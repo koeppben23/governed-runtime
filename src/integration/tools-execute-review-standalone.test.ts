@@ -451,10 +451,7 @@ describe('review (standalone flow)', () => {
         headSha: 'a'.repeat(40),
       });
       expect(obligation.subjectDigest).toBe(obligation.reviewSubject?.subjectDigest);
-      const attempt = state.reviewAssurance!.attempts.find(
-        (item) => item.obligationId === obligationId,
-      );
-      expect(attempt?.reviewMaterial?.materialDigest).toBe(
+      expect(obligation.reviewMaterial.materialDigest).toBe(
         obligation.reviewSubject?.materialDigest,
       );
       const findings = {

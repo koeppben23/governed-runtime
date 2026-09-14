@@ -63,7 +63,6 @@ import {
 } from './evidence-review-authority.js';
 import {
   refineAssuranceDiscoveryCoherence,
-  refineAssuranceDispatchCoherence,
   refineAssuranceIdentityUniqueness,
   refineAssuranceInvocationLinkageCoherence,
   refineAssuranceProvenanceCoherence,
@@ -73,6 +72,10 @@ import {
   refineReviewMaterialSubject,
   refineStandaloneSubject,
 } from './evidence-review-refinements.js';
+import {
+  refineAssuranceAttemptLineageCoherence,
+  refineAssuranceDispatchCoherence,
+} from './evidence-review-ledger-refinements.js';
 export { classifyRepositoryPath, type RepositoryPathClassification } from './repository-path.js';
 
 export const ReviewAttemptStatusValues = [
@@ -165,8 +168,6 @@ export const ReviewAttempt = z
     obligationId: z.string().uuid(),
     obligationType: ReviewObligationType,
     subjectDigest: z.string().min(1),
-    /** Immutable material supplied to the reviewer for standalone content reviews. */
-    reviewMaterial: ReviewMaterial.optional(),
     ordinal: z.number().int().nonnegative(),
     childSessionId: z.string().optional(),
     status: ReviewAttemptStatus,
@@ -451,12 +452,6 @@ export const ReviewObligation = z
      * participate in input-fingerprint matching.
      */
     fingerprintVersion: ReviewInputFingerprintVersion.optional(),
-    /**
-     * Ordered attempt IDs associated with this obligation.
-     * Each reviewer Task invocation creates a new attempt; the latest attempt at
-     * the highest ordinal is the authoritative one for binding.
-     */
-    attemptIds: z.array(z.string().uuid()).optional(),
     /** Optional metadata, e.g. input fingerprint for standalone /review obligations. */
     metadata: z.record(z.string(), z.unknown()).optional(),
     /** Frozen subject coverage. A review without a subject is not bindable. */
@@ -572,6 +567,7 @@ export const ReviewAssuranceState = z
   .superRefine(refineAssuranceIdentityUniqueness)
   .superRefine(refineAssuranceDiscoveryCoherence)
   .superRefine(refineAssuranceProvenanceCoherence)
+  .superRefine(refineAssuranceAttemptLineageCoherence)
   .superRefine(refineAssuranceDispatchCoherence)
   .superRefine(refineAssuranceInvocationLinkageCoherence)
   .readonly();

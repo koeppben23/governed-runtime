@@ -222,16 +222,6 @@ async function bindHostTaskReviewEvidence(
     reviewAssurance: appendInvocationEvidence(
       {
         ...assurance,
-        obligations: assurance.obligations.map((item) =>
-          item.obligationId === obligationId
-            ? {
-                ...item,
-                ...(existingAttempt?.reviewMaterial
-                  ? { reviewMaterial: existingAttempt.reviewMaterial }
-                  : {}),
-              }
-            : item,
-        ),
         attempts: [
           ...assurance.attempts.filter((attempt) => attempt.attemptId !== boundAttempt.attemptId),
           boundAttempt,

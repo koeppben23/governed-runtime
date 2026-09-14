@@ -62,11 +62,6 @@ function bindableAttemptFor(obligation: ReviewObligation): ReviewAttempt {
     repositoryDiscovery: { kind: 'not_applicable' },
     observations: [],
     createdAt: '2026-01-01T00:00:00.000Z',
-    reviewMaterial: {
-      content: PLAN_BODY,
-      materialDigest: hashCanonicalReviewContent(PLAN_BODY),
-      subjectDigest: 'plan-subject-digest',
-    },
   };
 }
 

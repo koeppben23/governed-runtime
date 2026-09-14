@@ -210,7 +210,6 @@ function buildState(
           obligationId: OBLIGATION_ID,
           obligationType,
           subjectDigest: item.subjectDigest,
-          reviewMaterial: obligationWithMaterial.reviewMaterial,
           ordinal: 1,
           status: 'created' as const,
           origin: { kind: 'initial' } as const,

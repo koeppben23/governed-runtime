@@ -67,7 +67,6 @@ function attemptFor(
     obligationId: obligation.obligationId,
     obligationType: obligation.obligationType,
     subjectDigest: obligation.subjectDigest,
-    reviewMaterial: obligation.reviewMaterial,
     ordinal,
     origin: { kind: 'initial' },
     repositoryDiscovery: { kind: 'not_applicable' },

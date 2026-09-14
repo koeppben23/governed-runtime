@@ -120,7 +120,6 @@ function buildState(overrides: Partial<SessionState> = {}): SessionState {
           obligationId: OBLIGATION_ID,
           obligationType: 'plan',
           subjectDigest: 'test-subject-digest',
-          reviewMaterial,
           ordinal: 1,
           status: 'created',
           origin: { kind: 'initial' },

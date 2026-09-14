@@ -161,7 +161,6 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
             obligationId,
             obligationType: 'plan' as const,
             subjectDigest: 'test-subject-digest',
-            reviewMaterial,
             ordinal: 0,
             status: 'created' as const,
             origin: { kind: 'initial' } as const,

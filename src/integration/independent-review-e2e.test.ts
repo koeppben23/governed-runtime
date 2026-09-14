@@ -262,7 +262,6 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
             obligationId: OBLIGATION_ID,
             obligationType: 'plan' as const,
             subjectDigest: SUBJECT_DIGEST,
-            reviewMaterial,
             ordinal: 0,
             status: 'created' as const,
             origin: { kind: 'initial' } as const,
@@ -514,17 +513,16 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
       ),
       'bindable attempt persisted by Call 1',
     ).toHaveLength(1);
-    const initialAttempt = (afterCall1?.reviewAssurance?.attempts ?? [])[0];
-    expect(initialAttempt?.reviewMaterial).toMatchObject({
-      content: expect.any(String),
-      materialDigest: expect.any(String),
-      subjectDigest: expect.any(String),
-    });
     const pendingAfterCall1 = (afterCall1?.reviewAssurance?.obligations ?? []).filter(
       (o) => o.obligationType === 'review' && o.status === 'pending',
     );
     expect(pendingAfterCall1.length, 'pending review obligation after Call 1').toBe(1);
     const pendingObligation = pendingAfterCall1[0];
+    expect(pendingObligation?.reviewMaterial).toMatchObject({
+      content: expect.any(String),
+      materialDigest: expect.any(String),
+      subjectDigest: expect.any(String),
+    });
     const reviewSubject = pendingObligation?.reviewSubject;
     expect(pendingObligation?.subjectDigest).toBe(reviewSubject?.subjectDigest);
     expect(reviewSubject?.kind).toBe('repository_change');
@@ -534,7 +532,7 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
         paths: reviewSubject.changedPaths,
       });
     }
-    expect(initialAttempt?.reviewMaterial?.materialDigest).toBe(reviewSubject?.materialDigest);
+    expect(pendingObligation?.reviewMaterial.materialDigest).toBe(reviewSubject?.materialDigest);
     await writeState(sessDir, {
       ...afterCall1!,
       reviewAssurance: {
@@ -543,9 +541,6 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
           obligation.obligationId === obligationId
             ? {
                 ...obligation,
-                ...(initialAttempt?.reviewMaterial
-                  ? { reviewMaterial: initialAttempt.reviewMaterial }
-                  : {}),
                 reviewSubjectScope: {
                   kind: 'repository_change' as const,
                   paths: ['docs/test.md'],

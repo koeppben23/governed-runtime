@@ -20,7 +20,6 @@ import {
   ensureReviewAssurance,
   findReviewObligationById,
   findBindableAttempt,
-  latestReviewMaterial,
   hasEvidenceReuse,
   buildInvocationEvidence,
   appendInvocationEvidence,
@@ -90,10 +89,9 @@ async function loadPersistedContentForReview(ctx: PipelineContext): Promise<{
     return null;
   }
   const attempt = findBindableAttempt(ctx.sessionState.reviewAssurance, reviewCtx.obligationId);
-  const material = attempt?.reviewMaterial;
+  const material = obligation?.reviewMaterial;
   if (!attempt || !material || attempt.subjectDigest !== obligation?.subjectDigest) {
-    const persisted = latestReviewMaterial(assurance, reviewCtx.obligationId);
-    const materialCheck = verifyFrozenMaterialForObligation(obligation, persisted);
+    const materialCheck = verifyFrozenMaterialForObligation(obligation, material);
     await blockReviewOutcomeHelper(
       deps,
       ctx,

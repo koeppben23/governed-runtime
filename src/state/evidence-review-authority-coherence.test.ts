@@ -421,3 +421,243 @@ describe('Current persisted authority schemas are strict', () => {
     expect(JSON.stringify(result.error.issues)).toContain('consistent invocation provenance');
   });
 });
+
+describe('Attempt lineage and dispatch lifecycle', () => {
+  const DECISION_IDENTITY = {
+    actorId: 'reviewer-1',
+    actorEmail: null,
+    actorSource: 'env' as const,
+    actorAssurance: 'best_effort' as const,
+  };
+  void DECISION_IDENTITY;
+
+  const PLAN_OBLIGATION = {
+    obligationId: FIXED_UUID,
+    obligationType: 'plan' as const,
+    iteration: 0,
+    planVersion: 1,
+    criteriaVersion: 'p40-v1',
+    mandateDigest: 'sha256-mandate',
+    createdAt: FIXED_TIME,
+    pluginHandshakeAt: null,
+    status: 'pending' as const,
+    invocationId: null,
+    blockedCode: null,
+    fulfilledAt: null,
+    consumedAt: null,
+    reviewProfile: 'core' as const,
+    profileSource: 'policy_default' as const,
+    requiredChallengeCount: 0,
+    requiredChallengeKind: 'design_challenge' as const,
+    challengePolicyVersion: 'challenge-policy.v1' as const,
+    subjectDigest: 'a'.repeat(64),
+    reviewMaterial: {
+      content: 'frozen review material',
+      materialDigest: 'a'.repeat(64),
+      subjectDigest: 'a'.repeat(64),
+    },
+    reviewSubjectScope: {
+      kind: 'artifact' as const,
+      artifact: {
+        kind: 'plan' as const,
+        digest: 'a'.repeat(64),
+        sectionPaths: [[{ headingDepth: 2, siblingIndex: 1, headingText: 'Approach' }]],
+      },
+    },
+    repositoryEvidenceFreeze: { kind: 'unavailable' as const, reason: 'repository_unavailable' },
+    maxReviewerOutputRepairAttempts: 3,
+  };
+
+  const REJECTED_ATTEMPT_ID = '11111111-1111-4111-8111-111111111111';
+  const REPAIR_ATTEMPT_ID = '44444444-4444-4444-8444-444444444444';
+  const LATER = '2026-01-01T00:00:01.000Z';
+
+  const REJECTED_ATTEMPT = {
+    attemptId: REJECTED_ATTEMPT_ID,
+    obligationId: FIXED_UUID,
+    obligationType: 'plan' as const,
+    subjectDigest: 'a'.repeat(64),
+    ordinal: 0,
+    childSessionId: 'ses_child',
+    status: 'rejected' as const,
+    origin: { kind: 'initial' as const },
+    rejectionReason: 'schema_invalid' as const,
+    repositoryDiscovery: { kind: 'not_applicable' as const },
+    observations: [],
+    createdAt: FIXED_TIME,
+    completedAt: FIXED_TIME,
+  };
+
+  function repairAttempt(overrides: Record<string, unknown> = {}) {
+    return {
+      attemptId: REPAIR_ATTEMPT_ID,
+      obligationId: FIXED_UUID,
+      obligationType: 'plan' as const,
+      subjectDigest: 'a'.repeat(64),
+      ordinal: 1,
+      status: 'created' as const,
+      origin: {
+        kind: 'output_repair' as const,
+        predecessorAttemptId: REJECTED_ATTEMPT_ID,
+        triggerReason: 'schema_invalid' as const,
+      },
+      repositoryDiscovery: { kind: 'not_applicable' as const },
+      observations: [],
+      createdAt: LATER,
+      ...overrides,
+    };
+  }
+
+  function parseLineage(attempts: readonly unknown[]) {
+    return ReviewAssuranceState.safeParse({
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
+      obligations: [PLAN_OBLIGATION],
+      invocations: [],
+      attempts,
+      dispatches: [],
+    });
+  }
+
+  it('HAPPY: coherent output_repair lineage parses', () => {
+    expect(parseLineage([REJECTED_ATTEMPT, repairAttempt()]).success).toBe(true);
+  });
+
+  it('ReviewAttempt rejects the removed reviewMaterial copy', () => {
+    const attempt = {
+      ...REJECTED_ATTEMPT,
+      reviewMaterial: {
+        content: 'stale copy',
+        materialDigest: 'b'.repeat(64),
+        subjectDigest: 'a'.repeat(64),
+      },
+    };
+    expect(ReviewAttempt.safeParse(attempt).success).toBe(false);
+  });
+
+  it('rejects an unknown predecessor', () => {
+    const result = parseLineage([
+      REJECTED_ATTEMPT,
+      repairAttempt({
+        origin: {
+          kind: 'output_repair' as const,
+          predecessorAttemptId: '99999999-9999-4999-8999-999999999999',
+          triggerReason: 'schema_invalid' as const,
+        },
+      }),
+    ]);
+    expect(result.success).toBe(false);
+    if (result.success) throw new TypeError('expected schema rejection');
+    expect(JSON.stringify(result.error.issues)).toContain('references unknown predecessor');
+  });
+
+  it('rejects a predecessor bound to a different subject', () => {
+    const foreignPredecessor = {
+      ...REJECTED_ATTEMPT,
+      subjectDigest: 'b'.repeat(64),
+    };
+    const result = parseLineage([foreignPredecessor, repairAttempt()]);
+    expect(result.success).toBe(false);
+    if (result.success) throw new TypeError('expected schema rejection');
+    expect(JSON.stringify(result.error.issues)).toContain('belongs to a different obligation');
+  });
+
+  it('rejects a predecessor that is not strictly earlier', () => {
+    const result = parseLineage([
+      { ...REJECTED_ATTEMPT, ordinal: 2 },
+      repairAttempt({ ordinal: 1 }),
+    ]);
+    expect(result.success).toBe(false);
+    if (result.success) throw new TypeError('expected schema rejection');
+    expect(JSON.stringify(result.error.issues)).toContain('not an earlier attempt');
+  });
+
+  it('rejects a trigger reason that contradicts the predecessor state', () => {
+    const result = parseLineage([
+      { ...REJECTED_ATTEMPT, rejectionReason: 'consistency_invalid' as const },
+      repairAttempt(),
+    ]);
+    expect(result.success).toBe(false);
+    if (result.success) throw new TypeError('expected schema rejection');
+    expect(JSON.stringify(result.error.issues)).toContain(
+      'trigger reason does not match its predecessor state',
+    );
+  });
+
+  it('rejects duplicate attempt ordinals for one obligation', () => {
+    const result = parseLineage([
+      REJECTED_ATTEMPT,
+      { ...REJECTED_ATTEMPT, attemptId: REPAIR_ATTEMPT_ID },
+    ]);
+    expect(result.success).toBe(false);
+    if (result.success) throw new TypeError('expected schema rejection');
+    expect(JSON.stringify(result.error.issues)).toContain('duplicate attempt ordinal');
+  });
+
+  function parseDispatches(dispatches: readonly unknown[]) {
+    return ReviewAssuranceState.safeParse({
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
+      obligations: [PLAN_OBLIGATION],
+      invocations: [],
+      attempts: [REJECTED_ATTEMPT, repairAttempt()],
+      dispatches,
+    });
+  }
+
+  function dispatch(overrides: Record<string, unknown> = {}) {
+    return {
+      dispatchId: '33333333-3333-4333-8333-333333333333',
+      attemptId: REJECTED_ATTEMPT_ID,
+      obligationId: FIXED_UUID,
+      hostCallId: 'call-1',
+      canonicalPromptDigest: 'a'.repeat(64),
+      dispatchAuthorizedAt: FIXED_TIME,
+      dispatchStatus: 'authorized' as const,
+      ...overrides,
+    };
+  }
+
+  it('HAPPY: one authorized dispatch per attempt parses', () => {
+    expect(parseDispatches([dispatch()]).success).toBe(true);
+  });
+
+  it('rejects a duplicate hostCallId across dispatches', () => {
+    const result = parseDispatches([
+      dispatch(),
+      dispatch({
+        dispatchId: '55555555-5555-4555-8555-555555555555',
+        attemptId: REPAIR_ATTEMPT_ID,
+        hostCallId: 'call-1',
+      }),
+    ]);
+    expect(result.success).toBe(false);
+    if (result.success) throw new TypeError('expected schema rejection');
+    expect(JSON.stringify(result.error.issues)).toContain('duplicate hostCallId');
+  });
+
+  it('rejects more than one active dispatch for the same attempt', () => {
+    const result = parseDispatches([
+      dispatch(),
+      dispatch({
+        dispatchId: '55555555-5555-4555-8555-555555555555',
+        hostCallId: 'call-2',
+      }),
+    ]);
+    expect(result.success).toBe(false);
+    if (result.success) throw new TypeError('expected schema rejection');
+    expect(JSON.stringify(result.error.issues)).toContain('more than one active dispatch');
+  });
+
+  it('rejects an authorized dispatch carrying completedAt', () => {
+    const result = parseDispatches([dispatch({ completedAt: FIXED_TIME })]);
+    expect(result.success).toBe(false);
+    if (result.success) throw new TypeError('expected schema rejection');
+    expect(JSON.stringify(result.error.issues)).toContain('authorized but carries completedAt');
+  });
+
+  it('rejects a completed dispatch without completedAt', () => {
+    const result = parseDispatches([dispatch({ dispatchStatus: 'completed' as const })]);
+    expect(result.success).toBe(false);
+    if (result.success) throw new TypeError('expected schema rejection');
+    expect(JSON.stringify(result.error.issues)).toContain('completed but is missing completedAt');
+  });
+});

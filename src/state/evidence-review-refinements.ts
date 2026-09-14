@@ -109,10 +109,19 @@ export interface AttemptRefinementShape {
   readonly attemptId: string;
   readonly obligationId: string;
   readonly obligationType: string;
+  readonly subjectDigest: string;
+  readonly ordinal: number;
   readonly status: string;
   readonly childSessionId?: string;
   readonly completedAt?: string;
   readonly observationCapability?: string;
+  readonly rejectionReason?: string;
+  readonly createdAt: string;
+  readonly origin: {
+    readonly kind: string;
+    readonly predecessorAttemptId?: string;
+    readonly triggerReason?: string;
+  };
   readonly repositoryDiscovery: { readonly kind: 'repository' | 'not_applicable' };
 }
 
@@ -140,6 +149,9 @@ export interface AssuranceRefinementShape {
     readonly dispatchId: string;
     readonly attemptId: string;
     readonly obligationId: string;
+    readonly hostCallId: string;
+    readonly dispatchStatus: string;
+    readonly completedAt?: string;
   }[];
 }
 
@@ -413,48 +425,6 @@ export function refineAssuranceDiscoveryCoherence(
         code: z.ZodIssueCode.custom,
         path: ['attempts'],
         message: `attempt ${attempt.attemptId} must carry not_applicable Discovery for a non-repository-governed obligation`,
-      });
-      return;
-    }
-  }
-}
-
-/**
- * Dispatch-ledger referential closure. The durable dispatch ledger is
- * authority-bearing, so every dispatch must reference an EXISTING attempt
- * belonging to the SAME obligation, and dispatch identities must be unique.
- * Orphans and cross-links are invalid states, not legacy data.
- */
-export function refineAssuranceDispatchCoherence(
-  assurance: AssuranceRefinementShape,
-  context: z.RefinementCtx,
-): void {
-  const attemptsById = new Map(assurance.attempts.map((attempt) => [attempt.attemptId, attempt]));
-  const dispatchIds = new Set<string>();
-  for (const dispatch of assurance.dispatches) {
-    if (dispatchIds.has(dispatch.dispatchId)) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['dispatches'],
-        message: `duplicate dispatchId ${dispatch.dispatchId} — a dispatch identity must be unique across the assurance state`,
-      });
-      return;
-    }
-    dispatchIds.add(dispatch.dispatchId);
-    const attempt = attemptsById.get(dispatch.attemptId);
-    if (!attempt) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['dispatches'],
-        message: `dispatch ${dispatch.dispatchId} references unknown attempt ${dispatch.attemptId}`,
-      });
-      return;
-    }
-    if (attempt.obligationId !== dispatch.obligationId) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['dispatches'],
-        message: `dispatch ${dispatch.dispatchId} obligation does not match its attempt`,
       });
       return;
     }

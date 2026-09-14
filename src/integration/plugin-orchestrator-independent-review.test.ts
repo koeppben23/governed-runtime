@@ -190,7 +190,6 @@ function buildState(
           obligationId: OBLIGATION_ID,
           obligationType,
           subjectDigest: 'test-subject-digest',
-          reviewMaterial,
           ordinal: 1,
           status: 'created',
           origin: { kind: 'initial' },

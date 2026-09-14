@@ -177,7 +177,7 @@ function applyReviewerContextFailure(
     result.recovery = [
       'Do not re-run the reviewer: the persisted material no longer matches its frozen digest binding',
       'Restore the persisted review obligation and material from a trusted source',
-      'If this obligation predates frozen review material, start a new review cycle; do not reconstruct material from current state or the worktree',
+      'If the frozen material cannot be restored from a trusted source, start a new review cycle; never reconstruct material from mutable state',
     ];
     return JSON.stringify(refreshBlockedPresentation(result));
   }
@@ -647,7 +647,7 @@ function resolveReviewerContextFailure(
     kind: 'attempt_missing',
     obligationId: obligation.obligationId,
     reason: bindableAttempt
-      ? 'the bindable attempt carries no persisted review material'
+      ? 'the obligation carries no frozen review material for this attempt'
       : 'every attempt for this obligation is already bound, rejected, staled, or expired',
   };
 }

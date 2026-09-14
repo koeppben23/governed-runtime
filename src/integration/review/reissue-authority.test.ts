@@ -60,15 +60,11 @@ function makeObligation(overrides: Partial<ReviewObligation> = {}): ReviewObliga
   };
 }
 
-function initialAttempt(
-  obligation: ReviewObligation,
-  reviewMaterial: ReviewMaterial = FROZEN_MATERIAL,
-): ReviewAttempt {
+function initialAttempt(obligation: ReviewObligation): ReviewAttempt {
   return createReviewAttempt({
     obligationId: obligation.obligationId,
     obligationType: obligation.obligationType,
     subjectDigest: obligation.subjectDigest,
-    reviewMaterial,
     ordinal: 1,
     origin: { kind: 'initial' },
     repositoryDiscovery: { kind: 'not_applicable' },
@@ -186,12 +182,12 @@ describe('authorizeOutputRepairReissue', () => {
     expect(result).toMatchObject({ kind: 'blocked', code: 'REVIEW_REPAIR_UNAVAILABLE' });
   });
 
-  it('blocks when no attempt exists (missing persisted material is an integrity failure)', () => {
+  it('blocks when no attempt exists (no rejected attempt can authorize a repair)', () => {
     const obligation = makeObligation();
     const result = authorizeOutputRepairReissue(assuranceWith(obligation, []), obligation);
     expect(result).toMatchObject({
-      kind: 'integrity_blocked',
-      code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
+      kind: 'blocked',
+      code: 'REVIEW_REPAIR_UNAVAILABLE',
     });
   });
 
@@ -256,10 +252,10 @@ describe('authorizeOutputRepairReissue', () => {
       subjectDigest: SUBJECT_DIGEST,
     };
     const rejected = rejectedAttempt(obligation, 'schema_invalid');
-    const tamperedAttempt: ReviewAttempt = { ...rejected, reviewMaterial: tampered };
+    const tamperedObligation: ReviewObligation = { ...obligation, reviewMaterial: tampered };
     const result = authorizeOutputRepairReissue(
-      assuranceWith(obligation, [tamperedAttempt]),
-      obligation,
+      assuranceWith(tamperedObligation, [rejected]),
+      tamperedObligation,
     );
     expect(result).toEqual({
       kind: 'integrity_blocked',
@@ -271,15 +267,18 @@ describe('authorizeOutputRepairReissue', () => {
   it('blocks with REVIEW_MATERIAL_INTEGRITY_FAILED when the persisted material is missing', () => {
     const obligation = makeObligation();
     const rejected = rejectedAttempt(obligation, 'schema_invalid');
-    const withoutMaterial: ReviewAttempt = { ...rejected, reviewMaterial: undefined };
+    const withoutMaterial = {
+      ...obligation,
+      reviewMaterial: undefined,
+    } as unknown as ReviewObligation;
     const result = authorizeOutputRepairReissue(
-      assuranceWith(obligation, [withoutMaterial]),
-      obligation,
+      assuranceWith(withoutMaterial, [rejected]),
+      withoutMaterial,
     );
     expect(result).toEqual({
       kind: 'integrity_blocked',
       code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
-      reason: expect.stringContaining('predates frozen review material'),
+      reason: expect.stringContaining('frozen review material is unavailable'),
     });
   });
 
@@ -293,10 +292,10 @@ describe('authorizeOutputRepairReissue', () => {
       subjectDigest: SUBJECT_DIGEST,
     };
     const rejected = rejectedAttempt(obligation, 'schema_invalid');
-    const tamperedAttempt: ReviewAttempt = { ...rejected, reviewMaterial: tampered };
+    const tamperedObligation: ReviewObligation = { ...obligation, reviewMaterial: tampered };
     const result = authorizeOutputRepairReissue(
-      assuranceWith(obligation, [tamperedAttempt]),
-      obligation,
+      assuranceWith(tamperedObligation, [rejected]),
+      tamperedObligation,
     );
     expect(result).toMatchObject({
       kind: 'integrity_blocked',

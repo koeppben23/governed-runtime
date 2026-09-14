@@ -189,11 +189,6 @@ function buildSessionState(
           obligationId: OBLIGATION_ID,
           obligationType: 'review',
           subjectDigest: SUBJECT_DIGEST,
-          reviewMaterial: {
-            content: PERSISTED_CONTENT,
-            materialDigest: MATERIAL_DIGEST,
-            subjectDigest: SUBJECT_DIGEST,
-          },
           ordinal: 1,
           status: 'created',
           origin: { kind: 'initial' } as const,
@@ -633,14 +628,14 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     });
 
     expect(client.session.create).not.toHaveBeenCalled();
-    // No attempt means the obligation predates the frozen-material contract:
-    // current mutable state must not be used to reconstruct reviewer input.
+    // No attempt means no bindable reviewer context: the frozen obligation
+    // material alone cannot reconstruct reviewer input without an attempt.
     expect(blockReviewOutcome).toHaveBeenCalledWith(
       expect.anything(),
       OBLIGATION_ID,
-      'REVIEW_MATERIAL_INTEGRITY_FAILED',
+      'REVIEW_ATTEMPT_UNAVAILABLE',
       expect.objectContaining({
-        reason: expect.stringContaining('predates frozen review material'),
+        reason: expect.stringContaining('bindable attempt'),
       }),
       output,
     );
@@ -695,16 +690,18 @@ describe('runReviewOrchestration strict /review content analysis', () => {
       ...stateRef.current,
       reviewAssurance: {
         ...stateRef.current.reviewAssurance!,
-        attempts: [
-          {
-            ...stateRef.current.reviewAssurance!.attempts[0]!,
-            reviewMaterial: {
-              content: 'wrong material',
-              materialDigest: 'b'.repeat(64),
-              subjectDigest: SUBJECT_DIGEST,
-            },
-          },
-        ],
+        obligations: stateRef.current.reviewAssurance!.obligations.map((obligation) =>
+          obligation.obligationId === OBLIGATION_ID
+            ? {
+                ...obligation,
+                reviewMaterial: {
+                  content: 'wrong material',
+                  materialDigest: 'b'.repeat(64),
+                  subjectDigest: SUBJECT_DIGEST,
+                },
+              }
+            : obligation,
+        ),
       },
     };
     vi.mocked(readState).mockResolvedValue(stateRef.current);

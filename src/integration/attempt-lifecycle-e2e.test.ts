@@ -84,11 +84,6 @@ async function seedSession(
     obligationId: OBLIGATION_ID,
     obligationType: 'plan',
     subjectDigest: SUBJECT_DIGEST,
-    reviewMaterial: {
-      content: REVIEW_MATERIAL_CONTENT,
-      materialDigest: REVIEW_MATERIAL_DIGEST,
-      subjectDigest: SUBJECT_DIGEST,
-    },
     ordinal: 0,
     status: options.attemptStatus ?? 'created',
     origin: { kind: 'initial' } as const,
@@ -201,18 +196,8 @@ async function reissuePlanReviewRequiredOutput(
   if (!state || !assurance || !predecessor || !obligation) {
     throw new TypeError('Expected persisted attempt and obligation for retry fixture');
   }
-  let triggerReason: 'interrupted' | 'rejected' | 'stale' | 'expired';
-  switch (predecessor.status) {
-    case 'created':
-      triggerReason = 'interrupted';
-      break;
-    case 'rejected':
-    case 'stale':
-    case 'expired':
-      triggerReason = predecessor.status;
-      break;
-    default:
-      throw new TypeError(`Cannot reissue ${predecessor.status} attempt in retry fixture`);
+  if (predecessor.status === 'bound' || predecessor.status === 'captured') {
+    throw new TypeError(`Cannot reissue ${predecessor.status} attempt in retry fixture`);
   }
   const reissue = createAttemptForExistingObligation(
     assurance,
@@ -223,12 +208,40 @@ async function reissuePlanReviewRequiredOutput(
       origin: {
         kind: 'task_rearm',
         predecessorAttemptId: predecessor.attemptId,
-        triggerReason,
+        triggerReason: 'stale',
       },
       repositoryDiscovery: predecessor.repositoryDiscovery,
     },
   );
-  await writeState(sessDir, { ...state, reviewAssurance: reissue.assurance });
+  // The lineage invariant derives the task_rearm trigger from the predecessor's
+  // PERSISTED state, which the mint may have superseded (staled).
+  const finalPredecessor = reissue.assurance.attempts.find(
+    (attempt) => attempt.attemptId === predecessor.attemptId,
+  );
+  const triggerReason: 'interrupted' | 'rejected' | 'stale' | 'expired' =
+    finalPredecessor?.status === 'created'
+      ? 'interrupted'
+      : finalPredecessor?.status === 'rejected'
+        ? 'rejected'
+        : finalPredecessor?.status === 'expired'
+          ? 'expired'
+          : 'stale';
+  const coherentAssurance = {
+    ...reissue.assurance,
+    attempts: reissue.assurance.attempts.map((attempt) =>
+      attempt.attemptId === reissue.attempt.attemptId && attempt.origin.kind === 'task_rearm'
+        ? {
+            ...attempt,
+            origin: {
+              kind: 'task_rearm' as const,
+              predecessorAttemptId: attempt.origin.predecessorAttemptId,
+              triggerReason,
+            },
+          }
+        : attempt,
+    ),
+  };
+  await writeState(sessDir, { ...state, reviewAssurance: coherentAssurance });
 
   const output = planReviewRequiredOutput(reissue.attempt.attemptId);
   await afterHook(

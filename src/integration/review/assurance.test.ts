@@ -128,7 +128,7 @@ describe('integration/review-assurance', () => {
   });
 
   describe('standalone review material', () => {
-    it('copies persisted normalized material to a reissued attempt', () => {
+    it('keeps the obligation material authoritative across a reissued attempt', () => {
       const materialDigest = hashText('line one\nline two\n');
       const subjectDigest = hashText(`content:${materialDigest}`);
       const material = {
@@ -164,7 +164,7 @@ describe('integration/review-assurance', () => {
         },
       );
 
-      expect(retried.assurance.attempts.at(-1)?.reviewMaterial).toEqual(material);
+      expect(retried.assurance.obligations.at(-1)?.reviewMaterial).toEqual(material);
       expect(retried.assurance.attempts.at(-1)?.subjectDigest).toBe(subjectDigest);
       expect(retried.attempt.childSessionId).toBe('child-session-2');
     });
@@ -197,7 +197,7 @@ describe('integration/review-assurance', () => {
 
       expect(reissued.attempt.childSessionId).toBeUndefined();
       expect(reissued.attempt.status).toBe('created');
-      expect(reissued.attempt.reviewMaterial).toEqual(material);
+      expect(reissued.assurance.obligations.at(-1)?.reviewMaterial).toEqual(material);
       // Bindable means: resolvable again by the host for a fresh reviewer Task.
       expect(findBindableAttempt(reissued.assurance, obligation.obligationId)?.attemptId).toBe(
         reissued.attempt.attemptId,
