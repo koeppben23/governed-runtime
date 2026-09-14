@@ -20,19 +20,13 @@ import { readFile as fsReadFile } from 'node:fs/promises';
 import * as nodePath from 'node:path';
 import { withSpan, addFingerprint } from '../telemetry/index.js';
 import type {
-  CollectorDiagnostic,
   CollectorInput,
-  CollectorStatus,
   DetectedStack,
   DetectedStackItem,
   DetectedStackTarget,
   DetectedStackTargetEntry,
-  DetectedStackVersion,
   DiscoveryResult,
   DiscoverySummary,
-  StackInfo,
-  TopologyInfo,
-  ValidationHints,
 } from './types.js';
 import { DISCOVERY_SCHEMA_VERSION } from './types.js';
 import { collectRepoMetadata } from './collectors/repo-metadata.js';
@@ -171,28 +165,18 @@ async function runDiscoveryImpl(
   ]);
 
   // Collect diagnostics
-  const diagnostics: CollectorDiagnostic[] = [
-    metaRun.diagnostic,
-    stackRun.diagnostic,
-    topoRun.diagnostic,
-    surfaceRun.diagnostic,
-    codeSurfaceRun.diagnostic,
-    domainRun.diagnostic,
+  const diagnostics: DiscoveryResult['diagnostics'] = [
+    { ...metaRun.diagnostic, name: 'repo-metadata' },
+    { ...stackRun.diagnostic, name: 'stack-detection' },
+    { ...topoRun.diagnostic, name: 'topology' },
+    { ...surfaceRun.diagnostic, name: 'surface-detection' },
+    { ...codeSurfaceRun.diagnostic, name: 'code-surface-analysis' },
+    { ...domainRun.diagnostic, name: 'domain-signals' },
   ];
-
-  // Derive legacy collectors map from diagnostics
-  const collectors: Record<string, CollectorStatus> = {};
-  for (const diag of diagnostics) {
-    collectors[diag.name] = diag.status;
-  }
-
-  // Derive validation hints from stack + topology
-  const validationHints = deriveValidationHints(stackRun.data, topoRun.data, input);
 
   return {
     schemaVersion: DISCOVERY_SCHEMA_VERSION,
     collectedAt: new Date().toISOString(),
-    collectors,
     diagnostics,
     repoMetadata: metaRun.data,
     stack: stackRun.data,
@@ -200,7 +184,6 @@ async function runDiscoveryImpl(
     surfaces: surfaceRun.data,
     codeSurfaces: codeSurfaceRun.data,
     domainSignals: domainRun.data,
-    validationHints,
   };
 }
 
@@ -244,7 +227,6 @@ const TARGET_ORDER: Record<DetectedStackTarget, number> = {
  *
  * Produces a deterministic, sorted projection:
  * - items[] sorted by category order (language → framework → ...)
- * - versions[] sorted by category order
  * - `summary` uses `id=version` for versioned items, `id` for unversioned.
  *
  * If allFiles is provided, also extracts module-scoped stack items for monorepos.
@@ -261,7 +243,6 @@ export async function extractDetectedStack(
   readFile?: (path: string) => Promise<string | undefined>,
 ): Promise<DetectedStack | null> {
   const items: DetectedStackItem[] = [];
-  const versionEntries: DetectedStackVersion[] = [];
   const targets: DetectedStackTargetEntry[] = [];
 
   const categories: Array<{ items: typeof result.stack.languages; target: DetectedStackTarget }> = [
@@ -269,10 +250,10 @@ export async function extractDetectedStack(
     { items: result.stack.frameworks, target: 'framework' },
     { items: result.stack.runtimes, target: 'runtime' },
     { items: result.stack.buildTools, target: 'buildTool' },
-    { items: result.stack.tools ?? [], target: 'tool' },
+    { items: result.stack.tools, target: 'tool' },
     { items: result.stack.testFrameworks, target: 'testFramework' },
-    { items: result.stack.qualityTools ?? [], target: 'qualityTool' },
-    { items: result.stack.databases ?? [], target: 'database' },
+    { items: result.stack.qualityTools, target: 'qualityTool' },
+    { items: result.stack.databases, target: 'database' },
   ];
 
   for (const { items: categoryItems, target } of categories) {
@@ -287,16 +268,6 @@ export async function extractDetectedStack(
         ...(item.version ? { version: item.version } : {}),
         ...(ev ? { evidence: ev } : {}),
       });
-
-      // Only versioned items go into versions[] (backward compat)
-      if (item.version) {
-        versionEntries.push({
-          id: item.id,
-          version: item.version,
-          target,
-          ...(item.versionEvidence ? { evidence: item.versionEvidence } : {}),
-        });
-      }
 
       // Compiler targets go into targets[]
       if (item.compilerTarget) {
@@ -325,7 +296,6 @@ export async function extractDetectedStack(
   };
 
   sortByTargetThenId(items, (i) => i.kind);
-  sortByTargetThenId(versionEntries, (v) => v.target);
 
   // Summary: versioned "id=version", unversioned "id"
   const summary = items.map((i) => (i.version ? `${i.id}=${i.version}` : i.id)).join(', ');
@@ -340,140 +310,7 @@ export async function extractDetectedStack(
   return {
     summary,
     items,
-    versions: versionEntries,
     ...(targets.length > 0 ? { targets } : {}),
     ...(scopes && scopes.length > 0 ? { scopes } : {}),
   };
-}
-
-/**
- * Derive validation hints from stack and topology analysis.
- *
- * @deprecated Internal derivation for discovery digest stability.
- * Agent-facing verification commands come from planVerificationCandidates.
- */
-function deriveValidationHints(
-  stack: StackInfo,
-  topology: TopologyInfo,
-  input: CollectorInput,
-): ValidationHints {
-  const commands: ValidationHints['commands'] = [];
-  const lintTools: ValidationHints['lintTools'] = [];
-
-  // Detect build/test commands from build tools
-  const buildToolIds = new Set(stack.buildTools.map((t) => t.id));
-
-  if (buildToolIds.has('npm')) {
-    commands.push(
-      {
-        kind: 'build',
-        command: 'npm run build',
-        confidence: 0.7,
-        classification: 'derived_signal',
-      },
-      { kind: 'test', command: 'npm test', confidence: 0.8, classification: 'derived_signal' },
-    );
-  }
-  if (buildToolIds.has('maven')) {
-    commands.push(
-      { kind: 'build', command: 'mvn compile', confidence: 0.8, classification: 'derived_signal' },
-      { kind: 'test', command: 'mvn test', confidence: 0.8, classification: 'derived_signal' },
-    );
-  }
-  if (buildToolIds.has('gradle') || buildToolIds.has('gradle-kotlin')) {
-    commands.push(
-      { kind: 'build', command: 'gradle build', confidence: 0.8, classification: 'derived_signal' },
-      { kind: 'test', command: 'gradle test', confidence: 0.8, classification: 'derived_signal' },
-    );
-  }
-  if (buildToolIds.has('cargo')) {
-    commands.push(
-      { kind: 'build', command: 'cargo build', confidence: 0.9, classification: 'derived_signal' },
-      { kind: 'test', command: 'cargo test', confidence: 0.9, classification: 'derived_signal' },
-    );
-  }
-  if (buildToolIds.has('go-modules')) {
-    commands.push(
-      {
-        kind: 'build',
-        command: 'go build ./...',
-        confidence: 0.9,
-        classification: 'derived_signal',
-      },
-      { kind: 'test', command: 'go test ./...', confidence: 0.9, classification: 'derived_signal' },
-    );
-  }
-
-  // Detect typecheck commands
-  const configSet = new Set(input.configFiles);
-  if (configSet.has('tsconfig.json')) {
-    commands.push({
-      kind: 'typecheck',
-      command: 'npx tsc --noEmit',
-      confidence: 0.85,
-      classification: 'derived_signal',
-    });
-  }
-
-  // Detect test frameworks as lint/check tools
-  for (const tf of stack.testFrameworks) {
-    if (tf.id === 'vitest') {
-      commands.push({
-        kind: 'test',
-        command: 'npx vitest run',
-        confidence: 0.9,
-        classification: 'derived_signal',
-      });
-    }
-    if (tf.id === 'jest') {
-      commands.push({
-        kind: 'test',
-        command: 'npx jest',
-        confidence: 0.85,
-        classification: 'derived_signal',
-      });
-    }
-  }
-
-  // Detect lint tools from config files
-  const eslintConfigs = [
-    '.eslintrc',
-    '.eslintrc.js',
-    '.eslintrc.json',
-    '.eslintrc.yml',
-    'eslint.config.js',
-    'eslint.config.mjs',
-  ];
-  if (eslintConfigs.some((c) => configSet.has(c))) {
-    lintTools.push({
-      id: 'eslint',
-      confidence: 0.9,
-      classification: 'fact',
-      evidence: eslintConfigs.filter((c) => configSet.has(c)),
-    });
-    commands.push({
-      kind: 'lint',
-      command: 'npx eslint .',
-      confidence: 0.7,
-      classification: 'derived_signal',
-    });
-  }
-
-  const prettierConfigs = ['.prettierrc', '.prettierrc.json'];
-  if (prettierConfigs.some((c) => configSet.has(c))) {
-    lintTools.push({
-      id: 'prettier',
-      confidence: 0.9,
-      classification: 'fact',
-      evidence: prettierConfigs.filter((c) => configSet.has(c)),
-    });
-    commands.push({
-      kind: 'format',
-      command: 'npx prettier --check .',
-      confidence: 0.7,
-      classification: 'derived_signal',
-    });
-  }
-
-  return { commands, lintTools };
 }

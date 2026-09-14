@@ -1,6 +1,6 @@
 /**
  * @module proofgraph
- * @description FlowGuard ProofGraph domain schemas (v1).
+ * @description FlowGuard ProofGraph domain schemas (v2).
  *
  * A compact, persisted, claim-centric projection: each critical change claim
  * carries provenance (an approved authority reference), typed digest-bound
@@ -20,7 +20,7 @@
  * ProofGraph extends existing review/validation authorities. It does not create
  * a parallel policy, state-transition, or review-decision registry.
  *
- * @version v1
+ * @version v2
  */
 
 import { z } from 'zod';
@@ -56,7 +56,7 @@ export const EvidenceAttestation = z.enum([
 export type EvidenceAttestation = z.infer<typeof EvidenceAttestation>;
 
 /** Persisted ProofGraph projection schema version. */
-export const PROOFGRAPH_SCHEMA_VERSION = 'proofgraph.v1' as const;
+export const PROOFGRAPH_SCHEMA_VERSION = 'proofgraph.v2' as const;
 
 /**
  * Policy-required evidence classes for a claim (the evaluator input). A claim
@@ -79,15 +79,7 @@ export type RequiredEvidence = z.infer<typeof RequiredEvidence>;
  * assertion. Only a matching failed assertion can contradict the claim.
  * Check-level outcomes alone never produce a counterexample contradiction.
  */
-export const LegacyAssertionCounterexampleRequirement = z
-  .object({ checkId: z.string().min(1), assertion: AssertionIdentity })
-  .strict()
-  .readonly();
-export type LegacyAssertionCounterexampleRequirement = z.infer<
-  typeof LegacyAssertionCounterexampleRequirement
->;
-
-/** V2 counterexample requirements distinguish assertion and suite coverage. */
+/** Counterexample requirements distinguish assertion and suite coverage. */
 export const AssertionCounterexampleRequirement = z
   .object({
     kind: z.literal('assertion'),
@@ -105,14 +97,9 @@ export const AggregateCounterexampleRequirement = z
   })
   .strict()
   .readonly();
-export const V2CounterexampleRequirement = z.discriminatedUnion('kind', [
+export const CounterexampleRequirement = z.discriminatedUnion('kind', [
   AssertionCounterexampleRequirement,
   AggregateCounterexampleRequirement,
-]);
-export type V2CounterexampleRequirement = z.infer<typeof V2CounterexampleRequirement>;
-export const CounterexampleRequirement = z.union([
-  LegacyAssertionCounterexampleRequirement,
-  V2CounterexampleRequirement,
 ]);
 export type CounterexampleRequirement = z.infer<typeof CounterexampleRequirement>;
 
@@ -130,7 +117,7 @@ const proofClaimBase = {
   signalClass: SignalClass,
   /** Whether the claim is critical (subject to stricter evidence gating). */
   critical: z.boolean(),
-  /** v2 declaration scope; suite claims require complete-suite positive evidence. */
+  /** Plan-derived claims carry scope; suite claims require complete-suite positive evidence. */
   claimScope: z.enum(['specific_behavior', 'suite']).optional(),
   /** Approved GOVERNING source (ticket/plan-ADR/canonical authority). `null` ⇒ unproven assumption. */
   provenance: ClaimAuthorityRef.nullable(),
@@ -142,8 +129,6 @@ const proofClaimBase = {
   requiredEvidence: RequiredEvidence.optional(),
   /** Optional counterexample requirement (assertion-level). */
   counterexampleRequirement: CounterexampleRequirement.optional(),
-  /** V1 declarations are audit-visible but cannot establish v2 proof. */
-  proofEligibility: z.enum(['eligible', 'legacy_declaration_v1']).optional(),
   /** Optional confidence in [0, 1] for advisory (non-fact) signals. */
   confidence: z.number().min(0).max(1).optional(),
 } as const;
@@ -151,6 +136,7 @@ const proofClaimBase = {
 /** A claim declaration — the evaluator input (no verification state). */
 export const DeclaredClaim = z
   .object(proofClaimBase)
+  .strict()
   .refine((c) => c.counterexampleRefs.length === 0 || c.counterexampleRequirement !== undefined, {
     message:
       'counterexampleRefs require a counterexampleRequirement with a bound assertion identity',
@@ -165,6 +151,7 @@ export const ProofClaim = z
     verificationState: ClaimVerificationState,
     freshness: Freshness.optional(),
   })
+  .strict()
   .readonly();
 export type ProofClaim = z.infer<typeof ProofClaim>;
 
@@ -193,6 +180,7 @@ export const ProofGraphProjection = z
     /** Per-claim binding diagnostic codes from counterexample evaluation. */
     claimDiagnostics: z.record(z.string().uuid(), AssertionBindingReasonCodeSchema).optional(),
   })
+  .strict()
   .readonly();
 export type ProofGraphProjection = z.infer<typeof ProofGraphProjection>;
 

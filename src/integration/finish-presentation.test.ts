@@ -231,7 +231,7 @@ describe('buildFinishDocument', () => {
   it('includes proofSummary with completion context when proofGraph exists', () => {
     const state = completeState({
       proofGraph: {
-        version: 'proofgraph.v1' as const,
+        version: 'proofgraph.v2' as const,
         claims: [
           {
             claimId: '99999999-9999-9999-9999-999999999999',
@@ -274,7 +274,7 @@ describe('buildFinishDocument', () => {
   it('renders ProofGraph section in finish document markdown when proofGraph exists', () => {
     const state = completeState({
       proofGraph: {
-        version: 'proofgraph.v1' as const,
+        version: 'proofgraph.v2' as const,
         claims: [
           {
             claimId: '88888888-8888-8888-8888-888888888888',

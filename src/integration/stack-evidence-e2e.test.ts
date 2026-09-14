@@ -189,23 +189,6 @@ describe('stack-evidence E2E', () => {
         ]),
       );
 
-      // versions[] backward compat — only versioned items
-      expect(ds.versions).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            id: 'java',
-            version: '21',
-            target: 'language',
-            evidence: 'pom.xml:<java.version>',
-          }),
-          expect.objectContaining({
-            id: 'spring-boot',
-            version: '3.4.1',
-            target: 'framework',
-          }),
-        ]),
-      );
-
       // 6. Verify flowguard_status surfaces full object (not summary string)
       const statusResult = await callStatus();
       expect(statusResult.detectedStack).not.toBeNull();
@@ -216,8 +199,6 @@ describe('stack-evidence E2E', () => {
       expect(statusDs.summary).toContain('java=21');
       expect(Array.isArray(statusDs.items)).toBe(true);
       expect((statusDs.items as unknown[]).length).toBeGreaterThanOrEqual(2);
-      expect(Array.isArray(statusDs.versions)).toBe(true);
-      expect((statusDs.versions as unknown[]).length).toBeGreaterThanOrEqual(2);
 
       const verificationCandidates = statusResult.verificationCandidates as Array<
         Record<string, unknown>
@@ -311,24 +292,13 @@ describe('stack-evidence E2E', () => {
           }),
         ]),
       );
-      expect(ds.versions).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            id: 'node',
-            version: '20.11.0',
-            target: 'runtime',
-            evidence: '.nvmrc',
-          }),
-        ]),
-      );
-
       // 6. Status surfaces full object
       const statusResult = await callStatus();
       expect(statusResult.detectedStack).not.toBeNull();
       const statusDs = statusResult.detectedStack as Record<string, unknown>;
       expect(statusDs.summary).toContain('node=20.11.0');
       expect(Array.isArray(statusDs.items)).toBe(true);
-      expect(Array.isArray(statusDs.versions)).toBe(true);
+      expect(statusDs).not.toHaveProperty('versions');
       expect(Array.isArray(statusResult.verificationCandidates)).toBe(true);
 
       const candidates = statusResult.verificationCandidates as Array<Record<string, unknown>>;
@@ -488,7 +458,7 @@ components = ["clippy", "rustfmt"]
 
       const ds = state!.detectedStack!;
       expect(ds.items.length).toBeGreaterThan(0);
-      expect(ds.versions).toHaveLength(0); // no versioned items
+      expect(ds.items.every((item) => item.version === undefined)).toBe(true);
 
       // Verify status surfaces full object (not null)
       const result = await callStatus();
@@ -527,7 +497,6 @@ components = ["clippy", "rustfmt"]
       const obj = ds as Record<string, unknown>;
       expect(typeof obj.summary).toBe('string');
       expect(Array.isArray(obj.items)).toBe(true);
-      expect(Array.isArray(obj.versions)).toBe(true);
 
       // Each item has required fields
       const items = obj.items as Array<Record<string, unknown>>;
@@ -551,27 +520,6 @@ components = ["clippy", "rustfmt"]
         // evidence is optional — string or undefined
         if (item.evidence !== undefined) {
           expect(typeof item.evidence).toBe('string');
-        }
-      }
-
-      // Each version entry has required fields (backward compat)
-      const versions = obj.versions as Array<Record<string, unknown>>;
-      for (const v of versions) {
-        expect(typeof v.id).toBe('string');
-        expect(typeof v.version).toBe('string');
-        expect([
-          'language',
-          'framework',
-          'runtime',
-          'buildTool',
-          'tool',
-          'testFramework',
-          'qualityTool',
-          'database',
-        ]).toContain(v.target);
-        // evidence is optional — string or undefined, never fabricated
-        if (v.evidence !== undefined) {
-          expect(typeof v.evidence).toBe('string');
         }
       }
     });

@@ -24,7 +24,6 @@ import {
   DiscoverySummarySchema,
   DetectedItemSchema,
   DetectedStackSchema,
-  DetectedStackVersionSchema,
   DetectedStackTargetSchema,
   StackInfoSchema,
   DISCOVERY_SCHEMA_VERSION,

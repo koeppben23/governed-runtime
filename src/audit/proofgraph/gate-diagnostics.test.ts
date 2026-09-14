@@ -33,7 +33,7 @@ function notVerifiedClaim(claimId: string): ProofClaim {
 
 function projectionWithDiagnostics(claimId: string, code: string): ProofGraphProjection {
   return {
-    version: 'proofgraph.v1',
+    version: 'proofgraph.v2',
     claims: [notVerifiedClaim(claimId)],
     evaluatedAt: NOW,
     // The runtime filter is exactly what these tests probe; the schema record
@@ -76,7 +76,7 @@ describe('gate claimDiagnostics passthrough', () => {
   it('keeps valid codes while dropping invalid entries in the same projection', () => {
     const claimId = UUID(1);
     const projection: ProofGraphProjection = {
-      version: 'proofgraph.v1',
+      version: 'proofgraph.v2',
       claims: [notVerifiedClaim(claimId)],
       evaluatedAt: NOW,
       claimDiagnostics: {

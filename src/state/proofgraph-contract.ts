@@ -1,6 +1,6 @@
 /**
  * @module proofgraph-contract
- * @description Thin, in-session ProofGraph contract declaration (contract.v1).
+ * @description Thin, in-session ProofGraph contract declaration (contract.v2).
  *
  * A declaration-only mechanism: it names the claims a change asserts and points
  * each claim at an approved-source reference (ticket/plan/ADR/implementation).
@@ -14,14 +14,14 @@
  * Claims are stored as the evaluator's `DeclaredClaim` shape so the contract and
  * the evaluator share one vocabulary instead of duplicating it.
  *
- * @version v1
+ * @version v2
  */
 
 import { z } from 'zod';
 import { DeclaredClaim } from './proofgraph.js';
 
 /** Persisted contract declaration schema version. */
-export const PROOFGRAPH_CONTRACT_VERSION = 'contract.v1' as const;
+export const PROOFGRAPH_CONTRACT_VERSION = 'contract.v2' as const;
 
 /** A change's declared claims plus their approved-source references. */
 export const ProofContract = z
@@ -29,6 +29,7 @@ export const ProofContract = z
     version: z.literal(PROOFGRAPH_CONTRACT_VERSION),
     claims: z.array(DeclaredClaim),
   })
+  .strict()
   .readonly();
 export type ProofContract = z.infer<typeof ProofContract>;
 
@@ -44,9 +45,9 @@ export const ProofContractCoverage = z
       'missing_expected_check',
       'unverified_mutation_profile',
       'invalid_counterexample_contract',
-      'legacy_claim_declaration_v1',
       'aggregate_counterexample_unsupported',
     ]),
   })
+  .strict()
   .readonly();
 export type ProofContractCoverage = z.infer<typeof ProofContractCoverage>;

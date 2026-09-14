@@ -64,7 +64,7 @@ function claim(
 
 function summary(claims: ProofClaim[]): ProofGraphSummary {
   return {
-    projection: { version: 'proofgraph.v1', claims, evaluatedAt: NOW },
+    projection: { version: 'proofgraph.v2', claims, evaluatedAt: NOW },
     counts: { PROVEN: 0, UNPROVEN: 0, CONTRADICTED: 0, STALE: 0, BLOCKED: 0, NOT_VERIFIED: 0 },
     criticalClaimCount: 0,
     criticalUnprovenCount: 0,
@@ -320,7 +320,7 @@ describe('evaluateProofGraphGateFromState', () => {
   }
 
   function projection(claims: ProofClaim[]): ProofGraphProjection {
-    return { version: 'proofgraph.v1', claims, evaluatedAt: NOW };
+    return { version: 'proofgraph.v2', claims, evaluatedAt: NOW };
   }
 
   function stateWith(overrides: Partial<SessionState>): SessionState {

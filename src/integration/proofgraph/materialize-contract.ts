@@ -19,7 +19,7 @@ import {
   resolveVerifiedMutationVerdicts,
 } from './mutation-provider.js';
 
-const EMPTY_CONTRACT: ProofContract = { version: 'contract.v1', claims: [] };
+const EMPTY_CONTRACT: ProofContract = { version: 'contract.v2', claims: [] };
 
 export type MaterializedPlanContract = {
   readonly contract: ProofContract;
@@ -102,7 +102,7 @@ function resolveCounterexampleAttempts(
   const requirement = declaration.counterexampleRequirement;
   const requiredCheckId = requirement?.checkId;
   if (!requiredCheckId) return { counterexampleAttempts: [] };
-  if ('kind' in requirement && requirement.kind === 'aggregate_check') {
+  if (requirement?.kind === 'aggregate_check') {
     const aggregateAttempts = attempts.filter((attempt) =>
       isAggregateCounterexampleAttempt(attempt, requiredCheckId, requirement.candidateId),
     );
@@ -201,7 +201,7 @@ export async function materializeApprovedPlanContractResult(
       statement: declaration.statement,
       signalClass: 'fact' as const,
       critical: declaration.critical,
-      ...('claimScope' in declaration ? { claimScope: declaration.claimScope } : {}),
+      claimScope: declaration.claimScope,
       provenance: {
         kind: 'canonical_authority' as const,
         authorityId: 'plan',
@@ -219,12 +219,10 @@ export async function materializeApprovedPlanContractResult(
         attemptId: attempt.attemptId,
       })),
       counterexampleRequirement: declaration.counterexampleRequirement,
-      // Hard Assurance Epoch: plan declarations are v2-only — every claim is eligible.
-      proofEligibility: 'eligible' as const,
       requiredEvidence: requiredEvidence(declaration),
     };
   });
-  return { contract: { version: 'contract.v1', claims }, coverage };
+  return { contract: { version: 'contract.v2', claims }, coverage };
 }
 
 type CertificateValidation =

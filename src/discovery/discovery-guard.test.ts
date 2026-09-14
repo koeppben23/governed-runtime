@@ -1,11 +1,6 @@
 /**
  * @module discovery/discovery-guard
- * @description Allowlist-based import guard preventing consumption of deprecated
- * `validationHints` symbols outside the discovery module.
- *
- * The guard scans all source files and fails if any file outside the
- * file-level allowlist imports or accesses ValidationHints, ValidationHintsSchema,
- * CommandHint, CommandHintSchema, or .validationHints.
+ * @description Guard preventing restoration of removed validation hint symbols.
  *
  * verificationCandidates from planVerificationCandidates() is the canonical
  * advisory verification source.
@@ -30,25 +25,6 @@ const DEPRECATED_SYMBOLS = [
 ];
 
 const DEPRECATED_FIELD_PATTERN = /\bvalidationHints\b/;
-
-const ALLOWLIST = new Set([
-  path.normalize('src/discovery/types.ts'),
-  path.normalize('src/discovery/orchestrator.ts'),
-  path.normalize('src/discovery/discovery-digest.ts'),
-  // Shared test fixture: keeps the deprecated DiscoveryResult field in the
-  // discovery authority layer instead of duplicating it in downstream tests.
-  path.normalize('src/discovery/discovery-test-fixtures.ts'),
-  path.normalize('src/discovery/discovery-guard.test.ts'),
-]);
-
-function isAllowlisted(filePath: string): boolean {
-  const normalized = path.normalize(filePath);
-  if (ALLOWLIST.has(normalized)) return true;
-  if (normalized.includes(`${path.sep}discovery${path.sep}`) && normalized.endsWith('.test.ts')) {
-    return true;
-  }
-  return false;
-}
 
 function scanFile(filePath: string): string[] {
   const content = fs.readFileSync(filePath, 'utf-8');
@@ -100,13 +76,14 @@ function collectSourceFiles(root: string): string[] {
 }
 
 describe('discovery-guard', () => {
-  it('no file outside the allowlist imports or accesses deprecated validationHints symbols', () => {
+  it('no production file imports or accesses removed validationHints symbols', () => {
     const allFiles = collectSourceFiles(PROJECT_ROOT);
     const violations: string[] = [];
 
     for (const absPath of allFiles) {
       const relPath = path.relative(PROJECT_ROOT, absPath);
-      if (isAllowlisted(relPath)) continue;
+      if (relPath === path.normalize('src/discovery/discovery-guard.test.ts')) continue;
+      if (relPath.endsWith('.test.ts')) continue;
 
       const fileViolations = scanFile(absPath);
       violations.push(...fileViolations);

@@ -7,7 +7,6 @@
  *
  * JSON canonicalization is delegated to the single canonical serializer in
  * `shared/canonical-json.ts`; this module does NOT define its own. Invariants:
- * - computeDiscoveryDigest() is backward-compatible, behavior unchanged
  * - computeStableDriftDigest() strips only collectedAt and diagnostics[].durationMs
  */
 import { hashText } from '../shared/hashing.js';
@@ -41,10 +40,9 @@ export function computeDiscoveryDigest(result: DiscoveryResult): string {
  * - diagnostics[].durationMs (wall-clock timing — varies per run)
  *
  * Preserves all content-semantic fields including:
- * - schemaVersion, collectors, diagnostics[].{name, status, timedOut,
+ * - schemaVersion, diagnostics[].{name, status, timedOut,
  *   errorCode, degradedReason}
- * - repoMetadata, stack, topology, surfaces, codeSurfaces, domainSignals,
- *   validationHints
+ * - repoMetadata, stack, topology, surfaces, codeSurfaces, domainSignals
  */
 function stripVolatileFields(result: DiscoveryResult): Record<string, unknown> {
   const {
@@ -55,13 +53,13 @@ function stripVolatileFields(result: DiscoveryResult): Record<string, unknown> {
     collectedAt: string;
   };
 
-  const strippedDiagnostics = diagnostics?.map(
+  const strippedDiagnostics = diagnostics.map(
     ({ durationMs: _durationMs, ...diagRest }) => diagRest,
   );
 
   return {
     ...rest,
-    ...(strippedDiagnostics ? { diagnostics: strippedDiagnostics } : {}),
+    diagnostics: strippedDiagnostics,
   };
 }
 
@@ -75,15 +73,14 @@ export function computeStableDiscoveryContributorDigests(
 ): ReadonlyMap<string, string> {
   const digests = new Map<string, string>();
   const diagnosticsByName = new Map(
-    result.diagnostics?.map(({ durationMs: _durationMs, ...diagnostic }) => [
+    result.diagnostics.map(({ durationMs: _durationMs, ...diagnostic }) => [
       diagnostic.name,
       diagnostic,
     ]),
   );
-  const collectorNames = new Set([
-    ...Object.keys(result.collectors),
+  const collectorNames = new Set<keyof typeof COLLECTOR_OUTPUTS>([
     ...diagnosticsByName.keys(),
-    ...Object.keys(COLLECTOR_OUTPUTS),
+    ...(Object.keys(COLLECTOR_OUTPUTS) as Array<keyof typeof COLLECTOR_OUTPUTS>),
   ]);
 
   for (const name of [...collectorNames].sort()) {
@@ -92,20 +89,19 @@ export function computeStableDiscoveryContributorDigests(
       name,
       hashText(
         canonicalJsonStringify({
-          status: result.collectors[name] ?? null,
+          status: diagnosticsByName.get(name)?.status ?? null,
           diagnostic: diagnosticsByName.get(name) ?? null,
           output: outputKey ? result[outputKey] : null,
         }),
       ),
     );
   }
-  digests.set('validation-hints', hashText(canonicalJsonStringify(result.validationHints)));
   digests.set(
     'discovery-metadata',
     hashText(
       canonicalJsonStringify({
         schemaVersion: result.schemaVersion,
-        diagnosticOrder: result.diagnostics?.map((diagnostic) => diagnostic.name) ?? [],
+        diagnosticOrder: result.diagnostics.map((diagnostic) => diagnostic.name),
       }),
     ),
   );

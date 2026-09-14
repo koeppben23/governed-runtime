@@ -81,11 +81,11 @@ describe('discovery/diagnostics (#372)', () => {
       expect(schemaParsed.success).toBe(true);
     });
 
-    it('diagnostics are consistent with legacy collectors map', async () => {
+    it('diagnostics identify each collector', async () => {
       const result = await runDiscovery(EMPTY_INPUT);
 
       for (const diag of result.diagnostics!) {
-        expect(result.collectors[diag.name]).toBe(diag.status);
+        expect(diag.name).toBeTruthy();
       }
     });
 
@@ -290,18 +290,16 @@ describe('discovery/diagnostics (#372)', () => {
   // ─── Phase 5: Advisory Authority ──────────────────────────────────────────
 
   describe('Phase 5: advisory authority consolidation', () => {
-    it('validationHints remains in DiscoveryResult for digest stability', async () => {
+    it('DiscoveryResult has no legacy planning fields', async () => {
       const result = await runDiscovery(EMPTY_INPUT);
-      expect(result.validationHints).toBeDefined();
-      expect(result.validationHints.commands).toBeDefined();
-      expect(result.validationHints.lintTools).toBeDefined();
+      expect(result).not.toHaveProperty('collectors');
+      expect(result).not.toHaveProperty('validationHints');
     });
 
-    it('DiscoveryResult schema still requires validationHints', () => {
+    it('DiscoveryResult schema requires diagnostics', () => {
       const incomplete = {
-        schemaVersion: 'discovery.v1',
+        schemaVersion: 'discovery.v2',
         collectedAt: new Date().toISOString(),
-        collectors: {},
         repoMetadata: {
           defaultBranch: null,
           headCommit: null,
@@ -326,17 +324,65 @@ describe('discovery/diagnostics (#372)', () => {
         },
         surfaces: { api: [], persistence: [], cicd: [], security: [], layers: [] },
         domainSignals: { keywords: [], glossarySources: [] },
-        // Missing validationHints
       };
       const parsed = DiscoveryResultSchema.safeParse(incomplete);
       expect(parsed.success).toBe(false);
+    });
+
+    it('requires exactly one diagnostic for every current collector and code surfaces', async () => {
+      const result = await runDiscovery(EMPTY_INPUT);
+      const withoutCodeSurfaces = (({ codeSurfaces: _codeSurfaces, ...rest }) => rest)(result);
+
+      expect(DiscoveryResultSchema.safeParse({ ...result, diagnostics: [] }).success).toBe(false);
+      expect(
+        DiscoveryResultSchema.safeParse({ ...result, diagnostics: result.diagnostics.slice(1) })
+          .success,
+      ).toBe(false);
+      expect(
+        DiscoveryResultSchema.safeParse({
+          ...result,
+          diagnostics: [...result.diagnostics.slice(0, -1), result.diagnostics[0]],
+        }).success,
+      ).toBe(false);
+      expect(
+        DiscoveryResultSchema.safeParse({
+          ...result,
+          diagnostics: [
+            { ...result.diagnostics[0], name: 'unknown-collector' },
+            ...result.diagnostics.slice(1),
+          ],
+        }).success,
+      ).toBe(false);
+      expect(DiscoveryResultSchema.safeParse(withoutCodeSurfaces).success).toBe(false);
+      expect(
+        DiscoveryResultSchema.safeParse({
+          ...result,
+          diagnostics: result.diagnostics.map((diagnostic) =>
+            diagnostic.name === 'code-surface-analysis'
+              ? { ...diagnostic, status: 'failed' as const }
+              : diagnostic,
+          ),
+          codeSurfaces: { ...result.codeSurfaces, status: 'failed' as const },
+        }).success,
+      ).toBe(true);
+    });
+
+    it('rejects removed v1 fields instead of stripping them', async () => {
+      const result = await runDiscovery(EMPTY_INPUT);
+      expect(DiscoveryResultSchema.safeParse({ ...result, collectors: {} }).success).toBe(false);
+      expect(
+        DiscoveryResultSchema.safeParse({
+          ...result,
+          validationHints: { commands: [], lintTools: [] },
+        }).success,
+      ).toBe(false);
     });
   });
 
   // ─── Schema Backward Compat ───────────────────────────────────────────────
 
-  describe('Schema backward compatibility', () => {
-    it('DiscoveryResult without diagnostics field parses successfully', () => {
+  describe('Schema rejection', () => {
+    it('rejects the legacy discovery.v1 shape without diagnostics', () => {
       const legacyResult = {
         schemaVersion: 'discovery.v1',
         collectedAt: new Date().toISOString(),
@@ -365,14 +411,13 @@ describe('discovery/diagnostics (#372)', () => {
         },
         surfaces: { api: [], persistence: [], cicd: [], security: [], layers: [] },
         domainSignals: { keywords: [], glossarySources: [] },
-        validationHints: { commands: [], lintTools: [] },
       };
       const parsed = DiscoveryResultSchema.safeParse(legacyResult);
-      expect(parsed.success).toBe(true);
+      expect(parsed.success).toBe(false);
     });
 
-    it('CodeSurfacesInfo without readStatuses/budget extensions parses', async () => {
-      const legacy = {
+    it('CodeSurfacesInfo preserves current optional fields but rejects obsolete fields', async () => {
+      const current = {
         status: 'ok',
         endpoints: [],
         authBoundaries: [],
@@ -385,13 +430,16 @@ describe('discovery/diagnostics (#372)', () => {
           maxBytesPerFile: 65536,
           maxTotalBytes: 2097152,
           timedOut: false,
-          outcome: 'supported' as const,
         },
       };
-      // Imported schema allows optional new fields
       const { CodeSurfacesInfoSchema } = await import('./types.js');
-      const parsed = CodeSurfacesInfoSchema.safeParse(legacy);
-      expect(parsed.success).toBe(true);
+      expect(CodeSurfacesInfoSchema.safeParse(current).success).toBe(true);
+      expect(
+        CodeSurfacesInfoSchema.safeParse({
+          ...current,
+          budget: { ...current.budget, outcome: 'supported' },
+        }).success,
+      ).toBe(false);
     });
   });
 
@@ -442,13 +490,17 @@ describe('discovery/diagnostics (#372)', () => {
       expect(d1).toBe(d2);
     });
 
-    it('stable digest changes when collectors status differs', async () => {
+    it('stable digest changes when diagnostic status differs', async () => {
       const { computeStableDriftDigest } = await import('./discovery-digest.js');
       const result = await runDiscovery(EMPTY_INPUT);
       const d1 = computeStableDriftDigest(result);
       const changed = {
         ...result,
-        collectors: { ...result.collectors, 'repo-metadata': 'failed' as const },
+        diagnostics: result.diagnostics.map((diagnostic) =>
+          diagnostic.name === 'repo-metadata'
+            ? { ...diagnostic, status: 'failed' as const }
+            : diagnostic,
+        ),
       };
       const d2 = computeStableDriftDigest(changed);
       expect(d1).not.toBe(d2);
@@ -551,10 +603,14 @@ describe('discovery/diagnostics (#372)', () => {
 
     it('drifted: true attributes a collector when its status changes', async () => {
       const persisted = await runDiscovery(EMPTY_INPUT);
-      // Mutate a collector status to 'failed'
+      // Mutate a collector diagnostic to 'failed'
       const tampered = {
         ...persisted,
-        collectors: { ...persisted.collectors, 'stack-detection': 'failed' as const },
+        diagnostics: persisted.diagnostics.map((diagnostic) =>
+          diagnostic.name === 'stack-detection'
+            ? { ...diagnostic, status: 'failed' as const }
+            : diagnostic,
+        ),
       };
 
       const { readDiscovery } = await import('../adapters/persistence-discovery.js');

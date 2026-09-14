@@ -181,7 +181,7 @@ describe('frozen review subject envelope', () => {
 describe('renderPersistedProofGraphContext', () => {
   it('reports persisted coverage and critical unresolved claims without evaluating providers', () => {
     const text = renderPersistedProofGraphContext({
-      version: 'proofgraph.v1',
+      version: 'proofgraph.v2',
       evaluatedAt: '2026-01-01T00:00:00.000Z',
       claims: [
         {
@@ -221,7 +221,7 @@ describe('renderPersistedProofGraphContext', () => {
 
 describe('ProofGraph prompt context', () => {
   const proofGraph = {
-    version: 'proofgraph.v1' as const,
+    version: 'proofgraph.v2' as const,
     evaluatedAt: '2026-01-01T00:00:00.000Z',
     claims: [],
   };

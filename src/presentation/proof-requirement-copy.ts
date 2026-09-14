@@ -32,13 +32,10 @@ export function humanRequiredEvidenceText(positiveKinds: readonly ProofProviderK
  * Human label for a counterexample requirement kind.
  *
  * Uses the canonical domain discriminator — no new Presentation-only kind.
- * `legacy_assertion` renders identically to `assertion` but is preserved
- * as a distinct diagnostic fact so it cannot be silently conflated with v2.
  */
 export function humanCounterexampleKindLabel(kind: string): string {
   switch (kind) {
     case 'assertion':
-    case 'legacy_assertion':
       return 'Assertion-level check';
     case 'aggregate_check':
       return 'Complete-check coverage';

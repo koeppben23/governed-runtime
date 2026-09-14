@@ -57,7 +57,7 @@ function claimRefingAttempt(attemptId = ATT, claimScope?: 'specific_behavior' | 
 function stateWith(attempts: SessionState['validationAttempts']): SessionState {
   return makeState('IMPL_VALIDATION', {
     implementation: IMPL,
-    proofContract: { version: 'contract.v1', claims: [claimRefingAttempt()] },
+    proofContract: { version: 'contract.v2', claims: [claimRefingAttempt()] },
     validationAttempts: attempts,
   });
 }
@@ -132,7 +132,7 @@ describe('bindExecutedTestEvidence', () => {
     const state = makeState('IMPL_VALIDATION', {
       implementation: IMPL,
       proofContract: {
-        version: 'contract.v1',
+        version: 'contract.v2',
         claims: [claimRefingAttempt(ATT, 'suite')],
       },
       validationAttempts: [
@@ -151,7 +151,7 @@ describe('bindExecutedTestEvidence', () => {
     const state = makeState('IMPL_VALIDATION', {
       implementation: IMPL,
       proofContract: {
-        version: 'contract.v1',
+        version: 'contract.v2',
         claims: [claimRefingAttempt(ATT, 'suite')],
       },
       validationAttempts: [
@@ -169,7 +169,7 @@ describe('bindExecutedTestEvidence', () => {
   it('ignores non-validation_attempt evidence references', () => {
     const state = makeState('IMPLEMENTATION', {
       proofContract: {
-        version: 'contract.v1',
+        version: 'contract.v2',
         claims: [{ ...claimRefingAttempt(), evidenceRefs: [{ kind: 'content', digest: 'x' }] }],
       },
     });

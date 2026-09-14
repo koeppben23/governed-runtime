@@ -66,14 +66,6 @@ function toDetectedStack(info: Record<string, DetectedItem[]>): DetectedStack | 
   return {
     summary: items.map((i) => `${i.kind}:${i.id}`).join(', '),
     items,
-    versions: items
-      .filter((i) => i.version)
-      .map((i) => ({
-        id: i.id,
-        version: i.version!,
-        target: i.kind,
-        ...(i.evidence ? { evidence: i.evidence } : {}),
-      })),
   };
 }
 

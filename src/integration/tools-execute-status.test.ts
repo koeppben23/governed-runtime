@@ -253,7 +253,7 @@ describe('status', () => {
       expect(pg.criticalClaimCount).toBe(0);
       expect(pg.criticalUnprovenCount).toBe(0);
       const projection = pg.projection as Record<string, unknown>;
-      expect(projection.version).toBe('proofgraph.v1');
+      expect(projection.version).toBe('proofgraph.v2');
       expect(projection.claims).toEqual([]);
       expect(result.persistedProofGraph).toEqual({
         coverage: 'NOT_DECLARED',
@@ -376,8 +376,7 @@ describe('status', () => {
       const ds = result.detectedStack as Record<string, unknown>;
       expect(Array.isArray(ds.items)).toBe(true);
       expect((ds.items as unknown[]).length).toBeGreaterThan(0);
-      expect(Array.isArray(ds.versions)).toBe(true);
-      expect((ds.versions as unknown[]).length).toBe(0);
+      expect(ds).not.toHaveProperty('versions');
     });
 
     it('returns full detectedStack object with summary and versions', async () => {
@@ -396,10 +395,6 @@ describe('status', () => {
             { kind: 'language', id: 'java', version: '21', evidence: 'pom.xml:<java.version>' },
             { kind: 'framework', id: 'spring-boot', version: '3.4.1' },
           ],
-          versions: [
-            { id: 'java', version: '21', target: 'language', evidence: 'pom.xml:<java.version>' },
-            { id: 'spring-boot', version: '3.4.1', target: 'framework' },
-          ],
         },
       });
       const result = parseToolResult(await status.execute({}, ctx));
@@ -409,7 +404,6 @@ describe('status', () => {
       const ds = result.detectedStack as Record<string, unknown>;
       expect(ds.summary).toBe('java=21, spring-boot=3.4.1');
       expect(Array.isArray(ds.items)).toBe(true);
-      expect(Array.isArray(ds.versions)).toBe(true);
 
       const items = ds.items as Array<Record<string, unknown>>;
       expect(items).toHaveLength(2);
@@ -424,21 +418,6 @@ describe('status', () => {
         id: 'spring-boot',
         version: '3.4.1',
       });
-
-      const versions = ds.versions as Array<Record<string, unknown>>;
-      expect(versions).toHaveLength(2);
-      expect(versions[0]).toMatchObject({
-        id: 'java',
-        version: '21',
-        target: 'language',
-        evidence: 'pom.xml:<java.version>',
-      });
-      expect(versions[1]).toMatchObject({
-        id: 'spring-boot',
-        version: '3.4.1',
-        target: 'framework',
-      });
-      expect(versions[1]?.evidence).toBeUndefined();
     });
 
     it('returns verificationCandidates array (empty by default)', async () => {
@@ -1398,6 +1377,7 @@ describe('declare_contract', () => {
         { kind: 'validation_attempt' as const, attemptId: state!.validationAttempts[1]!.attemptId },
       ],
       counterexampleRequirement: {
+        kind: 'assertion' as const,
         checkId: 'security',
         assertion: { providerId: 'junit', localId: 'com.example.SecurityTest#verify' },
       },
@@ -1431,7 +1411,7 @@ describe('declare_contract', () => {
         history: [],
         reviewCompletion: 'pending',
       },
-      proofContract: { version: 'contract.v1', claims: [existingClaim] },
+      proofContract: { version: 'contract.v2', claims: [existingClaim] },
       proofContractCoverage: coverage,
     });
 
@@ -1499,7 +1479,7 @@ describe('declare_contract', () => {
     await writeStateWithArtifacts(sessDir, {
       ...state!,
       proofContract: {
-        version: 'contract.v1',
+        version: 'contract.v2',
         claims: [
           {
             claimId,

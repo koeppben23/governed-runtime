@@ -24,7 +24,6 @@ import {
   DiscoverySummarySchema,
   DetectedItemSchema,
   DetectedStackSchema,
-  DetectedStackVersionSchema,
   DetectedStackTargetSchema,
   StackInfoSchema,
   DISCOVERY_SCHEMA_VERSION,
@@ -721,7 +720,7 @@ describe('discovery/collectors/stack-detection/artifact-detection', () => {
       expect(result.success).toBe(true);
     });
 
-    it('StackInfoSchema defaults tools and qualityTools when absent (backward compat)', () => {
+    it('StackInfoSchema rejects missing current stack arrays', () => {
       const result = StackInfoSchema.safeParse({
         languages: [],
         frameworks: [],
@@ -729,12 +728,7 @@ describe('discovery/collectors/stack-detection/artifact-detection', () => {
         testFrameworks: [],
         runtimes: [],
       });
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.data.tools).toEqual([]);
-        expect(result.data.qualityTools).toEqual([]);
-        expect(result.data.databases).toEqual([]);
-      }
+      expect(result.success).toBe(false);
     });
 
     it('extractDetectedStack includes tool, qualityTool, and database categories', async () => {
@@ -785,7 +779,7 @@ describe('discovery/collectors/stack-detection/artifact-detection', () => {
 
       const ds = await extractDetectedStack(result);
       expect(ds).not.toBeNull();
-      expect(ds!.versions.map((v) => v.target)).toEqual([
+      expect(ds!.items.map((item) => item.kind)).toEqual([
         'language',
         'tool',
         'testFramework',
@@ -797,12 +791,11 @@ describe('discovery/collectors/stack-detection/artifact-detection', () => {
       );
     });
 
-    it('DetectedStackVersion validates new target types', () => {
+    it('DetectedStack items validate new target types', () => {
       for (const target of ['tool', 'testFramework', 'qualityTool', 'database']) {
-        const result = DetectedStackVersionSchema.safeParse({
-          id: 'test-item',
-          version: '1.0.0',
-          target,
+        const result = DetectedStackSchema.safeParse({
+          summary: 'test-item=1.0.0',
+          items: [{ id: 'test-item', version: '1.0.0', kind: target }],
         });
         expect(result.success).toBe(true);
       }

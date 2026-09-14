@@ -1,6 +1,6 @@
 /**
  * @module proofgraph.test
- * @description Schema round-trip and negative-path tests for ProofGraph v1.
+ * @description Schema round-trip and negative-path tests for ProofGraph v2.
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -189,7 +189,36 @@ describe('proofgraph schemas', () => {
 
     it('rejects a wrong projection version literal', () => {
       expect(() =>
-        ProofGraphProjection.parse({ version: 'proofgraph.v2', claims: [], evaluatedAt: NOW }),
+        ProofGraphProjection.parse({ version: 'proofgraph.v1', claims: [], evaluatedAt: NOW }),
+      ).toThrow();
+    });
+
+    it('rejects removed legacy claim fields instead of stripping them', () => {
+      expect(() =>
+        DeclaredClaim.parse({ ...base, proofEligibility: 'legacy_declaration_v1' }),
+      ).toThrow();
+    });
+
+    it('rejects a legacy counterexample requirement without a discriminator', () => {
+      expect(() =>
+        DeclaredClaim.parse({
+          ...base,
+          counterexampleRequirement: {
+            checkId: 'test',
+            assertion: { providerId: 'vitest', localId: 'suite > test' },
+          },
+        }),
+      ).toThrow();
+    });
+
+    it('rejects unknown legacy fields on a current projection', () => {
+      expect(() =>
+        ProofGraphProjection.parse({
+          version: PROOFGRAPH_SCHEMA_VERSION,
+          claims: [],
+          evaluatedAt: NOW,
+          proofEligibility: 'legacy_declaration_v1',
+        }),
       ).toThrow();
     });
 
@@ -314,7 +343,7 @@ describe('proofgraph schemas', () => {
     });
 
     it('exposes the version literal as a stable constant', () => {
-      expect(PROOFGRAPH_SCHEMA_VERSION).toBe('proofgraph.v1');
+      expect(PROOFGRAPH_SCHEMA_VERSION).toBe('proofgraph.v2');
     });
   });
 });

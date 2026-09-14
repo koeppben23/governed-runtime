@@ -181,7 +181,7 @@ describe('proofGraph — persisted coverage summary', () => {
       {
         ...state,
         proofGraph: {
-          version: 'proofgraph.v1',
+          version: 'proofgraph.v2',
           evaluatedAt: '2026-01-01T00:00:00.000Z',
           claims: [
             {
@@ -426,7 +426,7 @@ describe('buildBlockedProjection — ProofGraph gate', () => {
       policySnapshot: createPolicySnapshot(team, '2026-01-01T00:00:00.000Z', hashText),
       plan: approvedPlan(),
       proofGraph: {
-        version: 'proofgraph.v1',
+        version: 'proofgraph.v2',
         evaluatedAt: '2026-01-01T00:00:00.000Z',
         claims: [
           {

@@ -31,7 +31,7 @@ function proofGraph(
   certified = true,
 ): ProofGraphProjection {
   return {
-    version: 'proofgraph.v1',
+    version: 'proofgraph.v2',
     evaluatedAt: '2026-01-01T00:00:00.000Z',
     claims: [
       {

@@ -12,7 +12,7 @@ function summary(claims: unknown[] = []): {
 } {
   return {
     projection: {
-      version: 'proofgraph.v1',
+      version: 'proofgraph.v2',
       claims: claims as never,
       evaluatedAt: '2026-01-01T00:00:00.000Z',
     },

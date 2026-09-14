@@ -166,26 +166,6 @@ export const DetectedStackTargetSchema = z.enum([
 export type DetectedStackTarget = z.infer<typeof DetectedStackTargetSchema>;
 
 /**
- * A single version-bearing item extracted from DiscoveryResult.stack.
- *
- * Derived evidence — NOT SSOT. The authoritative version data lives in
- * the DiscoveryResult returned by the discovery orchestrator. This is a
- * compact projection for quick consumption by LLM instructions via
- * flowguard_status.
- */
-export const DetectedStackVersionSchema = z.object({
-  /** Stack item identifier (e.g., "java", "spring-boot", "node"). */
-  id: z.string().min(1),
-  /** Detected version string (e.g., "21", "3.4.1", "20.11.0"). */
-  version: z.string().min(1),
-  /** Category of this item. */
-  target: DetectedStackTargetSchema,
-  /** Optional provenance string (e.g., "pom.xml:<java.version>"). */
-  evidence: z.string().optional(),
-});
-export type DetectedStackVersion = z.infer<typeof DetectedStackVersionSchema>;
-
-/**
  * A single detected stack item — version optional.
  *
  * Surfaces ALL items recognized by stack detection, regardless of whether
@@ -235,34 +215,33 @@ export type DetectedStackTargetEntry = z.infer<typeof DetectedStackTargetEntrySc
  * testFramework → qualityTool → database), then by id. Versioned: `id=version`, unversioned: `id`.
  *
  * `items` contains ALL detected items (version optional).
- * `versions` contains only versioned items (backward compatible).
  * `targets` contains compiler/runtime targets when detected.
  */
-export const DetectedStackSchema = z.object({
-  /** Pre-formatted summary string for quick injection into status. */
-  summary: z.string(),
-  /** ALL detected items — version optional. */
-  items: z.array(DetectedStackItemSchema),
-  /** Versioned items only (backward compatible). */
-  versions: z.array(DetectedStackVersionSchema),
-  /** Compiler/runtime targets (e.g., ES2022 from tsconfig). */
-  targets: z.array(DetectedStackTargetEntrySchema).optional(),
-  /** Module-scoped stack items for monorepos (optional). */
-  scopes: z
-    .array(
-      z.object({
-        /** Relative path to the module root (e.g., "apps/web"). */
-        path: z.string().min(1),
-        /** Pre-formatted summary string for this scope. */
-        summary: z.string().optional(),
-        /** All detected items in this scope. */
-        items: z.array(DetectedStackItemSchema),
-        /** Versioned items in this scope. */
-        versions: z.array(DetectedStackVersionSchema).default([]),
-      }),
-    )
-    .optional(),
-});
+export const DetectedStackSchema = z
+  .object({
+    /** Pre-formatted summary string for quick injection into status. */
+    summary: z.string(),
+    /** ALL detected items — version optional. */
+    items: z.array(DetectedStackItemSchema),
+    /** Compiler/runtime targets (e.g., ES2022 from tsconfig). */
+    targets: z.array(DetectedStackTargetEntrySchema).optional(),
+    /** Module-scoped stack items for monorepos (optional). */
+    scopes: z
+      .array(
+        z
+          .object({
+            /** Relative path to the module root (e.g., "apps/web"). */
+            path: z.string().min(1),
+            /** Pre-formatted summary string for this scope. */
+            summary: z.string().optional(),
+            /** All detected items in this scope. */
+            items: z.array(DetectedStackItemSchema),
+          })
+          .strict(),
+      )
+      .optional(),
+  })
+  .strict();
 export type DetectedStack = z.infer<typeof DetectedStackSchema>;
 
 // ─── Discovery Summary ───────────────────────────────────────────────────────

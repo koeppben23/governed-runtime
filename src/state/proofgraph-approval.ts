@@ -11,11 +11,11 @@
 import { z } from 'zod';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { hashText } from '../shared/hashing.js';
-import { V2CounterexampleRequirement } from './proofgraph.js';
+import { CounterexampleRequirement } from './proofgraph.js';
 export {
   AggregateCounterexampleRequirement,
   AssertionCounterexampleRequirement,
-  V2CounterexampleRequirement,
+  CounterexampleRequirement,
 } from './proofgraph.js';
 import * as crypto from 'node:crypto';
 
@@ -62,7 +62,7 @@ const v2PlanBase = z
     ...preEvidenceClaimDeclaration,
     claimScope: z.enum(['specific_behavior', 'suite']),
     expectedCheckId: z.string().min(1),
-    counterexampleRequirement: V2CounterexampleRequirement.optional(),
+    counterexampleRequirement: CounterexampleRequirement.optional(),
     structuralSurface: z.string().min(1).optional(),
     mutationProfile: z.string().min(1).optional(),
   })
