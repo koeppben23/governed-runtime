@@ -31,7 +31,7 @@ import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './review/assurance.js';
-import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { renderReviewerTaskPrompt } from './review/prompt-builders.js';
 import { createAttemptForExistingObligation } from './review/attempt-lifecycle.js';
 import { executeReviewDecision } from '../rails/review-decision.js';

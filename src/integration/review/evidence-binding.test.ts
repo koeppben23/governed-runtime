@@ -23,11 +23,11 @@ import {
 import { buildHostTaskEvidence } from './evidence-binding.js';
 import {
   REVIEW_REQUIRED_PREFIX,
-  REVIEWER_SUBAGENT_TYPE,
   type HostTaskBindOutcome,
   type HostTaskBindResult,
   type TaskToolContext,
 } from './enforcement/types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import {
   createReviewObligation,
   REVIEW_CRITERIA_VERSION,

@@ -1,4 +1,4 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 
 export const REJECT_COMMAND = `---
 description: FlowGuard — Reject the currently active review gate, returning to the workflow start.
@@ -25,7 +25,7 @@ Rejection reason: $ARGUMENTS
 - Always use "reject" as the verdict for this command.
 - Only run this command when the user explicitly invoked /reject. Do not reject on the user's behalf.
 - If blocked: report the reason and stop (never work around a blocked decision).
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 ## Done-when
 
 - Reject verdict recorded via flowguard_decision.

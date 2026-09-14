@@ -7,7 +7,8 @@
  */
 
 import { z } from 'zod';
-import { REVIEWER_SUBAGENT_TYPE, REVIEW_REPORT_SCHEMA_ID } from './evidence-identifiers.js';
+import { REVIEW_REPORT_SCHEMA_ID } from './evidence-identifiers.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { RepositoryEvidenceFreeze } from './evidence-review-freeze.js';
 import { assuranceSchema } from './evidence-assurance-internal.js';
 import {

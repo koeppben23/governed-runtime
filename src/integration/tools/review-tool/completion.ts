@@ -29,7 +29,7 @@ import type { PresentationRenderOptions } from '../../../presentation/glyph-prof
 import { materializeReviewCardArtifact } from '../../../adapters/workspace/index.js';
 import { readConfig } from '../../../adapters/persistence-config.js';
 import { writeReport, reportPath } from '../../../adapters/persistence.js';
-import { writeStateWithArtifacts, appendNextAction } from '../helpers.js';
+import { writeStateWithArtifacts, enrichWithNextAction } from '../helpers.js';
 import { ensureReviewAssurance } from '../../review/assurance.js';
 import { resolveNextAction } from '../../../machine/next-action.js';
 import { projectStatusActionFromCommand } from '../../status-conclusion.js';
@@ -326,36 +326,38 @@ function formatReviewCompletionResponse(input: {
     artifactWarning,
     nativeAttestationRejection,
   } = input;
-  return appendNextAction(
-    JSON.stringify({
-      reviewCard,
-      presentation: { markdown: presentationMarkdown },
-      phase: finalState.phase,
-      ...(artifactWarning && { artifactWarning }),
-      ...(nativeAttestationRejection && {
-        [NATIVE_ATTESTATION_REJECTION_FIELD]: nativeAttestationRejection,
-      }),
-      status: 'Review flow complete. Report generated.',
-      overallStatus: report.overallStatus,
-      policyMode: result.state.policySnapshot?.mode ?? 'unknown',
-      completeness: {
-        overallComplete: report.completeness.overallComplete,
-        fourEyes: report.completeness.fourEyes,
-        summary: report.completeness.summary,
-        slots: report.completeness.slots.map((s) => ({
-          slot: s.slot,
-          label: s.label,
-          status: s.status,
-          detail: s.detail,
-        })),
+  return JSON.stringify(
+    enrichWithNextAction(
+      {
+        reviewCard,
+        presentation: { markdown: presentationMarkdown },
+        phase: finalState.phase,
+        ...(artifactWarning && { artifactWarning }),
+        ...(nativeAttestationRejection && {
+          [NATIVE_ATTESTATION_REJECTION_FIELD]: nativeAttestationRejection,
+        }),
+        status: 'Review flow complete. Report generated.',
+        overallStatus: report.overallStatus,
+        policyMode: result.state.policySnapshot?.mode ?? 'unknown',
+        completeness: {
+          overallComplete: report.completeness.overallComplete,
+          fourEyes: report.completeness.fourEyes,
+          summary: report.completeness.summary,
+          slots: report.completeness.slots.map((s) => ({
+            slot: s.slot,
+            label: s.label,
+            status: s.status,
+            detail: s.detail,
+          })),
+        },
+        findingsCount: report.findings.length,
+        findings: report.findings,
+        validationSummary: report.validationSummary,
+        ...(report.reviewKind === 'content_review' && { reviewSubject: report.reviewSubject }),
+        _audit: { transitions: allTransitions },
       },
-      findingsCount: report.findings.length,
-      findings: report.findings,
-      validationSummary: report.validationSummary,
-      ...(report.reviewKind === 'content_review' && { reviewSubject: report.reviewSubject }),
-      _audit: { transitions: allTransitions },
-    }),
-    finalState,
+      finalState,
+    ),
   );
 }
 

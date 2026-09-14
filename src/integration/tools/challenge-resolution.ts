@@ -8,7 +8,7 @@ import type { ToolDefinition } from './helpers.js';
 import { formatError } from './error-format.js';
 import { isOpenImplementationChallenge } from './implement-review.js';
 import {
-  appendNextAction,
+  enrichWithNextAction,
   formatBlocked,
   withMutableSessionTransaction,
   writeStateWithArtifacts,
@@ -128,16 +128,18 @@ export const resolve_implementation_challenge: ToolDefinition = {
           challengeResolutions: [...state.challengeResolutions, resolution],
         };
         await writeStateWithArtifacts(sessDir, nextState);
-        return appendNextAction(
-          JSON.stringify({
-            phase: nextState.phase,
-            status:
-              'Implementation challenge resolution recorded as advisory NOT_VERIFIED evidence.',
-            challengeResolution: resolution,
-            advisory:
-              'NOT_VERIFIED: this evidence does not alter implementation-review acceptance.',
-          }),
-          nextState,
+        return JSON.stringify(
+          enrichWithNextAction(
+            {
+              phase: nextState.phase,
+              status:
+                'Implementation challenge resolution recorded as advisory NOT_VERIFIED evidence.',
+              challengeResolution: resolution,
+              advisory:
+                'NOT_VERIFIED: this evidence does not alter implementation-review acceptance.',
+            },
+            nextState,
+          ),
         );
       });
     } catch (error) {

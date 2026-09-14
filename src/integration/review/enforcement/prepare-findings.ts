@@ -32,7 +32,7 @@
 
 import { ReviewActorInfo, ReviewFindings } from '../../../state/evidence-review.js';
 import { ReviewerFindingsInput } from '../../../state/evidence-review-input.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../../tool-names.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import { normalizeChallenges } from './normalize.js';
 import type { PendingReview } from './types.js';
 import { validateReviewFindingsConsistency } from './findings-consistency.js';

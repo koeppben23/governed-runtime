@@ -19,7 +19,7 @@ import {
 } from './types.js';
 import type { ReviewAssuranceState } from '../../../state/evidence.js';
 import { promptContainsValue } from './extraction.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../../tool-names.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 
 /**
  * Enforce prompt integrity before allowing a subagent call (Level 3).

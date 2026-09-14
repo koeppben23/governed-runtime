@@ -11,7 +11,7 @@ import {
   enforceBeforeSubagentCall,
   enforceReviewerObligation,
 } from './review/enforcement/enforcement.js';
-import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import type { CommandHookBeforeInput, ToolHookBeforeInput, ToolHookBeforeOutput } from './types.js';
 import { recordUserDecisionIntentFromCommand } from './user-decision-intent.js';
 import {

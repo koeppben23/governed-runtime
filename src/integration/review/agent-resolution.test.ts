@@ -6,7 +6,7 @@ import {
   resolveReviewerAgent,
 } from './agent-resolution.js';
 import { invokeReviewer, type OrchestratorClient } from './orchestrator.js';
-import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import { makeClient, NO_SLEEP, PROMPT } from './orchestrator-test-helpers.js';
 
 describe('reviewer agent resolution', () => {

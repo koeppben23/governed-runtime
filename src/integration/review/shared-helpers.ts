@@ -11,7 +11,7 @@
 import type { SessionState } from '../../state/schema.js';
 import type { SemanticAuditIntent } from '../tools/audit-outbox.js';
 import { type OrchestratorLogExtra } from '../../logging/log-extras.js';
-import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import { extractReviewContext } from './orchestrator.js';
 import { parseToolResult } from '../plugin-helpers.js';
 import {

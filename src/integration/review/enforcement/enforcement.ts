@@ -54,7 +54,8 @@ import { validateReviewFindingsConsistency } from './findings-consistency.js';
 import { isPendingCaptureUsable, extractCaptureSchemaErrors } from './prepare-findings.js';
 export { enforceBeforeSubagentCall } from './prompt-integrity.js';
 
-import { REVIEWER_SUBAGENT_TYPE, TOOL_FLOWGUARD_REVIEW } from '../../tool-names.js';
+import { TOOL_FLOWGUARD_REVIEW } from '../../tool-names.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import {
   obligationTypeForTool,
   resolveReviewObligationTool,

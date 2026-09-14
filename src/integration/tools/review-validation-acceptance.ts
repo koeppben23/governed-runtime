@@ -8,10 +8,8 @@
 
 import type { ReviewObligation, ReviewInvocationEvidence } from '../../state/evidence.js';
 import { formatBlocked } from './helpers.js';
-import {
-  HOST_TASK_FINDINGS_REJECTION_FIELD,
-  REVIEWER_SUBAGENT_TYPE,
-} from '../../shared/flowguard-identifiers.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
+import { HOST_TASK_FINDINGS_REJECTION_FIELD } from '../../shared/flowguard-identifiers.js';
 
 // ─── Acceptance / Rejection Types ─────────────────────────────────────────────
 

@@ -49,7 +49,7 @@ import { refreshProofGraph } from '../proofgraph/refresh.js';
 import type { ToolDefinition } from './helpers.js';
 import { formatError } from './error-format.js';
 import {
-  appendNextAction,
+  enrichWithNextAction,
   formatBlocked,
   getWorktree,
   withMutableSessionTransaction,
@@ -431,13 +431,15 @@ export const declare_contract: ToolDefinition = {
         const proofGraph = await refreshProofGraph(stateWithContract, ctx.now());
         const nextState = { ...state, proofContract, proofGraph };
         await writeStateWithArtifacts(sessDir, nextState);
-        return appendNextAction(
-          JSON.stringify({
-            phase: nextState.phase,
-            status: 'ProofGraph claims added; projection recorded.',
-            proofGraph,
-          }),
-          nextState,
+        return JSON.stringify(
+          enrichWithNextAction(
+            {
+              phase: nextState.phase,
+              status: 'ProofGraph claims added; projection recorded.',
+              proofGraph,
+            },
+            nextState,
+          ),
         );
       });
     } catch (error) {

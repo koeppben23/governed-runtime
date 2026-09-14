@@ -41,16 +41,13 @@ const mocks = vi.hoisted(() => ({
   formatError: vi.fn((err: unknown) =>
     JSON.stringify({ error: true, code: 'INTERNAL_ERROR', message: String(err) }),
   ),
-  appendNextAction: vi.fn((p: string) => {
-    const result = JSON.parse(p) as Record<string, unknown>;
-    return JSON.stringify({
-      ...result,
-      productNextAction: {
-        text: `Canonical action for ${result.phase}`,
-        commands: [`/${String(result.phase).toLowerCase()}`],
-      },
-    });
-  }),
+  enrichWithNextAction: vi.fn((value: Record<string, unknown>) => ({
+    ...value,
+    productNextAction: {
+      text: `Canonical action for ${value.phase}`,
+      commands: [`/${String(value.phase).toLowerCase()}`],
+    },
+  })),
   writeStateWithArtifacts: vi.fn(async (_sessDir: string, state: SessionState) => state),
   formatEval: vi.fn(() => 'next'),
   // commands
@@ -100,7 +97,7 @@ vi.mock('./helpers.js', () => ({
   resolvePolicyFromState: mocks.resolvePolicyFromState,
   createPolicyContext: mocks.createPolicyContext,
   formatBlocked: mocks.formatBlocked,
-  appendNextAction: mocks.appendNextAction,
+  enrichWithNextAction: mocks.enrichWithNextAction,
   writeStateWithArtifacts: mocks.writeStateWithArtifacts,
   formatEval: mocks.formatEval,
 }));
@@ -308,7 +305,7 @@ describe('flowguard_continue (runtime)', () => {
   it('returns INTERNAL_ERROR when dependency throws', async () => {
     setPhase('TICKET');
     const { continue_cmd } = await import('./continue-tool.js');
-    mocks.appendNextAction.mockImplementation(() => {
+    mocks.enrichWithNextAction.mockImplementation(() => {
       throw new Error('catastrophic');
     });
     const res = await continue_cmd.execute({}, {} as never);
@@ -324,7 +321,13 @@ describe('flowguard_continue (runtime)', () => {
 describe('implement: empty evidence guard (P8a.1)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.appendNextAction.mockImplementation((p: string) => p);
+    mocks.enrichWithNextAction.mockImplementation((value: Record<string, unknown>) => ({
+      ...value,
+      productNextAction: {
+        text: `Canonical action for ${value.phase}`,
+        commands: [`/${String(value.phase).toLowerCase()}`],
+      },
+    }));
     mocks.state = {
       phase: 'IMPLEMENTATION',
       ticket: { text: 't', digest: 'd', source: 'user', createdAt: '2026-01-01T00:00:00.000Z' },

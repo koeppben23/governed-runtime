@@ -35,7 +35,7 @@ import {
   onFlowGuardToolAfter,
   enforceBeforeSubagentCall,
 } from './review/enforcement/enforcement.js';
-import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import type { SessionState } from '../state/schema.js';
 import type { OrchestratorClient } from './review/types.js';
 

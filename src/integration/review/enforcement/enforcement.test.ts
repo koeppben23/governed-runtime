@@ -23,11 +23,8 @@ import {
   matchPendingReview,
   enforceReviewerObligation,
 } from './enforcement.js';
-import {
-  REVIEW_REQUIRED_PREFIX,
-  REVIEWER_SUBAGENT_TYPE,
-  MIN_SUBAGENT_PROMPT_LENGTH,
-} from './types.js';
+import { REVIEW_REQUIRED_PREFIX, MIN_SUBAGENT_PROMPT_LENGTH } from './types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import {
   NOW,
   LATER,

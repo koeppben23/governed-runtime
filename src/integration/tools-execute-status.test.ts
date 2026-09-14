@@ -36,7 +36,7 @@ import {
 } from '../adapters/persistence.js';
 import { writeStateWithArtifacts } from './tools/helpers.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
-import { REVIEW_REPORT_SCHEMA_ID } from '../shared/flowguard-identifiers.js';
+import { REVIEW_REPORT_SCHEMA_ID } from '../state/evidence-identifiers.js';
 import { computeRecordDigest } from '../state/evidence-plan.js';
 import {
   artifactReviewSubjectScope,

@@ -28,7 +28,8 @@ import {
   matchPendingReview,
   enforceBeforeSubagentCall,
 } from './enforcement.js';
-import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './types.js';
+import { REVIEW_REQUIRED_PREFIX } from './types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import { buildHostTaskEvidence } from '../evidence-binding.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from '../assurance.js';
 import {

@@ -1,4 +1,4 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 
 export const RESOLVE_IMPLEMENTATION_CHALLENGE_COMMAND = `---
 description: FlowGuard — Record evidence addressing an implementation review challenge.
@@ -24,7 +24,7 @@ Record advisory evidence addressing an implementation challenge during IMPL_REVI
 - Use only passing post-implementation validation attempt IDs bound to the current digest.
 - Do not treat this advisory record as reviewer acceptance or user approval.
 
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 ## Done-when
 
 - The tool confirms the resolution evidence was recorded for the specified challenge.

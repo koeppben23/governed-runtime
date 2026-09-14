@@ -27,7 +27,7 @@ import { writeState } from '../adapters/persistence.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
 import { createTestWorkspace } from './test-helpers.js';
 import { formatBlocked, formatAutoAdvanceOverflow } from './tools/helpers.js';
-import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { NATIVE_ATTESTATION_REJECTION_FIELD } from '../shared/flowguard-identifiers.js';
 
 const SESSION_ID = crypto.randomUUID();

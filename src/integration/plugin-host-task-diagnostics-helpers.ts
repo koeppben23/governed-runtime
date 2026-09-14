@@ -8,7 +8,8 @@ import {
   onFlowGuardToolAfter,
   onTaskToolAfter,
 } from './review/enforcement/enforcement.js';
-import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
+import { REVIEW_REQUIRED_PREFIX } from './review/enforcement/types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import {
   artifactReviewSubjectScope,
   createReviewObligation,

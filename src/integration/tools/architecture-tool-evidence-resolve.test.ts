@@ -42,7 +42,7 @@ const mocks = vi.hoisted(() => {
     formatError: vi.fn((err: unknown) =>
       JSON.stringify({ error: true, code: 'INTERNAL_ERROR', message: String(err) }),
     ),
-    appendNextAction: vi.fn((payload: string) => payload),
+    enrichWithNextAction: vi.fn((value: Record<string, unknown>) => value),
     writeStateWithArtifacts: vi.fn<(sessDir: string, state: SessionState) => Promise<SessionState>>(
       async (_sessDir: string, state: SessionState) => state,
     ),
@@ -58,7 +58,7 @@ vi.mock('./helpers.js', () => ({
   formatEval: mocks.formatEval,
   formatBlocked: mocks.formatBlocked,
   formatError: mocks.formatError,
-  appendNextAction: mocks.appendNextAction,
+  enrichWithNextAction: mocks.enrichWithNextAction,
   writeStateWithArtifacts: mocks.writeStateWithArtifacts,
   withMutableSession: vi.fn(async (ctx) => {
     const paths = await mocks.resolveWorkspacePaths();

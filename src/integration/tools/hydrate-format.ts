@@ -11,7 +11,7 @@ import { executeHydrate } from '../../rails/hydrate.js';
 import type { ToolResult } from './helpers.js';
 import {
   persistAndFormat,
-  appendNextAction,
+  enrichWithNextAction,
   formatRailResult,
   writeStateWithArtifactsAndAuditOperations,
 } from './helpers.js';
@@ -298,7 +298,7 @@ export async function formatNewSessionResponse(
     gateNotice: gateNoticeText,
     presentation: buildHydratePresentationCard(cardParams),
   };
-  return appendNextAction(JSON.stringify(response), state);
+  return JSON.stringify(enrichWithNextAction(response, state));
 }
 
 export function formatPolicyResolution(

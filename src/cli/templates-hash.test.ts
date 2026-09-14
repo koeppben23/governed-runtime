@@ -121,7 +121,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
   });
 
   it('COMMANDS matches compiled output hash', () => {
-    // Refreshed for #262: GOVERNANCE_RULES is now a projection from the
+    // Refreshed for #262: governance rules are rendered from the
     // mandates Governance rules section, affecting all command templates.
     // Refreshed for #401: /review template now requires Discovery context
     // (health/drift) and NOT_VERIFIED correlation for PR/content review.

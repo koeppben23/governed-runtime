@@ -40,13 +40,13 @@ import {
 import { resolveAttemptDiscoveryOrBlock } from '../review/discovery-attempt-context.js';
 
 import type { ToolDefinition } from './helpers.js';
+import { projectMarkdownHeadings } from '../../shared/markdown-sections.js';
 import { formatError } from './error-format.js';
 import {
   withMutableSessionTransaction,
   formatBlocked,
   formatAutoAdvanceOverflow,
-  extractSections,
-  appendNextAction,
+  enrichWithNextAction,
   writeStateWithArtifacts,
 } from './helpers.js';
 import type { SessionState } from '../../state/schema.js';
@@ -200,7 +200,7 @@ function buildPlanEvidence(
   return {
     body: planBody,
     digest: contentDigest,
-    sections: extractSections(planBody),
+    sections: projectMarkdownHeadings(planBody),
     createdAt: scope.ctx.now(),
     recordDigest: computeRecordDigest({
       contentDigest,
@@ -554,7 +554,7 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
     reviewFindings,
     transitions,
   });
-  return appendNextAction(JSON.stringify(response), finalState);
+  return JSON.stringify(enrichWithNextAction(response, finalState));
 }
 
 /**

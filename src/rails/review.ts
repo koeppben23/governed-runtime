@@ -25,7 +25,7 @@ import {
   type InputOrigin,
   type ReviewReportFinding,
 } from '../state/evidence.js';
-import { REVIEW_REPORT_SCHEMA_ID } from '../shared/flowguard-identifiers.js';
+import { REVIEW_REPORT_SCHEMA_ID } from '../state/evidence-identifiers.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
 import type { RailResult, RailContext, TransitionRecord, RailBlocked } from './types.js';

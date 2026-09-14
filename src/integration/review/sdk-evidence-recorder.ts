@@ -18,7 +18,7 @@ import type { ReviewerSuccessResult } from './orchestrator.js';
 import { INVOCATION_MODE_SDK_SESSION } from './pipeline-types.js';
 import type { EvidenceRecordResult, OrchestratorDeps } from './pipeline-types.js';
 import type { PipelineContext } from './pipeline-types.js';
-import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
 type SdkEvidenceParams = {
   obligationId: string;

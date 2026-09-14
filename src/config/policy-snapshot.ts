@@ -7,14 +7,14 @@
  * 2. freezePolicySnapshot()  — freeze a PolicyResolution or HydratePolicyResolution
  * 3. resolvePolicyFromSnapshot() — reconstruct executable FlowGuardPolicy from snapshot
  *
- * Snapshot normalization (enriching incomplete/legacy snapshots) lives in
- * the canonical policy snapshot contract.
+ * Snapshot validation and reconstruction live in the canonical policy snapshot
+ * contract; incomplete snapshots are rejected at its trust boundary.
  *
  * The snapshot is the sole runtime authority for all governance-critical checks.
  * No runtime path should reconstruct policy from policyMode alone.
  *
- * Dependency: imports PolicySnapshot type from state layer. This is an existing
- * dependency that predates this module — config depends on state schema types.
+ * Dependency: PolicySnapshot is the canonical persisted state contract consumed
+ * by this policy lifecycle authority.
  *
  * @version v1
  */

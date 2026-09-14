@@ -21,7 +21,7 @@ import {
   MODE_A_OBLIGATION_ID,
   CHILD_SESSION_ID,
 } from '../../plugin-host-task-diagnostics-helpers.js';
-import { REVIEWER_SUBAGENT_TYPE } from './types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import type { ReviewAssuranceState } from '../../../state/evidence.js';
 
 const NOW = '2026-05-10T12:00:00.000Z';

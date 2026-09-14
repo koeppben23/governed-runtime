@@ -24,7 +24,7 @@ import {
   formatEval,
   formatAutoAdvanceOverflow,
   formatBlocked,
-  appendNextAction,
+  enrichWithNextAction,
   writeStateWithArtifacts,
 } from './helpers.js';
 import {
@@ -377,11 +377,11 @@ export async function persistConvergedPlanReview(input: ConvergedPlanReviewInput
   const { scope, finalState } = input;
   await writeStateWithArtifacts(scope.sessDir, finalState);
   if (finalState.phase !== 'PLAN_REVIEW') {
-    return appendNextAction(JSON.stringify(convergedPlanResponse(input)), finalState);
+    return JSON.stringify(enrichWithNextAction(convergedPlanResponse(input), finalState));
   }
 
   const response = await convergedPlanReviewCardResponse(input);
-  return appendNextAction(JSON.stringify(response), finalState);
+  return JSON.stringify(enrichWithNextAction(response, finalState));
 }
 
 export async function persistNonConvergedPlanReview(
@@ -425,11 +425,11 @@ export async function persistNonConvergedPlanReview(
     ? { ...finalState, reviewAssurance: attemptResult.assurance }
     : finalState;
   await writeStateWithArtifacts(scope.sessDir, stateToPersist);
-  return appendNextAction(
-    JSON.stringify(
+  return JSON.stringify(
+    enrichWithNextAction(
       nonConvergedPlanResponse(scope, finalState, transitions, revision, nextObligation),
+      stateToPersist,
     ),
-    stateToPersist,
   );
 }
 

@@ -12,7 +12,7 @@
  */
 
 import { z } from 'zod';
-import { REVIEWER_SUBAGENT_TYPE } from './evidence-identifiers.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { ReviewObligationType } from './evidence-primitives.js';
 
 const Sha256Digest = z.string().regex(/^[a-f0-9]{64}$/);

@@ -16,7 +16,7 @@ import {
   withMutableSession,
   withReadOnlySession,
   formatBlocked,
-  appendNextAction,
+  enrichWithNextAction,
   writeStateWithArtifacts,
 } from './helpers.js';
 import { formatError } from './error-format.js';
@@ -168,10 +168,7 @@ function formatDeterministicGuidance(state: SessionState, guidance: { status: st
   );
 }
 function formatContinueResponse(value: Record<string, unknown>, state: SessionState): string {
-  const response = JSON.parse(appendNextAction(JSON.stringify(value), state)) as Record<
-    string,
-    unknown
-  >;
+  const response = enrichWithNextAction(value, state);
   const productNext = response.productNextAction as { text?: unknown } | undefined;
   const commands = (productNext as { commands?: unknown } | undefined)?.commands;
   if (Array.isArray(commands) && commands.every((command) => typeof command === 'string')) {

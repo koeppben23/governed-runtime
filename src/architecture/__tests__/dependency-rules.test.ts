@@ -13,10 +13,11 @@
  * 1. LEAF MODULES: Inner layers must NOT import from outer layers
  *    - state/ must not import from machine/, rails/, adapters/, integration/, config/, audit/, archive/, logging/, cli/, diagnostics/, shared/
  *      except foundational shared canonicalization and hashing utilities
- *    - state/ owns evidence-level discriminators in state/evidence-identifiers.ts
- *      (FINGERPRINT_PATTERN, REVIEW_REPORT_SCHEMA_ID, REVIEWER_SUBAGENT_TYPE);
- *      shared/flowguard-identifiers.ts re-exports them for backward compatibility
- *    - archive/types.ts must not import from any other FF module
+ *    - state/ owns evidence/schema discriminators in state/evidence-identifiers.ts
+ *      (FINGERPRINT_PATTERN, REVIEW_REPORT_SCHEMA_ID, POLICY_DIGEST_VERSION,
+ *      POLICY_DIGEST_PATTERN); REVIEWER_SUBAGENT_TYPE is shared-owned.
+ *    - archive/types.ts must not import from any other FF module, except its
+ *      FINGERPRINT_PATTERN schema-contract import from state/evidence-identifiers.ts
  *    - discovery/types.ts must not import from any other FF module
  *
  * 2. MACHINE LAYER: machine/ may only import from state/
@@ -634,10 +635,20 @@ describe('Layer Dependency Rules', () => {
       // normalization/digest authority instead of duplicating it in state.
       '../shared/review-subject.js',
     ]);
-    const forbiddenStateSharedAuthorityImports = new Set([
-      '../shared/flowguard-identifiers.js',
-      '../shared/policy-digest.js',
-    ]);
+    const forbiddenStateSharedAuthorityImports = new Set(['../shared/policy-digest.js']);
+
+    it('keeps state evidence discriminators out of shared identifiers', async () => {
+      const identifiers = await fs.readFile(
+        path.join(SRC_DIR, 'shared', 'flowguard-identifiers.ts'),
+        'utf-8',
+      );
+      expect(identifiers).not.toMatch(
+        /export\s*\{[^}]*\b(?:FINGERPRINT_PATTERN|REVIEW_REPORT_SCHEMA_ID|POLICY_DIGEST_VERSION|POLICY_DIGEST_PATTERN)\b/,
+      );
+      expect(identifiers).toMatch(
+        /export\s+const\s+REVIEWER_SUBAGENT_TYPE\s*=\s*'flowguard-reviewer'/,
+      );
+    });
 
     beforeAll(() => {
       for (const [, analysis] of analyses) {
@@ -649,7 +660,11 @@ describe('Layer Dependency Rules', () => {
           if (
             imp.targetModule &&
             forbiddenFromState.has(imp.targetModule) &&
-            !allowedStateSharedImports.has(imp.module)
+            !allowedStateSharedImports.has(imp.module) &&
+            !(
+              imp.module === '../shared/flowguard-identifiers.js' &&
+              /import\s*\{\s*REVIEWER_SUBAGENT_TYPE\s*\}\s*from/.test(imp.raw)
+            )
           ) {
             stateViolations.push({
               file: analysis.relativePath,
@@ -714,6 +729,7 @@ describe('Layer Dependency Rules', () => {
       'discovery',
       'state',
     ]);
+    const allowedArchiveStateSchemaImport = '../state/evidence-identifiers.js';
 
     beforeAll(() => {
       for (const [, analysis] of analyses) {
@@ -722,7 +738,14 @@ describe('Layer Dependency Rules', () => {
 
         const ffImports = analysis.imports.filter((i) => i.isFFModule && i.targetModule);
         for (const imp of ffImports) {
-          if (imp.targetModule && forbiddenFromArchive.has(imp.targetModule)) {
+          if (
+            imp.targetModule &&
+            forbiddenFromArchive.has(imp.targetModule) &&
+            !(
+              imp.module === allowedArchiveStateSchemaImport &&
+              /import\s*\{\s*FINGERPRINT_PATTERN\s*\}\s*from/.test(imp.raw)
+            )
+          ) {
             violations.push({
               file: analysis.relativePath,
               rule: 'archive-leaf',

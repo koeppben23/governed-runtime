@@ -68,7 +68,6 @@
   "FROZEN_REVIEW_MATERIAL_CONTRACT@src/integration/review/frozen-reviewer-context.ts",
   "FlowGuardConfigSchema@src/config/index.ts",
   "FourEyesStatusSchema@src/audit/completeness.ts",
-  "GOVERNANCE_RULES@src/templates/commands/index.ts",
   "HostAdapterInitError@src/integration/opencode-host-adapter.ts",
   "IDP_ERROR_MESSAGES@src/identity/errors.ts",
   "IMPRINT_EXCLUDED_FIELDS@src/audit/__tests__/tamper-evidence-harness.ts",

@@ -34,7 +34,7 @@ import {
   updateCheckReworkContinuation,
 } from './plugin-rework-continuation.js';
 export { updateCheckReworkContinuation } from './plugin-rework-continuation.js';
-import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import type { SessionEnforcementState } from './review/enforcement/types.js';
 import { handleHostTaskEvidence } from './plugin-task-evidence.js';
 import { authorizeTaskLifecycleRearm } from './review/reissue-authority.js';

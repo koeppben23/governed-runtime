@@ -19,7 +19,7 @@ import { formatError } from './error-format.js';
 import {
   resolveWorkspacePaths,
   formatBlocked,
-  appendNextAction,
+  enrichWithNextAction,
   writeStateWithArtifacts,
 } from './helpers.js';
 import { readState } from '../../adapters/persistence.js';
@@ -166,19 +166,21 @@ export const archive: ToolDefinition = {
 
       // Route the immediate response from the archive that was just created,
       // not from an earlier regulated completion archive retained in state.
-      return appendNextAction(
-        JSON.stringify({
-          phase: state.phase,
-          status,
-          archivePath,
-          packagePurpose,
-          integrityCapability,
-          verificationStatus,
-          redactionMode,
-          includeRaw,
-          guidance,
-        }),
-        archivedState,
+      return JSON.stringify(
+        enrichWithNextAction(
+          {
+            phase: state.phase,
+            status,
+            archivePath,
+            packagePurpose,
+            integrityCapability,
+            verificationStatus,
+            redactionMode,
+            includeRaw,
+            guidance,
+          },
+          archivedState,
+        ),
       );
     } catch (err) {
       return formatError(err);

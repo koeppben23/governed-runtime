@@ -4,11 +4,8 @@
  */
 
 import type { ReviewAssuranceState } from '../../../state/evidence.js';
-import {
-  REVIEW_REQUIRED_PREFIX,
-  REVIEWER_SUBAGENT_TYPE,
-  type SessionEnforcementState,
-} from './types.js';
+import { REVIEW_REQUIRED_PREFIX, type SessionEnforcementState } from './types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 

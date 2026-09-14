@@ -56,7 +56,7 @@ const mocks = vi.hoisted(() => {
         autoAdvanceOverflow: { phase: overflow.phase, limit: overflow.limit },
       }),
     ),
-    appendNextAction: vi.fn((payload: string) => payload),
+    enrichWithNextAction: vi.fn((value: Record<string, unknown>) => value),
     writeStateWithArtifacts: vi.fn<(sessDir: string, state: SessionState) => Promise<SessionState>>(
       async (_sessDir: string, state: SessionState) => state,
     ),
@@ -75,7 +75,7 @@ vi.mock('./helpers.js', () => ({
   formatError: mocks.formatError,
   formatAutoAdvanceOverflow: mocks.formatAutoAdvanceOverflow,
   extractSections: mocks.extractSections,
-  appendNextAction: mocks.appendNextAction,
+  enrichWithNextAction: mocks.enrichWithNextAction,
   writeStateWithArtifacts: mocks.writeStateWithArtifacts,
   withMutableSession: vi.fn(async (ctx) => {
     const paths = await mocks.resolveWorkspacePaths();

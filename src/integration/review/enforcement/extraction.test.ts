@@ -14,7 +14,7 @@ import {
   matchPendingReview,
 } from './enforcement.js';
 import { extractContentMeta, extractCapturedFindings, promptContainsValue } from './extraction.js';
-import { REVIEWER_SUBAGENT_TYPE } from './types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import {
   NOW,
   LATER,
