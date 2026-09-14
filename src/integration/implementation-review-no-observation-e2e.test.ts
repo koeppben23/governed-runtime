@@ -196,7 +196,7 @@ function implFindings(
     planVersion: pv,
     reviewMode: 'subagent' as const,
     overallVerdict: verdict,
-    ...(withChallenge ? { challenges: [implementationChallenge(oblId, digest, attemptId)] } : {}),
+    challenges: withChallenge ? [implementationChallenge(oblId, digest, attemptId)] : [],
     blockingIssues:
       verdict === 'changes_requested'
         ? [
@@ -308,7 +308,12 @@ async function inject(
       verdict: 'approve',
       rationale: 'E2E',
       decidedAt: FIXED_TIME,
-      decidedBy: 'reviewer-1',
+      decisionIdentity: {
+        actorId: 'reviewer-1',
+        actorEmail: null,
+        actorSource: 'unknown',
+        actorAssurance: 'best_effort',
+      },
     },
   };
   await writeStateWithArtifacts(se.sDir, aug);

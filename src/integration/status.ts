@@ -25,6 +25,7 @@
 
 import type { SessionState } from '../state/schema.js';
 import type { ReviewFindings } from '../state/evidence.js';
+import type { DecisionIdentity } from '../state/evidence-identity.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 import { evaluate } from '../machine/evaluate.js';
 import { allValidationsPassed, implValidationPassed } from '../machine/guards.js';
@@ -189,7 +190,7 @@ export interface EvidenceDetailProjection {
     required: boolean;
     satisfied: boolean;
     initiatedBy: string;
-    decidedBy: string | null;
+    decisionIdentity: DecisionIdentity | null;
     detail: string;
   };
 }
@@ -499,7 +500,7 @@ export function buildEvidenceDetailProjection(state: SessionState): EvidenceDeta
       required: report.fourEyes.required,
       satisfied: report.fourEyes.satisfied,
       initiatedBy: report.fourEyes.initiatedBy,
-      decidedBy: report.fourEyes.decidedBy,
+      decisionIdentity: report.fourEyes.decisionIdentity,
       detail: report.fourEyes.detail,
     },
   };

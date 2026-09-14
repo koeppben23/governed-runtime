@@ -42,6 +42,7 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
         missingVerification: ['security_scan'],
         scopeCreep: [],
         unknowns: [],
+        challenges: [],
         reviewedBy: {
           sessionId: 'ses_subagent',
         },
@@ -68,6 +69,7 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
         missingVerification: [],
         scopeCreep: [],
         unknowns: [],
+        challenges: [],
         reviewedBy: { sessionId: 'ses_test' },
         reviewedAt: new Date().toISOString(),
       };
@@ -89,6 +91,7 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
         missingVerification: [],
         scopeCreep: [],
         unknowns: [],
+        challenges: [],
         reviewedBy: { sessionId: 'ses_sub' },
         reviewedAt: new Date().toISOString(),
       };
@@ -103,6 +106,7 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
         missingVerification: [],
         scopeCreep: [],
         unknowns: [],
+        challenges: [],
         reviewedBy: { sessionId: 'ses_self' },
         reviewedAt: new Date().toISOString(),
       };
@@ -170,6 +174,7 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
             missingVerification: [],
             scopeCreep: [],
             unknowns: [],
+            challenges: [],
             reviewedBy: { sessionId: 'ses_review' },
             reviewedAt: new Date().toISOString(),
           },
@@ -224,6 +229,7 @@ describe('P34a: Agent-Orchestrated Review Input Validation', () => {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: 'ses_subagent' },
     reviewedAt: new Date().toISOString(),
   };
@@ -238,6 +244,7 @@ describe('P34a: Agent-Orchestrated Review Input Validation', () => {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: 'ses_self' },
     reviewedAt: new Date().toISOString(),
   };
@@ -343,6 +350,7 @@ describe('P34a: Agent-Orchestrated Review Input Validation', () => {
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       reviewedBy: { sessionId: 'ses_min' },
       reviewedAt: new Date().toISOString(),
     };

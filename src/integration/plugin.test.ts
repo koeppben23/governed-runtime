@@ -1130,6 +1130,7 @@ describe('integration/plugin', () => {
           missingVerification: [],
           scopeCreep: [],
           unknowns: [],
+          challenges: [],
         };
 
         const hooks = await FlowGuardAuditPlugin(
@@ -1189,6 +1190,7 @@ describe('integration/plugin', () => {
           missingVerification: [],
           scopeCreep: [],
           unknowns: [],
+          challenges: [],
           attestation: {
             toolObligationId: obligationId,
           },
@@ -1251,6 +1253,7 @@ describe('integration/plugin', () => {
           missingVerification: [],
           scopeCreep: [],
           unknowns: [],
+          challenges: [],
           attestation: { toolObligationId: obligationId },
         };
         const hooks = await FlowGuardAuditPlugin(
@@ -1308,6 +1311,7 @@ describe('integration/plugin', () => {
           missingVerification: [],
           scopeCreep: [],
           unknowns: [],
+          challenges: [],
           attestation: {
             toolObligationId: obligationId,
           },

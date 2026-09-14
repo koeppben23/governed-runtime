@@ -55,12 +55,24 @@ export const ReviewInvocationEvidence = z
     capturedRawFindings: z.record(z.string(), z.unknown()).optional(),
     /** Evidence source: host-orchestrated or agent-submitted-attested. */
     source: z.enum(['host-orchestrated', 'agent-submitted-attested']).optional(),
-    /** Reviewer output transport used to obtain the findings. */
-    reviewOutputMode: z.literal('structured_output'),
-    /** Structured output was used to obtain this evidence. */
+    /**
+     * Reviewer output transport used to obtain the findings.
+     *
+     * `structured_output` — host-observed structured model output
+     * (`host_subagent_task`, `sdk_session_prompt`).
+     * `agent_submitted_structured` — schema-valid ReviewFindings submitted by
+     * the agent (`manual_attested`, `native_subagent_attested`). Structured,
+     * but NOT host-observed model output.
+     */
+    reviewOutputMode: z.enum(['structured_output', 'agent_submitted_structured']),
+    /** True ONLY when host-observed structured model output was used. */
     structuredOutputUsed: z.boolean(),
-    /** Structured reviewer output is the only evidence-bearing transport. */
-    reviewAssuranceLevel: z.literal('structured_high'),
+    /**
+     * Output assurance tier derived from the transport:
+     * `structured_high` for host-observed structured output,
+     * `structured_submitted` for agent-submitted structured findings.
+     */
+    reviewAssuranceLevel: z.enum(['structured_high', 'structured_submitted']),
     /** Host-captured corroboration (native_subagent_attested only).
      *  Populated from a FlowGuard hook (SubagentStop / PostToolUse) that fired inside the
      *  reviewer subagent. These fields are the independent host witness that the review tool

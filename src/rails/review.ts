@@ -162,7 +162,7 @@ function buildMechanicalFindings(
     });
   }
   if (completeness.fourEyes.required && !completeness.fourEyes.satisfied) {
-    if (completeness.fourEyes.decidedBy === null) {
+    if (completeness.fourEyes.decisionIdentity === null) {
       findings.push({
         source: 'mechanical',
         reportSeverity: 'warning',
@@ -174,7 +174,7 @@ function buildMechanicalFindings(
         source: 'mechanical',
         reportSeverity: 'error',
         category: 'four-eyes',
-        message: `Four-eyes principle VIOLATED: initiator (${completeness.fourEyes.initiatedBy}) and reviewer (${completeness.fourEyes.decidedBy}) are the same person`,
+        message: `Four-eyes principle VIOLATED: initiator (${completeness.fourEyes.initiatedBy}) and reviewer (${completeness.fourEyes.decisionIdentity.actorId}) are the same person`,
       });
     }
   }

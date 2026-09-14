@@ -23,6 +23,7 @@ import {
   hashText,
   validateStrictAttestation,
 } from './assurance.js';
+import { updateAttemptStatus } from './attempt-lifecycle.js';
 import { getBranchProvenanceFields } from './review-provenance.js';
 
 export type TransportEvidenceBindResult =
@@ -183,10 +184,15 @@ async function processTransportFile(
     invocation.invocationId,
     now,
   );
+  // Evidence-bearing invocations require the referenced attempt to be bound
+  // atomically, with its child session correlated to the invocation.
+  const bound = updateAttemptStatus(fulfilled, opts.attemptId, 'bound', now, {
+    childSessionId: invocation.childSessionId,
+  });
   return {
     status: 'bound',
     obligation,
-    state: { ...state, reviewAssurance: appendInvocationEvidence(fulfilled, invocation) },
+    state: { ...state, reviewAssurance: appendInvocationEvidence(bound, invocation) },
   };
 }
 

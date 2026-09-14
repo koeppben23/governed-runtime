@@ -127,6 +127,7 @@ describe('valid findings pass ReviewFindings validation', () => {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: 'ses_reviewer123' },
     reviewedAt: '2026-08-12T00:00:00.000Z',
     attestation: {

@@ -64,6 +64,7 @@ function boundAttempt(
     origin: { kind: 'initial' },
     repositoryDiscovery: { kind: 'not_applicable' },
     createdAt: '2026-07-26T00:00:00.000Z',
+    completedAt: '2026-07-26T00:00:00.000Z',
   };
 }
 
@@ -166,7 +167,7 @@ function capturedFindings(
             },
           ],
         }
-      : {}),
+      : { challenges: [] }),
     ...overrides,
   };
 }

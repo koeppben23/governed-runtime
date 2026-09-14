@@ -24,6 +24,7 @@
 
 import { z } from 'zod';
 import type { FrozenRepositoryAuthority } from './evidence-review-authority.js';
+import type { ReviewRepositoryIdentity as RepositoryIdentityValue } from './evidence-review-subject.js';
 import type { ReviewRepositoryRevisionProvenance as ProvenanceValue } from './evidence-primitives.js';
 import {
   deriveRepositoryRevisionProvenance,
@@ -44,6 +45,10 @@ export interface ObligationRefinementShape {
   readonly reviewSubject?: {
     readonly kind: string;
     readonly subjectDigest: string;
+    readonly baseRepository?: RepositoryIdentityValue;
+    readonly headRepository?: RepositoryIdentityValue | null;
+    readonly baseSha?: string;
+    readonly headSha?: string;
   } | null;
   readonly repositoryAuthority?: FrozenRepositoryAuthority;
   readonly repositoryEvidenceFreeze?: {
@@ -104,6 +109,10 @@ export interface AttemptRefinementShape {
   readonly attemptId: string;
   readonly obligationId: string;
   readonly obligationType: string;
+  readonly status: string;
+  readonly childSessionId?: string;
+  readonly completedAt?: string;
+  readonly observationCapability?: string;
   readonly repositoryDiscovery: { readonly kind: 'repository' | 'not_applicable' };
 }
 
@@ -114,7 +123,9 @@ export interface AssuranceRefinementShape {
     readonly invocationId: string;
     readonly obligationId: string;
     readonly obligationType: string;
+    readonly childSessionId: string;
     readonly attemptId?: string;
+    readonly invocationMode?: string;
     readonly reviewOutputMode?: string;
     readonly structuredOutputUsed?: boolean;
     readonly reviewAssuranceLevel?: string;
@@ -178,6 +189,111 @@ export function refineAuthorityStructure(
       code: z.ZodIssueCode.custom,
       path: ['repositoryAuthority'],
       message: `Invalid frozen repository authority: ${structural}`,
+    });
+  }
+}
+
+/** Structural equality for a frozen repository identity. */
+function sameRepositoryIdentity(a: RepositoryIdentityValue, b: RepositoryIdentityValue): boolean {
+  if ('kind' in a) return 'kind' in b && a.rootCommitDigest === b.rootCommitDigest;
+  return !('kind' in b) && a.host === b.host && a.owner === b.owner && a.name === b.name;
+}
+
+/**
+ * Obligation type ↔ frozen repository authority coherence.
+ *
+ * The repository authority union is shared by every obligation type, so the
+ * schema must never rely on "the writer passes the right kind". Exactly one
+ * relation is legal:
+ *
+ *   implement          → candidate_pair only
+ *   plan/architecture  → context only (presence mirrors the freeze outcome)
+ *   review + content   → no repository authority
+ *   review + repository_change → candidate_pair | fork_pair, EXACTLY equal to
+ *                                the frozen reviewSubject (identities + SHAs)
+ *
+ * A structurally valid authority that disagrees with the frozen reviewSubject
+ * is a split-brain state: review material could describe repository A while
+ * repository observations are authorized against repository B.
+ */
+export function refineObligationRepositoryAuthorityCoherence(
+  obligation: ObligationRefinementShape,
+  context: z.RefinementCtx,
+): void {
+  const authority = obligation.repositoryAuthority;
+  const obligationType = obligation.obligationType;
+  if (obligationType === 'plan' || obligationType === 'architecture') {
+    if (authority && authority.kind !== 'context') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['repositoryAuthority'],
+        message:
+          'plan/architecture obligations may only carry a frozen repository context authority',
+      });
+    }
+    return;
+  }
+  if (obligationType === 'implement') {
+    if (authority && authority.kind !== 'candidate_pair') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['repositoryAuthority'],
+        message:
+          'implement obligations may only carry a frozen candidate-pair repository authority',
+      });
+    }
+    return;
+  }
+  if (obligationType !== 'review') return;
+  const subject = obligation.reviewSubject;
+  if (!subject || subject.kind === 'content') {
+    if (authority) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['repositoryAuthority'],
+        message: 'content review obligations must not carry repository authority',
+      });
+    }
+    return;
+  }
+  if (subject.kind !== 'repository_change') return;
+  if (!authority) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['repositoryAuthority'],
+      message: 'repository_change review obligations require frozen repository authority',
+    });
+    return;
+  }
+  if (authority.kind === 'context') {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['repositoryAuthority'],
+      message:
+        'repository_change review obligations require a candidate-pair or fork-pair repository authority',
+    });
+    return;
+  }
+  const expectedHeadIdentity = subject.headRepository ?? subject.baseRepository;
+  if (!subject.baseRepository || !expectedHeadIdentity) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['reviewSubject'],
+      message: 'repository_change review subjects require base repository identity',
+    });
+    return;
+  }
+  const mismatch =
+    !sameRepositoryIdentity(authority.base.repositoryIdentity, subject.baseRepository) ||
+    !sameRepositoryIdentity(authority.head.repositoryIdentity, expectedHeadIdentity) ||
+    authority.base.objectSha !== subject.baseSha ||
+    authority.head.objectSha !== subject.headSha;
+  if (mismatch) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['repositoryAuthority'],
+      message:
+        'frozen repository authority must exactly match the frozen reviewSubject (identity and SHA)',
     });
   }
 }
@@ -248,6 +364,22 @@ export function refineAssuranceDiscoveryCoherence(
     assurance.obligations.map((obligation) => [obligation.obligationId, obligation]),
   );
   for (const attempt of assurance.attempts) {
+    if (attempt.repositoryDiscovery.kind === 'repository' && !attempt.observationCapability) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['attempts'],
+        message: `repository-governed attempt ${attempt.attemptId} requires an observation capability`,
+      });
+      return;
+    }
+    if (attempt.repositoryDiscovery.kind !== 'repository' && attempt.observationCapability) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['attempts'],
+        message: `non-repository attempt ${attempt.attemptId} must not carry an observation capability`,
+      });
+      return;
+    }
     const obligation = obligationsById.get(attempt.obligationId);
     if (!obligation) continue;
     const repositoryGoverned = hasFrozenRepositoryAuthority(obligation);
@@ -283,16 +415,38 @@ export function refineAssuranceInvocationLinkageCoherence(
   context: z.RefinementCtx,
 ): void {
   for (const invocation of assurance.invocations) {
+    // Provenance is derived from HOW the reviewer was invoked; a state whose
+    // transport disagrees with its output provenance claims more assurance
+    // than was observed.
+    const hostObserved =
+      invocation.invocationMode === 'host_subagent_task' ||
+      invocation.invocationMode === 'sdk_session_prompt';
+    const agentSubmitted =
+      invocation.invocationMode === 'manual_attested' ||
+      invocation.invocationMode === 'native_subagent_attested';
+    const expectedMode = hostObserved
+      ? 'structured_output'
+      : agentSubmitted
+        ? 'agent_submitted_structured'
+        : null;
+    const expectedLevel =
+      expectedMode === 'structured_output'
+        ? 'structured_high'
+        : expectedMode === 'agent_submitted_structured'
+          ? 'structured_submitted'
+          : null;
     if (
       !invocation.attemptId ||
-      invocation.reviewOutputMode !== 'structured_output' ||
-      invocation.structuredOutputUsed !== true ||
-      invocation.reviewAssuranceLevel !== 'structured_high'
+      expectedMode === null ||
+      invocation.reviewOutputMode !== expectedMode ||
+      invocation.reviewAssuranceLevel !== expectedLevel ||
+      invocation.structuredOutputUsed !== (expectedMode === 'structured_output')
     ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['invocations'],
-        message: 'Review invocation evidence requires attempt lineage and structured output.',
+        message:
+          'Review invocation evidence requires attempt lineage and consistent output provenance.',
       });
       return;
     }
@@ -320,6 +474,37 @@ export function refineAssuranceInvocationLinkageCoherence(
         code: z.ZodIssueCode.custom,
         path: ['invocations'],
         message: `invocation ${invocation.invocationId} attempt ${attempt.attemptId} belongs to a different obligation`,
+      });
+      return;
+    }
+    // The invocation records that the attempt held reviewer evidence. A later
+    // coherence rejection may revoke acceptance (`rejected`) without erasing
+    // that lineage; `created`/`stale`/`expired` attempts never hold evidence.
+    if (
+      attempt.status !== 'bound' &&
+      attempt.status !== 'captured' &&
+      attempt.status !== 'rejected'
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['invocations'],
+        message: `invocation ${invocation.invocationId} attempt ${attempt.attemptId} has no bound lifecycle`,
+      });
+      return;
+    }
+    if (attempt.childSessionId !== invocation.childSessionId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['invocations'],
+        message: `invocation ${invocation.invocationId} child session does not match the bound attempt`,
+      });
+      return;
+    }
+    if (!attempt.completedAt) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['invocations'],
+        message: `invocation ${invocation.invocationId} bound attempt is missing completedAt`,
       });
       return;
     }

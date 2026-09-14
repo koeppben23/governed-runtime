@@ -26,6 +26,7 @@ const validRawFindings: Record<string, unknown> = {
   missingVerification: [],
   scopeCreep: [],
   unknowns: [],
+  challenges: [],
   reviewedBy: { sessionId: 'ses_child' },
   reviewedAt: now,
 };

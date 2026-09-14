@@ -141,6 +141,7 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
         missingVerification: [],
         scopeCreep: [],
         unknowns: [],
+        challenges: [],
         reviewedBy: {},
         reviewedAt: NOW,
         attestation: {
@@ -184,6 +185,7 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
         missingVerification: [],
         scopeCreep: [],
         unknowns: [],
+        challenges: [],
         // No attestation field.
       });
       onTaskToolAfter(
@@ -670,6 +672,7 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       attestation: {
         toolObligationId: obligationId,
       },

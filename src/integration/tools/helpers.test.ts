@@ -254,6 +254,7 @@ describe('formatRailResult', () => {
               missingVerification: ['No negative-path test'],
               scopeCreep: [],
               unknowns: [],
+              challenges: [],
             },
           ],
         },

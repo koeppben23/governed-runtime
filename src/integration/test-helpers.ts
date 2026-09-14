@@ -42,6 +42,7 @@ import {
   hashFindings,
   hashText,
 } from './review/assurance.js';
+import { mintObservationCapabilityIfResolvable } from './review/attempt-lifecycle.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { writeStateWithAuditOperations } from './tools/audit-outbox.js';
 
@@ -471,7 +472,7 @@ export async function fulfillStrictReviewObligation(
       planVersion: input.planVersion,
       reviewedBy: REVIEWER_SUBAGENT_TYPE,
     },
-    ...(challenges.length > 0 ? { challenges } : {}),
+    challenges,
   };
 
   const isHostTask = state.policySnapshot?.reviewInvocationPolicy === 'host_task_required';
@@ -537,19 +538,25 @@ export async function fulfillStrictReviewObligation(
   return findings;
 }
 
-function attemptRepositoryDiscovery(obligation: {
-  readonly repositoryAuthority?: ReviewObligation['repositoryAuthority'];
-}): ReviewAttempt['repositoryDiscovery'] {
-  if (!obligation.repositoryAuthority) return { kind: 'not_applicable' };
+/**
+ * Canonical repository Discovery context for repository-governed attempts.
+ *
+ * Current-contract attempts with `repositoryDiscovery.kind === 'repository'`
+ * MUST carry an observation capability; this helper supplies the context shape
+ * only, callers mint the capability via `mintObservationCapability()`.
+ */
+export function repositoryDiscoveryContext(
+  observedAt: string = new Date().toISOString(),
+): ReviewAttempt['repositoryDiscovery'] {
   return {
     kind: 'repository',
     snapshot: {
-      observedAt: new Date().toISOString(),
+      observedAt,
       discoveryDigest: null,
       workspaceFingerprint: null,
       health: {
-        status: 'unavailable',
-        healthy: false,
+        status: 'available',
+        healthy: true,
         failedCollectorNames: [],
         hasBudgetExhaustion: false,
         ageWarning: null,
@@ -570,16 +577,27 @@ function attemptRepositoryDiscovery(obligation: {
   };
 }
 
+function attemptRepositoryDiscovery(obligation: {
+  readonly repositoryAuthority?: ReviewObligation['repositoryAuthority'];
+}): ReviewAttempt['repositoryDiscovery'] {
+  if (!obligation.repositoryAuthority) return { kind: 'not_applicable' };
+  const context = repositoryDiscoveryContext();
+  if (context.kind !== 'repository') return { kind: 'not_applicable' };
+  return {
+    ...context,
+    snapshot: {
+      ...context.snapshot,
+      health: { ...context.snapshot.health, status: 'unavailable', healthy: false },
+    },
+  };
+}
+
 function bindHostTaskAttempt(
   attempts: readonly ReviewAttempt[],
-  obligation: {
-    readonly obligationId: string;
-    readonly obligationType: ReviewObligationType;
-    readonly subjectDigest: string;
-    readonly repositoryAuthority?: ReviewObligation['repositoryAuthority'];
-  },
+  obligation: ReviewObligation,
   childSessionId: string,
 ): ReviewAttempt {
+  const now = new Date().toISOString();
   const existing = attempts.find((attempt) => attempt.obligationId === obligation.obligationId);
   const attempt = existing ?? {
     attemptId: crypto.randomUUID(),
@@ -591,7 +609,11 @@ function bindHostTaskAttempt(
     status: 'bound' as const,
     origin: { kind: 'initial' as const },
     repositoryDiscovery: attemptRepositoryDiscovery(obligation),
-    createdAt: new Date().toISOString(),
+    ...(obligation.repositoryAuthority
+      ? { observationCapability: mintObservationCapabilityIfResolvable(obligation) ?? undefined }
+      : {}),
+    createdAt: now,
+    completedAt: now,
   };
   return {
     ...attempt,
@@ -600,6 +622,7 @@ function bindHostTaskAttempt(
     subjectDigest: obligation.subjectDigest,
     childSessionId,
     status: 'bound',
+    completedAt: attempt.completedAt ?? now,
   };
 }
 

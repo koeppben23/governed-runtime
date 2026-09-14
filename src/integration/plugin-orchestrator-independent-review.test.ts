@@ -74,6 +74,7 @@ function buildFindings() {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     attestation: {
       toolObligationId: OBLIGATION_ID,
     },

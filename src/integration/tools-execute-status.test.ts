@@ -747,6 +747,7 @@ describe('status', () => {
         missingVerification: [],
         scopeCreep: [],
         unknowns: [],
+        challenges: [],
         reviewedBy: { sessionId: 'ses-child' },
         reviewedAt: '2026-01-01T00:00:00.000Z',
         attestation: {
@@ -813,6 +814,7 @@ describe('status', () => {
               origin: { kind: 'initial' as const },
               repositoryDiscovery: { kind: 'not_applicable' as const },
               createdAt: '2026-01-01T00:00:00.000Z',
+              completedAt: '2026-01-01T00:00:00.000Z',
             },
           ],
           dispatches: [],

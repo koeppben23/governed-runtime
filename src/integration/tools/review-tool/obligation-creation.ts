@@ -231,15 +231,12 @@ export async function ensureMissingAnalysisObligation(
   const explicit = await resolveExplicitObligationIdPath(sessDir, state, args, now);
   if (explicit.handled) return explicit.result;
 
-  const fingerprint = fingerprintReviewInput(
-    {
-      ...args,
-      resolvedBranchSha: context.resolvedSource?.resolvedBranchSha,
-      resolvedBaseSha: context.resolvedSource?.resolvedBaseSha,
-    },
-    'v2',
-  );
-  const inputFingerprint = fingerprintReviewInput(args, 'v2');
+  const fingerprint = fingerprintReviewInput({
+    ...args,
+    resolvedBranchSha: context.resolvedSource?.resolvedBranchSha,
+    resolvedBaseSha: context.resolvedSource?.resolvedBaseSha,
+  });
+  const inputFingerprint = fingerprintReviewInput(args);
   const existing = findLatestPendingReviewObligation(
     state.reviewAssurance,
     'review',

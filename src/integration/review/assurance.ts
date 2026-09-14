@@ -119,9 +119,8 @@ import {
 /**
  * Resolve the opaque observation capability of the attempt a reviewer Task
  * will bind to: the highest-ordinal attempt of the obligation. Returns null
- * when no attempt or capability exists (legacy attempts minted before the
- * frozen-repository-authority generation) — repository evidence is then
- * unavailable for the attempt.
+ * when no attempt exists or the obligation backs no frozen repository
+ * revision — repository evidence is then unavailable for the attempt.
  */
 export function resolveAttemptObservationCapability(
   assurance: ReviewAssuranceState | undefined,
@@ -207,7 +206,7 @@ export function createReviewObligation(input: {
    */
   claimedTaskClass?: TaskClass;
   metadata?: Record<string, unknown>;
-  fingerprintVersion?: 'v1' | 'v2';
+  fingerprintVersion?: 'v2';
 }): ReviewObligation {
   assertSubjectDigest(input.subjectDigest);
   assertRepositoryFreezeCoherence(input);
@@ -361,7 +360,7 @@ export function findLatestPendingReviewObligation(
   assurance: ReviewAssuranceState | undefined,
   obligationType: ReviewObligationType,
   metadataFingerprint?: string,
-  fingerprintVersion?: 'v1' | 'v2',
+  fingerprintVersion?: 'v2',
 ): ReviewObligation | null {
   const base = ensureReviewAssurance(assurance);
   const candidates = base.obligations.filter(
@@ -601,6 +600,8 @@ export function buildInvocationEvidence(input: {
   /** Persisted host-authoritative attempt ID bound at evidence-assembly time. */
   attemptId: string;
 }): ReviewInvocationEvidence {
+  const hostObservedStructured =
+    input.invocationMode === 'host_subagent_task' || input.invocationMode === 'sdk_session_prompt';
   return {
     invocationId: randomUUID(),
     obligationId: input.obligationId,
@@ -621,9 +622,9 @@ export function buildInvocationEvidence(input: {
     fulfilledAt: input.fulfilledAt ?? null,
     consumedByObligationId: null,
     source: input.source,
-    reviewOutputMode: 'structured_output',
-    structuredOutputUsed: true,
-    reviewAssuranceLevel: 'structured_high',
+    reviewOutputMode: hostObservedStructured ? 'structured_output' : 'agent_submitted_structured',
+    structuredOutputUsed: hostObservedStructured,
+    reviewAssuranceLevel: hostObservedStructured ? 'structured_high' : 'structured_submitted',
     resolvedBranchSha: input.resolvedBranchSha ?? null,
     resolvedBaseSha: input.resolvedBaseSha ?? null,
     reviewedContentDigest: input.reviewedContentDigest ?? null,

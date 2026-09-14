@@ -526,7 +526,8 @@ describe('identity-policy-e2e', () => {
       // Decision evidence persisted in state
       expect(state!.reviewDecision).toBeDefined();
       expect(state!.reviewDecision!.verdict).toBe('approve');
-      expect(state!.reviewDecision!.decidedBy).toBe('verified-operator');
+      expect(state!.reviewDecision!.decisionIdentity.actorId).toBe('verified-operator');
+      expect(state!.reviewDecision!.decisionIdentity.actorAssurance).toBe('idp_verified');
     });
 
     // ── Test 5: enforcement uses policySnapshot, not reconstructed defaults ──

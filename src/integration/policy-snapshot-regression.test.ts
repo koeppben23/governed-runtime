@@ -56,7 +56,6 @@ describe('policy snapshot regression', () => {
     const reviewerDecision = {
       verdict: 'approve' as const,
       rationale: 'approve',
-      decidedBy: 'reviewer-claim',
       decisionIdentity: {
         actorId: 'reviewer-claim',
         actorEmail: 'reviewer@example.com',
@@ -108,7 +107,6 @@ describe('policy snapshot regression', () => {
       {
         verdict: 'approve',
         rationale: 'approve',
-        decidedBy: 'reviewer',
         decisionIdentity: {
           actorId: 'reviewer',
           actorEmail: 'reviewer@example.com',

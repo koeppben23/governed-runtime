@@ -36,6 +36,7 @@ function findingsFor(
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy,
     reviewedAt: '2026-01-01T00:00:01.000Z',
     attestation: {
@@ -146,8 +147,20 @@ describe('external review transport evidence binding', () => {
 
     expect(result.status).toBe('bound');
     if (result.status !== 'bound') throw new Error('expected bound');
-    expect(result.state.reviewAssurance?.invocations[0]?.invocationMode).toBe('manual_attested');
+    const invocation = result.state.reviewAssurance?.invocations[0];
+    expect(invocation?.invocationMode).toBe('manual_attested');
     expect(result.state.reviewAssurance?.obligations[0]?.status).toBe('fulfilled');
+    // Agent-submitted transport must not claim host-observed structured output.
+    expect(invocation?.reviewOutputMode).toBe('agent_submitted_structured');
+    expect(invocation?.structuredOutputUsed).toBe(false);
+    expect(invocation?.reviewAssuranceLevel).toBe('structured_submitted');
+    // The referenced attempt is bound atomically and correlated to the child session.
+    const attempt = result.state.reviewAssurance?.attempts.find(
+      (item) => item.attemptId === invocation?.attemptId,
+    );
+    expect(attempt?.status).toBe('bound');
+    expect(attempt?.completedAt).toBeDefined();
+    expect(attempt?.childSessionId).toBe(invocation?.childSessionId);
   });
 
   it('rejects transport findings when reviewer actor is the session initiator', async () => {

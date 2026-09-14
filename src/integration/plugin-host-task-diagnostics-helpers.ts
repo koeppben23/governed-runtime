@@ -114,6 +114,7 @@ export function taskResultWithAttestation(
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     attestation: {
       toolObligationId: obligationId,
     },

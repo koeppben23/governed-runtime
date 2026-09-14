@@ -154,6 +154,7 @@ function buildAnalysisFindings(
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: 'flowguard-reviewer-session-123' },
     reviewedAt: '2026-01-01T00:00:00.000Z',
     attestation: {
@@ -214,6 +215,7 @@ async function bindHostTaskReviewEvidence(
     repositoryDiscovery:
       existingAttempt?.repositoryDiscovery ?? ({ kind: 'not_applicable' } as const),
     createdAt: existingAttempt?.createdAt ?? new Date().toISOString(),
+    completedAt: existingAttempt?.completedAt ?? invocation.fulfilledAt ?? new Date().toISOString(),
   };
   const boundInvocation = { ...invocation, attemptId: boundAttempt.attemptId };
   await writeState(sessDir, {

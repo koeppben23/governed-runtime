@@ -139,6 +139,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: 'sess-test' },
     reviewedAt: '2026-01-01T00:00:00.000Z',
   });
@@ -221,6 +222,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       reviewedBy: { sessionId: 'ses_child' },
       reviewedAt: now,
     };
@@ -448,6 +450,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
         missingVerification: ['No negative-path integration test'],
         scopeCreep: [],
         unknowns: [],
+        challenges: [],
         reviewedBy: { sessionId: 'ses_child' },
         reviewedAt: now,
       };

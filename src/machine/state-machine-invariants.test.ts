@@ -53,7 +53,6 @@ describe('state machine invariants', () => {
           {
             verdict: 'approve',
             rationale: 'invariant test',
-            decidedBy: 'reviewer-1',
             decisionIdentity: {
               actorId: 'reviewer-1',
               actorEmail: 'reviewer@example.com',

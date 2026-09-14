@@ -69,6 +69,7 @@ function findings(oblId: string, iteration = 0, planVersion = 1): ReviewFindings
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: 'ses_reviewer' },
     reviewedAt: NOW(),
     attestation: {
@@ -90,6 +91,7 @@ function buildAssuranceForObligation(
   invocationId: string,
 ) {
   const s = style(host);
+  const hostObserved = s === 'plugin_handshake';
   const attemptId = randomUUID();
   const invocation = {
     invocationId,
@@ -98,13 +100,9 @@ function buildAssuranceForObligation(
     parentSessionId,
     childSessionId: 'ses_reviewer',
     agentType: 'flowguard-reviewer' as const,
-    invocationMode:
-      s === 'plugin_handshake' ? ('host_subagent_task' as const) : ('manual_attested' as const),
-    hostVisible: s === 'plugin_handshake',
-    source:
-      s === 'plugin_handshake'
-        ? ('host-orchestrated' as const)
-        : ('agent-submitted-attested' as const),
+    invocationMode: hostObserved ? ('host_subagent_task' as const) : ('manual_attested' as const),
+    hostVisible: hostObserved,
+    source: hostObserved ? ('host-orchestrated' as const) : ('agent-submitted-attested' as const),
     promptHash: 'abc',
     mandateDigest: REVIEW_MANDATE_DIGEST,
     criteriaVersion: REVIEW_CRITERIA_VERSION,
@@ -112,17 +110,21 @@ function buildAssuranceForObligation(
     invokedAt: NOW(),
     fulfilledAt: NOW(),
     consumedByObligationId: null,
-    capturedVerdict: s === 'plugin_handshake' ? 'approve' : undefined,
-    reviewOutputMode: 'structured_output' as const,
-    structuredOutputUsed: true,
-    reviewAssuranceLevel: 'structured_high' as const,
+    capturedVerdict: hostObserved ? 'approve' : undefined,
+    reviewOutputMode: hostObserved
+      ? ('structured_output' as const)
+      : ('agent_submitted_structured' as const),
+    structuredOutputUsed: hostObserved,
+    reviewAssuranceLevel: hostObserved
+      ? ('structured_high' as const)
+      : ('structured_submitted' as const),
     attemptId,
   };
   const fulfilled = {
     ...obligation,
     status: 'fulfilled' as const,
     fulfilledAt: NOW(),
-    pluginHandshakeAt: s === 'plugin_handshake' ? NOW() : null,
+    pluginHandshakeAt: hostObserved ? NOW() : null,
   };
   const assured = appendInvocationEvidence(
     {
@@ -141,6 +143,7 @@ function buildAssuranceForObligation(
           origin: { kind: 'initial' as const },
           repositoryDiscovery: { kind: 'not_applicable' as const },
           createdAt: NOW(),
+          completedAt: NOW(),
         },
       ],
       dispatches: [],

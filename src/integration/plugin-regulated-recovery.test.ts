@@ -104,7 +104,7 @@ function terminalDecisionIntent() {
       gatePhase: 'EVIDENCE_REVIEW',
       verdict: REVIEW_APPROVE.verdict,
       rationale: REVIEW_APPROVE.rationale,
-      decidedBy: REVIEW_APPROVE.decidedBy,
+      decisionIdentity: REVIEW_APPROVE.decisionIdentity,
       decidedAt: REVIEW_APPROVE.decidedAt,
       fromPhase: 'EVIDENCE_REVIEW',
       toPhase: 'COMPLETE',

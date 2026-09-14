@@ -103,7 +103,12 @@ function decisionReceipt(
       decisionSequence,
       verdict: 'approve',
       rationale: 'reviewed',
-      decidedBy: 'reviewer',
+      decisionIdentity: {
+        actorId: 'reviewer',
+        actorEmail: null,
+        actorSource: 'unknown',
+        actorAssurance: 'best_effort',
+      },
       decidedAt: NOW,
       fromPhase: 'PLAN_REVIEW',
       toPhase: 'VALIDATION',

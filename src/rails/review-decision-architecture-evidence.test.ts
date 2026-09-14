@@ -704,7 +704,16 @@ describe('architecture review evidence resolution', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
+        {
+          verdict: 'approve',
+          rationale: 'ok',
+          decisionIdentity: {
+            actorId: 'reviewer-1',
+            actorEmail: null,
+            actorSource: 'unknown',
+            actorAssurance: 'best_effort',
+          },
+        },
         baseCtx,
       );
       expect(result.kind).toBe('blocked');
@@ -733,7 +742,16 @@ describe('architecture review evidence resolution', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
+        {
+          verdict: 'approve',
+          rationale: 'ok',
+          decisionIdentity: {
+            actorId: 'reviewer-1',
+            actorEmail: null,
+            actorSource: 'unknown',
+            actorAssurance: 'best_effort',
+          },
+        },
         baseCtx,
       );
       expect(result.kind).toBe('blocked');
@@ -749,7 +767,16 @@ describe('architecture review evidence resolution', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
+        {
+          verdict: 'approve',
+          rationale: 'ok',
+          decisionIdentity: {
+            actorId: 'reviewer-1',
+            actorEmail: null,
+            actorSource: 'unknown',
+            actorAssurance: 'best_effort',
+          },
+        },
         baseCtx,
       );
       expect(result.kind).toBe('blocked');
@@ -775,7 +802,16 @@ describe('architecture review evidence resolution', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
+        {
+          verdict: 'approve',
+          rationale: 'ok',
+          decisionIdentity: {
+            actorId: 'reviewer-1',
+            actorEmail: null,
+            actorSource: 'unknown',
+            actorAssurance: 'best_effort',
+          },
+        },
         baseCtx,
       );
       expect(result.kind).toBe('blocked');
@@ -802,7 +838,16 @@ describe('architecture review evidence resolution', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
+        {
+          verdict: 'approve',
+          rationale: 'ok',
+          decisionIdentity: {
+            actorId: 'reviewer-1',
+            actorEmail: null,
+            actorSource: 'unknown',
+            actorAssurance: 'best_effort',
+          },
+        },
         baseCtx,
       );
       expect(result.kind).toBe('blocked');
@@ -830,7 +875,16 @@ describe('architecture review evidence resolution', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
+        {
+          verdict: 'approve',
+          rationale: 'ok',
+          decisionIdentity: {
+            actorId: 'reviewer-1',
+            actorEmail: null,
+            actorSource: 'unknown',
+            actorAssurance: 'best_effort',
+          },
+        },
         baseCtx,
       );
       expect(result.kind).toBe('ok');

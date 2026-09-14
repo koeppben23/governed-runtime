@@ -55,7 +55,7 @@ export {
   type RequiredBranchReviewProvenance,
 } from '../../review/review-provenance.js';
 
-function fingerprintVersionOf(obligation: ReviewObligation): 'v1' | 'v2' | null {
+function fingerprintVersionOf(obligation: ReviewObligation): 'v2' | null {
   return obligation.fingerprintVersion ?? null;
 }
 
@@ -68,7 +68,7 @@ export function matchesReviewObligationInput(
   return (
     typeof inputFingerprint === 'string' &&
     fingerprintVersion !== null &&
-    inputFingerprint === fingerprintReviewInput(args, fingerprintVersion)
+    inputFingerprint === fingerprintReviewInput(args)
   );
 }
 
@@ -161,7 +161,7 @@ export async function resolveSubmittedReviewObligation(
       blocked: suppliedBlock,
     };
   }
-  const fingerprint = fingerprintReviewInput(args, 'v2');
+  const fingerprint = fingerprintReviewInput(args);
   let obligation =
     obligationById ??
     findLatestPendingReviewObligation(state.reviewAssurance, 'review', fingerprint, 'v2');

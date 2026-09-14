@@ -28,7 +28,7 @@ import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
-import { createTestWorkspace } from './test-helpers.js';
+import { createTestWorkspace, repositoryDiscoveryContext } from './test-helpers.js';
 import type { SessionState } from '../state/schema.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
@@ -1269,7 +1269,18 @@ describe('toolBefore — observation capability parent binding', () => {
               materialDigest: 'material-digest',
               subjectDigest: 'obs-subject-digest',
             },
-            repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+            repositoryEvidenceFreeze: { kind: 'available' as const },
+            repositoryAuthority: {
+              kind: 'context' as const,
+              context: {
+                kind: 'commit' as const,
+                repositoryIdentity: {
+                  kind: 'local' as const,
+                  rootCommitDigest: `sha256:${'d'.repeat(64)}`,
+                },
+                objectSha: 'e'.repeat(40),
+              },
+            },
             reviewSubjectScope: {
               kind: 'artifact',
               artifact: {
@@ -1295,7 +1306,7 @@ describe('toolBefore — observation capability parent binding', () => {
             ordinal: 0,
             status: 'created',
             origin: { kind: 'initial' } as const,
-            repositoryDiscovery: { kind: 'not_applicable' } as const,
+            repositoryDiscovery: repositoryDiscoveryContext(now),
             observationCapability: CAPABILITY,
             createdAt: now,
           },

@@ -184,6 +184,7 @@ function makeFindings(
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: 'ses_child' },
     reviewedAt: now,
   };
@@ -252,6 +253,7 @@ function planStateWithEvidence(
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: 'ses_child' },
     reviewedAt: now,
   };

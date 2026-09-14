@@ -17,6 +17,7 @@ import {
   appendInvocationEvidence,
   fulfillObligation,
 } from '../../review/assurance.js';
+import { updateAttemptStatus } from '../../review/attempt-lifecycle.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import { readReviewerCaptures } from '../../../adapters/persistence-reviewer-capture.js';
 import {
@@ -197,17 +198,22 @@ function buildManualInvocationState(input: {
       : {}),
     ...(attestation.hostCaptureSource ? { hostCaptureSource: attestation.hostCaptureSource } : {}),
   });
+  // Evidence-bearing invocations require the referenced attempt to be bound
+  // atomically, with its child session correlated to the invocation.
+  const fulfilled = fulfillObligation(
+    ensureReviewAssurance(result.state.reviewAssurance),
+    obligation.obligationId,
+    invocation.invocationId,
+    now,
+  );
   return {
     ...result,
     state: {
       ...result.state,
       reviewAssurance: appendInvocationEvidence(
-        fulfillObligation(
-          ensureReviewAssurance(result.state.reviewAssurance),
-          obligation.obligationId,
-          invocation.invocationId,
-          now,
-        ),
+        updateAttemptStatus(fulfilled, attemptId, 'bound', now, {
+          childSessionId: invocation.childSessionId,
+        }),
         invocation,
       ),
     },

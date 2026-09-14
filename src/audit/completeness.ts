@@ -46,6 +46,7 @@ import type { ActorIdentityComparison } from '../identity/actor-info.js';
 import { isTerminalPhase } from '../machine/topology.js';
 import { evaluateValidationEvidence } from '../machine/validation-evidence.js';
 import type { SessionState, Phase } from '../state/schema.js';
+import { DecisionIdentity } from '../state/evidence-identity.js';
 
 export const EvidenceSlotStatusSchema = z.object({
   slot: z.string(),
@@ -61,7 +62,7 @@ export const FourEyesStatusSchema = z.object({
   required: z.boolean(),
   satisfied: z.boolean(),
   initiatedBy: z.string(),
-  decidedBy: z.string().nullable(),
+  decisionIdentity: DecisionIdentity.nullable(),
   detail: z.string(),
 });
 
@@ -97,7 +98,7 @@ export interface FourEyesStatus {
   readonly required: boolean;
   readonly satisfied: boolean;
   readonly initiatedBy: string;
-  readonly decidedBy: string | null;
+  readonly decisionIdentity: DecisionIdentity | null;
   readonly detail: string;
 }
 
@@ -341,25 +342,23 @@ function buildSlotEntry(
 
 function compareReviewActors(
   state: SessionState,
-  decidedBy: string | null,
+  reviewerIdentity: DecisionIdentity | null,
 ): ActorIdentityComparison {
-  if (decidedBy === null) return 'uncomparable';
+  if (reviewerIdentity === null) return 'uncomparable';
   const initiatorIdentity = state.initiatedByIdentity ?? { actorId: state.initiatedBy };
-  const reviewerIdentity =
-    state.reviewDecision?.decisionIdentity ?? (decidedBy !== null ? { actorId: decidedBy } : null);
   return compareActorIdentity(initiatorIdentity, reviewerIdentity);
 }
 
 function getFourEyesDetail(
   state: SessionState,
-  decidedBy: string | null,
+  reviewerIdentity: DecisionIdentity | null,
   actorComparison: ActorIdentityComparison,
   fourEyesRequired: boolean,
 ): string {
   if (!fourEyesRequired) return 'Four-eyes not required by policy';
-  if (decidedBy === null) return 'Four-eyes pending: no review decision recorded yet';
+  if (reviewerIdentity === null) return 'Four-eyes pending: no review decision recorded yet';
   if (actorComparison === 'different')
-    return `Four-eyes satisfied: initiator=${state.initiatedBy}, reviewer=${decidedBy}`;
+    return `Four-eyes satisfied: initiator=${state.initiatedBy}, reviewer=${reviewerIdentity.actorId}`;
   if (actorComparison === 'uncomparable')
     return 'Four-eyes pending: initiator and reviewer identities are not comparable';
   return `Four-eyes VIOLATED: initiator and reviewer are the same person (${state.initiatedBy})`;
@@ -367,14 +366,14 @@ function getFourEyesDetail(
 
 function evaluateFourEyes(state: SessionState): FourEyesStatus {
   const fourEyesRequired = state.policySnapshot?.allowSelfApproval === false;
-  const decidedBy = state.reviewDecision?.decidedBy ?? null;
-  const actorComparison = compareReviewActors(state, decidedBy);
+  const decisionIdentity = state.reviewDecision?.decisionIdentity ?? null;
+  const actorComparison = compareReviewActors(state, decisionIdentity);
   return {
     required: fourEyesRequired,
     satisfied: !fourEyesRequired || actorComparison === 'different',
     initiatedBy: state.initiatedBy,
-    decidedBy,
-    detail: getFourEyesDetail(state, decidedBy, actorComparison, fourEyesRequired),
+    decisionIdentity,
+    detail: getFourEyesDetail(state, decisionIdentity, actorComparison, fourEyesRequired),
   };
 }
 

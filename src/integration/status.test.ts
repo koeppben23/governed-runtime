@@ -736,7 +736,12 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
       reviewDecision: {
         verdict: 'approve',
         rationale: 'All good',
-        decidedBy: 'reviewer@corp.com',
+        decisionIdentity: {
+          actorId: 'reviewer@corp.com',
+          actorEmail: 'reviewer@corp.com',
+          actorSource: 'unknown',
+          actorAssurance: 'best_effort',
+        },
         decidedAt: new Date().toISOString(),
       },
       error: null,

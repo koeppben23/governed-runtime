@@ -1391,6 +1391,7 @@ describe('plan', () => {
         missingVerification: [],
         scopeCreep: [],
         unknowns: [],
+        challenges: [],
         reviewedBy: { sessionId: 'ses-child' },
         reviewedAt: NOW,
         attestation: {

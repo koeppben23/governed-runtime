@@ -81,6 +81,7 @@ function attemptsFromEntries(entries: AssuranceEntry[]): ReviewAssuranceState['a
       origin: { kind: 'initial' } as const,
       repositoryDiscovery: { kind: 'not_applicable' } as const,
       createdAt: e.createdAt ?? '2026-01-01T00:00:00.000Z',
+      completedAt: e.createdAt ?? '2026-01-01T00:00:00.000Z',
     }));
 }
 

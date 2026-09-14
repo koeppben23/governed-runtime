@@ -67,7 +67,12 @@ import type { HostId } from '../shared/hosts.js';
 const ALL_HOSTS = ['opencode', 'claude-code', 'codex'] as const satisfies readonly HostId[];
 const ALL_OBLIGATION_TYPES = ['plan', 'implement', 'architecture'] as const;
 const NOW = new Date().toISOString();
-const DECIDED_BY = 'reviewer-1';
+const DECISION_IDENTITY = {
+  actorId: 'reviewer-1',
+  actorEmail: null,
+  actorSource: 'unknown' as const,
+  actorAssurance: 'best_effort' as const,
+};
 
 const OBLIGATION_ID = '11111111-1111-4111-8111-111111111111';
 const INVOCATION_ID = '22222222-2222-4222-8222-222222222222';
@@ -99,6 +104,7 @@ function makeFindings(overrides: Partial<ReviewFindings> = {}): ReviewFindings {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: SESS_ID_REVIEWER },
     reviewedAt: NOW,
     ...overrides,
@@ -127,6 +133,7 @@ function buildHostInvocation(
   attemptId = ATTEMPT_ID,
 ): ReviewInvocationEvidence {
   const style = computeHostEnforcementStyle(host);
+  const hostObserved = style === 'plugin_handshake';
   return {
     invocationId,
     attemptId,
@@ -135,9 +142,9 @@ function buildHostInvocation(
     parentSessionId: 'ses_parent',
     childSessionId: SESS_ID_REVIEWER,
     agentType: 'flowguard-reviewer',
-    invocationMode: style === 'plugin_handshake' ? 'host_subagent_task' : 'manual_attested',
-    hostVisible: style === 'plugin_handshake',
-    source: style === 'plugin_handshake' ? 'host-orchestrated' : 'agent-submitted-attested',
+    invocationMode: hostObserved ? 'host_subagent_task' : 'manual_attested',
+    hostVisible: hostObserved,
+    source: hostObserved ? 'host-orchestrated' : 'agent-submitted-attested',
     promptHash: 'abc',
     mandateDigest: REVIEW_MANDATE_DIGEST,
     criteriaVersion: REVIEW_CRITERIA_VERSION,
@@ -145,10 +152,10 @@ function buildHostInvocation(
     invokedAt: NOW,
     fulfilledAt: NOW,
     consumedByObligationId: null,
-    capturedVerdict: style === 'plugin_handshake' ? 'approve' : undefined,
-    reviewOutputMode: 'structured_output',
-    structuredOutputUsed: true,
-    reviewAssuranceLevel: 'structured_high',
+    capturedVerdict: hostObserved ? 'approve' : undefined,
+    reviewOutputMode: hostObserved ? 'structured_output' : 'agent_submitted_structured',
+    structuredOutputUsed: hostObserved,
+    reviewAssuranceLevel: hostObserved ? 'structured_high' : 'structured_submitted',
   };
 }
 
@@ -168,6 +175,7 @@ function buildBoundAttempt(
     origin: { kind: 'initial' },
     repositoryDiscovery: { kind: 'not_applicable' },
     createdAt: NOW,
+    completedAt: NOW,
   };
 }
 
@@ -255,6 +263,9 @@ function manualAttestedAssurance(
     invocationMode: 'manual_attested' as const,
     hostVisible: false,
     source: 'agent-submitted-attested' as const,
+    reviewOutputMode: 'agent_submitted_structured' as const,
+    structuredOutputUsed: false,
+    reviewAssuranceLevel: 'structured_submitted' as const,
   };
   return assurance;
 }
@@ -323,6 +334,9 @@ describe('validateReviewFindings host contract', () => {
       invocationMode: 'host_subagent_task',
       hostVisible: true,
       findingsHash: hashFindings(findings),
+      reviewOutputMode: 'structured_output',
+      structuredOutputUsed: true,
+      reviewAssuranceLevel: 'structured_high',
     };
 
     const result = validateReviewFindings(findings, {
@@ -455,7 +469,7 @@ describe('assurance lifecycle persistence across hosts', () => {
           verdict: 'approve',
           rationale: 'LGTM',
           decidedAt: NOW,
-          decidedBy: DECIDED_BY,
+          decisionIdentity: DECISION_IDENTITY,
         };
         await writeState(sessDir, planState);
         let loaded = await readState(sessDir);
@@ -608,7 +622,7 @@ describe('assurance lifecycle persistence across hosts', () => {
           verdict: 'approve',
           rationale: 'ADR accepted',
           decidedAt: NOW,
-          decidedBy: DECIDED_BY,
+          decisionIdentity: DECISION_IDENTITY,
         };
         await writeState(sessDir, archState);
 
@@ -619,7 +633,7 @@ describe('assurance lifecycle persistence across hosts', () => {
             verdict: 'approve',
             rationale: 'ADR accepted',
             decidedAt: NOW,
-            decidedBy: DECIDED_BY,
+            decisionIdentity: DECISION_IDENTITY,
           },
         });
         await writeState(sessDir, complete);

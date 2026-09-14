@@ -26,6 +26,7 @@ function makeFindings(overrides: Partial<ReviewFindings> = {}): ReviewFindings {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: 'ses_test' },
     reviewedAt: new Date().toISOString(),
     ...overrides,

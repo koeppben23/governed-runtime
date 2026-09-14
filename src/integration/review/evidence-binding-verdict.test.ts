@@ -195,6 +195,7 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       reviewedBy: { sessionId: CHILD_SESSION_ID },
       reviewedAt: NOW,
       // NOTE: attestation reconstructed by agent, may differ
@@ -281,6 +282,7 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       reviewedBy: { sessionId: CHILD_SESSION_ID },
       reviewedAt: NOW,
       attestation: {
@@ -377,6 +379,7 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       reviewedBy: { sessionId: CHILD_SESSION_ID },
       reviewedAt: NOW,
       attestation: {

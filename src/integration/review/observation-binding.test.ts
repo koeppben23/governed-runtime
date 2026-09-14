@@ -394,6 +394,7 @@ describe('host-task bind path', () => {
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       attestation: {
         toolObligationId: obligationId,
       },
@@ -467,6 +468,7 @@ describe('direct/submitted validator path', () => {
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       reviewedBy: { sessionId: CHILD_SESSION_ID },
       reviewedAt: NOW,
       attestation: {

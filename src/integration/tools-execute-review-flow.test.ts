@@ -343,6 +343,7 @@ describe('review', () => {
         missingVerification: [],
         scopeCreep: [],
         unknowns: [],
+        challenges: [],
         reviewedBy: { sessionId: 'flowguard-reviewer-session-123' },
         reviewedAt: '2026-01-01T00:00:00.000Z',
         attestation: {

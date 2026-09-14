@@ -134,7 +134,7 @@ function makeValidReport(): ReviewReport {
         required: false,
         satisfied: true,
         initiatedBy: 'test',
-        decidedBy: null,
+        decisionIdentity: null,
         detail: 'Four-eyes not required by policy',
       },
       summary: { total: 0, complete: 0, missing: 0, notYetRequired: 0, failed: 0 },

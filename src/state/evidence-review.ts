@@ -67,6 +67,7 @@ import {
   refineAssuranceInvocationLinkageCoherence,
   refineAssuranceProvenanceCoherence,
   refineAuthorityStructure,
+  refineObligationRepositoryAuthorityCoherence,
   refineRepositoryEvidenceFreezeCoherence,
   refineReviewMaterialSubject,
   refineStandaloneSubject,
@@ -187,8 +188,9 @@ export const ReviewAttempt = z.object({
   /**
    * Opaque host-minted observation capability bound to exactly this attempt.
    * Transported to the reviewer via the canonical prompt; echoed by the
-   * sanctioned observation tool as routing only. Optional for attempts
-   * persisted before the frozen-repository-authority generation.
+   * sanctioned observation tool as routing only. Required for repository-
+   * governed attempts and forbidden otherwise; the assurance boundary
+   * enforces both directions.
    */
   observationCapability: ObservationCapability.optional(),
   /**
@@ -228,7 +230,7 @@ export const FourEyesStatusSchema = z.object({
   required: z.boolean(),
   satisfied: z.boolean(),
   initiatedBy: z.string(),
-  decidedBy: z.string().nullable(),
+  decisionIdentity: DecisionIdentity.nullable(),
   detail: z.string(),
 });
 
@@ -346,8 +348,8 @@ export const ReviewFindingsObject = z
      */
     reviewerClaimedBy: ReviewActorInfo.optional(),
     attestation: ReviewAttestation.optional(),
-    /** Optional for findings persisted before challenge capture was introduced. */
-    challenges: z.array(ReviewChallenge).optional(),
+    /** Review challenges. REQUIRED: `[]` is the canonical "no challenges" form. */
+    challenges: z.array(ReviewChallenge),
     /** Reviewer-only verdicts for prior implementation challenge resolutions. */
     challengeResolutionVerdicts: z.array(ChallengeResolutionVerdict).optional(),
   })
@@ -383,7 +385,7 @@ export const ReviewProfileSource = z.enum([
   'inherited_plan_full',
 ]);
 export type ReviewProfileSource = z.infer<typeof ReviewProfileSource>;
-export const ReviewInputFingerprintVersion = z.enum(['v1', 'v2']);
+export const ReviewInputFingerprintVersion = z.literal('v2');
 export type ReviewInputFingerprintVersion = z.infer<typeof ReviewInputFingerprintVersion>;
 
 export { ReviewRepositoryRevisionProvenance } from './evidence-primitives.js';
@@ -439,7 +441,11 @@ export const ReviewObligation = z
     /** Frozen reviewed bytes. REQUIRED: every current obligation carries its material. */
     reviewMaterial: ReviewMaterial,
     reviewSubject: FrozenReviewSubject.optional(),
-    /** Missing means the legacy v1 fingerprint algorithm. */
+    /**
+     * Input-fingerprint generation. `v2` for standalone review obligations;
+     * absent for artifact flows (plan/architecture/implement) that do not
+     * participate in input-fingerprint matching.
+     */
     fingerprintVersion: ReviewInputFingerprintVersion.optional(),
     /**
      * Ordered attempt IDs associated with this obligation.
@@ -473,6 +479,7 @@ export const ReviewObligation = z
   .superRefine(refineStandaloneSubject)
   .superRefine(refineReviewMaterialSubject)
   .superRefine(refineAuthorityStructure)
+  .superRefine(refineObligationRepositoryAuthorityCoherence)
   .superRefine(refineRepositoryEvidenceFreezeCoherence);
 export type ReviewObligation = z.infer<typeof ReviewObligation>;
 
@@ -568,17 +575,16 @@ export type ReviewAssuranceState = z.infer<typeof ReviewAssuranceState>;
 /**
  * Human review decision at a User Gate (PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REVIEW).
  *
- * P30: Includes structured decisionIdentity for regulated approval attribution.
- * The decidedBy field remains for backward compatibility; decisionIdentity
- * provides full provenance for audit and four-eyes proof.
+ * P30: `decisionIdentity` is the sole decision attribution authority. It carries
+ * the full structured provenance (actor id, email, source, assurance) required
+ * for audit and four-eyes proof; there is no separate identity string.
  */
 export const ReviewDecision = z
   .object({
     verdict: ReviewVerdict,
     rationale: z.string(),
     decidedAt: z.string().datetime(),
-    decidedBy: z.string().min(1),
-    decisionIdentity: DecisionIdentity.optional(),
+    decisionIdentity: DecisionIdentity,
   })
   .readonly();
 export type ReviewDecision = z.infer<typeof ReviewDecision>;

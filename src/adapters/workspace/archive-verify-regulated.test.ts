@@ -61,7 +61,12 @@ function decisionEvent(overrides: Record<string, unknown> = {}): ChainedAuditEve
       gatePhase: 'EVIDENCE_REVIEW',
       verdict: 'approve',
       rationale: 'LGTM',
-      decidedBy: 'reviewer-1',
+      decisionIdentity: {
+        actorId: 'reviewer-1',
+        actorEmail: 'reviewer@test.com',
+        actorSource: 'env',
+        actorAssurance: 'best_effort',
+      },
       decidedAt: AT,
       fromPhase: 'EVIDENCE_REVIEW',
       toPhase: 'COMPLETE',
@@ -160,11 +165,26 @@ describe('verifyRegulatedCompletionCompleteness', () => {
   });
 
   it.each([
-    { override: { verdict: 'reject' }, label: 'verdict' },
-    { override: { rationale: 'other' }, label: 'rationale' },
-    { override: { decidedBy: 'other-reviewer' }, label: 'decidedBy' },
-    { override: { decidedAt: '2025-12-31T23:59:59.000Z' }, label: 'decidedAt' },
-  ])('binds the decision receipt $label to reviewDecision', ({ override }) => {
+    { override: { verdict: 'reject' }, label: 'verdict', expectedMessage: 'reviewDecision' },
+    { override: { rationale: 'other' }, label: 'rationale', expectedMessage: 'reviewDecision' },
+    {
+      override: {
+        decisionIdentity: {
+          actorId: 'other-reviewer',
+          actorEmail: 'other@test.com',
+          actorSource: 'env',
+          actorAssurance: 'best_effort',
+        },
+      },
+      label: 'decisionIdentity',
+      expectedMessage: 'decisionIdentity',
+    },
+    {
+      override: { decidedAt: '2025-12-31T23:59:59.000Z' },
+      label: 'decidedAt',
+      expectedMessage: 'reviewDecision',
+    },
+  ])('binds the decision receipt $label to reviewDecision', ({ override, expectedMessage }) => {
     const { findings } = run(regulatedCompleteState(), [
       transitionEvent(),
       decisionEvent(override),
@@ -173,7 +193,7 @@ describe('verifyRegulatedCompletionCompleteness', () => {
     expect(findings).toContainEqual(
       expect.objectContaining({
         code: 'regulated_terminal_decision_invalid',
-        message: expect.stringContaining('reviewDecision'),
+        message: expect.stringContaining(expectedMessage),
       }),
     );
   });

@@ -91,6 +91,7 @@ function finding(obligationId: string, verdict: 'accept' | 'changes_requested'):
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: 'ses_r' },
     reviewedAt: FIXED_TIME,
     attestation: {

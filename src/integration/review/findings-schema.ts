@@ -361,6 +361,7 @@ export const REVIEW_FINDINGS_JSON_SCHEMA = {
     'scopeCreep',
     'unknowns',
     'attestation',
+    'challenges',
   ],
   additionalProperties: false,
 } as const;

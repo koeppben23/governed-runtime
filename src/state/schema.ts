@@ -527,7 +527,7 @@ export const SessionState = z
      * Identity of the session initiator (author).
      * Set once at hydrate time, never mutated.
      * Used for regulated approval four-eyes enforcement:
-     * initiatedBy !== reviewDecision.decidedBy (approve path).
+     * initiatedBy !== reviewDecision.decisionIdentity.actorId (approve path).
      *
      * P30: For regulated sessions, this MUST be a known actor identity,
      * not the technical session ID. Use initiatedByIdentity for full provenance.

@@ -151,6 +151,7 @@ function reviewerTaskOutput(
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       attestation: {
         toolObligationId: OBLIGATION_ID,
       },
@@ -660,6 +661,7 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
           missingVerification: [],
           scopeCreep: [],
           unknowns: [],
+          challenges: [],
           attestation: {
             toolObligationId: obligationId,
           },
@@ -742,6 +744,7 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
         missingVerification: [],
         scopeCreep: [],
         unknowns: [],
+        challenges: [],
         attestation: {
           toolObligationId: obligationId,
         },

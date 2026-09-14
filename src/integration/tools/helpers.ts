@@ -225,7 +225,7 @@ export function formatRailResult(
           reviewDecision: {
             verdict: reviewDecision.verdict,
             rationale: reviewDecision.rationale,
-            decidedBy: reviewDecision.decidedBy,
+            decisionIdentity: reviewDecision.decisionIdentity,
             decidedAt: reviewDecision.decidedAt,
           },
         }

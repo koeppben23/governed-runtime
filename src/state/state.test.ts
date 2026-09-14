@@ -599,6 +599,7 @@ describe('state schemas', () => {
         missingVerification: [],
         scopeCreep: [],
         unknowns: [],
+        challenges: [],
         reviewedBy: { sessionId: 'sess-test' },
         reviewedAt: '2026-01-01T00:00:00.000Z',
       };
@@ -823,7 +824,7 @@ describe('state schemas', () => {
               required: false,
               satisfied: true,
               initiatedBy: 'test',
-              decidedBy: null,
+              decisionIdentity: null,
               detail: 'Four-eyes not required by policy',
             },
             summary: { total: 0, complete: 0, missing: 0, notYetRequired: 0, failed: 0 },

@@ -248,6 +248,7 @@ function reviewerOutput(_childSessionId: string): string {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     attestation: {
       toolObligationId: OBLIGATION_ID,
     },

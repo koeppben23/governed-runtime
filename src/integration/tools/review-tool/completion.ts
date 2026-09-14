@@ -62,9 +62,7 @@ const CHALLENGE_OUTCOME_SEVERITY: Record<string, 'info' | 'warning' | 'error'> =
 function challengeFindings(
   reviewFindings: Pick<ReviewFindings, 'challenges'>,
 ): ReviewReportFinding[] {
-  const challenges = reviewFindings.challenges;
-  if (!Array.isArray(challenges)) return [];
-  return challenges.flatMap((entry) => challengeFinding(entry));
+  return reviewFindings.challenges.flatMap((entry) => challengeFinding(entry));
 }
 
 function challengeFinding(entry: unknown): ReviewReportFinding[] {

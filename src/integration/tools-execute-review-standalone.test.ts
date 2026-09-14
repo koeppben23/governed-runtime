@@ -308,6 +308,7 @@ describe('review (standalone flow)', () => {
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       reviewedBy: { sessionId: 'flowguard-reviewer-session-123' },
       reviewedAt: '2026-01-01T00:00:00.000Z',
       attestation: {
@@ -361,7 +362,13 @@ describe('review (standalone flow)', () => {
           ...ensureReviewAssurance(state.reviewAssurance),
           attempts: state.reviewAssurance!.attempts.map((attempt) =>
             attempt.attemptId === boundAttempt.attemptId
-              ? { ...attempt, childSessionId: invocation.childSessionId, status: 'bound' as const }
+              ? {
+                  ...attempt,
+                  childSessionId: invocation.childSessionId,
+                  status: 'bound' as const,
+                  completedAt:
+                    attempt.completedAt ?? invocation.fulfilledAt ?? new Date().toISOString(),
+                }
               : attempt,
           ),
         },
@@ -495,6 +502,20 @@ describe('review (standalone flow)', () => {
         ),
       );
       expect(result).toMatchObject({ phase: 'REVIEW_COMPLETE' });
+      const afterSubmit = (await readState(await currentSessionDir()))!;
+      const invocation = afterSubmit.reviewAssurance!.invocations.find(
+        (item) => item.obligationId === obligationId,
+      );
+      // Manual submission carries honest agent-submitted provenance ...
+      expect(invocation?.reviewOutputMode).toBe('agent_submitted_structured');
+      expect(invocation?.structuredOutputUsed).toBe(false);
+      expect(invocation?.reviewAssuranceLevel).toBe('structured_submitted');
+      // ... and the referenced attempt is bound atomically.
+      const boundAttempt = afterSubmit.reviewAssurance!.attempts.find(
+        (item) => item.attemptId === invocation?.attemptId,
+      );
+      expect(boundAttempt?.status).toBe('bound');
+      expect(boundAttempt?.completedAt).toBeDefined();
     });
 
     it('standalone /review Call 1 persists a PENDING review obligation for host-task binding', async () => {
@@ -735,6 +756,7 @@ describe('review (standalone flow)', () => {
         missingVerification: [],
         scopeCreep: [],
         unknowns: [],
+        challenges: [],
         reviewedBy: { sessionId: 'flowguard-reviewer-session-123' },
         reviewedAt: '2026-01-01T00:00:00.000Z',
         attestation: {
@@ -1306,6 +1328,7 @@ describe('review (standalone flow)', () => {
           missingVerification: [],
           scopeCreep: [],
           unknowns: [],
+          challenges: [],
           reviewedBy: { sessionId: 'flowguard-reviewer-session-xyz' },
           reviewedAt: '2026-01-01T00:00:00.000Z',
           attestation: {
@@ -1354,6 +1377,7 @@ describe('review (standalone flow)', () => {
           missingVerification: [],
           scopeCreep: [],
           unknowns: [],
+          challenges: [],
           reviewedBy: { sessionId: 'flowguard-reviewer-session-e2e' },
           reviewedAt: '2026-01-01T00:00:00.000Z',
           attestation: {

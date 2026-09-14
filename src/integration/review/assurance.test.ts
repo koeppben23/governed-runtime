@@ -102,6 +102,7 @@ function makeFindings(overrides?: Partial<ReviewFindings>): ReviewFindings {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: 'child-session-1' },
     reviewedAt: NOW,
     attestation: {

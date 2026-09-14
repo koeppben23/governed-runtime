@@ -413,7 +413,12 @@ describe('plugin-integration', () => {
             reviewDecision: {
               verdict: 'approve',
               rationale: 'Looks good',
-              decidedBy: 'reviewer-42',
+              decisionIdentity: {
+                actorId: 'reviewer-42',
+                actorEmail: null,
+                actorSource: 'unknown',
+                actorAssurance: 'best_effort',
+              },
               decidedAt: transitions[0]!.at,
             },
           }),
@@ -428,7 +433,12 @@ describe('plugin-integration', () => {
       expect(decision!.detail.decisionSequence).toBe(1);
       expect(decision!.detail.verdict).toBe('approve');
       expect(decision!.detail.rationale).toBe('Looks good');
-      expect(decision!.detail.decidedBy).toBe('reviewer-42');
+      expect(decision!.detail.decisionIdentity).toEqual({
+        actorId: 'reviewer-42',
+        actorEmail: null,
+        actorSource: 'unknown',
+        actorAssurance: 'best_effort',
+      });
     });
 
     it('session_created lifecycle reason includes policy resolution fields', async () => {
@@ -533,7 +543,7 @@ describe('plugin-integration', () => {
       expect(events.some((e) => eventKind(e) === 'error')).toBe(true);
     });
 
-    it('skips decision receipt and emits explicit error when decidedBy is missing', async () => {
+    it('skips decision receipt and emits explicit error when decisionIdentity is missing', async () => {
       const transitions = [
         {
           from: 'PLAN_REVIEW',
@@ -759,7 +769,12 @@ describe('plugin-integration', () => {
               reviewDecision: {
                 verdict: 'approve',
                 rationale: 'r1',
-                decidedBy: 'reviewer-1',
+                decisionIdentity: {
+                  actorId: 'reviewer-1',
+                  actorEmail: null,
+                  actorSource: 'unknown',
+                  actorAssurance: 'best_effort',
+                },
                 decidedAt: transitions[0]!.at,
               },
             }),
@@ -775,7 +790,12 @@ describe('plugin-integration', () => {
               reviewDecision: {
                 verdict: 'approve',
                 rationale: 'r2',
-                decidedBy: 'reviewer-2',
+                decisionIdentity: {
+                  actorId: 'reviewer-2',
+                  actorEmail: null,
+                  actorSource: 'unknown',
+                  actorAssurance: 'best_effort',
+                },
                 decidedAt: transitions[0]!.at,
               },
             }),
@@ -789,8 +809,10 @@ describe('plugin-integration', () => {
       expect(decisions).toHaveLength(2);
       const ids = decisions.map((d) => d.event).sort();
       expect(ids).toEqual(['decision:DEC-001', 'decision:DEC-002']);
-      const decidedBy = decisions.map((d) => String(d.detail.decidedBy)).sort();
-      expect(decidedBy).toEqual(['reviewer-1', 'reviewer-2']);
+      const actors = decisions
+        .map((d) => (d.detail.decisionIdentity as { actorId: string }).actorId)
+        .sort();
+      expect(actors).toEqual(['reviewer-1', 'reviewer-2']);
     });
   });
 

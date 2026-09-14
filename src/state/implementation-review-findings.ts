@@ -18,7 +18,7 @@ export function projectOpenImplementationChallengeIds(
   const failingOrigins = new Set<string>();
   const latestVerdicts = new Map<string, string>();
   for (const findings of findingsHistory ?? []) {
-    for (const challenge of findings.challenges ?? []) {
+    for (const challenge of findings.challenges) {
       if (
         challenge.kind === 'implementation_challenge' &&
         (challenge.outcome === 'fail' || challenge.outcome === 'not_verified')

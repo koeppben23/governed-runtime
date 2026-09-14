@@ -84,6 +84,7 @@ function findingsWithVerdict(verdict: 'approve' | 'unable_to_review'): string {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     attestation: {
       toolObligationId: OBLIGATION_ID,
     },

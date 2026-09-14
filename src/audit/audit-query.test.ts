@@ -85,7 +85,12 @@ describe('audit query', () => {
         gatePhase: 'PLAN_REVIEW',
         verdict: 'approve',
         rationale: 'looks good',
-        decidedBy: 'reviewer-1',
+        decisionIdentity: {
+          actorId: 'reviewer-1',
+          actorEmail: null,
+          actorSource: 'env',
+          actorAssurance: 'best_effort',
+        },
         decidedAt: TS3,
         fromPhase: 'PLAN_REVIEW',
         toPhase: 'VALIDATION',

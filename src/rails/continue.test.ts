@@ -113,7 +113,6 @@ describe('continue rail', () => {
         activeChecks: ['test_quality', 'rollback_safety'],
         reviewDecision: {
           verdict: 'approve',
-          decidedBy: 'r',
           decidedAt: FIXED_TIME,
           rationale: 'approved',
           decisionIdentity: {
@@ -214,7 +213,6 @@ describe('continue rail', () => {
         },
         reviewDecision: {
           verdict: 'approve',
-          decidedBy: 'r',
           decidedAt: FIXED_TIME,
           rationale: 'approved',
           decisionIdentity: {

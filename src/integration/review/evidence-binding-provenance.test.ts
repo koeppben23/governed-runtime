@@ -48,6 +48,7 @@ function reviewerTaskResult(
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     attestation: {
       toolObligationId: obligationId,
     },
@@ -149,6 +150,7 @@ describe('F8: host-authoritative reviewer provenance', () => {
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       reviewedBy: { sessionId: CHILD_SESSION_ID },
       attestation: {
         toolObligationId: obligation.obligationId,

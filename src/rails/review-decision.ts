@@ -9,8 +9,8 @@
  *
  * Four-eyes principle enforcement (regulated mode):
  * For approval decisions only, when policy.allowSelfApproval === false,
- * the reviewer (decidedBy) MUST be different from the session initiator
- * (state.initiatedBy).
+ * the reviewer (decisionIdentity.actorId) MUST be different from the session
+ * initiator (state.initiatedByIdentity.actorId).
  * This satisfies MaRisk AT 7.2 (5) — separation of duties.
  *
  * State clearing patterns (FlowGuard-critical):
@@ -74,15 +74,13 @@ import { countUnboundMutationEpisodes } from '../state/evidence-mutation-episode
 /**
  * Input for /review-decision rail.
  *
- * P30: Includes decisionIdentity for regulated approval attribution.
- * The decidedBy field remains for backward compatibility;
- * decisionIdentity provides full provenance for audit and four-eyes proof.
+ * P30: `decisionIdentity` is the sole actor attribution. The rail persists it
+ * verbatim and derives four-eyes, assurance, and certificate authority from it.
  */
 export interface ReviewDecisionInput {
   readonly verdict: ReviewVerdict;
   readonly rationale: string;
-  readonly decidedBy: string;
-  readonly decisionIdentity?: DecisionIdentity;
+  readonly decisionIdentity: DecisionIdentity;
 }
 
 // ─── Verdict → Event mapping ──────────────────────────────────────────────────
@@ -232,10 +230,13 @@ function checkMinAssurance(
   input: ReviewDecisionInput,
   minimum: 'claim_validated' | 'idp_verified',
 ): RailBlocked | null {
-  if (!isAssuranceAtLeast(input.decisionIdentity?.actorAssurance, minimum))
+  const assurance = input.decisionIdentity.actorAssurance;
+  if (!isAssuranceAtLeast(assurance, minimum))
     return blocked('ACTOR_ASSURANCE_INSUFFICIENT', {
       minimum,
-      current: input.decisionIdentity?.actorAssurance ?? 'best_effort',
+      // A malformed (schema-invalid) identity has no tier; it is below every
+      // threshold and must be labeled as such instead of leaking a missing var.
+      current: assurance ?? 'unknown',
     });
   return null;
 }
@@ -402,7 +403,7 @@ function createArchitectureApprovalCertificate(
       // binding kind or swapping the reviewed digest changes the certificateId.
       reviewBinding,
       approvedAt: decision.decidedAt,
-      approvedBy: decision.decidedBy,
+      approvedBy: decision.decisionIdentity.actorId,
     }),
   );
   const certificateId = digestToId(certificateIdDigest, 4);
@@ -412,7 +413,7 @@ function createArchitectureApprovalCertificate(
     claimDeclarationsDigest,
     decisionAttestationDigest,
     approvedAt: decision.decidedAt,
-    approvedBy: decision.decidedBy,
+    approvedBy: decision.decisionIdentity.actorId,
     certificateId,
     reviewBinding,
   };
@@ -562,13 +563,12 @@ export function executeReviewDecision(
   }
 
   // 5. Create evidence
-  // P30: Include structured decisionIdentity for regulated approval attribution
+  // P30: Persist the structured decisionIdentity as the sole attribution authority.
   const decision: ReviewDecision = {
     verdict: input.verdict,
     rationale: input.rationale,
     decidedAt: ctx.now(),
-    decidedBy: input.decidedBy,
-    ...(input.decisionIdentity ? { decisionIdentity: input.decisionIdentity } : {}),
+    decisionIdentity: input.decisionIdentity,
   };
 
   // A certificate is created only for the first human approval at its flow's gate;

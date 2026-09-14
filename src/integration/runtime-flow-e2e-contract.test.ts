@@ -42,6 +42,7 @@ import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './review/assurance.js';
+import { mintObservationCapability } from './review/attempt-lifecycle.js';
 import { makeState, TICKET, FROZEN_IMPLEMENTATION_BASE } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
 import { computeRecordDigest } from '../state/evidence-plan.js';
@@ -218,11 +219,12 @@ async function inject(
   const ff = f(obl.obligationId, obl.iteration, obl.planVersion, challengesFor(state, obl));
   const fh = hashFindings(ff);
   const attemptId = randomUUID();
+  const hostObserved = isOpen(host);
   const newObl = {
     ...obl,
     status: 'fulfilled' as const,
     fulfilledAt: FIXED_TIME,
-    pluginHandshakeAt: isOpen(host) ? FIXED_TIME : null,
+    pluginHandshakeAt: hostObserved ? FIXED_TIME : null,
     reviewSubjectScope:
       obl.obligationType === 'implement'
         ? {
@@ -242,9 +244,9 @@ async function inject(
     parentSessionId: sessionId,
     childSessionId: 'ses_r',
     agentType: 'flowguard-reviewer' as const,
-    invocationMode: isOpen(host) ? ('host_subagent_task' as const) : ('manual_attested' as const),
-    hostVisible: isOpen(host),
-    source: isOpen(host) ? ('host-orchestrated' as const) : ('agent-submitted-attested' as const),
+    invocationMode: hostObserved ? ('host_subagent_task' as const) : ('manual_attested' as const),
+    hostVisible: hostObserved,
+    source: hostObserved ? ('host-orchestrated' as const) : ('agent-submitted-attested' as const),
     promptHash: 'abc',
     mandateDigest: REVIEW_MANDATE_DIGEST,
     criteriaVersion: REVIEW_CRITERIA_VERSION,
@@ -252,10 +254,14 @@ async function inject(
     invokedAt: FIXED_TIME,
     fulfilledAt: FIXED_TIME,
     consumedByObligationId: null,
-    capturedVerdict: isOpen(host) ? 'approve' : undefined,
-    reviewOutputMode: 'structured_output' as const,
-    structuredOutputUsed: true,
-    reviewAssuranceLevel: 'structured_high' as const,
+    capturedVerdict: hostObserved ? 'approve' : undefined,
+    reviewOutputMode: hostObserved
+      ? ('structured_output' as const)
+      : ('agent_submitted_structured' as const),
+    structuredOutputUsed: hostObserved,
+    reviewAssuranceLevel: hostObserved
+      ? ('structured_high' as const)
+      : ('structured_submitted' as const),
     attemptId,
   };
   const aug: SessionState = {
@@ -303,7 +309,9 @@ async function inject(
               notVerified: [],
             },
           },
+          observationCapability: mintObservationCapability(),
           createdAt: FIXED_TIME,
+          completedAt: FIXED_TIME,
         },
       ],
       dispatches: state.reviewAssurance!.dispatches,
@@ -312,7 +320,12 @@ async function inject(
       verdict: 'approve',
       rationale: 'E2E',
       decidedAt: FIXED_TIME,
-      decidedBy: 'reviewer-1',
+      decisionIdentity: {
+        actorId: 'reviewer-1',
+        actorEmail: null,
+        actorSource: 'unknown',
+        actorAssurance: 'best_effort',
+      },
     },
   };
   await writeStateWithArtifacts(sDir, aug);

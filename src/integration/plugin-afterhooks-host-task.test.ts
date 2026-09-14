@@ -164,6 +164,7 @@ function noVerdictReviewerOutput(): string {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     attestation: {
       toolObligationId: OBLIGATION_ID,
     },
@@ -182,6 +183,7 @@ function validReviewerOutput(): string {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     attestation: {
       toolObligationId: OBLIGATION_ID,
     },
@@ -756,7 +758,16 @@ describe('host-task evidence → plan certificate lineage', () => {
 
       const approved = executeReviewDecision(
         reviewState!,
-        { verdict: 'approve', rationale: 'ok', decidedBy: 'approver' },
+        {
+          verdict: 'approve',
+          rationale: 'ok',
+          decisionIdentity: {
+            actorId: 'approver',
+            actorEmail: null,
+            actorSource: 'unknown',
+            actorAssurance: 'best_effort',
+          },
+        },
         createTestContext(FIXED_TIME, hashText),
       );
       if (approved.kind !== 'ok') throw new Error('plan approval failed');

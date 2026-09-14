@@ -258,6 +258,7 @@ export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
       origin: { kind: 'initial' },
       repositoryDiscovery: { kind: 'not_applicable' },
       createdAt: FIXED_TIME,
+      completedAt: FIXED_TIME,
     },
   ],
   dispatches: [],
@@ -346,6 +347,7 @@ export const PLAN_REVIEW_ASSURANCE: ReviewAssuranceState = assuranceWith({
       origin: { kind: 'initial' },
       repositoryDiscovery: { kind: 'not_applicable' },
       createdAt: FIXED_TIME,
+      completedAt: FIXED_TIME,
     },
   ],
 });
@@ -482,7 +484,7 @@ export const REVIEW_APPROVE: ReviewDecision = {
   verdict: 'approve',
   rationale: 'LGTM',
   decidedAt: FIXED_TIME,
-  decidedBy: 'reviewer-1',
+  decisionIdentity: DECISION_IDENTITY_REVIEWER,
 };
 
 export const ERROR_INFO: ErrorInfo = {

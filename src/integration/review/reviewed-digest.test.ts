@@ -62,6 +62,7 @@ function subagentFindings(obligation: ReviewObligation, overrides: Record<string
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: 'ses-child' },
     reviewedAt: NOW,
     attestation: {

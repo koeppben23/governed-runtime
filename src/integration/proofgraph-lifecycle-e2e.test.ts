@@ -621,7 +621,16 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
           submitted!.plan!.claimDeclarations,
         ),
       },
-      { verdict: 'approve', rationale: 'ok', decidedBy: 'approver' },
+      {
+        verdict: 'approve',
+        rationale: 'ok',
+        decisionIdentity: {
+          actorId: 'approver',
+          actorEmail: null,
+          actorSource: 'unknown',
+          actorAssurance: 'best_effort',
+        },
+      },
       realDigestContext(),
     );
 
@@ -671,6 +680,7 @@ describe('standalone review hypotheses (runtime)', () => {
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       reviewedBy: { sessionId: 'ses_r' },
       reviewedAt: FIXED_TIME,
       attestation: {
@@ -849,7 +859,16 @@ describe('ProofGraph materialization and gate (runtime)', () => {
     });
     const approved = executeReviewDecision(
       base,
-      { verdict: 'approve', rationale: 'ok', decidedBy: 'approver' },
+      {
+        verdict: 'approve',
+        rationale: 'ok',
+        decisionIdentity: {
+          actorId: 'approver',
+          actorEmail: null,
+          actorSource: 'unknown',
+          actorAssurance: 'best_effort',
+        },
+      },
       realDigestContext(),
     );
     if (approved.kind !== 'ok') throw new Error('plan approval failed');
@@ -968,7 +987,16 @@ describe('ProofGraph materialization and gate (runtime)', () => {
         proofContract: contract,
         proofGraph: summary.projection,
       },
-      { verdict: 'approve', rationale: 'ship it', decidedBy: 'approver' },
+      {
+        verdict: 'approve',
+        rationale: 'ship it',
+        decisionIdentity: {
+          actorId: 'approver',
+          actorEmail: null,
+          actorSource: 'unknown',
+          actorAssurance: 'best_effort',
+        },
+      },
       // No policy configuration at all: enforcement is unconditional (#762).
       realDigestContext(),
     );
@@ -1110,7 +1138,16 @@ describe('ProofGraph materialization and gate (runtime)', () => {
     });
     const approved = executeReviewDecision(
       state,
-      { verdict: 'approve', rationale: 'ok', decidedBy: 'approver' },
+      {
+        verdict: 'approve',
+        rationale: 'ok',
+        decisionIdentity: {
+          actorId: 'approver',
+          actorEmail: null,
+          actorSource: 'unknown',
+          actorAssurance: 'best_effort',
+        },
+      },
       realDigestContext(),
     );
     if (approved.kind !== 'ok') throw new Error('plan approval failed');
