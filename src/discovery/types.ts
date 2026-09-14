@@ -115,21 +115,38 @@ export type CollectorStatus = z.infer<typeof CollectorStatusSchema>;
  * Makes collector-local degradation explicit and diagnosable without
  * hiding failures behind silent defaults.
  */
-export const CollectorDiagnosticSchema = z.object({
-  /** Collector name (e.g., "repo-metadata", "stack-detection"). */
-  name: z.string().min(1),
-  /** Final collector execution status. */
-  status: CollectorStatusSchema,
-  /** Wall-clock duration in milliseconds. */
-  durationMs: z.number().nonnegative(),
-  /** Error code when status is 'failed' (timeout message, error name, etc.). */
-  errorCode: z.string().optional(),
-  /** Whether the collector was terminated by timeout. */
-  timedOut: z.boolean(),
-  /** Human-readable reason for degraded/partial status. */
-  degradedReason: z.string().optional(),
-});
+export const CollectorDiagnosticSchema = z
+  .object({
+    /** Collector name (e.g., "repo-metadata", "stack-detection"). */
+    name: z.string().min(1),
+    /** Final collector execution status. */
+    status: CollectorStatusSchema,
+    /** Wall-clock duration in milliseconds. */
+    durationMs: z.number().nonnegative(),
+    /** Error code when status is 'failed' (timeout message, error name, etc.). */
+    errorCode: z.string().optional(),
+    /** Whether the collector was terminated by timeout. */
+    timedOut: z.boolean(),
+    /** Human-readable reason for degraded/partial status. */
+    degradedReason: z.string().optional(),
+  })
+  .strict();
 export type CollectorDiagnostic = z.infer<typeof CollectorDiagnosticSchema>;
+
+/** The complete, fixed set of collectors represented in a persisted discovery result. */
+const DiscoveryCollectorNameSchema = z.enum([
+  'repo-metadata',
+  'stack-detection',
+  'topology',
+  'surface-detection',
+  'code-surface-analysis',
+  'domain-signals',
+]);
+type DiscoveryCollectorName = z.infer<typeof DiscoveryCollectorNameSchema>;
+
+const DiscoveryResultDiagnosticSchema = CollectorDiagnosticSchema.extend({
+  name: DiscoveryCollectorNameSchema,
+}).strict();
 
 // ─── Detected Item ────────────────────────────────────────────────────────────
 
@@ -306,35 +323,39 @@ export type SemanticExtractionInfo = z.infer<typeof SemanticExtractionInfoSchema
 // CodeSurfaceStatusSchema + CodeSurfaceStatus: re-exported from state/discovery-schemas.ts
 
 /** Collector budget stats for code-surface analysis. */
-export const CodeSurfaceBudgetSchema = z.object({
-  scannedFiles: z.number().int().nonnegative(),
-  scannedBytes: z.number().int().nonnegative(),
-  maxFiles: z.number().int().positive(),
-  maxBytesPerFile: z.number().int().positive(),
-  maxTotalBytes: z.number().int().positive(),
-  timedOut: z.boolean(),
-  /** Total source-file candidates before budget slice. */
-  totalSourceCandidates: z.number().int().nonnegative().optional(),
-  /** Whether budget exhaustion truncated the scan (true = partial due to budget). */
-  budgetExhausted: z.boolean().optional(),
-});
+export const CodeSurfaceBudgetSchema = z
+  .object({
+    scannedFiles: z.number().int().nonnegative(),
+    scannedBytes: z.number().int().nonnegative(),
+    maxFiles: z.number().int().positive(),
+    maxBytesPerFile: z.number().int().positive(),
+    maxTotalBytes: z.number().int().positive(),
+    timedOut: z.boolean(),
+    /** Total source-file candidates before budget slice. */
+    totalSourceCandidates: z.number().int().nonnegative().optional(),
+    /** Whether budget exhaustion truncated the scan (true = partial due to budget). */
+    budgetExhausted: z.boolean().optional(),
+  })
+  .strict();
 export type CodeSurfaceBudget = z.infer<typeof CodeSurfaceBudgetSchema>;
 
 /** Bounded heuristic code-surface analysis result. */
-export const CodeSurfacesInfoSchema = z.object({
-  status: CodeSurfaceStatusSchema,
-  endpoints: z.array(CodeSurfaceSignalSchema),
-  authBoundaries: z.array(CodeSurfaceSignalSchema),
-  dataAccess: z.array(CodeSurfaceSignalSchema),
-  integrations: z.array(CodeSurfaceSignalSchema),
-  /** Advisory semantic test targets when framework/test patterns are detected. */
-  testTargets: z.array(CodeSurfaceSignalSchema).optional(),
-  budget: CodeSurfaceBudgetSchema,
-  /** Optional semantic extraction diagnostics; advisory, bounded, and non-authoritative. */
-  semanticExtraction: SemanticExtractionInfoSchema.optional(),
-  /** Per-file read outcome diagnostics (populated when reads degrade). */
-  readStatuses: z.record(z.string(), ReadOutcomeSchema).optional(),
-});
+export const CodeSurfacesInfoSchema = z
+  .object({
+    status: CodeSurfaceStatusSchema,
+    endpoints: z.array(CodeSurfaceSignalSchema),
+    authBoundaries: z.array(CodeSurfaceSignalSchema),
+    dataAccess: z.array(CodeSurfaceSignalSchema),
+    integrations: z.array(CodeSurfaceSignalSchema),
+    /** Advisory semantic test targets when framework/test patterns are detected. */
+    testTargets: z.array(CodeSurfaceSignalSchema).optional(),
+    budget: CodeSurfaceBudgetSchema,
+    /** Optional semantic extraction diagnostics; advisory, bounded, and non-authoritative. */
+    semanticExtraction: SemanticExtractionInfoSchema.optional(),
+    /** Per-file read outcome diagnostics (populated when reads degrade). */
+    readStatuses: z.record(z.string(), ReadOutcomeSchema).optional(),
+  })
+  .strict();
 export type CodeSurfacesInfo = z.infer<typeof CodeSurfacesInfoSchema>;
 
 // ─── Domain Signals ───────────────────────────────────────────────────────────
@@ -382,13 +403,35 @@ export const DiscoveryResultSchema = z
     schemaVersion: z.literal(DISCOVERY_SCHEMA_VERSION),
     collectedAt: z.string().datetime(),
     /** Per-collector structured diagnostics: timing, status, error info. */
-    diagnostics: z.array(CollectorDiagnosticSchema),
+    diagnostics: z.array(DiscoveryResultDiagnosticSchema),
     repoMetadata: RepoMetadataSchema,
     stack: StackInfoSchema,
     topology: TopologyInfoSchema,
     surfaces: SurfacesInfoSchema,
-    codeSurfaces: CodeSurfacesInfoSchema.optional(),
+    codeSurfaces: CodeSurfacesInfoSchema,
     domainSignals: DomainSignalsSchema,
+  })
+  .superRefine((result, ctx) => {
+    const counts = new Map<DiscoveryCollectorName, number>();
+    for (const diagnostic of result.diagnostics) {
+      counts.set(diagnostic.name, (counts.get(diagnostic.name) ?? 0) + 1);
+    }
+    for (const name of DiscoveryCollectorNameSchema.options) {
+      const count = counts.get(name) ?? 0;
+      if (count === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['diagnostics'],
+          message: `Missing diagnostic for collector '${name}'`,
+        });
+      } else if (count > 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['diagnostics'],
+          message: `Duplicate diagnostic for collector '${name}'`,
+        });
+      }
+    }
   })
   .strict();
 export type DiscoveryResult = z.infer<typeof DiscoveryResultSchema>;

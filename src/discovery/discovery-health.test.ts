@@ -10,8 +10,6 @@
  * - Degraded: read failures
  * - Degraded: multiple degradation types → healthy: false
  * - No healthy when any degradation present
- * - Missing diagnostics: sensible defaults
- * - Missing codeSurfaces: null status, no budget/read data
  * - ageWarning computed from collectedAt
  * - ageWarning null for recent discovery
  * - ageWarning null for missing/NaN collectedAt
@@ -60,6 +58,21 @@ function makeHealthyResult(overrides?: Partial<DiscoveryResult>): DiscoveryResul
       ignorePaths: [],
     },
     surfaces: { api: [], persistence: [], cicd: [], security: [], layers: [] },
+    codeSurfaces: {
+      status: 'ok',
+      endpoints: [],
+      authBoundaries: [],
+      dataAccess: [],
+      integrations: [],
+      budget: {
+        scannedFiles: 0,
+        scannedBytes: 0,
+        maxFiles: 200,
+        maxBytesPerFile: 65536,
+        maxTotalBytes: 2097152,
+        timedOut: false,
+      },
+    },
     domainSignals: { keywords: [], glossarySources: [] },
     ...overrides,
   };
@@ -85,7 +98,7 @@ describe('discovery-health', () => {
       expect(health.failedCollectorNames).toEqual([]);
       expect(health.hasBudgetExhaustion).toBe(false);
       expect(health.readFailureCount).toBe(0);
-      expect(health.codeSurfaceStatus).toBe(null);
+      expect(health.codeSurfaceStatus).toBe('ok');
       expect(health.kind).toBe('derived_discovery_health');
       expect(health.advisory).toBe(true);
       expect(health.source).toBe('persisted_discovery_result');
@@ -249,14 +262,6 @@ describe('discovery-health', () => {
       expect(health.failedCollectorNames).toEqual(['stack-detection', 'code-surface-analysis']);
       expect(health.hasBudgetExhaustion).toBe(true);
       expect(health.readFailureCount).toBe(1);
-    });
-
-    it('missing codeSurfaces: null status, no budget/read data', () => {
-      const result = makeHealthyResult({ codeSurfaces: undefined });
-      const health = extractAvailableHealth(result);
-      expect(health.codeSurfaceStatus).toBe(null);
-      expect(health.hasBudgetExhaustion).toBe(false);
-      expect(health.readFailureCount).toBe(0);
     });
 
     it('ageWarning computed correctly for old discovery', () => {

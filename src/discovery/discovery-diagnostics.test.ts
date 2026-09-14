@@ -329,6 +329,44 @@ describe('discovery/diagnostics (#372)', () => {
       expect(parsed.success).toBe(false);
     });
 
+    it('requires exactly one diagnostic for every current collector and code surfaces', async () => {
+      const result = await runDiscovery(EMPTY_INPUT);
+      const withoutCodeSurfaces = (({ codeSurfaces: _codeSurfaces, ...rest }) => rest)(result);
+
+      expect(DiscoveryResultSchema.safeParse({ ...result, diagnostics: [] }).success).toBe(false);
+      expect(
+        DiscoveryResultSchema.safeParse({ ...result, diagnostics: result.diagnostics.slice(1) })
+          .success,
+      ).toBe(false);
+      expect(
+        DiscoveryResultSchema.safeParse({
+          ...result,
+          diagnostics: [...result.diagnostics.slice(0, -1), result.diagnostics[0]],
+        }).success,
+      ).toBe(false);
+      expect(
+        DiscoveryResultSchema.safeParse({
+          ...result,
+          diagnostics: [
+            { ...result.diagnostics[0], name: 'unknown-collector' },
+            ...result.diagnostics.slice(1),
+          ],
+        }).success,
+      ).toBe(false);
+      expect(DiscoveryResultSchema.safeParse(withoutCodeSurfaces).success).toBe(false);
+      expect(
+        DiscoveryResultSchema.safeParse({
+          ...result,
+          diagnostics: result.diagnostics.map((diagnostic) =>
+            diagnostic.name === 'code-surface-analysis'
+              ? { ...diagnostic, status: 'failed' as const }
+              : diagnostic,
+          ),
+          codeSurfaces: { ...result.codeSurfaces, status: 'failed' as const },
+        }).success,
+      ).toBe(true);
+    });
+
     it('rejects removed v1 fields instead of stripping them', async () => {
       const result = await runDiscovery(EMPTY_INPUT);
       expect(DiscoveryResultSchema.safeParse({ ...result, collectors: {} }).success).toBe(false);
@@ -378,8 +416,8 @@ describe('discovery/diagnostics (#372)', () => {
       expect(parsed.success).toBe(false);
     });
 
-    it('CodeSurfacesInfo without readStatuses/budget extensions parses', async () => {
-      const legacy = {
+    it('CodeSurfacesInfo preserves current optional fields but rejects obsolete fields', async () => {
+      const current = {
         status: 'ok',
         endpoints: [],
         authBoundaries: [],
@@ -392,13 +430,16 @@ describe('discovery/diagnostics (#372)', () => {
           maxBytesPerFile: 65536,
           maxTotalBytes: 2097152,
           timedOut: false,
-          outcome: 'supported' as const,
         },
       };
-      // Imported schema allows optional new fields
       const { CodeSurfacesInfoSchema } = await import('./types.js');
-      const parsed = CodeSurfacesInfoSchema.safeParse(legacy);
-      expect(parsed.success).toBe(true);
+      expect(CodeSurfacesInfoSchema.safeParse(current).success).toBe(true);
+      expect(
+        CodeSurfacesInfoSchema.safeParse({
+          ...current,
+          budget: { ...current.budget, outcome: 'supported' },
+        }).success,
+      ).toBe(false);
     });
   });
 

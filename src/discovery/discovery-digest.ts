@@ -78,7 +78,10 @@ export function computeStableDiscoveryContributorDigests(
       diagnostic,
     ]),
   );
-  const collectorNames = new Set([...diagnosticsByName.keys(), ...Object.keys(COLLECTOR_OUTPUTS)]);
+  const collectorNames = new Set<keyof typeof COLLECTOR_OUTPUTS>([
+    ...diagnosticsByName.keys(),
+    ...(Object.keys(COLLECTOR_OUTPUTS) as Array<keyof typeof COLLECTOR_OUTPUTS>),
+  ]);
 
   for (const name of [...collectorNames].sort()) {
     const outputKey = COLLECTOR_OUTPUTS[name as keyof typeof COLLECTOR_OUTPUTS];

@@ -56,15 +56,15 @@ export type DiscoveryHealthProjection =
  *
  * Derived from:
  * - result.diagnostics[] → collector status counts and failed names
- * - result.codeSurfaces?.budget.budgetExhausted → hasBudgetExhaustion
- * - result.codeSurfaces?.readStatuses → readFailureCount (non-read_ok)
- * - result.codeSurfaces?.status → codeSurfaceStatus
+ * - result.codeSurfaces.budget.budgetExhausted → hasBudgetExhaustion
+ * - result.codeSurfaces.readStatuses → readFailureCount (non-read_ok)
+ * - result.codeSurfaces.status → codeSurfaceStatus
  * - result.collectedAt → collectedAt, ageWarning (computed)
  *
  * healthy: no failed, partial, budget exhaustion, or read failures.
  *
  * @param result - The DiscoveryResult to project from.
- * @returns DiscoveryHealthProjection — never null, always has defaults for missing data.
+ * @returns DiscoveryHealthProjection derived from a schema-valid current result.
  */
 export function extractDiscoveryHealth(result: DiscoveryResult): DiscoveryHealthProjection {
   const diagnostics = result.diagnostics;
@@ -90,11 +90,11 @@ export function extractDiscoveryHealth(result: DiscoveryResult): DiscoveryHealth
   }
 
   const codeSurfaces = result.codeSurfaces;
-  const hasBudgetExhaustion = codeSurfaces?.budget?.budgetExhausted ?? false;
-  const readFailureCount = codeSurfaces?.readStatuses
+  const hasBudgetExhaustion = codeSurfaces.budget.budgetExhausted ?? false;
+  const readFailureCount = codeSurfaces.readStatuses
     ? Object.values(codeSurfaces.readStatuses).filter((s) => s !== 'read_ok').length
     : 0;
-  const codeSurfaceStatus: CodeSurfaceStatus | null = codeSurfaces?.status ?? null;
+  const codeSurfaceStatus: CodeSurfaceStatus = codeSurfaces.status;
   const collectedAt: string | null = result.collectedAt ?? null;
 
   const ageWarning = computeAgeWarning(collectedAt);

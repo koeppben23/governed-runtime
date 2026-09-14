@@ -216,7 +216,11 @@ describe('projectClaimHumanProjection', () => {
   it('rejects a legacy counterexample requirement kind', () => {
     expect(() =>
       DeclaredClaim.parse({
-        ...facts(),
+        claimId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+        statement: 'The system rejects expired tokens',
+        signalClass: 'fact',
+        critical: true,
+        claimScope: 'specific_behavior',
         provenance: null,
         evidenceRefs: [],
         counterexampleRefs: [],

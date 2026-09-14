@@ -20,7 +20,6 @@ import { readFile as fsReadFile } from 'node:fs/promises';
 import * as nodePath from 'node:path';
 import { withSpan, addFingerprint } from '../telemetry/index.js';
 import type {
-  CollectorDiagnostic,
   CollectorInput,
   DetectedStack,
   DetectedStackItem,
@@ -166,13 +165,13 @@ async function runDiscoveryImpl(
   ]);
 
   // Collect diagnostics
-  const diagnostics: CollectorDiagnostic[] = [
-    metaRun.diagnostic,
-    stackRun.diagnostic,
-    topoRun.diagnostic,
-    surfaceRun.diagnostic,
-    codeSurfaceRun.diagnostic,
-    domainRun.diagnostic,
+  const diagnostics: DiscoveryResult['diagnostics'] = [
+    { ...metaRun.diagnostic, name: 'repo-metadata' },
+    { ...stackRun.diagnostic, name: 'stack-detection' },
+    { ...topoRun.diagnostic, name: 'topology' },
+    { ...surfaceRun.diagnostic, name: 'surface-detection' },
+    { ...codeSurfaceRun.diagnostic, name: 'code-surface-analysis' },
+    { ...domainRun.diagnostic, name: 'domain-signals' },
   ];
 
   return {
