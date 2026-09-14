@@ -90,10 +90,9 @@ export interface PipelineContext {
   sessionId: string;
   now: string;
   rawOutput: string;
-  strictEnforcement: boolean;
 }
 
-/** Result of strict attestation validation. */
+/** Result of attestation validation. */
 export type AttestationResult =
   { valid: true } | { valid: false; code: string; detail: Record<string, string> };
 
