@@ -54,7 +54,6 @@ describe('durable attempt lifecycle gates reviewer Task dispatch', () => {
     const result = enforceBeforeSubagentCall(
       state,
       { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt(0, 1) },
-      true,
       assurance,
     );
     expect(result.allowed).toBe(true);
@@ -85,7 +84,6 @@ describe('durable attempt lifecycle gates reviewer Task dispatch', () => {
     const result = enforceBeforeSubagentCall(
       state,
       { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt(0, 1) },
-      true,
       assurance,
     );
     expect(result.allowed).toBe(false);
@@ -136,7 +134,6 @@ describe('durable attempt lifecycle gates reviewer Task dispatch', () => {
     const result = enforceBeforeSubagentCall(
       state,
       { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt(0, 1) },
-      true,
       assurance,
     );
     expect(result.allowed).toBe(true);
