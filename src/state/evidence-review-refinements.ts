@@ -598,7 +598,6 @@ export function refineAssuranceInvocationLinkageCoherence(
   const invocationsByInvocationId = new Map(
     assurance.invocations.map((invocation) => [invocation.invocationId, invocation]),
   );
-  const obligationIds = new Set(assurance.obligations.map((obligation) => obligation.obligationId));
   for (const obligation of assurance.obligations) {
     if (obligation.invocationId) {
       const linked = invocationsByInvocationId.get(obligation.invocationId);
@@ -643,14 +642,16 @@ export function refineAssuranceInvocationLinkageCoherence(
     }
   }
   for (const invocation of assurance.invocations) {
+    // Consumption is self-referential: an invocation that was consumed must
+    // name its OWN obligation, never an arbitrary (even existing) one.
     if (
-      invocation.consumedByObligationId &&
-      !obligationIds.has(invocation.consumedByObligationId)
+      invocation.consumedByObligationId != null &&
+      invocation.consumedByObligationId !== invocation.obligationId
     ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['invocations'],
-        message: `invocation ${invocation.invocationId} references unknown consumedByObligationId ${invocation.consumedByObligationId}`,
+        message: `invocation ${invocation.invocationId} consumedByObligationId must equal its own obligationId`,
       });
       return;
     }

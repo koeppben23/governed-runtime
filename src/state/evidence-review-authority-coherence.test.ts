@@ -908,6 +908,22 @@ describe('Host invocation, obligation foreign keys and status relations', () => 
     expect(JSON.stringify(result.error.issues)).toContain('missing consumedAt');
   });
 
+  it('HAPPY: invocation consumed by its own obligation parses', () => {
+    const result = parseState({
+      obligations: [
+        {
+          ...PLAN_OBLIGATION,
+          status: 'consumed' as const,
+          invocationId: HOST_INVOCATION_ID,
+          fulfilledAt: FIXED_TIME,
+          consumedAt: FIXED_TIME,
+        },
+      ],
+      invocations: [sdkInvocation({ consumedByObligationId: FIXED_UUID })],
+    });
+    expect(result.success).toBe(true);
+  });
+
   it('rejects an invocation whose consumedByObligationId does not resolve', () => {
     const result = parseState({
       invocations: [
@@ -916,7 +932,25 @@ describe('Host invocation, obligation foreign keys and status relations', () => 
     });
     expect(result.success).toBe(false);
     if (result.success) throw new TypeError('expected schema rejection');
-    expect(JSON.stringify(result.error.issues)).toContain('unknown consumedByObligationId');
+    expect(JSON.stringify(result.error.issues)).toContain(
+      'consumedByObligationId must equal its own obligationId',
+    );
+  });
+
+  it('rejects an invocation consumed by a DIFFERENT existing obligation', () => {
+    const otherObligation = {
+      ...PLAN_OBLIGATION,
+      obligationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+    };
+    const result = parseState({
+      obligations: [PLAN_OBLIGATION, otherObligation],
+      invocations: [sdkInvocation({ consumedByObligationId: otherObligation.obligationId })],
+    });
+    expect(result.success).toBe(false);
+    if (result.success) throw new TypeError('expected schema rejection');
+    expect(JSON.stringify(result.error.issues)).toContain(
+      'consumedByObligationId must equal its own obligationId',
+    );
   });
 });
 
