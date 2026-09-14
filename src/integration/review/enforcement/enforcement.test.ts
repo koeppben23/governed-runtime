@@ -167,7 +167,7 @@ describe('review-enforcement', () => {
       ).toEqual({ allowed: true });
     });
 
-    it('no enforcement when independent-review marker is absent', () => {
+    it('blocks a reviewer verdict without a dispatchable review obligation', () => {
       const state = createSessionState();
 
       onFlowGuardToolAfter(
@@ -182,7 +182,7 @@ describe('review-enforcement', () => {
         reviewVerdict: 'accept',
       });
 
-      expect(result.allowed).toBe(true);
+      expect(result).toMatchObject({ allowed: false, code: 'REVIEW_ASSURANCE_STATE_UNAVAILABLE' });
     });
 
     it('clears pending review after successful Mode B', () => {
@@ -918,14 +918,14 @@ describe('review-enforcement', () => {
       expect(state.pendingReviews.size).toBe(0);
     });
 
-    it('allows verdict when no pending review exists (enforcement inactive)', () => {
+    it('blocks a reviewer verdict when no review obligation exists', () => {
       const state = createSessionState();
 
       const result = enforceBeforeVerdict(state, 'flowguard_plan', {
         reviewVerdict: 'accept',
       });
 
-      expect(result.allowed).toBe(true);
+      expect(result).toMatchObject({ allowed: false, code: 'REVIEW_ASSURANCE_STATE_UNAVAILABLE' });
     });
 
     it('L2: skips session-ID check when submitted sessionId is missing', () => {

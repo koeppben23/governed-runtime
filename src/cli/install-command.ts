@@ -12,12 +12,8 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { defaultReasonRegistry } from '../config/reasons.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
-import type {
-  CliArgs,
-  CliResult,
-  FileOp,
-  RollbackEntry as InstallRollbackEntry,
-} from './install-helpers.js';
+import type { CliArgs, CliResult, FileOp } from './install-types.js';
+import type { RollbackEntry as InstallRollbackEntry } from './install-helpers.js';
 import { rollbackArtifacts, snapshotForRollback, toCliError } from './install-helpers.js';
 import {
   assertManagedMandatesOwnership,

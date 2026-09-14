@@ -493,10 +493,7 @@ async function finalizeReviewOutput(ctx: PipelineContext, opts: FinalizeOutputOp
 
 // ─── Standard Pipeline: Failure Handler ──────────────────────────────────────
 
-async function handleReviewerFailure(
-  ctx: PipelineContext,
-  obligationType: string,
-): Promise<void> {
+async function handleReviewerFailure(ctx: PipelineContext, obligationType: string): Promise<void> {
   const { deps, sessDir, sessionId, reviewCtx, parsedOutput, sessionState, output } = ctx;
   const phase = String(parsedOutput.phase ?? sessionState.phase);
 

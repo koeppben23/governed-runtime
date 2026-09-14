@@ -5,11 +5,11 @@
  * Contains the state factory and hook handlers (pure functions) that enforce
  * four levels of review integrity:
  *
- * - Level 1 (Binary Gate): A Task call to flowguard-reviewer MUST occur
+ * - L1 (Binary Gate): A Task call to flowguard-reviewer MUST occur
  *   before any verdict submission.
- * - Level 2 (Session ID): Submitted sessionId must match actual subagent session.
- * - Level 3 (Prompt Integrity): Task call prompt must contain expected context.
- * - Level 4 (Findings Integrity): Submitted findings must match actual response.
+ * - L2 (Session ID): Submitted sessionId must match actual subagent session.
+ * - L3 (Prompt Integrity): Task call prompt must contain expected context.
+ * - L4 (Findings Integrity): Submitted findings must match actual response.
  *
  * Extracted modules (FG-REL-038):
  * - review-enforcement-types.ts — Types, interfaces, constants

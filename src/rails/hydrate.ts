@@ -40,13 +40,15 @@ import {
 } from '../state/schema.js';
 import type { BindingInfo } from '../state/evidence.js';
 import { FINGERPRINT_PATTERN } from '../state/evidence.js';
-import type { ActorInfo } from '../audit/types.js';
+import type { ActorInfo } from '../state/evidence.js';
 import type { DecisionIdentity } from '../state/evidence.js';
-import type { DiscoverySummary } from '../discovery/types.js';
-import type { DetectedStack } from '../discovery/types.js';
-import type { VerificationCandidates } from '../discovery/types.js';
-import type { ExecutionSubjectInput } from '../state/discovery-schemas.js';
-import type { IdpConfig, IdentityProviderMode } from '../identity/types.js';
+import type {
+  DetectedStack,
+  DiscoverySummary,
+  ExecutionSubjectInput,
+  VerificationCandidates,
+} from '../state/discovery-schemas.js';
+import type { IdpConfig, IdentityProviderMode } from '../state/policy-idp-config.js';
 import { evaluate } from '../machine/evaluate.js';
 import type { RailResult, RailBlocked, RailContext } from './types.js';
 import { blocked } from '../config/reasons.js';

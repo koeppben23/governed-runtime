@@ -19,16 +19,15 @@
 import { readFile as fsReadFile } from 'node:fs/promises';
 import * as nodePath from 'node:path';
 import { withSpan, addFingerprint } from '../telemetry/index.js';
+import type { CollectorInput, DiscoveryResult } from './types.js';
+import { DISCOVERY_SCHEMA_VERSION } from './types.js';
 import type {
-  CollectorInput,
   DetectedStack,
   DetectedStackItem,
   DetectedStackTarget,
   DetectedStackTargetEntry,
-  DiscoveryResult,
   DiscoverySummary,
-} from './types.js';
-import { DISCOVERY_SCHEMA_VERSION } from './types.js';
+} from '../state/discovery-schemas.js';
 import { collectRepoMetadata } from './collectors/repo-metadata.js';
 import { collectStack } from './collectors/stack-detection.js';
 import { collectTopology } from './collectors/topology.js';

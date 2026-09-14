@@ -621,12 +621,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
 
   it('BAD: sessionState=null → REVIEW_ASSURANCE_STATE_UNAVAILABLE', () => {
     const state = createSessionState();
-    const result = enforceBeforeVerdict(
-      state,
-      'flowguard_plan',
-      { reviewVerdict: 'accept' },
-      null,
-    );
+    const result = enforceBeforeVerdict(state, 'flowguard_plan', { reviewVerdict: 'accept' }, null);
     expect(result.allowed).toBe(false);
     if (!result.allowed) expect(result.code).toBe('REVIEW_ASSURANCE_STATE_UNAVAILABLE');
   });

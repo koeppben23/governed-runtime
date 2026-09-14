@@ -7,7 +7,7 @@
  * @version v1
  */
 
-import type { IdpConfig, IdentityProviderMode } from '../identity/types.js';
+import type { IdpConfig, IdentityProviderMode } from '../state/policy-idp-config.js';
 import type { PolicyMode, CentralMinimumMode } from '../state/policy-mode.js';
 
 // ─── Timestamp Assurance Policy ──────────────────────────────────────────────

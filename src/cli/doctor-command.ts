@@ -23,19 +23,20 @@ import {
   mandatesInstructionEntry,
 } from './templates.js';
 import {
-  type CliArgs,
-  type DoctorCheck,
-  type InstallScope,
-  PACKAGE_VERSION,
   computeMandatesDigest,
-  hasNonFlowGuardInstructions,
-  parseJsonc,
   resolveOpencodeConfigPath,
   resolveTarget,
   safeRead,
   sha256,
-  vendorDependency,
 } from './install-helpers.js';
+import {
+  hasNonFlowGuardInstructions,
+  PACKAGE_VERSION,
+  type CliArgs,
+  type DoctorCheck,
+  type InstallScope,
+} from './install-types.js';
+import { parseJsonc, vendorDependency } from './install-json.js';
 import { resolveClaudeCodePluginRoot } from './claude-code-plugin-install.js';
 import { resolveCodexPluginRoot } from './codex-plugin-install.js';
 import { buildPlatformTrustReport } from './platform-trust-report.js';

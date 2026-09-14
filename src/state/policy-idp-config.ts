@@ -7,8 +7,7 @@
  * They are pure schema definitions with no runtime identity resolution,
  * token verification, JWKS fetching, or actor/assurance logic.
  *
- * identity/types.ts re-exports these schemas for backward compatibility
- * with non-state callers (identity runtime, config layer).
+ * Runtime consumers import these policy schemas from this canonical state layer.
  *
  * @version v1
  */

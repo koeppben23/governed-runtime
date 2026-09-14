@@ -466,6 +466,7 @@ async function enforceTaskBefore(
   );
 }
 
+// eslint-disable-next-line complexity -- the fail-closed obligation gate keeps every rejection condition explicit.
 async function enforceReviewerObligationCheck(
   runtime: FlowGuardPluginRuntime,
   sessionState: SessionState | null,

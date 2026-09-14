@@ -26,25 +26,14 @@ import {
   type KeyResolver,
 } from './key-resolver.js';
 import { JwtStaticTokenVerifier, type TokenVerifier } from './token-verifier.js';
-import type { IdpConfig, ResolvedIdpActor } from './types.js';
-import { IdpConfigSchema } from './types.js';
+import type { ResolvedIdpActor } from './types.js';
+import { IdpConfigSchema } from '../state/policy-idp-config.js';
+import type { IdpConfig } from '../state/policy-idp-config.js';
 
 export { IdpError, type IdpErrorCode } from './errors.js';
 export {
-  IdpConfigSchema,
-  StaticIdpConfigSchema,
-  JwksIdpConfigSchema,
   JwksDocumentSchema,
   JwksKeySchema,
-  IdentityProviderModeSchema,
-  SigningKeySchema,
-  ClaimMappingSchema,
-  type IdpConfig,
-  type StaticIdpConfig,
-  type JwksIdpConfig,
-  type IdentityProviderMode,
-  type SigningKey,
-  type ClaimMapping,
   type VerifiedToken,
   type ActorVerificationMeta,
   type ResolvedIdpActor,
@@ -53,6 +42,22 @@ export {
   type KeyAlgorithm,
   type KeyKind,
 } from './types.js';
+export {
+  IdpConfigSchema,
+  StaticIdpConfigSchema,
+  JwksIdpConfigSchema,
+  IdentityProviderModeSchema,
+  SigningKeySchema,
+  ClaimMappingSchema,
+} from '../state/policy-idp-config.js';
+export type {
+  IdpConfig,
+  StaticIdpConfig,
+  JwksIdpConfig,
+  IdentityProviderMode,
+  SigningKey,
+  ClaimMapping,
+} from '../state/policy-idp-config.js';
 
 export interface IdpResolutionResult {
   kind: 'resolved';

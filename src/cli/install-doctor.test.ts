@@ -20,7 +20,7 @@ import { checkPluginActivation } from './doctor-plugin.js';
 import { checkLastSessionHandshake } from './doctor-handshake.js';
 import { COMMANDS, MANDATES_FILENAME, mandatesInstructionEntry } from './templates.js';
 import { measureAsync } from '../test-policy.js';
-import { SHIPPED_EXECUTABLE_CHECK } from './install-helpers.js';
+import { SHIPPED_EXECUTABLE_CHECK } from './install-types.js';
 import { checkShippedExecutables } from './doctor-executables.js';
 import { checkBuildInfo } from './doctor-build-info.js';
 import {

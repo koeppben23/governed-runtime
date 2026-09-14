@@ -174,13 +174,7 @@ async function validateContentFindings(
   const narrowed = canonicalReviewerResult as ReviewerSuccessResult & {
     findings: Record<string, unknown>;
   };
-  const blocked = await enforceContentGate(
-    ctx,
-    narrowed,
-    parsedFindings.data,
-    prompt,
-    attemptId,
-  );
+  const blocked = await enforceContentGate(ctx, narrowed, parsedFindings.data, prompt, attemptId);
   if (blocked) return false;
 
   const mutated = buildReviewContentMutatedOutput(rawOutput, canonicalReviewerResult);

@@ -37,9 +37,7 @@ export function hostAttestationFor(obligationId: string): Record<string, unknown
  * This is deliberately test-only: production must receive authoritative
  * persisted ReviewAssuranceState and never reconstruct it from transient state.
  */
-export function currentAttemptAssuranceFor(
-  state: SessionEnforcementState,
-): ReviewAssuranceState {
+export function currentAttemptAssuranceFor(state: SessionEnforcementState): ReviewAssuranceState {
   const attempts = [...state.pendingReviews.values()].flatMap((pending) => {
     if (pending.obligationId == null || pending.attemptId == null) return [];
     return [

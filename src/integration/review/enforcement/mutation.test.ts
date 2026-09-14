@@ -22,12 +22,7 @@ import {
   REVIEWER_SUBAGENT_TYPE,
   MIN_SUBAGENT_PROMPT_LENGTH,
 } from './types.js';
-import {
-  NOW,
-  LATER,
-  modeASubagentResponse,
-  currentAttemptAssuranceFor,
-} from './test-helpers.js';
+import { NOW, LATER, modeASubagentResponse, currentAttemptAssuranceFor } from './test-helpers.js';
 
 function enforceBeforeSubagentCall(
   state: ReturnType<typeof createSessionState>,
@@ -137,13 +132,7 @@ describe('review-enforcement mutation kills', () => {
       const state = createSessionState();
       onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeASubagentResponse(), NOW);
 
-      const result = recordPluginReview(
-        state,
-        'flowguard_plan',
-        'child-session',
-        null,
-        LATER,
-      );
+      const result = recordPluginReview(state, 'flowguard_plan', 'child-session', null, LATER);
 
       expect(result).toBe(true);
       const pending = state.pendingReviews.get('flowguard_plan');

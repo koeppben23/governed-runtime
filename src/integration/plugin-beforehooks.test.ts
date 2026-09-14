@@ -252,7 +252,7 @@ describe('toolBefore — host tool fail-closed resolution', () => {
     }
   });
 
-  it('propagates a persisted session error state', async () => {
+  it('fails closed when audit authority cannot reconcile a persisted session error', async () => {
     const ws = await createTestWorkspace();
     try {
       const sessDir = path.join(ws.tmpDir, 'sess-error');
@@ -271,7 +271,7 @@ describe('toolBefore — host tool fail-closed resolution', () => {
       const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
       await expect(
         toolBefore(runtime, { tool: 'write', sessionID: SESSION_ID }, { args: {} }),
-      ).rejects.toThrow('SESSION_ERROR');
+      ).rejects.toThrow('AUDIT_SESSION_AUTHORITY_UNAVAILABLE');
     } finally {
       await ws.cleanup();
     }

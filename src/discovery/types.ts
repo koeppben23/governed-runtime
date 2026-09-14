@@ -13,67 +13,14 @@
  * P2d: Session-embedded schemas (DiscoverySummary, DetectedStack, VerificationCandidates
  * and their transitive dependencies) are canonically defined in state/discovery-schemas.ts
  * to preserve the architecture boundary: state/ must not import from discovery/.
- * Re-exported here for backward compatibility.
  *
  * @version v2
  */
 
 import { z } from 'zod';
 
-// P2d: Session-embedded schemas re-imported from canonical state layer definitions.
-// This preserves backward compatibility: all existing imports from discovery/types
-// continue to work, while state/schema.ts imports from state/discovery-schemas.ts.
-import {
-  TopologyKindSchema,
-  type TopologyKind,
-  CodeSurfaceStatusSchema,
-  type CodeSurfaceStatus,
-  VerificationCandidateKindSchema,
-  type VerificationCandidateKind,
-  VerificationCandidateConfidenceSchema,
-  type VerificationCandidateConfidence,
-  VerificationCandidateSchema,
-  type VerificationCandidate,
-  VerificationCandidatesSchema,
-  type VerificationCandidates,
-  DetectedStackTargetSchema,
-  type DetectedStackTarget,
-  DetectedStackItemSchema,
-  type DetectedStackItem,
-  DetectedStackTargetEntrySchema,
-  type DetectedStackTargetEntry,
-  DetectedStackSchema,
-  type DetectedStack,
-  DiscoverySummarySchema,
-  type DiscoverySummary,
-} from '../state/discovery-schemas.js';
+import { TopologyKindSchema, CodeSurfaceStatusSchema } from '../state/discovery-schemas.js';
 import { SignalClass } from '../state/evidence-signal.js';
-
-// Re-export for backward compatibility
-export {
-  TopologyKindSchema,
-  type TopologyKind,
-  CodeSurfaceStatusSchema,
-  type CodeSurfaceStatus,
-  VerificationCandidateKindSchema,
-  type VerificationCandidateKind,
-  VerificationCandidateConfidenceSchema,
-  type VerificationCandidateConfidence,
-  VerificationCandidateSchema,
-  type VerificationCandidate,
-  VerificationCandidatesSchema,
-  type VerificationCandidates,
-  DetectedStackTargetSchema,
-  type DetectedStackTarget,
-  DetectedStackItemSchema,
-  type DetectedStackItem,
-  DetectedStackTargetEntrySchema,
-  type DetectedStackTargetEntry,
-  DetectedStackSchema,
-  type DetectedStack,
-  DiscoverySummarySchema,
-  type DiscoverySummary,
-};
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 

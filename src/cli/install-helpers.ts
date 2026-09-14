@@ -33,31 +33,6 @@ export type { InstallErrorCode } from './install-types.js';
 import { InstallError } from './install-recovery.js';
 export { InstallError };
 
-// ---- re-export everything from split modules for backward compatibility ----
-export type {
-  InstallScope,
-  InstallPlatform,
-  CliAction,
-  CliArgs,
-  FileOp,
-  CliResult,
-  DoctorStatus,
-  DoctorCheck,
-  PolicyMode,
-  CliError,
-  CliNotice,
-  ArtifactDetection,
-  ScopeSource,
-} from './install-types.js';
-export {
-  PACKAGE_VERSION,
-  resolvePackageRoot,
-  SHIPPED_EXECUTABLE_CHECK,
-  BUILD_INFO_CHECK,
-  FLOWGUARD_OWNED_FILES,
-  FLOWGUARD_TARBALL_PATTERN,
-  hasNonFlowGuardInstructions,
-} from './install-types.js';
 import {
   FLOWGUARD_REVIEWER_MODEL_ENV,
   VALID_MODEL_ID_PATTERN,
@@ -65,22 +40,6 @@ import {
   VALID_EFFORT_PATTERN,
   OPENCODE_CONFIG_FILENAMES,
 } from './install-types.js';
-export {
-  FLOWGUARD_REVIEWER_MODEL_ENV,
-  VALID_MODEL_ID_PATTERN,
-  FLOWGUARD_REVIEWER_EFFORT_ENV,
-  VALID_EFFORT_PATTERN,
-  OPENCODE_CONFIG_FILENAMES,
-} from './install-types.js';
-export {
-  parseJsonc,
-  createMalformedJsonBackup,
-  vendorDependency,
-  mergePackageJson,
-  mergeReviewerTaskPermission,
-  mergeOpencodeJson,
-  removeFromOpencodeJson,
-} from './install-json.js';
 export { hashText as sha256 };
 
 import type { InstallScope, InstallPlatform, FileOp, ArtifactDetection } from './install-types.js';
@@ -307,13 +266,10 @@ function assertReviewerTuningSupported(platform: InstallPlatform): void {
 /**
  * Inject operator-configured reviewer transport tuning into agent frontmatter.
  *
- * Host defaults to opencode for backward compatibility. Returns the template
- * unchanged when no override is set or the template has no frontmatter line.
+ * Returns the template unchanged when no override is set or the template has
+ * no frontmatter line.
  */
-export function buildReviewerAgentContent(
-  template: string,
-  platform: InstallPlatform = 'opencode',
-): string {
+export function buildReviewerAgentContent(template: string, platform: InstallPlatform): string {
   const lines: string[] = [];
 
   const model = readReviewerModelEnv();

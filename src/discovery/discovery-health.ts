@@ -13,7 +13,7 @@
  */
 
 import type { DiscoveryResult } from './types.js';
-import type { CodeSurfaceStatus } from './types.js';
+import type { CodeSurfaceStatus } from '../state/discovery-schemas.js';
 import { readDiscovery } from '../adapters/persistence-discovery.js';
 import { PersistenceError } from '../adapters/persistence.js';
 

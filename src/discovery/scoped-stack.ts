@@ -8,7 +8,8 @@
  * Single source of truth for scoped stack detection logic.
  */
 
-import type { DetectedItem, DetectedStackTarget } from './types.js';
+import type { DetectedItem } from './types.js';
+import type { DetectedStackTarget } from '../state/discovery-schemas.js';
 import { normalizeRepoSignalPath } from './repo-paths.js';
 
 /** Maximum number of scopes to return (budget limit). */
