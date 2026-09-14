@@ -87,7 +87,7 @@ export const PolicySnapshotSchema = z
      * Controls whether IdP verification failure blocks session creation.
      */
     identityProviderMode: z.enum(['optional', 'required']),
-    /** Frozen review output policy for structured vs text-compatible evidence. */
+    /** Frozen review output policy — structured findings are the only admissible form. */
     reviewOutputPolicy: z.literal('structured_required'),
     /** Frozen review invocation policy — how the reviewer must be invoked. */
     reviewInvocationPolicy: z.enum(['host_task_required', 'host_task_preferred', 'sdk_allowed']),

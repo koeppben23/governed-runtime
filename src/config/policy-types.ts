@@ -262,7 +262,7 @@ export interface FlowGuardPolicy {
    */
   readonly allowSelfApproval: boolean;
 
-  /** Whether lower-assurance text-compatible review output may satisfy evidence. */
+  /** Required review output assurance — structured findings are the only admissible form. */
   readonly reviewOutputPolicy: ReviewOutputPolicy;
 
   /** How reviewer invocation must occur: host-visible Task tool, SDK, or policy-gated. */
