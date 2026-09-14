@@ -58,7 +58,6 @@ const mocks = vi.hoisted(() => {
     ),
     enrichWithNextAction: vi.fn((value: Record<string, unknown>) => value),
     writeStateWithArtifacts: vi.fn(async (_sessDir: string, state: SessionState) => state),
-    extractSections: vi.fn(() => []),
     changedFiles: vi.fn(async () => ['src/foo.ts']),
   };
 });
@@ -72,7 +71,6 @@ vi.mock('./helpers.js', () => ({
   formatBlocked: mocks.formatBlocked,
   formatError: mocks.formatError,
   formatAutoAdvanceOverflow: mocks.formatAutoAdvanceOverflow,
-  extractSections: mocks.extractSections,
   enrichWithNextAction: mocks.enrichWithNextAction,
   writeStateWithArtifacts: mocks.writeStateWithArtifacts,
   withMutableSession: vi.fn(async (ctx) => {

@@ -14,10 +14,9 @@
  *    - state/ must not import from machine/, rails/, adapters/, integration/, config/, audit/, archive/, logging/, cli/, diagnostics/, shared/
  *      except foundational shared canonicalization and hashing utilities
  *    - state/ owns evidence/schema discriminators in state/evidence-identifiers.ts
- *      (FINGERPRINT_PATTERN, REVIEW_REPORT_SCHEMA_ID, POLICY_DIGEST_VERSION,
- *      POLICY_DIGEST_PATTERN); REVIEWER_SUBAGENT_TYPE is shared-owned.
- *    - archive/types.ts must not import from any other FF module, except its
- *      FINGERPRINT_PATTERN schema-contract import from state/evidence-identifiers.ts
+ *      (REVIEW_REPORT_SCHEMA_ID, POLICY_DIGEST_VERSION, POLICY_DIGEST_PATTERN).
+ *      FINGERPRINT_PATTERN and IdP policy configuration are shared-owned.
+ *    - archive/types.ts must not import from any other FF module
  *    - discovery/types.ts must not import from any other FF module
  *
  * 2. MACHINE LAYER: machine/ may only import from state/
@@ -623,13 +622,12 @@ describe('Layer Dependency Rules', () => {
       'diagnostics',
       'shared',
     ]);
-    // state/evidence-policy.ts imports IdpConfigSchema from ./policy-idp-config.js
-    // — state now owns the IdP config schemas it persists. No explicit identity/
-    // exception needed.
     const allowedForState = new Set<string>();
     const allowedStateSharedImports = new Set([
       '../shared/canonical-json.js',
       '../shared/hashing.js',
+      '../shared/policy-idp-config.js',
+      '../shared/repository-fingerprint.js',
       // The canonical review-continuation authority (state/review-continuation.ts)
       // verifies frozen review material itself and reuses the single content
       // normalization/digest authority instead of duplicating it in state.
@@ -637,17 +635,27 @@ describe('Layer Dependency Rules', () => {
     ]);
     const forbiddenStateSharedAuthorityImports = new Set(['../shared/policy-digest.js']);
 
-    it('keeps state evidence discriminators out of shared identifiers', async () => {
+    it('keeps identifier authorities separated', async () => {
       const identifiers = await fs.readFile(
         path.join(SRC_DIR, 'shared', 'flowguard-identifiers.ts'),
         'utf-8',
       );
       expect(identifiers).not.toMatch(
-        /export\s*\{[^}]*\b(?:FINGERPRINT_PATTERN|REVIEW_REPORT_SCHEMA_ID|POLICY_DIGEST_VERSION|POLICY_DIGEST_PATTERN)\b/,
+        /export\s*\{[^}]*\b(?:REVIEW_REPORT_SCHEMA_ID|POLICY_DIGEST_VERSION|POLICY_DIGEST_PATTERN)\b/,
       );
       expect(identifiers).toMatch(
         /export\s+const\s+REVIEWER_SUBAGENT_TYPE\s*=\s*'flowguard-reviewer'/,
       );
+      const evidenceIdentifiers = await fs.readFile(
+        path.join(SRC_DIR, 'state', 'evidence-identifiers.ts'),
+        'utf-8',
+      );
+      expect(evidenceIdentifiers).not.toMatch(/\bFINGERPRINT_PATTERN\b/);
+      const repositoryFingerprint = await fs.readFile(
+        path.join(SRC_DIR, 'shared', 'repository-fingerprint.ts'),
+        'utf-8',
+      );
+      expect(repositoryFingerprint).toMatch(/export\s+const\s+FINGERPRINT_PATTERN\s*=/);
     });
 
     beforeAll(() => {
@@ -729,8 +737,6 @@ describe('Layer Dependency Rules', () => {
       'discovery',
       'state',
     ]);
-    const allowedArchiveStateSchemaImport = '../state/evidence-identifiers.js';
-
     beforeAll(() => {
       for (const [, analysis] of analyses) {
         if (!analysis.filePath.includes('/archive/types')) continue;
@@ -738,14 +744,7 @@ describe('Layer Dependency Rules', () => {
 
         const ffImports = analysis.imports.filter((i) => i.isFFModule && i.targetModule);
         for (const imp of ffImports) {
-          if (
-            imp.targetModule &&
-            forbiddenFromArchive.has(imp.targetModule) &&
-            !(
-              imp.module === allowedArchiveStateSchemaImport &&
-              /import\s*\{\s*FINGERPRINT_PATTERN\s*\}\s*from/.test(imp.raw)
-            )
-          ) {
+          if (imp.targetModule && forbiddenFromArchive.has(imp.targetModule)) {
             violations.push({
               file: analysis.relativePath,
               rule: 'archive-leaf',

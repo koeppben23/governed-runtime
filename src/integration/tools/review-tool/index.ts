@@ -258,8 +258,7 @@ type AttemptRejectionResult =
   | { ok: true }
   | {
       ok: false;
-      code:
-        'REVIEW_ASSURANCE_UNAVAILABLE' | 'REVIEW_ATTEMPT_ID_MISSING' | 'REVIEW_ATTEMPT_NOT_FOUND';
+      code: 'REVIEW_ASSURANCE_UNAVAILABLE' | 'REVIEW_ATTEMPT_NOT_FOUND';
       details: Record<string, string>;
     };
 
@@ -272,9 +271,6 @@ async function rejectIncoherentAttempt(
   const assurance = state.reviewAssurance;
   if (!assurance) {
     return { ok: false, code: 'REVIEW_ASSURANCE_UNAVAILABLE', details: {} };
-  }
-  if (!attemptId) {
-    return { ok: false, code: 'REVIEW_ATTEMPT_ID_MISSING', details: {} };
   }
   const attempt = assurance.attempts?.find((item) => item.attemptId === attemptId);
   if (!attempt) {

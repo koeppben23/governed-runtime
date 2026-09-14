@@ -1,11 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const SRC_DIR = join(__dirname, '..');
 
 async function source(relativePath: string): Promise<string> {
   return readFile(join(SRC_DIR, relativePath), 'utf-8');
+}
+
+async function sourceFiles(relativeDirectory: string): Promise<string[]> {
+  const directory = join(SRC_DIR, relativeDirectory);
+  const entries = await readdir(directory, { recursive: true });
+  return Promise.all(
+    entries
+      .filter((entry) => entry.endsWith('.ts') && !entry.endsWith('.test.ts'))
+      .map((entry) => readFile(join(directory, entry), 'utf-8')),
+  );
+}
+
+function exportsIdentifier(module: string, identifier: string): boolean {
+  const escapedIdentifier = identifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(
+    `export\\s+(?:(?:declare\\s+)?(?:async\\s+)?(?:const|let|var|function|class|interface|type)\\s+${escapedIdentifier}\\b|\\{[^}]*\\b${escapedIdentifier}\\b[^}]*\\})`,
+  ).test(module);
 }
 
 describe('canonical compatibility surfaces', () => {
@@ -40,6 +57,29 @@ describe('canonical compatibility surfaces', () => {
     expect(helpers).not.toMatch(/export\s*\{[\s\S]*PACKAGE_VERSION/);
   });
 
+  it('pins identifiers to their direct canonical owners', async () => {
+    const [sharedIdentifiers, evidenceIdentifiers, repositoryFingerprint, policyIdpConfig] =
+      await Promise.all([
+        source('shared/flowguard-identifiers.ts'),
+        source('state/evidence-identifiers.ts'),
+        source('shared/repository-fingerprint.ts'),
+        source('shared/policy-idp-config.ts'),
+      ]);
+
+    expect(sharedIdentifiers).not.toMatch(/from\s+['"][^'"]*state\/evidence-identifiers\.js['"]/);
+    for (const identifier of [
+      'REVIEW_REPORT_SCHEMA_ID',
+      'POLICY_DIGEST_VERSION',
+      'POLICY_DIGEST_PATTERN',
+    ]) {
+      expect(exportsIdentifier(sharedIdentifiers, identifier)).toBe(false);
+    }
+    expect(repositoryFingerprint).toMatch(/export\s+const\s+FINGERPRINT_PATTERN\s*=/);
+    expect(exportsIdentifier(evidenceIdentifiers, 'FINGERPRINT_PATTERN')).toBe(false);
+    expect(policyIdpConfig).toMatch(/export\s+const\s+IdpConfigSchema\s*=/);
+    await expect(source('state/policy-idp-config.ts')).rejects.toThrow();
+  });
+
   it('keeps dead legacy-tolerance surfaces out of the audit verification result', async () => {
     const [integrity, summary, archiveVerifyChain] = await Promise.all([
       source('audit/integrity.ts'),
@@ -53,6 +93,34 @@ describe('canonical compatibility surfaces', () => {
     expect(integrity).not.toContain('LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE');
     expect(summary).not.toContain('skippedCount');
     expect(archiveVerifyChain).not.toContain('skippedCount');
+  });
+
+  it('does not restore removed compatibility projections or absent attempt lineage handling', async () => {
+    const [helpers, hostTaskResolver, reviewTool, envelopeReasons, evidenceRefinements] =
+      await Promise.all([
+        source('integration/tools/helpers.ts'),
+        source('integration/tools/review-validation-host-task.ts'),
+        source('integration/tools/review-tool/index.ts'),
+        source('config/reasons-envelope.ts'),
+        source('state/evidence-review-refinements.ts'),
+      ]);
+
+    expect(exportsIdentifier(helpers, 'appendNextAction')).toBe(false);
+    expect(exportsIdentifier(helpers, 'extractSections')).toBe(false);
+    const commandSources = await sourceFiles('templates/commands');
+    for (const module of [
+      ...commandSources,
+      hostTaskResolver,
+      reviewTool,
+      envelopeReasons,
+      evidenceRefinements,
+    ]) {
+      expect(module).not.toContain('GOVERNANCE_RULES');
+      expect(module).not.toContain('REVIEW_ATTEMPT_ID_MISSING');
+    }
+    expect(hostTaskResolver).not.toContain('!invocation.attemptId');
+    expect(evidenceRefinements).not.toContain('!invocation.attemptId');
+    expect(reviewTool).not.toMatch(/if\s*\(\s*!attemptId\s*\)/);
   });
 
   it('keeps current-facing documentation off removed audit and discovery contracts', async () => {

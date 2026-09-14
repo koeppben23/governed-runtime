@@ -27,8 +27,8 @@ import {
 } from './key-resolver.js';
 import { JwtStaticTokenVerifier, type TokenVerifier } from './token-verifier.js';
 import type { ResolvedIdpActor } from './types.js';
-import { IdpConfigSchema } from '../state/policy-idp-config.js';
-import type { IdpConfig } from '../state/policy-idp-config.js';
+import { IdpConfigSchema } from '../shared/policy-idp-config.js';
+import type { IdpConfig } from '../shared/policy-idp-config.js';
 
 export { IdpError, type IdpErrorCode } from './errors.js';
 export {
@@ -49,7 +49,7 @@ export {
   IdentityProviderModeSchema,
   SigningKeySchema,
   ClaimMappingSchema,
-} from '../state/policy-idp-config.js';
+} from '../shared/policy-idp-config.js';
 export type {
   IdpConfig,
   StaticIdpConfig,
@@ -57,7 +57,7 @@ export type {
   IdentityProviderMode,
   SigningKey,
   ClaimMapping,
-} from '../state/policy-idp-config.js';
+} from '../shared/policy-idp-config.js';
 
 export interface IdpResolutionResult {
   kind: 'resolved';

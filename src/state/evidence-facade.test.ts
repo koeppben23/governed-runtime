@@ -15,7 +15,6 @@ import { describe, it, expect } from 'vitest';
 const INTERNAL_HELPERS = ['OpenCodeSessionId', 'coerceAssurance', 'assuranceSchema'] as const;
 
 const PUBLIC_VALUE_EXPORTS = [
-  'FINGERPRINT_PATTERN',
   'CheckId',
   'ReviewVerdict',
   'RevisionDelta',

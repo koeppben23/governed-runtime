@@ -37,7 +37,7 @@ import type { ActorInfo } from '../state/evidence.js';
 import { gitUserEmail, gitUserName } from './git.js';
 import { IdpError } from '../identity/errors.js';
 import { resolveIdpToken, isIdpConfigured } from '../identity/index.js';
-import type { IdpConfig } from '../state/policy-idp-config.js';
+import type { IdpConfig } from '../shared/policy-idp-config.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import { redactIdentityExtra } from '../logging/redact.js';
 

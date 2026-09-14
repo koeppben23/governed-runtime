@@ -3,7 +3,7 @@
  * @description Runtime and hydrate-time policy resolution authority.
  */
 
-import type { IdpConfig, IdentityProviderMode } from '../state/policy-idp-config.js';
+import type { IdpConfig, IdentityProviderMode } from '../shared/policy-idp-config.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import type {
   EffectiveGateBehavior,

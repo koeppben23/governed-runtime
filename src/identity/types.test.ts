@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { JwkKeySchema, SigningKeySchema, type JwkKey } from '../state/policy-idp-config.js';
+import { JwkKeySchema, SigningKeySchema, type JwkKey } from '../shared/policy-idp-config.js';
 
 // ─── Valid public JWKs ─────────────────────────────────────────────────────────
 

@@ -4,7 +4,8 @@
  *
  * Reason codes, diagnostic fields, and cross-layer runtime identifiers are
  * owned by this module. Persisted evidence/schema discriminators are owned by
- * state/evidence-identifiers.ts.
+ * state/evidence-identifiers.ts, except repository fingerprints, which are
+ * owned by shared/repository-fingerprint.ts.
  *
  * @version v1
  */

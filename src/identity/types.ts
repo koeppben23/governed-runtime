@@ -19,7 +19,7 @@ import {
   PemKeySchema,
   SigningKeySchema,
   StaticIdpConfigSchema,
-} from '../state/policy-idp-config.js';
+} from '../shared/policy-idp-config.js';
 
 export type KeyKind = 'jwk' | 'pem';
 

@@ -7,7 +7,7 @@
 
 import { z } from 'zod';
 import { POLICY_DIGEST_PATTERN, POLICY_DIGEST_VERSION } from './evidence-identifiers.js';
-import { IdpConfigSchema } from './policy-idp-config.js';
+import { IdpConfigSchema } from '../shared/policy-idp-config.js';
 import { PolicyModeSchema, CentralMinimumModeSchema } from './policy-mode.js';
 
 /**

@@ -39,7 +39,7 @@ import {
   type TaskClass,
 } from '../state/schema.js';
 import type { BindingInfo } from '../state/evidence.js';
-import { FINGERPRINT_PATTERN } from '../state/evidence.js';
+import { FINGERPRINT_PATTERN } from '../shared/repository-fingerprint.js';
 import type { ActorInfo } from '../state/evidence.js';
 import type { DecisionIdentity } from '../state/evidence.js';
 import type {
@@ -48,7 +48,7 @@ import type {
   ExecutionSubjectInput,
   VerificationCandidates,
 } from '../state/discovery-schemas.js';
-import type { IdpConfig, IdentityProviderMode } from '../state/policy-idp-config.js';
+import type { IdpConfig, IdentityProviderMode } from '../shared/policy-idp-config.js';
 import { evaluate } from '../machine/evaluate.js';
 import type { RailResult, RailBlocked, RailContext } from './types.js';
 import { blocked } from '../config/reasons.js';
