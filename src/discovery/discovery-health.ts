@@ -67,7 +67,7 @@ export type DiscoveryHealthProjection =
  * @returns DiscoveryHealthProjection — never null, always has defaults for missing data.
  */
 export function extractDiscoveryHealth(result: DiscoveryResult): DiscoveryHealthProjection {
-  const diagnostics = result.diagnostics ?? [];
+  const diagnostics = result.diagnostics;
 
   let completeCollectors = 0;
   let partialCollectors = 0;

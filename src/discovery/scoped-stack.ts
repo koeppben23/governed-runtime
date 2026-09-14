@@ -480,12 +480,6 @@ export async function extractScopedStack(
     path: string;
     summary: string;
     items: Array<{ kind: DetectedStackTarget; id: string; version?: string; evidence?: string }>;
-    versions: Array<{
-      id: string;
-      version: string;
-      target: DetectedStackTarget;
-      evidence?: string;
-    }>;
   }>
 > {
   const scopeMap = new Map<string, Set<string>>();
@@ -526,13 +520,13 @@ export async function extractScopedStack(
   for (const item of stackInfo.runtimes) {
     allItems.push({ category: 'runtime', item });
   }
-  for (const item of stackInfo.tools ?? []) {
+  for (const item of stackInfo.tools) {
     allItems.push({ category: 'tool', item });
   }
-  for (const item of stackInfo.qualityTools ?? []) {
+  for (const item of stackInfo.qualityTools) {
     allItems.push({ category: 'qualityTool', item });
   }
-  for (const item of stackInfo.databases ?? []) {
+  for (const item of stackInfo.databases) {
     allItems.push({ category: 'database', item });
   }
 
@@ -540,12 +534,6 @@ export async function extractScopedStack(
     path: string;
     summary: string;
     items: Array<{ kind: DetectedStackTarget; id: string; version?: string; evidence?: string }>;
-    versions: Array<{
-      id: string;
-      version: string;
-      target: DetectedStackTarget;
-      evidence?: string;
-    }>;
   }> = [];
 
   const scopePaths = Array.from(scopeMap.keys()).sort();
@@ -557,12 +545,6 @@ export async function extractScopedStack(
       kind: DetectedStackTarget;
       id: string;
       version?: string;
-      evidence?: string;
-    }> = [];
-    const scopedVersions: Array<{
-      id: string;
-      version: string;
-      target: DetectedStackTarget;
       evidence?: string;
     }> = [];
     const seenItems = new Set<string>();
@@ -582,15 +564,6 @@ export async function extractScopedStack(
           version: item.version,
           evidence: item.evidence[0],
         });
-
-        if (item.version) {
-          scopedVersions.push({
-            id: item.id,
-            version: item.version,
-            target: category,
-            evidence: item.versionEvidence,
-          });
-        }
       }
     }
 
@@ -610,15 +583,6 @@ export async function extractScopedStack(
           version: fact.version,
           evidence: fact.evidence,
         });
-
-        if (fact.version) {
-          scopedVersions.push({
-            id: fact.id,
-            version: fact.version,
-            target: fact.kind,
-            evidence: fact.evidence,
-          });
-        }
       }
     }
 
@@ -627,7 +591,6 @@ export async function extractScopedStack(
         path: scopePath,
         summary: generateSummary(scopedItems),
         items: scopedItems,
-        versions: scopedVersions,
       });
     }
   }
