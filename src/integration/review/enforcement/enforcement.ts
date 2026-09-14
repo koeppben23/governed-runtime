@@ -72,21 +72,7 @@ export function createSessionState(): SessionEnforcementState {
 
 // ─── Hook handlers (pure functions) ──────────────────────────────────────────
 
-/**
- * Process a FlowGuard tool response (tool.execute.after).
- *
- * Mode A (plan/impl submission): If the response `next` field starts with
- * INDEPENDENT_REVIEW_REQUIRED, registers a pending review with content metadata
- * extracted from the message.
- *
- * Mode B (verdict submission): If the call succeeded, clears the pending review.
- *
- * @param state - Session enforcement state (mutated in place)
- * @param toolName - FlowGuard tool name
- * @param args - Tool call arguments
- * @param output - Raw tool output string
- * @param now - ISO 8601 timestamp
- */
+/** Process a FlowGuard tool response (tool.execute.after). */
 function trackReviewRequired(
   state: SessionEnforcementState,
   reviewTool: PendingReviewTool,
@@ -161,10 +147,6 @@ function resolveReviewTrackingContext(toolName: string): {
   signalOwner: ReviewableTool | undefined;
   isReviewContent: boolean;
 } | null {
-  // The obligation-owning tool for a verdict submission. For
-  // flowguard_review_implementation this resolves to flowguard_implement (the
-  // tool that created the pending review); for plan/architecture/review it is
-  // the tool itself.
   const obligationTool = resolveReviewObligationTool(toolName);
   const signalOwner = reviewSignalOwner(toolName);
   const isReviewContent = toolName === TOOL_FLOWGUARD_REVIEW;
@@ -178,7 +160,6 @@ function clearSubmittedReview(
   args: Record<string, unknown>,
   parsed: NonNullable<ReturnType<typeof parseToolResult>>,
 ): void {
-  // Verdict submission clears the pending review on the obligation-owning key.
   const hasSelfReviewVerdict =
     typeof args.reviewVerdict === 'string' && args.reviewVerdict.length > 0;
   if (hasSelfReviewVerdict && parsed.error !== true) {
@@ -209,8 +190,6 @@ function trackRequiredReview(
   parsed: NonNullable<ReturnType<typeof parseToolResult>>,
   now: string,
 ): void {
-  // REVIEW_REQUIRED is emitted by the record/content tool itself, which owns its
-  // pending-review key. A verdict-only tool never emits REVIEW_REQUIRED.
   const recordKey: PendingReviewTool = context.isReviewContent
     ? TOOL_FLOWGUARD_REVIEW
     : (context.signalOwner as PendingReviewTool);
@@ -228,26 +207,7 @@ function trackRequiredReview(
   }
 }
 
-/**
- * Process a Task tool completion (tool.execute.after for 'task').
- *
- * If the Task call was to flowguard-reviewer:
- * - Matches exactly one pending review obligation via contentMeta (P34 1:1 contract)
- * - Records the subagent session ID — null if extraction fails (Level 2 strict)
- * - Captures actual findings from the subagent response (Level 4)
- *
- * Session ID resolution (BUG-14 fix — three-tiered):
- *
- * Tier 1: Hook metadata — `context.metadata.sessionID` from the task tool runtime.
- * Tier 2: Text extraction — parse `reviewedBy.sessionId` from the reviewer's JSON output.
- * Tier 3: Synthetic — `derived:call:${context.callID}`. Guaranteed unique per invocation.
- *
- * @param state - Session enforcement state (mutated in place)
- * @param args - Task tool arguments (expects subagent_type and prompt fields)
- * @param taskResult - Raw task result string (subagent response)
- * @param now - ISO 8601 timestamp
- * @param context - Optional hook context for tiered session ID resolution
- */
+/** Process a completed flowguard-reviewer Task call. */
 export function onTaskToolAfter(
   state: SessionEnforcementState,
   args: Record<string, unknown>,
@@ -258,13 +218,8 @@ export function onTaskToolAfter(
   const subagentType = typeof args.subagent_type === 'string' ? args.subagent_type : '';
   if (subagentType !== REVIEWER_SUBAGENT_TYPE) return;
 
-  // Canonical three-tier session ID resolution (BUG-14), shared with the
-  // output-injection path so injected/logged/persisted ids agree.
   const sessionId = resolveSubagentSessionId(context?.metadata, taskResult, context?.callID);
-
-  // Capture actual findings from the subagent response
   const capturedFindings = extractCapturedFindings(taskResult);
-
   const terminationReason = detectStepExhaustion(taskResult)
     ? ('step_exhausted' as const)
     : undefined;
@@ -275,22 +230,13 @@ export function onTaskToolAfter(
     ...(terminationReason ? { terminationReason } : {}),
   };
 
-  // Match exactly ONE pending review obligation (P34 1:1 contract).
   const matched = matchPendingReview(state, args);
   if (matched) {
     applyCaptureToPending(matched, record, capturedFindings);
   }
 }
 
-/**
- * Apply the completed reviewer invocation to the matched pending review.
- *
- * Structural host-context defect first: a bindable obligation without the
- * host-issued attestation constants is NEVER a reviewer-output failure — a
- * reviewer invocation cannot repair it. No capture is kept, no schema errors
- * are computed (no raw-schema fallback), and the pending is excluded from
- * re-arm/repair from here on.
- */
+/** Apply the completed reviewer invocation to the matched pending review. */
 function applyCaptureToPending(
   matched: PendingReview,
   record: SubagentRecord,
@@ -307,7 +253,6 @@ function applyCaptureToPending(
     matched.expectedPromptDigest = null;
     return;
   }
-  // Track retries: a re-invoke after a prior (unusable) capture is a retry.
   if (matched.subagentCalled) {
     matched.retryCount = (matched.retryCount ?? 0) + 1;
   }
@@ -315,62 +260,22 @@ function applyCaptureToPending(
   matched.subagentRecord = record;
   matched.capturedFindings = capturedFindings;
   matched.lastSchemaErrors = extractCaptureSchemaErrors(matched);
-  // Enforce repair-prompt requirement: after schema-invalid output, a
-  // fresh canonical repair prompt must be issued before the next reviewer.
   matched.repairPromptRequired = matched.lastSchemaErrors !== null;
-  // Clear the expected digest — this repair cycle is consumed.
   matched.expectedRepairPromptDigest = null;
   matched.expectedPromptDigest = null;
 }
 
-/**
- * Whether a pending review already holds a usable capture — reviewer findings
- * that pass the shared host-normalization authority plus the canonical schema
- * gate (see prepare-findings.ts) and satisfy the canonical verdict coherence
- * rule applied by the verdict-time resolver.
- *
- * A capture that is absent (null), schema-invalid (e.g. the reviewer emitted
- * non-JSON, or mistyped a required field such as `majorRisks`) is NOT good: it
- * can never be bound into a parseable invocation, so the verdict submission
- * fails with HOST_TASK_FINDINGS_UNPARSEABLE. Treating such a capture as
- * "satisfied" is exactly what deadlocks the obligation — the pending review is
- * locked (subagentCalled=true) while its only capture is unusable, and a re-run's
- * evidence is rejected as duplicate_evidence against the corrupt capture.
- *
- * or internally incoherent (accept with blocking issues) is NOT usable. Returning
- * false keeps the review re-armable so a subsequent reviewer run can replace the
- * bad capture (new child session + new findings hash → no duplicate).
- *
- * This is a PURE query over the shared authority — it never mutates the pending
- * review. A structural host-context defect (enforcementFailure) is reported as
- * unusable here but is handled as an explicit, non-repairable blocker in
- * prompt-integrity.ts, never as a reviewer-output retry.
- */
+/** Whether a pending review already holds a usable capture. */
 function hasUsableCapture(pending: PendingReview): boolean {
   return isPendingCaptureUsable(pending);
 }
 
-/**
- * Match a Task call to exactly one pending review obligation.
- *
- * Matching strategy (P34 1:1 contract):
- * - 0 awaiting capture: null (no obligation to satisfy)
- * - 1 awaiting capture: that one (unambiguous — L3 already validated the prompt)
- * - >1 awaiting capture: match by contentMeta (iteration + planVersion from prompt)
- * - >1 awaiting capture, no contentMeta match: null (fail-closed, ambiguous)
- *
- * "Awaiting capture" includes a review that was already called but whose only
- * capture is unusable (see hasUsableCapture) — so a reviewer re-run replaces a
- * corrupt or incoherent capture instead of deadlocking the obligation.
- */
+/** Match a Task call to exactly one pending review obligation. */
 export function matchPendingReview(
   state: SessionEnforcementState,
   taskArgs: Record<string, unknown>,
 ): PendingReview | null {
   const awaitingCapture = [...state.pendingReviews.values()].filter(
-    // A structural host-context defect (enforcementFailure) is NOT "awaiting
-    // capture": it can never be repaired by another reviewer run, so such
-    // pendings are excluded from matching, re-arm, and retry counting.
     (p) => (p.enforcementFailure ?? null) === null && (!p.subagentCalled || !hasUsableCapture(p)),
   );
 
@@ -381,41 +286,23 @@ export function matchPendingReview(
     return candidate;
   }
 
-  // Multiple awaiting capture — match by contentMeta from prompt
   const prompt = typeof taskArgs.prompt === 'string' ? taskArgs.prompt : '';
-
   for (const pending of awaitingCapture) {
     if (!pending.contentMeta) continue;
-
     const { expectedIteration, expectedPlanVersion } = pending.contentMeta;
     const hasIteration = promptContainsValue(prompt, 'iteration', expectedIteration);
     const hasPlanVersion =
       expectedPlanVersion === null || promptContainsValue(prompt, 'version', expectedPlanVersion);
-
     if (hasIteration && hasPlanVersion) return pending;
   }
 
-  return null; // No match — fail-closed
+  return null;
 }
 
-/**
- * Enforce subagent invocation and findings integrity before allowing a
- * self-review verdict (tool.execute.before for flowguard_plan/flowguard_implement).
- *
- * Enforcement checks (in order):
- * - Level 1: Binary gate — subagent must have been called
- * - Level 2: Session ID match — when both actual and submitted IDs are available
- * - Level 4: Findings integrity — submitted must match captured
- *
- * Level 2/4 apply only to agent-attested findings (SDK / manual_attested). In
- * host_task_required mode findings are host-captured and agent-submitted findings
- * are ignored, so those checks are skipped (see enforceBeforeVerdict).
- */
 function checkPendingReview(
   state: SessionEnforcementState,
   reviewTool: ReviewableTool,
   sessionState: { reviewAssurance?: SessionState['reviewAssurance'] | null } | null | undefined,
-  strictEnforcement: boolean,
 ): EnforcementResult | null {
   const pending = state.pendingReviews.get(reviewTool);
   if (pending) return null;
@@ -435,15 +322,12 @@ function checkPendingReview(
     }
     return { allowed: true };
   }
-  if (strictEnforcement) {
-    return {
-      allowed: false,
-      code: 'REVIEW_ASSURANCE_STATE_UNAVAILABLE',
-      reason:
-        'Cannot verify review obligation fulfillment in strict mode — enforcement state is unavailable and session state cannot be read. Re-hydrate the session or run /continue before submitting a verdict.',
-    };
-  }
-  return { allowed: true };
+  return {
+    allowed: false,
+    code: 'REVIEW_ASSURANCE_STATE_UNAVAILABLE',
+    reason:
+      'Cannot verify review obligation fulfillment — enforcement state is unavailable and session state cannot be read. Re-hydrate the session or run /continue before submitting a verdict.',
+  };
 }
 
 function checkSessionMismatch(
@@ -497,15 +381,7 @@ function checkFindingsMismatch(
   return null;
 }
 
-/**
- * F12: assert the internal coherence of the captured review record.
- *
- * Semantically distinct from checkFindingsMismatch (which is anti-tampering
- * between submitted and captured findings). This validates the captured record
- * itself: an `accept` verdict must not carry blocking issues. Kept as its own
- * check so a later refactor of the mismatch logic cannot silently drop the
- * coherence invariant. Delegates to the canonical SSOT rule.
- */
+/** F12: assert the internal coherence of the captured review record. */
 function checkCapturedFindingsConsistency(captured: {
   overallVerdict: string;
   blockingIssuesCount: number;
@@ -533,7 +409,6 @@ function verifyFindingsIntegrity(
   const sessionIssue = checkSessionMismatch(pending, reviewFindings);
   if (sessionIssue) return sessionIssue;
   if (!pending.capturedFindings) return null;
-  // Coherence of the captured record first, then anti-tampering vs submitted.
   const consistencyIssue = checkCapturedFindingsConsistency(pending.capturedFindings);
   if (consistencyIssue) return consistencyIssue;
   return checkFindingsMismatch(pending, reviewFindings);
@@ -547,11 +422,7 @@ export function enforceBeforeVerdict(
     reviewAssurance?: SessionState['reviewAssurance'] | null;
     policySnapshot?: { reviewInvocationPolicy?: string } | null;
   } | null,
-  strictEnforcement = false,
 ): EnforcementResult {
-  // Resolve the obligation-owning tool. For flowguard_review_implementation the
-  // verdict applies to the flowguard_implement obligation (issue #565); for
-  // plan/architecture the verdict tool owns its own obligation (identity).
   const reviewTool = resolveReviewObligationTool(toolName);
   if (reviewTool === undefined) return { allowed: true };
 
@@ -560,7 +431,7 @@ export function enforceBeforeVerdict(
     typeof reviewVerdictValue === 'string' && reviewVerdictValue.length > 0;
   if (!hasSelfReviewVerdict) return { allowed: true };
 
-  const pendingCheck = checkPendingReview(state, reviewTool, sessionState, strictEnforcement);
+  const pendingCheck = checkPendingReview(state, reviewTool, sessionState);
   if (pendingCheck) return pendingCheck;
 
   const pending = state.pendingReviews.get(reviewTool);
@@ -574,15 +445,6 @@ export function enforceBeforeVerdict(
     };
   }
 
-  // ── Level 2/4: AGENT-submitted findings integrity ──────────────────────
-  // In host_task_required mode the findings are host-captured and bound, and the
-  // tool layer (resolveHostTaskEffectiveFindings) ignores any agent-submitted
-  // reviewFindings — verdict-only is expected. The agent cannot know the real
-  // child session id, so enforcing reviewedBy.sessionId against it here is both
-  // impossible to satisfy and meaningless: host capture is the integrity source,
-  // and the verdict is still verified against captured evidence downstream. Skip
-  // the agent-findings integrity checks so a (disobedient but harmless) findings
-  // payload does not hard-block the verdict with SUBAGENT_SESSION_MISMATCH.
   const hostTaskMode =
     sessionState?.policySnapshot?.reviewInvocationPolicy === 'host_task_required';
   if (hostTaskMode) return { allowed: true };
@@ -598,21 +460,7 @@ export function enforceBeforeVerdict(
 
 // ─── Plugin-Initiated Review Recording ───────────────────────────────────────
 
-/**
- * Record a plugin-initiated review invocation on a pending review.
- *
- * When the plugin orchestrator invokes the reviewer subagent directly
- * (deterministic path), it bypasses the Task tool. This function updates
- * the enforcement state as if a Task call had been made, so that
- * subsequent L1/L2/L4 checks pass for the verdict submission.
- *
- * @param state - Session enforcement state (mutated in place)
- * @param toolName - Which tool's pending review to satisfy
- * @param sessionId - The child session ID from the orchestrator
- * @param capturedFindings - The findings captured from the reviewer response
- * @param now - ISO 8601 timestamp
- * @returns true if a pending review was found and updated, false otherwise
- */
+/** Record a plugin-initiated review invocation on a pending review. */
 export function recordPluginReview(
   state: SessionEnforcementState,
   toolName: string,
@@ -630,9 +478,6 @@ export function recordPluginReview(
     sessionId,
     completedAt: now,
   };
-  // Same structural host-context rule as onTaskToolAfter: a bindable
-  // obligation without host attestation constants is never repaired by a
-  // reviewer capture — fail closed with the explicit marker.
   if (pending.obligationId != null && (pending.hostAttestationConstants ?? null) == null) {
     pending.enforcementFailure = 'host_attestation_constants_missing';
     pending.capturedFindings = null;
@@ -646,15 +491,8 @@ export function recordPluginReview(
 }
 
 /**
- * Pre-execution check: a flowguard-reviewer Task may only run when a pending
- * review obligation exists. This prevents wasted LLM time for reviewer Tasks
- * that would be blocked post-execution by handleHostTaskEvidence.
- *
- * If the session state is unavailable, only strict enforcement blocks —
- * non-strict modes allow the task to proceed rather than risking a
- * false-positive denial from a transient state read failure.
- *
- * @public unit-testable, no side effects
+ * Pre-execution check: a flowguard-reviewer Task may only run when current
+ * authoritative session state proves a pending review obligation exists.
  */
 export function enforceReviewerObligation(params: {
   obligations: ReadonlyArray<Pick<ReviewObligation, 'status'> & { obligationId?: string }>;
@@ -665,19 +503,15 @@ export function enforceReviewerObligation(params: {
   }>;
   reviewInvocationPolicy: string | undefined;
   maxIncoherentReviewerCaptureRetries?: number;
-  strictEnforcement: boolean;
   stateAvailable: boolean;
 }): EnforcementResult {
   if (!params.stateAvailable) {
-    if (params.strictEnforcement) {
-      return {
-        allowed: false,
-        code: 'STATE_UNAVAILABLE_FOR_REVIEWER_TASK',
-        reason:
-          'Session state could not be read. The flowguard-reviewer Task cannot run without verifiable state.',
-      };
-    }
-    return { allowed: true };
+    return {
+      allowed: false,
+      code: 'STATE_UNAVAILABLE_FOR_REVIEWER_TASK',
+      reason:
+        'Session state could not be read. The flowguard-reviewer Task cannot run without verifiable state.',
+    };
   }
 
   const hasPending = params.obligations.some((o) => o.status === 'pending');
