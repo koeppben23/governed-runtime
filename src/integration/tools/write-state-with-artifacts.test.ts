@@ -92,7 +92,7 @@ describe('writeStateWithArtifacts — artifacts-first ordering', () => {
       expect(read!.phase).toBe('TICKET');
       expect(read!.id).toBe(state.id);
       expect(read!.proofGraph).toMatchObject({
-        version: 'proofgraph.v1',
+        version: 'proofgraph.v2',
         claims: [],
         evaluatedAt: state.transition?.at ?? state.createdAt,
       });

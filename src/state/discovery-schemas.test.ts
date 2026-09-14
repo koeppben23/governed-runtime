@@ -56,7 +56,6 @@ describe('DetectedStackSchema', () => {
   const valid = {
     summary: 'TypeScript project with Jest',
     items: [{ kind: 'language', id: 'TypeScript' }],
-    versions: [],
   };
 
   it('parses a valid stack with summary and items', () => {

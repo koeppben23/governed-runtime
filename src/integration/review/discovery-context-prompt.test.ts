@@ -64,9 +64,6 @@ const BASE_CONTEXT: DiscoveryReviewContext = {
       { kind: 'language', id: 'typescript', version: '6.0.3', evidence: 'package.json' },
       { kind: 'testFramework', id: 'vitest', evidence: 'package.json:scripts.test' },
     ],
-    versions: [
-      { id: 'typescript', version: '6.0.3', target: 'language', evidence: 'package.json' },
-    ],
   },
   verificationCandidates: [
     {

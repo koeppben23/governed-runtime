@@ -652,9 +652,9 @@ services:
       const { DiscoveryResultSchema } = await import('./types.js');
 
       const result = DiscoveryResultSchema.parse({
-        schemaVersion: 'discovery.v1',
+        schemaVersion: 'discovery.v2',
         collectedAt: new Date().toISOString(),
-        collectors: { stack: 'complete' },
+        diagnostics: [],
         repoMetadata: {
           fingerprint: 'abcdef0123456789abcdef01',
           defaultBranch: 'main',
@@ -711,7 +711,6 @@ services:
         },
         surfaces: { api: [], persistence: [], cicd: [], security: [], layers: [] },
         domainSignals: { keywords: [], glossarySources: [] },
-        validationHints: { checks: [], placeholderScripts: [], commands: [], lintTools: [] },
       });
 
       const detectedStack = await extractDetectedStack(result, [
@@ -749,9 +748,9 @@ services:
       });
 
       const result = DiscoveryResultSchema.parse({
-        schemaVersion: 'discovery.v1',
+        schemaVersion: 'discovery.v2',
         collectedAt: new Date().toISOString(),
-        collectors: { stack: 'complete' },
+        diagnostics: [],
         repoMetadata: {
           fingerprint: 'abcdef0123456789abcdef01',
           defaultBranch: 'main',
@@ -787,7 +786,6 @@ services:
         },
         surfaces: { api: [], persistence: [], cicd: [], security: [], layers: [] },
         domainSignals: { keywords: [], glossarySources: [] },
-        validationHints: { checks: [], placeholderScripts: [], commands: [], lintTools: [] },
       });
 
       const readFile = async (path: string): Promise<string | undefined> => {
@@ -818,9 +816,9 @@ services:
       const { DiscoveryResultSchema } = await import('./types.js');
 
       const result = DiscoveryResultSchema.parse({
-        schemaVersion: 'discovery.v1',
+        schemaVersion: 'discovery.v2',
         collectedAt: new Date().toISOString(),
-        collectors: { stack: 'complete' },
+        diagnostics: [],
         repoMetadata: {
           fingerprint: 'abcdef0123456789abcdef01',
           defaultBranch: 'main',
@@ -858,7 +856,6 @@ services:
         },
         surfaces: { api: [], persistence: [], cicd: [], security: [], layers: [] },
         domainSignals: { keywords: [], glossarySources: [] },
-        validationHints: { checks: [], placeholderScripts: [], commands: [], lintTools: [] },
       });
 
       const detectedStack = await extractDetectedStack(result, ['package.json', 'src/index.ts']);

@@ -50,7 +50,7 @@ function claim() {
 function stateWith(attempts: SessionState['validationAttempts']): SessionState {
   return makeState('IMPL_VALIDATION', {
     implementation: IMPL,
-    proofContract: { version: 'contract.v1', claims: [claim()] },
+    proofContract: { version: 'contract.v2', claims: [claim()] },
     validationAttempts: attempts,
   });
 }
@@ -121,12 +121,13 @@ describe('summarizeProofGraph reviewer projection', () => {
     return makeState('IMPL_VALIDATION', {
       implementation: IMPL,
       proofContract: {
-        version: 'contract.v1',
+        version: 'contract.v2',
         claims: [
           {
             ...claim(),
             counterexampleRefs: [{ kind: 'validation_attempt' as const, attemptId: CX_ATT }],
             counterexampleRequirement: {
+              kind: 'assertion',
               checkId: 'security',
               assertion: { providerId: 'junit', localId: 'com.example.Test#method' },
             },
@@ -193,7 +194,7 @@ describe('summarizeProofGraph reviewer projection', () => {
     const state = makeState('IMPL_VALIDATION', {
       implementation: IMPL,
       proofContract: {
-        version: 'contract.v1',
+        version: 'contract.v2',
         claims: [{ ...claim(), provenance: null, evidenceRefs: [] }],
       },
     });

@@ -1,14 +1,14 @@
 /**
  * @module proofgraph-session.test
  * @description SessionState persistence of the optional ProofGraph projection (#762).
- * Proves the field is additive/backward-compatible and fail-closed on malformed input.
+ * Proves the field is optional and fail-closed on malformed input.
  */
 import { describe, it, expect } from 'vitest';
 import { SessionState } from './schema.js';
 import { makeState } from '../fixtures.js';
 
 const NOW = '2026-01-01T00:00:00.000Z';
-const PROJECTION = { version: 'proofgraph.v1' as const, claims: [], evaluatedAt: NOW };
+const PROJECTION = { version: 'proofgraph.v2' as const, claims: [], evaluatedAt: NOW };
 
 describe('SessionState.proofGraph (#762)', () => {
   it('accepts a valid ProofGraph projection', () => {
@@ -24,7 +24,7 @@ describe('SessionState.proofGraph (#762)', () => {
   it('round-trips a populated projection through JSON', () => {
     const state = makeState('IMPLEMENTATION', {
       proofGraph: {
-        version: 'proofgraph.v1',
+        version: 'proofgraph.v2',
         claims: [
           {
             claimId: '00000000-0000-4000-8000-000000000001',
@@ -48,7 +48,7 @@ describe('SessionState.proofGraph (#762)', () => {
   it('fails closed on a wrong projection version literal', () => {
     const input = {
       ...makeState('READY'),
-      proofGraph: { version: 'proofgraph.v2', claims: [], evaluatedAt: NOW },
+      proofGraph: { version: 'proofgraph.v1', claims: [], evaluatedAt: NOW },
     } as unknown;
     expect(() => SessionState.parse(input)).toThrow();
   });
@@ -57,7 +57,7 @@ describe('SessionState.proofGraph (#762)', () => {
     const input = {
       ...makeState('READY'),
       proofGraph: {
-        version: 'proofgraph.v1',
+        version: 'proofgraph.v2',
         claims: [{ claimId: 'not-a-uuid' }],
         evaluatedAt: NOW,
       },

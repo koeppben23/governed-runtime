@@ -25,6 +25,7 @@ const AUTHORITY_REF = {
 const IMPL = { changedFiles: ['a.ts'], domainFiles: [], digest: IMPL_DIGEST, executedAt: NOW };
 
 const COUNTEREXAMPLE_REQ: CounterexampleRequirement = {
+  kind: 'assertion',
   checkId: 'security',
   assertion: { providerId: 'junit', localId: 'com.example.Test#method' },
 };
@@ -94,7 +95,7 @@ function stateWith(
   return makeState(phase, {
     implementation: IMPL,
     proofContract: {
-      version: 'contract.v1',
+      version: 'contract.v2',
       claims: [{ ...claim(), ...overrides }],
     },
     validationAttempts: attempts,
@@ -297,7 +298,7 @@ describe('bindCounterexamples', () => {
 
   it('returns nothing when there is no implementation', () => {
     const state = makeState('IMPL_REVIEW', {
-      proofContract: { version: 'contract.v1', claims: [claim()] },
+      proofContract: { version: 'contract.v2', claims: [claim()] },
     });
     expect(bindCounterexamples(state, NOW).counterexamples).toEqual([]);
   });
@@ -306,7 +307,7 @@ describe('bindCounterexamples', () => {
     const state = makeState('IMPL_REVIEW', {
       implementation: IMPL,
       proofContract: {
-        version: 'contract.v1',
+        version: 'contract.v2',
         claims: [{ ...claim(), counterexampleRefs: [{ kind: 'content', digest: 'x' }] }],
       },
     });

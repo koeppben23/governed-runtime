@@ -183,14 +183,14 @@ function stateWithClaims() {
 }
 
 describe('materializeApprovedPlanContract', () => {
-  it('materializes current v2 declarations as proof-eligible without legacy reinterpretation', async () => {
+  it('materializes current v2 declarations without legacy reinterpretation', async () => {
     const state = stateWithClaims();
     const materialized = await materializeApprovedPlanContractResult(state, process.cwd());
     expect(materialized.coverage).not.toContainEqual({
       claimId: CLAIM_ID,
       cause: 'legacy_claim_declaration_v1',
     });
-    expect(materialized.contract.claims[0]!.proofEligibility).toBe('eligible');
+    expect(materialized.contract.claims).toHaveLength(1);
   });
 
   it('materializes approved pre-evidence claims with current implementation attempts only', async () => {
@@ -353,8 +353,8 @@ describe('materializeApprovedPlanContract', () => {
       process.cwd(),
     );
 
-    expect(withoutCertificate).toEqual({ version: 'contract.v1', claims: [] });
-    expect(staleCertificate).toEqual({ version: 'contract.v1', claims: [] });
+    expect(withoutCertificate).toEqual({ version: 'contract.v2', claims: [] });
+    expect(staleCertificate).toEqual({ version: 'contract.v2', claims: [] });
   });
 
   it('fails closed when the certificate declaration digest is not canonical', async () => {
@@ -374,7 +374,7 @@ describe('materializeApprovedPlanContract', () => {
     );
 
     expect(result).toEqual({
-      contract: { version: 'contract.v1', claims: [] },
+      contract: { version: 'contract.v2', claims: [] },
       coverage: [{ cause: 'invalid_certificate' }],
     });
   });
@@ -506,7 +506,7 @@ describe('materializeApprovedPlanContractResult — mutation coverage', () => {
     };
   }
 
-  it('versioned declarations materialize with claimScope and eligible eligibility', async () => {
+  it('versioned declarations materialize with claimScope', async () => {
     const state = withV2Declarations(stateWithClaims(), [
       {
         claimId: V2_CLAIM_ID,
@@ -521,11 +521,7 @@ describe('materializeApprovedPlanContractResult — mutation coverage', () => {
     expect(result.coverage).toEqual([]);
     const claim = result.contract.claims[0]!;
     expect(claim.claimScope).toBe('specific_behavior');
-    expect(claim.proofEligibility).toBe('eligible');
-    expect(claim.requiredEvidence).toEqual({
-      positive: ['executed_test'],
-      adversarial: ['counterexample'],
-    });
+    expect(claim.evidenceRefs).toHaveLength(1);
   });
 
   it('requires schema_compare for config-defaults surfaces and structural_assertion otherwise', async () => {

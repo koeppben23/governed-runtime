@@ -22,7 +22,7 @@ import {
 const CLAIM_ID = '33333333-3333-4333-8333-333333333333';
 
 function projection(claims: ProofGraphProjection['claims'] = []): ProofGraphProjection {
-  return { version: 'proofgraph.v1', evaluatedAt: '2026-01-01T00:00:00.000Z', claims };
+  return { version: 'proofgraph.v2', evaluatedAt: '2026-01-01T00:00:00.000Z', claims };
 }
 
 function provenClaim(overrides: Partial<ProofGraphProjection['claims'][number]> = {}) {

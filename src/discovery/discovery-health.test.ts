@@ -24,16 +24,8 @@ import type { DiscoveryHealthAvailableProjection } from './discovery-health.js';
 
 function makeHealthyResult(overrides?: Partial<DiscoveryResult>): DiscoveryResult {
   return {
-    schemaVersion: 'discovery.v1',
+    schemaVersion: 'discovery.v2',
     collectedAt: new Date().toISOString(),
-    collectors: {
-      'repo-metadata': 'complete',
-      'stack-detection': 'complete',
-      topology: 'complete',
-      'surface-detection': 'complete',
-      'code-surface-analysis': 'complete',
-      'domain-signals': 'complete',
-    },
     diagnostics: [
       { name: 'repo-metadata', status: 'complete', durationMs: 12, timedOut: false },
       { name: 'stack-detection', status: 'complete', durationMs: 34, timedOut: false },
@@ -69,7 +61,6 @@ function makeHealthyResult(overrides?: Partial<DiscoveryResult>): DiscoveryResul
     },
     surfaces: { api: [], persistence: [], cicd: [], security: [], layers: [] },
     domainSignals: { keywords: [], glossarySources: [] },
-    validationHints: { commands: [], lintTools: [] },
     ...overrides,
   };
 }
@@ -258,16 +249,6 @@ describe('discovery-health', () => {
       expect(health.failedCollectorNames).toEqual(['stack-detection', 'code-surface-analysis']);
       expect(health.hasBudgetExhaustion).toBe(true);
       expect(health.readFailureCount).toBe(1);
-    });
-
-    it('missing diagnostics: defaults to zero counts', () => {
-      const result = makeHealthyResult({ diagnostics: undefined });
-      const health = extractAvailableHealth(result);
-      expect(health.completeCollectors).toBe(0);
-      expect(health.partialCollectors).toBe(0);
-      expect(health.failedCollectors).toBe(0);
-      expect(health.failedCollectorNames).toEqual([]);
-      expect(health.healthy).toBe(true);
     });
 
     it('missing codeSurfaces: null status, no budget/read data', () => {

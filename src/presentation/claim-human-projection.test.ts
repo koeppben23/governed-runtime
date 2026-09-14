@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { ClaimResolutionFacts } from './claim-resolution.js';
 import { projectClaimHumanProjection, projectHumanProofSummary } from './claim-human-projection.js';
+import { DeclaredClaim } from '../state/proofgraph.js';
 
 function facts(overrides: Partial<ClaimResolutionFacts> = {}): ClaimResolutionFacts {
   return {
@@ -212,18 +213,20 @@ describe('projectClaimHumanProjection', () => {
     expect(p.diagnostic.counterexampleRequirement).toBeUndefined();
   });
 
-  it('diagnostic preserves legacy_assertion kind', () => {
-    const p = projectClaimHumanProjection(
-      facts({
-        verificationState: 'NOT_VERIFIED',
+  it('rejects a legacy counterexample requirement kind', () => {
+    expect(() =>
+      DeclaredClaim.parse({
+        ...facts(),
+        provenance: null,
+        evidenceRefs: [],
+        counterexampleRefs: [],
         counterexampleRequirement: {
           kind: 'legacy_assertion',
           checkId: 'old-test',
           assertion: { providerId: 'junit', localId: 'test#thing' },
         },
       }),
-    );
-    expect(p.diagnostic.counterexampleRequirement?.kind).toBe('legacy_assertion');
+    ).toThrow();
   });
 
   it('preserves statement verbatim in human projection', () => {

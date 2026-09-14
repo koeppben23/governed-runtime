@@ -9,13 +9,6 @@ export function makeDetectedStack(items: DetectedStack['items']): DetectedStack 
   return {
     summary: items.map((item) => item.id).join(', '),
     items,
-    versions: items
-      .filter((item) => item.version)
-      .map((item) => ({
-        id: item.id,
-        version: item.version!,
-        target: item.kind,
-      })),
   };
 }
 

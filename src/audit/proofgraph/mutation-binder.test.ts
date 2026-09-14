@@ -37,7 +37,7 @@ function stateWithAttemptRef(
       executedAt: NOW,
     },
     proofContract: {
-      version: 'contract.v1',
+      version: 'contract.v2',
       claims: [
         {
           claimId: CLAIM,
@@ -146,7 +146,7 @@ describe('bindMutationEvidence', () => {
   it('emits unavailable for mutation_profile refs (no concrete attempt)', () => {
     const state = makeState('IMPL_VALIDATION', {
       proofContract: {
-        version: 'contract.v1',
+        version: 'contract.v2',
         claims: [
           {
             claimId: CLAIM,
@@ -168,7 +168,7 @@ describe('bindMutationEvidence', () => {
   it('emits nothing for claims that do not reference mutation evidence', () => {
     const state = makeState('IMPL_VALIDATION', {
       proofContract: {
-        version: 'contract.v1',
+        version: 'contract.v2',
         claims: [
           {
             claimId: CLAIM,
@@ -209,7 +209,7 @@ describe('bindMutationEvidence', () => {
           executedAt: NOW,
         },
         proofContract: {
-          version: 'contract.v1',
+          version: 'contract.v2',
           claims: [
             {
               claimId: CLAIM,

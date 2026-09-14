@@ -27,7 +27,7 @@ const AUTHORITY_REF = {
 function stateWithSurface(surfaceId: string): SessionState {
   return makeState('IMPL_VALIDATION', {
     proofContract: {
-      version: 'contract.v1',
+      version: 'contract.v2',
       claims: [
         {
           claimId: CLAIM,
@@ -123,7 +123,7 @@ describe('bindStructuralEvidence', () => {
   it('emits nothing for claims that do not reference a surface', () => {
     const state = makeState('IMPL_VALIDATION', {
       proofContract: {
-        version: 'contract.v1',
+        version: 'contract.v2',
         claims: [
           {
             claimId: CLAIM,

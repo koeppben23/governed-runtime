@@ -32,7 +32,7 @@ function claim() {
 function stateWithContract() {
   return makeState('IMPLEMENTATION', {
     implementation: IMPL,
-    proofContract: { version: 'contract.v1' as const, claims: [claim()] },
+    proofContract: { version: 'contract.v2' as const, claims: [claim()] },
   });
 }
 
@@ -57,7 +57,7 @@ describe('deriveProofGraph', () => {
   it('returns an empty projection when there is no contract', () => {
     const out = deriveProofGraph(makeState('READY'), [], [], NOW);
     expect(out.claims).toEqual([]);
-    expect(out.version).toBe('proofgraph.v1');
+    expect(out.version).toBe('proofgraph.v2');
     expect(out.evaluatedAt).toBe(NOW);
   });
 
