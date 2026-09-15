@@ -81,18 +81,16 @@ import type { LoopVerdict, ReviewFindings } from '../../state/evidence.js';
 
 // Review findings validation (shared with plan.ts)
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
-import { requireReviewFindings, resolveHostTaskEffectiveFindings } from './review-validation.js';
+import { requireReviewFindings, resolveStructuredEffectiveFindings } from './review-validation.js';
 import { collectPreviouslyUsedChallengeIds } from '../review/challenge-history.js';
 import {
   consumeReviewObligation,
   ensureReviewAssurance,
   findAcceptedInvocationForFindings,
   findLatestObligation,
-  reviewObligationResponseFields,
 } from '../review/assurance.js';
 import { buildLatestImplementationReviewSummary } from './review-summary.js';
-import { resolveRuntimeReviewPlatform } from '../review/orchestration-mode.js';
-import { buildHostTaskChallengeContract } from '../review/host-task-policy.js';
+import { buildReviewChallengeContract } from '../review/challenge-contract.js';
 import type { ImplementRuntime } from './implement-shared.js';
 import {
   activateImplementationReviewObligation,
@@ -187,13 +185,10 @@ function resolveImplementationFindings(
   planVersion: number,
 ) {
   const pendingObligation = findPendingImplObligation(input.state);
-  const challengeContract = buildHostTaskChallengeContract(input.state, pendingObligation);
-  const resolved = resolveHostTaskEffectiveFindings({
+  const challengeContract = buildReviewChallengeContract(input.state, pendingObligation);
+  const resolved = resolveStructuredEffectiveFindings({
     pendingObligation,
     expected: { obligationType: 'implement', iteration, planVersion },
-    policy: {
-      reviewInvocationPolicy: input.policy.reviewInvocationPolicy,
-    },
     input: {
       reviewFindings: input.args.reviewFindings,
       reviewerUnavailable: input.args.reviewerUnavailable,
@@ -202,7 +197,6 @@ function resolveImplementationFindings(
     state: {
       assurance: input.state.reviewAssurance,
       sessionId: input.context.sessionID,
-      reviewHostPlatform: resolveRuntimeReviewPlatform(),
       unresolvedImplementationChallengeIds: computeTargetedResolutionChallengeIds(input.state),
       unaddressedPriorFailIds: computeUnaddressedPriorFailIds(input.state),
       allowedChallengeEvidenceRefs: challengeContract?.evidenceRefs,
@@ -444,53 +438,15 @@ async function handleApprovedReview(input: {
   return JSON.stringify(enrichWithNextAction(response, finalState));
 }
 
-function handlePreferredTaskTransportFailure(
-  input: ImplementRuntime,
-  pendingObligation: ReturnType<typeof findPendingImplObligation>,
-): string {
-  if (!pendingObligation)
-    return formatBlocked('REVIEW_FINDINGS_REQUIRED', { action: 'implementation review' });
-  return JSON.stringify(
-    enrichWithNextAction(
-      {
-        phase: input.state.phase,
-        status:
-          'OpenCode Task reviewer transport failure reported. Attempting the configured SDK review transport.',
-        next: 'INDEPENDENT_REVIEW_REQUIRED: Host Task transport failure was reported for the pending implementation review.',
-        ...reviewObligationResponseFields(pendingObligation),
-        // The canonical REVIEW_REQUIRED signal must carry the host attestation
-        // constants for the obligation it names; enforcement treats a signal
-        // without them as a structural host-context defect before any reviewer
-        // dispatch (mirrors pending-instruction.ts requiredReviewAttestation).
-        reviewInvocation: {
-          requiredReviewAttestation: {
-            reviewedBy: REVIEWER_SUBAGENT_TYPE,
-            mandateDigest: pendingObligation.mandateDigest,
-            criteriaVersion: pendingObligation.criteriaVersion,
-            toolObligationId: pendingObligation.obligationId,
-            iteration: pendingObligation.iteration,
-            planVersion: pendingObligation.planVersion,
-          },
-        },
-        reviewTransportFailure: { transport: 'host_task', reported: true },
-      },
-      input.state,
-    ),
-  );
-}
-
 function handleTaskTransportFailureRetry(input: ImplementRuntime): string | null {
   if (input.args.reviewerUnavailable !== true) return null;
   if (input.args.reviewVerdict !== undefined || input.args.reviewFindings !== undefined)
     return null;
-  if (input.policy.reviewInvocationPolicy !== 'host_task_preferred') {
-    return formatBlocked('REVIEWER_UNAVAILABLE_STRICT', {
-      reason: 'reviewer unavailable; independent ReviewFindings remain required',
-      recovery:
-        'Invoke a supported reviewer transport or provide policy-gated manual_attested ReviewFindings bound to the active obligation. flowguard_decision does not replace review evidence.',
-    });
-  }
-  return handlePreferredTaskTransportFailure(input, findPendingImplObligation(input.state));
+  return formatBlocked('REVIEWER_UNAVAILABLE_STRICT', {
+    reason: 'reviewer unavailable; independent ReviewFindings remain required',
+    recovery:
+      'Invoke a supported structured reviewer transport. flowguard_decision does not replace review evidence.',
+  });
 }
 
 // eslint-disable-next-line max-lines-per-function, complexity -- ordered evidence resolution, consumption, and convergence branches must remain together.

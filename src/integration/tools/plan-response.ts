@@ -47,14 +47,13 @@ import {
   resolveFrozenReviewProfile,
 } from '../review/assurance.js';
 import { buildFrozenReviewMaterialContent } from '../review/reviewer-context.js';
-import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
+import { buildChildSessionReviewInstruction } from '../review/child-session-instruction.js';
 import { resolveAttemptObservationCapability } from '../review/assurance.js';
 import { repositoryEvidenceUnavailableField } from '../review/observation-access.js';
 import {
   resolveReviewedArtifactIdentity,
   reviewedIdentityFields,
 } from '../review/reviewed-digest.js';
-import { buildReviewerProofContext } from '../review/proof-context.js';
 import { buildHeuristicRiskWarning } from '../proofgraph/claim-contract.js';
 import { assessMinimumTaskClass } from '../phase-tool-gate.js';
 import {
@@ -222,8 +221,8 @@ export function buildPlanSubmissionResponse(
     reviewMode: 'subagent',
     ...reviewObligationResponseFields(nextObligation, planAttemptId),
     ...planRepositoryEvidenceWarning(nextObligation),
-    next: reviewInstruction.next,
-    reviewInvocation: reviewInstruction.reviewInvocation,
+    next: 'INDEPENDENT_REVIEW_REQUIRED',
+    reviewInvocation: reviewInstruction,
     _audit: { transitions },
   };
   if (finalState.plan?.claimSubmissionDiagnostics?.rejectedClaims.length) {
@@ -265,19 +264,15 @@ export function buildPlanReviewInstruction(input: {
   const platform = resolveRuntimeReviewPlatform();
   const mode = resolveReviewOrchestrationMode({
     platform,
-    reviewInvocationPolicy: input.scope.policy.reviewInvocationPolicy,
     nativeReviewerAvailable: platform === 'unknown' ? false : true,
-    manualAttestedAllowed: input.scope.policy.reviewInvocationPolicy !== 'host_task_required',
+    manualAttestedAllowed: false,
   });
-  return buildPendingReviewInstruction({
+  return buildChildSessionReviewInstruction({
     mode,
     platform,
-    reviewKind: 'plan',
     obligation: input.obligation,
     iteration: input.iteration,
     planVersion: input.planVersion,
-    subjectLabel: input.subjectLabel,
-    proofContext: buildReviewerProofContext(input.state),
     observationCapability: input.obligation
       ? (resolveAttemptObservationCapability(
           input.state.reviewAssurance,
@@ -537,8 +532,8 @@ export function nonConvergedPlanResponse(
     revisionDelta: revision.revisionDelta,
     reviewMode: 'subagent',
     ...reviewObligationResponseFields(nextObligation),
-    next: reviewInstruction.next,
-    reviewInvocation: reviewInstruction.reviewInvocation,
+    next: 'INDEPENDENT_REVIEW_REQUIRED',
+    reviewInvocation: reviewInstruction,
     _audit: { transitions },
   };
 }

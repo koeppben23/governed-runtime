@@ -27,7 +27,6 @@ import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_ARCHITECTURE } from '../tool-names.
 import { obligationTypeForTool } from './obligation-tools.js';
 import { updateObligation } from './obligation-state.js';
 import { recordAssuranceWithAudit } from './shared-helpers.js';
-import { REASON_HOST_SUBAGENT_TASK_REQUIRED } from '../../shared/flowguard-identifiers.js';
 import type { PipelineContext } from './pipeline-types.js';
 import type { EvidenceRecordResult } from './pipeline-types.js';
 import { buildSdkEvidenceAuditIntents } from './sdk-evidence-recorder.js';
@@ -160,8 +159,6 @@ async function spawnStandardReviewer(
   return ctx.deps.adapter.spawnReviewer({
     prompt,
     parentSessionId: ctx.sessionId,
-    reviewOutputPolicy: ctx.sessionState.policySnapshot.reviewOutputPolicy,
-    reviewInvocationPolicy: ctx.sessionState.policySnapshot.reviewInvocationPolicy,
     onAttemptFailed: buildAttemptFailedLogger(ctx.deps, toolName, ctx.sessionId),
     onAttemptSucceeded: buildAttemptSucceededLogger(ctx.deps, toolName),
   });
@@ -184,13 +181,10 @@ async function handleStandardReviewerResult(
       await handleReviewerFailure(ctx, obligationType);
       return;
     }
-    ctx.output.output = strictBlockedOutput(
-      reviewerResult.code ?? REASON_HOST_SUBAGENT_TASK_REQUIRED,
-      {
-        reason: reviewerResult.reason ?? 'review invocation blocked by policy',
-        reviewInvocation: JSON.stringify(reviewerResult.reviewInvocation ?? {}),
-      },
-    );
+    ctx.output.output = strictBlockedOutput(reviewerResult.code, {
+      reason: reviewerResult.reason ?? 'review invocation blocked by host transport contract',
+      reviewInvocation: JSON.stringify(reviewerResult.reviewInvocation ?? {}),
+    });
     return;
   }
   if (!reviewerResult) {

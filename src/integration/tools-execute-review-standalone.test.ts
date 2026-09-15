@@ -47,8 +47,6 @@ import {
 } from '../adapters/persistence-reviewer-capture.js';
 import { NATIVE_ATTESTATION_REJECTION_FIELD } from '../shared/flowguard-identifiers.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
-import { readAuditTrail } from '../adapters/persistence-audit.js';
-import * as persistence from '../adapters/persistence.js';
 import {
   makeState,
   makeProgressedState,
@@ -61,8 +59,6 @@ import {
   IMPL_REVIEW_CONVERGED,
 } from '../fixtures.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
-import { hostTaskDispatchPlan } from './tools/review-validation-test-helpers.js';
-import { TEAM_POLICY } from '../config/policy.js';
 
 /** Test predicate for source-tagged standalone review report findings. */
 function hasMaterialFinding(
@@ -336,24 +332,18 @@ describe('review (standalone flow)', () => {
       (attempt) => attempt.obligationId === obligationId,
     );
     if (!boundAttempt) throw new TypeError('Expected persisted review attempt');
-    const dispatchPlan = hostTaskDispatchPlan({
-      isHostTask: true,
-      dispatches: ensureReviewAssurance(state.reviewAssurance).dispatches,
-      attemptId: boundAttempt.attemptId,
-      obligationId,
-      at: '2026-01-01T00:00:00.000Z',
-    });
+    // The structured-evidence contract binds the invocation's child session to
+    // the reviewer identity the captured findings attest to.
+    const childSessionId = findings.reviewedBy.sessionId;
     const invocation = buildInvocationEvidence({
       obligationId,
       obligationType: 'review',
       mandateDigest: obligation.mandateDigest,
       criteriaVersion: obligation.criteriaVersion,
       parentSessionId: ctx.sessionID,
-      childSessionId: 'ses_review_child_host_task',
-      invocationMode: 'host_subagent_task',
+      childSessionId,
+      invocationMode: 'sdk_session_prompt',
       promptHash: 'host-task-review-prompt',
-      hostTaskCallId: dispatchPlan.hostTaskCallId,
-      canonicalPromptDigest: dispatchPlan.canonicalPromptDigest,
       findingsHash: hashFindings(findings),
       invokedAt: '2026-01-01T00:00:00.000Z',
       fulfilledAt: '2026-01-01T00:00:00.000Z',
@@ -380,12 +370,7 @@ describe('review (standalone flow)', () => {
     );
     await writeState(sessDir, {
       ...state,
-      reviewAssurance: dispatchPlan.dispatch
-        ? {
-            ...assuranceWithEvidence,
-            dispatches: [...assuranceWithEvidence.dispatches, dispatchPlan.dispatch],
-          }
-        : assuranceWithEvidence,
+      reviewAssurance: assuranceWithEvidence,
     });
     return invocation;
   }
@@ -527,7 +512,7 @@ describe('review (standalone flow)', () => {
       expect(boundAttempt?.completedAt).toBeDefined();
     });
 
-    it('standalone /review Call 1 persists a PENDING review obligation for host-task binding', async () => {
+    it('standalone /review Call 1 persists a PENDING review obligation for host evidence binding', async () => {
       await hydrateSession({ policyMode: 'team', profileId: 'baseline' });
       const first = parseToolResult(
         await review.execute({ branch: 'feature-auth', inputOrigin: 'branch' }, ctx),
@@ -598,32 +583,7 @@ describe('review (standalone flow)', () => {
       expect((await readState(sessDir))?.reviewReportPath).toBeNull();
     });
 
-    it('standalone /review Call 1 carrying a premature reviewVerdict creates the obligation instead of terminally blocking', async () => {
-      await hydrateSession({ policyMode: 'team', profileId: 'baseline' });
-      const first = parseToolResult(
-        await review.execute(
-          {
-            branch: 'feature-auth',
-            inputOrigin: 'branch',
-            reviewVerdict: 'accept',
-          },
-          ctx,
-        ),
-      );
-      expect(first.code).toBe('CONTENT_ANALYSIS_REQUIRED');
-      expect(
-        (first.requiredReviewAttestation as Record<string, string>).toolObligationId,
-      ).toBeTruthy();
-
-      const sessDir = await currentSessionDir();
-      const state = await readState(sessDir);
-      const pendingReview = (state!.reviewAssurance?.obligations ?? []).filter(
-        (o) => o.obligationType === 'review' && o.status === 'pending' && o.consumedAt === null,
-      );
-      expect(pendingReview.length).toBe(1);
-    });
-
-    it('host_task_required verdict with an unknown obligation ID fails closed', async () => {
+    it('structured-evidence capture with an unknown obligation ID fails closed', async () => {
       await hydrateSession({ policyMode: 'team', profileId: 'baseline' });
       const first = parseToolResult(
         await review.execute({ branch: 'feature-auth', inputOrigin: 'branch' }, ctx),
@@ -636,7 +596,6 @@ describe('review (standalone flow)', () => {
             branch: 'feature-auth',
             inputOrigin: 'branch',
             reviewObligationId: '00000000-0000-4000-8000-000000000999',
-            reviewVerdict: 'accept',
           },
           ctx,
         ),
@@ -650,91 +609,11 @@ describe('review (standalone flow)', () => {
       ).toHaveLength(1);
     });
 
-    it('host_task_required verdict rejects a branch that differs from its obligation', async () => {
-      await hydrateSession({ policyMode: 'team', profileId: 'baseline' });
-      const first = parseToolResult(
-        await review.execute({ branch: 'feature-auth', inputOrigin: 'branch' }, ctx),
-      );
-      const obligationId = requiredString(first.requiredReviewAttestation, 'toolObligationId');
-
-      const result = parseToolResult(
-        await review.execute(
-          {
-            branch: 'different-branch',
-            inputOrigin: 'branch',
-            reviewObligationId: obligationId,
-            reviewVerdict: 'accept',
-          },
-          ctx,
-        ),
-      );
-
-      expect(result.code).toBe('REVIEW_OBLIGATION_INPUT_MISMATCH');
-    });
-
-    it('host_task_required verdict rejects a branch using a text obligation ID', async () => {
-      await hydrateSession({ policyMode: 'team', profileId: 'baseline' });
-      const first = parseToolResult(
-        await review.execute(
-          { text: 'manual diff', inputOrigin: 'manual_text', targetPaths: ['docs/test.md'] },
-          ctx,
-        ),
-      );
-      const obligationId = requiredString(first.requiredReviewAttestation, 'toolObligationId');
-
-      const result = parseToolResult(
-        await review.execute(
-          {
-            branch: 'feature-auth',
-            inputOrigin: 'branch',
-            reviewObligationId: obligationId,
-            reviewVerdict: 'accept',
-          },
-          ctx,
-        ),
-      );
-
-      expect(result.code).toBe('REVIEW_OBLIGATION_INPUT_MISMATCH');
-    });
-
-    it('host_task_required verdict-only review blocks verdict tampering', async () => {
-      await hydrateSession({ policyMode: 'team', profileId: 'baseline' });
-      const first = parseToolResult(
-        await review.execute(
-          { text: 'manual diff', inputOrigin: 'manual_text', targetPaths: ['docs/test.md'] },
-          ctx,
-        ),
-      );
-      expect(first.code).toBe('CONTENT_ANALYSIS_REQUIRED');
-      const obligationId = requiredString(first.requiredReviewAttestation, 'toolObligationId');
-      await bindHostTaskReviewEvidence(
-        obligationId,
-        buildAnalysisFindings('changes_requested', obligationId),
-      );
-
-      const result = parseToolResult(
-        await review.execute(
-          {
-            text: 'manual diff',
-            inputOrigin: 'manual_text',
-            reviewObligationId: obligationId,
-            reviewVerdict: 'accept',
-          },
-          ctx,
-        ),
-      );
-
-      expect(result.error).toBe(true);
-      expect(result.code).toBe('SUBAGENT_FINDINGS_VERDICT_MISMATCH');
-    });
-
-    it('F12 REGRESSION: host_task_required with accept + blocking issue → blocked, coherent code, not misrouted', async () => {
-      // The standalone /review path calls resolveHostTaskFindings DIRECTLY
-      // (not through resolveHostTaskEffectiveFindings). Before this fix,
-      // the `incoherent` kind fell through to the generic
-      // HOST_SUBAGENT_TASK_REQUIRED catch-all with wrong recovery guidance.
-      // This test proves the standalone path now emits the canonical coherence
-      // code and the verdict-only call does NOT advance to REVIEW_COMPLETE.
+    it('F12 REGRESSION: captured structured findings with accept + blocking issue → blocked, coherent code, not misrouted', async () => {
+      // The standalone /review structured-evidence path resolves findings from
+      // host-captured SDK invocation evidence. An `accept` verdict carrying a
+      // blocking issue is self-contradictory and must fail closed with the
+      // canonical coherence code before the report completes.
       await hydrateSession({ policyMode: 'team', profileId: 'baseline' });
       const first = parseToolResult(
         await review.execute(
@@ -785,14 +664,13 @@ describe('review (standalone flow)', () => {
             text: 'manual diff',
             inputOrigin: 'manual_text',
             reviewObligationId: obligationId,
-            reviewVerdict: 'accept',
           },
           ctx,
         ),
       );
 
       // 1. Must be blocked with the canonical coherence code — NOT the generic
-      //    HOST_SUBAGENT_TASK_REQUIRED that would claim "evidence is required".
+      //    SUBAGENT_EVIDENCE_MISSING that would claim "evidence is required".
       expect(result.error).toBe(true);
       expect(result.code).toBe('SUBAGENT_VERDICT_FINDINGS_INCOHERENT');
 
@@ -1654,26 +1532,6 @@ describe('review (standalone flow)', () => {
         expect(report.phase).toBe('REVIEW_COMPLETE');
         expect((report.completeness as Record<string, unknown>).phase).toBe('REVIEW_COMPLETE');
       });
-
-      it('rejects persisting a current-epoch state whose snapshot misses reviewInvocationPolicy', async () => {
-        await hydrateAndGetReady();
-        const { computeFingerprint, sessionDir: resolveSessionDir } =
-          await import('../adapters/workspace/index.js');
-        const fp = await computeFingerprint(ws.tmpDir);
-        const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
-        const state = await readState(sessDir);
-        if (!state) throw new TypeError('Expected persisted session state');
-
-        // Hard Assurance Epoch: an incomplete snapshot is rejected at persist
-        // time, not normalized on read.
-        const { reviewInvocationPolicy: _ri, ...snapshotWithoutPolicy } = state.policySnapshot;
-        await expect(
-          writeState(sessDir, {
-            ...state,
-            policySnapshot: snapshotWithoutPolicy as typeof state.policySnapshot,
-          }),
-        ).rejects.toMatchObject({ code: 'SCHEMA_VALIDATION_FAILED' });
-      });
     });
   });
 
@@ -1765,68 +1623,6 @@ describe('review (standalone flow)', () => {
     });
   });
 
-  describe('transport by policy mode (claude-code host)', () => {
-    let prevPlatform: string | undefined;
-
-    beforeEach(() => {
-      prevPlatform = process.env.FLOWGUARD_HOST_PLATFORM;
-      process.env.FLOWGUARD_HOST_PLATFORM = 'claude-code';
-    });
-
-    afterEach(() => {
-      if (prevPlatform === undefined) delete process.env.FLOWGUARD_HOST_PLATFORM;
-      else process.env.FLOWGUARD_HOST_PLATFORM = prevPlatform;
-    });
-
-    async function runContentReviewUnderPolicy(policyMode: string) {
-      const hy = parseToolResult(await hydrate.execute({ policyMode, profileId: 'baseline' }, ctx));
-      if (hy.error) {
-        throw new Error(`hydrate(${policyMode}) failed: ${String(hy.message)}`);
-      }
-
-      const snapshot = (await readState(await currentSessionDir()))!.policySnapshot!;
-
-      const first = parseToolResult(
-        await review.execute(
-          { prNumber: 77, inputOrigin: 'pr', targetPaths: ['docs/test.md'] },
-          ctx,
-        ),
-      );
-      expect(first.code).toBe('CONTENT_ANALYSIS_REQUIRED');
-      const uuid = requiredString(first.requiredReviewAttestation, 'toolObligationId');
-
-      const findings = buildAnalysisFindings('accept', uuid);
-      const second = parseToolResult(
-        await review.execute(
-          { prNumber: 77, reviewFindings: findings as never, inputOrigin: 'pr' },
-          ctx,
-        ),
-      );
-      return { snapshot, first, second };
-    }
-
-    it('solo (host_task_preferred): inline content review converges', async () => {
-      const { snapshot, second } = await runContentReviewUnderPolicy('solo');
-      expect(snapshot.reviewInvocationPolicy).toBe('host_task_preferred');
-      expect(second.error).toBeUndefined();
-      expect(second.phase).toBe('REVIEW_COMPLETE');
-    });
-
-    it('team (host_task_required): inline content review fails closed', async () => {
-      const { snapshot, second } = await runContentReviewUnderPolicy('team');
-      expect(snapshot.reviewInvocationPolicy).toBe('host_task_required');
-      expect(second.error).toBe(true);
-      expect(second.code).toBe('HOST_SUBAGENT_TASK_REQUIRED');
-    });
-
-    it('regulated (host_task_required): inline content review fails closed', async () => {
-      const { snapshot, second } = await runContentReviewUnderPolicy('regulated');
-      expect(snapshot.reviewInvocationPolicy).toBe('host_task_required');
-      expect(second.error).toBe(true);
-      expect(second.code).toBe('HOST_SUBAGENT_TASK_REQUIRED');
-    });
-  });
-
   describe('native_subagent_attested e2e (claude-code host)', () => {
     let prevPlatform: string | undefined;
 
@@ -1853,10 +1649,6 @@ describe('review (standalone flow)', () => {
       );
       expect(hy.error).toBeFalsy();
       const sessDir = await currentSessionDir();
-      expect((await readState(sessDir))!.policySnapshot!.reviewInvocationPolicy).toBe(
-        'host_task_preferred',
-      );
-
       const first = parseToolResult(
         await review.execute(
           { prNumber: 88, inputOrigin: 'pr', targetPaths: ['docs/test.md'] },

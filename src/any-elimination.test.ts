@@ -103,28 +103,6 @@ describe('status.test.ts', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Review enforcement tests — zero as any
-// ═══════════════════════════════════════════════════════════════════════════════
-
-describe('review-enforcement-session.test.ts', () => {
-  describe('HAPPY — no as any', () => {
-    it('has no as any casts', () => {
-      const source = readSource('integration/review/enforcement/session.test.ts');
-      expect(source).not.toContain('as any');
-    });
-  });
-});
-
-describe('review-enforcement-mutation.test.ts', () => {
-  describe('HAPPY — no as any', () => {
-    it('has no as any casts', () => {
-      const source = readSource('integration/review/enforcement/mutation.test.ts');
-      expect(source).not.toContain('as any');
-    });
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════════════════════
 // BUG-21 tests — intentional as any casts are documented
 // ═══════════════════════════════════════════════════════════════════════════════
 

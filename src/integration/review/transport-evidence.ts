@@ -158,14 +158,6 @@ async function processTransportFile(
   const parsed = parseAndValidateTransportFindings(file, state, obligation);
   if (parsed.status === 'invalid') return parsed;
 
-  if (state.policySnapshot?.reviewInvocationPolicy === 'host_task_required')
-    return {
-      status: 'invalid',
-      code: 'HOST_SUBAGENT_TASK_REQUIRED',
-      reason:
-        'host_task_required policy requires host-visible reviewer evidence; manual_attested transport evidence is not sufficient',
-    };
-
   const findings = parsed.findings;
   const findingsHash = hashFindings(findings);
   const existing = assurance.invocations.find(

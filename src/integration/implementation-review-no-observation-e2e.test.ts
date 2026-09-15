@@ -46,8 +46,14 @@ vi.mock('../verification/executor', () => ({
     })),
 }));
 
+const discoveryOriginals = vi.hoisted(() => ({
+  resolveAttemptDiscoveryOrBlock:
+    undefined as unknown as (typeof import('./review/discovery-attempt-context.js'))['resolveAttemptDiscoveryOrBlock'],
+}));
+
 vi.mock('./review/discovery-attempt-context.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./review/discovery-attempt-context.js')>();
+  discoveryOriginals.resolveAttemptDiscoveryOrBlock = actual.resolveAttemptDiscoveryOrBlock;
   return {
     ...actual,
     resolveAttemptDiscoveryOrBlock: vi.fn(actual.resolveAttemptDiscoveryOrBlock),
@@ -75,7 +81,6 @@ import {
   hashFindings,
 } from './review/assurance.js';
 import { resolveAttemptDiscoveryOrBlock } from './review/discovery-attempt-context.js';
-import { hostTaskDispatchPlan } from './tools/review-validation-test-helpers.js';
 import { resolveNextAction, ACTION_CODES } from '../machine/next-action.js';
 import { executeCheck } from '../verification/executor.js';
 
@@ -99,7 +104,11 @@ beforeEach(() => {
   pc = process.env.OPENCODE_CONFIG_DIR;
   pr = process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
   pp = process.env.FLOWGUARD_HOST_PLATFORM;
-  vi.mocked(resolveAttemptDiscoveryOrBlock).mockClear();
+  // mockReset clears unconsumed mockResolvedValueOnce queues; a test that fails
+  // before its queued value is consumed must not leak it into the next test.
+  vi.mocked(resolveAttemptDiscoveryOrBlock)
+    .mockReset()
+    .mockImplementation(discoveryOriginals.resolveAttemptDiscoveryOrBlock);
 });
 
 afterEach(() => {
@@ -256,13 +265,6 @@ async function inject(
   );
   if (!boundAttempt) throw new Error(`No attempt for pending ${oblType} obligation`);
   const invocationId = randomUUID();
-  const dispatchPlan = hostTaskDispatchPlan({
-    isHostTask: true,
-    dispatches: state!.reviewAssurance!.dispatches,
-    attemptId: boundAttempt.attemptId,
-    obligationId: obl.obligationId,
-    at: FIXED_TIME,
-  });
   const newObl = {
     ...obl,
     status: 'fulfilled' as const,
@@ -277,12 +279,10 @@ async function inject(
     parentSessionId: se.sId,
     childSessionId: 'ses_r',
     agentType: 'flowguard-reviewer' as const,
-    invocationMode: 'host_subagent_task' as const,
-    hostVisible: true,
+    invocationMode: 'sdk_session_prompt' as const,
+    hostVisible: false,
     source: 'host-orchestrated' as const,
     promptHash: 'abc',
-    hostTaskCallId: dispatchPlan.hostTaskCallId,
-    canonicalPromptDigest: dispatchPlan.canonicalPromptDigest,
     mandateDigest: REVIEW_MANDATE_DIGEST,
     criteriaVersion: REVIEW_CRITERIA_VERSION,
     findingsHash: fh,
@@ -314,9 +314,7 @@ async function inject(
             }
           : attempt,
       ),
-      dispatches: dispatchPlan.dispatch
-        ? [...state!.reviewAssurance!.dispatches, dispatchPlan.dispatch]
-        : state!.reviewAssurance!.dispatches,
+      dispatches: state!.reviewAssurance!.dispatches,
     },
     reviewDecision: {
       verdict: 'approve',
@@ -373,7 +371,6 @@ async function prepareBoundUnableReview(se: SE, implementationDigest: string) {
     },
     policySnapshot: {
       ...makeState('IMPL_REVIEW').policySnapshot,
-      reviewInvocationPolicy: 'host_task_required',
     },
   });
   await writeStateWithArtifacts(se.sDir, base);

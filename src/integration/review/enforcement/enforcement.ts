@@ -1,20 +1,24 @@
 /**
  * @module integration/review-enforcement
- * @description Runtime enforcement for independent review subagent invocation.
+ * @description Runtime enforcement for independently reviewed verdicts.
  *
- * Contains the state factory and hook handlers (pure functions) that enforce
- * four levels of review integrity:
+ * Contains the state factory and hook handlers (pure functions) that require
+ * a host-observed structured reviewer invocation before any FlowGuard verdict
+ * submission is authorized.
  *
- * - L1 (Binary Gate): A Task call to flowguard-reviewer MUST occur
- *   before any verdict submission.
- * - L2 (Session ID): Submitted sessionId must match actual subagent session.
- * - L3 (Prompt Integrity): Task call prompt must contain expected context.
- * - L4 (Findings Integrity): Submitted findings must match actual response.
+ * Four enforcement levels:
+ * - L1 (Binary Gate): a verdict submission is blocked until a host-observed
+ *   SDK reviewer invocation was recorded for the pending review.
+ * - L2 (Session Identity): submitted `reviewedBy.sessionId` must match the
+ *   child session recorded by the reviewer invocation.
+ * - L3 (Capture Coherence): a captured reviewer record must be internally
+ *   coherent (an `accept` verdict may not carry blocking issues).
+ * - L4 (Findings Integrity): a submitted verdict and blocking-issue count must
+ *   match the captured reviewer record exactly.
  *
  * Extracted modules (FG-REL-038):
  * - review-enforcement-types.ts — Types, interfaces, constants
- * - review-enforcement-extraction.ts — Pure parsing/extraction helpers
- * - review-evidence-binding.ts — Host-task evidence binding
+ * - review-enforcement-extraction.ts — Review-signal helpers
  *
  * Architecture:
  * - Pure logic module — no OpenCode/plugin dependencies, fully unit-testable.
@@ -25,34 +29,16 @@
  */
 
 import type { SessionState } from '../../../state/schema.js';
-import { type ReviewObligation } from '../../../state/evidence-review.js';
 import {
   type SessionEnforcementState,
-  type PendingReview,
   type CapturedFindings,
-  type SubagentRecord,
-  type TaskToolContext,
   type EnforcementResult,
   type PendingReviewTool,
   REVIEW_REQUIRED_PREFIX,
 } from './types.js';
-import {
-  canonicalPromptAnchorOf,
-  canonicalPromptDigestOf,
-  canonicalPromptOf,
-} from './prompt-contract.js';
-import {
-  extractCapturedFindings,
-  resolveSubagentSessionId,
-  promptContainsValue,
-  detectStepExhaustion,
-  signalAttestationOf,
-  readHostAttestationConstants,
-} from './extraction.js';
+import { signalAttestationOf, readHostAttestationConstants } from './extraction.js';
 import { buildPendingReview, type ReviewSignalBinding } from './pending-review.js';
 import { validateReviewFindingsConsistency } from './findings-consistency.js';
-import { isPendingCaptureUsable, extractCaptureSchemaErrors } from './prepare-findings.js';
-export { enforceBeforeSubagentCall } from './prompt-integrity.js';
 
 import { TOOL_FLOWGUARD_REVIEW } from '../../tool-names.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
@@ -169,6 +155,7 @@ function clearSubmittedReview(
   }
 }
 
+// eslint-disable-next-line complexity -- accepts established response projections at one boundary.
 function reviewObligationIdFromSignal(
   parsed: NonNullable<ReturnType<typeof parseToolResult>>,
   isReviewContent: boolean,
@@ -180,8 +167,13 @@ function reviewObligationIdFromSignal(
     return typeof obligationId === 'string' ? obligationId : null;
   }
   const value = parsed.reviewObligation;
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const obligationId = (value as Record<string, unknown>).obligationId;
+  const reviewInvocation = parsed.reviewInvocation;
+  const source =
+    reviewInvocation && typeof reviewInvocation === 'object' && !Array.isArray(reviewInvocation)
+      ? reviewInvocation
+      : value;
+  if (!source || typeof source !== 'object' || Array.isArray(source)) return null;
+  const obligationId = (source as Record<string, unknown>).obligationId;
   return typeof obligationId === 'string' ? obligationId : null;
 }
 
@@ -200,104 +192,12 @@ function trackRequiredReview(
     trackReviewRequired(state, recordKey, next, now, {
       attemptId,
       obligationId: reviewObligationIdFromSignal(parsed, context.isReviewContent),
-      canonicalPromptAnchor: canonicalPromptAnchorOf(parsed),
-      canonicalPrompt: canonicalPromptOf(parsed),
-      canonicalPromptDigest: canonicalPromptDigestOf(parsed),
+      canonicalPromptAnchor: null,
+      canonicalPrompt: null,
+      canonicalPromptDigest: null,
       hostAttestationConstants: readHostAttestationConstants(signalAttestationOf(parsed)),
     });
   }
-}
-
-/** Process a completed flowguard-reviewer Task call. */
-export function onTaskToolAfter(
-  state: SessionEnforcementState,
-  args: Record<string, unknown>,
-  taskResult: string,
-  now: string,
-  context?: TaskToolContext,
-): void {
-  const subagentType = typeof args.subagent_type === 'string' ? args.subagent_type : '';
-  if (subagentType !== REVIEWER_SUBAGENT_TYPE) return;
-
-  const sessionId = resolveSubagentSessionId(context?.metadata, taskResult, context?.callID);
-  const capturedFindings = extractCapturedFindings(taskResult);
-  const terminationReason = detectStepExhaustion(taskResult)
-    ? ('step_exhausted' as const)
-    : undefined;
-
-  const record: SubagentRecord = {
-    sessionId,
-    completedAt: now,
-    ...(terminationReason ? { terminationReason } : {}),
-  };
-
-  const matched = matchPendingReview(state, args);
-  if (matched) {
-    applyCaptureToPending(matched, record, capturedFindings);
-  }
-}
-
-/** Apply the completed reviewer invocation to the matched pending review. */
-function applyCaptureToPending(
-  matched: PendingReview,
-  record: SubagentRecord,
-  capturedFindings: CapturedFindings | null,
-): void {
-  if (matched.obligationId != null && (matched.hostAttestationConstants ?? null) == null) {
-    matched.subagentCalled = true;
-    matched.subagentRecord = record;
-    matched.enforcementFailure = 'host_attestation_constants_missing';
-    matched.capturedFindings = null;
-    matched.lastSchemaErrors = null;
-    matched.repairPromptRequired = false;
-    matched.expectedRepairPromptDigest = null;
-    matched.expectedPromptDigest = null;
-    return;
-  }
-  if (matched.subagentCalled) {
-    matched.retryCount = (matched.retryCount ?? 0) + 1;
-  }
-  matched.subagentCalled = true;
-  matched.subagentRecord = record;
-  matched.capturedFindings = capturedFindings;
-  matched.lastSchemaErrors = extractCaptureSchemaErrors(matched);
-  matched.repairPromptRequired = matched.lastSchemaErrors !== null;
-  matched.expectedRepairPromptDigest = null;
-  matched.expectedPromptDigest = null;
-}
-
-/** Whether a pending review already holds a usable capture. */
-function hasUsableCapture(pending: PendingReview): boolean {
-  return isPendingCaptureUsable(pending);
-}
-
-/** Match a Task call to exactly one pending review obligation. */
-export function matchPendingReview(
-  state: SessionEnforcementState,
-  taskArgs: Record<string, unknown>,
-): PendingReview | null {
-  const awaitingCapture = [...state.pendingReviews.values()].filter(
-    (p) => (p.enforcementFailure ?? null) === null && (!p.subagentCalled || !hasUsableCapture(p)),
-  );
-
-  if (awaitingCapture.length === 0) return null;
-  if (awaitingCapture.length === 1) {
-    const candidate = awaitingCapture[0]!;
-    if (candidate.subagentCalled && (candidate.retryCount ?? 0) >= 1) return null;
-    return candidate;
-  }
-
-  const prompt = typeof taskArgs.prompt === 'string' ? taskArgs.prompt : '';
-  for (const pending of awaitingCapture) {
-    if (!pending.contentMeta) continue;
-    const { expectedIteration, expectedPlanVersion } = pending.contentMeta;
-    const hasIteration = promptContainsValue(prompt, 'iteration', expectedIteration);
-    const hasPlanVersion =
-      expectedPlanVersion === null || promptContainsValue(prompt, 'version', expectedPlanVersion);
-    if (hasIteration && hasPlanVersion) return pending;
-  }
-
-  return null;
 }
 
 function checkPendingReview(
@@ -318,7 +218,7 @@ function checkPendingReview(
       return {
         allowed: false,
         code: 'SUBAGENT_REVIEW_NOT_INVOKED',
-        reason: `FlowGuard enforcement: recovered from session state — obligation ${pendingObligation.obligationId} is pending but no subagent call was recorded in the transient enforcement state. A ${REVIEWER_SUBAGENT_TYPE} subagent call via the Task tool is required to fulfill this P35 obligation.`,
+        reason: `FlowGuard enforcement: recovered from session state — obligation ${pendingObligation.obligationId} is pending but no SDK reviewer invocation was recorded in the transient enforcement state.`,
       };
     }
     return { allowed: true };
@@ -421,7 +321,7 @@ export function enforceBeforeVerdict(
   args: Record<string, unknown>,
   sessionState?: {
     reviewAssurance?: SessionState['reviewAssurance'] | null;
-    policySnapshot?: { reviewInvocationPolicy?: string } | null;
+    policySnapshot?: object | null;
   } | null,
 ): EnforcementResult {
   const reviewTool = resolveReviewObligationTool(toolName);
@@ -442,13 +342,16 @@ export function enforceBeforeVerdict(
     return {
       allowed: false,
       code: 'SUBAGENT_REVIEW_NOT_INVOKED',
-      reason: `FlowGuard enforcement: ${reviewTool} signaled INDEPENDENT_REVIEW_REQUIRED but no Task call to ${REVIEWER_SUBAGENT_TYPE} was detected. You MUST call the ${REVIEWER_SUBAGENT_TYPE} subagent via the Task tool before submitting a self-review verdict.`,
+      reason: `FlowGuard enforcement: ${reviewTool} signaled INDEPENDENT_REVIEW_REQUIRED but no SDK reviewer invocation was recorded before the self-review verdict.`,
     };
   }
 
-  const hostTaskMode =
-    sessionState?.policySnapshot?.reviewInvocationPolicy === 'host_task_required';
-  if (hostTaskMode) return { allowed: true };
+  if (
+    sessionState?.reviewAssurance?.invocations.some(
+      (invocation) => invocation.invocationMode === 'sdk_session_prompt',
+    )
+  )
+    return { allowed: true };
 
   const findingsCheck = verifyFindingsIntegrity(
     pending,
@@ -489,67 +392,4 @@ export function recordPluginReview(
   }
   pending.capturedFindings = capturedFindings;
   return true;
-}
-
-/**
- * Pre-execution check: a flowguard-reviewer Task may only run when current
- * authoritative session state proves a pending review obligation exists.
- */
-export function enforceReviewerObligation(params: {
-  obligations: ReadonlyArray<Pick<ReviewObligation, 'status'> & { obligationId?: string }>;
-  invocations?: ReadonlyArray<{
-    obligationId: string;
-    capturedVerdict?: string;
-    capturedRawFindings?: Record<string, unknown>;
-  }>;
-  reviewInvocationPolicy: string | undefined;
-  maxIncoherentReviewerCaptureRetries?: number;
-  stateAvailable: boolean;
-}): EnforcementResult {
-  if (!params.stateAvailable) {
-    return {
-      allowed: false,
-      code: 'STATE_UNAVAILABLE_FOR_REVIEWER_TASK',
-      reason:
-        'Session state could not be read. The flowguard-reviewer Task cannot run without verifiable state.',
-    };
-  }
-
-  const hasPending = params.obligations.some((o) => o.status === 'pending');
-  if (params.reviewInvocationPolicy === 'host_task_required' && !hasPending) {
-    return {
-      allowed: false,
-      code: 'REVIEWER_TASK_REQUIRES_PENDING_OBLIGATION',
-      reason:
-        'A flowguard-reviewer Task may only run when a pending review obligation exists. ' +
-        'Run the relevant FlowGuard review tool (flowguard_plan, flowguard_implement, ' +
-        'flowguard_architecture, or flowguard_review) first to create a pending review ' +
-        'obligation, then start the reviewer Task.',
-    };
-  }
-
-  const pendingObligationIds = new Set(
-    params.obligations
-      .filter((obligation) => obligation.status === 'pending' && obligation.obligationId)
-      .map((obligation) => obligation.obligationId!),
-  );
-  const incoherentCaptureCount = (params.invocations ?? []).filter(
-    (invocation) =>
-      (pendingObligationIds.size === 0 || pendingObligationIds.has(invocation.obligationId)) &&
-      invocation.capturedVerdict === 'accept' &&
-      Array.isArray(invocation.capturedRawFindings?.blockingIssues) &&
-      invocation.capturedRawFindings.blockingIssues.length > 0,
-  ).length;
-  const maxRetries = params.maxIncoherentReviewerCaptureRetries ?? 1;
-  if (incoherentCaptureCount > maxRetries) {
-    return {
-      allowed: false,
-      code: 'SUBAGENT_VERDICT_FINDINGS_INCOHERENT',
-      reason:
-        `Reviewer capture retry budget exhausted after ${incoherentCaptureCount} incoherent capture(s). ` +
-        'Revise or re-submit the governed artifact to create a new review obligation; do not continue retrying this obligation.',
-    };
-  }
-
-  return { allowed: true };
 }

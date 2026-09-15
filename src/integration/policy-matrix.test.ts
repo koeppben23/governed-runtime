@@ -363,22 +363,6 @@ const MATRIX: Array<{
 ];
 
 describe('policy mode matrix', () => {
-  it('freezes reviewOutputPolicy defaults per mode', async () => {
-    const expected: Record<Mode, 'structured_required'> = {
-      solo: 'structured_required',
-      team: 'structured_required',
-      'team-ci': 'structured_required',
-      regulated: 'structured_required',
-    };
-
-    for (const mode of MODES) {
-      const ctx = contextFor(mode);
-      await hydrateMode(mode, ctx);
-      const state = await readState(await sessionDir(ctx));
-      expect(state?.policySnapshot.reviewOutputPolicy).toBe(expected[mode]);
-    }
-  });
-
   for (const testCase of MATRIX) {
     for (const mode of MODES) {
       it(`${testCase.scenario} / ${mode}`, async () => {

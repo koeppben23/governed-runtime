@@ -96,10 +96,10 @@ describe('canonical compatibility surfaces', () => {
   });
 
   it('does not restore removed compatibility projections or absent attempt lineage handling', async () => {
-    const [helpers, hostTaskResolver, reviewTool, envelopeReasons, evidenceRefinements] =
+    const [helpers, structuredEvidenceResolver, reviewTool, envelopeReasons, evidenceRefinements] =
       await Promise.all([
         source('integration/tools/helpers.ts'),
-        source('integration/tools/review-validation-host-task.ts'),
+        source('integration/tools/review-validation-structured-evidence.ts'),
         source('integration/tools/review-tool/index.ts'),
         source('config/reasons-envelope.ts'),
         source('state/evidence-review-refinements.ts'),
@@ -110,7 +110,7 @@ describe('canonical compatibility surfaces', () => {
     const commandSources = await sourceFiles('templates/commands');
     for (const module of [
       ...commandSources,
-      hostTaskResolver,
+      structuredEvidenceResolver,
       reviewTool,
       envelopeReasons,
       evidenceRefinements,
@@ -118,7 +118,6 @@ describe('canonical compatibility surfaces', () => {
       expect(module).not.toContain('GOVERNANCE_RULES');
       expect(module).not.toContain('REVIEW_ATTEMPT_ID_MISSING');
     }
-    expect(hostTaskResolver).not.toContain('!invocation.attemptId');
     expect(evidenceRefinements).not.toContain('!invocation.attemptId');
     expect(reviewTool).not.toMatch(/if\s*\(\s*!attemptId\s*\)/);
   });

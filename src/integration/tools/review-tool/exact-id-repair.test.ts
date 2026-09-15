@@ -4,7 +4,7 @@
  *              fingerprint matching in the repair path.
  *
  * The canonical /review retry instruction is a review call carrying the
- * original content plus reviewObligationId and deliberately NO reviewVerdict.
+ * original content plus reviewObligationId and deliberately no findings.
  * The agent may legitimately omit inputOrigin/references metadata, which
  * changes the content fingerprint. Before this fix, that drift created a
  * SECOND obligation for the same review, resetting the per-obligation repair
@@ -167,15 +167,17 @@ describe('exact obligation identity dominates fingerprint matching', () => {
     await rejectLatestAttempt(sessDir, obligationId, 'f'.repeat(64));
 
     // The documented retry shape: original content field + reviewObligationId,
-    // WITHOUT the inputOrigin/references metadata of the first call.
+    // WITHOUT the inputOrigin/references metadata of the first call. Under the
+    // structured-evidence contract the call re-arms the bindable attempt on the
+    // SAME obligation but cannot return CONTENT_ANALYSIS_REQUIRED: acceptable
+    // findings must arrive as host-observed structured evidence.
     const repair = parseToolResult(
       await review.execute(
         { branch: 'feature/add-due-date', reviewObligationId: obligationId },
         ctx,
       ),
     );
-    expect(repair.code).toBe('CONTENT_ANALYSIS_REQUIRED');
-    expect(requiredString(repair.requiredReviewAttestation, 'toolObligationId')).toBe(obligationId);
+    expect(repair.code).toBe('SUBAGENT_EVIDENCE_MISSING');
 
     const afterRepair = await readState(sessDir);
     expect(afterRepair!.reviewAssurance!.obligations).toHaveLength(1);
@@ -223,26 +225,6 @@ describe('exact obligation identity dominates fingerprint matching', () => {
       true,
     );
   });
-
-  it('HAPPY: verdict continuation with explicit ID is untouched (input mismatch still guarded)', async () => {
-    await hydrateTeam();
-    const first = parseToolResult(
-      await review.execute({ branch: 'feature/auth', inputOrigin: 'branch' }, ctx),
-    );
-    const obligationId = requiredString(first.requiredReviewAttestation, 'toolObligationId');
-    const result = parseToolResult(
-      await review.execute(
-        {
-          branch: 'different-branch',
-          inputOrigin: 'branch',
-          reviewObligationId: obligationId,
-          reviewVerdict: 'accept',
-        },
-        ctx,
-      ),
-    );
-    expect(result.code).toBe('REVIEW_OBLIGATION_INPUT_MISMATCH');
-  });
 });
 
 /** Raise the frozen reviewer-attempt budget (test manipulation of frozen state). */
@@ -289,7 +271,7 @@ describe('output-repair stall detection', () => {
     const repair = parseToolResult(
       await review.execute({ branch: 'feature/stall', reviewObligationId: obligationId }, ctx),
     );
-    expect(repair.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+    expect(repair.code).toBe('SUBAGENT_EVIDENCE_MISSING');
     return { sessDir, obligationId, firstAttemptId: firstAttempt.attemptId };
   }
 
@@ -300,7 +282,9 @@ describe('output-repair stall detection', () => {
     const stalled = parseToolResult(
       await review.execute({ branch: 'feature/stall', reviewObligationId: obligationId }, ctx),
     );
-    expect(stalled.code).toBe('REVIEWER_OUTPUT_REPAIR_STALLED');
+    // The structured-evidence surface reports missing capture generically; the
+    // stall decision is persisted as the obligation's terminal blocked code.
+    expect(stalled.code).toBe('SUBAGENT_EVIDENCE_MISSING');
 
     const state = await readState(sessDir);
     const obligation = findReviewObligationById(state!.reviewAssurance, obligationId);
@@ -322,8 +306,12 @@ describe('output-repair stall detection', () => {
     const exhausted = parseToolResult(
       await review.execute({ branch: 'feature/stall', reviewObligationId: obligationId }, ctx),
     );
-    expect(exhausted.code).toBe('REVIEWER_OUTPUT_RETRY_EXHAUSTED');
-    expect(exhausted.code).not.toBe('REVIEWER_OUTPUT_REPAIR_STALLED');
+    expect(exhausted.code).toBe('SUBAGENT_EVIDENCE_MISSING');
+    const state = await readState(sessDir);
+    const obligation = findReviewObligationById(state!.reviewAssurance, obligationId);
+    expect(obligation?.status).toBe('blocked');
+    expect(obligation?.blockedCode).toBe('REVIEWER_OUTPUT_RETRY_EXHAUSTED');
+    expect(obligation?.blockedCode).not.toBe('REVIEWER_OUTPUT_REPAIR_STALLED');
   });
 
   it('HAPPY: a different error set mints a third attempt when the frozen budget allows', async () => {
@@ -334,10 +322,7 @@ describe('output-repair stall detection', () => {
     const repaired = parseToolResult(
       await review.execute({ branch: 'feature/stall', reviewObligationId: obligationId }, ctx),
     );
-    expect(repaired.code).toBe('CONTENT_ANALYSIS_REQUIRED');
-    expect(requiredString(repaired.requiredReviewAttestation, 'toolObligationId')).toBe(
-      obligationId,
-    );
+    expect(repaired.code).toBe('SUBAGENT_EVIDENCE_MISSING');
     const attempts = (await readState(sessDir))!.reviewAssurance!.attempts.filter(
       (a) => a.obligationId === obligationId,
     );
@@ -373,7 +358,12 @@ describe('output-repair stall detection', () => {
     const result = parseToolResult(
       await review.execute({ branch: 'feature/stall', reviewObligationId: obligationId }, ctx),
     );
-    expect(result.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+    expect(result.code).toBe('SUBAGENT_EVIDENCE_MISSING');
+    // The budget path continued: a third bindable attempt was minted.
+    const attemptsAfter = (await readState(sessDir))!.reviewAssurance!.attempts.filter(
+      (a) => a.obligationId === obligationId,
+    );
+    expect(attemptsAfter.map((a) => a.ordinal).sort()).toEqual([1, 2, 3]);
   });
 });
 

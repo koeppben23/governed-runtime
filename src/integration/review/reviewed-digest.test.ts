@@ -91,7 +91,7 @@ function hostInvocation(
     criteriaVersion: REVIEW_CRITERIA_VERSION,
     parentSessionId: 'ses-parent',
     childSessionId: 'ses-child',
-    invocationMode: 'host_subagent_task',
+    invocationMode: 'sdk_session_prompt',
     promptHash: 'sha256-prompt',
     findingsHash: hashFindings(findings),
     invokedAt: NOW,

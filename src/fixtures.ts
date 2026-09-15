@@ -74,8 +74,6 @@ export const POLICY_SNAPSHOT: PolicySnapshot = {
   minimumActorAssuranceForApproval: 'best_effort',
   identityProvider: undefined,
   identityProviderMode: 'optional',
-  reviewOutputPolicy: 'structured_required',
-  reviewInvocationPolicy: 'sdk_allowed',
   reviewProfile: 'core',
   challengePolicy: {
     version: 'challenge-policy.v1',
@@ -111,7 +109,6 @@ export const REGULATED_POLICY_SNAPSHOT: PolicySnapshot = {
   requestedMode: 'regulated',
   allowSelfApproval: false,
   minimumActorAssuranceForApproval: 'best_effort',
-  reviewOutputPolicy: 'structured_required',
   enforceRiskClassification: true,
 };
 
@@ -233,10 +230,8 @@ export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
       source: 'host-orchestrated',
       childSessionId: 'child-session-1',
       agentType: 'flowguard-reviewer',
-      invocationMode: 'host_subagent_task',
-      hostVisible: true,
-      hostTaskCallId: 'call-architecture-review',
-      canonicalPromptDigest: 'a'.repeat(64),
+      invocationMode: 'sdk_session_prompt',
+      hostVisible: false,
       promptHash: 'prompt-hash-of-architecture-review',
       mandateDigest: 'mandate-digest-of-review-criteria',
       criteriaVersion: 'criteria-v1',
@@ -266,18 +261,7 @@ export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
       completedAt: FIXED_TIME,
     },
   ],
-  dispatches: [
-    {
-      dispatchId: '99999999-9999-4999-8999-999999999999',
-      attemptId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
-      obligationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-      hostCallId: 'call-architecture-review',
-      canonicalPromptDigest: 'a'.repeat(64),
-      dispatchAuthorizedAt: FIXED_TIME,
-      dispatchStatus: 'completed',
-      completedAt: FIXED_TIME,
-    },
-  ],
+  dispatches: [],
 };
 
 /**
@@ -337,10 +321,8 @@ export const PLAN_REVIEW_ASSURANCE: ReviewAssuranceState = assuranceWith({
       source: 'host-orchestrated',
       childSessionId: 'child-session-1',
       agentType: 'flowguard-reviewer',
-      invocationMode: 'host_subagent_task',
-      hostVisible: true,
-      hostTaskCallId: 'call-plan-review',
-      canonicalPromptDigest: 'b'.repeat(64),
+      invocationMode: 'sdk_session_prompt',
+      hostVisible: false,
       promptHash: 'prompt-hash-of-plan-review',
       mandateDigest: 'mandate-digest-of-plan-review-criteria',
       criteriaVersion: 'criteria-v1',

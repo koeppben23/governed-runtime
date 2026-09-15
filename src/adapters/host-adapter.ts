@@ -45,8 +45,8 @@ export interface HostCapabilities {
   readonly outputReplacement: boolean;
   /** Can inject system context during session (compaction, status). */
   readonly contextInjection: boolean;
-  /** Can spawn a subagent for independent review. */
-  readonly reviewerSpawn: boolean;
+  /** Can perform an independent, schema-constrained, host-observed review. */
+  readonly independentStructuredReview: boolean;
   /** Can inject governance context during compaction events. */
   readonly compactionInjection: boolean;
 }
@@ -110,9 +110,8 @@ export interface ToolResultMutation {
 export interface ReviewerSpawnConfig {
   readonly prompt: string;
   readonly parentSessionId: string;
-  readonly reviewOutputPolicy?: 'structured_required';
-  readonly reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed';
-  readonly maxRetries?: number;
+  /** Technical retries within the same review attempt. */
+  readonly maxTransportRetries?: number;
   readonly baseDelayMs?: number;
   /** Test hook: callback on retry attempt failure. */
   readonly onAttemptFailed?: (info: {
@@ -136,8 +135,7 @@ export interface ReviewerSpawnConfig {
 }
 
 /**
- * Result of a reviewer invocation that was blocked by policy.
- * The reviewer was never actually spawned.
+ * Result of a reviewer invocation blocked by the host transport contract.
  */
 export interface HostReviewerBlockedResult {
   readonly blocked: true;

@@ -540,7 +540,7 @@ describe('P34a: Policy-Driven Branches', () => {
     const raw = await plan.execute({ reviewVerdict: 'accept' }, ctx);
     const result = parseToolResult(raw);
     expect(result.error).toBe(true);
-    expect(result.code).toBe('REVIEW_FINDINGS_REQUIRED');
+    expect(result.code).toBe('SUBAGENT_EVIDENCE_MISSING');
   });
 
   it('approve + subagentEnabled=true + valid reviewFindings → accepted', async () => {

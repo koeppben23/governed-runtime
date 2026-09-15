@@ -66,7 +66,6 @@ function contentChallenge(overrides: Record<string, unknown> = {}) {
 
 function argsWith(challenge: Record<string, unknown>): ReviewToolArgs {
   return {
-    reviewVerdict: 'accept',
     reviewFindings: {
       reviewMode: 'subagent',
       overallVerdict: 'accept',

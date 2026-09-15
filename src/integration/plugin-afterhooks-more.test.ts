@@ -27,7 +27,6 @@ import { writeState } from '../adapters/persistence.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
 import { createTestWorkspace } from './test-helpers.js';
 import { formatBlocked, formatAutoAdvanceOverflow } from './tools/helpers.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { NATIVE_ATTESTATION_REJECTION_FIELD } from '../shared/flowguard-identifiers.js';
 
 const SESSION_ID = crypto.randomUUID();
@@ -244,41 +243,6 @@ describe('toolAfter — reviewable diagnostics', () => {
     const runtime = makeRuntime();
     await toolAfter(runtime, { tool: 'read', sessionID: SESSION_ID }, hookOutput('{}'));
     expect(runtime.log.warn).not.toHaveBeenCalled();
-  });
-});
-
-describe('toolAfter — reviewer task provenance', () => {
-  it('rewrites the output when no host-owned execution record exists', async () => {
-    const runtime = makeRuntime();
-    const output = { title: 'task', output: '{}', metadata: {} };
-    await toolAfter(
-      runtime,
-      {
-        tool: 'task',
-        sessionID: SESSION_ID,
-        callID: 'c1',
-        args: { subagent_type: REVIEWER_SUBAGENT_TYPE },
-      },
-      output,
-    );
-    const parsed = JSON.parse(output.output) as Record<string, unknown>;
-    expect(parsed.code).toBe('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE');
-    expect(runtime.log.warn).toHaveBeenCalledWith(
-      'host-task',
-      'reviewer capture rejected without execution provenance',
-      expect.any(Object),
-    );
-  });
-
-  it('ignores generic tasks without reviewer args', async () => {
-    const runtime = makeRuntime();
-    const output = { title: 'task', output: '{}', metadata: {} };
-    await toolAfter(
-      runtime,
-      { tool: 'task', sessionID: SESSION_ID, callID: 'c1', args: {} },
-      output,
-    );
-    expect(output.output).toBe('{}');
   });
 });
 

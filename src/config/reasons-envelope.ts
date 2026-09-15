@@ -1,5 +1,5 @@
 /**
- * Reason codes: review envelope validation (host-task capture, extraction, binding).
+ * Reason codes: review envelope validation, extraction, and binding.
  *
  * Extracted from reasons-precondition.ts to stay within the 750 LOC file-size budget.
  * Re-exported by reasons-precondition.ts as part of PRECONDITION_REASONS.
@@ -27,9 +27,9 @@ export const ENVELOPE_PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'The reviewer Task completed, but its output did not contain extractable ReviewFindings JSON.',
     recoverySteps: [
-      'Re-run the originating FlowGuard command (plan, implement, architecture, or review) to authorize a fresh output-repair attempt and emit a new canonical reviewerTaskPrompt',
-      `Only after that command returns INDEPENDENT_REVIEW_REQUIRED, invoke the ${REVIEWER_SUBAGENT_TYPE} Task again with subagent_type="${REVIEWER_SUBAGENT_TYPE}"; do not reuse or free-compose the rejected prompt`,
-      'Do not hand-edit, copy, or submit rejected reviewFindings; host-captured valid evidence remains the only review authority',
+      'Re-run the originating FlowGuard command (plan, implement, architecture, or review) to authorize a fresh output-repair attempt',
+      'Follow the returned recovery steps; do not retry or reconstruct the rejected reviewer output yourself',
+      'Do not hand-edit, copy, or submit rejected reviewFindings; validated evidence remains the only review authority',
     ],
   },
 
@@ -60,9 +60,9 @@ export const ENVELOPE_PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'The reviewer Task completed, but its output failed canonical ReviewFindings schema validation: {message}',
     recoverySteps: [
-      'Re-run the originating FlowGuard command (plan, implement, architecture, or review) to authorize a fresh output-repair attempt and emit a new canonical reviewerTaskPrompt',
-      `Only after that command returns INDEPENDENT_REVIEW_REQUIRED, invoke the ${REVIEWER_SUBAGENT_TYPE} Task again with subagent_type="${REVIEWER_SUBAGENT_TYPE}"; do not reuse or free-compose the rejected prompt`,
-      'Do not hand-edit, copy, or submit rejected reviewFindings; host-captured schema-valid evidence remains the only review authority',
+      'Re-run the originating FlowGuard command (plan, implement, architecture, or review) to authorize a fresh output-repair attempt',
+      'Follow the returned recovery steps; do not retry or reconstruct the rejected reviewer output yourself',
+      'Do not hand-edit, copy, or submit rejected reviewFindings; schema-valid evidence remains the only review authority',
     ],
   },
 

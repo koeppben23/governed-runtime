@@ -72,10 +72,7 @@ if (comparison === 0) {
 }
 
 if (comparison < 0) {
-  console.log(
-    `OpenCode local host version ${localVersion} is older than baseline ${baselineVersion}; no update PR needed.`,
-  );
-  process.exit(0);
+  fail(`OpenCode local host version ${localVersion} is older than validated baseline ${baselineVersion}.`);
 }
 
 const recoveryCommand = `gh workflow run opencode-sdk-update.yml --ref main -f version=latest -f opencode_version=${localVersion}`;

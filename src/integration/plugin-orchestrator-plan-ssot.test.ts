@@ -84,7 +84,6 @@ function buildState(overrides: Partial<SessionState> = {}): SessionState {
     plan: PLAN_RECORD,
     policySnapshot: {
       ...POLICY_SNAPSHOT,
-      reviewOutputPolicy: 'structured_required',
     },
     reviewAssurance: {
       assuranceSchemaVersion: 'review-assurance.v6' as const,

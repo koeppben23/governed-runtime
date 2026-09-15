@@ -73,21 +73,24 @@ function makeInvocation(overrides?: Partial<ReviewInvocationEvidence>): ReviewIn
     criteriaVersion = FIXTURE_CRITERIA_VERSION,
     ...rest
   } = overrides ?? {};
-  return buildInvocationEvidence({
-    obligationId: '00000000-0000-4000-8000-000000000001',
-    obligationType: 'plan',
-    attemptId: '00000000-0000-4000-8000-000000000002',
-    mandateDigest,
-    criteriaVersion,
-    parentSessionId: 'parent-session-1',
-    childSessionId: 'child-session-1',
-    promptHash: hashText('test prompt'),
-    findingsHash: hashText('test findings'),
-    invokedAt: NOW,
-    fulfilledAt: fulfilledAt ?? NOW,
-    invocationMode: 'sdk_session_prompt',
+  return {
+    ...buildInvocationEvidence({
+      obligationId: '00000000-0000-4000-8000-000000000001',
+      obligationType: 'plan',
+      attemptId: '00000000-0000-4000-8000-000000000002',
+      mandateDigest,
+      criteriaVersion,
+      parentSessionId: 'parent-session-1',
+      childSessionId: 'child-session-1',
+      promptHash: hashText('test prompt'),
+      findingsHash: hashText('test findings'),
+      invokedAt: NOW,
+      fulfilledAt: fulfilledAt ?? NOW,
+      invocationMode: 'sdk_session_prompt',
+      ...rest,
+    }),
     ...rest,
-  });
+  };
 }
 
 function makeFindings(overrides?: Partial<ReviewFindings>): ReviewFindings {
@@ -837,6 +840,7 @@ describe('integration/review-assurance', () => {
       const findings = makeFindings();
       const obligation = makeObligation({
         obligationId: findings.attestation!.toolObligationId,
+        invocationId: '00000000-0000-4000-8000-000000000011',
       });
       const rejectedInvocation = makeInvocation({
         invocationId: '00000000-0000-4000-8000-000000000010',
@@ -849,7 +853,7 @@ describe('integration/review-assurance', () => {
         obligationId: obligation.obligationId,
         childSessionId: findings.reviewedBy.sessionId,
         findingsHash: hashFindings(findings),
-        invocationMode: 'host_subagent_task',
+        invocationMode: 'sdk_session_prompt',
       });
       const assurance = {
         assuranceSchemaVersion: 'review-assurance.v6' as const,
@@ -1012,7 +1016,7 @@ describe('integration/review-assurance', () => {
         criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
-        invocationMode: 'host_subagent_task',
+        invocationMode: 'sdk_session_prompt',
         promptHash: hashText('prompt'),
         findingsHash: hashText('findings'),
         invokedAt: NOW,
@@ -1049,7 +1053,7 @@ describe('integration/review-assurance', () => {
         criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
-        invocationMode: 'host_subagent_task',
+        invocationMode: 'sdk_session_prompt',
         promptHash: hashText('prompt'),
         findingsHash: hashFindings(sampleRawFindings),
         invokedAt: NOW,
@@ -1085,7 +1089,7 @@ describe('integration/review-assurance', () => {
         criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
-        invocationMode: 'host_subagent_task',
+        invocationMode: 'sdk_session_prompt',
         promptHash: hashText('prompt'),
         findingsHash: hashFindings(sampleRawFindings),
         invokedAt: NOW,

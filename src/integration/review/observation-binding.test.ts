@@ -27,21 +27,8 @@ import {
   REVIEW_MANDATE_DIGEST,
 } from './assurance.js';
 import { mintObservationCapability } from './attempt-lifecycle.js';
-import { buildHostTaskEvidence } from './evidence-binding.js';
 import { validateReviewFindings } from '../tools/review-validation.js';
-import {
-  createSessionState,
-  onFlowGuardToolAfter,
-  onTaskToolAfter,
-} from './enforcement/enforcement.js';
-import {
-  modeAResponse,
-  validPrompt,
-  NOW,
-  LATER,
-  SESSION_ID,
-  CHILD_SESSION_ID,
-} from '../plugin-host-task-diagnostics-helpers.js';
+import { NOW, SESSION_ID, CHILD_SESSION_ID } from '../plugin-host-task-diagnostics-helpers.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import type {
   RepositoryObservation,
@@ -389,87 +376,6 @@ describe('pure binder — adversarial matrix', () => {
     const obligation = candidateObligation();
     const result = bind(obligation, null, CHILD_SESSION_ID, []);
     expect(result).toEqual({ ok: true });
-  });
-});
-
-describe('host-task bind path', () => {
-  function taskResultWithEvidence(obligationId: string, locations: unknown[]): string {
-    return JSON.stringify({
-      iteration: 0,
-      planVersion: 1,
-      reviewMode: 'subagent',
-      overallVerdict: 'changes_requested',
-      blockingIssues: [
-        {
-          severity: 'major',
-          category: 'correctness',
-          message: 'flawed',
-          relation: {
-            // Plan reviews are artifact-scoped: the subject anchor targets the
-            // plan artifact; repository evidenceLocations bind against the
-            // attempt's authoritative observations.
-            subjectAnchors: [
-              {
-                kind: 'artifact_section',
-                artifactKind: 'plan',
-                artifactDigest: 'impl-digest',
-                sectionPath: [{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }],
-              },
-            ],
-            evidenceLocations: locations,
-          },
-        },
-      ],
-      majorRisks: [],
-      missingVerification: [],
-      scopeCreep: [],
-      unknowns: [],
-      challenges: [],
-      attestation: {
-        toolObligationId: obligationId,
-      },
-    });
-  }
-
-  function hostTaskCycle(
-    obligation: ReviewObligation,
-    attempt: ReviewAttempt,
-    locations: unknown[],
-  ) {
-    const state = createSessionState();
-    onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(0, 1), NOW);
-    onTaskToolAfter(
-      state,
-      { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt(0, 1) },
-      taskResultWithEvidence(obligation.obligationId, locations),
-      LATER,
-      { metadata: { sessionID: CHILD_SESSION_ID } },
-    );
-    return buildHostTaskEvidence(state, SESSION_ID, LATER, {
-      obligations: [obligation],
-      invocations: [],
-      attempts: [attempt],
-    });
-  }
-
-  it('HAPPY: evidenceLocations bind against the attempt observations', () => {
-    const obligation = candidateObligation('commit', 'plan');
-    const baseAttempt = attemptFor(obligation, CHILD_SESSION_ID);
-    const attempt: ReviewAttempt = {
-      ...baseAttempt,
-      observations: [makeObservation(obligation, baseAttempt)],
-    };
-    const result = hostTaskCycle(obligation, attempt, [{ path: 'src/foo.ts', revision: 'head' }]);
-    expect(result.bindOutcome).toBe('bound');
-    expect(result.evidence?.capturedVerdict).toBe('changes_requested');
-  });
-
-  it('BAD: evidenceLocations without observations -> repository_evidence_unbound (no repair)', () => {
-    const obligation = candidateObligation('commit', 'plan');
-    const attempt = attemptFor(obligation, CHILD_SESSION_ID);
-    const result = hostTaskCycle(obligation, attempt, [{ path: 'src/foo.ts', revision: 'head' }]);
-    expect(result.bindOutcome).toBe('repository_evidence_unbound');
-    expect(result.evidence).toBeNull();
   });
 });
 

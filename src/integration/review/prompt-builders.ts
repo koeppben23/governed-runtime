@@ -3,8 +3,7 @@
  * @description Prompt construction for reviewer subagent invocation.
  *
  * Structured review prompts carry semantic contracts and trusted/frozen context.
- * Serialization shape is supplied natively by the host when supported; the
- * text-compat fallback appends the complete schema and an explicit shape example.
+ * Serialization shape is supplied exclusively by the host structured-output contract.
  *
  * @version v2
  */
@@ -31,7 +30,6 @@ import {
 } from './prompt-sections.js';
 import type { FrozenReviewerContext } from './frozen-reviewer-context.js';
 import type { RepositoryDiscoverySnapshot } from '../../state/evidence.js';
-import { REVIEW_FINDINGS_JSON_SCHEMA } from './findings-schema.js';
 
 // ─── Canonical Review Context Serializer ─────────────────────────────────────
 
@@ -43,48 +41,6 @@ export {
   type ReviewVerificationEvidenceItem,
 } from './impl-review-prompt.js';
 import { renderReviewContext } from './prompt-sections.js';
-
-function textCompatExample(): Record<string, unknown> {
-  return {
-    iteration: '<exact iteration from Trusted Runtime Context>',
-    planVersion: '<exact planVersion when supplied>',
-    reviewMode: 'subagent',
-    overallVerdict: '<select after falsification>',
-    blockingIssues: [],
-    majorRisks: [],
-    missingVerification: [],
-    scopeCreep: [],
-    unknowns: [],
-    attestation: { toolObligationId: '<exact obligation id from Trusted Runtime Context>' },
-  };
-}
-
-/**
- * Serialization fallback for transports without native schema enforcement.
- * The structured task prompt remains the semantic authority; this fallback adds
- * only the serialization contract that native constrained decoding would have
- * enforced for us.
- */
-export function buildTextCompatReviewerPrompt(structuredPrompt: string): string {
-  return [
-    structuredPrompt,
-    '',
-    '## Text Compatibility Serialization Contract',
-    '',
-    'Native structured output is unavailable for this invocation. Return exactly one valid JSON object and no prose or markdown fences.',
-    'The JSON MUST validate against this canonical ReviewFindingsInput schema:',
-    '',
-    JSON.stringify(REVIEW_FINDINGS_JSON_SCHEMA, null, 2),
-    '',
-    'Use only schema-defined top-level fields. In particular, challenges belong in the top-level challenges array; never invent wrapper objects such as nonBlockingIssues or designChallenges.',
-    'The canonical schema is authoritative for field names, enums, required fields, optionality, and nesting.',
-    '',
-    'Shape example only (replace every placeholder/binding with the exact values from the Trusted Runtime Context; do not copy placeholder text):',
-    JSON.stringify(textCompatExample(), null, 2),
-    '',
-    'The schema, not the example, is authoritative for fields, enums, optionality, and nested structure.',
-  ].join('\n');
-}
 
 /** Serialize the integrity-verified review subject identically for every transport. */
 export function renderFrozenReviewSubjectEnvelope(context: FrozenReviewerContext): string[] {
@@ -166,13 +122,10 @@ function renderChallengeContract(
   contract: ReviewerChallengePromptContract | undefined,
   obligationId: string,
 ): string[] {
-  if (!contract) {
-    return ['- Omit the optional challenges field; no Challenge contract was supplied.'];
-  }
+  if (!contract)
+    return ['- Challenge requirement: exactly 0 challenges are required for this review.'];
   if (contract.requiredChallengeCount === 0) {
-    return [
-      '- Challenge contract: requiredChallengeCount=0. Omit the optional challenges field entirely.',
-    ];
+    return ['- Challenge requirement: exactly 0 challenges are required for this review.'];
   }
   const evidenceRefs = contract.evidenceRefs ?? [];
   const challenge = {

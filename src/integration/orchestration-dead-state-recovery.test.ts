@@ -876,7 +876,14 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
       expect(result.status).toContain('restarted');
       expect((result.reviewObligation as { iteration?: number } | undefined)?.iteration).toBe(2);
       expect(result.selfReviewIteration).toBe(2);
-      expect(String(result.next)).toContain('iteration=2');
+      // Under the structured-evidence contract the restart emits a child-session
+      // invocation instruction carrying the review cycle, not a reviewer prompt.
+      expect(result.next).toBe('INDEPENDENT_REVIEW_REQUIRED');
+      const invocation = result.reviewInvocation as Record<string, unknown> | undefined;
+      expect(invocation?.mode).toBeDefined();
+      expect(
+        (invocation?.requiredReviewAttestation as { iteration?: number } | undefined)?.iteration,
+      ).toBe(2);
 
       const after = await readState(sessDir);
       const pending = after!.reviewAssurance!.obligations.filter((o) => o.status === 'pending');

@@ -16,9 +16,8 @@ import {
   resolveRuntimeReviewPlatform,
   resolveReviewOrchestrationMode,
 } from '../review/orchestration-mode.js';
-import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
+import { buildChildSessionReviewInstruction } from '../review/child-session-instruction.js';
 import { resolveAttemptObservationCapability } from '../review/assurance.js';
-import { buildReviewerProofContext } from '../review/proof-context.js';
 
 // ─── Shared Types ─────────────────────────────────────────────────────────
 
@@ -104,26 +103,19 @@ export function buildArchitectureReviewInstruction(input: {
   subjectLabel: string;
   /** State whose declarations/graph the reviewer prompt must reflect (#762). */
   state: SessionState;
-}): {
-  next: string;
-  reviewInvocation?: ReturnType<typeof buildPendingReviewInstruction>['reviewInvocation'];
-} {
+}) {
   const platform = resolveRuntimeReviewPlatform();
   const mode = resolveReviewOrchestrationMode({
     platform,
-    reviewInvocationPolicy: input.policy.reviewInvocationPolicy,
     nativeReviewerAvailable: platform === 'unknown' ? false : true,
-    manualAttestedAllowed: input.policy.reviewInvocationPolicy !== 'host_task_required',
+    manualAttestedAllowed: false,
   });
-  const instruction = buildPendingReviewInstruction({
+  return buildChildSessionReviewInstruction({
     mode,
     platform,
-    reviewKind: 'architecture',
     obligation: input.obligation,
     iteration: input.iteration,
     planVersion: input.planVersion,
-    subjectLabel: input.subjectLabel,
-    proofContext: buildReviewerProofContext(input.state),
     observationCapability: input.obligation
       ? (resolveAttemptObservationCapability(
           input.state.reviewAssurance,
@@ -131,5 +123,4 @@ export function buildArchitectureReviewInstruction(input: {
         ) ?? undefined)
       : undefined,
   });
-  return { next: instruction.next, reviewInvocation: instruction.reviewInvocation };
 }

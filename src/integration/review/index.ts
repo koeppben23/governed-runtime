@@ -57,24 +57,11 @@ export { isReviewableTool, obligationTypeForTool, REVIEWABLE_TOOLS } from './obl
 export {
   createSessionState,
   onFlowGuardToolAfter,
-  enforceBeforeSubagentCall,
-  onTaskToolAfter,
-  matchPendingReview,
   enforceBeforeVerdict,
   recordPluginReview,
 } from './enforcement/enforcement.js';
 
 // ─── Enforcement Extraction ──────────────────────────────────────────────────
-
-export {
-  extractContentMeta,
-  extractCapturedFindings,
-  promptContainsValue,
-  resolveSessionIdFromMetadata,
-  injectSessionIdIntoOutput,
-  extractSubagentSessionId,
-  extractJsonBlock,
-} from './enforcement/extraction.js';
 
 // ─── Assurance ───────────────────────────────────────────────────────────────
 
@@ -145,8 +132,6 @@ export {
 } from './agent-resolution.js';
 
 // ─── Evidence Binding ────────────────────────────────────────────────────────
-
-export { buildHostTaskEvidence } from './evidence-binding.js';
 
 // ─── Findings Schema ─────────────────────────────────────────────────────────
 

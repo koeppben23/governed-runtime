@@ -3,11 +3,7 @@
  * @description Shared test factories and constants for plugin-host-task-diagnostics test suites.
  */
 
-import {
-  createSessionState,
-  onFlowGuardToolAfter,
-  onTaskToolAfter,
-} from './review/enforcement/enforcement.js';
+import { createSessionState, onFlowGuardToolAfter } from './review/enforcement/enforcement.js';
 import { REVIEW_REQUIRED_PREFIX } from './review/enforcement/types.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import {
@@ -187,8 +183,7 @@ export function attemptFor(
 }
 
 /**
- * Set up a full enforcement cycle: Mode A → Task call → enforcement state ready.
- * Returns the obligation, the enforcement state, and the recorded attempts.
+ * Set up a structured-review requirement and its corresponding attempt fixture.
  */
 export function setupFullCycle(
   opts: {
@@ -214,24 +209,6 @@ export function setupFullCycle(
     iteration,
     planVersion,
   });
-
-  const taskResult = taskResultWithAttestation(obligation.obligationId, {
-    childSessionId,
-    iteration,
-    planVersion,
-  });
-
-  // Step 2: Task call — onTaskToolAfter records subagent call
-  onTaskToolAfter(
-    state,
-    {
-      subagent_type: REVIEWER_SUBAGENT_TYPE,
-      prompt: validPrompt(iteration, planVersion),
-    },
-    taskResult,
-    LATER,
-    { metadata: { sessionID: childSessionId } },
-  );
 
   return { state, obligation, attempts: [attemptFor(obligation, childSessionId)] };
 }

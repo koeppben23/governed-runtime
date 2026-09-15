@@ -739,13 +739,6 @@ describe('status', () => {
           reviewedBy: 'flowguard-reviewer',
         },
       } as ReviewFindings;
-      const dispatchPlan = hostTaskDispatchPlan({
-        isHostTask: true,
-        dispatches: [],
-        attemptId: '00000000-0000-4000-8000-000000000123',
-        obligationId: obligation.obligationId,
-        at: '2026-01-01T00:00:00.000Z',
-      });
       const invocation = {
         ...buildInvocationEvidence({
           obligationId: obligation.obligationId,
@@ -754,10 +747,8 @@ describe('status', () => {
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           parentSessionId: ctx.sessionID,
           childSessionId: 'ses-child',
-          invocationMode: 'host_subagent_task',
+          invocationMode: 'sdk_session_prompt',
           promptHash: 'sha256-prompt',
-          hostTaskCallId: dispatchPlan.hostTaskCallId,
-          canonicalPromptDigest: dispatchPlan.canonicalPromptDigest,
           findingsHash: hashFindings(findings),
           invokedAt: '2026-01-01T00:00:00.000Z',
           attemptId: '00000000-0000-4000-8000-000000000123',
@@ -813,7 +804,7 @@ describe('status', () => {
               completedAt: '2026-01-01T00:00:00.000Z',
             },
           ],
-          dispatches: dispatchPlan.dispatch ? [dispatchPlan.dispatch] : [],
+          dispatches: [],
         },
       };
       await writeState(sessDir, state);

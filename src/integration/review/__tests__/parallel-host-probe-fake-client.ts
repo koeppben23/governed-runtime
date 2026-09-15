@@ -162,7 +162,7 @@ export class DeterministicFakeClient {
                 resolvePromise({
                   data: {
                     parts: [{ type: 'text', text: JSON.stringify(findings) }],
-                    info: { structured_output: findings },
+                    info: { structured: findings },
                   },
                   error: undefined,
                 });

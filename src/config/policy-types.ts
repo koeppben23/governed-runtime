@@ -51,16 +51,6 @@ export interface AuditPolicy {
 }
 
 /**
- * Independent review evidence always requires STRUCTURED findings (host-
- * observed structured model output or honestly-labeled agent-submitted
- * structured findings); unstructured text recovery is never admissible.
- */
-export type ReviewOutputPolicy = 'structured_required';
-
-/** Controls how the reviewer is invoked — host-visible Task tool vs SDK vs fallback. */
-export type ReviewInvocationPolicy = 'host_task_required' | 'host_task_preferred' | 'sdk_allowed';
-
-/**
  * Review coverage profile bound to a review obligation.
  *
  * - 'core' — the mandatory, non-optional baseline review pass. It reuses the
@@ -238,19 +228,13 @@ export interface FlowGuardPolicy {
   /** Max impl-review iterations in IMPL_REVIEW phase before force-convergence. */
   readonly maxImplReviewIterations: number;
 
-  /** Max fresh reviewer captures after an F12-incoherent host-task capture. */
+  /** Max fresh reviewer attempts after an F12-incoherent review result. */
   readonly maxIncoherentReviewerCaptureRetries: number;
 
   /**
    * Obligation-level reviewer-attempt budget: how many NEW reviewer attempts
-   * (output repairs AND task re-arms) may be minted for one obligation.
-   * Consumed by canonically repairable non-bindable reviewer output
-   * (schema/extraction/attestation/relation contract defects) and by
-   * Task-lifecycle re-arms after an interrupted dispatch. Frozen onto the
-   * obligation at creation; the reissue gates read the frozen value, never the
-   * live config. Governance rejections, scope/material failures, and
-   * execution failures do NOT consume this budget — they never authorize a
-   * reissue at all.
+   * (semantic re-reviews) may be minted for one obligation. Transport failures
+   * retry within the same attempt and do not consume this budget.
    */
   readonly maxReviewerAttempts: number;
 
@@ -261,12 +245,6 @@ export interface FlowGuardPolicy {
    * true  → self-approval allowed (solo/team).
    */
   readonly allowSelfApproval: boolean;
-
-  /** Required review output assurance — structured findings are the only admissible form. */
-  readonly reviewOutputPolicy: ReviewOutputPolicy;
-
-  /** How reviewer invocation must occur: host-visible Task tool, SDK, or policy-gated. */
-  readonly reviewInvocationPolicy: ReviewInvocationPolicy;
 
   /**
    * Mandatory review coverage profile. Defaults to 'core' in every preset.

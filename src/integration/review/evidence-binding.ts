@@ -256,11 +256,10 @@ function assembleBoundEvidence(input: {
     criteriaVersion: obligation.criteriaVersion,
     parentSessionId: input.sessionId,
     childSessionId,
-    invocationMode: 'host_subagent_task',
+    invocationMode: 'sdk_session_prompt',
     promptHash,
     ...(input.promptProvenance
       ? {
-          hostTaskCallId: input.promptProvenance.callId,
           canonicalPromptDigest: input.promptProvenance.canonicalPromptDigest,
           modelPromptDigest: input.promptProvenance.modelPromptDigest,
         }

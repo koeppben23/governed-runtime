@@ -162,19 +162,6 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // (and reviewFindings) on the first content-aware flowguard_review call — the
     // verdict is submitted only after the reviewer runs, so a verdict-bearing
     // first call no longer wedges the host-task bind.
-    // Refreshed for discovery-capture + payload-contract hardening: the shared
-    // Discovery capture (plan/implement/architecture) and /review step 1 now
-    // require an UNFOCUSED flowguard_status (focused projections omit
-    // discoveryHealth/discoveryDrift/detectedStack), so repo-dependent claims are
-    // no longer spuriously NOT_VERIFIED. The shared host_task_required verdict
-    // branch now states reviewFindings submitted alongside the verdict are ignored
-    // and the verdict is validated against captured evidence; /plan + /review
-    // first-call lines forbid a prefilled verdict imperatively.
-    // Refreshed for host-task verdict-only parity: the shared verdict branch,
-    // /review step 5, /plan payload contract, and /architecture review step now
-    // forbid reviewFindings "not even an empty placeholder object" in
-    // host_task_required mode — matching the runtime, which resolves findings from
-    // captured evidence and validates the verdict against it.
     // Refreshed for reviewer-criteria enrichment: /plan gained tracer-bullet /
     // deep-module step guidance plus a "Planning discipline" section, and
     // /validate gained an advisory "Test quality" section. These change the
@@ -285,8 +272,6 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // no longer treats local implementation mechanics as approved-plan authority.
     // Refreshed for explicit plan contract authority: /plan now materializes the
     // Contracts and Authority Decisions sections that /implement treats as binding.
-    // Refreshed for host-task output repair: schema/extraction failures require
-    // a fresh FlowGuard-authorized repair prompt before the reviewer Task is retried.
     // Refreshed for host-owned claim identity and evidence-fit guidance: /plan
     // and /architecture no longer instruct agents to mint claimId; /plan also
     // constrains claim statements to the observable evidence they declare.
@@ -294,9 +279,12 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // now starts with `---` at byte 0 (gray-matter requires the fence at the start
     // of the file) and every description is FlowGuard-branded with a `FlowGuard — `
     // prefix. Changes all command bodies and therefore the COMMANDS hash.
+    // Refreshed for the structured-review hard cut: command templates no longer
+    // reference reviewerTaskPrompt or Task-tool reviewer dispatch; the verdict is
+    // submitted against host-observed structured child-session evidence.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'e7e81eaaf4820dfcecff1bbb7ffd9eb7250dba6eb49c1d04b4ab9f7eff54880e',
+      '80f54437f2b4b162bc7ed30855a21547a27e31dda6f725ae4b1504873ee8ff7b',
     );
   });
 

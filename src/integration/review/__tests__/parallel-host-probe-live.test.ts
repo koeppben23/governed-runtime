@@ -155,7 +155,7 @@ function makeRestClient(handle: ServeHandle): OrchestratorClient {
           if (body.info?.error) {
             return { data: undefined, error: new Error('aborted') };
           }
-          return { data: { parts: body.parts, info: { structured_output: undefined } } };
+          return { data: { parts: body.parts, info: { structured: undefined } } };
         } finally {
           clearTimeout(timer);
         }

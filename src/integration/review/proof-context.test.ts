@@ -11,7 +11,6 @@ import { describe, expect, it } from 'vitest';
 import { makeState, PLAN_RECORD, ARCHITECTURE_DECISION } from '../../fixtures.js';
 import type { SessionState } from '../../state/schema.js';
 import type { ProofGraphProjection } from '../../state/proofgraph.js';
-import { renderReviewerTaskPrompt } from './prompt-builders.js';
 import {
   buildReviewerProofContext,
   renderCoverageGaps,
@@ -227,81 +226,5 @@ describe('renderCoverageGaps', () => {
 
   it('renders nothing when no gaps were recorded', () => {
     expect(renderCoverageGaps(makeState('READY'))).toEqual([]);
-  });
-});
-
-describe('host-task reviewer prompt carries ProofGraph context', () => {
-  const BASE = {
-    iteration: 1,
-    planVersion: 1,
-    obligationId: '11111111-1111-4111-8111-111111111111',
-    mandateDigest: 'mandate-digest',
-    criteriaVersion: 'criteria-v1',
-    subjectLabel: 'the artifact under review',
-  };
-
-  it('embeds the composed context so the reviewer sees claims', () => {
-    const state = makeState('IMPL_REVIEW', {
-      proofGraph: projection([provenClaim({ verificationState: 'UNPROVEN' })]),
-      proofContractCoverage: [{ claimId: CLAIM_ID, cause: 'missing_expected_check' }],
-    });
-    const prompt = renderReviewerTaskPrompt({
-      ...BASE,
-      proofContext: buildReviewerProofContext(state),
-    });
-    expect(prompt).toContain('## ProofGraph Context (persisted, advisory)');
-    expect(prompt).toContain(CLAIM_ID);
-    expect(prompt).toContain('missing_expected_check');
-  });
-
-  it('keeps the enforcement-critical review context tokens intact', () => {
-    const prompt = renderReviewerTaskPrompt({
-      ...BASE,
-      proofContext: buildReviewerProofContext(
-        makeState('IMPL_REVIEW', { proofGraph: projection([provenClaim()]) }),
-      ),
-    });
-    // promptContainsValue (enforcement/extraction.ts) matches these literals; the
-    // injected section must never displace or reformat them.
-    expect(prompt).toContain('iteration=1');
-    expect(prompt).toContain('planVersion=1');
-    // The appended-content marker must remain the final line so the agent still
-    // knows where to paste the subject.
-    expect(prompt.trimEnd().endsWith('content to review below this line:')).toBe(true);
-  });
-
-  it('omits the section entirely when no context is supplied', () => {
-    const prompt = renderReviewerTaskPrompt(BASE);
-    expect(prompt).not.toContain('## ProofGraph Context');
-  });
-
-  it('still reports NOT_DECLARED for a claimless session rather than staying silent', () => {
-    const prompt = renderReviewerTaskPrompt({
-      ...BASE,
-      proofContext: buildReviewerProofContext(makeState('READY')),
-    });
-    expect(prompt).toContain('Coverage: NOT_DECLARED');
-  });
-
-  it('renders the persisted critical fact requirement for a specific trigger', () => {
-    const state = makeState('IMPL_REVIEW', {
-      implementation: {
-        changedFiles: ['src/state/schema.ts'],
-        domainFiles: ['src/state/schema.ts'],
-        digest: 'implementation-digest',
-        executedAt: '2026-01-01T00:00:00.000Z',
-      },
-      implementationRiskAssessment: {
-        computedMinimumTaskClass: 'HIGH-RISK',
-        touchedSurfaces: ['src/state/schema.ts'],
-        riskTriggers: ['state_integrity'],
-        assessedFrom: 'implementation_changed_files',
-        assessedFileCount: 1,
-        implementationDigest: 'implementation-digest',
-      },
-    });
-    expect(buildReviewerProofContext(state).join('\n')).toContain(
-      'Relevant triggers: state_integrity',
-    );
   });
 });

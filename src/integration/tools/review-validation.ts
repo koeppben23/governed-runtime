@@ -15,7 +15,6 @@
 
 import type { ReviewFindings } from '../../state/evidence.js';
 import { formatBlocked } from './helpers.js';
-import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import {
   findLatestObligation,
   hashFindings,
@@ -28,14 +27,15 @@ import type {
   ReviewInvocationEvidence,
 } from '../../state/evidence.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
-import { REVIEW_ACCEPTANCE_PATH_NATIVE } from '../../shared/flowguard-identifiers.js';
 import {
   getReviewFindingsAcceptanceRejection,
-  hasValidHostTaskInvocationContract,
+  hasValidStructuredInvocationContract,
   formatAcceptanceRejection,
-  formatHostTaskAcceptanceRejection,
 } from './review-validation-acceptance.js';
-import { resolveHostTaskFindings } from './review-validation-host-task.js';
+import {
+  resolveStructuredFindings,
+  type StructuredFindingsResolution,
+} from './review-validation-structured-evidence.js';
 import { validateChallengeConsistency } from '../review/enforcement/challenge-consistency.js';
 import {
   validateReviewFindingsConsistency,
@@ -56,12 +56,8 @@ export interface ReviewFindingsValidationContext {
   readonly assurance?: ReviewAssuranceState;
   /** Obligation type for strict checks. */
   readonly obligationType?: ReviewObligationType;
-  /** When set, enforce that invocation evidence matches the required policy. */
-  readonly reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed';
   /** Parent OpenCode session expected in invocation evidence. */
   readonly reviewParentSessionId?: string;
-  /** Runtime host platform for transport-specific strict evidence validation. */
-  readonly reviewHostPlatform?: 'opencode' | 'claude-code' | 'codex' | 'unknown';
   /** Author-proposed implementation resolutions requiring independent verdicts. */
   readonly unresolvedImplementationChallengeIds?: readonly string[];
   /**
@@ -87,78 +83,6 @@ export interface ReviewFindingsValidationContext {
   readonly expectedObligationId?: string;
   /** Challenge IDs already persisted in this session's review-findings history. */
   readonly previouslyUsedChallengeIds?: readonly string[];
-}
-
-interface AttestedReviewCheckInput {
-  readonly findings: ReviewFindings;
-  readonly obligation: ReviewObligation;
-  readonly invocation: ReviewInvocationEvidence;
-  readonly findingsHash: string;
-  readonly ctx: ReviewFindingsValidationContext;
-}
-
-/**
- * Shared evidence checks for any agent-submitted attested review (manual_attested and
- * its strict superset native_subagent_attested). Excludes the invocationMode check so
- * each tier can assert its own mode plus tier-specific corroboration. The policy
- * predicate here only ever permits host_task_preferred / sdk_allowed, so neither tier
- * can satisfy host_task_required (which is validated on a separate, stricter branch).
- */
-function baseAgentAttestedChecks(input: AttestedReviewCheckInput): boolean[] {
-  const { findings, obligation, invocation, findingsHash, ctx } = input;
-  const isExternalHost =
-    ctx.reviewHostPlatform === 'claude-code' || ctx.reviewHostPlatform === 'codex';
-  const policyAllowsManualAttested =
-    ctx.reviewInvocationPolicy === 'sdk_allowed' ||
-    ctx.reviewInvocationPolicy === 'host_task_preferred';
-  // #434 (M1): reuse the single canonical acceptance authority instead of
-  // re-deriving the blocked/consumed/consumedAt predicate inline. A null
-  // rejection means the obligation is open (not blocked, not consumed,
-  // consumedAt === null) — exactly what the strict path also requires.
-  const obligationAcceptable = getReviewFindingsAcceptanceRejection({ obligation }) === null;
-  return [
-    isExternalHost,
-    policyAllowsManualAttested,
-    obligationAcceptable,
-    invocation.hostVisible === false,
-    invocation.source === 'agent-submitted-attested',
-    invocation.obligationId === obligation.obligationId,
-    invocation.obligationType === obligation.obligationType,
-    invocation.childSessionId === findings.reviewedBy.sessionId,
-    invocation.findingsHash === findingsHash,
-    invocation.criteriaVersion === obligation.criteriaVersion,
-    invocation.mandateDigest === obligation.mandateDigest,
-    invocation.consumedByObligationId === null,
-    invocation.childSessionId !== ctx.reviewParentSessionId,
-    findings.reviewedBy.sessionId !== ctx.reviewParentSessionId,
-  ];
-}
-
-function allowsManualAttestedReviewWithoutPluginHandshake(
-  input: AttestedReviewCheckInput,
-): boolean {
-  const checks = [
-    ...baseAgentAttestedChecks(input),
-    input.invocation.invocationMode === 'manual_attested',
-  ];
-  return checks.every((check) => check === true);
-}
-
-/**
- * Shared pre-acceptance gate: is first-party plugin enforcement unavailable for this
- * submission? Enforcement is available only when the plugin actually handshook
- * (`pluginHandshakeAt`) or when a policy-gated `manual_attested` invocation is permitted.
- *
- * native_subagent_attested corroboration lives in `reviewer-captures.jsonl`, which is
- * append-only plaintext with no hash chain (agent-writable). It therefore does NOT
- * establish enforcement availability: without a plugin handshake the native path fails
- * closed exactly like solo / host_task_preferred, never accept (#419). This is the single
- * canonical authority for the unavailable-enforcement deny — no per-path duplicate.
- */
-function pluginEnforcementUnavailableForReviewAcceptance(input: AttestedReviewCheckInput): boolean {
-  return (
-    !input.obligation.pluginHandshakeAt && !allowsManualAttestedReviewWithoutPluginHandshake(input)
-  );
 }
 
 // ─── Core Validation ──────────────────────────────────────────────────────────
@@ -301,7 +225,6 @@ interface StrictReviewBinding {
   readonly obligation: ReviewObligation;
   readonly invocation: ReviewInvocationEvidence;
   readonly submittedFindingsHash: string;
-  readonly isHostTaskMode: boolean;
 }
 
 function validateStrictReviewFindings(
@@ -313,7 +236,7 @@ function validateStrictReviewFindings(
   return (
     validateStrictReviewRejections(binding) ??
     validateStrictReviewIdentity(findings, ctx, binding) ??
-    validateStrictReviewAcceptance(findings, ctx, binding) ??
+    validateStrictReviewAcceptance(binding) ??
     validateStrictReviewAttestation(findings, ctx, binding.obligation) ??
     validateStrictReviewInvocationBinding(findings, ctx, binding)
   );
@@ -336,12 +259,11 @@ function resolveStrictReviewBinding(
   );
   if (!obligation) return missingStrictObligation(ctx);
   const submittedFindingsHash = hashFindings(findings);
-  const isHostTaskMode = ctx.reviewInvocationPolicy === 'host_task_required';
   const invocation = findStrictInvocation(ctx, obligation, findings, submittedFindingsHash);
   if (!invocation) {
     return formatBlocked('SUBAGENT_EVIDENCE_MISSING', { obligationId: obligation.obligationId });
   }
-  return { obligation, invocation, submittedFindingsHash, isHostTaskMode };
+  return { obligation, invocation, submittedFindingsHash };
 }
 
 function missingStrictObligation(ctx: ReviewFindingsValidationContext): string {
@@ -358,15 +280,12 @@ function findStrictInvocation(
   findings: ReviewFindings,
   submittedFindingsHash: string,
 ): ReviewInvocationEvidence | undefined {
-  const isHostTaskMode = ctx.reviewInvocationPolicy === 'host_task_required';
   return ctx.assurance?.invocations.find((item) =>
     obligation.invocationId
       ? item.invocationId === obligation.invocationId
       : item.obligationId === obligation.obligationId &&
-        (isHostTaskMode
-          ? item.invocationMode === 'host_subagent_task'
-          : item.childSessionId === findings.reviewedBy.sessionId &&
-            item.findingsHash === submittedFindingsHash),
+        item.childSessionId === findings.reviewedBy.sessionId &&
+        item.findingsHash === submittedFindingsHash,
   );
 }
 
@@ -388,59 +307,19 @@ function validateStrictReviewIdentity(
   binding: StrictReviewBinding,
 ): string | null {
   const { obligation, invocation } = binding;
-  const attestedMode =
-    invocation.invocationMode === 'manual_attested' ||
-    invocation.invocationMode === 'native_subagent_attested';
   const selfSession =
     invocation.childSessionId === ctx.reviewParentSessionId ||
     findings.reviewedBy.sessionId === ctx.reviewParentSessionId;
-  return attestedMode && selfSession
+  return selfSession
     ? formatBlocked('REVIEW_SELF_APPROVAL_DENIED', { obligationId: obligation.obligationId })
     : null;
 }
 
-function validateStrictReviewAcceptance(
-  findings: ReviewFindings,
-  ctx: ReviewFindingsValidationContext,
-  binding: StrictReviewBinding,
-): string | null {
-  const { obligation, invocation, submittedFindingsHash } = binding;
-  if (
-    pluginEnforcementUnavailableForReviewAcceptance({
-      findings,
-      obligation,
-      invocation,
-      findingsHash: submittedFindingsHash,
-      ctx,
-    })
-  ) {
-    return formatBlocked('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
-      obligationType: ctx.obligationType ?? 'review',
-      iteration: String(ctx.expectedIteration),
-      planVersion: String(ctx.expectedPlanVersion),
-      ...(invocation.invocationMode === 'native_subagent_attested'
-        ? { deniedReviewPath: REVIEW_ACCEPTANCE_PATH_NATIVE }
-        : {}),
-    });
-  }
-  return isStrictObligationConsumable(ctx, binding)
+function validateStrictReviewAcceptance(binding: StrictReviewBinding): string | null {
+  const { obligation } = binding;
+  return obligation.status === 'fulfilled'
     ? null
     : formatBlocked('SUBAGENT_EVIDENCE_MISSING', { obligationId: obligation.obligationId });
-}
-
-function isStrictObligationConsumable(
-  ctx: ReviewFindingsValidationContext,
-  binding: StrictReviewBinding,
-): boolean {
-  const { obligation, invocation } = binding;
-  return (
-    obligation.status === 'fulfilled' ||
-    (ctx.reviewInvocationPolicy === 'host_task_required' &&
-      obligation.status === 'pending' &&
-      invocation.obligationId === obligation.obligationId &&
-      invocation.invocationMode === 'host_subagent_task' &&
-      invocation.hostVisible === true)
-  );
 }
 
 function validateStrictReviewAttestation(
@@ -467,7 +346,7 @@ function validateStrictReviewInvocationBinding(
     validateInvocationObligationId(binding) ??
     validateInvocationSessionId(findings, binding) ??
     validateInvocationFindingsHash(findings, binding) ??
-    validateHostTaskInvocationContract(ctx, binding)
+    validateStructuredInvocationContract(ctx, binding)
   );
 }
 
@@ -482,12 +361,7 @@ function validateInvocationSessionId(
   findings: ReviewFindings,
   binding: StrictReviewBinding,
 ): string | null {
-  if (
-    findings.reviewedBy.sessionId === binding.invocation.childSessionId ||
-    binding.isHostTaskMode
-  ) {
-    return null;
-  }
+  if (findings.reviewedBy.sessionId === binding.invocation.childSessionId) return null;
   return formatBlocked('REVIEW_FINDINGS_SESSION_MISMATCH', {
     provided: findings.reviewedBy.sessionId,
     expected: binding.invocation.childSessionId,
@@ -498,34 +372,25 @@ function validateInvocationFindingsHash(
   findings: ReviewFindings,
   binding: StrictReviewBinding,
 ): string | null {
-  const { obligation, invocation, submittedFindingsHash, isHostTaskMode } = binding;
-  if (isHostTaskMode && invocation.capturedVerdict) {
-    const submittedVerdict = (findings as { overallVerdict?: string }).overallVerdict;
-    return submittedVerdict === invocation.capturedVerdict
-      ? null
-      : formatBlocked('REVIEW_FINDINGS_HASH_MISMATCH', { obligationId: obligation.obligationId });
-  }
+  const { obligation, invocation, submittedFindingsHash } = binding;
   return submittedFindingsHash === invocation.findingsHash
     ? null
     : formatBlocked('REVIEW_FINDINGS_HASH_MISMATCH', { obligationId: obligation.obligationId });
 }
 
-function validateHostTaskInvocationContract(
+function validateStructuredInvocationContract(
   ctx: ReviewFindingsValidationContext,
   binding: StrictReviewBinding,
 ): string | null {
-  const { obligation, invocation } = binding;
-  if (ctx.reviewInvocationPolicy !== 'host_task_required') return null;
-  const valid = hasValidHostTaskInvocationContract({
-    obligation,
-    invocation,
+  return hasValidStructuredInvocationContract({
+    obligation: binding.obligation,
+    invocation: binding.invocation,
     parentSessionId: ctx.reviewParentSessionId,
-  });
-  return valid
+  })
     ? null
     : formatBlocked('SUBAGENT_EVIDENCE_MISSING', {
-        obligationId: obligation.obligationId,
-        reason: `expected host-visible ${REVIEWER_SUBAGENT_TYPE} Task evidence bound to the active session, mandate, criteria, child session, and findings hash`,
+        obligationId: binding.obligation.obligationId,
+        reason: `expected structured ${REVIEWER_SUBAGENT_TYPE} evidence bound to the active session, mandate, criteria, child session, and findings hash`,
       });
 }
 
@@ -545,17 +410,14 @@ export function requireReviewFindings(hasFindings: boolean): string | null {
   return null;
 }
 
-// ─── Host Task Effective Findings Resolution ───────────────────────────────────
+// ─── Structured Findings Resolution ───────────────────────────────────────────
 
-interface HostTaskResolutionContext {
+interface StructuredResolutionContext {
   readonly pendingObligation: ReviewObligation | null;
   readonly expected: {
     readonly obligationType: ReviewObligationType;
     readonly iteration: number;
     readonly planVersion: number;
-  };
-  readonly policy: {
-    readonly reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed';
   };
   readonly input: {
     readonly reviewFindings?: unknown;
@@ -565,7 +427,6 @@ interface HostTaskResolutionContext {
   readonly state: {
     readonly assurance?: ReviewAssuranceState;
     readonly sessionId: string;
-    readonly reviewHostPlatform?: 'opencode' | 'claude-code' | 'codex' | 'unknown';
     readonly unresolvedImplementationChallengeIds?: readonly string[];
     readonly unaddressedPriorFailIds?: readonly string[];
     readonly allowedChallengeEvidenceRefs?: readonly unknown[];
@@ -577,126 +438,48 @@ interface HostTaskResolutionContext {
  * Check whether reviewerUnavailable is a misuse: the reviewer WAS spawned
  * (invocations exist) but the parent is signalling unavailability.
  */
-function checkReviewerUnavailableMisuse(ctx: HostTaskResolutionContext): string | null {
+function checkReviewerUnavailableMisuse(ctx: StructuredResolutionContext): string | null {
   if (ctx.input.reviewerUnavailable !== true) return null;
   const existingInvs =
     ctx.state.assurance?.invocations.filter(
       (inv) =>
         inv.obligationId === ctx.pendingObligation?.obligationId &&
-        inv.invocationMode === 'host_subagent_task',
+        inv.invocationMode === 'sdk_session_prompt',
     ) ?? [];
   if (existingInvs.length > 0) {
     return formatBlocked('INVALID_REVIEW_TOOL_SEQUENCE', {
       obligationId: ctx.pendingObligation?.obligationId ?? 'unknown',
       reason:
-        'reviewerUnavailable submitted but host_subagent_task invocations already exist for this obligation. The reviewer was spawned — use reviewVerdict matching the captured reviewer overallVerdict instead.',
+        'reviewerUnavailable submitted but a host-structured reviewer invocation already exists for this obligation. Use its bound reviewVerdict instead.',
     });
   }
   return formatBlocked('REVIEWER_UNAVAILABLE_STRICT', {
     reason: 'reviewer unavailable; independent ReviewFindings remain required',
     recovery:
-      'Invoke a supported reviewer transport or provide policy-gated manual_attested ReviewFindings bound to the active obligation. flowguard_decision does not replace review evidence.',
+      'Invoke the structured reviewer transport and submit its ReviewFindings bound to the active obligation. flowguard_decision does not replace review evidence.',
   });
 }
 
-interface HostTaskResolutionResult {
+interface StructuredResolutionResult {
   readonly effectiveFindings?: ReviewFindings;
   readonly evidenceInvocationId?: string;
   readonly blocked?: ReturnType<typeof formatBlocked>;
 }
 
-export function resolveHostTaskEffectiveFindings(
-  ctx: HostTaskResolutionContext,
-): HostTaskResolutionResult {
-  if (ctx.policy.reviewInvocationPolicy === 'host_task_required') {
-    if (ctx.input.reviewFindings) {
-      // Diagnostic for error analysis: in host-task mode the agent must submit
-      // the verdict ONLY — findings are resolved from captured invocation
-      // evidence below. Submitting (and especially hand-editing) reviewFindings
-      // here is the leading cause of SUBAGENT_SESSION_MISMATCH / hash-mismatch
-      // confusion. The submitted findings are intentionally ignored; surface the
-      // misuse so it can be diagnosed from logs.
-      getAdapterLogger().warn(
-        'flowguard_review',
-        'reviewFindings submitted in host-task mode are ignored; verdict-only is expected',
-        {
-          sessionId: ctx.state.sessionId,
-          obligationType: ctx.expected.obligationType,
-          iteration: ctx.expected.iteration,
-          planVersion: ctx.expected.planVersion,
-        },
-      );
-    }
-    const resolved = resolveHostTaskFindings(
-      ctx.state.assurance,
-      ctx.pendingObligation,
-      ctx.state.unresolvedImplementationChallengeIds,
-      ctx.state.allowedChallengeEvidenceRefs,
-      ctx.state.unaddressedPriorFailIds,
-      ctx.state.previouslyUsedChallengeIds,
-      ctx.state.sessionId,
-    );
-    if (resolved.kind === 'resolved') {
-      return {
-        effectiveFindings: resolved.findings,
-        evidenceInvocationId: resolved.invocation.invocationId,
-      };
-    }
-    if (resolved.kind === 'rejected') {
-      return { blocked: formatHostTaskAcceptanceRejection(resolved.rejection) };
-    }
-    if (resolved.kind === 'unparseable') {
-      // The reviewer ran and evidence was captured, but the captured findings
-      // are not schema-valid. Emit a DISTINCT block so this is not confused with
-      // "reviewer never ran" (REVIEW_FINDINGS_REQUIRED).
-      return {
-        blocked: formatBlocked('HOST_TASK_FINDINGS_UNPARSEABLE', { message: resolved.detail }),
-      };
-    }
-    if (resolved.kind === 'incoherent') {
-      // F12: the reviewer ran and evidence parsed, but the captured record is
-      // internally self-contradictory (accept + blocking issues). Fail closed at
-      // the host-task ingestion boundary before the findings become effective
-      // evidence, so a contradictory review cannot advance the gate.
-      return {
-        blocked: formatBlocked(
-          resolved.code,
-          Object.fromEntries(
-            Object.entries(resolved.details).map(([key, value]) => [key, String(value)]),
-          ),
-        ),
-      };
-    }
-    if (resolved.kind === 'attempt_lineage_unavailable') {
-      return {
-        blocked: formatBlocked('REVIEW_ATTEMPT_LINEAGE_UNAVAILABLE', {
-          invocationId: resolved.invocationId,
-          obligationId: resolved.obligationId,
-        }),
-      };
-    }
-    if (resolved.kind === 'invalid') {
-      return { blocked: formatBlocked(resolved.code, { obligationId: resolved.obligationId }) };
-    }
-    if (ctx.input.reviewerUnavailable === true) {
-      const misuse = checkReviewerUnavailableMisuse(ctx);
-      if (misuse) return { blocked: misuse };
-    }
-    return {};
+export function resolveStructuredEffectiveFindings(
+  ctx: StructuredResolutionContext,
+): StructuredResolutionResult {
+  if (!ctx.input.reviewFindings && ctx.input.reviewerUnavailable === true) {
+    const misuse = checkReviewerUnavailableMisuse(ctx);
+    if (misuse) return { blocked: misuse };
   }
-  return resolveDirectSubmittedFindings(ctx);
-}
-
-function resolveDirectSubmittedFindings(ctx: HostTaskResolutionContext): HostTaskResolutionResult {
-  if (!ctx.input.reviewFindings) return {};
+  if (!ctx.input.reviewFindings) return resolveCapturedEvidenceFindings(ctx);
   const blocked = validateReviewFindings(ctx.input.reviewFindings as ReviewFindings, {
     expectedPlanVersion: ctx.expected.planVersion,
     expectedIteration: ctx.expected.iteration,
     assurance: ctx.state.assurance,
     obligationType: ctx.expected.obligationType,
-    reviewInvocationPolicy: ctx.policy.reviewInvocationPolicy,
     reviewParentSessionId: ctx.state.sessionId,
-    reviewHostPlatform: ctx.state.reviewHostPlatform,
     unresolvedImplementationChallengeIds: ctx.state.unresolvedImplementationChallengeIds,
     unaddressedPriorFailIds: ctx.state.unaddressedPriorFailIds,
     allowedEvidenceRefs: ctx.state.allowedChallengeEvidenceRefs,
@@ -706,12 +489,56 @@ function resolveDirectSubmittedFindings(ctx: HostTaskResolutionContext): HostTas
   return blocked ? { blocked } : { effectiveFindings: ctx.input.reviewFindings as ReviewFindings };
 }
 
-export { resolveHostTaskFindings } from './review-validation-host-task.js';
-export type {
-  ResolvedHostTaskFindings,
-  HostTaskFindingsResolution,
-} from './review-validation-host-task.js';
-export type {
-  ReviewFindingsAcceptanceRejection,
-  HostTaskFindingsAcceptanceRejection,
-} from './review-validation-acceptance.js';
+/**
+ * Host-observed verdict continuation: the reviewer's findings are never
+ * resubmitted by the parent. Resolve the bound structured capture and use it
+ * as the effective findings authority.
+ */
+function resolveCapturedEvidenceFindings(
+  ctx: StructuredResolutionContext,
+): StructuredResolutionResult {
+  const resolution = resolveStructuredFindings(
+    ctx.state.assurance,
+    ctx.pendingObligation,
+    ctx.state.unresolvedImplementationChallengeIds,
+    ctx.state.allowedChallengeEvidenceRefs,
+    ctx.state.unaddressedPriorFailIds,
+    ctx.state.previouslyUsedChallengeIds,
+    ctx.state.sessionId,
+  );
+  if (resolution.kind === 'resolved') {
+    return {
+      effectiveFindings: resolution.findings,
+      evidenceInvocationId: resolution.invocationId,
+    };
+  }
+  return { blocked: formatStructuredResolutionFailure(resolution) };
+}
+
+/** Single formatting authority for structured-evidence resolution failures. */
+export function formatStructuredResolutionFailure(
+  resolution: Exclude<StructuredFindingsResolution, { kind: 'resolved' }>,
+): string {
+  if (resolution.kind === 'rejected') return formatAcceptanceRejection(resolution.rejection);
+  if (resolution.kind === 'incoherent') {
+    return formatBlocked(
+      resolution.code,
+      Object.fromEntries(
+        Object.entries(resolution.details).map(([key, value]) => [key, String(value)]),
+      ),
+    );
+  }
+  if (resolution.kind === 'attempt_lineage_unavailable') {
+    return formatBlocked('REVIEW_ATTEMPT_LINEAGE_UNAVAILABLE', {
+      invocationId: resolution.invocationId,
+      obligationId: resolution.obligationId,
+    });
+  }
+  if (resolution.kind === 'unparseable') {
+    return formatBlocked('SUBAGENT_EVIDENCE_MISSING', { reason: resolution.detail });
+  }
+  if (resolution.kind === 'not_found') {
+    return formatBlocked('SUBAGENT_EVIDENCE_MISSING', { reason: 'no matching structured capture' });
+  }
+  return formatBlocked(resolution.code, { obligationId: resolution.obligationId });
+}

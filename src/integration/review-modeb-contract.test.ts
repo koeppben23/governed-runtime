@@ -7,7 +7,8 @@
  * at the correct phase with pre-built evidence and host-specific synthetic
  * review assurance, then invokes the tool to validate and consume.
  *
- * Host profiles: opencode (plugin_handshake), claude-code and codex (manual_attested).
+ * Host profiles: the single host-observed structured child-session evidence path
+ * (sdk_session_prompt invocation with captured structured findings).
  * Does NOT test full E2E flows — only the review-verdict gate for plan and architecture.
  * No LLM inference, no network, no secrets.
  */
@@ -23,7 +24,6 @@ import { readState } from '../adapters/persistence.js';
 import { sessionDir } from '../adapters/workspace/index.js';
 import { computeFingerprint } from '../adapters/workspace/fingerprint.js';
 import { writeStateWithArtifacts } from './tools/helpers.js';
-import type { HostId } from '../shared/hosts.js';
 
 import { plan } from './tools/plan.js';
 import { architecture } from './tools/architecture.js';
@@ -45,19 +45,13 @@ import {
   ARCHITECTURE_DECISION,
   SELF_REVIEW_CONVERGED,
 } from '../fixtures.js';
-import { hostTaskDispatchPlan } from './tools/review-validation-test-helpers.js';
 import type { SessionState } from '../state/schema.js';
 import { hashCanonicalReviewContent } from '../shared/review-subject.js';
 
-const ALL_HOSTS = ['opencode', 'claude-code', 'codex'] as const satisfies readonly HostId[];
 const NOW = () => new Date().toISOString();
 const DECIDED_BY = 'reviewer-1';
 const REVIEW_MATERIAL_CONTENT = '## Frozen Test Review Material\n\nMode B fixture.\n';
 const REVIEW_MATERIAL_DIGEST = hashCanonicalReviewContent(REVIEW_MATERIAL_CONTENT);
-
-function style(host: HostId) {
-  return host === 'opencode' ? ('plugin_handshake' as const) : ('manual_attested' as const);
-}
 
 function findings(oblId: string, iteration = 0, planVersion = 1): ReviewFindings {
   return {
@@ -85,23 +79,13 @@ function findings(oblId: string, iteration = 0, planVersion = 1): ReviewFindings
 }
 
 function buildAssuranceForObligation(
-  host: HostId,
   obligation: ReviewObligation,
-  findingsHash: string,
+  rawFindings: ReviewFindings,
   parentSessionId: string,
   invocationId: string,
 ) {
-  const s = style(host);
-  const hostObserved = s === 'plugin_handshake';
   const attemptId = randomUUID();
   const now = NOW();
-  const dispatchPlan = hostTaskDispatchPlan({
-    isHostTask: hostObserved,
-    dispatches: [],
-    attemptId,
-    obligationId: obligation.obligationId,
-    at: now,
-  });
   const invocation = {
     invocationId,
     obligationId: obligation.obligationId,
@@ -109,30 +93,21 @@ function buildAssuranceForObligation(
     parentSessionId,
     childSessionId: 'ses_reviewer',
     agentType: 'flowguard-reviewer' as const,
-    invocationMode: hostObserved ? ('host_subagent_task' as const) : ('manual_attested' as const),
-    hostVisible: hostObserved,
-    source: hostObserved ? ('host-orchestrated' as const) : ('agent-submitted-attested' as const),
+    invocationMode: 'sdk_session_prompt' as const,
+    hostVisible: false,
+    source: 'host-orchestrated' as const,
     promptHash: 'abc',
     mandateDigest: REVIEW_MANDATE_DIGEST,
     criteriaVersion: REVIEW_CRITERIA_VERSION,
-    findingsHash,
-    ...(hostObserved
-      ? {
-          hostTaskCallId: dispatchPlan.hostTaskCallId,
-          canonicalPromptDigest: dispatchPlan.canonicalPromptDigest,
-        }
-      : {}),
+    findingsHash: hashFindings(rawFindings),
+    capturedRawFindings: rawFindings,
     invokedAt: now,
     fulfilledAt: now,
     consumedByObligationId: null,
-    capturedVerdict: hostObserved ? 'approve' : undefined,
-    reviewOutputMode: hostObserved
-      ? ('structured_output' as const)
-      : ('agent_submitted_structured' as const),
-    structuredOutputUsed: hostObserved,
-    reviewAssuranceLevel: hostObserved
-      ? ('structured_high' as const)
-      : ('structured_submitted' as const),
+    capturedVerdict: 'accept',
+    reviewOutputMode: 'structured_output' as const,
+    structuredOutputUsed: true,
+    reviewAssuranceLevel: 'structured_high' as const,
     attemptId,
   };
   const fulfilled = {
@@ -140,9 +115,9 @@ function buildAssuranceForObligation(
     status: 'fulfilled' as const,
     invocationId,
     fulfilledAt: now,
-    pluginHandshakeAt: hostObserved ? now : null,
+    pluginHandshakeAt: now,
   };
-  const assured = appendInvocationEvidence(
+  return appendInvocationEvidence(
     {
       assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [fulfilled],
@@ -167,10 +142,6 @@ function buildAssuranceForObligation(
     },
     invocation,
   );
-  return {
-    ...assured,
-    dispatches: dispatchPlan.dispatch ? [dispatchPlan.dispatch] : [],
-  };
 }
 
 interface E2ESession {
@@ -182,8 +153,8 @@ interface E2ESession {
   toolContext: ToolContext;
 }
 
-async function bootstrap(host: HostId, label: string): Promise<E2ESession> {
-  const rootDir = mkdtempSync(path.join(tmpdir(), `fg-e2e-${host}-${label}-`));
+async function bootstrap(label: string): Promise<E2ESession> {
+  const rootDir = mkdtempSync(path.join(tmpdir(), `fg-e2e-opencode-${label}-`));
   const worktree = path.join(rootDir, 'worktree'),
     configDir = path.join(rootDir, 'config'),
     sessionId = randomUUID();
@@ -200,7 +171,7 @@ async function bootstrap(host: HostId, label: string): Promise<E2ESession> {
   );
   process.env.OPENCODE_CONFIG_DIR = configDir;
   process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
-  process.env.FLOWGUARD_HOST_PLATFORM = host;
+  process.env.FLOWGUARD_HOST_PLATFORM = 'opencode';
   const fp = await computeFingerprint(worktree),
     sessDir = sessionDir(fp.fingerprint, sessionId);
   mkdirSync(sessDir, { recursive: true });
@@ -223,152 +194,146 @@ async function bootstrap(host: HostId, label: string): Promise<E2ESession> {
 }
 
 describe('plan / architecture Mode-B review contract', () => {
-  for (const host of ALL_HOSTS) {
-    describe(`${host} (${style(host)})`, () => {
-      let session: E2ESession;
-      let prevCfg: string | undefined, prevReq: string | undefined, prevPlat: string | undefined;
+  describe('opencode (structured host-observed evidence)', () => {
+    let session: E2ESession;
+    let prevCfg: string | undefined, prevReq: string | undefined, prevPlat: string | undefined;
 
-      beforeEach(() => {
-        prevCfg = process.env.OPENCODE_CONFIG_DIR;
-        prevReq = process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
-        prevPlat = process.env.FLOWGUARD_HOST_PLATFORM;
-      });
-      afterEach(() => {
-        process.env.OPENCODE_CONFIG_DIR = prevCfg;
-        process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = prevReq;
-        process.env.FLOWGUARD_HOST_PLATFORM = prevPlat;
-        if (session) rmSync(session.rootDir, { recursive: true, force: true });
-      });
-
-      it('plan Mode B: validates evidence and consumes obligation', async () => {
-        session = await bootstrap(host, 'plan');
-
-        const obl = {
-          ...createReviewObligation({
-            policySnapshot: {
-              challengePolicy: {
-                version: 'challenge-policy.v1',
-                counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
-              },
-              maxReviewerAttempts: 1,
-            },
-            obligationType: 'plan',
-            repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
-            iteration: 0,
-            planVersion: 1,
-            now: NOW(),
-            subjectDigest: 'test',
-            reviewMaterial: {
-              content: REVIEW_MATERIAL_CONTENT,
-              materialDigest: REVIEW_MATERIAL_DIGEST,
-              subjectDigest: 'test',
-            },
-            reviewSubjectScope: artifactReviewSubjectScope('plan', '# Plan\nBody', 'test'),
-            changedFiles: ['docs/test.md'],
-          }),
-          reviewMaterial: {
-            content: REVIEW_MATERIAL_CONTENT,
-            materialDigest: REVIEW_MATERIAL_DIGEST,
-            subjectDigest: 'test',
-          },
-        };
-        const f = findings(obl.obligationId);
-        const fh = hashFindings(f);
-        const assurance = buildAssuranceForObligation(
-          host,
-          obl,
-          fh,
-          session.toolContext.sessionID,
-          randomUUID(),
-        );
-
-        const state: SessionState = {
-          ...makeState('PLAN', { ticket: TICKET, plan: PLAN_RECORD }),
-          selfReview: SELF_REVIEW_CONVERGED,
-          reviewAssurance: assurance,
-        };
-        await writeStateWithArtifacts(session.sessDir, state);
-
-        const result = await plan.execute(
-          { reviewVerdict: 'accept', reviewFindings: f },
-          session.toolContext,
-        );
-        expect(typeof result).toBe('string');
-
-        const after = await readState(session.sessDir);
-        const consumed = after!.reviewAssurance!.obligations.find(
-          (o) => o.obligationId === obl.obligationId,
-        );
-        expect(consumed!.status).toBe('consumed');
-      });
-
-      it('architecture Mode B: validates evidence and consumes obligation', async () => {
-        session = await bootstrap(host, 'arch');
-
-        const obl = {
-          ...createReviewObligation({
-            policySnapshot: {
-              challengePolicy: {
-                version: 'challenge-policy.v1',
-                counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
-              },
-              maxReviewerAttempts: 1,
-            },
-            obligationType: 'architecture',
-            repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
-            iteration: 0,
-            planVersion: 1,
-            now: NOW(),
-            subjectDigest: 'test',
-            reviewMaterial: {
-              content: REVIEW_MATERIAL_CONTENT,
-              materialDigest: REVIEW_MATERIAL_DIGEST,
-              subjectDigest: 'test',
-            },
-            reviewSubjectScope: artifactReviewSubjectScope(
-              'adr',
-              '## Context\nC\n## Decision\nD',
-              'test',
-            ),
-            changedFiles: ['docs/test.md'],
-          }),
-          reviewMaterial: {
-            content: REVIEW_MATERIAL_CONTENT,
-            materialDigest: REVIEW_MATERIAL_DIGEST,
-            subjectDigest: 'test',
-          },
-        };
-        const f = findings(obl.obligationId);
-        const fh = hashFindings(f);
-        const assurance = buildAssuranceForObligation(
-          host,
-          obl,
-          fh,
-          session.toolContext.sessionID,
-          randomUUID(),
-        );
-
-        const state: SessionState = {
-          ...makeState('ARCHITECTURE', {
-            architecture: { ...ARCHITECTURE_DECISION, status: 'proposed' },
-          }),
-          selfReview: SELF_REVIEW_CONVERGED,
-          reviewAssurance: assurance,
-        };
-        await writeStateWithArtifacts(session.sessDir, state);
-
-        const result = await architecture.execute(
-          { reviewVerdict: 'accept', reviewFindings: f },
-          session.toolContext,
-        );
-        expect(typeof result).toBe('string');
-
-        const after = await readState(session.sessDir);
-        const consumed = after!.reviewAssurance!.obligations.find(
-          (o) => o.obligationId === obl.obligationId,
-        );
-        expect(consumed!.status).toBe('consumed');
-      });
+    beforeEach(() => {
+      prevCfg = process.env.OPENCODE_CONFIG_DIR;
+      prevReq = process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
+      prevPlat = process.env.FLOWGUARD_HOST_PLATFORM;
     });
-  }
+    afterEach(() => {
+      process.env.OPENCODE_CONFIG_DIR = prevCfg;
+      process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = prevReq;
+      process.env.FLOWGUARD_HOST_PLATFORM = prevPlat;
+      if (session) rmSync(session.rootDir, { recursive: true, force: true });
+    });
+
+    it('plan Mode B: validates evidence and consumes obligation', async () => {
+      session = await bootstrap('plan');
+
+      const obl = {
+        ...createReviewObligation({
+          policySnapshot: {
+            challengePolicy: {
+              version: 'challenge-policy.v1',
+              counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+            },
+            maxReviewerAttempts: 1,
+          },
+          obligationType: 'plan',
+          repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+          iteration: 0,
+          planVersion: 1,
+          now: NOW(),
+          subjectDigest: 'test',
+          reviewMaterial: {
+            content: REVIEW_MATERIAL_CONTENT,
+            materialDigest: REVIEW_MATERIAL_DIGEST,
+            subjectDigest: 'test',
+          },
+          reviewSubjectScope: artifactReviewSubjectScope('plan', '# Plan\nBody', 'test'),
+          changedFiles: ['docs/test.md'],
+        }),
+        reviewMaterial: {
+          content: REVIEW_MATERIAL_CONTENT,
+          materialDigest: REVIEW_MATERIAL_DIGEST,
+          subjectDigest: 'test',
+        },
+      };
+      const f = findings(obl.obligationId);
+      const assurance = buildAssuranceForObligation(
+        obl,
+        f,
+        session.toolContext.sessionID,
+        randomUUID(),
+      );
+
+      const state: SessionState = {
+        ...makeState('PLAN', { ticket: TICKET, plan: PLAN_RECORD }),
+        selfReview: SELF_REVIEW_CONVERGED,
+        reviewAssurance: assurance,
+      };
+      await writeStateWithArtifacts(session.sessDir, state);
+
+      const result = await plan.execute(
+        { reviewVerdict: 'accept', reviewFindings: f },
+        session.toolContext,
+      );
+      expect(typeof result).toBe('string');
+
+      const after = await readState(session.sessDir);
+      const consumed = after!.reviewAssurance!.obligations.find(
+        (o) => o.obligationId === obl.obligationId,
+      );
+      expect(consumed!.status).toBe('consumed');
+    });
+
+    it('architecture Mode B: validates evidence and consumes obligation', async () => {
+      session = await bootstrap('arch');
+
+      const obl = {
+        ...createReviewObligation({
+          policySnapshot: {
+            challengePolicy: {
+              version: 'challenge-policy.v1',
+              counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+            },
+            maxReviewerAttempts: 1,
+          },
+          obligationType: 'architecture',
+          repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+          iteration: 0,
+          planVersion: 1,
+          now: NOW(),
+          subjectDigest: 'test',
+          reviewMaterial: {
+            content: REVIEW_MATERIAL_CONTENT,
+            materialDigest: REVIEW_MATERIAL_DIGEST,
+            subjectDigest: 'test',
+          },
+          reviewSubjectScope: artifactReviewSubjectScope(
+            'adr',
+            '## Context\nC\n## Decision\nD',
+            'test',
+          ),
+          changedFiles: ['docs/test.md'],
+        }),
+        reviewMaterial: {
+          content: REVIEW_MATERIAL_CONTENT,
+          materialDigest: REVIEW_MATERIAL_DIGEST,
+          subjectDigest: 'test',
+        },
+      };
+      const f = findings(obl.obligationId);
+      const assurance = buildAssuranceForObligation(
+        obl,
+        f,
+        session.toolContext.sessionID,
+        randomUUID(),
+      );
+
+      const state: SessionState = {
+        ...makeState('ARCHITECTURE', {
+          architecture: { ...ARCHITECTURE_DECISION, status: 'proposed' },
+        }),
+        selfReview: SELF_REVIEW_CONVERGED,
+        reviewAssurance: assurance,
+      };
+      await writeStateWithArtifacts(session.sessDir, state);
+
+      const result = await architecture.execute(
+        { reviewVerdict: 'accept', reviewFindings: f },
+        session.toolContext,
+      );
+      expect(typeof result).toBe('string');
+
+      const after = await readState(session.sessDir);
+      const consumed = after!.reviewAssurance!.obligations.find(
+        (o) => o.obligationId === obl.obligationId,
+      );
+      expect(consumed!.status).toBe('consumed');
+    });
+  });
 });

@@ -679,7 +679,7 @@ describe('evidence-review', () => {
       );
     });
 
-    it('ReviewInvocationEvidence parses host-task invocation', () => {
+    it('ReviewInvocationEvidence parses SDK invocation', () => {
       const invocation = {
         invocationId: FIXED_UUID,
         obligationId: FIXED_UUID,
@@ -688,8 +688,8 @@ describe('evidence-review', () => {
         parentSessionId: 'ses_parent',
         childSessionId: 'ses_child',
         agentType: 'flowguard-reviewer' as const,
-        invocationMode: 'host_subagent_task' as const,
-        hostVisible: true,
+        invocationMode: 'sdk_session_prompt' as const,
+        hostVisible: false,
         source: 'host-orchestrated' as const,
         promptHash: 'sha256-prompt',
         mandateDigest: 'sha256-mandate',
@@ -1059,8 +1059,8 @@ describe('evidence-review', () => {
         parentSessionId: 'ses_parent',
         childSessionId: 'ses_child',
         agentType: 'flowguard-reviewer' as const,
-        invocationMode: 'host_subagent_task' as const,
-        hostVisible: true,
+        invocationMode: 'sdk_session_prompt' as const,
+        hostVisible: false,
         source: 'host-orchestrated' as const,
         promptHash: 'sha256-prompt',
         mandateDigest: 'sha256-mandate',

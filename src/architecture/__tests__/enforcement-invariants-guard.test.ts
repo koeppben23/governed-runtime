@@ -5,25 +5,22 @@
  * NOT deadlock the review, that verdict guessing is prevented, and that
  * reviewerUnavailable misuse is caught.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const SRC_ROOT = join(process.cwd(), 'src');
 
 describe('enforcement contract invariants', () => {
-  it('hasUsableCapture returns false for schema-invalid captured findings', () => {
-    // Verify the enforcement wrapper exists and delegates to the shared
-    // authority, which applies the canonical schema gate to captured findings.
-    const enforcement = readFileSync(
-      join(SRC_ROOT, 'integration/review/enforcement/enforcement.ts'),
-      'utf8',
-    );
-    expect(enforcement).toContain('function hasUsableCapture');
+  it('isPendingCaptureUsable returns false for schema-invalid captured findings', () => {
+    // The canonical capture-usability query applies the strict schema gate to
+    // the host-normalized candidate; an invalid capture is unusable, never
+    // silently accepted.
     const authority = readFileSync(
       join(SRC_ROOT, 'integration/review/enforcement/prepare-findings.ts'),
       'utf8',
     );
+    expect(authority).toContain('export function isPendingCaptureUsable');
     // Must check ReviewFindings.safeParse of the normalized candidate
     expect(authority).toContain('ReviewFindings.safeParse');
     // Must return false when the parse fails (no deadlock)
@@ -40,14 +37,15 @@ describe('enforcement contract invariants', () => {
     expect(content).toContain('pending.capturedFindings');
   });
 
-  it('pending review is re-armable when capture is unusable', () => {
-    // matchPendingReview must consider reviews with !hasUsableCapture as
-    // awaiting capture, so a re-run of the reviewer replaces the bad capture.
+  it('verdict enforcement authorizes only host-observed structured evidence', () => {
+    // The verdict gate must recognize the host-observed structured invocation;
+    // no submitted findings can authorize a verdict on their own.
     const content = readFileSync(
       join(SRC_ROOT, 'integration/review/enforcement/enforcement.ts'),
       'utf8',
     );
-    expect(content).toContain('!hasUsableCapture(p)');
+    expect(content).toContain('sdk_session_prompt');
+    expect(content).toContain('SUBAGENT_REVIEW_NOT_INVOKED');
   });
 
   it('review-validation.ts rejects reviewerUnavailable when invocations exist', () => {
@@ -55,33 +53,24 @@ describe('enforcement contract invariants', () => {
     // Must check for existing invocations before accepting reviewerUnavailable
     expect(content).toContain('checkReviewerUnavailableMisuse');
     expect(content).toContain('INVALID_REVIEW_TOOL_SEQUENCE');
-    expect(content).toContain('host_subagent_task');
+    expect(content).toContain('sdk_session_prompt');
     expect(content).toContain('invocationMode');
   });
 
-  it('retryCount is tracked on reviewer re-invocation', () => {
+  it('a reviewer session may hold evidence for one pending review at most', () => {
+    // recordPluginReview must refuse a second capture for an already-called
+    // pending review; one reviewer invocation cannot authorize two verdicts.
     const content = readFileSync(
       join(SRC_ROOT, 'integration/review/enforcement/enforcement.ts'),
       'utf8',
     );
-    expect(content).toContain('retryCount');
-    expect(content).toMatch(/matched\.retryCount\s*=/);
+    expect(content).toContain('export function recordPluginReview');
+    expect(content).toMatch(/pending\.subagentCalled/);
+    expect(content).toContain('return false');
   });
 
-  it('matchPendingReview returns null when retry is exhausted', () => {
-    const content = readFileSync(
-      join(SRC_ROOT, 'integration/review/enforcement/enforcement.ts'),
-      'utf8',
-    );
-    expect(content).toMatch(/retryCount.*>= 1/);
-    expect(content).toContain('return null');
-  });
-
-  it('host-task-policy.ts never says "submit the exact reviewFindings"', () => {
-    const content = readFileSync(join(SRC_ROOT, 'integration/review/host-task-policy.ts'), 'utf8');
-    expect(content).not.toMatch(/\bsubmit\s+the\s+reviewFindings\b/i);
-    expect(content).not.toMatch(/\bsubmit\s+reviewFindings\s+with\b/i);
-    expect(content).toMatch(/do NOT submit/i);
+  it('removes the obsolete host-task prompt authority', () => {
+    expect(existsSync(join(SRC_ROOT, 'integration/review/host-task-policy.ts'))).toBe(false);
   });
 
   it('anchor contract is typed per review subject kind', () => {

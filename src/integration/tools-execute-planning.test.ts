@@ -428,14 +428,16 @@ describe('plan', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(typeof result.selfReviewIteration).toBe('number');
-      expect(typeof result.next).toBe('string');
+      expect(result.next).toBe('INDEPENDENT_REVIEW_REQUIRED');
 
-      const nextText = result.next as string;
-      const iterMatch = nextText.match(/iteration[=:\s]+(\d+)/i);
-      expect(iterMatch).not.toBeNull();
-      const nextIteration = Number.parseInt(iterMatch![1]!, 10);
-
-      expect(nextIteration).toBe(result.selfReviewIteration as number);
+      // The next iteration is carried by the child-session instruction metadata
+      // (the orchestration signal no longer embeds it in the `next` text).
+      const reviewInvocation = result.reviewInvocation as {
+        requiredReviewAttestation?: { iteration?: number };
+      };
+      expect(reviewInvocation.requiredReviewAttestation?.iteration).toBe(
+        result.selfReviewIteration,
+      );
     });
   });
 
@@ -671,7 +673,7 @@ describe('plan', () => {
       expect(result.error).toBe(true);
       expect(result.code).toBe('PLAN_APPROVE_WITH_TEXT');
       expect(result.recovery).toContain(
-        'For host_task_required approval: call flowguard_plan({ reviewVerdict: "accept" }) after reviewer evidence is captured',
+        'Call flowguard_plan({ reviewVerdict: "accept", reviewFindings }) with the exact reviewer output',
       );
       await expectStateStillInPlan();
     });
@@ -1420,7 +1422,7 @@ describe('plan', () => {
           criteriaVersion: deps.REVIEW_CRITERIA_VERSION,
           parentSessionId: 'ses-parent',
           childSessionId: 'ses-child',
-          invocationMode: 'host_subagent_task',
+          invocationMode: 'sdk_session_prompt',
           promptHash: 'sha256-prompt',
           findingsHash: deps.hashFindings(findings),
           invokedAt: NOW,

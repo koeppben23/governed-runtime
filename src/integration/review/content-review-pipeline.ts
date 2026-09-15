@@ -13,7 +13,6 @@ import { buildReviewContentPrompt, selectReviewerProfileRules } from './prompt-b
 import { buildReviewContentMutatedOutput, type ReviewerSuccessResult } from './orchestrator.js';
 import { strictBlockedOutput } from '../plugin-helpers.js';
 import { TOOL_FLOWGUARD_REVIEW } from '../tool-names.js';
-import { REASON_HOST_SUBAGENT_TASK_REQUIRED } from '../../shared/flowguard-identifiers.js';
 import {
   hashText,
   hashFindings,
@@ -219,15 +218,13 @@ export async function runReviewContentPipeline(ctx: PipelineContext): Promise<vo
   const reviewerResult = await deps.adapter.spawnReviewer({
     prompt,
     parentSessionId: sessionId,
-    reviewOutputPolicy: sessionState.policySnapshot.reviewOutputPolicy,
-    reviewInvocationPolicy: sessionState.policySnapshot.reviewInvocationPolicy,
     onAttemptFailed: buildAttemptFailedLogger(deps, TOOL_FLOWGUARD_REVIEW, sessionId),
     onAttemptSucceeded: buildAttemptSucceededLogger(deps, TOOL_FLOWGUARD_REVIEW),
   });
 
   if (reviewerResult?.blocked) {
-    const code = reviewerResult.code ?? REASON_HOST_SUBAGENT_TASK_REQUIRED;
-    const reason = reviewerResult.reason ?? 'review invocation blocked by policy';
+    const code = reviewerResult.code;
+    const reason = reviewerResult.reason ?? 'review invocation blocked by host transport contract';
     deps.log.warn('review', 'content_review_blocked', { sessionId, code });
     output.output = strictBlockedOutput(code, {
       reason,

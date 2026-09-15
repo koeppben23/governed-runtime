@@ -22,14 +22,10 @@
  */
 
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
-import {
-  REASON_HOST_SUBAGENT_TASK_REQUIRED,
-  RECOVERY_HOST_SUBAGENT_TASK,
-} from '../../shared/flowguard-identifiers.js';
+import { ReviewerFindingsInput } from '../../state/evidence-review-input.js';
 import type { OrchestratorClient } from './types.js';
 
 import { REVIEW_FINDINGS_JSON_SCHEMA } from './findings-schema.js';
-import { extractStructuredOutputToolPart } from './structured-output-tool-part.js';
 import { resolveReviewerAgent } from './agent-resolution.js';
 import {
   abortReviewerSession,
@@ -44,27 +40,19 @@ export type { OrchestratorClient } from './types.js';
 
 export interface ReviewerBlockedResult {
   readonly blocked: true;
-  readonly code: typeof REASON_HOST_SUBAGENT_TASK_REQUIRED | 'REVIEWER_INVOCATION_EXHAUSTED';
+  readonly code:
+    | 'REVIEWER_INVOCATION_EXHAUSTED'
+    | 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE'
+    | 'HOST_STRUCTURED_OUTPUT_REQUIRED'
+    | 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION';
   readonly reason: string;
-  readonly reviewInvocation:
-    | {
-        readonly policy: 'host_task_required';
-        readonly status: 'blocked_until_host_task';
-        readonly code: typeof REASON_HOST_SUBAGENT_TASK_REQUIRED;
-        readonly reviewerSubagentType: typeof REVIEWER_SUBAGENT_TYPE;
-        readonly invocationMode: 'host_subagent_task';
-        readonly hostVisible: true;
-        readonly recovery: readonly [typeof RECOVERY_HOST_SUBAGENT_TASK];
-      }
-    | {
-        readonly policy: 'host_task_required' | 'sdk_allowed' | 'host_task_preferred';
-        readonly status: 'blocked_capability_mismatch';
-        readonly code: 'REVIEWER_INVOCATION_EXHAUSTED';
-        readonly reviewerSubagentType: typeof REVIEWER_SUBAGENT_TYPE;
-        readonly invocationMode: 'sdk_session';
-        readonly hostVisible: false;
-        readonly recovery: readonly [string];
-      };
+  readonly reviewInvocation: {
+    readonly status: 'blocked_capability_mismatch' | 'host_contract_violation';
+    readonly code: string;
+    readonly reviewerSubagentType: typeof REVIEWER_SUBAGENT_TYPE;
+    readonly invocationMode: 'sdk_session';
+    readonly recovery: readonly [string];
+  };
 }
 
 export interface ReviewerSuccessResult {
@@ -92,9 +80,8 @@ export interface OrchestrationResult {
 const REVIEWER_SESSION_TITLE = 'FlowGuard Independent Review';
 
 export interface InvokeReviewerOptions {
-  readonly reviewOutputPolicy?: 'structured_required';
-  readonly reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed';
-  readonly maxRetries?: number;
+  /** Technical retries within one ReviewAttempt. */
+  readonly maxTransportRetries?: number;
   readonly baseDelayMs?: number;
   /**
    * Maximum time to wait for a reviewer `session.prompt` before classifying the
@@ -130,9 +117,7 @@ export function retrySleep(ms: number): Promise<void> {
 }
 
 const DEFAULT_INVOKE_OPTIONS: Required<InvokeReviewerOptions> = {
-  reviewOutputPolicy: 'structured_required',
-  reviewInvocationPolicy: 'host_task_required',
-  maxRetries: 2,
+  maxTransportRetries: 2,
   baseDelayMs: 1000,
   promptTimeoutMs: DEFAULT_REVIEWER_PROMPT_TIMEOUT_MS,
   _sleepFn: retrySleep,
@@ -147,9 +132,6 @@ export async function invokeReviewer(
   options?: InvokeReviewerOptions,
 ): Promise<ReviewerResult | null> {
   const invokeOptions = { ...DEFAULT_INVOKE_OPTIONS, ...options };
-  if (invokeOptions.reviewInvocationPolicy === 'host_task_required')
-    return hostTaskRequiredBlockedResult();
-
   let agent: string;
   try {
     agent = await resolveReviewerAgent(client);
@@ -160,13 +142,12 @@ export async function invokeReviewer(
       error,
       details: {
         reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
-        reviewInvocationPolicy: invokeOptions.reviewInvocationPolicy,
       },
     });
-    return reviewerIsolationUnavailableBlockedResult(invokeOptions.reviewInvocationPolicy, error);
+    return reviewerIsolationUnavailableBlockedResult(error);
   }
 
-  const maxAttempts = invokeOptions.maxRetries + 1;
+  const maxAttempts = invokeOptions.maxTransportRetries + 1;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     if (attempt > 1)
       await invokeOptions._sleepFn(invokeOptions.baseDelayMs * Math.pow(2, attempt - 2));
@@ -186,41 +167,19 @@ export async function invokeReviewer(
   return null;
 }
 
-function reviewerIsolationUnavailableBlockedResult(
-  policy: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed',
-  error: unknown,
-): ReviewerBlockedResult {
+function reviewerIsolationUnavailableBlockedResult(error: unknown): ReviewerBlockedResult {
   const detail = error instanceof Error ? error.message : String(error);
   const recovery = `Install/register ${REVIEWER_SUBAGENT_TYPE} with its read-only host capability restrictions, then restart the host.`;
   return {
     blocked: true,
-    code: 'REVIEWER_INVOCATION_EXHAUSTED',
+    code: 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE',
     reason: `Independent review is blocked because isolated reviewer capability is unavailable: ${detail}`,
     reviewInvocation: {
-      policy,
       status: 'blocked_capability_mismatch',
-      code: 'REVIEWER_INVOCATION_EXHAUSTED',
+      code: 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE',
       reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
       invocationMode: 'sdk_session',
-      hostVisible: false,
       recovery: [recovery],
-    },
-  };
-}
-
-function hostTaskRequiredBlockedResult(): ReviewerBlockedResult {
-  return {
-    blocked: true,
-    code: REASON_HOST_SUBAGENT_TASK_REQUIRED,
-    reason: `Policy requires a host-visible ${REVIEWER_SUBAGENT_TYPE} invocation via the OpenCode Task tool; SDK session invocation is disabled.`,
-    reviewInvocation: {
-      policy: 'host_task_required',
-      status: 'blocked_until_host_task',
-      code: REASON_HOST_SUBAGENT_TASK_REQUIRED,
-      reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
-      invocationMode: 'host_subagent_task',
-      hostVisible: true,
-      recovery: [RECOVERY_HOST_SUBAGENT_TASK],
     },
   };
 }
@@ -305,9 +264,11 @@ async function promptReviewerSession(
   const capabilityResult = await handleInfoError(input, info?.error);
   if (capabilityResult) return capabilityResult;
 
-  const findings =
-    extractStructuredFindings(info) ?? extractStructuredOutputToolPart(promptResult.data.parts);
+  const findings = extractStructuredFindings(info);
   if (!findings) return handleNoStructuredFindings(input, promptResult.data.parts, info);
+  if (!ReviewerFindingsInput.safeParse(findings).success) {
+    return { kind: 'done', result: hostStructuredOutputContractViolation(input.agent) };
+  }
   options._onAttemptSucceeded({
     attempt,
     step: 'session_prompt',
@@ -437,28 +398,25 @@ function logCapabilityError(
       agent: input.agent,
       reason: 'Session model does not support required structured output.',
       detectedPattern: capabilityError,
-      reviewOutputPolicy: input.options.reviewOutputPolicy,
       recovery: `Configure the ${REVIEWER_SUBAGENT_TYPE} agent to use a structured-output-capable model.`,
     },
   });
 }
 
-function structuredOutputBlocked(input: InvokeAttemptInput): InvokeAttemptResult {
+function structuredOutputBlocked(_input: InvokeAttemptInput): InvokeAttemptResult {
   return {
     kind: 'done',
     result: {
       blocked: true,
-      code: 'REVIEWER_INVOCATION_EXHAUSTED',
+      code: 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE',
       reason:
         'The configured reviewer model does not support required structured output. ' +
         `Configure ${REVIEWER_SUBAGENT_TYPE} to use a structured-output-capable model.`,
       reviewInvocation: {
-        policy: input.options.reviewInvocationPolicy,
         status: 'blocked_capability_mismatch',
-        code: 'REVIEWER_INVOCATION_EXHAUSTED',
+        code: 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE',
         reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
         invocationMode: 'sdk_session',
-        hostVisible: false,
         recovery: [`Configure ${REVIEWER_SUBAGENT_TYPE} to use a structured-output-capable model.`],
       },
     },
@@ -468,7 +426,7 @@ function structuredOutputBlocked(input: InvokeAttemptInput): InvokeAttemptResult
 function extractStructuredFindings(
   info: Record<string, unknown> | undefined,
 ): Record<string, unknown> | null {
-  const structuredRaw = info?.structured_output ?? info?.structured;
+  const structuredRaw = info?.structured;
   return structuredRaw && typeof structuredRaw === 'object' && !Array.isArray(structuredRaw)
     ? (structuredRaw as Record<string, unknown>)
     : null;
@@ -484,7 +442,42 @@ function handleNoStructuredFindings(
     step: 'no_findings',
     details: noFindingsDetails(input.agent, parts, info),
   });
-  return input.attempt < input.maxAttempts ? { kind: 'retry' } : { kind: 'done', result: null };
+  return { kind: 'done', result: hostStructuredOutputRequired(input.agent) };
+}
+
+function hostStructuredOutputRequired(agent: string): ReviewerBlockedResult {
+  return {
+    blocked: true,
+    code: 'HOST_STRUCTURED_OUTPUT_REQUIRED',
+    reason: 'OpenCode did not return the required host-validated structured reviewer output.',
+    reviewInvocation: {
+      status: 'host_contract_violation',
+      code: 'HOST_STRUCTURED_OUTPUT_REQUIRED',
+      reviewerSubagentType: agent as typeof REVIEWER_SUBAGENT_TYPE,
+      invocationMode: 'sdk_session',
+      recovery: [
+        'Use the validated OpenCode host version and a structured-output-capable reviewer model.',
+      ],
+    },
+  };
+}
+
+function hostStructuredOutputContractViolation(agent: string): ReviewerBlockedResult {
+  return {
+    blocked: true,
+    code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+    reason:
+      "OpenCode returned structured reviewer output that violates FlowGuard's canonical input schema.",
+    reviewInvocation: {
+      status: 'host_contract_violation',
+      code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+      reviewerSubagentType: agent as typeof REVIEWER_SUBAGENT_TYPE,
+      invocationMode: 'sdk_session',
+      recovery: [
+        'Align the OpenCode structured-output contract with the validated FlowGuard schema.',
+      ],
+    },
+  };
 }
 
 function noFindingsDetails(
@@ -496,7 +489,6 @@ function noFindingsDetails(
     agent,
     hasInfo: !!info,
     infoError: info?.error ?? null,
-    hasStructuredOutput: info ? 'structured_output' in info : false,
     hasStructured: info ? 'structured' in info : false,
     infoKeys: info ? Object.keys(info) : [],
     partsCount: parts?.length ?? 0,

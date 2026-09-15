@@ -15,7 +15,6 @@ import { describe, expect, it } from 'vitest';
 import { PLAN_COMMAND } from './plan.js';
 import { IMPLEMENT_COMMAND } from './implement.js';
 import { ARCHITECTURE_COMMAND } from './architecture.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
 const TEMPLATES: ReadonlyArray<readonly [string, string]> = [
   ['plan', PLAN_COMMAND],
@@ -33,23 +32,16 @@ describe('templates/commands Discovery review parity (Item 2)', () => {
         expect(template).toContain('detectedStack');
       });
 
-      // HAPPY — the host injects the canonical prompt with frozen review context.
-      it('requires host injection of the canonical reviewer prompt', () => {
-        expect(template).toContain(REVIEWER_SUBAGENT_TYPE);
-        expect(template).toContain('FlowGuard injects the canonical prompt at the host boundary');
-        expect(template).toContain('Do not add a Task `prompt`');
+      // HAPPY — FlowGuard remains responsible for independent review evidence.
+      it('keeps independent review evidence bound by FlowGuard', () => {
+        expect(template).toContain('FlowGuard');
+        expect(template).toContain('reviewFindings');
       });
 
       // BAD — unverifiable Discovery yields NOT_VERIFIED, never invented truth.
       it('marks Discovery-dependent claims NOT_VERIFIED and forbids inventing truth', () => {
         expect(template).toContain('NOT_VERIFIED');
         expect(template).toContain('do not invent repository truth');
-      });
-
-      // CORNER — Discovery context is carried by the full canonical prompt.
-      it('forbids reconstructing the frozen reviewer context', () => {
-        expect(template).toContain('reviewerTaskPrompt');
-        expect(template).toContain('never free-compose a governed reviewer prompt');
       });
 
       // EDGE — Discovery is evidence, not verdict authority.

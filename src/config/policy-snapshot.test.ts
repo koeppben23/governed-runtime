@@ -77,8 +77,6 @@ describe('createPolicySnapshot', () => {
     );
     expect(snapshot.allowSelfApproval).toBe(SOLO_POLICY.allowSelfApproval);
     expect(snapshot.identityProviderMode).toBe(SOLO_POLICY.identityProviderMode);
-    expect(snapshot.reviewOutputPolicy).toBe(SOLO_POLICY.reviewOutputPolicy);
-    expect(snapshot.reviewInvocationPolicy).toBe(SOLO_POLICY.reviewInvocationPolicy);
     expect(snapshot.effectiveGateBehavior).toBe('auto_approve');
   });
 
@@ -175,7 +173,7 @@ describe('createPolicySnapshot', () => {
       },
       {
         ...SOLO_POLICY,
-        reviewInvocationPolicy: 'host_task_required' as const,
+        reviewProfile: 'full' as const,
       },
       {
         ...SOLO_POLICY,
@@ -244,7 +242,7 @@ describe('resolvePolicyFromSnapshot', () => {
       const reconstructed = resolvePolicyFromSnapshot(snapshot);
       expect(reconstructed.mode).toBe('regulated');
       expect(reconstructed.requireHumanGates).toBe(true);
-      expect(reconstructed.reviewOutputPolicy).toBe('structured_required');
+      expect(reconstructed.reviewProfile).toBe('core');
     });
 
     it('round-trips the mandatory core reviewProfile (Wave 1 — #730)', () => {

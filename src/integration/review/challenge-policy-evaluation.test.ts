@@ -15,8 +15,7 @@ import { computeFingerprint, sessionDir } from '../../adapters/workspace/index.j
 import { hashCanonicalReviewContent } from '../../shared/review-subject.js';
 import { createTestWorkspace, createToolContext, parseToolResult } from '../test-helpers.js';
 import { resolve_implementation_challenge } from '../tools/challenge-resolution.js';
-import { hostTaskDispatchPlan } from '../tools/review-validation-test-helpers.js';
-import { resolveHostTaskFindings } from '../tools/review-validation-host-task.js';
+import { resolveStructuredFindings } from '../tools/review-validation-structured-evidence.js';
 import {
   computeTargetedResolutionChallengeIds,
   computeUnaddressedPriorFailIds,
@@ -217,14 +216,14 @@ async function resolveCapturedFixture(
     criteriaVersion: obligation.criteriaVersion,
     parentSessionId: 'evaluation-parent',
     childSessionId: findings.reviewedBy.sessionId,
-    invocationMode: 'host_subagent_task',
+    invocationMode: 'sdk_session_prompt',
     promptHash: `prompt-${fixture.name}`,
     findingsHash: hashFindings(findings),
     invokedAt: '2026-07-26T00:00:00.000Z',
     capturedRawFindings: findings,
     attemptId: attempt.attemptId,
   });
-  const result = resolveHostTaskFindings(
+  const result = resolveStructuredFindings(
     {
       assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [obligation],
@@ -279,13 +278,6 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
       },
     ],
   });
-  const firstDispatchPlan = hostTaskDispatchPlan({
-    isHostTask: true,
-    dispatches: [],
-    attemptId: '33333333-3333-4333-8333-333333333334',
-    obligationId: firstObligation.obligationId,
-    at: '2026-07-26T00:00:00.000Z',
-  });
   const firstInvocation = buildInvocationEvidence({
     obligationId: firstObligation.obligationId,
     obligationType: 'implement',
@@ -293,10 +285,8 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
     criteriaVersion: firstObligation.criteriaVersion,
     parentSessionId: sessionID,
     childSessionId: firstFindings.reviewedBy.sessionId,
-    invocationMode: 'host_subagent_task',
+    invocationMode: 'sdk_session_prompt',
     promptHash: 'initial-changes-requested-prompt',
-    hostTaskCallId: firstDispatchPlan.hostTaskCallId,
-    canonicalPromptDigest: firstDispatchPlan.canonicalPromptDigest,
     findingsHash: hashFindings(firstFindings),
     invokedAt: '2026-07-26T00:00:00.000Z',
     capturedRawFindings: firstFindings,
@@ -308,7 +298,7 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
     firstInvocation.attemptId!,
   );
   expect(
-    resolveHostTaskFindings(
+    resolveStructuredFindings(
       {
         assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [firstObligation],
@@ -335,7 +325,7 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
         obligations: [firstObligation],
         invocations: [firstInvocation],
         attempts: [firstAttempt],
-        dispatches: firstDispatchPlan.dispatch ? [firstDispatchPlan.dispatch] : [],
+        dispatches: [],
       },
       validationAttempts: [
         {
@@ -394,7 +384,7 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
     criteriaVersion: secondObligation.criteriaVersion,
     parentSessionId: sessionID,
     childSessionId: secondFindings.reviewedBy.sessionId,
-    invocationMode: 'host_subagent_task',
+    invocationMode: 'sdk_session_prompt',
     promptHash: 'independent-re-review-prompt',
     findingsHash: hashFindings(secondFindings),
     invokedAt: '2026-07-26T00:01:00.000Z',
@@ -406,7 +396,7 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
     secondFindings.reviewedBy.sessionId,
     secondInvocation.attemptId!,
   );
-  const reReview = resolveHostTaskFindings(
+  const reReview = resolveStructuredFindings(
     {
       assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [secondObligation],

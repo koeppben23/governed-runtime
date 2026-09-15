@@ -57,15 +57,11 @@ function validFindings(overrides: Record<string, unknown> = {}): string {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: 'child-session-1' },
     reviewedAt: '2026-04-24T12:00:00.000Z',
     attestation: {
-      mandateDigest: 'test-mandate-digest',
-      criteriaVersion: 'p37-v1',
       toolObligationId: '11111111-1111-4111-8111-111111111111',
-      iteration: 0,
-      planVersion: 1,
-      reviewedBy: 'flowguard-reviewer',
     },
     ...overrides,
   });
@@ -86,7 +82,7 @@ function mockClient(
       data?: {
         parts?: Array<{ type?: string; text?: string }>;
         info?: {
-          structured_output?: unknown;
+          structured?: unknown;
           error?: { name: string; message: string };
         };
       };
@@ -113,7 +109,7 @@ function mockClient(
         opts.promptResult ?? {
           data: {
             parts: [{ type: 'text', text: validFindings() }],
-            info: { structured_output: JSON.parse(validFindings()) as Record<string, unknown> },
+            info: { structured: JSON.parse(validFindings()) as Record<string, unknown> },
           },
           error: undefined,
         },
@@ -199,23 +195,28 @@ describe('MUTATION_KILL: buildStackProfileSection via buildPlanReviewPrompt', ()
   });
 });
 
-describe('MUTATION_KILL: invokeReviewer StructuredOutputError with structured_output present', () => {
-  it('returns null even when structured_output co-exists with StructuredOutputError', async () => {
+describe('MUTATION_KILL: invokeReviewer StructuredOutputError with structured output present', () => {
+  it('returns null even when info.structured co-exists with StructuredOutputError', async () => {
     // This kills the L534 BlockStatement mutation (removing the return null)
     const client = mockClient({
       promptResult: {
         data: {
           info: {
             error: { name: 'StructuredOutputError', message: 'schema validation failed' },
-            structured_output: JSON.parse(validFindings()) as Record<string, unknown>,
+            structured: (() => {
+              const {
+                reviewedBy: _reviewedBy,
+                reviewedAt: _reviewedAt,
+                ...findings
+              } = JSON.parse(validFindings()) as Record<string, unknown>;
+              return findings;
+            })(),
           },
         },
         error: undefined,
       },
     });
-    const result = await invokeReviewer(client, 'test prompt', 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
-    });
+    const result = await invokeReviewer(client, 'test prompt', 'parent-1', {});
     expect(result).toBeNull();
   });
 
@@ -226,51 +227,40 @@ describe('MUTATION_KILL: invokeReviewer StructuredOutputError with structured_ou
         data: {
           info: {
             error: { name: 'OtherError', message: 'something else' },
-            structured_output: JSON.parse(validFindings()) as Record<string, unknown>,
+            structured: (() => {
+              const {
+                reviewedBy: _reviewedBy,
+                reviewedAt: _reviewedAt,
+                ...findings
+              } = JSON.parse(validFindings()) as Record<string, unknown>;
+              return findings;
+            })(),
           },
         },
         error: undefined,
       },
     });
-    const result = await invokeReviewer(client, 'test prompt', 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
-    });
+    const result = await invokeReviewer(client, 'test prompt', 'parent-1');
     assertSuccessfulResult(result);
     expect(result!.findings).not.toBeNull();
   });
 });
 
 describe('MUTATION_KILL: invokeReviewer reviewer provenance edge cases', () => {
-  it('does not rewrite reviewedBy when it is a primitive', async () => {
+  it('blocks when info.structured violates the canonical schema', async () => {
     const findings = JSON.parse(validFindings()) as Record<string, unknown>;
     findings.reviewedBy = 'not-an-object';
     const client = mockClient({
       promptResult: {
-        data: { info: { structured_output: findings } },
+        data: { info: { structured: findings } },
         error: undefined,
       },
     });
-    const result = await invokeReviewer(client, 'test prompt', 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
+    const result = await invokeReviewer(client, 'test prompt', 'parent-1', {});
+    expect(result).toMatchObject({
+      blocked: true,
+      code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
     });
-    assertSuccessfulResult(result);
-    expect(result!.findings!.reviewedBy).toBe('not-an-object');
-  });
-
-  it('does not rewrite reviewedBy when it is null', async () => {
-    const findings = JSON.parse(validFindings()) as Record<string, unknown>;
-    findings.reviewedBy = null;
-    const client = mockClient({
-      promptResult: {
-        data: { info: { structured_output: findings } },
-        error: undefined,
-      },
-    });
-    const result = await invokeReviewer(client, 'test prompt', 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
-    });
-    assertSuccessfulResult(result);
-    expect(result!.findings!.reviewedBy).toBeNull();
   });
 });
 
@@ -420,7 +410,6 @@ describe('M2 — retryCount in format object', () => {
     const client = mockClient();
     _resetAgentResolutionCache();
     await invokeReviewer(client, PROMPT, 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
       _sleepFn: async () => {},
     });
     const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0]![0]!;
@@ -431,7 +420,6 @@ describe('M2 — retryCount in format object', () => {
     const client = mockClient();
     _resetAgentResolutionCache();
     await invokeReviewer(client, PROMPT, 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
       _sleepFn: async () => {},
     });
     const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0]![0]!;
@@ -442,7 +430,6 @@ describe('M2 — retryCount in format object', () => {
     const client = mockClient();
     _resetAgentResolutionCache();
     await invokeReviewer(client, PROMPT, 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
       _sleepFn: async () => {},
     });
     const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0]![0]!;
@@ -454,7 +441,6 @@ describe('M2 — retryCount in format object', () => {
     const client = mockClient();
     _resetAgentResolutionCache();
     await invokeReviewer(client, PROMPT, 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
       _sleepFn: async () => {},
     });
     const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0]![0]!;

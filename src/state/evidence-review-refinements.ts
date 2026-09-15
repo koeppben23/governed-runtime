@@ -144,7 +144,6 @@ export interface AssuranceRefinementShape {
     readonly hostCapturedAgentId?: string;
     readonly hostCapturedAgentType?: string;
     readonly hostCaptureSource?: string;
-    readonly hostTaskCallId?: string;
     readonly canonicalPromptDigest?: string;
     readonly consumedByObligationId?: string | null;
     readonly reviewOutputMode?: string;
@@ -455,9 +454,7 @@ export function refineAssuranceInvocationLinkageCoherence(
     // Provenance is derived from HOW the reviewer was invoked; a state whose
     // transport, visibility, corroboration, or output provenance disagrees
     // with the invocation mode claims more assurance than was observed.
-    const hostObserved =
-      invocation.invocationMode === 'host_subagent_task' ||
-      invocation.invocationMode === 'sdk_session_prompt';
+    const hostObserved = invocation.invocationMode === 'sdk_session_prompt';
     const agentSubmitted =
       invocation.invocationMode === 'manual_attested' ||
       invocation.invocationMode === 'native_subagent_attested';
@@ -477,7 +474,7 @@ export function refineAssuranceInvocationLinkageCoherence(
       : agentSubmitted
         ? 'agent-submitted-attested'
         : null;
-    const expectedHostVisible = invocation.invocationMode === 'host_subagent_task';
+    const expectedHostVisible = false;
     const hostCaptureConsistent =
       invocation.invocationMode === 'native_subagent_attested'
         ? Boolean(
@@ -501,36 +498,6 @@ export function refineAssuranceInvocationLinkageCoherence(
         code: z.ZodIssueCode.custom,
         path: ['invocations'],
         message: 'Review invocation evidence requires consistent invocation provenance.',
-      });
-      return;
-    }
-    // A host-task invocation is the evidence side of exactly one durable
-    // dispatch: the dispatch must exist for the same attempt and be closed as
-    // completed on the same host call with the same canonical prompt.
-    if (invocation.invocationMode === 'host_subagent_task') {
-      const dispatch = assurance.dispatches.find(
-        (record) => record.attemptId === invocation.attemptId,
-      );
-      if (
-        !invocation.hostTaskCallId ||
-        !invocation.canonicalPromptDigest ||
-        !dispatch ||
-        dispatch.dispatchStatus !== 'completed' ||
-        dispatch.hostCallId !== invocation.hostTaskCallId ||
-        dispatch.canonicalPromptDigest !== invocation.canonicalPromptDigest
-      ) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['invocations'],
-          message: `host-task invocation ${invocation.invocationId} requires a completed matching dispatch`,
-        });
-        return;
-      }
-    } else if (invocation.hostTaskCallId) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['invocations'],
-        message: `non-host-task invocation ${invocation.invocationId} must not carry a host task call id`,
       });
       return;
     }

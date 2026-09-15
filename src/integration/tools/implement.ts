@@ -128,9 +128,7 @@ export const review_implementation: ToolDefinition = {
     "then re-record with flowguard_implement. 'unable_to_review' consumes the bound reviewer evidence, " +
     'fails closed, and prepares a fresh independent review attempt.\n' +
     'Review loop runs up to maxIterations (from policy). ' +
-    'Optionally accepts reviewFindings from the independent review agent. Under host_task_preferred only, ' +
-    'reviewerUnavailable without a verdict or findings reports an actual OpenCode Task transport failure and ' +
-    'requests the configured SDK transport; it never approves or persists review evidence.',
+    'reviewerUnavailable without a verdict or findings reports an actual reviewer transport failure; it never approves or persists review evidence.',
   args: {
     reviewVerdict: z
       .enum(['accept', 'changes_requested', 'unable_to_review'])
@@ -153,8 +151,7 @@ export const review_implementation: ToolDefinition = {
       .optional()
       .describe(
         'Set to true ONLY after a real reviewer-subagent spawn failure (Task tool fails, agent ' +
-          'unavailable). With host_task_preferred, use it alone at IMPL_REVIEW to request the configured ' +
-          'SDK transport. With host_task_required it fails closed. It never enables self-review or approval.',
+          'unavailable). It never enables self-review or approval.',
       ),
   },
   async execute(args, context) {

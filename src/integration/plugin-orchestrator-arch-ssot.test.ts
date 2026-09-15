@@ -84,7 +84,6 @@ function buildState(overrides: Partial<SessionState> = {}): SessionState {
     architecture: ARCHITECTURE_DECISION,
     policySnapshot: {
       ...POLICY_SNAPSHOT,
-      reviewOutputPolicy: 'structured_required',
     },
     reviewAssurance: {
       assuranceSchemaVersion: 'review-assurance.v6' as const,

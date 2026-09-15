@@ -85,7 +85,7 @@ export function classifyOpenCodeRuntime(
 // ─── Host contract compatibility ─────────────────────────────────────────────
 
 /** Exact OpenCode host version exercised by CI and represented by the baseline. */
-export const TESTED_OPENCODE_HOST_VERSION = '1.18.29';
+export const TESTED_OPENCODE_HOST_VERSION = '1.18.30';
 
 export interface OpenCodeHostContractDenyEntry {
   readonly versionRange: string;

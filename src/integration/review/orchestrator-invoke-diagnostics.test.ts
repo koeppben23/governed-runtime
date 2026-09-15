@@ -22,8 +22,7 @@ describe('invokeReviewer — diagnostics contract', () => {
         createResult: { error: { message: 'forbidden' }, data: undefined },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        maxRetries: 0,
-        reviewInvocationPolicy: 'sdk_allowed',
+        maxTransportRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -40,8 +39,7 @@ describe('invokeReviewer — diagnostics contract', () => {
         promptResult: { error: { message: 'bad request' }, data: undefined },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        maxRetries: 0,
-        reviewInvocationPolicy: 'sdk_allowed',
+        maxTransportRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -64,8 +62,7 @@ describe('invokeReviewer — diagnostics contract', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        maxRetries: 0,
-        reviewInvocationPolicy: 'sdk_allowed',
+        maxTransportRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -73,7 +70,6 @@ describe('invokeReviewer — diagnostics contract', () => {
       expect(diagnostics[0]!.step).toBe('no_findings');
       const details = diagnostics[0]!.details as Record<string, unknown>;
       expect(details.infoKeys).toEqual([]);
-      expect(details.hasStructuredOutput).toBe(false);
       expect(details.hasStructured).toBe(false);
     });
 
@@ -90,8 +86,7 @@ describe('invokeReviewer — diagnostics contract', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 2,
+        maxTransportRetries: 2,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -109,8 +104,7 @@ describe('invokeReviewer — diagnostics contract', () => {
         promptResult: { error: { message: 'timeout' }, data: undefined },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 2,
+        maxTransportRetries: 2,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -132,8 +126,7 @@ describe('invokeReviewer — diagnostics contract', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        maxRetries: 0,
-        reviewInvocationPolicy: 'sdk_allowed',
+        maxTransportRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -162,8 +155,7 @@ describe('invokeReviewer — diagnostics contract', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        maxRetries: 0,
-        reviewInvocationPolicy: 'sdk_allowed',
+        maxTransportRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -185,12 +177,11 @@ describe('invokeReviewer — diagnostics contract', () => {
         },
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
-        maxRetries: 0,
-        reviewInvocationPolicy: 'sdk_allowed',
+        maxTransportRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
-      expect(result).toBeNull();
+      expect(result).toMatchObject({ blocked: true, code: 'HOST_STRUCTURED_OUTPUT_REQUIRED' });
       expect(diagnostics.some((d) => d.step === 'no_findings')).toBe(true);
     });
 
@@ -209,8 +200,7 @@ describe('invokeReviewer — diagnostics contract', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 0,
+        maxTransportRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -242,8 +232,7 @@ describe('invokeReviewer — diagnostics contract', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 0,
+        maxTransportRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -269,8 +258,7 @@ describe('invokeReviewer — diagnostics contract', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 0,
+        maxTransportRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -299,8 +287,7 @@ describe('invokeReviewer — diagnostics contract', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 0,
+        maxTransportRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -310,9 +297,14 @@ describe('invokeReviewer — diagnostics contract', () => {
       expect((diagnostics[0]!.details as Record<string, unknown>).infoError).toBeNull();
     });
 
-    it('info_error fires but findings still returned when structured_output coexists with error', async () => {
+    it('info_error fires but findings still returned when info.structured coexists with error', async () => {
       const diagnostics: Array<Record<string, unknown>> = [];
-      const findings = validFindings();
+      const { reviewedBy: _reviewedBy, reviewedAt: _reviewedAt, ...findings } = validFindings();
+      const structured = {
+        ...findings,
+        challenges: [],
+        attestation: { toolObligationId: '11111111-1111-4111-8111-811111111111' },
+      };
       const client = makeClient({
         agents: [{ id: 'flowguard-reviewer' }],
         promptResult: {
@@ -320,15 +312,14 @@ describe('invokeReviewer — diagnostics contract', () => {
             parts: [],
             info: {
               error: { name: 'PartialWarning', message: 'some warning' },
-              structured_output: findings,
+              structured,
             },
           },
           error: undefined,
         },
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 0,
+        maxTransportRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -338,7 +329,7 @@ describe('invokeReviewer — diagnostics contract', () => {
       // But findings are still returned successfully (error doesn't block valid output)
       assertSuccessfulResult(result);
       expect(result!.findings).toBeTruthy();
-      expect(result!.findings!.overallVerdict).toBe(findings.overallVerdict);
+      expect(result!.findings!.overallVerdict).toBe('accept');
     });
   });
 });

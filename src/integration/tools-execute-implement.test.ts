@@ -783,7 +783,7 @@ describe('implement', () => {
       expect(result.code).toBe('IMPLEMENTATION_EVIDENCE_REQUIRED');
     });
 
-    it('reports a preferred host Task transport failure without consuming the implementation obligation', async () => {
+    it('fails closed on reviewerUnavailable at IMPL_REVIEW without consuming the implementation obligation', async () => {
       await reachImplementation();
       await implement.execute({}, ctx);
       await passImplValidation();
@@ -794,7 +794,6 @@ describe('implement', () => {
         ...state!,
         policySnapshot: {
           ...state!.policySnapshot!,
-          reviewInvocationPolicy: 'host_task_preferred' as const,
         },
       };
       await writeState(sessDir, retryState);
@@ -802,12 +801,9 @@ describe('implement', () => {
       const raw = await review_implementation.execute({ reviewerUnavailable: true }, ctx);
       const result = parseToolResult(raw);
       const after = await readState(sessDir);
-      expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('IMPL_REVIEW');
-      expect(result.reviewTransportFailure).toEqual({ transport: 'host_task', reported: true });
-      expect(
-        (result.reviewObligation as { obligationId?: string } | undefined)?.obligationId,
-      ).toBeTruthy();
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVIEWER_UNAVAILABLE_STRICT');
+      expect(after?.phase).toBe('IMPL_REVIEW');
       expect(after?.reviewAssurance).toEqual(retryState.reviewAssurance);
       expect(after?.implReview).toEqual(retryState.implReview);
     });
@@ -994,7 +990,7 @@ describe('implement', () => {
       const raw = await review_implementation.execute({ reviewVerdict: 'accept' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
-      expect(result.code).toBe('REVIEW_FINDINGS_REQUIRED');
+      expect(result.code).toBe('SUBAGENT_EVIDENCE_MISSING');
     });
 
     it('Mode B: reviewMode=self blocked when subagentEnabled=true and fallbackToSelf=false', async () => {
@@ -1286,7 +1282,7 @@ describe('implement', () => {
       const raw = await review_implementation.execute({ reviewVerdict: 'accept' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
-      expect(result.code).toBe('REVIEW_FINDINGS_REQUIRED');
+      expect(result.code).toBe('SUBAGENT_EVIDENCE_MISSING');
     });
 
     it('Mode B: changes_requested without findings blocks without changing phase or obligation', async () => {
@@ -1300,7 +1296,7 @@ describe('implement', () => {
         ctx,
       );
       const reviewResult = parseToolResult(reviewRaw);
-      expect(reviewResult.code).toBe('REVIEW_FINDINGS_REQUIRED');
+      expect(reviewResult.code).toBe('SUBAGENT_EVIDENCE_MISSING');
       expect(await readState(sessDir)).toEqual(before);
     });
 

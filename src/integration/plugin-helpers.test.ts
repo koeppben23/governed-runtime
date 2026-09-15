@@ -94,17 +94,22 @@ describe('strictBlockedOutput', () => {
   });
 
   it('HAPPY: includes diagnostics for known strict blocked codes', () => {
-    const json = strictBlockedOutput('HOST_SUBAGENT_TASK_REQUIRED', {
+    const json = strictBlockedOutput('STRICT_REVIEW_ORCHESTRATION_FAILED', {
       obligationId: 'rev-ob-123',
-      policyMode: 'host_task_required',
+      policyMode: 'regulated',
+      reason: 'reviewer response did not match ReviewFindings schema',
     });
     const parsed = JSON.parse(json) as Record<string, unknown>;
     const diagnostics = parsed.diagnostics as Record<string, unknown>;
 
-    expect(diagnostics.diagnosticCode).toBe('REVIEW_HOST_TASK_EVIDENCE_MISSING');
-    expect(diagnostics.rootCause).toContain('host-visible');
+    expect(diagnostics.diagnosticCode).toBe('STRICT_REVIEW_ORCHESTRATION_FAILED');
+    expect(diagnostics.rootCause).toContain('ReviewFindings');
+    expect(diagnostics.policyMode).toBe('regulated');
+    expect(diagnostics.observed).toEqual(
+      expect.arrayContaining([expect.stringContaining('obligationId=rev-ob-123')]),
+    );
     expect(diagnostics.safeNextActions).toEqual(
-      expect.arrayContaining([expect.stringContaining('Do NOT submit')]),
+      expect.arrayContaining([expect.stringContaining('fresh review obligation')]),
     );
     expect(parsed.diagnosticCard).toBeUndefined();
   });

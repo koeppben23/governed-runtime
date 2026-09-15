@@ -64,7 +64,6 @@
     "test:opencode-reviewer-capabilities": "vitest run --project smoke src/cli/opencode-reviewer-capability.test.ts",
     "test:opencode-host-boundary": "vitest run --project smoke src/cli/opencode-host-boundary-live.test.ts",
     "test:acp": "vitest run --project smoke src/cli/run-acp-smoke.test.ts",
-    "test:review-validation-host-contract": "vitest run --project integration src/integration/review-validation-host-contract.test.ts",
     "test:review-modeb-contract": "vitest run --project integration src/integration/review-modeb-contract.test.ts",
     "test:e2e-contract": "vitest run --project integration src/integration/runtime-flow-e2e-contract.test.ts",
     "test:unit": "vitest run --project unit",

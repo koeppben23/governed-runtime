@@ -137,14 +137,12 @@ export type ExternalReference = z.infer<typeof ExternalReferenceSchema>;
 
 /**
  * How the reviewer was invoked.
- * - `host_subagent_task`: host-visible Task tool (OpenCode, synchronous, strongest).
  * - `sdk_session_prompt`: in-process SDK reviewer session.
  * - `manual_attested`: agent-submitted attested findings (out-of-process hosts, weakest sanctioned).
  * - `native_subagent_attested`: agent-submitted findings corroborated by a FlowGuard-captured
  *   host hook (SubagentStop / PostToolUse fired inside the `flowguard-reviewer` subagent).
  *   Strictly stronger than `manual_attested` (independent host witness of the reviewer subagent),
- *   but NOT equivalent to `host_subagent_task` (FlowGuard is not the deterministic spawner; the
- *   correlation is best-effort, not a synchronous handshake).
+ *   with best-effort correlation.
  */
 export type ReviewInvocationMode =
-  'host_subagent_task' | 'sdk_session_prompt' | 'manual_attested' | 'native_subagent_attested';
+  'sdk_session_prompt' | 'manual_attested' | 'native_subagent_attested';

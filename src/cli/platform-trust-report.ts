@@ -29,7 +29,7 @@ const HOST_TRUST: Record<HostId, HostTrustProjection> = {
       argMutation: true,
       outputReplacement: true,
       contextInjection: true,
-      reviewerSpawn: true,
+      independentStructuredReview: true,
       compactionInjection: true,
     },
     runtimeVerification:
@@ -53,7 +53,7 @@ const HOST_TRUST: Record<HostId, HostTrustProjection> = {
       argMutation: false,
       outputReplacement: false,
       contextInjection: true,
-      reviewerSpawn: true,
+      independentStructuredReview: true,
       compactionInjection: true,
     },
     runtimeVerification:
@@ -78,7 +78,7 @@ const HOST_TRUST: Record<HostId, HostTrustProjection> = {
       argMutation: true,
       outputReplacement: true,
       contextInjection: true,
-      reviewerSpawn: true,
+      independentStructuredReview: true,
       compactionInjection: false,
     },
     runtimeVerification:

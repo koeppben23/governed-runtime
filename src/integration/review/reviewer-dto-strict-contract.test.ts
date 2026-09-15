@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { ReviewFindings } from '../../state/evidence.js';
-import { buildHostTaskChallengeContract } from './host-task-policy.js';
+import { buildReviewChallengeContract } from './challenge-contract.js';
 import { normalizeFindingsChallenges } from './enforcement/challenge-binding.js';
 import { makeState } from '../../fixtures.js';
 import { artifactReviewSubjectScope, createReviewObligation } from './assurance.js';
@@ -179,7 +179,7 @@ describe('reviewer DTO strict boundary', () => {
       },
     });
     const obligation = { ...planObligation(), obligationId: OBLIGATION_ID };
-    const contract = buildHostTaskChallengeContract(state, obligation);
+    const contract = buildReviewChallengeContract(state, obligation);
     expect(contract?.evidenceRefs?.length).toBeGreaterThan(0);
 
     const findings = {

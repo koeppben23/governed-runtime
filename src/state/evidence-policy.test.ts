@@ -27,8 +27,6 @@ const CURRENT_SNAPSHOT = {
   allowSelfApproval: true,
   minimumActorAssuranceForApproval: 'best_effort' as const,
   identityProviderMode: 'optional' as const,
-  reviewOutputPolicy: 'structured_required' as const,
-  reviewInvocationPolicy: 'sdk_allowed' as const,
   reviewProfile: 'core' as const,
   challengePolicy: {
     version: 'challenge-policy.v1' as const,
@@ -159,11 +157,16 @@ describe('evidence-policy', () => {
       expect(() => PolicySnapshotSchema.parse(snapshot)).toThrow();
     });
 
-    it('rejects a snapshot missing reviewOutputPolicy / reviewInvocationPolicy / reviewProfile', () => {
-      const { reviewOutputPolicy: _o, ...withoutOutput } = CURRENT_SNAPSHOT;
-      const { reviewInvocationPolicy: _i, ...withoutInvocation } = withoutOutput;
-      const { reviewProfile: _p, ...snapshot } = withoutInvocation;
+    it('rejects a snapshot missing reviewProfile', () => {
+      const { reviewProfile: _p, ...snapshot } = CURRENT_SNAPSHOT;
       expect(() => PolicySnapshotSchema.parse(snapshot)).toThrow();
+    });
+
+    it.each([
+      ['reviewOutputPolicy', 'structured_required'],
+      ['reviewInvocationPolicy', 'removed_policy'],
+    ])('rejects legacy policy field %s', (field, value) => {
+      expect(() => PolicySnapshotSchema.parse({ ...CURRENT_SNAPSHOT, [field]: value })).toThrow();
     });
 
     it('rejects a snapshot missing audit.timestampAssurance', () => {

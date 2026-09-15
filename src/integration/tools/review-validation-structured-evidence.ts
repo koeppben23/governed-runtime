@@ -1,7 +1,6 @@
 /**
- * @module integration/tools/review-validation-host-task
- * @description Host-task review findings resolution — reads captured raw
- *              findings from invocation evidence for host_task_required mode.
+ * @module integration/tools/review-validation-structured-evidence
+ * @description Structured review findings resolution from SDK invocation evidence.
  *
  * Extracted from review-validation.ts. The final acceptance/rejection
  * authority remains there. Imports only from state, shared, and the
@@ -21,9 +20,8 @@ import type {
 } from '../../state/evidence.js';
 import {
   getReviewFindingsAcceptanceRejection,
-  hasValidHostTaskInvocationContract,
-  withHostTaskPath,
-  type HostTaskFindingsAcceptanceRejection,
+  hasValidStructuredInvocationContract,
+  type ReviewFindingsAcceptanceRejection,
 } from './review-validation-acceptance.js';
 import { validateChallengeConsistency } from '../review/enforcement/challenge-consistency.js';
 import { validateReviewFindingsConsistency } from '../review/enforcement/findings-consistency.js';
@@ -31,9 +29,9 @@ import { hashFindings } from '../review/findings-hash.js';
 import { bindCanonicalEvidenceRefs } from '../review/enforcement/challenge-binding.js';
 
 /**
- * Result of resolving review findings from host-task invocation evidence.
+ * Result of resolving review findings from structured invocation evidence.
  */
-export interface ResolvedHostTaskFindings {
+export interface ResolvedStructuredFindings {
   /** Parsed ReviewFindings from the evidence's capturedRawFindings. */
   readonly findings: ReviewFindings;
   /** Invocation evidence record used for direct obligation consumption. */
@@ -42,9 +40,9 @@ export interface ResolvedHostTaskFindings {
   readonly invocationId: string;
 }
 
-export type HostTaskFindingsResolution =
-  | ({ readonly kind: 'resolved' } & ResolvedHostTaskFindings)
-  | { readonly kind: 'rejected'; readonly rejection: HostTaskFindingsAcceptanceRejection }
+export type StructuredFindingsResolution =
+  | ({ readonly kind: 'resolved' } & ResolvedStructuredFindings)
+  | { readonly kind: 'rejected'; readonly rejection: ReviewFindingsAcceptanceRejection }
   | { readonly kind: 'unparseable'; readonly detail: string }
   | {
       readonly kind: 'incoherent';
@@ -83,10 +81,8 @@ export type HostTaskFindingsResolution =
  * @param obligation - The pending/fulfilled obligation to resolve findings for
  * @returns Parsed findings + invocationId, or null if evidence is unavailable
  */
-// The resolver enumerates every persisted capture so an unusable record cannot
-// mask a later coherent retry; its branches are the explicit fail-closed states.
 // eslint-disable-next-line complexity, max-lines-per-function
-export function resolveHostTaskFindings(
+export function resolveStructuredFindings(
   assurance: ReviewAssuranceState | undefined,
   obligation: ReviewObligation | null,
   ...[
@@ -102,19 +98,18 @@ export function resolveHostTaskFindings(
     (readonly string[] | undefined)?,
     (string | undefined)?,
   ]
-): HostTaskFindingsResolution {
+): StructuredFindingsResolution {
   if (!obligation || !assurance) return { kind: 'not_found' };
 
   const obligationRejection = getReviewFindingsAcceptanceRejection({ obligation });
   if (obligationRejection) {
-    return { kind: 'rejected', rejection: withHostTaskPath(obligationRejection) };
+    return { kind: 'rejected', rejection: obligationRejection };
   }
 
   const matchingInvocations = assurance.invocations.filter(
     (inv) =>
       inv.obligationId === obligation.obligationId &&
-      inv.invocationMode === 'host_subagent_task' &&
-      inv.hostVisible === true &&
+      inv.invocationMode === 'sdk_session_prompt' &&
       inv.capturedRawFindings != null,
   );
   // Track the first unparseable capture so the caller can emit a DISTINCT
@@ -142,10 +137,10 @@ export function resolveHostTaskFindings(
     if (!capturedRawFindings) continue;
     const invocationRejection = getReviewFindingsAcceptanceRejection({ obligation, invocation });
     if (invocationRejection) {
-      return { kind: 'rejected', rejection: withHostTaskPath(invocationRejection) };
+      return { kind: 'rejected', rejection: invocationRejection };
     }
 
-    if (!hasValidHostTaskInvocationContract({ obligation, invocation, parentSessionId })) {
+    if (!hasValidStructuredInvocationContract({ obligation, invocation, parentSessionId })) {
       continue;
     }
 
@@ -177,6 +172,13 @@ export function resolveHostTaskFindings(
         return {
           kind: 'invalid',
           code: 'REVIEW_FINDINGS_HASH_MISMATCH',
+          obligationId: obligation.obligationId,
+        };
+      }
+      if (parsed.data.reviewedBy.sessionId !== invocation.childSessionId) {
+        return {
+          kind: 'invalid',
+          code: 'SUBAGENT_EVIDENCE_MISSING',
           obligationId: obligation.obligationId,
         };
       }
@@ -262,7 +264,7 @@ export function resolveHostTaskFindings(
     unparseableDetail = issues.join('; ') || 'unknown schema validation failure';
     getAdapterLogger().warn(
       'flowguard_review',
-      'host-task captured findings present but unparseable; treated as unparseable',
+      'structured captured findings present but unparseable; treated as unparseable',
       {
         obligationId: obligation.obligationId,
         invocationId: invocation.invocationId,
@@ -305,7 +307,7 @@ export function resolveHostTaskFindings(
 
 /**
  * The evidence consumer must independently verify the binding minted by the
- * host-task ingestion boundary. Never recover an invocation by searching for a
+ * structured-capture boundary. Never recover an invocation by searching for a
  * merely compatible attempt: invocation.attemptId is the authority key.
  */
 function hasExactBoundAttempt(

@@ -79,7 +79,7 @@ export const REVIEW_VALIDATION_REASONS = [
       'No bindable review attempt exists for obligation {obligationId}: {reason}. The frozen review material itself was not invalidated.',
     recoverySteps: [
       'Re-run flowguard_review with the original content fields and reviewObligationId to reissue a bindable attempt',
-      'Pass the newly returned reviewerTaskPrompt VERBATIM to the reviewer Task; never reuse a previous prompt',
+      'Follow the newly returned review recovery instructions; never reuse a previous reviewer attempt',
       'Do NOT submit reviewVerdict or reviewFindings to recover this state',
     ],
   },
@@ -682,17 +682,6 @@ export const REVIEW_VALIDATION_REASONS = [
     ],
   },
   {
-    code: 'REPAIR_PROMPT_REQUIRED',
-    category: 'state',
-    messageTemplate:
-      'The reviewer produced schema-invalid output. A fresh canonical repair prompt (from flowguard_review) must be obtained before re-running the reviewer Task. Do NOT re-run the Task with the same stale prompt.',
-    recoverySteps: [
-      'Call flowguard_review with the original content fields and reviewObligationId to obtain a new reviewerTaskPrompt with the validation errors',
-      'Pass the NEW reviewerTaskPrompt to the Task tool — never reuse the old one',
-      'Do NOT fabricate findings, guess a verdict, or call any other authority path',
-    ],
-  },
-  {
     code: 'REVIEW_VERDICT_EVIDENCE_MISSING',
     category: 'state',
     messageTemplate:
@@ -719,28 +708,18 @@ export const REVIEW_VALIDATION_REASONS = [
     messageTemplate:
       'Review tool invocation sequence is invalid for obligation {obligationId}: {reason}.',
     recoverySteps: [
-      'Follow the review invocation sequence documented in the reviewer task instructions',
-      'Do NOT submit reviewerUnavailable when the reviewer subagent successfully spawned',
-      'Do NOT submit reviewFindings in host_task_required mode — only reviewVerdict',
-    ],
-  },
-  {
-    code: 'SUBAGENT_PROMPT_MISMATCH',
-    category: 'state',
-    messageTemplate:
-      'The reviewer Task prompt differs from the host-issued prompt and could not be safely substituted.',
-    recoverySteps: [
-      'Re-run the originating FlowGuard command to issue a fresh reviewer Task request',
-      'Do not modify reviewer instructions or append material outside FlowGuard',
+      'Follow the review invocation sequence documented in the review instructions',
+      'Do NOT submit reviewerUnavailable when a host-observed reviewer invocation already exists',
+      'Submit only the reviewVerdict; the host resolves the bound structured reviewer evidence',
     ],
   },
   {
     code: 'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
     category: 'state',
     messageTemplate:
-      'The reviewer Task completed without a host-owned execution provenance record. Its output cannot bind to a review obligation.',
+      'The reviewer child session completed without a host-owned execution provenance record. Its output cannot bind to a review obligation.',
     recoverySteps: [
-      'Re-run the originating FlowGuard command to issue a fresh reviewer Task request',
+      'Re-run the originating FlowGuard command to authorize a fresh reviewer dispatch',
       'Do not reuse the prior reviewer output or submit copied findings',
     ],
   },

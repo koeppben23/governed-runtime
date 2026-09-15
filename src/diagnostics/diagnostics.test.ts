@@ -20,35 +20,8 @@ async function readGolden(name: string): Promise<string> {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe('runtime diagnostics', () => {
-  it('HAPPY: builds host-task evidence diagnostics with actionable recovery', () => {
-    const diagnostics = buildBlockedDiagnostics('HOST_SUBAGENT_TASK_REQUIRED', {
-      obligationId: 'rev-ob-123',
-      bindOutcome: 'no_bindable_findings',
-      policyMode: 'host_task_required',
-    });
-
-    expect(diagnostics).not.toBeNull();
-    expect(diagnostics?.diagnosticCode).toBe('REVIEW_HOST_TASK_EVIDENCE_MISSING');
-    expect(diagnostics?.rootCause).toContain('host-visible');
-    expect(diagnostics?.observed).toContain('obligationId=rev-ob-123');
-    expect(diagnostics?.required).toContain(
-      'host-visible Task invocation by the FlowGuard reviewer subagent',
-    );
-    expect(diagnostics?.missingEvidence).toContain('host_subagent_task_invocation');
-    expect(diagnostics?.safeNextActions.join('\n')).toContain('Do NOT submit');
-  });
-
   it('BAD: returns null for unknown codes instead of inventing authority', () => {
     expect(buildBlockedDiagnostics('UNKNOWN_CODE', { reason: 'unknown' })).toBeNull();
-  });
-
-  it('BAD: does not claim missing host evidence without bind evidence context', () => {
-    const diagnostics = buildBlockedDiagnostics('HOST_SUBAGENT_TASK_REQUIRED', {
-      reason: 'review invocation blocked by policy',
-    });
-
-    expect(diagnostics?.diagnosticCode).toBe('REVIEW_HOST_TASK_EVIDENCE_MISSING');
-    expect(diagnostics?.missingEvidence).toBeUndefined();
   });
 
   it('CORNER: builds enforcement-unavailable diagnostics with sparse detail', () => {

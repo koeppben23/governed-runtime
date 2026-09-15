@@ -32,8 +32,6 @@ export const SOLO_POLICY: FlowGuardPolicy = {
   maxIncoherentReviewerCaptureRetries: 1,
   maxReviewerAttempts: DEFAULT_MAX_REVIEWER_ATTEMPTS,
   allowSelfApproval: true,
-  reviewOutputPolicy: 'structured_required',
-  reviewInvocationPolicy: 'host_task_preferred',
   reviewProfile: 'core',
   challengePolicy: CHALLENGE_POLICY_V1,
   audit: {
@@ -64,8 +62,6 @@ export const TEAM_POLICY: FlowGuardPolicy = {
   maxIncoherentReviewerCaptureRetries: 1,
   maxReviewerAttempts: DEFAULT_MAX_REVIEWER_ATTEMPTS,
   allowSelfApproval: true,
-  reviewOutputPolicy: 'structured_required',
-  reviewInvocationPolicy: 'host_task_required',
   reviewProfile: 'core',
   challengePolicy: CHALLENGE_POLICY_V1,
   audit: {
@@ -96,8 +92,6 @@ export const TEAM_CI_POLICY: FlowGuardPolicy = {
   maxIncoherentReviewerCaptureRetries: 1,
   maxReviewerAttempts: DEFAULT_MAX_REVIEWER_ATTEMPTS,
   allowSelfApproval: true,
-  reviewOutputPolicy: 'structured_required',
-  reviewInvocationPolicy: 'host_task_required',
   reviewProfile: 'core',
   challengePolicy: CHALLENGE_POLICY_V1,
   audit: {
@@ -128,8 +122,6 @@ export const REGULATED_POLICY: FlowGuardPolicy = {
   maxIncoherentReviewerCaptureRetries: 1,
   maxReviewerAttempts: DEFAULT_MAX_REVIEWER_ATTEMPTS,
   allowSelfApproval: false,
-  reviewOutputPolicy: 'structured_required',
-  reviewInvocationPolicy: 'host_task_required',
   reviewProfile: 'core',
   challengePolicy: CHALLENGE_POLICY_V1,
   audit: {

@@ -35,7 +35,6 @@ import {
 import { mintObservationCapabilityIfResolvable } from './review/attempt-lifecycle.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { writeStateWithAuditOperations } from './tools/audit-outbox.js';
-import { hostTaskDispatchPlan } from './tools/review-validation-test-helpers.js';
 
 // ─── Safety Guards ───────────────────────────────────────────────────────────
 
@@ -464,19 +463,11 @@ export async function fulfillStrictReviewObligation(
     challenges,
   };
 
-  const isHostTask = state.policySnapshot?.reviewInvocationPolicy === 'host_task_required';
   const boundAttempt = bindHostTaskAttempt(
     assurance.attempts,
     obligation,
     findings.reviewedBy.sessionId,
   );
-  const dispatchPlan = hostTaskDispatchPlan({
-    isHostTask,
-    dispatches: assurance.dispatches,
-    attemptId: boundAttempt.attemptId,
-    obligationId: obligation.obligationId,
-    at: new Date().toISOString(),
-  });
   const invocation = buildInvocationEvidence({
     obligationId: obligation.obligationId,
     obligationType: input.obligationType,
@@ -484,14 +475,12 @@ export async function fulfillStrictReviewObligation(
     criteriaVersion: obligation.criteriaVersion,
     parentSessionId: state.binding.hostSessionId,
     childSessionId: findings.reviewedBy.sessionId,
-    invocationMode: isHostTask ? 'host_subagent_task' : 'sdk_session_prompt',
+    invocationMode: 'sdk_session_prompt',
     promptHash: hashText(`${input.obligationType}:${input.iteration}:${input.planVersion}`),
     findingsHash: hashFindings(findings),
     invokedAt: new Date().toISOString(),
     fulfilledAt: new Date().toISOString(),
     attemptId: boundAttempt.attemptId,
-    hostTaskCallId: dispatchPlan.hostTaskCallId,
-    canonicalPromptDigest: dispatchPlan.canonicalPromptDigest,
     // Production evidence carries the reviewer's explicit verdict
     // (transport-evidence sets capturedVerdict from findings.overallVerdict;
     // host-task captures set it from captured findings). The helper mirrors
@@ -501,9 +490,9 @@ export async function fulfillStrictReviewObligation(
     // BUG-17 Batch 10: host_task_required mode resolves findings from invocation
     // evidence (capturedRawFindings) rather than from agent-submitted args.
     // Without this, resolveHostTaskFindings returns null → REVIEW_FINDINGS_REQUIRED.
-    ...(isHostTask ? { capturedRawFindings: findings } : {}),
+    capturedRawFindings: findings,
   });
-  const obligationAcceptedByReviewer = !isHostTask;
+  const obligationAcceptedByReviewer = true;
 
   await writeStateWithAuditOperations(sessDir, {
     ...state,
@@ -529,9 +518,7 @@ export async function fulfillStrictReviewObligation(
         ...assurance.attempts.filter((attempt) => attempt.attemptId !== boundAttempt.attemptId),
         boundAttempt,
       ],
-      dispatches: dispatchPlan.dispatch
-        ? [...assurance.dispatches, dispatchPlan.dispatch]
-        : assurance.dispatches,
+      dispatches: assurance.dispatches,
     },
   });
 

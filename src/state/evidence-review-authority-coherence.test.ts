@@ -202,8 +202,8 @@ describe('Current persisted authority schemas are strict', () => {
     parentSessionId: 'ses_parent',
     childSessionId: 'ses_child',
     agentType: 'flowguard-reviewer' as const,
-    invocationMode: 'host_subagent_task' as const,
-    hostVisible: true,
+    invocationMode: 'sdk_session_prompt' as const,
+    hostVisible: false,
     source: 'host-orchestrated' as const,
     promptHash: 'sha256-prompt',
     mandateDigest: 'sha256-mandate',
@@ -716,9 +716,7 @@ describe('Host invocation, obligation foreign keys and status relations', () => 
   };
 
   const ATTEMPT_ID = '11111111-1111-4111-8111-111111111111';
-  const HOST_INVOCATION_ID = '77777777-7777-4777-8777-777777777777';
-  const HOST_CALL_ID = 'call-host';
-  const PROMPT_DIGEST = 'c'.repeat(64);
+  const INVOCATION_ID = '77777777-7777-4777-8777-777777777777';
 
   const BOUND_ATTEMPT = {
     attemptId: ATTEMPT_ID,
@@ -735,19 +733,17 @@ describe('Host invocation, obligation foreign keys and status relations', () => 
     completedAt: FIXED_TIME,
   };
 
-  function hostInvocation(overrides: Record<string, unknown> = {}) {
+  function sdkInvocation(overrides: Record<string, unknown> = {}) {
     return {
-      invocationId: HOST_INVOCATION_ID,
+      invocationId: INVOCATION_ID,
       obligationId: FIXED_UUID,
       obligationType: 'plan' as const,
       parentSessionId: 'ses_parent',
       childSessionId: 'ses_child',
       agentType: 'flowguard-reviewer' as const,
-      invocationMode: 'host_subagent_task' as const,
-      hostVisible: true,
+      invocationMode: 'sdk_session_prompt' as const,
+      hostVisible: false,
       source: 'host-orchestrated' as const,
-      hostTaskCallId: HOST_CALL_ID,
-      canonicalPromptDigest: PROMPT_DIGEST,
       promptHash: 'sha256-prompt',
       mandateDigest: 'sha256-mandate',
       criteriaVersion: 'p40-v1',
@@ -759,32 +755,6 @@ describe('Host invocation, obligation foreign keys and status relations', () => 
       reviewOutputMode: 'structured_output' as const,
       structuredOutputUsed: true,
       reviewAssuranceLevel: 'structured_high' as const,
-      ...overrides,
-    };
-  }
-
-  function sdkInvocation(overrides: Record<string, unknown> = {}) {
-    return {
-      ...hostInvocation(),
-      invocationId: HOST_INVOCATION_ID,
-      invocationMode: 'sdk_session_prompt' as const,
-      hostVisible: false,
-      hostTaskCallId: undefined,
-      canonicalPromptDigest: undefined,
-      ...overrides,
-    };
-  }
-
-  function completedDispatch(overrides: Record<string, unknown> = {}) {
-    return {
-      dispatchId: 'aaaaaaaa-1111-4111-8111-111111111111',
-      attemptId: ATTEMPT_ID,
-      obligationId: FIXED_UUID,
-      hostCallId: HOST_CALL_ID,
-      canonicalPromptDigest: PROMPT_DIGEST,
-      dispatchAuthorizedAt: FIXED_TIME,
-      dispatchStatus: 'completed' as const,
-      completedAt: FIXED_TIME,
       ...overrides,
     };
   }
@@ -803,66 +773,8 @@ describe('Host invocation, obligation foreign keys and status relations', () => 
     });
   }
 
-  it('HAPPY: host-task invocation with the completed matching dispatch parses', () => {
-    expect(
-      parseState({
-        invocations: [hostInvocation()],
-        dispatches: [completedDispatch()],
-      }).success,
-    ).toBe(true);
-  });
-
-  it('rejects a host-task invocation without a dispatch', () => {
-    const result = parseState({ invocations: [hostInvocation()] });
-    expect(result.success).toBe(false);
-    if (result.success) throw new TypeError('expected schema rejection');
-    expect(JSON.stringify(result.error.issues)).toContain('requires a completed matching dispatch');
-  });
-
-  it('rejects a host-task invocation whose dispatch is not completed', () => {
-    const result = parseState({
-      invocations: [hostInvocation()],
-      dispatches: [
-        completedDispatch({ dispatchStatus: 'authorized' as const, completedAt: undefined }),
-      ],
-    });
-    expect(result.success).toBe(false);
-    if (result.success) throw new TypeError('expected schema rejection');
-    expect(JSON.stringify(result.error.issues)).toContain('requires a completed matching dispatch');
-  });
-
-  it('rejects a host-task invocation with a mismatched host call or prompt digest', () => {
-    const callMismatch = parseState({
-      invocations: [hostInvocation()],
-      dispatches: [completedDispatch({ hostCallId: 'call-other' })],
-    });
-    expect(callMismatch.success).toBe(false);
-
-    const digestMismatch = parseState({
-      invocations: [hostInvocation()],
-      dispatches: [completedDispatch({ canonicalPromptDigest: 'd'.repeat(64) })],
-    });
-    expect(digestMismatch.success).toBe(false);
-  });
-
-  it('rejects a host-task invocation without a host call id', () => {
-    const result = parseState({
-      invocations: [hostInvocation({ hostTaskCallId: undefined })],
-      dispatches: [completedDispatch()],
-    });
-    expect(result.success).toBe(false);
-    if (result.success) throw new TypeError('expected schema rejection');
-    expect(JSON.stringify(result.error.issues)).toContain('requires a completed matching dispatch');
-  });
-
-  it('rejects a non-host invocation carrying a host call id', () => {
-    const result = parseState({
-      invocations: [sdkInvocation({ hostTaskCallId: HOST_CALL_ID })],
-      dispatches: [completedDispatch()],
-    });
-    expect(result.success).toBe(false);
-    if (result.success) throw new TypeError('expected schema rejection');
-    expect(JSON.stringify(result.error.issues)).toContain('must not carry a host task call id');
+  it('HAPPY: SDK invocation parses without a host-task dispatch', () => {
+    expect(parseState({ invocations: [sdkInvocation()] }).success).toBe(true);
   });
 
   it('rejects an obligation whose invocationId does not resolve', () => {
@@ -896,7 +808,7 @@ describe('Host invocation, obligation foreign keys and status relations', () => 
         {
           ...PLAN_OBLIGATION,
           status: 'consumed' as const,
-          invocationId: HOST_INVOCATION_ID,
+          invocationId: INVOCATION_ID,
           fulfilledAt: FIXED_TIME,
           consumedAt: null,
         },
@@ -914,7 +826,7 @@ describe('Host invocation, obligation foreign keys and status relations', () => 
         {
           ...PLAN_OBLIGATION,
           status: 'consumed' as const,
-          invocationId: HOST_INVOCATION_ID,
+          invocationId: INVOCATION_ID,
           fulfilledAt: FIXED_TIME,
           consumedAt: FIXED_TIME,
         },

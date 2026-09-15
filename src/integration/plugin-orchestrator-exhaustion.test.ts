@@ -58,10 +58,7 @@ function buildState(): SessionState {
   return makeState('PLAN', {
     ticket: TICKET,
     plan: PLAN_RECORD,
-    policySnapshot: {
-      ...POLICY_SNAPSHOT,
-      reviewOutputPolicy: 'structured_required',
-    },
+    policySnapshot: POLICY_SNAPSHOT,
     reviewAssurance: {
       assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [
@@ -105,10 +102,7 @@ function buildAlreadyBlockedState(): SessionState {
   return makeState('PLAN', {
     ticket: TICKET,
     plan: PLAN_RECORD,
-    policySnapshot: {
-      ...POLICY_SNAPSHOT,
-      reviewOutputPolicy: 'structured_required',
-    },
+    policySnapshot: POLICY_SNAPSHOT,
     reviewAssurance: {
       assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [
@@ -335,87 +329,6 @@ describe('BUG-07: obligation blocked after total invocation failure', () => {
       );
       expect(obligation!.status).toBe('blocked');
       expect(obligation!.blockedCode).toBe('REVIEWER_INVOCATION_EXHAUSTED');
-    });
-  });
-
-  // ─── EDGE ───────────────────────────────────────────────────────────────────
-
-  describe('EDGE: path differentiation', () => {
-    it('reviewerResult is null but blocked field present -> takes blocked path, not exhaustion', async () => {
-      // A client that returns null from invokeReviewer because the policy blocks it
-      // This tests that the `blocked` response path (line 587-596) is separate from exhaustion.
-      // To trigger this, we need invokeReviewer to return a blocked result.
-      // The policy-based blocking happens when reviewInvocationPolicy='host_task_required'.
-      const state = makeState('PLAN', {
-        ticket: TICKET,
-        plan: PLAN_RECORD,
-        policySnapshot: {
-          ...POLICY_SNAPSHOT,
-          reviewOutputPolicy: 'structured_required',
-          reviewInvocationPolicy: 'host_task_required',
-        },
-        reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v6' as const,
-          obligations: [
-            {
-              obligationId: OBLIGATION_ID,
-              obligationType: 'plan',
-              requiredChallengeCount: 0,
-              requiredChallengeKind: 'design_challenge',
-              challengePolicyVersion: 'challenge-policy.v1',
-              subjectDigest: 'test-subject-digest',
-              iteration: 1,
-              planVersion: 1,
-              criteriaVersion: REVIEW_CRITERIA_VERSION,
-              mandateDigest: REVIEW_MANDATE_DIGEST,
-              maxReviewerAttempts: 1,
-              reviewProfile: 'core',
-              profileSource: 'policy_default',
-              reviewMaterial: freezeReviewMaterial('frozen review material', 'test-subject-digest'),
-              createdAt: NOW,
-              pluginHandshakeAt: null,
-              status: 'pending',
-              invocationId: null,
-              blockedCode: null,
-              fulfilledAt: null,
-              consumedAt: null,
-              reviewSubjectScope: {
-                kind: 'repository_change',
-                paths: ['src/foo.ts'],
-                revisions: ['base', 'head'],
-              },
-            },
-          ],
-          invocations: [],
-          attempts: [],
-          dispatches: [],
-        },
-      });
-      const stateRef = { current: state };
-      vi.mocked(readState).mockResolvedValue(stateRef.current);
-      const client = buildFailingClient();
-      const { deps } = buildDeps(client, stateRef);
-      const output = { output: reviewRequiredOutput() };
-      const event: ToolCallEvent = {
-        toolName: TOOL_FLOWGUARD_PLAN,
-        input: {},
-        output,
-        sessionId: PARENT_SESSION_ID,
-        now: NOW,
-      };
-
-      await runReviewOrchestration(deps, event);
-
-      // The host_task_required path rewrites output with INDEPENDENT_REVIEW_REQUIRED
-      // but does NOT hit the exhaustion path
-      const exhaustionAudit = vi
-        .mocked(appendReviewAuditEvent)
-        .mock.calls.filter(
-          (call) =>
-            call[3] === 'review:obligation_blocked' &&
-            (call[4] as Record<string, unknown>).code === 'REVIEWER_INVOCATION_EXHAUSTED',
-        );
-      expect(exhaustionAudit.length).toBe(0);
     });
   });
 });

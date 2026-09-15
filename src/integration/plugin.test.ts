@@ -393,7 +393,7 @@ describe('integration/plugin', () => {
                 'argMutation',
                 'outputReplacement',
                 'contextInjection',
-                'reviewerSpawn',
+                'independentStructuredReview',
                 'compactionInjection',
               ],
             },
@@ -1145,7 +1145,7 @@ describe('integration/plugin', () => {
               session: {
                 create: async () => ({ data: { id: 'child-session-1' } }),
                 prompt: async () => ({
-                  data: { info: { structured_output: findings } },
+                  data: { info: { structured: findings } },
                 }),
               },
             },
@@ -1164,12 +1164,13 @@ describe('integration/plugin', () => {
 
         const blocked = JSON.parse(String(output.output)) as Record<string, unknown>;
         expect(blocked.error).toBe(true);
-        expect(blocked.code).toBe('STRICT_REVIEW_ORCHESTRATION_FAILED');
+        // The host-validated structured payload violates the canonical reviewer
+        // DTO before any obligation evidence is evaluated.
+        expect(blocked.code).toBe('HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION');
 
         const state = await readState(sessDir);
-        expect(state?.reviewAssurance?.obligations[0]?.blockedCode).toBe(
-          'STRICT_REVIEW_ORCHESTRATION_FAILED',
-        );
+        expect(state?.reviewAssurance?.obligations[0]?.status).toBe('pending');
+        expect(state?.reviewAssurance?.invocations).toEqual([]);
       } finally {
         await ws.cleanup();
       }
@@ -1208,7 +1209,7 @@ describe('integration/plugin', () => {
               session: {
                 create: async () => ({ data: { id: 'child-session-1' } }),
                 prompt: async () => ({
-                  data: { info: { structured_output: findings } },
+                  data: { info: { structured: findings } },
                 }),
               },
             },
@@ -1267,7 +1268,7 @@ describe('integration/plugin', () => {
               },
               session: {
                 create: async () => ({ data: { id: 'child-session-1' } }),
-                prompt: async () => ({ data: { info: { structured_output: findings } } }),
+                prompt: async () => ({ data: { info: { structured: findings } } }),
               },
             },
           }),
@@ -1329,7 +1330,7 @@ describe('integration/plugin', () => {
               session: {
                 create: async () => ({ data: { id: 'child-session-1' } }),
                 prompt: async () => ({
-                  data: { info: { structured_output: findings } },
+                  data: { info: { structured: findings } },
                 }),
               },
             },
@@ -1348,7 +1349,8 @@ describe('integration/plugin', () => {
 
         const mutated = JSON.parse(String(output.output)) as Record<string, unknown>;
         expect((mutated.next as string).startsWith('INDEPENDENT_REVIEW_COMPLETED')).toBe(true);
-        expect(mutated._pluginReviewSessionId).toBe('child-session-1');
+        expect(mutated.next).toContain('reviewVerdict=accept');
+        expect(mutated).not.toHaveProperty('_pluginReviewSessionId');
 
         const state = await readState(sessDir);
         expect(state?.reviewAssurance?.obligations[0]?.status).toBe('fulfilled');
@@ -1479,38 +1481,6 @@ describe('integration/plugin', () => {
       }
     });
 
-    // ── C2 regression: before hook reads args from output, not input ──
-    it('C2 BAD — reviewer Task without host execution provenance is blocked', async () => {
-      const ws = await createTestWorkspace();
-      try {
-        const sessionID = crypto.randomUUID();
-
-        // Seed a strict policy session so the before-hook enforcement engages
-        await seedStrictPlanSession(ws.tmpDir, sessionID);
-
-        const hooks = await FlowGuardAuditPlugin(
-          createMockInput({
-            worktree: ws.tmpDir,
-            directory: ws.tmpDir,
-          }),
-        );
-
-        const beforeHook = hooks['tool.execute.before'];
-        expect(typeof beforeHook).toBe('function');
-
-        // Per OpenCode docs: input has tool identity, output has mutable args.
-        // If the code incorrectly reads input.args, it would miss the subagent_type
-        // because input does NOT carry args per the documented contract.
-        const input = { tool: 'task', sessionID, callID: 'c1' };
-        const output = { args: { subagent_type: 'flowguard-reviewer', prompt: 'test' } };
-        await expect(beforeHook!(input, output)).rejects.toThrow(
-          'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
-        );
-      } finally {
-        await ws.cleanup();
-      }
-    });
-
     it('C2 BAD — before hook does not crash when output.args is empty', async () => {
       const ws = await createTestWorkspace();
       try {
@@ -1542,39 +1512,6 @@ describe('integration/plugin', () => {
         const input = { tool: 'some_tool', sessionID: crypto.randomUUID(), callID: 'c1' };
         // OpenCode always provides output, but unknown tools must still fail closed.
         await expect(beforeHook!(input, { args: {} })).rejects.toThrow('SESSION_DIR_NOT_FOUND');
-      } finally {
-        await ws.cleanup();
-      }
-    });
-
-    it('C2 CORNER — input.args cannot supply reviewer execution provenance', async () => {
-      const ws = await createTestWorkspace();
-      try {
-        const sessionID = crypto.randomUUID();
-        await seedStrictPlanSession(ws.tmpDir, sessionID);
-
-        const hooks = await FlowGuardAuditPlugin(
-          createMockInput({
-            worktree: ws.tmpDir,
-            directory: ws.tmpDir,
-          }),
-        );
-
-        const beforeHook = hooks['tool.execute.before'];
-        // Place args on input (wrong location per docs) — should be ignored
-        // Place DIFFERENT args on output (correct location) — should be used
-        const input = {
-          tool: 'task',
-          sessionID,
-          callID: 'c1',
-          args: { subagent_type: 'WRONG_TYPE' },
-        };
-        const output = { args: { subagent_type: 'flowguard-reviewer', prompt: 'test' } };
-        // The hook should read output.args (flowguard-reviewer), not input.args (WRONG_TYPE)
-        // If it reads input.args, it would miss the enforcement logic for flowguard-reviewer
-        await expect(beforeHook!(input, output)).rejects.toThrow(
-          'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
-        );
       } finally {
         await ws.cleanup();
       }

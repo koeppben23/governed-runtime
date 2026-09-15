@@ -10,6 +10,7 @@ import {
   appendInvocationEvidence,
   buildInvocationEvidence,
   ensureReviewAssurance,
+  fulfillObligation,
   hasEvidenceReuse,
   updateAttemptStatus,
 } from './assurance.js';
@@ -130,11 +131,7 @@ function buildSdkSessionInvocation(
     invokedAt: params.invokedAt,
     fulfilledAt: params.fulfilledAt,
     attemptId: params.attemptId,
-    capturedVerdict:
-      params.reviewerResult.findings &&
-      typeof params.reviewerResult.findings.overallVerdict === 'string'
-        ? params.reviewerResult.findings.overallVerdict
-        : undefined,
+    capturedRawFindings: params.reviewerResult.findings ?? undefined,
   });
 }
 
@@ -184,12 +181,15 @@ function applyEvidenceMutation(
     ...state,
     reviewAssurance: appendInvocationEvidence(boundAssurance, invocation),
   };
-  return updateObligation(withInvocation, params.obligationId, (item) => ({
-    ...item,
-    status: 'fulfilled',
-    invocationId: invocation.invocationId,
-    fulfilledAt: now,
-  }));
+  return {
+    ...withInvocation,
+    reviewAssurance: fulfillObligation(
+      withInvocation.reviewAssurance,
+      params.obligationId,
+      invocation.invocationId,
+      now,
+    ),
+  };
 }
 
 function resultFromFlags(flags: MutationFlags): EvidenceRecordResult {

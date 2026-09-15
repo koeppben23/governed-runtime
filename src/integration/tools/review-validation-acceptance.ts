@@ -71,7 +71,7 @@ export function getReviewFindingsAcceptanceRejection(input: {
 }
 
 /** Canonical host-task provenance contract for captured reviewer evidence. */
-export function hasValidHostTaskInvocationContract(input: {
+export function hasValidStructuredInvocationContract(input: {
   readonly obligation: ReviewObligation;
   readonly invocation: ReviewInvocationEvidence;
   /** Omit only where no active parent session is available to the caller. */
@@ -79,12 +79,14 @@ export function hasValidHostTaskInvocationContract(input: {
 }): boolean {
   const { obligation, invocation, parentSessionId } = input;
   return (
-    invocation.invocationMode === 'host_subagent_task' &&
-    invocation.hostVisible === true &&
+    invocation.invocationMode === 'sdk_session_prompt' &&
     invocation.agentType === REVIEWER_SUBAGENT_TYPE &&
     (parentSessionId === undefined || invocation.parentSessionId === parentSessionId) &&
     invocation.criteriaVersion === obligation.criteriaVersion &&
-    invocation.mandateDigest === obligation.mandateDigest
+    invocation.mandateDigest === obligation.mandateDigest &&
+    invocation.reviewOutputMode === 'structured_output' &&
+    invocation.structuredOutputUsed === true &&
+    invocation.reviewAssuranceLevel === 'structured_high'
   );
 }
 

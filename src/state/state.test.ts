@@ -647,8 +647,6 @@ describe('state schemas', () => {
             tsaTimeoutMs: 10000,
           },
         },
-        reviewOutputPolicy: 'structured_required',
-        reviewInvocationPolicy: 'sdk_allowed',
         reviewProfile: 'core',
         actorClassification: {
           flowguard_decision: 'human',
@@ -677,8 +675,6 @@ describe('state schemas', () => {
         validationEvidence: { enforcement: 'off', allowNoCommands: false },
         maxIncoherentReviewerCaptureRetries: 1,
         maxReviewerAttempts: 1,
-        reviewOutputPolicy: 'structured_required',
-        reviewInvocationPolicy: 'sdk_allowed',
         reviewProfile: 'core',
         challengePolicy: {
           version: 'challenge-policy.v1',
@@ -773,8 +769,6 @@ describe('state schemas', () => {
         allowReducedCeremony: false,
         discoveryHealth: { enforcement: 'required', onDegraded: 'warn', onDrift: 'block' },
         validationEvidence: { enforcement: 'required', allowNoCommands: false },
-        reviewOutputPolicy: 'structured_required',
-        reviewInvocationPolicy: 'host_task_required',
         reviewProfile: 'core',
         challengePolicy: {
           version: 'challenge-policy.v1',

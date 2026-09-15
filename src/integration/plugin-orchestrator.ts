@@ -19,7 +19,6 @@ import { readState } from '../adapters/persistence.js';
 import { getToolOutput, parseToolResult, strictBlockedOutput } from './plugin-helpers.js';
 import { TOOL_FLOWGUARD_REVIEW } from './tool-names.js';
 import { isReviewRequired, extractReviewContext } from './review/orchestrator.js';
-import { handleHostTaskPolicy } from './review/host-task-policy.js';
 import { runReviewContentPipeline } from './review/content-review-pipeline.js';
 import { runStandardReviewPipeline } from './review/standard-review-pipeline.js';
 import type { SessionState } from '../state/schema.js';
@@ -117,10 +116,6 @@ export async function runReviewOrchestration(
     if (!v) return;
     const { sessionState, sessDir, reviewCtx, parsedOutput } = v;
     const rawOutput = getToolOutput(output);
-
-    if (await handleHostTaskPolicy(deps, sessionState, sessDir, reviewCtx, output, sessionId)) {
-      return;
-    }
 
     const ctx: PipelineContext = {
       deps,

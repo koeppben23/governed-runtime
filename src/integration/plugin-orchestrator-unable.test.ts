@@ -100,7 +100,7 @@ function buildMockClient(findingsJson: string): OrchestratorClient {
       prompt: vi.fn().mockResolvedValue({
         data: {
           parts: [{ type: 'text', text: findingsJson }],
-          info: { structured_output: JSON.parse(findingsJson) as Record<string, unknown> },
+          info: { structured: JSON.parse(findingsJson) as Record<string, unknown> },
         },
         error: undefined,
       }),

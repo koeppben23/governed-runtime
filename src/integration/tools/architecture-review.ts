@@ -42,10 +42,9 @@ import {
 } from '../review/assurance.js';
 import { buildFrozenReviewMaterialContent } from '../review/reviewer-context.js';
 
-import { requireReviewFindings, resolveHostTaskEffectiveFindings } from './review-validation.js';
+import { requireReviewFindings, resolveStructuredEffectiveFindings } from './review-validation.js';
 import { collectPreviouslyUsedChallengeIds } from '../review/challenge-history.js';
-import { resolveRuntimeReviewPlatform } from '../review/orchestration-mode.js';
-import { buildHostTaskChallengeContract } from '../review/host-task-policy.js';
+import { buildReviewChallengeContract } from '../review/challenge-contract.js';
 
 import {
   PHASE_LABELS,
@@ -135,22 +134,19 @@ function resolveArchitectureReview(
   context: ToolContext,
   session: ArchitectureSession,
 ): ResolvedReview | string {
-  const { state, policy } = session;
+  const { state } = session;
   const assuranceBase = ensureReviewAssurance(state.reviewAssurance);
   const pendingObligation = findLatestUnconsumedObligation(assuranceBase, 'architecture');
   const { expectedIteration, expectedPlanVersion } = getObligationExpectation(
     pendingObligation,
     state,
   );
-  const resolved = resolveHostTaskEffectiveFindings({
+  const resolved = resolveStructuredEffectiveFindings({
     pendingObligation,
     expected: {
       obligationType: 'architecture',
       iteration: expectedIteration,
       planVersion: expectedPlanVersion,
-    },
-    policy: {
-      reviewInvocationPolicy: policy.reviewInvocationPolicy,
     },
     input: {
       reviewFindings: args.reviewFindings,
@@ -160,10 +156,9 @@ function resolveArchitectureReview(
     state: {
       assurance: state.reviewAssurance,
       sessionId: context.sessionID,
-      reviewHostPlatform: resolveRuntimeReviewPlatform(),
       // Bind design-challenge evidence to the ADR's canonical allowed refs
       // (finding B3): a fabricated section/digest must not satisfy a challenge.
-      allowedChallengeEvidenceRefs: buildHostTaskChallengeContract(state, pendingObligation ?? null)
+      allowedChallengeEvidenceRefs: buildReviewChallengeContract(state, pendingObligation ?? null)
         ?.evidenceRefs,
       previouslyUsedChallengeIds: collectPreviouslyUsedChallengeIds(state),
     },

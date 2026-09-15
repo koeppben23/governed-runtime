@@ -91,9 +91,8 @@ import {
   resolveRuntimeReviewPlatform,
   resolveReviewOrchestrationMode,
 } from '../review/orchestration-mode.js';
-import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
+import { buildChildSessionReviewInstruction } from '../review/child-session-instruction.js';
 import { resolveAttemptObservationCapability } from '../review/assurance.js';
-import { buildReviewerProofContext } from '../review/proof-context.js';
 import type { ImplementRuntime, ImplementationCeremony } from './implement-shared.js';
 import {
   hasUnresolvedMutationEpisodes,
@@ -111,9 +110,7 @@ export function validateInitialReviewFindings(input: ImplementRuntime): string |
   return validateReviewFindings(input.args.reviewFindings, {
     expectedIteration: 0,
     expectedPlanVersion: (input.state.plan?.history.length ?? 0) + 1,
-    reviewInvocationPolicy: input.policy.reviewInvocationPolicy,
     reviewParentSessionId: input.context.sessionID,
-    reviewHostPlatform: resolveRuntimeReviewPlatform(),
     previouslyUsedChallengeIds: collectPreviouslyUsedChallengeIds(input.state),
   });
 }
@@ -241,20 +238,16 @@ function buildImplRecordedResponse(input: {
   const platform = resolveRuntimeReviewPlatform();
   const mode = resolveReviewOrchestrationMode({
     platform,
-    reviewInvocationPolicy: input.policy.reviewInvocationPolicy,
     nativeReviewerAvailable: platform === 'unknown' ? false : true,
-    manualAttestedAllowed: input.policy.reviewInvocationPolicy !== 'host_task_required',
+    manualAttestedAllowed: false,
   });
   const instruction = input.nextObligation
-    ? buildPendingReviewInstruction({
+    ? buildChildSessionReviewInstruction({
         mode,
         platform,
-        reviewKind: 'implementation',
         obligation: input.nextObligation,
         iteration: input.reviewIteration,
         planVersion: input.planVersion,
-        subjectLabel: 'implementation summary, changed files, approved plan text, and ticket text',
-        proofContext: buildReviewerProofContext(input.finalState),
         observationCapability: input.nextObligation
           ? (resolveAttemptObservationCapability(
               input.finalState.reviewAssurance,
@@ -277,8 +270,10 @@ function buildImplRecordedResponse(input: {
     ...reviewObligationResponseFields(input.nextObligation),
     next: reduced
       ? 'REDUCED_CEREMONY_APPLIED: Runtime evidence classified the changed files as TRIVIAL after passed validation. Reduced-ceremony evidence was recorded; implementation review evidence was not synthesized.'
-      : (instruction?.next ?? nextAction.text),
-    ...(instruction ? { reviewInvocation: instruction.reviewInvocation } : {}),
+      : instruction
+        ? 'INDEPENDENT_REVIEW_REQUIRED'
+        : nextAction.text,
+    ...(instruction ? { reviewInvocation: instruction } : {}),
     _audit: { transitions: input.transitions },
   };
 

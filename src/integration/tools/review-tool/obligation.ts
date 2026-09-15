@@ -30,8 +30,7 @@ import {
   type FindingWithRelation,
 } from '../../review/enforcement/findings-consistency.js';
 import { collectPreviouslyUsedChallengeIds } from '../../review/challenge-history.js';
-import { buildHostTaskChallengeContract } from '../../review/host-task-policy.js';
-import { formatBlocked } from '../helpers.js';
+import { buildReviewChallengeContract } from '../../review/challenge-contract.js';
 import type { ReviewToolArgs, StartedReviewResult } from './types.js';
 
 export {
@@ -40,7 +39,6 @@ export {
   validateReviewContentSource,
   hasImplicitContentSignal,
 } from './review-input.js';
-import { hasReviewContentInput } from './review-input.js';
 export { persistReviewObligation, ensureMissingAnalysisObligation } from './obligation-creation.js';
 import { createNewReviewObligation, persistReviewObligation } from './obligation-creation.js';
 
@@ -70,27 +68,6 @@ export function matchesReviewObligationInput(
     fingerprintVersion !== null &&
     inputFingerprint === fingerprintReviewInput(args)
   );
-}
-
-/** Option A continuation: re-supply the immutable source alongside identity and verdict. */
-export function validateHostTaskContinuationInput(
-  obligation: ReviewObligation,
-  args: ReviewToolArgs,
-): string | null {
-  if (!hasReviewContentInput(args)) {
-    return formatBlocked('REVIEW_OBLIGATION_INPUT_MISMATCH', {
-      obligationId: obligation.obligationId,
-      reason:
-        'A host-task continuation must include the original immutable review content fields, reviewObligationId, and reviewVerdict.',
-    });
-  }
-  if (!matchesReviewObligationInput(obligation, args)) {
-    return formatBlocked('REVIEW_OBLIGATION_INPUT_MISMATCH', {
-      obligationId: obligation.obligationId,
-      reason: 'The supplied review input does not match the host-task review obligation.',
-    });
-  }
-  return null;
 }
 
 // ─── Obligation lifecycle ────────────────────────────────────────────────────
@@ -235,7 +212,7 @@ export function validateSubmittedReviewFindings(
     // B3/B5): a content challenge must carry the active obligation id and cite
     // the canonical content ref, not a fabricated digest.
     expectedObligationId: obligation.obligationId,
-    allowedEvidenceRefs: buildHostTaskChallengeContract(state, obligation)?.evidenceRefs,
+    allowedEvidenceRefs: buildReviewChallengeContract(state, obligation)?.evidenceRefs,
     resolutionVerdicts: findings.challengeResolutionVerdicts as Parameters<
       typeof validateChallengeConsistency
     >[0]['resolutionVerdicts'],

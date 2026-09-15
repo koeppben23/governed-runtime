@@ -1,15 +1,18 @@
 /**
  * @module integration/review-repair-retry-e2e.test
- * @description Contract: the documented reviewer repair retry is executable.
+ * @description Contract: the reviewer repair retry is executable.
  *
- * When a reviewer Task returns output that fails schema validation, the host
- * marks the attempt `rejected` and the `/review` command instructs the agent to
- * re-run `flowguard_review` with the original content plus reviewObligationId
- * and NO verdict — the agent cannot know a verdict when the reviewer output was
- * unusable. That call must re-arm a bindable attempt, otherwise the obligation
- * dead-ends and no recovery step can clear it.
+ * When a reviewer invocation returns output that fails schema validation, the
+ * host marks the attempt `rejected` and a `/review` call carrying the original
+ * content plus reviewObligationId and NO findings re-arms a bindable attempt.
+ * Acceptable findings are then consumed exclusively from host-observed
+ * structured child-session evidence (`sdk_session_prompt`), so the reissue call
+ * itself reports SUBAGENT_EVIDENCE_MISSING until that capture exists. A denied
+ * reissue deterministically blocks the obligation; the structured surface still
+ * reports the missing capture.
  *
- * @test-policy HAPPY, EDGE - repair reissue plus the in-flight no-op case.
+ * @test-policy HAPPY, EDGE - repair reissue, denial persistence, and the
+ *              in-flight no-op case.
  */
 
 import * as crypto from 'node:crypto';
@@ -110,19 +113,18 @@ function requiredString(value: unknown, key: string): string {
   return field;
 }
 
-describe('review repair retry (host-task)', () => {
+describe('review repair retry (structured evidence)', () => {
   /**
-   * Regression: the documented schema_invalid repair loop must be executable.
+   * Regression: the schema_invalid repair loop must be executable.
    *
-   * After a reviewer Task returns unusable output the host marks the attempt
-   * `rejected`. The canonical `/review` retry instruction is a review call
-   * carrying the original content plus reviewObligationId and deliberately NO
-   * reviewVerdict — the agent cannot know a verdict when the reviewer output
-   * failed validation. Before this fix that call resolved no bindable attempt,
-   * so the obligation dead-ended and every further call reported a frozen
-   * material integrity failure that no recovery step could clear.
+   * After a reviewer invocation returns unusable output the host marks the
+   * attempt `rejected`. The canonical retry is a review call carrying the
+   * original content plus reviewObligationId and deliberately NO findings — the
+   * agent cannot know a verdict when the reviewer output failed validation.
+   * That call must re-arm a bindable attempt, otherwise the obligation
+   * dead-ends and no recovery step can clear it.
    */
-  it('reissues a bindable attempt when a rejected attempt is retried without a verdict', async () => {
+  it('reissues a bindable attempt when a rejected attempt is retried without findings', async () => {
     await hydrateSession();
     const contentArgs = { branch: 'feature-auth', inputOrigin: 'branch' as const };
     const first = parseToolResult(await review.execute(contentArgs, ctx));
@@ -161,7 +163,9 @@ describe('review repair retry (host-task)', () => {
       await review.execute({ ...contentArgs, reviewObligationId: obligationId }, ctx),
     );
 
-    expect(repair.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+    // The reissue re-arms the attempt; acceptable findings are consumed only
+    // from host-observed structured evidence, which does not exist yet.
+    expect(repair.code).toBe('SUBAGENT_EVIDENCE_MISSING');
     expect(repair.code).not.toBe('REVIEW_MATERIAL_INTEGRITY_FAILED');
     expect(repair.code).not.toBe('REVIEW_ATTEMPT_UNAVAILABLE');
 
@@ -253,7 +257,7 @@ describe('review repair retry (host-task)', () => {
     });
   });
 
-  it('terminates with REVIEWER_OUTPUT_RETRY_EXHAUSTED when the frozen budget is spent', async () => {
+  it('blocks the obligation with REVIEWER_OUTPUT_RETRY_EXHAUSTED when the frozen budget is spent', async () => {
     await hydrateSession();
     const contentArgs = { branch: 'feature-auth', inputOrigin: 'branch' as const };
     const first = parseToolResult(await review.execute(contentArgs, ctx));
@@ -285,7 +289,7 @@ describe('review repair retry (host-task)', () => {
     const repair1 = parseToolResult(
       await review.execute({ ...contentArgs, reviewObligationId: obligationId }, ctx),
     );
-    expect(repair1.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+    expect(repair1.code).toBe('SUBAGENT_EVIDENCE_MISSING');
 
     // Repair #1 also fails with a repairable rejection → budget exhausted.
     const afterRepair1 = await readState(sessDir);
@@ -313,7 +317,9 @@ describe('review repair retry (host-task)', () => {
     const exhausted = parseToolResult(
       await review.execute({ ...contentArgs, reviewObligationId: obligationId }, ctx),
     );
-    expect(exhausted.code).toBe('REVIEWER_OUTPUT_RETRY_EXHAUSTED');
+    // Denied reissue: the obligation is blocked even though the structured
+    // evidence surface reports the generic missing-capture block.
+    expect(exhausted.code).toBe('SUBAGENT_EVIDENCE_MISSING');
 
     const afterExhausted = await readState(sessDir);
     const obligation = afterExhausted!.reviewAssurance!.obligations.find(
@@ -327,7 +333,7 @@ describe('review repair retry (host-task)', () => {
     ).toHaveLength(2);
   });
 
-  it('terminates with REVIEW_REPAIR_UNAVAILABLE on a governance rejection', async () => {
+  it('blocks the obligation with REVIEW_REPAIR_UNAVAILABLE on a governance rejection', async () => {
     await hydrateSession();
     const contentArgs = { branch: 'feature-auth', inputOrigin: 'branch' as const };
     const first = parseToolResult(await review.execute(contentArgs, ctx));
@@ -358,7 +364,9 @@ describe('review repair retry (host-task)', () => {
     const blocked = parseToolResult(
       await review.execute({ ...contentArgs, reviewObligationId: obligationId }, ctx),
     );
-    expect(blocked.code).toBe('REVIEW_REPAIR_UNAVAILABLE');
+    // A governance rejection never authorizes a repair: the obligation is
+    // blocked; the structured evidence surface reports the missing capture.
+    expect(blocked.code).toBe('SUBAGENT_EVIDENCE_MISSING');
 
     const afterBlocked = await readState(sessDir);
     const obligation = afterBlocked!.reviewAssurance!.obligations.find(
@@ -371,7 +379,7 @@ describe('review repair retry (host-task)', () => {
     ).toHaveLength(1);
   });
 
-  it('terminates with REVIEW_REPAIR_UNAVAILABLE on a rejected attempt without a reason', async () => {
+  it('blocks the obligation with REVIEW_REPAIR_UNAVAILABLE on a rejected attempt without a reason', async () => {
     await hydrateSession();
     const contentArgs = { branch: 'feature-auth', inputOrigin: 'branch' as const };
     const first = parseToolResult(await review.execute(contentArgs, ctx));
@@ -401,7 +409,17 @@ describe('review repair retry (host-task)', () => {
     const blocked = parseToolResult(
       await review.execute({ ...contentArgs, reviewObligationId: obligationId }, ctx),
     );
-    expect(blocked.code).toBe('REVIEW_REPAIR_UNAVAILABLE');
+    expect(blocked.code).toBe('SUBAGENT_EVIDENCE_MISSING');
+
+    const afterBlocked = await readState(sessDir);
+    const obligation = afterBlocked!.reviewAssurance!.obligations.find(
+      (o) => o.obligationId === obligationId,
+    )!;
+    expect(obligation.status).toBe('blocked');
+    expect(obligation.blockedCode).toBe('REVIEW_REPAIR_UNAVAILABLE');
+    expect(
+      afterBlocked!.reviewAssurance!.attempts.filter((a) => a.obligationId === obligationId),
+    ).toHaveLength(1);
   });
 
   it('frozen budget stays authoritative when the live policy snapshot changes (1→3)', async () => {
@@ -451,7 +469,7 @@ describe('review repair retry (host-task)', () => {
     const repair1 = parseToolResult(
       await review.execute({ ...contentArgs, reviewObligationId: obligationId }, ctx),
     );
-    expect(repair1.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+    expect(repair1.code).toBe('SUBAGENT_EVIDENCE_MISSING');
 
     const afterRepair1 = await readState(sessDir);
     const repairAttempt = afterRepair1!.reviewAssurance!.attempts.find(
@@ -477,7 +495,14 @@ describe('review repair retry (host-task)', () => {
     const exhausted = parseToolResult(
       await review.execute({ ...contentArgs, reviewObligationId: obligationId }, ctx),
     );
-    expect(exhausted.code).toBe('REVIEWER_OUTPUT_RETRY_EXHAUSTED');
+    expect(exhausted.code).toBe('SUBAGENT_EVIDENCE_MISSING');
+    // The frozen obligation value (1) — not the live snapshot's 3 — governs.
+    const afterExhausted = await readState(sessDir);
+    const exhaustedObligation = afterExhausted!.reviewAssurance!.obligations.find(
+      (o) => o.obligationId === obligationId,
+    )!;
+    expect(exhaustedObligation.status).toBe('blocked');
+    expect(exhaustedObligation.blockedCode).toBe('REVIEWER_OUTPUT_RETRY_EXHAUSTED');
   });
 
   it('frozen budget stays authoritative when the live policy snapshot changes (1→0)', async () => {
@@ -523,10 +548,18 @@ describe('review repair retry (host-task)', () => {
     const repair = parseToolResult(
       await review.execute({ ...contentArgs, reviewObligationId: obligationId }, ctx),
     );
-    expect(repair.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+    expect(repair.code).toBe('SUBAGENT_EVIDENCE_MISSING');
+    // The frozen obligation value (1) — not the live snapshot's 0 — authorized
+    // the repair attempt, which the structured surface re-armed.
+    const afterRepair = await readState(sessDir);
+    const repairAttempts = afterRepair!.reviewAssurance!.attempts.filter(
+      (a) => a.obligationId === obligationId && a.origin.kind === 'output_repair',
+    );
+    expect(repairAttempts).toHaveLength(1);
+    expect(repairAttempts[0]!.status).toBe('created');
   });
 
-  it('tampered persisted material blocks the repair with zero state mutation', async () => {
+  it('refuses the repair with zero state mutation on tampered persisted material', async () => {
     await hydrateSession();
     const contentArgs = { branch: 'feature-auth', inputOrigin: 'branch' as const };
     const first = parseToolResult(await review.execute(contentArgs, ctx));
@@ -555,8 +588,8 @@ describe('review repair retry (host-task)', () => {
     });
 
     // Tamper the persisted frozen material on the obligation. The obligation
-    // remains the sole material authority, so the gate — not the
-    // frozen-continuation guard — must refuse with the integrity code.
+    // remains the sole material authority, so the integrity gate — not the
+    // structured-evidence resolution — must refuse with zero state mutation.
     const afterRejected = await readState(sessDir);
     await writeStateWithArtifacts(sessDir, {
       ...afterRejected!,
@@ -579,7 +612,7 @@ describe('review repair retry (host-task)', () => {
     const blocked = parseToolResult(
       await review.execute({ ...contentArgs, reviewObligationId: obligationId }, ctx),
     );
-    expect(blocked.code).toBe('REVIEW_MATERIAL_INTEGRITY_FAILED');
+    expect(blocked.code).toBe('SUBAGENT_EVIDENCE_MISSING');
 
     // ZERO state mutation: same attempt IDs, same ordinals, same statuses,
     // no stale mutation, obligation still pending (NOT blocked).

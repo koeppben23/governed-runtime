@@ -27,8 +27,7 @@ describe('invokeReviewer — error handling', () => {
         },
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 2,
+        maxTransportRetries: 2,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -50,8 +49,7 @@ describe('invokeReviewer — error handling', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 2,
+        maxTransportRetries: 2,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -71,12 +69,11 @@ describe('invokeReviewer — error handling', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 2,
+        maxTransportRetries: 2,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
-      // Should retry maxRetries + 1 = 3 times
+      // Should retry maxTransportRetries + 1 = 3 times
       expect(diagnostics).toHaveLength(3);
       expect(diagnostics.map((d) => d.attempt)).toEqual([1, 2, 3]);
       expect(diagnostics.every((d) => d.step === 'session_prompt')).toBe(true);
@@ -96,8 +93,7 @@ describe('invokeReviewer — error handling', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 1,
+        maxTransportRetries: 1,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -115,8 +111,7 @@ describe('invokeReviewer — error handling', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 1,
+        maxTransportRetries: 1,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -134,8 +129,7 @@ describe('invokeReviewer — error handling', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 0,
+        maxTransportRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -170,14 +164,13 @@ describe('invokeReviewer — error handling', () => {
         },
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 2,
+        maxTransportRetries: 2,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
       expect(result).toMatchObject({
         blocked: true,
-        code: 'REVIEWER_INVOCATION_EXHAUSTED',
+        code: 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE',
         reviewInvocation: { status: 'blocked_capability_mismatch' },
       });
     });
@@ -200,8 +193,7 @@ describe('invokeReviewer — error handling', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        maxRetries: 0,
-        reviewInvocationPolicy: 'sdk_allowed',
+        maxTransportRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -231,8 +223,7 @@ describe('invokeReviewer — error handling', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 2,
+        maxTransportRetries: 2,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -259,8 +250,7 @@ describe('invokeReviewer — error handling', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        maxRetries: 0,
-        reviewInvocationPolicy: 'sdk_allowed',
+        maxTransportRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -293,14 +283,13 @@ describe('invokeReviewer — error handling', () => {
           },
         });
         const result = await invokeReviewer(client, PROMPT, 'parent-1', {
-          reviewInvocationPolicy: 'sdk_allowed',
-          maxRetries: 0,
+          maxTransportRetries: 0,
           _sleepFn: NO_SLEEP,
           _onAttemptFailed: (info) => diagnostics.push(info),
         });
         expect(result).toMatchObject({
           blocked: true,
-          code: 'REVIEWER_INVOCATION_EXHAUSTED',
+          code: 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE',
           reviewInvocation: { status: 'blocked_capability_mismatch' },
         });
         const incompatible = diagnostics.find((d) => d.step === 'model_capability_incompatible');
@@ -326,14 +315,13 @@ describe('invokeReviewer — error handling', () => {
         },
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 2,
+        maxTransportRetries: 2,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
       expect(result).toMatchObject({
         blocked: true,
-        code: 'REVIEWER_INVOCATION_EXHAUSTED',
+        code: 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE',
         reviewInvocation: { status: 'blocked_capability_mismatch' },
       });
       const incompatible = diagnostics.find((d) => d.step === 'model_capability_incompatible');
@@ -356,8 +344,7 @@ describe('invokeReviewer — error handling', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 0,
+        maxTransportRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -380,8 +367,7 @@ describe('invokeReviewer — error handling', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 0,
+        maxTransportRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -408,14 +394,13 @@ describe('invokeReviewer — error handling', () => {
         },
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 0,
+        maxTransportRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
       expect(result).toMatchObject({
         blocked: true,
-        code: 'REVIEWER_INVOCATION_EXHAUSTED',
+        code: 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE',
         reviewInvocation: { status: 'blocked_capability_mismatch' },
       });
       const incompatible = diagnostics.find((d) => d.step === 'model_capability_incompatible');
@@ -437,8 +422,7 @@ describe('invokeReviewer — error handling', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 0,
+        maxTransportRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });

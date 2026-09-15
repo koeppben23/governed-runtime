@@ -23,10 +23,7 @@ const mocks = vi.hoisted(() => {
       wsDir: '/tmp/ws',
     })),
     requireStateForMutation: vi.fn(async () => makeState('READY')),
-    resolvePolicyFromState: vi.fn(() => ({
-      ...TEAM_POLICY,
-      reviewInvocationPolicy: 'self',
-    })),
+    resolvePolicyFromState: vi.fn(() => TEAM_POLICY),
     createPolicyContext: vi.fn(() => ({
       policy: { maxSelfReviewIterations: 3 },
       now: () => '2026-01-01T00:00:00.000Z',
@@ -154,10 +151,7 @@ describe('integration/tools/architecture (wrapper)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.changedFiles.mockResolvedValue([]);
-    mocks.resolvePolicyFromState.mockReturnValue({
-      ...TEAM_POLICY,
-      reviewInvocationPolicy: 'self',
-    });
+    mocks.resolvePolicyFromState.mockReturnValue(TEAM_POLICY);
     mocks.state = makeState('READY');
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
     mocks.isCommandAllowed.mockReturnValue(true);
@@ -918,10 +912,10 @@ describe('integration/tools/architecture (wrapper)', () => {
   // ── F13 slice 7b: Mode-A INDEPENDENT_REVIEW_REQUIRED + reviewObligation ──
 
   it('emits INDEPENDENT_REVIEW_REQUIRED next-action for mandatory review (Mode A)', async () => {
-    // The architecture tool MUST emit a next-action that instructs the primary agent to call
-    // the flowguard-reviewer subagent before submitting a verdict. Mirrors
-    // plan.ts and implement.ts behavior. The orchestrator (slice 6) detects
-    // this marker to dispatch the subagent automatically.
+    // The architecture tool MUST emit the review-required marker plus the
+    // host-observed child-session binding metadata. Under the structured-only
+    // contract no reviewer Task prompt is projected here: the host creates the
+    // reviewer child session from the obligation and attestation metadata.
     mocks.resolvePolicyFromState.mockReturnValueOnce({
       ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
@@ -930,11 +924,11 @@ describe('integration/tools/architecture (wrapper)', () => {
     const res = await architecture.execute({ title: 'x', adrText: 'y' }, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.next).toContain('INDEPENDENT_REVIEW_REQUIRED');
-    expect(parsed.next).toContain('flowguard-reviewer');
-    expect(parsed.next).toContain('Task tool');
-    expect(parsed.next).toContain('full ADR text');
-    expect(parsed.next).toContain('ticket text');
     expect(parsed.reviewMode).toBe('subagent');
+    expect(parsed.reviewInvocation).toBeDefined();
+    expect(parsed.reviewInvocation.reviewerSubagentType).toBe('flowguard-reviewer');
+    expect(parsed.reviewInvocation.authority).toBe('review_obligation_evidence_binding');
+    expect(parsed.reviewInvocation.requiredReviewAttestation.toolObligationId).toBeDefined();
   });
 
   it('attaches an architecture review obligation for mandatory review (Mode A)', async () => {
@@ -982,7 +976,7 @@ describe('integration/tools/architecture (wrapper)', () => {
 
   it('blocks Mode B when reviewFindings is missing (slice 7c)', async () => {
     // Slice 7c parity with plan/implement: Mode B MUST require reviewFindings.
-    // Returns REVIEW_FINDINGS_REQUIRED before any verdict-specific check
+    // Returns SUBAGENT_EVIDENCE_MISSING before any verdict-specific check
     // (e.g. EMPTY_ADR_TEXT) is reached.
     mocks.state = makeState('ARCHITECTURE', {
       architecture: {
@@ -1006,7 +1000,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
     const { architecture } = await import('./architecture.js');
     const res = await architecture.execute({ reviewVerdict: 'accept' }, {} as never);
-    expect(JSON.parse(String(res)).code).toBe('REVIEW_FINDINGS_REQUIRED');
+    expect(JSON.parse(String(res)).code).toBe('SUBAGENT_EVIDENCE_MISSING');
   });
 
   it('does not persist manually supplied reviewFindings', async () => {
@@ -1106,9 +1100,10 @@ describe('integration/tools/architecture (wrapper)', () => {
   });
 
   it('requires captured findings on a non-converged Mode B call', async () => {
-    // Slice 7c: when subagentEnabled=true and the loop has not converged,
-    // the response must instruct the primary agent to call the subagent
-    // again for the next iteration, mirroring plan.ts:543-551.
+    // Structured-only contract: a non-converged call's findings are authorized
+    // only by host-observed structured child-session evidence. Manual findings
+    // carry no strict assurance binding, so the call fails closed with
+    // PLUGIN_ENFORCEMENT_UNAVAILABLE instead of reissuing a reviewer Task.
     mocks.resolvePolicyFromState.mockReturnValue(TEAM_POLICY);
     mocks.state = makeState('ARCHITECTURE', {
       architecture: {
@@ -1140,7 +1135,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       {} as never,
     );
     const parsed = JSON.parse(String(res));
-    expect(parsed.code).toBe('REVIEW_FINDINGS_REQUIRED');
+    expect(parsed.code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
   });
 
   it('rejects manual findings before checking verdict consistency', async () => {

@@ -1,4 +1,3 @@
-import { extractContentMeta } from './extraction.js';
 import type { PendingReview, PendingReviewTool } from './types.js';
 
 export type ReviewSignalBinding = {
@@ -16,7 +15,7 @@ export type ReviewSignalBinding = {
 /** Build the host-owned pending-review record from one canonical review signal. */
 export function buildPendingReview(
   reviewTool: PendingReviewTool,
-  next: string,
+  _next: string,
   now: string,
   binding: ReviewSignalBinding,
   prior: PendingReview | undefined,
@@ -30,7 +29,7 @@ export function buildPendingReview(
     ...reviewContext,
     subagentCalled: false,
     subagentRecord: null,
-    contentMeta: extractContentMeta(next),
+    contentMeta: null,
     canonicalPromptAnchor: binding.canonicalPromptAnchor ?? null,
     canonicalPrompt: binding.canonicalPrompt ?? null,
     capturedFindings: null,

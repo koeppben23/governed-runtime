@@ -30,7 +30,9 @@ describe('standalone review retry signal', () => {
     expect(state.pendingReviews.get('flowguard_review')).toMatchObject({
       attemptId,
       obligationId,
-      contentMeta: { expectedIteration: 0, expectedPlanVersion: 1 },
+      // contentMeta was populated from the host Task prompt before capture
+      // removal; structured-only enforcement has no consumer for it.
+      contentMeta: null,
     });
   });
 });

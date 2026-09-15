@@ -19,8 +19,6 @@ export type {
   CentralPolicyEvidence,
   HydratePolicyResolution,
   PolicyResolutionReason,
-  ReviewOutputPolicy,
-  ReviewInvocationPolicy,
   DiscoveryHealthPolicy,
   DiscoveryHealthEnforcement,
   DiscoveryHealthDegradedAction,

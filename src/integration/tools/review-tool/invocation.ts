@@ -2,7 +2,7 @@
  * @module integration/tools/review-tool/invocation
  * @description Review invocation validation and recording.
  *
- * Handles host-orchestrated and manual-attested review invocation evidence.
+ * Handles independently attested review invocation evidence.
  *
  * @version v1
  */
@@ -34,37 +34,6 @@ import type {
   ReviewExecutionContext,
 } from './types.js';
 import type { ToolContext } from '../helpers.js';
-
-// ─── Invocation validation ───────────────────────────────────────────────────
-
-export function validateHostInvocationEvidence(input: {
-  hostInvForObligation: ReturnType<typeof ensureReviewAssurance>['invocations'][number];
-  findingsHash: string;
-  childSessionId: string;
-  policy: string;
-  context: ToolContext;
-  obligation: ReviewObligation;
-}): string | null {
-  const { hostInvForObligation, findingsHash, childSessionId, policy, context, obligation } = input;
-  const policyMismatch =
-    policy === 'host_task_required' &&
-    (hostInvForObligation.invocationMode !== 'host_subagent_task' ||
-      hostInvForObligation.hostVisible !== true ||
-      hostInvForObligation.parentSessionId !== context.sessionID ||
-      hostInvForObligation.criteriaVersion !== obligation.criteriaVersion ||
-      hostInvForObligation.mandateDigest !== obligation.mandateDigest);
-  if (
-    hostInvForObligation.findingsHash === findingsHash &&
-    hostInvForObligation.childSessionId === childSessionId &&
-    !policyMismatch
-  )
-    return null;
-  return formatBlockedWithAttestation(
-    'SUBAGENT_MANDATE_MISMATCH',
-    'Submitted findings do not match the host-orchestrated reviewer findings for this obligation. Re-submit with the exact pluginReviewFindings provided by the plugin.',
-    obligation.obligationId,
-  );
-}
 
 // ─── Native subagent attestation resolution ──────────────────────────────────
 
@@ -234,16 +203,6 @@ async function recordManualReviewInvocation(input: {
   nativeAttestationRejection?: NativeAttestationRejection;
 }> {
   const { result, obligation, exec, childSessionId, findingsHash, assurance, sessDir } = input;
-  if (exec.policy === 'host_task_required') {
-    return {
-      result,
-      blocked: formatBlockedWithAttestation(
-        'HOST_SUBAGENT_TASK_REQUIRED',
-        `This policy requires host-visible Task-tool evidence for ${REVIEWER_SUBAGENT_TYPE}; manual-attested /review findings are not accepted.`,
-        obligation.obligationId,
-      ),
-    };
-  }
   if (childSessionId === exec.context.sessionID) {
     return {
       result,
@@ -322,23 +281,6 @@ export async function recordSubmittedReviewInvocation(
 
   const findingsHash = hashFindings(findings);
   const assurance = ensureReviewAssurance(result.state.reviewAssurance);
-  const hostInvForObligation = assurance.invocations.find(
-    (inv) => inv.obligationId === obligation.obligationId && inv.source === 'host-orchestrated',
-  );
-  if (hostInvForObligation) {
-    return {
-      result,
-      blocked:
-        validateHostInvocationEvidence({
-          hostInvForObligation,
-          findingsHash,
-          childSessionId,
-          policy: exec.policy,
-          context: exec.context,
-          obligation,
-        }) ?? undefined,
-    };
-  }
   return recordManualReviewInvocation({
     result,
     obligation,

@@ -243,8 +243,7 @@ export async function ensureMissingAnalysisObligation(
     fingerprint,
     'v2',
   );
-  const verdictFirstCall = args.reviewVerdict !== undefined && existing === null;
-  if (!verdictFirstCall && args.reviewFindings !== undefined) return { message: null };
+  if (args.reviewFindings !== undefined) return { message: null };
   if (!existing) {
     return createAndPrepareMissingAnalysisObligation({
       sessDir,
@@ -291,10 +290,7 @@ async function reissueAttemptForPendingObligation(
   attemptId?: string;
   assurance?: ReviewAssuranceState;
 }> {
-  const message = formatMissingContentAnalysis(
-    existing.obligationId,
-    state.policySnapshot?.reviewInvocationPolicy === 'host_task_required',
-  );
+  const message = formatMissingContentAnalysis(existing.obligationId);
   const authorization = authorizeOutputRepairReissue(state.reviewAssurance, existing);
   if (authorization.kind === 'bindable_exists') {
     return { message, obligation: existing, attemptId: authorization.attemptId };
@@ -418,10 +414,7 @@ async function createAndPrepareMissingAnalysisObligation(
     discovery.context,
   );
   return {
-    message: formatMissingContentAnalysis(
-      obligation.obligationId,
-      input.state.policySnapshot?.reviewInvocationPolicy === 'host_task_required',
-    ),
+    message: formatMissingContentAnalysis(obligation.obligationId),
     obligation,
     attemptId: persisted.attemptId,
     assurance: persisted.assurance,

@@ -16,30 +16,18 @@ export type {
   CapturedFindings,
   PendingReview,
   SessionEnforcementState,
-  TaskToolContext,
   EnforcementResult,
   HostTaskBindOutcome,
   HostTaskBindResult,
 } from './types.js';
 
-export { REVIEW_REQUIRED_PREFIX, MIN_SUBAGENT_PROMPT_LENGTH } from './types.js';
+export { REVIEW_REQUIRED_PREFIX } from './types.js';
 
-export {
-  extractContentMeta,
-  extractCapturedFindings,
-  promptContainsValue,
-  resolveSessionIdFromMetadata,
-  injectSessionIdIntoOutput,
-  extractSubagentSessionId,
-  extractJsonBlock,
-} from './extraction.js';
+export { signalAttestationOf, readHostAttestationConstants } from './extraction.js';
 
 export {
   createSessionState,
   onFlowGuardToolAfter,
-  enforceBeforeSubagentCall,
-  onTaskToolAfter,
-  matchPendingReview,
   enforceBeforeVerdict,
   recordPluginReview,
 } from './enforcement.js';

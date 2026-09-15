@@ -27,35 +27,29 @@ export const ReviewInvocationEvidence = z
     agentType: z.literal(REVIEWER_SUBAGENT_TYPE),
     /** Persisted host-authoritative attempt identity. */
     attemptId: z.string().uuid(),
-    /** How the reviewer was invoked: host-visible Task tool, SDK, manual attested, or
-     *  manual attested corroborated by a FlowGuard-captured host hook (native_subagent_attested). */
-    invocationMode: z.enum([
-      'host_subagent_task',
-      'sdk_session_prompt',
-      'manual_attested',
-      'native_subagent_attested',
-    ]),
+    /** How the reviewer was invoked: SDK, manual attested, or manual attested corroborated by a
+     *  FlowGuard-captured host hook (native_subagent_attested). */
+    invocationMode: z.enum(['sdk_session_prompt', 'manual_attested', 'native_subagent_attested']),
     /** Whether this invocation produced a host-visible child session in the OpenCode GUI. */
     hostVisible: z.boolean(),
     promptHash: z.string().min(1),
     canonicalPromptDigest: Sha256Digest.optional(),
     modelPromptDigest: Sha256Digest.nullable().optional(),
-    hostTaskCallId: z.string().min(1).optional(),
     mandateDigest: z.string().min(1),
     criteriaVersion: z.string().min(1),
     findingsHash: z.string().min(1),
     invokedAt: z.string().datetime(),
     fulfilledAt: z.string().datetime().nullable(),
     consumedByObligationId: z.string().uuid().nullable(),
-    /** Captured verdict from the reviewer's actual output (host-task authoritative). */
+    /** Captured verdict from the reviewer's actual output. */
     capturedVerdict: z.string().optional(),
-    /** Complete raw findings captured by the plugin from the reviewer's output (host-task only).
+    /** Complete raw findings captured by the plugin from the reviewer's output.
      *  Enables evidence-based findings resolution: the tool reads findings directly from
      *  invocation evidence, eliminating agent-side reconstruction of the ReviewFindings object. */
     capturedRawFindings: z.record(z.string(), z.unknown()).optional(),
     /**
      * Evidence source, fully determined by `invocationMode`:
-     * host_subagent_task/sdk_session_prompt → host-orchestrated,
+     * sdk_session_prompt → host-orchestrated,
      * manual_attested/native_subagent_attested → agent-submitted-attested.
      */
     source: z.enum(['host-orchestrated', 'agent-submitted-attested']),
@@ -63,7 +57,7 @@ export const ReviewInvocationEvidence = z
      * Reviewer output transport used to obtain the findings.
      *
      * `structured_output` — host-observed structured model output
-     * (`host_subagent_task`, `sdk_session_prompt`).
+     * (`sdk_session_prompt`).
      * `agent_submitted_structured` — schema-valid ReviewFindings submitted by
      * the agent (`manual_attested`, `native_subagent_attested`). Structured,
      * but NOT host-observed model output.

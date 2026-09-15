@@ -52,23 +52,11 @@ export function resolveObligationResolvedRefs(
   return { resolvedBranchSha: branchSha, resolvedBaseSha: baseSha };
 }
 
-/** Host-authored attestation fields required to regenerate a reviewer Task prompt. */
-export function buildHostTaskAttestation(obligation: ReviewObligation): Record<string, unknown> {
-  return {
-    toolObligationId: obligation.obligationId,
-    mandateDigest: obligation.mandateDigest,
-    criteriaVersion: obligation.criteriaVersion,
-    iteration: obligation.iteration,
-    planVersion: obligation.planVersion,
-  };
-}
-
 /**
  * Reissue a bindable review attempt for an existing obligation.
  *
- * Used when the prior attempt was rejected and the host must re-issue
- * reviewer-task guidance. The new attempt is created without a child session —
- * the after-hook binds the child session when the reviewer Task completes.
+ * Used when the prior attempt was rejected. The new attempt is created without
+ * a child session, which is bound when the reviewer invocation completes.
  *
  * Authorization is delegated to `authorizeOutputRepairReissue` (pending
  * obligation, no bindable attempt, latest attempt rejected with an explicit
@@ -79,12 +67,12 @@ export function buildHostTaskAttestation(obligation: ReviewObligation): Record<s
  * Attempt construction is delegated to the canonical
  * `createAttemptForExistingObligation` authority so ordinal assignment, material
  * carry-forward, and staling of superseded attempts cannot drift between the
- * verdict-continuation path and the pre-Task repair path. The origin is always
+ * repair paths. The origin is always
  * `output_repair` with the rejected predecessor and its trigger reason.
  *
  * Persists the updated assurance state and returns the new `ReviewAttempt` with
  * its `attemptId` for inclusion in the blocked response so enforcement tracking
- * can register it before the next Task invocation.
+ * can register it before the next reviewer invocation.
  */
 export type ReissueReviewAttemptResult =
   | { readonly kind: 'ok'; readonly attempt: ReviewAttempt }

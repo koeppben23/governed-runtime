@@ -1,8 +1,6 @@
 /**
  * @module integration/review/orchestrator-output
- * @description Output mutation helpers — inject reviewer findings into
- *              tool output for plan/implement/architecture and standalone
- *              /review responses.
+ * @description Output mutation helpers for already-bound reviewer evidence.
  *
  * Extracted from orchestrator.ts. Leaf module — no dependency on
  * orchestrator.ts or orchestrator-detection.ts.
@@ -11,16 +9,15 @@
  */
 
 import { REVIEW_COMPLETED_PREFIX } from './orchestrator-constants.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import { parseToolResult } from '../plugin-helpers.js';
 
 /** Subset of ReviewerSuccessResult needed for output mutation. */
 interface ReviewerOutputInput {
-  readonly findings: unknown;
-  readonly sessionId: string;
-  readonly reviewOutputMode: 'structured_output';
-  readonly structuredOutputUsed: boolean;
-  readonly reviewAssuranceLevel: 'structured_high';
+  readonly findings: Record<string, unknown> | null;
+  readonly sessionId?: string;
+  readonly reviewOutputMode?: 'structured_output';
+  readonly structuredOutputUsed?: boolean;
+  readonly reviewAssuranceLevel?: 'structured_high';
 }
 
 export function buildMutatedOutput(
@@ -33,19 +30,9 @@ export function buildMutatedOutput(
   if (!parsed || Array.isArray(parsed)) return null;
 
   parsed.next =
-    `${REVIEW_COMPLETED_PREFIX}: The FlowGuard plugin has automatically invoked the ` +
-    `${REVIEWER_SUBAGENT_TYPE} subagent. Review findings are included in ` +
-    `pluginReviewFindings. Submit your reviewVerdict based on the ` +
-    `overallVerdict, and include the reviewFindings object from ` +
-    `pluginReviewFindings in your flowguard_plan, flowguard_architecture, or flowguard_review_implementation call.`;
-
-  parsed.pluginReviewFindings = reviewerResult.findings;
-  parsed._pluginReviewSessionId = reviewerResult.sessionId;
-  parsed.pluginReviewOutput = {
-    reviewOutputMode: reviewerResult.reviewOutputMode,
-    structuredOutputUsed: reviewerResult.structuredOutputUsed,
-    reviewAssuranceLevel: reviewerResult.reviewAssuranceLevel,
-  };
+    `${REVIEW_COMPLETED_PREFIX}: FlowGuard bound the host-validated independent review. ` +
+    `Submit only reviewVerdict=${String(reviewerResult.findings.overallVerdict)} to continue; ` +
+    'do not submit or reconstruct reviewer findings.';
 
   return JSON.stringify(parsed);
 }
@@ -60,20 +47,9 @@ export function buildReviewContentMutatedOutput(
   if (!parsed || Array.isArray(parsed)) return null;
 
   parsed.next =
-    `PLUGIN_REVIEW_COMPLETED: The FlowGuard plugin has automatically invoked the ` +
-    `${REVIEWER_SUBAGENT_TYPE} subagent. Review findings are included in ` +
-    `pluginReviewFindings. Call flowguard_review again with the same content ` +
-    `input (prNumber/branch/url/text) and set reviewFindings to the ` +
-    `complete pluginReviewFindings object. Do NOT modify or map the findings. ` +
-    `Include attestation.toolObligationId from requiredReviewAttestation.`;
-
-  parsed.pluginReviewFindings = reviewerResult.findings;
-  parsed._pluginReviewSessionId = reviewerResult.sessionId;
-  parsed.pluginReviewOutput = {
-    reviewOutputMode: reviewerResult.reviewOutputMode,
-    structuredOutputUsed: reviewerResult.structuredOutputUsed,
-    reviewAssuranceLevel: reviewerResult.reviewAssuranceLevel,
-  };
+    `PLUGIN_REVIEW_COMPLETED: FlowGuard bound the host-validated independent review. ` +
+    `Call flowguard_review again with the same content input and reviewVerdict=${String(reviewerResult.findings.overallVerdict)}. ` +
+    'Do not submit or reconstruct reviewer findings.';
 
   return JSON.stringify(parsed);
 }

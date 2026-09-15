@@ -14,17 +14,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ─── Mocks ──────────────────────────────────────────────────────────────────
 
-const { mockOnFlowGuardToolAfter, mockOnTaskToolAfter } = vi.hoisted(() => ({
+const { mockOnFlowGuardToolAfter } = vi.hoisted(() => ({
   mockOnFlowGuardToolAfter: vi.fn(),
-  mockOnTaskToolAfter: vi.fn(),
 }));
 
 vi.mock('./review/enforcement/enforcement.js', () => ({
   onFlowGuardToolAfter: (...args: unknown[]) => mockOnFlowGuardToolAfter(...args),
-  onTaskToolAfter: (...args: unknown[]) => mockOnTaskToolAfter(...args),
 }));
 
-import { trackFlowGuardEnforcement, trackTaskEnforcement } from './plugin-enforcement-tracking.js';
+import { trackFlowGuardEnforcement } from './plugin-enforcement-tracking.js';
 import type {
   SessionEnforcementState,
   PendingReviewTool,
@@ -141,107 +139,6 @@ describe('trackFlowGuardEnforcement', () => {
       expect.any(Object),
       expect.any(String),
       FIXED_NOW,
-    );
-  });
-});
-
-// ─── trackTaskEnforcement ───────────────────────────────────────────────────
-
-describe('trackTaskEnforcement', () => {
-  beforeEach(() => {
-    vi.resetAllMocks();
-  });
-
-  // ─── HAPPY ─────────────────────────────────────────────────
-
-  it('extracts args, output, metadata, callID and delegates with TaskToolContext', () => {
-    const eState = makeEState();
-    const input = {
-      tool: 'task',
-      sessionID: 's1',
-      callID: 'call-abc-123',
-      args: { subagent_type: 'flowguard-reviewer' },
-    };
-    const output = {
-      title: 'Task',
-      output: 'task result',
-      metadata: { sessionID: 'child-session-1', foo: 'bar' },
-    };
-
-    trackTaskEnforcement(eState, input, output, FIXED_NOW);
-
-    expect(mockOnTaskToolAfter).toHaveBeenCalledTimes(1);
-    expect(mockOnTaskToolAfter).toHaveBeenCalledWith(
-      eState,
-      { subagent_type: 'flowguard-reviewer' },
-      'task result',
-      FIXED_NOW,
-      { metadata: { sessionID: 'child-session-1', foo: 'bar' }, callID: 'call-abc-123' },
-    );
-  });
-
-  it('forwards callID and metadata without normalization (BUG-14 guard)', () => {
-    const eState = makeEState();
-    const uniqueCallID = 'unusual-call-id-!@#$%';
-    const nestedMetadata = { sessionID: 'sess-nested', deep: { key: 'val' } };
-    const input = { callID: uniqueCallID, args: {} };
-    const output = { output: 'ok', metadata: nestedMetadata };
-
-    trackTaskEnforcement(eState, input, output, FIXED_NOW);
-
-    expect(mockOnTaskToolAfter).toHaveBeenCalledWith(
-      eState,
-      expect.any(Object),
-      expect.any(String),
-      FIXED_NOW,
-      { metadata: nestedMetadata, callID: uniqueCallID },
-    );
-  });
-
-  // ─── BAD ───────────────────────────────────────────────────
-
-  it('propagates error when onTaskToolAfter throws', () => {
-    const eState = makeEState();
-    mockOnTaskToolAfter.mockImplementation(() => {
-      throw new Error('task enforcement failure');
-    });
-
-    expect(() => trackTaskEnforcement(eState, { args: {} }, { output: 'x' }, FIXED_NOW)).toThrow(
-      'task enforcement failure',
-    );
-  });
-
-  // ─── CORNER ────────────────────────────────────────────────
-
-  it('passes metadata = {} in TaskToolContext when output metadata is absent', () => {
-    const eState = makeEState();
-    const input = { callID: 'c1', args: {} };
-    const output = { output: 'text' };
-
-    trackTaskEnforcement(eState, input, output, FIXED_NOW);
-
-    expect(mockOnTaskToolAfter).toHaveBeenCalledWith(
-      eState,
-      expect.any(Object),
-      expect.any(String),
-      FIXED_NOW,
-      { metadata: {}, callID: 'c1' },
-    );
-  });
-
-  it('passes callID = "" in TaskToolContext when input has no callID', () => {
-    const eState = makeEState();
-    const input = { args: {} };
-    const output = { output: 'text', metadata: {} };
-
-    trackTaskEnforcement(eState, input, output, FIXED_NOW);
-
-    expect(mockOnTaskToolAfter).toHaveBeenCalledWith(
-      eState,
-      expect.any(Object),
-      expect.any(String),
-      FIXED_NOW,
-      { metadata: {}, callID: '' },
     );
   });
 });

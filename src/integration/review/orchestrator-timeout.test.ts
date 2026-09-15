@@ -39,8 +39,7 @@ describe('invokeReviewer — prompt timeout and orphan containment', () => {
     const onFailed = vi.fn();
 
     const result = await invokeReviewer(client, 'prompt', 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
-      maxRetries: 0,
+      maxTransportRetries: 0,
       promptTimeoutMs: 5,
       _sleepFn: vi.fn().mockResolvedValue(undefined),
       _onAttemptFailed: onFailed,
@@ -72,8 +71,7 @@ describe('invokeReviewer — prompt timeout and orphan containment', () => {
     } as unknown as OrchestratorClient['session']);
 
     const result = await invokeReviewer(client, 'prompt', 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
-      maxRetries: 0,
+      maxTransportRetries: 0,
       promptTimeoutMs: 5,
       _sleepFn: vi.fn().mockResolvedValue(undefined),
     });
@@ -90,8 +88,7 @@ describe('invokeReviewer — prompt timeout and orphan containment', () => {
     } as unknown as OrchestratorClient['session']);
 
     const result = await invokeReviewer(client, 'prompt', 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
-      maxRetries: 1,
+      maxTransportRetries: 1,
       promptTimeoutMs: 5,
       _sleepFn: vi.fn().mockResolvedValue(undefined),
     });
@@ -102,20 +99,27 @@ describe('invokeReviewer — prompt timeout and orphan containment', () => {
 
   it('EDGE: a non-positive timeout disables the bound (prompt result is used)', async () => {
     const findings = {
+      iteration: 0,
+      planVersion: 1,
+      reviewMode: 'subagent',
       overallVerdict: 'accept',
       blockingIssues: [],
-      reviewedBy: { sessionId: 'child-3' },
+      majorRisks: [],
+      missingVerification: [],
+      scopeCreep: [],
+      unknowns: [],
+      challenges: [],
+      attestation: { toolObligationId: '11111111-1111-4111-8111-111111111111' },
     };
     const client = clientWith({
       create: vi.fn().mockResolvedValue({ data: { id: 'child-3' } }),
       prompt: vi.fn().mockResolvedValue({
-        data: { parts: [], info: { structured_output: findings } },
+        data: { parts: [], info: { structured: findings } },
       }),
     } as unknown as OrchestratorClient['session']);
 
     const result = await invokeReviewer(client, 'prompt', 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
-      maxRetries: 0,
+      maxTransportRetries: 0,
       promptTimeoutMs: 0,
       _sleepFn: vi.fn().mockResolvedValue(undefined),
     });

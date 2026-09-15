@@ -6,12 +6,7 @@ import { buildEnforcementError } from './plugin-helpers.js';
 import { isMutatingHostTool, isHostToolAllowedInPhase } from './phase-tool-gate.js';
 import { isAllowedReworkContinuation } from './plugin-rework-continuation.js';
 import { isMutatingFlowGuardTool } from './tool-classification.js';
-import {
-  enforceBeforeVerdict,
-  enforceBeforeSubagentCall,
-  enforceReviewerObligation,
-} from './review/enforcement/enforcement.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
+import { enforceBeforeVerdict } from './review/enforcement/enforcement.js';
 import type { CommandHookBeforeInput, ToolHookBeforeInput, ToolHookBeforeOutput } from './types.js';
 import { recordUserDecisionIntentFromCommand } from './user-decision-intent.js';
 import {
@@ -27,11 +22,8 @@ import {
 import { runWithAdapterLoggerAsync } from '../logging/adapter-logger.js';
 import { runWithLogContextAsync } from '../logging/log-context.js';
 import type { SessionState } from '../state/schema.js';
-import { projectUnaddressedImplementationChallengeIds } from '../state/implementation-review-findings.js';
 import { enforceRiskClassificationBefore as enforceRiskBefore } from './plugin-risk.js';
 import { enforceDiscoveryHealthBefore } from './plugin-discovery-health.js';
-import { registerExecutedTaskPrompt } from './review/enforcement/execution-provenance.js';
-import type { ExecutedTaskPrompt } from './review/enforcement/types.js';
 import { resolveAttemptByCapability } from './review/observation-resolution.js';
 import { reconcilePendingAuditOperations } from './plugin-audit-reconcile.js';
 import { auditEnforcementDenied } from './plugin-audit.js';
@@ -39,7 +31,6 @@ import { withSessionWriteLock } from '../adapters/persistence-lock.js';
 import { recoverRegulatedCompletion } from './plugin-regulated-recovery.js';
 import { writeStateWithAuditOperationsAlreadyLocked } from './tools/audit-outbox.js';
 import { authorizeMutationEpisode } from '../state/evidence-mutation-episode.js';
-import { persistAuthorizedDispatch, rearmInterruptedReviewerDispatch } from './durable-dispatch.js';
 import { getRuntimeInstanceId } from './runtime-instance.js';
 import { acquireRuntimeLease } from './runtime-lease.js';
 import { enforceGitPrerequisiteBeforeMutation } from './plugin-git-gate.js';
@@ -159,11 +150,6 @@ async function enforceBeforeRules(
   args: Record<string, unknown>,
 ): Promise<void> {
   await enforceCommandScope(runtime, toolName, sessionId);
-
-  if (toolName === 'task') {
-    await enforceTaskBefore(runtime, toolName, sessionId, callId, args);
-    return;
-  }
 
   const mutatingHost = isMutatingHostTool(toolName);
 
@@ -338,7 +324,6 @@ async function isAllowedInImplReview(
 ): Promise<boolean> {
   const reviewSurface =
     toolName === 'flowguard_review_implementation' ||
-    toolName === 'task' ||
     toolName === TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE;
   if (!reviewSurface) return false;
   return (await readScopedState(runtime, sessionId))?.phase === 'IMPL_REVIEW';
@@ -365,144 +350,6 @@ async function enforceCommandScope(
     'COMMAND_SCOPE_DENIED',
     `Tool '${toolName}' is not permitted while the explicit /check command is active. Report the check result and wait for the user to invoke the next command.`,
     { sessionId, tool: toolName, command: '/check' },
-  );
-}
-
-// eslint-disable-next-line complexity, max-lines-per-function -- the reviewer Task before-gate is one sequential fail-closed chain; splitting it would interleave the durable rearm recovery with the dispatch checks.
-async function enforceTaskBefore(
-  runtime: FlowGuardPluginRuntime,
-  toolName: string,
-  sessionId: string,
-  callId: string,
-  args: Record<string, unknown>,
-): Promise<void> {
-  const subagentType = typeof args.subagent_type === 'string' ? args.subagent_type : '';
-  if (subagentType === REVIEWER_SUBAGENT_TYPE) {
-    if (!callId) {
-      throw buildEnforcementError(
-        'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
-        'Reviewer Task requires a non-empty host callID.',
-      );
-    }
-    const eState = runtime.ws.getEnforcementState(sessionId);
-    const sessionState = await resolveEnforcement(runtime, sessionId, 'subagent');
-    await enforceReviewerObligationCheck(runtime, sessionState);
-    enforceImplementationChallengeResolutionCheck(sessionState);
-
-    await reconcileBeforeMutation(runtime, sessionId, toolName);
-
-    const registered = registerExecutedTaskPrompt(
-      eState,
-      sessionState?.reviewAssurance,
-      callId,
-      args.prompt,
-      new Date().toISOString(),
-    );
-    let gateAssurance = sessionState?.reviewAssurance;
-    let prompt: ExecutedTaskPrompt;
-    if (registered.kind === 'in_flight') {
-      const rearmed = await rearmInterruptedReviewerDispatch(
-        runtime,
-        sessionId,
-        eState,
-        registered,
-      );
-      if (rearmed.kind === 'blocked') {
-        throw buildEnforcementError(
-          rearmed.code ?? 'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
-          rearmed.reason,
-        );
-      }
-      gateAssurance = rearmed.assurance;
-      const reRegistered = registerExecutedTaskPrompt(
-        eState,
-        rearmed.assurance,
-        callId,
-        args.prompt,
-        new Date().toISOString(),
-      );
-      if (reRegistered.kind !== 'ready') {
-        throw buildEnforcementError(
-          'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
-          reRegistered.kind === 'blocked'
-            ? reRegistered.reason
-            : 're-armed attempt is still reported in-flight',
-        );
-      }
-      prompt = reRegistered.prompt;
-    } else if (registered.kind === 'ready') {
-      prompt = registered.prompt;
-    } else {
-      throw buildEnforcementError(
-        'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
-        registered.reason,
-      );
-    }
-    args.description = 'FlowGuard reviewer task';
-    args.prompt = prompt.canonicalPrompt;
-
-    const result = enforceBeforeSubagentCall(eState, args, gateAssurance);
-    if (result.allowed) {
-      await persistAuthorizedDispatch(runtime, sessionId, prompt);
-      return;
-    }
-    eState.executedTaskPrompts.delete(callId);
-    runtime.log.warn('enforcement', 'blocked subagent call', {
-      tool: toolName,
-      sessionId,
-      code: result.code,
-    });
-    throw buildEnforcementError(result.code ?? 'INTERNAL_ERROR', result.reason ?? '');
-  }
-  if (subagentType === '') return;
-  runtime.log.warn('enforcement', 'blocked unauthorized subagent type', {
-    tool: toolName,
-    subagentType,
-    sessionId,
-  });
-  throw buildEnforcementError(
-    'SUBAGENT_TYPE_UNAUTHORIZED',
-    `Subagent type '${subagentType}' is not authorized by FlowGuard governance. Only '${REVIEWER_SUBAGENT_TYPE}' is allowed.`,
-  );
-}
-
-// eslint-disable-next-line complexity -- the fail-closed obligation gate keeps every rejection condition explicit.
-async function enforceReviewerObligationCheck(
-  runtime: FlowGuardPluginRuntime,
-  sessionState: SessionState | null,
-): Promise<void> {
-  const obligationResult = enforceReviewerObligation({
-    obligations: sessionState?.reviewAssurance?.obligations ?? [],
-    invocations: sessionState?.reviewAssurance?.invocations ?? [],
-    reviewInvocationPolicy: sessionState?.policySnapshot?.reviewInvocationPolicy,
-    maxIncoherentReviewerCaptureRetries:
-      sessionState?.policySnapshot?.maxIncoherentReviewerCaptureRetries,
-    stateAvailable: sessionState !== null,
-  });
-  if (obligationResult.allowed) return;
-  const obligations = sessionState?.reviewAssurance?.obligations ?? [];
-  runtime.log.warn('enforcement', `reviewer task blocked — ${obligationResult.code}`, {
-    policy: sessionState?.policySnapshot?.reviewInvocationPolicy,
-    pendingObligationCount: obligations.filter((o) => o.status === 'pending').length,
-  });
-  throw buildEnforcementError(obligationResult.code, obligationResult.reason);
-}
-
-/** Deny implementation reviewer dispatch until every open prior challenge has current-digest author evidence. */
-function enforceImplementationChallengeResolutionCheck(sessionState: SessionState | null): void {
-  const hasPendingImplementationObligation = sessionState?.reviewAssurance?.obligations.some(
-    (obligation) => obligation.obligationType === 'implement' && obligation.status === 'pending',
-  );
-  if (!hasPendingImplementationObligation) return;
-  const unaddressed = projectUnaddressedImplementationChallengeIds(
-    sessionState?.implReviewFindings,
-    sessionState?.challengeResolutions ?? [],
-    sessionState?.implementation?.digest,
-  );
-  if (unaddressed.length === 0) return;
-  throw buildEnforcementError(
-    'SUBAGENT_PRIOR_CHALLENGE_UNRESOLVED',
-    'Record current-digest author resolution evidence for every prior failing implementation challenge before dispatching the reviewer Task.',
   );
 }
 

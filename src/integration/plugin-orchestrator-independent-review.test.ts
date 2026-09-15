@@ -86,9 +86,10 @@ function buildClient(findings: Record<string, unknown>): OrchestratorClient {
     app: { agents: vi.fn().mockResolvedValue({ data: [{ id: 'flowguard-reviewer' }] }) },
     session: {
       create: vi.fn().mockResolvedValue({ data: { id: CHILD_SESSION_ID }, error: undefined }),
-      prompt: vi
-        .fn()
-        .mockResolvedValue({ data: { info: { structured_output: findings } }, error: undefined }),
+      prompt: vi.fn().mockResolvedValue({
+        data: { info: { structured: findings } },
+        error: undefined,
+      }),
     },
   };
 }
@@ -118,7 +119,6 @@ function buildTextCompatClient(findings: Record<string, unknown>): OrchestratorC
 function buildState(
   phase: ReviewableCase['phase'],
   obligationType: ReviewableCase['obligationType'],
-  reviewOutputPolicy: 'structured_required' = 'structured_required',
 ) {
   const reviewMaterial = freezeReviewMaterial('frozen review material', 'test-subject-digest');
   return makeState(phase, {
@@ -138,10 +138,7 @@ function buildState(
             digest: 'digest-of-adr',
           }
         : null,
-    policySnapshot: {
-      ...POLICY_SNAPSHOT,
-      reviewOutputPolicy,
-    },
+    policySnapshot: POLICY_SNAPSHOT,
     reviewAssurance: {
       assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [
@@ -328,7 +325,6 @@ describe('runReviewOrchestration strict independent review with footer output', 
         reviewOutputMode: 'structured_output',
         structuredOutputUsed: true,
         reviewAssuranceLevel: 'structured_high',
-        capturedVerdict: 'accept',
       });
       expect(invocation?.invocationId).toBe(obligation?.invocationId);
       expect(Date.parse(invocation!.invokedAt)).toBeLessThanOrEqual(
@@ -383,35 +379,12 @@ describe('runReviewOrchestration strict independent review with footer output', 
         }),
       ]);
 
-      const pendingReview = deps
-        .getEnforcementState(PARENT_SESSION_ID)
-        .pendingReviews.get(testCase.toolName);
-      expect(pendingReview).toMatchObject({
-        subagentCalled: true,
-        subagentRecord: { sessionId: CHILD_SESSION_ID, completedAt: NOW },
-        capturedFindings: { overallVerdict: 'accept', sessionId: CHILD_SESSION_ID },
-      });
-
       const parsed = JSON.parse(output.output) as Record<string, unknown>;
       expect(parsed.next).toEqual(expect.stringContaining('INDEPENDENT_REVIEW_COMPLETED'));
-      expect(parsed.pluginReviewFindings).toMatchObject({
-        overallVerdict: 'accept',
-        reviewedBy: { sessionId: CHILD_SESSION_ID },
-        attestation: {
-          toolObligationId: OBLIGATION_ID,
-          mandateDigest: REVIEW_MANDATE_DIGEST,
-          criteriaVersion: REVIEW_CRITERIA_VERSION,
-          iteration: 1,
-          planVersion: 1,
-          reviewedBy: 'flowguard-reviewer',
-        },
-      });
-      expect(parsed.pluginReviewOutput).toMatchObject({
-        reviewOutputMode: 'structured_output',
-        structuredOutputUsed: true,
-        reviewAssuranceLevel: 'structured_high',
-      });
-      expect(parsed._pluginReviewSessionId).toBe(CHILD_SESSION_ID);
+      expect(parsed.next).toContain('reviewVerdict=accept');
+      expect(parsed).not.toHaveProperty('pluginReviewFindings');
+      expect(parsed).not.toHaveProperty('pluginReviewOutput');
+      expect(parsed).not.toHaveProperty('_pluginReviewSessionId');
     });
   }
 
@@ -437,134 +410,6 @@ describe('runReviewOrchestration strict independent review with footer output', 
     expect(result.reviewAssurance?.invocations).toEqual([]);
     expect(result.reviewAssurance?.attempts[0]?.status).toBe('created');
     expect(JSON.parse(output.output)).toMatchObject({ code: 'REVIEW_GENERATION_MISMATCH' });
-  });
-
-  it('host_task_required does not call SDK and returns machine-readable Task requirement', async () => {
-    const stateRef = { current: buildState('PLAN', 'plan') };
-    stateRef.current = {
-      ...stateRef.current,
-      policySnapshot: {
-        ...stateRef.current.policySnapshot!,
-        reviewInvocationPolicy: 'host_task_required',
-      },
-    };
-    vi.mocked(readState).mockResolvedValue(stateRef.current);
-    const client = buildClient(buildFindings());
-    const deps = buildDeps(client, stateRef);
-    const output = { output: reviewRequiredOutput('PLAN') };
-
-    await runReviewOrchestration(deps, {
-      toolName: TOOL_FLOWGUARD_PLAN,
-      input: { args: { planText: 'Add regression tests for review orchestration.' } },
-      output,
-      sessionId: PARENT_SESSION_ID,
-      now: NOW,
-    });
-
-    expect(client.session.create).not.toHaveBeenCalled();
-    expect(client.session.prompt).not.toHaveBeenCalled();
-    const parsed = JSON.parse(output.output) as Record<string, unknown>;
-    expect(parsed.next).toEqual(expect.stringContaining('INDEPENDENT_REVIEW_REQUIRED'));
-    expect(parsed.reviewInvocation).toMatchObject({
-      policy: 'host_task_required',
-      status: 'pending_host_task',
-      invocationMode: 'host_subagent_task',
-      hostVisible: true,
-    });
-
-    await runReviewOrchestration(deps, {
-      toolName: TOOL_FLOWGUARD_PLAN,
-      input: { args: { planText: 'Add regression tests for review orchestration.' } },
-      output: {
-        output: JSON.stringify({
-          ...JSON.parse(reviewRequiredOutput('PLAN')),
-          reviewTransportFailure: { transport: 'host_task', reported: true },
-        }),
-      },
-      sessionId: PARENT_SESSION_ID,
-      now: NOW,
-    });
-
-    expect(client.session.create).not.toHaveBeenCalled();
-    expect(client.session.prompt).not.toHaveBeenCalled();
-  });
-
-  it('host_task_preferred requests Task first without silently returning or calling SDK', async () => {
-    const stateRef = { current: buildState('PLAN', 'plan') };
-    stateRef.current = {
-      ...stateRef.current,
-      policySnapshot: {
-        ...stateRef.current.policySnapshot!,
-        reviewInvocationPolicy: 'host_task_preferred',
-      },
-    };
-    vi.mocked(readState).mockResolvedValue(stateRef.current);
-    const client = buildClient(buildFindings());
-    const deps = buildDeps(client, stateRef);
-    const output = { output: reviewRequiredOutput('PLAN') };
-
-    await runReviewOrchestration(deps, {
-      toolName: TOOL_FLOWGUARD_PLAN,
-      input: { args: { planText: 'Add regression tests for review orchestration.' } },
-      output,
-      sessionId: PARENT_SESSION_ID,
-      now: NOW,
-    });
-
-    expect(client.session.create).not.toHaveBeenCalled();
-    expect(client.session.prompt).not.toHaveBeenCalled();
-    const parsed = JSON.parse(output.output) as Record<string, unknown>;
-    expect(parsed.next).toEqual(expect.stringContaining('INDEPENDENT_REVIEW_REQUIRED'));
-    expect(parsed.reviewInvocation).toMatchObject({
-      policy: 'host_task_preferred',
-      status: 'pending_host_task',
-      invocationMode: 'host_subagent_task',
-      hostVisible: true,
-    });
-  });
-
-  it('host_task_preferred falls through to SDK only after an explicit Task transport failure', async () => {
-    const stateRef = { current: buildState('PLAN', 'plan') };
-    stateRef.current = {
-      ...stateRef.current,
-      policySnapshot: {
-        ...stateRef.current.policySnapshot!,
-        reviewInvocationPolicy: 'host_task_preferred',
-      },
-    };
-    vi.mocked(readState).mockImplementation(async () => stateRef.current);
-    const client = buildClient(buildFindings());
-    const deps = buildDeps(client, stateRef);
-    const event: ToolCallEvent = {
-      toolName: TOOL_FLOWGUARD_PLAN,
-      input: { args: { planText: 'Add regression tests for review orchestration.' } },
-      output: { output: reviewRequiredOutput('PLAN') },
-      sessionId: PARENT_SESSION_ID,
-      now: NOW,
-    };
-
-    await runReviewOrchestration(deps, event);
-    expect(client.session.create).not.toHaveBeenCalled();
-
-    await runReviewOrchestration(deps, {
-      ...event,
-      output: { output: reviewRequiredOutput('PLAN') },
-    });
-
-    expect(client.session.create).not.toHaveBeenCalled();
-
-    await runReviewOrchestration(deps, {
-      ...event,
-      output: {
-        output: JSON.stringify({
-          ...JSON.parse(reviewRequiredOutput('PLAN')),
-          reviewTransportFailure: { transport: 'host_task', reported: true },
-        }),
-      },
-    });
-
-    expect(client.session.create).toHaveBeenCalledOnce();
-    expect(client.session.prompt).toHaveBeenCalledOnce();
   });
 });
 

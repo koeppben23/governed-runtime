@@ -462,18 +462,18 @@ export function findAcceptedInvocationForFindings(
       ) ?? null
     );
   }
-
   return (
     base.invocations.find(
       (invocation) =>
         invocation.obligationId === obligation.obligationId &&
-        invocation.invocationMode === 'host_subagent_task' &&
-        invocation.hostVisible === true &&
+        invocation.invocationMode === 'sdk_session_prompt' &&
         invocation.childSessionId === findings.reviewedBy.sessionId &&
         invocation.findingsHash === findingsHash &&
         invocation.consumedByObligationId === null,
     ) ?? null
   );
+
+  return null;
 }
 
 /** Create an obligation and its initial attempt atomically.
@@ -571,7 +571,6 @@ export function buildInvocationEvidence(input: {
   promptHash: string;
   canonicalPromptDigest?: string;
   modelPromptDigest?: string | null;
-  hostTaskCallId?: string;
   findingsHash: string;
   invokedAt: string;
   fulfilledAt?: string;
@@ -595,9 +594,8 @@ export function buildInvocationEvidence(input: {
 }): ReviewInvocationEvidence {
   // Provenance is DERIVED from how the reviewer was invoked — callers cannot
   // assert host observation for agent-submitted transport.
-  const hostObservedStructured =
-    input.invocationMode === 'host_subagent_task' || input.invocationMode === 'sdk_session_prompt';
-  const hostVisible = input.invocationMode === 'host_subagent_task';
+  const hostObservedStructured = input.invocationMode === 'sdk_session_prompt';
+  const hostVisible = false;
   return {
     invocationId: randomUUID(),
     obligationId: input.obligationId,
@@ -610,7 +608,6 @@ export function buildInvocationEvidence(input: {
     promptHash: input.promptHash,
     canonicalPromptDigest: input.canonicalPromptDigest,
     modelPromptDigest: input.modelPromptDigest,
-    hostTaskCallId: input.hostTaskCallId,
     mandateDigest: input.mandateDigest,
     criteriaVersion: input.criteriaVersion,
     findingsHash: input.findingsHash,

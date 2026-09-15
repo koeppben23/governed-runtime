@@ -20,7 +20,6 @@ export type ReviewExecutionContext = {
   args: ReviewToolArgs;
   context: ToolContext;
   now: string;
-  policy: string;
 };
 
 export type NativeAttestationRejectionReason =
@@ -66,9 +65,7 @@ export type ReviewToolArgs = {
   /** Optional explicit base ref/branch/SHA for a branch review diff. */
   base?: string;
   url?: string;
-  /** Exact obligation identity required for host-task verdict continuations. */
   reviewObligationId?: string;
-  reviewVerdict?: 'accept' | 'changes_requested';
   reviewFindings?: ReviewFindings;
   /** Optional structured objectives; omitted uses the canonical static profile. */
   objectives?: StandaloneReviewObjective[];

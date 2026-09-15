@@ -74,9 +74,8 @@ import {
   resolveRuntimeReviewPlatform,
   resolveReviewOrchestrationMode,
 } from '../review/orchestration-mode.js';
-import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
+import { buildChildSessionReviewInstruction } from '../review/child-session-instruction.js';
 import { resolveAttemptObservationCapability } from '../review/assurance.js';
-import { buildReviewerProofContext } from '../review/proof-context.js';
 import {
   activateReviewObligationAndPersist,
   materializeImplReviewContract,
@@ -651,26 +650,22 @@ function buildNextValidationState(
 function buildRunCheckReviewInstruction(
   finalState: SessionState,
   nextObligation: ReviewObligation | null,
-  policy: FlowGuardPolicy,
+  _policy: FlowGuardPolicy,
 ) {
   if (!nextObligation) return null;
 
   const platform = resolveRuntimeReviewPlatform();
   const mode = resolveReviewOrchestrationMode({
     platform,
-    reviewInvocationPolicy: policy.reviewInvocationPolicy,
     nativeReviewerAvailable: platform !== 'unknown',
-    manualAttestedAllowed: policy.reviewInvocationPolicy !== 'host_task_required',
+    manualAttestedAllowed: false,
   });
-  return buildPendingReviewInstruction({
+  return buildChildSessionReviewInstruction({
     mode,
     platform,
-    reviewKind: 'implementation',
     obligation: nextObligation,
     iteration: nextObligation.iteration,
     planVersion: nextObligation.planVersion,
-    subjectLabel: 'implementation summary, changed files, approved plan text, and ticket text',
-    proofContext: buildReviewerProofContext(finalState),
     observationCapability:
       resolveAttemptObservationCapability(
         finalState.reviewAssurance,
@@ -734,8 +729,8 @@ function formatRunCheckResponse(input: {
         derivedRepairGuidance,
         remainingChecks,
         ...reviewObligationResponseFields(input.nextObligation),
-        next: reviewInstruction?.next ?? formatEval(ev),
-        ...(reviewInstruction ? { reviewInvocation: reviewInstruction.reviewInvocation } : {}),
+        next: reviewInstruction ? 'INDEPENDENT_REVIEW_REQUIRED' : formatEval(ev),
+        ...(reviewInstruction ? { reviewInvocation: reviewInstruction } : {}),
         _audit: { transitions },
       },
       finalState,

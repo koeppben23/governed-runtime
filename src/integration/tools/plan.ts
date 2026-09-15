@@ -66,7 +66,7 @@ import { normalizePlanClaims } from '../../state/proofgraph-approval.js';
 import {
   validateReviewFindings,
   requireReviewFindings,
-  resolveHostTaskEffectiveFindings,
+  resolveStructuredEffectiveFindings,
 } from './review-validation.js';
 import { collectPreviouslyUsedChallengeIds } from '../review/challenge-history.js';
 import {
@@ -77,8 +77,7 @@ import {
   findAcceptedInvocationForFindings,
   findLatestObligation,
 } from '../review/assurance.js';
-import { resolveRuntimeReviewPlatform } from '../review/orchestration-mode.js';
-import { buildHostTaskChallengeContract } from '../review/host-task-policy.js';
+import { buildReviewChallengeContract } from '../review/challenge-contract.js';
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
 // presentation imports moved to plan-response.ts
 
@@ -174,9 +173,7 @@ function validateInitialPlanFindings(scope: PlanExecutionScope): string | null {
   return validateReviewFindings(scope.args.reviewFindings, {
     expectedPlanVersion: (scope.state.plan?.history.length ?? 0) + 1,
     expectedIteration: 0,
-    reviewInvocationPolicy: scope.policy.reviewInvocationPolicy,
     reviewParentSessionId: scope.context.sessionID,
-    reviewHostPlatform: resolveRuntimeReviewPlatform(),
     previouslyUsedChallengeIds: collectPreviouslyUsedChallengeIds(scope.state),
   });
 }
@@ -347,15 +344,12 @@ function resolveEffectivePlanFindings(scope: PlanExecutionScope) {
   const expectedIteration = pendingObligation?.iteration ?? scope.state.selfReview!.iteration;
   const expectedPlanVersion =
     pendingObligation?.planVersion ?? scope.state.plan!.history.length + 1;
-  const resolved = resolveHostTaskEffectiveFindings({
+  const resolved = resolveStructuredEffectiveFindings({
     pendingObligation: pendingObligation ?? null,
     expected: {
       obligationType: 'plan',
       iteration: expectedIteration,
       planVersion: expectedPlanVersion,
-    },
-    policy: {
-      reviewInvocationPolicy: scope.policy.reviewInvocationPolicy,
     },
     input: {
       reviewFindings: scope.args.reviewFindings,
@@ -365,11 +359,10 @@ function resolveEffectivePlanFindings(scope: PlanExecutionScope) {
     state: {
       assurance: scope.state.reviewAssurance,
       sessionId: scope.context.sessionID,
-      reviewHostPlatform: resolveRuntimeReviewPlatform(),
       // Bind design-challenge evidence to the plan's canonical allowed refs
       // (finding B3): without this, a plan review challenge could cite a
       // fabricated ADR section / digest and pass.
-      allowedChallengeEvidenceRefs: buildHostTaskChallengeContract(
+      allowedChallengeEvidenceRefs: buildReviewChallengeContract(
         scope.state,
         pendingObligation ?? null,
       )?.evidenceRefs,
