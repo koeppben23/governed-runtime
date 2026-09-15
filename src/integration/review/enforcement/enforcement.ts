@@ -52,7 +52,7 @@ import { parseToolResult } from '../../plugin-helpers.js';
 
 /** Create a fresh enforcement state for a session. */
 export function createSessionState(): SessionEnforcementState {
-  return { pendingReviews: new Map(), executedTaskPrompts: new Map() };
+  return { pendingReviews: new Map() };
 }
 
 // ─── Hook handlers (pure functions) ──────────────────────────────────────────

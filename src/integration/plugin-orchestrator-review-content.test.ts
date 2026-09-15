@@ -229,7 +229,6 @@ function buildDeps(
       blockReviewOutcome,
       getEnforcementState: vi.fn().mockReturnValue({
         pendingReviews: new Map(),
-        executedTaskPrompts: new Map(),
       }),
       log: { info: vi.fn(), warn: vi.fn() },
       client,
@@ -358,7 +357,9 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     expect(client.session.create).toHaveBeenCalledOnce();
     expect(client.session.prompt).toHaveBeenCalledOnce();
     expect(blockReviewOutcome).not.toHaveBeenCalled();
-    expect(updateReviewAssurance).toHaveBeenCalledOnce();
+    // One durable write authorizes the dispatch before the prompt; a second
+    // records the bound evidence.
+    expect(updateReviewAssurance).toHaveBeenCalledTimes(2);
     const obligation = state.reviewAssurance?.obligations[0];
     expect(obligation).toMatchObject({
       obligationId: OBLIGATION_ID,
@@ -400,7 +401,7 @@ describe('runReviewOrchestration strict /review content analysis', () => {
       status: 'bound',
       childSessionId: CHILD_SESSION_ID,
     });
-    const evidenceIntents = vi.mocked(updateReviewAssurance).mock.calls[0]![2]!(state, NOW);
+    const evidenceIntents = vi.mocked(updateReviewAssurance).mock.calls[1]![2]!(state, NOW);
     expect(evidenceIntents).toEqual([
       expect.objectContaining({
         event: 'review:subagent_invoked',

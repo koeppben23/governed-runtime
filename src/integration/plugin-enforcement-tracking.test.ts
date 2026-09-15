@@ -34,7 +34,6 @@ import type {
 function makeEState(): SessionEnforcementState {
   return {
     pendingReviews: new Map<PendingReviewTool, PendingReview>(),
-    executedTaskPrompts: new Map(),
   };
 }
 

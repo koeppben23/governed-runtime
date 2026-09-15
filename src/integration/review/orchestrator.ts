@@ -44,7 +44,8 @@ export interface ReviewerBlockedResult {
     | 'REVIEWER_INVOCATION_EXHAUSTED'
     | 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE'
     | 'HOST_STRUCTURED_OUTPUT_REQUIRED'
-    | 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION';
+    | 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION'
+    | 'REVIEW_DISPATCH_PERSISTENCE_FAILED';
   readonly reason: string;
   readonly reviewInvocation: {
     readonly status: 'blocked_capability_mismatch' | 'host_contract_violation';
@@ -80,6 +81,20 @@ export interface OrchestrationResult {
 const REVIEWER_SESSION_TITLE = 'FlowGuard Independent Review';
 
 export interface InvokeReviewerOptions {
+  /**
+   * Persist the durable dispatch authorization for a created reviewer child
+   * session before its prompt is released. Production callers MUST supply this
+   * through the host adapter; a throwing implementation prevents the prompt.
+   */
+  readonly _authorizeDispatch?: (info: {
+    readonly childSessionId: string;
+    readonly invokedAt: string;
+  }) => Promise<void>;
+  /**
+   * Resolve a host call that concluded without bound evidence as
+   * `outcome_unknown` in the durable ledger.
+   */
+  readonly _abandonDispatch?: (info: { readonly childSessionId: string }) => Promise<void>;
   /** Technical retries within one ReviewAttempt. */
   readonly maxTransportRetries?: number;
   readonly baseDelayMs?: number;
@@ -116,6 +131,12 @@ export function retrySleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Durable-authorization hooks default to no-ops ONLY for direct transport unit
+ * tests. Every production path goes through `OpenCodeHostAdapter`, whose
+ * `ReviewerSpawnConfig` requires both hooks — enforced by the architecture
+ * guard `structured-review-authority-guard`.
+ */
 const DEFAULT_INVOKE_OPTIONS: Required<InvokeReviewerOptions> = {
   maxTransportRetries: 2,
   baseDelayMs: 1000,
@@ -123,6 +144,8 @@ const DEFAULT_INVOKE_OPTIONS: Required<InvokeReviewerOptions> = {
   _sleepFn: retrySleep,
   _onAttemptFailed: () => {},
   _onAttemptSucceeded: () => {},
+  _authorizeDispatch: async () => {},
+  _abandonDispatch: async () => {},
 };
 
 export async function invokeReviewer(
@@ -165,6 +188,76 @@ export async function invokeReviewer(
   }
 
   return null;
+}
+
+/**
+ * Persist the durable dispatch authorization before the prompt is released.
+ * A persistence failure is terminal for the attempt: the reviewer is NOT
+ * prompted without a ledger entry.
+ */
+async function authorizeDispatchBeforePrompt(
+  input: InvokeAttemptInput & { childSessionId: string },
+  invokedAt: string,
+): Promise<{ kind: 'authorized' } | { kind: 'blocked'; result: ReviewerBlockedResult }> {
+  const { options, childSessionId } = input;
+  try {
+    await options._authorizeDispatch({ childSessionId, invokedAt });
+    return { kind: 'authorized' };
+  } catch (error) {
+    options._onAttemptFailed({
+      attempt: input.attempt,
+      step: 'session_prompt',
+      error,
+      details: {
+        agent: input.agent,
+        childSessionId,
+        reason: 'durable reviewer dispatch could not be persisted before the host release',
+      },
+    });
+    return {
+      kind: 'blocked',
+      result: {
+        blocked: true,
+        code: 'REVIEW_DISPATCH_PERSISTENCE_FAILED',
+        reason:
+          'The durable reviewer dispatch could not be persisted before the host release. ' +
+          'The reviewer was NOT executed and no evidence exists.',
+        reviewInvocation: {
+          status: 'host_contract_violation',
+          code: 'REVIEW_DISPATCH_PERSISTENCE_FAILED',
+          reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
+          invocationMode: 'sdk_session',
+          recovery: [
+            'Retry the originating FlowGuard command; the reviewer was not executed and no findings were produced.',
+          ],
+        },
+      },
+    };
+  }
+}
+
+/**
+ * Resolve a host call that produced no bindable evidence as `outcome_unknown`.
+ * Abandon failures leave the entry `authorized`, which the next command
+ * resolves as an interrupted dispatch — fail-closed by construction.
+ */
+async function abandonDispatchOutcome(
+  input: InvokeAttemptInput & { childSessionId: string },
+): Promise<void> {
+  try {
+    await input.options._abandonDispatch({ childSessionId: input.childSessionId });
+  } catch (error) {
+    input.options._onAttemptFailed({
+      attempt: input.attempt,
+      step: 'session_prompt',
+      error,
+      details: {
+        agent: input.agent,
+        childSessionId: input.childSessionId,
+        reason: 'reviewer dispatch outcome could not be resolved after the host call concluded',
+      },
+    });
+  }
 }
 
 function reviewerIsolationUnavailableBlockedResult(error: unknown): ReviewerBlockedResult {
@@ -215,23 +308,45 @@ async function invokeReviewerAttempt(input: InvokeAttemptInput): Promise<InvokeA
     return attempt < maxAttempts ? { kind: 'retry' } : { kind: 'done', result: null };
   }
 
+  const childSessionId = createResult.data.id;
+
   options._onAttemptSucceeded({
     attempt,
     step: 'session_create',
     parentSessionId,
-    childSessionId: createResult.data.id,
+    childSessionId,
     durationMs: performance.now() - createStartedAt,
   });
 
-  return promptReviewerSession({ ...input, childSessionId: createResult.data.id });
+  // Durable before release: the dispatch authorization must be committed
+  // before the host receives the prompt. A persistence failure blocks the
+  // attempt without ever running the reviewer.
+  const invokedAt = new Date().toISOString();
+  const authorized = await authorizeDispatchBeforePrompt({ ...input, childSessionId }, invokedAt);
+  if (authorized.kind === 'blocked') return { kind: 'done', result: authorized.result };
+
+  let outcome: InvokeAttemptResult;
+  try {
+    outcome = await promptReviewerSession({ ...input, childSessionId, invokedAt });
+  } catch (error) {
+    await abandonDispatchOutcome({ ...input, childSessionId });
+    throw error;
+  }
+  // A host call that concluded without a successful structured result can
+  // never be completed in the ledger; classify it as outcome_unknown so a
+  // later crash cannot be mistaken for an unresolved authorization.
+  if (!(outcome.kind === 'done' && outcome.result && !outcome.result.blocked)) {
+    await abandonDispatchOutcome({ ...input, childSessionId });
+  }
+  return outcome;
 }
 
 async function promptReviewerSession(
-  input: InvokeAttemptInput & { childSessionId: string },
+  input: InvokeAttemptInput & { childSessionId: string; invokedAt: string },
 ): Promise<InvokeAttemptResult> {
-  const { client, prompt, agent, parentSessionId, childSessionId, attempt, options } = input;
+  const { client, prompt, agent, parentSessionId, childSessionId, attempt, options, invokedAt } =
+    input;
   const promptStartedAt = performance.now();
-  const invokedAt = new Date().toISOString();
   const race = await raceWithTimeout(
     client.session.prompt({
       path: { id: childSessionId },

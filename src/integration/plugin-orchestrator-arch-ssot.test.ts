@@ -22,6 +22,7 @@ vi.mock('./review/audit-events.js', () => ({
 }));
 
 import { readState } from '../adapters/persistence.js';
+import { makePendingReviewAttempt } from './review/__tests__/attempt-fixture.js';
 import { makeState, POLICY_SNAPSHOT, TICKET, ARCHITECTURE_DECISION } from '../fixtures.js';
 import { runReviewOrchestration } from './plugin-orchestrator.js';
 import type { OrchestratorDeps, ToolCallEvent } from './plugin-orchestrator.js';
@@ -34,6 +35,7 @@ import type { OrchestratorClient } from './review/types.js';
 const PARENT_SESSION_ID = 'parent-session-arch-ssot-1';
 const CHILD_SESSION_ID = 'child-session-arch-ssot-1';
 const OBLIGATION_ID = '33333333-3333-4333-8333-333333333333';
+const ATTEMPT_ID = '55555555-5555-4555-8555-555555555555';
 const SESS_DIR = '/tmp/fg-arch-ssot-test';
 const NOW = '2026-05-10T14:00:00.000Z';
 
@@ -122,7 +124,15 @@ function buildState(overrides: Partial<SessionState> = {}): SessionState {
         },
       ],
       invocations: [],
-      attempts: [],
+      attempts: [
+        makePendingReviewAttempt({
+          attemptId: ATTEMPT_ID,
+          obligationId: OBLIGATION_ID,
+          obligationType: 'architecture',
+          subjectDigest: 'test-subject-digest',
+          createdAt: NOW,
+        }),
+      ],
       dispatches: [],
     },
     ...overrides,

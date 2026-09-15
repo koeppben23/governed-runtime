@@ -319,10 +319,12 @@ export function isCanonicallyRepairable(reason: ReviewAttemptRejectionReason): b
 import { ensureReviewAssurance, hasUnresolvedDispatch } from './review-dispatch.js';
 
 export {
+  abandonReviewDispatch,
   appendReviewDispatch,
   completeReviewDispatch,
   emptyReviewAssurance,
   ensureReviewAssurance,
+  hasAuthorizedDispatch,
   hasUnresolvedDispatch,
   markDispatchOutcomeUnknown,
 } from './review-dispatch.js';

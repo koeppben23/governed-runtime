@@ -110,6 +110,22 @@ export interface ToolResultMutation {
 export interface ReviewerSpawnConfig {
   readonly prompt: string;
   readonly parentSessionId: string;
+  /**
+   * Persist the durable dispatch ledger entry for a created reviewer child
+   * session BEFORE the host may release the prompt. Throwing aborts the
+   * reviewer invocation with no prompt sent — no reviewer execution without a
+   * durable dispatch.
+   */
+  readonly authorizeDispatch: (info: {
+    readonly childSessionId: string;
+    readonly invokedAt: string;
+  }) => Promise<void>;
+  /**
+   * Resolve a host call that concluded without bound evidence (transport
+   * failure, timeout, contract violation, rejected findings) as
+   * `outcome_unknown` in the durable ledger.
+   */
+  readonly abandonDispatch: (info: { readonly childSessionId: string }) => Promise<void>;
   /** Technical retries within the same review attempt. */
   readonly maxTransportRetries?: number;
   readonly baseDelayMs?: number;

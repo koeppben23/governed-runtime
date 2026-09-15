@@ -291,7 +291,9 @@ describe('runReviewOrchestration strict independent review with footer output', 
       expect(client.session.create).toHaveBeenCalledOnce();
       expect(client.session.prompt).toHaveBeenCalledOnce();
       expect(deps.blockReviewOutcome).not.toHaveBeenCalled();
-      expect(deps.updateReviewAssurance).toHaveBeenCalledTimes(2);
+      // Handshake, durable dispatch authorization before the prompt, and bound
+      // evidence recording.
+      expect(deps.updateReviewAssurance).toHaveBeenCalledTimes(3);
 
       const obligation = state.reviewAssurance?.obligations[0];
       expect(obligation).toMatchObject({
@@ -351,7 +353,7 @@ describe('runReviewOrchestration strict independent review with footer output', 
           }),
         }),
       ]);
-      const evidenceIntents = vi.mocked(deps.updateReviewAssurance).mock.calls[1]![2]!(state, NOW);
+      const evidenceIntents = vi.mocked(deps.updateReviewAssurance).mock.calls[2]![2]!(state, NOW);
       expect(evidenceIntents).toEqual([
         expect.objectContaining({
           event: 'review:subagent_invoked',

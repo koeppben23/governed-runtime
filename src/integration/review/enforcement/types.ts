@@ -158,19 +158,6 @@ export interface PendingReview {
 export interface SessionEnforcementState {
   /** Pending reviews keyed by tool name. */
   readonly pendingReviews: Map<PendingReviewTool, PendingReview>;
-  /** Host-owned before/after Task transport binding, keyed by the host call ID. */
-  readonly executedTaskPrompts: Map<string, ExecutedTaskPrompt>;
-}
-
-/** Exact prompt bytes injected by the host for one Task execution. */
-export interface ExecutedTaskPrompt {
-  readonly callId: string;
-  readonly obligationId: string;
-  readonly attemptId: string;
-  readonly canonicalPrompt: string;
-  readonly canonicalPromptDigest: string;
-  readonly modelPromptDigest: string | null;
-  readonly createdAt: string;
 }
 
 /**

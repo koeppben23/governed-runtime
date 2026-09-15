@@ -84,7 +84,7 @@ export function markDispatchOutcomeUnknown(
   };
 }
 
-/** Mark the dispatch for a host call ID as completed (After observed the Task). */
+/** Mark the dispatch for a host call ID as completed (bound evidence observed). */
 export function completeReviewDispatch(
   assurance: ReviewAssuranceState | undefined,
   hostCallId: string,
@@ -96,6 +96,37 @@ export function completeReviewDispatch(
     dispatches: (base.dispatches ?? []).map((record) =>
       record.hostCallId === hostCallId && record.dispatchStatus === 'authorized'
         ? { ...record, dispatchStatus: 'completed' as const, completedAt }
+        : record,
+    ),
+  };
+}
+
+/** Whether a durable `authorized` dispatch exists for the exact host call. */
+export function hasAuthorizedDispatch(
+  assurance: ReviewAssuranceState | undefined,
+  hostCallId: string,
+): boolean {
+  return (assurance?.dispatches ?? []).some(
+    (record) => record.hostCallId === hostCallId && record.dispatchStatus === 'authorized',
+  );
+}
+
+/**
+ * Mark the dispatch for a host call ID as `outcome_unknown`. Used when a host
+ * call concluded without producing bound evidence (transport failure, timeout,
+ * contract violation, rejected findings). A late or unobserved completion of
+ * that call can never satisfy the durable-before-release contract again.
+ */
+export function abandonReviewDispatch(
+  assurance: ReviewAssuranceState | undefined,
+  hostCallId: string,
+): ReviewAssuranceState {
+  const base = ensureReviewAssurance(assurance);
+  return {
+    ...base,
+    dispatches: (base.dispatches ?? []).map((record) =>
+      record.hostCallId === hostCallId && record.dispatchStatus === 'authorized'
+        ? { ...record, dispatchStatus: 'outcome_unknown' as const }
         : record,
     ),
   };

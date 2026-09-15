@@ -21,6 +21,8 @@ import {
   hashText,
 } from './assurance.js';
 import { buildMutatedOutput, type ReviewerSuccessResult } from './orchestrator.js';
+import { persistAuthorizedSdkDispatch, abandonSdkDispatch } from '../durable-dispatch.js';
+import { hasUnresolvedDispatch } from '../../state/review-continuation.js';
 import { selectReviewerProfileRules } from './prompt-builders.js';
 import { getToolArgs, strictBlockedOutput } from '../plugin-helpers.js';
 import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_ARCHITECTURE } from '../tool-names.js';
@@ -93,19 +95,63 @@ export async function runStandardReviewPipeline(
     return;
   }
 
+  // Resolve the pre-authorized attempt BEFORE the host release: the durable
+  // dispatch ledger entry is written between session.create and
+  // session.prompt, so the attempt identity must exist up front.
+  const dispatchAttempt = resolveDispatchAuthorizedAttempt(ctx);
+  if (!dispatchAttempt) return;
+
   const assuranceResult = await recordObligationHandshake(ctx, obligationType);
   if (blockOnAuditFailure(ctx, assuranceResult)) return;
 
   const prompt = await buildStandardPromptAndLog(ctx, toolName, input);
   if (!prompt) return;
 
-  const reviewerResult = await spawnStandardReviewer(ctx, toolName, prompt);
+  const reviewerResult = await spawnStandardReviewer(
+    ctx,
+    toolName,
+    prompt,
+    dispatchAttempt.attemptId,
+  );
   await handleStandardReviewerResult(ctx, {
     toolName,
     reviewerResult,
     prompt,
     obligationType,
   });
+}
+
+/**
+ * Resolve the pre-authorized attempt or block the invocation. A missing
+ * attempt and an attempt whose prior durable dispatch outcome is unresolved
+ * both fail closed BEFORE the host release, so one attempt can never be
+ * prompted twice (crash/restart replay).
+ */
+function resolveDispatchAuthorizedAttempt(
+  ctx: PipelineContext,
+): { readonly attemptId: string } | null {
+  const { deps, sessionState, output, reviewCtx } = ctx;
+  const attempt = findBindableAttempt(sessionState.reviewAssurance, reviewCtx.obligationId);
+  if (!attempt) {
+    output.output = strictBlockedOutput('REVIEW_ATTEMPT_UNAVAILABLE', {
+      obligationId: reviewCtx.obligationId,
+      reason: 'SDK review completion has no pre-authorized bindable review attempt',
+    });
+    return null;
+  }
+  if (hasUnresolvedDispatch(sessionState.reviewAssurance, attempt.attemptId)) {
+    output.output = strictBlockedOutput('REVIEW_ATTEMPT_UNAVAILABLE', {
+      obligationId: reviewCtx.obligationId,
+      reason:
+        'the pre-authorized reviewer attempt has an unresolved dispatch; re-run the originating command to re-arm a fresh reviewer attempt',
+    });
+    deps.log.warn('orchestrator', 'reviewer dispatch interrupted — refusing replay', {
+      obligationId: reviewCtx.obligationId,
+      attemptId: attempt.attemptId,
+    });
+    return null;
+  }
+  return { attemptId: attempt.attemptId };
 }
 
 async function recordObligationHandshake(
@@ -155,12 +201,27 @@ async function spawnStandardReviewer(
   ctx: PipelineContext,
   toolName: string,
   prompt: string,
+  attemptId: string,
 ): ReturnType<PipelineContext['deps']['adapter']['spawnReviewer']> {
+  const { deps, sessDir, reviewCtx } = ctx;
+  const promptDigest = hashText(prompt);
   return ctx.deps.adapter.spawnReviewer({
     prompt,
     parentSessionId: ctx.sessionId,
-    onAttemptFailed: buildAttemptFailedLogger(ctx.deps, toolName, ctx.sessionId),
-    onAttemptSucceeded: buildAttemptSucceededLogger(ctx.deps, toolName),
+    authorizeDispatch: async ({ childSessionId, invokedAt }) => {
+      await persistAuthorizedSdkDispatch(deps, sessDir, {
+        attemptId,
+        obligationId: reviewCtx.obligationId,
+        childSessionId,
+        canonicalPromptDigest: promptDigest,
+        authorizedAt: invokedAt,
+      });
+    },
+    abandonDispatch: async ({ childSessionId }) => {
+      await abandonSdkDispatch(deps, sessDir, childSessionId);
+    },
+    onAttemptFailed: buildAttemptFailedLogger(deps, toolName, ctx.sessionId),
+    onAttemptSucceeded: buildAttemptSucceededLogger(deps, toolName),
   });
 }
 
@@ -428,6 +489,7 @@ async function enforceStandardGate(
     obligationType,
     sessionId,
     childSessionId: reviewerResult.sessionId,
+    hostCallId: reviewerResult.sessionId,
     attemptId: attempt.attemptId,
     promptHash,
     findingsHash,

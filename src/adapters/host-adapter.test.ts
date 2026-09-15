@@ -305,6 +305,8 @@ describe('HostAdapter Contract', () => {
       const config: ReviewerSpawnConfig = {
         prompt: 'Review this change',
         parentSessionId: 'parent-session',
+        authorizeDispatch: vi.fn(async () => {}),
+        abandonDispatch: vi.fn(async () => {}),
       };
 
       // Note: actual result depends on invokeReviewer implementation
@@ -330,6 +332,8 @@ describe('HostAdapter Contract', () => {
       const config: ReviewerSpawnConfig = {
         prompt: 'test prompt',
         parentSessionId: 'parent',
+        authorizeDispatch: vi.fn(async () => {}),
+        abandonDispatch: vi.fn(async () => {}),
         // These are intentionally NOT set:
         // maxTransportRetries: undefined,
         // baseDelayMs: undefined,
@@ -355,6 +359,8 @@ describe('HostAdapter Contract', () => {
       const config: ReviewerSpawnConfig = {
         prompt: 'test',
         parentSessionId: 'parent',
+        authorizeDispatch: vi.fn(async () => {}),
+        abandonDispatch: vi.fn(async () => {}),
         maxTransportRetries: 2,
         baseDelayMs: 100,
         onAttemptFailed: onFailed,

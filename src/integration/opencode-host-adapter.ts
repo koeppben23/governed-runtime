@@ -171,7 +171,10 @@ export class OpenCodeHostAdapter implements HostAdapter {
   // ── Subagent / Reviewer ──────────────────────────────────────────────────
 
   async spawnReviewer(config: ReviewerSpawnConfig): Promise<HostReviewerResult | null> {
-    const options: Record<string, unknown> = {};
+    const options: Record<string, unknown> = {
+      _authorizeDispatch: config.authorizeDispatch,
+      _abandonDispatch: config.abandonDispatch,
+    };
     if (config.maxTransportRetries !== undefined) {
       options.maxTransportRetries = config.maxTransportRetries;
     }

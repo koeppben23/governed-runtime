@@ -722,4 +722,15 @@ export const REVIEW_VALIDATION_REASONS = [
       'Do not reuse the prior reviewer output or submit copied findings',
     ],
   },
+  {
+    code: 'REVIEW_DISPATCH_PERSISTENCE_FAILED',
+    category: 'state',
+    messageTemplate:
+      'The durable reviewer dispatch could not be persisted before the host release. The reviewer was NOT executed and no evidence exists.',
+    recoverySteps: [
+      'Retry the originating FlowGuard command; the reviewer was not executed and no findings were produced',
+      'Ensure the session state is writable and re-hydrate the session if the write lock is contended',
+      'Do NOT treat this as a reviewer failure and do NOT submit fabricated findings',
+    ],
+  },
 ] as const satisfies readonly BlockedReason[];

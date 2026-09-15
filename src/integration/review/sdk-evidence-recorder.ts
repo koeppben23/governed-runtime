@@ -14,6 +14,7 @@ import {
   hasEvidenceReuse,
   updateAttemptStatus,
 } from './assurance.js';
+import { completeReviewDispatch } from '../../state/review-continuation.js';
 import { updateObligation } from './obligation-state.js';
 import type { ReviewerSuccessResult } from './orchestrator.js';
 import type { EvidenceRecordResult, OrchestratorDeps } from './pipeline-types.js';
@@ -25,6 +26,12 @@ type SdkEvidenceParams = {
   obligationType: ReviewObligationType;
   sessionId: string;
   childSessionId: string;
+  /**
+   * Host call identity of the reviewer dispatch. For SDK child sessions this is
+   * the child session id; it must have an `authorized` durable dispatch entry
+   * that this recording completes atomically.
+   */
+  hostCallId: string;
   attemptId: string;
   promptHash: string;
   findingsHash: string;
@@ -140,6 +147,37 @@ function buildSdkSessionInvocation(
   });
 }
 
+/**
+ * The attempt must be the exact created, unbound successor of the obligation,
+ * and the host call must carry a still-`authorized` durable dispatch for that
+ * attempt. No evidence exists without a prior dispatch release.
+ */
+function resolveEvidenceLineage(
+  assurance: ReturnType<typeof ensureReviewAssurance>,
+  obligation: { obligationId: string; obligationType: ReviewObligationType; subjectDigest: string },
+  params: SdkEvidenceParams,
+): { attemptId: string } | null {
+  const attempt = assurance.attempts.find((item) => item.attemptId === params.attemptId);
+  const lineageMatches =
+    attempt?.obligationId === obligation.obligationId &&
+    attempt.obligationType === obligation.obligationType &&
+    attempt.subjectDigest === obligation.subjectDigest &&
+    attempt.status === 'created' &&
+    attempt.childSessionId === undefined;
+  if (!lineageMatches || !attempt) return null;
+  const dispatch = (assurance.dispatches ?? []).find(
+    (record) => record.hostCallId === params.hostCallId,
+  );
+  if (
+    !dispatch ||
+    dispatch.dispatchStatus !== 'authorized' ||
+    dispatch.attemptId !== attempt.attemptId
+  ) {
+    return null;
+  }
+  return { attemptId: attempt.attemptId };
+}
+
 function applyEvidenceMutation(
   state: SessionState,
   now: string,
@@ -162,14 +200,8 @@ function applyEvidenceMutation(
       blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
     }));
   }
-  const attempt = assurance.attempts.find((item) => item.attemptId === params.attemptId);
-  const lineageMatches =
-    attempt?.obligationId === obligation.obligationId &&
-    attempt.obligationType === obligation.obligationType &&
-    attempt.subjectDigest === obligation.subjectDigest &&
-    attempt.status === 'created' &&
-    attempt.childSessionId === undefined;
-  if (!lineageMatches || !attempt) {
+  const lineage = resolveEvidenceLineage(assurance, obligation, params);
+  if (!lineage) {
     flags.lineageUnavailable = true;
     return state;
   }
@@ -177,14 +209,20 @@ function applyEvidenceMutation(
   const invocation = buildSdkSessionInvocation(params, obligation);
   const boundAssurance = updateAttemptStatus(
     assurance,
-    attempt.attemptId,
+    lineage.attemptId,
     'bound',
     params.fulfilledAt,
     { childSessionId: params.childSessionId },
   );
+  // Attempt binding, invocation evidence, dispatch completion, and obligation
+  // fulfillment are ONE mutation: the ledger can never diverge from evidence.
   const withInvocation = {
     ...state,
-    reviewAssurance: appendInvocationEvidence(boundAssurance, invocation),
+    reviewAssurance: completeReviewDispatch(
+      appendInvocationEvidence(boundAssurance, invocation),
+      params.hostCallId,
+      params.fulfilledAt,
+    ),
   };
   return {
     ...withInvocation,

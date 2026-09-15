@@ -59,6 +59,32 @@ describe('structured review authority hard cut', () => {
     expect(classifier).not.toContain('reviewFindings');
   });
 
+  it('persists the durable dispatch before release on every production path', () => {
+    const adapter = readFileSync(join(SRC, 'integration/opencode-host-adapter.ts'), 'utf8');
+    expect(adapter).toContain('_authorizeDispatch: config.authorizeDispatch');
+    expect(adapter).toContain('_abandonDispatch: config.abandonDispatch');
+    for (const pipeline of [
+      'integration/review/standard-review-pipeline.ts',
+      'integration/review/content-review-pipeline.ts',
+    ]) {
+      const content = readFileSync(join(SRC, pipeline), 'utf8');
+      expect(content, `${pipeline} must authorize the dispatch`).toContain('authorizeDispatch:');
+      expect(content, `${pipeline} must abandon concluded host calls`).toContain(
+        'abandonDispatch:',
+      );
+      expect(content, `${pipeline} must persist the durable ledger entry`).toContain(
+        'persistAuthorizedSdkDispatch',
+      );
+    }
+  });
+
+  it('invokes the transport only through the host adapter', () => {
+    const callers = listProductionSources(SRC).filter((file) =>
+      /(?<!function )\binvokeReviewer\s*\(/.test(readFileSync(file, 'utf8')),
+    );
+    expect(callers.map(relative)).toEqual(['integration/opencode-host-adapter.ts']);
+  });
+
   it('admits exactly the host-observed structured invocation generation', () => {
     const schema = readFileSync(join(SRC, 'state/evidence-review-invocation.ts'), 'utf8');
     expect(schema).toContain("invocationMode: z.literal('sdk_session_prompt')");

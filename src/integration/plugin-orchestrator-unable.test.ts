@@ -45,6 +45,7 @@ import { TOOL_FLOWGUARD_PLAN } from './tool-names.js';
 import { REVIEW_REQUIRED_PREFIX } from './review/enforcement/types.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import { POLICY_SNAPSHOT, makeState } from '../fixtures.js';
+import { makePendingReviewAttempt } from './review/__tests__/attempt-fixture.js';
 import { computeRecordDigest } from '../state/evidence-plan.js';
 import type { OrchestratorClient } from './review/types.js';
 
@@ -53,6 +54,7 @@ import type { OrchestratorClient } from './review/types.js';
 const PARENT_SESSION_ID = 'parent-session-1';
 const CHILD_SESSION_ID = 'child-session-1';
 const OBLIGATION_ID = '11111111-1111-4111-8111-111111111111';
+const ATTEMPT_ID = '66666666-6666-4666-8666-666666666666';
 const SESS_DIR = '/tmp/fg-mock-sess-dir';
 
 /** Build a Mode A plan tool output with INDEPENDENT_REVIEW_REQUIRED. */
@@ -222,7 +224,15 @@ function buildSessionState() {
         },
       ],
       invocations: [],
-      attempts: [],
+      attempts: [
+        makePendingReviewAttempt({
+          attemptId: ATTEMPT_ID,
+          obligationId: OBLIGATION_ID,
+          obligationType: 'plan',
+          subjectDigest: 'plan-digest-1',
+          createdAt: '2026-04-24T12:00:00.000Z',
+        }),
+      ],
       dispatches: [],
     },
   });
