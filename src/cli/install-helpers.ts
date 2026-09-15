@@ -37,12 +37,19 @@ import {
   FLOWGUARD_REVIEWER_MODEL_ENV,
   VALID_MODEL_ID_PATTERN,
   FLOWGUARD_REVIEWER_EFFORT_ENV,
+  REVIEWER_EFFORT_VALUES,
   VALID_EFFORT_PATTERN,
   OPENCODE_CONFIG_FILENAMES,
 } from './install-types.js';
 export { hashText as sha256 };
 
-import type { InstallScope, InstallPlatform, FileOp, ArtifactDetection } from './install-types.js';
+import type {
+  InstallScope,
+  InstallPlatform,
+  FileOp,
+  ArtifactDetection,
+  ReviewerEffort,
+} from './install-types.js';
 
 // ---- Path Resolution ----
 
@@ -219,20 +226,24 @@ function readReviewerModelEnv(): string | null {
   return model;
 }
 
-function readReviewerEffortEnv(): string | null {
+function readReviewerEffortEnv(platform: InstallPlatform): ReviewerEffort | null {
   const raw = process.env[FLOWGUARD_REVIEWER_EFFORT_ENV];
   if (!raw) return null;
   const effort = raw.trim();
   if (!effort) return null;
 
-  if (!VALID_EFFORT_PATTERN.test(effort)) {
+  const supported: readonly ReviewerEffort[] =
+    platform === 'opencode'
+      ? REVIEWER_EFFORT_VALUES
+      : REVIEWER_EFFORT_VALUES.filter((value) => value !== 'none');
+  if (!VALID_EFFORT_PATTERN.test(effort) || !supported.includes(effort as ReviewerEffort)) {
     throw new InstallError(
       'REVIEWER_CONFIG_INVALID',
       `${FLOWGUARD_REVIEWER_EFFORT_ENV} contains invalid value: "${effort}" — ` +
-        'only lowercase letters are allowed (e.g. low, medium, high, xhigh, max).',
+        `allowed values for ${platform} are: ${supported.join(', ')}.`,
     );
   }
-  return effort;
+  return effort as ReviewerEffort;
 }
 
 /**
@@ -277,7 +288,9 @@ export function buildReviewerAgentContent(template: string, platform: InstallPla
     lines.push(`model: ${model}`);
   }
 
-  const effort = readReviewerEffortEnv();
+  // OpenCode models that default to Thinking mode reject the host's required
+  // structured-output tool. The reviewer is always non-thinking by default.
+  const effort = readReviewerEffortEnv(platform) ?? (platform === 'opencode' ? 'none' : null);
   const effortField = reviewerEffortFieldForPlatform(platform);
   if (effort && effortField) {
     lines.push(`${effortField}: ${effort}`);

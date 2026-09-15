@@ -76,7 +76,7 @@ function writeChatCompletion(response: ServerResponse, streaming: boolean): void
   response.end('data: [DONE]\n\n');
 }
 
-async function runOpenCodeOnce(): Promise<{
+async function runOpenCode(): Promise<{
   requestBody: Record<string, unknown>;
   output: string;
 }> {
@@ -182,23 +182,6 @@ async function runOpenCodeOnce(): Promise<{
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
-}
-
-function isTransientHostError(error: unknown): boolean {
-  return error instanceof Error && error.message.includes('Unexpected server error');
-}
-
-async function runOpenCode(): Promise<{ requestBody: Record<string, unknown>; output: string }> {
-  let transientFailure: Error | null = null;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      return await runOpenCodeOnce();
-    } catch (error) {
-      if (!(error instanceof Error) || !isTransientHostError(error) || attempt === 1) throw error;
-      transientFailure = error;
-    }
-  }
-  throw transientFailure ?? new Error('OpenCode model-visibility probe did not run');
 }
 
 describe('OpenCode installed mandate model visibility', () => {

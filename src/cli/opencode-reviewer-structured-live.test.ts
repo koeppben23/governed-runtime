@@ -30,6 +30,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { REVIEWER_AGENT } from '../templates/mandates.js';
+import { buildReviewerAgentContent } from './install-helpers.js';
 import { REVIEW_FINDINGS_JSON_SCHEMA } from '../integration/review/findings-schema.js';
 import { ReviewerFindingsInput } from '../state/evidence-review-input.js';
 import { TESTED_OPENCODE_HOST_VERSION } from './opencode-runtime-compat.js';
@@ -285,7 +286,7 @@ describe.skipIf(!CAN_RUN)('OpenCode structured reviewer wire contract (live, pin
     await mkdir(join(projectDir, '.opencode', 'agents'), { recursive: true });
     await writeFile(
       join(projectDir, '.opencode', 'agents', 'flowguard-reviewer.md'),
-      REVIEWER_AGENT,
+      buildReviewerAgentContent(REVIEWER_AGENT, 'opencode'),
       'utf8',
     );
 
@@ -332,6 +333,12 @@ describe.skipIf(!CAN_RUN)('OpenCode structured reviewer wire contract (live, pin
       const agentsRes = await fetch(`${serve!.baseUrl}/agent?directory=${dir}`, { headers });
       const agents = (await agentsRes.json()) as Array<{ name?: string }>;
       expect(agents.some((agent) => agent.name === 'flowguard-reviewer')).toBe(true);
+      expect(
+        await readFile(
+          join(tmpRoot, 'project', '.opencode', 'agents', 'flowguard-reviewer.md'),
+          'utf8',
+        ),
+      ).toContain('reasoningEffort: none');
 
       const parentRes = await fetch(`${serve!.baseUrl}/session?directory=${dir}`, {
         method: 'POST',

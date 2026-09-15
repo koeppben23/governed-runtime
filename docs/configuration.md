@@ -542,12 +542,12 @@ Repository config takes precedence over global config, as described in
 
 ## Environment Variables
 
-| Variable                    | Description                                                                                    | Default              |
-| --------------------------- | ---------------------------------------------------------------------------------------------- | -------------------- |
-| `OPENCODE_CONFIG_DIR`       | Config root                                                                                    | `~/.config/opencode` |
-| `FLOWGUARD_POLICY_PATH`     | Optional central policy file path (`schemaVersion: "v1"`, `minimumMode`)                       | unset                |
-| `FLOWGUARD_REVIEWER_MODEL`  | Operative reviewer model id pinned into the reviewer agent frontmatter at install time         | unset (host default) |
-| `FLOWGUARD_REVIEWER_EFFORT` | Operative reviewer reasoning-effort pinned into the reviewer agent frontmatter at install time | unset (host default) |
+| Variable                    | Description                                                                                    | Default                              |
+| --------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `OPENCODE_CONFIG_DIR`       | Config root                                                                                    | `~/.config/opencode`                 |
+| `FLOWGUARD_POLICY_PATH`     | Optional central policy file path (`schemaVersion: "v1"`, `minimumMode`)                       | unset                                |
+| `FLOWGUARD_REVIEWER_MODEL`  | Operative reviewer model id pinned into the reviewer agent frontmatter at install time         | unset (host default)                 |
+| `FLOWGUARD_REVIEWER_EFFORT` | Operative reviewer reasoning-effort pinned into the reviewer agent frontmatter at install time | `none` for OpenCode; unset otherwise |
 
 Log level is sourced exclusively from `config.logging.level` (see the
 **logging** section above). There is no `FLOWGUARD_LOG_LEVEL` env override at
@@ -566,16 +566,17 @@ Values are validated fail-closed at install time:
 
 - `FLOWGUARD_REVIEWER_MODEL` — alphanumerics, dots, slashes, `@`, colons, and
   hyphens only; newlines rejected (YAML-injection guard).
-- `FLOWGUARD_REVIEWER_EFFORT` — lowercase letters only (e.g. `low`, `medium`,
-  `high`, `xhigh`, `max`). Any other value aborts the install.
+- `FLOWGUARD_REVIEWER_EFFORT` — one of `none`, `low`, `medium`, `high`,
+  `xhigh`, or `max`. `none` is supported by OpenCode only and is the required
+  default for its structured reviewer transport. Any other value aborts the install.
 
 Per-host support matrix (the injected frontmatter key differs by host):
 
-| Host          | `model:` injection | Effort frontmatter key | Notes                                               |
-| ------------- | ------------------ | ---------------------- | --------------------------------------------------- |
-| `opencode`    | yes                | `reasoningEffort:`     | Provider passthrough.                               |
-| `claude-code` | yes                | `effort:`              | Effort values: `low`/`medium`/`high`/`xhigh`/`max`. |
-| `codex`       | no                 | unsupported            | See limitation below.                               |
+| Host          | `model:` injection | Effort frontmatter key | Notes                                                                                        |
+| ------------- | ------------------ | ---------------------- | -------------------------------------------------------------------------------------------- |
+| `opencode`    | yes                | `reasoningEffort:`     | Defaults to `none`: Thinking Mode conflicts with OpenCode's required structured-output tool. |
+| `claude-code` | yes                | `effort:`              | Effort values: `low`/`medium`/`high`/`xhigh`/`max`.                                          |
+| `codex`       | no                 | unsupported            | See limitation below.                                                                        |
 
 **Codex limitation:** FlowGuard ships the Codex reviewer as a markdown subagent,
 which does not honor `model`/`model_reasoning_effort` directives. Codex configures

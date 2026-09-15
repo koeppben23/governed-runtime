@@ -126,7 +126,7 @@ When the plugin's `tool.execute.after` hook detects `INDEPENDENT_REVIEW_REQUIRED
 2. **Builds a structured prompt** with the plan/implementation text, ticket context, iteration, and planVersion
 3. **Creates a child session** via `client.session.create({ body: { parentID } })` for traceability
 4. **Sends the prompt** to the `flowguard-reviewer` agent via `client.session.prompt({ path: { id }, body: { agent: "flowguard-reviewer", parts, format } })`
-5. **Uses host-validated structured output** as the only accepted high-assurance path (`format: json_schema`, `reviewOutputMode: "structured_output"`, `reviewAssuranceLevel: "structured_high"`). There is no text-compatibility fallback on this path: a model that cannot produce structured output blocks with `STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE`, and a host that does not return the required structured result blocks with `HOST_STRUCTURED_OUTPUT_REQUIRED` or `HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION`
+5. **Uses host-validated structured output** as the only accepted high-assurance path (`format: json_schema`, `reviewOutputMode: "structured_output"`, `reviewAssuranceLevel: "structured_high"`). There is no text-compatibility fallback on this path: a model that cannot produce structured output blocks with `STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE`; an incompatible Thinking Mode blocks with `STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE`; and a host that does not return the required structured result blocks with `HOST_STRUCTURED_OUTPUT_REQUIRED` or `HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION`
 6. **Parses and validates ReviewFindings** with schema, obligation, mandate, criteria, reviewer, session, and invocation-evidence binding
 7. **Mutates `output.output`** from `INDEPENDENT_REVIEW_REQUIRED` to `INDEPENDENT_REVIEW_COMPLETED` with `pluginReviewFindings` and `pluginReviewOutput` injected only after evidence is valid
 8. **Updates enforcement state** to satisfy L1/L2/L4 checks for the subsequent verdict submission
@@ -177,15 +177,17 @@ and binds `reviewOutputMode: "structured_output"` with
 `reviewAssuranceLevel: "structured_high"`. There is no text-compatibility
 fallback. Failures block explicitly:
 
-| Condition                                                           | BLOCKED Code                                   |
-| ------------------------------------------------------------------- | ---------------------------------------------- |
-| Reviewer model cannot produce structured output                     | `STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE`     |
-| Host does not return the required structured result                 | `HOST_STRUCTURED_OUTPUT_REQUIRED`              |
-| Host structured result violates the reviewer findings contract      | `HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION`    |
-| Child session output cannot bind to host-owned execution provenance | `REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE` |
+| Condition                                                           | BLOCKED Code                                    |
+| ------------------------------------------------------------------- | ----------------------------------------------- |
+| Reviewer model cannot produce structured output                     | `STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE`      |
+| Reviewer Thinking Mode conflicts with the required structured tool  | `STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE` |
+| Host does not return the required structured result                 | `HOST_STRUCTURED_OUTPUT_REQUIRED`               |
+| Host structured result violates the reviewer findings contract      | `HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION`     |
+| Child session output cannot bind to host-owned execution provenance | `REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE`  |
 
 Recovery is to configure the `flowguard-reviewer` agent with a
-structured-output-capable model and re-run the originating FlowGuard command.
+structured-output-capable model and, for OpenCode, `reasoningEffort: none`; then
+re-run the originating FlowGuard command.
 
 ### Reviewer Dispatch Recovery
 
@@ -439,6 +441,7 @@ accept a challenge whose evidence is outside the frozen allowed set.
 
 L3 (Task-prompt integrity) was removed with reviewer Task interception; reviewer
 dispatch contract failures surface as `STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE`,
+`STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE`,
 `HOST_STRUCTURED_OUTPUT_REQUIRED`, `HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION`, or
 `REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE`.
 

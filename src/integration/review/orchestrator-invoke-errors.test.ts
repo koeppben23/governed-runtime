@@ -205,6 +205,42 @@ describe('invokeReviewer — error handling', () => {
       expect(details.recovery).toContain('structured-output-capable model');
     });
 
+    it('T6a: thinking-mode tool_choice conflict is execution-mode incompatible, not a model capability mismatch', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: {
+              error: {
+                name: 'APIError',
+                message: 'Thinking mode does not support this tool_choice',
+              },
+            },
+          },
+          error: undefined,
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxTransportRetries: 2,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+      expect(result).toMatchObject({
+        blocked: true,
+        code: 'STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE',
+        reviewInvocation: { status: 'blocked_execution_mode_incompatible' },
+      });
+      expect(diagnostics.map((diagnostic) => diagnostic.step)).toEqual([
+        'info_error',
+        'structured_review_execution_mode_incompatible',
+      ]);
+      expect(
+        diagnostics.some((diagnostic) => diagnostic.step === 'model_capability_incompatible'),
+      ).toBe(false);
+    });
+
     it('T7: model_capability_incompatible does not retry (deterministic)', async () => {
       const diagnostics: Array<Record<string, unknown>> = [];
       const client = makeClient({

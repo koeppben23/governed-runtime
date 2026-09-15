@@ -44,12 +44,16 @@ export interface ReviewerBlockedResult {
   readonly code:
     | 'REVIEWER_INVOCATION_EXHAUSTED'
     | 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE'
+    | 'STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE'
     | 'HOST_STRUCTURED_OUTPUT_REQUIRED'
     | 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION'
     | typeof REVIEW_DISPATCH_PERSISTENCE_FAILED;
   readonly reason: string;
   readonly reviewInvocation: {
-    readonly status: 'blocked_capability_mismatch' | 'host_contract_violation';
+    readonly status:
+      | 'blocked_capability_mismatch'
+      | 'blocked_execution_mode_incompatible'
+      | 'host_contract_violation';
     readonly code: string;
     readonly reviewerSubagentType: typeof REVIEWER_SUBAGENT_TYPE;
     readonly invocationMode: 'sdk_session';
@@ -115,6 +119,7 @@ export interface InvokeReviewerOptions {
       | 'structured_output_error'
       | 'info_error'
       | 'model_capability_incompatible'
+      | 'structured_review_execution_mode_incompatible'
       | 'no_findings';
     error?: unknown;
     details?: Record<string, unknown>;
@@ -451,8 +456,8 @@ async function handleInfoError(
       ? (error as Record<string, unknown>)
       : { value: error };
   logInfoError(input, error, errorObj);
-  const capabilityError = structuredOutputCapabilityError(errorObj);
-  return capabilityError ? handleStructuredCapabilityError(input, error, capabilityError) : null;
+  const structuredError = structuredOutputError(errorObj);
+  return structuredError ? handleStructuredOutputError(input, error, structuredError) : null;
 }
 
 function logInfoError(
@@ -477,7 +482,11 @@ function infoErrorMessage(errorObj: Record<string, unknown>): string | undefined
   return typeof errorObj.value === 'string' ? errorObj.value : undefined;
 }
 
-function structuredOutputCapabilityError(errorObj: Record<string, unknown>): string | null {
+type StructuredOutputError =
+  | { readonly kind: 'execution_mode_incompatible'; readonly detail: string }
+  | { readonly kind: 'capability_unavailable'; readonly detail: string };
+
+function structuredOutputError(errorObj: Record<string, unknown>): StructuredOutputError | null {
   const dataMessage =
     typeof errorObj.data === 'object' &&
     errorObj.data !== null &&
@@ -485,20 +494,63 @@ function structuredOutputCapabilityError(errorObj: Record<string, unknown>): str
       ? ((errorObj.data as Record<string, unknown>).message as string)
       : '';
   const lower = `${infoErrorMessage(errorObj) ?? ''} ${dataMessage}`.toLowerCase();
+  if (lower.includes('thinking mode does not support this tool_choice')) {
+    return { kind: 'execution_mode_incompatible', detail: lower.trim() };
+  }
   const unsupported = lower.includes('does not support');
   const structured = ['tool_choice', 'tools', 'function calling', 'structured output'].some(
     (term) => lower.includes(term),
   );
-  return unsupported && structured ? lower.trim() : null;
+  return unsupported && structured
+    ? { kind: 'capability_unavailable', detail: lower.trim() }
+    : null;
 }
 
-async function handleStructuredCapabilityError(
+async function handleStructuredOutputError(
   input: InvokeAttemptInput & { childSessionId: string },
   error: unknown,
-  capabilityError: string,
+  structuredError: StructuredOutputError,
 ): Promise<InvokeAttemptResult> {
-  logCapabilityError(input, error, capabilityError);
+  if (structuredError.kind === 'execution_mode_incompatible') {
+    logExecutionModeError(input, error, structuredError.detail);
+    return structuredExecutionModeBlocked();
+  }
+  logCapabilityError(input, error, structuredError.detail);
   return structuredOutputBlocked(input);
+}
+
+function logExecutionModeError(input: InvokeAttemptInput, error: unknown, detail: string): void {
+  input.options._onAttemptFailed({
+    attempt: input.attempt,
+    step: 'structured_review_execution_mode_incompatible',
+    error,
+    details: {
+      agent: input.agent,
+      reason: 'Thinking mode conflicts with the host-required structured-output tool.',
+      detectedPattern: detail,
+      recovery: `Configure the ${REVIEWER_SUBAGENT_TYPE} agent with reasoningEffort: none.`,
+    },
+  });
+}
+
+function structuredExecutionModeBlocked(): InvokeAttemptResult {
+  return {
+    kind: 'done',
+    result: {
+      blocked: true,
+      code: 'STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE',
+      reason:
+        'The reviewer Thinking mode conflicts with the host-required structured-output tool. ' +
+        `Configure ${REVIEWER_SUBAGENT_TYPE} with reasoningEffort: none.`,
+      reviewInvocation: {
+        status: 'blocked_execution_mode_incompatible',
+        code: 'STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE',
+        reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
+        invocationMode: 'sdk_session',
+        recovery: [`Configure ${REVIEWER_SUBAGENT_TYPE} with reasoningEffort: none.`],
+      },
+    },
+  };
 }
 
 function logCapabilityError(

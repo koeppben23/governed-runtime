@@ -12,6 +12,17 @@ import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 
 export const STRUCTURED_REVIEW_REASONS = [
   {
+    code: 'STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE',
+    category: 'state',
+    messageTemplate:
+      'The reviewer execution mode conflicts with the host-required structured-output transport. Independent review cannot be authorized.',
+    recoverySteps: [
+      `Configure the ${REVIEWER_SUBAGENT_TYPE} agent with reasoningEffort: none for OpenCode structured review`,
+      'Re-run the originating FlowGuard command after the compatible execution mode is installed',
+      'Do NOT retry the same thinking-mode request or fabricate findings',
+    ],
+  },
+  {
     code: 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE',
     category: 'state',
     messageTemplate:

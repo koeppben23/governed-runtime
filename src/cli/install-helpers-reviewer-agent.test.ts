@@ -4,6 +4,11 @@ import { buildReviewerAgentContent, reviewerDefinitionForPlatform } from './inst
 import { FLOWGUARD_REVIEWER_EFFORT_ENV, FLOWGUARD_REVIEWER_MODEL_ENV } from './install-types.js';
 import { REVIEWER_AGENT, CLAUDE_REVIEWER_AGENT, CODEX_REVIEWER_SUBAGENT } from './templates.js';
 
+const OPENCODE_STRUCTURED_REVIEWER = REVIEWER_AGENT.replace(
+  '---\n',
+  '---\nreasoningEffort: none\n',
+);
+
 describe('buildReviewerAgentContent', () => {
   let restoreEnv: (() => void) | undefined;
 
@@ -14,10 +19,10 @@ describe('buildReviewerAgentContent', () => {
 
   // ─── HAPPY ──────────────────────────────────────────────────────────────────
 
-  it('T11: returns template unchanged when FLOWGUARD_REVIEWER_MODEL absent', () => {
+  it('T11: retains the OpenCode structured-review profile when FLOWGUARD_REVIEWER_MODEL is absent', () => {
     restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: undefined });
     const result = buildReviewerAgentContent(REVIEWER_AGENT, 'opencode');
-    expect(result).toBe(REVIEWER_AGENT);
+    expect(result).toBe(OPENCODE_STRUCTURED_REVIEWER);
   });
 
   it('T13: injects model: into frontmatter when FLOWGUARD_REVIEWER_MODEL set', () => {
@@ -41,16 +46,16 @@ describe('buildReviewerAgentContent', () => {
 
   // ─── BAD ────────────────────────────────────────────────────────────────────
 
-  it('T12: returns template unchanged when FLOWGUARD_REVIEWER_MODEL is empty string', () => {
+  it('T12: retains the OpenCode structured-review profile when FLOWGUARD_REVIEWER_MODEL is empty', () => {
     restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: '' });
     const result = buildReviewerAgentContent(REVIEWER_AGENT, 'opencode');
-    expect(result).toBe(REVIEWER_AGENT);
+    expect(result).toBe(OPENCODE_STRUCTURED_REVIEWER);
   });
 
-  it('T12b: returns template unchanged when FLOWGUARD_REVIEWER_MODEL is whitespace only', () => {
+  it('T12b: retains the OpenCode structured-review profile when FLOWGUARD_REVIEWER_MODEL is whitespace', () => {
     restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: '   \t  ' });
     const result = buildReviewerAgentContent(REVIEWER_AGENT, 'opencode');
-    expect(result).toBe(REVIEWER_AGENT);
+    expect(result).toBe(OPENCODE_STRUCTURED_REVIEWER);
   });
 
   it('T15: throws on newline in FLOWGUARD_REVIEWER_MODEL (YAML injection prevention)', () => {
@@ -135,7 +140,7 @@ describe('buildReviewerAgentContent', () => {
     const result = buildReviewerAgentContent(REVIEWER_AGENT, 'opencode');
     // Remove the injected model line and compare
     const withoutModel = result.replace('model: test-model\n', '');
-    expect(withoutModel).toBe(REVIEWER_AGENT);
+    expect(withoutModel).toBe(OPENCODE_STRUCTURED_REVIEWER);
   });
 
   it('EDGE: handles template without newline gracefully', () => {
@@ -216,6 +221,18 @@ describe('buildReviewerAgentContent — per-host reasoning-effort injection', ()
     expect(frontmatterLines(result)).toContain('reasoningEffort: medium');
   });
 
+  it('F4-2a: opencode defaults the structured reviewer to non-thinking mode', () => {
+    restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_EFFORT_ENV]: undefined });
+    const result = buildReviewerAgentContent(REVIEWER_AGENT, 'opencode');
+    expect(frontmatterLines(result)).toContain('reasoningEffort: none');
+  });
+
+  it('F4-2b: opencode accepts none as the explicit non-thinking effort', () => {
+    restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_EFFORT_ENV]: 'none' });
+    const result = buildReviewerAgentContent(REVIEWER_AGENT, 'opencode');
+    expect(frontmatterLines(result)).toContain('reasoningEffort: none');
+  });
+
   // ─── HAPPY: claude-code uses effort key ───────────────────────────────────────
 
   it('F4-3: claude-code injects effort: from FLOWGUARD_REVIEWER_EFFORT', () => {
@@ -248,10 +265,10 @@ describe('buildReviewerAgentContent — per-host reasoning-effort injection', ()
     expect(() => buildReviewerAgentContent(REVIEWER_AGENT, 'opencode')).toThrow(/invalid value/);
   });
 
-  it('F4-7: empty/whitespace effort leaves template unchanged', () => {
+  it('F4-7: empty/whitespace effort retains the OpenCode non-thinking default', () => {
     restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_EFFORT_ENV]: '   ' });
     const result = buildReviewerAgentContent(REVIEWER_AGENT, 'opencode');
-    expect(result).toBe(REVIEWER_AGENT);
+    expect(frontmatterLines(result)).toContain('reasoningEffort: none');
   });
 
   // ─── GOVERNANCE INVARIANCE: tuning never alters the mandate body ──────────────

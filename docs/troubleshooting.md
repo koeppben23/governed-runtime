@@ -237,6 +237,7 @@ real, registered reason.
 | `REVIEWER_CONTEXT_UNAVAILABLE` | Canonical reviewer context could not be materialized; no review attempt was created | Restore the persisted Discovery basis or workspace fingerprint, then re-run the review |
 | `INVALID_REVIEW_TOOL_SEQUENCE` | Review tool call sequence is invalid (e.g. reviewerUnavailable after spawn) | Follow invocation sequence; do not submit reviewerUnavailable when a host-observed reviewer invocation exists |
 | `STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE` | Configured reviewer model does not support required structured output | Configure the flowguard-reviewer agent to use a structured-output-capable model, then re-run the originating command |
+| `STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE` | Reviewer Thinking Mode conflicts with the host-required structured-output tool | Configure flowguard-reviewer with `reasoningEffort: none`, then re-run the originating command |
 | `HOST_STRUCTURED_OUTPUT_REQUIRED` | Host did not deliver required structured output for the reviewer child session | Ensure the host supports session.prompt with format: json_schema; re-run the originating command |
 | `HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION` | Host structured output violates the reviewer findings contract | Re-run the originating command to authorize a fresh reviewer attempt; do not repair findings outside the host-observed transaction |
 | `REVIEW_ASSURANCE_STATE_UNAVAILABLE` | Strict review assurance state cannot be read | Re-hydrate; if persistent, restore from archive |
@@ -537,6 +538,7 @@ STATE_MISSING
 STATE_UNREADABLE
 STRICT_REVIEW_ORCHESTRATION_FAILED
 STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE
+STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE
 SUBAGENT_CONTEXT_UNVERIFIABLE
 SUBAGENT_EVIDENCE_MISSING
 SUBAGENT_EVIDENCE_REUSED
