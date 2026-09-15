@@ -556,14 +556,14 @@ describe('plan', () => {
       expect(rearmedAttemptId).not.toBe(spentAttemptId);
 
       // Durable outcome: A1 staled + dispatch outcome_unknown; A2 minted with
-      // origin task_rearm/interrupted on the SAME obligation (never a fresh
+      // origin dispatch_rearm/interrupted on the SAME obligation (never a fresh
       // obligation, never a re-bind of the spent attempt).
       const after = (await readState(sessDir))!;
       const attempts = after.reviewAssurance!.attempts;
       const spent = attempts.find((a) => a.attemptId === spentAttemptId)!;
       const rearmed = attempts.find((a) => a.attemptId === rearmedAttemptId)!;
       expect(spent.status).toBe('stale');
-      expect(rearmed.origin.kind).toBe('task_rearm');
+      expect(rearmed.origin.kind).toBe('dispatch_rearm');
       expect(rearmed.origin).toMatchObject({
         predecessorAttemptId: spentAttemptId,
         triggerReason: 'interrupted',

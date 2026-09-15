@@ -473,7 +473,7 @@ describe('Attempt lineage and dispatch lifecycle', () => {
     completedAt: FIXED_TIME,
   };
 
-  function repairAttempt(overrides: Record<string, unknown> = {}) {
+  function rearmAttempt(overrides: Record<string, unknown> = {}) {
     return {
       attemptId: REPAIR_ATTEMPT_ID,
       obligationId: FIXED_UUID,
@@ -482,9 +482,9 @@ describe('Attempt lineage and dispatch lifecycle', () => {
       ordinal: 1,
       status: 'created' as const,
       origin: {
-        kind: 'output_repair' as const,
+        kind: 'dispatch_rearm' as const,
         predecessorAttemptId: REJECTED_ATTEMPT_ID,
-        triggerReason: 'schema_invalid' as const,
+        triggerReason: 'rejected' as const,
       },
       repositoryDiscovery: { kind: 'not_applicable' as const },
       observations: [],
@@ -503,8 +503,66 @@ describe('Attempt lineage and dispatch lifecycle', () => {
     });
   }
 
-  it('HAPPY: coherent output_repair lineage parses', () => {
-    expect(parseLineage([REJECTED_ATTEMPT, repairAttempt()]).success).toBe(true);
+  it('HAPPY: coherent dispatch_rearm lineage parses', () => {
+    expect(parseLineage([REJECTED_ATTEMPT, rearmAttempt()]).success).toBe(true);
+  });
+
+  it('HAPPY: stale predecessors accept interrupted, spent, and stale re-arm triggers', () => {
+    const stale = {
+      ...REJECTED_ATTEMPT,
+      status: 'stale' as const,
+      rejectionReason: undefined,
+    } as unknown;
+    for (const triggerReason of ['interrupted', 'spent', 'stale'] as const) {
+      expect(
+        parseLineage([
+          stale,
+          rearmAttempt({
+            origin: {
+              kind: 'dispatch_rearm',
+              predecessorAttemptId: REJECTED_ATTEMPT_ID,
+              triggerReason,
+            },
+          }),
+        ]).success,
+      ).toBe(true);
+    }
+  });
+
+  it('BAD: the removed task_rearm origin kind is rejected', () => {
+    const attempt = rearmAttempt({
+      origin: {
+        kind: 'task_rearm' as const,
+        predecessorAttemptId: REJECTED_ATTEMPT_ID,
+        triggerReason: 'rejected' as const,
+      },
+    });
+    expect(ReviewAttempt.safeParse(attempt).success).toBe(false);
+    expect(parseLineage([REJECTED_ATTEMPT, attempt]).success).toBe(false);
+  });
+
+  it('BAD: the removed output_repair origin kind is rejected', () => {
+    const attempt = rearmAttempt({
+      origin: {
+        kind: 'output_repair' as const,
+        predecessorAttemptId: REJECTED_ATTEMPT_ID,
+        triggerReason: 'schema_invalid' as const,
+      },
+    });
+    expect(ReviewAttempt.safeParse(attempt).success).toBe(false);
+    expect(parseLineage([REJECTED_ATTEMPT, attempt]).success).toBe(false);
+  });
+
+  it('BAD: the removed extraction_invalid rejection reason is rejected', () => {
+    const attempt = { ...REJECTED_ATTEMPT, rejectionReason: 'extraction_invalid' as const };
+    expect(ReviewAttempt.safeParse(attempt).success).toBe(false);
+    expect(parseLineage([attempt, rearmAttempt()]).success).toBe(false);
+  });
+
+  it('BAD: the removed task_failed rejection reason is rejected', () => {
+    const attempt = { ...REJECTED_ATTEMPT, rejectionReason: 'task_failed' as const };
+    expect(ReviewAttempt.safeParse(attempt).success).toBe(false);
+    expect(parseLineage([attempt, rearmAttempt()]).success).toBe(false);
   });
 
   it('ReviewObligation rejects the removed attemptIds projection', () => {
@@ -528,11 +586,11 @@ describe('Attempt lineage and dispatch lifecycle', () => {
   it('rejects an unknown predecessor', () => {
     const result = parseLineage([
       REJECTED_ATTEMPT,
-      repairAttempt({
+      rearmAttempt({
         origin: {
-          kind: 'output_repair' as const,
+          kind: 'dispatch_rearm' as const,
           predecessorAttemptId: '99999999-9999-4999-8999-999999999999',
-          triggerReason: 'schema_invalid' as const,
+          triggerReason: 'rejected' as const,
         },
       }),
     ]);
@@ -546,7 +604,7 @@ describe('Attempt lineage and dispatch lifecycle', () => {
       ...REJECTED_ATTEMPT,
       subjectDigest: 'b'.repeat(64),
     };
-    const result = parseLineage([foreignPredecessor, repairAttempt()]);
+    const result = parseLineage([foreignPredecessor, rearmAttempt()]);
     expect(result.success).toBe(false);
     if (result.success) throw new TypeError('expected schema rejection');
     expect(JSON.stringify(result.error.issues)).toContain('belongs to a different obligation');
@@ -555,12 +613,12 @@ describe('Attempt lineage and dispatch lifecycle', () => {
   it('rejects a predecessor that is not strictly earlier', () => {
     const result = parseLineage([
       REJECTED_ATTEMPT,
-      repairAttempt({ ordinal: 2 }),
-      repairAttempt({
+      rearmAttempt({ ordinal: 2 }),
+      rearmAttempt({
         attemptId: '66666666-6666-4666-8666-666666666666',
         ordinal: 1,
         origin: {
-          kind: 'task_rearm' as const,
+          kind: 'dispatch_rearm' as const,
           predecessorAttemptId: REPAIR_ATTEMPT_ID,
           triggerReason: 'interrupted' as const,
         },
@@ -574,13 +632,27 @@ describe('Attempt lineage and dispatch lifecycle', () => {
   it('rejects a trigger reason that contradicts the predecessor state', () => {
     const result = parseLineage([
       { ...REJECTED_ATTEMPT, rejectionReason: 'consistency_invalid' as const },
-      repairAttempt(),
+      rearmAttempt({
+        origin: {
+          kind: 'dispatch_rearm',
+          predecessorAttemptId: REJECTED_ATTEMPT_ID,
+          triggerReason: 'expired',
+        },
+      }),
     ]);
     expect(result.success).toBe(false);
     if (result.success) throw new TypeError('expected schema rejection');
     expect(JSON.stringify(result.error.issues)).toContain(
       'trigger reason does not match its predecessor state',
     );
+  });
+
+  it('rejects a removed rejection reason on a lineage predecessor', () => {
+    const result = parseLineage([
+      { ...REJECTED_ATTEMPT, rejectionReason: 'extraction_invalid' as const },
+      rearmAttempt(),
+    ]);
+    expect(result.success).toBe(false);
   });
 
   it('rejects duplicate attempt ordinals for one obligation', () => {
@@ -598,7 +670,7 @@ describe('Attempt lineage and dispatch lifecycle', () => {
       assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [PLAN_OBLIGATION],
       invocations: [],
-      attempts: [REJECTED_ATTEMPT, repairAttempt()],
+      attempts: [REJECTED_ATTEMPT, rearmAttempt()],
       dispatches,
     });
   }
@@ -1005,7 +1077,7 @@ describe('Single initial attempt root and attempt status relations', () => {
     expect(JSON.stringify(result.error.issues)).toContain('more than one initial attempt');
   });
 
-  it('rejects a second initial attempt after an output repair', () => {
+  it('rejects a second initial attempt after a dispatch re-arm', () => {
     const result = parseAttempts([
       initialAttempt({
         status: 'rejected' as const,
@@ -1016,9 +1088,9 @@ describe('Single initial attempt root and attempt status relations', () => {
         attemptId: '44444444-4444-4444-8444-444444444444',
         ordinal: 1,
         origin: {
-          kind: 'output_repair' as const,
+          kind: 'dispatch_rearm' as const,
           predecessorAttemptId: '11111111-1111-4111-8111-111111111111',
-          triggerReason: 'schema_invalid' as const,
+          triggerReason: 'rejected' as const,
         },
       }),
       initialAttempt({

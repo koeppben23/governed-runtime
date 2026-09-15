@@ -576,7 +576,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
     });
   });
 
-  describe('restart identity, revision, and output repair', () => {
+  describe('restart identity, revision, and missing-attempt closure', () => {
     const ADR_TEXT = '## Context\nTest\n## Decision\nTest\n## Consequences\nTest';
     const CREATED_AT = '2026-01-01T00:00:00.000Z';
 
@@ -659,7 +659,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
       expect(pending[0]!.subjectDigest).toBe(hashText(revisedText));
     });
 
-    it('output repair: a repairable rejection reissues a fresh attempt on the SAME obligation', async () => {
+    it('missing attempt: a rejected attempt closes the obligation deterministically', async () => {
       await setupArchitectureDeadState(1);
       const sessDir = await currentSessionDir();
       const state = await readState(sessDir);
@@ -707,22 +707,25 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
       const raw = await architecture.execute({ title: 'Test Decision', adrText: ADR_TEXT }, ctx);
       const result = parseToolResult(raw);
 
-      expect(result.error).not.toBe(true);
-      expect(result.status).toContain('repair');
-      expect((result.reviewObligation as { obligationId?: string } | undefined)?.obligationId).toBe(
-        pending.obligationId,
-      );
+      // No repair reissue exists: the broken obligation is deterministically
+      // closed so the NEXT /architecture mints a fresh one.
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVIEW_ATTEMPT_UNAVAILABLE');
 
       const after = await readState(sessDir);
+      const obligation = after!.reviewAssurance!.obligations.find(
+        (o) => o.obligationId === pending.obligationId,
+      )!;
+      expect(obligation.status).toBe('blocked');
+      expect(obligation.blockedCode).toBe('REVIEW_ATTEMPT_UNAVAILABLE');
       const attempts = after!.reviewAssurance!.attempts.filter(
         (a) => a.obligationId === pending.obligationId,
       );
-      expect(attempts.length).toBe(2);
-      expect(attempts.filter((a) => a.status === 'created').length).toBe(1);
-      expect(attempts.at(-1)!.origin.kind).toBe('output_repair');
+      expect(attempts).toHaveLength(1);
+      expect(attempts[0]!.status).toBe('rejected');
     });
 
-    it('fails closed on reissue when the persisted artifact scope is tampered to another digest', async () => {
+    it('fails closed on a missing-attempt continuation when the persisted artifact scope is tampered to another digest', async () => {
       await setupArchitectureDeadState(1);
       const sessDir = await currentSessionDir();
       const state = await readState(sessDir);
@@ -741,7 +744,8 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         policySnapshot: state.policySnapshot,
       });
       // Fully self-consistent material generation with a tampered scope: the
-      // subject identity chain must be transitively closed on the reissue path.
+      // subject identity chain must be transitively closed on the continuation
+      // path.
       const tampered: ReviewObligation = {
         ...pending,
         reviewSubjectScope: {
@@ -791,7 +795,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
       expect(result.code).toBe('REVIEW_MATERIAL_INTEGRITY_FAILED');
     });
 
-    it('fails closed on reissue when the persisted scope kind is swapped to repository_change', async () => {
+    it('fails closed on a missing-attempt continuation when the persisted scope kind is swapped to repository_change', async () => {
       await setupArchitectureDeadState(1);
       const sessDir = await currentSessionDir();
       const state = await readState(sessDir);

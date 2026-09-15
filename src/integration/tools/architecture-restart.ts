@@ -1,15 +1,14 @@
 /**
  * @module integration/tools/architecture-restart
  * @description Architecture Mode-A routing for existing review obligations:
- *              output-repair reissue, attempt re-emission, and review
+ *              interrupted-dispatch re-arm, attempt re-emission, and review
  *              orchestration restart/revision after a blocked obligation.
  *
  * `/architecture` re-invocation is the authorized trigger for review
  * lifecycle transitions of the latest architecture obligation:
  *
  *   pending + bindable attempt      → re-emit the review instruction
- *   pending + repairable rejection  → mint a fresh attempt on the SAME
- *                                     obligation (canonical output repair)
+ *                                     (or re-arm an interrupted/spent dispatch)
  *   blocked + same ADR digest       → fresh review orchestration for the SAME
  *                                     ADR identity/revision (ADR id, createdAt,
  *                                     nextAdrNumber unchanged; new obligation +
@@ -43,7 +42,6 @@ import {
   type ReviewContinuation,
 } from '../review/review-continuation.js';
 import { blockObligation } from '../review/obligation-state.js';
-import { reissueReviewAttempt } from './review-tool/continuation.js';
 import { buildInterruptedDispatchRearm } from '../durable-dispatch.js';
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
 import {
@@ -74,7 +72,6 @@ export async function routeArchitectureInitialSubmission(
 
   switch (continuation.kind) {
     case 'awaiting_task':
-    case 'output_repair':
       return routePendingArchitectureContinuation(args, session, continuation);
     case 'interrupted_dispatch':
       return routeArchitectureInterruptedDispatch(
@@ -115,23 +112,20 @@ async function routeArchitectureMissingAttempt(
 async function routePendingArchitectureContinuation(
   args: ArchitectureArgs,
   session: ArchitectureSession,
-  continuation: Extract<ReviewContinuation, { readonly kind: 'awaiting_task' | 'output_repair' }>,
+  continuation: Extract<ReviewContinuation, { readonly kind: 'awaiting_task' }>,
 ): Promise<string> {
   // A pending continuation reviews the FROZEN subject: a submitted artifact
-  // with a different digest must never be silently ignored (or trigger a
-  // repair of the old subject) — fail closed instead.
+  // with a different digest must never be silently ignored — fail closed
+  // instead.
   const changed = changedSubjectWhilePending(args, continuation.obligation, session);
   if (changed) return changed;
-  if (continuation.kind === 'awaiting_task') {
-    return architectureInstructionResponse(session, {
-      obligation: continuation.obligation,
-      attemptId: continuation.attemptId,
-      status: 'Architecture review is pending.',
-      iteration: continuation.obligation.iteration,
-      planVersion: continuation.obligation.planVersion,
-    });
-  }
-  return routeArchitectureOutputRepair(session, continuation.obligation);
+  return architectureInstructionResponse(session, {
+    obligation: continuation.obligation,
+    attemptId: continuation.attemptId,
+    status: 'Architecture review is pending.',
+    iteration: continuation.obligation.iteration,
+    planVersion: continuation.obligation.planVersion,
+  });
 }
 
 function changedSubjectWhilePending(
@@ -147,35 +141,6 @@ function changedSubjectWhilePending(
     subjectDigest: obligation.subjectDigest,
     submittedDigest,
   });
-}
-
-async function routeArchitectureOutputRepair(
-  session: ArchitectureSession,
-  obligation: ReviewObligation,
-): Promise<string> {
-  const reissue = await reissueReviewAttempt(
-    session.sessDir,
-    session.state,
-    obligation,
-    session.ctx.now(),
-  );
-  if (reissue.kind === 'blocked') {
-    return formatBlocked(reissue.code, {
-      obligationId: obligation.obligationId,
-      reason: reissue.reason,
-    });
-  }
-  const fresh = (await readState(session.sessDir)) ?? session.state;
-  return architectureInstructionResponse(
-    { ...session, state: fresh },
-    {
-      obligation,
-      attemptId: reissue.attempt.attemptId,
-      status: 'Architecture review repair attempt issued.',
-      iteration: obligation.iteration,
-      planVersion: obligation.planVersion,
-    },
-  );
 }
 
 async function routeArchitectureInterruptedDispatch(

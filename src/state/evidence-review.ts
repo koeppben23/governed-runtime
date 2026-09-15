@@ -101,16 +101,13 @@ import { ReviewAttemptDiscoveryContext } from './evidence-review-attempt-discove
 /**
  * Canonical rejection classification persisted on a rejected review attempt.
  *
- * `output_*` reasons describe a non-bindable reviewer output whose defect can
- * plausibly be repaired by a fresh independent reviewer attempt against the
- * same frozen subject. Governance/execution reasons describe failures that a
- * new reviewer output cannot legitimately repair. Repairability itself is
- * classified in the enforcement layer (`REVIEW_ATTEMPT_REJECTION_POLICY`);
- * this enum only names the reasons structurally.
+ * These reasons name structural reviewer-evidence failures; none of them
+ * authorizes a repair reissue. A rejected attempt is terminal: the obligation
+ * settles through the continuation authority, never through a fresh attempt on
+ * the same obligation.
  */
 export const ReviewAttemptRejectionReason = z.enum([
   'schema_invalid',
-  'extraction_invalid',
   'attestation_invalid',
   'relation_invalid',
   'scope_invalid',
@@ -119,7 +116,6 @@ export const ReviewAttemptRejectionReason = z.enum([
   'subject_mismatch',
   'consistency_invalid',
   'reviewer_unavailable',
-  'task_failed',
 ]);
 export type ReviewAttemptRejectionReason = z.infer<typeof ReviewAttemptRejectionReason>;
 
@@ -127,11 +123,12 @@ export type ReviewAttemptRejectionReason = z.infer<typeof ReviewAttemptRejection
  * Authority-bearing origin of a review attempt.
  *
  * Every attempt carries exactly one origin. `initial` marks the first attempt
- * minted with its obligation. `output_repair` marks a reissue authorized by
- * the obligation-level reviewer-attempt budget (see reissue-authority.ts).
- * `task_rearm` marks a re-arm driven by the reviewer Task lifecycle
- * (interruption or spent-attempt retry); both repair classes draw on the SAME
- * frozen reviewer-attempt budget.
+ * minted with its obligation. `dispatch_rearm` marks a transport-neutral
+ * dispatch-recovery re-arm: the predecessor attempt was released to the host
+ * without producing bindable evidence (or was already terminally rejected,
+ * stale, or expired), so the originating command re-arms a fresh append-only
+ * attempt on the SAME obligation. Every re-arm draws on the shared frozen
+ * reviewer-attempt budget.
  *
  * Invariant: no non-initial attempt exists without an explicit origin.
  */
@@ -139,16 +136,9 @@ export const ReviewAttemptOrigin = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('initial') }).readonly(),
   z
     .object({
-      kind: z.literal('output_repair'),
+      kind: z.literal('dispatch_rearm'),
       predecessorAttemptId: z.string().uuid(),
-      triggerReason: ReviewAttemptRejectionReason,
-    })
-    .readonly(),
-  z
-    .object({
-      kind: z.literal('task_rearm'),
-      predecessorAttemptId: z.string().uuid(),
-      triggerReason: z.enum(['interrupted', 'rejected', 'stale', 'expired']),
+      triggerReason: z.enum(['interrupted', 'spent', 'rejected', 'stale', 'expired']),
     })
     .readonly(),
 ]);
@@ -180,8 +170,7 @@ export const ReviewAttempt = z
     origin: ReviewAttemptOrigin,
     /**
      * Structured reason for a `rejected` status. Persisted at the rejection
-     * point; the output-repair gate refuses reissues without an explicit,
-     * canonically repairable reason.
+     * point; a rejected attempt is terminal and never authorizes a reissue.
      */
     rejectionReason: ReviewAttemptRejectionReason.optional(),
     /**
@@ -198,15 +187,6 @@ export const ReviewAttempt = z
      * enforces both directions.
      */
     observationCapability: ObservationCapability.optional(),
-    /**
-     * Canonical fingerprint of the schema-error issue set that rejected this
-     * attempt (repair DIAGNOSTICS only — never authority). Detects a targeted
-     * repair that reproduced the identical error set (`REVIEWER_OUTPUT_REPAIR_STALLED`).
-     */
-    schemaErrorFingerprint: z
-      .string()
-      .regex(/^[a-f0-9]{64}$/)
-      .optional(),
     /**
      * Authoritative, attempt-bound repository observations. Minted EXCLUSIVELY
      * by the parent replay after the reviewer child session is known; child-side

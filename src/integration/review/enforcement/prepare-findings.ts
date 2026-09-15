@@ -119,15 +119,6 @@ export type PrepareReviewerFindingsResult =
       readonly ok: false;
       readonly code: 'schema_invalid';
       readonly issues: readonly string[];
-      /**
-       * Machine-readable issue keys (path, code, message) for the canonical
-       * repair fingerprint. Display text stays in `issues`.
-       */
-      readonly issueKeys: readonly {
-        readonly path: string;
-        readonly code: string;
-        readonly message: string;
-      }[];
     }
   | {
       readonly ok: false;
@@ -173,11 +164,6 @@ export function prepareReviewerFindingsForValidation(input: {
       issues: reviewerInput.error.issues.map(
         (issue) => `${schemaIssuePath(issue)}: ${issue.message}`,
       ),
-      issueKeys: reviewerInput.error.issues.map((issue) => ({
-        path: schemaIssuePath(issue),
-        code: issue.code,
-        message: issue.message,
-      })),
     };
   }
 
@@ -225,16 +211,6 @@ export function prepareReviewerFindingsForValidation(input: {
       ok: false,
       code: 'schema_invalid',
       issues: parsed.error.issues.map((issue) => `${schemaIssuePath(issue)}: ${issue.message}`),
-      // Machine-readable issue keys for the canonical repair fingerprint.
-      // The human-readable `issues` above remain the display form; these keys
-      // are sorted and hashed into ReviewAttempt.schemaErrorFingerprint so the
-      // output-repair gate can detect a repair that reproduced the identical
-      // error set.
-      issueKeys: parsed.error.issues.map((issue) => ({
-        path: schemaIssuePath(issue),
-        code: issue.code,
-        message: issue.message,
-      })),
     };
   }
   return { ok: true, findings: hostAttestationFindings };

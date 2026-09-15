@@ -78,8 +78,8 @@ export const REVIEW_VALIDATION_REASONS = [
     messageTemplate:
       'No bindable review attempt exists for obligation {obligationId}: {reason}. The frozen review material itself was not invalidated.',
     recoverySteps: [
-      'Re-run flowguard_review with the original content fields and reviewObligationId to reissue a bindable attempt',
-      'Follow the newly returned review recovery instructions; never reuse a previous reviewer attempt',
+      'Re-run the originating FlowGuard command for the same frozen subject so an available bindable attempt can be re-emitted',
+      'An obligation with no bindable attempt is deterministically closed; submit the artifact again to mint a fresh review obligation',
       'Do NOT submit a verdict to recover this state',
     ],
   },
@@ -615,47 +615,8 @@ export const REVIEW_VALIDATION_REASONS = [
       'Re-run the review if the required revision provenance could not be resolved',
     ],
   },
-  // ─── Reviewer Output Contract Enforcement ────────────────────────────────
+  // ─── Reviewer Evidence Observation ───────────────────────────────────────
 
-  {
-    code: 'REVIEWER_OUTPUT_SCHEMA_INVALID',
-    category: 'state',
-    messageTemplate:
-      'Reviewer output failed schema validation for obligation {obligationId}: {reason}. The reviewer must produce output conforming to the canonical ReviewFindings contract observed by the host.',
-    recoverySteps: [
-      'Re-invoke the flowguard-reviewer subagent with the exact same frozen subject and material',
-      'Ensure the reviewer output matches the FindingRelation grammar documented in the reviewer prompt',
-      'subjectAnchors.kind must be one of: repository_location, artifact_section, content',
-      'revision must be base or head — never a SHA, never "current" or "modified"',
-      'evidenceLocations are optional but must be valid RepositoryLocation entries when supplied',
-      'Do NOT self-review, fabricate findings, or submit a guessed verdict',
-    ],
-  },
-  {
-    code: 'REVIEWER_OUTPUT_RETRY_EXHAUSTED',
-    category: 'state',
-    messageTemplate:
-      'Reviewer output could not be bound after the canonical output-repair retry budget was exhausted for obligation {obligationId}. The reviewer output cannot be bound.',
-    recoverySteps: [
-      'Report the rejection reason to the operator',
-      'The frozen review subject and material remain unchanged',
-      'A terminal block requires operator intervention — the review cannot proceed',
-      'Do NOT rewrite the reviewer prompt, fabricate findings, or guess a verdict',
-    ],
-  },
-  {
-    code: 'REVIEWER_OUTPUT_REPAIR_STALLED',
-    category: 'state',
-    messageTemplate:
-      'A targeted output repair for obligation {obligationId} reproduced the identical schema error set — no further reviewer repair is authorized.',
-    recoverySteps: [
-      'The reviewer produced the same schema errors after a targeted repair instruction; another identical retry cannot recover',
-      'The frozen review subject and material remain unchanged',
-      'Inspect or correct the reviewer output mechanism before any further attempt',
-      'After operator intervention, start a fresh /review if a new independent attempt is desired',
-      'Do NOT rewrite the reviewer prompt, fabricate findings, or guess a verdict',
-    ],
-  },
   {
     code: 'REVIEW_EVIDENCE_NOT_OBSERVED',
     category: 'state',
@@ -666,18 +627,6 @@ export const REVIEW_VALIDATION_REASONS = [
       'This is a governance rejection (evidence_unavailable) — it is never repairable by resubmitting findings',
       'Start a fresh review attempt and cite only locations the reviewer observes through the sanctioned observation tool',
       'Do NOT substitute worktree reads, recalled content, or citations without a matching observation',
-    ],
-  },
-  {
-    code: 'REVIEW_REPAIR_UNAVAILABLE',
-    category: 'state',
-    messageTemplate:
-      'No output-repair reissue is authorized for obligation {obligationId}: {reason}. A new reviewer attempt cannot be minted for this rejection.',
-    recoverySteps: [
-      'Output-repair reissue requires: pending obligation, latest attempt rejected with an explicit canonically repairable output-contract reason, and remaining frozen repair budget',
-      'Governance, scope, material-integrity, semantic-consistency, and execution failures never authorize a reissue',
-      'The obligation is blocked terminally — operator intervention is required',
-      'Do NOT fabricate findings, guess a verdict, or bypass the frozen subject',
     ],
   },
   {

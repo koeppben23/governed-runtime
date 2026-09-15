@@ -26,7 +26,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { buildEnforcementError } from './plugin-helpers.js';
-import { authorizeTaskLifecycleRearm } from './review/reissue-authority.js';
+import { authorizeDispatchRearm } from './review/reissue-authority.js';
 import { createAttemptForExistingObligation } from './review/assurance.js';
 import {
   abandonReviewDispatch,
@@ -60,6 +60,51 @@ export interface AuthorizedSdkDispatchInput {
 }
 
 /**
+ * A host call ID may only be treated as an idempotent retry when the existing
+ * ledger entry represents EXACTLY this authorization. Any other collision
+ * (different attempt, obligation, or prompt digest, or an already-resolved
+ * status) fails closed: no host release without a durable authorization for
+ * exactly that release.
+ */
+function resolveExistingDispatchForCall(
+  existingForCall: readonly ReviewDispatchRecord[],
+  input: AuthorizedSdkDispatchInput,
+): 'append' | 'retry' | 'conflict' {
+  if (existingForCall.length === 0) return 'append';
+  const [existing] = existingForCall;
+  const exactRetry =
+    existingForCall.length === 1 &&
+    existing !== undefined &&
+    existing.attemptId === input.attemptId &&
+    existing.obligationId === input.obligationId &&
+    existing.canonicalPromptDigest === input.canonicalPromptDigest &&
+    existing.dispatchStatus === 'authorized';
+  return exactRetry ? 'retry' : 'conflict';
+}
+
+/** Require a pending obligation with a created, unbound attempt for the release. */
+function assertDispatchAuthorizable(
+  assurance: ReturnType<typeof ensureReviewAssurance>,
+  input: AuthorizedSdkDispatchInput,
+): void {
+  const obligation = assurance.obligations.find((item) => item.obligationId === input.obligationId);
+  const attempt = assurance.attempts.find((item) => item.attemptId === input.attemptId);
+  if (
+    obligation?.status === 'pending' &&
+    attempt !== undefined &&
+    attempt.obligationId === obligation.obligationId &&
+    attempt.status === 'created' &&
+    attempt.childSessionId === undefined
+  ) {
+    return;
+  }
+  throw buildEnforcementError(
+    REVIEW_DISPATCH_PERSISTENCE_FAILED,
+    'the reviewer dispatch requires a pending obligation with a created, unbound attempt',
+  );
+}
+
+/**
  * Persist the durable dispatch entry for a reviewer child session BEFORE the
  * host may release the prompt. Fails closed: a missing obligation, a
  * non-`created` attempt, or an already-bound attempt aborts the reviewer
@@ -72,28 +117,20 @@ export async function persistAuthorizedSdkDispatch(
 ): Promise<void> {
   await deps.updateReviewAssurance(sessDir, (state) => {
     const assurance = ensureReviewAssurance(state.reviewAssurance);
-    const obligation = assurance.obligations.find(
-      (item) => item.obligationId === input.obligationId,
+    assertDispatchAuthorizable(assurance, input);
+
+    const existingForCall = (assurance.dispatches ?? []).filter(
+      (record) => record.hostCallId === input.childSessionId,
     );
-    const attempt = assurance.attempts.find((item) => item.attemptId === input.attemptId);
-    if (
-      !obligation ||
-      obligation.status !== 'pending' ||
-      !attempt ||
-      attempt.obligationId !== obligation.obligationId ||
-      attempt.status !== 'created' ||
-      attempt.childSessionId !== undefined
-    ) {
+    const disposition = resolveExistingDispatchForCall(existingForCall, input);
+    if (disposition === 'conflict') {
       throw buildEnforcementError(
         REVIEW_DISPATCH_PERSISTENCE_FAILED,
-        'the reviewer dispatch requires a pending obligation with a created, unbound attempt',
+        'the host call ID is already bound to a different dispatch authorization',
       );
     }
-    // Idempotent for the exact host call: a retried authorize hook must not
-    // append a second ledger entry for the same child session.
-    if ((assurance.dispatches ?? []).some((record) => record.hostCallId === input.childSessionId)) {
-      return state;
-    }
+    if (disposition === 'retry') return state;
+
     const record: ReviewDispatchRecord = {
       dispatchId: randomUUID(),
       attemptId: input.attemptId,
@@ -152,7 +189,7 @@ export function buildInterruptedDispatchRearm(
   spent: ReviewAttempt,
   now: string,
 ): InterruptedDispatchRearm {
-  const authorization = authorizeTaskLifecycleRearm(assurance!, spent);
+  const authorization = authorizeDispatchRearm(assurance!, spent);
   if (authorization.kind === 'blocked') {
     return { kind: 'blocked', reason: authorization.reason };
   }

@@ -175,7 +175,7 @@ describe('flowguard_continue (runtime)', () => {
           {
             obligationType: 'implement',
             status: 'blocked',
-            blockedCode: 'REVIEW_REPAIR_UNAVAILABLE',
+            blockedCode: 'REVIEW_ATTEMPT_UNAVAILABLE',
           },
         ],
       },
@@ -184,7 +184,7 @@ describe('flowguard_continue (runtime)', () => {
     const { continue_cmd } = await import('./continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
-    expect(parsed.status).toContain('blocked (REVIEW_REPAIR_UNAVAILABLE)');
+    expect(parsed.status).toContain('blocked (REVIEW_ATTEMPT_UNAVAILABLE)');
     expect(parsed.status).not.toContain('Implementation review is pending.');
   });
 

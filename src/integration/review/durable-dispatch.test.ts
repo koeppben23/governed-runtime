@@ -151,6 +151,128 @@ describe('persistAuthorizedSdkDispatch', () => {
 
     expect(stateRef.current.reviewAssurance!.dispatches).toHaveLength(1);
   });
+
+  it('BAD: a host call collision with a different attempt fails closed', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const otherAttempt = {
+      ...attempt,
+      attemptId: '00000000-0000-4000-8000-0000000000a2',
+    };
+    const stateRef = {
+      current: makeState('PLAN', {
+        reviewAssurance: { ...assurance, attempts: [attempt, otherAttempt] },
+      }),
+    };
+    const deps = writeDeps(stateRef);
+    await persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+      attemptId: attempt.attemptId,
+      obligationId: obligation.obligationId,
+      childSessionId: CHILD,
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    });
+
+    await expect(
+      persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+        attemptId: otherAttempt.attemptId,
+        obligationId: obligation.obligationId,
+        childSessionId: CHILD,
+        canonicalPromptDigest: PROMPT_DIGEST,
+        authorizedAt: NOW,
+      }),
+    ).rejects.toThrow(/different dispatch authorization/);
+    expect(stateRef.current.reviewAssurance!.dispatches).toHaveLength(1);
+    expect(stateRef.current.reviewAssurance!.dispatches[0]!.attemptId).toBe(attempt.attemptId);
+  });
+
+  it('BAD: a host call collision with a different obligation fails closed', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const otherObligation = {
+      ...obligation,
+      obligationId: '00000000-0000-4000-8000-0000000000b2',
+    };
+    const otherAttempt = {
+      ...attempt,
+      attemptId: '00000000-0000-4000-8000-0000000000b3',
+      obligationId: otherObligation.obligationId,
+    };
+    const stateRef = {
+      current: makeState('PLAN', {
+        reviewAssurance: {
+          ...assurance,
+          obligations: [obligation, otherObligation],
+          attempts: [attempt, otherAttempt],
+        },
+      }),
+    };
+    const deps = writeDeps(stateRef);
+    await persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+      attemptId: attempt.attemptId,
+      obligationId: obligation.obligationId,
+      childSessionId: CHILD,
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    });
+
+    await expect(
+      persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+        attemptId: otherAttempt.attemptId,
+        obligationId: otherObligation.obligationId,
+        childSessionId: CHILD,
+        canonicalPromptDigest: PROMPT_DIGEST,
+        authorizedAt: NOW,
+      }),
+    ).rejects.toThrow(/different dispatch authorization/);
+    expect(stateRef.current.reviewAssurance!.dispatches).toHaveLength(1);
+    expect(stateRef.current.reviewAssurance!.dispatches[0]!.obligationId).toBe(
+      obligation.obligationId,
+    );
+  });
+
+  it('BAD: a host call collision with a different prompt digest fails closed', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const deps = writeDeps(stateRef);
+    await persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+      attemptId: attempt.attemptId,
+      obligationId: obligation.obligationId,
+      childSessionId: CHILD,
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    });
+
+    await expect(
+      persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+        attemptId: attempt.attemptId,
+        obligationId: obligation.obligationId,
+        childSessionId: CHILD,
+        canonicalPromptDigest: 'd'.repeat(64),
+        authorizedAt: NOW,
+      }),
+    ).rejects.toThrow(/different dispatch authorization/);
+    expect(stateRef.current.reviewAssurance!.dispatches).toHaveLength(1);
+  });
+
+  it('BAD: a resolved host call cannot be re-authorized', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const deps = writeDeps(stateRef);
+    const input = {
+      attemptId: attempt.attemptId,
+      obligationId: obligation.obligationId,
+      childSessionId: CHILD,
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    };
+    await persistAuthorizedSdkDispatch(deps, SESS_DIR, input);
+    await abandonSdkDispatch(deps, SESS_DIR, CHILD);
+
+    await expect(persistAuthorizedSdkDispatch(deps, SESS_DIR, input)).rejects.toThrow(
+      /different dispatch authorization/,
+    );
+    expect(stateRef.current.reviewAssurance!.dispatches).toHaveLength(1);
+    expect(stateRef.current.reviewAssurance!.dispatches[0]!.dispatchStatus).toBe('outcome_unknown');
+  });
 });
 
 describe('abandonSdkDispatch and interrupted-dispatch recovery', () => {
@@ -205,7 +327,7 @@ describe('abandonSdkDispatch and interrupted-dispatch recovery', () => {
     expect(attempts.find((a) => a.attemptId === attempt.attemptId)?.status).toBe('stale');
     expect(rearmed.attempt.obligationId).toBe(obligation.obligationId);
     expect(rearmed.attempt.origin).toMatchObject({
-      kind: 'task_rearm',
+      kind: 'dispatch_rearm',
       predecessorAttemptId: attempt.attemptId,
       triggerReason: 'interrupted',
     });
@@ -232,8 +354,8 @@ describe('abandonSdkDispatch and interrupted-dispatch recovery', () => {
     expect(first.kind).toBe('ok');
     if (first.kind !== 'ok') return;
     expect(first.attempt.origin).toMatchObject({
-      kind: 'task_rearm',
-      triggerReason: 'interrupted',
+      kind: 'dispatch_rearm',
+      triggerReason: 'spent',
     });
 
     // The fresh attempt is released and concluded without evidence as well.

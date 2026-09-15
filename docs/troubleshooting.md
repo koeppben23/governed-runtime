@@ -233,11 +233,7 @@ real, registered reason.
 | `REVIEW_URL_CONTENT_ENCODING_INVALID` | URL review content is malformed or not strict UTF-8 | Serve valid UTF-8 content or provide the review content directly |
 | `REVIEW_VERDICT_EVIDENCE_MISSING` | reviewVerdict submitted without matching bound ReviewInvocationEvidence | Run flowguard-reviewer subagent before submitting verdict |
 | `REVIEW_VERDICT_MISMATCH` | Submitted verdict does not match captured reviewer overallVerdict | Use verdict exactly matching reviewer output; do not override |
-| `REVIEWER_OUTPUT_RETRY_EXHAUSTED` | Reviewer output could not be bound after the canonical output-repair retry budget was exhausted | Operator intervention required; do not rewrite prompt or fabricate findings |
-| `REVIEWER_OUTPUT_REPAIR_STALLED` | Targeted repair reproduced the identical schema error set | Inspect or correct the reviewer output mechanism first; after operator intervention, start a fresh `/review` if a new independent attempt is desired |
 | `REVIEW_EVIDENCE_NOT_OBSERVED` | evidenceLocations have no matching authoritative repository observation for this reviewer attempt | Cite only locations obtained via flowguard_observe_repository during the attempt; start a fresh review otherwise |
-| `REVIEW_REPAIR_UNAVAILABLE` | No output-repair reissue is authorized for this rejection (governance, scope, integrity, consistency, or execution failure) | Operator intervention required; the obligation is blocked terminally — do not fabricate findings or bypass the frozen subject |
-| `REVIEWER_OUTPUT_SCHEMA_INVALID` | Reviewer output failed to validate against the canonical ReviewFindings schema | Re-invoke with exact same frozen subject; ensure output matches grammar in prompt |
 | `REVIEWER_CONTEXT_UNAVAILABLE` | Canonical reviewer context could not be materialized; no review attempt was created | Restore the persisted Discovery basis or workspace fingerprint, then re-run the review |
 | `INVALID_REVIEW_TOOL_SEQUENCE` | Review tool call sequence is invalid (e.g. reviewerUnavailable after spawn) | Follow invocation sequence; do not submit reviewerUnavailable when a host-observed reviewer invocation exists |
 | `STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE` | Configured reviewer model does not support required structured output | Configure the flowguard-reviewer agent to use a structured-output-capable model, then re-run the originating command |
@@ -247,7 +243,7 @@ real, registered reason.
 | `REVIEW_ATTEMPT_LINEAGE_UNAVAILABLE` | Invocation does not establish coherent persisted attempt lineage | Re-invoke the reviewer; the stale invocation is retained for audit |
 | `REVIEW_ATTEMPT_NOT_FOUND` | Attempt referenced by invocation was not found in assurance state | Verify the attempt exists with flowguard_status; re-invoke reviewer if corrupt |
 | `REVIEW_ASSURANCE_UNAVAILABLE` | Review assurance state missing; cannot reject an incoherent attempt | Ensure the session has an active review obligation with an attempt |
-| `REVIEW_ATTEMPT_UNAVAILABLE` | No attempt can currently bind reviewer evidence; the frozen material is intact | Re-run `flowguard_review` with the original content and `reviewObligationId` to reissue an attempt, then follow the newly returned review recovery instructions |
+| `REVIEW_ATTEMPT_UNAVAILABLE` | No attempt can currently bind reviewer evidence; the frozen material is intact | Re-run the originating command for the same frozen subject; an obligation with no bindable attempt is closed deterministically so the next submission mints a fresh obligation |
 | `REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE` | Reviewer child session completed without host-owned execution provenance | Re-run the originating FlowGuard command; do not reuse the prior reviewer output or submit copied findings |
 | `REVIEW_DISPATCH_PERSISTENCE_FAILED` | Durable reviewer dispatch could not be persisted before the host release; reviewer NOT executed | Retry the originating command; ensure the session state is writable; do not submit fabricated findings |
 | `REVIEW_SUBJECT_CHANGED_WHILE_PENDING` | Submitted artifact revision does not match the frozen subject of the pending review obligation | Submit the same revision to continue the active review, or wait for the obligation to settle before reviewing a changed revision |
@@ -506,7 +502,6 @@ REVIEW_OBLIGATION_INPUT_MISMATCH
 REVIEW_OBLIGATION_NOT_FOUND
 REVIEW_OBLIGATION_UNRESOLVED
 REVIEW_PLAN_VERSION_MISMATCH
-REVIEW_REPAIR_UNAVAILABLE
 REVIEW_REPOSITORY_IDENTITY_MISSING
 REVIEW_REPOSITORY_REVISION_UNAVAILABLE
 REVIEW_DISPATCH_PERSISTENCE_FAILED
@@ -520,9 +515,6 @@ REVIEW_TRANSPORT_EVIDENCE_INVALID
 REVIEW_URL_CONTENT_ENCODING_INVALID
 REVIEW_VERDICT_EVIDENCE_MISSING
 REVIEW_VERDICT_MISMATCH
-REVIEWER_OUTPUT_RETRY_EXHAUSTED
-REVIEWER_OUTPUT_REPAIR_STALLED
-REVIEWER_OUTPUT_SCHEMA_INVALID
 REVIEW_SUBJECT_CHANGED_WHILE_PENDING
 RESTART_CYCLE_ITERATION_MISMATCH
 REVIEWER_CONTEXT_UNAVAILABLE

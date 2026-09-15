@@ -95,11 +95,11 @@ export function refineAssuranceDispatchCoherence(
 }
 
 /**
- * Attempt predecessor lineage. Non-initial origins (`output_repair`,
- * `task_rearm`) are authority-bearing: the referenced predecessor must exist,
- * belong to the same obligation/subject, be a STRICTLY earlier attempt, and the
- * trigger reason must be coherent with the predecessor's terminal state.
- * Attempt ordinals are unique per obligation.
+ * Attempt predecessor lineage. Non-initial origins (`dispatch_rearm`) are
+ * authority-bearing: the referenced predecessor must exist, belong to the same
+ * obligation/subject, be a STRICTLY earlier attempt, and the trigger reason
+ * must be coherent with the predecessor's terminal state AND durable release
+ * record. Attempt ordinals are unique per obligation.
  */
 export function refineAssuranceAttemptLineageCoherence(
   assurance: AssuranceRefinementShape,
@@ -149,7 +149,7 @@ export function refineAssuranceAttemptLineageCoherence(
   }
   for (const attempt of assurance.attempts) {
     if (attempt.status === 'created') {
-      if (attempt.completedAt || attempt.rejectionReason || attempt.schemaErrorFingerprint) {
+      if (attempt.completedAt || attempt.rejectionReason) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['attempts'],
@@ -167,10 +167,7 @@ export function refineAssuranceAttemptLineageCoherence(
       });
       return;
     }
-    if (
-      attempt.status !== 'rejected' &&
-      (attempt.rejectionReason || attempt.schemaErrorFingerprint)
-    ) {
+    if (attempt.status !== 'rejected' && attempt.rejectionReason) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['attempts'],
@@ -220,7 +217,11 @@ export function refineAssuranceAttemptLineageCoherence(
       });
       return;
     }
-    const expectedTriggers = triggerReasonsForPredecessor(origin.kind, predecessor);
+    const expectedTriggers = triggerReasonsForPredecessor(
+      origin.kind,
+      predecessor,
+      assurance.dispatches,
+    );
     if (
       expectedTriggers === null ||
       origin.triggerReason === undefined ||
@@ -239,21 +240,20 @@ export function refineAssuranceAttemptLineageCoherence(
 function triggerReasonsForPredecessor(
   originKind: string,
   predecessor: AttemptRefinementShape,
+  dispatches: AssuranceRefinementShape['dispatches'],
 ): readonly string[] | null {
-  if (originKind === 'output_repair') {
-    return predecessor.status === 'rejected' && predecessor.rejectionReason
-      ? [predecessor.rejectionReason]
-      : null;
-  }
-  if (originKind === 'task_rearm') {
-    if (predecessor.status === 'created') return ['interrupted'];
-    if (predecessor.status === 'rejected') return ['rejected'];
-    // A `created` predecessor is superseded to `stale` by the re-arm mint, so
-    // both the interrupted and the already-stale triggers are coherent for a
-    // stale predecessor.
-    if (predecessor.status === 'stale') return ['interrupted', 'stale'];
-    if (predecessor.status === 'expired') return ['expired'];
+  if (originKind !== 'dispatch_rearm') return null;
+  if (predecessor.status === 'created') {
+    const released = dispatches.filter((record) => record.attemptId === predecessor.attemptId);
+    if (released.some((record) => record.dispatchStatus === 'authorized')) return ['interrupted'];
+    if (released.some((record) => record.dispatchStatus === 'outcome_unknown')) return ['spent'];
     return null;
   }
+  // A `created` predecessor is superseded to `stale` by the re-arm mint, so
+  // the interrupted, spent, and already-stale triggers are all coherent for a
+  // stale predecessor.
+  if (predecessor.status === 'stale') return ['interrupted', 'spent', 'stale'];
+  if (predecessor.status === 'rejected') return ['rejected'];
+  if (predecessor.status === 'expired') return ['expired'];
   return null;
 }

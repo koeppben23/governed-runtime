@@ -262,9 +262,9 @@ describe('authority-bound capability minting', () => {
     const obligation = contextObligation();
     const reissue = createAttemptForExistingObligation(undefined, obligation, undefined, NOW, {
       origin: {
-        kind: 'output_repair',
+        kind: 'dispatch_rearm',
         predecessorAttemptId: '00000000-0000-4000-8000-0000000000ff',
-        triggerReason: 'schema_invalid',
+        triggerReason: 'interrupted',
       },
       repositoryDiscovery: { kind: 'not_applicable' },
     });
@@ -278,9 +278,9 @@ describe('authority-bound capability minting', () => {
       NOW,
       {
         origin: {
-          kind: 'output_repair',
+          kind: 'dispatch_rearm',
           predecessorAttemptId: '00000000-0000-4000-8000-0000000000fe',
-          triggerReason: 'schema_invalid',
+          triggerReason: 'spent',
         },
         repositoryDiscovery: { kind: 'not_applicable' },
       },

@@ -21,10 +21,8 @@ import {
   resolveFrozenReviewProfile,
   findLatestPendingReviewObligation,
   findReviewObligationById,
-  createAttemptForExistingObligation,
+  findBindableAttempt,
 } from '../../review/assurance.js';
-import { authorizeOutputRepairReissue } from '../../review/reissue-authority.js';
-import { blockObligation } from '../../review/obligation-state.js';
 import { resolveReviewAttemptDiscoveryContext } from '../../review/discovery-attempt-context.js';
 import type { ReviewAttemptDiscoveryContext } from '../../../state/evidence.js';
 import { fingerprintReviewInput } from './fingerprint.js';
@@ -182,15 +180,12 @@ export interface MissingAnalysisObligationResult {
  * mixing two authority identities would reset the per-obligation repair
  * budget and split the reviewer lineage.
  */
-async function resolveExplicitObligationIdPath(
-  sessDir: string,
+function resolveExplicitObligationIdPath(
   state: SessionState,
   args: ReviewToolArgs,
-  now: string,
-): Promise<
+):
   | { readonly handled: false }
-  | { readonly handled: true; readonly result: MissingAnalysisObligationResult }
-> {
+  | { readonly handled: true; readonly result: MissingAnalysisObligationResult } {
   if (!args.reviewObligationId) return { handled: false };
   const byId = findReviewObligationById(state.reviewAssurance, args.reviewObligationId);
   if (!byId) {
@@ -205,7 +200,7 @@ async function resolveExplicitObligationIdPath(
   }
   return {
     handled: true,
-    result: await reissueAttemptForPendingObligation(sessDir, state, byId, now),
+    result: continuePendingReviewObligation(state, byId),
   };
 }
 
@@ -224,7 +219,7 @@ export async function ensureMissingAnalysisObligation(
 
   if (!hasReviewContentInput(args)) return { message: null };
 
-  const explicit = await resolveExplicitObligationIdPath(sessDir, state, args, now);
+  const explicit = resolveExplicitObligationIdPath(state, args);
   if (explicit.handled) return explicit.result;
 
   const fingerprint = fingerprintReviewInput({
@@ -251,103 +246,38 @@ export async function ensureMissingAnalysisObligation(
       fingerprintVersion: 'v2',
     });
   }
-  return reissueAttemptForPendingObligation(sessDir, state, existing, now);
+  return continuePendingReviewObligation(state, existing);
 }
 
 /**
- * Re-invocation of a still-pending review obligation: hand the host a bindable
- * attempt again.
+ * Re-invocation of a still-pending review obligation: reuse the bindable
+ * attempt when one exists, otherwise fail closed.
  *
- * A fresh attempt may be issued only after the previous reviewer attempt
- * produced a non-bindable output-contract failure classified as canonically
- * repairable (`REVIEW_ATTEMPT_REJECTION_POLICY`). Governance failures,
- * subject/material integrity failures, scope failures, and execution failures
- * do not authorize this reissue path.
- *
- * Reissue authorization is delegated to `authorizeOutputRepairReissue`:
- * pending obligation + no bindable attempt + latest attempt `rejected` with an
- * explicit structured reason + `canonical_output_retry` policy + remaining
- * frozen budget (`maxReviewerAttempts`, frozen onto the obligation
- * at creation). On denial the obligation is deterministically blocked with the
- * denial code — `/status` must not recommend a further reviewer retry.
- *
- * Reissuing while a bindable attempt is still open is refused: the open
- * attempt is returned as-is so an in-flight reviewer Task is never staled.
+ * There is deliberately NO repair reissue for an existing obligation. The only
+ * producer of a non-initial attempt is the transport-neutral
+ * dispatch-recovery re-arm, which runs through the originating
+ * plan/architecture route. Standalone `/review` never mints an attempt on an
+ * existing obligation: without a bindable attempt the obligation has no legal
+ * continuation and the caller is told `REVIEW_ATTEMPT_UNAVAILABLE`.
  */
-async function reissueAttemptForPendingObligation(
-  sessDir: string,
+function continuePendingReviewObligation(
   state: SessionState,
   existing: ReviewObligation,
-  now: string,
-): Promise<{
-  message: string | null;
-  obligation?: ReviewObligation;
-  attemptId?: string;
-  assurance?: ReviewAssuranceState;
-}> {
-  const message = formatMissingContentAnalysis(existing.obligationId);
-  const authorization = authorizeOutputRepairReissue(state.reviewAssurance, existing);
-  if (authorization.kind === 'bindable_exists') {
-    return { message, obligation: existing, attemptId: authorization.attemptId };
-  }
-  if (authorization.kind === 'integrity_blocked') {
-    // Broken frozen subject/material binding: refuse with ZERO state mutation.
-    // Blocking the obligation or staling attempts would mutate governance
-    // state on top of an unverifiable immutable foundation.
+): MissingAnalysisObligationResult {
+  const bindable = findBindableAttempt(state.reviewAssurance, existing.obligationId);
+  if (!bindable) {
     return {
-      message: formatBlocked(authorization.code, {
+      message: formatBlocked('REVIEW_ATTEMPT_UNAVAILABLE', {
         obligationId: existing.obligationId,
-        reason: authorization.reason,
+        reason: 'no bindable reviewer attempt exists and output repair is no longer authorized',
       }),
+      obligation: existing,
     };
   }
-  if (authorization.kind === 'blocked') {
-    const blockedState = blockObligation(state, existing.obligationId, authorization.code);
-    await writeStateWithArtifacts(sessDir, blockedState);
-    return {
-      message: formatBlocked(authorization.code, {
-        obligationId: existing.obligationId,
-        reason: authorization.reason,
-      }),
-    };
-  }
-  // Attempt-bound Discovery context resolved BEFORE the repair attempt is
-  // minted — a fresh host-owned snapshot for repository reviews. A structural
-  // projection failure blocks with zero state mutation.
-  const discovery = await resolveReviewAttemptDiscoveryContext({
-    state,
-    worktree: state.binding.worktree,
-    repositoryGoverned: hasFrozenRepositoryAuthority(existing),
-    now,
-  });
-  if (discovery.kind === 'blocked') {
-    return {
-      message: formatBlocked('REVIEWER_CONTEXT_UNAVAILABLE', {
-        obligationId: existing.obligationId,
-        reason: discovery.reason,
-      }),
-    };
-  }
-  const reissue = createAttemptForExistingObligation(
-    state.reviewAssurance,
-    existing,
-    undefined,
-    now,
-    {
-      origin: {
-        kind: 'output_repair',
-        predecessorAttemptId: authorization.predecessorAttemptId,
-        triggerReason: authorization.triggerReason,
-      },
-      repositoryDiscovery: discovery.context,
-    },
-  );
-  await writeStateWithArtifacts(sessDir, { ...state, reviewAssurance: reissue.assurance });
   return {
-    message,
+    message: formatMissingContentAnalysis(existing.obligationId),
     obligation: existing,
-    attemptId: reissue.attempt.attemptId,
-    assurance: reissue.assurance,
+    attemptId: bindable.attemptId,
   };
 }
 

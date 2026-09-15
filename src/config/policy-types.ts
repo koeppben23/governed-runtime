@@ -88,10 +88,10 @@ export function challengeKindForObligation(obligationType: string): ChallengeKin
 
 /**
  * Canonical default for `maxReviewerAttempts`: exactly ONE additional
- * reviewer attempt (output repair or task re-arm) per obligation.
+ * reviewer attempt (dispatch re-arm) per obligation.
  *
- * initial attempt (does not count) → repairable rejection → repair #1
- * repair #1 → repairable rejection → REVIEWER_OUTPUT_RETRY_EXHAUSTED
+ * initial attempt (does not count) → spent/interrupted dispatch → re-arm #1
+ * re-arm #1 → spent dispatch → budget exhausted
  *
  * The value is frozen onto the obligation at creation; presets and the
  * config override both route through this canonical default.

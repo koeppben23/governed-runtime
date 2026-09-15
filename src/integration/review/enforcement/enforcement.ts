@@ -71,12 +71,16 @@ function trackReviewRequired(
   state.pendingReviews.set(reviewTool, buildPendingReview(reviewTool, now, binding));
 }
 
-function trackContentAnalysis(state: SessionEnforcementState, now: string): void {
+function trackContentAnalysis(
+  state: SessionEnforcementState,
+  parsed: NonNullable<ReturnType<typeof parseToolResult>>,
+  now: string,
+): void {
   state.pendingReviews.set(TOOL_FLOWGUARD_REVIEW, {
     tool: TOOL_FLOWGUARD_REVIEW,
     requestedAt: now,
-    attemptId: null,
-    obligationId: null,
+    attemptId: typeof parsed.reviewAttemptId === 'string' ? parsed.reviewAttemptId : null,
+    obligationId: reviewObligationIdFromSignal(parsed, true),
   });
 }
 
@@ -93,7 +97,7 @@ function handleContentAnalysisFlag(
     attestation &&
     toolName === TOOL_FLOWGUARD_REVIEW
   ) {
-    trackContentAnalysis(state, now);
+    trackContentAnalysis(state, parsed, now);
   }
 }
 
@@ -236,16 +240,27 @@ export function enforceBeforeVerdict(
   const pending = state.pendingReviews.get(reviewTool);
   if (!pending) return { allowed: true };
 
-  if (
-    sessionState?.reviewAssurance?.invocations.some(
-      (invocation) => invocation.invocationMode === 'sdk_session_prompt',
-    )
-  )
-    return { allowed: true };
+  // L1 binds to the SPECIFIC pending review, not to the mere existence of any
+  // SDK invocation: the recorded invocation must belong to the pending
+  // obligation (and to its pre-authorized attempt, when the signal named one).
+  if (pending.obligationId === null) {
+    return {
+      allowed: false,
+      code: 'SUBAGENT_REVIEW_NOT_INVOKED',
+      reason: `FlowGuard enforcement: ${reviewTool} signaled a review requirement without an obligation identity; the reviewer invocation cannot be bound to the pending review.`,
+    };
+  }
+  const bound = sessionState?.reviewAssurance?.invocations.some(
+    (invocation) =>
+      invocation.invocationMode === 'sdk_session_prompt' &&
+      invocation.obligationId === pending.obligationId &&
+      (pending.attemptId === null || invocation.attemptId === pending.attemptId),
+  );
+  if (bound) return { allowed: true };
 
   return {
     allowed: false,
     code: 'SUBAGENT_REVIEW_NOT_INVOKED',
-    reason: `FlowGuard enforcement: ${reviewTool} signaled INDEPENDENT_REVIEW_REQUIRED but no host-observed structured reviewer invocation was recorded before the verdict.`,
+    reason: `FlowGuard enforcement: obligation ${pending.obligationId} signaled INDEPENDENT_REVIEW_REQUIRED but no host-observed structured reviewer invocation is bound to it before the verdict.`,
   };
 }

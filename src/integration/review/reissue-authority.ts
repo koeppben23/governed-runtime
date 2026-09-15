@@ -1,15 +1,16 @@
 /**
  * @module integration/review/reissue-authority
- * @description Transition authorities for minting NEW attempts on an existing
+ * @description Transition authority for minting NEW attempts on an existing
  *              obligation.
  *
- * The canonical output-repair authority now lives in
- * `src/state/review-continuation.js` (re-exported here for the historical
- * import surface). This module retains the reviewer Task lifecycle re-arm
- * authority, which stays in the integration layer because its budget is the
- * enforcement retry gate at Task dispatch time.
+ * The ONLY current producer of a non-initial attempt is the transport-neutral
+ * dispatch-recovery re-arm: an attempt whose durable dispatch ledger already
+ * records a host release is spent, and the originating command re-invokes the
+ * flow to mint a fresh append-only attempt on the SAME obligation. The
+ * authority stays in the integration layer because its budget is the
+ * enforcement retry gate at dispatch time.
  *
- * @version v1
+ * @version v2
  */
 
 import type {
@@ -18,37 +19,66 @@ import type {
   ReviewAttemptOrigin,
   ReviewObligation,
 } from '../../state/evidence.js';
+import { countReviewAttempts } from '../../state/review-continuation.js';
 
-export {
-  authorizeOutputRepairReissue,
-  countReviewAttempts,
-  latestAttemptForObligation,
-  type OutputRepairAuthorization,
-  type ReissueBlockCode,
-} from '../../state/review-continuation.js';
-
-export type TaskRearmAuthorization =
+export type DispatchRearmAuthorization =
   | {
       readonly kind: 'authorized';
       readonly obligation: ReviewObligation;
-      readonly origin: Extract<ReviewAttemptOrigin, { readonly kind: 'task_rearm' }>;
+      readonly origin: Extract<ReviewAttemptOrigin, { readonly kind: 'dispatch_rearm' }>;
     }
   | { readonly kind: 'blocked'; readonly reason: string };
 
+type DispatchRearmTrigger = Extract<
+  ReviewAttemptOrigin,
+  { readonly kind: 'dispatch_rearm' }
+>['triggerReason'];
+
 /**
- * Decide whether a spent/interrupted attempt may be re-armed by the reviewer
- * Task lifecycle. The settled-obligation guard lives here so the re-arm path
- * cannot mint attempts on fulfilled, consumed, or blocked obligations.
+ * Derive the dispatch-recovery trigger from the spent attempt and its durable
+ * release record:
  *
- * Re-arms and output repairs draw on the SAME frozen per-obligation
- * reviewer-attempt budget: an obligation cannot mint unbounded new reviewer
- * attempts, regardless of whether the predecessor was interrupted or
- * rejected.
+ *   created + an unresolved `authorized` dispatch → 'interrupted'
+ *   created + only `outcome_unknown` releases     → 'spent'
+ *   rejected                                       → 'rejected'
+ *   stale                                          → 'stale'
+ *   expired                                        → 'expired'
+ *
+ * A `created` attempt without any released dispatch (or with a completed
+ * dispatch, which contradicts its status) has no legal re-arm trigger.
  */
-export function authorizeTaskLifecycleRearm(
+function dispatchRearmTrigger(
   assurance: ReviewAssuranceState,
   spent: ReviewAttempt,
-): TaskRearmAuthorization {
+): DispatchRearmTrigger | null {
+  if (spent.status === 'created') {
+    const dispatches = (assurance.dispatches ?? []).filter(
+      (record) => record.attemptId === spent.attemptId,
+    );
+    if (dispatches.some((record) => record.dispatchStatus === 'authorized')) return 'interrupted';
+    if (dispatches.some((record) => record.dispatchStatus === 'outcome_unknown')) return 'spent';
+    return null;
+  }
+  if (spent.status === 'rejected') return 'rejected';
+  if (spent.status === 'stale') return 'stale';
+  if (spent.status === 'expired') return 'expired';
+  return null;
+}
+
+/**
+ * Decide whether a spent/interrupted attempt may be re-armed by the
+ * transport-neutral dispatch-recovery path. The settled-obligation guard lives
+ * here so the re-arm path cannot mint attempts on fulfilled, consumed, or
+ * blocked obligations.
+ *
+ * Every re-arm draws on the frozen per-obligation reviewer-attempt budget: an
+ * obligation cannot mint unbounded reviewer attempts, regardless of how the
+ * predecessor was spent.
+ */
+export function authorizeDispatchRearm(
+  assurance: ReviewAssuranceState,
+  spent: ReviewAttempt,
+): DispatchRearmAuthorization {
   const obligation = assurance.obligations.find((o) => o.obligationId === spent.obligationId);
   if (!obligation) {
     return { kind: 'blocked', reason: 'rearm_obligation_not_found' };
@@ -60,30 +90,25 @@ export function authorizeTaskLifecycleRearm(
   ) {
     return { kind: 'blocked', reason: 'rearm_obligation_settled' };
   }
-  const repairs = assurance.attempts.filter(
-    (attempt) =>
-      attempt.obligationId === obligation.obligationId &&
-      (attempt.origin.kind === 'task_rearm' || attempt.origin.kind === 'output_repair'),
-  ).length;
-  if (repairs >= obligation.maxReviewerAttempts) {
+  const rearms = countReviewAttempts(assurance, obligation.obligationId);
+  if (rearms >= obligation.maxReviewerAttempts) {
     return {
       kind: 'blocked',
-      reason: `reviewer repair budget exhausted (${repairs}/${obligation.maxReviewerAttempts})`,
+      reason: `reviewer re-arm budget exhausted (${rearms}/${obligation.maxReviewerAttempts})`,
     };
   }
-  const triggerReason =
-    spent.status === 'created'
-      ? 'interrupted'
-      : spent.status === 'rejected'
-        ? 'rejected'
-        : spent.status === 'stale'
-          ? 'stale'
-          : 'expired';
+  const triggerReason = dispatchRearmTrigger(assurance, spent);
+  if (!triggerReason) {
+    return {
+      kind: 'blocked',
+      reason: `reviewer attempt ${spent.attemptId} has no released dispatch to recover from`,
+    };
+  }
   return {
     kind: 'authorized',
     obligation,
     origin: {
-      kind: 'task_rearm',
+      kind: 'dispatch_rearm',
       predecessorAttemptId: spent.attemptId,
       triggerReason,
     },

@@ -67,9 +67,8 @@ export function createReviewAttempt(input: {
   observationCapability: string | null;
   /**
    * Authority-bearing origin. Every attempt must name how it came into
-   * existence: `initial` at obligation creation, `output_repair` after an
-   * authorized output-repair reissue, or `task_rearm` after a task-lifecycle
-   * re-arm. There is no origin-less attempt.
+   * existence: `initial` at obligation creation, or `dispatch_rearm` after an
+   * authorized dispatch-recovery re-arm. There is no origin-less attempt.
    */
   origin: ReviewAttemptOrigin;
   /**
@@ -121,10 +120,10 @@ export function createAttemptForExistingObligation(
   now: string,
   /**
    * Mint authority, supplied by the caller ONLY after the matching transition
-   * authority was satisfied (`authorizeOutputRepairReissue` or
-   * `authorizeTaskLifecycleRearm`) and the attempt-bound Discovery context was
-   * resolved BEFORE this mint. An architecture test whitelists the productive
-   * call sites so this parameter cannot become a public backdoor.
+   * authority was satisfied (`authorizeDispatchRearm`) and the attempt-bound
+   * Discovery context was resolved BEFORE this mint. An architecture test
+   * whitelists the productive call sites so this parameter cannot become a
+   * public backdoor.
    */
   transition: {
     readonly origin: ReviewAttemptOrigin;
@@ -229,12 +228,6 @@ export function updateAttemptStatus(
     childSessionId?: string;
     /** Structured rejection reason, persisted only for `rejected` status. */
     rejectionReason?: ReviewAttemptRejectionReason;
-    /**
-     * Canonical schema-error-set fingerprint, persisted only for `rejected`
-     * status. Repair diagnostics — feeds the stall detection of the
-     * output-repair gate, never authority.
-     */
-    schemaErrorFingerprint?: string;
   },
 ): ReviewAssuranceState {
   const base = ensureReviewAssurance(assurance);
@@ -253,9 +246,6 @@ export function updateAttemptStatus(
               : {}),
             ...(status === 'rejected' && extra?.rejectionReason
               ? { rejectionReason: extra.rejectionReason }
-              : {}),
-            ...(status === 'rejected' && extra?.schemaErrorFingerprint
-              ? { schemaErrorFingerprint: extra.schemaErrorFingerprint }
               : {}),
           },
     ),

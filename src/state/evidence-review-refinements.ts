@@ -119,7 +119,6 @@ export interface AttemptRefinementShape {
   readonly completedAt?: string;
   readonly observationCapability?: string;
   readonly rejectionReason?: string;
-  readonly schemaErrorFingerprint?: string;
   readonly createdAt: string;
   readonly origin: {
     readonly kind: string;

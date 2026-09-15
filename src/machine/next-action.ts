@@ -354,12 +354,6 @@ function reviewLifecycleAction(
         text: `Independent ${label.toLowerCase()} review was interrupted or spent mid-dispatch (released, no bound evidence). Re-run ${command} to re-arm the review attempt durably on the existing obligation.`,
         commands: [command],
       };
-    case 'output_repair':
-      return {
-        code: ACTION_CODES.RUN_PLAN,
-        text: `The latest ${label.toLowerCase()} review attempt needs an authorized repair. Re-run ${command} to re-issue the reviewer attempt on the existing obligation.`,
-        commands: [command],
-      };
     case 'integrity_blocked':
       return {
         code: ACTION_CODES.REVIEW_STATE_INCOMPLETE,

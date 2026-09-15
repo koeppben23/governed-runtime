@@ -217,7 +217,7 @@ describe('resolveNextAction', () => {
       expect(action.text).toContain('no legal reviewer attempt');
     });
 
-    it('PLAN with a repairable rejected attempt → authorized repair via /plan', () => {
+    it('PLAN with a rejected attempt no longer authorizes a repair → /plan closure', () => {
       const obligation = pendingPlanObligation({
         status: 'pending',
         maxReviewerAttempts: 1,
@@ -239,7 +239,8 @@ describe('resolveNextAction', () => {
       });
       const action = resolveNextAction('PLAN', state);
       expectAction(action, ACTION_CODES.RUN_PLAN, ['/plan']);
-      expect(action.text).toContain('authorized repair');
+      expect(action.text).toContain('no legal reviewer attempt');
+      expect(action.text).not.toContain('authorized repair');
     });
 
     it('PLAN_REVIEW → RUN_REVIEW_DECISION', () => {
@@ -463,7 +464,7 @@ describe('resolveNextAction', () => {
       const blocked = {
         ...obligation,
         status: 'blocked' as const,
-        blockedCode: 'REVIEW_REPAIR_UNAVAILABLE',
+        blockedCode: 'REVIEW_ATTEMPT_UNAVAILABLE',
       };
       const state = makeState('IMPL_REVIEW', {
         implementation: IMPL_EVIDENCE,
@@ -477,7 +478,7 @@ describe('resolveNextAction', () => {
       });
       const action = resolveNextAction('IMPL_REVIEW', state);
       expectAction(action, ACTION_CODES.IMPLEMENTATION_REVIEW_BLOCKED, ['/implement']);
-      expect(action.text).toContain('REVIEW_REPAIR_UNAVAILABLE');
+      expect(action.text).toContain('REVIEW_ATTEMPT_UNAVAILABLE');
       expect(action.text).not.toContain('flowguard-reviewer');
     });
 
@@ -503,7 +504,7 @@ describe('resolveNextAction', () => {
         return {
           ...obligation,
           status: 'blocked' as const,
-          blockedCode: 'REVIEW_REPAIR_UNAVAILABLE',
+          blockedCode: 'REVIEW_ATTEMPT_UNAVAILABLE',
         };
       });
       const state = makeState('IMPL_REVIEW', {
