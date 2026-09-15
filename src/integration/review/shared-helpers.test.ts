@@ -1,7 +1,7 @@
 /**
  * @module integration/review/shared-helpers.test
  * @description Tests for shared-helpers pure functions — attestation validation,
- *              policy extraction, output detection, and session context construction.
+ *              output detection, discovery context, and prompt authority.
  *
  * @test-policy HAPPY, BAD
  */
@@ -9,7 +9,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   validatePipelineAttestation,
-  isStrictEnforcementEnabled,
   isOutputAlreadyBlocked,
   buildReviewDiscoveryContextForPipeline,
   buildAttemptSucceededLogger,

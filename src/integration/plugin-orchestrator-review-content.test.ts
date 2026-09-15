@@ -423,7 +423,7 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     });
   });
 
-  it('blocks with STRICT_REVIEW_ORCHESTRATION_FAILED when strict /review reviewer returns no findings', async () => {
+  it('blocks with STRICT_REVIEW_ORCHESTRATION_FAILED when the /review invocation returns no findings', async () => {
     const { output, blockReviewOutcome } = await runReviewContent(null);
 
     expect(blockReviewOutcome).toHaveBeenCalledWith(
@@ -432,7 +432,7 @@ describe('runReviewOrchestration strict /review content analysis', () => {
       'STRICT_REVIEW_ORCHESTRATION_FAILED',
       {
         obligationId: OBLIGATION_ID,
-        reason: 'reviewer response was not parseable as ReviewFindings',
+        reason: 'reviewer invocation failed',
       },
       output,
     );

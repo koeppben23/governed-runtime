@@ -17,8 +17,12 @@
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { PACKAGE_VERSION, resolvePackageRoot, BUILD_INFO_CHECK } from './install-helpers.js';
-import type { DoctorCheck } from './install-types.js';
+import {
+  PACKAGE_VERSION,
+  resolvePackageRoot,
+  BUILD_INFO_CHECK,
+  type DoctorCheck,
+} from './install-types.js';
 
 export function checkBuildInfo(packageRoot: string = resolvePackageRoot()): DoctorCheck[] {
   const file = join(packageRoot, 'dist', 'build-info.json');

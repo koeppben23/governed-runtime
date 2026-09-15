@@ -1,14 +1,11 @@
 /**
- * @module state/policy-idp-config
- * @description IdP configuration Zod schemas owned by the state layer.
+ * @module shared/policy-idp-config
+ * @description Canonical IdP policy configuration Zod schemas.
  *
- * These schemas define the shape of persisted identity-provider configuration
- * embedded in policy snapshots (PolicySnapshotSchema → identityProvider field).
- * They are pure schema definitions with no runtime identity resolution,
- * token verification, JWKS fetching, or actor/assurance logic.
- *
- * identity/types.ts re-exports these schemas for backward compatibility
- * with non-state callers (identity runtime, config layer).
+ * These schemas define the policy configuration shape shared by policy
+ * resolution, persisted policy snapshots, and identity verification. They have
+ * no runtime identity resolution, token verification, JWKS fetching, or
+ * actor/assurance logic.
  *
  * @version v1
  */

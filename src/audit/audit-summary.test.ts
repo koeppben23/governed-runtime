@@ -112,7 +112,6 @@ describe('audit summary', () => {
         valid: false,
         totalEvents: 10,
         verifiedCount: 8,
-        skippedCount: 2,
         firstBreak: {
           index: 3,
           eventId: 'broken-event',
@@ -243,7 +242,6 @@ describe('audit summary', () => {
         valid: false,
         totalEvents: 5,
         verifiedCount: 5,
-        skippedCount: 0,
         firstBreak: {
           index: 2,
           eventId: 'evt-legacy',
@@ -273,7 +271,6 @@ describe('audit summary', () => {
         valid: true,
         totalEvents: 5,
         verifiedCount: 5,
-        skippedCount: 0,
         firstBreak: null,
         results: [],
         reason: null,

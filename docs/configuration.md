@@ -372,18 +372,25 @@ Optional fields:
 FlowGuard policy authority is resolved from explicit mode, repo default mode, and (optionally)
 `FLOWGUARD_POLICY_PATH` central minimum semantics.
 
-### Audit Chain Verification Mode
+### Audit Chain Verification
 
-The `verifyChain` function accepts an optional `{ strict: boolean }` parameter:
+`verifyChain` has no strict-vs-legacy mode. Every record must satisfy the
+canonical `audit-chain.v3` event envelope: anything that is not a valid v3
+record fails closed with reason `AUDIT_ENVELOPE_INVALID` and is never handed to
+secondary assurance authorities. No records are skipped or tolerated.
 
-- **Default (`strict: false`):** Legacy events without chain fields are skipped and counted.
-  The chain remains valid. Suitable for migration and diagnostic workflows.
-- **Strict (`strict: true`):** Legacy events without chain fields are treated as integrity
-  failures. Regulated verification paths must use strict mode.
+`verifyChain(events, options?)` accepts:
 
-Archive verification (`verifyArchive`) selects strict mode automatically when
-`manifest.policyMode === 'regulated'`. Unknown or non-regulated policy modes remain
-legacy-tolerant for backward compatibility.
+- `strictTimestamps` — when `true`, missing timestamp evidence, TSA imprint
+  mismatches, and pending token verification are failures rather than
+  diagnostics. Clock monotonicity is always enforced and is never gated by this
+  option.
+- `expectedFlowguardSessionId` — binds the trail to a state-owned FlowGuard
+  session identity; a mismatch is reported as `CHAIN_BREAK`.
+
+Failure reason priority: `CHAIN_BREAK` > `AUDIT_ENVELOPE_INVALID` >
+`CLOCK_ANOMALY` / `TIMESTAMP_EVIDENCE_MISSING` / `TSA_MESSAGE_IMPRINT_MISMATCH` /
+`TOKEN_VERIFICATION_REQUIRED`.
 
 ### Archive export redaction
 
@@ -435,7 +442,7 @@ Results are included in `discovery-snapshot.json` archives and used for profile 
 
 **Advisory verification authority:**
 
-Verification commands (test, lint, build, typecheck) are derived via `planVerificationCandidates` and surfaced as `verificationCandidates` in `flowguard_status`. This is the single canonical advisory verification source. The `validationHints` field in `DiscoveryResult` is a legacy intermediate signal retained for digest stability and must not be consumed for agent guidance.
+Verification commands (test, lint, build, typecheck) are derived via `planVerificationCandidates` and surfaced as `verificationCandidates` in `flowguard_status`. This is the single canonical advisory verification source. Discovery v2 carries no `validationHints` field; `DiscoveryResult` exposes only `verificationCandidates`.
 
 ### profile.defaultId
 

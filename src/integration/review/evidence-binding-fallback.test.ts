@@ -7,7 +7,7 @@ import {
   onFlowGuardToolAfter,
   onTaskToolAfter,
 } from './enforcement/enforcement.js';
-import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import {
   CHILD_SESSION_ID,
   LATER,

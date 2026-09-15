@@ -21,16 +21,18 @@ import * as path from 'node:path';
 import {
   DiscoveryResultSchema,
   ProfileResolutionSchema,
-  DiscoverySummarySchema,
   DetectedItemSchema,
-  DetectedStackSchema,
-  DetectedStackTargetSchema,
   StackInfoSchema,
   DISCOVERY_SCHEMA_VERSION,
   PROFILE_RESOLUTION_SCHEMA_VERSION,
   type CollectorInput,
   type DiscoveryResult,
 } from './types.js';
+import {
+  DetectedStackSchema,
+  DetectedStackTargetSchema,
+  DiscoverySummarySchema,
+} from '../state/discovery-schemas.js';
 import {
   ArchiveManifestSchema,
   ArchiveVerificationSchema,

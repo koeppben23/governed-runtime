@@ -15,7 +15,6 @@ hook-gated, platform-limited guarantees. Claude Code and Codex are technical pre
 ## Installation
 
 FlowGuard is distributed as a pre-built proprietary release artifact via GitHub Releases.
-Release publication is tag-driven (`v*`): if no release tag has been published yet, the Releases page can be empty for that snapshot.
 
 1. Download `flowguard-core-{version}.tgz` from the [Releases page](https://github.com/koeppben23/governed-runtime/releases)
 2. Install: `npx --package ./flowguard-core-{version}.tgz flowguard install --core-tarball ./flowguard-core-{version}.tgz`
@@ -134,7 +133,7 @@ subagent attestation, and the `/review` evidence model.
 | Feature                           | Description                                                                                                                                                                                                                                                      |
 | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Policy Modes**                  | Solo (auto), Team (human-gated, **default**), Team-CI (CI auto, local degrade), Regulated (mandatory review)                                                                                                                                                     |
-| **Independent Subagent Review**   | Mandatory plugin-orchestrated `flowguard-reviewer` subagent for `/plan`, `/architecture`, `/implement`. Fail-closed at four enforcement layers (subagent invoked, session ID match, prompt context, findings integrity). Self-review never accepted as evidence. |
+| **Independent Subagent Review**   | Mandatory independent `flowguard-reviewer` review for `/plan`, `/architecture`, `/implement`. Dispatch is policy-bound: `team`, `team-ci`, and `regulated` require host-observed Task dispatch (`host_task_required`); `solo` prefers it (`host_task_preferred`). Review output is always `structured_required`. Fail-closed at four enforcement layers (reviewer invoked, session ID match, prompt context, findings integrity). Self-review never accepted as evidence. |
 | **Profiles**                      | Auto-detect tech stack (TypeScript, Java, Angular)                                                                                                                                                                                                               |
 | **Python/Rust/Go Detection**      | Detects root-level Python, Rust, and Go ecosystem signals from manifest/toolchain files                                                                                                                                                                          |
 | **Database Detection**            | Detects repo database engines (PostgreSQL, MySQL, MariaDB, MongoDB, Redis, H2, SQLite, Oracle, SQL Server) from manifest evidence                                                                                                                                |
@@ -234,27 +233,13 @@ For debugging FlowGuard inside the OpenCode runtime with IntelliJ IDEA Ultimate,
 
 See [docs/testing-strategy.md](./docs/testing-strategy.md) for the full test tier system.
 
-### Release Checklist
+### Releases
 
-Releases are PR-first because `main` is protected. Do not use `npm version` for
-FlowGuard releases: it creates local commit/tag state before branch protection
-and required checks have accepted the release.
-
-1. `git switch main && git pull --ff-only origin main` — start from current `main`
-2. `git switch -c release/vX.Y.Z` — create a release branch
-3. `npm run release:prepare -- X.Y.Z` — update `VERSION`, package metadata, lockfile, changelog, and generated docs without committing or tagging
-4. Update release-pinned documentation tests when the release cut moves entries out of `[Unreleased]`
-5. `npm run release:verify` — type check, lint, tests, build, ESM check, and tarball install verification
-6. `git commit -m "chore(release): cut vX.Y.Z"` — commit on the release branch with hooks enabled
-7. Open a PR to `main`, wait for required checks, then squash-merge
-8. `git switch main && git pull --ff-only origin main` — move local `main` to the merged commit
-9. `npm run release:assert-main-tag -- vX.Y.Z` — prove `HEAD == origin/main`, versions match, changelog is cut, and the tag does not already exist
-10. `git tag vX.Y.Z && git push origin vX.Y.Z` — trigger the release workflow from the merged `main` commit
-11. Verify the GitHub Release artifact, checksum file, SBOM attachment, and provenance attestation
-
-The `release.yml` workflow handles: build, pack, naming validation, install-verify on
-tarball, SHA-256 checksums, CycloneDX SBOM generation, build provenance attestation,
-and GitHub Release creation with `--verify-tag`.
+`main` is the canonical release authority and is protected. Releases are
+PR-first: a `v*` tag must point at a commit already contained in `origin/main`.
+The full release process, artifact contents, integrity verification, and support
+lifecycle are owned by [docs/release-policy.md](./docs/release-policy.md); see
+[CONTRIBUTING.md](./CONTRIBUTING.md) for release branch conventions.
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for development guidelines.
 
@@ -281,9 +266,6 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for development guidelines.
 | Runtime-aware with CI degradation       | `resolvePolicyWithContext(mode, ciContext?).policy` |
 | Snapshot-based authoritative resolution | `resolvePolicyFromSnapshot(snapshot)`               |
 | Hydrate lifecycle (full pipeline)       | `resolvePolicyForHydrate(opts)`                     |
-
-> `resolvePolicy()` was removed in v1.2.0. Use `getPolicyPreset()` for the
-> same behavior, or the context/snapshot-aware APIs for authoritative resolution.
 
 ---
 

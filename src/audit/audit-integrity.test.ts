@@ -36,7 +36,6 @@ describe('audit integrity', () => {
       expect(result.valid).toBe(true);
       expect(result.totalEvents).toBe(3);
       expect(result.verifiedCount).toBe(3);
-      expect(result.skippedCount).toBe(0);
       expect(result.firstBreak).toBeNull();
       expect(result.reason).toBeNull();
     });
@@ -613,7 +612,6 @@ describe('audit integrity', () => {
       };
       // verifyChain treats non-v3 records as envelope-invalid — no skipping.
       const result = verifyChain([event]);
-      expect(result.skippedCount).toBe(0);
       expect(result.valid).toBe(false);
       expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
     });
@@ -625,7 +623,6 @@ describe('audit integrity', () => {
         prevHash: '',
       };
       const result = verifyChain([event]);
-      expect(result.skippedCount).toBe(0);
       expect(result.valid).toBe(false);
       expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
     });
@@ -645,7 +642,6 @@ describe('audit integrity', () => {
       expect(result.valid).toBe(false);
       expect(result.totalEvents).toBe(1);
       expect(result.verifiedCount).toBe(1);
-      expect(result.skippedCount).toBe(0);
       expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
       expect(result.firstBreak?.reasonCode).toBe('AUDIT_ENVELOPE_INVALID');
     });
@@ -675,7 +671,6 @@ describe('audit integrity', () => {
       const result = verifyChain(mixed);
       // Invalid records are never skipped — the chain fails closed.
       expect(result.totalEvents).toBe(3);
-      expect(result.skippedCount).toBe(0);
       expect(result.valid).toBe(false);
       expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
       expect(result.firstBreak?.index).toBe(2);
@@ -751,7 +746,6 @@ describe('audit integrity', () => {
         const result = verifyChain(raw);
         expect(result.valid).toBe(true);
         expect(result.reason).toBeNull();
-        expect(result.skippedCount).toBe(0);
         expect(result.verifiedCount).toBe(3);
       });
 
@@ -779,7 +773,6 @@ describe('audit integrity', () => {
         const result = verifyChain([invalidEvent]);
         expect(result.valid).toBe(false);
         expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
-        expect(result.skippedCount).toBe(0);
         expect(result.verifiedCount).toBe(1);
         expect(result.firstBreak?.index).toBe(0);
       });
@@ -817,7 +810,6 @@ describe('audit integrity', () => {
         const result = verifyChain(invalidEvents);
         expect(result.valid).toBe(false);
         expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
-        expect(result.skippedCount).toBe(0);
       });
 
       it('strict mode with tampered event → CHAIN_BREAK (not envelope-invalid)', () => {
@@ -839,7 +831,6 @@ describe('audit integrity', () => {
         const result = verifyChain([]);
         expect(result.valid).toBe(true);
         expect(result.reason).toBeNull();
-        expect(result.skippedCount).toBe(0);
       });
 
       it('non-strict (default) with invalid records → still fails closed', () => {
@@ -855,7 +846,6 @@ describe('audit integrity', () => {
         const result = verifyChain([invalidEvent]);
         expect(result.valid).toBe(false);
         expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
-        expect(result.skippedCount).toBe(0);
       });
 
       it('explicit strict: false also fails closed on invalid records', () => {
@@ -871,7 +861,6 @@ describe('audit integrity', () => {
         const result = verifyChain([invalidEvent]);
         expect(result.valid).toBe(false);
         expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
-        expect(result.skippedCount).toBe(0);
       });
     });
 
@@ -896,7 +885,6 @@ describe('audit integrity', () => {
         const result = verifyChain(mixed);
         expect(result.valid).toBe(false);
         expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
-        expect(result.skippedCount).toBe(0);
         expect(result.firstBreak?.index).toBe(2);
       });
 
@@ -922,7 +910,6 @@ describe('audit integrity', () => {
         expect(result.valid).toBe(false);
         // CHAIN_BREAK wins over envelope-invalid — more severe
         expect(result.reason).toBe('CHAIN_BREAK');
-        expect(result.skippedCount).toBe(0);
         expect(result.firstBreak).not.toBeNull();
       });
     });

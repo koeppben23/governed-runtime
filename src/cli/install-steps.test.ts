@@ -15,7 +15,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { initInstallContext, validateTarball, emitPostInstallWarnings } from './install-steps.js';
-import { PACKAGE_VERSION } from './install-helpers.js';
+import { PACKAGE_VERSION } from './install-types.js';
 import { repoArgs, globalArgs } from './install-test-helpers.test.js';
 
 const VERSION = PACKAGE_VERSION();

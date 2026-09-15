@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { resolveHostTaskFindings, resolveHostTaskEffectiveFindings } from './review-validation.js';
+import { resolveHostTaskFindings } from './review-validation-host-task.js';
+import { resolveHostTaskEffectiveFindings } from './review-validation.js';
 import {
   setAdapterLogger,
   resetAdapterLogger,
@@ -133,6 +134,18 @@ describe('resolveHostTaskFindings', () => {
     expect(result.kind).toBe('resolved');
     if (result.kind !== 'resolved') throw new Error('expected resolved findings');
     expect(result.findings.overallVerdict).toBe('changes_requested');
+  });
+
+  it('HAPPY: resolves findings when the host did not capture a separate verdict', () => {
+    const assurance = {
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
+      attempts: [makeBoundAttempt()],
+      obligations: [makeObligation()],
+      invocations: [makeHostTaskInvocation({ capturedVerdict: undefined })],
+      dispatches: [],
+    };
+
+    expect(resolveHostTaskFindings(assurance, makeObligation()).kind).toBe('resolved');
   });
 
   it('HAPPY: resolves an implementation challenge bound to the active obligation and evidence', () => {
@@ -476,7 +489,10 @@ describe('resolveHostTaskFindings', () => {
     };
     // Evidence WAS captured (reviewer ran) but is corrupt — distinct from the
     // "no evidence at all" not_found case so the caller can emit a distinct block.
-    expect(resolveHostTaskFindings(assurance, makeObligation()).kind).toBe('unparseable');
+    const result = resolveHostTaskFindings(assurance, makeObligation());
+    expect(result.kind).toBe('unparseable');
+    if (result.kind !== 'unparseable') throw new Error('expected unparseable findings');
+    expect(result.detail).toContain('iteration');
   });
 
   it('RECOVERY: resolves a later valid capture after an unparseable challenge capture', () => {
@@ -608,6 +624,28 @@ describe('resolveHostTaskFindings', () => {
     expect(result.rejection.path).toBe('host_task');
   });
 
+  it('BAD: rejects a blocked obligation before looking for host-task evidence', () => {
+    const obligation = makeObligation({
+      status: 'blocked',
+      blockedCode: 'STRICT_REVIEW_ORCHESTRATION_FAILED',
+    });
+    const result = resolveHostTaskFindings(
+      {
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        obligations: [obligation],
+        invocations: [],
+        attempts: [],
+        dispatches: [],
+      },
+      obligation,
+    );
+
+    expect(result).toMatchObject({
+      kind: 'rejected',
+      rejection: { reason: 'STRICT_REVIEW_ORCHESTRATION_FAILED', path: 'host_task' },
+    });
+  });
+
   it('BAD: rejects host-task findings when obligation status is consumed', () => {
     const assurance = {
       assuranceSchemaVersion: 'review-assurance.v6' as const,
@@ -673,7 +711,7 @@ describe('resolveHostTaskFindings', () => {
       invocations: [
         makeHostTaskInvocation({
           invocationMode: 'sdk_session_prompt',
-          hostVisible: false,
+          hostVisible: true,
         }),
       ],
       dispatches: [],
@@ -1009,36 +1047,6 @@ describe('resolveHostTaskFindings', () => {
     expect(result).toMatchObject({ kind: 'attempt_lineage_unavailable' });
   });
 
-  it('returns attempt_lineage_unavailable when invocation has no attemptId', () => {
-    const invocation = makeHostTaskInvocation({
-      attemptId: undefined,
-      capturedRawFindings: {
-        ...validRawFindings,
-        overallVerdict: 'accept',
-        blockingIssues: [finding({ message: 'stale' })],
-      },
-      findingsHash: hashFindings({
-        ...validRawFindings,
-        overallVerdict: 'accept',
-        blockingIssues: [finding({ message: 'stale' })],
-      }),
-    });
-    const result = resolveHostTaskFindings(
-      {
-        assuranceSchemaVersion: 'review-assurance.v6' as const,
-        obligations: [makeObligation()],
-        invocations: [invocation],
-        attempts: [makeBoundAttempt()],
-        dispatches: [],
-      },
-      makeObligation(),
-    );
-    expect(result).toMatchObject({
-      kind: 'attempt_lineage_unavailable',
-      invocationId: INVOCATION_ID,
-    });
-  });
-
   it('returns attempt_lineage_unavailable when invocation obligationType mismatches', () => {
     const invocation = makeHostTaskInvocation({ obligationType: 'implement' });
     const result = resolveHostTaskFindings(
@@ -1058,62 +1066,26 @@ describe('resolveHostTaskFindings', () => {
     });
   });
 
-  it('RECOVERY: resolves a later coherent capture after a legacy incoherent capture without attemptId', () => {
-    const legacyIncoherent = {
-      ...validRawFindings,
-      overallVerdict: 'accept',
-      blockingIssues: [
-        finding({ severity: 'major', category: 'correctness', message: 'legacy contradiction' }),
-      ],
-    };
-
-    const coherentRetry = {
-      ...validRawFindings,
-      overallVerdict: 'changes_requested',
-      blockingIssues: [
-        finding({ severity: 'major', category: 'correctness', message: 'valid retry finding' }),
-      ],
-    };
-
-    const retryInvocationId = '77777777-7777-4777-8777-777777777777';
-    const retryAttemptId = '88888888-8888-4888-8888-888888888888';
-
+  it.each([
+    ['obligation id', { obligationId: '33333333-3333-4333-8333-333333333333' }],
+    ['obligation type', { obligationType: 'implement' as const }],
+    ['subject digest', { subjectDigest: 'other-subject-digest' }],
+  ])('rejects exact attempt lineage with a mismatched %s', (_field, attemptOverrides) => {
     const result = resolveHostTaskFindings(
       {
         assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [makeObligation()],
-        attempts: [
-          makeBoundAttempt({
-            attemptId: retryAttemptId,
-            childSessionId: 'ses_retry',
-            ordinal: 1,
-          }),
-        ],
-        invocations: [
-          makeHostTaskInvocation({
-            invocationId: '66666666-6666-4666-8666-666666666666',
-            attemptId: undefined,
-            capturedRawFindings: legacyIncoherent,
-            findingsHash: hashFindings(legacyIncoherent),
-          }),
-          makeHostTaskInvocation({
-            invocationId: retryInvocationId,
-            attemptId: retryAttemptId,
-            childSessionId: 'ses_retry',
-            capturedVerdict: 'changes_requested',
-            capturedRawFindings: coherentRetry,
-            findingsHash: hashFindings(coherentRetry),
-          }),
-        ],
+        invocations: [makeHostTaskInvocation()],
+        attempts: [makeBoundAttempt(attemptOverrides)],
         dispatches: [],
       },
       makeObligation(),
     );
 
-    expect(result.kind).toBe('resolved');
-    if (result.kind !== 'resolved') throw new Error('expected resolved retry');
-    expect(result.invocationId).toBe(retryInvocationId);
-    expect(result.invocation.attemptId).toBe(retryAttemptId);
+    expect(result).toMatchObject({
+      kind: 'attempt_lineage_unavailable',
+      invocationId: INVOCATION_ID,
+    });
   });
 });
 

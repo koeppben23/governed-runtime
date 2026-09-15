@@ -27,10 +27,8 @@ import type {
   ReviewObligation,
   ReviewInvocationEvidence,
 } from '../../state/evidence.js';
-import {
-  REVIEWER_SUBAGENT_TYPE,
-  REVIEW_ACCEPTANCE_PATH_NATIVE,
-} from '../../shared/flowguard-identifiers.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
+import { REVIEW_ACCEPTANCE_PATH_NATIVE } from '../../shared/flowguard-identifiers.js';
 import {
   getReviewFindingsAcceptanceRejection,
   hasValidHostTaskInvocationContract,

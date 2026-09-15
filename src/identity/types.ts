@@ -3,10 +3,6 @@
  * @description IdP types and JWKS document schemas for P35a/P35b1/P35b2
  *              static + JWKS verification.
  *
- * IdP configuration schemas (IdpConfigSchema, SigningKeySchema, etc.) are
- * owned by state/policy-idp-config.ts and re-exported here for backward
- * compatibility with identity runtime and config-layer consumers.
- *
  * JWKS document schemas (JwksDocumentSchema, JwksKeySchema) remain owned
  * by this module — they describe on-the-wire JWKS document formats,
  * not persisted policy configuration.
@@ -23,18 +19,7 @@ import {
   PemKeySchema,
   SigningKeySchema,
   StaticIdpConfigSchema,
-} from '../state/policy-idp-config.js';
-
-export {
-  ClaimMappingSchema,
-  IdpConfigSchema,
-  IdentityProviderModeSchema,
-  JwkKeySchema,
-  JwksIdpConfigSchema,
-  PemKeySchema,
-  SigningKeySchema,
-  StaticIdpConfigSchema,
-};
+} from '../shared/policy-idp-config.js';
 
 export type KeyKind = 'jwk' | 'pem';
 

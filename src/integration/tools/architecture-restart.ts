@@ -60,7 +60,7 @@ import {
   type ArchitectureArgs,
   type ArchitectureSession,
 } from './architecture-shared.js';
-import { appendNextAction, formatBlocked, writeStateWithArtifacts } from './helpers.js';
+import { enrichWithNextAction, formatBlocked, writeStateWithArtifacts } from './helpers.js';
 
 export async function routeArchitectureInitialSubmission(
   args: ArchitectureArgs,
@@ -256,7 +256,7 @@ function architectureInstructionResponse(
     ...(instruction.reviewInvocation ? { reviewInvocation: instruction.reviewInvocation } : {}),
     _audit: { transitions: [] },
   };
-  return appendNextAction(JSON.stringify(response), state);
+  return JSON.stringify(enrichWithNextAction(response, state));
 }
 
 function restartBlockedCount(state: SessionState): number {
@@ -386,8 +386,8 @@ async function restartArchitectureReview(
     subjectLabel: 'full ADR text, ADR title, and ticket text',
     state: augmentedState,
   });
-  return appendNextAction(
-    JSON.stringify(
+  return JSON.stringify(
+    enrichWithNextAction(
       buildRestartResponse(augmentedState, {
         nextAdr,
         sameRevision,
@@ -397,8 +397,8 @@ async function restartArchitectureReview(
         restartAttemptId,
         instruction,
       }),
+      augmentedState,
     ),
-    augmentedState,
   );
 }
 

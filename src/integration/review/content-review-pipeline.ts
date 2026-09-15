@@ -3,7 +3,7 @@
  * @description Content review pipeline for flowguard_review tool invocations.
  *
  * Resolves persisted review material, builds a review prompt, invokes the reviewer
- * subagent, validates findings, and enforces strict gates.
+ * subagent, validates findings, and enforces review gates.
  */
 
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
@@ -33,8 +33,6 @@ import { INVOCATION_MODE_SDK_SESSION } from './pipeline-types.js';
 import {
   validatePipelineAttestation,
   blockReviewOutcomeHelper,
-  isStrictEnforcementEnabled,
-  getReviewerPolicies,
   buildAttemptFailedLogger,
   buildAttemptSucceededLogger,
 } from './shared-helpers.js';
@@ -138,18 +136,15 @@ async function validateContentFindings(
   ctx: PipelineContext,
   reviewerResult: ReviewerSuccessResult,
   prompt: string,
-  strictEnforcement: boolean,
   attemptId: string,
 ): Promise<boolean> {
   const { deps, reviewCtx, output, rawOutput } = ctx;
 
   if (!reviewerResult.findings) {
-    if (strictEnforcement) {
-      await blockReviewOutcomeHelper(deps, ctx, 'STRICT_REVIEW_ORCHESTRATION_FAILED', {
-        obligationId: reviewCtx.obligationId,
-        reason: 'reviewer response was not parseable as ReviewFindings',
-      });
-    }
+    await blockReviewOutcomeHelper(deps, ctx, 'STRICT_REVIEW_ORCHESTRATION_FAILED', {
+      obligationId: reviewCtx.obligationId,
+      reason: 'reviewer response was not parseable as ReviewFindings',
+    });
     return false;
   }
 
@@ -168,41 +163,35 @@ async function validateContentFindings(
   const parsedFindings = prepared.ok
     ? ReviewFindingsSchema.safeParse(prepared.findings)
     : { success: false as const };
-  if (!parsedFindings.success) {
-    if (strictEnforcement) {
-      await blockReviewOutcomeHelper(deps, ctx, 'STRICT_REVIEW_ORCHESTRATION_FAILED', {
-        obligationId: reviewCtx.obligationId,
-        reason: 'reviewer response did not match ReviewFindings schema',
-      });
-    }
+  if (!parsedFindings.success || !prepared.ok) {
+    await blockReviewOutcomeHelper(deps, ctx, 'STRICT_REVIEW_ORCHESTRATION_FAILED', {
+      obligationId: reviewCtx.obligationId,
+      reason: 'reviewer response did not match ReviewFindings schema',
+    });
     return false;
   }
-  if (!prepared.ok) return false;
   const canonicalReviewerResult = { ...reviewerResult, findings: prepared.findings };
-
-  if (strictEnforcement) {
-    const narrowed = canonicalReviewerResult as ReviewerSuccessResult & {
-      findings: Record<string, unknown>;
-    };
-    const blocked = await enforceContentStrictGate(
-      ctx,
-      narrowed,
-      parsedFindings.data,
-      prompt,
-      attemptId,
-    );
-    if (blocked) return false;
-  }
+  const narrowed = canonicalReviewerResult as ReviewerSuccessResult & {
+    findings: Record<string, unknown>;
+  };
+  const blocked = await enforceContentGate(ctx, narrowed, parsedFindings.data, prompt, attemptId);
+  if (blocked) return false;
 
   const mutated = buildReviewContentMutatedOutput(rawOutput, canonicalReviewerResult);
-  if (mutated) output.output = mutated;
+  if (!mutated) {
+    await blockReviewOutcomeHelper(deps, ctx, 'STRICT_REVIEW_ORCHESTRATION_FAILED', {
+      obligationId: reviewCtx.obligationId,
+      reason: 'review output mutation failed',
+    });
+    return false;
+  }
+  output.output = mutated;
   return true;
 }
 
 export async function runReviewContentPipeline(ctx: PipelineContext): Promise<void> {
   const { deps, sessionState, reviewCtx, output, sessionId } = ctx;
   deps.log.info('review', 'content_review_started', { sessionId });
-  const strictEnforcement = isStrictEnforcementEnabled(sessionState);
 
   const persistedContent = await loadPersistedContentForReview(ctx);
   if (!persistedContent) return;
@@ -227,12 +216,11 @@ export async function runReviewContentPipeline(ctx: PipelineContext): Promise<vo
     frozenReviewerContext: persistedContent.frozenReviewerContext,
   });
 
-  const policies = getReviewerPolicies(sessionState);
   const reviewerResult = await deps.adapter.spawnReviewer({
     prompt,
     parentSessionId: sessionId,
-    reviewOutputPolicy: policies.reviewOutputPolicy,
-    reviewInvocationPolicy: policies.reviewInvocationPolicy,
+    reviewOutputPolicy: sessionState.policySnapshot.reviewOutputPolicy,
+    reviewInvocationPolicy: sessionState.policySnapshot.reviewInvocationPolicy,
     onAttemptFailed: buildAttemptFailedLogger(deps, TOOL_FLOWGUARD_REVIEW, sessionId),
     onAttemptSucceeded: buildAttemptSucceededLogger(deps, TOOL_FLOWGUARD_REVIEW),
   });
@@ -248,30 +236,28 @@ export async function runReviewContentPipeline(ctx: PipelineContext): Promise<vo
     return;
   }
 
-  if (!reviewerResult || reviewerResult.blocked) {
-    if (strictEnforcement) {
-      await blockReviewOutcomeHelper(deps, ctx, 'STRICT_REVIEW_ORCHESTRATION_FAILED', {
-        obligationId: reviewCtx.obligationId,
-        reason: 'reviewer response was not parseable as ReviewFindings',
-      });
-    }
+  if (!reviewerResult) {
+    await blockReviewOutcomeHelper(deps, ctx, 'STRICT_REVIEW_ORCHESTRATION_FAILED', {
+      obligationId: reviewCtx.obligationId,
+      reason: 'reviewer invocation failed',
+    });
     return;
   }
 
-  await validateContentFindings(
+  const accepted = await validateContentFindings(
     ctx,
     reviewerResult,
     prompt,
-    strictEnforcement,
     persistedContent.attemptId,
   );
+  if (!accepted) return;
   deps.log.info('review', 'content_review_completed', {
     sessionId,
     findingCount: countFindings(reviewerResult.findings),
   });
 }
 
-async function enforceContentStrictGate(
+async function enforceContentGate(
   ctx: PipelineContext,
   reviewerResult: ReviewerSuccessResult & { findings: Record<string, unknown> },
   findings: {
@@ -299,7 +285,7 @@ async function enforceContentStrictGate(
     return true;
   }
 
-  return persistStrictReviewInvocation(ctx, reviewerResult, prompt, attemptId);
+  return persistReviewInvocation(ctx, reviewerResult, prompt, attemptId);
 }
 
 function buildContentReviewInvocation(
@@ -385,7 +371,7 @@ function buildContentEvidenceAuditIntents(input: {
         reviewerResult: mutation.reviewerResult,
         state,
         occurredAt,
-        reviewProfile: getReviewerPolicies(state).reviewProfile,
+        reviewProfile: state.policySnapshot.reviewProfile,
       });
 }
 
@@ -447,7 +433,7 @@ function applyContentEvidenceMutation(
   };
 }
 
-async function persistStrictReviewInvocation(
+async function persistReviewInvocation(
   ctx: PipelineContext,
   reviewerResult: ReviewerSuccessResult & { findings: Record<string, unknown> },
   prompt: string,

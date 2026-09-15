@@ -19,7 +19,7 @@ import {
   onTaskToolAfter,
 } from './enforcement/enforcement.js';
 import { buildHostTaskEvidence } from './evidence-binding.js';
-import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import { ReviewFindings } from '../../state/evidence.js';
 import {
   NOW,

@@ -57,9 +57,8 @@ const mocks = vi.hoisted(() => {
         autoAdvanceOverflow: { phase: overflow.phase, limit: overflow.limit },
       }),
     ),
-    appendNextAction: vi.fn((payload: string) => payload),
+    enrichWithNextAction: vi.fn((value: Record<string, unknown>) => value),
     writeStateWithArtifacts: vi.fn(async (_sessDir: string, state: SessionState) => state),
-    extractSections: vi.fn(() => []),
     readDiscovery: vi.fn(async () => null as unknown),
   };
 });
@@ -73,8 +72,7 @@ vi.mock('./helpers.js', () => ({
   formatBlocked: mocks.formatBlocked,
   formatError: mocks.formatError,
   formatAutoAdvanceOverflow: mocks.formatAutoAdvanceOverflow,
-  extractSections: mocks.extractSections,
-  appendNextAction: mocks.appendNextAction,
+  enrichWithNextAction: mocks.enrichWithNextAction,
   writeStateWithArtifacts: mocks.writeStateWithArtifacts,
   withMutableSession: vi.fn(async (ctx) => {
     const paths = await mocks.resolveWorkspacePaths();
@@ -445,7 +443,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
     //    the boundary stopped before any state materialization.
     expect(mocks.autoAdvance).not.toHaveBeenCalled();
     expect(mocks.writeStateWithArtifacts).not.toHaveBeenCalled();
-    expect(mocks.appendNextAction).not.toHaveBeenCalled();
+    expect(mocks.enrichWithNextAction).not.toHaveBeenCalled();
   });
 
   it('FAIL-CLOSED: auto-advance overflow returns blocked and persists NO state (#428)', async () => {
@@ -478,10 +476,10 @@ describe('BUG-17: plan evidence-first resolution', () => {
     expect(mocks.writeStateWithArtifacts).not.toHaveBeenCalled();
 
     // 3. No substitute advanced state: the success response (built from a
-    //    finalState and wrapped by appendNextAction) was never constructed —
+    //    finalState and enriched with next-action fields) was never constructed —
     //    a full stop before any state materialization, not just an unpersisted
     //    write.
-    expect(mocks.appendNextAction).not.toHaveBeenCalled();
+    expect(mocks.enrichWithNextAction).not.toHaveBeenCalled();
   });
 
   it('BAD: host_task_required + no evidence → BLOCKED', async () => {

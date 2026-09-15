@@ -5,7 +5,7 @@
 
 import { chmod, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type { FileOp } from './install-helpers.js';
+import type { FileOp } from './install-types.js';
 import { writeIfAbsent } from './install-helpers.js';
 import type { InstallMutationSink } from './install-mutation-types.js';
 import {

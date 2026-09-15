@@ -3,7 +3,9 @@
  * @description Shared test factories and constants for review-enforcement test suites.
  */
 
-import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './types.js';
+import type { ReviewAssuranceState } from '../../../state/evidence.js';
+import { REVIEW_REQUIRED_PREFIX, type SessionEnforcementState } from './types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -22,6 +24,35 @@ export function hostAttestationFor(obligationId: string): Record<string, unknown
     toolObligationId: obligationId,
     iteration: 0,
     planVersion: 1,
+  };
+}
+
+/**
+ * Project transient pending-review fixtures onto the minimum current durable
+ * authority required by the reviewer Task dispatch gate.
+ *
+ * This is deliberately test-only: production must receive authoritative
+ * persisted ReviewAssuranceState and never reconstruct it from transient state.
+ */
+export function currentAttemptAssuranceFor(state: SessionEnforcementState): ReviewAssuranceState {
+  const attempts = [...state.pendingReviews.values()].flatMap((pending) => {
+    if (pending.obligationId == null || pending.attemptId == null) return [];
+    return [
+      {
+        attemptId: pending.attemptId,
+        obligationId: pending.obligationId,
+        status: 'created' as const,
+        childSessionId: undefined,
+      } as ReviewAssuranceState['attempts'][number],
+    ];
+  });
+
+  return {
+    assuranceSchemaVersion: 'review-assurance.v6',
+    obligations: [],
+    invocations: [],
+    attempts,
+    dispatches: [],
   };
 }
 

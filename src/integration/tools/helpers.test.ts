@@ -15,10 +15,10 @@ import {
   formatBlocked,
   formatAutoAdvanceOverflow,
   getWorktree,
-  extractSections,
   formatEval,
   formatRailResult,
 } from './helpers.js';
+import { projectMarkdownHeadings } from '../../shared/markdown-sections.js';
 import { formatError } from './error-format.js';
 import type { EvalResult } from '../../machine/evaluate.js';
 import type { RailResult, AutoAdvanceOverflow } from '../../rails/types.js';
@@ -170,13 +170,13 @@ describe('getWorktree', () => {
   });
 });
 
-describe('extractSections', () => {
+describe('projectMarkdownHeadings', () => {
   it('extracts H2 and H3 headers', () => {
-    expect(extractSections('## A\n### B\n## C')).toEqual(['A', 'B', 'C']);
+    expect(projectMarkdownHeadings('## A\n### B\n## C')).toEqual(['A', 'B', 'C']);
   });
 
   it('returns empty array for text without headers', () => {
-    expect(extractSections('plain text')).toEqual([]);
+    expect(projectMarkdownHeadings('plain text')).toEqual([]);
   });
 });
 

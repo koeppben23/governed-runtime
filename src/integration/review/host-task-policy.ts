@@ -9,7 +9,7 @@
 import { createHash } from 'node:crypto';
 import { parseToolResult, getToolOutput } from '../plugin-helpers.js';
 import { extractContentMeta } from './enforcement/extraction.js';
-import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import {
   buildTextCompatReviewerPrompt,
   type AdvisoryChallengeResolution,

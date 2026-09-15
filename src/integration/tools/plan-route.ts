@@ -20,7 +20,7 @@ import { reissueReviewAttempt } from './review-tool/continuation.js';
 import { buildInterruptedDispatchRearm } from '../durable-dispatch.js';
 import type { PlanExecutionScope } from './plan-types.js';
 import { buildPlanReviewInstruction } from './plan-response.js';
-import { appendNextAction, formatBlocked, writeStateWithArtifacts } from './helpers.js';
+import { enrichWithNextAction, formatBlocked, writeStateWithArtifacts } from './helpers.js';
 
 /**
  * Gate an initial plan submission against the plan review loop: a pending plan
@@ -203,5 +203,5 @@ function planInstructionResponse(
     ...(instruction.reviewInvocation ? { reviewInvocation: instruction.reviewInvocation } : {}),
     _audit: { transitions: [] },
   };
-  return appendNextAction(JSON.stringify(response), scope.state);
+  return JSON.stringify(enrichWithNextAction(response, scope.state));
 }

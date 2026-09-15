@@ -21,7 +21,7 @@ import {
   MODE_A_OBLIGATION_ID,
   CHILD_SESSION_ID,
 } from '../../plugin-host-task-diagnostics-helpers.js';
-import { REVIEWER_SUBAGENT_TYPE } from './types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import type { ReviewAssuranceState } from '../../../state/evidence.js';
 
 const NOW = '2026-05-10T12:00:00.000Z';
@@ -54,7 +54,6 @@ describe('durable attempt lifecycle gates reviewer Task dispatch', () => {
     const result = enforceBeforeSubagentCall(
       state,
       { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt(0, 1) },
-      true,
       assurance,
     );
     expect(result.allowed).toBe(true);
@@ -85,7 +84,6 @@ describe('durable attempt lifecycle gates reviewer Task dispatch', () => {
     const result = enforceBeforeSubagentCall(
       state,
       { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt(0, 1) },
-      true,
       assurance,
     );
     expect(result.allowed).toBe(false);
@@ -136,7 +134,6 @@ describe('durable attempt lifecycle gates reviewer Task dispatch', () => {
     const result = enforceBeforeSubagentCall(
       state,
       { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt(0, 1) },
-      true,
       assurance,
     );
     expect(result.allowed).toBe(true);

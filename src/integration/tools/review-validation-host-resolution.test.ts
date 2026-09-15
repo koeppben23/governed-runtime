@@ -188,8 +188,7 @@ describe('resolveHostTaskEffectiveFindings', () => {
         },
       ],
     };
-    const invocation = makeHostTaskInvocation(incoherent);
-    delete (invocation as Record<string, unknown>).attemptId;
+    const invocation = makeHostTaskInvocation(incoherent, { childSessionId: 'ses_other' });
     const result = resolveHostTaskEffectiveFindings(
       ctx({
         state: {

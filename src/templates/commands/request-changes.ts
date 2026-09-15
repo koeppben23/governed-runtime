@@ -1,4 +1,4 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 
 export const REQUEST_CHANGES_COMMAND = `---
 description: FlowGuard — Request changes on the currently active review gate.
@@ -25,7 +25,7 @@ Change request: $ARGUMENTS
 - Always use "changes_requested" as the verdict for this command.
 - Only run this command when the user explicitly invoked /request-changes. Do not invent change requests on the user's behalf.
 - If blocked: report the reason and stop (never work around a blocked decision).
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 ## Done-when
 
 - Changes-requested verdict recorded via flowguard_decision.

@@ -51,7 +51,7 @@
 import {
   formatBlocked,
   formatAutoAdvanceOverflow,
-  appendNextAction,
+  enrichWithNextAction,
   writeStateWithArtifacts,
 } from './helpers.js';
 import { existsSync } from 'node:fs';
@@ -566,8 +566,8 @@ export async function persistImplRecordAndRespond(args: PersistImplRecordArgs): 
   // projection and understate claim coverage in the reviewer prompt (#762).
   const persisted = await writeStateWithArtifacts(input.sessDir, activated.state);
 
-  return appendNextAction(
-    JSON.stringify(
+  return JSON.stringify(
+    enrichWithNextAction(
       buildImplRecordedResponse({
         finalState: persisted,
         files,
@@ -581,7 +581,7 @@ export async function persistImplRecordAndRespond(args: PersistImplRecordArgs): 
         policy: input.policy,
         baselineScoping: args.baselineScoping,
       }),
+      persisted,
     ),
-    persisted,
   );
 }

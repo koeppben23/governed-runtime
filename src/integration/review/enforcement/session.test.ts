@@ -20,11 +20,8 @@ import {
   resolveSubagentSessionId,
   injectSessionIdIntoOutput,
 } from './extraction.js';
-import {
-  REVIEW_REQUIRED_PREFIX,
-  REVIEWER_SUBAGENT_TYPE,
-  type SessionEnforcementState,
-} from './types.js';
+import { REVIEW_REQUIRED_PREFIX, type SessionEnforcementState } from './types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import { NOW, LATER, modeASubagentResponse, taskResultWithFindings } from './test-helpers.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -170,7 +167,6 @@ describe('injectSessionIdIntoOutput (BUG-14)', () => {
     expect(result).toContain('"ses_embedded"');
     expect(result).toContain('Here is my review:');
     expect(result).toContain('Please fix these issues.');
-    // Verify the JSON block itself is valid
     const jsonStart = result.indexOf('{');
     const jsonEnd = result.lastIndexOf('}');
     const parsed = JSON.parse(result.slice(jsonStart, jsonEnd + 1));
@@ -196,10 +192,8 @@ describe('injectSessionIdIntoOutput (BUG-14)', () => {
     expect(injectSessionIdIntoOutput('', 'ses_x')).toBe('');
   });
 
-  it('BAD: returns unchanged for JSON without reviewedBy marker', () => {
+  it('BAD: creates reviewedBy for clean JSON without it', () => {
     const input = JSON.stringify({ verdict: 'approve', score: 42 });
-    // No "reviewedBy" string in the output, but it IS clean JSON.
-    // The function will parse it, find no reviewedBy, and create one.
     const result = injectSessionIdIntoOutput(input, 'ses_new');
     const parsed = JSON.parse(result);
     expect(parsed.reviewedBy).toEqual({ sessionId: 'ses_new' });
@@ -249,12 +243,9 @@ describe('injectSessionIdIntoOutput (BUG-14)', () => {
     expect(parsed.notes).toContain('"hello"');
   });
 
-  it('EDGE: handles JSON array at top level (returns unchanged)', () => {
+  it('EDGE: handles JSON array at top level', () => {
     const input = JSON.stringify([{ reviewedBy: { sessionId: 'old' } }]);
-    // Clean JSON parse succeeds but it's an array → not an object → fall through
-    // Path 2 will find "reviewedBy" and try embedded extraction
     const result = injectSessionIdIntoOutput(input, 'ses_arr');
-    // Should find the embedded block and inject
     expect(result).toContain('"ses_arr"');
   });
 
@@ -330,7 +321,6 @@ describe('onTaskToolAfter tiered session ID resolution (BUG-14)', () => {
       { metadata: {}, callID: 'call_002' },
     );
     const pending = state.pendingReviews.get('flowguard_plan');
-    // Tier 2: extracted from REVIEW_FINDINGS_JSON reviewedBy.sessionId
     expect(pending?.subagentRecord?.sessionId).toBe('text_ses_id');
   });
 
@@ -360,7 +350,7 @@ describe('onTaskToolAfter tiered session ID resolution (BUG-14)', () => {
     expect(pending?.subagentRecord?.sessionId).toBeNull();
   });
 
-  it('BAD: no context (backward compat) — falls to Tier 2 only', () => {
+  it('BAD: no host context falls to Tier 2', () => {
     const state = setupPendingReview();
     onTaskToolAfter(
       state,
@@ -369,11 +359,10 @@ describe('onTaskToolAfter tiered session ID resolution (BUG-14)', () => {
       LATER,
     );
     const pending = state.pendingReviews.get('flowguard_plan');
-    // No context → Tier 1 skipped, Tier 2 extracts from text
     expect(pending?.subagentRecord?.sessionId).toBe('text_ses_id');
   });
 
-  it('BAD: no context + no text session ID — null (backward compat)', () => {
+  it('BAD: no host context and no text session ID yields null', () => {
     const state = setupPendingReview();
     onTaskToolAfter(
       state,
@@ -382,7 +371,6 @@ describe('onTaskToolAfter tiered session ID resolution (BUG-14)', () => {
       LATER,
     );
     const pending = state.pendingReviews.get('flowguard_plan');
-    // No context → no Tier 3, Tier 2 fails → null
     expect(pending?.subagentRecord?.sessionId).toBeNull();
   });
 
@@ -396,7 +384,6 @@ describe('onTaskToolAfter tiered session ID resolution (BUG-14)', () => {
       { metadata: { sessionID: '' }, callID: 'call_003' },
     );
     const pending = state.pendingReviews.get('flowguard_plan');
-    // Empty string → Tier 1 returns null → falls to Tier 2
     expect(pending?.subagentRecord?.sessionId).toBe('text_ses_id');
   });
 
@@ -410,7 +397,6 @@ describe('onTaskToolAfter tiered session ID resolution (BUG-14)', () => {
       { metadata: { sessionID: 'ses_authoritative' }, callID: 'call_004' },
     );
     const pending = state.pendingReviews.get('flowguard_plan');
-    // Tier 1 wins over Tier 2's "text_ses_id"
     expect(pending?.subagentRecord?.sessionId).toBe('ses_authoritative');
   });
 
@@ -423,17 +409,13 @@ describe('onTaskToolAfter tiered session ID resolution (BUG-14)', () => {
       LATER,
       { metadata: { sessionID: 'ses_explore' }, callID: 'call_005' },
     );
-    // No pending review registered → nothing to update
     expect(state.pendingReviews.size).toBe(0);
   });
 
   it('E2E: full cycle with metadata sessionID produces non-null session in pending', () => {
     const state = createSessionState();
-
-    // Step 1: Mode A response
     onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeASubagentResponse(), NOW);
 
-    // Step 2: Task call with metadata
     const findings = JSON.stringify({
       overallVerdict: 'accept',
       reviewedBy: { sessionId: 'will_be_overridden' },
@@ -458,24 +440,15 @@ describe('onTaskToolAfter tiered session ID resolution (BUG-14)', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// BUG-21: Null-verdict tolerance and sessionState fallback
+// BUG-21: Null-verdict tolerance and authoritative session-state recovery
 // ═══════════════════════════════════════════════════════════════════════════════
 //
-// DeepSeek R1 sends explicit null for absent optional fields:
-//   { planText: "...", reviewVerdict: null, reviewFindings: null }
-//
-// The `in` operator returns true for keys with null values, causing:
-//   - enforceBeforeVerdict to enter Mode B enforcement path spuriously
-//   - onFlowGuardToolAfter to clear pending reviews spuriously
-//
-// Additionally, after /ticket (before first /plan), reviewAssurance is
-// undefined in sessionState. The old code treated this as "state unreadable"
-// and returned REVIEW_ASSURANCE_STATE_UNAVAILABLE in strict mode.
+// Explicit null for an absent optional verdict must not be mistaken for a
+// verdict submission. Once a real verdict is present, unavailable authoritative
+// state fails closed; there is no non-strict fallback mode.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
-  // ── Fix A: Value-based hasSelfReviewVerdict ────────────────────────────
-
   it('HAPPY: reviewVerdict=null is treated as Mode A → allowed immediately', () => {
     const state = createSessionState();
     const result = enforceBeforeVerdict(
@@ -483,19 +456,17 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       'flowguard_plan',
       { planText: 'my plan', reviewVerdict: null },
       { reviewAssurance: undefined },
-      true, // strict
     );
     expect(result.allowed).toBe(true);
   });
 
-  it('HAPPY: reviewVerdict=null is treated as Mode A → allowed immediately', () => {
+  it('HAPPY: implement reviewVerdict=null is treated as Mode A → allowed immediately', () => {
     const state = createSessionState();
     const result = enforceBeforeVerdict(
       state,
       'flowguard_implement',
       { reviewVerdict: null },
       { reviewAssurance: undefined },
-      true,
     );
     expect(result.allowed).toBe(true);
   });
@@ -507,7 +478,6 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       'flowguard_plan',
       { planText: 'plan', reviewVerdict: null },
       { reviewAssurance: undefined },
-      true,
     );
     expect(result.allowed).toBe(true);
   });
@@ -519,7 +489,6 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       'flowguard_plan',
       { planText: 'plan', reviewVerdict: '' },
       { reviewAssurance: undefined },
-      true,
     );
     expect(result.allowed).toBe(true);
   });
@@ -531,7 +500,6 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       'flowguard_plan',
       { planText: 'plan' },
       { reviewAssurance: undefined },
-      true,
     );
     expect(result.allowed).toBe(true);
   });
@@ -543,7 +511,6 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       'flowguard_plan',
       { planText: 'plan', reviewVerdict: 0 },
       { reviewAssurance: undefined },
-      true,
     );
     expect(result.allowed).toBe(true);
   });
@@ -555,14 +522,12 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       'flowguard_plan',
       { planText: 'plan', reviewVerdict: false },
       { reviewAssurance: undefined },
-      true,
     );
     expect(result.allowed).toBe(true);
   });
 
-  it('HAPPY: reviewVerdict="approve" enters enforcement (Mode B positive)', () => {
+  it('HAPPY: reviewVerdict="accept" enters enforcement when reviewer evidence exists', () => {
     const state = createSessionState();
-    // Set up pending with subagent called
     onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeASubagentResponse(), NOW);
     onTaskToolAfter(
       state,
@@ -588,10 +553,9 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
     expect(result.allowed).toBe(true);
   });
 
-  it('BAD: reviewVerdict="approve" but no subagent called → blocked', () => {
+  it('BAD: reviewVerdict="accept" but no subagent called → blocked', () => {
     const state = createSessionState();
     onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeASubagentResponse(), NOW);
-    // No Task call
 
     const result = enforceBeforeVerdict(
       state,
@@ -611,8 +575,6 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
     if (!result.allowed) expect(result.code).toBe('SUBAGENT_REVIEW_NOT_INVOKED');
   });
 
-  // ── Fix B: SessionState fallback ──────────────────────────────────────
-
   it('HAPPY: sessionState readable, reviewAssurance=undefined → allowed', () => {
     const state = createSessionState();
     const result = enforceBeforeVerdict(
@@ -620,7 +582,6 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       'flowguard_plan',
       { reviewVerdict: 'accept' },
       { reviewAssurance: undefined },
-      true, // strict
     );
     expect(result.allowed).toBe(true);
   });
@@ -632,7 +593,6 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       'flowguard_plan',
       { reviewVerdict: 'accept' },
       { reviewAssurance: null },
-      true,
     );
     expect(result.allowed).toBe(true);
   });
@@ -652,47 +612,27 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
           dispatches: [],
         },
       },
-      true,
     );
     expect(result.allowed).toBe(true);
   });
 
-  it('BAD: sessionState=null, strict=true → REVIEW_ASSURANCE_STATE_UNAVAILABLE', () => {
+  it('BAD: sessionState=null → REVIEW_ASSURANCE_STATE_UNAVAILABLE', () => {
     const state = createSessionState();
-    const result = enforceBeforeVerdict(
-      state,
-      'flowguard_plan',
-      { reviewVerdict: 'accept' },
-      null,
-      true,
-    );
+    const result = enforceBeforeVerdict(state, 'flowguard_plan', { reviewVerdict: 'accept' }, null);
     expect(result.allowed).toBe(false);
     if (!result.allowed) expect(result.code).toBe('REVIEW_ASSURANCE_STATE_UNAVAILABLE');
   });
 
-  it('CORNER: sessionState=undefined, strict=true → BLOCKED', () => {
+  it('CORNER: sessionState=undefined → BLOCKED', () => {
     const state = createSessionState();
     const result = enforceBeforeVerdict(
       state,
       'flowguard_plan',
       { reviewVerdict: 'accept' },
       undefined,
-      true,
     );
     expect(result.allowed).toBe(false);
     if (!result.allowed) expect(result.code).toBe('REVIEW_ASSURANCE_STATE_UNAVAILABLE');
-  });
-
-  it('HAPPY: sessionState=null, strict=false → allowed', () => {
-    const state = createSessionState();
-    const result = enforceBeforeVerdict(
-      state,
-      'flowguard_plan',
-      { reviewVerdict: 'accept' },
-      null,
-      false,
-    );
-    expect(result.allowed).toBe(true);
   });
 
   it('EDGE: sessionState readable, pending obligation → SUBAGENT_REVIEW_NOT_INVOKED', () => {
@@ -744,7 +684,6 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       'flowguard_plan',
       { reviewVerdict: 'accept' },
       sessionState,
-      true,
     );
     expect(result.allowed).toBe(false);
     if (!result.allowed) {
@@ -802,29 +741,23 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       'flowguard_plan',
       { reviewVerdict: 'accept' },
       sessionState,
-      true,
     );
-    // Plan tool has no pending obligation → allowed
     expect(result.allowed).toBe(true);
   });
 
-  // ── Combined Fix A+B: DeepSeek R1 exact scenario ──────────────────────
-
-  it('E2E SMOKE: DeepSeek R1 sends { planText, reviewVerdict: null } after /ticket → allowed', () => {
+  it('E2E SMOKE: explicit null verdict after /ticket is treated as Mode A', () => {
     const state = createSessionState();
-    // After /ticket: sessionState exists, reviewAssurance undefined
     const sessionState = { reviewAssurance: undefined };
     const result = enforceBeforeVerdict(
       state,
       'flowguard_plan',
       { planText: 'My detailed plan', reviewVerdict: null, reviewFindings: null },
       sessionState,
-      true,
     );
     expect(result.allowed).toBe(true);
   });
 
-  it('E2E SMOKE: DeepSeek R1 sends { planText, reviewVerdict: "accept" } after /ticket → allowed for tool normalization', () => {
+  it('E2E SMOKE: mixed initial approval payload remains a tool-normalization concern', () => {
     const state = createSessionState();
     const sessionState = { reviewAssurance: undefined };
     const result = enforceBeforeVerdict(
@@ -832,7 +765,6 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       'flowguard_plan',
       { planText: 'My plan', reviewVerdict: 'accept', reviewFindings: {} },
       sessionState,
-      true,
     );
     expect(result.allowed).toBe(true);
   });
@@ -845,7 +777,6 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       'flowguard_plan',
       { planText: 'My plan', reviewerUnavailable: true },
       sessionState,
-      true,
     );
     expect(result.allowed).toBe(true);
   });
@@ -873,7 +804,6 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
           dispatches: [],
         },
       },
-      true,
     );
     expect(result.allowed).toBe(true);
   });
@@ -893,7 +823,6 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
           dispatches: [],
         },
       },
-      true,
     );
     expect(result.allowed).toBe(true);
   });
@@ -913,12 +842,11 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
           dispatches: [],
         },
       },
-      true,
     );
     expect(result.allowed).toBe(true);
   });
 
-  it('E2E: verdict after reviewer completes with null reviewFindings → enforcement passes (Levels 2/4 skipped)', () => {
+  it('E2E: verdict after reviewer completes with null reviewFindings → enforcement passes', () => {
     const state = createSessionState();
     onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeASubagentResponse(), NOW);
     onTaskToolAfter(
@@ -928,9 +856,6 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       LATER,
     );
 
-    // DeepSeek R1 sends verdict with reviewFindings: null (stripped by Fix G
-    // before reaching here, so args would have no reviewFindings key).
-    // But even if raw null reaches enforcement, Levels 2/4 skip gracefully.
     const result = enforceBeforeVerdict(
       state,
       'flowguard_plan',
@@ -950,11 +875,8 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
 });
 
 describe('BUG-21: null-verdict tolerance (onFlowGuardToolAfter)', () => {
-  // ── Fix C: Value-based check in After-Hook ────────────────────────────
-
   it('HAPPY: Mode A output with null verdict key → pendingReview created (not cleared)', () => {
     const state = createSessionState();
-    // Simulates: args have reviewVerdict: null (After-Hook may see raw args)
     onFlowGuardToolAfter(
       state,
       'flowguard_plan',
@@ -982,11 +904,9 @@ describe('BUG-21: null-verdict tolerance (onFlowGuardToolAfter)', () => {
 
   it('HAPPY: Mode B output with valid verdict → pendingReview cleared', () => {
     const state = createSessionState();
-    // Set up pending
     onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeASubagentResponse(), NOW);
     expect(state.pendingReviews.has('flowguard_plan')).toBe(true);
 
-    // Simulate Mode B success output (no REVIEW_REQUIRED in next)
     const modeBOutput = JSON.stringify({
       phase: 'PLAN_REVIEW',
       status: 'Verdict recorded.',
@@ -1006,7 +926,6 @@ describe('BUG-21: null-verdict tolerance (onFlowGuardToolAfter)', () => {
       next: 'Fix your call.',
     });
     onFlowGuardToolAfter(state, 'flowguard_plan', { reviewVerdict: 'accept' }, errorOutput, LATER);
-    // Not cleared because output had error=true
     expect(state.pendingReviews.has('flowguard_plan')).toBe(true);
   });
 
@@ -1026,14 +945,12 @@ describe('BUG-21: null-verdict tolerance (onFlowGuardToolAfter)', () => {
 
     const successOutput = JSON.stringify({ phase: 'PLAN_REVIEW', status: 'ok' });
     onFlowGuardToolAfter(state, 'flowguard_plan', { reviewVerdict: '' }, successOutput, NOW);
-    // Empty string is not a valid verdict → pending NOT cleared
     expect(state.pendingReviews.has('flowguard_plan')).toBe(true);
   });
 
   it('E2E SMOKE: full cycle — Mode A (null verdict) → Task → Mode B (real verdict) → cleared', () => {
     const state = createSessionState();
 
-    // Step 1: Mode A with null verdict in args (DeepSeek R1 behavior)
     onFlowGuardToolAfter(
       state,
       'flowguard_plan',
@@ -1044,7 +961,6 @@ describe('BUG-21: null-verdict tolerance (onFlowGuardToolAfter)', () => {
     expect(state.pendingReviews.has('flowguard_plan')).toBe(true);
     expect(state.pendingReviews.get('flowguard_plan')!.subagentCalled).toBe(false);
 
-    // Step 2: Reviewer Task
     onTaskToolAfter(
       state,
       { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'Review iteration=0 planVersion=1' },
@@ -1053,7 +969,6 @@ describe('BUG-21: null-verdict tolerance (onFlowGuardToolAfter)', () => {
     );
     expect(state.pendingReviews.get('flowguard_plan')!.subagentCalled).toBe(true);
 
-    // Step 3: Mode B with real verdict
     const modeBOutput = JSON.stringify({ phase: 'PLAN_REVIEW', status: 'approved' });
     onFlowGuardToolAfter(state, 'flowguard_plan', { reviewVerdict: 'accept' }, modeBOutput, LATER);
     expect(state.pendingReviews.has('flowguard_plan')).toBe(false);

@@ -1,4 +1,4 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 
 export const HELP_COMMAND = `---
 description: FlowGuard — Show concise, context-sensitive help.
@@ -24,7 +24,7 @@ Show the commands and next action relevant to the current FlowGuard session.
 
 - /help is read-only. It never changes lifecycle, evidence, or archive state.
 - Do not infer availability or blockers yourself; use the FlowGuard result.
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 
 ## Done-when
 

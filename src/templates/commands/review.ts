@@ -1,4 +1,4 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
 export const REVIEW_COMMAND = `---
@@ -147,7 +147,7 @@ If repo-dependent claims are made without checking Discovery health/drift, flag 
 - Present the report clearly and concisely.
 - If \`flowguard_review\` returns BLOCKED with code \`STRICT_REVIEW_ORCHESTRATION_FAILED\`: The plugin review pipeline encountered a transient failure. Re-run the /review command to retry. This is NOT a permanent failure — the orchestration retries automatically on each fresh invocation.
 - If \`flowguard_review\` returns BLOCKED with code \`ORCHESTRATION_PERMANENTLY_FAILED\`: Report this to the user with the recovery steps and stop.
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 ## Done-when
 
 - Compliance report generated and presented.

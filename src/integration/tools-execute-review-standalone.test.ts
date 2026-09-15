@@ -45,10 +45,8 @@ import {
   appendReviewerCapture,
   reviewerCapturePath,
 } from '../adapters/persistence-reviewer-capture.js';
-import {
-  NATIVE_ATTESTATION_REJECTION_FIELD,
-  REVIEWER_SUBAGENT_TYPE,
-} from '../shared/flowguard-identifiers.js';
+import { NATIVE_ATTESTATION_REJECTION_FIELD } from '../shared/flowguard-identifiers.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
 import * as persistence from '../adapters/persistence.js';
 import {

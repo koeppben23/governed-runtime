@@ -10,7 +10,7 @@ import {
   formatEval,
   formatBlocked,
   formatAutoAdvanceOverflow,
-  appendNextAction,
+  enrichWithNextAction,
   writeStateWithArtifacts,
 } from './helpers.js';
 
@@ -410,7 +410,7 @@ async function persistAndFormatConvergedReview(input: ReviewResultContext): Prom
     reviewCompletion: completion,
     reviewedIdentity: resolveArchReviewedIdentity(review),
   });
-  return appendNextAction(JSON.stringify(resp), advanced.state);
+  return JSON.stringify(enrichWithNextAction(resp, advanced.state));
 }
 
 /**
@@ -606,7 +606,7 @@ async function persistAndFormatNonConvergedReview(
     attemptId,
     persisted,
   });
-  return appendNextAction(JSON.stringify(resp), stateToPersist);
+  return JSON.stringify(enrichWithNextAction(resp, stateToPersist));
 }
 
 function buildNonConvergedReviewResponse(input: {

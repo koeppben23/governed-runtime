@@ -14,7 +14,7 @@
 
 import { resolveActor, ActorIdentityError } from './actor.js';
 import { isIdpConfigured } from '../identity/index.js';
-import type { ActorInfo } from '../audit/types.js';
+import type { ActorInfo } from '../state/evidence.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 
 /**

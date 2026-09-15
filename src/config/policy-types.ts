@@ -7,7 +7,7 @@
  * @version v1
  */
 
-import type { IdpConfig, IdentityProviderMode } from '../identity/types.js';
+import type { IdpConfig, IdentityProviderMode } from '../shared/policy-idp-config.js';
 import type { PolicyMode, CentralMinimumMode } from '../state/policy-mode.js';
 
 // ─── Timestamp Assurance Policy ──────────────────────────────────────────────
@@ -262,7 +262,7 @@ export interface FlowGuardPolicy {
    */
   readonly allowSelfApproval: boolean;
 
-  /** Whether lower-assurance text-compatible review output may satisfy evidence. */
+  /** Required review output assurance — structured findings are the only admissible form. */
   readonly reviewOutputPolicy: ReviewOutputPolicy;
 
   /** How reviewer invocation must occur: host-visible Task tool, SDK, or policy-gated. */

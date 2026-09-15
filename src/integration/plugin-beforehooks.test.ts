@@ -30,7 +30,7 @@ import {
 } from '../adapters/workspace/index.js';
 import { createTestWorkspace, repositoryDiscoveryContext } from './test-helpers.js';
 import type { SessionState } from '../state/schema.js';
-import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import { createReviewObligation } from './review/assurance.js';
 

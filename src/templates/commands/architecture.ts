@@ -1,4 +1,4 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 import {
   SHARED_REVIEW_LOOP,
   DISCOVERY_REVIEW_CAPTURE,
@@ -101,7 +101,7 @@ Revision path (when review returns changes_requested):
 2. → new review starts, returns \`next: "INDEPENDENT_REVIEW_REQUIRED: ..."\` for the next iteration
 3. After re-reviewing, \`flowguard_architecture({ reviewVerdict: "accept" })\` → ARCH_REVIEW (user gate — the USER decides via /review-decision)
 
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 ## Presentation
 
 - If \`presentation.markdown\` is present, display its markdown verbatim — never summarize, truncate, or omit it; do not append a second conclusion.

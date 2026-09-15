@@ -46,11 +46,7 @@ export type {
   HostTaskBindResult,
 } from './enforcement/types.js';
 
-export {
-  REVIEW_REQUIRED_PREFIX,
-  REVIEWER_SUBAGENT_TYPE,
-  MIN_SUBAGENT_PROMPT_LENGTH,
-} from './enforcement/types.js';
+export { REVIEW_REQUIRED_PREFIX, MIN_SUBAGENT_PROMPT_LENGTH } from './enforcement/types.js';
 
 // ─── Obligation Tools ────────────────────────────────────────────────────────
 

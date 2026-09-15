@@ -5,12 +5,12 @@
 
 import { z } from 'zod';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
-import { normalizeRepositoryPath } from './repository-path.js';
+import { classifyRepositoryPath } from './repository-path.js';
 
 /** Strict, normalized repository-relative path used by review anchors and scopes. */
 export const RepositoryPathSchema = z.string().transform((value, context) => {
-  const normalized = normalizeRepositoryPath(value);
-  if (normalized !== undefined) return normalized;
+  const classification = classifyRepositoryPath(value);
+  if (classification.kind === 'valid') return classification.normalizedPath;
   context.addIssue({ code: 'custom', message: 'Expected a repository-relative POSIX path' });
   return z.NEVER;
 });

@@ -19,15 +19,12 @@ import {
   onFlowGuardToolAfter,
   onTaskToolAfter,
   enforceBeforeVerdict,
-  enforceBeforeSubagentCall,
+  enforceBeforeSubagentCall as enforceBeforeSubagentCallRaw,
   matchPendingReview,
   enforceReviewerObligation,
 } from './enforcement.js';
-import {
-  REVIEW_REQUIRED_PREFIX,
-  REVIEWER_SUBAGENT_TYPE,
-  MIN_SUBAGENT_PROMPT_LENGTH,
-} from './types.js';
+import { REVIEW_REQUIRED_PREFIX, MIN_SUBAGENT_PROMPT_LENGTH } from './types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import {
   NOW,
   LATER,
@@ -41,12 +38,20 @@ import {
   validSubagentPrompt,
   FIXTURE_OBLIGATION_ID,
   hostAttestationFor,
+  currentAttemptAssuranceFor,
 } from './test-helpers.js';
 import {
   TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
   TOOL_FLOWGUARD_RUN_CHECK,
 } from '../../tool-names.js';
+
+function enforceBeforeSubagentCall(
+  state: ReturnType<typeof createSessionState>,
+  taskArgs: Record<string, unknown>,
+) {
+  return enforceBeforeSubagentCallRaw(state, taskArgs, currentAttemptAssuranceFor(state));
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Tests
@@ -159,7 +164,7 @@ describe('review-enforcement', () => {
       ).toEqual({ allowed: true });
     });
 
-    it('no enforcement when independent-review marker is absent', () => {
+    it('blocks a reviewer verdict without a dispatchable review obligation', () => {
       const state = createSessionState();
 
       onFlowGuardToolAfter(
@@ -174,7 +179,7 @@ describe('review-enforcement', () => {
         reviewVerdict: 'accept',
       });
 
-      expect(result.allowed).toBe(true);
+      expect(result).toMatchObject({ allowed: false, code: 'REVIEW_ASSURANCE_STATE_UNAVAILABLE' });
     });
 
     it('clears pending review after successful Mode B', () => {
@@ -347,7 +352,7 @@ describe('review-enforcement', () => {
         },
       };
 
-      // Non-host_task (default policy): still strictly rejected.
+      // Non-host_task policy: still rejected.
       const sdk = enforceBeforeVerdict(state, 'flowguard_plan', { ...submitted });
       expect(sdk.allowed).toBe(false);
       expect(sdk).toHaveProperty('code', 'SUBAGENT_SESSION_MISMATCH');
@@ -910,14 +915,14 @@ describe('review-enforcement', () => {
       expect(state.pendingReviews.size).toBe(0);
     });
 
-    it('allows verdict when no pending review exists (enforcement inactive)', () => {
+    it('blocks a reviewer verdict when no review obligation exists', () => {
       const state = createSessionState();
 
       const result = enforceBeforeVerdict(state, 'flowguard_plan', {
         reviewVerdict: 'accept',
       });
 
-      expect(result.allowed).toBe(true);
+      expect(result).toMatchObject({ allowed: false, code: 'REVIEW_ASSURANCE_STATE_UNAVAILABLE' });
     });
 
     it('L2: skips session-ID check when submitted sessionId is missing', () => {
@@ -962,7 +967,7 @@ describe('review-enforcement', () => {
         NOW,
       );
 
-      // Task returns non-parseable response → sessionId = null (strict, no fallback)
+      // Task returns non-parseable response → sessionId = null
       onTaskToolAfter(
         state,
         { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'Review' },
@@ -1007,12 +1012,9 @@ describe('review-enforcement', () => {
       expect(result.allowed).toBe(true);
     });
 
-    it('L3: allows when contentMeta extraction failed (defensive)', () => {
+    it('L3: blocks when contentMeta extraction failed', () => {
       const state = createSessionState();
 
-      // Manually set pending review with null contentMeta (simulates extraction
-      // failure). The signal still carries obligation identity + host
-      // attestation, so it is not structurally failed.
       onFlowGuardToolAfter(
         state,
         'flowguard_plan',
@@ -1024,13 +1026,13 @@ describe('review-enforcement', () => {
       const pending = state.pendingReviews.get('flowguard_plan');
       expect(pending?.contentMeta).toBeNull();
 
-      // Should allow (can't validate without content meta)
       const result = enforceBeforeSubagentCall(state, {
         subagent_type: REVIEWER_SUBAGENT_TYPE,
         prompt: validSubagentPrompt(),
       });
 
-      expect(result.allowed).toBe(true);
+      expect(result.allowed).toBe(false);
+      expect(result).toHaveProperty('code', 'SUBAGENT_CONTEXT_UNVERIFIABLE');
     });
 
     it('L3: prompt matches one of multiple pending reviews → allowed', () => {
@@ -1151,7 +1153,7 @@ describe('review-enforcement', () => {
       expect(pending?.subagentRecord?.sessionId).toBe('embedded-session-id');
     });
 
-    it('sessionId is null when extraction fails (strict, no fallback)', () => {
+    it('sessionId is null when extraction fails', () => {
       const state = createSessionState();
 
       onFlowGuardToolAfter(
@@ -1443,11 +1445,9 @@ describe('review-enforcement', () => {
       expect(result.allowed).toBe(true);
     });
 
-    // ── L162: schema-invalid captures remain eligible for a repair retry ──
+    // ── schema-invalid captures remain eligible for a repair retry ──
     it('enforceBeforeSubagentCall requires the canonical repair prompt after schema-invalid findings', () => {
       const state = createSessionState();
-      // Register a pending review with the real production signal shape
-      // (obligation identity + host attestation constants).
       onFlowGuardToolAfter(
         state,
         'flowguard_plan',
@@ -1455,15 +1455,12 @@ describe('review-enforcement', () => {
         modeASubagentResponse({ obligationId: FIXTURE_OBLIGATION_ID }),
         NOW,
       );
-      // Complete the subagent call (marks subagentCalled=true)
       onTaskToolAfter(
         state,
         { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'Review' },
         taskResultWithFindings('s1'),
         LATER,
       );
-      // The old payload is schema-invalid, so a retry requires the canonical
-      // repair prompt rather than an arbitrary reviewer invocation.
       const result = enforceBeforeSubagentCall(state, {
         subagent_type: REVIEWER_SUBAGENT_TYPE,
         prompt: `iteration=0, planVersion=1. ${'x'.repeat(MIN_SUBAGENT_PROMPT_LENGTH)}`,
@@ -1471,7 +1468,7 @@ describe('review-enforcement', () => {
       expect(result.allowed).toBe(false);
     });
 
-    // ── L170: prompt length boundary (MIN_SUBAGENT_PROMPT_LENGTH) ──
+    // ── prompt length boundary ──
     it('enforceBeforeSubagentCall: prompt at exact MIN_SUBAGENT_PROMPT_LENGTH is allowed', () => {
       const state = createSessionState();
       onFlowGuardToolAfter(
@@ -1481,7 +1478,6 @@ describe('review-enforcement', () => {
         modeASubagentResponse({ iteration: 0, planVersion: 1 }),
         NOW,
       );
-      // Prompt at exactly MIN_SUBAGENT_PROMPT_LENGTH with required context
       const prompt = 'iteration=0, planVersion=1. ' + 'x'.repeat(MIN_SUBAGENT_PROMPT_LENGTH - 28);
       expect(prompt.length).toBe(MIN_SUBAGENT_PROMPT_LENGTH);
       const result = enforceBeforeSubagentCall(state, {
@@ -1509,7 +1505,7 @@ describe('review-enforcement', () => {
       expect(result).toHaveProperty('code', 'SUBAGENT_PROMPT_EMPTY');
     });
 
-    // ── L212-213: missing iteration/planVersion in prompt ──
+    // ── missing iteration/planVersion in prompt ──
     it('enforceBeforeSubagentCall: prompt missing iteration produces MISSING_CONTEXT', () => {
       const state = createSessionState();
       onFlowGuardToolAfter(
@@ -1519,7 +1515,6 @@ describe('review-enforcement', () => {
         modeASubagentResponse({ iteration: 5, planVersion: 3 }),
         NOW,
       );
-      // Long enough prompt but missing iteration=5
       const prompt = 'Review this plan. planVersion=3. ' + 'x'.repeat(MIN_SUBAGENT_PROMPT_LENGTH);
       const result = enforceBeforeSubagentCall(state, {
         subagent_type: REVIEWER_SUBAGENT_TYPE,
@@ -1541,7 +1536,6 @@ describe('review-enforcement', () => {
         modeASubagentResponse({ iteration: 2, planVersion: 7 }),
         NOW,
       );
-      // Has iteration but NOT planVersion
       const prompt = 'Review this plan. iteration=2. ' + 'x'.repeat(MIN_SUBAGENT_PROMPT_LENGTH);
       const result = enforceBeforeSubagentCall(state, {
         subagent_type: REVIEWER_SUBAGENT_TYPE,
@@ -1554,7 +1548,7 @@ describe('review-enforcement', () => {
       }
     });
 
-    // ── L259: onTaskToolAfter ignores non-reviewer subagent type ──
+    // ── onTaskToolAfter ignores non-reviewer subagent type ──
     it('onTaskToolAfter ignores non-reviewer subagent type (no state mutation)', () => {
       const state = createSessionState();
       onFlowGuardToolAfter(
@@ -1564,7 +1558,6 @@ describe('review-enforcement', () => {
         modeASubagentResponse(),
         NOW,
       );
-      // Non-reviewer subagent type → no state change
       onTaskToolAfter(
         state,
         { subagent_type: 'some-other-agent', prompt: 'review' },
@@ -1589,7 +1582,7 @@ describe('review-enforcement', () => {
       expect(pending.subagentCalled).toBe(false);
     });
 
-    // ── L302: schema-invalid captures remain eligible for a repair retry ──
+    // ── schema-invalid captures remain eligible for a repair retry ──
     it('matchPendingReview returns the pending review for a schema-repair retry', () => {
       const state = createSessionState();
       onFlowGuardToolAfter(
@@ -1599,14 +1592,12 @@ describe('review-enforcement', () => {
         modeASubagentResponse({ obligationId: FIXTURE_OBLIGATION_ID }),
         NOW,
       );
-      // Complete the review (marks subagentCalled)
       onTaskToolAfter(
         state,
         { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'Review' },
         taskResultWithFindings('s1'),
         LATER,
       );
-      // The invalid capture requires a fresh reviewer invocation.
       const result = matchPendingReview(state, {
         subagent_type: REVIEWER_SUBAGENT_TYPE,
         prompt: 'another review',
@@ -1614,10 +1605,9 @@ describe('review-enforcement', () => {
       expect(result).not.toBeNull();
     });
 
-    // ── L314: matchPendingReview planVersion matching ──
+    // ── matchPendingReview planVersion matching ──
     it('matchPendingReview rejects when planVersion expected but not in prompt', () => {
       const state = createSessionState();
-      // Register TWO pending reviews to trigger multi-match path
       onFlowGuardToolAfter(
         state,
         'flowguard_plan',
@@ -1632,7 +1622,6 @@ describe('review-enforcement', () => {
         modeASubagentResponse({ iteration: 1, planVersion: 5 }),
         LATER,
       );
-      // Prompt has iteration=0 but WRONG planVersion → no match
       const prompt = 'iteration=0 planVersion=99 ' + 'x'.repeat(MIN_SUBAGENT_PROMPT_LENGTH);
       const result = matchPendingReview(state, {
         subagent_type: REVIEWER_SUBAGENT_TYPE,
@@ -1641,10 +1630,9 @@ describe('review-enforcement', () => {
       expect(result).toBeNull();
     });
 
-    // ── L360: obligations.length === 0 recovery path ──
+    // ── obligations.length === 0 recovery path ──
     it('enforceBeforeVerdict allows when sessionState has no obligations', () => {
       const state = createSessionState();
-      // No pending review in enforcement state, but session state IS readable
       const sessionState = { reviewAssurance: { obligations: [] } };
       const result = enforceBeforeVerdict(
         state,
@@ -1667,7 +1655,7 @@ describe('review-enforcement', () => {
       expect(result.allowed).toBe(true);
     });
 
-    // ── L436+L442: Level 4 findings integrity specifics ──
+    // ── Level 4 findings integrity specifics ──
     it('L4: blocks when submitted verdict differs from captured (approve vs changes_requested)', () => {
       const state = createSessionState();
       onFlowGuardToolAfter(
@@ -1686,7 +1674,7 @@ describe('review-enforcement', () => {
       const result = enforceBeforeVerdict(state, 'flowguard_plan', {
         reviewVerdict: 'accept',
         reviewFindings: {
-          overallVerdict: 'accept', // MISMATCH: submitted approve but captured changes_requested
+          overallVerdict: 'accept',
           blockingIssues: [],
           reviewedBy: { sessionId: 's1' },
         },
@@ -1713,12 +1701,11 @@ describe('review-enforcement', () => {
         }),
         LATER,
       );
-      // Submit with ZERO issues but captured had 1
       const result = enforceBeforeVerdict(state, 'flowguard_plan', {
         reviewVerdict: 'changes_requested',
         reviewFindings: {
           overallVerdict: 'changes_requested',
-          blockingIssues: [], // MISMATCH: 0 vs 1 captured
+          blockingIssues: [],
           reviewedBy: { sessionId: 's1' },
         },
       });
@@ -1738,7 +1725,6 @@ describe('review-enforcement', () => {
       const result = enforceReviewerObligation({
         obligations: [PENDING],
         reviewInvocationPolicy: 'host_task_required',
-        strictEnforcement: true,
         stateAvailable: true,
       });
       expect(result.allowed).toBe(true);
@@ -1756,7 +1742,6 @@ describe('review-enforcement', () => {
         invocations: [incoherentCapture],
         maxIncoherentReviewerCaptureRetries: 1,
         reviewInvocationPolicy: 'host_task_required',
-        strictEnforcement: true,
         stateAvailable: true,
       });
       const exhausted = enforceReviewerObligation({
@@ -1764,7 +1749,6 @@ describe('review-enforcement', () => {
         invocations: [incoherentCapture, incoherentCapture],
         maxIncoherentReviewerCaptureRetries: 1,
         reviewInvocationPolicy: 'host_task_required',
-        strictEnforcement: true,
         stateAvailable: true,
       });
 
@@ -1777,7 +1761,6 @@ describe('review-enforcement', () => {
       const result = enforceReviewerObligation({
         obligations: [],
         reviewInvocationPolicy: 'host_task_required',
-        strictEnforcement: true,
         stateAvailable: true,
       });
       expect(result.allowed).toBe(false);
@@ -1790,7 +1773,6 @@ describe('review-enforcement', () => {
         const result = enforceReviewerObligation({
           obligations,
           reviewInvocationPolicy: 'host_task_required',
-          strictEnforcement: true,
           stateAvailable: true,
         });
         expect(result.allowed).toBe(false);
@@ -1801,7 +1783,6 @@ describe('review-enforcement', () => {
       const result = enforceReviewerObligation({
         obligations: [],
         reviewInvocationPolicy: 'host_task_preferred',
-        strictEnforcement: true,
         stateAvailable: true,
       });
       expect(result.allowed).toBe(true);
@@ -1811,7 +1792,6 @@ describe('review-enforcement', () => {
       const result = enforceReviewerObligation({
         obligations: [],
         reviewInvocationPolicy: undefined,
-        strictEnforcement: true,
         stateAvailable: true,
       });
       expect(result.allowed).toBe(true);
@@ -1821,38 +1801,25 @@ describe('review-enforcement', () => {
       const result = enforceReviewerObligation({
         obligations: [],
         reviewInvocationPolicy: 'sdk_allowed',
-        strictEnforcement: false,
         stateAvailable: true,
       });
       expect(result.allowed).toBe(true);
     });
 
-    it('blocks when state unavailable and strict enforcement', () => {
+    it('blocks when state is unavailable', () => {
       const result = enforceReviewerObligation({
         obligations: [],
         reviewInvocationPolicy: 'host_task_required',
-        strictEnforcement: true,
         stateAvailable: false,
       });
       expect(result.allowed).toBe(false);
       expect((result as { code: string }).code).toBe('STATE_UNAVAILABLE_FOR_REVIEWER_TASK');
     });
 
-    it('allows when state unavailable and non-strict enforcement', () => {
-      const result = enforceReviewerObligation({
-        obligations: [],
-        reviewInvocationPolicy: 'host_task_required',
-        strictEnforcement: false,
-        stateAvailable: false,
-      });
-      expect(result.allowed).toBe(true);
-    });
-
     it('allows when host_task_required with mixed obligations including one pending', () => {
       const result = enforceReviewerObligation({
         obligations: [CONSUMED, PENDING, BLOCKED],
         reviewInvocationPolicy: 'host_task_required',
-        strictEnforcement: true,
         stateAvailable: true,
       });
       expect(result.allowed).toBe(true);

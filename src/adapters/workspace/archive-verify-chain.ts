@@ -343,7 +343,7 @@ export function addTimestampFindings(
     findings.push({
       code: 'audit_chain_invalid',
       severity: 'error',
-      message: `Audit chain verification failed (${chainResult.reason}): ${chainResult.totalEvents} total, ${chainResult.verifiedCount} verified, ${chainResult.skippedCount} skipped`,
+      message: `Audit chain verification failed (${chainResult.reason}): ${chainResult.totalEvents} total, ${chainResult.verifiedCount} verified`,
       file: 'audit.jsonl',
     });
   }

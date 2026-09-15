@@ -34,7 +34,7 @@ import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './assurance.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../tool-names.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import type {
   ReviewObligation,
   ReviewInvocationEvidence,

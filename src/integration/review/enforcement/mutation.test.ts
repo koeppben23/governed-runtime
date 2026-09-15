@@ -13,16 +13,20 @@ import {
   createSessionState,
   onFlowGuardToolAfter,
   enforceBeforeVerdict,
-  enforceBeforeSubagentCall,
+  enforceBeforeSubagentCall as enforceBeforeSubagentCallRaw,
   recordPluginReview,
 } from './enforcement.js';
 import { extractCapturedFindings, promptContainsValue } from './extraction.js';
-import {
-  REVIEW_REQUIRED_PREFIX,
-  REVIEWER_SUBAGENT_TYPE,
-  MIN_SUBAGENT_PROMPT_LENGTH,
-} from './types.js';
-import { NOW, LATER, modeASubagentResponse } from './test-helpers.js';
+import { REVIEW_REQUIRED_PREFIX, MIN_SUBAGENT_PROMPT_LENGTH } from './types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
+import { NOW, LATER, modeASubagentResponse, currentAttemptAssuranceFor } from './test-helpers.js';
+
+function enforceBeforeSubagentCall(
+  state: ReturnType<typeof createSessionState>,
+  taskArgs: Record<string, unknown>,
+) {
+  return enforceBeforeSubagentCallRaw(state, taskArgs, currentAttemptAssuranceFor(state));
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Tests
@@ -34,14 +38,11 @@ describe('review-enforcement mutation kills', () => {
   // ═══════════════════════════════════════════════════════════════════════════
 
   describe('recordPluginReview', () => {
-    // HAPPY: records plugin review on pending plan review
     it('satisfies pending plan review and enables L1/L2/L4 pass', () => {
       const state = createSessionState();
-      // Register pending review via Mode A response
       onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeASubagentResponse(), NOW);
       expect(state.pendingReviews.get('flowguard_plan')?.subagentCalled).toBe(false);
 
-      // Record plugin-initiated review
       const result = recordPluginReview(
         state,
         'flowguard_plan',
@@ -61,7 +62,6 @@ describe('review-enforcement mutation kills', () => {
       expect(pending?.capturedFindings?.overallVerdict).toBe('accept');
       expect(pending?.capturedFindings?.blockingIssuesCount).toBe(0);
 
-      // L1 check should pass now
       const enforcement = enforceBeforeVerdict(state, 'flowguard_plan', {
         reviewVerdict: 'accept',
         reviewFindings: {
@@ -73,7 +73,6 @@ describe('review-enforcement mutation kills', () => {
       expect(enforcement.allowed).toBe(true);
     });
 
-    // HAPPY: records plugin review on pending implement review
     it('satisfies pending implement review', () => {
       const state = createSessionState();
       onFlowGuardToolAfter(
@@ -106,44 +105,31 @@ describe('review-enforcement mutation kills', () => {
       expect(pending?.capturedFindings?.blockingIssuesCount).toBe(2);
     });
 
-    // BAD: no pending review for the tool
     it('returns false when no pending review exists', () => {
       const state = createSessionState();
       const result = recordPluginReview(state, 'flowguard_plan', 'child-session', null, NOW);
       expect(result).toBe(false);
     });
 
-    // BAD: pending review already satisfied
     it('returns false when review was already satisfied', () => {
       const state = createSessionState();
       onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeASubagentResponse(), NOW);
 
-      // First call succeeds
       expect(recordPluginReview(state, 'flowguard_plan', 'child-1', null, LATER)).toBe(true);
-
-      // Second call fails — already satisfied
       expect(recordPluginReview(state, 'flowguard_plan', 'child-2', null, LATER)).toBe(false);
     });
 
-    // BAD: invalid tool name
     it('returns false for non-reviewable tool', () => {
       const state = createSessionState();
       const result = recordPluginReview(state, 'flowguard_status', 'child-session', null, NOW);
       expect(result).toBe(false);
     });
 
-    // CORNER: null captured findings (defensive — plugin gate prevents this path)
     it('accepts null captured findings defensively but plugin never calls this path', () => {
       const state = createSessionState();
       onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeASubagentResponse(), NOW);
 
-      const result = recordPluginReview(
-        state,
-        'flowguard_plan',
-        'child-session',
-        null, // Findings parsing failed
-        LATER,
-      );
+      const result = recordPluginReview(state, 'flowguard_plan', 'child-session', null, LATER);
 
       expect(result).toBe(true);
       const pending = state.pendingReviews.get('flowguard_plan');
@@ -151,7 +137,6 @@ describe('review-enforcement mutation kills', () => {
       expect(pending?.capturedFindings).toBeNull();
     });
 
-    // CORNER: L4 catches tampered findings after plugin review
     it('L4 blocks when submitted verdict differs from plugin-captured verdict', () => {
       const state = createSessionState();
       onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeASubagentResponse(), NOW);
@@ -168,11 +153,10 @@ describe('review-enforcement mutation kills', () => {
         LATER,
       );
 
-      // Try to submit "approve" when reviewer said "changes_requested"
       const enforcement = enforceBeforeVerdict(state, 'flowguard_plan', {
         reviewVerdict: 'accept',
         reviewFindings: {
-          overallVerdict: 'accept', // Tampered!
+          overallVerdict: 'accept',
           blockingIssues: [],
           reviewedBy: { sessionId: 'child-session-1' },
         },
@@ -183,8 +167,7 @@ describe('review-enforcement mutation kills', () => {
       );
     });
 
-    // P1.3 slice 5: L4 enforcement parity for the third LoopVerdict.
-    it('L4 allows when both submitted and captured verdicts are unable_to_review (HAPPY: third-verdict parity)', () => {
+    it('L4 allows when both submitted and captured verdicts are unable_to_review', () => {
       const state = createSessionState();
       onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeASubagentResponse(), NOW);
 
@@ -201,9 +184,9 @@ describe('review-enforcement mutation kills', () => {
       );
 
       const enforcement = enforceBeforeVerdict(state, 'flowguard_plan', {
-        reviewVerdict: 'accept', // submitter-side stays 2-valued
+        reviewVerdict: 'accept',
         reviewFindings: {
-          overallVerdict: 'unable_to_review', // matches captured
+          overallVerdict: 'unable_to_review',
           blockingIssues: [],
           reviewedBy: { sessionId: 'child-session-1' },
         },
@@ -213,7 +196,7 @@ describe('review-enforcement mutation kills', () => {
       }
     });
 
-    it('L4 blocks when submitted=approve but captured=unable_to_review (CORNER: convergence-fabrication bypass)', () => {
+    it('L4 blocks when submitted=approve but captured=unable_to_review', () => {
       const state = createSessionState();
       onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeASubagentResponse(), NOW);
 
@@ -232,7 +215,7 @@ describe('review-enforcement mutation kills', () => {
       const enforcement = enforceBeforeVerdict(state, 'flowguard_plan', {
         reviewVerdict: 'accept',
         reviewFindings: {
-          overallVerdict: 'accept', // Tampered: real reviewer said unable_to_review
+          overallVerdict: 'accept',
           blockingIssues: [],
           reviewedBy: { sessionId: 'child-session-1' },
         },
@@ -243,8 +226,6 @@ describe('review-enforcement mutation kills', () => {
       );
     });
 
-    // ─── MUTATION KILL: enforceBeforeSubagentCall (lines 208-287) ────────────
-
     describe('MUTATION_KILL: enforceBeforeSubagentCall', () => {
       it('allows task call for non-reviewer subagent type', () => {
         const state = createSessionState();
@@ -252,7 +233,7 @@ describe('review-enforcement mutation kills', () => {
         expect(result.allowed).toBe(true);
       });
 
-      it('allows when no pending reviews exist (survivor kill)', () => {
+      it('allows when no pending reviews exist', () => {
         const state = createSessionState();
         const result = enforceBeforeSubagentCall(state, {
           subagent_type: REVIEWER_SUBAGENT_TYPE,
@@ -261,14 +242,13 @@ describe('review-enforcement mutation kills', () => {
         expect(result.allowed).toBe(true);
       });
 
-      it('blocks when prompt is too short (survivor kill)', () => {
+      it('blocks when prompt is too short', () => {
         const state = createSessionState();
-        // Register a pending review
         state.pendingReviews.set('flowguard_plan', {
           tool: 'flowguard_plan',
           requestedAt: NOW,
-          attemptId: null,
-          obligationId: null,
+          attemptId: 'test-attempt-short',
+          obligationId: 'test-obligation-short',
           subagentCalled: false,
           subagentRecord: null,
           contentMeta: { expectedIteration: 0, expectedPlanVersion: 1 },
@@ -290,44 +270,13 @@ describe('review-enforcement mutation kills', () => {
         expect(result.allowed === false && result.code).toBe('SUBAGENT_PROMPT_EMPTY');
       });
 
-      it('blocks when contentMeta is null in strict mode (survivor kill)', () => {
+      it('blocks when contentMeta is unavailable', () => {
         const state = createSessionState();
         state.pendingReviews.set('flowguard_plan', {
           tool: 'flowguard_plan',
           requestedAt: NOW,
-          attemptId: null,
-          obligationId: null,
-          subagentCalled: false,
-          subagentRecord: null,
-          contentMeta: null, // Content meta extraction failed
-          canonicalPromptAnchor: null,
-          capturedFindings: null,
-          retryCount: 0,
-          lastSchemaErrors: null,
-          repairPromptRequired: false,
-          expectedPromptDigest: null,
-          expectedRepairPromptDigest: null,
-        });
-
-        const result = enforceBeforeSubagentCall(
-          state,
-          {
-            subagent_type: REVIEWER_SUBAGENT_TYPE,
-            prompt: 'A'.repeat(MIN_SUBAGENT_PROMPT_LENGTH + 10),
-          },
-          true, // strictEnforcement
-        );
-        expect(result.allowed).toBe(false);
-        expect(result.allowed === false && result.code).toBe('SUBAGENT_CONTEXT_UNVERIFIABLE');
-      });
-
-      it('allows when contentMeta is null in non-strict mode (survivor kill)', () => {
-        const state = createSessionState();
-        state.pendingReviews.set('flowguard_plan', {
-          tool: 'flowguard_plan',
-          requestedAt: NOW,
-          attemptId: null,
-          obligationId: null,
+          attemptId: 'test-attempt-context',
+          obligationId: 'test-obligation-context',
           subagentCalled: false,
           subagentRecord: null,
           contentMeta: null,
@@ -344,16 +293,17 @@ describe('review-enforcement mutation kills', () => {
           subagent_type: REVIEWER_SUBAGENT_TYPE,
           prompt: 'A'.repeat(MIN_SUBAGENT_PROMPT_LENGTH + 10),
         });
-        expect(result.allowed).toBe(true);
+        expect(result.allowed).toBe(false);
+        expect(result.allowed === false && result.code).toBe('SUBAGENT_CONTEXT_UNVERIFIABLE');
       });
 
-      it('blocks when prompt missing iteration (survivor kill)', () => {
+      it('blocks when prompt missing iteration', () => {
         const state = createSessionState();
         state.pendingReviews.set('flowguard_plan', {
           tool: 'flowguard_plan',
           requestedAt: NOW,
-          attemptId: null,
-          obligationId: null,
+          attemptId: 'test-attempt-iteration',
+          obligationId: 'test-obligation-iteration',
           subagentCalled: false,
           subagentRecord: null,
           contentMeta: { expectedIteration: 2, expectedPlanVersion: 1 },
@@ -375,13 +325,13 @@ describe('review-enforcement mutation kills', () => {
         expect(result.allowed === false && result.code).toBe('SUBAGENT_PROMPT_MISSING_CONTEXT');
       });
 
-      it('blocks when prompt missing planVersion (survivor kill)', () => {
+      it('blocks when prompt missing planVersion', () => {
         const state = createSessionState();
         state.pendingReviews.set('flowguard_plan', {
           tool: 'flowguard_plan',
           requestedAt: NOW,
-          attemptId: null,
-          obligationId: null,
+          attemptId: 'test-attempt-version',
+          obligationId: 'test-obligation-version',
           subagentCalled: false,
           subagentRecord: null,
           contentMeta: { expectedIteration: 0, expectedPlanVersion: 3 },
@@ -403,13 +353,13 @@ describe('review-enforcement mutation kills', () => {
         expect(result.allowed === false && result.code).toBe('SUBAGENT_PROMPT_MISSING_CONTEXT');
       });
 
-      it('allows when prompt contains both iteration and planVersion (survivor kill)', () => {
+      it('allows when prompt contains both iteration and planVersion', () => {
         const state = createSessionState();
         state.pendingReviews.set('flowguard_plan', {
           tool: 'flowguard_plan',
           requestedAt: NOW,
-          attemptId: null,
-          obligationId: null,
+          attemptId: 'test-attempt-valid',
+          obligationId: 'test-obligation-valid',
           subagentCalled: false,
           subagentRecord: null,
           contentMeta: { expectedIteration: 1, expectedPlanVersion: 2 },
@@ -431,18 +381,15 @@ describe('review-enforcement mutation kills', () => {
       });
     });
 
-    // ─── MUTATION KILL: onFlowGuardToolAfter (lines 160-193) ─────────────────
-
     describe('MUTATION_KILL: onFlowGuardToolAfter', () => {
-      it('ignores non-FlowGuard tools (survivor kill)', () => {
+      it('ignores non-FlowGuard tools', () => {
         const state = createSessionState();
         onFlowGuardToolAfter(state, 'other_tool', {}, 'Some output', NOW);
         expect(state.pendingReviews.size).toBe(0);
       });
 
-      it('clears pending review on Mode B success (survivor kill)', () => {
+      it('clears pending review on Mode B success', () => {
         const state = createSessionState();
-        // First register a pending review
         state.pendingReviews.set('flowguard_plan', {
           tool: 'flowguard_plan',
           requestedAt: NOW,
@@ -460,7 +407,6 @@ describe('review-enforcement mutation kills', () => {
           expectedRepairPromptDigest: null,
         });
 
-        // Mode B: submit verdict with success
         onFlowGuardToolAfter(
           state,
           'flowguard_plan',
@@ -471,7 +417,7 @@ describe('review-enforcement mutation kills', () => {
         expect(state.pendingReviews.has('flowguard_plan')).toBe(false);
       });
 
-      it('does NOT clear pending review on Mode B error (survivor kill)', () => {
+      it('does NOT clear pending review on Mode B error', () => {
         const state = createSessionState();
         state.pendingReviews.set('flowguard_plan', {
           tool: 'flowguard_plan',
@@ -490,7 +436,6 @@ describe('review-enforcement mutation kills', () => {
           expectedRepairPromptDigest: null,
         });
 
-        // Mode B: submit verdict with error
         onFlowGuardToolAfter(
           state,
           'flowguard_plan',
@@ -501,7 +446,7 @@ describe('review-enforcement mutation kills', () => {
         expect(state.pendingReviews.has('flowguard_plan')).toBe(true);
       });
 
-      it('registers pending review when next starts with REVIEW_REQUIRED_PREFIX (survivor kill)', () => {
+      it('registers pending review when next starts with REVIEW_REQUIRED_PREFIX', () => {
         const state = createSessionState();
         onFlowGuardToolAfter(
           state,
@@ -514,11 +459,9 @@ describe('review-enforcement mutation kills', () => {
           NOW,
         );
         expect(state.pendingReviews.has('flowguard_plan')).toBe(true);
-        // The exact contentMeta depends on extractContentMeta implementation
-        // Just verify the pending review was registered
       });
 
-      it('does NOT register pending review when next does not start with prefix (survivor kill)', () => {
+      it('does NOT register pending review when next does not start with prefix', () => {
         const state = createSessionState();
         onFlowGuardToolAfter(
           state,
@@ -533,7 +476,7 @@ describe('review-enforcement mutation kills', () => {
         expect(state.pendingReviews.has('flowguard_plan')).toBe(false);
       });
 
-      it('handles unparseable output gracefully (survivor kill)', () => {
+      it('handles unparseable output gracefully', () => {
         const state = createSessionState();
         onFlowGuardToolAfter(state, 'flowguard_plan', {}, 'Not valid JSON{', NOW);
         expect(state.pendingReviews.size).toBe(0);
@@ -541,11 +484,10 @@ describe('review-enforcement mutation kills', () => {
     });
   });
 
-  // ─── MUTATION KILL: P35 recovery and strict enforcement paths ────────────
+  // ─── MUTATION KILL: P35 recovery and fail-closed enforcement paths ──────
   describe('MUTATION_KILL: enforceBeforeVerdict P35 recovery path', () => {
     it('P35: blocks when sessionState has pending obligation but no transient state', () => {
       const state = createSessionState();
-      // No pending review in transient state
       const sessionState = {
         reviewAssurance: {
           assuranceSchemaVersion: 'review-assurance.v6' as const,
@@ -655,32 +597,19 @@ describe('review-enforcement mutation kills', () => {
       expect(result.allowed).toBe(true);
     });
 
-    it('P35: strict enforcement blocks when no transient state and no sessionState', () => {
+    it('P35: blocks when no transient state and no sessionState', () => {
       const state = createSessionState();
       const result = enforceBeforeVerdict(
         state,
         'flowguard_plan',
         { reviewVerdict: 'accept' },
         null,
-        true, // strictEnforcement
       );
       expect(result.allowed).toBe(false);
       if (!result.allowed) {
         expect(result.code).toBe('REVIEW_ASSURANCE_STATE_UNAVAILABLE');
-        expect(result.reason).toContain('strict mode');
+        expect(result.reason).toContain('Cannot verify review obligation fulfillment');
       }
-    });
-
-    it('P35: non-strict allows when no transient state and no sessionState', () => {
-      const state = createSessionState();
-      const result = enforceBeforeVerdict(
-        state,
-        'flowguard_plan',
-        { reviewVerdict: 'accept' },
-        null,
-        false,
-      );
-      expect(result.allowed).toBe(true);
     });
   });
 

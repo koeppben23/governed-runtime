@@ -33,11 +33,11 @@
 
 import { z } from 'zod';
 import * as fs from 'node:fs/promises';
-import type { ActorInfo } from '../audit/types.js';
+import type { ActorInfo } from '../state/evidence.js';
 import { gitUserEmail, gitUserName } from './git.js';
 import { IdpError } from '../identity/errors.js';
 import { resolveIdpToken, isIdpConfigured } from '../identity/index.js';
-import type { IdpConfig } from '../identity/types.js';
+import type { IdpConfig } from '../shared/policy-idp-config.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import { redactIdentityExtra } from '../logging/redact.js';
 
@@ -113,7 +113,6 @@ export class ActorIdentityError extends Error {
  * @throws ActorClaimError if claim is missing, unreadable, invalid, or expired.
  */
 export async function resolveActorFromClaim(claimsPath: string): Promise<ActorClaim> {
-  // Check file exists and is readable
   let fileContent: string;
   try {
     fileContent = await fs.readFile(claimsPath, 'utf-8');
@@ -127,7 +126,6 @@ export async function resolveActorFromClaim(claimsPath: string): Promise<ActorCl
     );
   }
 
-  // Parse JSON
   let claim: unknown;
   try {
     claim = JSON.parse(fileContent);
@@ -135,7 +133,6 @@ export async function resolveActorFromClaim(claimsPath: string): Promise<ActorCl
     throw new ActorClaimError('ACTOR_CLAIM_INVALID', 'Actor claim is not valid JSON');
   }
 
-  // Validate schema
   const parseResult = ActorClaimSchema.safeParse(claim);
   if (!parseResult.success) {
     throw new ActorClaimError(
@@ -145,8 +142,6 @@ export async function resolveActorFromClaim(claimsPath: string): Promise<ActorCl
   }
 
   const validClaim = parseResult.data;
-
-  // Validate temporal constraints (strict - no tolerance)
   const now = new Date();
   const issuedAt = new Date(validClaim.issuedAt);
   const expiresAt = new Date(validClaim.expiresAt);
@@ -208,7 +203,6 @@ export async function resolveActor(
           'IdP mode is required but FLOWGUARD_ACTOR_TOKEN_PATH is not set',
         );
       }
-      // optional mode: fall through to next priority
     } else {
       try {
         const idpActor = await resolveIdpToken(tokenPath, idpConfig);

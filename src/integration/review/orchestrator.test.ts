@@ -38,7 +38,8 @@ import {
   type ReviewerSuccessResult,
   type ReviewerResult,
 } from './orchestrator.js';
-import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
+import { REVIEW_REQUIRED_PREFIX } from './enforcement/types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
 import { TOOL_FLOWGUARD_REVIEW } from '../tool-names.js';
 import { parseToolResult } from '../plugin-helpers.js';

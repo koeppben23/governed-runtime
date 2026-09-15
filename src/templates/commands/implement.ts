@@ -1,4 +1,4 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 import {
   SHARED_REVIEW_LOOP,
   DISCOVERY_REVIEW_CAPTURE,
@@ -175,7 +175,7 @@ Revision path (when review returns changes_requested):
 5. \`flowguard_run_check({ kind: "<kind>" })\` for each active check → passes, advances to IMPL_REVIEW
 6. (review loop) \`flowguard_review_implementation({ reviewVerdict: "accept" })\` → EVIDENCE_REVIEW (user gate)
 
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 ## Presentation
 
 - If \`presentation.markdown\` is present, display its markdown verbatim — never summarize, truncate, or omit it; do not append a second conclusion.

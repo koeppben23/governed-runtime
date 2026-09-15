@@ -52,7 +52,7 @@ import {
   formatEval,
   formatBlocked,
   formatAutoAdvanceOverflow,
-  appendNextAction,
+  enrichWithNextAction,
   writeStateWithArtifacts,
 } from './helpers.js';
 
@@ -377,7 +377,7 @@ async function handleChangesRequestedReview(input: {
       ),
     };
   }
-  return appendNextAction(JSON.stringify(response), finalState);
+  return JSON.stringify(enrichWithNextAction(response, finalState));
 }
 
 async function handleApprovedReview(input: {
@@ -441,7 +441,7 @@ async function handleApprovedReview(input: {
   } else {
     response.status = `Implementation review reached max iterations (${input.iteration}/${input.runtime.maxImplReviewIterations}). Force-converged.`;
   }
-  return appendNextAction(JSON.stringify(response), finalState);
+  return JSON.stringify(enrichWithNextAction(response, finalState));
 }
 
 function handlePreferredTaskTransportFailure(
@@ -450,30 +450,32 @@ function handlePreferredTaskTransportFailure(
 ): string {
   if (!pendingObligation)
     return formatBlocked('REVIEW_FINDINGS_REQUIRED', { action: 'implementation review' });
-  return appendNextAction(
-    JSON.stringify({
-      phase: input.state.phase,
-      status:
-        'OpenCode Task reviewer transport failure reported. Attempting the configured SDK review transport.',
-      next: 'INDEPENDENT_REVIEW_REQUIRED: Host Task transport failure was reported for the pending implementation review.',
-      ...reviewObligationResponseFields(pendingObligation),
-      // The canonical REVIEW_REQUIRED signal must carry the host attestation
-      // constants for the obligation it names; enforcement treats a signal
-      // without them as a structural host-context defect before any reviewer
-      // dispatch (mirrors pending-instruction.ts requiredReviewAttestation).
-      reviewInvocation: {
-        requiredReviewAttestation: {
-          reviewedBy: REVIEWER_SUBAGENT_TYPE,
-          mandateDigest: pendingObligation.mandateDigest,
-          criteriaVersion: pendingObligation.criteriaVersion,
-          toolObligationId: pendingObligation.obligationId,
-          iteration: pendingObligation.iteration,
-          planVersion: pendingObligation.planVersion,
+  return JSON.stringify(
+    enrichWithNextAction(
+      {
+        phase: input.state.phase,
+        status:
+          'OpenCode Task reviewer transport failure reported. Attempting the configured SDK review transport.',
+        next: 'INDEPENDENT_REVIEW_REQUIRED: Host Task transport failure was reported for the pending implementation review.',
+        ...reviewObligationResponseFields(pendingObligation),
+        // The canonical REVIEW_REQUIRED signal must carry the host attestation
+        // constants for the obligation it names; enforcement treats a signal
+        // without them as a structural host-context defect before any reviewer
+        // dispatch (mirrors pending-instruction.ts requiredReviewAttestation).
+        reviewInvocation: {
+          requiredReviewAttestation: {
+            reviewedBy: REVIEWER_SUBAGENT_TYPE,
+            mandateDigest: pendingObligation.mandateDigest,
+            criteriaVersion: pendingObligation.criteriaVersion,
+            toolObligationId: pendingObligation.obligationId,
+            iteration: pendingObligation.iteration,
+            planVersion: pendingObligation.planVersion,
+          },
         },
+        reviewTransportFailure: { transport: 'host_task', reported: true },
       },
-      reviewTransportFailure: { transport: 'host_task', reported: true },
-    }),
-    input.state,
+      input.state,
+    ),
   );
 }
 
@@ -527,11 +529,16 @@ async function handleSubmittedImplementationReview(input: {
       worktree: runtime.worktree,
     });
     if (reissued.blocked || !reissued.obligation || !reissued.attemptId) {
-      return appendNextAction(
-        formatBlocked('REVIEWER_CONTEXT_UNAVAILABLE', {
-          reason: reissued.blocked?.reason ?? 'a fresh reviewer obligation could not be activated',
-        }),
-        runtime.state,
+      return JSON.stringify(
+        enrichWithNextAction(
+          JSON.parse(
+            formatBlocked('REVIEWER_CONTEXT_UNAVAILABLE', {
+              reason:
+                reissued.blocked?.reason ?? 'a fresh reviewer obligation could not be activated',
+            }),
+          ),
+          runtime.state,
+        ),
       );
     }
     const retryAttempt = reissued.state.reviewAssurance?.attempts.find(

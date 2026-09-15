@@ -1,4 +1,4 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
 export const CHECK_COMMAND = `---
@@ -33,7 +33,7 @@ Run automated verification checks for the current implementation.
          - \`changes_requested\`: the review has NOT converged — FlowGuard routes back to IMPLEMENTATION with an active non-exhausted \`implementationRework\` marker and intentionally returns no intermediate presentation card. This is an INTERNAL continuation, not a terminal result: continue automatically inside this /check command — make the code changes based on the blocking issues, call \`flowguard_implement({})\` again to re-record (advances to IMPL_VALIDATION), re-read \`activeChecks\`/\`remainingChecks\` via \`flowguard_status\` and execute the post-recording checks again via \`flowguard_run_check\`, record resolutions for any open implementation challenges via \`flowguard_resolve_implementation_challenge\`, then invoke a fresh independent reviewer and loop through these review steps again. Never render an intermediate result as final and never stop for user input between iterations. Only the loop's terminal responses end it: converged acceptance (present the card), an exhausted budget (surface the \`/extend-implementation-review\` extension decision to the user), or a BLOCKED code.
          - \`unable_to_review\` or any BLOCKED code: surface the recovery steps from the FlowGuard response and stop. Never retry the review on the same evidence.
 5. Report which checks passed, which failed, and whether the workflow can proceed.
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 ## Done-when
 
 - If both \`activeChecks\` and \`verificationCandidates\` are empty: report the canonical next action; do not claim validation passed.

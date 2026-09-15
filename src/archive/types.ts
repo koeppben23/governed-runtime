@@ -19,7 +19,7 @@
  */
 
 import { z } from 'zod';
-import { FINGERPRINT_PATTERN } from '../shared/flowguard-identifiers.js';
+import { FINGERPRINT_PATTERN } from '../shared/repository-fingerprint.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 

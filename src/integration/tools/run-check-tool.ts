@@ -32,7 +32,7 @@ import {
   formatBlocked,
   formatEval,
   formatAutoAdvanceOverflow,
-  appendNextAction,
+  enrichWithNextAction,
   getWorktree,
   writeStateWithArtifactsAndAuditOperationsAlreadyLocked,
   requireStateForMutation,
@@ -648,6 +648,37 @@ function buildNextValidationState(
 
 // ─── Response Formatting ──────────────────────────────────────────────────────
 
+function buildRunCheckReviewInstruction(
+  finalState: SessionState,
+  nextObligation: ReviewObligation | null,
+  policy: FlowGuardPolicy,
+) {
+  if (!nextObligation) return null;
+
+  const platform = resolveRuntimeReviewPlatform();
+  const mode = resolveReviewOrchestrationMode({
+    platform,
+    reviewInvocationPolicy: policy.reviewInvocationPolicy,
+    nativeReviewerAvailable: platform !== 'unknown',
+    manualAttestedAllowed: policy.reviewInvocationPolicy !== 'host_task_required',
+  });
+  return buildPendingReviewInstruction({
+    mode,
+    platform,
+    reviewKind: 'implementation',
+    obligation: nextObligation,
+    iteration: nextObligation.iteration,
+    planVersion: nextObligation.planVersion,
+    subjectLabel: 'implementation summary, changed files, approved plan text, and ticket text',
+    proofContext: buildReviewerProofContext(finalState),
+    observationCapability:
+      resolveAttemptObservationCapability(
+        finalState.reviewAssurance,
+        nextObligation.obligationId,
+      ) ?? undefined,
+  });
+}
+
 function formatRunCheckResponse(input: {
   kind: string;
   candidateId?: string;
@@ -675,56 +706,39 @@ function formatRunCheckResponse(input: {
   const remainingChecks = finalState.activeChecks.filter(
     (checkId) => !finalValidation.some((result) => result.checkId === checkId && result.passed),
   );
-  const platform = resolveRuntimeReviewPlatform();
-  const mode = resolveReviewOrchestrationMode({
-    platform,
-    reviewInvocationPolicy: input.policy.reviewInvocationPolicy,
-    nativeReviewerAvailable: platform !== 'unknown',
-    manualAttestedAllowed: input.policy.reviewInvocationPolicy !== 'host_task_required',
-  });
-  const reviewInstruction = input.nextObligation
-    ? buildPendingReviewInstruction({
-        mode,
-        platform,
-        reviewKind: 'implementation',
-        obligation: input.nextObligation,
-        iteration: input.nextObligation.iteration,
-        planVersion: input.nextObligation.planVersion,
-        subjectLabel: 'implementation summary, changed files, approved plan text, and ticket text',
-        proofContext: buildReviewerProofContext(finalState),
-        observationCapability:
-          resolveAttemptObservationCapability(
-            finalState.reviewAssurance,
-            input.nextObligation.obligationId,
-          ) ?? undefined,
-      })
-    : null;
-  return appendNextAction(
-    JSON.stringify({
-      phase: finalState.phase,
-      status: formatRunCheckStatus(input.kind, input.validationResult, evidence),
-      evidence: {
-        kind: evidence.kind,
-        ...(input.candidateId ? { candidateId: input.candidateId } : {}),
-        command: evidence.command,
-        exitCode: evidence.exitCode,
-        passed: evidence.passed,
-        executionMs: evidence.executionMs,
-        outputDigest: evidence.outputDigest,
-        timedOut: evidence.timedOut,
-      },
-      executionObservedStateDigest,
-      preCommitStateDigest: hashText(canonicalJsonStringify(originalState)),
-      committedStateDigest: hashText(canonicalJsonStringify(finalState)),
-      stateChangedDuringExecution:
-        executionObservedStateDigest !== hashText(canonicalJsonStringify(originalState)),
-      derivedRepairGuidance,
-      remainingChecks,
-      ...reviewObligationResponseFields(input.nextObligation),
-      next: reviewInstruction?.next ?? formatEval(ev),
-      ...(reviewInstruction ? { reviewInvocation: reviewInstruction.reviewInvocation } : {}),
-      _audit: { transitions },
-    }),
+  const reviewInstruction = buildRunCheckReviewInstruction(
     finalState,
+    input.nextObligation,
+    input.policy,
+  );
+  return JSON.stringify(
+    enrichWithNextAction(
+      {
+        phase: finalState.phase,
+        status: formatRunCheckStatus(input.kind, input.validationResult, evidence),
+        evidence: {
+          kind: evidence.kind,
+          ...(input.candidateId ? { candidateId: input.candidateId } : {}),
+          command: evidence.command,
+          exitCode: evidence.exitCode,
+          passed: evidence.passed,
+          executionMs: evidence.executionMs,
+          outputDigest: evidence.outputDigest,
+          timedOut: evidence.timedOut,
+        },
+        executionObservedStateDigest,
+        preCommitStateDigest: hashText(canonicalJsonStringify(originalState)),
+        committedStateDigest: hashText(canonicalJsonStringify(finalState)),
+        stateChangedDuringExecution:
+          executionObservedStateDigest !== hashText(canonicalJsonStringify(originalState)),
+        derivedRepairGuidance,
+        remainingChecks,
+        ...reviewObligationResponseFields(input.nextObligation),
+        next: reviewInstruction?.next ?? formatEval(ev),
+        ...(reviewInstruction ? { reviewInvocation: reviewInstruction.reviewInvocation } : {}),
+        _audit: { transitions },
+      },
+      finalState,
+    ),
   );
 }

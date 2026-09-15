@@ -489,7 +489,6 @@ export function refineAssuranceInvocationLinkageCoherence(
           !invocation.hostCapturedAgentType &&
           !invocation.hostCaptureSource;
     if (
-      !invocation.attemptId ||
       expectedMode === null ||
       invocation.reviewOutputMode !== expectedMode ||
       invocation.reviewAssuranceLevel !== expectedLevel ||
@@ -501,8 +500,7 @@ export function refineAssuranceInvocationLinkageCoherence(
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['invocations'],
-        message:
-          'Review invocation evidence requires attempt lineage and consistent invocation provenance.',
+        message: 'Review invocation evidence requires consistent invocation provenance.',
       });
       return;
     }

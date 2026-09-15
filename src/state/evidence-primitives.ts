@@ -8,9 +8,6 @@
  */
 
 import { z } from 'zod';
-import { FINGERPRINT_PATTERN } from './evidence-identifiers.js';
-
-export { FINGERPRINT_PATTERN };
 
 // ─── Closed Enums ─────────────────────────────────────────────────────────────
 

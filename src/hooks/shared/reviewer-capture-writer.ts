@@ -13,7 +13,8 @@
  * @version v1
  */
 
-import { REVIEWER_SUBAGENT_TYPE, TOOL_FLOWGUARD_REVIEW } from '../../integration/tool-names.js';
+import { TOOL_FLOWGUARD_REVIEW } from '../../integration/tool-names.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import { appendReviewerCapture } from '../../adapters/persistence-reviewer-capture.js';
 import type { ReviewerSubagentCapture } from '../../state/evidence-reviewer-capture.js';
 

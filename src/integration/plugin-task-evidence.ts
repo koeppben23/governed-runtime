@@ -20,7 +20,7 @@ import {
 } from './review/assurance.js';
 import { strictBlockedOutput } from './plugin-helpers.js';
 import { settleReviewObligationAfterAttempt } from './review/obligation-settlement.js';
-import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { bindOutcomeToRejectionReason } from './review/enforcement/rejection-policy.js';
 import {
   schemaErrorFingerprintOf,

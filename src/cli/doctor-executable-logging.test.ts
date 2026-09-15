@@ -14,7 +14,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { withTestEnv } from '../integration/test-helpers.js';
 import { resetAdapterLogger } from '../logging/adapter-logger.js';
-import { SHIPPED_EXECUTABLE_CHECK, resolvePackageRoot } from './install-helpers.js';
+import { SHIPPED_EXECUTABLE_CHECK, resolvePackageRoot } from './install-types.js';
 
 vi.mock('./doctor-command.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./doctor-command.js')>();

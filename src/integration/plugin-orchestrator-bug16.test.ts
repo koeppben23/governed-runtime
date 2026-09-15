@@ -35,7 +35,7 @@ import {
   onFlowGuardToolAfter,
   enforceBeforeSubagentCall,
 } from './review/enforcement/enforcement.js';
-import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import type { SessionState } from '../state/schema.js';
 import type { OrchestratorClient } from './review/types.js';
 
@@ -422,10 +422,11 @@ describe('BUG-16: buildHostTaskPolicyOutput preserves iteration/planVersion', ()
     // prompt the agent is told to paste, with the artifact appended below it.
     const enfState = createSessionState();
     onFlowGuardToolAfter(enfState, TOOL_FLOWGUARD_PLAN, {}, toolOutput.output, NOW);
-    const result = enforceBeforeSubagentCall(enfState, {
-      subagent_type: REVIEWER_SUBAGENT_TYPE,
-      prompt: reviewerTaskPrompt,
-    });
+    const result = enforceBeforeSubagentCall(
+      enfState,
+      { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: reviewerTaskPrompt },
+      state.reviewAssurance,
+    );
     expect(result.allowed).toBe(true);
   });
 
@@ -449,10 +450,11 @@ describe('BUG-16: buildHostTaskPolicyOutput preserves iteration/planVersion', ()
 
     const enfState = createSessionState();
     onFlowGuardToolAfter(enfState, TOOL_FLOWGUARD_PLAN, {}, toolOutput.output, NOW);
-    const result = enforceBeforeSubagentCall(enfState, {
-      subagent_type: REVIEWER_SUBAGENT_TYPE,
-      prompt: reviewerTaskPrompt,
-    });
+    const result = enforceBeforeSubagentCall(
+      enfState,
+      { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: reviewerTaskPrompt },
+      state.reviewAssurance,
+    );
 
     expect(reviewerTaskPrompt).toContain('frozen plan review material');
     expect(result.allowed).toBe(true);
@@ -485,10 +487,11 @@ describe('BUG-16: buildHostTaskPolicyOutput preserves iteration/planVersion', ()
       `criteriaVersion=${REVIEW_CRITERIA_VERSION}. Review the plan for completeness, ` +
       `correctness, feasibility, risk, and quality, and return ReviewFindings JSON. ` +
       `Do not call any FlowGuard tools in your session.`;
-    const result = enforceBeforeSubagentCall(enfState, {
-      subagent_type: REVIEWER_SUBAGENT_TYPE,
-      prompt: freeComposed,
-    });
+    const result = enforceBeforeSubagentCall(
+      enfState,
+      { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: freeComposed },
+      state.reviewAssurance,
+    );
     expect(result.allowed).toBe(false);
     if (!result.allowed) {
       expect(result.code).toBe('SUBAGENT_PROMPT_MISMATCH');

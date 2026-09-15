@@ -144,21 +144,10 @@ export const ENVELOPE_PRECONDITION_REASONS: readonly BlockedReason[] = [
   },
 
   {
-    code: 'REVIEW_ATTEMPT_ID_MISSING',
-    category: 'precondition',
-    messageTemplate:
-      'The attempt identity (attemptId) is missing from the reviewer invocation evidence. The attempt cannot be rejected.',
-    recoverySteps: [
-      'This is a legacy data condition; re-invoke the reviewer subagent for a fresh attempt',
-      'New invocations created by the binding path automatically carry the attemptId',
-    ],
-  },
-
-  {
     code: 'REVIEW_ATTEMPT_LINEAGE_UNAVAILABLE',
     category: 'precondition',
     messageTemplate:
-      'Invocation {invocationId} under obligation {obligationId} has no persisted attempt lineage. The attempt-owner relationship cannot be verified.',
+      'Invocation {invocationId} under obligation {obligationId} does not establish coherent persisted attempt lineage. The attempt-owner relationship cannot be verified.',
     recoverySteps: [
       'Re-invoke the reviewer subagent for a fresh attempt',
       'The stale invocation is retained for audit but cannot be used for attempt status changes',

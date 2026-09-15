@@ -218,7 +218,6 @@ export function formatReviewRequiredSignal(iteration: number, planVersion: numbe
 export const CANONICAL_PROMPT_APPEND_MARKER = 'Append the';
 
 /** The subagent type name for the FlowGuard reviewer. */
-export { REVIEWER_SUBAGENT_TYPE } from '../../tool-names.js';
 
 /**
  * Minimum prompt length for subagent calls (Level 3).

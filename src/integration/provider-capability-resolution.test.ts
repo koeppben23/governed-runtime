@@ -8,7 +8,7 @@ import { resolveProviderCapabilities } from './provider-capability-resolution.js
 import type { VerificationCandidate } from '../state/discovery-schemas.js';
 import type { ProviderId, ReportFormatId } from '../state/assertion-identity.js';
 import { makeDetectedStack } from '../discovery/verification-planner-test-helpers.js';
-import type { DetectedStack } from '../discovery/types.js';
+import type { DetectedStack } from '../state/discovery-schemas.js';
 import type { ResolvedVerificationCandidate } from './verification-runtime-resolution.js';
 
 function makeLooseStack(

@@ -2,23 +2,16 @@
  * @module shared/flowguard-identifiers
  * @description Canonical FlowGuard identifier constants and runtime reason codes.
  *
- * The evidence-level discriminator constants (FINGERPRINT_PATTERN,
- * REVIEW_REPORT_SCHEMA_ID, REVIEWER_SUBAGENT_TYPE) are owned by
- * state/evidence-identifiers.ts and re-exported here for backward
- * compatibility with non-state callers.
- *
- * Reason codes and diagnostic fields remain owned by this module.
+ * Reason codes, diagnostic fields, and cross-layer runtime identifiers are
+ * owned by this module. Persisted evidence/schema discriminators are owned by
+ * state/evidence-identifiers.ts, except repository fingerprints, which are
+ * owned by shared/repository-fingerprint.ts.
  *
  * @version v1
  */
 
-import {
-  FINGERPRINT_PATTERN,
-  REVIEW_REPORT_SCHEMA_ID,
-  REVIEWER_SUBAGENT_TYPE,
-} from '../state/evidence-identifiers.js';
-
-export { FINGERPRINT_PATTERN, REVIEW_REPORT_SCHEMA_ID, REVIEWER_SUBAGENT_TYPE };
+/** Subagent type identifier for the FlowGuard reviewer subagent. */
+export const REVIEWER_SUBAGENT_TYPE = 'flowguard-reviewer';
 
 /** Block code when host-visible subagent Task invocation is required by policy. */
 export const REASON_HOST_SUBAGENT_TASK_REQUIRED = 'HOST_SUBAGENT_TASK_REQUIRED';

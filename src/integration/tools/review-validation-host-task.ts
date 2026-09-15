@@ -52,7 +52,7 @@ export type HostTaskFindingsResolution =
       readonly details: Record<string, unknown>;
       readonly invocationId: string;
       readonly attemptId: string;
-      /** Compatibility projection for the original verdict/blocker invariant. */
+      /** Current diagnostic projection of the findings consistency failure. */
       readonly blockingIssueCount?: number;
     }
   | {
@@ -130,9 +130,6 @@ export function resolveHostTaskFindings(
     invocationId: string;
     attemptId: string;
   } | null = null;
-  // A legacy invocation without attempt lineage must not cause an immediate
-  // return — a later coherent retry must still be found. Accumulate the first
-  // missing-lineage invocation and continue scanning.
   let unavailableLineage: {
     invocationId: string;
     obligationId: string;
@@ -194,13 +191,6 @@ export function resolveHostTaskFindings(
         blockingIssueCount: parsed.data.blockingIssues.length,
       });
       if (!consistency.ok) {
-        if (!invocation.attemptId) {
-          unavailableLineage ??= {
-            invocationId: invocation.invocationId,
-            obligationId: obligation.obligationId,
-          };
-          continue;
-        }
         incoherent ??= {
           code: consistency.code,
           details: consistency.details,
@@ -251,13 +241,6 @@ export function resolveHostTaskFindings(
         previouslyUsedChallengeIds,
       });
       if (!challengeConsistency.ok) {
-        if (!invocation.attemptId) {
-          unavailableLineage ??= {
-            invocationId: invocation.invocationId,
-            obligationId: obligation.obligationId,
-          };
-          continue;
-        }
         incoherent ??= {
           code: challengeConsistency.code,
           details: challengeConsistency.details,
@@ -330,7 +313,6 @@ function hasExactBoundAttempt(
   obligation: ReviewObligation,
   invocation: ReviewInvocationEvidence,
 ): boolean {
-  if (!invocation.attemptId) return false;
   const attempt = attempts.find((item) => item.attemptId === invocation.attemptId);
   return (
     invocation.obligationType === obligation.obligationType &&

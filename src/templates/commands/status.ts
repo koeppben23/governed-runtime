@@ -1,4 +1,4 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 
 export const STATUS_COMMAND = `---
 description: FlowGuard — Show the current status surface.
@@ -26,7 +26,7 @@ Arguments: $ARGUMENTS
 - /status is read-only — never modify files or workflow state.
 - Report only what \`flowguard_status\` returns — never invent governance semantics.
 - If flags are unknown: report valid flags and stop.
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 ## Done-when
 
 - Status retrieved via \`flowguard_status\`.

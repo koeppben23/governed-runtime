@@ -16,7 +16,7 @@ import {
   onTaskToolAfter,
 } from './enforcement/enforcement.js';
 import { buildHostTaskEvidence } from './evidence-binding.js';
-import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,

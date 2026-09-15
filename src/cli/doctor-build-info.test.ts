@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { checkBuildInfo } from './doctor-build-info.js';
-import { PACKAGE_VERSION, BUILD_INFO_CHECK } from './install-helpers.js';
+import { PACKAGE_VERSION, BUILD_INFO_CHECK } from './install-types.js';
 
 describe('checkBuildInfo (stale-dist guard)', () => {
   let root: string;

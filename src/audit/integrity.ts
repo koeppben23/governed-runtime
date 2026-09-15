@@ -142,8 +142,6 @@ export interface ChainVerification {
   readonly totalEvents: number;
   /** Events verified (with hash fields). */
   readonly verifiedCount: number;
-  /** Events skipped (without hash fields — legacy/pre-chain). */
-  readonly skippedCount: number;
   /** First broken event (null if no hash chain break). */
   readonly firstBreak: EventVerification | null;
   /** All verification results (one per chained event). */
@@ -346,7 +344,6 @@ export function verifyChain(
     valid: reason === null,
     totalEvents: events.length,
     verifiedCount: results.length,
-    skippedCount: 0,
     firstBreak: failures.firstBreak ?? null,
     results,
     reason,

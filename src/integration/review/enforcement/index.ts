@@ -22,11 +22,7 @@ export type {
   HostTaskBindResult,
 } from './types.js';
 
-export {
-  REVIEW_REQUIRED_PREFIX,
-  REVIEWER_SUBAGENT_TYPE,
-  MIN_SUBAGENT_PROMPT_LENGTH,
-} from './types.js';
+export { REVIEW_REQUIRED_PREFIX, MIN_SUBAGENT_PROMPT_LENGTH } from './types.js';
 
 export {
   extractContentMeta,

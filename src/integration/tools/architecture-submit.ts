@@ -7,7 +7,7 @@
 
 import type { ArchitectureArgs, ArchitectureSession } from './architecture-shared.js';
 import { buildArchitectureReviewInstruction } from './architecture-shared.js';
-import { formatBlocked, appendNextAction, writeStateWithArtifacts } from './helpers.js';
+import { formatBlocked, enrichWithNextAction, writeStateWithArtifacts } from './helpers.js';
 import type { SessionState } from '../../state/schema.js';
 import { executeArchitecture } from '../../rails/architecture.js';
 import { normalizeArchitectureClaims } from '../../state/proofgraph-approval.js';
@@ -223,5 +223,5 @@ export async function handleAdrSubmission(
     _audit: { transitions: result.transitions },
   };
 
-  return appendNextAction(JSON.stringify(modeAResponse), augmentedState);
+  return JSON.stringify(enrichWithNextAction(modeAResponse, augmentedState));
 }

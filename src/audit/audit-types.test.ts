@@ -11,8 +11,8 @@ import {
   createDecisionEvent,
   summarizeArgs,
   type ChainedAuditEvent,
-  type ActorInfo,
 } from './types.js';
+import type { ActorInfo } from '../state/evidence.js';
 import { verifyChain } from './integrity.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 import { SESSION_ID, TS1, TS2, TS3, stampChainSequence } from './audit-test-helpers.js';

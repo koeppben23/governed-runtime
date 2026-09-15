@@ -49,13 +49,22 @@ describe('documentation/release-process', () => {
   });
 
   describe('CORNER — docs require PR before tag', () => {
-    it('README documents PR-first and tag-after-merge release ordering', () => {
+    it('release policy owns the PR-first, tag-after-merge ordering', () => {
+      const policy = readRepoFile('docs/release-policy.md');
+
+      expect(policy).toContain(
+        'Release changes must be merged through a pull request before a release tag is',
+      );
+      expect(policy).toContain('Squash-merge the pull request');
+      expect(policy).toContain('git tag vX.Y.Z && git push origin vX.Y.Z');
+    });
+
+    it('README delegates the release process instead of duplicating the checklist', () => {
       const readme = readRepoFile('README.md');
 
-      expect(readme).toContain('Releases are PR-first because `main` is protected');
-      expect(readme).toContain('Do not use `npm version` for');
-      expect(readme).toContain('squash-merge');
-      expect(readme).toContain('git tag vX.Y.Z && git push origin vX.Y.Z');
+      expect(readme).toContain('Releases are\nPR-first');
+      expect(readme).toContain('docs/release-policy.md');
+      expect(readme).not.toContain('npm run release:assert-main-tag');
     });
 
     it('release policy binds v-tags to origin/main commits', () => {

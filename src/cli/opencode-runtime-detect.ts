@@ -27,13 +27,13 @@
 import { execFileSync } from 'node:child_process';
 import { release } from 'node:os';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
+import { resolveOpencodeConfigPath, safeRead } from './install-helpers.js';
 import {
   hasNonFlowGuardInstructions,
-  parseJsonc,
-  resolveOpencodeConfigPath,
-  safeRead,
-} from './install-helpers.js';
-import type { InstallScope, InstallPlatform } from './install-types.js';
+  type InstallScope,
+  type InstallPlatform,
+} from './install-types.js';
+import { parseJsonc } from './install-json.js';
 import type { OpenCodeRuntimeEvidence, OpenCodeRuntimeKind } from './opencode-runtime-compat.js';
 
 const VERSION_PROBE_TIMEOUT_MS = 5_000;

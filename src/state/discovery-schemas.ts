@@ -57,7 +57,7 @@ export const VerificationCandidateKindSchema = z.enum([
 export type VerificationCandidateKind = z.infer<typeof VerificationCandidateKindSchema>;
 
 /** Confidence level for a planned verification candidate. */
-export const VerificationCandidateConfidenceSchema = z.enum(['high', 'medium', 'low']);
+const VerificationCandidateConfidenceSchema = z.enum(['high', 'medium', 'low']);
 export type VerificationCandidateConfidence = z.infer<typeof VerificationCandidateConfidenceSchema>;
 
 /** Explicit profile attestation that the command executes the complete check scope. */
@@ -174,7 +174,7 @@ export type DetectedStackTarget = z.infer<typeof DetectedStackTargetSchema>;
  *
  * Derived evidence — NOT SSOT.
  */
-export const DetectedStackItemSchema = z.object({
+const DetectedStackItemSchema = z.object({
   /** Category of this item (determines sort order). */
   kind: DetectedStackTargetSchema,
   /** Stack item identifier (e.g., "java", "vitest", "maven"). */
@@ -191,7 +191,7 @@ export type DetectedStackItem = z.infer<typeof DetectedStackItemSchema>;
  *
  * Derived evidence — NOT SSOT.
  */
-export const DetectedStackTargetEntrySchema = z.object({
+const DetectedStackTargetEntrySchema = z.object({
   /** Always 'compilerTarget' for now; extensible for future target kinds. */
   kind: z.literal('compilerTarget'),
   /** Identifier (e.g., "typescript", "java"). */

@@ -3,7 +3,7 @@
  * Import target only — never executed as a test suite.
  */
 
-import type { DetectedStack } from './types.js';
+import type { DetectedStack } from '../state/discovery-schemas.js';
 
 export function makeDetectedStack(items: DetectedStack['items']): DetectedStack {
   return {
