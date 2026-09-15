@@ -21,6 +21,7 @@ import {
   selectReviewerProfileRules,
   type ReviewVerificationEvidenceItem,
 } from './prompt-builders.js';
+import { buildReviewChallengeContract } from './challenge-contract.js';
 import { buildReviewDiscoveryContext } from './discovery-context-loader.js';
 import type { DiscoveryReviewContext } from './discovery-context-prompt.js';
 import {
@@ -297,11 +298,16 @@ function resolveImplementationSubjectDigest(state: SessionState, obligationId: s
   return obligation.subjectDigest;
 }
 
+// eslint-disable-next-line max-lines-per-function -- one canonical projection across reviewable tools.
 export function buildToolPrompt(params: BuildToolPromptParams): string | null {
   const { toolName, texts, reviewCtx, parsedOutput, sessionState, rules, deps, discoveryContext } =
     params;
   const { planText, ticketText, adrText, adrTitle } = texts;
   const { planRules, implRules, archRules } = rules;
+  const obligation = sessionState.reviewAssurance?.obligations.find(
+    (item) => item.obligationId === reviewCtx.obligationId,
+  );
+  const challengeContract = buildReviewChallengeContract(sessionState, obligation ?? null);
   if (toolName === TOOL_FLOWGUARD_PLAN) {
     return buildPlanReviewPrompt({
       planText,
@@ -313,6 +319,7 @@ export function buildToolPrompt(params: BuildToolPromptParams): string | null {
       mandateDigest: reviewCtx.mandateDigest,
       discoveryContext,
       proofGraph: sessionState.proofGraph,
+      challengeContract,
       ...planRules,
     });
   }
@@ -345,6 +352,7 @@ export function buildToolPrompt(params: BuildToolPromptParams): string | null {
         sessionState,
         reviewCtx.obligationId,
       ),
+      challengeContract,
       ...implRules,
     });
   }
@@ -367,6 +375,7 @@ export function buildToolPrompt(params: BuildToolPromptParams): string | null {
         sessionState,
         reviewCtx.obligationId,
       ),
+      challengeContract,
       ...archRules,
     });
   }

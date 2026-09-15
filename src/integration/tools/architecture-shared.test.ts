@@ -164,7 +164,7 @@ describe('buildArchitectureReviewInstruction', () => {
     });
     expect(result.next).toBe('INDEPENDENT_REVIEW_REQUIRED');
     expect(result).not.toHaveProperty('reviewerTaskPrompt');
-    expect(result.reviewInvocation).toMatchObject({
+    expect(result).toMatchObject({
       mode: 'host_structured',
       platform: 'opencode',
       status: 'pending_review',

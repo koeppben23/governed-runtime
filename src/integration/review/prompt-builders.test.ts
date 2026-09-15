@@ -237,16 +237,27 @@ describe('ProofGraph prompt context', () => {
   };
 
   it('is included in plan, architecture, implementation, and standalone prompts', () => {
+    const challengeContract = {
+      requiredChallengeCount: 1,
+      requiredChallengeKind: 'design_challenge' as const,
+      evidenceRefs: [{ kind: 'content', digest: 'a'.repeat(64) }],
+    };
     const prompts = [
-      buildPlanReviewPrompt({ ...common, planText: 'plan' }),
-      buildArchitectureReviewPrompt({ ...common, adrText: 'adr', adrTitle: 'ADR-1' }),
-      buildImplReviewPrompt({ ...common, planText: 'plan', changedFiles: [] }),
-      buildReviewContentPrompt({ ...common, content: 'content' }),
+      buildPlanReviewPrompt({ ...common, planText: 'plan', challengeContract }),
+      buildArchitectureReviewPrompt({
+        ...common,
+        adrText: 'adr',
+        adrTitle: 'ADR-1',
+        challengeContract,
+      }),
+      buildImplReviewPrompt({ ...common, planText: 'plan', changedFiles: [], challengeContract }),
+      buildReviewContentPrompt({ ...common, content: 'content', challengeContract }),
     ];
 
     for (const prompt of prompts) {
       expect(prompt).toContain('## ProofGraph Context (persisted, advisory)');
       expect(prompt).toContain('Coverage: 0/0 claims PROVEN; 0 unresolved.');
+      expect(prompt).toContain('return exactly 1 design_challenge challenge(s)');
     }
   });
 });

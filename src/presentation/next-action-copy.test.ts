@@ -24,10 +24,8 @@ describe('buildProductNextAction', () => {
     it('RUN_REVIEW_DECISION (PLAN_REVIEW)', () => {
       const action = resolveNextAction('PLAN_REVIEW', makeProgressedState('PLAN_REVIEW'));
       const product = buildProductNextAction(action, 'PLAN_REVIEW');
-      expect(product.commands).toEqual(['/approve', '/request-changes', '/reject']);
-      expect(product.text).toContain('/approve');
-      // Canonical action still uses /review-decision
-      expect(action.commands).toEqual(['/review-decision']);
+      expect(product.commands).toEqual(action.commands);
+      expect(product.text).toBe(action.text);
     });
 
     it('SESSION_COMPLETE (COMPLETE) gets phase-enriched text', () => {
@@ -186,10 +184,8 @@ describe('buildProductNextAction', () => {
     it('RUN_REVIEW_DECISION text and commands are exact', () => {
       const action = { code: 'RUN_REVIEW_DECISION', text: '', commands: [] as string[] };
       const product = buildProductNextAction(action, 'PLAN_REVIEW');
-      expect(product.text).toBe(
-        'Review gate active. Run /approve to accept, /request-changes to revise, or /reject to discard.',
-      );
-      expect(product.commands).toEqual(['/approve', '/request-changes', '/reject']);
+      expect(product.text).toBe(action.text);
+      expect(product.commands).toEqual(action.commands);
     });
 
     it('RUN_VALIDATE text and commands are exact', () => {

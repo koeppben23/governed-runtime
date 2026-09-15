@@ -126,7 +126,7 @@ describe('resolveNextAction', () => {
       expect(action.text).toContain('converged');
     });
 
-    it('PLAN with a bindable plan attempt → RUN_REVIEWER_TASK', () => {
+    it('PLAN with a bindable plan attempt → host dispatch recovery via /plan', () => {
       const obligation = pendingPlanObligation({ status: 'pending' });
       const attempt = bindableAttemptFor(obligation);
       const state = makeState('PLAN', {
@@ -138,7 +138,7 @@ describe('resolveNextAction', () => {
           attempts: [attempt],
         }),
       });
-      expectAction(resolveNextAction('PLAN', state), ACTION_CODES.RUN_REVIEWER_TASK, []);
+      expectAction(resolveNextAction('PLAN', state), ACTION_CODES.RUN_PLAN, ['/plan']);
     });
 
     it('PLAN with a bindable attempt + unresolved durable dispatch → /plan re-arm, never awaiting_task', () => {
@@ -348,10 +348,10 @@ describe('resolveNextAction', () => {
       expectAction(action, ACTION_CODES.RUN_CONTINUE, ['/continue']);
     });
 
-    it('IMPL_REVIEW without bound evidence → RUN_REVIEWER_TASK', () => {
+    it('IMPL_REVIEW without bound evidence → host dispatch recovery via /implement', () => {
       const state = makeProgressedState('IMPL_REVIEW');
       const action = resolveNextAction('IMPL_REVIEW', state);
-      expectAction(action, ACTION_CODES.RUN_REVIEWER_TASK, []);
+      expectAction(action, ACTION_CODES.RUN_IMPLEMENT, []);
     });
 
     it('IMPL_REVIEW with an unaddressed prior challenge → resolve it before reviewer dispatch', () => {
@@ -591,7 +591,7 @@ describe('resolveNextAction', () => {
       expect(action.text).not.toContain('archived');
     });
 
-    it('READY with a pending standalone review obligation → RUN_REVIEWER_TASK', () => {
+    it('READY with a pending standalone review obligation → host dispatch recovery', () => {
       const obligation = createReviewObligation({
         obligationType: 'review',
         iteration: 1,
@@ -610,11 +610,11 @@ describe('resolveNextAction', () => {
         },
       });
       const action = resolveNextAction('READY', state);
-      expectAction(action, ACTION_CODES.RUN_REVIEWER_TASK, []);
-      expect(action.text).toContain('flowguard-reviewer Task');
+      expectAction(action, ACTION_CODES.RUN_CONTINUE, ['flowguard_review']);
+      expect(action.text).not.toContain('flowguard-reviewer Task');
     });
 
-    it('REVIEW with a pending standalone review obligation → RUN_REVIEWER_TASK', () => {
+    it('REVIEW with a pending standalone review obligation → host dispatch recovery', () => {
       const obligation = createReviewObligation({
         obligationType: 'review',
         iteration: 1,
@@ -633,7 +633,7 @@ describe('resolveNextAction', () => {
         },
       });
       const action = resolveNextAction('REVIEW', state);
-      expectAction(action, ACTION_CODES.RUN_REVIEWER_TASK, []);
+      expectAction(action, ACTION_CODES.RUN_CONTINUE, ['flowguard_review']);
     });
   });
 

@@ -272,7 +272,7 @@ describe('buildWhyDocument', () => {
     const c = doc.conclusion;
     if (!c) throw new Error('no conclusion');
     expect(c.kind).toBe('decision_required');
-    if (c.kind === 'decision_required') expect(c.actions.length).toBeGreaterThan(1);
+    if (c.kind === 'decision_required') expect(c.actions).toHaveLength(1);
   });
 
   it('produces next_action for active state', () => {

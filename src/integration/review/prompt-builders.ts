@@ -10,7 +10,6 @@
 
 import type { ProofGraphProjection } from '../../state/proofgraph.js';
 import type { FrozenReviewSubject, ReviewSubjectScope } from '../../state/evidence.js';
-import { REVIEW_CHALLENGE_OUTCOMES } from '../../state/evidence.js';
 import {
   renderReviewerCriteria,
   type ReviewerPromptType,
@@ -30,6 +29,10 @@ import {
 } from './prompt-sections.js';
 import type { FrozenReviewerContext } from './frozen-reviewer-context.js';
 import type { RepositoryDiscoverySnapshot } from '../../state/evidence.js';
+import {
+  renderReviewChallengeContract,
+  type ReviewerChallengePromptContract,
+} from './challenge-contract.js';
 
 // ─── Canonical Review Context Serializer ─────────────────────────────────────
 
@@ -99,57 +102,6 @@ export function deriveReviewSubjectScope(subject: FrozenReviewSubject): ReviewSu
   return subject.kind === 'repository_change'
     ? { kind: 'repository_change', paths: [...subject.changedPaths], revisions: ['base', 'head'] }
     : { kind: 'content', subjectDigest: subject.subjectDigest, lineCount: subject.lineCount };
-}
-
-export interface ReviewerChallengePromptContract {
-  readonly requiredChallengeCount: number;
-  readonly requiredChallengeKind?:
-    'design_challenge' | 'implementation_challenge' | 'content_challenge';
-  readonly evidenceRefs?: readonly Record<string, unknown>[];
-}
-
-function challengeOutcomeVocabulary(
-  kind: ReviewerChallengePromptContract['requiredChallengeKind'],
-): string | null {
-  if (kind === undefined) return null;
-  const allowed = REVIEW_CHALLENGE_OUTCOMES[kind];
-  return `- Allowed ${kind} outcome values (exact strings, no others): ${allowed
-    .map((value) => `"${value}"`)
-    .join(' | ')}.`;
-}
-
-function renderChallengeContract(
-  contract: ReviewerChallengePromptContract | undefined,
-  obligationId: string,
-): string[] {
-  if (!contract)
-    return ['- Challenge requirement: exactly 0 challenges are required for this review.'];
-  if (contract.requiredChallengeCount === 0) {
-    return ['- Challenge requirement: exactly 0 challenges are required for this review.'];
-  }
-  const evidenceRefs = contract.evidenceRefs ?? [];
-  const challenge = {
-    clientReference: 'c1',
-    obligationId,
-    scenario: '<falsification scenario>',
-    claim: '<reviewed claim>',
-    locations: ['<concrete file or artifact location>'],
-    kind: contract.requiredChallengeKind,
-    evidenceRefs,
-  };
-  const outcomeVocabulary = challengeOutcomeVocabulary(contract.requiredChallengeKind);
-  return [
-    `- Challenge contract: return exactly ${contract.requiredChallengeCount} ${contract.requiredChallengeKind} challenge(s).`,
-    '- When provided, clientReference MUST be fresh and unique (e.g. "c1", "c2"); use the exact obligationId below.',
-    '- Copy evidenceRefs exactly from the contract below. Do not invent or alter a digest, sectionPath, or attemptId.',
-    '- Omit challengeResolutionVerdicts unless the Task prompt explicitly supplies prior challenge IDs to resolve.',
-    '- Required field: outcome. Select it yourself only after completing the falsification attempt; there is no default outcome.',
-    ...(outcomeVocabulary ? [outcomeVocabulary] : []),
-    `- Required challenge object shape: ${JSON.stringify(challenge)}`,
-    ...(evidenceRefs.length === 0
-      ? ['- No usable evidence reference was supplied; return unable_to_review.']
-      : []),
-  ];
 }
 
 function renderReviewerRules(isRepositoryReview: boolean): string[] {
@@ -269,7 +221,7 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
     renderReviewerCriteria(resolveReviewerPromptType(input)),
     ...renderReviewerRules(isRepositoryReview),
     ...renderFindingsSemanticRule(input),
-    ...renderChallengeContract(input.challengeContract, input.obligationId),
+    ...renderReviewChallengeContract(input.challengeContract, input.obligationId),
     renderFindingRelationGrammar(),
     '',
     '## Trusted Runtime Context',
@@ -318,6 +270,7 @@ export interface PlanReviewPromptOpts {
   readonly profileRules?: string;
   readonly discoveryContext: DiscoveryReviewContext;
   readonly proofGraph?: ProofGraphProjection;
+  readonly challengeContract?: ReviewerChallengePromptContract;
 }
 
 export interface ArchitectureReviewPromptOpts {
@@ -335,6 +288,7 @@ export interface ArchitectureReviewPromptOpts {
   readonly proofGraph?: ProofGraphProjection;
   readonly observationCapability?: string;
   readonly observationRevisions?: readonly ('base' | 'head')[];
+  readonly challengeContract?: ReviewerChallengePromptContract;
 }
 
 export function selectReviewerProfileRules(
@@ -367,6 +321,7 @@ export function buildPlanReviewPrompt(opts: PlanReviewPromptOpts): string {
     proofGraph,
     mandateDigest,
     criteriaVersion,
+    challengeContract,
   } = opts;
   const stackSection = buildStackProfileSection(profileName, profileRules);
   const discoverySection = buildDiscoveryContextSection(discoveryContext);
@@ -381,6 +336,7 @@ export function buildPlanReviewPrompt(opts: PlanReviewPromptOpts): string {
     `obligationId=${obligationId}`,
     `mandateDigest=${mandateDigest}`,
     `criteriaVersion=${criteriaVersion}`,
+    ...renderReviewChallengeContract(challengeContract, obligationId),
     ...(stackSection ? [stackSection] : []),
     ...(discoverySection ? [discoverySection] : []),
     ...renderPersistedProofGraphContext(proofGraph),
@@ -411,6 +367,7 @@ export function buildArchitectureReviewPrompt(opts: ArchitectureReviewPromptOpts
     observationRevisions,
     mandateDigest,
     criteriaVersion,
+    challengeContract,
   } = opts;
   const stackSection = buildStackProfileSection(profileName, profileRules);
   const discoverySection = buildDiscoveryContextSection(discoveryContext);
@@ -425,6 +382,7 @@ export function buildArchitectureReviewPrompt(opts: ArchitectureReviewPromptOpts
     `obligationId=${obligationId}`,
     `mandateDigest=${mandateDigest}`,
     `criteriaVersion=${criteriaVersion}`,
+    ...renderReviewChallengeContract(challengeContract, obligationId),
     ...(stackSection ? [stackSection] : []),
     ...(discoverySection ? [discoverySection] : []),
     ...renderPersistedProofGraphContext(proofGraph),
@@ -453,6 +411,7 @@ export function buildReviewContentPrompt(opts: {
   repositoryDiscoverySnapshot?: RepositoryDiscoverySnapshot | null;
   proofGraph?: ProofGraphProjection;
   frozenReviewerContext?: FrozenReviewerContext;
+  challengeContract?: ReviewerChallengePromptContract;
 }): string {
   const stackSection = buildStackProfileSection(opts.profileName, opts.profileRules);
   const discoverySection = resolveReviewerDiscoverySection(
@@ -472,6 +431,7 @@ export function buildReviewContentPrompt(opts: {
     `obligationId=${opts.obligationId}`,
     `mandateDigest=${opts.mandateDigest}`,
     `criteriaVersion=${opts.criteriaVersion}`,
+    ...renderReviewChallengeContract(opts.challengeContract, opts.obligationId),
   ];
   if (stackSection) lines.push(stackSection);
   if (discoverySection) lines.push(discoverySection);

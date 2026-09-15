@@ -819,6 +819,25 @@ describe('buildMutatedOutput', () => {
     expect(parsed.next).toContain('reviewVerdict=changes_requested');
   });
 
+  it('removes stale pending-review routing after evidence is bound', () => {
+    const output = JSON.stringify({
+      next: 'INDEPENDENT_REVIEW_REQUIRED',
+      reviewInvocation: { status: 'pending_review', next: 'INDEPENDENT_REVIEW_REQUIRED' },
+      nextAction: { code: 'RUN_REVIEWER_TASK' },
+      productNextAction: { presentationForm: 'review_pending' },
+    });
+
+    const parsed = JSON.parse(buildMutatedOutput(output, reviewerResult)!) as Record<
+      string,
+      unknown
+    >;
+
+    expect(parsed.next).toContain('INDEPENDENT_REVIEW_COMPLETED');
+    expect(parsed).not.toHaveProperty('reviewInvocation');
+    expect(parsed).not.toHaveProperty('nextAction');
+    expect(parsed).not.toHaveProperty('productNextAction');
+  });
+
   // EDGE: findings is null (parsing failed) — fail-closed: returns null
   it('returns null when findings is null (fail-closed)', () => {
     const nullFindingsResult: ReviewerSuccessResult = {

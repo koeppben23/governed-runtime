@@ -616,7 +616,7 @@ function buildNonConvergedReviewResponse(input: {
     ...reviewObligationResponseFields(nextObligation, input.attemptId),
     ...repositoryEvidenceUnavailableField(nextObligation?.repositoryEvidenceFreeze),
     next: instruction.next,
-    ...(instruction.reviewInvocation ? { reviewInvocation: instruction.reviewInvocation } : {}),
+    reviewInvocation: instruction,
     _audit: { transitions: advanced.transitions },
   };
 }

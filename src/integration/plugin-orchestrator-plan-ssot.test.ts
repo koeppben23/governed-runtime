@@ -67,6 +67,7 @@ function buildFindings() {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: CHILD_SESSION_ID },
     reviewedAt: NOW,
     attestation: {
@@ -159,7 +160,7 @@ function buildCapturingClient(findings: Record<string, unknown>): {
             const text = req?.body?.parts?.[0]?.text;
             if (text) capturedPrompts.push(text);
             return {
-              data: { info: { structured_output: findings } },
+              data: { parts: [], info: { structured: findings } },
               error: undefined,
             };
           }),

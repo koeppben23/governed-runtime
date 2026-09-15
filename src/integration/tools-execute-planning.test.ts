@@ -983,7 +983,7 @@ describe('plan', () => {
       expect(result.reviewCard).toContain('# FlowGuard Plan Review');
       expect(result.reviewCard).toContain('## Proposed Plan');
       expect(result.reviewCard).toContain('Implement payment validation');
-      expect(result.reviewCard).toContain('## Decision required');
+      expect(result.reviewCard).toContain('Review the plan and decide: /review-decision');
       expect(result.presentation).toEqual({ markdown: result.reviewCard });
     });
 
@@ -999,9 +999,7 @@ describe('plan', () => {
       const result = parseToolResult(raw);
 
       expect(result.error).toBeUndefined();
-      expect(result.reviewCard).toContain('- `/approve`');
-      expect(result.reviewCard).toContain('- `/request-changes`');
-      expect(result.reviewCard).toContain('- `/reject`');
+      expect(result.reviewCard).toContain('/review-decision');
     });
 
     it('non-PLAN_REVIEW convergence (solo auto-advance) does not include reviewCard', async () => {

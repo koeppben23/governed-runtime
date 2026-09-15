@@ -219,7 +219,7 @@ export async function handleAdrSubmission(
     ...reviewObligationResponseFields(nextObligation, subAttemptId),
     ...repositoryEvidenceUnavailableField(nextObligation?.repositoryEvidenceFreeze),
     next: instruction.next,
-    ...(instruction.reviewInvocation ? { reviewInvocation: instruction.reviewInvocation } : {}),
+    reviewInvocation: instruction,
     _audit: { transitions: result.transitions },
   };
 

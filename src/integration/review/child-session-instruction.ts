@@ -41,6 +41,5 @@ export function buildChildSessionReviewInstruction(input: ChildSessionReviewInst
   return {
     ...metadata,
     next: 'INDEPENDENT_REVIEW_REQUIRED',
-    reviewInvocation: metadata,
   };
 }

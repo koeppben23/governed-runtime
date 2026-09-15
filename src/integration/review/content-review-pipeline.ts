@@ -10,6 +10,9 @@ import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js'
 import { prepareReviewerFindingsForValidation } from './enforcement/prepare-findings.js';
 import type { RepositoryDiscoverySnapshot } from '../../state/evidence.js';
 import { buildReviewContentPrompt, selectReviewerProfileRules } from './prompt-builders.js';
+import { buildReviewChallengeContract } from './challenge-contract.js';
+import { collectPreviouslyUsedChallengeIds } from './challenge-history.js';
+import { validateChallengeConsistency } from './enforcement/challenge-consistency.js';
 import { buildReviewContentMutatedOutput, type ReviewerSuccessResult } from './orchestrator.js';
 import { strictBlockedOutput } from '../plugin-helpers.js';
 import { TOOL_FLOWGUARD_REVIEW } from '../tool-names.js';
@@ -96,6 +99,7 @@ async function loadPersistedContentForReview(ctx: PipelineContext): Promise<{
   frozenReviewerContext: FrozenReviewerContext;
   repositoryDiscoverySnapshot: RepositoryDiscoverySnapshot | null;
   attemptId: string;
+  obligation: PersistedReviewObligation;
 } | null> {
   const { deps, reviewCtx } = ctx;
   const assurance = ensureReviewAssurance(ctx.sessionState.reviewAssurance);
@@ -126,6 +130,7 @@ async function loadPersistedContentForReview(ctx: PipelineContext): Promise<{
         ? resolved.attempt.repositoryDiscovery.snapshot
         : null,
     attemptId: resolved.attempt.attemptId,
+    obligation,
   };
 }
 
@@ -235,6 +240,7 @@ async function validateContentFindings(
   return true;
 }
 
+// eslint-disable-next-line max-lines-per-function -- one atomic content-review dispatch and binding lifecycle.
 export async function runReviewContentPipeline(ctx: PipelineContext): Promise<void> {
   const { deps, sessionState, reviewCtx, output, sessionId } = ctx;
   deps.log.info('review', 'content_review_started', { sessionId });
@@ -260,6 +266,7 @@ export async function runReviewContentPipeline(ctx: PipelineContext): Promise<vo
     repositoryDiscoverySnapshot: persistedContent.repositoryDiscoverySnapshot,
     proofGraph: sessionState.proofGraph,
     frozenReviewerContext: persistedContent.frozenReviewerContext,
+    challengeContract: buildReviewChallengeContract(sessionState, persistedContent.obligation),
   });
 
   const promptDigest = hashText(prompt);
@@ -347,6 +354,39 @@ async function enforceContentGate(
 
   if (!attestation.valid) {
     await blockReviewOutcomeHelper(deps, ctx, attestation.code, attestation.detail);
+    return true;
+  }
+
+  const obligation = findReviewObligationById(
+    ctx.sessionState.reviewAssurance,
+    reviewCtx.obligationId,
+  );
+  if (!obligation) {
+    await blockReviewOutcomeHelper(deps, ctx, 'REVIEW_MATERIAL_INTEGRITY_FAILED', {
+      obligationId: reviewCtx.obligationId,
+      reason: 'reviewer completion has no exact frozen obligation',
+    });
+    return true;
+  }
+  const challengeConsistency = validateChallengeConsistency({
+    overallVerdict: findings.overallVerdict as 'accept' | 'changes_requested' | 'unable_to_review',
+    requiredChallengeCount: obligation.requiredChallengeCount,
+    requiredChallengeKind: obligation.requiredChallengeKind ?? 'content_challenge',
+    challenges: reviewerResult.findings.challenges as Parameters<
+      typeof validateChallengeConsistency
+    >[0]['challenges'],
+    expectedObligationId: obligation.obligationId,
+    allowedEvidenceRefs: buildReviewChallengeContract(ctx.sessionState, obligation)?.evidenceRefs,
+    resolutionVerdicts: reviewerResult.findings.challengeResolutionVerdicts as Parameters<
+      typeof validateChallengeConsistency
+    >[0]['resolutionVerdicts'],
+    previouslyUsedChallengeIds: collectPreviouslyUsedChallengeIds(ctx.sessionState),
+  });
+  if (!challengeConsistency.ok) {
+    await blockReviewOutcomeHelper(deps, ctx, challengeConsistency.code, {
+      obligationId: obligation.obligationId,
+      ...challengeConsistency.details,
+    });
     return true;
   }
 

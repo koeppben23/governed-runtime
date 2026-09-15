@@ -175,7 +175,7 @@ function planInstructionResponse(
     reviewMode: 'subagent',
     ...reviewObligationResponseFields(obligation, attemptId),
     next: instruction.next,
-    ...(instruction.reviewInvocation ? { reviewInvocation: instruction.reviewInvocation } : {}),
+    reviewInvocation: instruction,
     _audit: { transitions: [] },
   };
   return JSON.stringify(enrichWithNextAction(response, scope.state));

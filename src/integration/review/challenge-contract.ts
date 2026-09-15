@@ -5,8 +5,55 @@
 
 import type { SessionState } from '../../state/schema.js';
 import type { ReviewObligation } from '../../state/evidence.js';
+import { REVIEW_CHALLENGE_OUTCOMES } from '../../state/evidence.js';
 import { indexMarkdownSections } from '../../shared/markdown-sections.js';
-import type { ReviewerChallengePromptContract } from './prompt-builders.js';
+
+export interface ReviewerChallengePromptContract {
+  readonly requiredChallengeCount: number;
+  readonly requiredChallengeKind?:
+    'design_challenge' | 'implementation_challenge' | 'content_challenge';
+  readonly evidenceRefs?: readonly Record<string, unknown>[];
+}
+
+export function renderReviewChallengeContract(
+  contract: ReviewerChallengePromptContract | undefined,
+  obligationId: string,
+): string[] {
+  if (!contract || contract.requiredChallengeCount === 0) {
+    return ['- Challenge requirement: exactly 0 challenges are required for this review.'];
+  }
+  const evidenceRefs = contract.evidenceRefs ?? [];
+  const kind = contract.requiredChallengeKind;
+  const challenge = {
+    clientReference: 'c1',
+    obligationId,
+    scenario: '<falsification scenario>',
+    claim: '<reviewed claim>',
+    locations: ['<concrete file or artifact location>'],
+    kind,
+    evidenceRefs,
+  };
+  return [
+    `- Challenge contract: return exactly ${contract.requiredChallengeCount} ${kind} challenge(s).`,
+    '- When provided, clientReference MUST be fresh and unique (e.g. "c1", "c2"); use the exact obligationId below.',
+    '- Copy evidenceRefs exactly from the contract below. Do not invent or alter a digest, sectionPath, or attemptId.',
+    '- Omit challengeResolutionVerdicts unless the Task prompt explicitly supplies prior challenge IDs to resolve.',
+    '- Required field: outcome. Select it yourself only after completing the falsification attempt; there is no default outcome.',
+    ...(kind
+      ? [
+          `- Allowed ${kind} outcome values (exact strings, no others): ${REVIEW_CHALLENGE_OUTCOMES[
+            kind
+          ]
+            .map((value) => `"${value}"`)
+            .join(' | ')}.`,
+        ]
+      : []),
+    `- Required challenge object shape: ${JSON.stringify(challenge)}`,
+    ...(evidenceRefs.length === 0
+      ? ['- No usable evidence reference was supplied; return unable_to_review.']
+      : []),
+  ];
+}
 
 function artifactEvidence(
   kind: 'plan' | 'adr',

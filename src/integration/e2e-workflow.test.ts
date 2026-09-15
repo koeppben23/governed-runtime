@@ -386,10 +386,8 @@ describe('e2e-workflow', () => {
       expect(await getPhase()).toBe('EVIDENCE_REVIEW');
       const presentation = implementationReviewResult?.presentation as
         { markdown?: unknown } | undefined;
-      expect(presentation?.markdown).toContain('## Decision required');
-      expect(presentation?.markdown).toContain('/approve');
-      expect(presentation?.markdown).toContain('/request-changes');
-      expect(presentation?.markdown).toContain('/reject');
+      expect(presentation?.markdown).toContain('## Decision');
+      expect(presentation?.markdown).toContain('/review-decision');
       expect(presentation?.markdown).toContain('## Verification');
       expect(presentation?.markdown).toContain('No verification obligations declared');
 

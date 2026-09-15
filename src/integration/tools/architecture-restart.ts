@@ -218,7 +218,7 @@ function architectureInstructionResponse(
     // cause, not only the immediate Mode-A response.
     ...repositoryEvidenceUnavailableField(input.obligation.repositoryEvidenceFreeze),
     next: instruction.next,
-    ...(instruction.reviewInvocation ? { reviewInvocation: instruction.reviewInvocation } : {}),
+    reviewInvocation: instruction,
     _audit: { transitions: [] },
   };
   return JSON.stringify(enrichWithNextAction(response, state));
@@ -453,9 +453,7 @@ function buildRestartResponse(
     ...reviewObligationResponseFields(input.obligation, input.restartAttemptId),
     ...repositoryEvidenceUnavailableField(input.obligation?.repositoryEvidenceFreeze),
     next: input.instruction.next,
-    ...(input.instruction.reviewInvocation
-      ? { reviewInvocation: input.instruction.reviewInvocation }
-      : {}),
+    reviewInvocation: input.instruction,
     _audit: { transitions: [] },
   };
 }

@@ -274,8 +274,8 @@ const NEXT_ACTION_MAP: Record<Phase, NextActionFn> = {
       };
     }
     return {
-      code: ACTION_CODES.RUN_REVIEWER_TASK,
-      text: 'Implementation review is pending. Invoke the flowguard-reviewer task, then submit its verdict with flowguard_review_implementation.',
+      code: ACTION_CODES.RUN_IMPLEMENT,
+      text: 'Independent implementation review dispatch is pending. Re-run /implement only if FlowGuard reports that host dispatch did not complete.',
       commands: [],
     };
   },
@@ -344,9 +344,9 @@ function reviewLifecycleAction(
   switch (continuation.kind) {
     case 'awaiting_task':
       return {
-        code: ACTION_CODES.RUN_REVIEWER_TASK,
-        text: `Independent ${label.toLowerCase()} review is pending. Invoke the flowguard-reviewer Task, then submit only its verdict with ${command}.`,
-        commands: [],
+        code: ACTION_CODES.RUN_PLAN,
+        text: `Independent ${label.toLowerCase()} review dispatch is pending. Re-run ${command} only if FlowGuard reports that host dispatch did not complete.`,
+        commands: [command],
       };
     case 'interrupted_dispatch':
       return {
@@ -406,9 +406,9 @@ export function resolveNextAction(phase: Phase, state: SessionState): NextAction
   );
   if ((phase === 'READY' || phase === 'REVIEW') && pendingStandaloneReview) {
     return {
-      code: ACTION_CODES.RUN_REVIEWER_TASK,
-      text: 'Independent content review is pending. Invoke the flowguard-reviewer Task, then submit only its verdict with flowguard_review.',
-      commands: [],
+      code: ACTION_CODES.RUN_CONTINUE,
+      text: 'Independent content review dispatch is pending. Re-run flowguard_review only if FlowGuard reports that host dispatch did not complete.',
+      commands: ['flowguard_review'],
     };
   }
   return NEXT_ACTION_MAP[phase](state);

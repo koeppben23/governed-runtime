@@ -30,6 +30,9 @@ import { recordAssuranceWithAudit } from './shared-helpers.js';
 import type { PipelineContext } from './pipeline-types.js';
 import type { EvidenceRecordResult } from './pipeline-types.js';
 import { buildSdkEvidenceAuditIntents } from './sdk-evidence-recorder.js';
+import { buildReviewChallengeContract } from './challenge-contract.js';
+import { collectPreviouslyUsedChallengeIds } from './challenge-history.js';
+import { validateChallengeConsistency } from './enforcement/challenge-consistency.js';
 import {
   validatePipelineAttestation,
   recordEvidenceOrBlockReuse,
@@ -441,6 +444,7 @@ function applyStandardEvidenceResult(ctx: PipelineContext, result: EvidenceRecor
   return false;
 }
 
+// eslint-disable-next-line max-lines-per-function -- attest, validate frozen policy, then bind as one gate.
 async function enforceStandardGate(
   ctx: PipelineContext,
   reviewerResult: ReviewerSuccessResult & { findings: Record<string, unknown> },
@@ -466,6 +470,38 @@ async function enforceStandardGate(
 
   if (!attestation.valid) {
     await blockReviewOutcomeHelper(deps, ctx, attestation.code, attestation.detail);
+    return true;
+  }
+
+  const obligation = sessionState.reviewAssurance?.obligations.find(
+    (item) => item.obligationId === reviewCtx.obligationId,
+  );
+  if (!obligation) {
+    output.output = strictBlockedOutput('REVIEW_MATERIAL_INTEGRITY_FAILED', {
+      obligationId: reviewCtx.obligationId,
+      reason: 'reviewer completion has no exact frozen obligation',
+    });
+    return true;
+  }
+  const challengeConsistency = validateChallengeConsistency({
+    overallVerdict: findings.overallVerdict as 'accept' | 'changes_requested' | 'unable_to_review',
+    requiredChallengeCount: obligation.requiredChallengeCount,
+    requiredChallengeKind: obligation.requiredChallengeKind ?? 'implementation_challenge',
+    challenges: reviewerResult.findings.challenges as Parameters<
+      typeof validateChallengeConsistency
+    >[0]['challenges'],
+    expectedObligationId: obligation.obligationId,
+    allowedEvidenceRefs: buildReviewChallengeContract(sessionState, obligation)?.evidenceRefs,
+    resolutionVerdicts: reviewerResult.findings.challengeResolutionVerdicts as Parameters<
+      typeof validateChallengeConsistency
+    >[0]['resolutionVerdicts'],
+    previouslyUsedChallengeIds: collectPreviouslyUsedChallengeIds(sessionState),
+  });
+  if (!challengeConsistency.ok) {
+    await blockReviewOutcomeHelper(deps, ctx, challengeConsistency.code, {
+      obligationId: obligation.obligationId,
+      ...challengeConsistency.details,
+    });
     return true;
   }
 

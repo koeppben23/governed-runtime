@@ -53,7 +53,7 @@ describe('buildRailConclusion', () => {
   });
 
   describe('HAPPY — user gate → decision_required', () => {
-    it('PLAN_REVIEW waiting yields the product decision commands', () => {
+    it('PLAN_REVIEW waiting preserves the canonical decision command', () => {
       const state = makeProgressedState('PLAN_REVIEW');
       const evalResult: EvalResult = {
         kind: 'waiting',
@@ -65,7 +65,7 @@ describe('buildRailConclusion', () => {
       if (conclusion.kind === 'decision_required') {
         expect(conclusion.question).toBe('Human review decision required at PLAN_REVIEW.');
         const invocations = conclusion.actions.map((a) => a.invocation);
-        expect(invocations).toEqual(['/approve', '/request-changes', '/reject']);
+        expect(invocations).toEqual(['/review-decision']);
         for (const action of conclusion.actions) {
           expect(action.visibility).toBe('available');
           expect(action.description.length).toBeGreaterThan(0);
@@ -98,10 +98,7 @@ describe('buildRailConclusion', () => {
   });
 
   describe('CORNER — pending independent review', () => {
-    it('READY with a pending standalone review obligation → review-pending message', () => {
-      // resolveNextAction returns RUN_REVIEWER_TASK here, whose product
-      // projection has an empty command list but non-empty guidance text →
-      // a dedicated review-pending conclusion carrying that text (never an invented command).
+    it('READY with a pending standalone review obligation → host dispatch recovery', () => {
       const obligation = createReviewObligation({
         policySnapshot: {
           challengePolicy: {
@@ -132,20 +129,18 @@ describe('buildRailConclusion', () => {
       });
       const evalResult: EvalResult = { kind: 'pending', phase: 'READY' };
       const conclusion = buildRailConclusion(state, evalResult);
-      expect(conclusion.kind).toBe('review_pending');
-      if (conclusion.kind === 'review_pending') {
-        expect(conclusion.message).toContain('flowguard-reviewer');
+      expect(conclusion.kind).toBe('next_action');
+      if (conclusion.kind === 'next_action') {
+        expect(conclusion.action.invocation).toBe('/continue');
       }
     });
   });
 
   describe('GOVERNANCE BOUNDARY — pending review is not a rail next action', () => {
     // The pending-review submission responses (buildPlanSubmissionResponse etc.)
-    // carry a dense governance `next` protocol from buildPendingReviewInstruction
-    // ("INDEPENDENT_REVIEW_REQUIRED: ... invoke the reviewer via the Task tool").
+    // carry a dense governance `next` protocol from buildPendingReviewInstruction.
     // A rail conclusion for those PLAN / IMPL_REVIEW states resolves to the
-    // routing command /continue — which is NOT the required action (invoking the
-    // reviewer subagent). This test pins that mismatch so the rendered rail
+    // routing command /continue — which is NOT the host dispatch recovery. This test pins that mismatch so the rendered rail
     // conclusion is never substituted for the governance protocol on those
     // surfaces: the governance `next` remains the sole authority there.
     it('rail conclusion for PLAN pending routes to /continue, not the reviewer protocol', () => {

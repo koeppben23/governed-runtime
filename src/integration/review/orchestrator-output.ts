@@ -33,6 +33,11 @@ export function buildMutatedOutput(
     `${REVIEW_COMPLETED_PREFIX}: FlowGuard bound the host-validated independent review. ` +
     `Submit only reviewVerdict=${String(reviewerResult.findings.overallVerdict)} to continue; ` +
     'do not submit or reconstruct reviewer findings.';
+  // The original tool response was projected before host dispatch. Its pending
+  // review metadata and Task instruction are stale once evidence is bound.
+  delete parsed.reviewInvocation;
+  delete parsed.nextAction;
+  delete parsed.productNextAction;
 
   return JSON.stringify(parsed);
 }
