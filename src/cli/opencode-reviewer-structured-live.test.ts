@@ -33,6 +33,7 @@ import { REVIEWER_AGENT } from '../templates/mandates.js';
 import { REVIEW_FINDINGS_JSON_SCHEMA } from '../integration/review/findings-schema.js';
 import { ReviewerFindingsInput } from '../state/evidence-review-input.js';
 import { TESTED_OPENCODE_HOST_VERSION } from './opencode-runtime-compat.js';
+import { resolvePinnedOpenCodeHost, type PinnedOpenCodeHost } from './opencode-live-host.js';
 
 const ROOT = join(fileURLToPath(new URL('../..', import.meta.url)));
 /**
@@ -60,23 +61,13 @@ const FINDINGS = {
 } as const;
 
 let tmpRoot: string;
-let hostPackage: string;
-let hostVersion: string;
+let host: PinnedOpenCodeHost;
 
 interface ServeHandle {
   proc: ChildProcess;
   baseUrl: string;
   password: string;
   output: () => string;
-}
-
-function resolveHostCommand(): { command: string; argsPrefix: string[] } {
-  const explicit = process.env.OPENCODE_CLI;
-  if (explicit) return { command: explicit, argsPrefix: [] };
-  return {
-    command: 'npm',
-    argsPrefix: ['exec', '--yes', `--package=${hostPackage}@${hostVersion}`, '--', 'opencode'],
-  };
 }
 
 /** Deterministic OpenAI-compatible capture: answers structured-output tool calls. */
@@ -216,21 +207,20 @@ async function startServe(cwd: string, capturePort: number): Promise<ServeHandle
     'utf8',
   );
 
-  const { command, argsPrefix } = resolveHostCommand();
   const port = 18080 + Math.floor(Math.random() * 1500);
   const password = `structured-${Math.random().toString(36).slice(2)}`;
   const proc = spawn(
-    command,
-    [...argsPrefix, 'serve', '--hostname=127.0.0.1', `--port=${port}`, '--print-logs'],
+    host.command,
+    [...host.argsPrefix, 'serve', '--hostname=127.0.0.1', `--port=${port}`, '--print-logs'],
     {
       cwd,
       env: {
         ...process.env,
+        ...host.env,
         HOME: tmpRoot,
         USERPROFILE: tmpRoot,
         XDG_CONFIG_HOME: join(tmpRoot, '.config'),
         XDG_DATA_HOME: join(tmpRoot, '.local', 'share'),
-        OPENCODE_DISABLE_AUTOUPDATE: '1',
         OPENCODE_SERVER_PASSWORD: password,
         FORCE_COLOR: '0',
       },
@@ -288,8 +278,7 @@ describe.skipIf(!CAN_RUN)('OpenCode structured reviewer wire contract (live, pin
     const baseline = JSON.parse(
       await readFile(join(ROOT, '.sdk-baselines', 'opencode', 'host-version.json'), 'utf8'),
     ) as { package: string; version: string };
-    hostPackage = baseline.package;
-    hostVersion = baseline.version;
+    host = resolvePinnedOpenCodeHost(baseline);
 
     tmpRoot = await mkdtemp(join(tmpdir(), 'fg-opencode-structured-'));
     const projectDir = join(tmpRoot, 'project');
@@ -325,17 +314,16 @@ describe.skipIf(!CAN_RUN)('OpenCode structured reviewer wire contract (live, pin
   it(
     'returns the reviewer findings exclusively through info.structured for a child session',
     async () => {
-      const { command, argsPrefix } = resolveHostCommand();
-      const versionProbe = spawnSync(command, [...argsPrefix, '--version'], {
+      const versionProbe = spawnSync(host.command, [...host.argsPrefix, '--version'], {
         encoding: 'utf8',
         timeout: 60_000,
-        env: { ...process.env, OPENCODE_DISABLE_AUTOUPDATE: '1' },
+        env: { ...process.env, ...host.env },
       });
       const reported = (versionProbe.stdout ?? '').trim();
       expect(reported, `pinned host version mismatch (${versionProbe.stderr ?? ''})`).toBe(
         TESTED_OPENCODE_HOST_VERSION,
       );
-      expect(hostVersion).toBe(TESTED_OPENCODE_HOST_VERSION);
+      expect(host.version).toBe(TESTED_OPENCODE_HOST_VERSION);
 
       const dir = encodeURIComponent(join(tmpRoot, 'project'));
       const auth = `Basic ${Buffer.from(`opencode:${serve!.password}`).toString('base64')}`;

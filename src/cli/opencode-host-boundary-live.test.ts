@@ -24,6 +24,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { resolvePinnedOpenCodeHost, type PinnedOpenCodeHost } from './opencode-live-host.js';
 
 const EXEC_TIMEOUT_MS = 300_000;
 const ROOT = join(fileURLToPath(new URL('../..', import.meta.url)));
@@ -32,8 +33,7 @@ const LIVE = process.env.OPENCODE_LIVE === '1';
 const CAN_RUN = LIVE && existsSync(DIST_ENTRY);
 
 let tmpRoot: string;
-let hostPackage: string;
-let hostVersion: string;
+let host: PinnedOpenCodeHost;
 
 afterAll(async () => {
   if (tmpRoot) await rm(tmpRoot, { recursive: true, force: true });
@@ -193,13 +193,9 @@ function writeTextCompletion(response: ServerResponse, streaming: boolean, conte
 function runOpenCode(port: number, markerPath: string): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const child = spawn(
-      'npm',
+      host.command,
       [
-        'exec',
-        '--yes',
-        `--package=${hostPackage}@${hostVersion}`,
-        '--',
-        'opencode',
+        ...host.argsPrefix,
         'run',
         '--model',
         'flowguard-capture/probe',
@@ -209,11 +205,11 @@ function runOpenCode(port: number, markerPath: string): Promise<string> {
         cwd: tmpRoot,
         env: {
           ...process.env,
+          ...host.env,
           HOME: tmpRoot,
           USERPROFILE: tmpRoot,
           XDG_CONFIG_HOME: join(tmpRoot, '.config'),
           XDG_DATA_HOME: join(tmpRoot, '.local', 'share'),
-          OPENCODE_DISABLE_AUTOUPDATE: '1',
           FG_E2E_MARKER: markerPath,
         },
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -245,8 +241,7 @@ describe.skipIf(!CAN_RUN)('OpenCode host boundary (live, pinned host)', () => {
     const hostBaseline = JSON.parse(
       await readFile(join(ROOT, '.sdk-baselines', 'opencode', 'host-version.json'), 'utf8'),
     ) as { package: string; version: string };
-    hostPackage = hostBaseline.package;
-    hostVersion = hostBaseline.version;
+    host = resolvePinnedOpenCodeHost(hostBaseline);
 
     tmpRoot = await mkdtemp(join(tmpdir(), 'fg-opencode-boundary-'));
     await mkdir(join(tmpRoot, '.opencode', 'plugins'), { recursive: true });

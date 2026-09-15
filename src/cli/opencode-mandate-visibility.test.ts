@@ -8,13 +8,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hashText } from '../shared/hashing.js';
 import { FLOWGUARD_MANDATES_KERNEL } from '../templates/mandates.js';
 import { buildMandatesContent } from './templates.js';
+import { resolvePinnedOpenCodeHost, type PinnedOpenCodeHost } from './opencode-live-host.js';
 
 const EXEC_TIMEOUT_MS = 60_000;
 const ROOT = join(fileURLToPath(new URL('../..', import.meta.url)));
 
 let tmpRoot: string;
-let hostPackage: string;
-let hostVersion: string;
+let host: PinnedOpenCodeHost;
 
 afterAll(async () => {
   if (tmpRoot) await rm(tmpRoot, { recursive: true, force: true });
@@ -109,13 +109,9 @@ async function runOpenCode(
   try {
     const output = await new Promise<string>((resolve, reject) => {
       const child = spawn(
-        'npm',
+        host.command,
         [
-          'exec',
-          '--yes',
-          `--package=${hostPackage}@${hostVersion}`,
-          '--',
-          'opencode',
+          ...host.argsPrefix,
           'run',
           '--model',
           'flowguard-capture/visibility',
@@ -125,11 +121,11 @@ async function runOpenCode(
           cwd: tmpRoot,
           env: {
             ...process.env,
+            ...host.env,
             HOME: tmpRoot,
             USERPROFILE: tmpRoot,
             XDG_CONFIG_HOME: join(tmpRoot, '.config'),
             XDG_DATA_HOME: join(tmpRoot, '.local', 'share'),
-            OPENCODE_DISABLE_AUTOUPDATE: '1',
           },
           stdio: ['ignore', 'pipe', 'pipe'],
         },
@@ -164,8 +160,7 @@ describe('OpenCode installed mandate model visibility', () => {
     const hostBaseline = JSON.parse(
       await readFile(join(ROOT, '.sdk-baselines', 'opencode', 'host-version.json'), 'utf8'),
     ) as { package: string; version: string };
-    hostPackage = hostBaseline.package;
-    hostVersion = hostBaseline.version;
+    host = resolvePinnedOpenCodeHost(hostBaseline);
     tmpRoot = await mkdtemp(join(tmpdir(), 'fg-opencode-visibility-'));
     await mkdir(join(tmpRoot, '.opencode'), { recursive: true });
     const digest = hashText(FLOWGUARD_MANDATES_KERNEL);
