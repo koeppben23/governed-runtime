@@ -853,6 +853,22 @@ describe('DEFAULT_CONFIG', () => {
       expect(result.data).toEqual(DEFAULT_CONFIG);
     }
   });
+
+  it('rejects removed requireVerifiedActorsForApproval policy configuration', () => {
+    const result = FlowGuardConfigSchema.safeParse({
+      schemaVersion: 'v1',
+      policy: { requireVerifiedActorsForApproval: true },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects removed selfReview policy configuration', () => {
+    const result = FlowGuardConfigSchema.safeParse({
+      schemaVersion: 'v1',
+      policy: { selfReview: { subagentEnabled: true } },
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 // ══════════════════════════════════════════════════

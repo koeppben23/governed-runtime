@@ -8,7 +8,7 @@
 import { formatBlocked } from './helpers.js';
 import type { MutableSession } from './helpers.js';
 import type { SessionState } from '../../state/schema.js';
-import type { LoopVerdict, ReviewFindings } from '../../state/evidence.js';
+import type { LoopVerdict } from '../../state/evidence.js';
 import type { ArchitectureClaimDeclarationInput } from '../../state/proofgraph-approval.js';
 import { ensureReviewAssurance, createReviewObligation } from '../review/assurance.js';
 import { classifyToolCallMode } from './review-validation-mode.js';
@@ -16,9 +16,8 @@ import {
   resolveRuntimeReviewPlatform,
   resolveReviewOrchestrationMode,
 } from '../review/orchestration-mode.js';
-import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
+import { buildChildSessionReviewInstruction } from '../review/child-session-instruction.js';
 import { resolveAttemptObservationCapability } from '../review/assurance.js';
-import { buildReviewerProofContext } from '../review/proof-context.js';
 
 // ─── Shared Types ─────────────────────────────────────────────────────────
 
@@ -27,7 +26,6 @@ export type ArchitectureArgs = {
   adrText?: string;
   claims?: ArchitectureClaimDeclarationInput[];
   reviewVerdict?: LoopVerdict;
-  reviewFindings?: ReviewFindings;
   reviewerUnavailable?: boolean;
   targetPaths?: string[];
 };
@@ -50,12 +48,11 @@ export function validateArchitectureCallShape(args: ArchitectureArgs): string | 
   }
 
   // Canonical argument-shape validation (closes the historical architecture gaps:
-  // adrText+verdict=accept, findings-without-verdict, reviewerUnavailable+submission).
+  // adrText+verdict=accept, reviewerUnavailable+submission).
   // `text` is the heavy ADR payload (adrText); title is handled above.
   const mode = classifyToolCallMode('architecture', {
     text: args.adrText,
     reviewVerdict: args.reviewVerdict,
-    reviewFindings: args.reviewFindings,
     reviewerUnavailable: args.reviewerUnavailable,
   });
   if (mode.kind === 'invalid') return formatBlocked(mode.code, mode.params);
@@ -98,42 +95,24 @@ export function validateInitialSubmissionGate(
 
 export function buildArchitectureReviewInstruction(input: {
   policy: ArchitectureSession['policy'];
-  subagentEnabled: boolean;
   obligation: ReturnType<typeof createReviewObligation> | null;
   iteration: number;
   planVersion: number;
   subjectLabel: string;
   /** State whose declarations/graph the reviewer prompt must reflect (#762). */
   state: SessionState;
-}): {
-  next: string;
-  reviewInvocation?: ReturnType<typeof buildPendingReviewInstruction>['reviewInvocation'];
-} {
-  const { subagentEnabled } = input;
-  if (!subagentEnabled) {
-    return {
-      next:
-        'Self-review needed. Review the ADR critically against MADR standards. ' +
-        'Check for completeness, clarity, and consequences coverage. ' +
-        'Then call flowguard_architecture with reviewVerdict.',
-    };
-  }
+}) {
   const platform = resolveRuntimeReviewPlatform();
   const mode = resolveReviewOrchestrationMode({
     platform,
-    reviewInvocationPolicy: input.policy.reviewInvocationPolicy,
     nativeReviewerAvailable: platform === 'unknown' ? false : true,
-    manualAttestedAllowed: input.policy.reviewInvocationPolicy !== 'host_task_required',
   });
-  const instruction = buildPendingReviewInstruction({
+  return buildChildSessionReviewInstruction({
     mode,
     platform,
-    reviewKind: 'architecture',
     obligation: input.obligation,
     iteration: input.iteration,
     planVersion: input.planVersion,
-    subjectLabel: input.subjectLabel,
-    proofContext: buildReviewerProofContext(input.state),
     observationCapability: input.obligation
       ? (resolveAttemptObservationCapability(
           input.state.reviewAssurance,
@@ -141,5 +120,4 @@ export function buildArchitectureReviewInstruction(input: {
         ) ?? undefined)
       : undefined,
   });
-  return { next: instruction.next, reviewInvocation: instruction.reviewInvocation };
 }

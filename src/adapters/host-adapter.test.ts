@@ -87,7 +87,7 @@ describe('HostAdapter Contract', () => {
       expect(typeof caps.argMutation).toBe('boolean');
       expect(typeof caps.outputReplacement).toBe('boolean');
       expect(typeof caps.contextInjection).toBe('boolean');
-      expect(typeof caps.reviewerSpawn).toBe('boolean');
+      expect(typeof caps.independentStructuredReview).toBe('boolean');
       expect(typeof caps.compactionInjection).toBe('boolean');
     });
 
@@ -97,7 +97,7 @@ describe('HostAdapter Contract', () => {
       expect(caps.argMutation).toBe(true);
       expect(caps.outputReplacement).toBe(true);
       expect(caps.contextInjection).toBe(true);
-      expect(caps.reviewerSpawn).toBe(true);
+      expect(caps.independentStructuredReview).toBe(true);
       expect(caps.compactionInjection).toBe(true);
     });
 
@@ -257,7 +257,7 @@ describe('HostAdapter Contract', () => {
         'argMutation',
         'outputReplacement',
         'contextInjection',
-        'reviewerSpawn',
+        'independentStructuredReview',
         'compactionInjection',
       ]);
     });
@@ -305,6 +305,8 @@ describe('HostAdapter Contract', () => {
       const config: ReviewerSpawnConfig = {
         prompt: 'Review this change',
         parentSessionId: 'parent-session',
+        authorizeDispatch: vi.fn(async () => {}),
+        abandonDispatch: vi.fn(async () => {}),
       };
 
       // Note: actual result depends on invokeReviewer implementation
@@ -330,8 +332,10 @@ describe('HostAdapter Contract', () => {
       const config: ReviewerSpawnConfig = {
         prompt: 'test prompt',
         parentSessionId: 'parent',
+        authorizeDispatch: vi.fn(async () => {}),
+        abandonDispatch: vi.fn(async () => {}),
         // These are intentionally NOT set:
-        // maxRetries: undefined,
+        // maxTransportRetries: undefined,
         // baseDelayMs: undefined,
         // onAttemptFailed: undefined,
       };
@@ -355,11 +359,11 @@ describe('HostAdapter Contract', () => {
       const config: ReviewerSpawnConfig = {
         prompt: 'test',
         parentSessionId: 'parent',
-        maxRetries: 2,
+        authorizeDispatch: vi.fn(async () => {}),
+        abandonDispatch: vi.fn(async () => {}),
+        maxTransportRetries: 2,
         baseDelayMs: 100,
         onAttemptFailed: onFailed,
-        reviewOutputPolicy: 'structured_required',
-        reviewInvocationPolicy: 'host_task_required',
       };
 
       // Should not crash — validates all options are accepted

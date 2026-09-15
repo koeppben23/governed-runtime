@@ -123,7 +123,7 @@ describe('opencode-runtime-compat', () => {
     });
 
     it('HAPPY: classifies the exact tested host version as verified', () => {
-      const result = classifyOpenCodeHostContract('1.18.29');
+      const result = classifyOpenCodeHostContract(TESTED_OPENCODE_HOST_VERSION);
       expect(result.status).toBe('verified');
       expect(result.testedVersion).toBe(TESTED_OPENCODE_HOST_VERSION);
       expect(result.testedRange).toBe(TESTED_OPENCODE_HOST_VERSION);

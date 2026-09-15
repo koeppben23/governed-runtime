@@ -54,7 +54,6 @@ export const ACTION_CODES = {
   RESOLVE_IMPLEMENTATION_CHALLENGES: 'RESOLVE_IMPLEMENTATION_CHALLENGES',
   IMPLEMENTATION_REVIEW_BLOCKED: 'IMPLEMENTATION_REVIEW_BLOCKED',
   RUN_ARCHITECTURE: 'RUN_ARCHITECTURE',
-  RUN_REVIEWER_TASK: 'RUN_REVIEWER_TASK',
   SUBMIT_REVIEWER_VERDICT: 'SUBMIT_REVIEWER_VERDICT',
   REVIEW_STATE_INCOMPLETE: 'REVIEW_STATE_INCOMPLETE',
   SESSION_COMPLETE: 'SESSION_COMPLETE',
@@ -274,8 +273,8 @@ const NEXT_ACTION_MAP: Record<Phase, NextActionFn> = {
       };
     }
     return {
-      code: ACTION_CODES.RUN_REVIEWER_TASK,
-      text: 'Implementation review is pending. Invoke the flowguard-reviewer task, then submit its verdict with flowguard_review_implementation.',
+      code: ACTION_CODES.RUN_IMPLEMENT,
+      text: 'Independent implementation review dispatch is pending. Re-run /implement only if FlowGuard reports that host dispatch did not complete.',
       commands: [],
     };
   },
@@ -344,20 +343,14 @@ function reviewLifecycleAction(
   switch (continuation.kind) {
     case 'awaiting_task':
       return {
-        code: ACTION_CODES.RUN_REVIEWER_TASK,
-        text: `Independent ${label.toLowerCase()} review is pending. Invoke the flowguard-reviewer Task, then submit only its verdict with ${command}.`,
-        commands: [],
+        code: ACTION_CODES.RUN_PLAN,
+        text: `Independent ${label.toLowerCase()} review dispatch is pending. Re-run ${command} only if FlowGuard reports that host dispatch did not complete.`,
+        commands: [command],
       };
     case 'interrupted_dispatch':
       return {
         code: ACTION_CODES.RUN_PLAN,
-        text: `Independent ${label.toLowerCase()} review was interrupted mid-dispatch (unresolved durable dispatch). Re-run ${command} to re-arm the review attempt durably on the existing obligation.`,
-        commands: [command],
-      };
-    case 'output_repair':
-      return {
-        code: ACTION_CODES.RUN_PLAN,
-        text: `The latest ${label.toLowerCase()} review attempt needs an authorized repair. Re-run ${command} to re-issue the reviewer attempt on the existing obligation.`,
+        text: `Independent ${label.toLowerCase()} review was interrupted or spent mid-dispatch (released, no bound evidence). Re-run ${command} to re-arm the review attempt durably on the existing obligation.`,
         commands: [command],
       };
     case 'integrity_blocked':
@@ -412,9 +405,9 @@ export function resolveNextAction(phase: Phase, state: SessionState): NextAction
   );
   if ((phase === 'READY' || phase === 'REVIEW') && pendingStandaloneReview) {
     return {
-      code: ACTION_CODES.RUN_REVIEWER_TASK,
-      text: 'Independent content review is pending. Invoke the flowguard-reviewer Task, then submit only its verdict with flowguard_review.',
-      commands: [],
+      code: ACTION_CODES.RUN_CONTINUE,
+      text: 'Independent content review dispatch is pending. Re-run flowguard_review only if FlowGuard reports that host dispatch did not complete.',
+      commands: ['flowguard_review'],
     };
   }
   return NEXT_ACTION_MAP[phase](state);

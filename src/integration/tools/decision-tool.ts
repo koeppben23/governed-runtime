@@ -132,7 +132,6 @@ export const decision: ToolDefinition = {
               // serialization. Without this guard SessionState.safeParse rejects
               // the decision with SCHEMA_VALIDATION_FAILED.
               rationale: args.rationale ?? '',
-              decidedBy: actorInfo.id,
               decisionIdentity,
             },
             ctx,

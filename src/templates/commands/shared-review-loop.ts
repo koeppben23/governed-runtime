@@ -5,8 +5,6 @@
  * duplication. Each conditional branch is one bullet with numbered sub-steps.
  */
 
-import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
-
 /**
  * Phase 1 Discovery-context capture instruction, shared across the plan,
  * implement, and architecture review templates (parity with /review). Discovery
@@ -24,8 +22,8 @@ export const DISCOVERY_REVIEW_CAPTURE = `   - Call \`flowguard_status\` with NO 
      \`health\`, \`drift\`, \`detectedStack\`, repo-native \`verificationCandidates\`,
      and risk surfaces. This is REQUIRED review evidence for repo-dependent claims.
    - Discovery context is advisory falsification evidence, NOT review verdict
-     authority: ReviewFindings, obligation binding, mandate digest, and attestation
-     remain the review authority.
+     authority: the host-observed structured reviewer invocation evidence,
+     obligation binding, and mandate digest remain the review authority.
    - If Discovery is unavailable, degraded, drifted, timed out, or not checked, mark
      every Discovery-dependent claim \`NOT_VERIFIED\`; do not invent repository truth.`;
 
@@ -94,22 +92,17 @@ export interface ReviewLoopParams {
 export function SHARED_REVIEW_LOOP(p: ReviewLoopParams): string {
   const verdictTool = p.verdictToolName ?? p.toolName;
   return `   - \`reviewVerdict\` records the INDEPENDENT REVIEWER's result, never your own approval. On convergence it advances to the policy's terminal gate — the human review gate, where the USER approves the ${p.artifactName} via /review-decision, or a policy-permitted automatic terminal phase (e.g. \`COMPLETE\`) — whichever the tool response returns; the returned phase is authoritative. \`flowguard_decision\` is the only user approval.
-   - When \`next\` starts with "INDEPENDENT_REVIEW_COMPLETED":
-       1. Read \`overallVerdict\` from \`pluginReviewFindings\` in the response.
-       2. host_task_required mode: findings are resolved from plugin evidence automatically — submit ONLY the verdict, never \`reviewFindings\` (not even an empty placeholder object). Any \`reviewFindings\` sent here are ignored and logged as misuse, and the submitted verdict is validated against the captured reviewer evidence (a mismatch is rejected).
-       3. SDK mode: pass the entire \`pluginReviewFindings\` object as \`reviewFindings\`.
-       4. "accept": Call \`${verdictTool}({ reviewVerdict: "accept" })\` (or with \`reviewFindings\` in SDK mode). This is the reviewer's acceptance, not user approval.
+    - When \`next\` starts with "INDEPENDENT_REVIEW_COMPLETED":
+        1. Read the bound \`overallVerdict\` from \`next\`.
+         2. Do not submit or reconstruct \`reviewFindings\`; FlowGuard has already validated and bound them.
+         3. "accept": Call \`${verdictTool}({ reviewVerdict: "accept" })\`. This is the reviewer's acceptance, not user approval.
        5. "changes_requested": ${
          p.changesRequestedVerdictFirst
-           ? `Record the reviewer's negative verdict FIRST: call \`${verdictTool}({ reviewVerdict: "changes_requested"${p.reviseParams ? `, ${p.reviseParams}` : ''} })\` (or with \`reviewFindings\` in SDK mode) — do NOT modify the ${p.artifactName} before FlowGuard records this verdict.${p.changesRequestedExtra}`
-           : `Revise the ${p.artifactName} to address blocking issues, then call \`${verdictTool}({ reviewVerdict: "changes_requested"${p.reviseParams ? `, ${p.reviseParams}` : ''} })\` (or with \`reviewFindings\` in SDK mode).${p.changesRequestedExtra}`
+           ? `Record the reviewer's negative verdict FIRST: call \`${verdictTool}({ reviewVerdict: "changes_requested"${p.reviseParams ? `, ${p.reviseParams}` : ''} })\` — do NOT modify the ${p.artifactName} before FlowGuard records this verdict.${p.changesRequestedExtra}`
+           : `Revise the ${p.artifactName} to address blocking issues, then call \`${verdictTool}({ reviewVerdict: "changes_requested"${p.reviseParams ? `, ${p.reviseParams}` : ''} })\`.${p.changesRequestedExtra}`
        }
        6. "unable_to_review": The reviewer declared the ${p.artifactName} unreviewable (${p.unableDescription}). The tool will be BLOCKED with reason \`SUBAGENT_UNABLE_TO_REVIEW\`. DO NOT retry the review with the same ${p.artifactName} — that obligation is consumed. Report the reviewer's findings to the user, then either ${p.unableRecoveryA} OR ${p.unableRecoveryB}.
-   - When \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED":
-           1. Call the ${REVIEWER_SUBAGENT_TYPE} subagent via Task tool${p.subagentExtra}. Issue this Task call SEQUENTIALLY — only AFTER the preceding \`${verdictTool}\` call has returned and you have read its \`reviewObligation\`/\`iteration\` from the response; never fire the reviewer Task in parallel with a \`${verdictTool}({ reviewVerdict })\` submission. If binding returns \`ENVELOPE_SCHEMA_INVALID\` or \`ENVELOPE_PAYLOAD_NOT_FOUND\`, do NOT re-run Task directly. Re-run the originating FlowGuard command so it can authorize a fresh repair attempt and emit a new \`reviewerTaskPrompt\`; then call Task only with \`subagent_type: "${REVIEWER_SUBAGENT_TYPE}"\`. FlowGuard injects the canonical prompt at the host boundary. Do not add a Task \`prompt\`, artifact content, Discovery context, attestation, instructions, or commentary. If it is absent, report the FlowGuard blocker and stop; never free-compose a governed reviewer prompt.
-       2. Submit the verdict. In host_task_required mode, plugin evidence is resolved automatically — submit ONLY the verdict, never \`reviewFindings\` (not even an empty placeholder object). Any \`reviewFindings\` sent here are ignored and logged as misuse, and the submitted verdict is validated against the captured reviewer evidence (a mismatch is rejected).
-       3. In strict mode, manual JSON/attestation copy alone is diagnostic context only; FlowGuard must persist matching \`ReviewInvocationEvidence\` before reviewFindings satisfy governance.
-         4. **FALLBACK**: If the Task tool cannot spawn the reviewer (error, agent unavailable${p.fallbackExtra}), do NOT invent ReviewFindings and do NOT approve. \`host_task_required\` remains blocked and stops. For implementation review under \`host_task_preferred\`, report the actual transport failure with \`flowguard_review_implementation({ reviewerUnavailable: true })\` only, without a verdict or findings, so the configured SDK transport can run. For other review types, report the failure and stop. Never submit copied or fabricated findings on either path.
+    - When \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED": independent review is still in progress. Re-run the originating FlowGuard command only when its recovery steps direct you to do so; do not submit a verdict or reconstruct reviewer findings.
    - If review converged: Report the result per the Presentation section below.
    - If another iteration is needed: CONTINUE AUTOMATICALLY — do not stop and do not wait for a new user command between iterations. Run the next iteration from step ${p.repeatStep}, looping until the reviewer accepts (convergence) or the budget is exhausted ${p.iterationNote}.
    - If the tool returns BLOCKED with code \`SUBAGENT_UNABLE_TO_REVIEW\`: Stop the review loop. Treat the obligation as consumed (no retry). Surface the recovery steps from the reason payload.

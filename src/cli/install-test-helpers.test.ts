@@ -13,12 +13,8 @@ import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import type { CliArgs } from './install.js';
+import type { CliArgs } from './install-types.js';
 import { withTestEnv } from '../integration/test-helpers.js';
-
-// ─── Mock: child_process ──────────────────────────────────────────────────────
-// Must be called at module scope in each test file that needs it (vitest hoists mocks per-file).
-// This function is exported for documentation but the actual vi.mock() MUST be in the consuming file.
 
 /**
  * Returns the vi.mock factory for node:child_process.
@@ -57,30 +53,15 @@ export function childProcessMockFactory() {
   };
 }
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-/**
- * Repo root derived from this file's location (src/cli/install.test-helpers.ts).
- * Used by DEV_REPO_INVARIANTS tests to read the real repo filesystem.
- */
 export const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-
-/**
- * SSOT: Read version from VERSION file at repo root.
- */
 export const VERSION = readFileSync(path.join(REPO_ROOT, 'VERSION'), 'utf-8').trim();
 
-// ─── Temp Dir Management ──────────────────────────────────────────────────────
-
-/** Mutable state: current temp directory (set in beforeEach). */
 export let tmpDir: string;
 
-/** Create a fresh temp directory. */
 export async function createTmpDir(): Promise<string> {
   return await fs.mkdtemp(path.join(os.tmpdir(), 'gov-cli-test-'));
 }
 
-/** Clean up temp directory. */
 export async function cleanTmpDir(dir: string): Promise<void> {
   try {
     await fs.rm(dir, { recursive: true, force: true });
@@ -89,9 +70,6 @@ export async function cleanTmpDir(dir: string): Promise<void> {
   }
 }
 
-// ─── Args Builders ────────────────────────────────────────────────────────────
-
-/** Default args for repo-scope install targeting the cwd-relative .opencode/. */
 export function repoArgs(overrides: Partial<CliArgs> = {}): CliArgs {
   return {
     action: 'install',
@@ -104,7 +82,6 @@ export function repoArgs(overrides: Partial<CliArgs> = {}): CliArgs {
   };
 }
 
-/** Default args for global-scope install. */
 export function globalArgs(overrides: Partial<CliArgs> = {}): CliArgs {
   return {
     action: 'install',
@@ -117,15 +94,9 @@ export function globalArgs(overrides: Partial<CliArgs> = {}): CliArgs {
   };
 }
 
-// ─── Shared Setup/Teardown ────────────────────────────────────────────────────
-
 let originalCwd: string;
 let restoreEnv: (() => void) | undefined;
 
-/**
- * Call this in each test file's top-level scope to set up the shared
- * beforeEach/afterEach (tmpDir creation, cwd change, env vars).
- */
 export function setupCliTestEnvironment(): void {
   beforeEach(async () => {
     tmpDir = await createTmpDir();
@@ -146,9 +117,6 @@ export function setupCliTestEnvironment(): void {
   });
 }
 
-// ─── Mock Tarball Helper ──────────────────────────────────────────────────────
-
-/** Create a mock tarball in the current tmpDir. */
 export async function createMockTarball(
   version = VERSION,
   options: { writeChecksum?: boolean } = {},
@@ -166,7 +134,6 @@ export async function createMockTarball(
   return tarballPath;
 }
 
-// Vitest requires at least one test in *.test.ts files
 import { describe, it, expect } from 'vitest';
 describe('install-test-helpers', () => {
   it('exports shared test infrastructure', () => {

@@ -15,6 +15,7 @@ import { getPolicyPreset } from '../config/policy.js';
 import { createPolicySnapshot } from '../config/policy-snapshot.js';
 import { hashText } from '../shared/hashing.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { makePlanRevision } from '../state/evidence-test-constants.js';
 
 function sp(mode: 'solo' | 'team') {
   return createPolicySnapshot(getPolicyPreset(mode), '2026-01-01T00:00:00.000Z', hashText);
@@ -23,7 +24,7 @@ function sp(mode: 'solo' | 'team') {
 function completeState(extras: Record<string, unknown> = {}): SessionState {
   return {
     ...makeProgressedState('COMPLETE'),
-    archiveStatus: 'verified',
+    regulatedArchiveStatus: 'verified',
     policySnapshot: sp('solo'),
     actorInfo: undefined,
     ...extras,
@@ -61,25 +62,6 @@ describe('golden fixtures for /finish', () => {
     expect(output).toBe(golden.trimEnd());
     // Full evidence, terminal, solo → READY
     expect(card.overallStatus).toBe('READY');
-  });
-
-  it('finish-ready-with-warnings matches golden output', async () => {
-    const warnSnapshot = {
-      ...createPolicySnapshot(getPolicyPreset('solo'), '2026-01-01T00:00:00.000Z', hashText),
-      // Legacy-shaped in-memory injection for runtime-projection robustness;
-      // the persisted schema no longer admits weakened selfReview.
-      selfReview: { subagentEnabled: false, fallbackToSelf: true, strictEnforcement: false },
-    } as unknown as ReturnType<typeof createPolicySnapshot>;
-    const state = completeState({ policySnapshot: warnSnapshot });
-    const policy = getPolicyPreset('solo');
-    const card = buildFinishCard(state, policy);
-    const pres = buildFinishPresentationProjection(state, card);
-    const output = renderMarkdown(buildFinishDocument(pres));
-    const golden = await readGolden('finish-ready-with-warnings.md');
-    expect(output).toBe(golden.trimEnd());
-    // Legacy selfReview config → READY_WITH_WARNINGS
-    expect(card.overallStatus).toBe('READY_WITH_WARNINGS');
-    expect(card.warnings.length).toBeGreaterThan(0);
   });
 
   it('finish-blocked matches golden output', async () => {
@@ -162,21 +144,25 @@ describe('buildFinishDocument', () => {
         },
       ],
     };
+    const current = makePlanRevision({
+      body: 'x',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
     const certificate = {
       flow: 'plan' as const,
-      authorityDigest: 'plan-digest',
+      authorityDigest: current.digest,
       claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations)),
       decisionAttestationDigest: 'd',
       approvedAt: '2026-01-01T00:00:00.000Z',
       approvedBy: 'reviewer',
       certificateId: '00000000-0000-4000-8000-0000000000ce',
       planVersion: 1,
-      planRecordDigest: 'record-digest',
+      planRecordDigest: current.recordDigest,
       reviewBinding: {
         kind: 'current_review' as const,
         reviewObligationId: '00000000-0000-4000-8000-0000000000cd',
         reviewEvidenceDigest: 'e'.repeat(64),
-        reviewedSubjectDigest: 'plan-digest',
+        reviewedSubjectDigest: current.digest,
       },
       reviewObligationId: '00000000-0000-4000-8000-0000000000cd',
       reviewEvidenceDigest: 'e'.repeat(64),
@@ -189,18 +175,7 @@ describe('buildFinishDocument', () => {
         hashText,
       ),
       plan: {
-        current: {
-          body: 'x',
-          digest: 'plan-digest',
-          sections: [],
-          createdAt: '2026-01-01T00:00:00.000Z',
-          recordDigest: 'record-digest',
-          planVersion: 1,
-          supersedesRecordDigest: null,
-          originatingReviewObligationId: null,
-          revisionReason: null,
-          lineageStatus: 'verified',
-        },
+        current,
         history: [],
         reviewCompletion: 'pending',
         claimDeclarations: declarations,
@@ -236,21 +211,6 @@ describe('buildFinishDocument', () => {
     expect(output).toContain('- Abandon this work');
   });
 
-  it('renders warning notice for each warning', () => {
-    const warnSnapshot = {
-      ...createPolicySnapshot(getPolicyPreset('solo'), '2026-01-01T00:00:00.000Z', hashText),
-      // Legacy-shaped in-memory injection for runtime-projection robustness;
-      // the persisted schema no longer admits weakened selfReview.
-      selfReview: { subagentEnabled: false, fallbackToSelf: true, strictEnforcement: false },
-    } as unknown as ReturnType<typeof createPolicySnapshot>;
-    const state = completeState({ policySnapshot: warnSnapshot });
-    const card = buildFinishCard(state, getPolicyPreset('solo'));
-    const pres = buildFinishPresentationProjection(state, card);
-    const output = renderMarkdown(buildFinishDocument(pres));
-    expect(output).toContain('## Warnings');
-    expect(output).toContain('⚠');
-  });
-
   it('guarantees are set correctly', () => {
     const state = completeState();
     const card = buildFinishCard(state, getPolicyPreset('solo'));
@@ -265,7 +225,7 @@ describe('buildFinishDocument', () => {
   it('includes proofSummary with completion context when proofGraph exists', () => {
     const state = completeState({
       proofGraph: {
-        version: 'proofgraph.v1' as const,
+        version: 'proofgraph.v2' as const,
         claims: [
           {
             claimId: '99999999-9999-9999-9999-999999999999',
@@ -308,7 +268,7 @@ describe('buildFinishDocument', () => {
   it('renders ProofGraph section in finish document markdown when proofGraph exists', () => {
     const state = completeState({
       proofGraph: {
-        version: 'proofgraph.v1' as const,
+        version: 'proofgraph.v2' as const,
         claims: [
           {
             claimId: '88888888-8888-8888-8888-888888888888',

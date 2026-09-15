@@ -23,6 +23,7 @@ import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 import {
   artifactReviewSubjectScope,
   createReviewObligation,
+  freezeReviewMaterial,
 } from '../integration/review/assurance.js';
 import { hashCanonicalReviewContent, normalizeReviewContent } from '../shared/review-subject.js';
 
@@ -59,12 +60,8 @@ function bindableAttemptFor(obligation: ReviewObligation): ReviewAttempt {
     status: 'created',
     origin: { kind: 'initial' },
     repositoryDiscovery: { kind: 'not_applicable' },
+    observations: [],
     createdAt: '2026-01-01T00:00:00.000Z',
-    reviewMaterial: {
-      content: PLAN_BODY,
-      materialDigest: hashCanonicalReviewContent(PLAN_BODY),
-      subjectDigest: 'plan-subject-digest',
-    },
   };
 }
 
@@ -129,7 +126,7 @@ describe('resolveNextAction', () => {
       expect(action.text).toContain('converged');
     });
 
-    it('PLAN with a bindable plan attempt → RUN_REVIEWER_TASK', () => {
+    it('PLAN with a bindable plan attempt → host dispatch recovery via /plan', () => {
       const obligation = pendingPlanObligation({ status: 'pending' });
       const attempt = bindableAttemptFor(obligation);
       const state = makeState('PLAN', {
@@ -141,7 +138,7 @@ describe('resolveNextAction', () => {
           attempts: [attempt],
         }),
       });
-      expectAction(resolveNextAction('PLAN', state), ACTION_CODES.RUN_REVIEWER_TASK, []);
+      expectAction(resolveNextAction('PLAN', state), ACTION_CODES.RUN_PLAN, ['/plan']);
     });
 
     it('PLAN with a bindable attempt + unresolved durable dispatch → /plan re-arm, never awaiting_task', () => {
@@ -220,10 +217,10 @@ describe('resolveNextAction', () => {
       expect(action.text).toContain('no legal reviewer attempt');
     });
 
-    it('PLAN with a repairable rejected attempt → authorized repair via /plan', () => {
+    it('PLAN with a rejected attempt no longer authorizes a repair → /plan closure', () => {
       const obligation = pendingPlanObligation({
         status: 'pending',
-        maxReviewerOutputRepairAttempts: 1,
+        maxReviewerAttempts: 1,
       });
       const rejected = {
         ...bindableAttemptFor(obligation),
@@ -242,7 +239,8 @@ describe('resolveNextAction', () => {
       });
       const action = resolveNextAction('PLAN', state);
       expectAction(action, ACTION_CODES.RUN_PLAN, ['/plan']);
-      expect(action.text).toContain('authorized repair');
+      expect(action.text).toContain('no legal reviewer attempt');
+      expect(action.text).not.toContain('authorized repair');
     });
 
     it('PLAN_REVIEW → RUN_REVIEW_DECISION', () => {
@@ -350,10 +348,10 @@ describe('resolveNextAction', () => {
       expectAction(action, ACTION_CODES.RUN_CONTINUE, ['/continue']);
     });
 
-    it('IMPL_REVIEW without bound evidence → RUN_REVIEWER_TASK', () => {
+    it('IMPL_REVIEW without bound evidence → host dispatch recovery via /implement', () => {
       const state = makeProgressedState('IMPL_REVIEW');
       const action = resolveNextAction('IMPL_REVIEW', state);
-      expectAction(action, ACTION_CODES.RUN_REVIEWER_TASK, []);
+      expectAction(action, ACTION_CODES.RUN_IMPLEMENT, []);
     });
 
     it('IMPL_REVIEW with an unaddressed prior challenge → resolve it before reviewer dispatch', () => {
@@ -385,6 +383,7 @@ describe('resolveNextAction', () => {
         iteration: 1,
         planVersion: 1,
         subjectDigest: 'impl-digest',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'impl-digest'),
         reviewSubjectScope: { kind: 'implementation', implementationDigest: 'impl-digest' },
         changedFiles: ['src/a.ts'],
         policySnapshot: null,
@@ -405,6 +404,7 @@ describe('resolveNextAction', () => {
               ordinal: 1,
               origin: { kind: 'initial' },
               repositoryDiscovery: { kind: 'not_applicable' },
+              observations: [],
               status: 'bound',
               childSessionId: 'child',
               completedAt: '2026-01-01T00:00:00.000Z',
@@ -420,8 +420,8 @@ describe('resolveNextAction', () => {
               parentSessionId: 'parent',
               childSessionId: 'child',
               agentType: 'flowguard-reviewer',
-              invocationMode: 'host_subagent_task',
-              hostVisible: true,
+              invocationMode: 'sdk_session_prompt',
+              hostVisible: false,
               source: 'host-orchestrated',
               promptHash: 'prompt',
               mandateDigest: obligation.mandateDigest,
@@ -431,6 +431,7 @@ describe('resolveNextAction', () => {
               fulfilledAt: '2026-01-01T00:00:00.000Z',
               consumedByObligationId: null,
               capturedVerdict: 'unable_to_review',
+              capturedRawFindings: { overallVerdict: 'unable_to_review' },
               attemptId: '22222222-2222-4222-8222-222222222222',
               reviewOutputMode: 'structured_output',
               structuredOutputUsed: true,
@@ -451,6 +452,7 @@ describe('resolveNextAction', () => {
         iteration: 1,
         planVersion: 1,
         subjectDigest: 'impl-digest',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'impl-digest'),
         reviewSubjectScope: {
           kind: 'implementation',
           implementationDigest: 'impl-digest',
@@ -462,7 +464,7 @@ describe('resolveNextAction', () => {
       const blocked = {
         ...obligation,
         status: 'blocked' as const,
-        blockedCode: 'REVIEW_REPAIR_UNAVAILABLE',
+        blockedCode: 'REVIEW_ATTEMPT_UNAVAILABLE',
       };
       const state = makeState('IMPL_REVIEW', {
         implementation: IMPL_EVIDENCE,
@@ -476,7 +478,7 @@ describe('resolveNextAction', () => {
       });
       const action = resolveNextAction('IMPL_REVIEW', state);
       expectAction(action, ACTION_CODES.IMPLEMENTATION_REVIEW_BLOCKED, ['/implement']);
-      expect(action.text).toContain('REVIEW_REPAIR_UNAVAILABLE');
+      expect(action.text).toContain('REVIEW_ATTEMPT_UNAVAILABLE');
       expect(action.text).not.toContain('flowguard-reviewer');
     });
 
@@ -487,6 +489,10 @@ describe('resolveNextAction', () => {
           iteration,
           planVersion: 1,
           subjectDigest: `impl-digest-${iteration}`,
+          reviewMaterial: freezeReviewMaterial(
+            'frozen review material',
+            `impl-digest-${iteration}`,
+          ),
           reviewSubjectScope: {
             kind: 'implementation',
             implementationDigest: `impl-digest-${iteration}`,
@@ -498,7 +504,7 @@ describe('resolveNextAction', () => {
         return {
           ...obligation,
           status: 'blocked' as const,
-          blockedCode: 'REVIEW_REPAIR_UNAVAILABLE',
+          blockedCode: 'REVIEW_ATTEMPT_UNAVAILABLE',
         };
       });
       const state = makeState('IMPL_REVIEW', {
@@ -585,13 +591,14 @@ describe('resolveNextAction', () => {
       expect(action.text).not.toContain('archived');
     });
 
-    it('READY with a pending standalone review obligation → RUN_REVIEWER_TASK', () => {
+    it('READY with a pending standalone review obligation → host dispatch recovery', () => {
       const obligation = createReviewObligation({
         obligationType: 'review',
         iteration: 1,
         planVersion: 1,
         now: '2026-01-01T00:00:00.000Z',
         subjectDigest: 'test',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
       });
       const state = makeState('READY', {
         reviewAssurance: {
@@ -603,17 +610,18 @@ describe('resolveNextAction', () => {
         },
       });
       const action = resolveNextAction('READY', state);
-      expectAction(action, ACTION_CODES.RUN_REVIEWER_TASK, []);
-      expect(action.text).toContain('flowguard-reviewer Task');
+      expectAction(action, ACTION_CODES.RUN_CONTINUE, ['flowguard_review']);
+      expect(action.text).not.toContain('flowguard-reviewer Task');
     });
 
-    it('REVIEW with a pending standalone review obligation → RUN_REVIEWER_TASK', () => {
+    it('REVIEW with a pending standalone review obligation → host dispatch recovery', () => {
       const obligation = createReviewObligation({
         obligationType: 'review',
         iteration: 1,
         planVersion: 1,
         now: '2026-01-01T00:00:00.000Z',
         subjectDigest: 'test',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
       });
       const state = makeState('REVIEW', {
         reviewAssurance: {
@@ -625,7 +633,7 @@ describe('resolveNextAction', () => {
         },
       });
       const action = resolveNextAction('REVIEW', state);
-      expectAction(action, ACTION_CODES.RUN_REVIEWER_TASK, []);
+      expectAction(action, ACTION_CODES.RUN_CONTINUE, ['flowguard_review']);
     });
   });
 

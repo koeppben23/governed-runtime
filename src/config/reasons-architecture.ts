@@ -46,20 +46,8 @@ export const ARCHITECTURE_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'ADR approval included adrText (you sent reviewVerdict="{receivedVerdict}"). Approval and ADR submission must be separate calls; adrText is for initial submissions and revisions only.',
     recoverySteps: [
-      'For approval: call flowguard_architecture({ reviewVerdict: "accept" }) (host-task mode) or with reviewFindings (SDK mode) — without adrText',
+      'For approval: call flowguard_architecture({ reviewVerdict: "accept" }) without adrText',
       'Include adrText only when reviewVerdict is "changes_requested" (revised ADR)',
-    ],
-    quickFixCommand: '/architecture',
-  },
-
-  {
-    code: 'ADR_FINDINGS_WITHOUT_VERDICT',
-    category: 'precondition',
-    messageTemplate:
-      'Review findings were submitted without a verdict. Include reviewVerdict alongside reviewFindings.',
-    recoverySteps: [
-      'Include reviewVerdict alongside reviewFindings',
-      'Call flowguard_architecture({ reviewVerdict: "accept"|"changes_requested", reviewFindings })',
     ],
     quickFixCommand: '/architecture',
   },

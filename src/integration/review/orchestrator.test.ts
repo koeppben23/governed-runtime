@@ -38,7 +38,8 @@ import {
   type ReviewerSuccessResult,
   type ReviewerResult,
 } from './orchestrator.js';
-import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
+import { REVIEW_REQUIRED_PREFIX } from './enforcement/types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
 import { TOOL_FLOWGUARD_REVIEW } from '../tool-names.js';
 import { parseToolResult } from '../plugin-helpers.js';
@@ -57,15 +58,9 @@ function validFindings(overrides: Record<string, unknown> = {}): string {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
-    reviewedBy: { sessionId: 'child-session-1' },
-    reviewedAt: '2026-04-24T12:00:00.000Z',
+    challenges: [],
     attestation: {
-      mandateDigest: 'test-mandate-digest',
-      criteriaVersion: 'p37-v1',
       toolObligationId: '11111111-1111-4111-8111-111111111111',
-      iteration: 0,
-      planVersion: 1,
-      reviewedBy: 'flowguard-reviewer',
     },
     ...overrides,
   });
@@ -79,7 +74,7 @@ function mockClient(
       data?: {
         parts?: Array<{ type?: string; text?: string }>;
         info?: {
-          structured_output?: unknown;
+          structured?: unknown;
           error?: { name: string; message: string };
         };
       };
@@ -106,7 +101,7 @@ function mockClient(
         opts.promptResult ?? {
           data: {
             parts: [{ type: 'text', text: validFindings() }],
-            info: { structured_output: JSON.parse(validFindings()) as Record<string, unknown> },
+            info: { structured: JSON.parse(validFindings()) as Record<string, unknown> },
           },
           error: undefined,
         },
@@ -214,9 +209,8 @@ describe('buildPlanReviewPrompt', () => {
   });
 
   // CORNER: prompt length exceeds minimum (for L3 enforcement)
-  it('produces prompt longer than MIN_SUBAGENT_PROMPT_LENGTH', () => {
+  it('produces prompt longer than 200 chars', () => {
     const prompt = buildPlanReviewPrompt(baseOpts);
-    // MIN_SUBAGENT_PROMPT_LENGTH is 200 chars
     expect(prompt.length).toBeGreaterThan(200);
   });
 
@@ -627,9 +621,7 @@ describe('invokeReviewer', () => {
   it('creates child session and invokes reviewer', async () => {
     const { REVIEW_FINDINGS_JSON_SCHEMA } = await import('./findings-schema.js');
     const client = mockClient();
-    const result = await invokeReviewer(client, PROMPT, 'parent-session-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
-    });
+    const result = await invokeReviewer(client, PROMPT, 'parent-session-1');
 
     assertSuccessfulResult(result);
     expect(result!.sessionId).toBe('child-session-1');
@@ -653,48 +645,12 @@ describe('invokeReviewer', () => {
     });
   });
 
-  it('returns typed HOST_SUBAGENT_TASK_REQUIRED result without SDK calls when host task is required', async () => {
-    const client = mockClient();
-    const result = await invokeReviewer(client, PROMPT, 'parent-session-1', {
-      reviewInvocationPolicy: 'host_task_required',
-    });
-
-    expect(result).toMatchObject({
-      blocked: true,
-      code: 'HOST_SUBAGENT_TASK_REQUIRED',
-      reviewInvocation: {
-        policy: 'host_task_required',
-        status: 'blocked_until_host_task',
-        invocationMode: 'host_subagent_task',
-        hostVisible: true,
-      },
-    });
-    expect(client.session.create).not.toHaveBeenCalled();
-    expect(client.session.prompt).not.toHaveBeenCalled();
-  });
-
-  it('defaults to host task required without SDK calls', async () => {
-    const client = mockClient();
-    const result = await invokeReviewer(client, PROMPT, 'parent-session-1');
-
-    expect(result).toMatchObject({
-      blocked: true,
-      code: 'HOST_SUBAGENT_TASK_REQUIRED',
-      reviewInvocation: { policy: 'host_task_required' },
-    });
-    expect(client.app.agents).not.toHaveBeenCalled();
-    expect(client.session.create).not.toHaveBeenCalled();
-    expect(client.session.prompt).not.toHaveBeenCalled();
-  });
-
   // BAD: session creation fails
   it('returns null when session creation fails', async () => {
     const client = mockClient({
       createResult: { error: { message: 'Failed' } },
     });
-    const result = await invokeReviewer(client, PROMPT, 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
-    });
+    const result = await invokeReviewer(client, PROMPT, 'parent-1');
     expect(result).toBeNull();
   });
 
@@ -703,9 +659,7 @@ describe('invokeReviewer', () => {
     const client = mockClient({
       createResult: { data: undefined, error: undefined },
     });
-    const result = await invokeReviewer(client, PROMPT, 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
-    });
+    const result = await invokeReviewer(client, PROMPT, 'parent-1');
     expect(result).toBeNull();
   });
 
@@ -714,9 +668,7 @@ describe('invokeReviewer', () => {
     const client = mockClient({
       promptResult: { error: { message: 'Prompt failed' } },
     });
-    const result = await invokeReviewer(client, PROMPT, 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
-    });
+    const result = await invokeReviewer(client, PROMPT, 'parent-1');
     expect(result).toBeNull();
   });
 
@@ -725,41 +677,30 @@ describe('invokeReviewer', () => {
     const client = mockClient({
       promptResult: { data: undefined, error: undefined },
     });
-    const result = await invokeReviewer(client, PROMPT, 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
-    });
+    const result = await invokeReviewer(client, PROMPT, 'parent-1');
     expect(result).toBeNull();
   });
 
-  // CORNER: prompt returns no structured output but valid JSON in text parts
-  // With fail-closed strict mode, text fallback is NOT used — must return null.
-  // This validates the FlowGuard invariant: only SDK-validated structured_output is accepted.
-  it('returns null when structured_output is absent even if text parts contain valid JSON (fail-closed)', async () => {
+  it('blocks when structured output is absent even if text parts contain valid JSON', async () => {
     const client = mockClient({
       promptResult: {
         data: { parts: [{ type: 'text', text: validFindings() }] },
         error: undefined,
       },
     });
-    const result = await invokeReviewer(client, PROMPT, 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
-    });
-    // Fail-closed: text content is NOT accepted as structured output substitute
-    expect(result).toBeNull();
+    const result = await invokeReviewer(client, PROMPT, 'parent-1');
+    expect(result).toMatchObject({ blocked: true, code: 'HOST_STRUCTURED_OUTPUT_REQUIRED' });
   });
 
-  // BAD: prompt returns no structured output AND no valid JSON in parts
-  it('returns null when neither structured_output nor text parts have valid JSON', async () => {
+  it('blocks when no structured output is returned', async () => {
     const client = mockClient({
       promptResult: {
         data: { parts: [{ type: 'text', text: 'I cannot review this.' }] },
         error: undefined,
       },
     });
-    const result = await invokeReviewer(client, PROMPT, 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
-    });
-    expect(result).toBeNull();
+    const result = await invokeReviewer(client, PROMPT, 'parent-1');
+    expect(result).toMatchObject({ blocked: true, code: 'HOST_STRUCTURED_OUTPUT_REQUIRED' });
   });
 
   // EDGE: structured output validation failed
@@ -772,49 +713,23 @@ describe('invokeReviewer', () => {
         error: undefined,
       },
     });
-    const result = await invokeReviewer(client, PROMPT, 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
-    });
+    const result = await invokeReviewer(client, PROMPT, 'parent-1');
     expect(result).toBeNull();
   });
 
-  // CORNER: transport preserves untrusted input; the shared preparation boundary
-  // adds canonical provenance only after strict input validation.
-  it('does not stamp reviewer provenance in the transport layer', async () => {
+  it('blocks structured output that supplies host-managed reviewer provenance', async () => {
     const findingsJson = validFindings({ reviewedBy: { sessionId: 'reviewer-guessed-id' } });
     const client = mockClient({
       promptResult: {
-        data: { info: { structured_output: JSON.parse(findingsJson) as Record<string, unknown> } },
+        data: { info: { structured: JSON.parse(findingsJson) as Record<string, unknown> } },
         error: undefined,
       },
     });
-    const result = await invokeReviewer(client, PROMPT, 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
+    const result = await invokeReviewer(client, PROMPT, 'parent-1');
+    expect(result).toMatchObject({
+      blocked: true,
+      code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
     });
-    assertSuccessfulResult(result);
-    expect(result!.findings).not.toBeNull();
-    expect(result!.reviewOutputMode).toBe('structured_output');
-    expect(result!.structuredOutputUsed).toBe(true);
-    expect(result!.reviewAssuranceLevel).toBe('structured_high');
-    expect(result!.extractionMethod).toBeUndefined();
-    expect(result!.findings!.reviewedBy).toEqual({ sessionId: 'reviewer-guessed-id' });
-  });
-
-  it('preserves missing reviewer provenance for the strict input boundary', async () => {
-    const findingsJson = validFindings();
-    const parsed = JSON.parse(findingsJson) as Record<string, unknown>;
-    delete parsed.reviewedBy;
-    const client = mockClient({
-      promptResult: {
-        data: { info: { structured_output: parsed } },
-        error: undefined,
-      },
-    });
-    const result = await invokeReviewer(client, PROMPT, 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
-    });
-    assertSuccessfulResult(result);
-    expect(result!.findings).not.toHaveProperty('reviewedBy');
   });
 
   // P1.3 slice 4c: third LoopVerdict propagation through invokeReviewer.
@@ -831,20 +746,15 @@ describe('invokeReviewer', () => {
     });
     const client = mockClient({
       promptResult: {
-        data: { info: { structured_output: JSON.parse(findingsJson) as Record<string, unknown> } },
+        data: { info: { structured: JSON.parse(findingsJson) as Record<string, unknown> } },
         error: undefined,
       },
     });
-    const result = await invokeReviewer(client, PROMPT, 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
-    });
+    const result = await invokeReviewer(client, PROMPT, 'parent-1');
     assertSuccessfulResult(result);
     expect(result!.findings).not.toBeNull();
     expect(result!.findings!.overallVerdict).toBe('unable_to_review');
-    // Confirm reviewedBy is still authoritatively set; the unreviewable
-    // verdict must NOT bypass childSessionId enforcement.
-    const reviewedBy = result!.findings!.reviewedBy as Record<string, unknown>;
-    expect(reviewedBy.sessionId).toBe('child-session-1');
+    expect(result!.findings).not.toHaveProperty('reviewedBy');
   });
 });
 
@@ -874,13 +784,8 @@ describe('buildMutatedOutput', () => {
     expect(typeof parsed.next).toBe('string');
     expect((parsed.next as string).startsWith(REVIEW_COMPLETED_PREFIX)).toBe(true);
 
-    // Findings should be injected
-    expect(parsed.pluginReviewFindings).toBeDefined();
-    const findings = parsed.pluginReviewFindings as Record<string, unknown>;
-    expect(findings.overallVerdict).toBe('accept');
-
-    // Session ID should be injected
-    expect(parsed._pluginReviewSessionId).toBe('child-session-1');
+    expect(parsed.pluginReviewFindings).toBeUndefined();
+    expect(parsed._pluginReviewSessionId).toBeUndefined();
 
     // Original fields should be preserved
     expect(parsed.phase).toBe('PLAN');
@@ -911,8 +816,26 @@ describe('buildMutatedOutput', () => {
     expect(mutated).not.toBeNull();
 
     const parsed = JSON.parse(mutated!) as Record<string, unknown>;
-    const findings = parsed.pluginReviewFindings as Record<string, unknown>;
-    expect(findings.overallVerdict).toBe('changes_requested');
+    expect(parsed.next).toContain('reviewVerdict=changes_requested');
+  });
+
+  it('removes stale pending-review routing after evidence is bound', () => {
+    const output = JSON.stringify({
+      next: 'INDEPENDENT_REVIEW_REQUIRED',
+      reviewInvocation: { status: 'pending_review', next: 'INDEPENDENT_REVIEW_REQUIRED' },
+      nextAction: { code: 'RUN_PLAN' },
+      productNextAction: { presentationForm: 'review_pending' },
+    });
+
+    const parsed = JSON.parse(buildMutatedOutput(output, reviewerResult)!) as Record<
+      string,
+      unknown
+    >;
+
+    expect(parsed.next).toContain('INDEPENDENT_REVIEW_COMPLETED');
+    expect(parsed).not.toHaveProperty('reviewInvocation');
+    expect(parsed).not.toHaveProperty('nextAction');
+    expect(parsed).not.toHaveProperty('productNextAction');
   });
 
   // EDGE: findings is null (parsing failed) — fail-closed: returns null
@@ -946,8 +869,8 @@ describe('buildMutatedOutput', () => {
     expect(mutated).not.toBeNull();
     const parsed = JSON.parse(mutated!);
     expect(parsed.next).toContain('INDEPENDENT_REVIEW_COMPLETED');
-    expect(parsed.pluginReviewFindings).toBeDefined();
-    expect(parsed._pluginReviewSessionId).toBeDefined();
+    expect(parsed.pluginReviewFindings).toBeUndefined();
+    expect(parsed._pluginReviewSessionId).toBeUndefined();
   });
 
   // BAD: /plan footer mutation
@@ -960,7 +883,7 @@ describe('buildMutatedOutput', () => {
     expect(mutated).not.toBeNull();
     const parsed = JSON.parse(mutated!);
     expect(parsed.next).toContain('INDEPENDENT_REVIEW_COMPLETED');
-    expect(parsed.pluginReviewFindings).toBeDefined();
+    expect(parsed.pluginReviewFindings).toBeUndefined();
   });
 
   // BAD: /implement footer mutation
@@ -973,7 +896,7 @@ describe('buildMutatedOutput', () => {
     expect(mutated).not.toBeNull();
     const parsed = JSON.parse(mutated!);
     expect(parsed.next).toContain('INDEPENDENT_REVIEW_COMPLETED');
-    expect(parsed.pluginReviewFindings).toBeDefined();
+    expect(parsed.pluginReviewFindings).toBeUndefined();
   });
 
   // BAD: /architecture footer mutation
@@ -986,7 +909,7 @@ describe('buildMutatedOutput', () => {
     expect(mutated).not.toBeNull();
     const parsed = JSON.parse(mutated!);
     expect(parsed.next).toContain('INDEPENDENT_REVIEW_COMPLETED');
-    expect(parsed.pluginReviewFindings).toBeDefined();
+    expect(parsed.pluginReviewFindings).toBeUndefined();
   });
 });
 
@@ -1004,7 +927,6 @@ describe('reviewer spawn observability (_onAttemptSucceeded)', () => {
     }> = [];
 
     const result = await invokeReviewer(client, SPAWN_PROMPT, 'parent-session-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
       _onAttemptSucceeded: (info) => succeeded.push(info),
     });
 
@@ -1024,7 +946,6 @@ describe('reviewer spawn observability (_onAttemptSucceeded)', () => {
     const succeeded: string[] = [];
 
     await invokeReviewer(client, SPAWN_PROMPT, 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
       _onAttemptSucceeded: (info) => succeeded.push(info.step),
     });
 
@@ -1039,7 +960,6 @@ describe('reviewer spawn observability (_onAttemptSucceeded)', () => {
     const succeeded: string[] = [];
 
     await invokeReviewer(client, SPAWN_PROMPT, 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
       _onAttemptSucceeded: (info) => succeeded.push(info.step),
     });
 

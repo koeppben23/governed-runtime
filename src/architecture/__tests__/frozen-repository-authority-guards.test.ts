@@ -128,16 +128,13 @@ describe('Guard 2: no mutable revision resolution in review-authority constructi
 
 describe('Guard 3: evidence admissibility evaluates observations via the canonical binder only', () => {
   /**
-   * The ONLY modules that may evaluate authoritative observations for
-   * evidence ADMISSIBILITY: the host-task bind path and the direct/submitted
-   * findings validator. Audit/status/diagnostics may read observations; they
-   * must never make admissibility decisions — enforced by keeping the binder
-   * the single entry point and importing it exclusively from these callers.
+   * The ONLY module that may evaluate authoritative observations for evidence
+   * ADMISSIBILITY is the structured-evidence validator. Audit/status/diagnostics
+   * may read observations; they must never make admissibility decisions —
+   * enforced by keeping the binder the single entry point and importing it
+   * exclusively from this caller.
    */
-  const ALLOWED_BINDER_CALLERS = [
-    'integration/review/evidence-binding.ts',
-    'integration/tools/review-validation-evidence.ts',
-  ];
+  const ALLOWED_BINDER_CALLERS = ['integration/tools/review-validation-evidence.ts'];
 
   it('only the sanctioned bind paths invoke the canonical evidence binder', () => {
     const callers: string[] = [];

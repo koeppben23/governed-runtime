@@ -23,7 +23,7 @@ import { emptyClaimDeclarations } from '../../state/proofgraph-approval.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { hashText } from '../../shared/hashing.js';
 
-const EMPTY_CONTRACT: ProofContract = { version: 'contract.v1', claims: [] };
+const EMPTY_CONTRACT: ProofContract = { version: 'contract.v2', claims: [] };
 
 export type MaterializedArchitectureContract = {
   readonly contract: ProofContract;
@@ -97,5 +97,5 @@ export function materializeApprovedArchitectureContractResult(
     counterexampleRefs: [],
   }));
 
-  return { contract: { version: 'contract.v1', claims }, coverage: [] };
+  return { contract: { version: 'contract.v2', claims }, coverage: [] };
 }

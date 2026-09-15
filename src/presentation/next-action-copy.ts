@@ -44,10 +44,6 @@ const PRODUCT_GUIDANCE: Partial<Record<ActionCode, ProductNextAction>> = {
     text: 'Task captured. Generate an implementation plan with /plan',
     commands: ['/plan'],
   },
-  RUN_REVIEW_DECISION: {
-    text: 'Review gate active. Run /approve to accept, /request-changes to revise, or /reject to discard.',
-    commands: ['/approve', '/request-changes', '/reject'],
-  },
   RUN_VALIDATE: {
     text: 'Run validation checks with /check',
     commands: ['/check'],
@@ -116,14 +112,6 @@ export function buildProductNextAction(
     'lastExportPackagePurpose' | 'lastExportIntegrityCapability' | 'lastExportVerificationStatus'
   >,
 ): ProductNextAction {
-  if (action.code === ACTION_CODES.RUN_REVIEWER_TASK) {
-    return {
-      text: action.text,
-      commands: action.commands,
-      presentationForm: 'review_pending',
-    };
-  }
-
   const code = action.code as ActionCode;
   const guidance = PRODUCT_GUIDANCE[code];
 

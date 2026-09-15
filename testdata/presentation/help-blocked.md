@@ -6,17 +6,16 @@
 
 ## Next
 
-`/approve` — Record the human decision at a review gate.
+`/review-decision` — Record the human decision at a review gate.
 
 ## Available commands
 
-  - **`/approve`** — Record the human decision at a review gate.
   - `/status` — Show the current phase and next action.
   - `/continue` — Route to the next workflow step.
   - `/abort` — End the current workflow without presenting it as completed.
   - `/start` — Prepare or restore a governed session.
-  - `/request-changes` — Record the human decision at a review gate.
+  - `/approve` — Record the human decision at a review gate.
 
 **Session artifacts:**
   ticket: available "Fix the auth bug in login.ts" (digest: digest-o...)
-  current plan v1: available "## Plan" (digest: digest-o...)
+  current plan v1: available "## Plan" (digest: ccdbbfa3...)

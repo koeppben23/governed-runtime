@@ -1,4 +1,4 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 
 export const COMMANDS_COMMAND = `---
 description: FlowGuard — List available commands in the current context.
@@ -24,7 +24,7 @@ Show the currently available FlowGuard commands, or the complete reference.
 
 - /commands is read-only. It never changes lifecycle, evidence, or archive state.
 - Do not claim a command is available without the FlowGuard result.
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 
 ## Done-when
 

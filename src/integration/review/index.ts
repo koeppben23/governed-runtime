@@ -9,13 +9,13 @@
  * Architecture: review/ is a cohesive bounded context that owns:
  * - Review obligation lifecycle and tool mapping
  * - Obligation state transforms (updateObligation, blockObligation)
- * - Enforcement types, state, and validation (4-level integrity)
+ * - Enforcement types, pending-review state, and the host-observed
+ *   structured-invocation verdict gate
  * - Reviewer subagent orchestration (SDK invocation, retry, output parsing)
  * - Review assurance state management (obligations, invocations, evidence)
- * - Evidence binding (host-task -> invocation evidence)
+ * - Durable dispatch authorization and SDK invocation evidence recording
  * - Prompt construction for all review types
  * - Agent resolution (registry probe + cache)
- * - Text/JSON extraction from unstructured responses
  * - Findings JSON Schema definition
  * - Review audit event emission
  *
@@ -23,7 +23,7 @@
  * config/, and adapters/persistence (audit trail I/O).
  * review/ MUST NOT import from plugin-*, tools/, or integration root.
  *
- * @version v2
+ * @version v3
  */
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -35,22 +35,12 @@ export type { OrchestratorClient } from './types.js';
 export type {
   ReviewableTool,
   PendingReviewTool,
-  SubagentRecord,
-  ContentMeta,
-  CapturedFindings,
   PendingReview,
   SessionEnforcementState,
-  TaskToolContext,
   EnforcementResult,
-  HostTaskBindOutcome,
-  HostTaskBindResult,
 } from './enforcement/types.js';
 
-export {
-  REVIEW_REQUIRED_PREFIX,
-  REVIEWER_SUBAGENT_TYPE,
-  MIN_SUBAGENT_PROMPT_LENGTH,
-} from './enforcement/types.js';
+export { REVIEW_REQUIRED_PREFIX } from './enforcement/types.js';
 
 // ─── Obligation Tools ────────────────────────────────────────────────────────
 
@@ -61,24 +51,8 @@ export { isReviewableTool, obligationTypeForTool, REVIEWABLE_TOOLS } from './obl
 export {
   createSessionState,
   onFlowGuardToolAfter,
-  enforceBeforeSubagentCall,
-  onTaskToolAfter,
-  matchPendingReview,
   enforceBeforeVerdict,
-  recordPluginReview,
 } from './enforcement/enforcement.js';
-
-// ─── Enforcement Extraction ──────────────────────────────────────────────────
-
-export {
-  extractContentMeta,
-  extractCapturedFindings,
-  promptContainsValue,
-  resolveSessionIdFromMetadata,
-  injectSessionIdIntoOutput,
-  extractSubagentSessionId,
-  extractJsonBlock,
-} from './enforcement/extraction.js';
 
 // ─── Assurance ───────────────────────────────────────────────────────────────
 
@@ -86,7 +60,6 @@ export {
   hashText,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
-  getReviewMandateDigest,
   emptyReviewAssurance,
   ensureReviewAssurance,
   createReviewObligation,
@@ -148,14 +121,6 @@ export {
   resolveReviewerAgent,
   _resetAgentResolutionCache,
 } from './agent-resolution.js';
-
-// ─── Evidence Binding ────────────────────────────────────────────────────────
-
-export { buildHostTaskEvidence } from './evidence-binding.js';
-
-// ─── Text Extraction ─────────────────────────────────────────────────────────
-
-export { extractJsonFromText, extractJsonFromTextWithMethod } from './text-extraction.js';
 
 // ─── Findings Schema ─────────────────────────────────────────────────────────
 

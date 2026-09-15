@@ -2,36 +2,32 @@
  * @module integration/tools/implement
  * @description FlowGuard implement tool — record implementation or review verdict.
  *
- * Agent-Orchestrated Independent Review for /implement
+ * Host-Observed Independent Review for /implement
  *
  * Architecture: FlowGuard does NOT call subagents. The OpenCode primary agent
  * orchestrates independent review by calling the flowguard-reviewer subagent
- * via the Task tool. FlowGuard accepts, validates, and persists the resulting
- * ReviewFindings.
+ * via the Task tool. The HOST captures the reviewer's structured findings into
+ * the review assurance evidence; the agent never resubmits findings.
  *
- * Flow (subagentEnabled=true):
+ * Flow:
  * 1. Primary agent performs implementation work
  * 2. Primary agent calls flowguard_implement (Mode A, records evidence)
  * 3. FlowGuard returns next-action instructing subagent invocation
  * 4. Primary agent calls flowguard-reviewer subagent via Task tool
- * 5. Subagent returns structured ReviewFindings
- * 6. Primary agent submits reviewVerdict + reviewFindings to FlowGuard (Mode B)
- * 7. FlowGuard validates and persists both (append-only, separate)
+ * 5. Host captures the reviewer's structured findings into invocation evidence
+ * 6. Primary agent submits the review verdict ONLY (flowguard_review_implementation)
+ * 7. FlowGuard resolves the host-captured findings, validates, and persists them
  *
  * Tool responsibilities:
- * - Input validation: reviewFindings vs policy, iteration binding
- * - Persistence: impl history (author), implReviewFindings (reviewer)
+ * - Input validation: verdict vs host-captured evidence binding
+ * - Persistence: impl history (author), implReviewFindings (host-captured)
  * - Response: summary of review findings
  * - Next-action: independent reviewer instructions
  *
- * Policy config (selfReview):
- * - subagentEnabled: enforces subagent review mode
- * - fallbackToSelf: deprecated compatibility field; self-review fallback is prohibited
- *
  * Validation rules:
  * - reviewMode=self → BLOCKED
- * - reviewVerdict=approve + missing reviewFindings → BLOCKED
- * - reviewFindings.iteration mismatch → BLOCKED
+ * - reviewVerdict without bound structured evidence → SUBAGENT_EVIDENCE_MISSING
+ * - captured findings iteration mismatch → BLOCKED
  *
  * Multi-call pattern driven by the LLM:
  *
@@ -42,8 +38,9 @@
  *   -> Returns "review needed" with policy-conditional next-action
  *
  * Step 3: LLM calls flowguard-reviewer subagent via Task tool
- * Step 4: LLM calls flowguard_review_implementation({ reviewVerdict: "accept", reviewFindings })
- *   -> Tool records review iteration, checks convergence
+ * Step 4: LLM calls flowguard_review_implementation({ reviewVerdict: "accept" })
+ *   -> Tool resolves the host-captured findings, records the review iteration,
+ *      and checks convergence
  *   -> On convergence: auto-advance to EVIDENCE_REVIEW
  *
  * OR Step 4: LLM calls flowguard_review_implementation({ reviewVerdict: "changes_requested" })
@@ -55,7 +52,7 @@
 import {
   formatBlocked,
   formatAutoAdvanceOverflow,
-  appendNextAction,
+  enrichWithNextAction,
   writeStateWithArtifacts,
 } from './helpers.js';
 import { existsSync } from 'node:fs';
@@ -84,9 +81,6 @@ import { writeImplementationDiffArtifact } from './implement-diff-artifact.js';
 
 // Evidence types
 
-// Review findings validation (shared with plan.ts)
-import { validateReviewFindings } from './review-validation.js';
-import { collectPreviouslyUsedChallengeIds } from '../review/challenge-history.js';
 import { ensureReviewAssurance, reviewObligationResponseFields } from '../review/assurance.js';
 import { buildLatestImplementationReviewSummary } from './review-summary.js';
 import { collectHistoricallyRejectedImplementationDigests } from '../review/rejected-digests.js';
@@ -95,35 +89,18 @@ import {
   resolveRuntimeReviewPlatform,
   resolveReviewOrchestrationMode,
 } from '../review/orchestration-mode.js';
-import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
+import { buildChildSessionReviewInstruction } from '../review/child-session-instruction.js';
 import { resolveAttemptObservationCapability } from '../review/assurance.js';
-import { buildReviewerProofContext } from '../review/proof-context.js';
 import type { ImplementRuntime, ImplementationCeremony } from './implement-shared.js';
 import {
   hasUnresolvedMutationEpisodes,
   reconcileMutationEpisodes,
 } from '../../state/evidence-mutation-episode.js';
-import { normalizeHostFindings } from './implement-shared.js';
 import {
   activateReviewObligationAndPersist,
   materializeImplReviewContract,
   nextImplementationReviewIteration,
 } from './implement-shared.js';
-// Mode A
-export function validateInitialReviewFindings(input: ImplementRuntime): string | null {
-  if (!input.args.reviewFindings) return null;
-  return validateReviewFindings(input.args.reviewFindings, {
-    subagentEnabled: input.subagentEnabled,
-    fallbackToSelf: input.fallbackToSelf,
-    expectedIteration: 0,
-    expectedPlanVersion: (input.state.plan?.history.length ?? 0) + 1,
-    strictEnforcement: false,
-    reviewInvocationPolicy: input.policy.reviewInvocationPolicy,
-    reviewParentSessionId: input.context.sessionID,
-    reviewHostPlatform: resolveRuntimeReviewPlatform(),
-    previouslyUsedChallengeIds: collectPreviouslyUsedChallengeIds(input.state),
-  });
-}
 
 function blockedImplRecovery(state: SessionState): string | null {
   if (state.phase !== 'IMPL_REVIEW') {
@@ -248,20 +225,15 @@ function buildImplRecordedResponse(input: {
   const platform = resolveRuntimeReviewPlatform();
   const mode = resolveReviewOrchestrationMode({
     platform,
-    reviewInvocationPolicy: input.policy.reviewInvocationPolicy,
     nativeReviewerAvailable: platform === 'unknown' ? false : true,
-    manualAttestedAllowed: input.policy.reviewInvocationPolicy !== 'host_task_required',
   });
   const instruction = input.nextObligation
-    ? buildPendingReviewInstruction({
+    ? buildChildSessionReviewInstruction({
         mode,
         platform,
-        reviewKind: 'implementation',
         obligation: input.nextObligation,
         iteration: input.reviewIteration,
         planVersion: input.planVersion,
-        subjectLabel: 'implementation summary, changed files, approved plan text, and ticket text',
-        proofContext: buildReviewerProofContext(input.finalState),
         observationCapability: input.nextObligation
           ? (resolveAttemptObservationCapability(
               input.finalState.reviewAssurance,
@@ -284,8 +256,10 @@ function buildImplRecordedResponse(input: {
     ...reviewObligationResponseFields(input.nextObligation),
     next: reduced
       ? 'REDUCED_CEREMONY_APPLIED: Runtime evidence classified the changed files as TRIVIAL after passed validation. Reduced-ceremony evidence was recorded; implementation review evidence was not synthesized.'
-      : (instruction?.next ?? nextAction.text),
-    ...(instruction ? { reviewInvocation: instruction.reviewInvocation } : {}),
+      : instruction
+        ? 'INDEPENDENT_REVIEW_REQUIRED'
+        : nextAction.text,
+    ...(instruction ? { reviewInvocation: instruction } : {}),
     _audit: { transitions: input.transitions },
   };
 
@@ -462,10 +436,9 @@ export async function handleImplRecord(
   const reworkBlocked = reworkBlock(input.state, digest);
   if (reworkBlocked) return reworkBlocked;
   const implEvidence = await buildImplEvidence(input, files, domainFiles, digest);
+  // Host-captured findings are append-only and only ever written by
+  // handleImplReview from the resolved structured evidence.
   const existingFindings = input.state.implReviewFindings ?? [];
-  const newReviewFindings = input.args.reviewFindings
-    ? [...existingFindings, normalizeHostFindings(input.args.reviewFindings)]
-    : existingFindings;
   const reviewIteration = nextImplementationReviewIteration(input.state);
   const planVersion = (input.state.plan?.history.length ?? 0) + 1;
   const ceremony = resolveCeremonyProfile({ state: input.state, changedFiles: files });
@@ -510,7 +483,7 @@ export async function handleImplRecord(
         }
       : null,
     implReview: null,
-    implReviewFindings: newReviewFindings.length > 0 ? newReviewFindings : undefined,
+    implReviewFindings: existingFindings.length > 0 ? existingFindings : undefined,
     reviewAssurance: input.state.reviewAssurance,
     error: null,
   };
@@ -521,7 +494,7 @@ export async function handleImplRecord(
     domainFiles,
     reviewIteration,
     planVersion,
-    reviewFindings: newReviewFindings,
+    reviewFindings: existingFindings,
     ceremony,
     baselineScoping,
   });
@@ -554,7 +527,6 @@ export async function persistImplRecordAndRespond(args: PersistImplRecordArgs): 
   const activation = await activateReviewObligationAndPersist({
     state: stateWithMaterializedContract,
     preAdvanceState: nextState,
-    subagentEnabled: input.subagentEnabled,
     iteration: reviewIteration,
     planVersion,
     now: input.ctx.now(),
@@ -574,8 +546,8 @@ export async function persistImplRecordAndRespond(args: PersistImplRecordArgs): 
   // projection and understate claim coverage in the reviewer prompt (#762).
   const persisted = await writeStateWithArtifacts(input.sessDir, activated.state);
 
-  return appendNextAction(
-    JSON.stringify(
+  return JSON.stringify(
+    enrichWithNextAction(
       buildImplRecordedResponse({
         finalState: persisted,
         files,
@@ -589,7 +561,7 @@ export async function persistImplRecordAndRespond(args: PersistImplRecordArgs): 
         policy: input.policy,
         baselineScoping: args.baselineScoping,
       }),
+      persisted,
     ),
-    persisted,
   );
 }

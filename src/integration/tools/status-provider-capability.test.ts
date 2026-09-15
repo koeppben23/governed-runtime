@@ -42,7 +42,6 @@ describe('flowguard_status providerCapabilities', () => {
       detectedStack: {
         summary: '',
         items: [{ kind: 'testFramework', id: 'vitest', evidence: 'vitest.config.ts' }],
-        versions: [],
       },
       verificationCandidates: [
         {

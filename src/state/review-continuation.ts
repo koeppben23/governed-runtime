@@ -11,18 +11,14 @@
  *   awaiting_task  — a bindable attempt exists; re-emit the review instruction
  *                    for it. No new attempt, no new obligation.
  *   interrupted_dispatch — a bindable attempt exists whose durable dispatch
- *                    ledger still reports an unresolved `authorized` outcome
- *                    (a crash/restart between Before and After). The attempt
- *                    must be re-armed durably by re-invoking the originating
- *                    command (/plan, /architecture): the old dispatch becomes
+ *                    ledger already records a host release: either an
+ *                    unresolved `authorized` outcome (a crash/restart between
+ *                    release and completion) or an `outcome_unknown` spent
+ *                    call. The attempt must be re-armed durably by re-invoking
+ *                    the originating command: the old dispatch becomes
  *                    `outcome_unknown`, the spent attempt is staled, and a
  *                    fresh append-only attempt is minted on the same
- *                    obligation.
- *   output_repair  — the latest attempt is rejected with a canonically
- *                    repairable output-contract reason and the frozen repair
- *                    budget remains; the originating command re-invocation is
- *                    the authorized trigger to mint a fresh attempt on the
- *                    SAME obligation.
+ *                    obligation (consuming the shared attempt budget).
  *   awaiting_verdict — valid evidence is bound and awaits verdict submission.
  *   integrity_blocked — the frozen subject/material binding is broken. This is
  *                    an integrity failure, NOT a non-repairable reviewer
@@ -47,7 +43,6 @@ import type {
   FrozenReviewSubject,
   ReviewAssuranceState,
   ReviewAttempt,
-  ReviewAttemptRejectionReason,
   ReviewMaterial,
   ReviewObligation,
   ReviewObligationType,
@@ -133,8 +128,7 @@ export function verifyFrozenReviewerContext(
     return {
       kind: 'blocked',
       code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
-      reason:
-        'this obligation predates frozen review material and cannot be safely reconstructed from mutable state',
+      reason: 'frozen review material is unavailable for this obligation',
     };
   }
   if (reviewMaterial.content !== normalizeReviewContent(reviewMaterial.content)) {
@@ -224,8 +218,7 @@ export function verifyFrozenArtifactMaterial(
     return {
       kind: 'blocked',
       code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
-      reason:
-        'this obligation predates frozen review material and cannot be safely reconstructed from mutable state',
+      reason: 'frozen review material is unavailable for this obligation',
     };
   }
   if (reviewMaterial.content !== normalizeReviewContent(reviewMaterial.content)) {
@@ -285,47 +278,20 @@ export function verifyFrozenMaterialForObligation(
   return verified.kind === 'ok' ? { kind: 'ok', context: verified.context } : verified;
 }
 
-// ─── Rejection policy ────────────────────────────────────────────────────────
-
-/** Canonical repairability policy per structural rejection reason. */
-export const REVIEW_ATTEMPT_REJECTION_POLICY: Readonly<
-  Record<ReviewAttemptRejectionReason, { readonly repair: 'canonical_output_retry' | 'none' }>
-> = {
-  // Output-contract defects: a fresh reviewer attempt can plausibly repair
-  // these against the same frozen subject.
-  schema_invalid: { repair: 'canonical_output_retry' },
-  extraction_invalid: { repair: 'canonical_output_retry' },
-  attestation_invalid: { repair: 'canonical_output_retry' },
-  relation_invalid: { repair: 'canonical_output_retry' },
-  // Governance/integrity failures: never re-issuable via this path.
-  scope_invalid: { repair: 'none' },
-  evidence_unavailable: { repair: 'none' },
-  material_integrity_failed: { repair: 'none' },
-  subject_mismatch: { repair: 'none' },
-  consistency_invalid: { repair: 'none' },
-  // Execution failures: separate availability/execution domain.
-  reviewer_unavailable: { repair: 'none' },
-  task_failed: { repair: 'none' },
-};
-
-/** Whether a structural rejection reason authorizes an output-repair reissue. */
-export function isCanonicallyRepairable(reason: ReviewAttemptRejectionReason): boolean {
-  return REVIEW_ATTEMPT_REJECTION_POLICY[reason].repair === 'canonical_output_retry';
-}
-
 // ─── Assurance container primitives ──────────────────────────────────────────
 // `emptyReviewAssurance` / `ensureReviewAssurance` and the durable dispatch
 // ledger helpers live in `state/review-dispatch.ts`; imported here for local
 // use and re-exported for the historical import surface.
 
-import { ensureReviewAssurance, hasUnresolvedDispatch } from './review-dispatch.js';
+import { ensureReviewAssurance, hasReleasedDispatch } from './review-dispatch.js';
 
 export {
+  abandonReviewDispatch,
   appendReviewDispatch,
   completeReviewDispatch,
   emptyReviewAssurance,
   ensureReviewAssurance,
-  hasUnresolvedDispatch,
+  hasReleasedDispatch,
   markDispatchOutcomeUnknown,
 } from './review-dispatch.js';
 
@@ -350,181 +316,20 @@ export function findBindableAttempt(
   return candidates.reduce((best, a) => (a.ordinal > best.ordinal ? a : best));
 }
 
-export function latestReviewMaterial(
-  assurance: ReviewAssuranceState,
-  obligationId: string,
-): ReviewMaterial | undefined {
-  for (let index = assurance.attempts.length - 1; index >= 0; index--) {
-    const attempt = assurance.attempts[index];
-    if (attempt?.obligationId === obligationId && attempt.reviewMaterial) {
-      return attempt.reviewMaterial;
-    }
-  }
-  return undefined;
-}
-
-// ─── Output-repair reissue authority ─────────────────────────────────────────
-
-export type ReissueBlockCode =
-  | 'REVIEW_REPAIR_UNAVAILABLE'
-  | 'REVIEWER_OUTPUT_RETRY_EXHAUSTED'
-  | 'REVIEWER_OUTPUT_REPAIR_STALLED';
-
-/** The attempt with the highest ordinal for an obligation, or null. */
-export function latestAttemptForObligation(
-  assurance: ReviewAssuranceState | undefined,
-  obligationId: string,
-): ReviewAttempt | null {
-  const candidates = (assurance?.attempts ?? []).filter((a) => a.obligationId === obligationId);
-  if (candidates.length === 0) return null;
-  return candidates.reduce((best, a) => (a.ordinal > best.ordinal ? a : best));
-}
+// ─── Dispatch-rearm budget ───────────────────────────────────────────────────
 
 /**
- * Number of attempts minted as authorized output repairs for this obligation.
- * Derived exclusively from attempt origins — no separate counter exists.
+ * Number of attempts minted as authorized dispatch-recovery re-arms for this
+ * obligation. Derived exclusively from attempt origins — no separate counter
+ * exists.
  */
-export function countOutputRepairAttempts(
+export function countReviewAttempts(
   assurance: ReviewAssuranceState | undefined,
   obligationId: string,
 ): number {
   return (assurance?.attempts ?? []).filter(
-    (a) =>
-      a.obligationId === obligationId &&
-      (a.origin.kind === 'output_repair' || a.origin.kind === 'task_rearm'),
+    (a) => a.obligationId === obligationId && a.origin.kind === 'dispatch_rearm',
   ).length;
-}
-
-export type OutputRepairAuthorization =
-  | { readonly kind: 'bindable_exists'; readonly attemptId: string }
-  | {
-      readonly kind: 'authorized';
-      readonly predecessorAttemptId: string;
-      readonly triggerReason: ReviewAttemptRejectionReason;
-    }
-  | {
-      readonly kind: 'blocked';
-      readonly code: ReissueBlockCode;
-      readonly reason: string;
-    }
-  | {
-      readonly kind: 'integrity_blocked';
-      readonly code: 'REVIEW_MATERIAL_INTEGRITY_FAILED';
-      readonly reason: string;
-    };
-
-/**
- * Stall detection: a targeted repair that reproduced the IDENTICAL schema
- * error set gained no new information — another LLM repair is token burn, not
- * recovery. Canonical fingerprint comparison only; different error sets keep
- * the normal budget.
- */
-function repairStallBlock(
-  assurance: ReviewAssuranceState | undefined,
-  latest: ReviewAttempt,
-): { readonly code: ReissueBlockCode; readonly reason: string } | null {
-  if (latest.rejectionReason !== 'schema_invalid' || latest.origin.kind !== 'output_repair') {
-    return null;
-  }
-  const origin = latest.origin;
-  const predecessor = (assurance?.attempts ?? []).find(
-    (a) => a.attemptId === origin.predecessorAttemptId,
-  );
-  if (
-    latest.schemaErrorFingerprint &&
-    predecessor?.schemaErrorFingerprint &&
-    latest.schemaErrorFingerprint === predecessor.schemaErrorFingerprint
-  ) {
-    return {
-      code: 'REVIEWER_OUTPUT_REPAIR_STALLED',
-      reason:
-        'the targeted repair reproduced the identical schema error set; no further reviewer repair is authorized',
-    };
-  }
-  return null;
-}
-
-/**
- * Decide whether a pending obligation may receive a new `output_repair` attempt.
- *
- * The immutable authority is verified FIRST — a broken frozen subject/material
- * binding blocks the transition before any other condition is consulted and
- * before any state can be mutated:
- *   verifyFrozenMaterialForObligation(obligation, latestReviewMaterial) == ok
- *   AND obligation.status === 'pending'
- *   AND no bindable attempt exists (an open attempt is returned as-is)
- *   AND the latest attempt exists and is `rejected`
- *   AND it carries an explicit structured rejectionReason
- *   AND the rejection policy classifies that reason as `canonical_output_retry`
- *   AND the repair did NOT reproduce the identical schema error set (stall)
- *   AND the frozen budget has remaining capacity
- *
- * Everything else blocks — fail-closed, no defaulting anywhere.
- */
-export function authorizeOutputRepairReissue(
-  assurance: ReviewAssuranceState | undefined,
-  obligation: ReviewObligation,
-): OutputRepairAuthorization {
-  const material = latestReviewMaterial(ensureReviewAssurance(assurance), obligation.obligationId);
-  const materialVerification = verifyFrozenMaterialForObligation(obligation, material);
-  if (materialVerification.kind === 'blocked') {
-    return {
-      kind: 'integrity_blocked',
-      code: materialVerification.code,
-      reason: materialVerification.reason,
-    };
-  }
-  if (obligation.status !== 'pending') {
-    return {
-      kind: 'blocked',
-      code: 'REVIEW_REPAIR_UNAVAILABLE',
-      reason: `review obligation is ${obligation.status}, not pending`,
-    };
-  }
-  const bindable = findBindableAttempt(assurance, obligation.obligationId);
-  if (bindable) {
-    return { kind: 'bindable_exists', attemptId: bindable.attemptId };
-  }
-  const latest = latestAttemptForObligation(assurance, obligation.obligationId);
-  if (!latest || latest.status !== 'rejected') {
-    return {
-      kind: 'blocked',
-      code: 'REVIEW_REPAIR_UNAVAILABLE',
-      reason: 'no rejected attempt exists to repair',
-    };
-  }
-  const reason = latest.rejectionReason;
-  if (!reason) {
-    return {
-      kind: 'blocked',
-      code: 'REVIEW_REPAIR_UNAVAILABLE',
-      reason: 'latest attempt was rejected without a structured rejection reason',
-    };
-  }
-  if (!isCanonicallyRepairable(reason)) {
-    return {
-      kind: 'blocked',
-      code: 'REVIEW_REPAIR_UNAVAILABLE',
-      reason: `rejection reason ${reason} does not authorize an output repair`,
-    };
-  }
-  const stall = repairStallBlock(assurance, latest);
-  if (stall) {
-    return { kind: 'blocked', code: stall.code, reason: stall.reason };
-  }
-  const used = countOutputRepairAttempts(assurance, obligation.obligationId);
-  if (used >= obligation.maxReviewerOutputRepairAttempts) {
-    return {
-      kind: 'blocked',
-      code: 'REVIEWER_OUTPUT_RETRY_EXHAUSTED',
-      reason: `output-repair budget exhausted (${used}/${obligation.maxReviewerOutputRepairAttempts})`,
-    };
-  }
-  return {
-    kind: 'authorized',
-    predecessorAttemptId: latest.attemptId,
-    triggerReason: reason,
-  };
 }
 
 // ─── Continuation resolution ─────────────────────────────────────────────────
@@ -550,11 +355,6 @@ export type ReviewContinuation =
       readonly attemptId: string;
     }
   | {
-      readonly kind: 'output_repair';
-      readonly obligation: ReviewObligation;
-      readonly authorization: Extract<OutputRepairAuthorization, { readonly kind: 'authorized' }>;
-    }
-  | {
       readonly kind: 'integrity_blocked';
       readonly obligation: ReviewObligation;
       readonly code: string;
@@ -565,14 +365,14 @@ export type ReviewContinuation =
   | {
       /**
        * The obligation is pending but has NO legal reviewer attempt: no
-       * bindable attempt exists and no output repair is authorized. This is
-       * never a state a self-review iteration can repair — it requires an
-       * explicit flow recovery (deterministic closure or a fresh attempt
+       * bindable attempt exists and output repair is no longer authorized.
+       * This is never a state a self-review iteration can repair — it requires
+       * an explicit flow recovery (deterministic closure or a fresh attempt
        * authority), never a silent fall-through.
        */
       readonly kind: 'missing_attempt';
       readonly obligation: ReviewObligation;
-      readonly code: ReissueBlockCode;
+      readonly code: 'REVIEW_ATTEMPT_UNAVAILABLE';
       readonly reason: string;
     }
   | { readonly kind: 'none' };
@@ -602,34 +402,37 @@ export function resolveReviewContinuation(
 
   const bindable = findBindableAttempt(assurance, obligation.obligationId);
   if (bindable) {
-    // A created attempt whose durable dispatch ledger still reports an
-    // unresolved `authorized` outcome can NEVER be re-emitted as a plain
-    // awaiting_task: a crash/restart between Before and After would otherwise
-    // be mistaken for "never dispatched" and the spent attempt re-bound. It is
-    // an interrupted dispatch that the originating command (/plan,
-    // /architecture) must re-arm durably.
-    if (hasUnresolvedDispatch(assurance, bindable.attemptId)) {
+    // A bindable attempt whose durable ledger already records a host release
+    // can NEVER be re-emitted as a plain awaiting_task:
+    // - `authorized` = crash/restart between release and completion (outcome
+    //   unknown);
+    // - `outcome_unknown` = the call concluded without bindable evidence
+    //   (spent attempt).
+    // Both must go through a durable re-arm, which consumes the shared frozen
+    // reviewer-attempt budget. Re-dispatching the same attempt would reset the
+    // technical retry budget on every command invocation.
+    if (hasReleasedDispatch(assurance, bindable.attemptId)) {
       return { kind: 'interrupted_dispatch', obligation, attemptId: bindable.attemptId };
     }
     return { kind: 'awaiting_task', obligation, attemptId: bindable.attemptId };
   }
-  const authorization = authorizeOutputRepairReissue(assurance, obligation);
-  if (authorization.kind === 'authorized') {
-    return { kind: 'output_repair', obligation, authorization };
-  }
-  if (authorization.kind === 'integrity_blocked') {
+  // No bindable attempt remains. The frozen-material authority is verified
+  // FIRST: a broken binding is an integrity failure (no closure, no state
+  // mutation), while intact material with no legal attempt closes
+  // deterministically through the missing-attempt route.
+  const material = verifyFrozenMaterialForObligation(obligation, obligation.reviewMaterial);
+  if (material.kind === 'blocked') {
     return {
       kind: 'integrity_blocked',
       obligation,
-      code: authorization.code,
-      reason: authorization.reason,
+      code: material.code,
+      reason: material.reason,
     };
   }
-  if (authorization.kind === 'bindable_exists') return { kind: 'none' };
   return {
     kind: 'missing_attempt',
     obligation,
-    code: authorization.code,
-    reason: authorization.reason,
+    code: 'REVIEW_ATTEMPT_UNAVAILABLE',
+    reason: 'no bindable reviewer attempt exists and output repair is no longer authorized',
   };
 }

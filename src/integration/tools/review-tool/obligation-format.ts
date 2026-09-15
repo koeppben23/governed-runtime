@@ -1,5 +1,10 @@
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
-import type { FrozenReviewSubject, ReviewRepositoryIdentity } from '../../../state/evidence.js';
+import type {
+  FrozenRepositoryAuthority,
+  FrozenRepositoryRevisionTarget,
+  FrozenReviewSubject,
+  ReviewRepositoryIdentity,
+} from '../../../state/evidence.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from '../../review/assurance.js';
 
 /**
@@ -11,6 +16,35 @@ import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from '../../review/ass
 function sameRepositoryIdentity(a: ReviewRepositoryIdentity, b: ReviewRepositoryIdentity): boolean {
   if ('kind' in a) return 'kind' in b && a.rootCommitDigest === b.rootCommitDigest;
   return !('kind' in b) && a.host === b.host && a.owner === b.owner && a.name === b.name;
+}
+
+/**
+ * Explicit frozen repository authority for a frozen repository-change subject.
+ *
+ * Same-repository reviews mint a `candidate_pair`; distinct remote
+ * repositories (a fork PR) mint a `fork_pair`, which keeps the two repository
+ * identities explicit instead of silently re-pointing one side at the other.
+ * Non-repository subjects carry no repository authority.
+ */
+export function repositoryAuthorityFromSubject(
+  subject: FrozenReviewSubject | undefined,
+): FrozenRepositoryAuthority | undefined {
+  if (subject?.kind !== 'repository_change') return undefined;
+  const baseIdentity = subject.baseRepository;
+  const headIdentity = subject.headRepository ?? subject.baseRepository;
+  const base: FrozenRepositoryRevisionTarget = {
+    kind: 'commit',
+    repositoryIdentity: baseIdentity,
+    objectSha: subject.baseSha,
+  };
+  const head: FrozenRepositoryRevisionTarget = {
+    kind: 'commit',
+    repositoryIdentity: headIdentity,
+    objectSha: subject.headSha,
+  };
+  return sameRepositoryIdentity(baseIdentity, headIdentity)
+    ? { kind: 'candidate_pair', base, head }
+    : { kind: 'fork_pair', base, head };
 }
 
 /**
@@ -52,40 +86,14 @@ export function buildRequiredReviewAttestationPayload(obligationId: string): {
     reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
     recovery: [
       'Load the referenced content (PR diff via gh CLI, URL via webfetch, or use manual text).',
-      `Call Task tool with subagent_type: "${REVIEWER_SUBAGENT_TYPE}" and provide the content in the prompt.`,
-      'Pass the requiredReviewAttestation values to the subagent so it populates attestation.reviewedBy, attestation.mandateDigest, attestation.criteriaVersion, and attestation.toolObligationId exactly as provided.',
-      'Instruct the subagent to return a complete ReviewFindings object (reviewMode, reviewedBy, reviewedAt, attestation, blockingIssues, majorRisks, missingVerification, scopeCreep, unknowns).',
-      'Parse the subagent response as a ReviewFindings object - do NOT convert it to an array and do NOT drop attestation fields.',
-      'Re-run flowguard_review with reviewFindings set to the complete ReviewFindings object. In strict mode, copied attestation fields alone are diagnostic context only; FlowGuard must persist matching ReviewInvocationEvidence before the findings satisfy governance.',
+      `Run the ${REVIEWER_SUBAGENT_TYPE} through the configured SDK structured session.`,
+      'Bind the requiredReviewAttestation values to the structured reviewer invocation.',
+      'Wait for FlowGuard to capture a complete structured ReviewFindings object and re-run flowguard_review with reviewObligationId.',
     ],
   };
 }
 
-export function formatBlockedWithAttestation(
-  code: string,
-  message: string,
-  obligationId: string,
-): string {
-  if (code === 'HOST_SUBAGENT_TASK_REQUIRED') {
-    return JSON.stringify({
-      error: true,
-      code,
-      message,
-      reviewObligationId: obligationId,
-      requiredReviewAttestation: {
-        reviewedBy: REVIEWER_SUBAGENT_TYPE,
-        mandateDigest: REVIEW_MANDATE_DIGEST,
-        criteriaVersion: REVIEW_CRITERIA_VERSION,
-        toolObligationId: obligationId,
-      },
-      reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
-      recovery: [
-        `Call Task tool with subagent_type: "${REVIEWER_SUBAGENT_TYPE}" and provide the content plus requiredReviewAttestation.`,
-        'After FlowGuard captures the Task evidence, re-run flowguard_review with reviewObligationId set to requiredReviewAttestation.toolObligationId and reviewVerdict matching the reviewer overallVerdict.',
-        'Do not submit, copy, or alter reviewFindings in host-task mode.',
-      ],
-    });
-  }
+function formatBlockedWithAttestation(code: string, message: string, obligationId: string): string {
   return JSON.stringify({
     error: true,
     code,
@@ -95,19 +103,10 @@ export function formatBlockedWithAttestation(
   });
 }
 
-export function formatMissingContentAnalysis(
-  obligationId: string,
-  hostTaskRequired = false,
-): string {
-  // The host-task branch previously lived inside a plain double-quoted string
-  // nested in this template literal, so `${obligationId}` reached the agent
-  // verbatim instead of the real UUID.
-  const continuation = hostTaskRequired
-    ? `, then re-run flowguard_review with the original content fields, reviewObligationId '${obligationId}', and reviewVerdict matching the captured reviewer verdict. Do not submit or copy reviewFindings in host-task mode.`
-    : ' to analyze the provided content, then re-run flowguard_review with the complete ReviewFindings object. Manual JSON/attestation copy alone is not sufficient in strict mode; FlowGuard must persist matching ReviewInvocationEvidence.';
+export function formatMissingContentAnalysis(obligationId: string): string {
   return formatBlockedWithAttestation(
     'CONTENT_ANALYSIS_REQUIRED',
-    `Content-aware /review requires subagent analysis. Call the ${REVIEWER_SUBAGENT_TYPE} subagent via Task tool${continuation}`,
+    `Content-aware /review requires SDK structured analysis by ${REVIEWER_SUBAGENT_TYPE}. Re-run flowguard_review with reviewObligationId after FlowGuard captures the reviewer findings.`,
     obligationId,
   );
 }
@@ -115,7 +114,7 @@ export function formatMissingContentAnalysis(
 export function formatSubagentReviewNotInvoked(detail: string, obligationId: string): string {
   return formatBlockedWithAttestation(
     'SUBAGENT_REVIEW_NOT_INVOKED',
-    `Supplied reviewFindings did not pass subagent attestation: ${detail}. Re-run the ${REVIEWER_SUBAGENT_TYPE} subagent with the requiredReviewAttestation values and submit the complete ReviewFindings object. Copied attestation fields are diagnostic context only until FlowGuard persists matching ReviewInvocationEvidence.`,
+    `Host-observed structured reviewer evidence did not pass subagent attestation: ${detail}. Re-run the originating FlowGuard command so the host can create a fresh ${REVIEWER_SUBAGENT_TYPE} reviewer child session. Submit only the reviewVerdict; FlowGuard resolves the bound structured reviewer evidence automatically. Copied attestation fields are diagnostic context only until FlowGuard persists matching ReviewInvocationEvidence.`,
     obligationId,
   );
 }

@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 /**
  * @module cli/install
- * @description Executable FlowGuard CLI facade.
+ * @description Executable FlowGuard CLI entrypoint and repository-internal CLI test API.
  *
  * Install, uninstall, and doctor behavior live in cohesive command modules.
- * This file preserves the public CLI entrypoint and compatibility exports.
+ * This file owns CLI argument parsing, console formatting, process dispatch,
+ * and the intentionally shared CLI surface used by installer integration tests.
  */
 
 import { realpathSync } from 'node:fs';
@@ -18,7 +19,7 @@ import type { FlowGuardLogger } from '../logging/logger.js';
 import { HOST_IDS } from '../shared/hosts.js';
 import { POLICY_MODES } from '../state/policy-mode.js';
 import type { CliParseResult } from './parse-result.js';
-import { formatTargetPath, detectInstalledArtifacts } from './install-helpers.js';
+import { formatTargetPath, detectInstalledArtifacts, resolveTarget } from './install-helpers.js';
 import { formatRecoveryLines } from './install-recovery.js';
 import {
   type InstallScope,
@@ -33,31 +34,28 @@ import {
   PACKAGE_VERSION,
   SHIPPED_EXECUTABLE_CHECK,
   resolvePackageRoot,
-  resolveTarget,
-} from './install-helpers.js';
+} from './install-types.js';
 
-// ─── Re-exports for backward compatibility ─────────────────────────────────
-export {
-  type InstallScope,
-  type InstallPlatform,
-  type PolicyMode,
-  type CliAction,
-  type CliArgs,
-  type FileOp,
-  type CliResult,
-  type DoctorStatus,
-  type DoctorCheck,
-} from './install-helpers.js';
+export type {
+  InstallScope,
+  InstallPlatform,
+  PolicyMode,
+  CliAction,
+  CliArgs,
+  FileOp,
+  CliResult,
+  DoctorStatus,
+  DoctorCheck,
+} from './install-types.js';
 export {
   resolveTarget,
   formatTargetPath,
   sha256,
   computeMandatesDigest,
-  mergeReviewerTaskPermission,
-  hasNonFlowGuardInstructions,
   resolveOpencodeConfigPath,
-  FLOWGUARD_INSTRUCTION_ENTRIES,
 } from './install-helpers.js';
+export { mergeReviewerTaskPermission } from './install-json.js';
+export { hasNonFlowGuardInstructions, FLOWGUARD_INSTRUCTION_ENTRIES } from './install-types.js';
 export { doctor } from './doctor-command.js';
 export { checkLastSessionHandshake } from './doctor-handshake.js';
 export { checkPluginActivation } from './doctor-plugin.js';
@@ -138,19 +136,9 @@ function validateAndSetPlatform(st: ParseState, value: string): string | true {
   return true;
 }
 
-function validateAndSetPolicyMode(
-  st: ParseState,
-  deps: string[],
-  flag: string,
-  value: string,
-): string | true {
+function validateAndSetPolicyMode(st: ParseState, value: string): string | true {
   if (!isValidPolicyMode(value)) return `Invalid policy mode: ${value}`;
-  if (flag === '--mode') {
-    st.policyMode = value;
-    deps.push('--mode is deprecated, use --policy-mode');
-  } else {
-    st.policyMode = value;
-  }
+  st.policyMode = value;
   return true;
 }
 
@@ -170,12 +158,7 @@ function validateAndSetChecksums(st: ParseState, value: string): true {
   return true;
 }
 
-function handleValueFlag(
-  st: ParseState,
-  deps: string[],
-  flag: string,
-  value: string | null,
-): string | true {
+function handleValueFlag(st: ParseState, flag: string, value: string | null): string | true {
   if (value === null) return `${flag} requires a value`;
 
   switch (flag) {
@@ -185,8 +168,7 @@ function handleValueFlag(
     case '--host':
       return validateAndSetPlatform(st, value);
     case '--policy-mode':
-    case '--mode':
-      return validateAndSetPolicyMode(st, deps, flag, value);
+      return validateAndSetPolicyMode(st, value);
     case '--core-tarball':
       return validateAndSetTarball(st, value);
     case '--checksums-file':
@@ -197,13 +179,7 @@ function handleValueFlag(
   return `Unknown option: ${flag}`;
 }
 
-function parseOneArg(
-  st: ParseState,
-  deps: string[],
-  arg: string,
-  argv: string[],
-  i: number,
-): number | string {
+function parseOneArg(st: ParseState, arg: string, argv: string[], i: number): number | string {
   if (arg === '--help' || arg === '-h') return -2;
 
   const valueFlags = new Set([
@@ -216,9 +192,9 @@ function parseOneArg(
     '--log-mode',
   ]);
 
-  if (valueFlags.has(arg) || arg === '--mode') {
+  if (valueFlags.has(arg)) {
     const value = readNextValue(argv, i);
-    const result = handleValueFlag(st, deps, arg, value);
+    const result = handleValueFlag(st, arg, value);
     if (result !== true) return result;
     return 2;
   }
@@ -229,14 +205,6 @@ function parseOneArg(
       return 1;
     case '--allow-unverified-tarball':
       st.allowUnverifiedTarball = true;
-      return 1;
-    case '--global':
-      st.installScope = 'global';
-      deps.push('--global is deprecated, use --install-scope global');
-      return 1;
-    case '--project':
-      st.installScope = 'repo';
-      deps.push('--project is deprecated, use --install-scope repo');
       return 1;
     default:
       return -1;
@@ -258,36 +226,27 @@ function buildArgs(action: CliAction, st: ParseState): CliArgs {
   };
 }
 
-function makeDelegatedResult(
-  action: string,
-): CliParseResult<{ args: CliArgs; deprecations: string[] }> {
+function makeDelegatedResult(action: string): CliParseResult<CliArgs> {
   return {
     kind: 'ok',
     value: {
-      args: {
-        action: action as CliAction,
-        installScope: 'global',
-        scopeSource: 'default',
-        installPlatform: 'opencode',
-        policyMode: 'team',
-        force: false,
-      },
-      deprecations: [],
+      action: action as CliAction,
+      installScope: 'global',
+      scopeSource: 'default',
+      installPlatform: 'opencode',
+      policyMode: 'team',
+      force: false,
     },
   };
 }
 
-function parseInstallArgs(
-  action: CliAction,
-  argv: string[],
-): CliParseResult<{ args: CliArgs; deprecations: string[] }> {
+function parseInstallArgs(action: CliAction, argv: string[]): CliParseResult<CliArgs> {
   const st = initialParseState();
-  const deprecations: string[] = [];
 
   for (let i = 1; i < argv.length;) {
     const arg = argv[i];
     if (arg === undefined) return { kind: 'error', error: 'Unexpected empty argument' };
-    const advance = parseOneArg(st, deprecations, arg, argv, i);
+    const advance = parseOneArg(st, arg, argv, i);
     if (advance === -2) return { kind: 'help' };
     if (typeof advance === 'string')
       return { kind: 'error', error: advance, hint: 'Use --help for usage' };
@@ -303,13 +262,11 @@ function parseInstallArgs(
     };
   }
 
-  return { kind: 'ok', value: { args: buildArgs(action, st), deprecations } };
+  return { kind: 'ok', value: buildArgs(action, st) };
 }
 
 /** Parse CLI arguments from process.argv. */
-export function parseArgs(
-  argv: string[],
-): CliParseResult<{ args: CliArgs; deprecations: string[] }> {
+export function parseArgs(argv: string[]): CliParseResult<CliArgs> {
   const action = argv[0];
   if (action === '--help' || action === '-h') {
     return { kind: 'help' };
@@ -340,9 +297,7 @@ function countOps(ops: Array<{ action: string }>) {
   };
 }
 
-/**
- * Format a CliResult for human-readable console output.
- */
+/** Format a CliResult for human-readable console output. */
 export function formatResult(result: CliResult): string {
   const lines: string[] = [];
   const { written, merged, skipped, removed } = countOps(result.ops);
@@ -402,9 +357,7 @@ function computeOverallStatus(
   return 'HEALTHY';
 }
 
-/**
- * Format doctor check results for console output.
- */
+/** Format doctor check results for console output. */
 export function formatDoctor(checks: DoctorCheck[], host: InstallPlatform): string {
   const hostNames: Record<InstallPlatform, string> = {
     opencode: 'OpenCode',
@@ -509,11 +462,6 @@ Options:
   --checksums-file Path to checksums.sha256 (defaults to tarball-adjacent checksums.sha256)
   --allow-unverified-tarball
                    Supply-chain opt-out: install without tarball integrity verification (not recommended)
-
-Deprecated (still work):
-  --global    → --install-scope global
-  --project   → --install-scope repo
-  --mode X    → --policy-mode X
 
 Examples:
   npx --package ./flowguard-core-${v}.tgz flowguard install --core-tarball ./flowguard-core-${v}.tgz
@@ -682,16 +630,12 @@ export async function main(argv: string[]): Promise<number> {
     return 2;
   }
 
-  const { args, deprecations } = parsed.value;
+  const args = parsed.value;
 
   const cliLog = initCliLogger(
     resolveTarget(args.installScope, args.installPlatform ?? 'opencode'),
     args.logMode ?? 'console',
   );
-
-  for (const d of deprecations) {
-    console.error(`  [deprecated] ${d}`);
-  }
 
   cliLog.info('cli', 'command_started', {
     action: args.action,

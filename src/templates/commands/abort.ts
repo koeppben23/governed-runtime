@@ -1,4 +1,4 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 
 export const ABORT_COMMAND = `---
 description: FlowGuard — Emergency termination of the session.
@@ -31,7 +31,7 @@ Reason: $ARGUMENTS
 
 - Always inform the user of consequences before aborting.
 - After abort: the session is terminal — no further workflow actions apply.
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 ## Done-when
 
 - User informed of consequences.

@@ -35,13 +35,9 @@ function baseSession(stateOverrides: Record<string, unknown> = {}): Architecture
       selfReview: { iteration: 1 },
       ...stateOverrides,
     },
-    policy: {
-      selfReview: { strictEnforcement: false },
-      reviewInvocationPolicy: 'host_task_preferred',
-      maxSelfReviewIterations: 3,
-    },
+    policy: { maxSelfReviewIterations: 3 },
     ctx: {},
-  } as ArchitectureSession;
+  } as unknown as ArchitectureSession;
 }
 
 const baseContext = { sessionID: 'test-session' } as ToolContext;
@@ -78,6 +74,6 @@ describe('handleAdrReview', () => {
       ),
     );
     expect(result.error).toBe(true);
-    expect(result.code).toBe('REVIEW_FINDINGS_REQUIRED');
+    expect(result.code).toBe('SUBAGENT_EVIDENCE_MISSING');
   });
 });

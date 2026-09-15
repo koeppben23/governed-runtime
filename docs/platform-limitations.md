@@ -134,7 +134,7 @@ FlowGuard operates at different enforcement levels depending on the host platfor
 **Mitigation implemented**:
 
 1. **Explicit instructions**: FlowGuard tools return unambiguous instructions for invoking the native reviewer transport.
-2. **Evidence binding**: Claude/Codex review completion requires validated, obligation-bound `manual_attested` / transport ReviewInvocationEvidence. File presence, copied JSON, and `flowguard_decision` are not review evidence.
+2. **Evidence binding**: review completion requires a host-observed structured child-session invocation bound to the active obligation. Claude/Codex currently expose no such in-process structured session, so their review paths fail closed; file presence, copied JSON, and `flowguard_decision` are not review evidence.
 3. **Gate enforcement**: PreToolUse hook blocks mutating tools until review evidence exists on disk where the host can enforce hooks.
 4. **Escalating warnings**: PostToolUse hook surfaces time-based escalating warnings when review obligations remain pending (info → warn → critical).
 5. **Defense-in-depth**: `isSubagentAuthorized()` blocks unauthorized subagent types.
@@ -145,7 +145,7 @@ FlowGuard operates at different enforcement levels depending on the host platfor
 - `src/hooks/post-tool-use.ts:104-107` (escalation integration)
 - `src/hooks/shared/phase-gate.ts:isSubagentAuthorized()` (defense-in-depth)
 
-**Residual Risk**: MEDIUM — LLM may ignore reviewer instructions, or hook-gated hosts may fail open on hook failure. FlowGuard does not silently accept this: `host_task_required` still requires OpenCode host-visible plugin evidence, and Claude/Codex Mode B convergence is accepted only through validated `manual_attested` evidence bound to the active obligation, findings hash, session id, mandate digest, criteria version, and strict attestation.
+**Residual Risk**: MEDIUM — LLM may ignore reviewer instructions, or hook-gated hosts may fail open on hook failure. FlowGuard does not silently accept this: review convergence requires validated evidence bound to the active obligation, findings hash, session id, mandate digest, criteria version, and strict attestation.
 
 ---
 
@@ -255,20 +255,13 @@ and parallel-load abort (details below).
 **Decision (2026-07-24): parallel specialist coverage is NOT being built.** A
 design and scaffolding effort for the `full` review profile (a per-role prompt
 registry, fail-closed findings aggregation, and HIGH-RISK-to-`full` escalation)
-was prototyped and then **removed**, because parallel specialist fan-out over the
-SDK reviewer path is only reachable when `reviewInvocationPolicy` permits SDK
-spawns — i.e. only the SOLO preset (`host_task_preferred`). In the TEAM,
-TEAM_CI, and REGULATED presets the reviewer runs through the host-task path
-(`host_task_required`), where `invokeReviewer` blocks the SDK spawn and the
-agent spawns a single host-visible reviewer under a strict 1:1 obligation
-contract. HIGH-RISK work typically runs under exactly those stricter presets, so
-the intended benefit (parallel specialists on HIGH-RISK reviews) is not
-achievable via the SDK path, and delivering it through the host-task path would
-require breaking the fail-closed 1:1 obligation/evidence binding. The `full`
-review profile therefore remains a **reserved, inert enum value** (as before),
-with no producer, no marker, and no escalation. The verified host-capability
-evidence above is retained as reference; #736 (parallel specialist
-orchestration) is **not planned** on the SDK path.
+was prototyped and then **removed**. The product invokes one reviewer session at
+a time, so the intended benefit of parallel specialists for HIGH-RISK reviews
+cannot be achieved without changing the fail-closed 1:1 obligation/evidence
+binding. The `full` review profile therefore remains a **reserved, inert enum
+value** (as before), with no producer, no marker, and no escalation. The
+verified host-capability evidence above is retained as reference; #736 (parallel
+specialist orchestration) is **not planned**.
 
 **What has been built and what it proves**:
 

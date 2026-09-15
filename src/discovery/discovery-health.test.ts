@@ -10,8 +10,6 @@
  * - Degraded: read failures
  * - Degraded: multiple degradation types → healthy: false
  * - No healthy when any degradation present
- * - Missing diagnostics: sensible defaults
- * - Missing codeSurfaces: null status, no budget/read data
  * - ageWarning computed from collectedAt
  * - ageWarning null for recent discovery
  * - ageWarning null for missing/NaN collectedAt
@@ -24,16 +22,8 @@ import type { DiscoveryHealthAvailableProjection } from './discovery-health.js';
 
 function makeHealthyResult(overrides?: Partial<DiscoveryResult>): DiscoveryResult {
   return {
-    schemaVersion: 'discovery.v1',
+    schemaVersion: 'discovery.v2',
     collectedAt: new Date().toISOString(),
-    collectors: {
-      'repo-metadata': 'complete',
-      'stack-detection': 'complete',
-      topology: 'complete',
-      'surface-detection': 'complete',
-      'code-surface-analysis': 'complete',
-      'domain-signals': 'complete',
-    },
     diagnostics: [
       { name: 'repo-metadata', status: 'complete', durationMs: 12, timedOut: false },
       { name: 'stack-detection', status: 'complete', durationMs: 34, timedOut: false },
@@ -68,8 +58,22 @@ function makeHealthyResult(overrides?: Partial<DiscoveryResult>): DiscoveryResul
       ignorePaths: [],
     },
     surfaces: { api: [], persistence: [], cicd: [], security: [], layers: [] },
+    codeSurfaces: {
+      status: 'ok',
+      endpoints: [],
+      authBoundaries: [],
+      dataAccess: [],
+      integrations: [],
+      budget: {
+        scannedFiles: 0,
+        scannedBytes: 0,
+        maxFiles: 200,
+        maxBytesPerFile: 65536,
+        maxTotalBytes: 2097152,
+        timedOut: false,
+      },
+    },
     domainSignals: { keywords: [], glossarySources: [] },
-    validationHints: { commands: [], lintTools: [] },
     ...overrides,
   };
 }
@@ -94,7 +98,7 @@ describe('discovery-health', () => {
       expect(health.failedCollectorNames).toEqual([]);
       expect(health.hasBudgetExhaustion).toBe(false);
       expect(health.readFailureCount).toBe(0);
-      expect(health.codeSurfaceStatus).toBe(null);
+      expect(health.codeSurfaceStatus).toBe('ok');
       expect(health.kind).toBe('derived_discovery_health');
       expect(health.advisory).toBe(true);
       expect(health.source).toBe('persisted_discovery_result');
@@ -258,24 +262,6 @@ describe('discovery-health', () => {
       expect(health.failedCollectorNames).toEqual(['stack-detection', 'code-surface-analysis']);
       expect(health.hasBudgetExhaustion).toBe(true);
       expect(health.readFailureCount).toBe(1);
-    });
-
-    it('missing diagnostics: defaults to zero counts', () => {
-      const result = makeHealthyResult({ diagnostics: undefined });
-      const health = extractAvailableHealth(result);
-      expect(health.completeCollectors).toBe(0);
-      expect(health.partialCollectors).toBe(0);
-      expect(health.failedCollectors).toBe(0);
-      expect(health.failedCollectorNames).toEqual([]);
-      expect(health.healthy).toBe(true);
-    });
-
-    it('missing codeSurfaces: null status, no budget/read data', () => {
-      const result = makeHealthyResult({ codeSurfaces: undefined });
-      const health = extractAvailableHealth(result);
-      expect(health.codeSurfaceStatus).toBe(null);
-      expect(health.hasBudgetExhaustion).toBe(false);
-      expect(health.readFailureCount).toBe(0);
     });
 
     it('ageWarning computed correctly for old discovery', () => {

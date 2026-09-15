@@ -39,14 +39,16 @@ import {
   type TaskClass,
 } from '../state/schema.js';
 import type { BindingInfo } from '../state/evidence.js';
-import { FINGERPRINT_PATTERN } from '../state/evidence.js';
-import type { ActorInfo } from '../audit/types.js';
+import { FINGERPRINT_PATTERN } from '../shared/repository-fingerprint.js';
+import type { ActorInfo } from '../state/evidence.js';
 import type { DecisionIdentity } from '../state/evidence.js';
-import type { DiscoverySummary } from '../discovery/types.js';
-import type { DetectedStack } from '../discovery/types.js';
-import type { VerificationCandidates } from '../discovery/types.js';
-import type { ExecutionSubjectInput } from '../state/discovery-schemas.js';
-import type { IdpConfig, IdentityProviderMode } from '../identity/types.js';
+import type {
+  DetectedStack,
+  DiscoverySummary,
+  ExecutionSubjectInput,
+  VerificationCandidates,
+} from '../state/discovery-schemas.js';
+import type { IdpConfig, IdentityProviderMode } from '../shared/policy-idp-config.js';
 import { evaluate } from '../machine/evaluate.js';
 import type { RailResult, RailBlocked, RailContext } from './types.js';
 import { blocked } from '../config/reasons.js';
@@ -117,7 +119,6 @@ export interface HydratePolicyInput {
   readonly policyPathHint?: string;
   readonly maxSelfReviewIterations?: number;
   readonly maxImplReviewIterations?: number;
-  readonly requireVerifiedActorsForApproval?: boolean;
   readonly identityProvider?: IdpConfig;
   readonly identityProviderMode?: IdentityProviderMode;
   readonly minimumActorAssuranceForApproval?: 'best_effort' | 'claim_validated' | 'idp_verified';
@@ -177,9 +178,6 @@ export function applyHydrateOverrides(
       : {}),
     ...(p.maxImplReviewIterations !== undefined
       ? { maxImplReviewIterations: p.maxImplReviewIterations }
-      : {}),
-    ...(p.requireVerifiedActorsForApproval !== undefined
-      ? { requireVerifiedActorsForApproval: p.requireVerifiedActorsForApproval }
       : {}),
     ...(p.identityProvider !== undefined ? { identityProvider: p.identityProvider } : {}),
     ...(p.identityProviderMode !== undefined
@@ -360,6 +358,7 @@ function buildNewHydrateState(
     pendingAuditOperations: [],
     error: null,
     createdAt: now,
+    regulatedArchiveStatus: null,
   };
 
   const result = evaluate(newState, ctx.policy);

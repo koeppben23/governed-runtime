@@ -20,7 +20,6 @@ import {
   withReadOnlySession,
   formatBlocked,
   formatEval,
-  appendNextAction,
   enrichWithNextAction,
 } from './helpers.js';
 
@@ -190,19 +189,21 @@ async function buildProofGraphProjectionResponse(
   });
   const registrationConsistency = checkRegistrationConsistency();
   const configConsistency = checkConfigDefaultConsistency();
-  return appendNextAction(
-    JSON.stringify({
-      phase: state.phase,
-      sessionId: state.id,
-      proofGraph,
-      persistedProofGraph: summarizePersistedProofGraph(state),
-      proofApprovals: buildProofApprovalProjection(state),
-      proofGraphGate,
-      registrationConsistency,
-      configConsistency,
-      ...checkFields,
-    }),
-    state,
+  return JSON.stringify(
+    enrichWithNextAction(
+      {
+        phase: state.phase,
+        sessionId: state.id,
+        proofGraph,
+        persistedProofGraph: summarizePersistedProofGraph(state),
+        proofApprovals: buildProofApprovalProjection(state),
+        proofGraphGate,
+        registrationConsistency,
+        configConsistency,
+        ...checkFields,
+      },
+      state,
+    ),
   );
 }
 
@@ -217,78 +218,95 @@ interface ResolveProjectionInput {
   readonly presentation: PresentationRenderOptions;
 }
 
-async function resolveProjection(input: ResolveProjectionInput): Promise<string | null> {
-  const { args, state, policy, sessDir, presentation } = input;
-  const checkFields = buildCheckProjectionFields(state, policy);
-  // /finish is the most comprehensive focused projection and is placed first so
-  // its own template call is never shadowed by a stray additional flag. This
-  // preserves the existing first-match dispatch semantics for all other flags.
-  if (args.finish) {
-    const reviewReport = await readReport(sessDir);
-    const finishCard = buildFinishCard(state, policy, reviewReport);
-    const finishPres = buildFinishPresentationProjection(state, finishCard);
-    const finishDoc = buildFinishDocument(finishPres);
-    return appendNextAction(
-      JSON.stringify({
+async function buildFinishProjectionResponse(
+  input: ResolveProjectionInput,
+  checkFields: Record<string, unknown>,
+): Promise<string> {
+  const { state, policy, sessDir, presentation } = input;
+  const reviewReport = await readReport(sessDir);
+  const finishCard = buildFinishCard(state, policy, reviewReport);
+  const finishPres = buildFinishPresentationProjection(state, finishCard);
+  const finishDoc = buildFinishDocument(finishPres);
+  return JSON.stringify(
+    enrichWithNextAction(
+      {
         phase: state.phase,
         sessionId: state.id,
         finish: finishCard,
         ...checkFields,
         presentation: { markdown: renderMarkdown(finishDoc, presentation) },
-      }),
+      },
       state,
-    );
+    ),
+  );
+}
+async function resolveProjection(input: ResolveProjectionInput): Promise<string | null> {
+  const { args, state, policy, presentation } = input;
+  const checkFields = buildCheckProjectionFields(state, policy);
+  // /finish is the most comprehensive focused projection and is placed first so
+  // its own template call is never shadowed by a stray additional flag. This
+  // preserves the existing first-match dispatch semantics for all other flags.
+  if (args.finish) {
+    return await buildFinishProjectionResponse(input, checkFields);
   }
   if (args.whyBlocked) {
     const blocked = buildBlockedProjection(state, policy);
     const whyPres = buildWhyPresentationProjection(state, policy, blocked);
     const whyDoc = buildWhyDocument(whyPres);
     emitDetailRequested(state);
-    return appendNextAction(
-      JSON.stringify({
-        phase: state.phase,
-        sessionId: state.id,
-        whyBlocked: blocked,
-        ...checkFields,
-        presentation: { markdown: renderMarkdown(whyDoc, presentation) },
-      }),
-      state,
+    return JSON.stringify(
+      enrichWithNextAction(
+        {
+          phase: state.phase,
+          sessionId: state.id,
+          whyBlocked: blocked,
+          ...checkFields,
+          presentation: { markdown: renderMarkdown(whyDoc, presentation) },
+        },
+        state,
+      ),
     );
   }
   if (args.evidence) {
     const evidenceDetail = buildEvidenceDetailProjection(state);
-    return appendNextAction(
-      JSON.stringify({
-        phase: state.phase,
-        sessionId: state.id,
-        evidence: evidenceDetail,
-        ...checkFields,
-      }),
-      state,
+    return JSON.stringify(
+      enrichWithNextAction(
+        {
+          phase: state.phase,
+          sessionId: state.id,
+          evidence: evidenceDetail,
+          ...checkFields,
+        },
+        state,
+      ),
     );
   }
   if (args.context) {
     const contextDetail = buildContextProjection(state);
-    return appendNextAction(
-      JSON.stringify({
-        phase: state.phase,
-        sessionId: state.id,
-        context: contextDetail,
-        ...checkFields,
-      }),
-      state,
+    return JSON.stringify(
+      enrichWithNextAction(
+        {
+          phase: state.phase,
+          sessionId: state.id,
+          context: contextDetail,
+          ...checkFields,
+        },
+        state,
+      ),
     );
   }
   if (args.readiness) {
     const readinessDetail = buildReadinessProjection(state, policy);
-    return appendNextAction(
-      JSON.stringify({
-        phase: state.phase,
-        sessionId: state.id,
-        readiness: readinessDetail,
-        ...checkFields,
-      }),
-      state,
+    return JSON.stringify(
+      enrichWithNextAction(
+        {
+          phase: state.phase,
+          sessionId: state.id,
+          readiness: readinessDetail,
+          ...checkFields,
+        },
+        state,
+      ),
     );
   }
   if (args.proofGraph) {
@@ -593,7 +611,7 @@ function buildFullStatusResponse(input: FullStatusInput): string {
     ),
     discoveryDrift,
     implementationGuidance,
-    archiveStatus: state.archiveStatus ?? null,
+    archiveStatus: state.regulatedArchiveStatus ?? null,
     appliedPolicy: buildAppliedPolicyStatus(state),
     ...buildProfileStatus(state, discoveryHealth, input.runtimeCandidates),
     ...buildEvidenceStatus(state),

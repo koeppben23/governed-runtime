@@ -292,7 +292,7 @@ function checkChainIntegrity(chainVerification: ChainVerification): ComplianceCh
     return {
       name: 'chain_integrity',
       passed: true,
-      detail: `Chain verified: ${chainVerification.verifiedCount} events, ${chainVerification.skippedCount} skipped`,
+      detail: `Chain verified: ${chainVerification.verifiedCount} events`,
     };
   }
 

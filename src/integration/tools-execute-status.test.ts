@@ -36,8 +36,9 @@ import {
 } from '../adapters/persistence.js';
 import { writeStateWithArtifacts } from './tools/helpers.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
-import { REVIEW_REPORT_SCHEMA_ID } from '../shared/flowguard-identifiers.js';
-import { computeRecordDigest } from '../state/evidence-plan.js';
+import { REVIEW_REPORT_SCHEMA_ID } from '../state/evidence-identifiers.js';
+import { makePlanRevision } from '../state/evidence-test-constants.js';
+import { completedDispatchForInvocation } from '../state/evidence-test-constants.js';
 import {
   artifactReviewSubjectScope,
   buildInvocationEvidence,
@@ -47,6 +48,7 @@ import {
   REVIEW_MANDATE_DIGEST,
 } from './review/assurance.js';
 import { hashFindings } from './review/findings-hash.js';
+import { hostTaskDispatchPlan } from './tools/review-validation-test-helpers.js';
 import type { ReviewFindings } from '../state/evidence.js';
 // ─── Zod v4 Metadata Regression (P1 review gate) ──────────────────────────────
 describe('tool-schemas-zod-v4', () => {
@@ -124,6 +126,7 @@ vi.mock('../adapters/actor', async (importOriginal) => {
       id: 'test-operator',
       email: 'test@flowguard.dev',
       source: 'env',
+      assurance: 'best_effort',
     }),
   };
 });
@@ -251,7 +254,7 @@ describe('status', () => {
       expect(pg.criticalClaimCount).toBe(0);
       expect(pg.criticalUnprovenCount).toBe(0);
       const projection = pg.projection as Record<string, unknown>;
-      expect(projection.version).toBe('proofgraph.v1');
+      expect(projection.version).toBe('proofgraph.v2');
       expect(projection.claims).toEqual([]);
       expect(result.persistedProofGraph).toEqual({
         coverage: 'NOT_DECLARED',
@@ -374,8 +377,7 @@ describe('status', () => {
       const ds = result.detectedStack as Record<string, unknown>;
       expect(Array.isArray(ds.items)).toBe(true);
       expect((ds.items as unknown[]).length).toBeGreaterThan(0);
-      expect(Array.isArray(ds.versions)).toBe(true);
-      expect((ds.versions as unknown[]).length).toBe(0);
+      expect(ds).not.toHaveProperty('versions');
     });
 
     it('returns full detectedStack object with summary and versions', async () => {
@@ -394,10 +396,6 @@ describe('status', () => {
             { kind: 'language', id: 'java', version: '21', evidence: 'pom.xml:<java.version>' },
             { kind: 'framework', id: 'spring-boot', version: '3.4.1' },
           ],
-          versions: [
-            { id: 'java', version: '21', target: 'language', evidence: 'pom.xml:<java.version>' },
-            { id: 'spring-boot', version: '3.4.1', target: 'framework' },
-          ],
         },
       });
       const result = parseToolResult(await status.execute({}, ctx));
@@ -407,7 +405,6 @@ describe('status', () => {
       const ds = result.detectedStack as Record<string, unknown>;
       expect(ds.summary).toBe('java=21, spring-boot=3.4.1');
       expect(Array.isArray(ds.items)).toBe(true);
-      expect(Array.isArray(ds.versions)).toBe(true);
 
       const items = ds.items as Array<Record<string, unknown>>;
       expect(items).toHaveLength(2);
@@ -422,21 +419,6 @@ describe('status', () => {
         id: 'spring-boot',
         version: '3.4.1',
       });
-
-      const versions = ds.versions as Array<Record<string, unknown>>;
-      expect(versions).toHaveLength(2);
-      expect(versions[0]).toMatchObject({
-        id: 'java',
-        version: '21',
-        target: 'language',
-        evidence: 'pom.xml:<java.version>',
-      });
-      expect(versions[1]).toMatchObject({
-        id: 'spring-boot',
-        version: '3.4.1',
-        target: 'framework',
-      });
-      expect(versions[1]?.evidence).toBeUndefined();
     });
 
     it('returns verificationCandidates array (empty by default)', async () => {
@@ -718,7 +700,7 @@ describe('status', () => {
             version: 'challenge-policy.v1',
             counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
           },
-          maxReviewerOutputRepairAttempts: 1,
+          maxReviewerAttempts: 1,
         },
         obligationType: 'architecture',
         iteration: 0,
@@ -746,6 +728,7 @@ describe('status', () => {
         missingVerification: [],
         scopeCreep: [],
         unknowns: [],
+        challenges: [],
         reviewedBy: { sessionId: 'ses-child' },
         reviewedAt: '2026-01-01T00:00:00.000Z',
         attestation: {
@@ -765,12 +748,11 @@ describe('status', () => {
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           parentSessionId: ctx.sessionID,
           childSessionId: 'ses-child',
-          invocationMode: 'host_subagent_task',
-          hostVisible: true,
-          promptHash: 'sha256-prompt',
+          promptHash: 'a'.repeat(64),
           findingsHash: hashFindings(findings),
           invokedAt: '2026-01-01T00:00:00.000Z',
-          source: 'host-orchestrated',
+          capturedRawFindings: findings,
+          attemptId: '00000000-0000-4000-8000-000000000123',
         }),
         consumedByObligationId: obligation.obligationId,
       };
@@ -797,10 +779,33 @@ describe('status', () => {
         },
         reviewAssurance: {
           assuranceSchemaVersion: 'review-assurance.v6' as const,
-          obligations: [{ ...obligation, status: 'consumed' as const }],
+          obligations: [
+            {
+              ...obligation,
+              status: 'consumed' as const,
+              invocationId: invocation.invocationId,
+              fulfilledAt: '2026-01-01T00:00:00.000Z',
+              consumedAt: '2026-01-01T00:00:00.000Z',
+            },
+          ],
           invocations: [invocation],
-          attempts: [],
-          dispatches: [],
+          attempts: [
+            {
+              attemptId: '00000000-0000-4000-8000-000000000123',
+              obligationId: obligation.obligationId,
+              obligationType: 'architecture' as const,
+              subjectDigest: obligation.subjectDigest,
+              ordinal: 1,
+              childSessionId: 'ses-child',
+              status: 'bound' as const,
+              origin: { kind: 'initial' as const },
+              repositoryDiscovery: { kind: 'not_applicable' as const },
+              observations: [] as const,
+              createdAt: '2026-01-01T00:00:00.000Z',
+              completedAt: '2026-01-01T00:00:00.000Z',
+            },
+          ],
+          dispatches: [completedDispatchForInvocation(invocation)],
         },
       };
       await writeState(sessDir, state);
@@ -1364,6 +1369,7 @@ describe('declare_contract', () => {
         { kind: 'validation_attempt' as const, attemptId: state!.validationAttempts[1]!.attemptId },
       ],
       counterexampleRequirement: {
+        kind: 'assertion' as const,
         checkId: 'security',
         assertion: { providerId: 'junit', localId: 'com.example.SecurityTest#verify' },
       },
@@ -1376,28 +1382,11 @@ describe('declare_contract', () => {
     await writeStateWithArtifacts(sessDir, {
       ...state!,
       plan: {
-        current: {
-          body: 'manual authority plan',
-          digest: 'plan-digest',
-          sections: [],
-          createdAt: NOW,
-          recordDigest: computeRecordDigest({
-            contentDigest: 'plan-digest',
-            planVersion: 1,
-            supersedesRecordDigest: null,
-            originatingReviewObligationId: null,
-            revisionReason: null,
-          }),
-          planVersion: 1,
-          supersedesRecordDigest: null,
-          originatingReviewObligationId: null,
-          revisionReason: null,
-          lineageStatus: 'verified' as const,
-        },
+        current: makePlanRevision({ body: 'manual authority plan', createdAt: NOW }),
         history: [],
         reviewCompletion: 'pending',
       },
-      proofContract: { version: 'contract.v1', claims: [existingClaim] },
+      proofContract: { version: 'contract.v2', claims: [existingClaim] },
       proofContractCoverage: coverage,
     });
 
@@ -1465,7 +1454,7 @@ describe('declare_contract', () => {
     await writeStateWithArtifacts(sessDir, {
       ...state!,
       proofContract: {
-        version: 'contract.v1',
+        version: 'contract.v2',
         claims: [
           {
             claimId,

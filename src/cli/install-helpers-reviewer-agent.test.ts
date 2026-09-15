@@ -1,12 +1,13 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { withTestEnv } from '../integration/test-helpers.js';
-import {
-  buildReviewerAgentContent,
-  reviewerDefinitionForPlatform,
-  FLOWGUARD_REVIEWER_MODEL_ENV,
-  FLOWGUARD_REVIEWER_EFFORT_ENV,
-} from './install-helpers.js';
+import { buildReviewerAgentContent, reviewerDefinitionForPlatform } from './install-helpers.js';
+import { FLOWGUARD_REVIEWER_EFFORT_ENV, FLOWGUARD_REVIEWER_MODEL_ENV } from './install-types.js';
 import { REVIEWER_AGENT, CLAUDE_REVIEWER_AGENT, CODEX_REVIEWER_SUBAGENT } from './templates.js';
+
+const OPENCODE_STRUCTURED_REVIEWER = REVIEWER_AGENT.replace(
+  '---\n',
+  '---\nreasoningEffort: none\n',
+);
 
 describe('buildReviewerAgentContent', () => {
   let restoreEnv: (() => void) | undefined;
@@ -18,22 +19,22 @@ describe('buildReviewerAgentContent', () => {
 
   // ─── HAPPY ──────────────────────────────────────────────────────────────────
 
-  it('T11: returns template unchanged when FLOWGUARD_REVIEWER_MODEL absent', () => {
+  it('T11: retains the OpenCode structured-review profile when FLOWGUARD_REVIEWER_MODEL is absent', () => {
     restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: undefined });
-    const result = buildReviewerAgentContent(REVIEWER_AGENT);
-    expect(result).toBe(REVIEWER_AGENT);
+    const result = buildReviewerAgentContent(REVIEWER_AGENT, 'opencode');
+    expect(result).toBe(OPENCODE_STRUCTURED_REVIEWER);
   });
 
   it('T13: injects model: into frontmatter when FLOWGUARD_REVIEWER_MODEL set', () => {
     restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: 'opencode/big-pickle' });
-    const result = buildReviewerAgentContent(REVIEWER_AGENT);
+    const result = buildReviewerAgentContent(REVIEWER_AGENT, 'opencode');
     expect(result).toContain('model: opencode/big-pickle');
     expect(result).not.toBe(REVIEWER_AGENT);
   });
 
   it('T14: injected model: appears between --- and description:', () => {
     restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: 'gpt-5.2' });
-    const result = buildReviewerAgentContent(REVIEWER_AGENT);
+    const result = buildReviewerAgentContent(REVIEWER_AGENT, 'opencode');
     const lines = result.split('\n');
     const dashIndex = lines.indexOf('---');
     const modelIndex = lines.findIndex((l) => l.startsWith('model:'));
@@ -45,41 +46,51 @@ describe('buildReviewerAgentContent', () => {
 
   // ─── BAD ────────────────────────────────────────────────────────────────────
 
-  it('T12: returns template unchanged when FLOWGUARD_REVIEWER_MODEL is empty string', () => {
+  it('T12: retains the OpenCode structured-review profile when FLOWGUARD_REVIEWER_MODEL is empty', () => {
     restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: '' });
-    const result = buildReviewerAgentContent(REVIEWER_AGENT);
-    expect(result).toBe(REVIEWER_AGENT);
+    const result = buildReviewerAgentContent(REVIEWER_AGENT, 'opencode');
+    expect(result).toBe(OPENCODE_STRUCTURED_REVIEWER);
   });
 
-  it('T12b: returns template unchanged when FLOWGUARD_REVIEWER_MODEL is whitespace only', () => {
+  it('T12b: retains the OpenCode structured-review profile when FLOWGUARD_REVIEWER_MODEL is whitespace', () => {
     restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: '   \t  ' });
-    const result = buildReviewerAgentContent(REVIEWER_AGENT);
-    expect(result).toBe(REVIEWER_AGENT);
+    const result = buildReviewerAgentContent(REVIEWER_AGENT, 'opencode');
+    expect(result).toBe(OPENCODE_STRUCTURED_REVIEWER);
   });
 
   it('T15: throws on newline in FLOWGUARD_REVIEWER_MODEL (YAML injection prevention)', () => {
     restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: 'bad-model\nhidden: false' });
-    expect(() => buildReviewerAgentContent(REVIEWER_AGENT)).toThrow(/newline characters/);
+    expect(() => buildReviewerAgentContent(REVIEWER_AGENT, 'opencode')).toThrow(
+      /newline characters/,
+    );
   });
 
   it('T15b: throws on carriage return in FLOWGUARD_REVIEWER_MODEL', () => {
     restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: 'bad-model\rinjected: true' });
-    expect(() => buildReviewerAgentContent(REVIEWER_AGENT)).toThrow(/newline characters/);
+    expect(() => buildReviewerAgentContent(REVIEWER_AGENT, 'opencode')).toThrow(
+      /newline characters/,
+    );
   });
 
   it('T16: throws on invalid characters in FLOWGUARD_REVIEWER_MODEL', () => {
     restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: 'model with spaces' });
-    expect(() => buildReviewerAgentContent(REVIEWER_AGENT)).toThrow(/invalid characters/);
+    expect(() => buildReviewerAgentContent(REVIEWER_AGENT, 'opencode')).toThrow(
+      /invalid characters/,
+    );
   });
 
   it('T16b: throws on shell metacharacters in FLOWGUARD_REVIEWER_MODEL', () => {
     restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: '$(whoami)' });
-    expect(() => buildReviewerAgentContent(REVIEWER_AGENT)).toThrow(/invalid characters/);
+    expect(() => buildReviewerAgentContent(REVIEWER_AGENT, 'opencode')).toThrow(
+      /invalid characters/,
+    );
   });
 
   it('T16c: throws on quotes in FLOWGUARD_REVIEWER_MODEL', () => {
     restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: '"injected"' });
-    expect(() => buildReviewerAgentContent(REVIEWER_AGENT)).toThrow(/invalid characters/);
+    expect(() => buildReviewerAgentContent(REVIEWER_AGENT, 'opencode')).toThrow(
+      /invalid characters/,
+    );
   });
 
   // ─── CORNER ─────────────────────────────────────────────────────────────────
@@ -97,7 +108,7 @@ describe('buildReviewerAgentContent', () => {
     for (const id of validIds) {
       const cleanup = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: id });
       try {
-        const result = buildReviewerAgentContent(REVIEWER_AGENT);
+        const result = buildReviewerAgentContent(REVIEWER_AGENT, 'opencode');
         expect(result).toContain(`model: ${id}`);
       } finally {
         cleanup();
@@ -118,7 +129,7 @@ describe('buildReviewerAgentContent', () => {
 
   it('EDGE: trims whitespace from model ID', () => {
     restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: '  opencode/big-pickle  ' });
-    const result = buildReviewerAgentContent(REVIEWER_AGENT);
+    const result = buildReviewerAgentContent(REVIEWER_AGENT, 'opencode');
     expect(result).toContain('model: opencode/big-pickle');
     // No leading/trailing whitespace in the model value
     expect(result).not.toContain('model:   ');
@@ -126,22 +137,22 @@ describe('buildReviewerAgentContent', () => {
 
   it('EDGE: preserves rest of template unchanged', () => {
     restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: 'test-model' });
-    const result = buildReviewerAgentContent(REVIEWER_AGENT);
+    const result = buildReviewerAgentContent(REVIEWER_AGENT, 'opencode');
     // Remove the injected model line and compare
     const withoutModel = result.replace('model: test-model\n', '');
-    expect(withoutModel).toBe(REVIEWER_AGENT);
+    expect(withoutModel).toBe(OPENCODE_STRUCTURED_REVIEWER);
   });
 
   it('EDGE: handles template without newline gracefully', () => {
     restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: undefined });
-    const result = buildReviewerAgentContent('no-newline');
+    const result = buildReviewerAgentContent('no-newline', 'opencode');
     expect(result).toBe('no-newline');
   });
 
   it('EDGE: handles template without newline when env var set', () => {
     restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: 'some-model' });
     // Defensive: malformed template with no newline returns template unchanged
-    const result = buildReviewerAgentContent('no-newline');
+    const result = buildReviewerAgentContent('no-newline', 'opencode');
     expect(result).toBe('no-newline');
   });
 
@@ -153,7 +164,7 @@ describe('buildReviewerAgentContent', () => {
 
   it('SMOKE: injected content is valid YAML frontmatter', () => {
     restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: 'opencode/big-pickle' });
-    const result = buildReviewerAgentContent(REVIEWER_AGENT);
+    const result = buildReviewerAgentContent(REVIEWER_AGENT, 'opencode');
     // Verify the frontmatter block is well-formed: starts with ---, ends with ---
     const lines = result.split('\n');
     expect(lines[0]).toBe('---');
@@ -204,10 +215,22 @@ describe('buildReviewerAgentContent — per-host reasoning-effort injection', ()
     expect(result).not.toContain('effort: high');
   });
 
-  it('F4-2: opencode default platform also uses reasoningEffort', () => {
+  it('F4-2: opencode uses reasoningEffort when explicitly selected', () => {
     restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_EFFORT_ENV]: 'medium' });
-    const result = buildReviewerAgentContent(REVIEWER_AGENT);
+    const result = buildReviewerAgentContent(REVIEWER_AGENT, 'opencode');
     expect(frontmatterLines(result)).toContain('reasoningEffort: medium');
+  });
+
+  it('F4-2a: opencode defaults the structured reviewer to non-thinking mode', () => {
+    restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_EFFORT_ENV]: undefined });
+    const result = buildReviewerAgentContent(REVIEWER_AGENT, 'opencode');
+    expect(frontmatterLines(result)).toContain('reasoningEffort: none');
+  });
+
+  it('F4-2b: opencode accepts none as the explicit non-thinking effort', () => {
+    restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_EFFORT_ENV]: 'none' });
+    const result = buildReviewerAgentContent(REVIEWER_AGENT, 'opencode');
+    expect(frontmatterLines(result)).toContain('reasoningEffort: none');
   });
 
   // ─── HAPPY: claude-code uses effort key ───────────────────────────────────────
@@ -242,10 +265,10 @@ describe('buildReviewerAgentContent — per-host reasoning-effort injection', ()
     expect(() => buildReviewerAgentContent(REVIEWER_AGENT, 'opencode')).toThrow(/invalid value/);
   });
 
-  it('F4-7: empty/whitespace effort leaves template unchanged', () => {
+  it('F4-7: empty/whitespace effort retains the OpenCode non-thinking default', () => {
     restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_EFFORT_ENV]: '   ' });
     const result = buildReviewerAgentContent(REVIEWER_AGENT, 'opencode');
-    expect(result).toBe(REVIEWER_AGENT);
+    expect(frontmatterLines(result)).toContain('reasoningEffort: none');
   });
 
   // ─── GOVERNANCE INVARIANCE: tuning never alters the mandate body ──────────────

@@ -3,14 +3,12 @@
  * @description Standard review pipeline for plan, implementation, and architecture reviews.
  *
  * Creates review obligations, builds prompts, invokes the reviewer subagent,
- * handles success/failure paths, enforces strict gates, records evidence,
+ * handles success/failure paths, enforces review gates, records evidence,
  * and emits audit events.
  */
 
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 import type { ReviewObligationType } from '../../state/evidence.js';
-import type { CapturedFindings } from './enforcement/types.js';
-import { recordPluginReview } from './enforcement/enforcement.js';
 import { prepareReviewerFindingsForValidation } from './enforcement/prepare-findings.js';
 import {
   REVIEW_CRITERIA_VERSION,
@@ -21,22 +19,24 @@ import {
   hashText,
 } from './assurance.js';
 import { buildMutatedOutput, type ReviewerSuccessResult } from './orchestrator.js';
+import { persistAuthorizedSdkDispatch, abandonSdkDispatch } from '../durable-dispatch.js';
+import { hasReleasedDispatch } from '../../state/review-continuation.js';
 import { selectReviewerProfileRules } from './prompt-builders.js';
 import { getToolArgs, strictBlockedOutput } from '../plugin-helpers.js';
 import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_ARCHITECTURE } from '../tool-names.js';
 import { obligationTypeForTool } from './obligation-tools.js';
 import { updateObligation } from './obligation-state.js';
 import { recordAssuranceWithAudit } from './shared-helpers.js';
-import { REASON_HOST_SUBAGENT_TASK_REQUIRED } from '../../shared/flowguard-identifiers.js';
 import type { PipelineContext } from './pipeline-types.js';
-import type { EvidenceRecordResult } from './pipeline-types.js';
 import { buildSdkEvidenceAuditIntents } from './sdk-evidence-recorder.js';
+import type { SdkEvidenceRecordResult } from './sdk-evidence-recorder.js';
+import { buildReviewChallengeContract } from './challenge-contract.js';
+import { collectPreviouslyUsedChallengeIds } from './challenge-history.js';
+import { validateChallengeConsistency } from './enforcement/challenge-consistency.js';
 import {
   validatePipelineAttestation,
   recordEvidenceOrBlockReuse,
   blockReviewOutcomeHelper,
-  isStrictEnforcementEnabled,
-  getReviewerPolicies,
   isOutputAlreadyBlocked,
   buildToolPrompt,
   buildAttemptFailedLogger,
@@ -61,8 +61,6 @@ export async function runStandardReviewPipeline(
     deps.log.warn('orchestrator', 'unsupported reviewable tool — blocked', { tool: toolName });
     return;
   }
-
-  const strictEnforcement = isStrictEnforcementEnabled(sessionState);
 
   // Hard subject-authority gate: no exact obligation ⇒ no reviewer execution.
   // A missing or type-mismatched obligation must never let the pipeline fall
@@ -98,27 +96,69 @@ export async function runStandardReviewPipeline(
     return;
   }
 
-  const assuranceResult = await recordObligationHandshake(ctx, obligationType, strictEnforcement);
+  // Resolve the pre-authorized attempt BEFORE the host release: the durable
+  // dispatch ledger entry is written between session.create and
+  // session.prompt, so the attempt identity must exist up front.
+  const dispatchAttempt = resolveDispatchAuthorizedAttempt(ctx);
+  if (!dispatchAttempt) return;
 
+  const assuranceResult = await recordObligationHandshake(ctx, obligationType);
   if (blockOnAuditFailure(ctx, assuranceResult)) return;
 
   const prompt = await buildStandardPromptAndLog(ctx, toolName, input);
   if (!prompt) return;
 
-  const reviewerResult = await spawnStandardReviewer(ctx, toolName, prompt);
+  const reviewerResult = await spawnStandardReviewer(
+    ctx,
+    toolName,
+    prompt,
+    dispatchAttempt.attemptId,
+  );
   await handleStandardReviewerResult(ctx, {
     toolName,
     reviewerResult,
     prompt,
     obligationType,
-    strictEnforcement,
   });
+}
+
+/**
+ * Resolve the pre-authorized attempt or block the invocation. A missing
+ * attempt and an attempt that was already released to the host (unresolved or
+ * spent) both fail closed BEFORE the host release, so one attempt can never be
+ * prompted twice (crash/restart replay) and the technical retry budget cannot
+ * reset per command invocation.
+ */
+function resolveDispatchAuthorizedAttempt(
+  ctx: PipelineContext,
+): { readonly attemptId: string } | null {
+  const { deps, sessionState, output, reviewCtx } = ctx;
+  const attempt = findBindableAttempt(sessionState.reviewAssurance, reviewCtx.obligationId);
+  if (!attempt) {
+    output.output = strictBlockedOutput('REVIEW_ATTEMPT_UNAVAILABLE', {
+      obligationId: reviewCtx.obligationId,
+      reason: 'SDK review completion has no pre-authorized bindable review attempt',
+    });
+    return null;
+  }
+  if (hasReleasedDispatch(sessionState.reviewAssurance, attempt.attemptId)) {
+    output.output = strictBlockedOutput('REVIEW_ATTEMPT_UNAVAILABLE', {
+      obligationId: reviewCtx.obligationId,
+      reason:
+        'the pre-authorized reviewer attempt was already released to the host; re-run the originating command to re-arm a fresh reviewer attempt',
+    });
+    deps.log.warn('orchestrator', 'reviewer dispatch already released — refusing replay', {
+      obligationId: reviewCtx.obligationId,
+      attemptId: attempt.attemptId,
+    });
+    return null;
+  }
+  return { attemptId: attempt.attemptId };
 }
 
 async function recordObligationHandshake(
   ctx: PipelineContext,
   obligationType: ReviewObligationType,
-  _strictEnforcement: boolean,
 ): ReturnType<typeof recordAssuranceWithAudit> {
   const { deps, sessionState, sessDir, reviewCtx } = ctx;
   return recordAssuranceWithAudit(
@@ -141,9 +181,7 @@ async function recordObligationHandshake(
         planVersion: reviewCtx.planVersion,
         criteriaVersion: reviewCtx.criteriaVersion,
         mandateDigest: reviewCtx.mandateDigest,
-        // Freeze provenance: the mandatory review profile is frozen at
-        // obligation creation. 'policy_default' is the only source in this wave.
-        reviewProfile: getReviewerPolicies(sessionState).reviewProfile,
+        reviewProfile: sessionState.policySnapshot.reviewProfile,
         profileSource: 'policy_default',
       },
     },
@@ -165,15 +203,27 @@ async function spawnStandardReviewer(
   ctx: PipelineContext,
   toolName: string,
   prompt: string,
+  attemptId: string,
 ): ReturnType<PipelineContext['deps']['adapter']['spawnReviewer']> {
-  const policies = getReviewerPolicies(ctx.sessionState);
+  const { deps, sessDir, reviewCtx } = ctx;
+  const promptDigest = hashText(prompt);
   return ctx.deps.adapter.spawnReviewer({
     prompt,
     parentSessionId: ctx.sessionId,
-    reviewOutputPolicy: policies.reviewOutputPolicy,
-    reviewInvocationPolicy: policies.reviewInvocationPolicy,
-    onAttemptFailed: buildAttemptFailedLogger(ctx.deps, toolName, ctx.sessionId),
-    onAttemptSucceeded: buildAttemptSucceededLogger(ctx.deps, toolName),
+    authorizeDispatch: async ({ childSessionId, invokedAt }) => {
+      await persistAuthorizedSdkDispatch(deps, sessDir, {
+        attemptId,
+        obligationId: reviewCtx.obligationId,
+        childSessionId,
+        canonicalPromptDigest: promptDigest,
+        authorizedAt: invokedAt,
+      });
+    },
+    abandonDispatch: async ({ childSessionId }) => {
+      await abandonSdkDispatch(deps, sessDir, childSessionId);
+    },
+    onAttemptFailed: buildAttemptFailedLogger(deps, toolName, ctx.sessionId),
+    onAttemptSucceeded: buildAttemptSucceededLogger(deps, toolName),
   });
 }
 
@@ -182,30 +232,26 @@ interface StandardReviewerResultOpts {
   reviewerResult: Awaited<ReturnType<PipelineContext['deps']['adapter']['spawnReviewer']>>;
   prompt: string;
   obligationType: ReviewObligationType;
-  strictEnforcement: boolean;
 }
 
 async function handleStandardReviewerResult(
   ctx: PipelineContext,
   opts: StandardReviewerResultOpts,
 ): Promise<void> {
-  const { reviewerResult, obligationType, strictEnforcement } = opts;
+  const { reviewerResult, obligationType } = opts;
   if (reviewerResult?.blocked) {
-    if (strictEnforcement && reviewerResult.code === 'REVIEWER_INVOCATION_EXHAUSTED') {
-      await handleReviewerFailure(ctx, obligationType, strictEnforcement);
+    if (reviewerResult.code === 'REVIEWER_INVOCATION_EXHAUSTED') {
+      await handleReviewerFailure(ctx, obligationType);
       return;
     }
-    ctx.output.output = strictBlockedOutput(
-      reviewerResult.code ?? REASON_HOST_SUBAGENT_TASK_REQUIRED,
-      {
-        reason: reviewerResult.reason ?? 'review invocation blocked by policy',
-        reviewInvocation: JSON.stringify(reviewerResult.reviewInvocation ?? {}),
-      },
-    );
+    ctx.output.output = strictBlockedOutput(reviewerResult.code, {
+      reason: reviewerResult.reason ?? 'review invocation blocked by host transport contract',
+      reviewInvocation: JSON.stringify(reviewerResult.reviewInvocation ?? {}),
+    });
     return;
   }
   if (!reviewerResult) {
-    await handleReviewerFailure(ctx, obligationType, strictEnforcement);
+    await handleReviewerFailure(ctx, obligationType);
     return;
   }
   await handleReviewerSuccess(ctx, { ...opts, reviewerResult });
@@ -281,11 +327,10 @@ interface ReviewSuccessOpts {
   reviewerResult: ReviewerSuccessResult;
   prompt: string;
   obligationType: ReviewObligationType;
-  strictEnforcement: boolean;
 }
 
 async function handleReviewerSuccess(ctx: PipelineContext, opts: ReviewSuccessOpts): Promise<void> {
-  const { toolName, reviewerResult, prompt, obligationType, strictEnforcement } = opts;
+  const { toolName, reviewerResult, prompt, obligationType } = opts;
   const { deps, output, sessionId, rawOutput } = ctx;
 
   if (!reviewerResult.findings) {
@@ -293,46 +338,36 @@ async function handleReviewerSuccess(ctx: PipelineContext, opts: ReviewSuccessOp
     return;
   }
 
-  const canonicalReviewerResult = await prepareStandardReviewerResult(
-    ctx,
-    reviewerResult,
-    strictEnforcement,
-  );
+  const canonicalReviewerResult = await prepareStandardReviewerResult(ctx, reviewerResult);
   if (!canonicalReviewerResult) return;
   const parsedFindings = ReviewFindingsSchema.parse(canonicalReviewerResult.findings);
 
-  if (strictEnforcement) {
-    const gateBlocked = await enforceStandardStrictGate(
-      ctx,
-      canonicalReviewerResult,
-      parsedFindings,
-      prompt,
-      obligationType,
-    );
-    if (gateBlocked) return;
-  }
+  const gateBlocked = await enforceStandardGate(
+    ctx,
+    canonicalReviewerResult,
+    parsedFindings,
+    prompt,
+    obligationType,
+  );
+  if (gateBlocked) return;
 
-  if (strictEnforcement && isOutputAlreadyBlocked(output)) return;
+  if (isOutputAlreadyBlocked(output)) return;
 
   const mutated = buildMutatedOutput(rawOutput, canonicalReviewerResult);
   if (mutated) {
-    // buildMutatedOutput returns non-null only when findings is non-null
     await finalizeReviewOutput(ctx, {
       toolName,
       reviewerResult: canonicalReviewerResult,
       mutated,
-      strictEnforcement,
     });
   } else {
-    deps.log.warn('orchestrator', 'output mutation failed (fallback to LLM-driven)', {
+    deps.log.warn('orchestrator', 'review output mutation failed — blocking', {
       tool: toolName,
       sessionId,
     });
-    if (strictEnforcement) {
-      output.output = strictBlockedOutput('STRICT_REVIEW_ORCHESTRATION_FAILED', {
-        reason: 'output mutation failed',
-      });
-    }
+    output.output = strictBlockedOutput('STRICT_REVIEW_ORCHESTRATION_FAILED', {
+      reason: 'output mutation failed',
+    });
   }
 }
 
@@ -341,28 +376,21 @@ async function handleUnparseableReviewerResult(
   opts: ReviewSuccessOpts,
 ): Promise<void> {
   const { deps, sessionId } = ctx;
-  const { toolName, reviewerResult, strictEnforcement } = opts;
-  deps.log.warn(
-    'orchestrator',
-    'reviewer returned unparseable response — fallback to LLM-driven path',
-    {
-      tool: toolName,
-      sessionId,
-      childSessionId: reviewerResult.sessionId,
-      rawResponseLength: reviewerResult.rawResponse.length,
-    },
-  );
-  if (strictEnforcement) {
-    await blockReviewOutcomeHelper(deps, ctx, 'STRICT_REVIEW_ORCHESTRATION_FAILED', {
-      reason: 'reviewer response was not parseable as ReviewFindings',
-    });
-  }
+  const { toolName, reviewerResult } = opts;
+  deps.log.warn('orchestrator', 'reviewer returned unparseable response — blocking', {
+    tool: toolName,
+    sessionId,
+    childSessionId: reviewerResult.sessionId,
+    rawResponseLength: reviewerResult.rawResponse.length,
+  });
+  await blockReviewOutcomeHelper(deps, ctx, 'STRICT_REVIEW_ORCHESTRATION_FAILED', {
+    reason: 'reviewer response was not parseable as ReviewFindings',
+  });
 }
 
 async function prepareStandardReviewerResult(
   ctx: PipelineContext,
   reviewerResult: ReviewerSuccessResult,
-  strictEnforcement: boolean,
 ): Promise<(ReviewerSuccessResult & { findings: Record<string, unknown> }) | null> {
   const prepared = prepareReviewerFindingsForValidation({
     rawFindings: reviewerResult.findings!,
@@ -377,20 +405,33 @@ async function prepareStandardReviewerResult(
     },
   });
   if (!prepared.ok) {
-    if (strictEnforcement) {
-      await blockReviewOutcomeHelper(ctx.deps, ctx, 'STRICT_REVIEW_ORCHESTRATION_FAILED', {
-        reason: 'reviewer response did not match ReviewFindings schema',
-      });
-    }
+    await blockReviewOutcomeHelper(ctx.deps, ctx, 'STRICT_REVIEW_ORCHESTRATION_FAILED', {
+      reason: 'reviewer response did not match ReviewFindings schema',
+    });
     return null;
   }
   const parsed = ReviewFindingsSchema.safeParse(prepared.findings);
-  if (!parsed.success) return null;
+  if (!parsed.success) {
+    await blockReviewOutcomeHelper(ctx.deps, ctx, 'STRICT_REVIEW_ORCHESTRATION_FAILED', {
+      reason: 'reviewer response did not match ReviewFindings schema',
+    });
+    return null;
+  }
   return { ...reviewerResult, findings: prepared.findings };
 }
 
-function applyStandardEvidenceResult(ctx: PipelineContext, result: EvidenceRecordResult): boolean {
+async function applyStandardEvidenceResult(
+  ctx: PipelineContext,
+  result: SdkEvidenceRecordResult,
+): Promise<boolean> {
   const { output, reviewCtx } = ctx;
+  if (typeof result !== 'string') {
+    await blockReviewOutcomeHelper(ctx.deps, ctx, result.code, {
+      obligationId: reviewCtx.obligationId,
+      ...result.details,
+    });
+    return true;
+  }
   if (result === 'reused') {
     output.output = strictBlockedOutput('SUBAGENT_EVIDENCE_REUSED', {
       obligationId: reviewCtx.obligationId,
@@ -413,7 +454,8 @@ function applyStandardEvidenceResult(ctx: PipelineContext, result: EvidenceRecor
   return false;
 }
 
-async function enforceStandardStrictGate(
+// eslint-disable-next-line max-lines-per-function -- attest, validate frozen policy, then bind as one gate.
+async function enforceStandardGate(
   ctx: PipelineContext,
   reviewerResult: ReviewerSuccessResult & { findings: Record<string, unknown> },
   findings: {
@@ -441,6 +483,38 @@ async function enforceStandardStrictGate(
     return true;
   }
 
+  const obligation = sessionState.reviewAssurance?.obligations.find(
+    (item) => item.obligationId === reviewCtx.obligationId,
+  );
+  if (!obligation) {
+    output.output = strictBlockedOutput('REVIEW_MATERIAL_INTEGRITY_FAILED', {
+      obligationId: reviewCtx.obligationId,
+      reason: 'reviewer completion has no exact frozen obligation',
+    });
+    return true;
+  }
+  const challengeConsistency = validateChallengeConsistency({
+    overallVerdict: findings.overallVerdict as 'accept' | 'changes_requested' | 'unable_to_review',
+    requiredChallengeCount: obligation.requiredChallengeCount,
+    requiredChallengeKind: obligation.requiredChallengeKind ?? 'implementation_challenge',
+    challenges: reviewerResult.findings.challenges as Parameters<
+      typeof validateChallengeConsistency
+    >[0]['challenges'],
+    expectedObligationId: obligation.obligationId,
+    allowedEvidenceRefs: buildReviewChallengeContract(sessionState, obligation)?.evidenceRefs,
+    resolutionVerdicts: reviewerResult.findings.challengeResolutionVerdicts as Parameters<
+      typeof validateChallengeConsistency
+    >[0]['resolutionVerdicts'],
+    previouslyUsedChallengeIds: collectPreviouslyUsedChallengeIds(sessionState),
+  });
+  if (!challengeConsistency.ok) {
+    await blockReviewOutcomeHelper(deps, ctx, challengeConsistency.code, {
+      obligationId: obligation.obligationId,
+      ...challengeConsistency.details,
+    });
+    return true;
+  }
+
   const attempt = findBindableAttempt(sessionState.reviewAssurance, reviewCtx.obligationId);
   if (!attempt) {
     output.output = strictBlockedOutput('REVIEW_ATTEMPT_UNAVAILABLE', {
@@ -460,6 +534,7 @@ async function enforceStandardStrictGate(
     obligationType,
     sessionId,
     childSessionId: reviewerResult.sessionId,
+    hostCallId: reviewerResult.sessionId,
     attemptId: attempt.attemptId,
     promptHash,
     findingsHash,
@@ -476,7 +551,7 @@ async function enforceStandardStrictGate(
         reviewerResult,
         state,
         occurredAt,
-        reviewProfile: getReviewerPolicies(state).reviewProfile,
+        reviewProfile: state.policySnapshot.reviewProfile,
       }),
   });
 
@@ -487,31 +562,12 @@ interface FinalizeOutputOpts {
   toolName: string;
   reviewerResult: ReviewerSuccessResult & { findings: Record<string, unknown> };
   mutated: string;
-  strictEnforcement: boolean;
 }
 
 async function finalizeReviewOutput(ctx: PipelineContext, opts: FinalizeOutputOpts): Promise<void> {
-  const { toolName, reviewerResult, mutated, strictEnforcement } = opts;
-  const { deps, output, sessionId, now } = ctx;
+  const { toolName, reviewerResult, mutated } = opts;
+  const { deps, output, sessionId } = ctx;
 
-  if (strictEnforcement) {
-    // Evidence already recorded in enforceStandardStrictGate
-  }
-
-  const eState = deps.getEnforcementState(sessionId);
-  const captured: CapturedFindings = {
-    overallVerdict:
-      typeof reviewerResult.findings.overallVerdict === 'string'
-        ? reviewerResult.findings.overallVerdict
-        : 'unknown',
-    blockingIssuesCount: Array.isArray(reviewerResult.findings.blockingIssues)
-      ? reviewerResult.findings.blockingIssues.length
-      : 0,
-    sessionId: reviewerResult.sessionId,
-    rawFindings: reviewerResult.findings,
-  };
-
-  recordPluginReview(eState, toolName, reviewerResult.sessionId, captured, now);
   output.output = mutated;
 
   deps.log.info('orchestrator', 'reviewer invocation succeeded', {
@@ -524,50 +580,20 @@ async function finalizeReviewOutput(ctx: PipelineContext, opts: FinalizeOutputOp
 
 // ─── Standard Pipeline: Failure Handler ──────────────────────────────────────
 
-async function handleReviewerFailure(
-  ctx: PipelineContext,
-  obligationType: string,
-  strictEnforcement: boolean,
-): Promise<void> {
+async function handleReviewerFailure(ctx: PipelineContext, obligationType: string): Promise<void> {
   const { deps, sessDir, sessionId, reviewCtx, parsedOutput, sessionState, output } = ctx;
   const phase = String(parsedOutput.phase ?? sessionState.phase);
-  const toolName = ctx.deps === deps ? 'unknown' : 'unknown'; // just for log below
-  void toolName;
 
-  deps.log.warn('orchestrator', 'reviewer invocation failed (fallback to LLM-driven)', {
+  deps.log.warn('orchestrator', 'reviewer invocation failed — blocking', {
     tool: obligationType,
     sessionId,
   });
 
-  if (strictEnforcement) {
-    await deps.blockReviewOutcome(
-      { sessDir, sessionId, phase },
-      reviewCtx.obligationId,
-      'STRICT_REVIEW_ORCHESTRATION_FAILED',
-      { reason: 'reviewer invocation failed' },
-      output,
-    );
-  } else {
-    // Non-strict: block the obligation to prevent infinite re-invocation.
-    await recordAssuranceWithAudit(
-      {
-        updateReviewAssurance: (sessDir, update, semanticIntents) =>
-          deps.updateReviewAssurance(sessDir, update, semanticIntents),
-      },
-      {
-        sessDir,
-        stateMutation: (s) =>
-          updateObligation(s, reviewCtx.obligationId, (item) => ({
-            ...item,
-            status: 'blocked' as const,
-            blockedCode: 'REVIEWER_INVOCATION_EXHAUSTED',
-          })),
-        auditEventName: 'review:obligation_blocked',
-        auditDetail: {
-          obligationId: reviewCtx.obligationId,
-          code: 'REVIEWER_INVOCATION_EXHAUSTED',
-        },
-      },
-    );
-  }
+  await deps.blockReviewOutcome(
+    { sessDir, sessionId, phase },
+    reviewCtx.obligationId,
+    'STRICT_REVIEW_ORCHESTRATION_FAILED',
+    { reason: 'reviewer invocation failed' },
+    output,
+  );
 }

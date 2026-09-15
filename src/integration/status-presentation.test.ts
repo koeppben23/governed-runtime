@@ -74,7 +74,7 @@ function makeReadyState(): SessionState {
     implReview: null,
     reviewDecision: null,
     architecture: null,
-    archiveStatus: null,
+    regulatedArchiveStatus: null,
     actorInfo: undefined,
   };
 }
@@ -97,7 +97,7 @@ function makeBlockedPlanReviewState(): SessionState {
     implReview: null,
     reviewDecision: null,
     architecture: null,
-    archiveStatus: null,
+    regulatedArchiveStatus: null,
     actorInfo: undefined,
   };
 }
@@ -120,7 +120,7 @@ function makeValidatingState(): SessionState {
     implReview: null,
     reviewDecision: null,
     architecture: null,
-    archiveStatus: null,
+    regulatedArchiveStatus: null,
     actorInfo: undefined,
   };
 }
@@ -604,13 +604,13 @@ describe('discovery notice', () => {
       advisory: true as const,
       source: 'persisted_discovery_result' as const,
       status: 'available' as const,
-      completeCollectors: 5,
+      completeCollectors: 6,
       partialCollectors: 0,
       failedCollectors: 0,
       failedCollectorNames: [],
       hasBudgetExhaustion: false,
       readFailureCount: 0,
-      codeSurfaceStatus: null,
+      codeSurfaceStatus: 'ok' as const,
       collectedAt: null,
       ageWarning: null,
       healthy: true,

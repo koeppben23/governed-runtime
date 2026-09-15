@@ -418,7 +418,7 @@ source enum in `src/archive/types.ts` (`AUDIT_CHAIN_*`, `MANIFEST_*`,
 codes).
 
 **Regulated mode:** In regulated mode, clean completion (`EVIDENCE_REVIEW → APPROVE → COMPLETE`) triggers
-synchronous archive creation + verification. The `archiveStatus` field on session state tracks the lifecycle
+synchronous archive creation + verification. The `regulatedArchiveStatus` field on session state tracks the lifecycle
 (`pending` → `created` → `verified` or `failed`). Checksum sidecar failure is fatal in regulated mode. Manual redacted sharing exports use `not_verifiable`, never `failed`, when raw evidence was intentionally excluded.
 
 **Note:** This is an operational export action. The original session is preserved.

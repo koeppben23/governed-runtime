@@ -39,26 +39,12 @@ export interface OrchestratorClient {
     }): Promise<{
       data?:
         | {
-            /**
-             * Response parts. Text parts carry `text`; a `type: 'tool'` part
-             * (additive, optional fields) carries the host's structured-output
-             * delivery on hosts that return it as a `StructuredOutput` tool part
-             * rather than a top-level `info.structured_output` field. Existing
-             * mocks that only set `{ type, text }` remain valid.
-             */
+            /** Response parts are diagnostics only, never reviewer authority. */
             parts?: Array<{
               type?: string;
               text?: string;
-              tool?: string;
-              callID?: string;
-              state?: {
-                status?: string;
-                input?: unknown;
-                metadata?: { valid?: unknown } & Record<string, unknown>;
-              };
             }>;
             info?: {
-              structured_output?: unknown;
               structured?: unknown;
               error?: {
                 name: string;

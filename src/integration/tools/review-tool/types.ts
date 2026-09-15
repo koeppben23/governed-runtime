@@ -20,19 +20,6 @@ export type ReviewExecutionContext = {
   args: ReviewToolArgs;
   context: ToolContext;
   now: string;
-  policy: string;
-};
-
-export type NativeAttestationRejectionReason =
-  | 'capture_read_failed'
-  | 'capture_lines_skipped'
-  | 'capture_missing'
-  | 'capture_unbound'
-  | 'capture_session_mismatch';
-
-export type NativeAttestationRejection = {
-  reason: NativeAttestationRejectionReason;
-  obligationId: string;
 };
 
 export type ReviewPreparation = {
@@ -50,7 +37,6 @@ export type ReviewPreparation = {
   blockMessage?: string;
   effectiveReviewFindings?: ReviewFindings;
   evidenceInvocationId?: string;
-  nativeAttestationRejection?: NativeAttestationRejection;
   materializedContent?: import('../../../rails/review.js').PreparedReviewContent | null;
   reviewSubject?: FrozenReviewSubject;
 };
@@ -66,10 +52,7 @@ export type ReviewToolArgs = {
   /** Optional explicit base ref/branch/SHA for a branch review diff. */
   base?: string;
   url?: string;
-  /** Exact obligation identity required for host-task verdict continuations. */
   reviewObligationId?: string;
-  reviewVerdict?: 'accept' | 'changes_requested';
-  reviewFindings?: ReviewFindings;
   /** Optional structured objectives; omitted uses the canonical static profile. */
   objectives?: StandaloneReviewObjective[];
   targetPaths?: string[];

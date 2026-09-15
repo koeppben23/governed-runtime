@@ -1,15 +1,14 @@
 /**
  * @module config/policy
- * @description Stable policy public facade.
+ * @description Canonical public aggregation facade for policy contracts.
  *
  * Implementation lives in focused policy-* modules. Keep this file as the
- * compatibility entry point for existing imports from `config/policy.js`.
+ * public entry point for `config/policy.js` imports.
  */
 
 export type {
   AuditPolicy,
   TimestampAssurancePolicy,
-  SelfReviewConfig,
   FlowGuardPolicy,
   PolicyMode,
   EffectiveGateBehavior,
@@ -20,8 +19,6 @@ export type {
   CentralPolicyEvidence,
   HydratePolicyResolution,
   PolicyResolutionReason,
-  ReviewOutputPolicy,
-  ReviewInvocationPolicy,
   DiscoveryHealthPolicy,
   DiscoveryHealthEnforcement,
   DiscoveryHealthDegradedAction,
@@ -32,7 +29,6 @@ export type {
   ChallengeKind,
 } from './policy-types.js';
 export {
-  DEFAULT_SELF_REVIEW_CONFIG,
   CHALLENGE_POLICY_V1,
   CHALLENGE_POLICY_VERSION,
   challengeKindForObligation,
@@ -71,4 +67,3 @@ export {
   freezePolicySnapshot,
   resolvePolicyFromSnapshot,
 } from './policy-snapshot.js';
-export { normalizePolicySnapshot } from './policy-snapshot-normalize.js';

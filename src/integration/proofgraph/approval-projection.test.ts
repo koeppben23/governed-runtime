@@ -54,7 +54,7 @@ function contractState(overrides: Partial<SessionState> = {}): SessionState {
       },
     },
     proofContract: {
-      version: 'contract.v1',
+      version: 'contract.v2',
       claims: [
         {
           claimId: CLAIM_ID,
@@ -118,7 +118,7 @@ describe('buildProofApprovalProjection', () => {
   it('reports the evaluated verification state once the graph exists', () => {
     const state = contractState({
       proofGraph: {
-        version: 'proofgraph.v1',
+        version: 'proofgraph.v2',
         evaluatedAt: '2026-01-01T00:00:00.000Z',
         claims: [
           {

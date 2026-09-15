@@ -1,13 +1,13 @@
 /**
  * @module integration/plugin-orchestrator-review-content.test
- * @description Regression coverage for strict host-orchestrated /review content analysis.
+ * @description Regression coverage for strict /review content analysis.
  *
  * Contract under test:
  * - In strict enforcement, host-orchestrated /review MUST fail closed when
  *   subagent findings are missing, lack attestation, or carry mismatched
  *   attestation.
- * - A valid attestation still injects pluginReviewFindings and records
- *   host-orchestrated evidence.
+ * - A valid attestation records bound structured evidence and directs a
+ *   verdict-only follow-up.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -75,6 +75,7 @@ function buildFindings(overrides: Record<string, unknown> = {}): Record<string, 
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     attestation: {
       toolObligationId: OBLIGATION_ID,
     },
@@ -87,13 +88,14 @@ function buildClient(findings: Record<string, unknown> | null): OrchestratorClie
     app: { agents: vi.fn().mockResolvedValue({ data: [{ id: 'flowguard-reviewer' }] }) },
     session: {
       create: vi.fn().mockResolvedValue({ data: { id: CHILD_SESSION_ID }, error: undefined }),
-      prompt: vi
-        .fn()
-        .mockResolvedValue(
-          findings
-            ? { data: { info: { structured_output: findings } }, error: undefined }
-            : { data: { info: {} }, error: undefined },
-        ),
+      prompt: vi.fn().mockResolvedValue(
+        findings
+          ? {
+              data: { info: { structured: findings } },
+              error: undefined,
+            }
+          : { data: { info: {} }, error: undefined },
+      ),
     },
   };
 }
@@ -122,8 +124,6 @@ function buildTextCompatClient(findings: Record<string, unknown>): OrchestratorC
 
 function buildSessionState(
   strictEnforcement = true,
-  reviewOutputPolicy: 'structured_required' | 'text_compat_allowed' = 'structured_required',
-  reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed',
   seedInvocations: NonNullable<SessionState['reviewAssurance']>['invocations'] = [],
 ) {
   return makeState('REVIEW', {
@@ -133,16 +133,7 @@ function buildSessionState(
       source: 'user',
       createdAt: NOW,
     },
-    policySnapshot: {
-      ...POLICY_SNAPSHOT,
-      selfReview: {
-        subagentEnabled: true,
-        fallbackToSelf: false,
-        strictEnforcement,
-      } as never,
-      reviewOutputPolicy,
-      ...(reviewInvocationPolicy ? { reviewInvocationPolicy } : {}),
-    },
+    policySnapshot: POLICY_SNAPSHOT,
     reviewAssurance: {
       assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [
@@ -157,7 +148,9 @@ function buildSessionState(
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
-          maxReviewerOutputRepairAttempts: 1,
+          maxReviewerAttempts: 1,
+          reviewProfile: 'core',
+          profileSource: 'policy_default',
           createdAt: NOW,
           pluginHandshakeAt: null,
           status: 'pending',
@@ -191,15 +184,11 @@ function buildSessionState(
           obligationId: OBLIGATION_ID,
           obligationType: 'review',
           subjectDigest: SUBJECT_DIGEST,
-          reviewMaterial: {
-            content: PERSISTED_CONTENT,
-            materialDigest: MATERIAL_DIGEST,
-            subjectDigest: SUBJECT_DIGEST,
-          },
           ordinal: 1,
           status: 'created',
           origin: { kind: 'initial' } as const,
           repositoryDiscovery: { kind: 'not_applicable' } as const,
+          observations: [],
           createdAt: NOW,
         },
       ],
@@ -240,7 +229,6 @@ function buildDeps(
       blockReviewOutcome,
       getEnforcementState: vi.fn().mockReturnValue({
         pendingReviews: new Map(),
-        executedTaskPrompts: new Map(),
       }),
       log: { info: vi.fn(), warn: vi.fn() },
       client,
@@ -255,20 +243,13 @@ async function runReviewContent(
   findings: Record<string, unknown> | null,
   input: unknown = { args: { text: 'diff content', inputOrigin: 'manual_text' } },
   strictEnforcement = true,
-  reviewOutputPolicy: 'structured_required' | 'text_compat_allowed' = 'structured_required',
   clientOverride?: OrchestratorClient,
-  reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed',
   seedInvocations: NonNullable<SessionState['reviewAssurance']>['invocations'] = [],
   configureState?: (state: SessionState) => void,
 ) {
   const client = clientOverride ?? buildClient(findings);
   const stateRef = {
-    current: buildSessionState(
-      strictEnforcement,
-      reviewOutputPolicy,
-      reviewInvocationPolicy,
-      seedInvocations,
-    ),
+    current: buildSessionState(strictEnforcement, seedInvocations),
   };
   configureState?.(stateRef.current);
   vi.mocked(readState).mockResolvedValue(stateRef.current);
@@ -304,80 +285,7 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     });
   });
 
-  it('host_task_required does not call SDK for standalone /review', async () => {
-    const { output, client } = await runReviewContent(
-      buildFindings(),
-      { args: { text: 'diff content', inputOrigin: 'manual_text' } },
-      true,
-      'structured_required',
-      undefined,
-      'host_task_required',
-    );
-
-    expect(client.session.create).not.toHaveBeenCalled();
-    expect(client.session.prompt).not.toHaveBeenCalled();
-    const parsed = JSON.parse(output.output) as Record<string, unknown>;
-    expect(parsed.code).toBe('HOST_SUBAGENT_TASK_REQUIRED');
-    expect(parsed.recovery).toEqual([
-      expect.stringContaining('host-visible subagent invocation via the OpenCode Task tool'),
-    ]);
-    expect(parsed.reviewInvocation).toMatchObject({
-      policy: 'host_task_required',
-      status: 'blocked_until_host_task',
-      code: 'HOST_SUBAGENT_TASK_REQUIRED',
-      invocationMode: 'host_subagent_task',
-      hostVisible: true,
-    });
-  });
-
-  it('standalone /review host-task instruction forwards obligation attestation + cycle context', async () => {
-    // Regression: standalone /review Call 1 emits CONTENT_ANALYSIS_REQUIRED with
-    // no `next`, so the host-task instruction previously omitted iteration/
-    // planVersion AND the requiredReviewAttestation. The reviewer then defaulted
-    // toolObligationId to "NOT_VERIFIED" and the verdict could not bind host-task
-    // evidence. The instruction must now source these from the obligation.
-    const { output } = await runReviewContent(
-      buildFindings(),
-      { args: { text: 'diff content', inputOrigin: 'manual_text' } },
-      true,
-      'structured_required',
-      undefined,
-      'host_task_required',
-    );
-
-    const parsed = JSON.parse(output.output) as Record<string, unknown>;
-
-    // Structured attestation forwarded from the obligation (machine-readable).
-    expect(parsed.requiredReviewAttestation).toMatchObject({
-      reviewedBy: 'flowguard-reviewer',
-      toolObligationId: OBLIGATION_ID,
-      mandateDigest: REVIEW_MANDATE_DIGEST,
-      criteriaVersion: REVIEW_CRITERIA_VERSION,
-      iteration: 1,
-      planVersion: 1,
-    });
-
-    // The host instruction identifies the obligation without asking the parent
-    // agent to construct reviewer attestation fields.
-    const next = String(parsed.next);
-    expect(next).toContain('iteration=1');
-    expect(next).toContain('planVersion=1');
-    expect(next).toContain(`Host context identifies obligation ${OBLIGATION_ID}`);
-    expect(next).toContain('do not construct reviewer attestation fields');
-    const reviewerTaskPrompt = String(parsed.reviewerTaskPrompt);
-    expect(reviewerTaskPrompt).toContain('persisted diff content');
-    expect(reviewerTaskPrompt).toContain('## Frozen Untrusted Subject');
-    expect(reviewerTaskPrompt).toContain('## Subject Scope (frozen obligation scope)');
-    expect(reviewerTaskPrompt).toContain(
-      JSON.stringify({ kind: 'content', subjectDigest: SUBJECT_DIGEST, lineCount: 1 }),
-    );
-    expect(reviewerTaskPrompt).toContain(
-      'Content review: subjectAnchors must use kind=content with the exact frozen subjectDigest.',
-    );
-    expect(reviewerTaskPrompt).not.toContain('content to review below this line:');
-  });
-
-  it('blocks malformed reviewer attestation at the strict input boundary', async () => {
+  it('reports malformed reviewer attestation as a structured-output contract violation', async () => {
     const findings = buildFindings({
       attestation: {
         mandateDigest: REVIEW_MANDATE_DIGEST,
@@ -389,62 +297,29 @@ describe('runReviewOrchestration strict /review content analysis', () => {
       },
     });
 
-    const { output, blockReviewOutcome } = await runReviewContent(findings);
-
-    expect(blockReviewOutcome).toHaveBeenCalledWith(
-      expect.anything(),
-      OBLIGATION_ID,
-      'STRICT_REVIEW_ORCHESTRATION_FAILED',
-      {
-        obligationId: OBLIGATION_ID,
-        reason: 'reviewer response did not match ReviewFindings schema',
-      },
-      output,
-    );
+    const { output } = await runReviewContent(findings);
     expect(JSON.parse(output.output)).toMatchObject({
       error: true,
-      code: 'STRICT_REVIEW_ORCHESTRATION_FAILED',
+      code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
     });
   });
 
-  it('blocks missing reviewer attestation at the strict input boundary', async () => {
+  it('reports missing reviewer attestation as a structured-output contract violation', async () => {
     const { attestation: _omit, ...findings } = buildFindings();
     void _omit;
 
-    const { output, blockReviewOutcome } = await runReviewContent(findings);
-
-    expect(blockReviewOutcome).toHaveBeenCalledWith(
-      expect.anything(),
-      OBLIGATION_ID,
-      'STRICT_REVIEW_ORCHESTRATION_FAILED',
-      {
-        obligationId: OBLIGATION_ID,
-        reason: 'reviewer response did not match ReviewFindings schema',
-      },
-      output,
-    );
+    const { output } = await runReviewContent(findings);
     expect(JSON.parse(output.output)).toMatchObject({
       error: true,
-      code: 'STRICT_REVIEW_ORCHESTRATION_FAILED',
+      code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
     });
   });
 
-  it('blocks with STRICT_REVIEW_ORCHESTRATION_FAILED when strict /review reviewer returns no findings', async () => {
-    const { output, blockReviewOutcome } = await runReviewContent(null);
-
-    expect(blockReviewOutcome).toHaveBeenCalledWith(
-      expect.anything(),
-      OBLIGATION_ID,
-      'STRICT_REVIEW_ORCHESTRATION_FAILED',
-      {
-        obligationId: OBLIGATION_ID,
-        reason: 'reviewer response was not parseable as ReviewFindings',
-      },
-      output,
-    );
+  it('reports missing structured reviewer output directly', async () => {
+    const { output } = await runReviewContent(null);
     expect(JSON.parse(output.output)).toMatchObject({
       error: true,
-      code: 'STRICT_REVIEW_ORCHESTRATION_FAILED',
+      code: 'HOST_STRUCTURED_OUTPUT_REQUIRED',
     });
   });
 
@@ -475,14 +350,16 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     expect(state.reviewAssurance?.obligations[0]?.status).not.toBe('fulfilled');
   });
 
-  it('injects pluginReviewFindings and records evidence when strict /review attestation is valid', async () => {
+  it('records bound structured evidence and returns a verdict-only follow-up', async () => {
     const { output, blockReviewOutcome, updateReviewAssurance, state, client } =
       await runReviewContent(buildFindings());
 
     expect(client.session.create).toHaveBeenCalledOnce();
     expect(client.session.prompt).toHaveBeenCalledOnce();
     expect(blockReviewOutcome).not.toHaveBeenCalled();
-    expect(updateReviewAssurance).toHaveBeenCalledOnce();
+    // One durable write authorizes the dispatch before the prompt; a second
+    // records the bound evidence.
+    expect(updateReviewAssurance).toHaveBeenCalledTimes(2);
     const obligation = state.reviewAssurance?.obligations[0];
     expect(obligation).toMatchObject({
       obligationId: OBLIGATION_ID,
@@ -524,7 +401,7 @@ describe('runReviewOrchestration strict /review content analysis', () => {
       status: 'bound',
       childSessionId: CHILD_SESSION_ID,
     });
-    const evidenceIntents = vi.mocked(updateReviewAssurance).mock.calls[0]![2]!(state, NOW);
+    const evidenceIntents = vi.mocked(updateReviewAssurance).mock.calls[1]![2]!(state, NOW);
     expect(evidenceIntents).toEqual([
       expect.objectContaining({
         event: 'review:subagent_invoked',
@@ -543,30 +420,49 @@ describe('runReviewOrchestration strict /review content analysis', () => {
       }),
     ]);
     const parsed = JSON.parse(output.output) as Record<string, unknown>;
-    expect(parsed.error).toBe(true);
-    expect(parsed.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+    expect(parsed.error).toBeUndefined();
+    expect(parsed.code).toBeUndefined();
+    expect(parsed.phase).toBe('REVIEW');
     expect(String(parsed.next)).toContain('PLUGIN_REVIEW_COMPLETED');
-    expect(parsed.pluginReviewFindings).toMatchObject({
-      overallVerdict: 'accept',
-      reviewedBy: { sessionId: CHILD_SESSION_ID },
-      attestation: {
-        toolObligationId: OBLIGATION_ID,
-        mandateDigest: REVIEW_MANDATE_DIGEST,
-        criteriaVersion: REVIEW_CRITERIA_VERSION,
-        iteration: 1,
-        planVersion: 1,
-        reviewedBy: 'flowguard-reviewer',
-      },
+    expect(String(parsed.next)).toContain('reviewVerdict=accept');
+    expect(parsed).not.toHaveProperty('pluginReviewFindings');
+    expect(parsed).not.toHaveProperty('_pluginReviewSessionId');
+  });
+
+  it('never fulfills the obligation when a content finding is out of the frozen subject scope', async () => {
+    const findings = buildFindings({
+      overallVerdict: 'changes_requested',
+      blockingIssues: [
+        {
+          severity: 'critical',
+          category: 'correctness',
+          message: 'Out-of-scope content finding.',
+          relation: {
+            subjectAnchors: [{ kind: 'content', subjectDigest: 'other-subject-digest' }],
+            evidenceLocations: [],
+          },
+        },
+      ],
     });
-    expect(parsed._pluginReviewSessionId).toBe(CHILD_SESSION_ID);
+
+    const { output, blockReviewOutcome, state } = await runReviewContent(findings);
+
+    expect(blockReviewOutcome).toHaveBeenCalledWith(
+      expect.anything(),
+      OBLIGATION_ID,
+      'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE',
+      expect.anything(),
+      output,
+    );
+    expect(state.reviewAssurance?.obligations[0]?.status).not.toBe('fulfilled');
+    expect(state.reviewAssurance?.invocations).toHaveLength(0);
+    expect(state.reviewAssurance?.attempts[0]).toMatchObject({ status: 'created' });
   });
 
   it('blocks stale content-review generation before any SDK invocation or evidence mutation', async () => {
     const { output, blockReviewOutcome, updateReviewAssurance, state, client } =
       await runReviewContent(
         buildFindings(),
-        undefined,
-        undefined,
         undefined,
         undefined,
         undefined,
@@ -590,36 +486,7 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     );
   });
 
-  it('passes explicit reviewOutputPolicy for /review content text compatibility', async () => {
-    const findings = buildFindings();
-    const textCompatClient = buildTextCompatClient(findings);
-    const { output, blockReviewOutcome, state, client } = await runReviewContent(
-      findings,
-      { args: { text: 'diff content', inputOrigin: 'manual_text' } },
-      true,
-      'text_compat_allowed',
-      textCompatClient,
-    );
-
-    expect(blockReviewOutcome).not.toHaveBeenCalled();
-    expect(client.session.prompt).toHaveBeenCalledTimes(2);
-    const invocation = state.reviewAssurance?.invocations[0];
-    expect(invocation).toMatchObject({
-      reviewOutputMode: 'text_compat',
-      structuredOutputUsed: false,
-      reviewAssuranceLevel: 'text_compat_lower',
-      extractionMethod: 'direct_json',
-    });
-    const parsed = JSON.parse(output.output) as Record<string, unknown>;
-    expect(parsed.pluginReviewOutput).toMatchObject({
-      reviewOutputMode: 'text_compat',
-      structuredOutputUsed: false,
-      reviewAssuranceLevel: 'text_compat_lower',
-      extractionMethod: 'direct_json',
-    });
-  });
-
-  it('uses persisted material rather than direct /review input while injecting valid strict findings', async () => {
+  it('uses persisted material rather than direct /review input and returns a verdict-only follow-up', async () => {
     const { output, blockReviewOutcome, client } = await runReviewContent(buildFindings(), {
       text: 'diff content',
       inputOrigin: 'manual_text',
@@ -638,9 +505,8 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     );
     const parsed = JSON.parse(output.output) as Record<string, unknown>;
     expect(String(parsed.next)).toContain('PLUGIN_REVIEW_COMPLETED');
-    expect(parsed.pluginReviewFindings).toMatchObject({
-      attestation: { toolObligationId: OBLIGATION_ID },
-    });
+    expect(String(parsed.next)).toContain('reviewVerdict=accept');
+    expect(parsed).not.toHaveProperty('pluginReviewFindings');
   });
 
   it('fails closed without any persisted attempt for the obligation', async () => {
@@ -663,14 +529,14 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     });
 
     expect(client.session.create).not.toHaveBeenCalled();
-    // No attempt means the obligation predates the frozen-material contract:
-    // current mutable state must not be used to reconstruct reviewer input.
+    // No attempt means no bindable reviewer context: the frozen obligation
+    // material alone cannot reconstruct reviewer input without an attempt.
     expect(blockReviewOutcome).toHaveBeenCalledWith(
       expect.anything(),
       OBLIGATION_ID,
-      'REVIEW_MATERIAL_INTEGRITY_FAILED',
+      'REVIEW_ATTEMPT_UNAVAILABLE',
       expect.objectContaining({
-        reason: expect.stringContaining('predates frozen review material'),
+        reason: expect.stringContaining('bindable attempt'),
       }),
       output,
     );
@@ -725,16 +591,18 @@ describe('runReviewOrchestration strict /review content analysis', () => {
       ...stateRef.current,
       reviewAssurance: {
         ...stateRef.current.reviewAssurance!,
-        attempts: [
-          {
-            ...stateRef.current.reviewAssurance!.attempts[0]!,
-            reviewMaterial: {
-              content: 'wrong material',
-              materialDigest: 'b'.repeat(64),
-              subjectDigest: SUBJECT_DIGEST,
-            },
-          },
-        ],
+        obligations: stateRef.current.reviewAssurance!.obligations.map((obligation) =>
+          obligation.obligationId === OBLIGATION_ID
+            ? {
+                ...obligation,
+                reviewMaterial: {
+                  content: 'wrong material',
+                  materialDigest: 'b'.repeat(64),
+                  subjectDigest: SUBJECT_DIGEST,
+                },
+              }
+            : obligation,
+        ),
       },
     };
     vi.mocked(readState).mockResolvedValue(stateRef.current);
@@ -759,31 +627,6 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     );
   });
 
-  it('does not mutate output for non-strict malformed reviewer input', async () => {
-    const findings = buildFindings({
-      attestation: {
-        mandateDigest: 'wrong-digest-value',
-        criteriaVersion: REVIEW_CRITERIA_VERSION,
-        toolObligationId: OBLIGATION_ID,
-        iteration: 1,
-        planVersion: 1,
-        reviewedBy: 'flowguard-reviewer',
-      },
-    });
-
-    const { output, blockReviewOutcome, updateReviewAssurance } = await runReviewContent(
-      findings,
-      { args: { text: 'diff content', inputOrigin: 'manual_text' } },
-      false,
-    );
-
-    expect(blockReviewOutcome).not.toHaveBeenCalled();
-    expect(updateReviewAssurance).not.toHaveBeenCalled();
-    const parsed = JSON.parse(output.output) as Record<string, unknown>;
-    expect(parsed.next).toBeUndefined();
-    expect(parsed.pluginReviewFindings).toBeUndefined();
-  });
-
   it('blocks with SUBAGENT_EVIDENCE_REUSED when subagent findings were already used (atomic reuse check)', async () => {
     // Item 4: the reuse check and evidence append happen in a single
     // updateReviewAssurance transaction. A pre-existing invocation that shares
@@ -793,14 +636,13 @@ describe('runReviewOrchestration strict /review content analysis', () => {
       buildFindings(),
       { args: { text: 'diff content', inputOrigin: 'manual_text' } },
       true,
-      'structured_required',
-      undefined,
       undefined,
       [
         {
           invocationId: 'prior-invocation-1',
           obligationId: 'prior-obligation-1',
           obligationType: 'review',
+          attemptId: '00000000-0000-4000-8000-0000000000c1',
           parentSessionId: PARENT_SESSION_ID,
           childSessionId: CHILD_SESSION_ID,
           agentType: 'flowguard-reviewer',
@@ -817,7 +659,7 @@ describe('runReviewOrchestration strict /review content analysis', () => {
           reviewOutputMode: 'structured_output',
           structuredOutputUsed: true,
           reviewAssuranceLevel: 'structured_high',
-          capturedVerdict: 'accept',
+          capturedRawFindings: { overallVerdict: 'accept' },
         },
       ],
     );

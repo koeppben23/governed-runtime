@@ -12,6 +12,10 @@ import {
   type DiscoveryReviewContext,
 } from './discovery-context-prompt.js';
 import { buildStackProfileSection, CORE_REVIEW_PROFILE_MARKER } from './prompt-sections.js';
+import {
+  renderReviewChallengeContract,
+  type ReviewerChallengePromptContract,
+} from './challenge-contract.js';
 
 export interface ImplReviewPromptOpts {
   readonly changedFiles: string[];
@@ -36,6 +40,7 @@ export interface ImplReviewPromptOpts {
   readonly observationCapability?: string;
   readonly observationRevisions?: readonly ('base' | 'head')[];
   readonly implementationDigest?: string;
+  readonly challengeContract?: ReviewerChallengePromptContract;
 }
 
 export interface ReviewClaimAssertionEvidence {
@@ -139,6 +144,7 @@ export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
     observationCapability,
     observationRevisions,
     implementationDigest,
+    challengeContract,
   } = opts;
   const stackSection = buildStackProfileSection(profileName, profileRules);
   const discoverySection = buildDiscoveryContextSection(discoveryContext);
@@ -156,6 +162,7 @@ export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
     `obligationId=${obligationId}`,
     `mandateDigest=${mandateDigest}`,
     `criteriaVersion=${criteriaVersion}`,
+    ...renderReviewChallengeContract(challengeContract, obligationId),
     ...(stackSection ? [stackSection] : []),
     ...(discoverySection ? [discoverySection] : []),
     ...renderPersistedProofGraphContext(proofGraph),

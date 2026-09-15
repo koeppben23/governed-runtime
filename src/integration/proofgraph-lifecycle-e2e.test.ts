@@ -33,13 +33,17 @@ import { writeStateWithArtifacts, type ToolContext } from './tools/helpers.js';
 import { runRequiredDiscovery } from './tools/hydrate-discovery.js';
 import { plan } from './tools/plan.js';
 import { review } from './tools/review-tool/index.js';
-import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
+import {
+  REVIEW_CRITERIA_VERSION,
+  REVIEW_MANDATE_DIGEST,
+  buildInvocationEvidence,
+  hashFindings,
+} from './review/assurance.js';
 import type { ReviewFindings } from '../state/evidence.js';
 import { executeReviewDecision } from '../rails/review-decision.js';
 import { createTestContext } from '../testing.js';
 import { hashText } from '../shared/hashing.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
-import { computeRecordDigest } from '../state/evidence-plan.js';
 import { materializeApprovedPlanContractResult } from './proofgraph/materialize-contract.js';
 import { summarizeProofGraph, summarizePersistedProofGraph } from '../audit/proofgraph/summary.js';
 import { evaluateProofGraphGate } from '../audit/proofgraph/gate.js';
@@ -55,6 +59,10 @@ import {
   assuranceWith,
 } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
+import {
+  completedDispatchForInvocation,
+  makePlanRevision,
+} from '../state/evidence-test-constants.js';
 import type { ReviewAssuranceState } from '../state/evidence-review.js';
 import type {
   PlanClaimDeclaration,
@@ -99,6 +107,7 @@ function planReviewEvidenceFor(
           : obligation.reviewSubjectScope,
     },
     invocations: [invocation],
+    dispatches: PLAN_REVIEW_ASSURANCE.dispatches,
   });
 }
 
@@ -226,6 +235,9 @@ const PLAN_TEXT = [
   '## Verification',
   '1. `./mvnw verify` — Source: repo:mvnw',
 ].join('\n');
+
+/** Canonical coherent plan revision for the PLAN_TEXT fixture. */
+const PLAN_CURRENT = makePlanRevision({ body: PLAN_TEXT, createdAt: FIXED_TIME });
 
 /**
  * Rail context using the REAL digest function. Certificate validation in the
@@ -621,7 +633,16 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
           submitted!.plan!.claimDeclarations,
         ),
       },
-      { verdict: 'approve', rationale: 'ok', decidedBy: 'approver' },
+      {
+        verdict: 'approve',
+        rationale: 'ok',
+        decisionIdentity: {
+          actorId: 'approver',
+          actorEmail: null,
+          actorSource: 'unknown',
+          actorAssurance: 'best_effort',
+        },
+      },
       realDigestContext(),
     );
 
@@ -671,6 +692,7 @@ describe('standalone review hypotheses (runtime)', () => {
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       reviewedBy: { sessionId: 'ses_r' },
       reviewedAt: FIXED_TIME,
       attestation: {
@@ -682,6 +704,64 @@ describe('standalone review hypotheses (runtime)', () => {
         reviewedBy: 'flowguard-reviewer',
       },
     };
+  }
+
+  /** Bind host-captured structured findings to the standalone review obligation. */
+  async function bindStructuredReviewEvidence(
+    reviewEnv: Env,
+    obligationId: string,
+    capturedFindings: ReviewFindings,
+  ): Promise<void> {
+    const state = await readState(reviewEnv.sDir);
+    const assurance = state?.reviewAssurance;
+    const obligation = assurance?.obligations.find((o) => o.obligationId === obligationId);
+    const attempt = assurance?.attempts.find((a) => a.obligationId === obligationId);
+    if (!state || !assurance || !obligation || !attempt) {
+      throw new Error('standalone review evidence requires a pending obligation and attempt');
+    }
+    const invocation = buildInvocationEvidence({
+      obligationId,
+      obligationType: 'review',
+      mandateDigest: obligation.mandateDigest,
+      criteriaVersion: obligation.criteriaVersion,
+      parentSessionId: reviewEnv.tc.sessionID,
+      childSessionId: capturedFindings.reviewedBy.sessionId,
+      promptHash: 'a'.repeat(64),
+      findingsHash: hashFindings(capturedFindings),
+      invokedAt: FIXED_TIME,
+      fulfilledAt: FIXED_TIME,
+      capturedRawFindings: capturedFindings,
+      attemptId: attempt.attemptId,
+    });
+    await writeStateWithArtifacts(reviewEnv.sDir, {
+      ...state,
+      reviewAssurance: {
+        ...assurance,
+        obligations: assurance.obligations.map((item) =>
+          item.obligationId === obligationId
+            ? {
+                ...item,
+                status: 'fulfilled' as const,
+                invocationId: invocation.invocationId,
+                pluginHandshakeAt: FIXED_TIME,
+                fulfilledAt: FIXED_TIME,
+              }
+            : item,
+        ),
+        invocations: [...assurance.invocations, invocation],
+        attempts: assurance.attempts.map((item) =>
+          item.attemptId === attempt.attemptId
+            ? {
+                ...item,
+                status: 'bound' as const,
+                childSessionId: invocation.childSessionId,
+                completedAt: FIXED_TIME,
+              }
+            : item,
+        ),
+        dispatches: [...assurance.dispatches, completedDispatchForInvocation(invocation)],
+      },
+    });
   }
 
   it('produces exactly the profile objective count, never a duplicated set', async () => {
@@ -719,12 +799,18 @@ describe('standalone review hypotheses (runtime)', () => {
       },
     });
 
+    await bindStructuredReviewEvidence(
+      env,
+      obligationId,
+      findings(obligationId, obligation.iteration, obligation.planVersion),
+    );
+
     await review.execute(
       {
         inputOrigin: 'manual_text',
         text: 'PR under review',
         targetPaths: ['README.md'],
-        reviewFindings: findings(obligationId, obligation.iteration, obligation.planVersion),
+        reviewObligationId: obligationId,
       },
       env.tc,
     );
@@ -818,30 +904,13 @@ describe('ProofGraph materialization and gate (runtime)', () => {
       activeChecks: ACTIVE_CHECKS,
       verificationCandidates,
       plan: {
-        current: {
-          body: PLAN_TEXT,
-          digest: 'plan-digest',
-          sections: [],
-          createdAt: FIXED_TIME,
-          recordDigest: computeRecordDigest({
-            contentDigest: 'plan-digest',
-            planVersion: 1,
-            supersedesRecordDigest: null,
-            originatingReviewObligationId: null,
-            revisionReason: null,
-          }),
-          planVersion: 1,
-          supersedesRecordDigest: null,
-          originatingReviewObligationId: null,
-          revisionReason: null,
-          lineageStatus: 'verified' as const,
-        },
+        current: PLAN_CURRENT,
         history: [],
         reviewFindings: undefined,
         claimDeclarations: { flow: 'plan', version: 'v2', claims: [claim] },
         reviewCompletion: 'reviewer_accepted',
       },
-      reviewAssurance: planReviewEvidenceFor('plan-digest', {
+      reviewAssurance: planReviewEvidenceFor(PLAN_CURRENT.digest, {
         flow: 'plan',
         version: 'v2',
         claims: [claim],
@@ -849,7 +918,16 @@ describe('ProofGraph materialization and gate (runtime)', () => {
     });
     const approved = executeReviewDecision(
       base,
-      { verdict: 'approve', rationale: 'ok', decidedBy: 'approver' },
+      {
+        verdict: 'approve',
+        rationale: 'ok',
+        decisionIdentity: {
+          actorId: 'approver',
+          actorEmail: null,
+          actorSource: 'unknown',
+          actorAssurance: 'best_effort',
+        },
+      },
       realDigestContext(),
     );
     if (approved.kind !== 'ok') throw new Error('plan approval failed');
@@ -968,7 +1046,16 @@ describe('ProofGraph materialization and gate (runtime)', () => {
         proofContract: contract,
         proofGraph: summary.projection,
       },
-      { verdict: 'approve', rationale: 'ship it', decidedBy: 'approver' },
+      {
+        verdict: 'approve',
+        rationale: 'ship it',
+        decisionIdentity: {
+          actorId: 'approver',
+          actorEmail: null,
+          actorSource: 'unknown',
+          actorAssurance: 'best_effort',
+        },
+      },
       // No policy configuration at all: enforcement is unconditional (#762).
       realDigestContext(),
     );
@@ -1009,24 +1096,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
       ticket: TICKET,
       activeChecks: ACTIVE_CHECKS,
       plan: {
-        current: {
-          body: PLAN_TEXT,
-          digest: 'plan-digest',
-          sections: [],
-          createdAt: FIXED_TIME,
-          recordDigest: computeRecordDigest({
-            contentDigest: 'plan-digest',
-            planVersion: 1,
-            supersedesRecordDigest: null,
-            originatingReviewObligationId: null,
-            revisionReason: null,
-          }),
-          planVersion: 1,
-          supersedesRecordDigest: null,
-          originatingReviewObligationId: null,
-          revisionReason: null,
-          lineageStatus: 'verified' as const,
-        },
+        current: PLAN_CURRENT,
         history: [],
         reviewFindings: undefined,
         claimDeclarations: { flow: 'plan', version: 'v2', claims: [CRITICAL_CLAIM] },
@@ -1041,7 +1111,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             requiredChallengeCount: 0,
             requiredChallengeKind: 'design_challenge' as const,
             challengePolicyVersion: 'challenge-policy.v1' as const,
-            subjectDigest: 'plan-digest',
+            subjectDigest: PLAN_CURRENT.digest,
             claimDeclarationsDigest: hashText(
               canonicalJsonStringify({ flow: 'plan', version: 'v2', claims: [CRITICAL_CLAIM] }),
             ),
@@ -1049,7 +1119,14 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             planVersion: 1,
             criteriaVersion: 'p40-v1',
             mandateDigest: 'e78b6bab98fcf033874fcc07e17d87aaff73fca47b1a28209e5dd4a1a28eedb7',
-            maxReviewerOutputRepairAttempts: 1,
+            maxReviewerAttempts: 1,
+            reviewProfile: 'core',
+            profileSource: 'policy_default',
+            reviewMaterial: {
+              content: 'frozen review material',
+              materialDigest: 'a'.repeat(64),
+              subjectDigest: PLAN_CURRENT.digest,
+            },
             createdAt: FIXED_TIME,
             pluginHandshakeAt: FIXED_TIME,
             status: 'fulfilled' as const,
@@ -1068,9 +1145,10 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             parentSessionId: 'ses_parent',
             childSessionId: 'ses_child',
             agentType: 'flowguard-reviewer' as const,
-            invocationMode: 'host_subagent_task' as const,
-            hostVisible: true,
-            promptHash: 'abc',
+            invocationMode: 'sdk_session_prompt' as const,
+            hostVisible: false,
+            source: 'host-orchestrated' as const,
+            promptHash: 'a'.repeat(64),
             mandateDigest: 'e78b6bab98fcf033874fcc07e17d87aaff73fca47b1a28209e5dd4a1a28eedb7',
             criteriaVersion: 'p40-v1',
             findingsHash,
@@ -1078,6 +1156,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             fulfilledAt: FIXED_TIME,
             consumedByObligationId: null,
             capturedVerdict: 'accept',
+            capturedRawFindings: { overallVerdict: 'accept' },
             reviewOutputMode: 'structured_output' as const,
             structuredOutputUsed: true,
             reviewAssuranceLevel: 'structured_high' as const,
@@ -1089,21 +1168,43 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             attemptId: '55555555-3333-4333-8333-333333333333',
             obligationId,
             obligationType: 'plan' as const,
-            subjectDigest: 'plan-digest',
+            subjectDigest: PLAN_CURRENT.digest,
             childSessionId: 'ses_child',
             ordinal: 0,
             status: 'bound' as const,
             origin: { kind: 'initial' } as const,
             repositoryDiscovery: { kind: 'not_applicable' } as const,
+            observations: [],
             createdAt: FIXED_TIME,
+            completedAt: FIXED_TIME,
           },
         ],
-        dispatches: [],
+        dispatches: [
+          {
+            dispatchId: '55555555-5555-4555-8555-555555555555',
+            attemptId: '55555555-3333-4333-8333-333333333333',
+            obligationId,
+            hostCallId: 'ses_child',
+            canonicalPromptDigest: 'a'.repeat(64),
+            dispatchAuthorizedAt: FIXED_TIME,
+            dispatchStatus: 'completed' as const,
+            completedAt: FIXED_TIME,
+          },
+        ],
       },
     });
     const approved = executeReviewDecision(
       state,
-      { verdict: 'approve', rationale: 'ok', decidedBy: 'approver' },
+      {
+        verdict: 'approve',
+        rationale: 'ok',
+        decisionIdentity: {
+          actorId: 'approver',
+          actorEmail: null,
+          actorSource: 'unknown',
+          actorAssurance: 'best_effort',
+        },
+      },
       realDigestContext(),
     );
     if (approved.kind !== 'ok') throw new Error('plan approval failed');

@@ -3,7 +3,7 @@
  * @description Path resolution, tarball integrity, and file helpers for the FlowGuard CLI installer.
  *
  * Types and JSON merge logic extracted to install-types.ts and install-json.ts
- * following FG-REL-042. This module re-exports everything for backward compatibility.
+ * following FG-REL-042.
  *
  * @version v2
  */
@@ -33,58 +33,23 @@ export type { InstallErrorCode } from './install-types.js';
 import { InstallError } from './install-recovery.js';
 export { InstallError };
 
-// ---- re-export everything from split modules for backward compatibility ----
-export type {
-  InstallScope,
-  InstallPlatform,
-  CliAction,
-  CliArgs,
-  FileOp,
-  CliResult,
-  DoctorStatus,
-  DoctorCheck,
-  PolicyMode,
-  CliError,
-  CliNotice,
-  ArtifactDetection,
-  ScopeSource,
-} from './install-types.js';
-export {
-  PACKAGE_VERSION,
-  resolvePackageRoot,
-  SHIPPED_EXECUTABLE_CHECK,
-  BUILD_INFO_CHECK,
-  FLOWGUARD_OWNED_FILES,
-  FLOWGUARD_TARBALL_PATTERN,
-  FLOWGUARD_INSTRUCTION_ENTRIES,
-  hasNonFlowGuardInstructions,
-} from './install-types.js';
 import {
   FLOWGUARD_REVIEWER_MODEL_ENV,
   VALID_MODEL_ID_PATTERN,
   FLOWGUARD_REVIEWER_EFFORT_ENV,
+  REVIEWER_EFFORT_VALUES,
   VALID_EFFORT_PATTERN,
   OPENCODE_CONFIG_FILENAMES,
 } from './install-types.js';
-export {
-  FLOWGUARD_REVIEWER_MODEL_ENV,
-  VALID_MODEL_ID_PATTERN,
-  FLOWGUARD_REVIEWER_EFFORT_ENV,
-  VALID_EFFORT_PATTERN,
-  OPENCODE_CONFIG_FILENAMES,
-} from './install-types.js';
-export {
-  parseJsonc,
-  createMalformedJsonBackup,
-  vendorDependency,
-  mergePackageJson,
-  mergeReviewerTaskPermission,
-  mergeOpencodeJson,
-  removeFromOpencodeJson,
-} from './install-json.js';
 export { hashText as sha256 };
 
-import type { InstallScope, InstallPlatform, FileOp, ArtifactDetection } from './install-types.js';
+import type {
+  InstallScope,
+  InstallPlatform,
+  FileOp,
+  ArtifactDetection,
+  ReviewerEffort,
+} from './install-types.js';
 
 // ---- Path Resolution ----
 
@@ -261,20 +226,24 @@ function readReviewerModelEnv(): string | null {
   return model;
 }
 
-function readReviewerEffortEnv(): string | null {
+function readReviewerEffortEnv(platform: InstallPlatform): ReviewerEffort | null {
   const raw = process.env[FLOWGUARD_REVIEWER_EFFORT_ENV];
   if (!raw) return null;
   const effort = raw.trim();
   if (!effort) return null;
 
-  if (!VALID_EFFORT_PATTERN.test(effort)) {
+  const supported: readonly ReviewerEffort[] =
+    platform === 'opencode'
+      ? REVIEWER_EFFORT_VALUES
+      : REVIEWER_EFFORT_VALUES.filter((value) => value !== 'none');
+  if (!VALID_EFFORT_PATTERN.test(effort) || !supported.includes(effort as ReviewerEffort)) {
     throw new InstallError(
       'REVIEWER_CONFIG_INVALID',
       `${FLOWGUARD_REVIEWER_EFFORT_ENV} contains invalid value: "${effort}" — ` +
-        'only lowercase letters are allowed (e.g. low, medium, high, xhigh, max).',
+        `allowed values for ${platform} are: ${supported.join(', ')}.`,
     );
   }
-  return effort;
+  return effort as ReviewerEffort;
 }
 
 /**
@@ -308,13 +277,10 @@ function assertReviewerTuningSupported(platform: InstallPlatform): void {
 /**
  * Inject operator-configured reviewer transport tuning into agent frontmatter.
  *
- * Host defaults to opencode for backward compatibility. Returns the template
- * unchanged when no override is set or the template has no frontmatter line.
+ * Returns the template unchanged when no override is set or the template has
+ * no frontmatter line.
  */
-export function buildReviewerAgentContent(
-  template: string,
-  platform: InstallPlatform = 'opencode',
-): string {
+export function buildReviewerAgentContent(template: string, platform: InstallPlatform): string {
   const lines: string[] = [];
 
   const model = readReviewerModelEnv();
@@ -322,7 +288,9 @@ export function buildReviewerAgentContent(
     lines.push(`model: ${model}`);
   }
 
-  const effort = readReviewerEffortEnv();
+  // OpenCode models that default to Thinking mode reject the host's required
+  // structured-output tool. The reviewer is always non-thinking by default.
+  const effort = readReviewerEffortEnv(platform) ?? (platform === 'opencode' ? 'none' : null);
   const effortField = reviewerEffortFieldForPlatform(platform);
   if (effort && effortField) {
     lines.push(`${effortField}: ${effort}`);

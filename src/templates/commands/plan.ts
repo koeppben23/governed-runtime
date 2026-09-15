@@ -1,4 +1,4 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 import {
   SHARED_REVIEW_LOOP,
   DISCOVERY_REVIEW_CAPTURE,
@@ -126,13 +126,13 @@ ${DISCOVERY_REVIEW_CAPTURE}
 6. Read the response. The \`next\` field contains the review workflow instructions.
 
 Payload contract for \`flowguard_plan\`:
-- Initial submission: the FIRST call MUST be \`flowguard_plan({ planText, claims })\`. NEVER include \`reviewVerdict\`, \`reviewFindings\`, or \`reviewerUnavailable\` in the first call — a prefilled verdict is a fabrication-of-convergence attempt and is rejected (the tool routes a verdict-bearing first call back to \`INDEPENDENT_REVIEW_REQUIRED\`).
+- Initial submission: the FIRST call MUST be \`flowguard_plan({ planText, claims })\`. NEVER include \`reviewVerdict\` or \`reviewerUnavailable\` in the first call — a prefilled verdict is a fabrication-of-convergence attempt and is rejected (the tool routes a verdict-bearing first call back to \`INDEPENDENT_REVIEW_REQUIRED\`).
 - Claims are pre-evidence declarations, not proof. They are bound into the plan approval certificate and materialized as ProofGraph fact claims after implementation; a declaration without its expected check remains unproven and is reported as a coverage gap.
 - \`claimId\` is not part of the public declaration input. FlowGuard mints it deterministically; never synthesize or submit one.
-- Record an accepting reviewer verdict after review: host_task_required mode calls \`flowguard_plan({ reviewVerdict: "accept" })\` (no \`reviewFindings\` — the plugin resolves captured evidence automatically); SDK/manual-attested modes also include the reviewer's exact \`reviewFindings\`. \`reviewVerdict: "accept"\` is the reviewer's acceptance, NOT user approval.
-- Revision after review: host_task_required mode calls \`flowguard_plan({ reviewVerdict: "changes_requested", planText: <complete revised plan>, claims: <complete revised claims> })\`; SDK/manual-attested modes also include the exact reviewer output as \`reviewFindings\`.
-- Never submit placeholder, diagnostic, or manually fabricated \`reviewFindings\`.
-- Set \`reviewerUnavailable: true\` only after an actual Task/subagent spawn failure; never set it preemptively.
+- After FlowGuard completes the independent review, submit only the bound reviewer verdict: \`flowguard_plan({ reviewVerdict: "accept" })\`. \`reviewVerdict: "accept"\` is the reviewer's acceptance, NOT user approval. FlowGuard captures and binds the host-observed structured reviewer evidence; never submit, copy, or reconstruct findings yourself.
+- Revision after review: call \`flowguard_plan({ reviewVerdict: "changes_requested", planText: <complete revised plan>, claims: <complete revised claims> })\`.
+- Never submit, copy, or reconstruct reviewer findings; only the bound verdict is accepted.
+- Set \`reviewerUnavailable: true\` only after an actual reviewer child-session dispatch failure; never set it preemptively.
 - After every FlowGuard call, stop and interpret \`phase\`, \`next\`, \`reviewInvocation\`, and any error code before constructing the next payload.
 
 ### Phase 3: Review Loop
@@ -191,7 +191,7 @@ Revision path (when review returns changes_requested):
 2. → new review starts, returns \`next: "INDEPENDENT_REVIEW_COMPLETED: ..."\`
 3. \`flowguard_plan({ reviewVerdict: "accept" })\` → PLAN_REVIEW (user gate — the USER decides via /review-decision)
 
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 ## Presentation
 
 - If \`presentation.markdown\` is present, display its markdown verbatim — never summarize, truncate, or omit it; do not append a second conclusion.

@@ -123,18 +123,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'Review findings are required for all review verdicts in mandatory review mode.',
     recoverySteps: [
       `Invoke the ${REVIEWER_SUBAGENT_TYPE} subagent so its ReviewFindings are captured for this obligation`,
-      'host-task mode: submit the verdict ONLY (reviewFindings is resolved from captured evidence and ignored if submitted). SDK mode: submit the verdict together with the reviewer reviewFindings',
-    ],
-  },
-
-  {
-    code: 'HOST_TASK_FINDINGS_UNPARSEABLE',
-    category: 'precondition',
-    messageTemplate:
-      'Host-task review evidence was captured but its findings could not be parsed as valid ReviewFindings: {message}',
-    recoverySteps: [
-      `Re-run the ${REVIEWER_SUBAGENT_TYPE} subagent and ensure it returns a complete, schema-valid ReviewFindings object`,
-      'Do not hand-edit the captured findings; the host-task evidence is the single source of truth and corrupt captures cannot be substituted by submitting reviewFindings',
+      'Submit only the reviewer verdict; FlowGuard resolves validated evidence automatically',
     ],
   },
 
@@ -165,7 +154,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   {
     code: 'REVIEW_OBLIGATION_ID_REQUIRED',
     category: 'precondition',
-    messageTemplate: 'A host-task review verdict requires reviewObligationId. {reason}',
+    messageTemplate: 'A review verdict requires reviewObligationId. {reason}',
     recoverySteps: [
       'Reuse reviewObligationId from the original CONTENT_ANALYSIS_REQUIRED response',
       'Submit the original content fields, reviewObligationId, and the captured reviewer verdict together',
@@ -219,20 +208,8 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'Invalid flowguard_plan call sequence: plan submission and review verdict inputs must be separate calls.',
     recoverySteps: [
       'Submit the plan first with flowguard_plan({ planText, claims }) — no verdict inputs',
-      'Do not include reviewVerdict, reviewFindings, or reviewerUnavailable in the plan submission call',
+      'Do not include reviewVerdict or reviewerUnavailable in the plan submission call',
       'Read the tool response next field before constructing the review verdict call',
-    ],
-    quickFixCommand: '/plan',
-  },
-
-  {
-    code: 'PLAN_SUBMISSION_MIXED_INPUTS',
-    category: 'precondition',
-    messageTemplate:
-      'Plan submission included reviewFindings without a verdict. Findings belong to the verdict call, not the initial submission.',
-    recoverySteps: [
-      'Submit the plan with flowguard_plan({ planText, claims }) — no verdict inputs',
-      'Add reviewFindings in the verdict call: flowguard_plan({ reviewVerdict, reviewFindings })',
     ],
     quickFixCommand: '/plan',
   },
@@ -243,8 +220,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'Plan approval included planText (you sent reviewVerdict="{receivedVerdict}"). Approval and plan submission must be separate calls; planText is for initial submissions and revisions only.',
     recoverySteps: [
-      'For host_task_required approval: call flowguard_plan({ reviewVerdict: "accept" }) after reviewer evidence is captured',
-      'For SDK/manual-attested approval: call flowguard_plan({ reviewVerdict: "accept", reviewFindings }) with the exact reviewer output',
+      'Call flowguard_plan({ reviewVerdict: "accept" }) after FlowGuard binds the host-observed structured reviewer evidence',
       'Include planText only when reviewVerdict is "changes_requested" (revised plan)',
     ],
     quickFixCommand: '/plan',
@@ -256,21 +232,8 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'The plan review loop is already active. Submit a review verdict to continue it, not a new plan.',
     recoverySteps: [
-      'The review loop is active — submit a reviewVerdict to continue it',
-      'In host_task_required mode, submit only reviewVerdict after reviewer evidence is captured',
-      'In SDK/manual-attested mode, include the exact reviewer output as reviewFindings',
-    ],
-    quickFixCommand: '/plan',
-  },
-
-  {
-    code: 'PLAN_FINDINGS_WITHOUT_VERDICT',
-    category: 'precondition',
-    messageTemplate:
-      'Review findings were submitted without a verdict. Include reviewVerdict alongside reviewFindings.',
-    recoverySteps: [
-      'Include reviewVerdict alongside reviewFindings',
-      'Call flowguard_plan({ reviewVerdict: "accept"|"changes_requested", reviewFindings })',
+      'The review loop is active — submit only the bound reviewVerdict to continue it',
+      'FlowGuard has already captured and bound the host-observed structured reviewer evidence',
     ],
     quickFixCommand: '/plan',
   },
@@ -292,7 +255,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate: 'A plan review verdict requires an active plan review loop.',
     recoverySteps: [
       'Submit the plan first and wait for the review obligation',
-      'Then submit reviewVerdict together with reviewFindings',
+      'Then submit only the bound reviewVerdict once FlowGuard captures the structured reviewer evidence',
     ],
     quickFixCommand: '/plan',
   },
@@ -425,7 +388,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'An implementation review verdict requires an active implementation review loop, but the current phase is {phase}.',
     recoverySteps: [
       'Run the required post-implementation validation with flowguard_run_check({ kind }) for every active check',
-      'After all checks pass and phase becomes IMPL_REVIEW, submit the verdict with flowguard_review_implementation({ reviewVerdict }) (in host-task mode the plugin resolves reviewFindings automatically)',
+      'After all checks pass and phase becomes IMPL_REVIEW, submit the bound verdict with flowguard_review_implementation({ reviewVerdict })',
     ],
     quickFixCommand: '/check',
   },
@@ -595,46 +558,13 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   },
 
   {
-    code: 'SUBAGENT_PROMPT_EMPTY',
-    category: 'precondition',
-    messageTemplate: `The ${REVIEWER_SUBAGENT_TYPE} prompt is too short. Include the plan/implementation text, ticket text, iteration, and planVersion.`,
-    recoverySteps: [
-      `Provide a substantive prompt to the ${REVIEWER_SUBAGENT_TYPE} subagent`,
-      'Include the full review context: plan or implementation text, ticket text, iteration, and planVersion',
-      'Re-invoke the subagent with the complete context',
-    ],
-  },
-
-  {
-    code: 'SUBAGENT_PROMPT_MISSING_CONTEXT',
-    category: 'precondition',
-    messageTemplate: `The ${REVIEWER_SUBAGENT_TYPE} prompt does not contain the expected review context. Include iteration and planVersion values from the FlowGuard tool response.`,
-    recoverySteps: [
-      'Read the iteration and planVersion values from the flowguard_plan or flowguard_implement response',
-      `Include those exact values in the prompt to the ${REVIEWER_SUBAGENT_TYPE} subagent`,
-      'Re-invoke the subagent with the corrected prompt',
-    ],
-  },
-
-  {
-    code: 'SUBAGENT_PROMPT_ARTIFACT_MISSING',
-    category: 'precondition',
-    messageTemplate: `The ${REVIEWER_SUBAGENT_TYPE} prompt ends at the canonical instruction block with no artifact appended below it. A reviewer cannot review an empty subject.`,
-    recoverySteps: [
-      'Append the content to review below the final line of the canonical reviewerTaskPrompt',
-      'Use the plan text, implementation diff, ADR, or reviewed branch diff as appropriate for the obligation',
-      `Re-invoke the ${REVIEWER_SUBAGENT_TYPE} subagent with the artifact included`,
-    ],
-  },
-
-  {
     code: 'SUBAGENT_REVIEW_NOT_INVOKED',
     category: 'precondition',
-    messageTemplate: `FlowGuard signaled INDEPENDENT_REVIEW_REQUIRED but no Task call to ${REVIEWER_SUBAGENT_TYPE} was detected. Call the subagent before submitting a verdict.`,
+    messageTemplate: `FlowGuard signaled INDEPENDENT_REVIEW_REQUIRED but no host-observed structured ${REVIEWER_SUBAGENT_TYPE} invocation was recorded. The structured reviewer invocation must complete before a verdict is submitted.`,
     recoverySteps: [
-      `Call the ${REVIEWER_SUBAGENT_TYPE} subagent via the Task tool`,
-      'Pass the plan/implementation text, ticket text, iteration, and planVersion in the prompt',
-      'After the subagent returns, submit only reviewVerdict matching the captured reviewer verdict; do not submit reviewFindings',
+      `Re-run the originating FlowGuard command so the host can create the reviewer child session`,
+      'Submit only the reviewVerdict; the host resolves the bound structured reviewer evidence automatically',
+      'Do NOT submit, copy, or reconstruct reviewer findings — only the bound verdict is accepted',
     ],
   },
 
@@ -677,23 +607,11 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   },
 
   {
-    code: 'HOST_SUBAGENT_TASK_REQUIRED',
-    category: 'precondition',
-    messageTemplate:
-      'Policy requires host-visible subagent invocation via the Task tool for {obligationId}, but no host evidence was found.',
-    recoverySteps: [
-      `Invoke the ${REVIEWER_SUBAGENT_TYPE} subagent via the OpenCode Task tool (subagent_type: "${REVIEWER_SUBAGENT_TYPE}")`,
-      `Ensure the build agent has task permission: { "*": "deny", "${REVIEWER_SUBAGENT_TYPE}": "allow" }`,
-      'After captured Task evidence binds, submit only reviewObligationId and reviewVerdict; never submit reviewFindings',
-    ],
-  },
-
-  {
     code: 'SUBAGENT_TYPE_UNAUTHORIZED',
     category: 'precondition',
     messageTemplate: `Subagent type '{subagentType}' is not authorized by FlowGuard governance. Only ${REVIEWER_SUBAGENT_TYPE} is allowed.`,
     recoverySteps: [
-      `Use the ${REVIEWER_SUBAGENT_TYPE} subagent type for reviewer Task calls`,
+      `Use the ${REVIEWER_SUBAGENT_TYPE} subagent type for reviewer invocations`,
       'Do not spawn unauthorized subagents — FlowGuard governance restricts subagent types',
     ],
   },
@@ -707,18 +625,6 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'Run /hydrate to recreate or bind a valid FlowGuard session.',
       'Verify the workspace/session directory still exists and is writable.',
       'Restart OpenCode if the sidecar session points to stale workspace state.',
-    ],
-  },
-
-  {
-    code: 'REVIEWER_TASK_REQUIRES_PENDING_OBLIGATION',
-    category: 'precondition',
-    messageTemplate:
-      'A flowguard-reviewer Task may only run when a pending review obligation exists. Run the relevant FlowGuard review tool (flowguard_plan, flowguard_implement, flowguard_architecture, or flowguard_review) first to create a pending review obligation, then start the reviewer Task.',
-    recoverySteps: [
-      'Run the relevant FlowGuard review tool (flowguard_plan, flowguard_implement, flowguard_architecture, or flowguard_review) first',
-      `Wait for the tool response to signal INDEPENDENT_REVIEW_REQUIRED before starting the ${REVIEWER_SUBAGENT_TYPE} Task`,
-      'Do not start reviewer Tasks speculatively before a review obligation has been created',
     ],
   },
 ];

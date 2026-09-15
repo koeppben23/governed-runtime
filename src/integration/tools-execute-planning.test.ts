@@ -59,7 +59,9 @@ import {
   IMPL_EVIDENCE,
   IMPL_REVIEW_CONVERGED,
 } from '../fixtures.js';
+import { completedDispatchForInvocation } from '../state/evidence-test-constants.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
+import { convertArgsToInputSchema } from '../mcp-server/schema-converter.js';
 import { TEAM_POLICY } from '../config/policy.js';
 import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
 import type { ReviewVerdict } from '../state/evidence.js';
@@ -121,6 +123,7 @@ vi.mock('../adapters/actor', async (importOriginal) => {
       id: 'test-operator',
       email: 'test@flowguard.dev',
       source: 'env',
+      assurance: 'best_effort',
     }),
   };
 });
@@ -218,7 +221,7 @@ async function currentSessionDir(): Promise<string> {
 
 async function fulfillPlanReview(
   iteration = 0,
-  overallVerdict: 'accept' | 'changes_requested' = 'accept',
+  overallVerdict: ReviewFindings['overallVerdict'] = 'accept',
 ) {
   return fulfillStrictReviewObligation(await currentSessionDir(), {
     obligationType: 'plan',
@@ -230,7 +233,7 @@ async function fulfillPlanReview(
 
 async function fulfillArchitectureReview(
   iteration = 0,
-  overallVerdict: 'accept' | 'changes_requested' = 'accept',
+  overallVerdict: ReviewFindings['overallVerdict'] = 'accept',
 ) {
   return fulfillStrictReviewObligation(await currentSessionDir(), {
     obligationType: 'architecture',
@@ -247,34 +250,6 @@ async function fulfillArchitectureReview(
 // =============================================================================
 
 describe('plan', () => {
-  const modeBSubagentFindings = {
-    iteration: 1,
-    planVersion: 1,
-    reviewMode: 'subagent' as const,
-    overallVerdict: 'accept' as const,
-    blockingIssues: [],
-    majorRisks: [],
-    missingVerification: [],
-    scopeCreep: [],
-    unknowns: [],
-    reviewedBy: { sessionId: 'ses_subagent_mode_b' },
-    reviewedAt: new Date().toISOString(),
-  };
-
-  const modeBSelfFindings = {
-    iteration: 1,
-    planVersion: 1,
-    reviewMode: 'self' as unknown as 'subagent',
-    overallVerdict: 'accept' as const,
-    blockingIssues: [],
-    majorRisks: [],
-    missingVerification: [],
-    scopeCreep: [],
-    unknowns: [],
-    reviewedBy: { sessionId: 'ses_self_mode_b' },
-    reviewedAt: new Date().toISOString(),
-  };
-
   describe('HAPPY', () => {
     it('Mode A: records initial plan with digest', async () => {
       await hydrateAndTicket();
@@ -427,14 +402,16 @@ describe('plan', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(typeof result.selfReviewIteration).toBe('number');
-      expect(typeof result.next).toBe('string');
+      expect(result.next).toBe('INDEPENDENT_REVIEW_REQUIRED');
 
-      const nextText = result.next as string;
-      const iterMatch = nextText.match(/iteration[=:\s]+(\d+)/i);
-      expect(iterMatch).not.toBeNull();
-      const nextIteration = Number.parseInt(iterMatch![1]!, 10);
-
-      expect(nextIteration).toBe(result.selfReviewIteration as number);
+      // The next iteration is carried by the child-session instruction metadata
+      // (the orchestration signal no longer embeds it in the `next` text).
+      const reviewInvocation = result.reviewInvocation as {
+        requiredReviewAttestation?: { iteration?: number };
+      };
+      expect(reviewInvocation.requiredReviewAttestation?.iteration).toBe(
+        result.selfReviewIteration,
+      );
     });
   });
 
@@ -474,30 +451,13 @@ describe('plan', () => {
       expect(result.selfReviewIteration).toBe(0);
     });
 
-    it('normalizes incident payload and discards approval, fabricated findings, and unavailable marker', async () => {
+    it('normalizes incident payload and discards approval and unavailable marker', async () => {
       await hydrateAndTicket();
       const raw = await plan.execute(
         {
           planText: '## Plan',
           reviewVerdict: 'accept',
-          reviewFindings: modeBSubagentFindings,
           reviewerUnavailable: true,
-          targetPaths: ['docs/test.md'],
-        },
-        ctx,
-      );
-      const result = parseToolResult(raw);
-      expect(result.error).not.toBe(true);
-      expect(result.status).toContain('Plan submitted');
-      expect(result.latestReview).toBeUndefined();
-    });
-
-    it('normalizes first-call planText + reviewFindings into initial plan submission', async () => {
-      await hydrateAndTicket();
-      const raw = await plan.execute(
-        {
-          planText: '## Plan',
-          reviewFindings: modeBSubagentFindings,
           targetPaths: ['docs/test.md'],
         },
         ctx,
@@ -535,7 +495,9 @@ describe('plan', () => {
       // instruction (awaiting_task continuation).
       expect(result.error).not.toBe(true);
       expect(result.phase).toBe('PLAN');
-      expect(result.reviewObligationId).toBe(first.reviewObligationId);
+      expect((result.reviewObligation as { obligationId?: string } | undefined)?.obligationId).toBe(
+        (first.reviewObligation as { obligationId?: string } | undefined)?.obligationId,
+      );
       expect(result.status).toContain('pending');
 
       // CHANGED revision while pending: fail closed — never silently ignored.
@@ -556,7 +518,7 @@ describe('plan', () => {
       );
       const first = parseToolResult(firstRaw);
       expect(first.phase).toBe('PLAN');
-      const obligationId = first.reviewObligationId as string;
+      const obligationId = (first.reviewObligation as { obligationId: string }).obligationId;
       const spentAttemptId = first.reviewAttemptId as string;
 
       // Simulate a crash/restart between the reviewer Task's Before and After:
@@ -587,19 +549,21 @@ describe('plan', () => {
       const result = parseToolResult(raw);
       expect(result.error).not.toBe(true);
       expect(result.phase).toBe('PLAN');
-      expect(result.reviewObligationId).toBe(obligationId);
+      expect((result.reviewObligation as { obligationId?: string } | undefined)?.obligationId).toBe(
+        obligationId,
+      );
       const rearmedAttemptId = result.reviewAttemptId as string;
       expect(rearmedAttemptId).not.toBe(spentAttemptId);
 
       // Durable outcome: A1 staled + dispatch outcome_unknown; A2 minted with
-      // origin task_rearm/interrupted on the SAME obligation (never a fresh
+      // origin dispatch_rearm/interrupted on the SAME obligation (never a fresh
       // obligation, never a re-bind of the spent attempt).
       const after = (await readState(sessDir))!;
       const attempts = after.reviewAssurance!.attempts;
       const spent = attempts.find((a) => a.attemptId === spentAttemptId)!;
       const rearmed = attempts.find((a) => a.attemptId === rearmedAttemptId)!;
       expect(spent.status).toBe('stale');
-      expect(rearmed.origin.kind).toBe('task_rearm');
+      expect(rearmed.origin.kind).toBe('dispatch_rearm');
       expect(rearmed.origin).toMatchObject({
         predecessorAttemptId: spentAttemptId,
         triggerReason: 'interrupted',
@@ -612,10 +576,7 @@ describe('plan', () => {
 
     it('blocks verdict before any plan exists with PLAN_SUBMISSION_REQUIRED', async () => {
       await hydrateAndTicket();
-      const raw = await plan.execute(
-        { reviewVerdict: 'accept', reviewFindings: modeBSubagentFindings },
-        ctx,
-      );
+      const raw = await plan.execute({ reviewVerdict: 'accept' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('PLAN_SUBMISSION_REQUIRED');
@@ -628,7 +589,6 @@ describe('plan', () => {
         {
           reviewVerdict: 'changes_requested',
           planText: '## Revised Plan',
-          reviewFindings: { ...modeBSubagentFindings, overallVerdict: 'changes_requested' },
           targetPaths: ['docs/test.md'],
         },
         ctx,
@@ -666,28 +626,7 @@ describe('plan', () => {
       expect(result.error).toBe(true);
       expect(result.code).toBe('PLAN_APPROVE_WITH_TEXT');
       expect(result.recovery).toContain(
-        'For host_task_required approval: call flowguard_plan({ reviewVerdict: "accept" }) after reviewer evidence is captured',
-      );
-      await expectStateStillInPlan();
-    });
-
-    it('blocks reviewFindings mixed into a plan-only resubmission after review starts', async () => {
-      await setupMidLoopPlan();
-
-      const raw = await plan.execute(
-        {
-          planText: '## Revised Plan',
-          reviewFindings: modeBSubagentFindings,
-          targetPaths: ['docs/test.md'],
-        },
-        ctx,
-      );
-      const result = parseToolResult(raw);
-
-      expect(result.error).toBe(true);
-      expect(result.code).toBe('PLAN_SUBMISSION_MIXED_INPUTS');
-      expect(result.recovery).toContain(
-        'Submit the plan with flowguard_plan({ planText, claims }) — no verdict inputs',
+        'Call flowguard_plan({ reviewVerdict: "accept" }) after FlowGuard binds the host-observed structured reviewer evidence',
       );
       await expectStateStillInPlan();
     });
@@ -704,7 +643,7 @@ describe('plan', () => {
       expect(result.error).toBe(true);
       expect(result.code).toBe('INVALID_PLAN_TOOL_SEQUENCE');
       expect(result.recovery).toContain(
-        'Do not include reviewVerdict, reviewFindings, or reviewerUnavailable in the plan submission call',
+        'Do not include reviewVerdict or reviewerUnavailable in the plan submission call',
       );
       await expectStateStillInPlan();
     });
@@ -973,94 +912,7 @@ describe('plan', () => {
       expect(result.reviewMode).toBe('subagent');
     });
 
-    it('Mode B blocks self findings when fallbackToSelf=false and subagentEnabled=true', async () => {
-      await hydrateSession({ policyMode: 'solo' });
-      await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
-
-      const { computeFingerprint, sessionDir: resolveSessionDir } =
-        await import('../adapters/workspace/index.js');
-      const fp = await computeFingerprint(ws.tmpDir);
-      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
-      const state = await readState(sessDir);
-      await writeState(sessDir, {
-        ...state!,
-        policySnapshot: {
-          ...state!.policySnapshot,
-          selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
-        },
-      });
-
-      await plan.execute({ planText: '## Plan', targetPaths: ['docs/test.md'] }, ctx);
-      const findings = { ...modeBSelfFindings, overallVerdict: 'changes_requested' as const };
-      const raw = await plan.execute(
-        {
-          reviewVerdict: 'changes_requested',
-          planText: '## Revised Plan',
-          reviewFindings: findings,
-          targetPaths: ['docs/test.md'],
-        },
-        ctx,
-      );
-      const result = parseToolResult(raw);
-      expect(result.error).toBe(true);
-      expect(result.code).toBe('REVIEW_MODE_SELF_NOT_ALLOWED');
-    });
-
-    it('Mode B blocks tampered review findings that do not match persisted evidence', async () => {
-      await hydrateAndTicket();
-      await plan.execute({ planText: '## Plan', targetPaths: ['docs/test.md'] }, ctx);
-
-      const reviewFindings = await fulfillPlanReview(0, 'accept');
-      const raw = await plan.execute(
-        {
-          reviewVerdict: 'accept',
-          reviewFindings: {
-            ...reviewFindings,
-            // Tamper a NON-blocking field so the payload stays internally
-            // coherent (accept + empty blockingIssues) and specifically
-            // exercises hash-mismatch, not the F12 coherence gate.
-            missingVerification: ['tampered: no integration test'],
-          },
-        },
-        ctx,
-      );
-      const result = parseToolResult(raw);
-      expect(result.error).toBe(true);
-      expect(result.code).toBe('REVIEW_FINDINGS_HASH_MISMATCH');
-    });
-
-    it('F12: blocks an accept payload carrying a blocking issue on coherence (precedes hash-mismatch)', async () => {
-      await hydrateAndTicket();
-      await plan.execute({ planText: '## Plan', targetPaths: ['docs/test.md'] }, ctx);
-
-      const reviewFindings = await fulfillPlanReview(0, 'accept');
-      // accept + a blocking issue is internally self-contradictory. The F12
-      // coherence gate fails closed BEFORE anti-tampering hash comparison, so a
-      // self-contradictory record never reaches (and cannot be masked by) the
-      // hash-mismatch path.
-      const raw = await plan.execute(
-        {
-          reviewVerdict: 'accept',
-          reviewFindings: {
-            ...reviewFindings,
-            blockingIssues: [
-              {
-                severity: 'major' as const,
-                category: 'correctness' as const,
-                message: 'contract drift',
-                location: 'test',
-              },
-            ],
-          },
-        },
-        ctx,
-      );
-      const result = parseToolResult(raw);
-      expect(result.error).toBe(true);
-      expect(result.code).toBe('SUBAGENT_VERDICT_FINDINGS_INCOHERENT');
-    });
-
-    it('Mode B blocks when reviewVerdict does not match reviewFindings.overallVerdict', async () => {
+    it('Mode B blocks when reviewVerdict does not match captured findings overallVerdict', async () => {
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan', targetPaths: ['docs/test.md'] }, ctx);
       const reviewFindings = await fulfillPlanReview(0, 'changes_requested');
@@ -1131,7 +983,7 @@ describe('plan', () => {
       expect(result.reviewCard).toContain('# FlowGuard Plan Review');
       expect(result.reviewCard).toContain('## Proposed Plan');
       expect(result.reviewCard).toContain('Implement payment validation');
-      expect(result.reviewCard).toContain('## Decision required');
+      expect(result.reviewCard).toContain('Review the plan and decide: /review-decision');
       expect(result.presentation).toEqual({ markdown: result.reviewCard });
     });
 
@@ -1147,9 +999,7 @@ describe('plan', () => {
       const result = parseToolResult(raw);
 
       expect(result.error).toBeUndefined();
-      expect(result.reviewCard).toContain('- `/approve`');
-      expect(result.reviewCard).toContain('- `/request-changes`');
-      expect(result.reviewCard).toContain('- `/reject`');
+      expect(result.reviewCard).toContain('/review-decision');
     });
 
     it('non-PLAN_REVIEW convergence (solo auto-advance) does not include reviewCard', async () => {
@@ -1168,39 +1018,29 @@ describe('plan', () => {
 
   // ─── P1.3 slice 8: third-verdict end-to-end through tool layer ──────────
   describe('EDGE: unable_to_review tool-layer integration', () => {
-    it('blocks plan with SUBAGENT_UNABLE_TO_REVIEW when findings.overallVerdict=unable_to_review (E2E)', async () => {
-      // End-to-end: full plan submission flow, real fulfilled obligation,
-      // findings mutated to unable_to_review. The tool layer (slice 4e)
-      // MUST short-circuit to BLOCKED before any reviewVerdict
-      // semantics are evaluated.
+    it('blocks plan with SUBAGENT_UNABLE_TO_REVIEW when captured findings declare unable_to_review (E2E)', async () => {
+      // End-to-end: full plan submission flow, real fulfilled obligation whose
+      // HOST capture declares unable_to_review. The tool layer MUST
+      // short-circuit to BLOCKED before any reviewVerdict semantics.
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan\n1. Fix auth', targetPaths: ['docs/test.md'] }, ctx);
-      // fulfillPlanReview installs a valid attestation; mutate the verdict.
-      const baseFindings = await fulfillPlanReview(0, 'accept');
-      const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
+      await fulfillPlanReview(0, 'unable_to_review');
 
-      const raw = await plan.execute(
-        { reviewVerdict: 'changes_requested', reviewFindings: unableFindings },
-        ctx,
-      );
+      const raw = await plan.execute({ reviewVerdict: 'changes_requested' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
     });
 
     it('blocks plan with SUBAGENT_UNABLE_TO_REVIEW even when paired with reviewVerdict=approve (E2E precedence)', async () => {
-      // Slice 4e precedence: unable_to_review fails closed regardless of
-      // the agent's submitted reviewVerdict. There is no path where
+      // Precedence: a host-captured unable_to_review fails closed regardless
+      // of the agent's submitted reviewVerdict. There is no path where
       // an unreviewable finding can be coerced into convergence.
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan\n1. Fix auth', targetPaths: ['docs/test.md'] }, ctx);
-      const baseFindings = await fulfillPlanReview(0, 'accept');
-      const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
+      await fulfillPlanReview(0, 'unable_to_review');
 
-      const raw = await plan.execute(
-        { reviewVerdict: 'accept', reviewFindings: unableFindings },
-        ctx,
-      );
+      const raw = await plan.execute({ reviewVerdict: 'accept' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
@@ -1211,13 +1051,9 @@ describe('plan', () => {
       // tool stack (not only via the unit-level validation test).
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
-      const baseFindings = await fulfillPlanReview(0, 'accept');
-      const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
+      await fulfillPlanReview(0, 'unable_to_review');
 
-      const raw = await plan.execute(
-        { reviewVerdict: 'accept', reviewFindings: unableFindings },
-        ctx,
-      );
+      const raw = await plan.execute({ reviewVerdict: 'accept' }, ctx);
       const result = parseToolResult(raw);
       expect(result.code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
       // Reason must surface a non-empty recovery hint; exact wording is
@@ -1235,33 +1071,27 @@ describe('plan', () => {
     const adrText =
       '## Context\nA database is needed.\n\n## Decision\nUse PostgreSQL.\n\n## Consequences\nMust maintain DB infra.';
 
-    it('blocks architecture with SUBAGENT_UNABLE_TO_REVIEW when findings.overallVerdict=unable_to_review (E2E)', async () => {
-      // F13 slice 10 parity with the plan EDGE test above. Full architecture
-      // submission flow with a real fulfilled obligation; finding verdict
-      // mutated to unable_to_review. The tool layer (slice 7c hooks
-      // validateReviewFindings, which fail-closes per P1.3 slice 4e) MUST
-      // short-circuit to BLOCKED before any reviewVerdict semantics
-      // are evaluated.
+    it('blocks architecture with SUBAGENT_UNABLE_TO_REVIEW when captured findings declare unable_to_review (E2E)', async () => {
+      // F13 slice 10 parity with the plan EDGE test above: full architecture
+      // submission flow with a real fulfilled obligation whose HOST capture
+      // declares unable_to_review. The tool layer MUST short-circuit to
+      // BLOCKED before any reviewVerdict semantics are evaluated.
       await hydrateSession({ policyMode: 'solo' });
       await architecture.execute(
         { title: 'PostgreSQL', adrText, targetPaths: ['docs/test.md'] },
         ctx,
       );
-      const baseFindings = await fulfillArchitectureReview(0, 'accept');
-      const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
+      await fulfillArchitectureReview(0, 'unable_to_review');
 
-      const raw = await architecture.execute(
-        { reviewVerdict: 'changes_requested', reviewFindings: unableFindings },
-        ctx,
-      );
+      const raw = await architecture.execute({ reviewVerdict: 'changes_requested' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
     });
 
     it('blocks architecture with SUBAGENT_UNABLE_TO_REVIEW even when paired with reviewVerdict=approve (E2E precedence)', async () => {
-      // Slice 4e precedence parity for architecture: unable_to_review fails
-      // closed regardless of the agent's submitted reviewVerdict. There
+      // Precedence parity for architecture: a host-captured unable_to_review
+      // fails closed regardless of the agent's submitted reviewVerdict. There
       // is no path where an unreviewable finding can be coerced into
       // architecture convergence.
       await hydrateSession({ policyMode: 'solo' });
@@ -1269,13 +1099,9 @@ describe('plan', () => {
         { title: 'PostgreSQL', adrText, targetPaths: ['docs/test.md'] },
         ctx,
       );
-      const baseFindings = await fulfillArchitectureReview(0, 'accept');
-      const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
+      await fulfillArchitectureReview(0, 'unable_to_review');
 
-      const raw = await architecture.execute(
-        { reviewVerdict: 'accept', reviewFindings: unableFindings },
-        ctx,
-      );
+      const raw = await architecture.execute({ reviewVerdict: 'accept' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
@@ -1289,13 +1115,9 @@ describe('plan', () => {
         { title: 'PostgreSQL', adrText, targetPaths: ['docs/test.md'] },
         ctx,
       );
-      const baseFindings = await fulfillArchitectureReview(0, 'accept');
-      const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
+      await fulfillArchitectureReview(0, 'unable_to_review');
 
-      const raw = await architecture.execute(
-        { reviewVerdict: 'accept', reviewFindings: unableFindings },
-        ctx,
-      );
+      const raw = await architecture.execute({ reviewVerdict: 'accept' }, ctx);
       const result = parseToolResult(raw);
       expect(result.code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
       expect(typeof result.recovery === 'string' || Array.isArray(result.recovery)).toBe(true);
@@ -1305,26 +1127,19 @@ describe('plan', () => {
       expect(recoveryText.length).toBeGreaterThan(0);
     });
 
-    it('architecture obligation iteration matches expectedIteration (planVersion stable at 1)', async () => {
+    it('architecture verdict-only review against bound captured evidence is accepted', async () => {
+      // Verdict-only submission (no agent findings) resolves the host-captured
+      // findings and consumes the bound obligation.
       await hydrateSession({ policyMode: 'solo' });
       await architecture.execute(
         { title: 'PostgreSQL', adrText, targetPaths: ['docs/test.md'] },
         ctx,
       );
-      const baseFindings = await fulfillArchitectureReview(0, 'accept');
-      const driftFindings = { ...baseFindings, planVersion: 2 };
+      await fulfillArchitectureReview(0, 'accept');
 
-      const raw = await architecture.execute(
-        { reviewVerdict: 'accept', reviewFindings: driftFindings },
-        ctx,
-      );
+      const raw = await architecture.execute({ reviewVerdict: 'accept' }, ctx);
       const result = parseToolResult(raw);
-      expect(result.error).toBe(true);
-      // The exact code is one of REVIEW_PLAN_VERSION_MISMATCH or similar
-      // depending on validation order — pin the family rather than the exact
-      // code so a future validation reorder doesn't break this contract pin.
-      expect(typeof result.code).toBe('string');
-      expect(String(result.code).length).toBeGreaterThan(0);
+      expect(result.error).toBeUndefined();
     });
   });
 
@@ -1339,6 +1154,7 @@ describe('plan', () => {
         artifactReviewSubjectScope: assuranceMod.artifactReviewSubjectScope,
         buildInvocationEvidence: assuranceMod.buildInvocationEvidence,
         createReviewObligation: assuranceMod.createReviewObligation,
+        freezeReviewMaterial: assuranceMod.freezeReviewMaterial,
         REVIEW_CRITERIA_VERSION: assuranceMod.REVIEW_CRITERIA_VERSION,
         REVIEW_MANDATE_DIGEST: assuranceMod.REVIEW_MANDATE_DIGEST,
         hashFindings: findingsHashMod.hashFindings,
@@ -1355,13 +1171,14 @@ describe('plan', () => {
             version: 'challenge-policy.v1',
             counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
           },
-          maxReviewerOutputRepairAttempts: 1,
+          maxReviewerAttempts: 1,
         },
         obligationType: 'plan',
         iteration: 0,
         planVersion: 1,
         now: NOW,
         subjectDigest,
+        reviewMaterial: deps.freezeReviewMaterial('frozen review material', subjectDigest),
         reviewSubjectScope: deps.artifactReviewSubjectScope(
           'plan',
           '## Approach\nBody',
@@ -1385,6 +1202,7 @@ describe('plan', () => {
         missingVerification: [],
         scopeCreep: [],
         unknowns: [],
+        challenges: [],
         reviewedBy: { sessionId: 'ses-child' },
         reviewedAt: NOW,
         attestation: {
@@ -1408,16 +1226,15 @@ describe('plan', () => {
         ...deps.buildInvocationEvidence({
           obligationId: obligation.obligationId,
           obligationType: 'plan',
+          attemptId: '00000000-0000-4000-8000-0000000000d1',
           mandateDigest: deps.REVIEW_MANDATE_DIGEST,
           criteriaVersion: deps.REVIEW_CRITERIA_VERSION,
           parentSessionId: 'ses-parent',
           childSessionId: 'ses-child',
-          invocationMode: 'host_subagent_task',
-          hostVisible: true,
-          promptHash: 'sha256-prompt',
+          promptHash: 'a'.repeat(64),
           findingsHash: deps.hashFindings(findings),
           invokedAt: NOW,
-          source: 'host-orchestrated',
+          capturedRawFindings: findings as unknown as Record<string, unknown>,
         }),
         consumedByObligationId: consumedBy,
       };
@@ -1427,12 +1244,13 @@ describe('plan', () => {
       const deps = await dependencies();
       const obligation = producerObligation(deps, 'plan-digest-reviewed');
       const findings = findingsFor(deps, obligation);
+      const invocation = invocationFor(deps, obligation, findings, obligation.obligationId);
       const assuranceState = {
         assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [obligation],
-        invocations: [invocationFor(deps, obligation, findings, obligation.obligationId)],
+        invocations: [invocation],
         attempts: [],
-        dispatches: [],
+        dispatches: [completedDispatchForInvocation(invocation)],
       };
       const summary = deps.latestPlanReviewSummary(assuranceState, findings, 1);
       expect(summary.reviewedDigest).toBe('plan-digest-reviewed');
@@ -1510,7 +1328,7 @@ describe('plan', () => {
       expect(result.status).toContain('Plan submitted');
     });
 
-    it('HAPPY: reviewFindings=null + planText → Mode A (not PLAN_SUBMISSION_MIXED_INPUTS)', async () => {
+    it('HAPPY: reviewFindings=null + planText → Mode A (not treated as agent-supplied findings)', async () => {
       await hydrateAndTicket();
       const raw = await plan.execute(
         {
@@ -1558,6 +1376,23 @@ describe('plan', () => {
       const result = parseToolResult(raw);
       expect(result.error).not.toBe(true);
       expect(result.status).toContain('Plan submitted');
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // Tool boundary: the published strict input schema rejects unknown args
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  describe('strict tool input schema', () => {
+    it('rejects an unknown reviewFindings argument (no agent findings submission)', () => {
+      const schema = convertArgsToInputSchema(plan.args);
+      const parsed = schema.safeParse({ reviewVerdict: 'accept', reviewFindings: {} });
+      expect(parsed.success).toBe(false);
+      if (!parsed.success) {
+        expect(parsed.error.issues.some((issue) => issue.code === 'unrecognized_keys')).toBe(true);
+      }
+      // Verdict-only submission remains representable.
+      expect(schema.safeParse({ reviewVerdict: 'accept' }).success).toBe(true);
     });
   });
 });

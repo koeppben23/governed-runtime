@@ -22,6 +22,7 @@ vi.mock('./review/audit-events.js', () => ({
 }));
 
 import { readState } from '../adapters/persistence.js';
+import { makePendingReviewAttempt } from './review/__tests__/attempt-fixture.js';
 import { makeState, POLICY_SNAPSHOT, PLAN_RECORD, TICKET } from '../fixtures.js';
 import { runReviewOrchestration } from './plugin-orchestrator.js';
 import type { OrchestratorDeps, ToolCallEvent } from './plugin-orchestrator.js';
@@ -29,12 +30,13 @@ import { createTestAdapter } from './test-adapter-helper.js';
 import { TOOL_FLOWGUARD_PLAN } from './tool-names.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import type { SessionState } from '../state/schema.js';
-import { computeRecordDigest } from '../state/evidence-plan.js';
+import { makePlanRevision } from '../state/evidence-test-constants.js';
 import type { OrchestratorClient } from './review/types.js';
 
 const PARENT_SESSION_ID = 'parent-session-ssot-1';
 const CHILD_SESSION_ID = 'child-session-ssot-1';
 const OBLIGATION_ID = '22222222-2222-4222-8222-222222222222';
+const ATTEMPT_ID = '44444444-4444-4444-8444-444444444444';
 const SESS_DIR = '/tmp/fg-plan-ssot-test';
 const NOW = '2026-05-10T12:00:00.000Z';
 
@@ -44,11 +46,13 @@ function reviewRequiredOutput(): string {
   return JSON.stringify({
     phase: 'PLAN',
     next: 'INDEPENDENT_REVIEW_REQUIRED: call flowguard-reviewer with iteration=1 and planVersion=1',
-    reviewObligationId: OBLIGATION_ID,
-    reviewObligationIteration: 1,
-    reviewObligationPlanVersion: 1,
-    reviewCriteriaVersion: REVIEW_CRITERIA_VERSION,
-    reviewMandateDigest: REVIEW_MANDATE_DIGEST,
+    reviewObligation: {
+      obligationId: OBLIGATION_ID,
+      iteration: 1,
+      planVersion: 1,
+      criteriaVersion: REVIEW_CRITERIA_VERSION,
+      mandateDigest: REVIEW_MANDATE_DIGEST,
+    },
   });
 }
 
@@ -63,6 +67,7 @@ function buildFindings() {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: CHILD_SESSION_ID },
     reviewedAt: NOW,
     attestation: {
@@ -82,12 +87,6 @@ function buildState(overrides: Partial<SessionState> = {}): SessionState {
     plan: PLAN_RECORD,
     policySnapshot: {
       ...POLICY_SNAPSHOT,
-      selfReview: {
-        subagentEnabled: true,
-        fallbackToSelf: false,
-        strictEnforcement: true,
-      },
-      reviewOutputPolicy: 'structured_required',
     },
     reviewAssurance: {
       assuranceSchemaVersion: 'review-assurance.v6' as const,
@@ -103,7 +102,14 @@ function buildState(overrides: Partial<SessionState> = {}): SessionState {
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
-          maxReviewerOutputRepairAttempts: 1,
+          maxReviewerAttempts: 1,
+          reviewProfile: 'core',
+          profileSource: 'policy_default',
+          reviewMaterial: {
+            content: 'frozen review material',
+            materialDigest: 'a'.repeat(64),
+            subjectDigest: 'test-subject-digest',
+          },
           createdAt: NOW,
           pluginHandshakeAt: null,
           status: 'pending',
@@ -119,7 +125,15 @@ function buildState(overrides: Partial<SessionState> = {}): SessionState {
         },
       ],
       invocations: [],
-      attempts: [],
+      attempts: [
+        makePendingReviewAttempt({
+          attemptId: ATTEMPT_ID,
+          obligationId: OBLIGATION_ID,
+          obligationType: 'plan',
+          subjectDigest: 'test-subject-digest',
+          createdAt: NOW,
+        }),
+      ],
       dispatches: [],
     },
     ...overrides,
@@ -146,7 +160,7 @@ function buildCapturingClient(findings: Record<string, unknown>): {
             const text = req?.body?.parts?.[0]?.text;
             if (text) capturedPrompts.push(text);
             return {
-              data: { info: { structured_output: findings } },
+              data: { parts: [], info: { structured: findings } },
               error: undefined,
             };
           }),
@@ -167,10 +181,8 @@ function buildDeps(
       {
         tool,
         requestedAt: NOW,
-        subagentCalled: false,
-        subagentRecord: null,
-        contentMeta: { expectedIteration: 1, expectedPlanVersion: 1 },
-        capturedFindings: null,
+        attemptId: null,
+        obligationId: null,
       },
     ]),
   );
@@ -267,24 +279,7 @@ describe('BUG-09: plan text SSOT enforcement', () => {
     it('sessionState.plan.current.body is empty string -> empty plan in prompt', async () => {
       const emptyPlanState = {
         plan: {
-          current: {
-            body: '',
-            digest: 'digest-empty',
-            sections: [] as string[],
-            createdAt: NOW,
-            recordDigest: computeRecordDigest({
-              contentDigest: 'digest-empty',
-              planVersion: 1,
-              supersedesRecordDigest: null,
-              originatingReviewObligationId: null,
-              revisionReason: null,
-            }),
-            planVersion: 1,
-            supersedesRecordDigest: null,
-            originatingReviewObligationId: null,
-            revisionReason: null,
-            lineageStatus: 'verified' as const,
-          },
+          current: makePlanRevision({ body: '', createdAt: NOW }),
           history: [],
           reviewCompletion: 'pending' as const,
         },
@@ -328,24 +323,7 @@ describe('BUG-09: plan text SSOT enforcement', () => {
       const longPlan = 'A'.repeat(15_000);
       const longPlanState = {
         plan: {
-          current: {
-            body: longPlan,
-            digest: 'digest-long',
-            sections: ['Plan'] as string[],
-            createdAt: NOW,
-            recordDigest: computeRecordDigest({
-              contentDigest: 'digest-long',
-              planVersion: 1,
-              supersedesRecordDigest: null,
-              originatingReviewObligationId: null,
-              revisionReason: null,
-            }),
-            planVersion: 1,
-            supersedesRecordDigest: null,
-            originatingReviewObligationId: null,
-            revisionReason: null,
-            lineageStatus: 'verified' as const,
-          },
+          current: makePlanRevision({ body: longPlan, createdAt: NOW }),
           history: [],
           reviewCompletion: 'pending' as const,
         },

@@ -1,4 +1,4 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 
 export const APPROVE_COMMAND = `---
 description: FlowGuard — Approve the currently active review gate (plan, implementation evidence, or architecture).
@@ -26,7 +26,7 @@ Decision context: $ARGUMENTS
 - Only run this command when the user explicitly invoked /approve. Do not infer approval from chat context or review findings.
 - The approval target is determined by the current phase — flowguard_decision handles routing deterministically.
 - If blocked: report the reason and stop (never work around a blocked decision).
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 ## Done-when
 
 - Approval recorded via flowguard_decision.

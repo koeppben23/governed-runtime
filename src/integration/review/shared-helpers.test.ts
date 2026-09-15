@@ -1,7 +1,7 @@
 /**
  * @module integration/review/shared-helpers.test
  * @description Tests for shared-helpers pure functions — attestation validation,
- *              policy extraction, output detection, and session context construction.
+ *              output detection, discovery context, and prompt authority.
  *
  * @test-policy HAPPY, BAD
  */
@@ -9,7 +9,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   validatePipelineAttestation,
-  isStrictEnforcementEnabled,
   isOutputAlreadyBlocked,
   buildReviewDiscoveryContextForPipeline,
   buildAttemptSucceededLogger,
@@ -147,29 +146,6 @@ describe('validatePipelineAttestation', () => {
     );
     expect(result.valid).toBe(false);
     if (!result.valid) expect(result.code).toBe(REASON_MANDATE_MISMATCH);
-  });
-});
-
-// ─── isStrictEnforcementEnabled ───────────────────────────────────────────────
-
-describe('isStrictEnforcementEnabled', () => {
-  it('returns true when selfReview.strictEnforcement is true', () => {
-    const s = {
-      policySnapshot: { selfReview: { strictEnforcement: true } },
-    } as unknown as SessionState;
-    expect(isStrictEnforcementEnabled(s)).toBe(true);
-  });
-
-  it('returns false when selfReview is absent', () => {
-    const s = { policySnapshot: {} } as unknown as SessionState;
-    expect(isStrictEnforcementEnabled(s)).toBe(false);
-  });
-
-  it('returns false when strictEnforcement is false', () => {
-    const s = {
-      policySnapshot: { selfReview: { strictEnforcement: false } },
-    } as unknown as SessionState;
-    expect(isStrictEnforcementEnabled(s)).toBe(false);
   });
 });
 
@@ -314,7 +290,7 @@ function implementPromptState(overrides: {
     planVersion: 1,
     criteriaVersion: 'p41-v1',
     mandateDigest: 'mandate-digest',
-    maxReviewerOutputRepairAttempts: 1,
+    maxReviewerAttempts: 1,
     createdAt: '2026-01-01T00:00:00.000Z',
     pluginHandshakeAt: null,
     status: 'pending' as const,
@@ -323,6 +299,11 @@ function implementPromptState(overrides: {
     fulfilledAt: null,
     consumedAt: null,
     subjectDigest: 'subject-A',
+    reviewMaterial: {
+      content: 'frozen review material',
+      materialDigest: 'a'.repeat(64),
+      subjectDigest: 'subject-A',
+    },
     reviewProfile: 'core' as const,
     profileSource: 'policy_default' as const,
     reviewSubjectScope:
@@ -449,7 +430,7 @@ it('fails closed when the resolved obligation is not an implement obligation', (
     planVersion: 1,
     criteriaVersion: 'p41-v1',
     mandateDigest: 'mandate-digest',
-    maxReviewerOutputRepairAttempts: 1,
+    maxReviewerAttempts: 1,
     createdAt: '2026-01-01T00:00:00.000Z',
     pluginHandshakeAt: null,
     status: 'pending' as const,
@@ -458,6 +439,11 @@ it('fails closed when the resolved obligation is not an implement obligation', (
     fulfilledAt: null,
     consumedAt: null,
     subjectDigest: 'subject-A',
+    reviewMaterial: {
+      content: 'frozen review material',
+      materialDigest: 'a'.repeat(64),
+      subjectDigest: 'subject-A',
+    },
     reviewProfile: 'core' as const,
     profileSource: 'policy_default' as const,
     reviewSubjectScope: {

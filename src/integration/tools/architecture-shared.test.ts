@@ -16,14 +16,8 @@ import type { SessionState, Phase } from '../../state/schema.js';
 import { TEAM_POLICY } from '../../config/policy-presets.js';
 
 vi.mock('../review/orchestration-mode.js', () => ({
-  resolveRuntimeReviewPlatform: vi.fn(() => 'unknown'),
-  resolveReviewOrchestrationMode: vi.fn(() => 'self'),
-}));
-
-vi.mock('../review/pending-instruction.js', () => ({
-  buildPendingReviewInstruction: vi.fn((_input: unknown) => ({
-    next: 'faux-review-instruction',
-  })),
+  resolveRuntimeReviewPlatform: vi.fn(() => 'opencode'),
+  resolveReviewOrchestrationMode: vi.fn(() => 'host_structured'),
 }));
 
 // ─── Minimal Fixtures ─────────────────────────────────────────────────────────
@@ -156,36 +150,33 @@ describe('validateInitialSubmissionGate', () => {
 // ─── buildArchitectureReviewInstruction ───────────────────────────────────────
 
 describe('buildArchitectureReviewInstruction', () => {
-  it('subagentEnabled=false => self-review text prompt', () => {
+  it('returns child-session metadata for mandatory independent review', () => {
+    const obligation = archObligation('pending');
     const result = buildArchitectureReviewInstruction({
       policy: {
         ...TEAM_POLICY,
-        reviewInvocationPolicy: 'sdk_allowed',
       },
-      subagentEnabled: false,
-      obligation: null,
+      obligation,
       iteration: 0,
       planVersion: 1,
       subjectLabel: 'ADR',
       state: state('ARCHITECTURE'),
     });
-    expect(result.next).toContain('Self-review needed');
-    expect(result.reviewInvocation).toBeUndefined();
-  });
-
-  it('subagentEnabled=true => returns next + reviewInvocation', () => {
-    const result = buildArchitectureReviewInstruction({
-      policy: {
-        ...TEAM_POLICY,
-        reviewInvocationPolicy: 'sdk_allowed',
+    expect(result.next).toBe('INDEPENDENT_REVIEW_REQUIRED');
+    expect(result).not.toHaveProperty('reviewerTaskPrompt');
+    expect(result).toMatchObject({
+      mode: 'host_structured',
+      platform: 'opencode',
+      status: 'pending_review',
+      reviewerSubagentType: 'flowguard-reviewer',
+      authority: 'review_obligation_evidence_binding',
+      obligationId: obligation.obligationId,
+      requiredReviewAttestation: {
+        reviewedBy: 'flowguard-reviewer',
+        toolObligationId: obligation.obligationId,
+        iteration: 0,
+        planVersion: 1,
       },
-      subagentEnabled: true,
-      obligation: null,
-      iteration: 0,
-      planVersion: 1,
-      subjectLabel: 'ADR',
-      state: state('ARCHITECTURE'),
     });
-    expect(result.next).toBe('faux-review-instruction');
   });
 });

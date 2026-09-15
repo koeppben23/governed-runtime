@@ -298,18 +298,15 @@ Evaluates whether the actor's `assurance` tier satisfies the policy requirement.
 
 ### 10.2 Migration Mapping
 
-| Original Config                                     | Current Behavior                                                        |
-| --------------------------------------------------- | ----------------------------------------------------------------------- |
-| `FLOWGUARD_ACTOR_CLAIMS_PATH` not set               | `source: 'env'/'git'/'unknown'`, `assurance: 'best_effort'` — unchanged |
-| `FLOWGUARD_ACTOR_CLAIMS_PATH` set, valid claim      | `source: 'claim'`, `assurance: 'claim_validated'` (was `verified`)      |
-| `requireVerifiedActorsForApproval: false` (default) | `minimumActorAssuranceForApproval: 'best_effort'`                       |
-| `requireVerifiedActorsForApproval: true`            | `minimumActorAssuranceForApproval: 'claim_validated'`                   |
+| Original Config                                | Current Behavior                                                        |
+| ---------------------------------------------- | ----------------------------------------------------------------------- |
+| `FLOWGUARD_ACTOR_CLAIMS_PATH` not set          | `source: 'env'/'git'/'unknown'`, `assurance: 'best_effort'` — unchanged |
+| `FLOWGUARD_ACTOR_CLAIMS_PATH` set, valid claim | `source: 'claim'`, `assurance: 'claim_validated'` (was `verified`)      |
 
-### 10.3 Backward Compatibility & Precedence
+### 10.3 Approval Threshold
 
-- Original sessions loaded after upgrade: `actorAssurance: 'verified'` is accepted and treated as `claim_validated` (coercive parse in `src/state/evidence-assurance-internal.ts`).
-- Policy precedence (current runtime behavior, see `verifyAssuranceThreshold` in `src/rails/review-decision.ts`): `requireVerifiedActorsForApproval` is evaluated **first**. When it is `true`, the runtime requires `claim_validated` or higher and **does not consult** `minimumActorAssuranceForApproval`. The newer field is used only when the legacy flag is `false`/absent.
-- This provides a safe migration window without breaking existing sessions or configs, but operators relaxing the legacy gate by setting `minimumActorAssuranceForApproval` to a lower tier MUST also flip `requireVerifiedActorsForApproval` to `false` — otherwise the stricter legacy gate keeps winning silently.
+- `minimumActorAssuranceForApproval` is the sole approval-assurance authority.
+- Current session states and configuration reject the removed boolean policy key.
 
 ---
 

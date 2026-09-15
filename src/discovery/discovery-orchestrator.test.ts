@@ -21,17 +21,18 @@ import * as path from 'node:path';
 import {
   DiscoveryResultSchema,
   ProfileResolutionSchema,
-  DiscoverySummarySchema,
   DetectedItemSchema,
-  DetectedStackSchema,
-  DetectedStackVersionSchema,
-  DetectedStackTargetSchema,
   StackInfoSchema,
   DISCOVERY_SCHEMA_VERSION,
   PROFILE_RESOLUTION_SCHEMA_VERSION,
   type CollectorInput,
   type DiscoveryResult,
 } from './types.js';
+import {
+  DetectedStackSchema,
+  DetectedStackTargetSchema,
+  DiscoverySummarySchema,
+} from '../state/discovery-schemas.js';
 import {
   ArchiveManifestSchema,
   ArchiveVerificationSchema,
@@ -138,8 +139,7 @@ describe('discovery/orchestrator', () => {
       expect(result.collectedAt).toBeDefined();
       expect(typeof result.collectedAt).toBe('string');
 
-      // All collectors should report status
-      expect(Object.keys(result.collectors).length).toBe(6);
+      expect(result.diagnostics).toHaveLength(6);
 
       // Stack should have detected TypeScript
       expect(result.stack.languages.some((l) => l.id === 'typescript')).toBe(true);
@@ -147,8 +147,7 @@ describe('discovery/orchestrator', () => {
       // Topology should be single-project
       expect(result.topology.kind).toBe('single-project');
 
-      // Validation hints should have commands
-      expect(result.validationHints.commands.length).toBeGreaterThan(0);
+      expect(result).not.toHaveProperty('validationHints');
 
       // Schema validation passes
       const parsed = DiscoveryResultSchema.safeParse(result);
@@ -194,23 +193,6 @@ describe('discovery/orchestrator', () => {
 
       expect(ds.summary).toBeTruthy();
       expect(ds.items.length).toBeGreaterThan(0);
-      expect(ds.versions.length).toBeGreaterThanOrEqual(0);
-
-      // Every versioned entry must have id, version, and target
-      for (const v of ds.versions) {
-        expect(v.id.length).toBeGreaterThan(0);
-        expect(v.version.length).toBeGreaterThan(0);
-        expect([
-          'language',
-          'framework',
-          'runtime',
-          'buildTool',
-          'tool',
-          'testFramework',
-          'qualityTool',
-          'database',
-        ]).toContain(v.target);
-      }
 
       // Every item must have id and kind
       for (const item of ds.items) {
@@ -300,7 +282,7 @@ describe('discovery/orchestrator', () => {
 
       const ds = await extractDetectedStack(result);
       expect(ds).not.toBeNull();
-      expect(ds!.versions.map((v) => v.target)).toEqual([
+      expect(ds!.items.map((item) => item.kind)).toEqual([
         'language',
         'framework',
         'runtime',
@@ -336,7 +318,6 @@ describe('discovery/orchestrator', () => {
 
       const ds = await extractDetectedStack(result);
       expect(ds).not.toBeNull();
-      expect(ds!.versions[0]!.evidence).toBe('pom.xml:<java.version>');
       expect(ds!.items[0]!.evidence).toBe('pom.xml:<java.version>');
     });
 
@@ -354,10 +335,10 @@ describe('discovery/orchestrator', () => {
 
       const ds = await extractDetectedStack(result);
       expect(ds).not.toBeNull();
-      expect(ds!.versions[0]!.evidence).toBeUndefined();
+      expect(ds!.items[0]!.evidence).toBeUndefined();
     });
 
-    it('extractDetectedStack surfaces unversioned items in items[] but not versions[]', async () => {
+    it('extractDetectedStack surfaces versioned and unversioned items in items[]', async () => {
       const result = await runDiscovery(TS_PROJECT_INPUT);
       // Inject a versioned language + unversioned test framework
       result.stack.languages = [
@@ -391,10 +372,6 @@ describe('discovery/orchestrator', () => {
       expect(ds!.items[0]).toMatchObject({ kind: 'language', id: 'java', version: '21' });
       expect(ds!.items[1]).toMatchObject({ kind: 'testFramework', id: 'vitest' });
       expect(ds!.items[1]!.version).toBeUndefined();
-
-      // versions[] has only versioned item
-      expect(ds!.versions).toHaveLength(1);
-      expect(ds!.versions[0]).toMatchObject({ id: 'java', version: '21', target: 'language' });
 
       // summary: "java=21, vitest"
       expect(ds!.summary).toBe('java=21, vitest');
@@ -485,16 +462,14 @@ describe('discovery/orchestrator', () => {
       expect(ds).toBeNull();
     });
 
-    it('validation hints derive typecheck command from tsconfig', async () => {
+    it('detects TypeScript from tsconfig', async () => {
       const result = await runDiscovery(TS_PROJECT_INPUT);
-      const typecheckCmd = result.validationHints.commands.find((c) => c.kind === 'typecheck');
-      expect(typecheckCmd).toBeDefined();
-      expect(typecheckCmd?.command).toContain('tsc');
+      expect(result.stack.languages.some((item) => item.id === 'typescript')).toBe(true);
     });
 
-    it('validation hints derive lint tools from eslint config', async () => {
+    it('detects eslint from eslint config', async () => {
       const result = await runDiscovery(TS_PROJECT_INPUT);
-      const eslint = result.validationHints.lintTools.find((t) => t.id === 'eslint');
+      const eslint = result.stack.qualityTools.find((item) => item.id === 'eslint');
       expect(eslint).toBeDefined();
       expect(eslint?.classification).toBe('fact');
     });
@@ -505,7 +480,7 @@ describe('discovery/orchestrator', () => {
       expect(result.topology.modules.length).toBeGreaterThanOrEqual(3);
     });
 
-    it('derives gradle/jest commands from detected stack', async () => {
+    it('detects gradle and jest from repository evidence', async () => {
       const input: CollectorInput = {
         worktreePath: '/test/gradle',
         fingerprint: 'abcdef0123456789abcdef01',
@@ -515,14 +490,11 @@ describe('discovery/orchestrator', () => {
       };
 
       const result = await runDiscovery(input);
-      const commands = result.validationHints.commands.map((c) => c.command);
-
-      expect(commands).toContain('gradle build');
-      expect(commands).toContain('gradle test');
-      expect(commands).toContain('npx jest');
+      expect(result.stack.buildTools.some((item) => item.id === 'gradle')).toBe(true);
+      expect(result.stack.testFrameworks.some((item) => item.id === 'jest')).toBe(true);
     });
 
-    it('derives cargo and go-module commands from detected stack', async () => {
+    it('detects cargo and go modules from repository evidence', async () => {
       const input: CollectorInput = {
         worktreePath: '/test/multi',
         fingerprint: 'abcdef0123456789abcdef01',
@@ -532,15 +504,12 @@ describe('discovery/orchestrator', () => {
       };
 
       const result = await runDiscovery(input);
-      const commands = result.validationHints.commands.map((c) => c.command);
-
-      expect(commands).toContain('cargo build');
-      expect(commands).toContain('cargo test');
-      expect(commands).toContain('go build ./...');
-      expect(commands).toContain('go test ./...');
+      expect(result.stack.buildTools.map((item) => item.id)).toEqual(
+        expect.arrayContaining(['cargo', 'go-modules']),
+      );
     });
 
-    it('derives maven commands from detected stack', async () => {
+    it('detects maven from repository evidence', async () => {
       const input: CollectorInput = {
         worktreePath: '/test/maven',
         fingerprint: 'abcdef0123456789abcdef01',
@@ -550,10 +519,7 @@ describe('discovery/orchestrator', () => {
       };
 
       const result = await runDiscovery(input);
-      const commands = result.validationHints.commands.map((c) => c.command);
-
-      expect(commands).toContain('mvn compile');
-      expect(commands).toContain('mvn test');
+      expect(result.stack.buildTools.some((item) => item.id === 'maven')).toBe(true);
     });
   });
 
@@ -612,7 +578,9 @@ describe('discovery/orchestrator', () => {
       });
 
       const result = await runDiscovery(TS_PROJECT_INPUT, 1);
-      const failedCollectors = Object.values(result.collectors).filter((s) => s === 'failed');
+      const failedCollectors = result.diagnostics.filter(
+        (diagnostic) => diagnostic.status === 'failed',
+      );
 
       expect(failedCollectors.length).toBeGreaterThan(0);
       expect(result.schemaVersion).toBe(DISCOVERY_SCHEMA_VERSION);

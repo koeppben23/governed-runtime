@@ -24,6 +24,12 @@ import {
   runAudit,
   type AuditDeps,
 } from './plugin-audit.js';
+import {
+  FIXED_DECISION_AT,
+  makeDeps,
+  resetChainSeq,
+  SESSION_ID,
+} from './plugin-audit-test-helpers.js';
 import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
 import {
   buildTransitionBody,
@@ -52,44 +58,6 @@ class FixtureTimestampAuthorityProvider implements TimestampAuthorityProvider {
 }
 
 // ─── Deps Factory ──────────────────────────────────────────────────────────
-
-let chainSeq: number;
-
-function resetChainSeq(): void {
-  chainSeq = 0;
-}
-
-function makeDeps(overrides: Partial<AuditDeps> = {}): AuditDeps {
-  return {
-    resolveFingerprint: vi.fn().mockResolvedValue('fp-abc'),
-    getSessionDir: vi.fn().mockReturnValue('/tmp/sess-dir'),
-    resolveSessionPolicy: vi.fn().mockResolvedValue({
-      policy: {
-        audit: { emitToolCalls: true, emitTransitions: true, enableChainHash: true },
-        actorClassification: {},
-        mode: 'solo',
-        requireHumanGates: false,
-      },
-      state: makeState('PLAN'),
-    }),
-    initChain: vi.fn().mockResolvedValue('prev-hash-001'),
-    invalidateChainState: vi.fn(),
-    // Chain-threading contract: appendAndTrack mutates evt.chainHash.
-    // plugin-audit.ts reads evt.chainHash! after every call to thread prevHash.
-    appendAndTrack: vi.fn(async (evt: Record<string, unknown>) => {
-      evt.chainHash = `chain-${String(chainSeq++).padStart(3, '0')}`;
-    }),
-    nextDecisionSequence: vi.fn().mockResolvedValue(1),
-    log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
-    logError: vi.fn(),
-    cachedFingerprint: 'fp-abc',
-    mode: 'solo',
-    ...overrides,
-  };
-}
-
-const SESSION_ID = 'aaaaaaaa-0000-4000-8000-000000000001';
-const FIXED_DECISION_AT = '2026-05-15T12:00:00.000Z';
 
 function requireTransition(
   operation: PendingAuditOperation,
@@ -674,9 +642,9 @@ describe('runAudit', () => {
       );
     });
 
-    // ─── B4: missing decidedBy → error event ──────────────────────
+    // ─── B4: missing decision identity → error event ─────────────────
 
-    it('emits error event when decidedBy is missing in flowguard_decision', async () => {
+    it('emits error event when decisionIdentity is missing in flowguard_decision', async () => {
       const deps = makeDeps({
         resolveSessionPolicy: vi.fn().mockResolvedValue({
           policy: {
@@ -706,7 +674,7 @@ describe('runAudit', () => {
         reviewDecision: {
           rationale: 'looks good',
           decidedAt: FIXED_DECISION_AT,
-          // decidedBy intentionally missing
+          // decisionIdentity intentionally missing
         },
       };
 
@@ -735,7 +703,12 @@ describe('runAudit', () => {
   // ─── D: decision receipt verdict branches ────────────────────────────────
 
   describe('decision receipts', () => {
-    const decidedBy = 'opencode/big-pickle';
+    const decisionIdentity = {
+      actorId: 'opencode/big-pickle',
+      actorEmail: null,
+      actorSource: 'unknown' as const,
+      actorAssurance: 'best_effort' as const,
+    };
 
     function decisionDeps(state: SessionState, overrides: Partial<AuditDeps> = {}): AuditDeps {
       return makeDeps({
@@ -783,7 +756,7 @@ describe('runAudit', () => {
         {
           phase: 'PLAN_REVIEW',
           error: false,
-          reviewDecision: { decidedBy, rationale: 'revise', decidedAt: FIXED_DECISION_AT },
+          reviewDecision: { decisionIdentity, rationale: 'revise', decidedAt: FIXED_DECISION_AT },
         },
         SESSION_ID,
       );
@@ -810,7 +783,11 @@ describe('runAudit', () => {
         {
           phase: 'PLAN_REVIEW',
           error: false,
-          reviewDecision: { decidedBy, rationale: 'start over', decidedAt: FIXED_DECISION_AT },
+          reviewDecision: {
+            decisionIdentity,
+            rationale: 'start over',
+            decidedAt: FIXED_DECISION_AT,
+          },
         },
         SESSION_ID,
       );
@@ -829,7 +806,7 @@ describe('runAudit', () => {
         deps,
         'flowguard_decision',
         { args: { rationale: 'arg rationale' } },
-        { phase: 'PLAN_REVIEW', error: false, reviewDecision: { decidedBy } },
+        { phase: 'PLAN_REVIEW', error: false, reviewDecision: { decisionIdentity } },
         SESSION_ID,
       );
 
@@ -838,7 +815,7 @@ describe('runAudit', () => {
       expect(detail.decidedAt).toBe(FIXED_DECISION_AT);
     });
 
-    it('resolves decidedBy from persisted reviewDecision when output lacks it', async () => {
+    it('resolves decisionIdentity from persisted reviewDecision when output lacks it', async () => {
       const state = makeState('PLAN_REVIEW', {
         transition: { from: 'PLAN_REVIEW', to: 'PLAN', event: 'APPROVE', at: FIXED_DECISION_AT },
         reviewDecision: { ...REVIEW_APPROVE, decidedAt: FIXED_DECISION_AT },
@@ -854,7 +831,7 @@ describe('runAudit', () => {
       );
 
       const detail = decisionEvent(deps).detail as Record<string, unknown>;
-      expect(detail.decidedBy).toBe(REVIEW_APPROVE.decidedBy);
+      expect(detail.decisionIdentity).toEqual(REVIEW_APPROVE.decisionIdentity);
       expect(detail.decidedAt).toBe(FIXED_DECISION_AT);
     });
 
@@ -868,7 +845,7 @@ describe('runAudit', () => {
         deps,
         'flowguard_decision',
         {},
-        { phase: 'PLAN_REVIEW', error: true, reviewDecision: { decidedBy } },
+        { phase: 'PLAN_REVIEW', error: true, reviewDecision: { decisionIdentity } },
         SESSION_ID,
       );
 
@@ -891,7 +868,7 @@ describe('runAudit', () => {
         deps,
         'flowguard_plan',
         {},
-        { phase: 'PLAN', error: false, reviewDecision: { decidedBy } },
+        { phase: 'PLAN', error: false, reviewDecision: { decisionIdentity } },
         SESSION_ID,
       );
 
@@ -911,7 +888,7 @@ describe('runAudit', () => {
         deps,
         'flowguard_decision',
         {},
-        { phase: 'PLAN_REVIEW', error: false, reviewDecision: { decidedBy } },
+        { phase: 'PLAN_REVIEW', error: false, reviewDecision: { decisionIdentity } },
         SESSION_ID,
       );
 
@@ -924,7 +901,7 @@ describe('runAudit', () => {
       ).toBe(true);
     });
 
-    it('emits the actor-missing error for a whitespace-only decidedBy', async () => {
+    it('emits the actor-missing error for a whitespace-only actorId', async () => {
       const state = makeState('PLAN_REVIEW', {
         transition: { from: 'PLAN_REVIEW', to: 'PLAN', event: 'APPROVE', at: FIXED_DECISION_AT },
       });
@@ -937,7 +914,11 @@ describe('runAudit', () => {
         {
           phase: 'PLAN_REVIEW',
           error: false,
-          reviewDecision: { decidedBy: '   ', rationale: 'x', decidedAt: FIXED_DECISION_AT },
+          reviewDecision: {
+            decisionIdentity: { ...decisionIdentity, actorId: '   ' },
+            rationale: 'x',
+            decidedAt: FIXED_DECISION_AT,
+          },
         },
         SESSION_ID,
       );
@@ -966,7 +947,7 @@ describe('runAudit', () => {
         deps,
         'flowguard_decision',
         {},
-        { phase: 'PLAN_REVIEW', error: false, reviewDecision: { decidedBy } },
+        { phase: 'PLAN_REVIEW', error: false, reviewDecision: { decisionIdentity } },
         SESSION_ID,
       );
 
@@ -1088,7 +1069,7 @@ describe('runAudit', () => {
       const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-complete-'));
       try {
         const state = completeState({
-          archiveStatus: 'created',
+          regulatedArchiveStatus: 'created',
           policySnapshot: { ...completeState().policySnapshot, mode: 'solo' as const },
         });
         await writeState(sessDir, state);
@@ -1263,10 +1244,10 @@ describe('runAudit', () => {
       expect(argsSummary.input).toBe('[Object]');
     });
 
-    // ─── C1: decision receipt with decidedBy ───────────────────────
+    // ─── C1: decision receipt with decisionIdentity ────────────────
     // Decision receipts are emitted independently from transition audit emission.
 
-    it('emits decision event for flowguard_decision with decidedBy present', async () => {
+    it('emits decision event for flowguard_decision with decisionIdentity present', async () => {
       const deps = makeDeps({
         resolveSessionPolicy: vi.fn().mockResolvedValue({
           policy: {
@@ -1294,7 +1275,12 @@ describe('runAudit', () => {
           ],
         },
         reviewDecision: {
-          decidedBy: 'opencode/big-pickle',
+          decisionIdentity: {
+            actorId: 'opencode/big-pickle',
+            actorEmail: null,
+            actorSource: 'unknown',
+            actorAssurance: 'best_effort',
+          },
           rationale: 'looks good',
           decidedAt: FIXED_DECISION_AT,
         },

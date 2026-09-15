@@ -72,7 +72,7 @@ function makeEvalState(claims: ProofClaim[]): SessionState {
   };
   return {
     ...base,
-    proofGraph: { version: 'proofgraph.v1' as const, claims, evaluatedAt: '2025-01-01T00:00:00Z' },
+    proofGraph: { version: 'proofgraph.v2' as const, claims, evaluatedAt: '2025-01-01T00:00:00Z' },
     implementation: {
       digest: 'abc123',
       files: [{ path: 'src/foo.ts', status: 'modified' as const, contentHash: 'abc' }],

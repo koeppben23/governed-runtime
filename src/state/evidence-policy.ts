@@ -7,7 +7,7 @@
 
 import { z } from 'zod';
 import { POLICY_DIGEST_PATTERN, POLICY_DIGEST_VERSION } from './evidence-identifiers.js';
-import { IdpConfigSchema } from './policy-idp-config.js';
+import { IdpConfigSchema } from '../shared/policy-idp-config.js';
 import { PolicyModeSchema, CentralMinimumModeSchema } from './policy-mode.js';
 
 /**
@@ -25,7 +25,7 @@ import { PolicyModeSchema, CentralMinimumModeSchema } from './policy-mode.js';
  * remain optional.
  *
  * The hash is SHA-256 of recursively canonicalized policy content, identified
- * by `hashVersion: policy-digest.v2`. It supports integrity comparison against
+ * by `hashVersion: policy-digest.v3`. It supports integrity comparison against
  * a trusted reference; it does not independently prove authenticity or
  * non-repudiation.
  *
@@ -72,33 +72,11 @@ export const PolicySnapshotSchema = z
     maxImplReviewIterations: z.number().int().positive(),
     /** Frozen retry budget for F12-incoherent reviewer captures. */
     maxIncoherentReviewerCaptureRetries: z.number().int().nonnegative(),
-    /** Frozen obligation-level reviewer output-repair budget. */
-    maxReviewerOutputRepairAttempts: z.number().int().min(0).max(5),
+    /** Frozen obligation-level reviewer-attempt budget. */
+    maxReviewerAttempts: z.number().int().min(0).max(5),
     allowSelfApproval: z.boolean(),
-    /**
-     * P34: Minimum required actor assurance for regulated approval decisions.
-     *
-     * Resolution precedence (see verifyAssuranceThreshold in
-     * src/rails/review-decision.ts):
-     *   1. requireVerifiedActorsForApproval (P33) — if `true`, the
-     *      approver must be at assurance `claim_validated` or higher and this
-     *      field is the gate; minimumActorAssuranceForApproval is then ignored.
-     *   2. minimumActorAssuranceForApproval (P34) — used only when
-     *      requireVerifiedActorsForApproval is `false`.
-     *
-     * Operators relaxing requireVerifiedActorsForApproval=true by setting
-     * minimumActorAssuranceForApproval to a lower tier MUST also flip
-     * requireVerifiedActorsForApproval to `false`, otherwise the stricter
-     * gate keeps winning.
-     */
+    /** P34: Minimum required actor assurance for regulated approval decisions. */
     minimumActorAssuranceForApproval: z.enum(['best_effort', 'claim_validated', 'idp_verified']),
-    /**
-     * P33 (still authoritative when set true): Whether regulated
-     * approvals require verified actor identity (claim_validated or higher).
-     * Checked BEFORE minimumActorAssuranceForApproval; when `true`, takes
-     * precedence and minimumActorAssuranceForApproval is not consulted.
-     */
-    requireVerifiedActorsForApproval: z.boolean(),
     /**
      * P35a/P35b1/P35b2: IdP configuration for static keys or JWKS authority.
      * Frozen at hydrate time. Optional: absence means no IdP is configured.
@@ -109,21 +87,6 @@ export const PolicySnapshotSchema = z
      * Controls whether IdP verification failure blocks session creation.
      */
     identityProviderMode: z.enum(['optional', 'required']),
-    /**
-     * Self-review configuration for independent review.
-     * Frozen at hydrate time. REQUIRED, and — Hard Assurance Epoch — the ONLY
-     * current-contract-valid shape is the mandatory strict subagent review;
-     * anything else fails parsing instead of being re-normalized at runtime.
-     */
-    selfReview: z.object({
-      subagentEnabled: z.literal(true),
-      fallbackToSelf: z.literal(false),
-      strictEnforcement: z.literal(true),
-    }),
-    /** Frozen review output policy for structured vs text-compatible evidence. */
-    reviewOutputPolicy: z.enum(['structured_required', 'text_compat_allowed']),
-    /** Frozen review invocation policy — how the reviewer must be invoked. */
-    reviewInvocationPolicy: z.enum(['host_task_required', 'host_task_preferred', 'sdk_allowed']),
     /** Frozen mandatory review coverage profile. */
     reviewProfile: z.enum(['core', 'full']),
     /**
@@ -179,5 +142,6 @@ export const PolicySnapshotSchema = z
      */
     actorClassification: z.record(z.string(), z.string()),
   })
+  .strict()
   .readonly();
 export type PolicySnapshot = z.infer<typeof PolicySnapshotSchema>;

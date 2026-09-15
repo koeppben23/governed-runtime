@@ -4,12 +4,13 @@
  * flow segments.
  *
  * Calls actual tool.execute() in-process with real git worktrees and persistence.
- * Each test: Mode A (evidence + obligation creation) → inject host-specific
- * synthetic evidence into tool-created obligation → Mode B (review verdict
- * validates and consumes). The main chain test links plan and implement
+ * Each test: Mode A (evidence + obligation creation) → inject structured
+ * host-observed evidence into the tool-created obligation → Mode B (review
+ * verdict validates and consumes). The main chain test links plan and implement
  * segments. The standalone review flow completes via content + findings.
  *
- * Host profiles: opencode (plugin_handshake), claude-code and codex (manual_attested).
+ * Independent review is authorized only by host-observed structured child-session
+ * evidence (sdk_session_prompt invocation with captured structured findings).
  * Does NOT test /check, /validate, /export, /review-decision as standalone tools.
  * (validate and archive are tested within the plan-to-implement segment.)
  * No LLM inference, no network, no secrets.
@@ -26,7 +27,6 @@ import { readState } from '../adapters/persistence.js';
 import { sessionDir } from '../adapters/workspace/index.js';
 import { computeFingerprint } from '../adapters/workspace/fingerprint.js';
 import { writeStateWithArtifacts } from './tools/helpers.js';
-import type { HostId } from '../shared/hosts.js';
 
 import { plan } from './tools/plan.js';
 import { hydrate } from './tools/hydrate.js';
@@ -44,7 +44,10 @@ import {
 } from './review/assurance.js';
 import { makeState, TICKET, FROZEN_IMPLEMENTATION_BASE } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
-import { computeRecordDigest } from '../state/evidence-plan.js';
+import {
+  completedDispatchForInvocation,
+  makePlanRevision,
+} from '../state/evidence-test-constants.js';
 
 vi.mock('../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
@@ -84,12 +87,7 @@ vi.mock('../verification/executor', () => ({
     })),
 }));
 
-const HOSTS = ['opencode', 'claude-code', 'codex'] as const satisfies readonly HostId[];
 const FIXED_TIME = '2026-01-01T00:00:00.000Z';
-
-function isOpen(host: HostId) {
-  return host === 'opencode';
-}
 
 function f(
   oblId: string,
@@ -160,8 +158,8 @@ interface SE {
   tc: ToolContext;
 }
 
-async function boot(host: HostId, label: string): Promise<SE> {
-  const r = mkdtempSync(path.join(tmpdir(), `fg-e2e-${host}-${label}-`));
+async function boot(label: string): Promise<SE> {
+  const r = mkdtempSync(path.join(tmpdir(), `fg-e2e-opencode-${label}-`));
   const w = path.join(r, 'worktree'),
     c = path.join(r, 'config'),
     id = randomUUID();
@@ -178,7 +176,7 @@ async function boot(host: HostId, label: string): Promise<SE> {
   );
   process.env.OPENCODE_CONFIG_DIR = c;
   process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
-  process.env.FLOWGUARD_HOST_PLATFORM = host;
+  process.env.FLOWGUARD_HOST_PLATFORM = 'opencode';
   const tc: ToolContext = {
     sessionID: id,
     messageID: randomUUID(),
@@ -207,7 +205,6 @@ async function boot(host: HostId, label: string): Promise<SE> {
 async function inject(
   sDir: string,
   state: SessionState,
-  host: HostId,
   oblType: string,
   sessionId: string,
 ): Promise<{ state: SessionState; oblId: string }> {
@@ -215,40 +212,58 @@ async function inject(
     (o) => o.obligationType === oblType && o.status === 'pending',
   );
   if (!obl) throw new Error(`No pending ${oblType} obligation`);
+  // The obligation's tool-created attempt is the one the reviewer evidence is
+  // bound to; mutating it keeps the attempt ledger append-only instead of
+  // replacing historical attempts (which would orphan earlier invocations).
+  const priorAttempt = state.reviewAssurance!.attempts.find(
+    (attempt) => attempt.obligationId === obl.obligationId,
+  );
+  if (!priorAttempt) throw new Error(`No attempt for ${oblType} obligation`);
   const ff = f(obl.obligationId, obl.iteration, obl.planVersion, challengesFor(state, obl));
   const fh = hashFindings(ff);
-  const newObl = {
-    ...obl,
-    status: 'fulfilled' as const,
-    fulfilledAt: FIXED_TIME,
-    pluginHandshakeAt: isOpen(host) ? FIXED_TIME : null,
-    reviewSubjectScope: {
-      kind: 'repository_change' as const,
-      paths: ['README.md'],
-      revisions: ['base', 'head'] as const,
-    },
-  };
+  const attemptId = priorAttempt.attemptId;
+  const invocationId = randomUUID();
   const inv = {
-    invocationId: randomUUID(),
+    invocationId,
     obligationId: obl.obligationId,
     obligationType: obl.obligationType,
     parentSessionId: sessionId,
     childSessionId: 'ses_r',
     agentType: 'flowguard-reviewer' as const,
-    invocationMode: isOpen(host) ? ('host_subagent_task' as const) : ('manual_attested' as const),
-    hostVisible: isOpen(host),
-    source: isOpen(host) ? ('host-orchestrated' as const) : ('agent-submitted-attested' as const),
-    promptHash: 'abc',
+    invocationMode: 'sdk_session_prompt' as const,
+    hostVisible: false,
+    source: 'host-orchestrated' as const,
+    promptHash: 'a'.repeat(64),
     mandateDigest: REVIEW_MANDATE_DIGEST,
     criteriaVersion: REVIEW_CRITERIA_VERSION,
     findingsHash: fh,
+    capturedRawFindings: ff,
     invokedAt: FIXED_TIME,
     fulfilledAt: FIXED_TIME,
     consumedByObligationId: null,
-    capturedVerdict: isOpen(host) ? 'approve' : undefined,
+    capturedVerdict: 'accept',
     reviewOutputMode: 'structured_output' as const,
-    structuredOutputUsed: true,
+    structuredOutputUsed: true as const,
     reviewAssuranceLevel: 'structured_high' as const,
+    attemptId,
+  };
+  const newObl = {
+    ...obl,
+    status: 'fulfilled' as const,
+    invocationId,
+    fulfilledAt: FIXED_TIME,
+    pluginHandshakeAt: FIXED_TIME,
+    reviewSubjectScope:
+      obl.obligationType === 'implement'
+        ? {
+            kind: 'implementation' as const,
+            implementationDigest: obl.subjectDigest,
+          }
+        : {
+            kind: 'repository_change' as const,
+            paths: ['README.md'],
+            revisions: ['base', 'head'] as const,
+          },
   };
   const aug: SessionState = {
     ...state,
@@ -258,14 +273,28 @@ async function inject(
         o.obligationId === obl.obligationId ? newObl : o,
       ),
       invocations: [...state.reviewAssurance!.invocations, inv],
-      attempts: [],
-      dispatches: state.reviewAssurance!.dispatches,
+      attempts: state.reviewAssurance!.attempts.map((attempt) =>
+        attempt.attemptId === attemptId
+          ? {
+              ...attempt,
+              childSessionId: 'ses_r',
+              status: 'bound' as const,
+              completedAt: FIXED_TIME,
+            }
+          : attempt,
+      ),
+      dispatches: [...state.reviewAssurance!.dispatches, completedDispatchForInvocation(inv)],
     },
     reviewDecision: {
       verdict: 'approve',
       rationale: 'E2E',
       decidedAt: FIXED_TIME,
-      decidedBy: 'reviewer-1',
+      decisionIdentity: {
+        actorId: 'reviewer-1',
+        actorEmail: null,
+        actorSource: 'unknown',
+        actorAssurance: 'best_effort',
+      },
     },
   };
   await writeStateWithArtifacts(sDir, aug);
@@ -278,345 +307,269 @@ function restoreEnv(name: string, value: string | undefined) {
 }
 
 describe('FlowGuard tool-level E2E', () => {
-  for (const host of HOSTS) {
-    describe(`${host} (${isOpen(host) ? 'plugin_handshake' : 'manual_attested'})`, () => {
-      let s: SE | undefined;
-      let pc: string | undefined, pr: string | undefined, pp: string | undefined;
-      beforeEach(() => {
-        pc = process.env.OPENCODE_CONFIG_DIR;
-        pr = process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
-        pp = process.env.FLOWGUARD_HOST_PLATFORM;
-      });
-      afterEach(() => {
-        restoreEnv('OPENCODE_CONFIG_DIR', pc);
-        restoreEnv('FLOWGUARD_REQUIRE_TEST_CONFIG_DIR', pr);
-        restoreEnv('FLOWGUARD_HOST_PLATFORM', pp);
-        if (s) {
-          rmSync(s.rootDir, { recursive: true, force: true });
-          s = undefined;
-        }
-      });
-
-      it('architecture: Mode A → evidence → Mode B', async () => {
-        s = await boot(host, 'arch');
-        await writeStateWithArtifacts(s.sDir, makeState('READY'));
-        const a = await architecture.execute(
-          {
-            title: 'E2E ADR',
-            adrText: '## Context\nTest.\n\n## Decision\nUse X.\n\n## Consequences\nY.\n',
-          },
-          s.tc,
-        );
-        expect(typeof a).toBe('string');
-        expect(a).not.toContain('INTERNAL_ERROR');
-        let st = await readState(s.sDir);
-        expect(st!.architecture).toBeTruthy();
-        const { oblId } = await inject(s.sDir, st!, host, 'architecture', s.tc.sessionID);
-        st = await readState(s.sDir);
-        const o1 = st!.reviewAssurance!.obligations.find((o) => o.obligationId === oblId)!;
-        const b = await architecture.execute(
-          {
-            reviewVerdict: 'accept',
-            reviewFindings: f(o1.obligationId, o1.iteration, o1.planVersion),
-          },
-          s.tc,
-        );
-        expect(typeof b).toBe('string');
-        expect(b).not.toContain('INTERNAL_ERROR');
-        st = await readState(s.sDir);
-        expect(st!.reviewAssurance!.obligations.find((o) => o.obligationId === oblId)!.status).toBe(
-          'consumed',
-        );
-      });
-
-      it('plan: Mode A → evidence → Mode B', async () => {
-        s = await boot(host, 'plan');
-        await writeStateWithArtifacts(s.sDir, makeState('TICKET', { ticket: TICKET }));
-        const a = await plan.execute({ planText: '## Plan\n1. Fix auth' }, s.tc);
-        expect(typeof a).toBe('string');
-        expect(a).not.toContain('INTERNAL_ERROR');
-        let st = await readState(s.sDir);
-        expect(st!.plan).toBeTruthy();
-        expect(st!.ticket).toBeTruthy();
-        const { oblId } = await inject(s.sDir, st!, host, 'plan', s.tc.sessionID);
-        st = await readState(s.sDir);
-        const o1 = st!.reviewAssurance!.obligations.find((o) => o.obligationId === oblId)!;
-        const b = await plan.execute(
-          {
-            reviewVerdict: 'accept',
-            reviewFindings: f(o1.obligationId, o1.iteration, o1.planVersion),
-          },
-          s.tc,
-        );
-        expect(typeof b).toBe('string');
-        expect(b).not.toContain('INTERNAL_ERROR');
-        st = await readState(s.sDir);
-        expect(st!.reviewAssurance!.obligations.find((o) => o.obligationId === oblId)!.status).toBe(
-          'consumed',
-        );
-      });
-
-      it('implement: Mode A → evidence → Mode B', async () => {
-        s = await boot(host, 'impl');
-        await writeStateWithArtifacts(
-          s.sDir,
-          makeState('IMPLEMENTATION', {
-            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
-            ticket: TICKET,
-            plan: {
-              current: {
-                body: '# Plan',
-                digest: 'abc',
-                sections: [],
-                createdAt: FIXED_TIME,
-                recordDigest: computeRecordDigest({
-                  contentDigest: 'abc',
-                  planVersion: 1,
-                  supersedesRecordDigest: null,
-                  originatingReviewObligationId: null,
-                  revisionReason: null,
-                }),
-                planVersion: 1,
-                supersedesRecordDigest: null,
-                originatingReviewObligationId: null,
-                revisionReason: null,
-                lineageStatus: 'verified' as const,
-              },
-              history: [],
-              reviewCompletion: 'pending',
-              reviewFindings: undefined,
-            },
-            // No active checks → IMPL_VALIDATION passes vacuously and auto-advances to
-            // IMPL_REVIEW (this segment exercises the review handshake, not re-validation).
-            activeChecks: [],
-          }),
-        );
-        mkdirSync(path.join(s.worktree, 'src'), { recursive: true });
-        writeFileSync(path.join(s.worktree, 'src', 'auth.ts'), 'export const auth = () => true;');
-        execSync('git add src', { cwd: s.worktree, stdio: 'pipe' });
-        const a = await implement.execute({}, s.tc);
-        expect(typeof a).toBe('string');
-        expect(a).not.toContain('INTERNAL_ERROR');
-        let st = await readState(s.sDir);
-        expect(st!.implementation).toBeTruthy();
-        const { oblId } = await inject(s.sDir, st!, host, 'implement', s.tc.sessionID);
-        st = await readState(s.sDir);
-        const o1 = st!.reviewAssurance!.obligations.find((o) => o.obligationId === oblId)!;
-        const b = await review_implementation.execute(
-          {
-            reviewVerdict: 'accept',
-            reviewFindings: f(
-              o1.obligationId,
-              o1.iteration,
-              o1.planVersion,
-              challengesFor(st!, o1),
-            ),
-          },
-          s.tc,
-        );
-        expect(typeof b).toBe('string');
-        expect(b).not.toContain('INTERNAL_ERROR');
-        st = await readState(s.sDir);
-        expect(st!.reviewAssurance!.obligations.find((o) => o.obligationId === oblId)!.status).toBe(
-          'consumed',
-        );
-      });
-
-      it('plan-to-implement segment: plan → run_check → implement → archive', async () => {
-        s = await boot(host, 'main');
-
-        // Step 1: plan Mode A
-        await writeStateWithArtifacts(s.sDir, makeState('TICKET', { ticket: TICKET }));
-        const r1 = await plan.execute({ planText: '## Plan\n1. Fix auth' }, s.tc);
-        expect(typeof r1).toBe('string');
-        expect(r1).not.toContain('INTERNAL_ERROR');
-        let st = await readState(s.sDir);
-        expect(st!.plan).toBeTruthy();
-
-        // Step 2: inject evidence + approve plan
-        const { oblId: pid } = await inject(s.sDir, st!, host, 'plan', s.tc.sessionID);
-        st = await readState(s.sDir);
-        const po = st!.reviewAssurance!.obligations.find((o) => o.obligationId === pid)!;
-        const r2 = await plan.execute(
-          {
-            reviewVerdict: 'accept',
-            reviewFindings: f(po.obligationId, po.iteration, po.planVersion),
-          },
-          s.tc,
-        );
-        expect(typeof r2).toBe('string');
-        expect(r2).not.toContain('INTERNAL_ERROR');
-
-        // Step 3: run_check — bootstrap at VALIDATION with verificationCandidates
-        st = await readState(s.sDir);
-        const currentPlan = st!.plan!;
-        await writeStateWithArtifacts(
-          s.sDir,
-          makeState('VALIDATION', {
-            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
-            ticket: TICKET,
-            plan: currentPlan,
-            reviewDecision: st!.reviewDecision,
-            activeChecks: ['typecheck'],
-            verificationCandidates: [
-              {
-                assertionCapability: 'unsupported' as const,
-                kind: 'typecheck',
-                command: 'npx tsc --noEmit',
-                source: 'test',
-                confidence: 'high',
-                reason: 'E2E test candidate',
-              },
-            ],
-            executionSubjectInputsByKind: {
-              typecheck: [{ kind: 'implementation' as const }],
-            },
-          }),
-        );
-        const rV = await run_check.execute({ kind: 'typecheck' }, s.tc);
-        expect(typeof rV).toBe('string');
-        expect(rV).not.toContain('INTERNAL_ERROR');
-
-        // Step 4: implement Mode A
-        st = await readState(s.sDir);
-        // Bootstrap IMPLEMENTATION with evidence from run_check
-        await writeStateWithArtifacts(
-          s.sDir,
-          makeState('IMPLEMENTATION', {
-            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
-            ticket: TICKET,
-            plan: currentPlan,
-            reviewDecision: st!.reviewDecision,
-            validation: st!.validation,
-            activeChecks: ['typecheck'],
-            verificationCandidates: [
-              {
-                assertionCapability: 'unsupported' as const,
-                kind: 'typecheck',
-                command: 'npx tsc --noEmit',
-                source: 'test',
-                confidence: 'high',
-                reason: 'E2E test candidate',
-              },
-            ],
-            executionSubjectInputsByKind: {
-              typecheck: [{ kind: 'implementation' as const }],
-            },
-          }),
-        );
-        mkdirSync(path.join(s.worktree, 'src'), { recursive: true });
-        writeFileSync(path.join(s.worktree, 'src', 'auth.ts'), 'export const auth = () => true;');
-        execSync('git add src', { cwd: s.worktree, stdio: 'pipe' });
-        const r3 = await implement.execute({}, s.tc);
-        expect(typeof r3).toBe('string');
-        expect(r3).not.toContain('INTERNAL_ERROR');
-        st = await readState(s.sDir);
-        expect(st!.implementation).toBeTruthy();
-
-        // IMPL_VALIDATION: re-run the checks against the implemented code → IMPL_REVIEW
-        await run_check.execute({ kind: 'typecheck' }, s.tc);
-        st = await readState(s.sDir);
-
-        // Step 5: inject impl evidence + approve
-        const { oblId: iid } = await inject(s.sDir, st!, host, 'implement', s.tc.sessionID);
-        st = await readState(s.sDir);
-        const io = st!.reviewAssurance!.obligations.find((o) => o.obligationId === iid)!;
-        const r4 = await review_implementation.execute(
-          {
-            reviewVerdict: 'accept',
-            reviewFindings: f(io.obligationId, io.iteration, io.planVersion),
-          },
-          s.tc,
-        );
-        expect(typeof r4).toBe('string');
-        expect(r4).not.toContain('INTERNAL_ERROR');
-
-        // Step 6: archive at terminal phase
-        st = await readState(s.sDir);
-        await writeStateWithArtifacts(
-          s.sDir,
-          makeState('COMPLETE', {
-            ticket: TICKET,
-            plan: currentPlan,
-            implementation: st!.implementation,
-            reviewAssurance: st!.reviewAssurance,
-            reviewDecision: st!.reviewDecision,
-            validation: st!.validation,
-            activeChecks: ['typecheck'],
-            verificationCandidates: [
-              {
-                assertionCapability: 'unsupported' as const,
-                kind: 'typecheck',
-                command: 'npx tsc --noEmit',
-                source: 'test',
-                confidence: 'high',
-                reason: 'E2E test candidate',
-              },
-            ],
-            executionSubjectInputsByKind: {
-              typecheck: [{ kind: 'implementation' as const }],
-            },
-          }),
-        );
-        const rA = await archive.execute({}, s.tc);
-        expect(typeof rA).toBe('string');
-        expect(rA).not.toContain('INTERNAL_ERROR');
-        st = await readState(s.sDir);
-        expect(st!.lastExportPackagePurpose).toBeTruthy();
-      });
-
-      it('review: content → obligation → evidence → complete', async () => {
-        s = await boot(host, 'review');
-        await writeStateWithArtifacts(s.sDir, makeState('READY'));
-
-        // Step 1: content-aware call creates review obligation
-        const r1 = await review.execute(
-          { inputOrigin: 'manual_text', text: 'E2E review content', targetPaths: ['README.md'] },
-          s.tc,
-        );
-        expect(typeof r1).toBe('string');
-        expect(r1).toContain('CONTENT_ANALYSIS_REQUIRED');
-
-        // Extract the obligation ID from the response
-        const p1 = JSON.parse(r1 as string);
-        const oblId = p1.requiredReviewAttestation?.toolObligationId as string;
-        expect(oblId).toBeTruthy();
-
-        // Step 2: complete with findings — review tool records its own evidence
-        let st = await readState(s.sDir);
-        const obl = st!.reviewAssurance!.obligations.find((o) => o.obligationId === oblId)!;
-        await writeStateWithArtifacts(s.sDir, {
-          ...st!,
-          reviewAssurance: {
-            ...st!.reviewAssurance!,
-            obligations: st!.reviewAssurance!.obligations.map((item) =>
-              item.obligationId === oblId
-                ? {
-                    ...item,
-                    reviewSubjectScope: {
-                      kind: 'repository_change',
-                      paths: ['README.md'],
-                      revisions: ['base', 'head'],
-                    },
-                  }
-                : item,
-            ),
-          },
-        });
-        const r2 = await review.execute(
-          {
-            inputOrigin: 'manual_text',
-            text: 'E2E review content',
-            targetPaths: ['README.md'],
-            reviewFindings: f(oblId, obl.iteration, obl.planVersion),
-          },
-          s.tc,
-        );
-        expect(typeof r2).toBe('string');
-        expect(r2).not.toContain('INTERNAL_ERROR');
-        st = await readState(s.sDir);
-        expect(st!.phase).toBe('REVIEW_COMPLETE');
-      });
+  describe('opencode (structured host-observed evidence)', () => {
+    let s: SE | undefined;
+    let pc: string | undefined, pr: string | undefined, pp: string | undefined;
+    beforeEach(() => {
+      pc = process.env.OPENCODE_CONFIG_DIR;
+      pr = process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
+      pp = process.env.FLOWGUARD_HOST_PLATFORM;
     });
-  }
+    afterEach(() => {
+      restoreEnv('OPENCODE_CONFIG_DIR', pc);
+      restoreEnv('FLOWGUARD_REQUIRE_TEST_CONFIG_DIR', pr);
+      restoreEnv('FLOWGUARD_HOST_PLATFORM', pp);
+      if (s) {
+        rmSync(s.rootDir, { recursive: true, force: true });
+        s = undefined;
+      }
+    });
+
+    it('architecture: Mode A → evidence → Mode B', async () => {
+      s = await boot('arch');
+      await writeStateWithArtifacts(s.sDir, makeState('READY'));
+      const a = await architecture.execute(
+        {
+          title: 'E2E ADR',
+          adrText: '## Context\nTest.\n\n## Decision\nUse X.\n\n## Consequences\nY.\n',
+        },
+        s.tc,
+      );
+      expect(typeof a).toBe('string');
+      expect(a).not.toContain('INTERNAL_ERROR');
+      let st = await readState(s.sDir);
+      expect(st!.architecture).toBeTruthy();
+      const { oblId } = await inject(s.sDir, st!, 'architecture', s.tc.sessionID);
+      st = await readState(s.sDir);
+      const b = await architecture.execute({ reviewVerdict: 'accept' }, s.tc);
+      expect(typeof b).toBe('string');
+      expect(b).not.toContain('INTERNAL_ERROR');
+      st = await readState(s.sDir);
+      expect(st!.reviewAssurance!.obligations.find((o) => o.obligationId === oblId)!.status).toBe(
+        'consumed',
+      );
+    });
+
+    it('plan: Mode A → evidence → Mode B', async () => {
+      s = await boot('plan');
+      await writeStateWithArtifacts(s.sDir, makeState('TICKET', { ticket: TICKET }));
+      const a = await plan.execute({ planText: '## Plan\n1. Fix auth' }, s.tc);
+      expect(typeof a).toBe('string');
+      expect(a).not.toContain('INTERNAL_ERROR');
+      let st = await readState(s.sDir);
+      expect(st!.plan).toBeTruthy();
+      expect(st!.ticket).toBeTruthy();
+      const { oblId } = await inject(s.sDir, st!, 'plan', s.tc.sessionID);
+      st = await readState(s.sDir);
+      const b = await plan.execute({ reviewVerdict: 'accept' }, s.tc);
+      expect(typeof b).toBe('string');
+      expect(b).not.toContain('INTERNAL_ERROR');
+      st = await readState(s.sDir);
+      expect(st!.reviewAssurance!.obligations.find((o) => o.obligationId === oblId)!.status).toBe(
+        'consumed',
+      );
+    });
+
+    it('implement: Mode A → evidence → Mode B', async () => {
+      s = await boot('impl');
+      await writeStateWithArtifacts(
+        s.sDir,
+        makeState('IMPLEMENTATION', {
+          implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+          ticket: TICKET,
+          plan: {
+            current: makePlanRevision({ body: '# Plan', createdAt: FIXED_TIME }),
+            history: [],
+            reviewCompletion: 'pending',
+            reviewFindings: undefined,
+          },
+          // No active checks → IMPL_VALIDATION passes vacuously and auto-advances to
+          // IMPL_REVIEW (this segment exercises the review handshake, not re-validation).
+          activeChecks: [],
+        }),
+      );
+      mkdirSync(path.join(s.worktree, 'src'), { recursive: true });
+      writeFileSync(path.join(s.worktree, 'src', 'auth.ts'), 'export const auth = () => true;');
+      execSync('git add src', { cwd: s.worktree, stdio: 'pipe' });
+      const a = await implement.execute({}, s.tc);
+      expect(typeof a).toBe('string');
+      expect(a).not.toContain('INTERNAL_ERROR');
+      let st = await readState(s.sDir);
+      expect(st!.implementation).toBeTruthy();
+      const { oblId } = await inject(s.sDir, st!, 'implement', s.tc.sessionID);
+      st = await readState(s.sDir);
+      const b = await review_implementation.execute({ reviewVerdict: 'accept' }, s.tc);
+      expect(typeof b).toBe('string');
+      expect(b).not.toContain('INTERNAL_ERROR');
+      st = await readState(s.sDir);
+      expect(st!.reviewAssurance!.obligations.find((o) => o.obligationId === oblId)!.status).toBe(
+        'consumed',
+      );
+    });
+
+    it('plan-to-implement segment: plan → run_check → implement → archive', async () => {
+      s = await boot('main');
+
+      // Step 1: plan Mode A
+      await writeStateWithArtifacts(s.sDir, makeState('TICKET', { ticket: TICKET }));
+      const r1 = await plan.execute({ planText: '## Plan\n1. Fix auth' }, s.tc);
+      expect(typeof r1).toBe('string');
+      expect(r1).not.toContain('INTERNAL_ERROR');
+      let st = await readState(s.sDir);
+      expect(st!.plan).toBeTruthy();
+
+      // Step 2: inject evidence + approve plan
+      const { oblId: pid } = await inject(s.sDir, st!, 'plan', s.tc.sessionID);
+      st = await readState(s.sDir);
+      const r2 = await plan.execute({ reviewVerdict: 'accept' }, s.tc);
+      expect(typeof r2).toBe('string');
+      expect(r2).not.toContain('INTERNAL_ERROR');
+
+      // Step 3: run_check — bootstrap at VALIDATION with verificationCandidates
+      st = await readState(s.sDir);
+      const currentPlan = st!.plan!;
+      await writeStateWithArtifacts(
+        s.sDir,
+        makeState('VALIDATION', {
+          implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+          ticket: TICKET,
+          plan: currentPlan,
+          reviewDecision: st!.reviewDecision,
+          activeChecks: ['typecheck'],
+          verificationCandidates: [
+            {
+              assertionCapability: 'unsupported' as const,
+              kind: 'typecheck',
+              command: 'npx tsc --noEmit',
+              source: 'test',
+              confidence: 'high',
+              reason: 'E2E test candidate',
+            },
+          ],
+          executionSubjectInputsByKind: {
+            typecheck: [{ kind: 'implementation' as const }],
+          },
+        }),
+      );
+      const rV = await run_check.execute({ kind: 'typecheck' }, s.tc);
+      expect(typeof rV).toBe('string');
+      expect(rV).not.toContain('INTERNAL_ERROR');
+
+      // Step 4: implement Mode A
+      st = await readState(s.sDir);
+      // Bootstrap IMPLEMENTATION with evidence from run_check
+      await writeStateWithArtifacts(
+        s.sDir,
+        makeState('IMPLEMENTATION', {
+          implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+          ticket: TICKET,
+          plan: currentPlan,
+          reviewDecision: st!.reviewDecision,
+          validation: st!.validation,
+          activeChecks: ['typecheck'],
+          verificationCandidates: [
+            {
+              assertionCapability: 'unsupported' as const,
+              kind: 'typecheck',
+              command: 'npx tsc --noEmit',
+              source: 'test',
+              confidence: 'high',
+              reason: 'E2E test candidate',
+            },
+          ],
+          executionSubjectInputsByKind: {
+            typecheck: [{ kind: 'implementation' as const }],
+          },
+        }),
+      );
+      mkdirSync(path.join(s.worktree, 'src'), { recursive: true });
+      writeFileSync(path.join(s.worktree, 'src', 'auth.ts'), 'export const auth = () => true;');
+      execSync('git add src', { cwd: s.worktree, stdio: 'pipe' });
+      const r3 = await implement.execute({}, s.tc);
+      expect(typeof r3).toBe('string');
+      expect(r3).not.toContain('INTERNAL_ERROR');
+      st = await readState(s.sDir);
+      expect(st!.implementation).toBeTruthy();
+
+      // IMPL_VALIDATION: re-run the checks against the implemented code → IMPL_REVIEW
+      await run_check.execute({ kind: 'typecheck' }, s.tc);
+      st = await readState(s.sDir);
+
+      // Step 5: inject impl evidence + approve
+      const { oblId: iid } = await inject(s.sDir, st!, 'implement', s.tc.sessionID);
+      st = await readState(s.sDir);
+      const r4 = await review_implementation.execute({ reviewVerdict: 'accept' }, s.tc);
+      expect(typeof r4).toBe('string');
+      expect(r4).not.toContain('INTERNAL_ERROR');
+
+      // Step 6: archive at terminal phase
+      st = await readState(s.sDir);
+      await writeStateWithArtifacts(
+        s.sDir,
+        makeState('COMPLETE', {
+          ticket: TICKET,
+          plan: currentPlan,
+          implementation: st!.implementation,
+          reviewAssurance: st!.reviewAssurance,
+          reviewDecision: st!.reviewDecision,
+          validation: st!.validation,
+          activeChecks: ['typecheck'],
+          verificationCandidates: [
+            {
+              assertionCapability: 'unsupported' as const,
+              kind: 'typecheck',
+              command: 'npx tsc --noEmit',
+              source: 'test',
+              confidence: 'high',
+              reason: 'E2E test candidate',
+            },
+          ],
+          executionSubjectInputsByKind: {
+            typecheck: [{ kind: 'implementation' as const }],
+          },
+        }),
+      );
+      const rA = await archive.execute({}, s.tc);
+      expect(typeof rA).toBe('string');
+      expect(rA).not.toContain('INTERNAL_ERROR');
+      st = await readState(s.sDir);
+      expect(st!.lastExportPackagePurpose).toBeTruthy();
+    });
+
+    it('review: content → obligation → evidence → complete', async () => {
+      s = await boot('review');
+      await writeStateWithArtifacts(s.sDir, makeState('READY'));
+
+      // Step 1: content-aware call creates review obligation
+      const r1 = await review.execute(
+        { inputOrigin: 'manual_text', text: 'E2E review content', targetPaths: ['README.md'] },
+        s.tc,
+      );
+      expect(typeof r1).toBe('string');
+      expect(r1).toContain('CONTENT_ANALYSIS_REQUIRED');
+
+      // Extract the obligation ID from the response
+      const p1 = JSON.parse(r1 as string);
+      const oblId = p1.requiredReviewAttestation?.toolObligationId as string;
+      expect(oblId).toBeTruthy();
+
+      // Step 2: host captures the reviewer's structured findings and binds them
+      // to the tool-created obligation, then the verdict-only call completes it.
+      let st = await readState(s.sDir);
+      await inject(s.sDir, st!, 'review', s.tc.sessionID);
+      const r2 = await review.execute(
+        {
+          inputOrigin: 'manual_text',
+          text: 'E2E review content',
+          targetPaths: ['README.md'],
+          reviewObligationId: oblId,
+        },
+        s.tc,
+      );
+      expect(typeof r2).toBe('string');
+      expect(r2).not.toContain('INTERNAL_ERROR');
+      st = await readState(s.sDir);
+      expect(st!.phase).toBe('REVIEW_COMPLETE');
+    });
+  });
 });

@@ -17,7 +17,6 @@ import { assuranceSchema } from './evidence-assurance-internal.js';
  * - claim_validated: schema + expiry validated from local claim file
  * - idp_verified: cryptographic IdP verification (future P35)
  *
- * Backward compat: 'verified' from P33 v0 is coerced to 'claim_validated'.
  */
 export const DecisionIdentity = z
   .object({
@@ -30,7 +29,7 @@ export const DecisionIdentity = z
     actorEmail: z.string().nullable(),
     actorDisplayName: z.string().nullable().optional(),
     actorSource: z.enum(['env', 'git', 'claim', 'oidc', 'unknown']),
-    actorAssurance: assuranceSchema().default('best_effort'),
+    actorAssurance: assuranceSchema(),
   })
   .readonly();
 export type DecisionIdentity = z.infer<typeof DecisionIdentity>;
@@ -80,7 +79,7 @@ export const ActorInfoSchema = z
     email: z.string().nullable(),
     displayName: z.string().nullable().optional(),
     source: z.enum(['env', 'git', 'claim', 'oidc', 'unknown']),
-    assurance: assuranceSchema().default('best_effort'),
+    assurance: assuranceSchema(),
     verificationMeta: ActorVerificationMetaSchema.optional(),
   })
   .readonly();

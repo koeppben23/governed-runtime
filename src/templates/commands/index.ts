@@ -6,8 +6,8 @@
  * into the COMMANDS registry used by install and runtime.
  *
  * All templates use positive language per Anthropic and OpenAI
- * prompt engineering best practices. Shared governance rules are
- * composed from shared-rules.ts.
+ * prompt engineering best practices. Shared governance rules are rendered
+ * directly from the mandates authority.
  *
  * @version v3
  */
@@ -39,8 +39,6 @@ import { FINISH_COMMAND } from './finish.js';
 import { HELP_COMMAND } from './help.js';
 import { COMMANDS_COMMAND } from './commands.js';
 import { INSTALLED_TEMPLATE_FILES } from '../../integration/installed-commands.js';
-
-export { GOVERNANCE_RULES } from './shared-rules.js';
 
 const COMMAND_BODIES: Record<string, string> = {
   'hydrate.md': HYDRATE_COMMAND,

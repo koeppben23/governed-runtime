@@ -1,4 +1,4 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 
 export const ARCHIVE_COMMAND = `---
 description: FlowGuard — Archive a completed session as a compressed tar.gz file.
@@ -37,7 +37,7 @@ Archive the current completed FlowGuard session.
 ## Rules
 
 - Only terminal sessions can be archived.
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 ## Done-when
 
 - Session archive created as tar.gz.

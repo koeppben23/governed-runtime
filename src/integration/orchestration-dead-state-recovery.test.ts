@@ -110,7 +110,9 @@ function makeBlockedObligation(
     planVersion,
     criteriaVersion: 'p37-v1',
     mandateDigest: 'test-mandate-digest-blocked',
-    maxReviewerOutputRepairAttempts: 1,
+    maxReviewerAttempts: 1,
+    reviewProfile: 'core',
+    profileSource: 'policy_default',
     requiredChallengeCount: 0,
     requiredChallengeKind: 'design_challenge' as const,
     challengePolicyVersion: 'challenge-policy.v1' as const,
@@ -121,7 +123,17 @@ function makeBlockedObligation(
     invocationId: null,
     fulfilledAt: null,
     consumedAt: null,
-    reviewSubjectScope: { kind: 'unavailable', reason: 'blocked obligation fixture' },
+    reviewSubjectScope:
+      obligationType === 'implement'
+        ? {
+            kind: 'implementation' as const,
+            implementationDigest: 'test-subject-digest-blocked',
+          }
+        : { kind: 'unavailable' as const, reason: 'blocked obligation fixture' },
+    reviewMaterial: freezeReviewMaterial(
+      `# Frozen ${obligationType} review material`,
+      'test-subject-digest-blocked',
+    ),
     ...(obligationType === 'plan' || obligationType === 'architecture'
       ? {
           repositoryEvidenceFreeze: {
@@ -147,7 +159,9 @@ function makePendingObligation(
     planVersion,
     criteriaVersion: 'p37-v1',
     mandateDigest: 'test-mandate-digest-pending',
-    maxReviewerOutputRepairAttempts: 1,
+    maxReviewerAttempts: 1,
+    reviewProfile: 'core',
+    profileSource: 'policy_default',
     requiredChallengeCount: 0,
     requiredChallengeKind: 'design_challenge' as const,
     challengePolicyVersion: 'challenge-policy.v1' as const,
@@ -158,11 +172,21 @@ function makePendingObligation(
     invocationId: null,
     fulfilledAt: null,
     consumedAt: null,
-    reviewSubjectScope: {
-      kind: 'repository_change',
-      paths: ['src/foo.ts'],
-      revisions: ['base', 'head'],
-    },
+    reviewSubjectScope:
+      obligationType === 'implement'
+        ? {
+            kind: 'implementation' as const,
+            implementationDigest: 'test-subject-digest-pending',
+          }
+        : {
+            kind: 'repository_change' as const,
+            paths: ['src/foo.ts'],
+            revisions: ['base', 'head'] as const,
+          },
+    reviewMaterial: freezeReviewMaterial(
+      `# Frozen ${obligationType} review material`,
+      'test-subject-digest-pending',
+    ),
     ...(obligationType === 'plan' || obligationType === 'architecture'
       ? {
           repositoryEvidenceFreeze: {
@@ -404,7 +428,10 @@ describe('plan — dead-state recovery (Fix 2a)', () => {
       );
       const same = parseToolResult(sameRaw);
       expect(same.error).not.toBe(true);
-      expect(same.reviewObligationId).toBe(lastObl?.obligationId ?? first.reviewObligationId);
+      expect((same.reviewObligation as { obligationId?: string } | undefined)?.obligationId).toBe(
+        lastObl?.obligationId ??
+          (first.reviewObligation as { obligationId?: string } | undefined)?.obligationId,
+      );
 
       // CHANGED revision while pending: fail closed — never silently ignored.
       const changedRaw = await plan.execute(
@@ -549,7 +576,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
     });
   });
 
-  describe('restart identity, revision, and output repair', () => {
+  describe('restart identity, revision, and missing-attempt closure', () => {
     const ADR_TEXT = '## Context\nTest\n## Decision\nTest\n## Consequences\nTest';
     const CREATED_AT = '2026-01-01T00:00:00.000Z';
 
@@ -587,8 +614,12 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
       expect(result.status).toContain('restarted');
       expect(result.adrId).toBe('ADR-001');
       expect(result.adrDigest).toBe(hashText(ADR_TEXT));
-      expect(result.reviewObligationId).toBeDefined();
-      expect(result.reviewObligationId).not.toBe(blockedObligationId);
+      expect(
+        (result.reviewObligation as { obligationId?: string } | undefined)?.obligationId,
+      ).toBeDefined();
+      expect(
+        (result.reviewObligation as { obligationId?: string } | undefined)?.obligationId,
+      ).not.toBe(blockedObligationId);
 
       const after = await readState(sessDir);
       // A blocked review obligation is a new review generation — never a new ADR.
@@ -628,7 +659,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
       expect(pending[0]!.subjectDigest).toBe(hashText(revisedText));
     });
 
-    it('output repair: a repairable rejection reissues a fresh attempt on the SAME obligation', async () => {
+    it('missing attempt: a rejected attempt closes the obligation deterministically', async () => {
       await setupArchitectureDeadState(1);
       const sessDir = await currentSessionDir();
       const state = await readState(sessDir);
@@ -651,13 +682,14 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         obligationId: pending.obligationId,
         obligationType: 'architecture',
         subjectDigest: pending.subjectDigest,
-        reviewMaterial: pending.reviewMaterial,
         ordinal: 1,
         status: 'rejected',
         origin: { kind: 'initial' },
         rejectionReason: 'schema_invalid',
         repositoryDiscovery: { kind: 'not_applicable' },
+        observations: [],
         createdAt: CREATED_AT,
+        completedAt: CREATED_AT,
       };
       await writeState(sessDir, {
         ...state,
@@ -675,20 +707,25 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
       const raw = await architecture.execute({ title: 'Test Decision', adrText: ADR_TEXT }, ctx);
       const result = parseToolResult(raw);
 
-      expect(result.error).not.toBe(true);
-      expect(result.status).toContain('repair');
-      expect(result.reviewObligationId).toBe(pending.obligationId);
+      // No repair reissue exists: the broken obligation is deterministically
+      // closed so the NEXT /architecture mints a fresh one.
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVIEW_ATTEMPT_UNAVAILABLE');
 
       const after = await readState(sessDir);
+      const obligation = after!.reviewAssurance!.obligations.find(
+        (o) => o.obligationId === pending.obligationId,
+      )!;
+      expect(obligation.status).toBe('blocked');
+      expect(obligation.blockedCode).toBe('REVIEW_ATTEMPT_UNAVAILABLE');
       const attempts = after!.reviewAssurance!.attempts.filter(
         (a) => a.obligationId === pending.obligationId,
       );
-      expect(attempts.length).toBe(2);
-      expect(attempts.filter((a) => a.status === 'created').length).toBe(1);
-      expect(attempts.at(-1)!.origin.kind).toBe('output_repair');
+      expect(attempts).toHaveLength(1);
+      expect(attempts[0]!.status).toBe('rejected');
     });
 
-    it('fails closed on reissue when the persisted artifact scope is tampered to another digest', async () => {
+    it('fails closed on a missing-attempt continuation when the persisted artifact scope is tampered to another digest', async () => {
       await setupArchitectureDeadState(1);
       const sessDir = await currentSessionDir();
       const state = await readState(sessDir);
@@ -707,7 +744,8 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         policySnapshot: state.policySnapshot,
       });
       // Fully self-consistent material generation with a tampered scope: the
-      // subject identity chain must be transitively closed on the reissue path.
+      // subject identity chain must be transitively closed on the continuation
+      // path.
       const tampered: ReviewObligation = {
         ...pending,
         reviewSubjectScope: {
@@ -728,13 +766,14 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         obligationId: tampered.obligationId,
         obligationType: 'architecture',
         subjectDigest: tampered.subjectDigest,
-        reviewMaterial: tampered.reviewMaterial,
         ordinal: 1,
         status: 'rejected',
         origin: { kind: 'initial' },
         rejectionReason: 'schema_invalid',
         repositoryDiscovery: { kind: 'not_applicable' },
+        observations: [],
         createdAt: CREATED_AT,
+        completedAt: CREATED_AT,
       };
       await writeState(sessDir, {
         ...state,
@@ -756,7 +795,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
       expect(result.code).toBe('REVIEW_MATERIAL_INTEGRITY_FAILED');
     });
 
-    it('fails closed on reissue when the persisted scope kind is swapped to repository_change', async () => {
+    it('fails closed on a missing-attempt continuation when the persisted scope kind is swapped to repository_change', async () => {
       await setupArchitectureDeadState(1);
       const sessDir = await currentSessionDir();
       const state = await readState(sessDir);
@@ -790,13 +829,14 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         obligationId: tampered.obligationId,
         obligationType: 'architecture',
         subjectDigest: tampered.subjectDigest,
-        reviewMaterial: tampered.reviewMaterial,
         ordinal: 1,
         status: 'rejected',
         origin: { kind: 'initial' },
         rejectionReason: 'schema_invalid',
         repositoryDiscovery: { kind: 'not_applicable' },
+        observations: [],
         createdAt: CREATED_AT,
+        completedAt: CREATED_AT,
       };
       await writeState(sessDir, {
         ...state,
@@ -838,9 +878,16 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
 
       expect(result.error).not.toBe(true);
       expect(result.status).toContain('restarted');
-      expect(result.reviewObligationIteration).toBe(2);
+      expect((result.reviewObligation as { iteration?: number } | undefined)?.iteration).toBe(2);
       expect(result.selfReviewIteration).toBe(2);
-      expect(String(result.next)).toContain('iteration=2');
+      // Under the structured-evidence contract the restart emits a child-session
+      // invocation instruction carrying the review cycle, not a reviewer prompt.
+      expect(result.next).toBe('INDEPENDENT_REVIEW_REQUIRED');
+      const invocation = result.reviewInvocation as Record<string, unknown> | undefined;
+      expect(invocation?.mode).toBeDefined();
+      expect(
+        (invocation?.requiredReviewAttestation as { iteration?: number } | undefined)?.iteration,
+      ).toBe(2);
 
       const after = await readState(sessDir);
       const pending = after!.reviewAssurance!.obligations.filter((o) => o.status === 'pending');
@@ -931,7 +978,9 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
       const result = parseToolResult(raw);
 
       expect(result.error).not.toBe(true);
-      expect(result.reviewObligationId).toBe(pending.obligationId);
+      expect((result.reviewObligation as { obligationId?: string } | undefined)?.obligationId).toBe(
+        pending.obligationId,
+      );
       expect(result.status).toContain('pending');
     });
   });

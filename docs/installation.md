@@ -148,7 +148,7 @@ Installer status meanings:
 
 Codex cloud-only operation is out of scope for this installer because local plugin files, local MCP execution, and local hook trust are required.
 
-Set `FLOWGUARD_HOST_PLATFORM=claude-code` or `FLOWGUARD_HOST_PLATFORM=codex` for MCP/tool execution so FlowGuard emits the correct `external_instruction_pending` guidance. If the platform is ambiguous, FlowGuard fails closed or requires policy-gated `manual_attested` ReviewFindings.
+Set `FLOWGUARD_HOST_PLATFORM=claude-code` or `FLOWGUARD_HOST_PLATFORM=codex` for MCP/tool execution so FlowGuard emits the correct `external_instruction_pending` guidance. Independent review requires a host-observed structured child-session invocation; on hosts that cannot provide one, FlowGuard fails closed.
 
 ### 3. Verify Installation
 

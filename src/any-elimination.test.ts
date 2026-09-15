@@ -103,28 +103,6 @@ describe('status.test.ts', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Review enforcement tests — zero as any
-// ═══════════════════════════════════════════════════════════════════════════════
-
-describe('review-enforcement-session.test.ts', () => {
-  describe('HAPPY — no as any', () => {
-    it('has no as any casts', () => {
-      const source = readSource('integration/review/enforcement/session.test.ts');
-      expect(source).not.toContain('as any');
-    });
-  });
-});
-
-describe('review-enforcement-mutation.test.ts', () => {
-  describe('HAPPY — no as any', () => {
-    it('has no as any casts', () => {
-      const source = readSource('integration/review/enforcement/mutation.test.ts');
-      expect(source).not.toContain('as any');
-    });
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════════════════════
 // BUG-21 tests — intentional as any casts are documented
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -138,12 +116,6 @@ describe('BUG-21 null-tolerance tests', () => {
 
     it('execution BUG-21 block explains intentionally invalid input', () => {
       const source = readSource('integration/tools-execute-implement.test.ts');
-      expect(source).toContain('BUG-21');
-      expect(source).toContain('as any');
-    });
-
-    it('architecture BUG-21 block explains intentionally invalid input', () => {
-      const source = readSource('integration/tools/architecture-tool.test.ts');
       expect(source).toContain('BUG-21');
       expect(source).toContain('as any');
     });

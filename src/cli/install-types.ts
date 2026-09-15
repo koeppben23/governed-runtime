@@ -108,6 +108,8 @@ export const FLOWGUARD_REVIEWER_MODEL_ENV = 'FLOWGUARD_REVIEWER_MODEL';
 export const VALID_MODEL_ID_PATTERN = /^[A-Za-z0-9._/@:-]+$/;
 export const FLOWGUARD_REVIEWER_EFFORT_ENV = 'FLOWGUARD_REVIEWER_EFFORT';
 export const VALID_EFFORT_PATTERN = /^[a-z]+$/;
+export const REVIEWER_EFFORT_VALUES = ['none', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
+export type ReviewerEffort = (typeof REVIEWER_EFFORT_VALUES)[number];
 export const OPENCODE_CONFIG_FILENAMES = ['opencode.jsonc', 'opencode.json'] as const;
 
 export type InstallErrorCode =

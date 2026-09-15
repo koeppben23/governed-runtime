@@ -10,8 +10,6 @@ const outputFile = path.join(tmpDir, 'vitest-independent-review.json');
 
 const testFiles = [
   'src/integration/plugin.test.ts',
-  'src/integration/independent-review-e2e.test.ts',
-  'src/integration/tools-execute-session.test.ts',
   'src/integration/tools-execute-planning.test.ts',
   'src/integration/tools-execute-ticket.test.ts',
   'src/integration/tools-execute-review.test.ts',
@@ -22,8 +20,6 @@ const testFiles = [
   'src/integration/tools-execute-abort-session.test.ts',
   'src/integration/tools-execute-archive.test.ts',
   'src/integration/tools/review-validation-findings.test.ts',
-  'src/integration/tools/review-validation-anti-forgery.test.ts',
-  'src/integration/tools/review-validation-host-task.test.ts',
 ];
 
 const mustPassTestTitles = [
@@ -31,11 +27,8 @@ const mustPassTestTitles = [
   'accepts when strict evidence and attestation match',
   'blocks when strict attestation is missing',
   'blocks when strict obligation is blocked',
+  'blocks when submitted findings session differs from invocation child session',
   'Mode B changes_requested keeps selfReviewIteration aligned with next iteration metadata',
-  // Host-task verdict runtime path through the real plugin hooks (gap closer):
-  'captures + binds reviewer evidence through the real Task after-hook',
-  'REGRESSION: verdict with a mismatched submitted-findings session is NOT blocked',
-  'REGRESSION: host stamps canonical attestation after reviewer input binds',
 ];
 
 const testTitleFilter = mustPassTestTitles

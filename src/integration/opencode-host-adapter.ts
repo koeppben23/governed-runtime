@@ -79,7 +79,7 @@ export class OpenCodeHostAdapter implements HostAdapter {
     argMutation: true,
     outputReplacement: true,
     contextInjection: true,
-    reviewerSpawn: true,
+    independentStructuredReview: true,
     compactionInjection: true,
   };
 
@@ -130,7 +130,7 @@ export class OpenCodeHostAdapter implements HostAdapter {
    * and a successful registry listing would not even prove that the
    * `flowguard-reviewer` agent is resolvable. Reviewer capability is verified
    * lazily on the real invocation path by `resolveReviewerAgent()`, so
-   * `reviewerSpawn` stays contract-attested here instead of being reported as
+   * `independentStructuredReview` stays contract-attested here instead of being reported as
    * runtime-verified.
    */
   async validateCapabilities(): Promise<CapabilityValidationResult> {
@@ -171,15 +171,12 @@ export class OpenCodeHostAdapter implements HostAdapter {
   // ── Subagent / Reviewer ──────────────────────────────────────────────────
 
   async spawnReviewer(config: ReviewerSpawnConfig): Promise<HostReviewerResult | null> {
-    const options: Record<string, unknown> = {};
-    if (config.reviewOutputPolicy !== undefined) {
-      options.reviewOutputPolicy = config.reviewOutputPolicy;
-    }
-    if (config.reviewInvocationPolicy !== undefined) {
-      options.reviewInvocationPolicy = config.reviewInvocationPolicy;
-    }
-    if (config.maxRetries !== undefined) {
-      options.maxRetries = config.maxRetries;
+    const options: Record<string, unknown> = {
+      _authorizeDispatch: config.authorizeDispatch,
+      _abandonDispatch: config.abandonDispatch,
+    };
+    if (config.maxTransportRetries !== undefined) {
+      options.maxTransportRetries = config.maxTransportRetries;
     }
     if (config.baseDelayMs !== undefined) {
       options.baseDelayMs = config.baseDelayMs;

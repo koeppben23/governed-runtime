@@ -80,12 +80,6 @@ function flowGuardPolicy(overrides: Record<string, unknown> = {}) {
     maxImplReviewIterations: 5,
     allowSelfApproval: false,
     ...overrides,
-    selfReview: {
-      subagentEnabled: false,
-      fallbackToSelf: false,
-      strictEnforcement: false,
-      ...((overrides.selfReview as Record<string, unknown>) ?? {}),
-    },
   } as unknown as ImplementRuntime['policy'];
 }
 
@@ -100,6 +94,7 @@ function makeReviewFindings(overrides: Partial<ReviewFindings> = {}): ReviewFind
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: 'reviewer' },
     reviewedAt: '2026-01-01T00:00:00.000Z',
     ...overrides,
@@ -173,49 +168,23 @@ describe('buildImplementRuntime', () => {
     });
     expect(rt.maxImplReviewIterations).toBe(7);
   });
-
-  it('defaults subagent fields to false when selfReview is absent', () => {
-    const rt = buildImplementRuntime({
-      args: implementArgs(),
-      context: toolContext(),
-      worktree: '/tmp/repo',
-      sessDir: '/tmp/sess',
-      state: state('IMPLEMENTATION'),
-      policy: flowGuardPolicy(),
-      ctx: {} as unknown as ImplementRuntime['ctx'],
-    });
-    expect(rt.subagentEnabled).toBe(false);
-    expect(rt.fallbackToSelf).toBe(false);
-    expect(rt.strictEnforcement).toBe(false);
-  });
-
-  it('passes through selfReview config values', () => {
-    const rt = buildImplementRuntime({
-      args: implementArgs(),
-      context: toolContext(),
-      worktree: '/tmp/repo',
-      sessDir: '/tmp/sess',
-      state: state('IMPLEMENTATION'),
-      policy: flowGuardPolicy({
-        selfReview: { subagentEnabled: true, fallbackToSelf: true, strictEnforcement: true },
-      }),
-      ctx: {} as unknown as ImplementRuntime['ctx'],
-    });
-    expect(rt.subagentEnabled).toBe(true);
-    expect(rt.fallbackToSelf).toBe(true);
-    expect(rt.strictEnforcement).toBe(true);
-  });
 });
 
 // ─── validateImplementSequence ────────────────────────────────────────────────
 
 describe('validateImplementSequence', () => {
-  it('findings without verdict => INVALID_IMPLEMENT_TOOL_SEQUENCE', () => {
+  it('a stray reviewFindings key is not a verdict shape (rejected at the schema boundary)', () => {
+    // Findings are never part of the tool args: the strict published schema
+    // rejects unknown reviewFindings keys; the runtime classifier sees only
+    // verdict/unavailable, so a findings-only call is an initial submission.
     const result = validateImplementSequence(
-      implementArgs({ reviewFindings: {} as unknown as ImplementArgs['reviewFindings'] }),
+      {
+        ...implementArgs(),
+        reviewFindings: {},
+      } as unknown as ImplementArgs,
       state('IMPLEMENTATION'),
     );
-    expect(result).toContain('INVALID_IMPLEMENT_TOOL_SEQUENCE');
+    expect(result).toBeNull();
   });
 
   it('reviewerUnavailable retry is allowed only at IMPL_REVIEW with implementation evidence', () => {
@@ -419,7 +388,6 @@ describe('activateImplementationReviewObligation — implementation subject mode
 
     const input = implReviewState();
     const result = await activateImplementationReviewObligation(input, {
-      subagentEnabled: true,
       iteration: 1,
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',
@@ -454,7 +422,6 @@ describe('activateImplementationReviewObligation — implementation subject mode
 
     const input = implReviewState();
     const result = await activateImplementationReviewObligation(input, {
-      subagentEnabled: true,
       iteration: 1,
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',
@@ -485,7 +452,6 @@ describe('activateImplementationReviewObligation — implementation subject mode
 
     const input = implReviewState();
     const result = await activateImplementationReviewObligation(input, {
-      subagentEnabled: true,
       iteration: 1,
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',

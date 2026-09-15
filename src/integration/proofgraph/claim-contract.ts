@@ -24,7 +24,7 @@
  */
 
 import type { TaskClass } from '../../state/schema.js';
-import type { V2CounterexampleRequirement } from '../../state/proofgraph-approval.js';
+import type { CounterexampleRequirement } from '../../state/proofgraph-approval.js';
 import type { VerificationCandidate } from '../../state/discovery-schemas.js';
 import {
   ASSERTION_FORMATS_BY_PROVIDER,
@@ -48,7 +48,7 @@ export interface NormalizedClaimDeclaration {
   readonly critical: boolean;
   readonly claimScope: 'specific_behavior' | 'suite';
   readonly positiveCheckId: string;
-  readonly counterexampleRequirement?: V2CounterexampleRequirement;
+  readonly counterexampleRequirement?: CounterexampleRequirement;
   readonly structuralSurface?: string;
   readonly mutationProfile?: string;
   /** Present only for plan declarations; architecture/contract flows omit it. */
@@ -347,7 +347,7 @@ function resolveCounterexampleCandidate(
   candidates: readonly VerificationCandidate[],
   requirement: NonNullable<NormalizedClaimDeclaration['counterexampleRequirement']>,
 ): VerificationCandidate | undefined {
-  const candidateId = 'candidateId' in requirement ? requirement.candidateId : undefined;
+  const candidateId = requirement.kind === 'aggregate_check' ? requirement.candidateId : undefined;
   return candidateId
     ? candidates.find(
         (candidate) =>

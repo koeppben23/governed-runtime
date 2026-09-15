@@ -17,6 +17,7 @@
 import type { Phase } from '../state/schema.js';
 import type { ReviewReportFinding } from '../state/evidence.js';
 import type { FrozenReviewSubject } from '../state/evidence.js';
+import type { ReviewInvocationEvidence } from '../state/evidence-review-invocation.js';
 import type {
   ReviewCardDocument,
   PresentationSection,
@@ -53,18 +54,23 @@ export interface ReviewReportCardInput {
   reviewSubject?: FrozenReviewSubject;
   /** Obligation UUID — present when content-aware review was performed. */
   obligationId?: string;
-  /** Evidence source: host-orchestrated or agent-submitted-attested. */
-  invocationSource?: string;
-  /** How the reviewer was invoked: host_subagent_task, sdk_session_prompt, manual_attested, or native_subagent_attested. */
-  invocationMode?: string;
+  /** Bound invocation evidence source (always host-orchestrated). */
+  invocationSource?: ReviewInvocationEvidence['source'];
+  /**
+   * How the reviewer was invoked. The only sanctioned transport is a
+   * host-observed SDK session prompt.
+   */
+  invocationMode?: ReviewInvocationEvidence['invocationMode'];
   /** Whether this invocation produced a host-visible child session in the OpenCode GUI. */
   hostVisible?: boolean;
   /** Subagent session ID from invocation evidence. */
   reviewerSessionId?: string;
-  reviewOutputMode?: string;
-  structuredOutputUsed?: boolean;
-  reviewAssuranceLevel?: string;
-  extractionMethod?: string;
+  /** Findings provenance (always host-observed structured model output). */
+  reviewOutputMode?: ReviewInvocationEvidence['reviewOutputMode'];
+  /** Host-observed structured model output was used. */
+  structuredOutputUsed?: ReviewInvocationEvidence['structuredOutputUsed'];
+  /** Output assurance tier for host-observed structured output. */
+  reviewAssuranceLevel?: ReviewInvocationEvidence['reviewAssuranceLevel'];
   /** Mandatory state-derived ProofGraph summary. */
   proofSummary: CompactProofPresentation;
   /** Canonical next action resolved from the completed state. */
@@ -152,7 +158,6 @@ export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewC
     reviewOutputMode,
     structuredOutputUsed,
     reviewAssuranceLevel,
-    extractionMethod,
     proofSummary,
   } = input;
 
@@ -260,7 +265,6 @@ export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewC
     if (reviewAssuranceLevel) {
       evidence.push({ label: 'Review assurance', value: reviewAssuranceLevel });
     }
-    if (extractionMethod) evidence.push({ label: 'Extraction method', value: extractionMethod });
     sections.push({ kind: 'keyValue', heading: 'Evidence', items: evidence });
   }
 

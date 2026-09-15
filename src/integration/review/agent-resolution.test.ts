@@ -6,7 +6,7 @@ import {
   resolveReviewerAgent,
 } from './agent-resolution.js';
 import { invokeReviewer, type OrchestratorClient } from './orchestrator.js';
-import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import { makeClient, NO_SLEEP, PROMPT } from './orchestrator-test-helpers.js';
 
 describe('reviewer agent resolution', () => {
@@ -97,15 +97,14 @@ describe('reviewer agent resolution', () => {
     const diagnostics: Array<Record<string, unknown>> = [];
 
     const result = await invokeReviewer(client, PROMPT, 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
-      maxRetries: 0,
+      maxTransportRetries: 0,
       _sleepFn: NO_SLEEP,
       _onAttemptFailed: (info) => diagnostics.push(info),
     });
 
     expect(result).toMatchObject({
       blocked: true,
-      code: 'REVIEWER_INVOCATION_EXHAUSTED',
+      code: 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE',
       reviewInvocation: {
         status: 'blocked_capability_mismatch',
         reviewerSubagentType: 'flowguard-reviewer',
@@ -123,12 +122,14 @@ describe('reviewer agent resolution', () => {
   it('never substitutes general even when general is explicitly registered', async () => {
     const client = makeClient({ agents: [{ id: 'general', name: 'general' }] });
     const result = await invokeReviewer(client, PROMPT, 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
-      maxRetries: 0,
+      maxTransportRetries: 0,
       _sleepFn: NO_SLEEP,
     });
 
-    expect(result).toMatchObject({ blocked: true, code: 'REVIEWER_INVOCATION_EXHAUSTED' });
+    expect(result).toMatchObject({
+      blocked: true,
+      code: 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE',
+    });
     expect(client.session.prompt).not.toHaveBeenCalled();
   });
 });

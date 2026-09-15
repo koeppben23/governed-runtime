@@ -2,10 +2,9 @@
  * @module architecture/attempt-reissue-call-sites
  * @description Architecture guard: minting a NEW attempt for an existing
  * obligation is a transition authority. `createAttemptForExistingObligation`
- * may only be called from productive sites that route through the matching
- * transition authority (`authorizeOutputRepairReissue` for output repairs,
- * `authorizeTaskLifecycleRearm` for task-lifecycle re-arms). The origin
- * parameter must not become a public backdoor.
+ * may only be called from the productive dispatch-recovery site, which routes
+ * through `authorizeDispatchRearm`. The origin parameter must not become a
+ * public backdoor.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, sep } from 'node:path';
@@ -14,12 +13,7 @@ import { describe, expect, it } from 'vitest';
 const SRC = join(process.cwd(), 'src');
 
 /** Production files that may call `createAttemptForExistingObligation(...)`. */
-const ALLOWED_CALLERS = [
-  'integration/durable-dispatch.ts',
-  'integration/plugin-afterhooks.ts',
-  'integration/tools/review-tool/obligation-creation.ts',
-  'integration/tools/review-tool/continuation.ts',
-];
+const ALLOWED_CALLERS = ['integration/durable-dispatch.ts'];
 
 function listSourceFiles(dir: string): string[] {
   const results: string[] = [];
@@ -58,25 +52,38 @@ describe('createAttemptForExistingObligation call-site whitelist', () => {
     expect(unauthorized).toEqual([]);
   });
 
-  it('every allowed caller routes through its matching transition authority', () => {
-    const outputRepairSites = [
-      'integration/tools/review-tool/obligation-creation.ts',
-      'integration/tools/review-tool/continuation.ts',
-    ];
-    for (const file of outputRepairSites) {
-      const content = readFileSync(join(SRC, file), 'utf8');
-      expect(content, `${file} must route through authorizeOutputRepairReissue`).toContain(
+  it('the durable re-arm site routes through the canonical dispatch-rearm authority', () => {
+    const durableRearm = readFileSync(join(SRC, 'integration/durable-dispatch.ts'), 'utf8');
+    expect(durableRearm).toContain('authorizeDispatchRearm');
+    expect(durableRearm).not.toContain('authorizeOutputRepairReissue');
+    expect(durableRearm).not.toContain('authorizeTaskLifecycleRearm');
+    // Reviewer-Task interception is removed: the afterhook must never mint an
+    // attempt or re-arm the retired Task lifecycle.
+    const afterhooks = readFileSync(join(SRC, 'integration/plugin-afterhooks.ts'), 'utf8');
+    expect(afterhooks).not.toContain('authorizeDispatchRearm');
+    expect(afterhooks).not.toContain('createAttemptForExistingObligation');
+  });
+
+  it('the removed repair and task-rearm authorities have no production reference', () => {
+    for (const file of listSourceFiles(SRC)) {
+      const content = readFileSync(file, 'utf8');
+      const relative = file
+        .slice(SRC.length + 1)
+        .split(sep)
+        .join('/');
+      expect(content, `${relative} must not reference the removed repair authority`).not.toContain(
         'authorizeOutputRepairReissue',
       );
-      expect(content, `${file} must not use the task-rearm authority`).not.toContain(
-        'authorizeTaskLifecycleRearm',
+      expect(
+        content,
+        `${relative} must not reference the removed task-rearm authority`,
+      ).not.toContain('authorizeTaskLifecycleRearm');
+      expect(content, `${relative} must not use the removed output_repair origin`).not.toContain(
+        "'output_repair'",
+      );
+      expect(content, `${relative} must not use the removed task_rearm origin`).not.toContain(
+        "'task_rearm'",
       );
     }
-    const rearm = readFileSync(join(SRC, 'integration/plugin-afterhooks.ts'), 'utf8');
-    expect(rearm).toContain('authorizeTaskLifecycleRearm');
-    expect(rearm).not.toContain('authorizeOutputRepairReissue');
-    const durableRearm = readFileSync(join(SRC, 'integration/durable-dispatch.ts'), 'utf8');
-    expect(durableRearm).toContain('authorizeTaskLifecycleRearm');
-    expect(durableRearm).not.toContain('authorizeOutputRepairReissue');
   });
 });

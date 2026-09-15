@@ -7,7 +7,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { EnforcementLevel, HostCapabilities } from '../adapters/host-adapter.js';
 import type { HostId } from '../shared/hosts.js';
-import type { DoctorCheck, InstallScope } from './install-helpers.js';
+import type { DoctorCheck, InstallScope } from './install-types.js';
 import { codexInstallStatus, resolveCodexMarketplacePath } from './codex-plugin-install.js';
 
 interface HostTrustProjection {
@@ -29,7 +29,7 @@ const HOST_TRUST: Record<HostId, HostTrustProjection> = {
       argMutation: true,
       outputReplacement: true,
       contextInjection: true,
-      reviewerSpawn: true,
+      independentStructuredReview: true,
       compactionInjection: true,
     },
     runtimeVerification:
@@ -53,7 +53,7 @@ const HOST_TRUST: Record<HostId, HostTrustProjection> = {
       argMutation: false,
       outputReplacement: false,
       contextInjection: true,
-      reviewerSpawn: true,
+      independentStructuredReview: true,
       compactionInjection: true,
     },
     runtimeVerification:
@@ -78,7 +78,7 @@ const HOST_TRUST: Record<HostId, HostTrustProjection> = {
       argMutation: true,
       outputReplacement: true,
       contextInjection: true,
-      reviewerSpawn: true,
+      independentStructuredReview: true,
       compactionInjection: false,
     },
     runtimeVerification:

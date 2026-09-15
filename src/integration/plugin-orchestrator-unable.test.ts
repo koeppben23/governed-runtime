@@ -45,7 +45,8 @@ import { TOOL_FLOWGUARD_PLAN } from './tool-names.js';
 import { REVIEW_REQUIRED_PREFIX } from './review/enforcement/types.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import { POLICY_SNAPSHOT, makeState } from '../fixtures.js';
-import { computeRecordDigest } from '../state/evidence-plan.js';
+import { makePendingReviewAttempt } from './review/__tests__/attempt-fixture.js';
+import { makePlanRevision } from '../state/evidence-test-constants.js';
 import type { OrchestratorClient } from './review/types.js';
 
 // ─── Test fixtures ────────────────────────────────────────────────────────────
@@ -53,6 +54,7 @@ import type { OrchestratorClient } from './review/types.js';
 const PARENT_SESSION_ID = 'parent-session-1';
 const CHILD_SESSION_ID = 'child-session-1';
 const OBLIGATION_ID = '11111111-1111-4111-8111-111111111111';
+const ATTEMPT_ID = '66666666-6666-4666-8666-666666666666';
 const SESS_DIR = '/tmp/fg-mock-sess-dir';
 
 /** Build a Mode A plan tool output with INDEPENDENT_REVIEW_REQUIRED. */
@@ -84,6 +86,7 @@ function findingsWithVerdict(verdict: 'approve' | 'unable_to_review'): string {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     attestation: {
       toolObligationId: OBLIGATION_ID,
     },
@@ -99,7 +102,7 @@ function buildMockClient(findingsJson: string): OrchestratorClient {
       prompt: vi.fn().mockResolvedValue({
         data: {
           parts: [{ type: 'text', text: findingsJson }],
-          info: { structured_output: JSON.parse(findingsJson) as Record<string, unknown> },
+          info: { structured: JSON.parse(findingsJson) as Record<string, unknown> },
         },
         error: undefined,
       }),
@@ -148,34 +151,16 @@ function buildDeps(client: OrchestratorClient): {
 
 /** Build a minimal session state snapshot with strictEnforcement enabled. */
 function buildSessionState() {
+  const planCurrent = makePlanRevision({
+    body: 'plan body for review',
+    createdAt: '2026-04-24T12:00:00.000Z',
+  });
   return makeState('PLAN', {
     policySnapshot: {
       ...POLICY_SNAPSHOT,
-      selfReview: {
-        subagentEnabled: true,
-        fallbackToSelf: false,
-        strictEnforcement: true,
-      },
     },
     plan: {
-      current: {
-        body: 'plan body for review',
-        digest: 'plan-digest-1',
-        sections: ['Plan'],
-        createdAt: '2026-04-24T12:00:00.000Z',
-        recordDigest: computeRecordDigest({
-          contentDigest: 'plan-digest-1',
-          planVersion: 1,
-          supersedesRecordDigest: null,
-          originatingReviewObligationId: null,
-          revisionReason: null,
-        }),
-        planVersion: 1,
-        supersedesRecordDigest: null,
-        originatingReviewObligationId: null,
-        revisionReason: null,
-        lineageStatus: 'verified' as const,
-      },
+      current: planCurrent,
       history: [],
       reviewCompletion: 'pending',
     },
@@ -199,7 +184,7 @@ function buildSessionState() {
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
-          maxReviewerOutputRepairAttempts: 1,
+          maxReviewerAttempts: 1,
           createdAt: '2026-04-24T12:00:00.000Z',
           pluginHandshakeAt: null,
           status: 'pending' as const,
@@ -207,21 +192,34 @@ function buildSessionState() {
           blockedCode: null,
           fulfilledAt: null,
           consumedAt: null,
-          subjectDigest: 'plan-digest-1',
+          subjectDigest: planCurrent.digest,
           reviewProfile: 'core' as const,
           profileSource: 'policy_default' as const,
+          reviewMaterial: {
+            content: 'frozen review material',
+            materialDigest: 'a'.repeat(64),
+            subjectDigest: planCurrent.digest,
+          },
           reviewSubjectScope: {
             kind: 'artifact' as const,
             artifact: {
               kind: 'plan' as const,
-              digest: 'plan-digest-1',
+              digest: planCurrent.digest,
               sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }]],
             },
           },
         },
       ],
       invocations: [],
-      attempts: [],
+      attempts: [
+        makePendingReviewAttempt({
+          attemptId: ATTEMPT_ID,
+          obligationId: OBLIGATION_ID,
+          obligationType: 'plan',
+          subjectDigest: planCurrent.digest,
+          createdAt: '2026-04-24T12:00:00.000Z',
+        }),
+      ],
       dispatches: [],
     },
   });

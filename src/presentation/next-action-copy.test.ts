@@ -24,10 +24,8 @@ describe('buildProductNextAction', () => {
     it('RUN_REVIEW_DECISION (PLAN_REVIEW)', () => {
       const action = resolveNextAction('PLAN_REVIEW', makeProgressedState('PLAN_REVIEW'));
       const product = buildProductNextAction(action, 'PLAN_REVIEW');
-      expect(product.commands).toEqual(['/approve', '/request-changes', '/reject']);
-      expect(product.text).toContain('/approve');
-      // Canonical action still uses /review-decision
-      expect(action.commands).toEqual(['/review-decision']);
+      expect(product.commands).toEqual(action.commands);
+      expect(product.text).toBe(action.text);
     });
 
     it('SESSION_COMPLETE (COMPLETE) gets phase-enriched text', () => {
@@ -125,31 +123,6 @@ describe('buildProductNextAction', () => {
     });
   });
 
-  describe('RUN_REVIEWER_TASK — preserve canonical phase routing', () => {
-    it.each([
-      ['PLAN', 'Independent plan review is pending. Submit the reviewer verdict with /plan.'],
-      [
-        'ARCHITECTURE',
-        'Independent architecture review is pending. Submit the reviewer verdict with /architecture.',
-      ],
-      [
-        'IMPL_REVIEW',
-        'Independent implementation review is pending. Submit the reviewer verdict with flowguard_review_implementation.',
-      ],
-      [
-        'REVIEW',
-        'Independent content review is pending. Submit the reviewer verdict with flowguard_review.',
-      ],
-    ] as const)('preserves %s canonical routing', (phase, canonicalText) => {
-      const action = { code: 'RUN_REVIEWER_TASK', text: canonicalText, commands: [] as string[] };
-      expect(buildProductNextAction(action, phase)).toEqual({
-        text: canonicalText,
-        commands: [],
-        presentationForm: 'review_pending',
-      });
-    });
-  });
-
   describe('CORNER — unknown codes fall back to canonical', () => {
     it('returns canonical text and commands for unmapped code', () => {
       const action = { code: 'UNKNOWN_CODE', text: 'Canonical text', commands: ['/cmd'] };
@@ -186,10 +159,8 @@ describe('buildProductNextAction', () => {
     it('RUN_REVIEW_DECISION text and commands are exact', () => {
       const action = { code: 'RUN_REVIEW_DECISION', text: '', commands: [] as string[] };
       const product = buildProductNextAction(action, 'PLAN_REVIEW');
-      expect(product.text).toBe(
-        'Review gate active. Run /approve to accept, /request-changes to revise, or /reject to discard.',
-      );
-      expect(product.commands).toEqual(['/approve', '/request-changes', '/reject']);
+      expect(product.text).toBe(action.text);
+      expect(product.commands).toEqual(action.commands);
     });
 
     it('RUN_VALIDATE text and commands are exact', () => {

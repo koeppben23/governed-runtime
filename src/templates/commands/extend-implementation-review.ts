@@ -1,4 +1,4 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 
 export const EXTEND_IMPLEMENTATION_REVIEW_COMMAND = `---
 description: FlowGuard — Authorize more independent implementation review iterations after budget exhaustion.
@@ -23,7 +23,7 @@ Authorize a finite additional independent implementation review budget after the
 - This is an explicit user authorization: the tool consumes the recorded \`/extend-implementation-review <integer>\` command intent. If the intent is missing, mismatched, or the review budget is not yet exhausted, the call is BLOCKED and the authorization is NOT recorded. Never bypass the missing authorization.
 - This command only opens the finite review budget. It never records implementation evidence, runs validation, or submits a review verdict.
 - Do not auto-extend or self-authorize additional review iterations.
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 ## Done-when
 
 - The independent implementation review is unblocked with exactly the finite budget the user authorized.

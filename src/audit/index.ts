@@ -11,9 +11,10 @@
  * @version v1
  */
 
+export type { ActorInfo } from '../state/evidence.js';
+
 // Structured event types + factories
 export {
-  type ActorInfo,
   type AuditEventKind,
   type TransitionDetail,
   type StateWriteDetail,

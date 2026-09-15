@@ -2,14 +2,14 @@
  * @module integration/plugin-orchestrator
  * @description Deterministic review subagent orchestration — extracted from plugin.ts.
  *
- * Invokes the flowguard-reviewer subagent via the OpenCode SDK client when a
+ * Invokes the flowguard-reviewer subagent via the host adapter when a
  * FlowGuard tool response signals INDEPENDENT_REVIEW_REQUIRED. Handles:
  * - Review obligation creation + audit
  * - Prompt building (plan, architecture, or impl)
  * - Subagent invocation
- * - Structured findings validation (P35 strict / non-strict)
+ * - Structured findings validation
  * - Evidence recording with reuse detection
- * - Output mutation (strict blocked or success)
+ * - Fail-closed output mutation
  *
  * @version v2
  */
@@ -19,13 +19,12 @@ import { readState } from '../adapters/persistence.js';
 import { getToolOutput, parseToolResult, strictBlockedOutput } from './plugin-helpers.js';
 import { TOOL_FLOWGUARD_REVIEW } from './tool-names.js';
 import { isReviewRequired, extractReviewContext } from './review/orchestrator.js';
-import { handleHostTaskPolicy } from './review/host-task-policy.js';
 import { runReviewContentPipeline } from './review/content-review-pipeline.js';
 import { runStandardReviewPipeline } from './review/standard-review-pipeline.js';
 import type { SessionState } from '../state/schema.js';
 import type { OrchestratorDeps, ToolCallEvent, PipelineContext } from './review/pipeline-types.js';
 
-// ─── Re-exports (preserving pre-refactor public API surface) ─────────────────
+// ─── Re-exports ───────────────────────────────────────────────────────────────
 
 export type { OrchestratorDeps, ToolCallEvent } from './review/pipeline-types.js';
 
@@ -36,7 +35,6 @@ interface ValidatedSession {
   sessDir: string;
   reviewCtx: NonNullable<ReturnType<typeof extractReviewContext>>;
   parsedOutput: Record<string, unknown>;
-  strictEnforcement: boolean | null;
 }
 
 // ─── Session Validation ──────────────────────────────────────────────────────
@@ -52,14 +50,14 @@ async function validateSessionContext(
 
   if (!sessDir) {
     output.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
-      reason: 'session directory unavailable for strict review orchestration',
+      reason: 'session directory unavailable for review orchestration',
     });
     return null;
   }
   const sessionState = await readState(sessDir);
   if (!sessionState) {
     output.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
-      reason: 'session state unavailable for strict review orchestration',
+      reason: 'session state unavailable for review orchestration',
     });
     return null;
   }
@@ -68,44 +66,32 @@ async function validateSessionContext(
   const parsedOutput = parseToolResult(rawOutput);
   if (!parsedOutput || Array.isArray(parsedOutput)) {
     output.output = strictBlockedOutput('STRICT_REVIEW_ORCHESTRATION_FAILED', {
-      reason: 'review-required tool output could not be parsed for strict orchestration',
+      reason: 'review-required tool output could not be parsed for orchestration',
     });
     return null;
   }
   const reviewCtx = extractReviewContext(toolName, parsedOutput);
-  let strictEnforcement: boolean | null = null;
   if (!reviewCtx) {
-    strictEnforcement = sessionState?.policySnapshot?.selfReview?.strictEnforcement === true;
-    if (strictEnforcement) {
-      output.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
-        reason: 'review context missing for strict orchestration',
-      });
-    }
+    output.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
+      reason: 'review context missing for orchestration',
+    });
     return null;
   }
 
-  return { sessionState, sessDir, reviewCtx, parsedOutput, strictEnforcement };
+  return { sessionState, sessDir, reviewCtx, parsedOutput };
 }
 
 function handleOrchestrationError(
   deps: OrchestratorDeps,
-  inReviewPath: boolean,
-  strictEnforcement: boolean | null,
   output: { output: string },
   err: unknown,
 ): void {
-  if (inReviewPath && strictEnforcement !== false) {
-    output.output = strictBlockedOutput('STRICT_REVIEW_ORCHESTRATION_FAILED', {
-      reason: 'reviewer orchestration threw an exception',
-    });
-    deps.log.warn('audit', 'review orchestration failed (strict mode blocked)', {
-      error: serializeError(err),
-    });
-  } else {
-    deps.log.warn('audit', 'review orchestration failed (fallback to LLM-driven)', {
-      error: serializeError(err),
-    });
-  }
+  output.output = strictBlockedOutput('STRICT_REVIEW_ORCHESTRATION_FAILED', {
+    reason: 'reviewer orchestration threw an exception',
+  });
+  deps.log.warn('audit', 'review orchestration failed — blocked', {
+    error: serializeError(err),
+  });
 }
 
 // ─── Entry Point ─────────────────────────────────────────────────────────────
@@ -122,20 +108,14 @@ export async function runReviewOrchestration(
 ): Promise<void> {
   const { toolName, input, output, sessionId, now } = event;
 
-  let strictEnforcement: boolean | null = null;
   const inReviewPath = isReviewRequired(getToolOutput(output), toolName);
   if (!inReviewPath) return;
 
   try {
     const v = await validateSessionContext(deps, output, toolName, sessionId);
     if (!v) return;
-    strictEnforcement = v.strictEnforcement;
     const { sessionState, sessDir, reviewCtx, parsedOutput } = v;
     const rawOutput = getToolOutput(output);
-
-    if (await handleHostTaskPolicy(deps, sessionState, sessDir, reviewCtx, output, sessionId)) {
-      return;
-    }
 
     const ctx: PipelineContext = {
       deps,
@@ -147,7 +127,6 @@ export async function runReviewOrchestration(
       sessionId,
       now,
       rawOutput,
-      strictEnforcement: sessionState?.policySnapshot?.selfReview?.strictEnforcement === true,
     };
 
     if (toolName === TOOL_FLOWGUARD_REVIEW) {
@@ -156,6 +135,6 @@ export async function runReviewOrchestration(
       await runStandardReviewPipeline(ctx, toolName, input);
     }
   } catch (err) {
-    handleOrchestrationError(deps, inReviewPath, strictEnforcement, output, err);
+    handleOrchestrationError(deps, output, err);
   }
 }

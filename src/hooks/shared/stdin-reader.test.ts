@@ -10,7 +10,6 @@ import {
   readStdin,
   validateToolHookPayload,
   validateSessionPayload,
-  validateSubagentStopPayload,
 } from './stdin-reader.js';
 
 function streamFromString(content: string): NodeJS.ReadableStream {
@@ -290,118 +289,5 @@ describe('validateSessionPayload', () => {
 
   it('throws when cwd is empty string', () => {
     expect(() => validateSessionPayload({ session_id: 'sess-1', cwd: '' })).toThrow(StdinReadError);
-  });
-});
-
-// ─── validateSubagentStopPayload ──────────────────────────────────────────────
-
-describe('validateSubagentStopPayload', () => {
-  it('validates a minimal valid subagent stop payload', () => {
-    const result = validateSubagentStopPayload({
-      session_id: 'sess-1',
-      cwd: '/home',
-      agent_id: 'agent-1',
-      agent_type: 'flowguard-reviewer',
-    });
-    expect(result.session_id).toBe('sess-1');
-    expect(result.cwd).toBe('/home');
-    expect(result.agent_id).toBe('agent-1');
-    expect(result.agent_type).toBe('flowguard-reviewer');
-  });
-
-  it('throws when agent_id is missing', () => {
-    expect(() =>
-      validateSubagentStopPayload({
-        session_id: 'sess-1',
-        cwd: '/home',
-        agent_type: 'flowguard-reviewer',
-      } as Record<string, unknown>),
-    ).toThrow(StdinReadError);
-  });
-
-  it('throws when agent_type is missing', () => {
-    expect(() =>
-      validateSubagentStopPayload({
-        session_id: 'sess-1',
-        cwd: '/home',
-        agent_id: 'agent-1',
-      } as Record<string, unknown>),
-    ).toThrow(StdinReadError);
-  });
-
-  it('throws when agent_id is empty string', () => {
-    expect(() =>
-      validateSubagentStopPayload({
-        session_id: 'sess-1',
-        cwd: '/home',
-        agent_id: '',
-        agent_type: 'flowguard-reviewer',
-      }),
-    ).toThrow(StdinReadError);
-  });
-
-  it('throws when agent_type is empty string', () => {
-    expect(() =>
-      validateSubagentStopPayload({
-        session_id: 'sess-1',
-        cwd: '/home',
-        agent_id: 'agent-1',
-        agent_type: '',
-      }),
-    ).toThrow(StdinReadError);
-  });
-
-  it('includes optional last_assistant_message when present', () => {
-    const result = validateSubagentStopPayload({
-      session_id: 'sess-1',
-      cwd: '/home',
-      agent_id: 'agent-1',
-      agent_type: 'flowguard-reviewer',
-      last_assistant_message: 'Done.',
-    });
-    expect(result.last_assistant_message).toBe('Done.');
-  });
-
-  it('omits last_assistant_message when empty string', () => {
-    const result = validateSubagentStopPayload({
-      session_id: 'sess-1',
-      cwd: '/home',
-      agent_id: 'agent-1',
-      agent_type: 'flowguard-reviewer',
-      last_assistant_message: '',
-    });
-    expect(result.last_assistant_message).toBeUndefined();
-  });
-
-  it('includes optional agent_transcript_path when present', () => {
-    const result = validateSubagentStopPayload({
-      session_id: 'sess-1',
-      cwd: '/home',
-      agent_id: 'agent-1',
-      agent_type: 'flowguard-reviewer',
-      agent_transcript_path: '/tmp/transcript.json',
-    });
-    expect(result.agent_transcript_path).toBe('/tmp/transcript.json');
-  });
-
-  it('omits agent_transcript_path when empty string', () => {
-    const result = validateSubagentStopPayload({
-      session_id: 'sess-1',
-      cwd: '/home',
-      agent_id: 'agent-1',
-      agent_type: 'flowguard-reviewer',
-      agent_transcript_path: '',
-    });
-    expect(result.agent_transcript_path).toBeUndefined();
-  });
-
-  it('collects multiple validation errors', () => {
-    try {
-      validateSubagentStopPayload({} as Record<string, unknown>);
-      expect.unreachable('should have thrown');
-    } catch (e) {
-      expect(e).toBeInstanceOf(StdinReadError);
-      expect((e as StdinReadError).code).toBe('STDIN_VALIDATION_FAILED');
-    }
   });
 });

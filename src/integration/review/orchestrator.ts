@@ -3,12 +3,11 @@
  * @description Deterministic review subagent invocation via OpenCode SDK.
  *
  * This module is the core orchestration layer for reviewer subagent invocation.
- * It handles SDK session lifecycle, retry logic, structured/text-compat output,
- * output mutation, and review detection.
+ * It handles SDK session lifecycle, retry logic, structured output, output
+ * mutation, and review detection.
  *
  * Extracted modules (FG-REL-038):
  * - review-findings-schema.ts — JSON Schema for ReviewFindings
- * - review-text-extraction.ts — Multi-strategy JSON extraction
  * - review-prompt-builders.ts — Prompt construction for all review types
  * - review-agent-resolution.ts — Agent registry probe + cache
  *
@@ -23,17 +22,12 @@
  */
 
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
-import {
-  REASON_HOST_SUBAGENT_TASK_REQUIRED,
-  RECOVERY_HOST_SUBAGENT_TASK,
-} from '../../shared/flowguard-identifiers.js';
+import { ReviewerFindingsInput } from '../../state/evidence-review-input.js';
+import { REVIEW_DISPATCH_PERSISTENCE_FAILED } from '../durable-dispatch.js';
 import type { OrchestratorClient } from './types.js';
 
 import { REVIEW_FINDINGS_JSON_SCHEMA } from './findings-schema.js';
-import { extractStructuredOutputToolPart } from './structured-output-tool-part.js';
-import { extractJsonFromTextWithMethod } from './text-extraction.js';
 import { resolveReviewerAgent } from './agent-resolution.js';
-import { buildTextCompatReviewerPrompt } from './prompt-builders.js';
 import {
   abortReviewerSession,
   DEFAULT_REVIEWER_PROMPT_TIMEOUT_MS,
@@ -47,27 +41,24 @@ export type { OrchestratorClient } from './types.js';
 
 export interface ReviewerBlockedResult {
   readonly blocked: true;
-  readonly code: typeof REASON_HOST_SUBAGENT_TASK_REQUIRED | 'REVIEWER_INVOCATION_EXHAUSTED';
+  readonly code:
+    | 'REVIEWER_INVOCATION_EXHAUSTED'
+    | 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE'
+    | 'STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE'
+    | 'HOST_STRUCTURED_OUTPUT_REQUIRED'
+    | 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION'
+    | typeof REVIEW_DISPATCH_PERSISTENCE_FAILED;
   readonly reason: string;
-  readonly reviewInvocation:
-    | {
-        readonly policy: 'host_task_required';
-        readonly status: 'blocked_until_host_task';
-        readonly code: typeof REASON_HOST_SUBAGENT_TASK_REQUIRED;
-        readonly reviewerSubagentType: typeof REVIEWER_SUBAGENT_TYPE;
-        readonly invocationMode: 'host_subagent_task';
-        readonly hostVisible: true;
-        readonly recovery: readonly [typeof RECOVERY_HOST_SUBAGENT_TASK];
-      }
-    | {
-        readonly policy: 'host_task_required' | 'sdk_allowed' | 'host_task_preferred';
-        readonly status: 'blocked_capability_mismatch';
-        readonly code: 'REVIEWER_INVOCATION_EXHAUSTED';
-        readonly reviewerSubagentType: typeof REVIEWER_SUBAGENT_TYPE;
-        readonly invocationMode: 'sdk_session';
-        readonly hostVisible: false;
-        readonly recovery: readonly [string];
-      };
+  readonly reviewInvocation: {
+    readonly status:
+      | 'blocked_capability_mismatch'
+      | 'blocked_execution_mode_incompatible'
+      | 'host_contract_violation';
+    readonly code: string;
+    readonly reviewerSubagentType: typeof REVIEWER_SUBAGENT_TYPE;
+    readonly invocationMode: 'sdk_session';
+    readonly recovery: readonly [string];
+  };
 }
 
 export interface ReviewerSuccessResult {
@@ -75,11 +66,9 @@ export interface ReviewerSuccessResult {
   readonly sessionId: string;
   readonly rawResponse: string;
   readonly findings: Record<string, unknown> | null;
-  readonly reviewOutputMode: 'structured_output' | 'text_compat';
+  readonly reviewOutputMode: 'structured_output';
   readonly structuredOutputUsed: boolean;
-  readonly reviewAssuranceLevel: 'structured_high' | 'text_compat_lower';
-  readonly extractionMethod?: 'direct_json' | 'json_fence' | 'outermost_braces';
-  readonly modelCapabilityError?: string;
+  readonly reviewAssuranceLevel: 'structured_high';
   /** Host-observed lifecycle timestamps for the successful reviewer prompt. */
   readonly invokedAt?: string;
   readonly fulfilledAt?: string;
@@ -97,9 +86,22 @@ export interface OrchestrationResult {
 const REVIEWER_SESSION_TITLE = 'FlowGuard Independent Review';
 
 export interface InvokeReviewerOptions {
-  readonly reviewOutputPolicy?: 'structured_required' | 'text_compat_allowed';
-  readonly reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed';
-  readonly maxRetries?: number;
+  /**
+   * Persist the durable dispatch authorization for a created reviewer child
+   * session before its prompt is released. Production callers MUST supply this
+   * through the host adapter; a throwing implementation prevents the prompt.
+   */
+  readonly _authorizeDispatch?: (info: {
+    readonly childSessionId: string;
+    readonly invokedAt: string;
+  }) => Promise<void>;
+  /**
+   * Resolve a host call that concluded without bound evidence as
+   * `outcome_unknown` in the durable ledger.
+   */
+  readonly _abandonDispatch?: (info: { readonly childSessionId: string }) => Promise<void>;
+  /** Technical retries within one ReviewAttempt. */
+  readonly maxTransportRetries?: number;
   readonly baseDelayMs?: number;
   /**
    * Maximum time to wait for a reviewer `session.prompt` before classifying the
@@ -117,11 +119,7 @@ export interface InvokeReviewerOptions {
       | 'structured_output_error'
       | 'info_error'
       | 'model_capability_incompatible'
-      | 'format_free_retry_session_create'
-      | 'format_free_retry_failed'
-      | 'format_free_retry_empty'
-      | 'format_free_retry_parse_failed'
-      | 'text_compat_blocked_by_policy'
+      | 'structured_review_execution_mode_incompatible'
       | 'no_findings';
     error?: unknown;
     details?: Record<string, unknown>;
@@ -139,121 +137,22 @@ export function retrySleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Durable-authorization hooks default to no-ops ONLY for direct transport unit
+ * tests. Every production path goes through `OpenCodeHostAdapter`, whose
+ * `ReviewerSpawnConfig` requires both hooks — enforced by the architecture
+ * guard `structured-review-authority-guard`.
+ */
 const DEFAULT_INVOKE_OPTIONS: Required<InvokeReviewerOptions> = {
-  reviewOutputPolicy: 'structured_required',
-  reviewInvocationPolicy: 'host_task_required',
-  maxRetries: 2,
+  maxTransportRetries: 2,
   baseDelayMs: 1000,
   promptTimeoutMs: DEFAULT_REVIEWER_PROMPT_TIMEOUT_MS,
   _sleepFn: retrySleep,
   _onAttemptFailed: () => {},
   _onAttemptSucceeded: () => {},
+  _authorizeDispatch: async () => {},
+  _abandonDispatch: async () => {},
 };
-
-interface ExecuteFormatFreePromptInput {
-  client: OrchestratorClient;
-  agent: string;
-  prompt: string;
-  sessionId: string;
-  attempt: number;
-  modelCapabilityError: string;
-  invokedAt: string;
-  timeoutMs: number;
-  onFailed: (info: {
-    attempt: number;
-    step: 'format_free_retry_failed' | 'format_free_retry_empty' | 'format_free_retry_parse_failed';
-    error?: unknown;
-    details?: Record<string, unknown>;
-  }) => void;
-}
-
-async function executeFormatFreePrompt(
-  input: ExecuteFormatFreePromptInput,
-): Promise<ReviewerResult | null> {
-  const { client, agent, prompt, sessionId, attempt, modelCapabilityError, onFailed, timeoutMs } =
-    input;
-  const race = await raceWithTimeout(
-    client.session.prompt({
-      path: { id: sessionId },
-      body: {
-        agent,
-        parts: [{ type: 'text' as const, text: prompt }],
-      },
-    }),
-    timeoutMs,
-  );
-
-  if (race.kind === 'timed_out') {
-    await abortReviewerSession(client, sessionId);
-    onFailed({
-      attempt,
-      step: 'format_free_retry_failed',
-      error: { code: REVIEWER_PROMPT_TIMEOUT_CODE, isRetryable: true },
-      details: { agent, childSessionId: sessionId, timeoutMs },
-    });
-    return null;
-  }
-
-  const formatFreeResult = race.value;
-
-  if (formatFreeResult.error || !formatFreeResult.data) {
-    onFailed({
-      attempt,
-      step: 'format_free_retry_failed',
-      error: formatFreeResult.error,
-      details: { agent, childSessionId: sessionId },
-    });
-    return null;
-  }
-
-  const textContent = (formatFreeResult.data.parts ?? [])
-    .filter((p: { type?: string; text?: string }) => p.type === 'text' && p.text)
-    .map((p: { type?: string; text?: string }) => p.text!)
-    .join('');
-
-  if (!textContent) {
-    onFailed({
-      attempt,
-      step: 'format_free_retry_empty',
-      error: null,
-      details: {
-        agent,
-        childSessionId: sessionId,
-        partsCount: formatFreeResult.data.parts?.length ?? 0,
-      },
-    });
-    return null;
-  }
-
-  const extraction = extractJsonFromTextWithMethod(textContent);
-  if (!extraction) {
-    onFailed({
-      attempt,
-      step: 'format_free_retry_parse_failed',
-      error: null,
-      details: {
-        agent,
-        childSessionId: sessionId,
-        textLength: textContent.length,
-        textPreview: textContent.slice(0, 200),
-      },
-    });
-    return null;
-  }
-
-  return {
-    sessionId,
-    rawResponse: JSON.stringify(extraction.value),
-    findings: extraction.value,
-    reviewOutputMode: 'text_compat',
-    structuredOutputUsed: false,
-    reviewAssuranceLevel: 'text_compat_lower',
-    extractionMethod: extraction.extractionMethod,
-    modelCapabilityError,
-    invokedAt: input.invokedAt,
-    fulfilledAt: new Date().toISOString(),
-  };
-}
 
 export async function invokeReviewer(
   client: OrchestratorClient,
@@ -262,9 +161,6 @@ export async function invokeReviewer(
   options?: InvokeReviewerOptions,
 ): Promise<ReviewerResult | null> {
   const invokeOptions = { ...DEFAULT_INVOKE_OPTIONS, ...options };
-  if (invokeOptions.reviewInvocationPolicy === 'host_task_required')
-    return hostTaskRequiredBlockedResult();
-
   let agent: string;
   try {
     agent = await resolveReviewerAgent(client);
@@ -275,13 +171,12 @@ export async function invokeReviewer(
       error,
       details: {
         reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
-        reviewInvocationPolicy: invokeOptions.reviewInvocationPolicy,
       },
     });
-    return reviewerIsolationUnavailableBlockedResult(invokeOptions.reviewInvocationPolicy, error);
+    return reviewerIsolationUnavailableBlockedResult(error);
   }
 
-  const maxAttempts = invokeOptions.maxRetries + 1;
+  const maxAttempts = invokeOptions.maxTransportRetries + 1;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     if (attempt > 1)
       await invokeOptions._sleepFn(invokeOptions.baseDelayMs * Math.pow(2, attempt - 2));
@@ -301,41 +196,89 @@ export async function invokeReviewer(
   return null;
 }
 
-function reviewerIsolationUnavailableBlockedResult(
-  policy: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed',
-  error: unknown,
-): ReviewerBlockedResult {
+/**
+ * Persist the durable dispatch authorization before the prompt is released.
+ * A persistence failure is terminal for the attempt: the reviewer is NOT
+ * prompted without a ledger entry.
+ */
+async function authorizeDispatchBeforePrompt(
+  input: InvokeAttemptInput & { childSessionId: string },
+  invokedAt: string,
+): Promise<{ kind: 'authorized' } | { kind: 'blocked'; result: ReviewerBlockedResult }> {
+  const { options, childSessionId } = input;
+  try {
+    await options._authorizeDispatch({ childSessionId, invokedAt });
+    return { kind: 'authorized' };
+  } catch (error) {
+    options._onAttemptFailed({
+      attempt: input.attempt,
+      step: 'session_prompt',
+      error,
+      details: {
+        agent: input.agent,
+        childSessionId,
+        reason: 'durable reviewer dispatch could not be persisted before the host release',
+      },
+    });
+    return {
+      kind: 'blocked',
+      result: {
+        blocked: true,
+        code: REVIEW_DISPATCH_PERSISTENCE_FAILED,
+        reason:
+          'The durable reviewer dispatch could not be persisted before the host release. ' +
+          'The reviewer was NOT executed and no evidence exists.',
+        reviewInvocation: {
+          status: 'host_contract_violation',
+          code: REVIEW_DISPATCH_PERSISTENCE_FAILED,
+          reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
+          invocationMode: 'sdk_session',
+          recovery: [
+            'Retry the originating FlowGuard command; the reviewer was not executed and no findings were produced.',
+          ],
+        },
+      },
+    };
+  }
+}
+
+/**
+ * Resolve a host call that produced no bindable evidence as `outcome_unknown`.
+ * Abandon failures leave the entry `authorized`, which the next command
+ * resolves as an interrupted dispatch — fail-closed by construction.
+ */
+async function abandonDispatchOutcome(
+  input: InvokeAttemptInput & { childSessionId: string },
+): Promise<void> {
+  try {
+    await input.options._abandonDispatch({ childSessionId: input.childSessionId });
+  } catch (error) {
+    input.options._onAttemptFailed({
+      attempt: input.attempt,
+      step: 'session_prompt',
+      error,
+      details: {
+        agent: input.agent,
+        childSessionId: input.childSessionId,
+        reason: 'reviewer dispatch outcome could not be resolved after the host call concluded',
+      },
+    });
+  }
+}
+
+function reviewerIsolationUnavailableBlockedResult(error: unknown): ReviewerBlockedResult {
   const detail = error instanceof Error ? error.message : String(error);
   const recovery = `Install/register ${REVIEWER_SUBAGENT_TYPE} with its read-only host capability restrictions, then restart the host.`;
   return {
     blocked: true,
-    code: 'REVIEWER_INVOCATION_EXHAUSTED',
+    code: 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE',
     reason: `Independent review is blocked because isolated reviewer capability is unavailable: ${detail}`,
     reviewInvocation: {
-      policy,
       status: 'blocked_capability_mismatch',
-      code: 'REVIEWER_INVOCATION_EXHAUSTED',
+      code: 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE',
       reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
       invocationMode: 'sdk_session',
-      hostVisible: false,
       recovery: [recovery],
-    },
-  };
-}
-
-function hostTaskRequiredBlockedResult(): ReviewerBlockedResult {
-  return {
-    blocked: true,
-    code: REASON_HOST_SUBAGENT_TASK_REQUIRED,
-    reason: `Policy requires a host-visible ${REVIEWER_SUBAGENT_TYPE} invocation via the OpenCode Task tool; SDK session invocation is disabled.`,
-    reviewInvocation: {
-      policy: 'host_task_required',
-      status: 'blocked_until_host_task',
-      code: REASON_HOST_SUBAGENT_TASK_REQUIRED,
-      reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
-      invocationMode: 'host_subagent_task',
-      hostVisible: true,
-      recovery: [RECOVERY_HOST_SUBAGENT_TASK],
     },
   };
 }
@@ -371,23 +314,45 @@ async function invokeReviewerAttempt(input: InvokeAttemptInput): Promise<InvokeA
     return attempt < maxAttempts ? { kind: 'retry' } : { kind: 'done', result: null };
   }
 
+  const childSessionId = createResult.data.id;
+
   options._onAttemptSucceeded({
     attempt,
     step: 'session_create',
     parentSessionId,
-    childSessionId: createResult.data.id,
+    childSessionId,
     durationMs: performance.now() - createStartedAt,
   });
 
-  return promptReviewerSession({ ...input, childSessionId: createResult.data.id });
+  // Durable before release: the dispatch authorization must be committed
+  // before the host receives the prompt. A persistence failure blocks the
+  // attempt without ever running the reviewer.
+  const invokedAt = new Date().toISOString();
+  const authorized = await authorizeDispatchBeforePrompt({ ...input, childSessionId }, invokedAt);
+  if (authorized.kind === 'blocked') return { kind: 'done', result: authorized.result };
+
+  let outcome: InvokeAttemptResult;
+  try {
+    outcome = await promptReviewerSession({ ...input, childSessionId, invokedAt });
+  } catch (error) {
+    await abandonDispatchOutcome({ ...input, childSessionId });
+    throw error;
+  }
+  // A host call that concluded without a successful structured result can
+  // never be completed in the ledger; classify it as outcome_unknown so a
+  // later crash cannot be mistaken for an unresolved authorization.
+  if (!(outcome.kind === 'done' && outcome.result && !outcome.result.blocked)) {
+    await abandonDispatchOutcome({ ...input, childSessionId });
+  }
+  return outcome;
 }
 
 async function promptReviewerSession(
-  input: InvokeAttemptInput & { childSessionId: string },
+  input: InvokeAttemptInput & { childSessionId: string; invokedAt: string },
 ): Promise<InvokeAttemptResult> {
-  const { client, prompt, agent, parentSessionId, childSessionId, attempt, options } = input;
+  const { client, prompt, agent, parentSessionId, childSessionId, attempt, options, invokedAt } =
+    input;
   const promptStartedAt = performance.now();
-  const invokedAt = new Date().toISOString();
   const race = await raceWithTimeout(
     client.session.prompt({
       path: { id: childSessionId },
@@ -420,9 +385,11 @@ async function promptReviewerSession(
   const capabilityResult = await handleInfoError(input, info?.error);
   if (capabilityResult) return capabilityResult;
 
-  const findings =
-    extractStructuredFindings(info) ?? extractStructuredOutputToolPart(promptResult.data.parts);
+  const findings = extractStructuredFindings(info);
   if (!findings) return handleNoStructuredFindings(input, promptResult.data.parts, info);
+  if (!ReviewerFindingsInput.safeParse(findings).success) {
+    return { kind: 'done', result: hostStructuredOutputContractViolation(input.agent) };
+  }
   options._onAttemptSucceeded({
     attempt,
     step: 'session_prompt',
@@ -489,8 +456,8 @@ async function handleInfoError(
       ? (error as Record<string, unknown>)
       : { value: error };
   logInfoError(input, error, errorObj);
-  const capabilityError = structuredOutputCapabilityError(errorObj);
-  return capabilityError ? handleStructuredCapabilityError(input, error, capabilityError) : null;
+  const structuredError = structuredOutputError(errorObj);
+  return structuredError ? handleStructuredOutputError(input, error, structuredError) : null;
 }
 
 function logInfoError(
@@ -515,7 +482,11 @@ function infoErrorMessage(errorObj: Record<string, unknown>): string | undefined
   return typeof errorObj.value === 'string' ? errorObj.value : undefined;
 }
 
-function structuredOutputCapabilityError(errorObj: Record<string, unknown>): string | null {
+type StructuredOutputError =
+  | { readonly kind: 'execution_mode_incompatible'; readonly detail: string }
+  | { readonly kind: 'capability_unavailable'; readonly detail: string };
+
+function structuredOutputError(errorObj: Record<string, unknown>): StructuredOutputError | null {
   const dataMessage =
     typeof errorObj.data === 'object' &&
     errorObj.data !== null &&
@@ -523,47 +494,63 @@ function structuredOutputCapabilityError(errorObj: Record<string, unknown>): str
       ? ((errorObj.data as Record<string, unknown>).message as string)
       : '';
   const lower = `${infoErrorMessage(errorObj) ?? ''} ${dataMessage}`.toLowerCase();
+  if (lower.includes('thinking mode does not support this tool_choice')) {
+    return { kind: 'execution_mode_incompatible', detail: lower.trim() };
+  }
   const unsupported = lower.includes('does not support');
   const structured = ['tool_choice', 'tools', 'function calling', 'structured output'].some(
     (term) => lower.includes(term),
   );
-  return unsupported && structured ? lower.trim() : null;
+  return unsupported && structured
+    ? { kind: 'capability_unavailable', detail: lower.trim() }
+    : null;
 }
 
-async function handleStructuredCapabilityError(
+async function handleStructuredOutputError(
   input: InvokeAttemptInput & { childSessionId: string },
   error: unknown,
-  capabilityError: string,
+  structuredError: StructuredOutputError,
 ): Promise<InvokeAttemptResult> {
-  logCapabilityError(input, error, capabilityError);
-  if (input.options.reviewOutputPolicy !== 'text_compat_allowed')
-    return textCompatBlocked(input, error);
-  await showTextCompatToast(input.client);
-  const retrySessionId = await createFormatFreeRetrySession(input, error);
-  if (!retrySessionId) return { kind: 'done', result: null };
-  const promptStartedAt = performance.now();
-  const invokedAt = new Date().toISOString();
-  const result = await executeFormatFreePrompt({
-    client: input.client,
-    agent: input.agent,
-    prompt: buildTextCompatReviewerPrompt(input.prompt),
-    sessionId: retrySessionId,
-    attempt: input.attempt,
-    modelCapabilityError: capabilityError,
-    invokedAt,
-    timeoutMs: input.options.promptTimeoutMs,
-    onFailed: input.options._onAttemptFailed,
-  });
-  if (result && result.blocked !== true) {
-    input.options._onAttemptSucceeded({
-      attempt: input.attempt,
-      step: 'session_prompt',
-      parentSessionId: input.parentSessionId,
-      childSessionId: retrySessionId,
-      durationMs: performance.now() - promptStartedAt,
-    });
+  if (structuredError.kind === 'execution_mode_incompatible') {
+    logExecutionModeError(input, error, structuredError.detail);
+    return structuredExecutionModeBlocked();
   }
-  return { kind: 'done', result };
+  logCapabilityError(input, error, structuredError.detail);
+  return structuredOutputBlocked(input);
+}
+
+function logExecutionModeError(input: InvokeAttemptInput, error: unknown, detail: string): void {
+  input.options._onAttemptFailed({
+    attempt: input.attempt,
+    step: 'structured_review_execution_mode_incompatible',
+    error,
+    details: {
+      agent: input.agent,
+      reason: 'Thinking mode conflicts with the host-required structured-output tool.',
+      detectedPattern: detail,
+      recovery: `Configure the ${REVIEWER_SUBAGENT_TYPE} agent with reasoningEffort: none.`,
+    },
+  });
+}
+
+function structuredExecutionModeBlocked(): InvokeAttemptResult {
+  return {
+    kind: 'done',
+    result: {
+      blocked: true,
+      code: 'STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE',
+      reason:
+        'The reviewer Thinking mode conflicts with the host-required structured-output tool. ' +
+        `Configure ${REVIEWER_SUBAGENT_TYPE} with reasoningEffort: none.`,
+      reviewInvocation: {
+        status: 'blocked_execution_mode_incompatible',
+        code: 'STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE',
+        reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
+        invocationMode: 'sdk_session',
+        recovery: [`Configure ${REVIEWER_SUBAGENT_TYPE} with reasoningEffort: none.`],
+      },
+    },
+  };
 }
 
 function logCapabilityError(
@@ -577,83 +564,37 @@ function logCapabilityError(
     error,
     details: {
       agent: input.agent,
-      reason:
-        'Session model does not support structured output (tool_choice/function calling). ' +
-        (input.options.reviewOutputPolicy === 'text_compat_allowed'
-          ? 'Creating new child session for text compatibility retry.'
-          : 'Policy requires structured output.'),
+      reason: 'Session model does not support required structured output.',
       detectedPattern: capabilityError,
-      reviewOutputPolicy: input.options.reviewOutputPolicy,
+      recovery: `Configure the ${REVIEWER_SUBAGENT_TYPE} agent to use a structured-output-capable model.`,
     },
   });
 }
 
-function textCompatBlocked(input: InvokeAttemptInput, error: unknown): InvokeAttemptResult {
-  input.options._onAttemptFailed({
-    attempt: input.attempt,
-    step: 'text_compat_blocked_by_policy',
-    error,
-    details: {
-      agent: input.agent,
-      reviewOutputPolicy: input.options.reviewOutputPolicy,
-      recovery: `Configure the ${REVIEWER_SUBAGENT_TYPE} agent to use a structured-output-capable model.`,
-    },
-  });
+function structuredOutputBlocked(_input: InvokeAttemptInput): InvokeAttemptResult {
   return {
     kind: 'done',
     result: {
       blocked: true,
-      code: 'REVIEWER_INVOCATION_EXHAUSTED',
+      code: 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE',
       reason:
         'The configured reviewer model does not support required structured output. ' +
         `Configure ${REVIEWER_SUBAGENT_TYPE} to use a structured-output-capable model.`,
       reviewInvocation: {
-        policy: input.options.reviewInvocationPolicy,
         status: 'blocked_capability_mismatch',
-        code: 'REVIEWER_INVOCATION_EXHAUSTED',
+        code: 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE',
         reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
         invocationMode: 'sdk_session',
-        hostVisible: false,
         recovery: [`Configure ${REVIEWER_SUBAGENT_TYPE} to use a structured-output-capable model.`],
       },
     },
   };
 }
 
-async function showTextCompatToast(client: OrchestratorClient): Promise<void> {
-  try {
-    await client.tui?.showToast({
-      body: {
-        message: 'FlowGuard Reviewer: using lower-assurance text compatibility mode',
-        variant: 'info',
-      },
-    });
-  } catch {
-    /* TUI unavailable — ignore */
-  }
-}
-
-async function createFormatFreeRetrySession(
-  input: InvokeAttemptInput & { childSessionId: string },
-  error: unknown,
-): Promise<string | null> {
-  const retryCreateResult = await input.client.session.create({
-    body: { parentID: input.parentSessionId, title: REVIEWER_SESSION_TITLE + ' (format-free)' },
-  });
-  if (!retryCreateResult.error && retryCreateResult.data?.id) return retryCreateResult.data.id;
-  input.options._onAttemptFailed({
-    attempt: input.attempt,
-    step: 'format_free_retry_session_create',
-    error: retryCreateResult.error ?? error,
-    details: { agent: input.agent, originalSessionId: input.childSessionId },
-  });
-  return null;
-}
-
 function extractStructuredFindings(
   info: Record<string, unknown> | undefined,
 ): Record<string, unknown> | null {
-  const structuredRaw = info?.structured_output ?? info?.structured;
+  const structuredRaw = info?.structured;
   return structuredRaw && typeof structuredRaw === 'object' && !Array.isArray(structuredRaw)
     ? (structuredRaw as Record<string, unknown>)
     : null;
@@ -669,7 +610,42 @@ function handleNoStructuredFindings(
     step: 'no_findings',
     details: noFindingsDetails(input.agent, parts, info),
   });
-  return input.attempt < input.maxAttempts ? { kind: 'retry' } : { kind: 'done', result: null };
+  return { kind: 'done', result: hostStructuredOutputRequired(input.agent) };
+}
+
+function hostStructuredOutputRequired(agent: string): ReviewerBlockedResult {
+  return {
+    blocked: true,
+    code: 'HOST_STRUCTURED_OUTPUT_REQUIRED',
+    reason: 'OpenCode did not return the required host-validated structured reviewer output.',
+    reviewInvocation: {
+      status: 'host_contract_violation',
+      code: 'HOST_STRUCTURED_OUTPUT_REQUIRED',
+      reviewerSubagentType: agent as typeof REVIEWER_SUBAGENT_TYPE,
+      invocationMode: 'sdk_session',
+      recovery: [
+        'Use the validated OpenCode host version and a structured-output-capable reviewer model.',
+      ],
+    },
+  };
+}
+
+function hostStructuredOutputContractViolation(agent: string): ReviewerBlockedResult {
+  return {
+    blocked: true,
+    code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+    reason:
+      "OpenCode returned structured reviewer output that violates FlowGuard's canonical input schema.",
+    reviewInvocation: {
+      status: 'host_contract_violation',
+      code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+      reviewerSubagentType: agent as typeof REVIEWER_SUBAGENT_TYPE,
+      invocationMode: 'sdk_session',
+      recovery: [
+        'Align the OpenCode structured-output contract with the validated FlowGuard schema.',
+      ],
+    },
+  };
 }
 
 function noFindingsDetails(
@@ -681,7 +657,6 @@ function noFindingsDetails(
     agent,
     hasInfo: !!info,
     infoError: info?.error ?? null,
-    hasStructuredOutput: info ? 'structured_output' in info : false,
     hasStructured: info ? 'structured' in info : false,
     infoKeys: info ? Object.keys(info) : [],
     partsCount: parts?.length ?? 0,

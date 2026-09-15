@@ -10,7 +10,7 @@ import {
   formatEval,
   formatBlocked,
   formatAutoAdvanceOverflow,
-  appendNextAction,
+  enrichWithNextAction,
   writeStateWithArtifacts,
 } from './helpers.js';
 
@@ -33,7 +33,6 @@ import {
   consumeReviewObligation,
   createReviewObligation,
   ensureReviewAssurance,
-  findAcceptedInvocationForFindings,
   findLatestObligation,
   findLatestUnconsumedObligation,
   freezeReviewMaterial,
@@ -42,10 +41,9 @@ import {
 } from '../review/assurance.js';
 import { buildFrozenReviewMaterialContent } from '../review/reviewer-context.js';
 
-import { requireReviewFindings, resolveHostTaskEffectiveFindings } from './review-validation.js';
+import { resolveStructuredEffectiveFindings } from './review-validation.js';
 import { collectPreviouslyUsedChallengeIds } from '../review/challenge-history.js';
-import { resolveRuntimeReviewPlatform } from '../review/orchestration-mode.js';
-import { buildHostTaskChallengeContract } from '../review/host-task-policy.js';
+import { buildReviewChallengeContract } from '../review/challenge-contract.js';
 
 import {
   PHASE_LABELS,
@@ -79,20 +77,12 @@ import type { ReviewAttemptDiscoveryContext } from '../../state/evidence.js';
 // ─── Mode-B Internal Types ────────────────────────────────────────────────
 
 type ResolvedReview = {
-  subagentEnabled: boolean;
-  strictEnforcement: boolean;
   pendingObligation: ReturnType<typeof findLatestUnconsumedObligation>;
   expectedIteration: number;
   expectedPlanVersion: number;
   assuranceBase: ReturnType<typeof ensureReviewAssurance>;
-  effectiveFindings?: ReviewFindings;
-  evidenceInvocationId?: string;
-};
-
-type ReviewPolicyConfig = {
-  subagentEnabled: boolean;
-  fallbackToSelf: boolean;
-  strictEnforcement: boolean;
+  effectiveFindings: ReviewFindings;
+  evidenceInvocationId: string;
 };
 
 type AdrRevision = {
@@ -125,14 +115,6 @@ function validateReviewEntryState(state: SessionState): string | null {
   return null;
 }
 
-function getReviewPolicyConfig(policy: ArchitectureSession['policy']): ReviewPolicyConfig {
-  return {
-    subagentEnabled: policy.selfReview?.subagentEnabled ?? false,
-    fallbackToSelf: policy.selfReview?.fallbackToSelf ?? false,
-    strictEnforcement: policy.selfReview?.strictEnforcement ?? false,
-  };
-}
-
 function getObligationExpectation(
   pendingObligation: ReturnType<typeof findLatestUnconsumedObligation>,
   state: SessionState,
@@ -151,45 +133,36 @@ function resolveArchitectureReview(
   context: ToolContext,
   session: ArchitectureSession,
 ): ResolvedReview | string {
-  const { state, policy } = session;
-  const reviewPolicy = getReviewPolicyConfig(policy);
+  const { state } = session;
   const assuranceBase = ensureReviewAssurance(state.reviewAssurance);
   const pendingObligation = findLatestUnconsumedObligation(assuranceBase, 'architecture');
   const { expectedIteration, expectedPlanVersion } = getObligationExpectation(
     pendingObligation,
     state,
   );
-  const resolved = resolveHostTaskEffectiveFindings({
+  const resolved = resolveStructuredEffectiveFindings({
     pendingObligation,
     expected: {
       obligationType: 'architecture',
       iteration: expectedIteration,
       planVersion: expectedPlanVersion,
     },
-    policy: {
-      reviewInvocationPolicy: policy.reviewInvocationPolicy,
-      strictEnforcement: reviewPolicy.strictEnforcement,
-      subagentEnabled: reviewPolicy.subagentEnabled,
-      fallbackToSelf: reviewPolicy.fallbackToSelf,
-    },
     input: {
-      reviewFindings: args.reviewFindings,
       reviewerUnavailable: args.reviewerUnavailable,
       verdict: args.reviewVerdict,
     },
     state: {
       assurance: state.reviewAssurance,
       sessionId: context.sessionID,
-      reviewHostPlatform: resolveRuntimeReviewPlatform(),
       // Bind design-challenge evidence to the ADR's canonical allowed refs
       // (finding B3): a fabricated section/digest must not satisfy a challenge.
-      allowedChallengeEvidenceRefs: buildHostTaskChallengeContract(state, pendingObligation ?? null)
+      allowedChallengeEvidenceRefs: buildReviewChallengeContract(state, pendingObligation ?? null)
         ?.evidenceRefs,
       previouslyUsedChallengeIds: collectPreviouslyUsedChallengeIds(state),
     },
   });
 
-  if (resolved.blocked) return resolved.blocked;
+  if (resolved.kind === 'blocked') return resolved.blocked;
 
   const findingsBlocked = validateResolvedFindings(
     resolved.effectiveFindings,
@@ -199,8 +172,6 @@ function resolveArchitectureReview(
   if (findingsBlocked) return findingsBlocked;
 
   return {
-    subagentEnabled: reviewPolicy.subagentEnabled,
-    strictEnforcement: reviewPolicy.strictEnforcement,
     pendingObligation,
     expectedIteration,
     expectedPlanVersion,
@@ -211,11 +182,10 @@ function resolveArchitectureReview(
 }
 
 function validateResolvedFindings(
-  effectiveFindings: ReviewFindings | undefined,
+  effectiveFindings: ReviewFindings,
   submittedVerdict: LoopVerdict | undefined,
   obligationId: string | undefined,
 ): string | null {
-  if (!effectiveFindings) return requireReviewFindings(false);
   if (effectiveFindings.overallVerdict === 'unable_to_review') {
     return formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', { obligationId: obligationId ?? 'unknown' });
   }
@@ -275,52 +245,34 @@ function buildReviewedState(
 ): SessionState {
   const { state, policy, ctx } = session;
   const iteration = state.selfReview!.iteration + 1;
+  // Only host-captured effective findings are ever appended.
   const existingReviewFindings = state.architecture!.reviewFindings;
-  const newReviewFindings = review.effectiveFindings
-    ? [...(existingReviewFindings ?? []), review.effectiveFindings]
-    : existingReviewFindings;
-  const strictObligation = review.strictEnforcement
-    ? findLatestObligation(
-        review.assuranceBase.obligations,
-        'architecture',
-        review.expectedIteration,
-        review.expectedPlanVersion,
-      )
-    : null;
+  const newReviewFindings = [...(existingReviewFindings ?? []), review.effectiveFindings];
+  const strictObligation = findLatestObligation(
+    review.assuranceBase.obligations,
+    'architecture',
+    review.expectedIteration,
+    review.expectedPlanVersion,
+  );
   const consumedAssurance = consumeReviewObligation(
     review.assuranceBase,
     strictObligation,
     ctx.now(),
-    review.evidenceInvocationId ??
-      findAcceptedInvocationForFindings(
-        review.assuranceBase,
-        strictObligation,
-        review.effectiveFindings,
-      )?.invocationId,
+    review.evidenceInvocationId,
   );
 
   return {
     ...state,
-    architecture: newReviewFindings
-      ? {
-          ...revision.currentAdr,
-          reviewCompletion: resolveArchitectureReviewCompletion(
-            iteration,
-            policy.maxSelfReviewIterations,
-            revision.revisionDelta,
-            args.reviewVerdict as LoopVerdict,
-          ),
-          reviewFindings: newReviewFindings,
-        }
-      : {
-          ...revision.currentAdr,
-          reviewCompletion: resolveArchitectureReviewCompletion(
-            iteration,
-            policy.maxSelfReviewIterations,
-            revision.revisionDelta,
-            args.reviewVerdict as LoopVerdict,
-          ),
-        },
+    architecture: {
+      ...revision.currentAdr,
+      reviewCompletion: resolveArchitectureReviewCompletion(
+        iteration,
+        policy.maxSelfReviewIterations,
+        revision.revisionDelta,
+        args.reviewVerdict as LoopVerdict,
+      ),
+      reviewFindings: newReviewFindings,
+    },
     selfReview: {
       iteration,
       maxIterations: policy.maxSelfReviewIterations,
@@ -407,7 +359,7 @@ async function persistAndFormatReviewResult(input: ReviewResultContext): Promise
 async function persistAndFormatConvergedReview(input: ReviewResultContext): Promise<string> {
   const { session, review, revision, advanced, iteration } = input;
   await writeStateWithArtifacts(session.sessDir, advanced.state);
-  const reviewLabel = review.subagentEnabled ? 'Independent review' : 'ADR self-review';
+  const reviewLabel = 'Independent review';
   const completion = advanced.state.architecture?.reviewCompletion;
   const status =
     completion === 'review_exhausted'
@@ -434,7 +386,7 @@ async function persistAndFormatConvergedReview(input: ReviewResultContext): Prom
     reviewCompletion: completion,
     reviewedIdentity: resolveArchReviewedIdentity(review),
   });
-  return appendNextAction(JSON.stringify(resp), advanced.state);
+  return JSON.stringify(enrichWithNextAction(resp, advanced.state));
 }
 
 /**
@@ -582,7 +534,6 @@ async function persistAndFormatNonConvergedReview(
   const classification = await resolvePreImplementationChallengeClassification(
     advanced.state,
     session.worktree,
-    review.subagentEnabled,
     targetPaths,
   );
   const resolvedTargetPaths =
@@ -631,7 +582,7 @@ async function persistAndFormatNonConvergedReview(
     attemptId,
     persisted,
   });
-  return appendNextAction(JSON.stringify(resp), stateToPersist);
+  return JSON.stringify(enrichWithNextAction(resp, stateToPersist));
 }
 
 function buildNonConvergedReviewResponse(input: {
@@ -648,7 +599,6 @@ function buildNonConvergedReviewResponse(input: {
   const { session, review, revision, advanced, iteration, verdict, nextObligation } = input;
   const instruction = buildArchitectureReviewInstruction({
     policy: session.policy,
-    subagentEnabled: review.subagentEnabled,
     obligation: nextObligation,
     iteration,
     planVersion: review.expectedPlanVersion,
@@ -657,18 +607,16 @@ function buildNonConvergedReviewResponse(input: {
   });
   return {
     phase: advanced.state.phase,
-    status: `${review.subagentEnabled ? 'Independent review' : 'ADR self-review'} iteration ${iteration}/${session.policy.maxSelfReviewIterations}. Verdict: ${verdict}.`,
+    status: `Independent review iteration ${iteration}/${session.policy.maxSelfReviewIterations}. Verdict: ${verdict}.`,
     adrId: revision.currentAdr.id,
     adrDigest: revision.currentAdr.digest,
     selfReviewIteration: iteration,
     revisionDelta: revision.revisionDelta,
-    reviewMode: review.subagentEnabled ? 'subagent' : 'self',
+    reviewMode: 'subagent',
     ...reviewObligationResponseFields(nextObligation, input.attemptId),
-    ...(review.subagentEnabled
-      ? repositoryEvidenceUnavailableField(nextObligation?.repositoryEvidenceFreeze)
-      : {}),
+    ...repositoryEvidenceUnavailableField(nextObligation?.repositoryEvidenceFreeze),
     next: instruction.next,
-    ...(instruction.reviewInvocation ? { reviewInvocation: instruction.reviewInvocation } : {}),
+    reviewInvocation: instruction,
     _audit: { transitions: advanced.transitions },
   };
 }
@@ -683,7 +631,6 @@ function createNextArchitectureReviewObligation(input: {
   freeze: RepositoryAuthorityFreezeResult;
 }) {
   const { state, session, review, revision, iteration, resolvedTargetPaths, freeze } = input;
-  if (!review.subagentEnabled) return null;
   const subjectDigest = state.architecture?.digest ?? `arch-${review.expectedPlanVersion}`;
   return createReviewObligation({
     obligationType: 'architecture',

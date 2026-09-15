@@ -11,6 +11,7 @@ import type { ReviewProfile as ConfigReviewProfile } from '../../config/policy-t
 import {
   artifactReviewSubjectScope,
   createReviewObligation,
+  freezeReviewMaterial,
   resolveFrozenReviewProfile,
 } from './assurance.js';
 
@@ -56,7 +57,7 @@ describe('review profile freeze (Wave 1 — #730)', () => {
             version: 'challenge-policy.v1',
             counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
           },
-          maxReviewerOutputRepairAttempts: 1,
+          maxReviewerAttempts: 1,
         },
         obligationType: 'plan',
         repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
@@ -64,6 +65,7 @@ describe('review profile freeze (Wave 1 — #730)', () => {
         planVersion: 1,
         now: NOW,
         subjectDigest: 'test',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
         reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
       });
       expect(obligation.reviewProfile).toBe('core');
@@ -79,13 +81,14 @@ describe('review profile freeze (Wave 1 — #730)', () => {
             version: 'challenge-policy.v1',
             counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
           },
-          maxReviewerOutputRepairAttempts: 1,
+          maxReviewerAttempts: 1,
         },
         obligationType: 'implement',
         iteration: 1,
         planVersion: 2,
         now: NOW,
         subjectDigest: 'test',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
         reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
         reviewProfile: 'full',
         profileSource: 'runtime_required_full',

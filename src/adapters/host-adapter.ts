@@ -45,8 +45,8 @@ export interface HostCapabilities {
   readonly outputReplacement: boolean;
   /** Can inject system context during session (compaction, status). */
   readonly contextInjection: boolean;
-  /** Can spawn a subagent for independent review. */
-  readonly reviewerSpawn: boolean;
+  /** Can perform an independent, schema-constrained, host-observed review. */
+  readonly independentStructuredReview: boolean;
   /** Can inject governance context during compaction events. */
   readonly compactionInjection: boolean;
 }
@@ -110,9 +110,24 @@ export interface ToolResultMutation {
 export interface ReviewerSpawnConfig {
   readonly prompt: string;
   readonly parentSessionId: string;
-  readonly reviewOutputPolicy?: 'structured_required' | 'text_compat_allowed';
-  readonly reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed';
-  readonly maxRetries?: number;
+  /**
+   * Persist the durable dispatch ledger entry for a created reviewer child
+   * session BEFORE the host may release the prompt. Throwing aborts the
+   * reviewer invocation with no prompt sent — no reviewer execution without a
+   * durable dispatch.
+   */
+  readonly authorizeDispatch: (info: {
+    readonly childSessionId: string;
+    readonly invokedAt: string;
+  }) => Promise<void>;
+  /**
+   * Resolve a host call that concluded without bound evidence (transport
+   * failure, timeout, contract violation, rejected findings) as
+   * `outcome_unknown` in the durable ledger.
+   */
+  readonly abandonDispatch: (info: { readonly childSessionId: string }) => Promise<void>;
+  /** Technical retries within the same review attempt. */
+  readonly maxTransportRetries?: number;
   readonly baseDelayMs?: number;
   /** Test hook: callback on retry attempt failure. */
   readonly onAttemptFailed?: (info: {
@@ -136,8 +151,7 @@ export interface ReviewerSpawnConfig {
 }
 
 /**
- * Result of a reviewer invocation that was blocked by policy.
- * The reviewer was never actually spawned.
+ * Result of a reviewer invocation blocked by the host transport contract.
  */
 export interface HostReviewerBlockedResult {
   readonly blocked: true;
@@ -155,11 +169,9 @@ export interface HostReviewerSuccessResult {
   readonly sessionId: string;
   readonly rawResponse: string;
   readonly findings: Record<string, unknown> | null;
-  readonly reviewOutputMode: 'structured_output' | 'text_compat';
+  readonly reviewOutputMode: 'structured_output';
   readonly structuredOutputUsed: boolean;
-  readonly reviewAssuranceLevel: 'structured_high' | 'text_compat_lower';
-  readonly extractionMethod?: 'direct_json' | 'json_fence' | 'outermost_braces';
-  readonly modelCapabilityError?: string;
+  readonly reviewAssuranceLevel: 'structured_high';
 }
 
 /** Discriminated union of reviewer invocation outcomes. */

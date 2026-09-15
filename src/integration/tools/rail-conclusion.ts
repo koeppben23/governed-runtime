@@ -54,7 +54,7 @@ export function buildRailConclusion(
     nextAction,
     state.phase,
     state.error?.code === 'ABORTED',
-    state.archiveStatus ?? null,
+    state.regulatedArchiveStatus ?? null,
   );
 
   // User gate → decision_required. Actions come from the product commands;

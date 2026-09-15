@@ -13,8 +13,12 @@
  * @version v3
  */
 
-import type { DetectedStack, VerificationCandidate, VerificationCandidateKind } from './types.js';
-import type { ExecutionSubjectInput } from '../state/discovery-schemas.js';
+import type {
+  DetectedStack,
+  ExecutionSubjectInput,
+  VerificationCandidate,
+  VerificationCandidateKind,
+} from '../state/discovery-schemas.js';
 import {
   ASSERTION_PROFILES,
   PROFILE_BY_ID,

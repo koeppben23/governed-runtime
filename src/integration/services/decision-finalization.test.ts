@@ -38,7 +38,7 @@ vi.mock('../artifacts/madr-writer.js', () => ({
 vi.mock('./regulated-completion.js', () => ({
   executeRegulatedCompletion: vi.fn().mockImplementation(async (_s, _f, _id, state) => ({
     ...state,
-    archiveStatus: 'verified',
+    regulatedArchiveStatus: 'verified',
   })),
 }));
 
@@ -150,7 +150,7 @@ describe('finalizeDecision', () => {
       );
       expect(finalResult.kind).toBe('ok');
       if (finalResult.kind === 'ok') {
-        expect(finalResult.state.archiveStatus).toBe('verified');
+        expect(finalResult.state.regulatedArchiveStatus).toBe('verified');
       }
     });
   });

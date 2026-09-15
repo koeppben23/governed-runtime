@@ -48,6 +48,7 @@ export const FIXED_UUID = '00000000-0000-4000-8000-000000000001';
 export const FIXED_SESSION_UUID = '00000000-0000-4000-8000-000000000002';
 export const FIXED_DIGEST = 'digest-of-test';
 export const FIXED_FINGERPRINT = 'a1b2c3d4e5f6a1b2c3d4e5f6';
+const PLAN_DIGEST = hashText('## Plan\n1. Fix auth\n2. Add tests');
 
 // ─── Evidence Fixtures ────────────────────────────────────────────────────────
 
@@ -69,20 +70,12 @@ export const POLICY_SNAPSHOT: PolicySnapshot = {
   maxSelfReviewIterations: 3,
   maxImplReviewIterations: 3,
   maxIncoherentReviewerCaptureRetries: 1,
-  maxReviewerOutputRepairAttempts: 1,
+  maxReviewerAttempts: 1,
   allowSelfApproval: true,
   minimumActorAssuranceForApproval: 'best_effort',
-  requireVerifiedActorsForApproval: false,
   identityProvider: undefined,
   identityProviderMode: 'optional',
-  reviewOutputPolicy: 'text_compat_allowed',
-  reviewInvocationPolicy: 'sdk_allowed',
   reviewProfile: 'core',
-  selfReview: {
-    subagentEnabled: true,
-    fallbackToSelf: false,
-    strictEnforcement: true,
-  },
   challengePolicy: {
     version: 'challenge-policy.v1',
     counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
@@ -117,8 +110,6 @@ export const REGULATED_POLICY_SNAPSHOT: PolicySnapshot = {
   requestedMode: 'regulated',
   allowSelfApproval: false,
   minimumActorAssuranceForApproval: 'best_effort',
-  requireVerifiedActorsForApproval: false,
-  reviewOutputPolicy: 'structured_required',
   enforceRiskClassification: true,
 };
 
@@ -173,6 +164,7 @@ export function assuranceWith(input: {
   readonly obligations?: readonly ReviewObligation[];
   readonly invocations?: readonly ReviewInvocationEvidence[];
   readonly attempts?: readonly ReviewAttempt[];
+  readonly dispatches?: ReviewAssuranceState['dispatches'];
 }): ReviewAssuranceState {
   const obligations = input.obligations ?? (input.obligation ? [input.obligation] : []);
   return {
@@ -180,14 +172,57 @@ export function assuranceWith(input: {
     obligations: [...obligations],
     invocations: input.invocations ? [...input.invocations] : [],
     attempts: input.attempts ? [...input.attempts] : [],
-    dispatches: [],
+    dispatches: input.dispatches ? [...input.dispatches] : [],
   };
 }
 
 /**
+ * Host-observed capture record for the canonical bound review fixtures. The
+ * captured structured findings are the only findings authority in the current
+ * contract; `capturedFindingsHash` is the canonical findings hash over exactly
+ * this record (hashFindings normalizes finding arrays, which are empty here).
+ */
+function capturedFindingsFor(input: {
+  iteration: number;
+  planVersion: number;
+  sessionId: string;
+}): Record<string, unknown> {
+  return {
+    iteration: input.iteration,
+    planVersion: input.planVersion,
+    reviewMode: 'subagent',
+    overallVerdict: 'accept',
+    blockingIssues: [],
+    majorRisks: [],
+    missingVerification: [],
+    scopeCreep: [],
+    unknowns: [],
+    reviewedBy: { sessionId: input.sessionId },
+    reviewedAt: FIXED_TIME,
+    challenges: [],
+  };
+}
+
+function capturedFindingsHash(findings: Record<string, unknown>): string {
+  return hashText(canonicalJsonStringify(findings));
+}
+
+const ARCHITECTURE_REVIEW_CAPTURED_FINDINGS = capturedFindingsFor({
+  iteration: 0,
+  planVersion: 1,
+  sessionId: 'child-session-1',
+});
+
+const PLAN_REVIEW_CAPTURED_FINDINGS = capturedFindingsFor({
+  iteration: 0,
+  planVersion: 1,
+  sessionId: 'child-session-1',
+});
+
+/**
  * Canonical bound architecture review evidence for approve-path tests: a
  * consumed architecture obligation for exactly the ARCHITECTURE_DECISION
- * digest plus its invocation with a findings hash.
+ * digest plus its invocation with a host-captured findings record.
  */
 export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
   assuranceSchemaVersion: REVIEW_ASSURANCE_SCHEMA_VERSION,
@@ -207,6 +242,8 @@ export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
       fulfilledAt: FIXED_TIME,
       consumedAt: FIXED_TIME,
       subjectDigest: ARCHITECTURE_DECISION.digest,
+      reviewProfile: 'core',
+      profileSource: 'policy_default',
       requiredChallengeCount: 0,
       requiredChallengeKind: 'design_challenge',
       challengePolicyVersion: 'challenge-policy.v1',
@@ -224,34 +261,63 @@ export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
         },
       },
       repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
-      maxReviewerOutputRepairAttempts: 0,
+      maxReviewerAttempts: 0,
     },
   ],
   invocations: [
     {
       invocationId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      attemptId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
       obligationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       obligationType: 'architecture',
       parentSessionId: 'parent-session-1',
+      source: 'host-orchestrated',
       childSessionId: 'child-session-1',
       agentType: 'flowguard-reviewer',
-      invocationMode: 'host_subagent_task',
-      hostVisible: true,
-      promptHash: 'prompt-hash-of-architecture-review',
+      invocationMode: 'sdk_session_prompt',
+      hostVisible: false,
+      promptHash: 'a'.repeat(64),
       mandateDigest: 'mandate-digest-of-review-criteria',
       criteriaVersion: 'criteria-v1',
-      findingsHash: 'findings-hash-of-architecture-review',
+      findingsHash: capturedFindingsHash(ARCHITECTURE_REVIEW_CAPTURED_FINDINGS),
       invokedAt: FIXED_TIME,
       fulfilledAt: FIXED_TIME,
       consumedByObligationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       capturedVerdict: 'accept',
+      capturedRawFindings: ARCHITECTURE_REVIEW_CAPTURED_FINDINGS,
       reviewOutputMode: 'structured_output',
       structuredOutputUsed: true,
       reviewAssuranceLevel: 'structured_high',
     },
   ],
-  attempts: [],
-  dispatches: [],
+  attempts: [
+    {
+      attemptId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      obligationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      obligationType: 'architecture',
+      subjectDigest: ARCHITECTURE_DECISION.digest,
+      ordinal: 0,
+      childSessionId: 'child-session-1',
+      status: 'bound',
+      origin: { kind: 'initial' },
+      repositoryDiscovery: { kind: 'not_applicable' },
+      observations: [],
+      createdAt: FIXED_TIME,
+      completedAt: FIXED_TIME,
+    },
+  ],
+  dispatches: [
+    {
+      dispatchId: '99999999-9999-4999-8999-999999999999',
+      attemptId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      obligationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      hostCallId: 'child-session-1',
+      canonicalPromptDigest: 'a'.repeat(64),
+      dispatchAuthorizedAt: FIXED_TIME,
+      dispatchStatus: 'completed',
+      completedAt: FIXED_TIME,
+    },
+  ],
 };
 
 /**
@@ -274,7 +340,9 @@ export const PLAN_REVIEW_ASSURANCE: ReviewAssuranceState = assuranceWith({
     blockedCode: null,
     fulfilledAt: FIXED_TIME,
     consumedAt: FIXED_TIME,
-    subjectDigest: 'digest-of-plan',
+    subjectDigest: PLAN_DIGEST,
+    reviewProfile: 'core',
+    profileSource: 'policy_default',
     // Bound to the (empty) claim declaration set of PLAN_RECORD: the plan
     // approval gate fails closed when evidence carries no claim binding.
     claimDeclarationsDigest: hashText(
@@ -286,55 +354,88 @@ export const PLAN_REVIEW_ASSURANCE: ReviewAssuranceState = assuranceWith({
     reviewMaterial: {
       content: '## Plan\n1. Fix auth\n2. Add tests',
       materialDigest: 'material-digest-of-plan-review',
-      subjectDigest: 'digest-of-plan',
+      subjectDigest: PLAN_DIGEST,
     },
     reviewSubjectScope: {
       kind: 'artifact',
       artifact: {
         kind: 'plan',
-        digest: 'digest-of-plan',
+        digest: PLAN_DIGEST,
         sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }]],
       },
     },
     repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
-    maxReviewerOutputRepairAttempts: 0,
+    maxReviewerAttempts: 0,
   },
   invocations: [
     {
       invocationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      attemptId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
       obligationId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
       obligationType: 'plan',
       parentSessionId: 'parent-session-1',
+      source: 'host-orchestrated',
       childSessionId: 'child-session-1',
       agentType: 'flowguard-reviewer',
-      invocationMode: 'host_subagent_task',
-      hostVisible: true,
-      promptHash: 'prompt-hash-of-plan-review',
+      invocationMode: 'sdk_session_prompt',
+      hostVisible: false,
+      promptHash: 'b'.repeat(64),
       mandateDigest: 'mandate-digest-of-plan-review-criteria',
       criteriaVersion: 'criteria-v1',
-      findingsHash: 'findings-hash-of-plan-review',
+      findingsHash: capturedFindingsHash(PLAN_REVIEW_CAPTURED_FINDINGS),
       invokedAt: FIXED_TIME,
       fulfilledAt: FIXED_TIME,
       consumedByObligationId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
       capturedVerdict: 'accept',
+      capturedRawFindings: PLAN_REVIEW_CAPTURED_FINDINGS,
       reviewOutputMode: 'structured_output',
       structuredOutputUsed: true,
       reviewAssuranceLevel: 'structured_high',
+    },
+  ],
+  attempts: [
+    {
+      attemptId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      obligationId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      obligationType: 'plan',
+      subjectDigest: PLAN_DIGEST,
+      ordinal: 0,
+      childSessionId: 'child-session-1',
+      status: 'bound',
+      origin: { kind: 'initial' },
+      repositoryDiscovery: { kind: 'not_applicable' },
+      observations: [],
+      createdAt: FIXED_TIME,
+      completedAt: FIXED_TIME,
+    },
+  ],
+  dispatches: [
+    {
+      dispatchId: '88888888-8888-4888-8888-888888888888',
+      attemptId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      obligationId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      hostCallId: 'child-session-1',
+      canonicalPromptDigest: 'b'.repeat(64),
+      dispatchAuthorizedAt: FIXED_TIME,
+      dispatchStatus: 'completed',
+      completedAt: FIXED_TIME,
     },
   ],
 });
 
 export const PLAN_EVIDENCE: PlanEvidence = {
   body: '## Plan\n1. Fix auth\n2. Add tests',
-  digest: 'digest-of-plan',
+  digest: PLAN_DIGEST,
   sections: ['Plan'],
   createdAt: FIXED_TIME,
+  revisionId: FIXED_UUID,
   recordDigest: computeRecordDigest({
-    contentDigest: 'digest-of-plan',
+    contentDigest: PLAN_DIGEST,
     planVersion: 1,
     supersedesRecordDigest: null,
     originatingReviewObligationId: null,
     revisionReason: null,
+    revisionId: FIXED_UUID,
   }),
   planVersion: 1,
   supersedesRecordDigest: null,
@@ -353,7 +454,7 @@ export const SELF_REVIEW_CONVERGED: SelfReviewLoop = {
   iteration: 1,
   maxIterations: 3,
   prevDigest: null,
-  currDigest: 'digest-of-plan',
+  currDigest: PLAN_DIGEST,
   revisionDelta: 'none',
   verdict: 'accept',
 };
@@ -362,7 +463,7 @@ export const SELF_REVIEW_PENDING: SelfReviewLoop = {
   iteration: 1,
   maxIterations: 3,
   prevDigest: null,
-  currDigest: 'digest-of-plan',
+  currDigest: PLAN_DIGEST,
   revisionDelta: 'minor',
   verdict: 'changes_requested',
 };
@@ -456,7 +557,7 @@ export const REVIEW_APPROVE: ReviewDecision = {
   verdict: 'approve',
   rationale: 'LGTM',
   decidedAt: FIXED_TIME,
-  decidedBy: 'reviewer-1',
+  decisionIdentity: DECISION_IDENTITY_REVIEWER,
 };
 
 export const ERROR_INFO: ErrorInfo = {
@@ -531,6 +632,7 @@ export function makeState(
     pendingAuditOperations: [],
     error: null,
     createdAt: FIXED_TIME,
+    regulatedArchiveStatus: null,
     ...overrides,
   };
 }

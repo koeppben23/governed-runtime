@@ -8,7 +8,7 @@ import { chmod, readFile, writeFile, rename, unlink } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { FileOp, InstallScope } from './install-helpers.js';
+import type { FileOp, InstallScope } from './install-types.js';
 import { writeIfAbsent } from './install-helpers.js';
 import type { InstallMutationSink } from './install-mutation-types.js';
 import { CODEX_PLUGIN_NAME, CODEX_PLUGIN_RELATIVE_FILES, codexPluginFiles } from './templates.js';

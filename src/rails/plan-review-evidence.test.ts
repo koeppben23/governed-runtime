@@ -145,7 +145,16 @@ describe('plan approval certificate authority (version-tuple binding)', () => {
     });
     const result = executeReviewDecision(
       state,
-      { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
+      {
+        verdict: 'approve',
+        rationale: 'ok',
+        decisionIdentity: {
+          actorId: 'reviewer-1',
+          actorEmail: null,
+          actorSource: 'unknown',
+          actorAssurance: 'best_effort',
+        },
+      },
       { now: () => FIXED_TIME, digest: hashText },
     );
     expect(result.kind).toBe('ok');
@@ -186,7 +195,16 @@ describe('plan approval certificate authority (version-tuple binding)', () => {
     });
     const result = executeReviewDecision(
       state,
-      { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
+      {
+        verdict: 'approve',
+        rationale: 'ok',
+        decisionIdentity: {
+          actorId: 'reviewer-1',
+          actorEmail: null,
+          actorSource: 'unknown',
+          actorAssurance: 'best_effort',
+        },
+      },
       { now: () => FIXED_TIME, digest: hashText },
     );
     expect(result.kind).toBe('ok');
@@ -238,7 +256,16 @@ describe('plan approval certificate authority (version-tuple binding)', () => {
 
     const result = executeReviewDecision(
       state,
-      { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
+      {
+        verdict: 'approve',
+        rationale: 'ok',
+        decisionIdentity: {
+          actorId: 'reviewer-1',
+          actorEmail: null,
+          actorSource: 'unknown',
+          actorAssurance: 'best_effort',
+        },
+      },
       { now: () => FIXED_TIME, digest: hashText },
     );
 

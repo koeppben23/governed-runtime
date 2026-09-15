@@ -80,6 +80,8 @@ export type {
   LoopVerdict,
   RevisionDelta,
   PolicySnapshot,
+  ActorInfo,
+  ActorVerificationMeta,
 } from './state/evidence.js';
 
 export {
@@ -166,7 +168,6 @@ export { type FlowGuardLogger, createLogger, createNoopLogger } from './logging/
 // ─── Audit ───────────────────────────────────────────────────────────────────
 
 export {
-  type ActorInfo,
   type AuditEventKind,
   type TransitionDetail,
   type StateWriteDetail,

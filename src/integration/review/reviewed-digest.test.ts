@@ -22,10 +22,12 @@ import {
   artifactReviewSubjectScope,
   buildInvocationEvidence,
   createReviewObligation,
+  freezeReviewMaterial,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './assurance.js';
 import { hashFindings } from './findings-hash.js';
+import { completedDispatchForInvocation } from '../../state/evidence-test-constants.js';
 import { resolveReviewedArtifactIdentity } from './reviewed-digest.js';
 
 const NOW = '2026-08-15T10:00:00.000Z';
@@ -37,13 +39,14 @@ function planObligation(): ReviewObligation {
         version: 'challenge-policy.v1',
         counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
       },
-      maxReviewerOutputRepairAttempts: 1,
+      maxReviewerAttempts: 1,
     },
     obligationType: 'plan',
     iteration: 0,
     planVersion: 1,
     now: NOW,
     subjectDigest: 'plan-digest-v1',
+    reviewMaterial: freezeReviewMaterial('frozen review material', 'plan-digest-v1'),
     reviewSubjectScope: artifactReviewSubjectScope('plan', '## Approach\nBody', 'plan-digest-v1'),
     repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
   });
@@ -60,6 +63,7 @@ function subagentFindings(obligation: ReviewObligation, overrides: Record<string
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: 'ses-child' },
     reviewedAt: NOW,
     attestation: {
@@ -83,16 +87,15 @@ function hostInvocation(
   const invocation = buildInvocationEvidence({
     obligationId: obligation.obligationId,
     obligationType: obligation.obligationType,
+    attemptId: '00000000-0000-4000-8000-0000000000aa',
     mandateDigest: REVIEW_MANDATE_DIGEST,
     criteriaVersion: REVIEW_CRITERIA_VERSION,
     parentSessionId: 'ses-parent',
     childSessionId: 'ses-child',
-    invocationMode: 'host_subagent_task',
-    hostVisible: true,
-    promptHash: 'sha256-prompt',
+    promptHash: 'a'.repeat(64),
     findingsHash: hashFindings(findings),
     invokedAt: NOW,
-    source: 'host-orchestrated',
+    capturedRawFindings: findings,
   });
   return { ...invocation, ...overrides } as ReviewInvocationEvidence;
 }
@@ -103,7 +106,7 @@ function assurance(obligations: ReviewObligation[], invocations: ReviewInvocatio
     obligations,
     invocations,
     attempts: [],
-    dispatches: [],
+    dispatches: invocations.map((invocation) => completedDispatchForInvocation(invocation)),
   };
 }
 
@@ -144,13 +147,14 @@ describe('resolveReviewedArtifactIdentity', () => {
           version: 'challenge-policy.v1',
           counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
         },
-        maxReviewerOutputRepairAttempts: 1,
+        maxReviewerAttempts: 1,
       },
       obligationType: 'plan',
       iteration: 1,
       planVersion: 2,
       now: NOW,
       subjectDigest: 'plan-digest-v2',
+      reviewMaterial: freezeReviewMaterial('frozen review material', 'plan-digest-v2'),
       reviewSubjectScope: artifactReviewSubjectScope(
         'plan',
         '## Approach\nBody2',
@@ -173,13 +177,14 @@ describe('resolveReviewedArtifactIdentity', () => {
           version: 'challenge-policy.v1',
           counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
         },
-        maxReviewerOutputRepairAttempts: 1,
+        maxReviewerAttempts: 1,
       },
       obligationType: 'implement',
       iteration: 0,
       planVersion: 1,
       now: NOW,
       subjectDigest: 'impl-digest',
+      reviewMaterial: freezeReviewMaterial('frozen review material', 'impl-digest'),
       changedFiles: ['src/foo.ts'],
       reviewSubjectScope: { kind: 'implementation', implementationDigest: 'impl-digest' },
     });

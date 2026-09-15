@@ -38,8 +38,8 @@ import {
   type ReviewerResult,
   type ReviewerSuccessResult,
 } from './orchestrator.js';
-import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
-import { promptContainsValue } from './enforcement/extraction.js';
+import { REVIEW_REQUIRED_PREFIX } from './enforcement/types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
 import { TOOL_FLOWGUARD_REVIEW } from '../tool-names.js';
 import { parseToolResult } from '../plugin-helpers.js';
@@ -58,15 +58,9 @@ function validFindings(overrides: Record<string, unknown> = {}): string {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
-    reviewedBy: { sessionId: 'child-session-1' },
-    reviewedAt: '2026-04-24T12:00:00.000Z',
+    challenges: [],
     attestation: {
-      mandateDigest: 'test-mandate-digest',
-      criteriaVersion: 'p37-v1',
       toolObligationId: '11111111-1111-4111-8111-111111111111',
-      iteration: 0,
-      planVersion: 1,
-      reviewedBy: 'flowguard-reviewer',
     },
     ...overrides,
   });
@@ -87,7 +81,7 @@ function mockClient(
       data?: {
         parts?: Array<{ type?: string; text?: string }>;
         info?: {
-          structured_output?: unknown;
+          structured?: unknown;
           error?: { name: string; message: string };
         };
       };
@@ -114,7 +108,7 @@ function mockClient(
         opts.promptResult ?? {
           data: {
             parts: [{ type: 'text', text: validFindings() }],
-            info: { structured_output: JSON.parse(validFindings()) as Record<string, unknown> },
+            info: { structured: JSON.parse(validFindings()) as Record<string, unknown> },
           },
           error: undefined,
         },
@@ -136,9 +130,13 @@ function modeAOutput(
     phase: 'PLAN',
     status: `Plan submitted (v${planVersion}).`,
     selfReviewIteration: iteration,
-    reviewObligationId: '11111111-1111-4111-8111-111111111111',
-    reviewCriteriaVersion: 'p37-v1',
-    reviewMandateDigest: 'test-mandate-digest',
+    reviewObligation: {
+      obligationId: '11111111-1111-4111-8111-111111111111',
+      iteration,
+      planVersion,
+      criteriaVersion: 'p37-v1',
+      mandateDigest: 'test-mandate-digest',
+    },
     reviewMode: 'subagent',
     next:
       `${REVIEW_REQUIRED_PREFIX}: Call the flowguard-reviewer subagent via Task tool. ` +
@@ -329,9 +327,13 @@ describe('extractReviewContext', () => {
   it('does not validate selfReviewIteration for implement tool', () => {
     const parsed = {
       next: `${REVIEW_REQUIRED_PREFIX}: iteration=1, planVersion=2`,
-      reviewObligationId: '11111111-1111-4111-8111-111111111111',
-      reviewCriteriaVersion: 'p37-v1',
-      reviewMandateDigest: 'test-mandate-digest',
+      reviewObligation: {
+        obligationId: '11111111-1111-4111-8111-111111111111',
+        iteration: 1,
+        planVersion: 2,
+        criteriaVersion: 'p37-v1',
+        mandateDigest: 'test-mandate-digest',
+      },
       selfReviewIteration: 99, // different — but implement doesn't check
     };
     const ctx = extractReviewContext('flowguard_implement', parsed);
@@ -372,9 +374,7 @@ describe('end-to-end orchestration flow', () => {
 
     // Step 4: Invoke reviewer
     const client = mockClient();
-    const result = await invokeReviewer(client, prompt, 'parent-session', {
-      reviewInvocationPolicy: 'sdk_allowed',
-    });
+    const result = await invokeReviewer(client, prompt, 'parent-session');
     assertSuccessfulResult(result);
 
     // Step 5: Mutate output
@@ -384,11 +384,13 @@ describe('end-to-end orchestration flow', () => {
     // Verify mutated output
     const mutatedParsed = JSON.parse(mutated!) as Record<string, unknown>;
     expect((mutatedParsed.next as string).startsWith(REVIEW_COMPLETED_PREFIX)).toBe(true);
-    expect(mutatedParsed.pluginReviewFindings).toBeDefined();
-    expect(mutatedParsed._pluginReviewSessionId).toBe('child-session-1');
+    expect(mutatedParsed.pluginReviewFindings).toBeUndefined();
+    expect(mutatedParsed._pluginReviewSessionId).toBeUndefined();
     // Original fields preserved
     expect(mutatedParsed.phase).toBe('PLAN');
-    expect(mutatedParsed.reviewObligationId).toBeDefined();
+    expect(mutatedParsed.reviewObligation).toMatchObject({
+      obligationId: '11111111-1111-4111-8111-111111111111',
+    });
   });
 
   // EDGE: reviewer fails — graceful degradation (output unchanged)
@@ -398,9 +400,7 @@ describe('end-to-end orchestration flow', () => {
     const client = mockClient({
       createResult: { error: { message: 'Server error' } },
     });
-    const result = await invokeReviewer(client, 'test prompt', 'parent', {
-      reviewInvocationPolicy: 'sdk_allowed',
-    });
+    const result = await invokeReviewer(client, 'test prompt', 'parent');
     expect(result).toBeNull();
 
     // Output stays unchanged — the LLM will follow the original INDEPENDENT_REVIEW_REQUIRED
@@ -417,10 +417,8 @@ describe('end-to-end orchestration flow', () => {
         error: undefined,
       },
     });
-    const result = await invokeReviewer(client, 'test prompt', 'parent', {
-      reviewInvocationPolicy: 'sdk_allowed',
-    });
-    expect(result).toBeNull();
+    const result = await invokeReviewer(client, 'test prompt', 'parent');
+    expect(result).toMatchObject({ blocked: true, code: 'HOST_STRUCTURED_OUTPUT_REQUIRED' });
 
     expect(isReviewRequired(original)).toBe(true);
   });
@@ -526,11 +524,11 @@ describe('buildReviewContentMutatedOutput', () => {
     });
     expect(result).toBeDefined();
     const parsed = JSON.parse(result!);
-    expect(parsed.pluginReviewFindings).toBeDefined();
+    expect(parsed.pluginReviewFindings).toBeUndefined();
     expect(parsed.next).toContain('flowguard_review');
-    expect(parsed.next).toContain('reviewFindings');
-    expect(parsed.next).toContain('pluginReviewFindings');
-    expect(parsed._pluginReviewSessionId).toBe('child-1');
+    expect(parsed.next).toContain('reviewVerdict=accept');
+    expect(parsed.next).toContain('Do not submit or reconstruct reviewer findings.');
+    expect(parsed._pluginReviewSessionId).toBeUndefined();
   });
 
   it('does not contain plan/implement/architecture next instruction', () => {
@@ -543,7 +541,7 @@ describe('buildReviewContentMutatedOutput', () => {
     });
     const parsed = JSON.parse(result!);
     expect(parsed.next).not.toContain('flowguard_plan');
-    expect(parsed.next).not.toContain('reviewVerdict');
+    expect(parsed.next).toContain('reviewVerdict=accept');
   });
 
   it('returns null on parse failure', () => {
@@ -595,7 +593,7 @@ describe('buildReviewContentMutatedOutput', () => {
     expect(result).not.toBeNull();
     const parsed = JSON.parse(result!);
     expect(parsed.next).toContain('PLUGIN_REVIEW_COMPLETED');
-    expect(parsed.pluginReviewFindings).toBeDefined();
+    expect(parsed.pluginReviewFindings).toBeUndefined();
   });
 });
 
@@ -803,7 +801,7 @@ describe('buildReviewContentMutatedOutput edge cases', () => {
     }),
   );
 
-  it('preserves original fields from the blocked output', () => {
+  it('replaces the blocked output with a success envelope', () => {
     const original = JSON.stringify({ code: 'CONTENT_ANALYSIS_REQUIRED', error: true });
     const result = buildReviewContentMutatedOutput(original, {
       sessionId: 's1',
@@ -813,8 +811,9 @@ describe('buildReviewContentMutatedOutput edge cases', () => {
       reviewAssuranceLevel: 'structured_high',
     });
     const parsed = JSON.parse(result!);
-    expect(parsed.code).toBe('CONTENT_ANALYSIS_REQUIRED');
-    expect(parsed.error).toBe(true);
+    expect(parsed).not.toHaveProperty('code');
+    expect(parsed).not.toHaveProperty('error');
+    expect(parsed.phase).toBe('REVIEW');
   });
 
   it('includes requiredReviewAttestation next instruction', () => {
@@ -826,8 +825,8 @@ describe('buildReviewContentMutatedOutput edge cases', () => {
       reviewAssuranceLevel: 'structured_high',
     });
     const parsed = JSON.parse(result!);
-    expect(parsed.next).toContain('reviewFindings');
-    expect(parsed.next).toContain('pluginReviewFindings');
+    expect(parsed.next).toContain('reviewVerdict=accept');
+    expect(parsed.next).toContain('Do not submit or reconstruct reviewer findings.');
   });
 
   it('sets _pluginReviewSessionId correctly', () => {
@@ -839,7 +838,7 @@ describe('buildReviewContentMutatedOutput edge cases', () => {
       reviewAssuranceLevel: 'structured_high',
     });
     const parsed = JSON.parse(result!);
-    expect(parsed._pluginReviewSessionId).toBe('child-session-xyz');
+    expect(parsed._pluginReviewSessionId).toBeUndefined();
   });
 });
 
@@ -950,13 +949,6 @@ describe('CORE_REVIEW_PROFILE_MARKER (Wave 1 — #730)', () => {
     it(`${flow} prompt appends the core marker as trailing content`, () => {
       expect(prompt).toContain(CORE_REVIEW_PROFILE_MARKER);
       expect(prompt.trimEnd().endsWith(CORE_REVIEW_PROFILE_MARKER)).toBe(true);
-    });
-
-    it(`${flow} prompt preserves iteration/planVersion enforcement tokens with the marker present`, () => {
-      // Direct proof the marker does not displace the tokens the enforcement
-      // matcher (promptContainsValue) requires — the exact BUG-16 regression.
-      expect(promptContainsValue(prompt, 'iteration', iteration)).toBe(true);
-      expect(promptContainsValue(prompt, 'version', planVersion)).toBe(true);
     });
   }
 });

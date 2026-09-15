@@ -431,9 +431,6 @@ export function resolveCeremonyProfile(input: CeremonyProfileInput): CeremonyPro
   if (input.state.claimedTaskClass !== 'TRIVIAL') {
     return { ...base, profile: 'full', reason: 'CLAIMED_CLASS_NOT_TRIVIAL' };
   }
-  if (input.state.policySnapshot.reviewInvocationPolicy === 'host_task_required') {
-    return { ...base, profile: 'full', reason: 'POLICY_REVIEW_REQUIRED' };
-  }
   if (input.state.riskGate?.status === 'blocked') {
     return { ...base, profile: 'full', reason: 'RISK_GATE_BLOCKED' };
   }

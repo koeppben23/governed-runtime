@@ -158,39 +158,30 @@ Resolution contract:
 
 ## Policy Comparison
 
-| Setting                                | Solo      | Team     | Team-CI             | Regulated       |
-| -------------------------------------- | --------- | -------- | ------------------- | --------------- |
-| Human gates                            | 0         | 3        | 0 (CI only; else 3) | 3               |
-| Four-eyes required                     | No        | No       | No                  | **Yes**         |
-| Self-approval                          | Allowed   | Allowed  | Allowed             | **Not Allowed** |
-| Plan review iterations (max)           | 2         | 3        | 3                   | 3               |
-| Impl review iterations (max)           | 1         | 3        | 3                   | 3               |
-| Reviewer invocation                    | preferred | required | required            | required        |
-| Decision actor classification          | system    | human    | system              | human           |
-| Audit trail (transitions + tool calls) | **Yes**   | **Yes**  | **Yes**             | **Yes**         |
-| Audit chain hash                       | No        | **Yes**  | **Yes**             | **Yes**         |
-| Subagent review                        | **Yes**   | **Yes**  | **Yes**             | **Yes**         |
-| Strict review enforcement              | **Yes**   | **Yes**  | **Yes**             | **Yes**         |
+| Setting                                | Solo    | Team    | Team-CI             | Regulated       |
+| -------------------------------------- | ------- | ------- | ------------------- | --------------- |
+| Human gates                            | 0       | 3       | 0 (CI only; else 3) | 3               |
+| Four-eyes required                     | No      | No      | No                  | **Yes**         |
+| Self-approval                          | Allowed | Allowed | Allowed             | **Not Allowed** |
+| Plan review iterations (max)           | 2       | 3       | 3                   | 3               |
+| Impl review iterations (max)           | 1       | 3       | 3                   | 3               |
+| Decision actor classification          | system  | human   | system              | human           |
+| Audit trail (transitions + tool calls) | **Yes** | **Yes** | **Yes**             | **Yes**         |
+| Audit chain hash                       | No      | **Yes** | **Yes**             | **Yes**         |
+| Subagent review                        | **Yes** | **Yes** | **Yes**             | **Yes**         |
+| Strict review enforcement              | **Yes** | **Yes** | **Yes**             | **Yes**         |
 
 **Human gates list (where applicable):** `PLAN_REVIEW`, `EVIDENCE_REVIEW`,
 `ARCH_REVIEW`. `IMPL_REVIEW` is an independent-review gate (subagent-driven), not
 a human gate.
-
-**Reviewer invocation** (`reviewInvocationPolicy`): `required` =
-`host_task_required` — the `flowguard-reviewer` subagent MUST be invoked via the
-host Task tool. `preferred` = `host_task_preferred` — the host Task subagent is
-preferred, but obligation-bound reviewer evidence may also be supplied via
-SDK/manual attestation. Either way self-review is never accepted as evidence.
 
 **Decision actor classification** (`actorClassification.flowguard_decision`):
 how a `/review-decision` is labelled in the audit trail — `human` in team/regulated
 (an explicit human decision is expected), `system` in solo/team-ci (gates
 auto-approve, so the decision is machine-attributed).
 
-**Subagent review:** All four modes ship with `selfReview.subagentEnabled = true`,
-`selfReview.fallbackToSelf = false`, `selfReview.strictEnforcement = true` as the
-runtime-normalized defaults. Self-review is never accepted as review evidence in
-the current release; the orchestrator deterministically invokes the
+**Subagent review:** Independent subagent review is a mandatory runtime invariant,
+not a policy setting. Self-review is never accepted as review evidence; the orchestrator invokes the
 `flowguard-reviewer` subagent for `/plan`, `/architecture`, and `/implement` and
 fails closed on missing or mismatched evidence (see `docs/independent-review.md`).
 

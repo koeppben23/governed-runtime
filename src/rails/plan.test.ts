@@ -13,10 +13,12 @@ import { executePlan, type PlanInput, type PlanExecutors } from './plan.js';
 import { makeState, FIXED_TIME, TICKET, PLAN_RECORD } from '../fixtures.js';
 import type { RailContext } from './types.js';
 import { TEAM_POLICY } from '../config/policy.js';
+import { hashText } from '../shared/hashing.js';
+import { PlanRecord } from '../state/evidence-plan.js';
 
 const ctx: RailContext = {
   now: () => FIXED_TIME,
-  digest: (s: string) => `sha256:${s.length}`,
+  digest: (s: string) => hashText(s),
   policy: { ...TEAM_POLICY, maxSelfReviewIterations: 3 },
 };
 
@@ -116,6 +118,15 @@ describe('plan rail', () => {
         // History should have previous entries preserved
         expect(result.state.plan?.history.length).toBeGreaterThanOrEqual(1);
         expect(result.state.plan?.current.body).toBe('## Revised\nNew plan');
+        // A re-plan is a revision of the SAME lineage: the resulting record must
+        // satisfy the PlanRecord authority (contiguous, chained, head = current).
+        const parsed = PlanRecord.safeParse(result.state.plan);
+        expect(parsed.success, parsed.success ? '' : JSON.stringify(parsed.error.issues)).toBe(
+          true,
+        );
+        const plan = result.state.plan!;
+        expect(plan.current.planVersion).toBe(plan.history.length + 1);
+        expect(plan.history[0]!.recordDigest).toBe(plan.current.supersedesRecordDigest);
       }
     });
 

@@ -144,50 +144,16 @@ function riskClassificationBlocked(detail: DiagnosticDetail): RuntimeDiagnostics
   };
 }
 
-function hostSubagentTaskRequired(detail: DiagnosticDetail): RuntimeDiagnostics {
-  const obligationId = optionalField(detail.obligationId);
-  const bindOutcome = optionalField(detail.bindOutcome);
-  return {
-    diagnosticCode: 'REVIEW_HOST_TASK_EVIDENCE_MISSING',
-    severity: 'error',
-    phase: optionalField(detail.phase),
-    policyMode: optionalField(detail.policyMode) ?? 'host_task_required',
-    rootCause:
-      optionalField(detail.reason) ??
-      'Policy requires host-visible reviewer Task evidence, but no bindable evidence was found.',
-    observed: clean([
-      obligationId ? `obligationId=${detail.obligationId}` : undefined,
-      optionalField(detail.bindOutcome) ? `bindOutcome=${detail.bindOutcome}` : undefined,
-      optionalField(detail.reviewerSubagentType)
-        ? `reviewerSubagentType=${detail.reviewerSubagentType}`
-        : undefined,
-    ]),
-    required: [
-      'host-visible Task invocation by the FlowGuard reviewer subagent',
-      'ReviewFindings bound to the active review obligation',
-      'matching mandateDigest and criteriaVersion',
-    ],
-    ...(bindOutcome
-      ? { missingEvidence: ['host_subagent_task_invocation', 'review_findings_attestation'] }
-      : {}),
-    safeNextActions: [
-      'Run the FlowGuard reviewer subagent via the OpenCode Task tool.',
-      'In host_task_required mode, submit only the reviewVerdict matching the captured reviewer overallVerdict — FlowGuard resolves the evidence automatically.',
-      'Do NOT submit, copy, or alter reviewFindings in host_task_required mode.',
-    ],
-  };
-}
-
 function hostTaskSchemaInvalid(detail: DiagnosticDetail): RuntimeDiagnostics {
   return {
-    diagnosticCode: 'REVIEW_HOST_TASK_FINDINGS_SCHEMA_INVALID',
+    diagnosticCode: 'REVIEWER_FINDINGS_SCHEMA_INVALID',
     severity: 'error',
     phase: optionalField(detail.phase),
-    policyMode: optionalField(detail.policyMode) ?? 'host_task_required',
+    policyMode: optionalField(detail.policyMode),
     rootCause:
       optionalField(detail.reason) ??
       optionalField(detail.message) ??
-      'The host-visible reviewer Task completed, but its ReviewFindings output failed canonical schema validation.',
+      'The reviewer completed, but its ReviewFindings output failed canonical schema validation.',
     observed: clean([
       optionalField(detail.obligationId) ? `obligationId=${detail.obligationId}` : undefined,
       optionalField(detail.bindOutcome) ? `bindOutcome=${detail.bindOutcome}` : undefined,
@@ -197,14 +163,14 @@ function hostTaskSchemaInvalid(detail: DiagnosticDetail): RuntimeDiagnostics {
         : undefined,
     ]),
     required: [
-      'one schema-valid canonical ReviewFindings object from the completed reviewer Task',
+      'one schema-valid canonical ReviewFindings object from the completed reviewer session',
       'ReviewFindings bound to the active review obligation',
       'matching mandateDigest and criteriaVersion',
     ],
     missingEvidence: ['schema_valid_review_findings'],
     safeNextActions: [
-      'Re-run the originating FlowGuard command to authorize a fresh output-repair attempt and emit a new canonical reviewerTaskPrompt.',
-      'Only then invoke the FlowGuard reviewer Task again using the newly issued prompt.',
+      'Re-run the originating FlowGuard command to authorize a fresh output-repair attempt.',
+      'Follow the returned recovery steps; do not retry or reconstruct the rejected reviewer output yourself.',
       'Do NOT hand-edit, copy, or submit the rejected reviewFindings.',
     ],
   };
@@ -300,8 +266,6 @@ export function buildBlockedDiagnostics(
     case 'RISK_GATE_BLOCKED':
     case 'RISK_DOWNGRADE_OVERRIDE_DENIED':
       return riskClassificationBlocked(detail);
-    case 'HOST_SUBAGENT_TASK_REQUIRED':
-      return hostSubagentTaskRequired(detail);
     case 'ENVELOPE_SCHEMA_INVALID':
       return hostTaskSchemaInvalid(detail);
     case 'SUBAGENT_EVIDENCE_MISSING':

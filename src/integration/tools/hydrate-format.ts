@@ -11,7 +11,7 @@ import { executeHydrate } from '../../rails/hydrate.js';
 import type { ToolResult } from './helpers.js';
 import {
   persistAndFormat,
-  appendNextAction,
+  enrichWithNextAction,
   formatRailResult,
   writeStateWithArtifactsAndAuditOperations,
 } from './helpers.js';
@@ -84,7 +84,6 @@ export function buildNewPolicyInput(
     policyPathHint: policyResolution.centralEvidence?.pathHint,
     maxSelfReviewIterations: config.policy.maxSelfReviewIterations,
     maxImplReviewIterations: config.policy.maxImplReviewIterations,
-    requireVerifiedActorsForApproval: config.policy.requireVerifiedActorsForApproval,
     identityProvider: config.policy.identityProvider,
     identityProviderMode: config.policy.identityProviderMode,
     minimumActorAssuranceForApproval: config.policy.minimumActorAssuranceForApproval,
@@ -299,7 +298,7 @@ export async function formatNewSessionResponse(
     gateNotice: gateNoticeText,
     presentation: buildHydratePresentationCard(cardParams),
   };
-  return appendNextAction(JSON.stringify(response), state);
+  return JSON.stringify(enrichWithNextAction(response, state));
 }
 
 export function formatPolicyResolution(

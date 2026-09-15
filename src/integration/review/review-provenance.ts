@@ -36,7 +36,7 @@ export type RequiredBranchReviewProvenance = z.infer<typeof BranchReviewProvenan
 
 // ─── Error ───────────────────────────────────────────────────────────────────
 
-export class ReviewProvenanceError extends Error {
+class ReviewProvenanceError extends Error {
   readonly code = 'REVIEW_BRANCH_PROVENANCE_MISSING' as const;
 
   constructor(message: string) {
@@ -46,18 +46,6 @@ export class ReviewProvenanceError extends Error {
 }
 
 // ─── Extractors ──────────────────────────────────────────────────────────────
-
-export function getRequiredBranchReviewSource(
-  obligation: ReviewObligation,
-): RequiredBranchReviewSource {
-  const parsed = BranchReviewSourceSchema.safeParse(obligation.metadata);
-  if (!parsed.success) {
-    throw new ReviewProvenanceError(
-      'Branch review obligation does not contain valid immutable provenance.',
-    );
-  }
-  return parsed.data;
-}
 
 export function getRequiredBranchReviewProvenance(
   obligation: ReviewObligation,
@@ -69,23 +57,4 @@ export function getRequiredBranchReviewProvenance(
     );
   }
   return parsed.data;
-}
-
-/** Read all three provenance fields from an obligation, or return nulls for non-branch obligations. */
-export function getBranchProvenanceFields(obligation: ReviewObligation): {
-  resolvedBranchSha: string | null;
-  resolvedBaseSha: string | null;
-  reviewedContentDigest: string | null;
-} {
-  const isBranch =
-    typeof obligation.metadata?.branch === 'string' && obligation.metadata.branch.length > 0;
-  if (!isBranch) {
-    return { resolvedBranchSha: null, resolvedBaseSha: null, reviewedContentDigest: null };
-  }
-  const p = getRequiredBranchReviewProvenance(obligation);
-  return {
-    resolvedBranchSha: p.resolvedBranchSha,
-    resolvedBaseSha: p.resolvedBaseSha,
-    reviewedContentDigest: p.reviewedContentDigest,
-  };
 }

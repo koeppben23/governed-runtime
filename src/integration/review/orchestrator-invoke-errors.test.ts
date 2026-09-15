@@ -1,7 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { _resetAgentResolutionCache } from './agent-resolution.js';
 import { invokeReviewer } from './orchestrator.js';
-import { NO_SLEEP, TEXT_COMPAT_OPTIONS, makeClient, PROMPT } from './orchestrator-test-helpers.js';
+import { NO_SLEEP, makeClient, PROMPT } from './orchestrator-test-helpers.js';
 describe('invokeReviewer — error handling', () => {
   beforeEach(() => {
     _resetAgentResolutionCache();
@@ -27,8 +27,7 @@ describe('invokeReviewer — error handling', () => {
         },
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 2,
+        maxTransportRetries: 2,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -50,8 +49,7 @@ describe('invokeReviewer — error handling', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 2,
+        maxTransportRetries: 2,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -71,12 +69,11 @@ describe('invokeReviewer — error handling', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 2,
+        maxTransportRetries: 2,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
-      // Should retry maxRetries + 1 = 3 times
+      // Should retry maxTransportRetries + 1 = 3 times
       expect(diagnostics).toHaveLength(3);
       expect(diagnostics.map((d) => d.attempt)).toEqual([1, 2, 3]);
       expect(diagnostics.every((d) => d.step === 'session_prompt')).toBe(true);
@@ -96,8 +93,7 @@ describe('invokeReviewer — error handling', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 1,
+        maxTransportRetries: 1,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -115,8 +111,7 @@ describe('invokeReviewer — error handling', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 1,
+        maxTransportRetries: 1,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -134,8 +129,7 @@ describe('invokeReviewer — error handling', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 0,
+        maxTransportRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -170,14 +164,13 @@ describe('invokeReviewer — error handling', () => {
         },
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 2,
+        maxTransportRetries: 2,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
       expect(result).toMatchObject({
         blocked: true,
-        code: 'REVIEWER_INVOCATION_EXHAUSTED',
+        code: 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE',
         reviewInvocation: { status: 'blocked_capability_mismatch' },
       });
     });
@@ -200,17 +193,52 @@ describe('invokeReviewer — error handling', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        maxRetries: 0,
-        ...TEXT_COMPAT_OPTIONS,
+        maxTransportRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
       const incompatible = diagnostics.find((d) => d.step === 'model_capability_incompatible');
       expect(incompatible).toBeDefined();
       const details = incompatible!.details as Record<string, unknown>;
-      expect(details.reason).toContain('does not support structured output');
-      expect(details.reason).toContain('text compatibility retry');
+      expect(details.reason).toContain('does not support required structured output');
       expect(details.detectedPattern).toContain('tool_choice');
+      expect(details.recovery).toContain('structured-output-capable model');
+    });
+
+    it('T6a: thinking-mode tool_choice conflict is execution-mode incompatible, not a model capability mismatch', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: {
+              error: {
+                name: 'APIError',
+                message: 'Thinking mode does not support this tool_choice',
+              },
+            },
+          },
+          error: undefined,
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxTransportRetries: 2,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+      expect(result).toMatchObject({
+        blocked: true,
+        code: 'STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE',
+        reviewInvocation: { status: 'blocked_execution_mode_incompatible' },
+      });
+      expect(diagnostics.map((diagnostic) => diagnostic.step)).toEqual([
+        'info_error',
+        'structured_review_execution_mode_incompatible',
+      ]);
+      expect(
+        diagnostics.some((diagnostic) => diagnostic.step === 'model_capability_incompatible'),
+      ).toBe(false);
     });
 
     it('T7: model_capability_incompatible does not retry (deterministic)', async () => {
@@ -231,8 +259,7 @@ describe('invokeReviewer — error handling', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 2,
+        maxTransportRetries: 2,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -241,7 +268,7 @@ describe('invokeReviewer — error handling', () => {
       expect(attempts).toEqual([1]);
     });
 
-    it('T8: info_error fires BEFORE model_capability_incompatible (ordering)', async () => {
+    it('T8: capability mismatch emits info_error and exactly one model_capability_incompatible', async () => {
       const diagnostics: Array<Record<string, unknown>> = [];
       const client = makeClient({
         agents: [{ id: 'flowguard-reviewer' }],
@@ -259,17 +286,15 @@ describe('invokeReviewer — error handling', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        maxRetries: 0,
-        ...TEXT_COMPAT_OPTIONS,
+        maxTransportRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
-      // 3 diagnostics: info_error → model_capability_incompatible → format_free_retry_empty
-      // (format_free_retry_empty because the mock returns same empty parts for both calls)
-      expect(diagnostics).toHaveLength(3);
+      // Exactly two diagnostics: info_error first, then the single authoritative
+      // model_capability_incompatible emission (no duplicated failure callback).
+      expect(diagnostics).toHaveLength(2);
       expect(diagnostics[0]!.step).toBe('info_error');
       expect(diagnostics[1]!.step).toBe('model_capability_incompatible');
-      expect(diagnostics[2]!.step).toBe('format_free_retry_empty');
     });
 
     it('T9: model_capability_incompatible matches case-insensitive', async () => {
@@ -294,14 +319,13 @@ describe('invokeReviewer — error handling', () => {
           },
         });
         const result = await invokeReviewer(client, PROMPT, 'parent-1', {
-          reviewInvocationPolicy: 'sdk_allowed',
-          maxRetries: 0,
+          maxTransportRetries: 0,
           _sleepFn: NO_SLEEP,
           _onAttemptFailed: (info) => diagnostics.push(info),
         });
         expect(result).toMatchObject({
           blocked: true,
-          code: 'REVIEWER_INVOCATION_EXHAUSTED',
+          code: 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE',
           reviewInvocation: { status: 'blocked_capability_mismatch' },
         });
         const incompatible = diagnostics.find((d) => d.step === 'model_capability_incompatible');
@@ -327,20 +351,19 @@ describe('invokeReviewer — error handling', () => {
         },
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 2,
+        maxTransportRetries: 2,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
       expect(result).toMatchObject({
         blocked: true,
-        code: 'REVIEWER_INVOCATION_EXHAUSTED',
+        code: 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE',
         reviewInvocation: { status: 'blocked_capability_mismatch' },
       });
       const incompatible = diagnostics.find((d) => d.step === 'model_capability_incompatible');
       expect(incompatible).toBeDefined();
-      expect((incompatible!.details as Record<string, unknown>).detectedPattern).toContain(
-        'structured output',
+      expect((incompatible!.details as Record<string, unknown>).detectedPattern).toBe(
+        'does not support structured output for this model',
       );
     });
 
@@ -357,8 +380,7 @@ describe('invokeReviewer — error handling', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 0,
+        maxTransportRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -381,8 +403,7 @@ describe('invokeReviewer — error handling', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 0,
+        maxTransportRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -409,14 +430,13 @@ describe('invokeReviewer — error handling', () => {
         },
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 0,
+        maxTransportRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
       expect(result).toMatchObject({
         blocked: true,
-        code: 'REVIEWER_INVOCATION_EXHAUSTED',
+        code: 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE',
         reviewInvocation: { status: 'blocked_capability_mismatch' },
       });
       const incompatible = diagnostics.find((d) => d.step === 'model_capability_incompatible');
@@ -438,8 +458,7 @@ describe('invokeReviewer — error handling', () => {
         },
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
-        reviewInvocationPolicy: 'sdk_allowed',
-        maxRetries: 0,
+        maxTransportRetries: 0,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });

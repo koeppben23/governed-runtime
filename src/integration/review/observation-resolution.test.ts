@@ -6,6 +6,7 @@ import { makeState } from '../../fixtures.js';
 import { readState } from '../../adapters/persistence.js';
 import { createReviewAttempt, createReviewObligation, freezeReviewMaterial } from './assurance.js';
 import { mintObservationCapability } from './attempt-lifecycle.js';
+import { repositoryDiscoveryContext } from '../test-helpers.js';
 
 const fixture = vi.hoisted(() => ({ root: '' }));
 
@@ -33,7 +34,7 @@ describe('resolveAttemptByCapability', () => {
           version: 'challenge-policy.v1',
           counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
         },
-        maxReviewerOutputRepairAttempts: 1,
+        maxReviewerAttempts: 1,
       },
       obligationType: 'implement',
       iteration: 1,
@@ -41,6 +42,19 @@ describe('resolveAttemptByCapability', () => {
       subjectDigest: 'implementation-digest',
       reviewMaterial: freezeReviewMaterial('implementation material', 'implementation-digest'),
       reviewSubjectScope: { kind: 'implementation', implementationDigest: 'implementation-digest' },
+      repositoryAuthority: {
+        kind: 'candidate_pair',
+        base: {
+          kind: 'commit',
+          repositoryIdentity: { kind: 'local', rootCommitDigest: `sha256:${'a'.repeat(64)}` },
+          objectSha: 'b'.repeat(40),
+        },
+        head: {
+          kind: 'tree',
+          repositoryIdentity: { kind: 'local', rootCommitDigest: `sha256:${'a'.repeat(64)}` },
+          objectSha: 'c'.repeat(40),
+        },
+      },
       now: '2026-01-01T00:00:00.000Z',
     });
     const capability = mintObservationCapability();
@@ -50,7 +64,7 @@ describe('resolveAttemptByCapability', () => {
       subjectDigest: obligation.subjectDigest,
       ordinal: 1,
       origin: { kind: 'initial' },
-      repositoryDiscovery: { kind: 'not_applicable' },
+      repositoryDiscovery: repositoryDiscoveryContext('2026-01-01T00:00:00.000Z'),
       observationCapability: capability,
       now: '2026-01-01T00:00:00.000Z',
     });

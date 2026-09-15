@@ -29,7 +29,7 @@ function proofGraphState() {
   return makeState('IMPL_REVIEW', {
     implementation: IMPL_EVIDENCE,
     proofGraph: {
-      version: 'proofgraph.v1' as const,
+      version: 'proofgraph.v2' as const,
       claims: [
         {
           claimId: '99999999-9999-9999-9999-999999999999',
@@ -61,7 +61,7 @@ function negativeProofGraphState() {
   return makeState('IMPL_REVIEW', {
     implementation: IMPL_EVIDENCE,
     proofGraph: {
-      version: 'proofgraph.v1' as const,
+      version: 'proofgraph.v2' as const,
       claims: [
         {
           claimId: '99999999-9999-9999-9999-999999999999',

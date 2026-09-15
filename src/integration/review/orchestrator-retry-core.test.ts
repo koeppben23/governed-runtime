@@ -7,7 +7,7 @@ import {
 } from './orchestrator.js';
 
 const mockSleep = vi.fn<(ms: number) => Promise<void>>().mockResolvedValue(undefined);
-const TEST_OPTS = { reviewInvocationPolicy: 'sdk_allowed', _sleepFn: mockSleep } as const;
+const TEST_OPTS = { _sleepFn: mockSleep } as const;
 
 function expectReviewerSuccess(
   result: Awaited<ReturnType<typeof invokeReviewer>>,
@@ -28,15 +28,9 @@ function validFindings(): Record<string, unknown> {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
-    reviewedBy: { sessionId: 'child-session-1' },
-    reviewedAt: '2026-05-07T12:00:00.000Z',
+    challenges: [],
     attestation: {
-      mandateDigest: 'test-mandate-digest',
-      criteriaVersion: 'p37-v1',
       toolObligationId: '11111111-1111-4111-8111-111111111111',
-      iteration: 0,
-      planVersion: 1,
-      reviewedBy: 'flowguard-reviewer',
     },
   };
 }
@@ -49,7 +43,7 @@ function successPromptResult() {
   return {
     data: {
       parts: [{ type: 'text', text: JSON.stringify(validFindings()) }],
-      info: { structured_output: validFindings() },
+      info: { structured: validFindings() },
     },
     error: undefined,
   };
@@ -138,17 +132,14 @@ describe('invokeReviewer — retry core', () => {
     expect(client.session.prompt).toHaveBeenCalledTimes(2);
   });
 
-  it('retries missing structured output but never parses text as a substitute', async () => {
+  it('blocks missing structured output without parsing text as a substitute', async () => {
     const client = makeRetryClient({
       create: vi.fn().mockResolvedValue(successCreateResult()),
-      prompt: vi
-        .fn()
-        .mockResolvedValueOnce(noStructuredOutputResult())
-        .mockResolvedValueOnce(successPromptResult()),
+      prompt: vi.fn().mockResolvedValueOnce(noStructuredOutputResult()),
     });
     const result = await invokeReviewer(client, PROMPT, PARENT_ID, TEST_OPTS);
-    expect(expectReviewerSuccess(result).findings?.overallVerdict).toBe('accept');
-    expect(client.session.prompt).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({ blocked: true, code: 'HOST_STRUCTURED_OUTPUT_REQUIRED' });
+    expect(client.session.prompt).toHaveBeenCalledTimes(1);
   });
 
   it('returns null after create retries are exhausted', async () => {
@@ -184,14 +175,13 @@ describe('invokeReviewer — retry core', () => {
     expect(mockSleep).not.toHaveBeenCalled();
   });
 
-  it('respects maxRetries=0', async () => {
+  it('respects maxTransportRetries=0', async () => {
     const client = makeRetryClient({
       create: vi.fn().mockResolvedValue(failCreateResult()),
       prompt: vi.fn(),
     });
     const result = await invokeReviewer(client, PROMPT, PARENT_ID, {
-      reviewInvocationPolicy: 'sdk_allowed',
-      maxRetries: 0,
+      maxTransportRetries: 0,
       _sleepFn: mockSleep,
     });
     expect(result).toBeNull();
@@ -208,7 +198,6 @@ describe('invokeReviewer — retry core', () => {
       prompt: vi.fn().mockResolvedValue(successPromptResult()),
     });
     await invokeReviewer(client, PROMPT, PARENT_ID, {
-      reviewInvocationPolicy: 'sdk_allowed',
       baseDelayMs: 500,
       _sleepFn: mockSleep,
     });
@@ -222,7 +211,10 @@ describe('invokeReviewer — retry core', () => {
       session: { create: vi.fn(), prompt: vi.fn() },
     };
     const result = await invokeReviewer(client, PROMPT, PARENT_ID, TEST_OPTS);
-    expect(result).toMatchObject({ blocked: true, code: 'REVIEWER_INVOCATION_EXHAUSTED' });
+    expect(result).toMatchObject({
+      blocked: true,
+      code: 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE',
+    });
     expect(client.session.create).not.toHaveBeenCalled();
     expect(mockSleep).not.toHaveBeenCalled();
   });

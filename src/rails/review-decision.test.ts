@@ -10,6 +10,7 @@ import {
 import { TEAM_POLICY } from '../config/policy.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 import type { ReviewAssuranceState } from '../state/evidence-review.js';
+import { DecisionIdentity } from '../state/evidence-identity.js';
 import {
   assuranceChain,
   ARCH_INVOCATION_ID,
@@ -170,7 +171,7 @@ describe('review-decision rail', () => {
 
     const result = executeReviewDecision(
       state,
-      { verdict: 'approve', rationale: 'approved', decidedBy: 'reviewer-1' },
+      { verdict: 'approve', rationale: 'approved', decisionIdentity: reviewerIdentity },
       baseCtx,
     );
 
@@ -183,7 +184,7 @@ describe('review-decision rail', () => {
           '{"claims":[{"authoritySectionId":"authentication","claimId":"00000000-0000-4000-8000-000000000003","claimScope":"specific_behavior","critical":true,"expectedCheckId":"test","statement":"The login flow rejects invalid credentials."}],"flow":"plan","version":"v2"}',
         ),
         decisionAttestationDigest: baseCtx.digest(
-          '{"decidedAt":"2026-01-01T00:00:00.000Z","decidedBy":"reviewer-1","rationale":"approved","verdict":"approve"}',
+          '{"decidedAt":"2026-01-01T00:00:00.000Z","decisionIdentity":{"actorAssurance":"claim_validated","actorDisplayName":"Reviewer","actorEmail":"review@example.com","actorId":"reviewer-1","actorSource":"claim"},"rationale":"approved","verdict":"approve"}',
         ),
         approvedAt: FIXED_TIME,
         approvedBy: 'reviewer-1',
@@ -210,7 +211,7 @@ describe('review-decision rail', () => {
           capturedVerdict: 'accept',
         }),
       }),
-      { verdict: 'approve', rationale: 'approved', decidedBy: 'reviewer-1' },
+      { verdict: 'approve', rationale: 'approved', decisionIdentity: reviewerIdentity },
       baseCtx,
     );
 
@@ -223,7 +224,7 @@ describe('review-decision rail', () => {
           '{"claims":[{"authoritySectionId":"decision","claimId":"00000000-0000-4000-8000-000000000004","critical":true,"requiredReviewEvidence":["architecture-review"],"statement":"The selected architecture keeps service data durable."}],"flow":"architecture"}',
         ),
         decisionAttestationDigest: baseCtx.digest(
-          '{"decidedAt":"2026-01-01T00:00:00.000Z","decidedBy":"reviewer-1","rationale":"approved","verdict":"approve"}',
+          '{"decidedAt":"2026-01-01T00:00:00.000Z","decisionIdentity":{"actorAssurance":"claim_validated","actorDisplayName":"Reviewer","actorEmail":"review@example.com","actorId":"reviewer-1","actorSource":"claim"},"rationale":"approved","verdict":"approve"}',
         ),
         approvedAt: FIXED_TIME,
         approvedBy: 'reviewer-1',
@@ -256,7 +257,7 @@ describe('review-decision rail', () => {
       {
         verdict: 'reject',
         rationale: 'start over',
-        decidedBy: 'reviewer-1',
+        decisionIdentity: reviewerIdentity,
       },
       baseCtx,
     );
@@ -289,7 +290,7 @@ describe('review-decision rail', () => {
       {
         verdict: 'changes_requested',
         rationale: 'rework implementation',
-        decidedBy: 'reviewer-1',
+        decisionIdentity: reviewerIdentity,
       },
       baseCtx,
     );
@@ -325,7 +326,7 @@ describe('review-decision rail', () => {
       {
         verdict: 'approve',
         rationale: 'accepted',
-        decidedBy: 'reviewer-1',
+        decisionIdentity: reviewerIdentity,
       },
       baseCtx,
     );
@@ -336,7 +337,9 @@ describe('review-decision rail', () => {
     }
   });
 
-  it('regulated approve requires structured identities', () => {
+  it('regulated approve requires the structured initiator identity', () => {
+    // A valid reviewer identity is always present on the input; the missing
+    // initiator identity is the authority gap this boundary must reject.
     const state = makeState('PLAN_REVIEW', {
       initiatedByIdentity: undefined,
     });
@@ -346,7 +349,7 @@ describe('review-decision rail', () => {
       {
         verdict: 'approve',
         rationale: 'ok',
-        decidedBy: 'reviewer-1',
+        decisionIdentity: reviewerIdentity,
       },
       {
         ...baseCtx,
@@ -372,7 +375,6 @@ describe('review-decision rail', () => {
       {
         verdict: 'approve',
         rationale: 'ok',
-        decidedBy: 'reviewer-1',
         decisionIdentity: {
           ...reviewerIdentity,
           actorSource: 'unknown',
@@ -392,35 +394,6 @@ describe('review-decision rail', () => {
     }
   });
 
-  it('requireVerifiedActorsForApproval blocks best_effort reviewer', () => {
-    const state = makeState('PLAN_REVIEW', {
-      initiatedByIdentity: initiatorIdentity,
-    });
-
-    const result = executeReviewDecision(
-      state,
-      {
-        verdict: 'approve',
-        rationale: 'ok',
-        decidedBy: 'reviewer-1',
-        decisionIdentity: {
-          ...reviewerIdentity,
-          actorAssurance: 'best_effort',
-        },
-      },
-      {
-        ...baseCtx,
-        policy: withPolicy({ requireVerifiedActorsForApproval: true }),
-      },
-    );
-
-    expect(result.kind).toBe('blocked');
-    if (result.kind === 'blocked') {
-      expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
-      expect(result.reason).toBeDefined();
-    }
-  });
-
   it('minimum idp_verified blocks claim_validated reviewer', () => {
     const state = makeState('PLAN_REVIEW', {
       initiatedByIdentity: initiatorIdentity,
@@ -431,7 +404,6 @@ describe('review-decision rail', () => {
       {
         verdict: 'approve',
         rationale: 'ok',
-        decidedBy: 'reviewer-1',
         decisionIdentity: {
           ...reviewerIdentity,
           actorAssurance: 'claim_validated',
@@ -455,7 +427,7 @@ describe('review-decision rail', () => {
     const state = makeState('TICKET');
     const result = executeReviewDecision(
       state,
-      { verdict: 'approve', rationale: 'ok', decidedBy: 'r1' },
+      { verdict: 'approve', rationale: 'ok', decisionIdentity: reviewerIdentity },
       baseCtx,
     );
     expect(result.kind).toBe('blocked');
@@ -475,7 +447,6 @@ describe('review-decision rail', () => {
       {
         verdict: 'approve',
         rationale: 'ok',
-        decidedBy: 'reviewer-1',
         decisionIdentity: reviewerIdentity,
       },
       { ...baseCtx, policy: withPolicy({ allowSelfApproval: false }) },
@@ -496,7 +467,6 @@ describe('review-decision rail', () => {
       {
         verdict: 'approve',
         rationale: 'ok',
-        decidedBy: 'reviewer-1',
         decisionIdentity: { ...reviewerIdentity, actorSource: 'unknown' as const },
       },
       { ...baseCtx, policy: withPolicy({ allowSelfApproval: false }) },
@@ -517,7 +487,6 @@ describe('review-decision rail', () => {
       {
         verdict: 'approve',
         rationale: 'ok',
-        decidedBy: 'initiator-1',
         decisionIdentity: { ...reviewerIdentity, actorId: 'initiator-1' },
       },
       { ...baseCtx, policy: withPolicy({ allowSelfApproval: false }) },
@@ -538,7 +507,6 @@ describe('review-decision rail', () => {
       {
         verdict: 'approve',
         rationale: 'ok',
-        decidedBy: 'reviewer-1',
         decisionIdentity: { ...reviewerIdentity, actorId: '   ' },
       },
       { ...baseCtx, policy: withPolicy({ allowSelfApproval: false }) },
@@ -558,7 +526,6 @@ describe('review-decision rail', () => {
       {
         verdict: 'approve',
         rationale: 'ok',
-        decidedBy: 'reviewer-1',
         decisionIdentity: reviewerIdentity,
       },
       { ...baseCtx, policy: withPolicy({ allowSelfApproval: false }) },
@@ -578,7 +545,6 @@ describe('review-decision rail', () => {
       {
         verdict: 'approve',
         rationale: 'ok',
-        decidedBy: 'cafe\u0301',
         decisionIdentity: { ...reviewerIdentity, actorId: 'cafe\u0301' },
       },
       { ...baseCtx, policy: withPolicy({ allowSelfApproval: false }) },
@@ -604,34 +570,11 @@ describe('review-decision rail', () => {
       {
         verdict: 'approve',
         rationale: 'ok',
-        decidedBy: 'reviewer-1',
         decisionIdentity: reviewerIdentity,
       },
       { ...baseCtx, policy: withPolicy({ allowSelfApproval: false }) },
     );
     expect(result.kind).toBe('ok');
-  });
-
-  it('ACTOR_ASSURANCE_INSUFFICIENT reason includes minimum and current levels', () => {
-    const state = makeState('PLAN_REVIEW', {
-      initiatedByIdentity: initiatorIdentity,
-    });
-    const result = executeReviewDecision(
-      state,
-      {
-        verdict: 'approve',
-        rationale: 'ok',
-        decidedBy: 'reviewer-1',
-        decisionIdentity: { ...reviewerIdentity, actorAssurance: 'best_effort' as const },
-      },
-      { ...baseCtx, policy: withPolicy({ requireVerifiedActorsForApproval: true }) },
-    );
-    expect(result.kind).toBe('blocked');
-    if (result.kind === 'blocked') {
-      expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
-      expect(result.reason).toContain('claim_validated');
-      expect(result.reason).toContain('best_effort');
-    }
   });
 
   it('ACTOR_ASSURANCE_INSUFFICIENT via minimumActorAssurance includes levels', () => {
@@ -643,7 +586,6 @@ describe('review-decision rail', () => {
       {
         verdict: 'approve',
         rationale: 'ok',
-        decidedBy: 'reviewer-1',
         decisionIdentity: { ...reviewerIdentity, actorAssurance: 'best_effort' as const },
       },
       { ...baseCtx, policy: withPolicy({ minimumActorAssuranceForApproval: 'idp_verified' }) },
@@ -670,7 +612,7 @@ describe('review-decision rail', () => {
     });
     const result = executeReviewDecision(
       state,
-      { verdict: 'changes_requested', rationale: 'rework', decidedBy: 'r1' },
+      { verdict: 'changes_requested', rationale: 'rework', decisionIdentity: reviewerIdentity },
       baseCtx,
     );
     expect(result.kind).toBe('ok');
@@ -706,7 +648,11 @@ describe('review-decision rail', () => {
 
     const result = executeReviewDecision(
       state,
-      { verdict: 'changes_requested', rationale: 'rework implementation', decidedBy: 'reviewer-1' },
+      {
+        verdict: 'changes_requested',
+        rationale: 'rework implementation',
+        decisionIdentity: reviewerIdentity,
+      },
       baseCtx,
     );
 
@@ -746,7 +692,7 @@ describe('review-decision rail', () => {
 
     const result = executeReviewDecision(
       state,
-      { verdict: 'approve', rationale: 'looks good', decidedBy: 'reviewer-1' },
+      { verdict: 'approve', rationale: 'looks good', decisionIdentity: reviewerIdentity },
       baseCtx,
     );
 
@@ -775,7 +721,7 @@ describe('review-decision rail', () => {
 
     const result = executeReviewDecision(
       state,
-      { verdict: 'reject', rationale: 'start over', decidedBy: 'reviewer-1' },
+      { verdict: 'reject', rationale: 'start over', decisionIdentity: reviewerIdentity },
       baseCtx,
     );
 
@@ -791,7 +737,7 @@ describe('review-decision rail', () => {
     const state = makeState('PLAN_REVIEW');
     const result = executeReviewDecision(
       state,
-      { verdict: 'maybe' as never, rationale: 'idk', decidedBy: 'r1' },
+      { verdict: 'maybe' as never, rationale: 'idk', decisionIdentity: reviewerIdentity },
       baseCtx,
     );
     expect(result.kind).toBe('blocked');
@@ -802,8 +748,7 @@ describe('review-decision rail', () => {
   });
 
   // ─── MUTATION KILL round 2 ───────────────────────────────────
-  it('idp_verified passes requireVerifiedActorsForApproval (assurance threshold)', () => {
-    // Kill: actorAssurance !== 'idp_verified' → true (blocks idp_verified)
+  it('idp_verified meets the assurance threshold', () => {
     const state = makeState('PLAN_REVIEW', {
       initiatedByIdentity: initiatorIdentity,
       plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
@@ -818,10 +763,9 @@ describe('review-decision rail', () => {
       {
         verdict: 'approve',
         rationale: 'ok',
-        decidedBy: 'reviewer-1',
         decisionIdentity: { ...reviewerIdentity, actorAssurance: 'idp_verified' as const },
       },
-      { ...baseCtx, policy: withPolicy({ requireVerifiedActorsForApproval: true }) },
+      { ...baseCtx, policy: withPolicy({}) },
     );
     // idp_verified meets the threshold — should NOT be blocked
     expect(result.kind).toBe('ok');
@@ -842,7 +786,7 @@ describe('review-decision rail', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'LGTM', decidedBy: 'reviewer' },
+        { verdict: 'approve', rationale: 'LGTM', decisionIdentity: reviewerIdentity },
         baseCtx,
       );
       expect(result.kind).toBe('ok');
@@ -858,7 +802,7 @@ describe('review-decision rail', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'LGTM', decidedBy: 'reviewer' },
+        { verdict: 'approve', rationale: 'LGTM', decisionIdentity: reviewerIdentity },
         baseCtx,
       );
       expect(result).toMatchObject({
@@ -874,7 +818,7 @@ describe('review-decision rail', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'LGTM', decidedBy: 'reviewer' },
+        { verdict: 'approve', rationale: 'LGTM', decisionIdentity: reviewerIdentity },
         baseCtx,
       );
       expect(result).toMatchObject({
@@ -903,7 +847,7 @@ describe('review-decision rail', () => {
         });
         const result = executeReviewDecision(
           state,
-          { verdict: 'approve', rationale: 'LGTM', decidedBy: 'reviewer' },
+          { verdict: 'approve', rationale: 'LGTM', decisionIdentity: reviewerIdentity },
           baseCtx,
         );
         expect(result.kind).toBe('ok');
@@ -943,7 +887,7 @@ describe('review-decision rail', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'LGTM', decidedBy: 'reviewer' },
+        { verdict: 'approve', rationale: 'LGTM', decisionIdentity: reviewerIdentity },
         baseCtx,
       );
       expect(result).toMatchObject({
@@ -960,7 +904,7 @@ describe('review-decision rail', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'LGTM', decidedBy: 'reviewer' },
+        { verdict: 'approve', rationale: 'LGTM', decisionIdentity: reviewerIdentity },
         baseCtx,
       );
       expect(result).toMatchObject({
@@ -982,7 +926,7 @@ describe('review-decision rail', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'LGTM', decidedBy: 'reviewer' },
+        { verdict: 'approve', rationale: 'LGTM', decisionIdentity: reviewerIdentity },
         baseCtx,
       );
       expect(result).toMatchObject({
@@ -1008,7 +952,7 @@ describe('review-decision rail', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'override', decidedBy: 'reviewer' },
+        { verdict: 'approve', rationale: 'override', decisionIdentity: reviewerIdentity },
         baseCtx,
       );
       expect(result.kind).toBe('ok');
@@ -1045,12 +989,12 @@ describe('review-decision rail', () => {
       const ctx = { ...baseCtx, digest: hashText };
       const acceptedResult = executeReviewDecision(
         accepted,
-        { verdict: 'approve', rationale: 'approved', decidedBy: 'reviewer-1' },
+        { verdict: 'approve', rationale: 'approved', decisionIdentity: reviewerIdentity },
         ctx,
       );
       const exhaustedResult = executeReviewDecision(
         exhausted,
-        { verdict: 'approve', rationale: 'approved', decidedBy: 'reviewer-1' },
+        { verdict: 'approve', rationale: 'approved', decisionIdentity: reviewerIdentity },
         ctx,
       );
       expect(acceptedResult.kind).toBe('ok');
@@ -1089,7 +1033,11 @@ describe('review-decision rail', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'changes_requested', rationale: 'Needs work', decidedBy: 'reviewer' },
+        {
+          verdict: 'changes_requested',
+          rationale: 'Needs work',
+          decisionIdentity: reviewerIdentity,
+        },
         baseCtx,
       );
       expect(result.kind).toBe('ok');
@@ -1116,7 +1064,6 @@ describe('review-decision rail', () => {
         {
           verdict: 'changes_requested',
           rationale: 'Needs changes',
-          decidedBy: 'same-person',
           decisionIdentity: { ...reviewerIdentity, actorId: 'same-person' },
         },
         { ...baseCtx, policy: withPolicy({ allowSelfApproval: false }) },
@@ -1137,14 +1084,12 @@ describe('review-decision rail', () => {
         {
           verdict: 'approve',
           rationale: 'ok',
-          decidedBy: 'reviewer-1',
           decisionIdentity: { ...reviewerIdentity, actorAssurance: 'best_effort' as const },
         },
         {
           ...baseCtx,
           policy: withPolicy({
             minimumActorAssuranceForApproval: 'claim_validated',
-            // NOT using legacy requireVerifiedActorsForApproval
           }),
         },
       );
@@ -1166,7 +1111,6 @@ describe('review-decision rail', () => {
         {
           verdict: 'approve',
           rationale: 'ok',
-          decidedBy: 'reviewer-1',
           decisionIdentity: { ...reviewerIdentity, actorAssurance: 'claim_validated' as const },
         },
         {
@@ -1194,7 +1138,6 @@ describe('review-decision rail', () => {
         {
           verdict: 'approve',
           rationale: 'ok',
-          decidedBy: 'reviewer-1',
           decisionIdentity: { ...reviewerIdentity, actorAssurance: 'claim_validated' as const },
         },
         {
@@ -1230,7 +1173,11 @@ describe('review-decision rail', () => {
 
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'approve stale subject', decidedBy: 'reviewer-1' },
+        {
+          verdict: 'approve',
+          rationale: 'approve stale subject',
+          decisionIdentity: reviewerIdentity,
+        },
         baseCtx,
       );
 
@@ -1260,7 +1207,11 @@ describe('review-decision rail', () => {
 
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'approve pending subject', decidedBy: 'reviewer-1' },
+        {
+          verdict: 'approve',
+          rationale: 'approve pending subject',
+          decisionIdentity: reviewerIdentity,
+        },
         baseCtx,
       );
 
@@ -1301,7 +1252,11 @@ describe('review-decision rail', () => {
 
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'approve recaptured subject', decidedBy: 'reviewer-1' },
+        {
+          verdict: 'approve',
+          rationale: 'approve recaptured subject',
+          decisionIdentity: reviewerIdentity,
+        },
         baseCtx,
       );
 
@@ -1332,7 +1287,11 @@ describe('review-decision rail', () => {
 
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'approve current subject', decidedBy: 'reviewer-1' },
+        {
+          verdict: 'approve',
+          rationale: 'approve current subject',
+          decisionIdentity: reviewerIdentity,
+        },
         baseCtx,
       );
 
@@ -1351,7 +1310,6 @@ describe('review-decision rail', () => {
         {
           verdict: 'approve',
           rationale: 'ok',
-          decidedBy: 'reviewer-1',
           decisionIdentity: { ...reviewerIdentity, actorAssurance: 'idp_verified' as const },
         },
         {
@@ -1376,13 +1334,12 @@ describe('review-decision rail', () => {
         {
           verdict: 'approve',
           rationale: 'ok',
-          decidedBy: 'reviewer-1',
           decisionIdentity: { ...reviewerIdentity, actorAssurance: 'best_effort' as const },
         },
         {
           ...baseCtx,
           policy: withPolicy({
-            // Neither requireVerifiedActorsForApproval nor minimumActorAssuranceForApproval set
+            // No assurance threshold is set.
           }),
         },
       );
@@ -1401,7 +1358,7 @@ describe('review-decision rail', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
+        { verdict: 'approve', rationale: 'ok', decisionIdentity: reviewerIdentity },
         baseCtx,
       );
       expect(result.kind).toBe('ok');
@@ -1420,7 +1377,7 @@ describe('review-decision rail', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'changes_requested', rationale: 'rework', decidedBy: 'reviewer-1' },
+        { verdict: 'changes_requested', rationale: 'rework', decisionIdentity: reviewerIdentity },
         baseCtx,
       );
       expect(result.kind).toBe('ok');
@@ -1445,7 +1402,7 @@ describe('review-decision rail', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'changes_requested', rationale: 'rework', decidedBy: 'reviewer-1' },
+        { verdict: 'changes_requested', rationale: 'rework', decisionIdentity: reviewerIdentity },
         baseCtx,
       );
       expect(result.kind).toBe('ok');
@@ -1463,7 +1420,7 @@ describe('review-decision rail', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'changes_requested', rationale: 'rework', decidedBy: 'reviewer-1' },
+        { verdict: 'changes_requested', rationale: 'rework', decisionIdentity: reviewerIdentity },
         baseCtx,
       );
       expect(result.kind).toBe('ok');
@@ -1481,7 +1438,7 @@ describe('review-decision rail', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'reject', rationale: 'rejected', decidedBy: 'reviewer-1' },
+        { verdict: 'reject', rationale: 'rejected', decisionIdentity: reviewerIdentity },
         baseCtx,
       );
       expect(result.kind).toBe('ok');
@@ -1500,7 +1457,7 @@ describe('review-decision rail', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'reject', rationale: 'rejected', decidedBy: 'reviewer-1' },
+        { verdict: 'reject', rationale: 'rejected', decisionIdentity: reviewerIdentity },
         baseCtx,
       );
       expect(result.kind).toBe('ok');
@@ -1510,7 +1467,10 @@ describe('review-decision rail', () => {
       }
     });
 
-    it('actorAssurance fallback to best_effort when undefined (survivor kill)', () => {
+    it('a decision identity missing actorAssurance fails closed at the schema and rail boundaries', () => {
+      const malformed = identityWithoutAssurance();
+      // The persisted decision contract requires the assurance tier.
+      expect(DecisionIdentity.safeParse(malformed).success).toBe(false);
       const state = makeState('PLAN_REVIEW', {
         initiatedByIdentity: initiatorIdentity,
       });
@@ -1519,37 +1479,7 @@ describe('review-decision rail', () => {
         {
           verdict: 'approve',
           rationale: 'ok',
-          decidedBy: 'reviewer-1',
-          decisionIdentity: identityWithoutAssurance(),
-        },
-        {
-          ...baseCtx,
-          policy: withPolicy({ requireVerifiedActorsForApproval: true }),
-        },
-      );
-      // Should still work since undefined falls back to 'best_effort' which fails requirement
-      expect(result.kind).toBe('blocked');
-      if (result.kind === 'blocked') {
-        expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
-        // Pin the explicit string fallback so a literal mutation cannot survive:
-        // the rendered message must contain "best_effort" as the current assurance.
-        expect(result.reason).toContain('best_effort');
-        expect(result.reason).toContain('claim_validated');
-      }
-    });
-
-    it('actorAssurance fallback to best_effort under explicit minimumAssurance (P34 path)', () => {
-      // Triggers the second fallback site at line 221.
-      const state = makeState('PLAN_REVIEW', {
-        initiatedByIdentity: initiatorIdentity,
-      });
-      const result = executeReviewDecision(
-        state,
-        {
-          verdict: 'approve',
-          rationale: 'ok',
-          decidedBy: 'reviewer-1',
-          decisionIdentity: identityWithoutAssurance(),
+          decisionIdentity: malformed,
         },
         {
           ...baseCtx,
@@ -1559,7 +1489,7 @@ describe('review-decision rail', () => {
       expect(result.kind).toBe('blocked');
       if (result.kind === 'blocked') {
         expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
-        expect(result.reason).toContain('best_effort');
+        expect(result.reason).toContain('unknown');
         expect(result.reason).toContain('claim_validated');
       }
     });
@@ -1583,7 +1513,7 @@ describe('review-decision rail', () => {
         {
           verdict: 'approve',
           rationale: 'ok',
-          decidedBy: 'reviewer-1',
+          decisionIdentity: reviewerIdentity,
         },
         baseCtx,
       );
@@ -1609,7 +1539,7 @@ describe('review-decision rail', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
+        { verdict: 'approve', rationale: 'ok', decisionIdentity: reviewerIdentity },
         baseCtx,
       );
       expect(result).toMatchObject({
@@ -1631,7 +1561,7 @@ describe('review-decision rail', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
+        { verdict: 'approve', rationale: 'ok', decisionIdentity: reviewerIdentity },
         baseCtx,
       );
       expect(result).toMatchObject({
@@ -1669,7 +1599,7 @@ describe('review-decision rail', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
+        { verdict: 'approve', rationale: 'ok', decisionIdentity: reviewerIdentity },
         baseCtx,
       );
       expect(result).toMatchObject({
@@ -1692,7 +1622,7 @@ describe('review-decision rail', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'override', decidedBy: 'reviewer-1' },
+        { verdict: 'approve', rationale: 'override', decisionIdentity: reviewerIdentity },
         baseCtx,
       );
       expect(result.kind).toBe('ok');
@@ -1720,7 +1650,7 @@ describe('review-decision rail', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'override', decidedBy: 'reviewer-1' },
+        { verdict: 'approve', rationale: 'override', decisionIdentity: reviewerIdentity },
         baseCtx,
       );
       expect(result).toMatchObject({
@@ -1743,7 +1673,7 @@ describe('review-decision rail', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'override', decidedBy: 'reviewer-1' },
+        { verdict: 'approve', rationale: 'override', decisionIdentity: reviewerIdentity },
         baseCtx,
       );
       expect(result).toMatchObject({
@@ -1768,7 +1698,7 @@ describe('review-decision rail', () => {
         });
         const result = executeReviewDecision(
           state,
-          { verdict: 'approve', rationale: 'override', decidedBy: 'reviewer-1' },
+          { verdict: 'approve', rationale: 'override', decisionIdentity: reviewerIdentity },
           baseCtx,
         );
         expect(result).toMatchObject({
@@ -1791,7 +1721,7 @@ describe('review-decision rail', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'override', decidedBy: 'reviewer-1' },
+        { verdict: 'approve', rationale: 'override', decisionIdentity: reviewerIdentity },
         baseCtx,
       );
       expect(result).toMatchObject({
@@ -1814,7 +1744,7 @@ describe('review-decision rail', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
+        { verdict: 'approve', rationale: 'ok', decisionIdentity: reviewerIdentity },
         baseCtx,
       );
       expect(result).toMatchObject({
@@ -1842,7 +1772,7 @@ describe('review-decision rail', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
+        { verdict: 'approve', rationale: 'ok', decisionIdentity: reviewerIdentity },
         baseCtx,
       );
       // The plan gate is phase-guarded off; a pending plan completion cannot
@@ -1863,7 +1793,7 @@ describe('review-decision rail', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'override', decidedBy: 'reviewer-1' },
+        { verdict: 'approve', rationale: 'override', decisionIdentity: reviewerIdentity },
         baseCtx,
       );
       // A pending obligation is not completed review evidence — the override
@@ -1895,7 +1825,7 @@ describe('review-decision rail', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
+        { verdict: 'approve', rationale: 'ok', decisionIdentity: reviewerIdentity },
         baseCtx,
       );
       expect(result).toMatchObject({
@@ -1922,7 +1852,7 @@ describe('review-decision rail', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
+        { verdict: 'approve', rationale: 'ok', decisionIdentity: reviewerIdentity },
         baseCtx,
       );
       expect(result).toMatchObject({

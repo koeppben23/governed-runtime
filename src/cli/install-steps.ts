@@ -30,19 +30,8 @@ import {
 } from './codex-plugin-install.js';
 import { InstallError, pushError } from './install-helpers.js';
 import {
-  type CliArgs,
-  type FileOp,
-  type InstallPlatform,
-  type RollbackEntry,
-  type CliError,
-  type CliNotice,
-  type InstallErrorCode,
-  FLOWGUARD_TARBALL_PATTERN,
-  PACKAGE_VERSION,
   computeMandatesDigest,
   detectPackageManager,
-  mergeOpencodeJson,
-  mergePackageJson,
   reviewerDefinitionForPlatform,
   resolveOpencodeConfigPath,
   resolveTarget,
@@ -50,6 +39,18 @@ import {
   verifyTarballChecksum,
   writeIfAbsent,
 } from './install-helpers.js';
+import {
+  FLOWGUARD_TARBALL_PATTERN,
+  PACKAGE_VERSION,
+  type CliArgs,
+  type CliError,
+  type CliNotice,
+  type FileOp,
+  type InstallErrorCode,
+  type InstallPlatform,
+} from './install-types.js';
+import { mergeOpencodeJson, mergePackageJson } from './install-json.js';
+import type { RollbackEntry } from './install-helpers.js';
 import type { InstallMutationSink } from './install-mutation-types.js';
 import { assertManagedMandatesOwnership } from './install-ownership.js';
 import { ensureDirTracked, MutationJournal } from './install-transaction.js';

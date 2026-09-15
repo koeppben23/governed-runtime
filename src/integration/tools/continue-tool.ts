@@ -11,22 +11,13 @@
  * @version v1
  */
 
-import {
-  withMutableSessionTransaction,
-  withMutableSession,
-  withReadOnlySession,
-  formatBlocked,
-  appendNextAction,
-  writeStateWithArtifacts,
-} from './helpers.js';
+import { withReadOnlySession, formatBlocked, enrichWithNextAction } from './helpers.js';
 import { formatError } from './error-format.js';
 import { USER_GATES, TERMINAL } from '../../machine/topology.js';
 import { resolveNextAction } from '../../machine/next-action.js';
 import { buildProductNextAction } from '../../presentation/next-action-copy.js';
-import type { MutableSession, ToolDefinition } from './helpers.js';
+import type { ToolDefinition } from './helpers.js';
 import type { SessionState } from '../../state/schema.js';
-import { bindExternalReviewEvidence } from '../review/transport-evidence.js';
-import { REVIEW_IDENTITY_REJECTION_FIELD } from '../../shared/flowguard-identifiers.js';
 
 const PHASE_GUIDANCE: Record<string, { status: string | ((state: SessionState) => string) }> = {
   TICKET: {
@@ -86,9 +77,7 @@ export const continue_cmd: ToolDefinition = {
   args: {},
   async execute(_args, context) {
     try {
-      const mutableSession = await tryBindTransportEvidence(context);
-      if (typeof mutableSession === 'string') return mutableSession;
-      const { state } = mutableSession ?? (await withReadOnlySession(context)) ?? {};
+      const { state } = (await withReadOnlySession(context)) ?? {};
       if (!state) return formatBlocked('NO_SESSION');
       const { phase } = state;
 
@@ -128,7 +117,7 @@ function formatUserGateGuidance(state: SessionState): string {
     nextAction,
     state.phase,
     state.error?.code === 'ABORTED',
-    state.archiveStatus ?? null,
+    state.regulatedArchiveStatus ?? null,
   );
   return formatContinueResponse(
     {
@@ -168,69 +157,11 @@ function formatDeterministicGuidance(state: SessionState, guidance: { status: st
   );
 }
 function formatContinueResponse(value: Record<string, unknown>, state: SessionState): string {
-  const response = JSON.parse(appendNextAction(JSON.stringify(value), state)) as Record<
-    string,
-    unknown
-  >;
+  const response = enrichWithNextAction(value, state);
   const productNext = response.productNextAction as { text?: unknown } | undefined;
   const commands = (productNext as { commands?: unknown } | undefined)?.commands;
   if (Array.isArray(commands) && commands.every((command) => typeof command === 'string')) {
     response.next = commands.join(', ');
   }
   return JSON.stringify(response);
-}
-
-async function tryBindTransportEvidence(context: {
-  sessionID: string;
-  worktree: string;
-  directory: string;
-}): Promise<MutableSession | string> {
-  const probe = await withMutableSession(context);
-  const probeResult = await bindExternalReviewEvidence(
-    probe.sessDir,
-    probe.state,
-    context.sessionID,
-    probe.ctx.now(),
-  );
-  if (probeResult.status === 'none' || probeResult.status === 'already_bound') return probe;
-  if (probeResult.status === 'invalid') {
-    return formatTransportEvidenceBlock(probeResult);
-  }
-
-  return withMutableSessionTransaction(context, async (session) => {
-    const result = await bindExternalReviewEvidence(
-      session.sessDir,
-      session.state,
-      context.sessionID,
-      session.ctx.now(),
-    );
-    if (result.status === 'none' || result.status === 'already_bound') return session;
-    if (result.status === 'invalid') {
-      return formatTransportEvidenceBlock(result);
-    }
-    await writeStateWithArtifacts(session.sessDir, result.state);
-    return { ...session, state: result.state };
-  });
-}
-
-function formatTransportEvidenceBlock(
-  result: Extract<Awaited<ReturnType<typeof bindExternalReviewEvidence>>, { status: 'invalid' }>,
-): string {
-  const vars = {
-    reason: result.reason,
-    ...(result.vars ?? {}),
-    ...(result.obligationId ? { obligationId: result.obligationId } : {}),
-  };
-  return formatBlocked(
-    result.code,
-    vars,
-    result.rejectionReason
-      ? {
-          [REVIEW_IDENTITY_REJECTION_FIELD]: {
-            reason: result.rejectionReason,
-            ...(result.obligationId ? { obligationId: result.obligationId } : {}),
-          },
-        }
-      : undefined,
-  );
 }

@@ -178,6 +178,7 @@ describe('reviewer contract E2E (Git fixture)', () => {
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       reviewedBy: { sessionId: 'ses_x' },
       reviewedAt: '2026-08-12T00:00:00.000Z',
       attestation: {
@@ -270,6 +271,7 @@ describe('reviewer contract E2E (Git fixture)', () => {
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       reviewedBy: { sessionId: 'ses_x' },
       reviewedAt: '2026-08-12T00:00:00.000Z',
       attestation: {
@@ -309,6 +311,7 @@ describe('reviewer contract E2E (Git fixture)', () => {
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       reviewedBy: { sessionId: 'ses_x' },
       reviewedAt: '2026-08-12T00:00:00.000Z',
       attestation: {
@@ -348,6 +351,7 @@ describe('reviewer contract E2E (Git fixture)', () => {
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       reviewedBy: { sessionId: 'ses_x' },
       reviewedAt: '2026-08-12T00:00:00.000Z',
       attestation: {
@@ -383,6 +387,7 @@ describe('reviewer contract E2E (Git fixture)', () => {
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       reviewedBy: { sessionId: 'ses_x' },
       reviewedAt: '2026-08-12T00:00:00.000Z',
       attestation: {
@@ -415,6 +420,7 @@ describe('reviewer contract E2E (Git fixture)', () => {
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       reviewedBy: { sessionId: 'ses_x' },
       reviewedAt: '2026-08-12T00:00:00.000Z',
       attestation: {
@@ -456,6 +462,7 @@ describe('reviewer contract E2E (Git fixture)', () => {
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       reviewedBy: { sessionId: 'ses_x' },
       reviewedAt: '2026-08-12T00:00:00.000Z',
       attestation: {
@@ -495,6 +502,7 @@ describe('reviewer contract E2E (Git fixture)', () => {
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       reviewedBy: { sessionId: 'ses_x' },
       reviewedAt: '2026-08-12T00:00:00.000Z',
       attestation: {
@@ -521,6 +529,7 @@ describe('reviewer contract E2E (Git fixture)', () => {
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       reviewedBy: { sessionId: 'ses_x' },
       reviewedAt: '2026-08-12T00:00:00.000Z',
       attestation: {
@@ -557,6 +566,7 @@ describe('reviewer contract E2E (Git fixture)', () => {
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       reviewedBy: { sessionId: 'ses_x' },
       reviewedAt: '2026-08-12T00:00:00.000Z',
       attestation: {
@@ -608,6 +618,7 @@ describe('reviewer contract E2E (Git fixture)', () => {
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       reviewedBy: { sessionId: 'ses_x' },
       reviewedAt: '2026-08-12T00:00:00.000Z',
       attestation: {
@@ -632,6 +643,7 @@ describe('reviewer contract E2E (Git fixture)', () => {
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       reviewedBy: { sessionId: 'ses_x' },
       reviewedAt: '2026-08-12T00:00:00.000Z',
       attestation: {
@@ -656,6 +668,7 @@ describe('reviewer contract E2E (Git fixture)', () => {
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       reviewedBy: { sessionId: 'ses_x' },
       reviewedAt: '2026-08-12T00:00:00.000Z',
       attestation: {

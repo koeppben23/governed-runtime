@@ -193,11 +193,11 @@ export function formatRailResult(
     nextAction,
     result.state.phase,
     aborted,
-    result.state.archiveStatus ?? null,
+    result.state.regulatedArchiveStatus ?? null,
     result.state,
   );
   const reviewDecision = result.state.reviewDecision;
-  const { archiveStatus } = result.state;
+  const archiveStatus = result.state.regulatedArchiveStatus;
   const reviewLoop = getReviewLoopProgress(result.state);
   const presentation = options.evidenceApprovalCompletion
     ? buildEvidenceApprovalCompletionPresentation(result.state)
@@ -225,7 +225,7 @@ export function formatRailResult(
           reviewDecision: {
             verdict: reviewDecision.verdict,
             rationale: reviewDecision.rationale,
-            decidedBy: reviewDecision.decidedBy,
+            decisionIdentity: reviewDecision.decisionIdentity,
             decidedAt: reviewDecision.decidedAt,
           },
         }
@@ -604,32 +604,6 @@ function isPersistedAbort(result: Extract<RailResult, { kind: 'ok' }>): boolean 
 }
 
 /**
- * Append NextAction routing metadata to a custom JSON response string.
- *
- * Use this when a tool builds custom JSON (not via formatRailResult)
- * but still needs the machine-readable NextAction routing fields.
- *
- * Delegates to {@link enrichWithNextAction} for the actual logic —
- * this function is a thin JSON-parse/serialize wrapper for backwards
- * compatibility.
- *
- * Contract: the appended `nextAction`/`productNextAction` fields are
- * machine-readable ROUTING METADATA, not a pre-rendered footer. On surfaces
- * that carry `presentation.markdown`, the user-facing next action is owned by
- * the rendered PresentationConclusion (see src/presentation/markdown.ts); the
- * agent must not additionally print these JSON fields as a duplicate
- * `Next action:` line. On surfaces without `presentation.markdown`, the command
- * template projects a single `Next action:` line from `productNextAction`.
- *
- * @param jsonStr - The JSON string to augment (will be parsed, extended, re-serialized).
- * @param state - Current session state for NextAction resolution.
- * @returns JSON string with nextAction routing fields.
- */
-export function appendNextAction(jsonStr: string, state: SessionState): string {
-  return JSON.stringify(enrichWithNextAction(JSON.parse(jsonStr), state));
-}
-
-/**
  * Machine-readable NextAction routing fields appended by
  * {@link enrichWithNextAction}. These are NOT a rendered footer — user-facing
  * next-action text is owned by the presentation conclusion where a rendered
@@ -644,10 +618,7 @@ export interface NextActionFields {
 /**
  * Enrich an arbitrary value object with NextAction fields.
  *
- * This is the canonical implementation — {@link appendNextAction}
- * delegates to it for the JSON-based path. Callers that already work
- * with objects (instead of pre-serialized JSON strings) should use this
- * function directly to avoid unnecessary parse/serialize rounds.
+ * Callers serialize the enriched object only at their response boundary.
  *
  * @param value - The object to enrich.
  * @param state - Current session state for NextAction resolution.
@@ -662,7 +633,7 @@ export function enrichWithNextAction<T extends Record<string, unknown>>(
     nextAction,
     state.phase,
     state.error?.code === 'ABORTED',
-    state.archiveStatus ?? null,
+    state.regulatedArchiveStatus ?? null,
     state,
   );
   return {
@@ -672,9 +643,6 @@ export function enrichWithNextAction<T extends Record<string, unknown>>(
     productNextAction: productNext,
   };
 }
-
-// Compatibility export for existing tool consumers. The shared index is authoritative.
-export { projectMarkdownHeadings as extractSections } from '../../shared/markdown-sections.js';
 
 // ─── Session Bootstrap Wrappers ────────────────────────────────────────────────
 

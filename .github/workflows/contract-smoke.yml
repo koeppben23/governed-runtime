@@ -31,8 +31,8 @@ jobs:
         run: npm run check
         env:
           FORCE_COLOR: '0'
-      - name: Run review validation host contract tests
-        run: npm run test:review-validation-host-contract
+      - name: Run structured review host contract tests
+        run: npm run test:review-host-contract
         env:
           FORCE_COLOR: '0'
       - name: Run Mode-B review contract tests

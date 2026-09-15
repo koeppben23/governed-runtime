@@ -23,7 +23,7 @@ import {
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
-import { computeRecordDigest } from '../state/evidence-plan.js';
+import { makePlanRevision } from '../state/evidence-test-constants.js';
 import { fileURLToPath } from 'node:url';
 
 // The test workspace carries a fake `.git` marker (not a real repository), but
@@ -61,6 +61,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
   const fp = await computeFingerprint(worktree);
   const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
   const obligationId = '11111111-1111-4111-8111-111111111111';
+  const planCurrent = makePlanRevision({ body: '## Plan\n1. Fix auth', createdAt: now });
 
   await fs.mkdir(sessDir, { recursive: true });
   await writeState(
@@ -73,24 +74,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
         createdAt: now,
       },
       plan: {
-        current: {
-          body: '## Plan\n1. Fix auth',
-          digest: 'plan-digest',
-          sections: ['Plan'],
-          createdAt: now,
-          recordDigest: computeRecordDigest({
-            contentDigest: 'plan-digest',
-            planVersion: 1,
-            supersedesRecordDigest: null,
-            originatingReviewObligationId: null,
-            revisionReason: null,
-          }),
-          planVersion: 1,
-          supersedesRecordDigest: null,
-          originatingReviewObligationId: null,
-          revisionReason: null,
-          lineageStatus: 'verified' as const,
-        },
+        current: planCurrent,
         history: [],
         reviewCompletion: 'pending',
         reviewFindings: [],
@@ -99,17 +83,12 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
         iteration: 0,
         maxIterations: 3,
         prevDigest: null,
-        currDigest: 'plan-digest',
+        currDigest: planCurrent.digest,
         revisionDelta: 'major',
         verdict: 'changes_requested',
       },
       policySnapshot: {
         ...makeState('PLAN').policySnapshot,
-        selfReview: {
-          subagentEnabled: true,
-          fallbackToSelf: false,
-          strictEnforcement: true,
-        },
       },
       reviewAssurance: {
         assuranceSchemaVersion: 'review-assurance.v6' as const,
@@ -125,7 +104,9 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
             planVersion: 1,
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
-            maxReviewerOutputRepairAttempts: 1,
+            maxReviewerAttempts: 1,
+            reviewProfile: 'core',
+            profileSource: 'policy_default',
             createdAt: now,
             pluginHandshakeAt: null,
             status: 'pending',
@@ -263,138 +244,6 @@ describe('plugin bootstrap fail-closed', () => {
     } finally {
       await fs.rm(repo, { recursive: true, force: true });
     }
-  });
-
-  // ═══════════════════════════════════════════════════════════════════════════════
-  // BUG-08: Subagent type authorization (defense-in-depth)
-  // ═══════════════════════════════════════════════════════════════════════════════
-  describe('BUG-08: subagent type authorization', () => {
-    it('BAD — flowguard-reviewer without a pending obligation is blocked', async () => {
-      const ws = await createTestWorkspace();
-      try {
-        const hooks = await FlowGuardAuditPlugin(
-          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
-        );
-        const beforeHook = hooks['tool.execute.before']!;
-
-        // Reviewer Tasks require a FlowGuard-issued pending obligation and cannot
-        // be started speculatively. Without a hydrated session the audit session
-        // authority is unavailable and the dispatch fails closed before any
-        // execution record can be registered.
-        const input = { tool: 'task', sessionID: crypto.randomUUID(), callID: 'c1' };
-        const output = { args: { subagent_type: 'flowguard-reviewer', prompt: 'test prompt' } };
-        await expect(beforeHook(input, output)).rejects.toThrow(
-          'AUDIT_SESSION_AUTHORITY_UNAVAILABLE',
-        );
-      } finally {
-        await ws.cleanup();
-      }
-    });
-
-    it('BAD — non-reviewer subagent type "explore" is blocked', async () => {
-      const ws = await createTestWorkspace();
-      try {
-        const hooks = await FlowGuardAuditPlugin(
-          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
-        );
-        const beforeHook = hooks['tool.execute.before']!;
-
-        const input = { tool: 'task', sessionID: crypto.randomUUID(), callID: 'c1' };
-        const output = { args: { subagent_type: 'explore', prompt: 'search code' } };
-        await expect(beforeHook(input, output)).rejects.toThrow('SUBAGENT_TYPE_UNAUTHORIZED');
-      } finally {
-        await ws.cleanup();
-      }
-    });
-
-    it('BAD — non-reviewer subagent type "general" is blocked', async () => {
-      const ws = await createTestWorkspace();
-      try {
-        const hooks = await FlowGuardAuditPlugin(
-          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
-        );
-        const beforeHook = hooks['tool.execute.before']!;
-
-        const input = { tool: 'task', sessionID: crypto.randomUUID(), callID: 'c1' };
-        const output = { args: { subagent_type: 'general', prompt: 'do something' } };
-        await expect(beforeHook(input, output)).rejects.toThrow('SUBAGENT_TYPE_UNAUTHORIZED');
-      } finally {
-        await ws.cleanup();
-      }
-    });
-
-    it('BAD — arbitrary subagent type "malicious-agent" is blocked', async () => {
-      const ws = await createTestWorkspace();
-      try {
-        const hooks = await FlowGuardAuditPlugin(
-          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
-        );
-        const beforeHook = hooks['tool.execute.before']!;
-
-        const input = { tool: 'task', sessionID: crypto.randomUUID(), callID: 'c1' };
-        const output = { args: { subagent_type: 'malicious-agent', prompt: 'bypass' } };
-        await expect(beforeHook(input, output)).rejects.toThrow('SUBAGENT_TYPE_UNAUTHORIZED');
-      } finally {
-        await ws.cleanup();
-      }
-    });
-
-    it('CORNER — empty subagent_type passes through (generic task, not a subagent spawn)', async () => {
-      const ws = await createTestWorkspace();
-      try {
-        const hooks = await FlowGuardAuditPlugin(
-          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
-        );
-        const beforeHook = hooks['tool.execute.before']!;
-
-        const input = { tool: 'task', sessionID: crypto.randomUUID(), callID: 'c1' };
-        const output = { args: { subagent_type: '', prompt: 'something' } };
-        await expect(beforeHook(input, output)).resolves.toBeUndefined();
-      } finally {
-        await ws.cleanup();
-      }
-    });
-
-    it('CORNER — missing subagent_type field passes through (undefined → empty)', async () => {
-      const ws = await createTestWorkspace();
-      try {
-        const hooks = await FlowGuardAuditPlugin(
-          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
-        );
-        const beforeHook = hooks['tool.execute.before']!;
-
-        const input = { tool: 'task', sessionID: crypto.randomUUID(), callID: 'c1' };
-        const output = { args: { prompt: 'no subagent_type field' } };
-        await expect(beforeHook(input, output)).resolves.toBeUndefined();
-      } finally {
-        await ws.cleanup();
-      }
-    });
-
-    it('EDGE — error message includes the blocked subagent type name', async () => {
-      const ws = await createTestWorkspace();
-      try {
-        const hooks = await FlowGuardAuditPlugin(
-          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
-        );
-        const beforeHook = hooks['tool.execute.before']!;
-
-        const input = { tool: 'task', sessionID: crypto.randomUUID(), callID: 'c1' };
-        const output = { args: { subagent_type: 'rogue-agent', prompt: 'test' } };
-        try {
-          await beforeHook(input, output);
-          expect.fail('should have thrown');
-        } catch (err) {
-          expect(err).toBeInstanceOf(Error);
-          const error = err as Error;
-          expect(error.name).toBe('FlowGuardEnforcementError');
-          expect(error.message).toContain('rogue-agent');
-          expect(error.message).toContain('SUBAGENT_TYPE_UNAUTHORIZED');
-        }
-      } finally {
-        await ws.cleanup();
-      }
-    });
   });
 
   // ═══════════════════════════════════════════════════════════════════════════════

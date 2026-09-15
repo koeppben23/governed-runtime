@@ -1,9 +1,9 @@
 /**
  * @module integration/plugin-beforehooks.test
  * @description Direct tests for the before-hook enforcement gate:
- *              command scope, reviewer task authorization, host tool
- *              fail-closed resolution, verdict null-arg stripping, and the
- *              reconcile-before-side-effects ordering.
+ *              command scope, host tool fail-closed resolution, verdict
+ *              null-arg stripping, and the reconcile-before-side-effects
+ *              ordering.
  *
  * @test-policy HAPPY, BAD, CORNER
  * @version v1
@@ -18,21 +18,16 @@ import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import type { AuditDeps } from './plugin-audit.js';
 import type { PluginWorkspace } from './plugin-workspace.js';
 import { createSessionState } from './review/enforcement/enforcement.js';
-import type { PendingReview } from './review/enforcement/types.js';
-import { pendingObligation } from './plugin-host-task-diagnostics-helpers.js';
-import { hashCanonicalReviewContent, normalizeReviewContent } from '../shared/review-subject.js';
-import { makeState, FROZEN_IMPLEMENTATION_BASE, IMPL_EVIDENCE } from '../fixtures.js';
+import { makeState, FROZEN_IMPLEMENTATION_BASE } from '../fixtures.js';
 import { writeState, readState } from '../adapters/persistence.js';
 import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
 import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
-import { createTestWorkspace } from './test-helpers.js';
+import { createTestWorkspace, repositoryDiscoveryContext } from './test-helpers.js';
 import type { SessionState } from '../state/schema.js';
-import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
-import { createReviewObligation } from './review/assurance.js';
 
 // The test workspace carries a fake `.git` marker rather than a real
 // repository; the git prerequisite gate for mutating host tools treats it as a
@@ -359,25 +354,6 @@ describe('toolBefore — command scope', () => {
     await expect(
       toolBefore(runtime, { tool: 'task', sessionID: SESSION_ID }, { args: { subagent_type: '' } }),
     ).rejects.toThrow('COMMAND_SCOPE_DENIED');
-  });
-
-  it('allows a generic task in IMPL_REVIEW during /check', async () => {
-    const ws = await createTestWorkspace();
-    try {
-      const sessDir = path.join(ws.tmpDir, 'sess-impl-review');
-      await seedSession(sessDir, makeState('IMPL_REVIEW'));
-      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
-      runtime.activeCommandScopes.set(SESSION_ID, 'check');
-      await expect(
-        toolBefore(
-          runtime,
-          { tool: 'task', sessionID: SESSION_ID },
-          { args: { subagent_type: '' } },
-        ),
-      ).resolves.toBeUndefined();
-    } finally {
-      await ws.cleanup();
-    }
   });
 
   it('allows flowguard_review_implementation in IMPL_REVIEW during /check', async () => {
@@ -740,425 +716,6 @@ describe('toolBefore — command scope', () => {
   });
 });
 
-describe('toolBefore — reviewer task authorization', () => {
-  it('blocks a reviewer task without a host callID', async () => {
-    const runtime = makeRuntime();
-    await expect(
-      toolBefore(
-        runtime,
-        { tool: 'task', sessionID: SESSION_ID, callID: '' },
-        { args: { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'x' } },
-      ),
-    ).rejects.toThrow('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE');
-  });
-
-  it('blocks unauthorized subagent types', async () => {
-    const runtime = makeRuntime();
-    await expect(
-      toolBefore(
-        runtime,
-        { tool: 'task', sessionID: SESSION_ID, callID: 'c1' },
-        { args: { subagent_type: 'rogue-agent', prompt: 'x' } },
-      ),
-    ).rejects.toThrow('SUBAGENT_TYPE_UNAUTHORIZED');
-  });
-
-  it('passes generic tasks with an empty subagent type', async () => {
-    const runtime = makeRuntime();
-    await expect(
-      toolBefore(
-        runtime,
-        { tool: 'task', sessionID: SESSION_ID, callID: 'c1' },
-        { args: { subagent_type: '', prompt: 'x' } },
-      ),
-    ).resolves.toBeUndefined();
-  });
-
-  it('passes generic tasks with a missing subagent type', async () => {
-    const runtime = makeRuntime();
-    await expect(
-      toolBefore(runtime, { tool: 'task', sessionID: SESSION_ID, callID: 'c1' }, { args: {} }),
-    ).resolves.toBeUndefined();
-  });
-
-  it('blocks a reviewer task without a pending review obligation', async () => {
-    const ws = await createTestWorkspace();
-    try {
-      const sessDir = path.join(ws.tmpDir, 'sess-plan');
-      const state = makeState('PLAN');
-      await seedSession(sessDir, state);
-      const runtime = makeRuntime({
-        ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) },
-        auditDeps: makeAuditDeps(sessDir, state),
-      });
-      await expect(
-        toolBefore(
-          runtime,
-          { tool: 'task', sessionID: SESSION_ID, callID: 'c1' },
-          { args: { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'x' } },
-        ),
-      ).rejects.toThrow('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE');
-    } finally {
-      await ws.cleanup();
-    }
-  });
-
-  it('blocks implementation reviewer dispatch until every prior failure has current-digest resolution evidence', async () => {
-    const ws = await createTestWorkspace();
-    try {
-      const sessDir = path.join(ws.tmpDir, 'sess-impl-resolution-required');
-      const obligation = createReviewObligation({
-        obligationType: 'implement',
-        iteration: 1,
-        planVersion: 1,
-        subjectDigest: IMPL_EVIDENCE.digest,
-        reviewSubjectScope: { kind: 'implementation', implementationDigest: IMPL_EVIDENCE.digest },
-        changedFiles: IMPL_EVIDENCE.changedFiles,
-        reviewMaterial: {
-          content: '# Implementation\n\nCurrent implementation',
-          materialDigest: hashCanonicalReviewContent('# Implementation\n\nCurrent implementation'),
-          subjectDigest: IMPL_EVIDENCE.digest,
-        },
-        policySnapshot: null,
-        now: '2026-01-01T00:00:00.000Z',
-      });
-      const state = makeState('IMPL_REVIEW', {
-        implementation: IMPL_EVIDENCE,
-        implReviewFindings: [
-          {
-            iteration: 1,
-            planVersion: 1,
-            reviewMode: 'subagent',
-            overallVerdict: 'changes_requested',
-            blockingIssues: [],
-            majorRisks: [],
-            missingVerification: [],
-            scopeCreep: [],
-            unknowns: [],
-            reviewedBy: { sessionId: 'reviewer' },
-            reviewedAt: '2026-01-01T00:00:00.000Z',
-            challenges: [
-              {
-                challengeId: '00000000-0000-4000-8000-00000000000a',
-                obligationId: obligation.obligationId,
-                kind: 'implementation_challenge',
-                outcome: 'fail',
-                scenario: 'Exercise the failed behavior',
-                claim: 'The implementation handles the behavior correctly',
-                locations: ['src/auth.ts'],
-                evidenceRefs: [
-                  { kind: 'implementation', implementationDigest: IMPL_EVIDENCE.digest },
-                ],
-              },
-            ],
-          },
-        ],
-        reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v6',
-          obligations: [obligation],
-          attempts: [],
-          dispatches: [],
-          invocations: [],
-        },
-      });
-      await seedSession(sessDir, state);
-      const runtime = makeRuntime({
-        ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) },
-        auditDeps: makeAuditDeps(sessDir, state),
-      });
-
-      await expect(
-        toolBefore(
-          runtime,
-          { tool: 'task', sessionID: SESSION_ID, callID: 'c1' },
-          { args: { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'x' } },
-        ),
-      ).rejects.toThrow('SUBAGENT_PRIOR_CHALLENGE_UNRESOLVED');
-    } finally {
-      await ws.cleanup();
-    }
-  });
-
-  it('blocks a reviewer task when unreadable session state fails closed', async () => {
-    const ws = await createTestWorkspace();
-    try {
-      const sessDir = path.join(ws.tmpDir, 'sess-corrupt');
-      await fs.mkdir(sessDir, { recursive: true });
-      await fs.writeFile(path.join(sessDir, 'session-state.json'), '{ corrupt json', 'utf8');
-      const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
-      await expect(
-        toolBefore(
-          runtime,
-          { tool: 'task', sessionID: SESSION_ID, callID: 'c1' },
-          { args: { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'x' } },
-        ),
-      ).rejects.toThrow('STATE_UNAVAILABLE_FOR_REVIEWER_TASK');
-    } finally {
-      await ws.cleanup();
-    }
-  });
-
-  it('blocks a reviewer task under a strict-enforcement policy session', async () => {
-    const ws = await createTestWorkspace();
-    try {
-      const sessDir = path.join(ws.tmpDir, 'sess-strict');
-      const base = makeState('PLAN');
-      const state = makeState('PLAN', {
-        policySnapshot: {
-          ...base.policySnapshot,
-          selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
-        },
-      });
-      await seedSession(sessDir, state);
-      const runtime = makeRuntime({
-        ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) },
-        auditDeps: makeAuditDeps(sessDir, state),
-      });
-      await expect(
-        toolBefore(
-          runtime,
-          { tool: 'task', sessionID: SESSION_ID, callID: 'c1' },
-          { args: { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'x' } },
-        ),
-      ).rejects.toThrow('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE');
-    } finally {
-      await ws.cleanup();
-    }
-  });
-
-  it('blocks a reviewer task with a non-string subagent_type via the empty-type pass', async () => {
-    const runtime = makeRuntime();
-    await expect(
-      toolBefore(
-        runtime,
-        { tool: 'task', sessionID: SESSION_ID, callID: 'c1' },
-        { args: { subagent_type: 42, prompt: 'x' } },
-      ),
-    ).resolves.toBeUndefined();
-  });
-});
-
-describe('toolBefore — reviewer dispatch recovery (before-without-after)', () => {
-  const PROMPT = `Review the host-issued artifact with the full plan context.
-
-## Plan
-1. Fix authentication
-2. Add regression tests
-3. Update documentation
-
-iteration=0
-planVersion=1
-
-Provide structured findings per the canonical reviewer contract.`.repeat(2);
-  const PROMPT_DIGEST = crypto.createHash('sha256').update(PROMPT, 'utf8').digest('hex');
-  const PLAN_BODY = normalizeReviewContent('# Plan\n1. Fix auth');
-  const MATERIAL_DIGEST = hashCanonicalReviewContent(PLAN_BODY);
-
-  function pendingReviewFor(obligationId: string, attemptId: string): PendingReview {
-    return {
-      tool: 'flowguard_plan',
-      requestedAt: '2026-01-01T00:00:00.000Z',
-      obligationId,
-      attemptId,
-      subagentCalled: false,
-      subagentRecord: null,
-      contentMeta: { expectedIteration: 0, expectedPlanVersion: 1 },
-      canonicalPromptAnchor: null,
-      expectedPromptDigest: PROMPT_DIGEST,
-      canonicalPrompt: PROMPT,
-      capturedFindings: null,
-      retryCount: 0,
-      hostAttestationConstants: null,
-      enforcementFailure: null,
-      lastSchemaErrors: null,
-      repairPromptRequired: false,
-      expectedRepairPromptDigest: null,
-    };
-  }
-
-  function planReviewFixture() {
-    const obligation = {
-      ...pendingObligation(),
-      reviewMaterial: {
-        content: PLAN_BODY,
-        materialDigest: MATERIAL_DIGEST,
-        subjectDigest: 'diagnostics-test-subject',
-      },
-      repositoryAuthority: undefined,
-      repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' } as const,
-    };
-    const initialAttempt = {
-      attemptId: crypto.randomUUID(),
-      obligationId: obligation.obligationId,
-      obligationType: 'plan' as const,
-      subjectDigest: obligation.subjectDigest,
-      reviewMaterial: obligation.reviewMaterial,
-      ordinal: 0,
-      status: 'created' as const,
-      origin: { kind: 'initial' } as const,
-      repositoryDiscovery: { kind: 'not_applicable' } as const,
-      createdAt: '2026-01-01T00:00:00.000Z',
-    };
-    return { obligation, initialAttempt };
-  }
-
-  it('HAPPY — a phantom in-flight dispatch is re-armed as a NEW append-only attempt', async () => {
-    const ws = await createTestWorkspace();
-    try {
-      const fingerprint = (await computeFingerprint(ws.tmpDir)).fingerprint;
-      const sessionId = crypto.randomUUID();
-      const sessDir = resolveSessionDir(fingerprint, sessionId);
-      const { obligation, initialAttempt } = planReviewFixture();
-      const state = makeState('PLAN', {
-        reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v6' as const,
-          obligations: [obligation],
-          invocations: [],
-          attempts: [initialAttempt],
-          dispatches: [
-            {
-              dispatchId: crypto.randomUUID(),
-              attemptId: initialAttempt.attemptId,
-              obligationId: obligation.obligationId,
-              hostCallId: 'call-a',
-              canonicalPromptDigest: PROMPT_DIGEST,
-              dispatchAuthorizedAt: '2026-01-01T00:00:00.000Z',
-              dispatchStatus: 'authorized' as const,
-            },
-          ],
-        },
-      });
-      await seedSession(sessDir, state);
-
-      const eState = createSessionState();
-      eState.pendingReviews.set(
-        'flowguard_plan',
-        pendingReviewFor(obligation.obligationId, initialAttempt.attemptId),
-      );
-      eState.executedTaskPrompts.set('call-a', {
-        callId: 'call-a',
-        obligationId: obligation.obligationId,
-        attemptId: initialAttempt.attemptId,
-        canonicalPrompt: PROMPT,
-        canonicalPromptDigest: PROMPT_DIGEST,
-        modelPromptDigest: null,
-        createdAt: '2026-01-01T00:00:00.000Z',
-      });
-
-      const runtime = makeRuntime({
-        ws: {
-          getSessionDir: vi.fn().mockReturnValue(sessDir),
-          getEnforcementState: vi.fn(() => eState),
-        },
-        auditDeps: { ...makeAuditDeps(sessDir, state), cachedFingerprint: fingerprint },
-      });
-      const args: Record<string, unknown> = {
-        subagent_type: REVIEWER_SUBAGENT_TYPE,
-        prompt: PROMPT,
-      };
-      await expect(
-        toolBefore(runtime, { tool: 'task', sessionID: sessionId, callID: 'call-b' }, { args }),
-      ).resolves.toBeUndefined();
-
-      const persisted = await readState(sessDir);
-      const attempts = persisted!.reviewAssurance!.attempts;
-      expect(attempts).toHaveLength(2);
-      expect(attempts[0]).toMatchObject({ attemptId: initialAttempt.attemptId, status: 'stale' });
-      expect(attempts[1]).toMatchObject({
-        status: 'created',
-        ordinal: 2,
-        origin: {
-          kind: 'task_rearm',
-          predecessorAttemptId: initialAttempt.attemptId,
-          triggerReason: 'interrupted',
-        },
-      });
-      const rearmedId = attempts[1]!.attemptId;
-      expect(rearmedId).not.toBe(initialAttempt.attemptId);
-      expect(attempts[1]!.childSessionId).toBeUndefined();
-      expect(args.description).toBe('FlowGuard reviewer task');
-      expect(args.prompt).toBe(PROMPT);
-      // The durable dispatch ledger: the stale predecessor's dispatch is marked
-      // unknown-outcome and the re-arm mints a fresh `authorized` entry.
-      const dispatches = persisted!.reviewAssurance!.dispatches;
-      expect(dispatches).toHaveLength(2);
-      const oldDispatch = dispatches!.find((d) => d.hostCallId === 'call-a');
-      const newDispatch = dispatches!.find((d) => d.hostCallId === 'call-b');
-      expect(oldDispatch).toMatchObject({
-        attemptId: initialAttempt.attemptId,
-        dispatchStatus: 'outcome_unknown',
-      });
-      expect(newDispatch).toMatchObject({
-        attemptId: rearmedId,
-        dispatchStatus: 'authorized',
-      });
-      expect(newDispatch!.dispatchId).not.toBe(oldDispatch!.dispatchId);
-      expect(eState.executedTaskPrompts.has('call-a')).toBe(false);
-      expect(eState.executedTaskPrompts.get('call-b')).toMatchObject({ attemptId: rearmedId });
-      expect(eState.pendingReviews.get('flowguard_plan')!.attemptId).toBe(rearmedId);
-    } finally {
-      await ws.cleanup();
-    }
-  });
-
-  it('BAD — a phantom record naming a missing attempt fails closed without mutation', async () => {
-    const ws = await createTestWorkspace();
-    try {
-      const fingerprint = (await computeFingerprint(ws.tmpDir)).fingerprint;
-      const sessionId = crypto.randomUUID();
-      const sessDir = resolveSessionDir(fingerprint, sessionId);
-      const { obligation, initialAttempt } = planReviewFixture();
-      const state = makeState('PLAN', {
-        reviewAssurance: {
-          assuranceSchemaVersion: 'review-assurance.v6' as const,
-          obligations: [obligation],
-          invocations: [],
-          attempts: [initialAttempt],
-          dispatches: [],
-        },
-      });
-      await seedSession(sessDir, state);
-
-      const ghostAttemptId = crypto.randomUUID();
-      const eState = createSessionState();
-      eState.pendingReviews.set(
-        'flowguard_plan',
-        pendingReviewFor(obligation.obligationId, ghostAttemptId),
-      );
-      eState.executedTaskPrompts.set('call-a', {
-        callId: 'call-a',
-        obligationId: obligation.obligationId,
-        attemptId: ghostAttemptId,
-        canonicalPrompt: PROMPT,
-        canonicalPromptDigest: PROMPT_DIGEST,
-        modelPromptDigest: null,
-        createdAt: '2026-01-01T00:00:00.000Z',
-      });
-
-      const runtime = makeRuntime({
-        ws: {
-          getSessionDir: vi.fn().mockReturnValue(sessDir),
-          getEnforcementState: vi.fn(() => eState),
-        },
-        auditDeps: { ...makeAuditDeps(sessDir, state), cachedFingerprint: fingerprint },
-      });
-      await expect(
-        toolBefore(
-          runtime,
-          { tool: 'task', sessionID: sessionId, callID: 'call-b' },
-          {
-            args: { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: PROMPT },
-          },
-        ),
-      ).rejects.toThrow('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE');
-      const persisted = await readState(sessDir);
-      expect(persisted!.reviewAssurance!.attempts).toHaveLength(1);
-    } finally {
-      await ws.cleanup();
-    }
-  });
-});
-
 describe('toolBefore — workflow reconciliation gate', () => {
   it('blocks a workflow tool when no audit session authority exists', async () => {
     const runtime = makeRuntime();
@@ -1255,7 +812,9 @@ describe('toolBefore — observation capability parent binding', () => {
             planVersion: 1,
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
-            maxReviewerOutputRepairAttempts: 1,
+            maxReviewerAttempts: 1,
+            reviewProfile: 'core' as const,
+            profileSource: 'policy_default' as const,
             createdAt: now,
             pluginHandshakeAt: null,
             status: 'pending',
@@ -1268,7 +827,18 @@ describe('toolBefore — observation capability parent binding', () => {
               materialDigest: 'material-digest',
               subjectDigest: 'obs-subject-digest',
             },
-            repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+            repositoryEvidenceFreeze: { kind: 'available' as const },
+            repositoryAuthority: {
+              kind: 'context' as const,
+              context: {
+                kind: 'commit' as const,
+                repositoryIdentity: {
+                  kind: 'local' as const,
+                  rootCommitDigest: `sha256:${'d'.repeat(64)}`,
+                },
+                objectSha: 'e'.repeat(40),
+              },
+            },
             reviewSubjectScope: {
               kind: 'artifact',
               artifact: {
@@ -1286,16 +856,12 @@ describe('toolBefore — observation capability parent binding', () => {
             obligationId: OBLIGATION_ID,
             obligationType: 'plan',
             subjectDigest: 'obs-subject-digest',
-            reviewMaterial: {
-              content: '## Plan\n',
-              materialDigest: 'material-digest',
-              subjectDigest: 'obs-subject-digest',
-            },
             ordinal: 0,
             status: 'created',
             origin: { kind: 'initial' } as const,
-            repositoryDiscovery: { kind: 'not_applicable' } as const,
+            repositoryDiscovery: repositoryDiscoveryContext(now),
             observationCapability: CAPABILITY,
+            observations: [],
             createdAt: now,
           },
         ],

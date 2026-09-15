@@ -384,7 +384,7 @@ describe('audit and archive integrity fail-closed behavior', () => {
       await completeRegulatedSession();
       const state = await readState((await workspaceIds()).sessDir);
       expect(state?.phase).toBe('COMPLETE');
-      expect(state?.archiveStatus).toBe('failed');
+      expect(state?.regulatedArchiveStatus).toBe('failed');
     },
   );
 

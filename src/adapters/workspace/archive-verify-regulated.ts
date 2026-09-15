@@ -135,7 +135,6 @@ function addDecisionBindingFindings(
   if (
     detail.verdict !== decision.verdict ||
     detail.rationale !== decision.rationale ||
-    detail.decidedBy !== decision.decidedBy ||
     detail.decidedAt !== decision.decidedAt
   ) {
     findings.push({
@@ -146,10 +145,8 @@ function addDecisionBindingFindings(
       file: 'audit/audit.jsonl',
     });
   }
-  if (decision.decisionIdentity) {
-    addDecisionIdentityBindingFindings(findings, detail, decision.decisionIdentity);
-  }
-  if (event.actor !== (decision.decisionIdentity?.actorId ?? decision.decidedBy)) {
+  addDecisionIdentityBindingFindings(findings, detail, decision.decisionIdentity);
+  if (event.actor !== decision.decisionIdentity.actorId) {
     findings.push({
       code: 'regulated_terminal_decision_invalid',
       severity: 'error',

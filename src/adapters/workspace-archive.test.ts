@@ -238,7 +238,12 @@ describe('Archive Layout v2', () => {
         gatePhase: 'PLAN_REVIEW',
         verdict: 'approve',
         rationale: 'Approved for archive projection test.',
-        decidedBy: 'reviewer-1',
+        decisionIdentity: {
+          actorId: 'reviewer-1',
+          actorEmail: null,
+          actorSource: 'env',
+          actorAssurance: 'best_effort',
+        },
         decidedAt: '2026-01-01T00:00:00.000Z',
         fromPhase: 'PLAN_REVIEW',
         toPhase: 'VALIDATION',
@@ -262,7 +267,12 @@ describe('Archive Layout v2', () => {
         decisionId: 'DEC-ARCHIVE-001',
         gatePhase: 'PLAN_REVIEW',
         verdict: 'approve',
-        decidedBy: 'reviewer-1',
+        decisionIdentity: {
+          actorId: 'reviewer-1',
+          actorEmail: null,
+          actorSource: 'env',
+          actorAssurance: 'best_effort',
+        },
         transitionEvent: 'APPROVE',
       }),
     ]);

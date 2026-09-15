@@ -10,6 +10,7 @@ import type { AssertionExtractionResult } from '../../state/evidence-validation.
 
 function requirement(providerId: string, localId: string): CounterexampleRequirement {
   return {
+    kind: 'assertion',
     checkId: 'test',
     assertion: { providerId, localId },
   };

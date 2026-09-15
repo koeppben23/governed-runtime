@@ -278,7 +278,7 @@ describe('SDK Contract: HAI governance surface', () => {
         argMutation: false,
         outputReplacement: true,
         contextInjection: false,
-        reviewerSpawn: true,
+        independentStructuredReview: true,
         compactionInjection: false,
       };
       expect(Object.keys(caps)).toHaveLength(6);

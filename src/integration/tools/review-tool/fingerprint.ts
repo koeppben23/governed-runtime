@@ -1,5 +1,5 @@
 import { canonicalJsonStringify } from '../../../shared/canonical-json.js';
-import { hashText, hashTextShort } from '../../../shared/hashing.js';
+import { hashText } from '../../../shared/hashing.js';
 
 export type ReviewFingerprintInput = {
   prNumber?: number;
@@ -13,21 +13,7 @@ export type ReviewFingerprintInput = {
   resolvedBaseSha?: string;
 };
 
-function v1(a: ReviewFingerprintInput): string {
-  return hashText(
-    JSON.stringify({
-      prNumber: a.prNumber,
-      branch: a.branch,
-      url: a.url,
-      textHash: a.text ? hashTextShort(a.text, 16) : undefined,
-      inputOrigin: a.inputOrigin,
-      references: a.references ? hashTextShort(JSON.stringify(a.references), 16) : undefined,
-      resolvedBranchSha: a.resolvedBranchSha,
-      resolvedBaseSha: a.resolvedBaseSha,
-    }),
-  );
-}
-function v2(a: ReviewFingerprintInput): string {
+export function fingerprintReviewInput(a: ReviewFingerprintInput): string {
   return hashText(
     canonicalJsonStringify({
       version: 'v2',
@@ -43,10 +29,4 @@ function v2(a: ReviewFingerprintInput): string {
       resolvedBaseSha: a.resolvedBaseSha,
     }),
   );
-}
-export function fingerprintReviewInput(
-  a: ReviewFingerprintInput,
-  version: 'v1' | 'v2' = 'v2',
-): string {
-  return version === 'v1' ? v1(a) : v2(a);
 }

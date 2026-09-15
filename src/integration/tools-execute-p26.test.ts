@@ -384,7 +384,7 @@ describe('P26: regulated archive completion', () => {
 
       const finalState = await readState(sessDir);
       expect(finalState).not.toBeNull();
-      expect(finalState!.archiveStatus).toBe('verified');
+      expect(finalState!.regulatedArchiveStatus).toBe('verified');
     });
   });
 
@@ -401,7 +401,7 @@ describe('P26: regulated archive completion', () => {
 
       const finalState = await readState(sessDir);
       expect(finalState).not.toBeNull();
-      expect(finalState!.archiveStatus).toBe('failed');
+      expect(finalState!.regulatedArchiveStatus).toBe('failed');
     });
 
     it('regulated + archive ok + verify fails → archiveStatus: failed', async () => {
@@ -428,12 +428,12 @@ describe('P26: regulated archive completion', () => {
 
       const finalState = await readState(sessDir);
       expect(finalState).not.toBeNull();
-      expect(finalState!.archiveStatus).toBe('failed');
+      expect(finalState!.regulatedArchiveStatus).toBe('failed');
     });
   });
 
   describe('CORNER', () => {
-    it('team + clean completion → no archiveStatus (backward-compatible)', async () => {
+    it('team + clean completion → no archiveStatus projection', async () => {
       // Use team workflow directly (no regulated patch)
       await hydrateSession({ policyMode: 'team' });
       await ticket.execute({ text: 'Team task', source: 'user' }, ctx);
@@ -476,13 +476,13 @@ describe('P26: regulated archive completion', () => {
       // Non-regulated: response must NOT include archiveStatus
       expect(result.archiveStatus).toBeUndefined();
 
-      // Read state — archiveStatus should NOT be set
+      // Read state — regulated archive lifecycle is explicitly unset
       const { computeFingerprint, sessionDir: resolveSessionDir } = wsMock;
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const finalState = await readState(sessDir);
       expect(finalState).not.toBeNull();
-      expect(finalState!.archiveStatus).toBeUndefined();
+      expect(finalState!.regulatedArchiveStatus).toBeNull();
     });
 
     it('solo + completion → no archiveStatus', async () => {
@@ -522,7 +522,7 @@ describe('P26: regulated archive completion', () => {
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const finalState = await readState(sessDir);
       expect(finalState).not.toBeNull();
-      expect(finalState!.archiveStatus).toBeUndefined();
+      expect(finalState!.regulatedArchiveStatus).toBeNull();
     });
 
     it('abort at regulated session → no archiveStatus (emergency escape)', async () => {
@@ -553,8 +553,8 @@ describe('P26: regulated archive completion', () => {
       expect(finalState).not.toBeNull();
       expect(finalState!.error).not.toBeNull();
       expect(finalState!.error!.code).toBe('ABORTED');
-      // No archive attempt for aborted sessions
-      expect(finalState!.archiveStatus).toBeUndefined();
+      // No archive attempt for aborted sessions; persisted authority remains explicitly unset
+      expect(finalState!.regulatedArchiveStatus).toBeNull();
     });
   });
 
@@ -574,7 +574,7 @@ describe('P26: regulated archive completion', () => {
 
       const finalState = await readState(sessDir);
       expect(finalState).not.toBeNull();
-      expect(finalState!.archiveStatus).toBe('failed');
+      expect(finalState!.regulatedArchiveStatus).toBe('failed');
     });
 
     it('regulated COMPLETE + archiveStatus !== verified is not clean completion', async () => {
@@ -589,7 +589,7 @@ describe('P26: regulated archive completion', () => {
       expect(finalState!.phase).toBe('COMPLETE');
       expect(finalState!.policySnapshot.mode).toBe('regulated');
       expect(finalState!.error).toBeNull();
-      expect(finalState!.archiveStatus).not.toBe('verified');
+      expect(finalState!.regulatedArchiveStatus).not.toBe('verified');
       // This combination means: regulated session completed but archive failed.
       // Doctor/status tools should surface this as degraded completion.
     });
@@ -647,7 +647,7 @@ describe('P26: regulated archive completion', () => {
       // P26 Review 3: the tool-layer emits session_completed to the audit trail.
       // Verifies: (a) the event exists on disk, (b) there is exactly one (no duplication).
       // The plugin is not running in tool-execute tests, so this proves the tool-layer
-      // writes the event and sets archiveStatus (which the plugin uses to skip its own).
+      // writes the event and sets regulatedArchiveStatus (which the plugin uses to skip its own).
       const sessDir = await reachRegulatedEvidenceReview();
       vi.mocked(wsMock.archiveSession).mockResolvedValueOnce('/fake/archive.tar.gz');
       vi.mocked(regulatedVerification.verifyRegulatedArchive).mockResolvedValueOnce({
@@ -670,9 +670,9 @@ describe('P26: regulated archive completion', () => {
       expect(completionEvents[0]!.actor).toBe('machine');
       expect(completionEvents[0]!.hostSessionId).toBe(ctx.sessionID);
 
-      // archiveStatus on persisted state enables plugin to skip its own emission
+      // regulatedArchiveStatus on persisted state enables plugin to skip its own emission
       const finalState = await readState(sessDir);
-      expect(finalState!.archiveStatus).toBe('verified');
+      expect(finalState!.regulatedArchiveStatus).toBe('verified');
     });
 
     it('regulated + session_completed append fails → archiveStatus: failed', async () => {
@@ -693,7 +693,7 @@ describe('P26: regulated archive completion', () => {
       expect(result.archiveStatus).toBe('failed');
 
       const finalState = await readState(sessDir);
-      expect(finalState!.archiveStatus).toBe('failed');
+      expect(finalState!.regulatedArchiveStatus).toBe('failed');
 
       appendSpy.mockRestore();
     });

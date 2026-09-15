@@ -35,7 +35,6 @@ function snapshot(): RepositoryDiscoverySnapshot {
     detectedStack: {
       summary: 'java=21',
       items: [{ kind: 'language', id: 'java', version: '21', evidence: 'pom.xml' }],
-      versions: [],
     },
     verificationCandidates: [
       {

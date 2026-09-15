@@ -1,7 +1,7 @@
 /**
  * @module integration/tools/plan-route
  * @description Plan initial-submission routing for an existing plan review
- *              obligation: output-repair reissue and attempt re-emission.
+ *              obligation: interrupted-dispatch re-arm and attempt re-emission.
  *
  * `/plan` re-invocation is the authorized trigger for review lifecycle
  * transitions of the latest plan obligation. A blocked plan obligation is NOT
@@ -16,11 +16,10 @@ import type { SessionState } from '../../state/schema.js';
 import { ensureReviewAssurance, reviewObligationResponseFields } from '../review/assurance.js';
 import { resolveReviewContinuation } from '../review/review-continuation.js';
 import { blockObligation } from '../review/obligation-state.js';
-import { reissueReviewAttempt } from './review-tool/continuation.js';
 import { buildInterruptedDispatchRearm } from '../durable-dispatch.js';
 import type { PlanExecutionScope } from './plan-types.js';
 import { buildPlanReviewInstruction } from './plan-response.js';
-import { appendNextAction, formatBlocked, writeStateWithArtifacts } from './helpers.js';
+import { enrichWithNextAction, formatBlocked, writeStateWithArtifacts } from './helpers.js';
 
 /**
  * Gate an initial plan submission against the plan review loop: a pending plan
@@ -48,7 +47,7 @@ export function blockedPlanReviewInProgress(state: SessionState): string | null 
   return null;
 }
 
-// eslint-disable-next-line complexity -- the plan continuation route is one sequential fail-closed chain (pending re-emit, interrupted-dispatch re-arm, output repair, missing-attempt close).
+// eslint-disable-next-line complexity -- the plan continuation route is one sequential fail-closed chain (pending re-emit, interrupted-dispatch re-arm, missing-attempt close).
 export async function routePlanInitialSubmission(
   scope: PlanExecutionScope,
 ): Promise<string | null> {
@@ -75,8 +74,6 @@ export async function routePlanInitialSubmission(
       if (changed) return changed;
       return routePlanInterruptedDispatch(scope, continuation.obligation, continuation.attemptId);
     }
-    case 'output_repair':
-      return routePlanOutputRepair(scope, continuation.obligation);
     case 'integrity_blocked':
       return formatBlocked(continuation.code, {
         obligationId: continuation.obligation.obligationId,
@@ -142,28 +139,6 @@ async function routePlanInterruptedDispatch(
   return planInstructionResponse({ ...scope, state: fresh }, obligation, rearmed.attempt.attemptId);
 }
 
-async function routePlanOutputRepair(
-  scope: PlanExecutionScope,
-  obligation: NonNullable<PlanExecutionScope['state']['reviewAssurance']>['obligations'][number],
-): Promise<string> {
-  const changed = changedSubjectWhilePending(scope, obligation);
-  if (changed) return changed;
-  const reissue = await reissueReviewAttempt(
-    scope.sessDir,
-    scope.state,
-    obligation,
-    scope.ctx.now(),
-  );
-  if (reissue.kind === 'blocked') {
-    return formatBlocked(reissue.code, {
-      obligationId: obligation.obligationId,
-      reason: reissue.reason,
-    });
-  }
-  const fresh = (await readState(scope.sessDir)) ?? scope.state;
-  return planInstructionResponse({ ...scope, state: fresh }, obligation, reissue.attempt.attemptId);
-}
-
 function changedSubjectWhilePending(
   scope: PlanExecutionScope,
   obligation: NonNullable<PlanExecutionScope['state']['reviewAssurance']>['obligations'][number],
@@ -197,11 +172,11 @@ function planInstructionResponse(
     status: 'Plan review is pending; reusing the existing review obligation.',
     planDigest: scope.state.plan!.current.digest,
     selfReviewIteration: scope.state.selfReview!.iteration,
-    reviewMode: scope.reviewPolicy.subagentEnabled ? 'subagent' : 'self',
+    reviewMode: 'subagent',
     ...reviewObligationResponseFields(obligation, attemptId),
     next: instruction.next,
-    ...(instruction.reviewInvocation ? { reviewInvocation: instruction.reviewInvocation } : {}),
+    reviewInvocation: instruction,
     _audit: { transitions: [] },
   };
-  return appendNextAction(JSON.stringify(response), scope.state);
+  return JSON.stringify(enrichWithNextAction(response, scope.state));
 }

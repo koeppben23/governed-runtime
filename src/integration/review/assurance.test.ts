@@ -30,10 +30,11 @@ import {
   appendObligationWithAttempt,
   createAttemptForExistingObligation,
   artifactReviewSubjectScope,
+  freezeReviewMaterial,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './assurance.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../tool-names.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import type {
   ReviewObligation,
   ReviewInvocationEvidence,
@@ -48,6 +49,21 @@ const NOW = '2026-04-27T00:00:00.000Z';
 const FIXTURE_MANDATE_DIGEST = 'fixture-mandate-digest';
 const FIXTURE_CRITERIA_VERSION = 'fixture-criteria-v1';
 
+/** Host-captured structured findings; the invocation verdict is derived from these. */
+const SAMPLE_RAW_FINDINGS: Record<string, unknown> = {
+  iteration: 0,
+  planVersion: 1,
+  reviewMode: 'subagent',
+  overallVerdict: 'accept',
+  blockingIssues: [],
+  majorRisks: [],
+  missingVerification: [],
+  scopeCreep: [],
+  unknowns: [],
+  reviewedBy: { sessionId: 'child-session-1' },
+  reviewedAt: NOW,
+};
+
 function makeObligation(overrides?: Partial<ReviewObligation>): ReviewObligation {
   const obligationType = overrides?.obligationType ?? 'plan';
   return createReviewObligation({
@@ -56,6 +72,7 @@ function makeObligation(overrides?: Partial<ReviewObligation>): ReviewObligation
     planVersion: 1,
     now: NOW,
     subjectDigest: 'test',
+    reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
     reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
     ...(obligationType === 'plan' || obligationType === 'architecture'
       ? { repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' } }
@@ -69,23 +86,27 @@ function makeInvocation(overrides?: Partial<ReviewInvocationEvidence>): ReviewIn
     fulfilledAt,
     mandateDigest = FIXTURE_MANDATE_DIGEST,
     criteriaVersion = FIXTURE_CRITERIA_VERSION,
+    capturedRawFindings = SAMPLE_RAW_FINDINGS,
     ...rest
   } = overrides ?? {};
-  return buildInvocationEvidence({
-    obligationId: '00000000-0000-4000-8000-000000000001',
-    obligationType: 'plan',
-    mandateDigest,
-    criteriaVersion,
-    parentSessionId: 'parent-session-1',
-    childSessionId: 'child-session-1',
-    promptHash: hashText('test prompt'),
-    findingsHash: hashText('test findings'),
-    invokedAt: NOW,
-    fulfilledAt: fulfilledAt ?? NOW,
-    invocationMode: 'sdk_session_prompt',
-    hostVisible: false,
+  return {
+    ...buildInvocationEvidence({
+      obligationId: '00000000-0000-4000-8000-000000000001',
+      obligationType: 'plan',
+      attemptId: '00000000-0000-4000-8000-000000000002',
+      mandateDigest,
+      criteriaVersion,
+      parentSessionId: 'parent-session-1',
+      childSessionId: 'child-session-1',
+      promptHash: hashText('test prompt'),
+      findingsHash: hashText('test findings'),
+      invokedAt: NOW,
+      fulfilledAt: fulfilledAt ?? NOW,
+      capturedRawFindings,
+    }),
     ...rest,
-  });
+    capturedRawFindings,
+  };
 }
 
 function makeFindings(overrides?: Partial<ReviewFindings>): ReviewFindings {
@@ -99,6 +120,7 @@ function makeFindings(overrides?: Partial<ReviewFindings>): ReviewFindings {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: 'child-session-1' },
     reviewedAt: NOW,
     attestation: {
@@ -125,7 +147,7 @@ describe('integration/review-assurance', () => {
   });
 
   describe('standalone review material', () => {
-    it('copies persisted normalized material to a reissued attempt', () => {
+    it('keeps the obligation material authoritative across a dispatch recovery attempt', () => {
       const materialDigest = hashText('line one\nline two\n');
       const subjectDigest = hashText(`content:${materialDigest}`);
       const material = {
@@ -156,17 +178,21 @@ describe('integration/review-assurance', () => {
         'child-session-2',
         NOW,
         {
-          origin: { kind: 'initial' } as const,
+          origin: {
+            kind: 'dispatch_rearm',
+            predecessorAttemptId: initial.attemptId,
+            triggerReason: 'interrupted',
+          } as const,
           repositoryDiscovery: { kind: 'not_applicable' } as const,
         },
       );
 
-      expect(retried.assurance.attempts.at(-1)?.reviewMaterial).toEqual(material);
+      expect(retried.assurance.obligations.at(-1)?.reviewMaterial).toEqual(material);
       expect(retried.assurance.attempts.at(-1)?.subjectDigest).toBe(subjectDigest);
       expect(retried.attempt.childSessionId).toBe('child-session-2');
     });
 
-    it('omits childSessionId so a pre-Task reissue stays bindable', () => {
+    it('omits childSessionId so a dispatch recovery attempt stays bindable', () => {
       const subjectDigest = 'd'.repeat(64);
       const material = {
         content: 'frozen',
@@ -187,15 +213,19 @@ describe('integration/review-assurance', () => {
         undefined,
         NOW,
         {
-          origin: { kind: 'initial' } as const,
+          origin: {
+            kind: 'dispatch_rearm',
+            predecessorAttemptId: initial.attemptId,
+            triggerReason: 'interrupted',
+          } as const,
           repositoryDiscovery: { kind: 'not_applicable' } as const,
         },
       );
 
       expect(reissued.attempt.childSessionId).toBeUndefined();
       expect(reissued.attempt.status).toBe('created');
-      expect(reissued.attempt.reviewMaterial).toEqual(material);
-      // Bindable means: resolvable again by the host for a fresh reviewer Task.
+      expect(reissued.assurance.obligations.at(-1)?.reviewMaterial).toEqual(material);
+      // Bindable means: resolvable again by the host for a fresh reviewer task.
       expect(findBindableAttempt(reissued.assurance, obligation.obligationId)?.attemptId).toBe(
         reissued.attempt.attemptId,
       );
@@ -229,6 +259,7 @@ describe('integration/review-assurance', () => {
         planVersion: 1,
         now: NOW,
         subjectDigest: 'test',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
         reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
       });
       expect(result.obligationType).toBe('plan');
@@ -260,6 +291,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           changedFiles,
           ...(obligationType === 'plan' || obligationType === 'architecture'
             ? {
@@ -289,7 +321,7 @@ describe('integration/review-assurance', () => {
               version: 'challenge-policy.v1',
               counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
             },
-            maxReviewerOutputRepairAttempts: 1,
+            maxReviewerAttempts: 1,
           },
         });
         expect(result).toMatchObject({
@@ -306,7 +338,7 @@ describe('integration/review-assurance', () => {
           version: 'challenge-policy.v1' as const,
           counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 } as const,
         },
-        maxReviewerOutputRepairAttempts: 1,
+        maxReviewerAttempts: 1,
       };
 
       it('uses the HIGH-RISK claim even when changedFiles look doc-only', () => {
@@ -318,6 +350,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           changedFiles: ['docs/x.md'],
           reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
           claimedTaskClass: 'HIGH-RISK',
@@ -333,6 +366,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           changedFiles: ['src/state/schema.ts'],
           reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
           claimedTaskClass: 'TRIVIAL',
@@ -349,6 +383,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           changedFiles: ['docs/x.md'],
           reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
           claimedTaskClass: 'STANDARD',
@@ -365,6 +400,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           changedFiles: ['docs/x.md'],
           reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
           policySnapshot,
@@ -380,9 +416,10 @@ describe('integration/review-assurance', () => {
         planVersion: 1,
         now: NOW,
         subjectDigest: 'test',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
         changedFiles: ['src/state/schema.ts'],
         reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
-        policySnapshot: { maxReviewerOutputRepairAttempts: 1 },
+        policySnapshot: { maxReviewerAttempts: 1 },
       });
       // Hard Assurance Epoch: the mint always freezes the canonical challenge
       // matrix (writer-side default), never an implicit no-policy state.
@@ -432,6 +469,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
         }),
       ).toThrow(/FAIL_CLOSED/);
     });
@@ -445,6 +483,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
         }),
       ).toThrow(/FAIL_CLOSED/);
     });
@@ -458,6 +497,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           changedFiles: ['src/foo.ts'],
           reviewSubjectScope: { kind: 'unavailable', reason: 'diff_resolution_failed' },
         }),
@@ -473,6 +513,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           changedFiles: ['src/foo.ts'],
           reviewSubjectScope: {
             kind: 'repository_change',
@@ -490,6 +531,7 @@ describe('integration/review-assurance', () => {
         planVersion: 1,
         now: NOW,
         subjectDigest: 'test',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
       });
       expect(result.reviewSubjectScope).toEqual({
         kind: 'unavailable',
@@ -505,6 +547,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
         }),
       ).toThrowError('implementation reviewSubjectScope');
     });
@@ -517,6 +560,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           changedFiles: ['src/foo.ts'],
         }),
       ).toThrowError('implementation reviewSubjectScope');
@@ -530,6 +574,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           reviewSubjectScope: { kind: 'unavailable', reason: 'diff_resolution_failed' },
         }),
       ).toThrowError('implementation reviewSubjectScope');
@@ -543,6 +588,7 @@ describe('integration/review-assurance', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           reviewSubjectScope: { kind: 'implementation', implementationDigest: 'other' },
         }),
       ).toThrowError('does not match the obligation subject digest');
@@ -555,6 +601,7 @@ describe('integration/review-assurance', () => {
         planVersion: 1,
         now: NOW,
         subjectDigest: 'test',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
         changedFiles: ['src/foo.ts'],
         reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
       });
@@ -572,6 +619,7 @@ describe('integration/review-assurance', () => {
         planVersion: 1,
         now: NOW,
         subjectDigest: 'plan-digest',
+        reviewMaterial: freezeReviewMaterial('frozen review material', 'plan-digest'),
         reviewSubjectScope: {
           kind: 'artifact',
           artifact: {
@@ -671,7 +719,7 @@ describe('integration/review-assurance', () => {
   });
 
   describe('reviewObligationResponseFields', () => {
-    it('builds nested and flat compatibility response fields', () => {
+    it('builds structured response fields', () => {
       const obligation = makeObligation({ obligationType: 'architecture', iteration: 2 });
       const result = reviewObligationResponseFields(obligation);
 
@@ -680,8 +728,15 @@ describe('integration/review-assurance', () => {
         obligationType: 'architecture',
         iteration: 2,
       });
-      expect(result.reviewObligationId).toBe(obligation.obligationId);
-      expect(result.reviewCriteriaVersion).toBe(obligation.criteriaVersion);
+      for (const field of [
+        'reviewObligationId',
+        'reviewObligationIteration',
+        'reviewObligationPlanVersion',
+        'reviewCriteriaVersion',
+        'reviewMandateDigest',
+      ]) {
+        expect(result).not.toHaveProperty(field);
+      }
     });
 
     it('returns empty fields when obligation is null', () => {
@@ -809,6 +864,7 @@ describe('integration/review-assurance', () => {
       const findings = makeFindings();
       const obligation = makeObligation({
         obligationId: findings.attestation!.toolObligationId,
+        invocationId: '00000000-0000-4000-8000-000000000011',
       });
       const rejectedInvocation = makeInvocation({
         invocationId: '00000000-0000-4000-8000-000000000010',
@@ -821,8 +877,6 @@ describe('integration/review-assurance', () => {
         obligationId: obligation.obligationId,
         childSessionId: findings.reviewedBy.sessionId,
         findingsHash: hashFindings(findings),
-        invocationMode: 'host_subagent_task',
-        hostVisible: true,
       });
       const assurance = {
         assuranceSchemaVersion: 'review-assurance.v6' as const,
@@ -908,61 +962,26 @@ describe('integration/review-assurance', () => {
         findingsHash: hashText('findings'),
         invokedAt: NOW,
         fulfilledAt: NOW,
-        invocationMode: 'sdk_session_prompt',
-        hostVisible: false,
+        attemptId: '00000000-0000-4000-8000-000000000003',
+        capturedRawFindings: SAMPLE_RAW_FINDINGS,
       });
       expect(result.agentType).toBe(REVIEWER_SUBAGENT_TYPE);
       expect(result.mandateDigest).toBe(FIXTURE_MANDATE_DIGEST);
       expect(result.consumedByObligationId).toBeNull();
+      expect(result.invocationMode).toBe('sdk_session_prompt');
+      expect(result.source).toBe('host-orchestrated');
       expect(result.reviewOutputMode).toBe('structured_output');
       expect(result.structuredOutputUsed).toBe(true);
       expect(result.reviewAssuranceLevel).toBe('structured_high');
-      expect(result.extractionMethod).toBeUndefined();
-    });
-
-    it('records text compatibility metadata explicitly', () => {
-      const result = makeInvocation({
-        reviewOutputMode: 'text_compat',
-        structuredOutputUsed: false,
-        reviewAssuranceLevel: 'text_compat_lower',
-        extractionMethod: 'outermost_braces',
-        modelCapabilityError: 'model does not support this tool_choice',
-      });
-      expect(result).toMatchObject({
-        reviewOutputMode: 'text_compat',
-        structuredOutputUsed: false,
-        reviewAssuranceLevel: 'text_compat_lower',
-        extractionMethod: 'outermost_braces',
-        modelCapabilityError: 'model does not support this tool_choice',
-      });
-    });
-
-    it('defaults to text_compat_lower when reviewOutputMode is text_compat', () => {
-      const result = buildInvocationEvidence({
-        obligationId: '00000000-0000-4000-8000-000000000002',
-        obligationType: 'review',
-        mandateDigest: FIXTURE_MANDATE_DIGEST,
-        criteriaVersion: FIXTURE_CRITERIA_VERSION,
-        parentSessionId: 'parent-1',
-        childSessionId: 'child-1',
-        promptHash: hashText('prompt'),
-        findingsHash: hashText('findings'),
-        invokedAt: NOW,
-        fulfilledAt: NOW,
-        reviewOutputMode: 'text_compat',
-        invocationMode: 'sdk_session_prompt',
-        hostVisible: false,
-      });
-      expect(result.reviewOutputMode).toBe('text_compat');
-      expect(result.structuredOutputUsed).toBe(false);
-      expect(result.reviewAssuranceLevel).toBe('text_compat_lower');
+      expect(result.capturedRawFindings).toEqual(SAMPLE_RAW_FINDINGS);
+      expect(result.capturedVerdict).toBe('accept');
     });
   });
 
-  // ── BUG-15: capturedVerdict field ──────────────────────────────────────
+  // ── BUG-15: derived capturedVerdict field ──────────────────────────────
 
-  describe('buildInvocationEvidence — capturedVerdict (BUG-15)', () => {
-    it('HAPPY: includes capturedVerdict when provided', () => {
+  describe('buildInvocationEvidence — derived capturedVerdict (BUG-15)', () => {
+    it('HAPPY: derives accept from the captured findings', () => {
       const result = buildInvocationEvidence({
         obligationId: '00000000-0000-4000-8000-000000000001',
         obligationType: 'plan',
@@ -974,14 +993,13 @@ describe('integration/review-assurance', () => {
         findingsHash: hashText('findings'),
         invokedAt: NOW,
         fulfilledAt: NOW,
-        capturedVerdict: 'accept',
-        invocationMode: 'sdk_session_prompt',
-        hostVisible: false,
+        capturedRawFindings: { overallVerdict: 'accept' },
+        attemptId: '00000000-0000-4000-8000-000000000004',
       });
       expect(result.capturedVerdict).toBe('accept');
     });
 
-    it('HAPPY: includes capturedVerdict=changes_requested', () => {
+    it('HAPPY: derives changes_requested from the captured findings', () => {
       const result = buildInvocationEvidence({
         obligationId: '00000000-0000-4000-8000-000000000001',
         obligationType: 'plan',
@@ -992,14 +1010,13 @@ describe('integration/review-assurance', () => {
         promptHash: hashText('prompt'),
         findingsHash: hashText('findings'),
         invokedAt: NOW,
-        capturedVerdict: 'changes_requested',
-        invocationMode: 'sdk_session_prompt',
-        hostVisible: false,
+        capturedRawFindings: { overallVerdict: 'changes_requested' },
+        attemptId: '00000000-0000-4000-8000-000000000005',
       });
       expect(result.capturedVerdict).toBe('changes_requested');
     });
 
-    it('HAPPY: omits capturedVerdict when undefined', () => {
+    it('HAPPY: omits capturedVerdict when the capture has no string verdict', () => {
       const result = buildInvocationEvidence({
         obligationId: '00000000-0000-4000-8000-000000000001',
         obligationType: 'plan',
@@ -1010,10 +1027,27 @@ describe('integration/review-assurance', () => {
         promptHash: hashText('prompt'),
         findingsHash: hashText('findings'),
         invokedAt: NOW,
-        invocationMode: 'sdk_session_prompt',
-        hostVisible: false,
+        capturedRawFindings: { overallVerdict: 42 },
+        attemptId: '00000000-0000-4000-8000-000000000006',
       });
       expect(result.capturedVerdict).toBeUndefined();
+    });
+
+    it('BAD: cannot assert a verdict that disagrees with the captured findings', () => {
+      const result = buildInvocationEvidence({
+        obligationId: '00000000-0000-4000-8000-000000000001',
+        obligationType: 'plan',
+        mandateDigest: FIXTURE_MANDATE_DIGEST,
+        criteriaVersion: FIXTURE_CRITERIA_VERSION,
+        parentSessionId: 'parent-1',
+        childSessionId: 'child-1',
+        promptHash: hashText('prompt'),
+        findingsHash: hashText('findings'),
+        invokedAt: NOW,
+        capturedRawFindings: { overallVerdict: 'changes_requested' },
+        attemptId: '00000000-0000-4000-8000-000000000007',
+      });
+      expect(result.capturedVerdict).toBe('changes_requested');
     });
 
     it('EDGE: capturedVerdict survives Zod round-trip (schema parse)', () => {
@@ -1024,40 +1058,20 @@ describe('integration/review-assurance', () => {
         criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
-        invocationMode: 'host_subagent_task',
-        hostVisible: true,
         promptHash: hashText('prompt'),
         findingsHash: hashText('findings'),
         invokedAt: NOW,
-        capturedVerdict: 'accept',
+        attemptId: '00000000-0000-4000-8000-000000000002',
+        capturedRawFindings: { overallVerdict: 'accept' },
       });
       const parsed = ReviewInvocationEvidenceSchema.parse(evidence);
       expect(parsed.capturedVerdict).toBe('accept');
     });
-
-    it('EDGE: Zod parse accepts evidence without capturedVerdict (backward compat)', () => {
-      const evidence = buildInvocationEvidence({
-        obligationId: '00000000-0000-4000-8000-000000000001',
-        obligationType: 'plan',
-        mandateDigest: FIXTURE_MANDATE_DIGEST,
-        criteriaVersion: FIXTURE_CRITERIA_VERSION,
-        parentSessionId: 'parent-1',
-        childSessionId: 'child-1',
-        invocationMode: 'sdk_session_prompt',
-        hostVisible: false,
-        promptHash: hashText('prompt'),
-        findingsHash: hashText('findings'),
-        invokedAt: NOW,
-        // no capturedVerdict
-      });
-      const parsed = ReviewInvocationEvidenceSchema.parse(evidence);
-      expect(parsed.capturedVerdict).toBeUndefined();
-    });
   });
 
-  // ── BUG-15 Stufe 2: capturedRawFindings field ─────────────────────────────
+  // ── capturedRawFindings is the mandatory host capture ─────────────────────
 
-  describe('buildInvocationEvidence — capturedRawFindings (BUG-15 Stufe 2)', () => {
+  describe('buildInvocationEvidence — capturedRawFindings', () => {
     const sampleRawFindings: Record<string, unknown> = {
       iteration: 0,
       planVersion: 1,
@@ -1080,32 +1094,13 @@ describe('integration/review-assurance', () => {
         criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
-        invocationMode: 'host_subagent_task',
-        hostVisible: true,
         promptHash: hashText('prompt'),
         findingsHash: hashFindings(sampleRawFindings),
         invokedAt: NOW,
-        capturedVerdict: 'accept',
+        attemptId: '00000000-0000-4000-8000-000000000002',
         capturedRawFindings: sampleRawFindings,
       });
       expect(result.capturedRawFindings).toEqual(sampleRawFindings);
-    });
-
-    it('HAPPY: omits capturedRawFindings when undefined', () => {
-      const result = buildInvocationEvidence({
-        obligationId: '00000000-0000-4000-8000-000000000001',
-        obligationType: 'plan',
-        mandateDigest: FIXTURE_MANDATE_DIGEST,
-        criteriaVersion: FIXTURE_CRITERIA_VERSION,
-        parentSessionId: 'parent-1',
-        childSessionId: 'child-1',
-        invocationMode: 'sdk_session_prompt',
-        hostVisible: false,
-        promptHash: hashText('prompt'),
-        findingsHash: hashText('findings'),
-        invokedAt: NOW,
-      });
-      expect(result.capturedRawFindings).toBeUndefined();
     });
 
     it('EDGE: capturedRawFindings survives Zod round-trip (schema parse)', () => {
@@ -1116,62 +1111,16 @@ describe('integration/review-assurance', () => {
         criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
-        invocationMode: 'host_subagent_task',
-        hostVisible: true,
         promptHash: hashText('prompt'),
         findingsHash: hashFindings(sampleRawFindings),
         invokedAt: NOW,
-        capturedVerdict: 'accept',
+        attemptId: '00000000-0000-4000-8000-000000000002',
         capturedRawFindings: sampleRawFindings,
       });
       const parsed = ReviewInvocationEvidenceSchema.parse(evidence);
       expect(parsed.capturedRawFindings).toBeDefined();
       expect(parsed.capturedRawFindings!.overallVerdict).toBe('accept');
       expect(parsed.capturedRawFindings!.iteration).toBe(0);
-    });
-
-    it('EDGE: Zod parse accepts evidence without capturedRawFindings (backward compat)', () => {
-      const evidence = buildInvocationEvidence({
-        obligationId: '00000000-0000-4000-8000-000000000001',
-        obligationType: 'plan',
-        mandateDigest: FIXTURE_MANDATE_DIGEST,
-        criteriaVersion: FIXTURE_CRITERIA_VERSION,
-        parentSessionId: 'parent-1',
-        childSessionId: 'child-1',
-        invocationMode: 'sdk_session_prompt',
-        hostVisible: false,
-        promptHash: hashText('prompt'),
-        findingsHash: hashText('findings'),
-        invokedAt: NOW,
-      });
-      const parsed = ReviewInvocationEvidenceSchema.parse(evidence);
-      expect(parsed.capturedRawFindings).toBeUndefined();
-    });
-
-    it('CORNER: capturedRawFindings with extra keys preserved through Zod (z.record passthrough)', () => {
-      const rawWithExtras = {
-        ...sampleRawFindings,
-        _internalDebug: { foo: 'bar' },
-        customField: 42,
-      };
-      const evidence = buildInvocationEvidence({
-        obligationId: '00000000-0000-4000-8000-000000000001',
-        obligationType: 'plan',
-        mandateDigest: FIXTURE_MANDATE_DIGEST,
-        criteriaVersion: FIXTURE_CRITERIA_VERSION,
-        parentSessionId: 'parent-1',
-        childSessionId: 'child-1',
-        invocationMode: 'host_subagent_task',
-        hostVisible: true,
-        promptHash: hashText('prompt'),
-        findingsHash: hashFindings(rawWithExtras),
-        invokedAt: NOW,
-        capturedRawFindings: rawWithExtras,
-      });
-      const parsed = ReviewInvocationEvidenceSchema.parse(evidence);
-      // z.record(z.string(), z.unknown()) preserves all keys
-      expect(parsed.capturedRawFindings!._internalDebug).toEqual({ foo: 'bar' });
-      expect(parsed.capturedRawFindings!.customField).toBe(42);
     });
   });
 
@@ -1370,7 +1319,7 @@ describe('findBindableAttempt', () => {
     expect(findBindableAttempt(assuranceWith([bound]), OBLIGATION_A)).toBeNull();
   });
 
-  it.each(['captured', 'rejected', 'bound', 'stale', 'expired'] as const)(
+  it.each(['rejected', 'bound', 'stale', 'expired'] as const)(
     'ignores an attempt with status %s',
     (status) => {
       const spent = attempt({ ordinal: 0, status });

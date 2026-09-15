@@ -46,8 +46,14 @@ vi.mock('../verification/executor', () => ({
     })),
 }));
 
+const discoveryOriginals = vi.hoisted(() => ({
+  resolveAttemptDiscoveryOrBlock:
+    undefined as unknown as (typeof import('./review/discovery-attempt-context.js'))['resolveAttemptDiscoveryOrBlock'],
+}));
+
 vi.mock('./review/discovery-attempt-context.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./review/discovery-attempt-context.js')>();
+  discoveryOriginals.resolveAttemptDiscoveryOrBlock = actual.resolveAttemptDiscoveryOrBlock;
   return {
     ...actual,
     resolveAttemptDiscoveryOrBlock: vi.fn(actual.resolveAttemptDiscoveryOrBlock),
@@ -69,6 +75,10 @@ import type { ToolContext } from './tools/helpers.js';
 import { makeState, TICKET, FROZEN_IMPLEMENTATION_BASE } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
 import type { ReviewFindings } from '../state/evidence.js';
+import {
+  completedDispatchForInvocation,
+  makePlanRevision,
+} from '../state/evidence-test-constants.js';
 import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
@@ -98,7 +108,11 @@ beforeEach(() => {
   pc = process.env.OPENCODE_CONFIG_DIR;
   pr = process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
   pp = process.env.FLOWGUARD_HOST_PLATFORM;
-  vi.mocked(resolveAttemptDiscoveryOrBlock).mockClear();
+  // mockReset clears unconsumed mockResolvedValueOnce queues; a test that fails
+  // before its queued value is consumed must not leak it into the next test.
+  vi.mocked(resolveAttemptDiscoveryOrBlock)
+    .mockReset()
+    .mockImplementation(discoveryOriginals.resolveAttemptDiscoveryOrBlock);
 });
 
 afterEach(() => {
@@ -190,13 +204,14 @@ function implFindings(
   verdict: 'accept' | 'changes_requested' | 'unable_to_review',
   withChallenge = false,
   attemptId = '',
+  childSessionId = 'ses_r',
 ): ReviewFindings {
   return {
     iteration: iter,
     planVersion: pv,
     reviewMode: 'subagent' as const,
     overallVerdict: verdict,
-    ...(withChallenge ? { challenges: [implementationChallenge(oblId, digest, attemptId)] } : {}),
+    challenges: withChallenge ? [implementationChallenge(oblId, digest, attemptId)] : [],
     blockingIssues:
       verdict === 'changes_requested'
         ? [
@@ -215,7 +230,7 @@ function implFindings(
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
-    reviewedBy: { sessionId: 'ses_r' },
+    reviewedBy: { sessionId: childSessionId },
     reviewedAt: FIXED_TIME,
     attestation: {
       mandateDigest: REVIEW_MANDATE_DIGEST,
@@ -240,6 +255,7 @@ async function inject(
     (o) => o.obligationType === oblType && o.status === 'pending',
   );
   if (!obl) throw new Error(`No pending ${oblType} obligation`);
+  const childSessionId = `ses_r_${obl.obligationId}`;
   const ff = implFindings(
     obl.obligationId,
     obl.iteration,
@@ -248,25 +264,32 @@ async function inject(
     verdict,
     oblType === 'implement' && verdict !== 'unable_to_review',
     validationAttemptIdFor(state!, digest),
+    childSessionId,
   );
   const fh = hashFindings(ff);
+  const boundAttempt = state!.reviewAssurance!.attempts.find(
+    (a) => a.obligationId === obl.obligationId,
+  );
+  if (!boundAttempt) throw new Error(`No attempt for pending ${oblType} obligation`);
+  const invocationId = randomUUID();
   const newObl = {
     ...obl,
     status: 'fulfilled' as const,
+    invocationId,
     fulfilledAt: FIXED_TIME,
     pluginHandshakeAt: FIXED_TIME,
   };
   const inv = {
-    invocationId: randomUUID(),
+    invocationId,
     obligationId: obl.obligationId,
     obligationType: obl.obligationType,
     parentSessionId: se.sId,
-    childSessionId: 'ses_r',
+    childSessionId,
     agentType: 'flowguard-reviewer' as const,
-    invocationMode: 'host_subagent_task' as const,
-    hostVisible: true,
+    invocationMode: 'sdk_session_prompt' as const,
+    hostVisible: false,
     source: 'host-orchestrated' as const,
-    promptHash: 'abc',
+    promptHash: 'a'.repeat(64),
     mandateDigest: REVIEW_MANDATE_DIGEST,
     criteriaVersion: REVIEW_CRITERIA_VERSION,
     findingsHash: fh,
@@ -275,10 +298,9 @@ async function inject(
     consumedByObligationId: null,
     capturedVerdict: verdict,
     capturedRawFindings: ff,
-    attemptId: state!.reviewAssurance!.attempts.find((a) => a.obligationId === obl.obligationId)
-      ?.attemptId,
+    attemptId: boundAttempt.attemptId,
     reviewOutputMode: 'structured_output' as const,
-    structuredOutputUsed: true,
+    structuredOutputUsed: true as const,
     reviewAssuranceLevel: 'structured_high' as const,
   };
   const aug: SessionState = {
@@ -294,18 +316,23 @@ async function inject(
           ? {
               ...attempt,
               status: 'bound' as const,
-              childSessionId: 'ses_r',
+              childSessionId,
               completedAt: FIXED_TIME,
             }
           : attempt,
       ),
-      dispatches: state!.reviewAssurance!.dispatches,
+      dispatches: [...state!.reviewAssurance!.dispatches, completedDispatchForInvocation(inv)],
     },
     reviewDecision: {
       verdict: 'approve',
       rationale: 'E2E',
       decidedAt: FIXED_TIME,
-      decidedBy: 'reviewer-1',
+      decisionIdentity: {
+        actorId: 'reviewer-1',
+        actorEmail: null,
+        actorSource: 'unknown',
+        actorAssurance: 'best_effort',
+      },
     },
   };
   await writeStateWithArtifacts(se.sDir, aug);
@@ -327,18 +354,10 @@ async function prepareBoundUnableReview(se: SE, implementationDigest: string) {
     binding: { ...makeState('IMPL_REVIEW').binding, worktree: se.worktree },
     ticket: TICKET,
     plan: {
-      current: {
+      current: makePlanRevision({
         body: '## Plan\n1. Verify implementation',
-        digest: 'plan-digest',
-        sections: [],
         createdAt: FIXED_TIME,
-        recordDigest: 'a'.repeat(64),
-        planVersion: 1,
-        supersedesRecordDigest: null,
-        originatingReviewObligationId: null,
-        revisionReason: null,
-        lineageStatus: 'verified',
-      },
+      }),
       history: [],
       reviewCompletion: 'pending',
       reviewFindings: [],
@@ -351,8 +370,6 @@ async function prepareBoundUnableReview(se: SE, implementationDigest: string) {
     },
     policySnapshot: {
       ...makeState('IMPL_REVIEW').policySnapshot,
-      reviewInvocationPolicy: 'host_task_required',
-      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
     },
   });
   await writeStateWithArtifacts(se.sDir, base);
@@ -360,7 +377,6 @@ async function prepareBoundUnableReview(se: SE, implementationDigest: string) {
   const activated = await (
     await import('./tools/implement-shared.js')
   ).activateImplementationReviewObligation(firstState!, {
-    subagentEnabled: true,
     iteration: 1,
     planVersion: 1,
     now: FIXED_TIME,
@@ -452,7 +468,6 @@ describe('implementation review without repository observation authority', () =>
     const r2 = await plan.execute(
       {
         reviewVerdict: 'accept',
-        reviewFindings: implFindings(planInjected.oblId, 0, 1, 'plan-digest', 'accept'),
       },
       s.tc,
     );
@@ -520,19 +535,10 @@ describe('implementation review without repository observation authority', () =>
 
     // Phase 3: genuine changes_requested with an implementation subject anchor
     // and empty evidenceLocations — the bind must pass (orthogonality proof).
-    const { oblId } = await inject('implement', 'changes_requested', implDigest1);
+    await inject('implement', 'changes_requested', implDigest1);
     const r3 = await review_implementation.execute(
       {
         reviewVerdict: 'changes_requested',
-        reviewFindings: implFindings(
-          oblId,
-          1,
-          1,
-          implDigest1,
-          'changes_requested',
-          true,
-          validationAttemptIdFor(state!, implDigest1),
-        ),
       },
       s.tc,
     );
@@ -567,19 +573,10 @@ describe('implementation review without repository observation authority', () =>
 
     const secondScope = second.reviewSubjectScope;
     if (secondScope.kind !== 'implementation') throw new Error('expected implementation scope');
-    const { oblId: oblId2 } = await inject('implement', 'accept', secondScope.implementationDigest);
+    await inject('implement', 'accept', secondScope.implementationDigest);
     const r5 = await review_implementation.execute(
       {
         reviewVerdict: 'accept',
-        reviewFindings: implFindings(
-          oblId2,
-          second.iteration,
-          second.planVersion,
-          secondScope.implementationDigest,
-          'accept',
-          true,
-          validationAttemptIdFor(state!, secondScope.implementationDigest),
-        ),
       },
       s.tc,
     );
@@ -598,11 +595,10 @@ describe('implementation review without repository observation authority', () =>
       s.tc,
     );
     expect(r1).not.toContain('INTERNAL_ERROR');
-    const planInjected = await inject('plan', 'accept', 'plan-digest');
+    await inject('plan', 'accept', 'plan-digest');
     const r2 = await plan.execute(
       {
         reviewVerdict: 'accept',
-        reviewFindings: implFindings(planInjected.oblId, 0, 1, 'plan-digest', 'accept'),
       },
       s.tc,
     );
@@ -650,19 +646,10 @@ describe('implementation review without repository observation authority', () =>
     expect(state!.phase).toBe('IMPL_REVIEW');
 
     // Phase 3: reviewer changes_requested → IMPLEMENTATION + rework(D1).
-    const { oblId } = await inject('implement', 'changes_requested', implDigest1);
+    await inject('implement', 'changes_requested', implDigest1);
     const r3 = await review_implementation.execute(
       {
         reviewVerdict: 'changes_requested',
-        reviewFindings: implFindings(
-          oblId,
-          1,
-          1,
-          implDigest1,
-          'changes_requested',
-          true,
-          validationAttemptIdFor(state!, implDigest1),
-        ),
       },
       s.tc,
     );
@@ -735,19 +722,10 @@ describe('implementation review without repository observation authority', () =>
     const obligation = implObligations.at(-1)!;
     const scope = obligation.reviewSubjectScope;
     if (scope.kind !== 'implementation') throw new Error('expected implementation scope');
-    const { oblId: oblIdAccept } = await inject('implement', 'accept', scope.implementationDigest);
+    await inject('implement', 'accept', scope.implementationDigest);
     const r6 = await review_implementation.execute(
       {
         reviewVerdict: 'accept',
-        reviewFindings: implFindings(
-          oblIdAccept,
-          obligation.iteration,
-          obligation.planVersion,
-          scope.implementationDigest,
-          'accept',
-          true,
-          validationAttemptIdFor(state!, scope.implementationDigest),
-        ),
       },
       s.tc,
     );
@@ -766,11 +744,10 @@ describe('implementation review without repository observation authority', () =>
       s.tc,
     );
     expect(r1).not.toContain('INTERNAL_ERROR');
-    const planInjected = await inject('plan', 'accept', 'plan-digest');
+    await inject('plan', 'accept', 'plan-digest');
     const r2 = await plan.execute(
       {
         reviewVerdict: 'accept',
-        reviewFindings: implFindings(planInjected.oblId, 0, 1, 'plan-digest', 'accept'),
       },
       s.tc,
     );
@@ -818,19 +795,10 @@ describe('implementation review without repository observation authority', () =>
     expect(state!.phase).toBe('IMPL_REVIEW');
 
     // Phase 3: Reviewer A changes_requested(D1) → IMPLEMENTATION + rework(D1).
-    const { oblId } = await inject('implement', 'changes_requested', implDigest1);
+    await inject('implement', 'changes_requested', implDigest1);
     const r3 = await review_implementation.execute(
       {
         reviewVerdict: 'changes_requested',
-        reviewFindings: implFindings(
-          oblId,
-          1,
-          1,
-          implDigest1,
-          'changes_requested',
-          true,
-          validationAttemptIdFor(state!, implDigest1),
-        ),
       },
       s.tc,
     );
@@ -863,19 +831,10 @@ describe('implementation review without repository observation authority', () =>
 
     // Phase 5: Reviewer B changes_requested(D2) → IMPLEMENTATION; the single-slot
     // marker moves on to D2.
-    const { oblId: oblId2 } = await inject('implement', 'changes_requested', implDigest2);
+    await inject('implement', 'changes_requested', implDigest2);
     const r5 = await review_implementation.execute(
       {
         reviewVerdict: 'changes_requested',
-        reviewFindings: implFindings(
-          oblId2,
-          second.iteration,
-          second.planVersion,
-          implDigest2,
-          'changes_requested',
-          true,
-          validationAttemptIdFor(state!, implDigest2),
-        ),
       },
       s.tc,
     );
@@ -926,23 +885,10 @@ describe('implementation review without repository observation authority', () =>
     if (thirdScope.kind !== 'implementation') throw new Error('expected implementation scope');
     expect(thirdScope.implementationDigest).not.toBe(implDigest1);
     expect(thirdScope.implementationDigest).not.toBe(implDigest2);
-    const { oblId: oblIdAccept } = await inject(
-      'implement',
-      'accept',
-      thirdScope.implementationDigest,
-    );
+    await inject('implement', 'accept', thirdScope.implementationDigest);
     const r7 = await review_implementation.execute(
       {
         reviewVerdict: 'accept',
-        reviewFindings: implFindings(
-          oblIdAccept,
-          third.iteration,
-          third.planVersion,
-          thirdScope.implementationDigest,
-          'accept',
-          true,
-          validationAttemptIdFor(state!, thirdScope.implementationDigest),
-        ),
       },
       s.tc,
     );

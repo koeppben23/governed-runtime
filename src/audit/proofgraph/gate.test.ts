@@ -22,6 +22,7 @@ import type {
   PlanClaimDeclarations,
 } from '../../state/proofgraph-approval.js';
 import type { PlanRecord } from '../../state/evidence-plan.js';
+import { makePlanRevision } from '../../state/evidence-test-constants.js';
 import { makeState } from '../../fixtures.js';
 import { hashText } from '../../shared/hashing.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
@@ -64,7 +65,7 @@ function claim(
 
 function summary(claims: ProofClaim[]): ProofGraphSummary {
   return {
-    projection: { version: 'proofgraph.v1', claims, evaluatedAt: NOW },
+    projection: { version: 'proofgraph.v2', claims, evaluatedAt: NOW },
     counts: { PROVEN: 0, UNPROVEN: 0, CONTRADICTED: 0, STALE: 0, BLOCKED: 0, NOT_VERIFIED: 0 },
     criticalClaimCount: 0,
     criticalUnprovenCount: 0,
@@ -278,40 +279,31 @@ describe('evaluateProofGraphGateFromState', () => {
     };
   }
 
+  const PLAN_CURRENT = makePlanRevision({ body: 'x', createdAt: NOW });
+
   function certificate(decls: PlanClaimDeclarations): PlanApprovalCertificate {
     return {
       flow: 'plan',
-      authorityDigest: 'plan-digest',
+      authorityDigest: PLAN_CURRENT.digest,
       claimDeclarationsDigest: hashText(canonicalJsonStringify(decls)),
       decisionAttestationDigest: 'd',
       approvedAt: NOW,
       approvedBy: 'reviewer',
       certificateId: '00000000-0000-4000-8000-0000000000ce',
-      planVersion: 1,
-      planRecordDigest: 'record-digest',
+      planVersion: PLAN_CURRENT.planVersion,
+      planRecordDigest: PLAN_CURRENT.recordDigest,
       reviewBinding: {
         kind: 'current_review',
         reviewObligationId: '00000000-0000-4000-8000-0000000000cf',
         reviewEvidenceDigest: 'review-evidence-digest',
-        reviewedSubjectDigest: 'plan-digest',
+        reviewedSubjectDigest: PLAN_CURRENT.digest,
       },
     };
   }
 
   function planRecord(decls: PlanClaimDeclarations, cert?: PlanApprovalCertificate): PlanRecord {
     return {
-      current: {
-        body: 'x',
-        digest: 'plan-digest',
-        sections: [],
-        createdAt: NOW,
-        recordDigest: 'record-digest',
-        planVersion: 1,
-        supersedesRecordDigest: null,
-        originatingReviewObligationId: null,
-        revisionReason: null,
-        lineageStatus: 'verified',
-      },
+      current: PLAN_CURRENT,
       history: [],
       reviewCompletion: 'pending',
       claimDeclarations: decls,
@@ -320,7 +312,7 @@ describe('evaluateProofGraphGateFromState', () => {
   }
 
   function projection(claims: ProofClaim[]): ProofGraphProjection {
-    return { version: 'proofgraph.v1', claims, evaluatedAt: NOW };
+    return { version: 'proofgraph.v2', claims, evaluatedAt: NOW };
   }
 
   function stateWith(overrides: Partial<SessionState>): SessionState {

@@ -17,12 +17,6 @@ import type { SemanticAuditIntent } from '../tools/audit-outbox.js';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-/** Invocation mode for SDK-driven session prompts (not host-visible). */
-export const INVOCATION_MODE_SDK_SESSION = 'sdk_session_prompt' as const;
-
-/** Evidence source tag for host-orchestrated reviews. */
-export const EVIDENCE_SOURCE_HOST = 'host-orchestrated' as const;
-
 // ─── Public interfaces ───────────────────────────────────────────────────────
 
 /**
@@ -93,10 +87,9 @@ export interface PipelineContext {
   sessionId: string;
   now: string;
   rawOutput: string;
-  strictEnforcement: boolean;
 }
 
-/** Result of strict attestation validation. */
+/** Result of attestation validation. */
 export type AttestationResult =
   { valid: true } | { valid: false; code: string; detail: Record<string, string> };
 

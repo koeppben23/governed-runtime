@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { POLICY_DIGEST_VERSION } from '../../state/evidence-identifiers.js';
+import { makePlanRevision, makePlanRevisionAfter } from '../../state/evidence-test-constants.js';
 
 const POLICY_DIGEST = 'a'.repeat(64);
 
@@ -42,6 +43,7 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
         missingVerification: ['security_scan'],
         scopeCreep: [],
         unknowns: [],
+        challenges: [],
         reviewedBy: {
           sessionId: 'ses_subagent',
         },
@@ -68,6 +70,7 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
         missingVerification: [],
         scopeCreep: [],
         unknowns: [],
+        challenges: [],
         reviewedBy: { sessionId: 'ses_test' },
         reviewedAt: new Date().toISOString(),
       };
@@ -89,6 +92,7 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
         missingVerification: [],
         scopeCreep: [],
         unknowns: [],
+        challenges: [],
         reviewedBy: { sessionId: 'ses_sub' },
         reviewedAt: new Date().toISOString(),
       };
@@ -103,6 +107,7 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
         missingVerification: [],
         scopeCreep: [],
         unknowns: [],
+        challenges: [],
         reviewedBy: { sessionId: 'ses_self' },
         reviewedAt: new Date().toISOString(),
       };
@@ -116,33 +121,11 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
     it('PlanRecord stores author history and review findings separately', async () => {
       const { PlanRecord } = await import('../../state/evidence.js');
 
+      const original = makePlanRevision({ body: '# Original' });
+      const revised = makePlanRevisionAfter(original, { body: '# Plan v1' });
       const planRecord = {
-        current: {
-          body: '# Plan v1',
-          digest: 'sha256-v1',
-          sections: ['Plan'],
-          createdAt: new Date().toISOString(),
-          recordDigest: 'record-v1',
-          planVersion: 1,
-          supersedesRecordDigest: null,
-          originatingReviewObligationId: null,
-          revisionReason: null,
-          lineageStatus: 'verified',
-        },
-        history: [
-          {
-            body: '# Original',
-            digest: 'sha256-orig',
-            sections: [],
-            createdAt: new Date().toISOString(),
-            recordDigest: 'record-orig',
-            planVersion: 1,
-            supersedesRecordDigest: null,
-            originatingReviewObligationId: null,
-            revisionReason: null,
-            lineageStatus: 'verified',
-          },
-        ],
+        current: revised,
+        history: [original],
         reviewCompletion: 'pending',
         reviewFindings: [
           {
@@ -170,6 +153,7 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
             missingVerification: [],
             scopeCreep: [],
             unknowns: [],
+            challenges: [],
             reviewedBy: { sessionId: 'ses_review' },
             reviewedAt: new Date().toISOString(),
           },
@@ -182,7 +166,7 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
       if (result.success) {
         expect(result.data.history.length).toBe(1);
         expect(result.data.reviewFindings?.length).toBe(1);
-        expect(result.data.history[0]!.digest).toBe('sha256-orig');
+        expect(result.data.history[0]!.digest).toBe(original.digest);
         expect(result.data.reviewFindings?.[0]?.blockingIssues.length).toBe(1);
       }
     });
@@ -191,18 +175,7 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
       const { PlanRecord } = await import('../../state/evidence.js');
 
       const recordWithoutReview = {
-        current: {
-          body: '# Plan',
-          digest: 'sha256',
-          sections: [],
-          createdAt: new Date().toISOString(),
-          recordDigest: 'record',
-          planVersion: 1,
-          supersedesRecordDigest: null,
-          originatingReviewObligationId: null,
-          revisionReason: null,
-          lineageStatus: 'verified',
-        },
+        current: makePlanRevision({ body: '# Plan' }),
         history: [],
         reviewCompletion: 'pending',
       };
@@ -210,296 +183,6 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
       const result = PlanRecord.safeParse(recordWithoutReview);
       expect(result.success).toBe(true);
     });
-  });
-
-  describe('Policy selfReview config', () => {
-    it('FlowGuardPolicy includes selfReview', async () => {
-      const { getPolicyPreset } = await import('../../config/policy.js');
-
-      const solo = getPolicyPreset('solo');
-      expect(solo.selfReview).toBeDefined();
-      expect(solo.selfReview.subagentEnabled).toBe(true);
-      expect(solo.selfReview.fallbackToSelf).toBe(false);
-      expect(solo.selfReview.strictEnforcement).toBe(true);
-
-      const team = getPolicyPreset('team');
-      expect(team.selfReview).toBeDefined();
-      expect(team.selfReview.subagentEnabled).toBe(true);
-      expect(team.selfReview.strictEnforcement).toBe(true);
-
-      const regulated = getPolicyPreset('regulated');
-      expect(regulated.selfReview).toBeDefined();
-      expect(regulated.selfReview.subagentEnabled).toBe(true);
-      expect(regulated.selfReview.strictEnforcement).toBe(true);
-    });
-
-    it('DEFAULT_SELF_REVIEW_CONFIG has correct defaults', async () => {
-      const { DEFAULT_SELF_REVIEW_CONFIG } = await import('../../config/policy.js');
-
-      expect(DEFAULT_SELF_REVIEW_CONFIG.subagentEnabled).toBe(true);
-      expect(DEFAULT_SELF_REVIEW_CONFIG.fallbackToSelf).toBe(false);
-      expect(DEFAULT_SELF_REVIEW_CONFIG.strictEnforcement).toBe(true);
-    });
-
-    it('resolvePolicyFromSnapshot normalizes weakened selfReview to mandatory subagent review', async () => {
-      const { resolvePolicyFromSnapshot } = await import('../../config/policy.js');
-      const { PolicySnapshotSchema } = await import('../../state/evidence.js');
-
-      const snapshotWithSelfReview = PolicySnapshotSchema.parse({
-        mode: 'team',
-        hash: POLICY_DIGEST,
-        hashVersion: POLICY_DIGEST_VERSION,
-        resolvedAt: new Date().toISOString(),
-        requestedMode: 'team',
-        effectiveGateBehavior: 'human_gated',
-        requireHumanGates: true,
-        maxSelfReviewIterations: 3,
-        maxImplReviewIterations: 3,
-        allowSelfApproval: true,
-        minimumActorAssuranceForApproval: 'best_effort',
-        requireVerifiedActorsForApproval: false,
-        enforceRiskClassification: false,
-        allowRiskDowngradeOverride: false,
-        identityProviderMode: 'optional',
-        maxIncoherentReviewerCaptureRetries: 1,
-        maxReviewerOutputRepairAttempts: 1,
-        allowReducedCeremony: false,
-        discoveryHealth: { enforcement: 'off', onDegraded: 'allow', onDrift: 'allow' },
-        validationEvidence: { enforcement: 'off', allowNoCommands: false },
-        reviewOutputPolicy: 'text_compat_allowed',
-        reviewInvocationPolicy: 'sdk_allowed',
-        reviewProfile: 'core',
-        selfReview: {
-          subagentEnabled: true,
-          fallbackToSelf: false,
-          strictEnforcement: true,
-        },
-        challengePolicy: {
-          version: 'challenge-policy.v1',
-          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
-        },
-        audit: {
-          emitTransitions: true,
-          emitToolCalls: true,
-          enableChainHash: true,
-          timestampAssurance: {
-            enabled: false,
-            mode: 'local_only',
-            strict: false,
-            criticalEvents: ['decision', 'lifecycle'],
-            ntpServers: ['pool.ntp.org'],
-            ntpDriftThresholdMs: 30000,
-            tsaTimeoutMs: 10000,
-          },
-        },
-        actorClassification: {},
-      });
-
-      const policy = resolvePolicyFromSnapshot(snapshotWithSelfReview);
-      expect(policy.selfReview.subagentEnabled).toBe(true);
-      expect(policy.selfReview.fallbackToSelf).toBe(false);
-      expect(policy.selfReview.strictEnforcement).toBe(true);
-    });
-
-    it('resolvePolicyFromSnapshot uses default when snapshot lacks selfReview', async () => {
-      const { resolvePolicyFromSnapshot, DEFAULT_SELF_REVIEW_CONFIG } =
-        await import('../../config/policy.js');
-      const { PolicySnapshotSchema } = await import('../../state/evidence.js');
-
-      const snapshotWithoutSelfReview = PolicySnapshotSchema.parse({
-        mode: 'solo',
-        hash: POLICY_DIGEST,
-        hashVersion: POLICY_DIGEST_VERSION,
-        resolvedAt: new Date().toISOString(),
-        requestedMode: 'solo',
-        effectiveGateBehavior: 'auto_approve',
-        requireHumanGates: false,
-        maxSelfReviewIterations: 2,
-        maxImplReviewIterations: 1,
-        allowSelfApproval: true,
-        minimumActorAssuranceForApproval: 'best_effort',
-        requireVerifiedActorsForApproval: false,
-        enforceRiskClassification: false,
-        allowRiskDowngradeOverride: false,
-        identityProviderMode: 'optional',
-        maxIncoherentReviewerCaptureRetries: 1,
-        maxReviewerOutputRepairAttempts: 1,
-        allowReducedCeremony: false,
-        discoveryHealth: { enforcement: 'off', onDegraded: 'allow', onDrift: 'allow' },
-        validationEvidence: { enforcement: 'off', allowNoCommands: false },
-        reviewOutputPolicy: 'text_compat_allowed',
-        reviewInvocationPolicy: 'sdk_allowed',
-        reviewProfile: 'core',
-        selfReview: {
-          subagentEnabled: true,
-          fallbackToSelf: false,
-          strictEnforcement: true,
-        },
-        challengePolicy: {
-          version: 'challenge-policy.v1',
-          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
-        },
-        audit: {
-          emitTransitions: true,
-          emitToolCalls: true,
-          enableChainHash: false,
-          timestampAssurance: {
-            enabled: false,
-            mode: 'local_only',
-            strict: false,
-            criticalEvents: ['decision', 'lifecycle'],
-            ntpServers: ['pool.ntp.org'],
-            ntpDriftThresholdMs: 30000,
-            tsaTimeoutMs: 10000,
-          },
-        },
-        actorClassification: {},
-      });
-
-      const policy = resolvePolicyFromSnapshot(snapshotWithoutSelfReview);
-      expect(policy.selfReview).toEqual(DEFAULT_SELF_REVIEW_CONFIG);
-    });
-  });
-
-  describe('PolicySnapshot includes selfReview', () => {
-    it('PolicySnapshotSchema validates selfReview field', async () => {
-      const { PolicySnapshotSchema } = await import('../../state/evidence.js');
-
-      const snapshotWithSelfReview = PolicySnapshotSchema.parse({
-        mode: 'team',
-        hash: POLICY_DIGEST,
-        hashVersion: POLICY_DIGEST_VERSION,
-        resolvedAt: new Date().toISOString(),
-        requestedMode: 'team',
-        effectiveGateBehavior: 'human_gated',
-        requireHumanGates: true,
-        maxSelfReviewIterations: 3,
-        maxImplReviewIterations: 3,
-        allowSelfApproval: true,
-        minimumActorAssuranceForApproval: 'best_effort',
-        requireVerifiedActorsForApproval: false,
-        enforceRiskClassification: false,
-        allowRiskDowngradeOverride: false,
-        identityProviderMode: 'optional',
-        maxIncoherentReviewerCaptureRetries: 1,
-        maxReviewerOutputRepairAttempts: 1,
-        allowReducedCeremony: false,
-        discoveryHealth: { enforcement: 'off', onDegraded: 'allow', onDrift: 'allow' },
-        validationEvidence: { enforcement: 'off', allowNoCommands: false },
-        reviewOutputPolicy: 'text_compat_allowed',
-        reviewInvocationPolicy: 'sdk_allowed',
-        reviewProfile: 'core',
-        selfReview: {
-          subagentEnabled: true,
-          fallbackToSelf: false,
-          strictEnforcement: true,
-        },
-        challengePolicy: {
-          version: 'challenge-policy.v1',
-          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
-        },
-        audit: {
-          emitTransitions: true,
-          emitToolCalls: true,
-          enableChainHash: true,
-          timestampAssurance: {
-            enabled: false,
-            mode: 'local_only',
-            strict: false,
-            criticalEvents: ['decision', 'lifecycle'],
-            ntpServers: ['pool.ntp.org'],
-            ntpDriftThresholdMs: 30000,
-            tsaTimeoutMs: 10000,
-          },
-        },
-        actorClassification: {},
-      });
-
-      expect(snapshotWithSelfReview.selfReview).toBeDefined();
-      expect(snapshotWithSelfReview.selfReview?.subagentEnabled).toBe(true);
-    });
-
-    it('PolicySnapshotSchema rejects a snapshot missing selfReview (hard epoch)', async () => {
-      const { PolicySnapshotSchema } = await import('../../state/evidence.js');
-
-      const complete = {
-        mode: 'solo',
-        hash: POLICY_DIGEST,
-        hashVersion: POLICY_DIGEST_VERSION,
-        resolvedAt: new Date().toISOString(),
-        requestedMode: 'solo',
-        effectiveGateBehavior: 'auto_approve',
-        requireHumanGates: false,
-        maxSelfReviewIterations: 2,
-        maxImplReviewIterations: 1,
-        allowSelfApproval: true,
-        minimumActorAssuranceForApproval: 'best_effort',
-        requireVerifiedActorsForApproval: false,
-        enforceRiskClassification: false,
-        allowRiskDowngradeOverride: false,
-        identityProviderMode: 'optional',
-        maxIncoherentReviewerCaptureRetries: 1,
-        maxReviewerOutputRepairAttempts: 1,
-        allowReducedCeremony: false,
-        discoveryHealth: { enforcement: 'off', onDegraded: 'allow', onDrift: 'allow' },
-        validationEvidence: { enforcement: 'off', allowNoCommands: false },
-        reviewOutputPolicy: 'text_compat_allowed',
-        reviewInvocationPolicy: 'sdk_allowed',
-        reviewProfile: 'core',
-        selfReview: {
-          subagentEnabled: true,
-          fallbackToSelf: false,
-          strictEnforcement: true,
-        },
-        challengePolicy: {
-          version: 'challenge-policy.v1',
-          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
-        },
-        audit: {
-          emitTransitions: true,
-          emitToolCalls: true,
-          enableChainHash: false,
-          timestampAssurance: {
-            enabled: false,
-            mode: 'local_only',
-            strict: false,
-            criticalEvents: ['decision', 'lifecycle'],
-            ntpServers: ['pool.ntp.org'],
-            ntpDriftThresholdMs: 30000,
-            tsaTimeoutMs: 10000,
-          },
-        },
-        actorClassification: {},
-      };
-
-      const { selfReview: _sr, ...snapshotWithoutSelfReview } = complete;
-      expect(() => PolicySnapshotSchema.parse(snapshotWithoutSelfReview)).toThrow();
-      expect(PolicySnapshotSchema.parse(complete).selfReview).toEqual({
-        subagentEnabled: true,
-        fallbackToSelf: false,
-        strictEnforcement: true,
-      });
-    });
-  });
-});
-
-describe('P34a Foundation: Mandatory Independent Review Semantics', () => {
-  it('fallbackToSelf=true is not part of the mandatory review default', async () => {
-    const { getPolicyPreset } = await import('../../config/policy.js');
-
-    const policy = getPolicyPreset('team');
-    expect(policy.selfReview.subagentEnabled).toBe(true);
-    expect(policy.selfReview.fallbackToSelf).toBe(false);
-    expect(policy.selfReview.strictEnforcement).toBe(true);
-  });
-
-  it('regulated policy also requires strict subagent review', async () => {
-    const { getPolicyPreset } = await import('../../config/policy.js');
-
-    const policy = getPolicyPreset('regulated');
-    expect(policy.selfReview.subagentEnabled).toBe(true);
-    expect(policy.selfReview.fallbackToSelf).toBe(false);
-    expect(policy.selfReview.strictEnforcement).toBe(true);
   });
 });
 
@@ -514,6 +197,7 @@ describe('P34a: Agent-Orchestrated Review Input Validation', () => {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: 'ses_subagent' },
     reviewedAt: new Date().toISOString(),
   };
@@ -528,6 +212,7 @@ describe('P34a: Agent-Orchestrated Review Input Validation', () => {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: 'ses_self' },
     reviewedAt: new Date().toISOString(),
   };
@@ -566,22 +251,11 @@ describe('P34a: Agent-Orchestrated Review Input Validation', () => {
     const { PlanRecord } = await import('../../state/evidence.js');
 
     const existingPlan = {
-      current: {
-        body: 'v1',
-        digest: 'd1',
-        sections: [],
-        createdAt: new Date().toISOString(),
-        recordDigest: 'record-d1',
-        planVersion: 1,
-        supersedesRecordDigest: null,
-        originatingReviewObligationId: null,
-        revisionReason: null,
-        lineageStatus: 'verified',
-      },
+      current: makePlanRevision({ body: 'v1' }),
       history: [],
       reviewCompletion: 'pending',
       reviewFindings: [validReviewFindingsSubagent],
-    } as any;
+    };
 
     const result = PlanRecord.safeParse(existingPlan);
     expect(result.success).toBe(true);
@@ -633,6 +307,7 @@ describe('P34a: Agent-Orchestrated Review Input Validation', () => {
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       reviewedBy: { sessionId: 'ses_min' },
       reviewedAt: new Date().toISOString(),
     };

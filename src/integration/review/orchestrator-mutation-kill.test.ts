@@ -37,7 +37,8 @@ import {
   type ReviewerResult,
   type ReviewerSuccessResult,
 } from './orchestrator.js';
-import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
+import { REVIEW_REQUIRED_PREFIX } from './enforcement/types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
 import { TOOL_FLOWGUARD_REVIEW } from '../tool-names.js';
 import { parseToolResult } from '../plugin-helpers.js';
@@ -56,15 +57,11 @@ function validFindings(overrides: Record<string, unknown> = {}): string {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: 'child-session-1' },
     reviewedAt: '2026-04-24T12:00:00.000Z',
     attestation: {
-      mandateDigest: 'test-mandate-digest',
-      criteriaVersion: 'p37-v1',
       toolObligationId: '11111111-1111-4111-8111-111111111111',
-      iteration: 0,
-      planVersion: 1,
-      reviewedBy: 'flowguard-reviewer',
     },
     ...overrides,
   });
@@ -85,7 +82,7 @@ function mockClient(
       data?: {
         parts?: Array<{ type?: string; text?: string }>;
         info?: {
-          structured_output?: unknown;
+          structured?: unknown;
           error?: { name: string; message: string };
         };
       };
@@ -112,7 +109,7 @@ function mockClient(
         opts.promptResult ?? {
           data: {
             parts: [{ type: 'text', text: validFindings() }],
-            info: { structured_output: JSON.parse(validFindings()) as Record<string, unknown> },
+            info: { structured: JSON.parse(validFindings()) as Record<string, unknown> },
           },
           error: undefined,
         },
@@ -198,23 +195,28 @@ describe('MUTATION_KILL: buildStackProfileSection via buildPlanReviewPrompt', ()
   });
 });
 
-describe('MUTATION_KILL: invokeReviewer StructuredOutputError with structured_output present', () => {
-  it('returns null even when structured_output co-exists with StructuredOutputError', async () => {
+describe('MUTATION_KILL: invokeReviewer StructuredOutputError with structured output present', () => {
+  it('returns null even when info.structured co-exists with StructuredOutputError', async () => {
     // This kills the L534 BlockStatement mutation (removing the return null)
     const client = mockClient({
       promptResult: {
         data: {
           info: {
             error: { name: 'StructuredOutputError', message: 'schema validation failed' },
-            structured_output: JSON.parse(validFindings()) as Record<string, unknown>,
+            structured: (() => {
+              const {
+                reviewedBy: _reviewedBy,
+                reviewedAt: _reviewedAt,
+                ...findings
+              } = JSON.parse(validFindings()) as Record<string, unknown>;
+              return findings;
+            })(),
           },
         },
         error: undefined,
       },
     });
-    const result = await invokeReviewer(client, 'test prompt', 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
-    });
+    const result = await invokeReviewer(client, 'test prompt', 'parent-1', {});
     expect(result).toBeNull();
   });
 
@@ -225,51 +227,40 @@ describe('MUTATION_KILL: invokeReviewer StructuredOutputError with structured_ou
         data: {
           info: {
             error: { name: 'OtherError', message: 'something else' },
-            structured_output: JSON.parse(validFindings()) as Record<string, unknown>,
+            structured: (() => {
+              const {
+                reviewedBy: _reviewedBy,
+                reviewedAt: _reviewedAt,
+                ...findings
+              } = JSON.parse(validFindings()) as Record<string, unknown>;
+              return findings;
+            })(),
           },
         },
         error: undefined,
       },
     });
-    const result = await invokeReviewer(client, 'test prompt', 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
-    });
+    const result = await invokeReviewer(client, 'test prompt', 'parent-1');
     assertSuccessfulResult(result);
     expect(result!.findings).not.toBeNull();
   });
 });
 
 describe('MUTATION_KILL: invokeReviewer reviewer provenance edge cases', () => {
-  it('does not rewrite reviewedBy when it is a primitive', async () => {
+  it('blocks when info.structured violates the canonical schema', async () => {
     const findings = JSON.parse(validFindings()) as Record<string, unknown>;
     findings.reviewedBy = 'not-an-object';
     const client = mockClient({
       promptResult: {
-        data: { info: { structured_output: findings } },
+        data: { info: { structured: findings } },
         error: undefined,
       },
     });
-    const result = await invokeReviewer(client, 'test prompt', 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
+    const result = await invokeReviewer(client, 'test prompt', 'parent-1', {});
+    expect(result).toMatchObject({
+      blocked: true,
+      code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
     });
-    assertSuccessfulResult(result);
-    expect(result!.findings!.reviewedBy).toBe('not-an-object');
-  });
-
-  it('does not rewrite reviewedBy when it is null', async () => {
-    const findings = JSON.parse(validFindings()) as Record<string, unknown>;
-    findings.reviewedBy = null;
-    const client = mockClient({
-      promptResult: {
-        data: { info: { structured_output: findings } },
-        error: undefined,
-      },
-    });
-    const result = await invokeReviewer(client, 'test prompt', 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
-    });
-    assertSuccessfulResult(result);
-    expect(result!.findings!.reviewedBy).toBeNull();
   });
 });
 
@@ -302,17 +293,19 @@ describe('MUTATION_KILL: isReviewRequired /review CONTENT_ANALYSIS_REQUIRED boun
   });
 });
 
-describe('MUTATION_KILL: extractReviewContext regex fallback with multi-digit and whitespace', () => {
+describe('MUTATION_KILL: extractReviewContext canonical structured fields', () => {
   const baseFields = {
-    reviewObligationId: '11111111-1111-4111-8111-111111111111',
-    reviewCriteriaVersion: 'p37-v1',
-    reviewMandateDigest: 'test-mandate-digest',
+    reviewObligation: {
+      obligationId: '11111111-1111-4111-8111-111111111111',
+      criteriaVersion: 'p37-v1',
+      mandateDigest: 'test-mandate-digest',
+    },
   };
 
   it('extracts multi-digit iteration from regex (kills \\d+ → \\d)', () => {
     const parsed = {
       ...baseFields,
-      next: `${REVIEW_REQUIRED_PREFIX}: iteration=12, planVersion=34`,
+      reviewObligation: { ...baseFields.reviewObligation, iteration: 12, planVersion: 34 },
     };
     const ctx = extractReviewContext('flowguard_plan', parsed);
     expect(ctx).not.toBeNull();
@@ -323,7 +316,7 @@ describe('MUTATION_KILL: extractReviewContext regex fallback with multi-digit an
   it('extracts iteration with whitespace separator (kills \\s → \\S)', () => {
     const parsed = {
       ...baseFields,
-      next: `${REVIEW_REQUIRED_PREFIX}: iteration 5, planVersion 7`,
+      reviewObligation: { ...baseFields.reviewObligation, iteration: 5, planVersion: 7 },
     };
     const ctx = extractReviewContext('flowguard_plan', parsed);
     expect(ctx).not.toBeNull();
@@ -334,7 +327,7 @@ describe('MUTATION_KILL: extractReviewContext regex fallback with multi-digit an
   it('extracts iteration with colon separator', () => {
     const parsed = {
       ...baseFields,
-      next: `${REVIEW_REQUIRED_PREFIX}: iteration: 3, planVersion: 9`,
+      reviewObligation: { ...baseFields.reviewObligation, iteration: 3, planVersion: 9 },
     };
     const ctx = extractReviewContext('flowguard_plan', parsed);
     expect(ctx).not.toBeNull();
@@ -345,7 +338,7 @@ describe('MUTATION_KILL: extractReviewContext regex fallback with multi-digit an
   it('returns null when iteration regex does not match (kills conditional true)', () => {
     const parsed = {
       ...baseFields,
-      next: `${REVIEW_REQUIRED_PREFIX}: no numeric fields here`,
+      reviewObligation: baseFields.reviewObligation,
     };
     const ctx = extractReviewContext('flowguard_plan', parsed);
     expect(ctx).toBeNull();
@@ -354,9 +347,7 @@ describe('MUTATION_KILL: extractReviewContext regex fallback with multi-digit an
   it('uses structured field over regex when both present', () => {
     const parsed = {
       ...baseFields,
-      reviewObligationIteration: 10,
-      reviewObligationPlanVersion: 20,
-      next: `${REVIEW_REQUIRED_PREFIX}: iteration=99, planVersion=99`,
+      reviewObligation: { ...baseFields.reviewObligation, iteration: 10, planVersion: 20 },
     };
     const ctx = extractReviewContext('flowguard_plan', parsed);
     expect(ctx).not.toBeNull();
@@ -419,7 +410,6 @@ describe('M2 — retryCount in format object', () => {
     const client = mockClient();
     _resetAgentResolutionCache();
     await invokeReviewer(client, PROMPT, 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
       _sleepFn: async () => {},
     });
     const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0]![0]!;
@@ -430,7 +420,6 @@ describe('M2 — retryCount in format object', () => {
     const client = mockClient();
     _resetAgentResolutionCache();
     await invokeReviewer(client, PROMPT, 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
       _sleepFn: async () => {},
     });
     const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0]![0]!;
@@ -441,7 +430,6 @@ describe('M2 — retryCount in format object', () => {
     const client = mockClient();
     _resetAgentResolutionCache();
     await invokeReviewer(client, PROMPT, 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
       _sleepFn: async () => {},
     });
     const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0]![0]!;
@@ -453,7 +441,6 @@ describe('M2 — retryCount in format object', () => {
     const client = mockClient();
     _resetAgentResolutionCache();
     await invokeReviewer(client, PROMPT, 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
       _sleepFn: async () => {},
     });
     const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0]![0]!;

@@ -31,10 +31,7 @@ export interface CapabilityResolution {
 }
 
 /** Attempt statuses during which an observation capability may be used. */
-const USABLE_ATTEMPT_STATUSES: ReadonlySet<ReviewAttempt['status']> = new Set([
-  'created',
-  'captured',
-]);
+const USABLE_ATTEMPT_STATUSES: ReadonlySet<ReviewAttempt['status']> = new Set(['created']);
 
 /**
  * Resolve an echoed observation capability to its owning attempt by scanning

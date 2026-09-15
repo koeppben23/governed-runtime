@@ -24,7 +24,7 @@ import {
   formatEval,
   formatAutoAdvanceOverflow,
   formatBlocked,
-  appendNextAction,
+  enrichWithNextAction,
   writeStateWithArtifacts,
 } from './helpers.js';
 import {
@@ -47,14 +47,13 @@ import {
   resolveFrozenReviewProfile,
 } from '../review/assurance.js';
 import { buildFrozenReviewMaterialContent } from '../review/reviewer-context.js';
-import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
+import { buildChildSessionReviewInstruction } from '../review/child-session-instruction.js';
 import { resolveAttemptObservationCapability } from '../review/assurance.js';
 import { repositoryEvidenceUnavailableField } from '../review/observation-access.js';
 import {
   resolveReviewedArtifactIdentity,
   reviewedIdentityFields,
 } from '../review/reviewed-digest.js';
-import { buildReviewerProofContext } from '../review/proof-context.js';
 import { buildHeuristicRiskWarning } from '../proofgraph/claim-contract.js';
 import { assessMinimumTaskClass } from '../phase-tool-gate.js';
 import {
@@ -161,9 +160,12 @@ function planSubmissionReviewContext(
   finalState: SessionState,
   planVersion: number,
 ) {
-  const nextObligation = scope.reviewPolicy.subagentEnabled
-    ? findLatestObligation(finalState.reviewAssurance?.obligations ?? [], 'plan', 0, planVersion)
-    : null;
+  const nextObligation = findLatestObligation(
+    finalState.reviewAssurance?.obligations ?? [],
+    'plan',
+    0,
+    planVersion,
+  );
   const planAttemptId = nextObligation
     ? (finalState.reviewAssurance?.attempts?.find(
         (a) => a.obligationId === nextObligation.obligationId && a.status === 'created',
@@ -204,7 +206,7 @@ function partialClaimAcceptancePresentation(
 export function buildPlanSubmissionResponse(
   input: PlanSubmissionResponseInput,
 ): Record<string, unknown> {
-  const { scope, finalState, planEvidence, planVersion, reviewFindings, transitions } = input;
+  const { scope, finalState, planEvidence, planVersion, transitions } = input;
   const { nextObligation, planAttemptId, reviewInstruction } = planSubmissionReviewContext(
     scope,
     finalState,
@@ -216,11 +218,11 @@ export function buildPlanSubmissionResponse(
     planDigest: planEvidence.digest,
     selfReviewIteration: 0,
     maxSelfReviewIterations: scope.maxSelfReviewIterations,
-    reviewMode: scope.reviewPolicy.subagentEnabled ? 'subagent' : 'self',
+    reviewMode: 'subagent',
     ...reviewObligationResponseFields(nextObligation, planAttemptId),
     ...planRepositoryEvidenceWarning(nextObligation),
-    next: reviewInstruction.next,
-    reviewInvocation: reviewInstruction.reviewInvocation,
+    next: 'INDEPENDENT_REVIEW_REQUIRED',
+    reviewInvocation: reviewInstruction,
     _audit: { transitions },
   };
   if (finalState.plan?.claimSubmissionDiagnostics?.rejectedClaims.length) {
@@ -232,12 +234,6 @@ export function buildPlanSubmissionResponse(
   }
   const riskWarning = planRiskWarning(scope);
   if (riskWarning) response.proofGraphRiskWarning = riskWarning;
-  if (reviewFindings)
-    response.latestReview = latestPlanReviewSummary(
-      finalState.reviewAssurance,
-      reviewFindings,
-      planVersion,
-    );
   return response;
 }
 
@@ -262,19 +258,14 @@ export function buildPlanReviewInstruction(input: {
   const platform = resolveRuntimeReviewPlatform();
   const mode = resolveReviewOrchestrationMode({
     platform,
-    reviewInvocationPolicy: input.scope.policy.reviewInvocationPolicy,
     nativeReviewerAvailable: platform === 'unknown' ? false : true,
-    manualAttestedAllowed: input.scope.policy.reviewInvocationPolicy !== 'host_task_required',
   });
-  return buildPendingReviewInstruction({
+  return buildChildSessionReviewInstruction({
     mode,
     platform,
-    reviewKind: 'plan',
     obligation: input.obligation,
     iteration: input.iteration,
     planVersion: input.planVersion,
-    subjectLabel: input.subjectLabel,
-    proofContext: buildReviewerProofContext(input.state),
     observationCapability: input.obligation
       ? (resolveAttemptObservationCapability(
           input.state.reviewAssurance,
@@ -374,11 +365,11 @@ export async function persistConvergedPlanReview(input: ConvergedPlanReviewInput
   const { scope, finalState } = input;
   await writeStateWithArtifacts(scope.sessDir, finalState);
   if (finalState.phase !== 'PLAN_REVIEW') {
-    return appendNextAction(JSON.stringify(convergedPlanResponse(input)), finalState);
+    return JSON.stringify(enrichWithNextAction(convergedPlanResponse(input), finalState));
   }
 
   const response = await convergedPlanReviewCardResponse(input);
-  return appendNextAction(JSON.stringify(response), finalState);
+  return JSON.stringify(enrichWithNextAction(response, finalState));
 }
 
 export async function persistNonConvergedPlanReview(
@@ -396,7 +387,6 @@ export async function persistNonConvergedPlanReview(
   const classification = await resolvePreImplementationChallengeClassification(
     finalState,
     scope.worktree,
-    scope.reviewPolicy.subagentEnabled,
     targetPaths,
   );
   const resolvedTargetPaths =
@@ -423,11 +413,11 @@ export async function persistNonConvergedPlanReview(
     ? { ...finalState, reviewAssurance: attemptResult.assurance }
     : finalState;
   await writeStateWithArtifacts(scope.sessDir, stateToPersist);
-  return appendNextAction(
-    JSON.stringify(
+  return JSON.stringify(
+    enrichWithNextAction(
       nonConvergedPlanResponse(scope, finalState, transitions, revision, nextObligation),
+      stateToPersist,
     ),
-    stateToPersist,
   );
 }
 
@@ -468,50 +458,46 @@ async function mintPlanRevisionAttempt(input: {
       }),
     };
   }
-  const attemptResult = scope.reviewPolicy.subagentEnabled
-    ? createObligationAndAttempt(
-        finalState.reviewAssurance,
-        {
+  const attemptResult = createObligationAndAttempt(
+    finalState.reviewAssurance,
+    {
+      obligationType: 'plan',
+      iteration,
+      planVersion: nextPlanVersion,
+      now: scope.ctx.now(),
+      subjectDigest: revision.currentPlan.digest,
+      claimDeclarationsDigest: hashText(
+        canonicalJsonStringify(finalState.plan?.claimDeclarations ?? { flow: 'plan', claims: [] }),
+      ),
+      // Frozen review material: the exact (possibly revised) plan artifact
+      // plus originating ticket context, digest-bound at creation time.
+      reviewMaterial: freezeReviewMaterial(
+        buildFrozenReviewMaterialContent({
           obligationType: 'plan',
-          iteration,
-          planVersion: nextPlanVersion,
-          now: scope.ctx.now(),
-          subjectDigest: revision.currentPlan.digest,
-          claimDeclarationsDigest: hashText(
-            canonicalJsonStringify(
-              finalState.plan?.claimDeclarations ?? { flow: 'plan', claims: [] },
-            ),
-          ),
-          // Frozen review material: the exact (possibly revised) plan artifact
-          // plus originating ticket context, digest-bound at creation time.
-          reviewMaterial: freezeReviewMaterial(
-            buildFrozenReviewMaterialContent({
-              obligationType: 'plan',
-              state: finalState,
-              artifact: revision.currentPlan.body,
-            }),
-            revision.currentPlan.digest,
-          ),
-          // The (possibly revised) plan artifact is the review SUBJECT; changedFiles
-          // below stay challenge-classification and repository-evidence context only.
-          reviewSubjectScope: artifactReviewSubjectScope(
-            'plan',
-            revision.currentPlan.body,
-            revision.currentPlan.digest,
-          ),
-          reviewProfile: resolveFrozenReviewProfile(finalState.policySnapshot),
-          profileSource: 'policy_default',
-          policySnapshot: finalState.policySnapshot,
-          changedFiles: resolvedTargetPaths,
-          claimedTaskClass: finalState.claimedTaskClass,
-          metadata,
-          repositoryAuthority: authority,
-          repositoryEvidenceFreeze: freezeOutcomeRecord(freeze),
-        },
-        scope.ctx.now(),
-        discovery.context,
-      )
-    : null;
+          state: finalState,
+          artifact: revision.currentPlan.body,
+        }),
+        revision.currentPlan.digest,
+      ),
+      // The (possibly revised) plan artifact is the review SUBJECT; changedFiles
+      // below stay challenge-classification and repository-evidence context only.
+      reviewSubjectScope: artifactReviewSubjectScope(
+        'plan',
+        revision.currentPlan.body,
+        revision.currentPlan.digest,
+      ),
+      reviewProfile: resolveFrozenReviewProfile(finalState.policySnapshot),
+      profileSource: 'policy_default',
+      policySnapshot: finalState.policySnapshot,
+      changedFiles: resolvedTargetPaths,
+      claimedTaskClass: finalState.claimedTaskClass,
+      metadata,
+      repositoryAuthority: authority,
+      repositoryEvidenceFreeze: freezeOutcomeRecord(freeze),
+    },
+    scope.ctx.now(),
+    discovery.context,
+  );
   return { kind: 'ok', attemptResult };
 }
 
@@ -539,8 +525,8 @@ export function nonConvergedPlanResponse(
     revisionDelta: revision.revisionDelta,
     reviewMode: 'subagent',
     ...reviewObligationResponseFields(nextObligation),
-    next: reviewInstruction.next,
-    reviewInvocation: reviewInstruction.reviewInvocation,
+    next: 'INDEPENDENT_REVIEW_REQUIRED',
+    reviewInvocation: reviewInstruction,
     _audit: { transitions },
   };
 }
@@ -548,12 +534,12 @@ export function nonConvergedPlanResponse(
 export async function persistPlanReview(
   scope: PlanExecutionScope,
   revision: PlanRevisionResult,
-  effectiveFindings: ReviewFindings | null,
+  effectiveFindings: ReviewFindings,
   consumedAssurance: ReturnType<typeof import('../review/assurance.js').consumeReviewObligation>,
   buildReviewedPlanState: (
     scope: PlanExecutionScope,
     revision: PlanRevisionResult,
-    effectiveFindings: ReviewFindings | null,
+    effectiveFindings: ReviewFindings,
     consumedAssurance: ReturnType<typeof import('../review/assurance.js').consumeReviewObligation>,
   ) => SessionState,
 ): Promise<string> {

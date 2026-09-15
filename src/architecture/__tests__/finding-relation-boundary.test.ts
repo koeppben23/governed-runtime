@@ -14,7 +14,6 @@ const FINDING_RELATION_PROJECTION = 'presentation/finding-relation.ts';
 
 const PRESENTATION_FORBIDDEN_IMPORTS = [
   'integration/review/enforcement/',
-  'integration/review/evidence-binding.js',
   'integration/tools/review-validation.js',
   'adapters/git',
   'state/proofgraph.js',
@@ -23,7 +22,6 @@ const PRESENTATION_FORBIDDEN_IMPORTS = [
 const CANONICAL_AUTHORITY_ROOTS = [
   'state',
   'integration/review/enforcement',
-  'integration/review/evidence-binding.ts',
   'integration/tools/review-validation.ts',
   'integration/tools/review-tool',
 ] as const;

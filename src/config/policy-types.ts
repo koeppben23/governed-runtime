@@ -7,7 +7,7 @@
  * @version v1
  */
 
-import type { IdpConfig, IdentityProviderMode } from '../identity/types.js';
+import type { IdpConfig, IdentityProviderMode } from '../shared/policy-idp-config.js';
 import type { PolicyMode, CentralMinimumMode } from '../state/policy-mode.js';
 
 // ─── Timestamp Assurance Policy ──────────────────────────────────────────────
@@ -51,32 +51,6 @@ export interface AuditPolicy {
 }
 
 /**
- * Mandatory independent review configuration.
- * Plan and implementation reviews must be performed by the flowguard-reviewer
- * subagent with mandate-bound evidence. Self-review fallback is not permitted.
- *
- * NOTE: These fields are retained for compatibility with existing snapshots.
- * In the current governance model, only the mandatory strict configuration
- * (subagentEnabled=true, fallbackToSelf=false, strictEnforcement=true) is valid.
- * Weaker values are normalized to the mandatory default at snapshot load time.
- * @see policy-snapshot.ts normalizeSelfReviewConfig
- */
-export interface SelfReviewConfig {
-  /** Legacy/compatibility field. Mandatory independent review is always enabled. */
-  readonly subagentEnabled: boolean;
-  /** Legacy/compatibility field. Self-review fallback is always prohibited. */
-  readonly fallbackToSelf: boolean;
-  /** Legacy/compatibility field. Strict enforcement is always required. */
-  readonly strictEnforcement: boolean;
-}
-
-/** Controls which reviewer output modes may satisfy governance evidence. */
-export type ReviewOutputPolicy = 'structured_required' | 'text_compat_allowed';
-
-/** Controls how the reviewer is invoked — host-visible Task tool vs SDK vs fallback. */
-export type ReviewInvocationPolicy = 'host_task_required' | 'host_task_preferred' | 'sdk_allowed';
-
-/**
  * Review coverage profile bound to a review obligation.
  *
  * - 'core' — the mandatory, non-optional baseline review pass. It reuses the
@@ -112,24 +86,17 @@ export function challengeKindForObligation(obligationType: string): ChallengeKin
   return 'design_challenge';
 }
 
-/** Mandatory independent review configuration for FlowGuardPolicy. */
-export const DEFAULT_SELF_REVIEW_CONFIG = {
-  subagentEnabled: true as const,
-  fallbackToSelf: false as const,
-  strictEnforcement: true as const,
-};
-
 /**
- * Canonical default for `maxReviewerOutputRepairAttempts`: exactly ONE
- * authorized output-repair reissue per obligation.
+ * Canonical default for `maxReviewerAttempts`: exactly ONE additional
+ * reviewer attempt (dispatch re-arm) per obligation.
  *
- * initial attempt (does not count) → repairable rejection → repair #1
- * repair #1 → repairable rejection → REVIEWER_OUTPUT_RETRY_EXHAUSTED
+ * initial attempt (does not count) → spent/interrupted dispatch → re-arm #1
+ * re-arm #1 → spent dispatch → budget exhausted
  *
  * The value is frozen onto the obligation at creation; presets and the
  * config override both route through this canonical default.
  */
-export const DEFAULT_MAX_REVIEWER_OUTPUT_REPAIR_ATTEMPTS = 1;
+export const DEFAULT_MAX_REVIEWER_ATTEMPTS = 1;
 
 // ─── Discovery Health Policy ──────────────────────────────────────────────────
 
@@ -232,16 +199,6 @@ export function defaultValidationEvidenceForMode(mode: PolicyMode): ValidationEv
   return { enforcement: 'off', allowNoCommands: false };
 }
 
-/**
- * Fail-closed challenge-policy default for a mode when a snapshot omits it.
- * Hard Assurance Epoch: every preset carries the canonical matrix — the
- * writer-side default is the matrix for ALL modes, and the persisted snapshot
- * requires the field explicitly.
- */
-export function defaultChallengePolicyForMode(_mode: PolicyMode): ChallengePolicy {
-  return CHALLENGE_POLICY_V1;
-}
-
 // ─── FlowGuard Policy ─────────────────────────────────────────────────────────
 
 /**
@@ -271,19 +228,15 @@ export interface FlowGuardPolicy {
   /** Max impl-review iterations in IMPL_REVIEW phase before force-convergence. */
   readonly maxImplReviewIterations: number;
 
-  /** Max fresh reviewer captures after an F12-incoherent host-task capture. */
+  /** Max fresh reviewer attempts after an F12-incoherent review result. */
   readonly maxIncoherentReviewerCaptureRetries: number;
 
   /**
-   * Obligation-level output-repair budget: how many NEW reviewer attempts may
-   * be minted for one obligation after a canonically repairable non-bindable
-   * reviewer output (schema/extraction/attestation/relation contract defects).
-   * Frozen onto the obligation at creation; the reissue gate reads the frozen
-   * value, never the live config. Governance rejections, scope/material
-   * failures, and execution failures do NOT consume this budget — they never
-   * authorize a reissue at all.
+   * Obligation-level reviewer-attempt budget: how many NEW reviewer attempts
+   * (semantic re-reviews) may be minted for one obligation. Transport failures
+   * retry within the same attempt and do not consume this budget.
    */
-  readonly maxReviewerOutputRepairAttempts: number;
+  readonly maxReviewerAttempts: number;
 
   /**
    * Whether the session initiator can approve at User Gates.
@@ -292,15 +245,6 @@ export interface FlowGuardPolicy {
    * true  → self-approval allowed (solo/team).
    */
   readonly allowSelfApproval: boolean;
-
-  /** Independent review configuration. */
-  readonly selfReview: SelfReviewConfig;
-
-  /** Whether lower-assurance text-compatible review output may satisfy evidence. */
-  readonly reviewOutputPolicy: ReviewOutputPolicy;
-
-  /** How reviewer invocation must occur: host-visible Task tool, SDK, or policy-gated. */
-  readonly reviewInvocationPolicy: ReviewInvocationPolicy;
 
   /**
    * Mandatory review coverage profile. Defaults to 'core' in every preset.
@@ -331,22 +275,9 @@ export interface FlowGuardPolicy {
    * Applies at User Gates in regulated mode. Actors below the threshold are blocked
    * with reason ACTOR_ASSURANCE_INSUFFICIENT.
    *
-   * Migration from P33 v0:
-   *   requireVerifiedActorsForApproval: true  → minimumActorAssuranceForApproval: 'claim_validated'
-   *   requireVerifiedActorsForApproval: false → minimumActorAssuranceForApproval: 'best_effort'
-   *
    * P34 design doc: docs/actor-assurance-architecture.md
    */
   readonly minimumActorAssuranceForApproval: 'best_effort' | 'claim_validated' | 'idp_verified';
-
-  /**
-   * P33 (deprecated): Whether regulated approvals require verified actor identity.
-   * Ignored if minimumActorAssuranceForApproval is set.
-   * Translated to minimumActorAssuranceForApproval at resolution time:
-   *   true  → 'claim_validated'
-   *   false → 'best_effort'
-   */
-  readonly requireVerifiedActorsForApproval: boolean;
 
   /**
    * P35a/P35b1/P35b2: IdP configuration for static keys or JWKS authority.

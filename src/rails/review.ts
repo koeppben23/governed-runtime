@@ -25,7 +25,7 @@ import {
   type InputOrigin,
   type ReviewReportFinding,
 } from '../state/evidence.js';
-import { REVIEW_REPORT_SCHEMA_ID } from '../shared/flowguard-identifiers.js';
+import { REVIEW_REPORT_SCHEMA_ID } from '../state/evidence-identifiers.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
 import type { RailResult, RailContext, TransitionRecord, RailBlocked } from './types.js';
@@ -162,7 +162,7 @@ function buildMechanicalFindings(
     });
   }
   if (completeness.fourEyes.required && !completeness.fourEyes.satisfied) {
-    if (completeness.fourEyes.decidedBy === null) {
+    if (completeness.fourEyes.decisionIdentity === null) {
       findings.push({
         source: 'mechanical',
         reportSeverity: 'warning',
@@ -174,7 +174,7 @@ function buildMechanicalFindings(
         source: 'mechanical',
         reportSeverity: 'error',
         category: 'four-eyes',
-        message: `Four-eyes principle VIOLATED: initiator (${completeness.fourEyes.initiatedBy}) and reviewer (${completeness.fourEyes.decidedBy}) are the same person`,
+        message: `Four-eyes principle VIOLATED: initiator (${completeness.fourEyes.initiatedBy}) and reviewer (${completeness.fourEyes.decisionIdentity.actorId}) are the same person`,
       });
     }
   }

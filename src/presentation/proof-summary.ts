@@ -316,7 +316,7 @@ function renderEvaluationDiagnostic(
         const cr = claim.diagnostic.counterexampleRequirement;
         lines.push(`  Counterexample requirement: ${cr.kind}`);
         lines.push(`  Check: ${cr.checkId}`);
-        if (cr.kind === 'assertion' || cr.kind === 'legacy_assertion') {
+        if (cr.kind === 'assertion') {
           lines.push(`  Provider: ${cr.assertion.providerId}`);
           lines.push(`  Assertion: ${cr.assertion.localId}`);
         }

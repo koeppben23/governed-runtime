@@ -26,9 +26,7 @@ import { makeState, FROZEN_IMPLEMENTATION_BASE } from '../fixtures.js';
 import { writeState } from '../adapters/persistence.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
 import { createTestWorkspace } from './test-helpers.js';
-import { formatBlocked, formatAutoAdvanceOverflow } from './tools/helpers.js';
-import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
-import { NATIVE_ATTESTATION_REJECTION_FIELD } from '../shared/flowguard-identifiers.js';
+import { formatAutoAdvanceOverflow } from './tools/helpers.js';
 
 const SESSION_ID = crypto.randomUUID();
 
@@ -89,84 +87,6 @@ function hookOutput(output: string): {
 }
 
 describe('toolAfter — reviewable diagnostics', () => {
-  it('warns on a native enforcement-unavailable denial', async () => {
-    const runtime = makeRuntime();
-    await toolAfter(
-      runtime,
-      { tool: 'flowguard_plan', sessionID: SESSION_ID },
-      hookOutput(
-        formatBlocked('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
-          obligationType: 'plan',
-          iteration: '0',
-          planVersion: '1',
-          deniedReviewPath: 'native',
-        }),
-      ),
-    );
-    expect(runtime.log.warn).toHaveBeenCalledWith(
-      'review',
-      'native review acceptance denied: plugin enforcement unavailable',
-      expect.any(Object),
-    );
-  });
-
-  it('warns on a host-task findings rejection', async () => {
-    const runtime = makeRuntime();
-    const output = JSON.stringify({
-      error: true,
-      code: 'SUBAGENT_EVIDENCE_REUSED',
-      hostTaskFindingsRejection: {
-        path: 'host_task',
-        reason: 'SUBAGENT_EVIDENCE_REUSED',
-        status: 'consumed',
-        obligationId: '11111111-1111-4111-8111-111111111111',
-      },
-    });
-    await toolAfter(
-      runtime,
-      { tool: 'flowguard_implement', sessionID: SESSION_ID },
-      hookOutput(output),
-    );
-    expect(runtime.log.warn).toHaveBeenCalledWith(
-      'review',
-      'host-task findings rejected by shared guard',
-      expect.objectContaining({ obligationId: '11111111-1111-4111-8111-111111111111' }),
-    );
-  });
-
-  it('warns on an identity rejection for flowguard_plan', async () => {
-    const runtime = makeRuntime();
-    const output = JSON.stringify({
-      error: true,
-      code: 'FOUR_EYES_ACTOR_MATCH',
-      reviewIdentityRejection: { reason: 'reviewer_is_author' },
-    });
-    await toolAfter(runtime, { tool: 'flowguard_plan', sessionID: SESSION_ID }, hookOutput(output));
-    expect(runtime.log.warn).toHaveBeenCalledWith(
-      'review',
-      'self-review rejected',
-      expect.objectContaining({ reason: 'reviewer_is_author' }),
-    );
-  });
-
-  it('warns on a native attestation rejection for flowguard_review', async () => {
-    const runtime = makeRuntime();
-    const output = JSON.stringify({
-      phase: 'REVIEW_COMPLETE',
-      [NATIVE_ATTESTATION_REJECTION_FIELD]: { reason: 'capture_session_mismatch' },
-    });
-    await toolAfter(
-      runtime,
-      { tool: 'flowguard_review', sessionID: SESSION_ID },
-      hookOutput(output),
-    );
-    expect(runtime.log.warn).toHaveBeenCalledWith(
-      'review',
-      'native attestation not upgraded',
-      expect.objectContaining({ reason: 'capture_session_mismatch' }),
-    );
-  });
-
   it('errors on an auto-advance overflow result', async () => {
     const runtime = makeRuntime();
     const overflow = {
@@ -184,25 +104,6 @@ describe('toolAfter — reviewable diagnostics', () => {
       'autoAdvance',
       'auto-advance overflow: topology may be non-terminating',
       expect.objectContaining({ phase: 'PLAN_REVIEW', limit: 10 }),
-    );
-  });
-
-  it('warns on an identity rejection for flowguard_continue', async () => {
-    const runtime = makeRuntime();
-    const output = JSON.stringify({
-      error: true,
-      code: 'FOUR_EYES_ACTOR_MATCH',
-      reviewIdentityRejection: { reason: 'reviewer_identity_uncomparable', obligationId: 'ob-1' },
-    });
-    await toolAfter(
-      runtime,
-      { tool: 'flowguard_continue', sessionID: SESSION_ID },
-      hookOutput(output),
-    );
-    expect(runtime.log.warn).toHaveBeenCalledWith(
-      'review',
-      'self-review rejected',
-      expect.objectContaining({ obligationId: 'ob-1' }),
     );
   });
 
@@ -244,41 +145,6 @@ describe('toolAfter — reviewable diagnostics', () => {
     const runtime = makeRuntime();
     await toolAfter(runtime, { tool: 'read', sessionID: SESSION_ID }, hookOutput('{}'));
     expect(runtime.log.warn).not.toHaveBeenCalled();
-  });
-});
-
-describe('toolAfter — reviewer task provenance', () => {
-  it('rewrites the output when no host-owned execution record exists', async () => {
-    const runtime = makeRuntime();
-    const output = { title: 'task', output: '{}', metadata: {} };
-    await toolAfter(
-      runtime,
-      {
-        tool: 'task',
-        sessionID: SESSION_ID,
-        callID: 'c1',
-        args: { subagent_type: REVIEWER_SUBAGENT_TYPE },
-      },
-      output,
-    );
-    const parsed = JSON.parse(output.output) as Record<string, unknown>;
-    expect(parsed.code).toBe('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE');
-    expect(runtime.log.warn).toHaveBeenCalledWith(
-      'host-task',
-      'reviewer capture rejected without execution provenance',
-      expect.any(Object),
-    );
-  });
-
-  it('ignores generic tasks without reviewer args', async () => {
-    const runtime = makeRuntime();
-    const output = { title: 'task', output: '{}', metadata: {} };
-    await toolAfter(
-      runtime,
-      { tool: 'task', sessionID: SESSION_ID, callID: 'c1', args: {} },
-      output,
-    );
-    expect(output.output).toBe('{}');
   });
 });
 

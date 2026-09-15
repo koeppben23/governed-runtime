@@ -7,9 +7,7 @@ import {
   buildReviewContentPrompt,
   renderFrozenReviewSubjectEnvelope,
   renderReviewerTaskPrompt,
-  buildTextCompatReviewerPrompt,
 } from './prompt-builders.js';
-import { REVIEW_FINDINGS_JSON_SCHEMA } from './findings-schema.js';
 import { renderPersistedProofGraphContext } from './proof-context.js';
 import type { FrozenReviewerContext } from './frozen-reviewer-context.js';
 
@@ -45,8 +43,10 @@ describe('renderReviewerTaskPrompt challenge contract', () => {
       challengeContract: { requiredChallengeCount: 0, requiredChallengeKind: 'design_challenge' },
     });
 
-    expect(prompt).toContain('requiredChallengeCount=0');
-    expect(prompt).toContain('Omit the optional challenges field entirely');
+    expect(prompt).toContain(
+      'Challenge requirement: exactly 0 challenges are required for this review.',
+    );
+    expect(prompt).not.toContain('Required challenge object shape');
   });
 
   it('provides only host-authoritative evidence for required challenges', () => {
@@ -181,7 +181,7 @@ describe('frozen review subject envelope', () => {
 describe('renderPersistedProofGraphContext', () => {
   it('reports persisted coverage and critical unresolved claims without evaluating providers', () => {
     const text = renderPersistedProofGraphContext({
-      version: 'proofgraph.v1',
+      version: 'proofgraph.v2',
       evaluatedAt: '2026-01-01T00:00:00.000Z',
       claims: [
         {
@@ -221,7 +221,7 @@ describe('renderPersistedProofGraphContext', () => {
 
 describe('ProofGraph prompt context', () => {
   const proofGraph = {
-    version: 'proofgraph.v1' as const,
+    version: 'proofgraph.v2' as const,
     evaluatedAt: '2026-01-01T00:00:00.000Z',
     claims: [],
   };
@@ -237,16 +237,27 @@ describe('ProofGraph prompt context', () => {
   };
 
   it('is included in plan, architecture, implementation, and standalone prompts', () => {
+    const challengeContract = {
+      requiredChallengeCount: 1,
+      requiredChallengeKind: 'design_challenge' as const,
+      evidenceRefs: [{ kind: 'content', digest: 'a'.repeat(64) }],
+    };
     const prompts = [
-      buildPlanReviewPrompt({ ...common, planText: 'plan' }),
-      buildArchitectureReviewPrompt({ ...common, adrText: 'adr', adrTitle: 'ADR-1' }),
-      buildImplReviewPrompt({ ...common, planText: 'plan', changedFiles: [] }),
-      buildReviewContentPrompt({ ...common, content: 'content' }),
+      buildPlanReviewPrompt({ ...common, planText: 'plan', challengeContract }),
+      buildArchitectureReviewPrompt({
+        ...common,
+        adrText: 'adr',
+        adrTitle: 'ADR-1',
+        challengeContract,
+      }),
+      buildImplReviewPrompt({ ...common, planText: 'plan', changedFiles: [], challengeContract }),
+      buildReviewContentPrompt({ ...common, content: 'content', challengeContract }),
     ];
 
     for (const prompt of prompts) {
       expect(prompt).toContain('## ProofGraph Context (persisted, advisory)');
       expect(prompt).toContain('Coverage: 0/0 claims PROVEN; 0 unresolved.');
+      expect(prompt).toContain('return exactly 1 design_challenge challenge(s)');
     }
   });
 });
@@ -256,22 +267,5 @@ describe('repository observation and reviewer-provenance rules', () => {
     const prompt = renderReviewerTaskPrompt({ ...BASE_INPUT });
     expect(prompt).toContain('Do NOT output reviewedBy or reviewedAt.');
     expect(prompt).toContain('ReviewerFindingsInput');
-  });
-});
-
-describe('text compatibility reviewer contract', () => {
-  it('keeps the native structured prompt free of serialization schema bytes', () => {
-    const prompt = renderReviewerTaskPrompt(BASE_INPUT);
-
-    expect(prompt).not.toContain('## Text Compatibility Serialization Contract');
-    expect(prompt).not.toContain(JSON.stringify(REVIEW_FINDINGS_JSON_SCHEMA, null, 2));
-  });
-
-  it('derives every required field from the native JSON schema', () => {
-    const prompt = buildTextCompatReviewerPrompt('review prompt');
-
-    for (const field of REVIEW_FINDINGS_JSON_SCHEMA.required) {
-      expect(prompt).toContain(field);
-    }
   });
 });

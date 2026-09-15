@@ -2,11 +2,8 @@
  * @module integration/tool-names
  * @description Canonical FlowGuard tool name constants.
  *
- * Single source of truth for all FlowGuard tool names and agent identifiers.
+ * Single source of truth for all FlowGuard tool names.
  * Every module that compares or routes on tool names MUST import from here.
- *
- * REVIEWER_SUBAGENT_TYPE is re-exported from shared/flowguard-identifiers.ts
- * (neutral module, zero dependencies, importable by any layer).
  *
  * @version v1
  */
@@ -71,8 +68,6 @@ export const ALL_FLOWGUARD_TOOL_NAMES: ReadonlySet<string> = new Set([
   TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE,
   TOOL_FLOWGUARD_OBSERVE_REPOSITORY,
 ]);
-
-export { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 
 const FLOWGUARD_VERDICT_TOOLS: ReadonlySet<string> = new Set([
   TOOL_FLOWGUARD_PLAN,

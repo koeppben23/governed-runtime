@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { getPolicyPreset, TEAM_POLICY } from '../../config/policy.js';
 import * as crypto from 'node:crypto';
-import { makeProgressedState, makeState, TICKET } from '../../fixtures.js';
+import { makeProgressedState, makeState, PLAN_EVIDENCE, TICKET } from '../../fixtures.js';
 import { buildHelpResult, finishToReadiness } from './help-projection.js';
 import { buildFinishCard } from '../status-finish.js';
 import { resolveCurrentReviewReport } from '../review/report-coherence.js';
@@ -317,7 +317,7 @@ describe('HelpResult artifacts', () => {
       view: 'context',
     });
     expect(result.artifacts.currentPlan.status).toBe('available');
-    expect(result.artifacts.currentPlan.digest).toBe('digest-of-plan');
+    expect(result.artifacts.currentPlan.digest).toBe(PLAN_EVIDENCE.digest);
     expect(result.artifacts.currentPlanVersion).toBe(1); // history: [] → 0 + 1
   });
 

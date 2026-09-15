@@ -22,6 +22,7 @@ vi.mock('./review/audit-events.js', () => ({
 }));
 
 import { readState } from '../adapters/persistence.js';
+import { makePendingReviewAttempt } from './review/__tests__/attempt-fixture.js';
 import { makeState, POLICY_SNAPSHOT, TICKET, ARCHITECTURE_DECISION } from '../fixtures.js';
 import { runReviewOrchestration } from './plugin-orchestrator.js';
 import type { OrchestratorDeps, ToolCallEvent } from './plugin-orchestrator.js';
@@ -34,6 +35,7 @@ import type { OrchestratorClient } from './review/types.js';
 const PARENT_SESSION_ID = 'parent-session-arch-ssot-1';
 const CHILD_SESSION_ID = 'child-session-arch-ssot-1';
 const OBLIGATION_ID = '33333333-3333-4333-8333-333333333333';
+const ATTEMPT_ID = '55555555-5555-4555-8555-555555555555';
 const SESS_DIR = '/tmp/fg-arch-ssot-test';
 const NOW = '2026-05-10T14:00:00.000Z';
 
@@ -44,11 +46,13 @@ function reviewRequiredOutput(): string {
   return JSON.stringify({
     phase: 'ARCHITECTURE',
     next: 'INDEPENDENT_REVIEW_REQUIRED: call flowguard-reviewer with iteration=1 and planVersion=1',
-    reviewObligationId: OBLIGATION_ID,
-    reviewObligationIteration: 1,
-    reviewObligationPlanVersion: 1,
-    reviewCriteriaVersion: REVIEW_CRITERIA_VERSION,
-    reviewMandateDigest: REVIEW_MANDATE_DIGEST,
+    reviewObligation: {
+      obligationId: OBLIGATION_ID,
+      iteration: 1,
+      planVersion: 1,
+      criteriaVersion: REVIEW_CRITERIA_VERSION,
+      mandateDigest: REVIEW_MANDATE_DIGEST,
+    },
   });
 }
 
@@ -82,12 +86,6 @@ function buildState(overrides: Partial<SessionState> = {}): SessionState {
     architecture: ARCHITECTURE_DECISION,
     policySnapshot: {
       ...POLICY_SNAPSHOT,
-      selfReview: {
-        subagentEnabled: true,
-        fallbackToSelf: false,
-        strictEnforcement: true,
-      },
-      reviewOutputPolicy: 'structured_required',
     },
     reviewAssurance: {
       assuranceSchemaVersion: 'review-assurance.v6' as const,
@@ -103,7 +101,14 @@ function buildState(overrides: Partial<SessionState> = {}): SessionState {
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
-          maxReviewerOutputRepairAttempts: 1,
+          maxReviewerAttempts: 1,
+          reviewProfile: 'core',
+          profileSource: 'policy_default',
+          reviewMaterial: {
+            content: 'frozen review material',
+            materialDigest: 'a'.repeat(64),
+            subjectDigest: 'test-subject-digest',
+          },
           createdAt: NOW,
           pluginHandshakeAt: null,
           status: 'pending',
@@ -119,7 +124,15 @@ function buildState(overrides: Partial<SessionState> = {}): SessionState {
         },
       ],
       invocations: [],
-      attempts: [],
+      attempts: [
+        makePendingReviewAttempt({
+          attemptId: ATTEMPT_ID,
+          obligationId: OBLIGATION_ID,
+          obligationType: 'architecture',
+          subjectDigest: 'test-subject-digest',
+          createdAt: NOW,
+        }),
+      ],
       dispatches: [],
     },
     ...overrides,
@@ -163,10 +176,8 @@ function buildDeps(
       {
         tool,
         requestedAt: NOW,
-        subagentCalled: false,
-        subagentRecord: null,
-        contentMeta: { expectedIteration: 1, expectedPlanVersion: 1 },
-        capturedFindings: null,
+        attemptId: null,
+        obligationId: null,
       },
     ]),
   );

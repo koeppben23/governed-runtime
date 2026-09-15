@@ -7,7 +7,7 @@
 
 import type { ArchitectureArgs, ArchitectureSession } from './architecture-shared.js';
 import { buildArchitectureReviewInstruction } from './architecture-shared.js';
-import { formatBlocked, appendNextAction, writeStateWithArtifacts } from './helpers.js';
+import { formatBlocked, enrichWithNextAction, writeStateWithArtifacts } from './helpers.js';
 import type { SessionState } from '../../state/schema.js';
 import { executeArchitecture } from '../../rails/architecture.js';
 import { normalizeArchitectureClaims } from '../../state/proofgraph-approval.js';
@@ -57,7 +57,6 @@ async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Prom
   const classification = await resolvePreImplementationChallengeClassification(
     ctx.state,
     ctx.worktree,
-    ctx.subagentEnabled,
     ctx.targetPaths,
   );
   const resolvedTargetPaths =
@@ -179,7 +178,7 @@ export async function handleAdrSubmission(
     });
   }
 
-  const subagentEnabled = policy.selfReview?.subagentEnabled ?? false;
+  const subagentEnabled = true;
   const archPlanVersion = 1;
   const now = ctx.now();
   const classification = await classifyAndCreateArchObligation({
@@ -203,7 +202,6 @@ export async function handleAdrSubmission(
 
   const instruction = buildArchitectureReviewInstruction({
     policy: session.policy,
-    subagentEnabled,
     obligation: nextObligation,
     iteration: 0,
     planVersion: archPlanVersion,
@@ -221,9 +219,9 @@ export async function handleAdrSubmission(
     ...reviewObligationResponseFields(nextObligation, subAttemptId),
     ...repositoryEvidenceUnavailableField(nextObligation?.repositoryEvidenceFreeze),
     next: instruction.next,
-    ...(instruction.reviewInvocation ? { reviewInvocation: instruction.reviewInvocation } : {}),
+    reviewInvocation: instruction,
     _audit: { transitions: result.transitions },
   };
 
-  return appendNextAction(JSON.stringify(modeAResponse), augmentedState);
+  return JSON.stringify(enrichWithNextAction(modeAResponse, augmentedState));
 }

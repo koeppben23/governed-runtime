@@ -89,7 +89,7 @@ export async function resolveAuditContext(
   const actor = policy.actorClassification[toolName] ?? 'system';
   const now = new Date().toISOString();
 
-  if (state?.archiveStatus) deps.invalidateChainState(sessionId);
+  if (state?.regulatedArchiveStatus) deps.invalidateChainState(sessionId);
   const prevHash = await deps.initChain(sessDir, sessionId);
   const parsedOutput = parseAuditOutput(output);
   const resolvedTsa = resolveTimestampAssurancePolicy(policy.audit.timestampAssurance);

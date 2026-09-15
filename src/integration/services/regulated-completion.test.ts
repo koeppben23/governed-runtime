@@ -91,7 +91,7 @@ function decisionEvent(overrides: Record<string, unknown> = {}): Record<string, 
       gatePhase: 'EVIDENCE_REVIEW',
       verdict: 'approve',
       rationale: 'LGTM',
-      decidedBy: 'reviewer-1',
+      decisionIdentity: REVIEW_APPROVE.decisionIdentity,
       decidedAt: AT,
       fromPhase: 'EVIDENCE_REVIEW',
       toPhase: 'COMPLETE',
@@ -194,7 +194,7 @@ describe('executeRegulatedCompletion', () => {
       completionDeps(),
     );
 
-    expect(result.archiveStatus).toBe('verified');
+    expect(result.regulatedArchiveStatus).toBe('verified');
     expect(decisionWrites()).toHaveLength(1);
     expect(lifecycleWrites()).toHaveLength(1);
     expect(writeStateWithArtifactsAndAuditOperations).toHaveBeenNthCalledWith(
@@ -226,11 +226,11 @@ describe('executeRegulatedCompletion', () => {
       completionDeps(),
     );
 
-    expect(result.archiveStatus).toBe('failed');
+    expect(result.regulatedArchiveStatus).toBe('failed');
     expect(archiveRegulatedEvidence).not.toHaveBeenCalled();
     expect(writeStateWithArtifactsAndAuditOperations).toHaveBeenLastCalledWith(
       '/sess',
-      expect.objectContaining({ archiveStatus: 'failed' }),
+      expect.objectContaining({ regulatedArchiveStatus: 'failed' }),
     );
   });
 
@@ -253,7 +253,7 @@ describe('executeRegulatedCompletion', () => {
       completionDeps(),
     );
 
-    expect(result.archiveStatus).toBe('verified');
+    expect(result.regulatedArchiveStatus).toBe('verified');
     expect(decisionWrites()).toHaveLength(0);
     expect(lifecycleWrites()).toHaveLength(0);
     expect(archiveRegulatedEvidence).toHaveBeenCalledOnce();
@@ -320,7 +320,7 @@ describe('executeRegulatedCompletion', () => {
       completionDeps(),
     );
 
-    expect(result.archiveStatus).toBe('verified');
+    expect(result.regulatedArchiveStatus).toBe('verified');
     expect(decisionWrites()).toHaveLength(0);
     expect(lifecycleWrites()).toHaveLength(1);
     expect(reconcilePendingAuditOperations).toHaveBeenCalled();
@@ -329,7 +329,7 @@ describe('executeRegulatedCompletion', () => {
   it('resumes only for incomplete regulated COMPLETE checkpoints', async () => {
     vi.mocked(readState).mockResolvedValue({
       ...reviewState('COMPLETE'),
-      archiveStatus: 'pending',
+      regulatedArchiveStatus: 'pending',
     });
 
     await expect(
@@ -338,7 +338,7 @@ describe('executeRegulatedCompletion', () => {
 
     vi.mocked(readState).mockResolvedValue({
       ...reviewState('COMPLETE'),
-      archiveStatus: 'verified',
+      regulatedArchiveStatus: 'verified',
     });
     await expect(
       resumeRegulatedCompletion('/sess', 'fp', 'sid', completionDeps()),
@@ -395,7 +395,8 @@ describe('executeRegulatedCompletion', () => {
     const failedWrites = vi
       .mocked(writeStateWithArtifactsAndAuditOperations)
       .mock.calls.filter(
-        (call) => (call[1] as { archiveStatus?: string }).archiveStatus === 'failed',
+        (call) =>
+          (call[1] as { regulatedArchiveStatus?: string }).regulatedArchiveStatus === 'failed',
       );
     expect(failedWrites).toHaveLength(0);
   });
@@ -403,7 +404,6 @@ describe('executeRegulatedCompletion', () => {
   it('returns the verified state when contention resolves against an already verified session', async () => {
     const verified = {
       ...reviewState('COMPLETE'),
-      archiveStatus: 'verified' as const,
       regulatedArchiveStatus: 'verified' as const,
     };
     trackPersistedState(verified);

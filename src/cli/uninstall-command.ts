@@ -10,15 +10,8 @@ import { basename, join, resolve } from 'node:path';
 import { globalConfigPath } from '../adapters/persistence.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import {
-  type CliArgs,
-  type CliResult,
-  type FileOp,
-  type InstallPlatform,
-  FLOWGUARD_OWNED_FILES,
-  FLOWGUARD_TARBALL_PATTERN,
   computeMandatesDigest,
   findParallelOpencodeConfig,
-  removeFromOpencodeJson,
   resolveOpencodeConfigPath,
   resolveTarget,
   reviewerDefinitionForPlatform,
@@ -27,6 +20,9 @@ import {
   sha256,
   toCliError,
 } from './install-helpers.js';
+import type { CliArgs, CliResult, FileOp, InstallPlatform } from './install-types.js';
+import { FLOWGUARD_OWNED_FILES, FLOWGUARD_TARBALL_PATTERN } from './install-types.js';
+import { removeFromOpencodeJson } from './install-json.js';
 import {
   ownershipManifestPath,
   readInstallOwnershipManifest,

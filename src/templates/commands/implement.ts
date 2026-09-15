@@ -1,4 +1,4 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 import {
   SHARED_REVIEW_LOOP,
   DISCOVERY_REVIEW_CAPTURE,
@@ -104,7 +104,7 @@ ${DISCOVERY_REVIEW_CAPTURE}
 ### Phase 5: Implementation Review Loop
 
 7. Read the \`next\` field from the tool response and follow its instructions exactly:
-   - If prior failing implementation challenges are open, before invoking the reviewer Task you MUST
+   - If prior failing implementation challenges are open, before the independent reviewer runs you MUST
      record each one with \`flowguard_resolve_implementation_challenge({ challengeId, validationAttemptIds })\`.
      Use only post-implementation validation attempt IDs for the current digest. This is advisory
      \`NOT_VERIFIED\` evidence and never changes reviewer acceptance or the user gate.
@@ -175,7 +175,7 @@ Revision path (when review returns changes_requested):
 5. \`flowguard_run_check({ kind: "<kind>" })\` for each active check → passes, advances to IMPL_REVIEW
 6. (review loop) \`flowguard_review_implementation({ reviewVerdict: "accept" })\` → EVIDENCE_REVIEW (user gate)
 
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 ## Presentation
 
 - If \`presentation.markdown\` is present, display its markdown verbatim — never summarize, truncate, or omit it; do not append a second conclusion.

@@ -10,13 +10,8 @@
 
 import type { SessionState } from '../../state/schema.js';
 import type { SemanticAuditIntent } from '../tools/audit-outbox.js';
-import type {
-  ReviewInvocationPolicy,
-  ReviewOutputPolicy,
-  ReviewProfile,
-} from '../../config/policy-types.js';
 import { type OrchestratorLogExtra } from '../../logging/log-extras.js';
-import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import { extractReviewContext } from './orchestrator.js';
 import { parseToolResult } from '../plugin-helpers.js';
 import {
@@ -26,6 +21,7 @@ import {
   selectReviewerProfileRules,
   type ReviewVerificationEvidenceItem,
 } from './prompt-builders.js';
+import { buildReviewChallengeContract } from './challenge-contract.js';
 import { buildReviewDiscoveryContext } from './discovery-context-loader.js';
 import type { DiscoveryReviewContext } from './discovery-context-prompt.js';
 import {
@@ -162,45 +158,6 @@ export function buildAttemptSucceededLogger(
       `reviewer ${info.step} succeeded (attempt ${info.attempt})`,
       extra as Record<string, unknown>,
     );
-  };
-}
-
-// ─── Policy Helpers ──────────────────────────────────────────────────────────
-
-export function isStrictEnforcementEnabled(sessionState: {
-  policySnapshot?: { selfReview?: { strictEnforcement?: boolean } };
-}): boolean {
-  return sessionState?.policySnapshot?.selfReview?.strictEnforcement === true;
-}
-
-export function getReviewerPolicies(sessionState: {
-  policySnapshot: {
-    reviewOutputPolicy?: string;
-    reviewInvocationPolicy?: string;
-    reviewProfile?: string;
-  };
-}): {
-  reviewOutputPolicy: ReviewOutputPolicy;
-  reviewInvocationPolicy: ReviewInvocationPolicy;
-  reviewProfile: ReviewProfile;
-} {
-  const outputPolicy = sessionState.policySnapshot.reviewOutputPolicy;
-  const invocationPolicy = sessionState.policySnapshot?.reviewInvocationPolicy;
-  const reviewProfile = sessionState.policySnapshot?.reviewProfile;
-  return {
-    reviewOutputPolicy:
-      outputPolicy === 'structured_required' || outputPolicy === 'text_compat_allowed'
-        ? outputPolicy
-        : 'structured_required',
-    reviewInvocationPolicy:
-      invocationPolicy === 'host_task_required' ||
-      invocationPolicy === 'host_task_preferred' ||
-      invocationPolicy === 'sdk_allowed'
-        ? invocationPolicy
-        : 'host_task_required',
-    // Fail-closed: any missing/invalid frozen profile resolves to the mandatory
-    // 'core' baseline. 'core' is never operator-optional and has no 'off' mode.
-    reviewProfile: reviewProfile === 'core' || reviewProfile === 'full' ? reviewProfile : 'core',
   };
 }
 
@@ -341,11 +298,16 @@ function resolveImplementationSubjectDigest(state: SessionState, obligationId: s
   return obligation.subjectDigest;
 }
 
+// eslint-disable-next-line max-lines-per-function -- one canonical projection across reviewable tools.
 export function buildToolPrompt(params: BuildToolPromptParams): string | null {
   const { toolName, texts, reviewCtx, parsedOutput, sessionState, rules, deps, discoveryContext } =
     params;
   const { planText, ticketText, adrText, adrTitle } = texts;
   const { planRules, implRules, archRules } = rules;
+  const obligation = sessionState.reviewAssurance?.obligations.find(
+    (item) => item.obligationId === reviewCtx.obligationId,
+  );
+  const challengeContract = buildReviewChallengeContract(sessionState, obligation ?? null);
   if (toolName === TOOL_FLOWGUARD_PLAN) {
     return buildPlanReviewPrompt({
       planText,
@@ -357,6 +319,7 @@ export function buildToolPrompt(params: BuildToolPromptParams): string | null {
       mandateDigest: reviewCtx.mandateDigest,
       discoveryContext,
       proofGraph: sessionState.proofGraph,
+      challengeContract,
       ...planRules,
     });
   }
@@ -389,6 +352,7 @@ export function buildToolPrompt(params: BuildToolPromptParams): string | null {
         sessionState,
         reviewCtx.obligationId,
       ),
+      challengeContract,
       ...implRules,
     });
   }
@@ -411,6 +375,7 @@ export function buildToolPrompt(params: BuildToolPromptParams): string | null {
         sessionState,
         reviewCtx.obligationId,
       ),
+      challengeContract,
       ...archRules,
     });
   }

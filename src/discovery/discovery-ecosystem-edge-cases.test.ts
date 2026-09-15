@@ -21,17 +21,18 @@ import * as path from 'node:path';
 import {
   DiscoveryResultSchema,
   ProfileResolutionSchema,
-  DiscoverySummarySchema,
   DetectedItemSchema,
-  DetectedStackSchema,
-  DetectedStackVersionSchema,
-  DetectedStackTargetSchema,
   StackInfoSchema,
   DISCOVERY_SCHEMA_VERSION,
   PROFILE_RESOLUTION_SCHEMA_VERSION,
   type CollectorInput,
   type DiscoveryResult,
 } from './types.js';
+import {
+  DetectedStackSchema,
+  DetectedStackTargetSchema,
+  DiscoverySummarySchema,
+} from '../state/discovery-schemas.js';
 import {
   ArchiveManifestSchema,
   ArchiveVerificationSchema,
@@ -678,11 +679,10 @@ line-length = 100
       expect(pnpmItem).toBeDefined();
       expect(pnpmItem?.kind).toBe('buildTool');
       expect(pnpmItem?.version).toBeUndefined();
-      // Should NOT be in versions[]
-      expect(ds!.versions.find((v) => v.id === 'pnpm')).toBeUndefined();
+      expect(ds!.items.find((item) => item.id === 'pnpm')?.version).toBeUndefined();
     });
 
-    it('detectedStack.versions includes versioned package.json tools', async () => {
+    it('detectedStack.items includes versioned package.json tools', async () => {
       const input = inputWithFiles(
         {
           'package.json': JSON.stringify({
@@ -699,16 +699,15 @@ line-length = 100
       const ds = await extractDetectedStack(result);
       expect(ds).not.toBeNull();
 
-      // versions[] should include react, vitest, eslint
-      const versionIds = ds!.versions.map((v) => v.id);
+      const versionIds = ds!.items.filter((item) => item.version).map((item) => item.id);
       expect(versionIds).toContain('react');
       expect(versionIds).toContain('vitest');
       expect(versionIds).toContain('eslint');
 
       // Correct targets
-      expect(ds!.versions.find((v) => v.id === 'react')?.target).toBe('framework');
-      expect(ds!.versions.find((v) => v.id === 'vitest')?.target).toBe('testFramework');
-      expect(ds!.versions.find((v) => v.id === 'eslint')?.target).toBe('qualityTool');
+      expect(ds!.items.find((item) => item.id === 'react')?.kind).toBe('framework');
+      expect(ds!.items.find((item) => item.id === 'vitest')?.kind).toBe('testFramework');
+      expect(ds!.items.find((item) => item.id === 'eslint')?.kind).toBe('qualityTool');
     });
 
     it('detectedStack.items includes all detected items from full project', async () => {
@@ -789,7 +788,9 @@ line-length = 100
       expect(dbItem).toBeDefined();
       expect(dbItem?.version).toBe('16');
 
-      const dbVersion = ds!.versions.find((v) => v.target === 'database' && v.id === 'postgresql');
+      const dbVersion = ds!.items.find(
+        (item) => item.kind === 'database' && item.id === 'postgresql',
+      );
       expect(dbVersion).toBeDefined();
       expect(dbVersion?.version).toBe('16');
     });
@@ -846,11 +847,11 @@ components = ["clippy", "rustfmt"]
       expect(itemIds).toContain('buildTool:go-modules');
       expect(itemIds).toContain('qualityTool:golangci-lint');
 
-      expect(ds!.versions).toEqual(
+      expect(ds!.items).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ id: 'python', version: '3.12.2', target: 'language' }),
-          expect.objectContaining({ id: 'rust', version: '1.78.0', target: 'language' }),
-          expect.objectContaining({ id: 'go', version: '1.23', target: 'language' }),
+          expect.objectContaining({ id: 'python', version: '3.12.2', kind: 'language' }),
+          expect.objectContaining({ id: 'rust', version: '1.78.0', kind: 'language' }),
+          expect.objectContaining({ id: 'go', version: '1.23', kind: 'language' }),
         ]),
       );
     });

@@ -13,75 +13,18 @@
  * P2d: Session-embedded schemas (DiscoverySummary, DetectedStack, VerificationCandidates
  * and their transitive dependencies) are canonically defined in state/discovery-schemas.ts
  * to preserve the architecture boundary: state/ must not import from discovery/.
- * Re-exported here for backward compatibility.
  *
  * @version v2
  */
 
 import { z } from 'zod';
 
-// P2d: Session-embedded schemas re-imported from canonical state layer definitions.
-// This preserves backward compatibility: all existing imports from discovery/types
-// continue to work, while state/schema.ts imports from state/discovery-schemas.ts.
-import {
-  TopologyKindSchema,
-  type TopologyKind,
-  CodeSurfaceStatusSchema,
-  type CodeSurfaceStatus,
-  VerificationCandidateKindSchema,
-  type VerificationCandidateKind,
-  VerificationCandidateConfidenceSchema,
-  type VerificationCandidateConfidence,
-  VerificationCandidateSchema,
-  type VerificationCandidate,
-  VerificationCandidatesSchema,
-  type VerificationCandidates,
-  DetectedStackTargetSchema,
-  type DetectedStackTarget,
-  DetectedStackVersionSchema,
-  type DetectedStackVersion,
-  DetectedStackItemSchema,
-  type DetectedStackItem,
-  DetectedStackTargetEntrySchema,
-  type DetectedStackTargetEntry,
-  DetectedStackSchema,
-  type DetectedStack,
-  DiscoverySummarySchema,
-  type DiscoverySummary,
-} from '../state/discovery-schemas.js';
+import { TopologyKindSchema, CodeSurfaceStatusSchema } from '../state/discovery-schemas.js';
 import { SignalClass } from '../state/evidence-signal.js';
-
-// Re-export for backward compatibility
-export {
-  TopologyKindSchema,
-  type TopologyKind,
-  CodeSurfaceStatusSchema,
-  type CodeSurfaceStatus,
-  VerificationCandidateKindSchema,
-  type VerificationCandidateKind,
-  VerificationCandidateConfidenceSchema,
-  type VerificationCandidateConfidence,
-  VerificationCandidateSchema,
-  type VerificationCandidate,
-  VerificationCandidatesSchema,
-  type VerificationCandidates,
-  DetectedStackTargetSchema,
-  type DetectedStackTarget,
-  DetectedStackVersionSchema,
-  type DetectedStackVersion,
-  DetectedStackItemSchema,
-  type DetectedStackItem,
-  DetectedStackTargetEntrySchema,
-  type DetectedStackTargetEntry,
-  DetectedStackSchema,
-  type DetectedStack,
-  DiscoverySummarySchema,
-  type DiscoverySummary,
-};
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-export const DISCOVERY_SCHEMA_VERSION = 'discovery.v1' as const;
+export const DISCOVERY_SCHEMA_VERSION = 'discovery.v2' as const;
 export const PROFILE_RESOLUTION_SCHEMA_VERSION = 'profile-resolution.v1' as const;
 
 // ─── Evidence Classification ──────────────────────────────────────────────────
@@ -119,21 +62,38 @@ export type CollectorStatus = z.infer<typeof CollectorStatusSchema>;
  * Makes collector-local degradation explicit and diagnosable without
  * hiding failures behind silent defaults.
  */
-export const CollectorDiagnosticSchema = z.object({
-  /** Collector name (e.g., "repo-metadata", "stack-detection"). */
-  name: z.string().min(1),
-  /** Final collector execution status. */
-  status: CollectorStatusSchema,
-  /** Wall-clock duration in milliseconds. */
-  durationMs: z.number().nonnegative(),
-  /** Error code when status is 'failed' (timeout message, error name, etc.). */
-  errorCode: z.string().optional(),
-  /** Whether the collector was terminated by timeout. */
-  timedOut: z.boolean(),
-  /** Human-readable reason for degraded/partial status. */
-  degradedReason: z.string().optional(),
-});
+export const CollectorDiagnosticSchema = z
+  .object({
+    /** Collector name (e.g., "repo-metadata", "stack-detection"). */
+    name: z.string().min(1),
+    /** Final collector execution status. */
+    status: CollectorStatusSchema,
+    /** Wall-clock duration in milliseconds. */
+    durationMs: z.number().nonnegative(),
+    /** Error code when status is 'failed' (timeout message, error name, etc.). */
+    errorCode: z.string().optional(),
+    /** Whether the collector was terminated by timeout. */
+    timedOut: z.boolean(),
+    /** Human-readable reason for degraded/partial status. */
+    degradedReason: z.string().optional(),
+  })
+  .strict();
 export type CollectorDiagnostic = z.infer<typeof CollectorDiagnosticSchema>;
+
+/** The complete, fixed set of collectors represented in a persisted discovery result. */
+const DiscoveryCollectorNameSchema = z.enum([
+  'repo-metadata',
+  'stack-detection',
+  'topology',
+  'surface-detection',
+  'code-surface-analysis',
+  'domain-signals',
+]);
+type DiscoveryCollectorName = z.infer<typeof DiscoveryCollectorNameSchema>;
+
+const DiscoveryResultDiagnosticSchema = CollectorDiagnosticSchema.extend({
+  name: DiscoveryCollectorNameSchema,
+}).strict();
 
 // ─── Detected Item ────────────────────────────────────────────────────────────
 
@@ -179,19 +139,21 @@ export type RepoMetadata = z.infer<typeof RepoMetadataSchema>;
 // ─── Stack Detection ──────────────────────────────────────────────────────────
 
 /** Stack detection result: languages, frameworks, build tools, test frameworks, runtimes, tools, quality tools, databases. */
-export const StackInfoSchema = z.object({
-  languages: z.array(DetectedItemSchema),
-  frameworks: z.array(DetectedItemSchema),
-  buildTools: z.array(DetectedItemSchema),
-  testFrameworks: z.array(DetectedItemSchema),
-  runtimes: z.array(DetectedItemSchema),
-  /** Detected ecosystem tools (e.g., openapi-generator, flyway, liquibase). Default [] for backward compat. */
-  tools: z.array(DetectedItemSchema).default([]),
-  /** Detected quality/analysis tools (e.g., spotless, checkstyle, jacoco). Default [] for backward compat. */
-  qualityTools: z.array(DetectedItemSchema).default([]),
-  /** Detected database engines (e.g., postgresql, mysql, mongodb). Default [] for backward compat. */
-  databases: z.array(DetectedItemSchema).default([]),
-});
+export const StackInfoSchema = z
+  .object({
+    languages: z.array(DetectedItemSchema),
+    frameworks: z.array(DetectedItemSchema),
+    buildTools: z.array(DetectedItemSchema),
+    testFrameworks: z.array(DetectedItemSchema),
+    runtimes: z.array(DetectedItemSchema),
+    /** Detected ecosystem tools (e.g., openapi-generator, flyway, liquibase). */
+    tools: z.array(DetectedItemSchema),
+    /** Detected quality/analysis tools (e.g., spotless, checkstyle, jacoco). */
+    qualityTools: z.array(DetectedItemSchema),
+    /** Detected database engines (e.g., postgresql, mysql, mongodb). */
+    databases: z.array(DetectedItemSchema),
+  })
+  .strict();
 export type StackInfo = z.infer<typeof StackInfoSchema>;
 
 // ─── Topology ─────────────────────────────────────────────────────────────────
@@ -308,35 +270,39 @@ export type SemanticExtractionInfo = z.infer<typeof SemanticExtractionInfoSchema
 // CodeSurfaceStatusSchema + CodeSurfaceStatus: re-exported from state/discovery-schemas.ts
 
 /** Collector budget stats for code-surface analysis. */
-export const CodeSurfaceBudgetSchema = z.object({
-  scannedFiles: z.number().int().nonnegative(),
-  scannedBytes: z.number().int().nonnegative(),
-  maxFiles: z.number().int().positive(),
-  maxBytesPerFile: z.number().int().positive(),
-  maxTotalBytes: z.number().int().positive(),
-  timedOut: z.boolean(),
-  /** Total source-file candidates before budget slice. */
-  totalSourceCandidates: z.number().int().nonnegative().optional(),
-  /** Whether budget exhaustion truncated the scan (true = partial due to budget). */
-  budgetExhausted: z.boolean().optional(),
-});
+export const CodeSurfaceBudgetSchema = z
+  .object({
+    scannedFiles: z.number().int().nonnegative(),
+    scannedBytes: z.number().int().nonnegative(),
+    maxFiles: z.number().int().positive(),
+    maxBytesPerFile: z.number().int().positive(),
+    maxTotalBytes: z.number().int().positive(),
+    timedOut: z.boolean(),
+    /** Total source-file candidates before budget slice. */
+    totalSourceCandidates: z.number().int().nonnegative().optional(),
+    /** Whether budget exhaustion truncated the scan (true = partial due to budget). */
+    budgetExhausted: z.boolean().optional(),
+  })
+  .strict();
 export type CodeSurfaceBudget = z.infer<typeof CodeSurfaceBudgetSchema>;
 
 /** Bounded heuristic code-surface analysis result. */
-export const CodeSurfacesInfoSchema = z.object({
-  status: CodeSurfaceStatusSchema,
-  endpoints: z.array(CodeSurfaceSignalSchema),
-  authBoundaries: z.array(CodeSurfaceSignalSchema),
-  dataAccess: z.array(CodeSurfaceSignalSchema),
-  integrations: z.array(CodeSurfaceSignalSchema),
-  /** Advisory semantic test targets when framework/test patterns are detected. */
-  testTargets: z.array(CodeSurfaceSignalSchema).optional(),
-  budget: CodeSurfaceBudgetSchema,
-  /** Optional semantic extraction diagnostics; advisory, bounded, and non-authoritative. */
-  semanticExtraction: SemanticExtractionInfoSchema.optional(),
-  /** Per-file read outcome diagnostics (populated when reads degrade). */
-  readStatuses: z.record(z.string(), ReadOutcomeSchema).optional(),
-});
+export const CodeSurfacesInfoSchema = z
+  .object({
+    status: CodeSurfaceStatusSchema,
+    endpoints: z.array(CodeSurfaceSignalSchema),
+    authBoundaries: z.array(CodeSurfaceSignalSchema),
+    dataAccess: z.array(CodeSurfaceSignalSchema),
+    integrations: z.array(CodeSurfaceSignalSchema),
+    /** Advisory semantic test targets when framework/test patterns are detected. */
+    testTargets: z.array(CodeSurfaceSignalSchema).optional(),
+    budget: CodeSurfaceBudgetSchema,
+    /** Optional semantic extraction diagnostics; advisory, bounded, and non-authoritative. */
+    semanticExtraction: SemanticExtractionInfoSchema.optional(),
+    /** Per-file read outcome diagnostics (populated when reads degrade). */
+    readStatuses: z.record(z.string(), ReadOutcomeSchema).optional(),
+  })
+  .strict();
 export type CodeSurfacesInfo = z.infer<typeof CodeSurfacesInfoSchema>;
 
 // ─── Domain Signals ───────────────────────────────────────────────────────────
@@ -360,28 +326,6 @@ export const DomainSignalsSchema = z.object({
 });
 export type DomainSignals = z.infer<typeof DomainSignalsSchema>;
 
-// ─── Validation Hints ─────────────────────────────────────────────────────────
-
-/** A command hint for validation (build, test, lint, etc.). */
-export const CommandHintSchema = z.object({
-  /** Command category. */
-  kind: z.enum(['build', 'test', 'lint', 'typecheck', 'format', 'other']),
-  /** The command string (e.g., "npm test", "mvn verify"). */
-  command: z.string().min(1),
-  /** Confidence that this is the right command. */
-  confidence: z.number().min(0).max(1),
-  /** Evidence classification. */
-  classification: EvidenceClassSchema,
-});
-export type CommandHint = z.infer<typeof CommandHintSchema>;
-
-/** Validation hints: detected commands and lint tools. */
-export const ValidationHintsSchema = z.object({
-  commands: z.array(CommandHintSchema),
-  lintTools: z.array(DetectedItemSchema),
-});
-export type ValidationHints = z.infer<typeof ValidationHintsSchema>;
-
 // ─── Verification Candidates (advisory planner output) ───────────────────────
 // VerificationCandidate* schemas: re-exported from state/discovery-schemas.ts
 
@@ -398,31 +342,61 @@ export type ValidationHints = z.infer<typeof ValidationHintsSchema>;
  * 5. code-surface-analysis: bounded heuristic endpoint/auth/data/integration signals
  * 6. domain-signals: domain keywords, glossary sources
  *
- * Plus validation hints derived from stack + topology.
- *
  * Persisted to: discovery/discovery.json (workspace-level)
  * Snapshot to: sessions/{id}/discovery-snapshot.json (immutable per-session copy)
  */
-export const DiscoveryResultSchema = z.object({
-  schemaVersion: z.literal(DISCOVERY_SCHEMA_VERSION),
-  collectedAt: z.string().datetime(),
-  /** Per-collector execution status (legacy flat map — derived from diagnostics). */
-  collectors: z.record(z.string(), CollectorStatusSchema),
-  /** Per-collector structured diagnostics: timing, status, error info. */
-  diagnostics: z.array(CollectorDiagnosticSchema).optional(),
-  repoMetadata: RepoMetadataSchema,
-  stack: StackInfoSchema,
-  topology: TopologyInfoSchema,
-  surfaces: SurfacesInfoSchema,
-  codeSurfaces: CodeSurfacesInfoSchema.optional(),
-  domainSignals: DomainSignalsSchema,
-  /**
-   * Validation hints derived from stack + topology analysis.
-   * @deprecated Superseded by verificationCandidates (planVerificationCandidates output).
-   * Retained for discovery digest stability. Do not consume for agent guidance.
-   */
-  validationHints: ValidationHintsSchema,
-});
+export const DiscoveryResultSchema = z
+  .object({
+    schemaVersion: z.literal(DISCOVERY_SCHEMA_VERSION),
+    collectedAt: z.string().datetime(),
+    /** Per-collector structured diagnostics: timing, status, error info. */
+    diagnostics: z.array(DiscoveryResultDiagnosticSchema),
+    repoMetadata: RepoMetadataSchema,
+    stack: StackInfoSchema,
+    topology: TopologyInfoSchema,
+    surfaces: SurfacesInfoSchema,
+    codeSurfaces: CodeSurfacesInfoSchema,
+    domainSignals: DomainSignalsSchema,
+  })
+  .superRefine((result, ctx) => {
+    const counts = new Map<DiscoveryCollectorName, number>();
+    for (const diagnostic of result.diagnostics) {
+      counts.set(diagnostic.name, (counts.get(diagnostic.name) ?? 0) + 1);
+    }
+    for (const name of DiscoveryCollectorNameSchema.options) {
+      const count = counts.get(name) ?? 0;
+      if (count === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['diagnostics'],
+          message: `Missing diagnostic for collector '${name}'`,
+        });
+      } else if (count > 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['diagnostics'],
+          message: `Duplicate diagnostic for collector '${name}'`,
+        });
+      }
+    }
+
+    const codeSurfaceDiagnosticIndex = result.diagnostics.findIndex(
+      (diagnostic) => diagnostic.name === 'code-surface-analysis',
+    );
+    if (codeSurfaceDiagnosticIndex >= 0) {
+      const codeSurfaceDiagnostic = result.diagnostics[codeSurfaceDiagnosticIndex]!;
+      const expectedStatus =
+        result.codeSurfaces.status === 'ok' ? 'complete' : result.codeSurfaces.status;
+      if (codeSurfaceDiagnostic.status !== expectedStatus) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['diagnostics', codeSurfaceDiagnosticIndex, 'status'],
+          message: `code-surface-analysis diagnostic status must be '${expectedStatus}' when codeSurfaces.status is '${result.codeSurfaces.status}'`,
+        });
+      }
+    }
+  })
+  .strict();
 export type DiscoveryResult = z.infer<typeof DiscoveryResultSchema>;
 
 // ─── Profile Resolution ───────────────────────────────────────────────────────

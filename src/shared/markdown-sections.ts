@@ -115,8 +115,8 @@ export function indexMarkdownSections(markdown: string): MarkdownSection[] {
 }
 
 /**
- * Compatibility projection for legacy PlanEvidence.sections consumers.
- * Existing behavior includes only H1 through H3 headings in document order.
+ * Project the canonical `PlanEvidence.sections` heading list from a markdown body.
+ * Includes only H1 through H3 headings, in document order.
  */
 export function projectMarkdownHeadings(markdown: string): string[] {
   return indexMarkdownSections(markdown)

@@ -18,7 +18,7 @@ import {
   ARCHITECTURE_DECISION,
   POLICY_SNAPSHOT,
 } from '../fixtures.js';
-import { computeRecordDigest } from '../state/evidence-plan.js';
+import { makePlanRevision } from '../state/evidence-test-constants.js';
 import type { RailContext } from './types.js';
 import type { PlanRecord } from '../state/evidence.js';
 import { TEAM_POLICY } from '../config/policy.js';
@@ -69,24 +69,7 @@ function makeExecutors(overrides?: Partial<ContinueExecutors>): ContinueExecutor
 
 function planWith(body: string): PlanRecord {
   return {
-    current: {
-      body,
-      digest: 'd',
-      sections: [],
-      createdAt: FIXED_TIME,
-      recordDigest: computeRecordDigest({
-        contentDigest: 'd',
-        planVersion: 1,
-        supersedesRecordDigest: null,
-        originatingReviewObligationId: null,
-        revisionReason: null,
-      }),
-      planVersion: 1,
-      supersedesRecordDigest: null,
-      originatingReviewObligationId: null,
-      revisionReason: null,
-      lineageStatus: 'verified' as const,
-    },
+    current: makePlanRevision({ body, createdAt: FIXED_TIME }),
     history: [],
     reviewCompletion: 'pending',
   };
@@ -113,7 +96,6 @@ describe('continue rail', () => {
         activeChecks: ['test_quality', 'rollback_safety'],
         reviewDecision: {
           verdict: 'approve',
-          decidedBy: 'r',
           decidedAt: FIXED_TIME,
           rationale: 'approved',
           decisionIdentity: {
@@ -214,7 +196,6 @@ describe('continue rail', () => {
         },
         reviewDecision: {
           verdict: 'approve',
-          decidedBy: 'r',
           decidedAt: FIXED_TIME,
           rationale: 'approved',
           decisionIdentity: {

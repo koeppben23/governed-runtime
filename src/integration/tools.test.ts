@@ -358,8 +358,9 @@ describe('integration/tools', () => {
       expect(Object.keys(toolArgs(implement))).toHaveLength(0);
     });
 
-    it('review exposes reviewFindings, not analysisFindings', () => {
-      expect(Object.keys(toolArgs(review))).toContain('reviewFindings');
+    it('review exposes reviewObligationId, not reviewFindings/analysisFindings', () => {
+      expect(Object.keys(toolArgs(review))).toContain('reviewObligationId');
+      expect(Object.keys(toolArgs(review))).not.toContain('reviewFindings');
       expect(Object.keys(toolArgs(review))).not.toContain('analysisFindings');
     });
 

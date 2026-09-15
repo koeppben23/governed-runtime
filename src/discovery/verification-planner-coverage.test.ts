@@ -8,7 +8,7 @@ import {
   stripToCandidates,
 } from './verification-planner.js';
 import { makeDetectedStack, makeReadFile } from './verification-planner-test-helpers.js';
-import type { DetectedStack } from './types.js';
+import type { DetectedStack } from '../state/discovery-schemas.js';
 
 async function plan(input: {
   detectedStack?: DetectedStack | null;

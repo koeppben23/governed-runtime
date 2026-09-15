@@ -4,24 +4,17 @@
  *
  * This module does not approve, block, mutate state, bind evidence, or consume
  * obligations. It only projects the transport mode that should be described to
- * the agent from the existing platform and policy inputs.
+ * the agent from the existing host input.
  */
 
-import type { ReviewInvocationPolicy } from '../../config/policy-types.js';
-
 export type ReviewOrchestrationMode =
-  | 'host_task_sync'
-  | 'external_instruction_pending'
-  | 'manual_attested_required'
-  | 'unsupported_blocked';
+  'host_structured' | 'external_instruction_pending' | 'unsupported_blocked';
 
 export type ReviewHostPlatform = 'opencode' | 'claude-code' | 'codex' | 'unknown';
 
 export interface ReviewOrchestrationModeInput {
   readonly platform: ReviewHostPlatform;
-  readonly reviewInvocationPolicy?: ReviewInvocationPolicy;
   readonly nativeReviewerAvailable?: boolean;
-  readonly manualAttestedAllowed?: boolean;
 }
 
 export function normalizeReviewHostPlatform(value: unknown): ReviewHostPlatform {
@@ -32,23 +25,15 @@ export function normalizeReviewHostPlatform(value: unknown): ReviewHostPlatform 
 export function resolveReviewOrchestrationMode(
   input: ReviewOrchestrationModeInput,
 ): ReviewOrchestrationMode {
-  if (input.platform === 'opencode') return 'host_task_sync';
+  if (input.platform === 'opencode') return 'host_structured';
 
   if (input.platform === 'claude-code' || input.platform === 'codex') {
-    if (input.reviewInvocationPolicy === 'host_task_required') {
-      return input.manualAttestedAllowed === true
-        ? 'manual_attested_required'
-        : 'unsupported_blocked';
-    }
     if (input.nativeReviewerAvailable === false) {
-      return input.manualAttestedAllowed === true
-        ? 'manual_attested_required'
-        : 'unsupported_blocked';
+      return 'unsupported_blocked';
     }
     return 'external_instruction_pending';
   }
 
-  if (input.manualAttestedAllowed === true) return 'manual_attested_required';
   return 'unsupported_blocked';
 }
 
