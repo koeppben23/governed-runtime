@@ -66,12 +66,11 @@ export type StructuredFindingsResolution =
   | { readonly kind: 'not_found' };
 
 /**
- * Resolve review findings from host-task invocation evidence.
+ * Resolve review findings from host-observed structured invocation evidence.
  *
- * For `host_task_required` mode, the plugin stores the complete raw findings
- * in the invocation evidence (`capturedRawFindings`). This function reads and
- * validates them, eliminating agent-side reconstruction of the ReviewFindings
- * object — the primary remaining failure point after Stufe 1.
+ * The host stores the complete structured findings in the invocation evidence
+ * (`capturedRawFindings`). This function reads and validates them, eliminating
+ * agent-side reconstruction of the ReviewFindings object.
  *
  * The returned `invocationId` is used for direct obligation consumption,
  * bypassing `findAcceptedInvocationForFindings` (which would require hash

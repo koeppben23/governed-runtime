@@ -11,7 +11,6 @@ import type { ToolDefinition } from './helpers.js';
 import { formatError } from './error-format.js';
 import { withMutableSessionTransaction } from './helpers.js';
 
-import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 import { ArchitectureClaimDeclarationInput as ArchitectureClaimDeclarationSchema } from '../../state/proofgraph-approval.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import {
@@ -27,11 +26,10 @@ export const architecture: ToolDefinition = {
   description:
     'Submit an Architecture Decision Record (ADR) OR record the independent reviewer verdict. Two modes:\n' +
     'Mode A (submit ADR): provide title and adrText. ADR ID is auto-generated. Records the ADR and starts the review flow.\n' +
-    "Mode B (review verdict): provide reviewVerdict ('accept' or 'changes_requested'). " +
+    "Mode B (review verdict): provide reviewVerdict only ('accept' or 'changes_requested'). " +
     "If 'changes_requested', also provide revised adrText.\n" +
-    `Review is performed by the ${REVIEWER_SUBAGENT_TYPE} under the active review transport. ` +
-    'In host-task mode submit ONLY reviewVerdict; FlowGuard resolves captured reviewer evidence automatically. ' +
-    'In an explicitly active SDK/manual findings mode, include the exact reviewer reviewFindings accepted by that transport. ' +
+    `Review is performed by the ${REVIEWER_SUBAGENT_TYPE} and the host captures its structured findings. ` +
+    'FlowGuard resolves those captured findings automatically — submit the verdict only and never reviewer findings. ' +
     'There is no self-review fallback and reviewer unavailability always fails closed.\n' +
     'The review loop runs up to maxIterations (from policy). ' +
     'On convergence, advances to the ARCH_REVIEW human gate; reviewer acceptance is not user approval.\n' +
@@ -65,11 +63,6 @@ export const architecture: ToolDefinition = {
           'ARCH_REVIEW user gate (the user still approves via /review-decision). ' +
           "'changes_requested' = the ADR needs revision; provide updated adrText.",
       ),
-    reviewFindings: ReviewFindingsSchema.optional().describe(
-      `The ${REVIEWER_SUBAGENT_TYPE} subagent's structured findings. SDK/manual findings mode only — pass the ` +
-        'reviewer output verbatim when the active transport explicitly requests it. In host-task mode do NOT submit reviewFindings: the plugin ' +
-        'resolves them from captured evidence, and hand-edited or mismatched findings are rejected.',
-    ),
     reviewerUnavailable: z
       .boolean()
       .optional()
@@ -95,7 +88,6 @@ export const architecture: ToolDefinition = {
         const { hasVerdict } = toolCallFlags({
           text: args.adrText,
           reviewVerdict: args.reviewVerdict,
-          reviewFindings: args.reviewFindings,
           reviewerUnavailable: args.reviewerUnavailable,
         });
         const isInitialSubmission = !hasVerdict;

@@ -33,7 +33,12 @@ import { writeStateWithArtifacts, type ToolContext } from './tools/helpers.js';
 import { runRequiredDiscovery } from './tools/hydrate-discovery.js';
 import { plan } from './tools/plan.js';
 import { review } from './tools/review-tool/index.js';
-import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
+import {
+  REVIEW_CRITERIA_VERSION,
+  REVIEW_MANDATE_DIGEST,
+  buildInvocationEvidence,
+  hashFindings,
+} from './review/assurance.js';
 import type { ReviewFindings } from '../state/evidence.js';
 import { executeReviewDecision } from '../rails/review-decision.js';
 import { createTestContext } from '../testing.js';
@@ -694,6 +699,63 @@ describe('standalone review hypotheses (runtime)', () => {
     };
   }
 
+  /** Bind host-captured structured findings to the standalone review obligation. */
+  async function bindStructuredReviewEvidence(
+    reviewEnv: Env,
+    obligationId: string,
+    capturedFindings: ReviewFindings,
+  ): Promise<void> {
+    const state = await readState(reviewEnv.sDir);
+    const assurance = state?.reviewAssurance;
+    const obligation = assurance?.obligations.find((o) => o.obligationId === obligationId);
+    const attempt = assurance?.attempts.find((a) => a.obligationId === obligationId);
+    if (!state || !assurance || !obligation || !attempt) {
+      throw new Error('standalone review evidence requires a pending obligation and attempt');
+    }
+    const invocation = buildInvocationEvidence({
+      obligationId,
+      obligationType: 'review',
+      mandateDigest: obligation.mandateDigest,
+      criteriaVersion: obligation.criteriaVersion,
+      parentSessionId: reviewEnv.tc.sessionID,
+      childSessionId: capturedFindings.reviewedBy.sessionId,
+      promptHash: 'standalone-review-host-capture',
+      findingsHash: hashFindings(capturedFindings),
+      invokedAt: FIXED_TIME,
+      fulfilledAt: FIXED_TIME,
+      capturedRawFindings: capturedFindings,
+      attemptId: attempt.attemptId,
+    });
+    await writeStateWithArtifacts(reviewEnv.sDir, {
+      ...state,
+      reviewAssurance: {
+        ...assurance,
+        obligations: assurance.obligations.map((item) =>
+          item.obligationId === obligationId
+            ? {
+                ...item,
+                status: 'fulfilled' as const,
+                invocationId: invocation.invocationId,
+                pluginHandshakeAt: FIXED_TIME,
+                fulfilledAt: FIXED_TIME,
+              }
+            : item,
+        ),
+        invocations: [...assurance.invocations, invocation],
+        attempts: assurance.attempts.map((item) =>
+          item.attemptId === attempt.attemptId
+            ? {
+                ...item,
+                status: 'bound' as const,
+                childSessionId: invocation.childSessionId,
+                completedAt: FIXED_TIME,
+              }
+            : item,
+        ),
+      },
+    });
+  }
+
   it('produces exactly the profile objective count, never a duplicated set', async () => {
     env = await boot('standalone');
     await writeStateWithArtifacts(env.sDir, makeState('READY'));
@@ -729,12 +791,18 @@ describe('standalone review hypotheses (runtime)', () => {
       },
     });
 
+    await bindStructuredReviewEvidence(
+      env,
+      obligationId,
+      findings(obligationId, obligation.iteration, obligation.planVersion),
+    );
+
     await review.execute(
       {
         inputOrigin: 'manual_text',
         text: 'PR under review',
         targetPaths: ['README.md'],
-        reviewFindings: findings(obligationId, obligation.iteration, obligation.planVersion),
+        reviewObligationId: obligationId,
       },
       env.tc,
     );
@@ -1114,6 +1182,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             fulfilledAt: FIXED_TIME,
             consumedByObligationId: null,
             capturedVerdict: 'accept',
+            capturedRawFindings: { overallVerdict: 'accept' },
             reviewOutputMode: 'structured_output' as const,
             structuredOutputUsed: true,
             reviewAssuranceLevel: 'structured_high' as const,

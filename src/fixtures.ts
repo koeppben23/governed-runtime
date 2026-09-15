@@ -176,9 +176,52 @@ export function assuranceWith(input: {
 }
 
 /**
+ * Host-observed capture record for the canonical bound review fixtures. The
+ * captured structured findings are the only findings authority in the current
+ * contract; `capturedFindingsHash` is the canonical findings hash over exactly
+ * this record (hashFindings normalizes finding arrays, which are empty here).
+ */
+function capturedFindingsFor(input: {
+  iteration: number;
+  planVersion: number;
+  sessionId: string;
+}): Record<string, unknown> {
+  return {
+    iteration: input.iteration,
+    planVersion: input.planVersion,
+    reviewMode: 'subagent',
+    overallVerdict: 'accept',
+    blockingIssues: [],
+    majorRisks: [],
+    missingVerification: [],
+    scopeCreep: [],
+    unknowns: [],
+    reviewedBy: { sessionId: input.sessionId },
+    reviewedAt: FIXED_TIME,
+    challenges: [],
+  };
+}
+
+function capturedFindingsHash(findings: Record<string, unknown>): string {
+  return hashText(canonicalJsonStringify(findings));
+}
+
+const ARCHITECTURE_REVIEW_CAPTURED_FINDINGS = capturedFindingsFor({
+  iteration: 0,
+  planVersion: 1,
+  sessionId: 'child-session-1',
+});
+
+const PLAN_REVIEW_CAPTURED_FINDINGS = capturedFindingsFor({
+  iteration: 0,
+  planVersion: 1,
+  sessionId: 'child-session-1',
+});
+
+/**
  * Canonical bound architecture review evidence for approve-path tests: a
  * consumed architecture obligation for exactly the ARCHITECTURE_DECISION
- * digest plus its invocation with a findings hash.
+ * digest plus its invocation with a host-captured findings record.
  */
 export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
   assuranceSchemaVersion: REVIEW_ASSURANCE_SCHEMA_VERSION,
@@ -235,11 +278,12 @@ export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
       promptHash: 'prompt-hash-of-architecture-review',
       mandateDigest: 'mandate-digest-of-review-criteria',
       criteriaVersion: 'criteria-v1',
-      findingsHash: 'findings-hash-of-architecture-review',
+      findingsHash: capturedFindingsHash(ARCHITECTURE_REVIEW_CAPTURED_FINDINGS),
       invokedAt: FIXED_TIME,
       fulfilledAt: FIXED_TIME,
       consumedByObligationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       capturedVerdict: 'accept',
+      capturedRawFindings: ARCHITECTURE_REVIEW_CAPTURED_FINDINGS,
       reviewOutputMode: 'structured_output',
       structuredOutputUsed: true,
       reviewAssuranceLevel: 'structured_high',
@@ -326,11 +370,12 @@ export const PLAN_REVIEW_ASSURANCE: ReviewAssuranceState = assuranceWith({
       promptHash: 'prompt-hash-of-plan-review',
       mandateDigest: 'mandate-digest-of-plan-review-criteria',
       criteriaVersion: 'criteria-v1',
-      findingsHash: 'findings-hash-of-plan-review',
+      findingsHash: capturedFindingsHash(PLAN_REVIEW_CAPTURED_FINDINGS),
       invokedAt: FIXED_TIME,
       fulfilledAt: FIXED_TIME,
       consumedByObligationId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
       capturedVerdict: 'accept',
+      capturedRawFindings: PLAN_REVIEW_CAPTURED_FINDINGS,
       reviewOutputMode: 'structured_output',
       structuredOutputUsed: true,
       reviewAssuranceLevel: 'structured_high',

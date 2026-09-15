@@ -282,9 +282,13 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed for the structured-review hard cut: command templates no longer
     // reference reviewerTaskPrompt or Task-tool reviewer dispatch; the verdict is
     // submitted against host-observed structured child-session evidence.
+    // Refreshed for the structured-only residue sweep: /plan, /implement, and
+    // /review plus the shared review loop now describe verdict-only submission
+    // against host-observed structured reviewer invocation evidence, with no
+    // reviewFindings or attestation-as-transport wording.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '80f54437f2b4b162bc7ed30855a21547a27e31dda6f725ae4b1504873ee8ff7b',
+      '6df018c6a9d371ffe6b6d8a2ad1c3beac93388f453586532d65ad61f386b1644',
     );
   });
 

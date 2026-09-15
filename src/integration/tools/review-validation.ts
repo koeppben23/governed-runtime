@@ -2,15 +2,20 @@
  * @module integration/tools/review-validation
  * @description Shared validation logic for independent review findings.
  *
- * Single authority for all review-findings validation rules used by
- * both /plan and /implement tools. Fail-closed: returns a formatBlocked
- * string on any policy or binding violation, or null when valid.
+ * Single authority for all review-findings validation rules shared by the
+ * governed tools. Fail-closed: returns a formatBlocked string on any policy or
+ * binding violation, or null when valid.
+ *
+ * Findings are never accepted from the agent: `resolveStructuredEffectiveFindings`
+ * always resolves the host-captured structured evidence bound to the active
+ * obligation. This module's `validateReviewFindings` remains the internal
+ * evidence-validation authority for a concrete ReviewFindings record.
  *
  * Validation rules:
- * - reviewMode=self is rejected by the ReviewFindings schema
+ * - reviewMode=self is rejected
  * - planVersion mismatch → BLOCKED
  * - iteration mismatch → BLOCKED
- * - approve verdict + missing findings → BLOCKED
+ * - unable_to_review → BLOCKED (no tool-submit path consumes it)
  */
 
 import type { ReviewFindings } from '../../state/evidence.js';
@@ -394,22 +399,6 @@ function validateStructuredInvocationContract(
       });
 }
 
-/**
- * Check whether a review verdict requires review findings.
- * Covers approve and changes_requested verdicts in mandatory review mode.
- *
- * @returns formatBlocked string if findings are required but missing, null otherwise.
- */
-export function requireReviewFindings(hasFindings: boolean): string | null {
-  if (!hasFindings) {
-    return formatBlocked('REVIEW_FINDINGS_REQUIRED', {
-      action: 'mandatory subagent review',
-      required: 'reviewFindings',
-    });
-  }
-  return null;
-}
-
 // ─── Structured Findings Resolution ───────────────────────────────────────────
 
 interface StructuredResolutionContext {
@@ -420,7 +409,6 @@ interface StructuredResolutionContext {
     readonly planVersion: number;
   };
   readonly input: {
-    readonly reviewFindings?: unknown;
     readonly reviewerUnavailable?: boolean;
     readonly verdict?: string;
   };
@@ -454,39 +442,36 @@ function checkReviewerUnavailableMisuse(ctx: StructuredResolutionContext): strin
     });
   }
   return formatBlocked('REVIEWER_UNAVAILABLE_STRICT', {
-    reason: 'reviewer unavailable; independent ReviewFindings remain required',
+    reason: 'reviewer unavailable; independent host-captured reviewer evidence remains required',
     recovery:
-      'Invoke the structured reviewer transport and submit its ReviewFindings bound to the active obligation. flowguard_decision does not replace review evidence.',
+      'Invoke the structured reviewer transport; the host captures its findings bound to the active obligation. flowguard_decision does not replace review evidence.',
   });
 }
 
-interface StructuredResolutionResult {
-  readonly effectiveFindings?: ReviewFindings;
-  readonly evidenceInvocationId?: string;
-  readonly blocked?: ReturnType<typeof formatBlocked>;
-}
+/**
+ * Resolution result: findings come exclusively from host-captured structured
+ * evidence, so a resolved result ALWAYS carries the effective findings and the
+ * evidence invocation that produced them.
+ */
+export type StructuredResolutionResult =
+  | {
+      readonly kind: 'blocked';
+      readonly blocked: ReturnType<typeof formatBlocked>;
+    }
+  | {
+      readonly kind: 'resolved';
+      readonly effectiveFindings: ReviewFindings;
+      readonly evidenceInvocationId: string;
+    };
 
 export function resolveStructuredEffectiveFindings(
   ctx: StructuredResolutionContext,
 ): StructuredResolutionResult {
-  if (!ctx.input.reviewFindings && ctx.input.reviewerUnavailable === true) {
+  if (ctx.input.reviewerUnavailable === true) {
     const misuse = checkReviewerUnavailableMisuse(ctx);
-    if (misuse) return { blocked: misuse };
+    if (misuse) return { kind: 'blocked', blocked: misuse };
   }
-  if (!ctx.input.reviewFindings) return resolveCapturedEvidenceFindings(ctx);
-  const blocked = validateReviewFindings(ctx.input.reviewFindings as ReviewFindings, {
-    expectedPlanVersion: ctx.expected.planVersion,
-    expectedIteration: ctx.expected.iteration,
-    assurance: ctx.state.assurance,
-    obligationType: ctx.expected.obligationType,
-    reviewParentSessionId: ctx.state.sessionId,
-    unresolvedImplementationChallengeIds: ctx.state.unresolvedImplementationChallengeIds,
-    unaddressedPriorFailIds: ctx.state.unaddressedPriorFailIds,
-    allowedEvidenceRefs: ctx.state.allowedChallengeEvidenceRefs,
-    expectedObligationId: ctx.pendingObligation?.obligationId,
-    previouslyUsedChallengeIds: ctx.state.previouslyUsedChallengeIds,
-  });
-  return blocked ? { blocked } : { effectiveFindings: ctx.input.reviewFindings as ReviewFindings };
+  return resolveCapturedEvidenceFindings(ctx);
 }
 
 /**
@@ -508,11 +493,12 @@ function resolveCapturedEvidenceFindings(
   );
   if (resolution.kind === 'resolved') {
     return {
+      kind: 'resolved',
       effectiveFindings: resolution.findings,
       evidenceInvocationId: resolution.invocationId,
     };
   }
-  return { blocked: formatStructuredResolutionFailure(resolution) };
+  return { kind: 'blocked', blocked: formatStructuredResolutionFailure(resolution) };
 }
 
 /** Single formatting authority for structured-evidence resolution failures. */

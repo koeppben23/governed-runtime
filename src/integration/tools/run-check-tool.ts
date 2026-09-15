@@ -658,7 +658,6 @@ function buildRunCheckReviewInstruction(
   const mode = resolveReviewOrchestrationMode({
     platform,
     nativeReviewerAvailable: platform !== 'unknown',
-    manualAttestedAllowed: false,
   });
   return buildChildSessionReviewInstruction({
     mode,

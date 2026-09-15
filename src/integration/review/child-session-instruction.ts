@@ -14,12 +14,7 @@ export interface ChildSessionReviewInstructionInput {
 /** Metadata for a host-created reviewer child session; never a reviewer prompt. */
 export function buildChildSessionReviewInstruction(input: ChildSessionReviewInstructionInput) {
   const obligation = input.obligation;
-  const status =
-    input.mode === 'unsupported_blocked'
-      ? 'unsupported_blocked'
-      : input.mode === 'manual_attested_required'
-        ? 'manual_attested_required'
-        : 'pending_review';
+  const status = input.mode === 'unsupported_blocked' ? 'unsupported_blocked' : 'pending_review';
   const metadata = {
     mode: input.mode,
     platform: input.platform,

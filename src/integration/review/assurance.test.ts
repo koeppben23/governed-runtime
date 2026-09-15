@@ -49,6 +49,21 @@ const NOW = '2026-04-27T00:00:00.000Z';
 const FIXTURE_MANDATE_DIGEST = 'fixture-mandate-digest';
 const FIXTURE_CRITERIA_VERSION = 'fixture-criteria-v1';
 
+/** Host-captured structured findings; the invocation verdict is derived from these. */
+const SAMPLE_RAW_FINDINGS: Record<string, unknown> = {
+  iteration: 0,
+  planVersion: 1,
+  reviewMode: 'subagent',
+  overallVerdict: 'accept',
+  blockingIssues: [],
+  majorRisks: [],
+  missingVerification: [],
+  scopeCreep: [],
+  unknowns: [],
+  reviewedBy: { sessionId: 'child-session-1' },
+  reviewedAt: NOW,
+};
+
 function makeObligation(overrides?: Partial<ReviewObligation>): ReviewObligation {
   const obligationType = overrides?.obligationType ?? 'plan';
   return createReviewObligation({
@@ -71,6 +86,7 @@ function makeInvocation(overrides?: Partial<ReviewInvocationEvidence>): ReviewIn
     fulfilledAt,
     mandateDigest = FIXTURE_MANDATE_DIGEST,
     criteriaVersion = FIXTURE_CRITERIA_VERSION,
+    capturedRawFindings = SAMPLE_RAW_FINDINGS,
     ...rest
   } = overrides ?? {};
   return {
@@ -86,10 +102,10 @@ function makeInvocation(overrides?: Partial<ReviewInvocationEvidence>): ReviewIn
       findingsHash: hashText('test findings'),
       invokedAt: NOW,
       fulfilledAt: fulfilledAt ?? NOW,
-      invocationMode: 'sdk_session_prompt',
-      ...rest,
+      capturedRawFindings,
     }),
     ...rest,
+    capturedRawFindings,
   };
 }
 
@@ -853,7 +869,6 @@ describe('integration/review-assurance', () => {
         obligationId: obligation.obligationId,
         childSessionId: findings.reviewedBy.sessionId,
         findingsHash: hashFindings(findings),
-        invocationMode: 'sdk_session_prompt',
       });
       const assurance = {
         assuranceSchemaVersion: 'review-assurance.v6' as const,
@@ -940,21 +955,25 @@ describe('integration/review-assurance', () => {
         invokedAt: NOW,
         fulfilledAt: NOW,
         attemptId: '00000000-0000-4000-8000-000000000003',
-        invocationMode: 'sdk_session_prompt',
+        capturedRawFindings: SAMPLE_RAW_FINDINGS,
       });
       expect(result.agentType).toBe(REVIEWER_SUBAGENT_TYPE);
       expect(result.mandateDigest).toBe(FIXTURE_MANDATE_DIGEST);
       expect(result.consumedByObligationId).toBeNull();
+      expect(result.invocationMode).toBe('sdk_session_prompt');
+      expect(result.source).toBe('host-orchestrated');
       expect(result.reviewOutputMode).toBe('structured_output');
       expect(result.structuredOutputUsed).toBe(true);
       expect(result.reviewAssuranceLevel).toBe('structured_high');
+      expect(result.capturedRawFindings).toEqual(SAMPLE_RAW_FINDINGS);
+      expect(result.capturedVerdict).toBe('accept');
     });
   });
 
-  // ── BUG-15: capturedVerdict field ──────────────────────────────────────
+  // ── BUG-15: derived capturedVerdict field ──────────────────────────────
 
-  describe('buildInvocationEvidence — capturedVerdict (BUG-15)', () => {
-    it('HAPPY: includes capturedVerdict when provided', () => {
+  describe('buildInvocationEvidence — derived capturedVerdict (BUG-15)', () => {
+    it('HAPPY: derives accept from the captured findings', () => {
       const result = buildInvocationEvidence({
         obligationId: '00000000-0000-4000-8000-000000000001',
         obligationType: 'plan',
@@ -966,14 +985,13 @@ describe('integration/review-assurance', () => {
         findingsHash: hashText('findings'),
         invokedAt: NOW,
         fulfilledAt: NOW,
-        capturedVerdict: 'accept',
+        capturedRawFindings: { overallVerdict: 'accept' },
         attemptId: '00000000-0000-4000-8000-000000000004',
-        invocationMode: 'sdk_session_prompt',
       });
       expect(result.capturedVerdict).toBe('accept');
     });
 
-    it('HAPPY: includes capturedVerdict=changes_requested', () => {
+    it('HAPPY: derives changes_requested from the captured findings', () => {
       const result = buildInvocationEvidence({
         obligationId: '00000000-0000-4000-8000-000000000001',
         obligationType: 'plan',
@@ -984,14 +1002,13 @@ describe('integration/review-assurance', () => {
         promptHash: hashText('prompt'),
         findingsHash: hashText('findings'),
         invokedAt: NOW,
-        capturedVerdict: 'changes_requested',
+        capturedRawFindings: { overallVerdict: 'changes_requested' },
         attemptId: '00000000-0000-4000-8000-000000000005',
-        invocationMode: 'sdk_session_prompt',
       });
       expect(result.capturedVerdict).toBe('changes_requested');
     });
 
-    it('HAPPY: omits capturedVerdict when undefined', () => {
+    it('HAPPY: omits capturedVerdict when the capture has no string verdict', () => {
       const result = buildInvocationEvidence({
         obligationId: '00000000-0000-4000-8000-000000000001',
         obligationType: 'plan',
@@ -1002,10 +1019,27 @@ describe('integration/review-assurance', () => {
         promptHash: hashText('prompt'),
         findingsHash: hashText('findings'),
         invokedAt: NOW,
+        capturedRawFindings: { overallVerdict: 42 },
         attemptId: '00000000-0000-4000-8000-000000000006',
-        invocationMode: 'sdk_session_prompt',
       });
       expect(result.capturedVerdict).toBeUndefined();
+    });
+
+    it('BAD: cannot assert a verdict that disagrees with the captured findings', () => {
+      const result = buildInvocationEvidence({
+        obligationId: '00000000-0000-4000-8000-000000000001',
+        obligationType: 'plan',
+        mandateDigest: FIXTURE_MANDATE_DIGEST,
+        criteriaVersion: FIXTURE_CRITERIA_VERSION,
+        parentSessionId: 'parent-1',
+        childSessionId: 'child-1',
+        promptHash: hashText('prompt'),
+        findingsHash: hashText('findings'),
+        invokedAt: NOW,
+        capturedRawFindings: { overallVerdict: 'changes_requested' },
+        attemptId: '00000000-0000-4000-8000-000000000007',
+      });
+      expect(result.capturedVerdict).toBe('changes_requested');
     });
 
     it('EDGE: capturedVerdict survives Zod round-trip (schema parse)', () => {
@@ -1016,21 +1050,20 @@ describe('integration/review-assurance', () => {
         criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
-        invocationMode: 'sdk_session_prompt',
         promptHash: hashText('prompt'),
         findingsHash: hashText('findings'),
         invokedAt: NOW,
         attemptId: '00000000-0000-4000-8000-000000000002',
-        capturedVerdict: 'accept',
+        capturedRawFindings: { overallVerdict: 'accept' },
       });
       const parsed = ReviewInvocationEvidenceSchema.parse(evidence);
       expect(parsed.capturedVerdict).toBe('accept');
     });
   });
 
-  // ── BUG-15 Stufe 2: capturedRawFindings field ─────────────────────────────
+  // ── capturedRawFindings is the mandatory host capture ─────────────────────
 
-  describe('buildInvocationEvidence — capturedRawFindings (BUG-15 Stufe 2)', () => {
+  describe('buildInvocationEvidence — capturedRawFindings', () => {
     const sampleRawFindings: Record<string, unknown> = {
       iteration: 0,
       planVersion: 1,
@@ -1053,32 +1086,13 @@ describe('integration/review-assurance', () => {
         criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
-        invocationMode: 'sdk_session_prompt',
         promptHash: hashText('prompt'),
         findingsHash: hashFindings(sampleRawFindings),
         invokedAt: NOW,
         attemptId: '00000000-0000-4000-8000-000000000002',
-        capturedVerdict: 'accept',
         capturedRawFindings: sampleRawFindings,
       });
       expect(result.capturedRawFindings).toEqual(sampleRawFindings);
-    });
-
-    it('HAPPY: omits capturedRawFindings when undefined', () => {
-      const result = buildInvocationEvidence({
-        obligationId: '00000000-0000-4000-8000-000000000001',
-        obligationType: 'plan',
-        mandateDigest: FIXTURE_MANDATE_DIGEST,
-        criteriaVersion: FIXTURE_CRITERIA_VERSION,
-        parentSessionId: 'parent-1',
-        childSessionId: 'child-1',
-        invocationMode: 'sdk_session_prompt',
-        promptHash: hashText('prompt'),
-        findingsHash: hashText('findings'),
-        invokedAt: NOW,
-        attemptId: '00000000-0000-4000-8000-000000000007',
-      });
-      expect(result.capturedRawFindings).toBeUndefined();
     });
 
     it('EDGE: capturedRawFindings survives Zod round-trip (schema parse)', () => {
@@ -1089,12 +1103,10 @@ describe('integration/review-assurance', () => {
         criteriaVersion: FIXTURE_CRITERIA_VERSION,
         parentSessionId: 'parent-1',
         childSessionId: 'child-1',
-        invocationMode: 'sdk_session_prompt',
         promptHash: hashText('prompt'),
         findingsHash: hashFindings(sampleRawFindings),
         invokedAt: NOW,
         attemptId: '00000000-0000-4000-8000-000000000002',
-        capturedVerdict: 'accept',
         capturedRawFindings: sampleRawFindings,
       });
       const parsed = ReviewInvocationEvidenceSchema.parse(evidence);

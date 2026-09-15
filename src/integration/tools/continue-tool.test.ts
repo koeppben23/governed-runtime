@@ -57,7 +57,6 @@ const mocks = vi.hoisted(() => ({
   changedFiles: vi.fn(async () => mocks.changedFilesResult),
   // evaluate
   evaluate: vi.fn(() => ({ kind: 'pending' as const })),
-  bindExternalReviewEvidence: vi.fn(async () => ({ status: 'none' as const })),
 }));
 
 vi.mock('./helpers.js', () => ({
@@ -121,10 +120,6 @@ vi.mock('../../machine/evaluate.js', () => ({
   evaluate: mocks.evaluate,
 }));
 
-vi.mock('../review/transport-evidence.js', () => ({
-  bindExternalReviewEvidence: mocks.bindExternalReviewEvidence,
-}));
-
 // ── Continue tool ───────────────────────────────────────────────────────────
 
 function setPhase(phase: string) {
@@ -185,6 +180,7 @@ describe('flowguard_continue (runtime)', () => {
         ],
       },
     };
+    mocks.readOnlySession = { state: mocks.state, policy: null };
     const { continue_cmd } = await import('./continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));

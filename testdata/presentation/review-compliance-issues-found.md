@@ -37,7 +37,7 @@ Diagnostic: `flowguard_status({ proofGraph: true })`
 ## Evidence
 
 **Obligation:** `oblig-002`
-**Invocation source:** agent-submitted-attested
+**Invocation source:** host-orchestrated
 
 ## Recommended follow-up
 

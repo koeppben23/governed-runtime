@@ -2,32 +2,32 @@
  * @module integration/tools/implement
  * @description FlowGuard implement tool — record implementation or review verdict.
  *
- * Agent-Orchestrated Independent Review for /implement
+ * Host-Observed Independent Review for /implement
  *
  * Architecture: FlowGuard does NOT call subagents. The OpenCode primary agent
  * orchestrates independent review by calling the flowguard-reviewer subagent
- * via the Task tool. FlowGuard accepts, validates, and persists the resulting
- * ReviewFindings.
+ * via the Task tool. The HOST captures the reviewer's structured findings into
+ * the review assurance evidence; the agent never resubmits findings.
  *
  * Flow:
  * 1. Primary agent performs implementation work
  * 2. Primary agent calls flowguard_implement (Mode A, records evidence)
  * 3. FlowGuard returns next-action instructing subagent invocation
  * 4. Primary agent calls flowguard-reviewer subagent via Task tool
- * 5. Subagent returns structured ReviewFindings
- * 6. Primary agent submits reviewVerdict + reviewFindings to FlowGuard (Mode B)
- * 7. FlowGuard validates and persists both (append-only, separate)
+ * 5. Host captures the reviewer's structured findings into invocation evidence
+ * 6. Primary agent submits the review verdict ONLY (flowguard_review_implementation)
+ * 7. FlowGuard resolves the host-captured findings, validates, and persists them
  *
  * Tool responsibilities:
- * - Input validation: reviewFindings vs policy, iteration binding
- * - Persistence: impl history (author), implReviewFindings (reviewer)
+ * - Input validation: verdict vs host-captured evidence binding
+ * - Persistence: impl history (author), implReviewFindings (host-captured)
  * - Response: summary of review findings
  * - Next-action: independent reviewer instructions
  *
  * Validation rules:
  * - reviewMode=self → BLOCKED
- * - reviewVerdict=approve + missing reviewFindings → BLOCKED
- * - reviewFindings.iteration mismatch → BLOCKED
+ * - reviewVerdict without bound structured evidence → SUBAGENT_EVIDENCE_MISSING
+ * - captured findings iteration mismatch → BLOCKED
  *
  * Multi-call pattern driven by the LLM:
  *
@@ -38,8 +38,9 @@
  *   -> Returns "review needed" with policy-conditional next-action
  *
  * Step 3: LLM calls flowguard-reviewer subagent via Task tool
- * Step 4: LLM calls flowguard_review_implementation({ reviewVerdict: "accept", reviewFindings })
- *   -> Tool records review iteration, checks convergence
+ * Step 4: LLM calls flowguard_review_implementation({ reviewVerdict: "accept" })
+ *   -> Tool resolves the host-captured findings, records the review iteration,
+ *      and checks convergence
  *   -> On convergence: auto-advance to EVIDENCE_REVIEW
  *
  * OR Step 4: LLM calls flowguard_review_implementation({ reviewVerdict: "changes_requested" })
@@ -80,9 +81,6 @@ import { writeImplementationDiffArtifact } from './implement-diff-artifact.js';
 
 // Evidence types
 
-// Review findings validation (shared with plan.ts)
-import { validateReviewFindings } from './review-validation.js';
-import { collectPreviouslyUsedChallengeIds } from '../review/challenge-history.js';
 import { ensureReviewAssurance, reviewObligationResponseFields } from '../review/assurance.js';
 import { buildLatestImplementationReviewSummary } from './review-summary.js';
 import { collectHistoricallyRejectedImplementationDigests } from '../review/rejected-digests.js';
@@ -98,22 +96,11 @@ import {
   hasUnresolvedMutationEpisodes,
   reconcileMutationEpisodes,
 } from '../../state/evidence-mutation-episode.js';
-import { normalizeHostFindings } from './implement-shared.js';
 import {
   activateReviewObligationAndPersist,
   materializeImplReviewContract,
   nextImplementationReviewIteration,
 } from './implement-shared.js';
-// Mode A
-export function validateInitialReviewFindings(input: ImplementRuntime): string | null {
-  if (!input.args.reviewFindings) return null;
-  return validateReviewFindings(input.args.reviewFindings, {
-    expectedIteration: 0,
-    expectedPlanVersion: (input.state.plan?.history.length ?? 0) + 1,
-    reviewParentSessionId: input.context.sessionID,
-    previouslyUsedChallengeIds: collectPreviouslyUsedChallengeIds(input.state),
-  });
-}
 
 function blockedImplRecovery(state: SessionState): string | null {
   if (state.phase !== 'IMPL_REVIEW') {
@@ -239,7 +226,6 @@ function buildImplRecordedResponse(input: {
   const mode = resolveReviewOrchestrationMode({
     platform,
     nativeReviewerAvailable: platform === 'unknown' ? false : true,
-    manualAttestedAllowed: false,
   });
   const instruction = input.nextObligation
     ? buildChildSessionReviewInstruction({
@@ -450,10 +436,9 @@ export async function handleImplRecord(
   const reworkBlocked = reworkBlock(input.state, digest);
   if (reworkBlocked) return reworkBlocked;
   const implEvidence = await buildImplEvidence(input, files, domainFiles, digest);
+  // Host-captured findings are append-only and only ever written by
+  // handleImplReview from the resolved structured evidence.
   const existingFindings = input.state.implReviewFindings ?? [];
-  const newReviewFindings = input.args.reviewFindings
-    ? [...existingFindings, normalizeHostFindings(input.args.reviewFindings)]
-    : existingFindings;
   const reviewIteration = nextImplementationReviewIteration(input.state);
   const planVersion = (input.state.plan?.history.length ?? 0) + 1;
   const ceremony = resolveCeremonyProfile({ state: input.state, changedFiles: files });
@@ -498,7 +483,7 @@ export async function handleImplRecord(
         }
       : null,
     implReview: null,
-    implReviewFindings: newReviewFindings.length > 0 ? newReviewFindings : undefined,
+    implReviewFindings: existingFindings.length > 0 ? existingFindings : undefined,
     reviewAssurance: input.state.reviewAssurance,
     error: null,
   };
@@ -509,7 +494,7 @@ export async function handleImplRecord(
     domainFiles,
     reviewIteration,
     planVersion,
-    reviewFindings: newReviewFindings,
+    reviewFindings: existingFindings,
     ceremony,
     baselineScoping,
   });

@@ -9,7 +9,6 @@
 import type { ReviewObligation, ReviewInvocationEvidence } from '../../state/evidence.js';
 import { formatBlocked } from './helpers.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
-import { HOST_TASK_FINDINGS_REJECTION_FIELD } from '../../shared/flowguard-identifiers.js';
 
 // ─── Acceptance / Rejection Types ─────────────────────────────────────────────
 
@@ -26,10 +25,6 @@ export interface ReviewFindingsAcceptanceRejection {
   readonly consumedBy?: string;
   readonly blockedCode?: string | null;
 }
-
-export type HostTaskFindingsAcceptanceRejection = ReviewFindingsAcceptanceRejection & {
-  readonly path: 'host_task';
-};
 
 // ─── Acceptance / Rejection Helpers ───────────────────────────────────────────
 
@@ -70,7 +65,7 @@ export function getReviewFindingsAcceptanceRejection(input: {
   return null;
 }
 
-/** Canonical host-task provenance contract for captured reviewer evidence. */
+/** Canonical provenance contract for captured host-observed reviewer evidence. */
 export function hasValidStructuredInvocationContract(input: {
   readonly obligation: ReviewObligation;
   readonly invocation: ReviewInvocationEvidence;
@@ -83,10 +78,7 @@ export function hasValidStructuredInvocationContract(input: {
     invocation.agentType === REVIEWER_SUBAGENT_TYPE &&
     (parentSessionId === undefined || invocation.parentSessionId === parentSessionId) &&
     invocation.criteriaVersion === obligation.criteriaVersion &&
-    invocation.mandateDigest === obligation.mandateDigest &&
-    invocation.reviewOutputMode === 'structured_output' &&
-    invocation.structuredOutputUsed === true &&
-    invocation.reviewAssuranceLevel === 'structured_high'
+    invocation.mandateDigest === obligation.mandateDigest
   );
 }
 
@@ -105,27 +97,6 @@ function acceptanceRejectionFormatVars(
   return { obligationId: rejection.obligationId ?? 'unknown' };
 }
 
-export function withHostTaskPath(
-  rejection: ReviewFindingsAcceptanceRejection,
-): HostTaskFindingsAcceptanceRejection {
-  return { ...rejection, path: 'host_task' };
-}
-
 export function formatAcceptanceRejection(rejection: ReviewFindingsAcceptanceRejection): string {
   return formatBlocked(rejection.reason, acceptanceRejectionFormatVars(rejection));
-}
-
-export function formatHostTaskAcceptanceRejection(
-  rejection: HostTaskFindingsAcceptanceRejection,
-): string {
-  const vars = acceptanceRejectionFormatVars(rejection);
-  return formatBlocked(rejection.reason, vars, {
-    [HOST_TASK_FINDINGS_REJECTION_FIELD]: {
-      path: rejection.path,
-      reason: rejection.reason,
-      status: rejection.status,
-      ...(rejection.obligationId ? { obligationId: rejection.obligationId } : {}),
-      ...(rejection.invocationId ? { invocationId: rejection.invocationId } : {}),
-    },
-  });
 }

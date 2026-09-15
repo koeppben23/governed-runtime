@@ -627,7 +627,7 @@ describe('runReviewOrchestration strict /review content analysis', () => {
           reviewOutputMode: 'structured_output',
           structuredOutputUsed: true,
           reviewAssuranceLevel: 'structured_high',
-          capturedVerdict: 'accept',
+          capturedRawFindings: { overallVerdict: 'accept' },
         },
       ],
     );

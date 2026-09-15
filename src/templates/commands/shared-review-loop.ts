@@ -22,8 +22,8 @@ export const DISCOVERY_REVIEW_CAPTURE = `   - Call \`flowguard_status\` with NO 
      \`health\`, \`drift\`, \`detectedStack\`, repo-native \`verificationCandidates\`,
      and risk surfaces. This is REQUIRED review evidence for repo-dependent claims.
    - Discovery context is advisory falsification evidence, NOT review verdict
-     authority: ReviewFindings, obligation binding, mandate digest, and attestation
-     remain the review authority.
+     authority: the host-observed structured reviewer invocation evidence,
+     obligation binding, and mandate digest remain the review authority.
    - If Discovery is unavailable, degraded, drifted, timed out, or not checked, mark
      every Discovery-dependent claim \`NOT_VERIFIED\`; do not invent repository truth.`;
 

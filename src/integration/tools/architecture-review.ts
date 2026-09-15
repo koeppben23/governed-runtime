@@ -33,7 +33,6 @@ import {
   consumeReviewObligation,
   createReviewObligation,
   ensureReviewAssurance,
-  findAcceptedInvocationForFindings,
   findLatestObligation,
   findLatestUnconsumedObligation,
   freezeReviewMaterial,
@@ -42,7 +41,7 @@ import {
 } from '../review/assurance.js';
 import { buildFrozenReviewMaterialContent } from '../review/reviewer-context.js';
 
-import { requireReviewFindings, resolveStructuredEffectiveFindings } from './review-validation.js';
+import { resolveStructuredEffectiveFindings } from './review-validation.js';
 import { collectPreviouslyUsedChallengeIds } from '../review/challenge-history.js';
 import { buildReviewChallengeContract } from '../review/challenge-contract.js';
 
@@ -82,8 +81,8 @@ type ResolvedReview = {
   expectedIteration: number;
   expectedPlanVersion: number;
   assuranceBase: ReturnType<typeof ensureReviewAssurance>;
-  effectiveFindings?: ReviewFindings;
-  evidenceInvocationId?: string;
+  effectiveFindings: ReviewFindings;
+  evidenceInvocationId: string;
 };
 
 type AdrRevision = {
@@ -149,7 +148,6 @@ function resolveArchitectureReview(
       planVersion: expectedPlanVersion,
     },
     input: {
-      reviewFindings: args.reviewFindings,
       reviewerUnavailable: args.reviewerUnavailable,
       verdict: args.reviewVerdict,
     },
@@ -164,7 +162,7 @@ function resolveArchitectureReview(
     },
   });
 
-  if (resolved.blocked) return resolved.blocked;
+  if (resolved.kind === 'blocked') return resolved.blocked;
 
   const findingsBlocked = validateResolvedFindings(
     resolved.effectiveFindings,
@@ -184,11 +182,10 @@ function resolveArchitectureReview(
 }
 
 function validateResolvedFindings(
-  effectiveFindings: ReviewFindings | undefined,
+  effectiveFindings: ReviewFindings,
   submittedVerdict: LoopVerdict | undefined,
   obligationId: string | undefined,
 ): string | null {
-  if (!effectiveFindings) return requireReviewFindings(false);
   if (effectiveFindings.overallVerdict === 'unable_to_review') {
     return formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', { obligationId: obligationId ?? 'unknown' });
   }
@@ -248,10 +245,9 @@ function buildReviewedState(
 ): SessionState {
   const { state, policy, ctx } = session;
   const iteration = state.selfReview!.iteration + 1;
+  // Only host-captured effective findings are ever appended.
   const existingReviewFindings = state.architecture!.reviewFindings;
-  const newReviewFindings = review.effectiveFindings
-    ? [...(existingReviewFindings ?? []), review.effectiveFindings]
-    : existingReviewFindings;
+  const newReviewFindings = [...(existingReviewFindings ?? []), review.effectiveFindings];
   const strictObligation = findLatestObligation(
     review.assuranceBase.obligations,
     'architecture',
@@ -262,36 +258,21 @@ function buildReviewedState(
     review.assuranceBase,
     strictObligation,
     ctx.now(),
-    review.evidenceInvocationId ??
-      findAcceptedInvocationForFindings(
-        review.assuranceBase,
-        strictObligation,
-        review.effectiveFindings,
-      )?.invocationId,
+    review.evidenceInvocationId,
   );
 
   return {
     ...state,
-    architecture: newReviewFindings
-      ? {
-          ...revision.currentAdr,
-          reviewCompletion: resolveArchitectureReviewCompletion(
-            iteration,
-            policy.maxSelfReviewIterations,
-            revision.revisionDelta,
-            args.reviewVerdict as LoopVerdict,
-          ),
-          reviewFindings: newReviewFindings,
-        }
-      : {
-          ...revision.currentAdr,
-          reviewCompletion: resolveArchitectureReviewCompletion(
-            iteration,
-            policy.maxSelfReviewIterations,
-            revision.revisionDelta,
-            args.reviewVerdict as LoopVerdict,
-          ),
-        },
+    architecture: {
+      ...revision.currentAdr,
+      reviewCompletion: resolveArchitectureReviewCompletion(
+        iteration,
+        policy.maxSelfReviewIterations,
+        revision.revisionDelta,
+        args.reviewVerdict as LoopVerdict,
+      ),
+      reviewFindings: newReviewFindings,
+    },
     selfReview: {
       iteration,
       maxIterations: policy.maxSelfReviewIterations,

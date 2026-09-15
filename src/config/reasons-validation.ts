@@ -352,10 +352,10 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     code: 'SUBAGENT_MANDATE_MISSING',
     category: 'state',
     messageTemplate:
-      'The submitted review findings carry no mandate attestation for the active review obligation {obligationId}.',
+      'The captured reviewer findings carry no mandate attestation for the active review obligation {obligationId}.',
     recoverySteps: [
-      'Re-invoke the flowguard-reviewer subagent so the captured findings carry the mandate attestation',
-      'Do not submit hand-assembled findings for a strict host-visible review',
+      'Re-run the originating FlowGuard command so the host creates a reviewer child session bound to the active mandate',
+      'Do not submit hand-assembled or reconstructed findings for a strict review',
       'Run /continue to confirm the active obligation before retrying the verdict',
     ],
     quickFixCommand: '/continue',
@@ -365,11 +365,11 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     code: 'CONTENT_ANALYSIS_REQUIRED',
     category: 'input',
     messageTemplate:
-      'Content-aware /review requires reviewFindings. Analyze the supplied content before calling flowguard_review.',
+      'Content-aware /review requires a host-observed structured reviewer analysis. Re-run flowguard_review with the content fields and reviewObligationId after FlowGuard captures the reviewer findings.',
     recoverySteps: [
       'Fetch or inspect the referenced text, PR, branch, or URL content',
-      'Create concrete findings with severity, category, and message',
-      'Re-run flowguard_review with reviewFindings populated',
+      'Re-run flowguard_review with the same content fields and reviewObligationId once the host has captured the reviewer findings',
+      'Submit only the bound reviewVerdict; do not construct or submit reviewFindings yourself',
     ],
   },
 

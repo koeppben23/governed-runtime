@@ -5,12 +5,7 @@
  * @version v1
  */
 
-import type {
-  PlanEvidence,
-  LoopVerdict,
-  RevisionDelta,
-  ReviewFindings,
-} from '../../state/evidence.js';
+import type { PlanEvidence, LoopVerdict, RevisionDelta } from '../../state/evidence.js';
 import type { PlanClaimDeclarationInput } from '../../state/proofgraph-approval.js';
 import type { MutableSession, ToolContext } from './helpers.js';
 import { classifyToolCallMode, toolCallFlags } from './review-validation-mode.js';
@@ -19,7 +14,6 @@ export type PlanArgs = {
   planText?: string;
   claims?: PlanClaimDeclarationInput[];
   reviewVerdict?: 'accept' | 'changes_requested';
-  reviewFindings?: ReviewFindings;
   reviewerUnavailable?: boolean;
   targetPaths?: string[];
 };
@@ -29,7 +23,6 @@ export type MutablePlanSession = MutableSession;
 export type PlanInputFlags = {
   hasPlanText: boolean;
   hasVerdict: boolean;
-  hasFindings: boolean;
   hasReviewerUnavailable: boolean;
   isInitialSubmission: boolean;
 };
@@ -40,11 +33,7 @@ export type PlanCallMode =
   | { kind: 'revision' }
   | {
       kind: 'invalid';
-      code:
-        | 'INVALID_PLAN_TOOL_SEQUENCE'
-        | 'PLAN_APPROVE_WITH_TEXT'
-        | 'PLAN_SUBMISSION_MIXED_INPUTS'
-        | 'PLAN_FINDINGS_WITHOUT_VERDICT';
+      code: 'INVALID_PLAN_TOOL_SEQUENCE' | 'PLAN_APPROVE_WITH_TEXT';
       params?: Record<string, string>;
     };
 
@@ -86,7 +75,6 @@ export type PlanSubmissionResponseInput = {
   finalState: import('../../state/schema.js').SessionState;
   planEvidence: PlanEvidence;
   planVersion: number;
-  reviewFindings: ReviewFindings | null;
   transitions: unknown;
 };
 
@@ -109,13 +97,11 @@ export function planInputFlags(args: PlanArgs): PlanInputFlags {
   const f = toolCallFlags({
     text: args.planText,
     reviewVerdict: args.reviewVerdict,
-    reviewFindings: args.reviewFindings,
     reviewerUnavailable: args.reviewerUnavailable,
   });
   return {
     hasPlanText: f.hasText,
     hasVerdict: f.hasVerdict,
-    hasFindings: f.hasFindings,
     hasReviewerUnavailable: f.hasReviewerUnavailable,
     isInitialSubmission: !f.hasVerdict,
   };
@@ -126,7 +112,6 @@ export function classifyPlanCall(args: PlanArgs, input = planInputFlags(args)): 
   const mode = classifyToolCallMode('plan', {
     text: args.planText,
     reviewVerdict: args.reviewVerdict,
-    reviewFindings: args.reviewFindings,
     reviewerUnavailable: args.reviewerUnavailable,
   });
   if (mode.kind === 'invalid') {

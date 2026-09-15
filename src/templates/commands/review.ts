@@ -23,8 +23,8 @@ Start the compliance review flow for the current FlowGuard session.
       \`health\`, \`drift\`, \`detectedStack\`, repo-native \`verificationCandidates\`,
       and risk surfaces. This is REQUIRED review evidence for repo-dependent claims.
     - Discovery context is advisory falsification evidence, NOT review verdict
-      authority: ReviewFindings, obligation binding, mandate digest, and attestation
-      remain the review authority.
+      authority: the host-observed structured reviewer invocation evidence,
+      obligation binding, and mandate digest remain the review authority.
     - If Discovery is unavailable, degraded, drifted, timed out, or not checked, mark
       every Discovery-dependent claim \`NOT_VERIFIED\`; do not invent repository truth.
 
@@ -54,7 +54,7 @@ Start the compliance review flow for the current FlowGuard session.
 5. Complete content-aware \`flowguard_review\`: when \`next\` reports the bound reviewer verdict,
    call \`flowguard_review\` with the same content fields and matching \`reviewVerdict\`
    (\`"accept"\` or \`"changes_requested"\`). Do not submit, copy, or alter \`reviewFindings\`.
-   If FlowGuard reports an output or transport failure, report its recovery and stop; do not
+   If FlowGuard reports a capture or orchestration failure, report its recovery and stop; do not
    fabricate findings or guess a verdict.
 
 6. If no external content is supplied, call \`flowguard_review\` with optional \`inputOrigin\` and \`references\` only.

@@ -27,14 +27,16 @@ describe('enforcement contract invariants', () => {
     expect(authority).toContain('return false');
   });
 
-  it('checkFindingsMismatch prevents verdict guessing', () => {
+  it('verdict guessing is impossible without a recorded structured invocation', () => {
     const content = readFileSync(
       join(SRC_ROOT, 'integration/review/enforcement/enforcement.ts'),
       'utf8',
     );
-    expect(content).toContain('SUBAGENT_FINDINGS_VERDICT_MISMATCH');
-    expect(content).toContain('submittedVerdict');
-    expect(content).toContain('pending.capturedFindings');
+    // Only a host-observed structured invocation authorizes a verdict; no
+    // submitted argument payload can satisfy the gate.
+    expect(content).toContain('SUBAGENT_REVIEW_NOT_INVOKED');
+    expect(content).toContain('sdk_session_prompt');
+    expect(content).not.toContain('args.reviewFindings');
   });
 
   it('verdict enforcement authorizes only host-observed structured evidence', () => {

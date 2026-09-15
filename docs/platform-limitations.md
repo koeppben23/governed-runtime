@@ -134,7 +134,7 @@ FlowGuard operates at different enforcement levels depending on the host platfor
 **Mitigation implemented**:
 
 1. **Explicit instructions**: FlowGuard tools return unambiguous instructions for invoking the native reviewer transport.
-2. **Evidence binding**: Claude/Codex review completion requires validated, obligation-bound `manual_attested` / transport ReviewInvocationEvidence. File presence, copied JSON, and `flowguard_decision` are not review evidence.
+2. **Evidence binding**: review completion requires a host-observed structured child-session invocation bound to the active obligation. Claude/Codex currently expose no such in-process structured session, so their review paths fail closed; file presence, copied JSON, and `flowguard_decision` are not review evidence.
 3. **Gate enforcement**: PreToolUse hook blocks mutating tools until review evidence exists on disk where the host can enforce hooks.
 4. **Escalating warnings**: PostToolUse hook surfaces time-based escalating warnings when review obligations remain pending (info → warn → critical).
 5. **Defense-in-depth**: `isSubagentAuthorized()` blocks unauthorized subagent types.

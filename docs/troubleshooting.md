@@ -92,10 +92,9 @@ Legacy `location` text is not accepted.
 
 **Solution:**
 
-1. Re-run the `flowguard-reviewer` native agent/subagent with the exact Binding Envelope from the FlowGuard tool response.
-2. Ensure the reviewer submits via `flowguard_review` or returns a complete `ReviewFindings` object.
-3. Run `/continue` to let FlowGuard parse, validate, and bind transport evidence.
-4. If the host cannot provide reliable reviewer context, use only a policy-gated `manual_attested` ReviewFindings path; do not use `flowguard_decision` as review evidence.
+1. Re-run the originating FlowGuard command so the host creates the reviewer child session and captures its structured output.
+2. Submit only the `reviewVerdict`; FlowGuard resolves the host-captured structured findings automatically. Never submit or reconstruct `reviewFindings`.
+3. Do not use `flowguard_decision` as review evidence — it cannot replace the host-observed reviewer invocation.
 
 ### Archive Verification Failed
 
@@ -315,7 +314,6 @@ ACTOR_CLAIM_UNREADABLE
 ACTOR_IDP_CONFIG_REQUIRED
 ACTOR_IDP_MODE_REQUIRED
 ADR_APPROVE_WITH_TEXT
-ADR_FINDINGS_WITHOUT_VERDICT
 ADR_REVIEW_IN_PROGRESS
 ADR_SUBMISSION_MIXED_INPUTS
 ARCHITECTURE_REVIEW_COMPLETION_REQUIRED
@@ -434,7 +432,6 @@ OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED
 ORCHESTRATION_PERMANENTLY_FAILED
 PARSE_FAILED
 PLAN_APPROVE_WITH_TEXT
-PLAN_FINDINGS_WITHOUT_VERDICT
 PLAN_REQUIRED
  MAX_REVIEW_ITERATIONS_REACHED
 PLAN_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION
@@ -442,7 +439,6 @@ PLAN_REVIEW_EVIDENCE_REQUIRED
 PLAN_REVIEW_IN_PROGRESS
 PLAN_REVIEW_LOOP_REQUIRED
 PLAN_REVIEW_OVERRIDE_SUBJECT_MISMATCH
-PLAN_SUBMISSION_MIXED_INPUTS
 PLAN_SUBMISSION_REQUIRED
 PLUGIN_ENFORCEMENT_UNAVAILABLE
 POLICY_SNAPSHOT_MISSING

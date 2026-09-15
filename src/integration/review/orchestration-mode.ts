@@ -8,17 +8,13 @@
  */
 
 export type ReviewOrchestrationMode =
-  | 'host_structured'
-  | 'external_instruction_pending'
-  | 'manual_attested_required'
-  | 'unsupported_blocked';
+  'host_structured' | 'external_instruction_pending' | 'unsupported_blocked';
 
 export type ReviewHostPlatform = 'opencode' | 'claude-code' | 'codex' | 'unknown';
 
 export interface ReviewOrchestrationModeInput {
   readonly platform: ReviewHostPlatform;
   readonly nativeReviewerAvailable?: boolean;
-  readonly manualAttestedAllowed?: boolean;
 }
 
 export function normalizeReviewHostPlatform(value: unknown): ReviewHostPlatform {
@@ -33,14 +29,11 @@ export function resolveReviewOrchestrationMode(
 
   if (input.platform === 'claude-code' || input.platform === 'codex') {
     if (input.nativeReviewerAvailable === false) {
-      return input.manualAttestedAllowed === true
-        ? 'manual_attested_required'
-        : 'unsupported_blocked';
+      return 'unsupported_blocked';
     }
     return 'external_instruction_pending';
   }
 
-  if (input.manualAttestedAllowed === true) return 'manual_attested_required';
   return 'unsupported_blocked';
 }
 

@@ -180,8 +180,7 @@ export interface MissingAnalysisObligationResult {
  * reviewObligationId resolves the exact obligation or fails closed. There is
  * deliberately NO fingerprint fallback and NO creation for an unknown id —
  * mixing two authority identities would reset the per-obligation repair
- * budget and split the reviewer lineage. (Findings submission with an
- * explicit id is handled by resolveSubmittedReviewObligation.)
+ * budget and split the reviewer lineage.
  */
 async function resolveExplicitObligationIdPath(
   sessDir: string,
@@ -193,9 +192,6 @@ async function resolveExplicitObligationIdPath(
   | { readonly handled: true; readonly result: MissingAnalysisObligationResult }
 > {
   if (!args.reviewObligationId) return { handled: false };
-  if (args.reviewFindings !== undefined) {
-    return { handled: true, result: { message: null } };
-  }
   const byId = findReviewObligationById(state.reviewAssurance, args.reviewObligationId);
   if (!byId) {
     return {
@@ -243,7 +239,6 @@ export async function ensureMissingAnalysisObligation(
     fingerprint,
     'v2',
   );
-  if (args.reviewFindings !== undefined) return { message: null };
   if (!existing) {
     return createAndPrepareMissingAnalysisObligation({
       sessDir,

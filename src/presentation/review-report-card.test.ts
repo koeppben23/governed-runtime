@@ -288,7 +288,7 @@ describe('compliance review golden fixtures', () => {
         total: 3,
         summary: '1/3 complete, 2 missing',
       },
-      invocationSource: 'agent-submitted-attested',
+      invocationSource: 'host-orchestrated',
       obligationId: 'oblig-002',
     });
     expect(card).toBe(await readGolden('review-compliance-issues-found.md'));

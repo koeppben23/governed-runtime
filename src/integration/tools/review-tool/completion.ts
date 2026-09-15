@@ -15,6 +15,7 @@ import type {
   ReviewObligation,
   ReviewReportFinding,
 } from '../../../state/evidence.js';
+import type { ReviewInvocationEvidence } from '../../../state/evidence-review-invocation.js';
 import type { ReviewExecutors } from '../../../rails/review.js';
 import { ReviewReport } from '../../../state/evidence.js';
 import { evaluateCompleteness } from '../../../audit/completeness.js';
@@ -34,13 +35,7 @@ import { ensureReviewAssurance } from '../../review/assurance.js';
 import { resolveNextAction } from '../../../machine/next-action.js';
 import { projectStatusActionFromCommand } from '../../status-conclusion.js';
 import { projectCompletionProofStatus } from '../../proofgraph/proof-summary-projectors.js';
-import { NATIVE_ATTESTATION_REJECTION_FIELD } from '../../../shared/flowguard-identifiers.js';
-import type {
-  NativeAttestationRejection,
-  ReviewToolArgs,
-  StartedReviewResult,
-  ReviewReportResult,
-} from './types.js';
+import type { StartedReviewResult, ReviewReportResult } from './types.js';
 
 const reviewSeverityMap: Record<string, 'info' | 'warning' | 'error'> = {
   critical: 'error',
@@ -125,15 +120,11 @@ export function mapReviewFindingsToReport(reviewFindings: ReviewFindings): Revie
   ];
 }
 
-export function buildReviewExecutors(
-  args: ReviewToolArgs,
-  effectiveReviewFindings?: ReviewFindings,
-): ReviewExecutors {
+export function buildReviewExecutors(effectiveReviewFindings?: ReviewFindings): ReviewExecutors {
   return {
     analyze: async () => {
-      const findings = effectiveReviewFindings ?? args.reviewFindings;
-      if (!findings) return [];
-      return mapReviewFindingsToReport(findings);
+      if (!effectiveReviewFindings) return [];
+      return mapReviewFindingsToReport(effectiveReviewFindings);
     },
   };
 }
@@ -217,14 +208,13 @@ function reviewCardCompleteness(report: ReviewReportResult): {
 
 function reviewCardInvocationFields(
   boundInvocation: ReturnType<typeof ensureReviewAssurance>['invocations'][number] | undefined,
-  args: ReviewToolArgs,
 ): {
-  invocationSource?: string;
-  invocationMode?: string;
+  invocationSource?: ReviewInvocationEvidence['source'];
+  invocationMode?: ReviewInvocationEvidence['invocationMode'];
   hostVisible?: boolean;
-  reviewOutputMode?: string;
-  structuredOutputUsed?: boolean;
-  reviewAssuranceLevel?: string;
+  reviewOutputMode?: ReviewInvocationEvidence['reviewOutputMode'];
+  structuredOutputUsed?: ReviewInvocationEvidence['structuredOutputUsed'];
+  reviewAssuranceLevel?: ReviewInvocationEvidence['reviewAssuranceLevel'];
   reviewerSessionId?: string;
 } {
   return {
@@ -234,24 +224,12 @@ function reviewCardInvocationFields(
     reviewOutputMode: boundInvocation?.reviewOutputMode,
     structuredOutputUsed: boundInvocation?.structuredOutputUsed,
     reviewAssuranceLevel: boundInvocation?.reviewAssuranceLevel,
-    reviewerSessionId: reviewerSessionId(boundInvocation, args),
+    reviewerSessionId: boundInvocation?.childSessionId,
   };
-}
-
-function reviewerSessionId(
-  boundInvocation: ReturnType<typeof ensureReviewAssurance>['invocations'][number] | undefined,
-  args: ReviewToolArgs,
-): string | undefined {
-  return (
-    boundInvocation?.childSessionId ??
-    ((args.reviewFindings?.reviewedBy as Record<string, unknown> | undefined)?.sessionId as
-      string | undefined)
-  );
 }
 
 function buildStandaloneReviewCard(
   input: {
-    args: ReviewToolArgs;
     result: StartedReviewResult;
     finalState: SessionState;
     report: ReviewReportResult;
@@ -259,7 +237,7 @@ function buildStandaloneReviewCard(
   },
   options?: PresentationRenderOptions,
 ): string {
-  const { args, result, finalState, report, validatedReviewObligation } = input;
+  const { result, finalState, report, validatedReviewObligation } = input;
   const boundInvocation = findBoundReviewInvocation(result, validatedReviewObligation);
   const nextAction = resolveNextAction(finalState.phase, finalState);
   const productNextAction = buildProductNextAction(nextAction, finalState.phase);
@@ -282,7 +260,7 @@ function buildStandaloneReviewCard(
       proofSummary: projectCompletionProofStatus(finalState),
       productNextAction,
       conclusionAction,
-      ...reviewCardInvocationFields(boundInvocation, args),
+      ...reviewCardInvocationFields(boundInvocation),
     },
     options,
   );
@@ -314,7 +292,6 @@ function formatReviewCompletionResponse(input: {
   reviewCard: string;
   presentationMarkdown: string;
   artifactWarning?: { code: string; message: string };
-  nativeAttestationRejection?: NativeAttestationRejection;
 }): string {
   const {
     result,
@@ -324,7 +301,6 @@ function formatReviewCompletionResponse(input: {
     reviewCard,
     presentationMarkdown,
     artifactWarning,
-    nativeAttestationRejection,
   } = input;
   return JSON.stringify(
     enrichWithNextAction(
@@ -333,9 +309,6 @@ function formatReviewCompletionResponse(input: {
         presentation: { markdown: presentationMarkdown },
         phase: finalState.phase,
         ...(artifactWarning && { artifactWarning }),
-        ...(nativeAttestationRejection && {
-          [NATIVE_ATTESTATION_REJECTION_FIELD]: nativeAttestationRejection,
-        }),
         status: 'Review flow complete. Report generated.',
         overallStatus: report.overallStatus,
         policyMode: result.state.policySnapshot?.mode ?? 'unknown',
@@ -363,28 +336,23 @@ function formatReviewCompletionResponse(input: {
 
 export async function buildReviewCompletionResponse(input: {
   sessDir: string;
-  args: ReviewToolArgs;
   result: StartedReviewResult;
   finalState: SessionState;
   report: ReviewReportResult;
   allTransitions: StartedReviewResult['transitions'];
   worktree: string;
   validatedReviewObligation: ReviewObligation | null;
-  nativeAttestationRejection?: NativeAttestationRejection;
 }): Promise<string> {
   const {
     sessDir,
-    args,
     result,
     finalState,
     report,
     allTransitions,
     worktree,
     validatedReviewObligation,
-    nativeAttestationRejection,
   } = input;
   const reviewCard = buildStandaloneReviewCard({
-    args,
     result,
     finalState,
     report,
@@ -397,7 +365,7 @@ export async function buildReviewCompletionResponse(input: {
     validatedReviewObligation,
   });
   const presentationMarkdown = buildStandaloneReviewCard(
-    { args, result, finalState, report, validatedReviewObligation },
+    { result, finalState, report, validatedReviewObligation },
     { glyphProfile: (await readConfig(worktree)).presentation.opencode.glyphProfile },
   );
   return formatReviewCompletionResponse({
@@ -408,6 +376,5 @@ export async function buildReviewCompletionResponse(input: {
     reviewCard,
     presentationMarkdown,
     artifactWarning,
-    nativeAttestationRejection,
   });
 }

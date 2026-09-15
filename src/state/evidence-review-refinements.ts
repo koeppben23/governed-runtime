@@ -141,9 +141,6 @@ export interface AssuranceRefinementShape {
     readonly invocationMode?: string;
     readonly source?: string;
     readonly hostVisible?: boolean;
-    readonly hostCapturedAgentId?: string;
-    readonly hostCapturedAgentType?: string;
-    readonly hostCaptureSource?: string;
     readonly canonicalPromptDigest?: string;
     readonly consumedByObligationId?: string | null;
     readonly reviewOutputMode?: string;
@@ -451,48 +448,16 @@ export function refineAssuranceInvocationLinkageCoherence(
   context: z.RefinementCtx,
 ): void {
   for (const invocation of assurance.invocations) {
-    // Provenance is derived from HOW the reviewer was invoked; a state whose
-    // transport, visibility, corroboration, or output provenance disagrees
-    // with the invocation mode claims more assurance than was observed.
-    const hostObserved = invocation.invocationMode === 'sdk_session_prompt';
-    const agentSubmitted =
-      invocation.invocationMode === 'manual_attested' ||
-      invocation.invocationMode === 'native_subagent_attested';
-    const expectedMode = hostObserved
-      ? 'structured_output'
-      : agentSubmitted
-        ? 'agent_submitted_structured'
-        : null;
-    const expectedLevel =
-      expectedMode === 'structured_output'
-        ? 'structured_high'
-        : expectedMode === 'agent_submitted_structured'
-          ? 'structured_submitted'
-          : null;
-    const expectedSource = hostObserved
-      ? 'host-orchestrated'
-      : agentSubmitted
-        ? 'agent-submitted-attested'
-        : null;
-    const expectedHostVisible = false;
-    const hostCaptureConsistent =
-      invocation.invocationMode === 'native_subagent_attested'
-        ? Boolean(
-            invocation.hostCapturedAgentId &&
-            invocation.hostCapturedAgentType &&
-            invocation.hostCaptureSource,
-          )
-        : !invocation.hostCapturedAgentId &&
-          !invocation.hostCapturedAgentType &&
-          !invocation.hostCaptureSource;
+    // There is exactly one sanctioned invocation generation: a host-observed
+    // SDK structured output. A state whose transport or output provenance
+    // disagrees claims more assurance than was observed.
     if (
-      expectedMode === null ||
-      invocation.reviewOutputMode !== expectedMode ||
-      invocation.reviewAssuranceLevel !== expectedLevel ||
-      invocation.structuredOutputUsed !== (expectedMode === 'structured_output') ||
-      invocation.source !== expectedSource ||
-      invocation.hostVisible !== expectedHostVisible ||
-      !hostCaptureConsistent
+      invocation.invocationMode !== 'sdk_session_prompt' ||
+      invocation.reviewOutputMode !== 'structured_output' ||
+      invocation.reviewAssuranceLevel !== 'structured_high' ||
+      invocation.structuredOutputUsed !== true ||
+      invocation.source !== 'host-orchestrated' ||
+      invocation.hostVisible !== false
     ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,

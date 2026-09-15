@@ -262,7 +262,6 @@ export async function activateReviewObligationAndPersist(input: {
 
 export type ImplementArgs = {
   reviewVerdict?: LoopVerdict;
-  reviewFindings?: ReviewFindings;
   reviewerUnavailable?: boolean;
 };
 
@@ -298,7 +297,6 @@ export function validateImplementSequence(args: ImplementArgs, state: SessionSta
   // 1. Canonical argument-shape validation.
   const mode = classifyToolCallMode('implement', {
     reviewVerdict: args.reviewVerdict,
-    reviewFindings: args.reviewFindings,
     reviewerUnavailable: args.reviewerUnavailable,
   });
   if (mode.kind === 'invalid') return formatBlocked(mode.code, mode.params);

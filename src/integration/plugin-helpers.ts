@@ -12,13 +12,8 @@ import { buildBlockedDiagnostics } from '../diagnostics/index.js';
 import { lookupReasonCopy } from '../presentation/index.js';
 import { AUTO_ADVANCE_OVERFLOW_CODE } from '../rails/auto-advance-overflow.js';
 import {
-  REASON_PLUGIN_ENFORCEMENT_UNAVAILABLE,
-  REVIEW_ACCEPTANCE_PATH_NATIVE,
   REASON_SESSION_LOCK_CONTENDED,
   LOCK_CONTENDED_OUTPUT_FIELD,
-  HOST_TASK_FINDINGS_REJECTION_FIELD,
-  REVIEW_IDENTITY_REJECTION_FIELD,
-  NATIVE_ATTESTATION_REJECTION_FIELD,
 } from '../shared/flowguard-identifiers.js';
 
 /**
@@ -193,109 +188,6 @@ export function getToolMetadata(output: unknown): Record<string, unknown> {
 export function getToolCallID(input: unknown): string {
   const val = (input as Record<string, unknown> | null | undefined)?.callID;
   return typeof val === 'string' ? val : '';
-}
-
-/**
- * Detect a fail-closed review denial produced by the native_subagent_attested path
- * because first-party plugin enforcement was unavailable (#419).
- *
- * Reads the structured blocked-result fields (`code` + `diagnostics.deniedReviewPath`)
- * surfaced by the pure validation layer — never parses human-readable messages — so the
- * plugin boundary can emit a single diagnostic warn without re-deriving the path.
- *
- * @param rawOutput - The raw tool output string from the tool.execute.after hook
- * @returns true when the output is a native enforcement-unavailable denial
- */
-export function isNativeEnforcementUnavailableDenial(rawOutput: unknown): boolean {
-  const parsed = parseToolResult(rawOutput);
-  if (!parsed || parsed.code !== REASON_PLUGIN_ENFORCEMENT_UNAVAILABLE) return false;
-  const diagnostics = parsed.diagnostics;
-  if (typeof diagnostics !== 'object' || diagnostics === null) return false;
-  return (
-    (diagnostics as { deniedReviewPath?: unknown }).deniedReviewPath ===
-    REVIEW_ACCEPTANCE_PATH_NATIVE
-  );
-}
-
-export interface HostTaskFindingsRejectionLogContext {
-  readonly path: 'host_task';
-  readonly reason: string;
-  readonly status: string;
-  readonly obligationId?: string;
-}
-
-/**
- * Detect a host-task findings rejection surfaced by the pure validation layer.
- * Detection is structured-only so strict-path denials cannot be mislabeled as
- * host-task denials by matching on shared reason codes.
- */
-export function getHostTaskFindingsRejection(
-  rawOutput: unknown,
-): HostTaskFindingsRejectionLogContext | null {
-  const parsed = parseToolResult(rawOutput);
-  if (!parsed) return null;
-  const rejection = parsed[HOST_TASK_FINDINGS_REJECTION_FIELD];
-  if (typeof rejection !== 'object' || rejection === null) return null;
-
-  const { path, reason, status, obligationId } = rejection as {
-    path?: unknown;
-    reason?: unknown;
-    status?: unknown;
-    obligationId?: unknown;
-  };
-  if (path !== 'host_task' || typeof reason !== 'string' || typeof status !== 'string') {
-    return null;
-  }
-  return {
-    path,
-    reason,
-    status,
-    ...(typeof obligationId === 'string' ? { obligationId } : {}),
-  };
-}
-
-export interface ReviewIdentityRejectionLogContext {
-  readonly reason: 'reviewer_is_author' | 'reviewer_identity_uncomparable';
-  readonly obligationId?: string;
-}
-
-export function getReviewIdentityRejection(
-  rawOutput: unknown,
-): ReviewIdentityRejectionLogContext | null {
-  const parsed = parseToolResult(rawOutput);
-  if (!parsed) return null;
-  const rejection = parsed[REVIEW_IDENTITY_REJECTION_FIELD];
-  if (typeof rejection !== 'object' || rejection === null) return null;
-
-  const { reason, obligationId } = rejection as { reason?: unknown; obligationId?: unknown };
-  if (reason !== 'reviewer_is_author' && reason !== 'reviewer_identity_uncomparable') {
-    return null;
-  }
-  return {
-    reason,
-    ...(typeof obligationId === 'string' ? { obligationId } : {}),
-  };
-}
-
-export interface NativeAttestationRejectionLogContext {
-  readonly reason: string;
-  readonly obligationId?: string;
-}
-
-export function getNativeAttestationRejection(
-  rawOutput: unknown,
-): NativeAttestationRejectionLogContext | null {
-  const parsed = parseToolResult(rawOutput);
-  if (!parsed) return null;
-  const rejection = parsed[NATIVE_ATTESTATION_REJECTION_FIELD];
-  if (typeof rejection !== 'object' || rejection === null) return null;
-
-  const { reason, obligationId } = rejection as { reason?: unknown; obligationId?: unknown };
-  if (typeof reason !== 'string') return null;
-  return {
-    reason,
-    ...(typeof obligationId === 'string' ? { obligationId } : {}),
-  };
 }
 
 /**

@@ -16,7 +16,6 @@ import {
 } from './assurance.js';
 import { updateObligation } from './obligation-state.js';
 import type { ReviewerSuccessResult } from './orchestrator.js';
-import { INVOCATION_MODE_SDK_SESSION } from './pipeline-types.js';
 import type { EvidenceRecordResult, OrchestratorDeps } from './pipeline-types.js';
 import type { PipelineContext } from './pipeline-types.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
@@ -31,10 +30,17 @@ type SdkEvidenceParams = {
   findingsHash: string;
   invokedAt: string;
   fulfilledAt: string;
-  reviewerResult: Pick<
-    ReviewerSuccessResult,
-    'sessionId' | 'reviewOutputMode' | 'structuredOutputUsed' | 'reviewAssuranceLevel' | 'findings'
-  >;
+  reviewerResult: Omit<
+    Pick<
+      ReviewerSuccessResult,
+      | 'sessionId'
+      | 'reviewOutputMode'
+      | 'structuredOutputUsed'
+      | 'reviewAssuranceLevel'
+      | 'findings'
+    >,
+    'findings'
+  > & { findings: Record<string, unknown> };
   semanticIntents?: (
     result: EvidenceRecordResult,
     state: SessionState,
@@ -125,13 +131,12 @@ function buildSdkSessionInvocation(
     criteriaVersion: obligation.criteriaVersion,
     parentSessionId: params.sessionId,
     childSessionId: params.childSessionId,
-    invocationMode: INVOCATION_MODE_SDK_SESSION,
     promptHash: params.promptHash,
     findingsHash: params.findingsHash,
     invokedAt: params.invokedAt,
     fulfilledAt: params.fulfilledAt,
     attemptId: params.attemptId,
-    capturedRawFindings: params.reviewerResult.findings ?? undefined,
+    capturedRawFindings: params.reviewerResult.findings,
   });
 }
 

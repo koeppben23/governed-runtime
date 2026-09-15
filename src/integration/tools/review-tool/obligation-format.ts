@@ -118,7 +118,7 @@ export function formatMissingContentAnalysis(obligationId: string): string {
 export function formatSubagentReviewNotInvoked(detail: string, obligationId: string): string {
   return formatBlockedWithAttestation(
     'SUBAGENT_REVIEW_NOT_INVOKED',
-    `Supplied reviewFindings did not pass subagent attestation: ${detail}. Re-run the ${REVIEWER_SUBAGENT_TYPE} subagent with the requiredReviewAttestation values and submit the complete ReviewFindings object. Copied attestation fields are diagnostic context only until FlowGuard persists matching ReviewInvocationEvidence.`,
+    `Host-observed structured reviewer evidence did not pass subagent attestation: ${detail}. Re-run the originating FlowGuard command so the host can create a fresh ${REVIEWER_SUBAGENT_TYPE} reviewer child session. Submit only the reviewVerdict; FlowGuard resolves the bound structured reviewer evidence automatically. Copied attestation fields are diagnostic context only until FlowGuard persists matching ReviewInvocationEvidence.`,
     obligationId,
   );
 }

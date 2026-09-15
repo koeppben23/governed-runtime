@@ -106,7 +106,7 @@ function buildAssuranceForObligation(
     consumedByObligationId: null,
     capturedVerdict: 'accept',
     reviewOutputMode: 'structured_output' as const,
-    structuredOutputUsed: true,
+    structuredOutputUsed: true as const,
     reviewAssuranceLevel: 'structured_high' as const,
     attemptId,
   };
@@ -257,10 +257,7 @@ describe('plan / architecture Mode-B review contract', () => {
       };
       await writeStateWithArtifacts(session.sessDir, state);
 
-      const result = await plan.execute(
-        { reviewVerdict: 'accept', reviewFindings: f },
-        session.toolContext,
-      );
+      const result = await plan.execute({ reviewVerdict: 'accept' }, session.toolContext);
       expect(typeof result).toBe('string');
 
       const after = await readState(session.sessDir);
@@ -323,10 +320,7 @@ describe('plan / architecture Mode-B review contract', () => {
       };
       await writeStateWithArtifacts(session.sessDir, state);
 
-      const result = await architecture.execute(
-        { reviewVerdict: 'accept', reviewFindings: f },
-        session.toolContext,
-      );
+      const result = await architecture.execute({ reviewVerdict: 'accept' }, session.toolContext);
       expect(typeof result).toBe('string');
 
       const after = await readState(session.sessDir);

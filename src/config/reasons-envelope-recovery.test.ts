@@ -7,7 +7,7 @@ describe('schema rejection recovery', () => {
       message: 'schema_invalid',
     });
 
-    expect(formatted.reason).toContain('reviewer Task completed');
+    expect(formatted.reason).toContain('reviewer child session completed');
     expect(formatted.reason).toContain('canonical ReviewFindings schema validation');
     expect(formatted.recovery[0]).toContain('Re-run the originating FlowGuard command');
     expect(formatted.recovery[0]).toContain('fresh output-repair attempt');

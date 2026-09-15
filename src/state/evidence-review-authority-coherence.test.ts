@@ -213,6 +213,7 @@ describe('Current persisted authority schemas are strict', () => {
     fulfilledAt: FIXED_TIME,
     consumedByObligationId: null,
     attemptId: '22222222-2222-4222-8222-222222222222',
+    capturedRawFindings: { overallVerdict: 'accept' },
     reviewOutputMode: 'structured_output' as const,
     structuredOutputUsed: true,
     reviewAssuranceLevel: 'structured_high' as const,
@@ -367,48 +368,21 @@ describe('Current persisted authority schemas are strict', () => {
     expect(JSON.stringify(duplicate.error.issues)).toContain('duplicate dispatchId');
   });
 
-  it('native_subagent_attested requires all host-capture corroboration fields', () => {
-    const nativeInvocation = {
-      ...VALID_INVOCATION,
-      invocationMode: 'native_subagent_attested' as const,
-      hostVisible: false,
-      source: 'agent-submitted-attested' as const,
-      reviewOutputMode: 'agent_submitted_structured' as const,
-      structuredOutputUsed: false,
-      reviewAssuranceLevel: 'structured_submitted' as const,
-    };
-    expect(
-      assuranceWithInvocation({ ...nativeInvocation, hostCapturedAgentId: 'agent-1' }).success,
-    ).toBe(false);
-    expect(
-      assuranceWithInvocation({
-        ...nativeInvocation,
-        hostCapturedAgentId: 'agent-1',
-        hostCapturedAgentType: 'flowguard-reviewer',
-        hostCaptureSource: 'post_tool_use_hook',
-      }).success,
-    ).toBe(true);
-  });
-
-  it('manual_attested rejects host-capture corroboration fields', () => {
-    const manual = {
-      ...VALID_INVOCATION,
-      invocationMode: 'manual_attested' as const,
-      hostVisible: false,
-      source: 'agent-submitted-attested' as const,
-      reviewOutputMode: 'agent_submitted_structured' as const,
-      structuredOutputUsed: false,
-      reviewAssuranceLevel: 'structured_submitted' as const,
-    };
+  it('rejects host-capture corroboration fields removed from the current contract', () => {
     const result = assuranceWithInvocation({
-      ...manual,
+      ...VALID_INVOCATION,
       hostCapturedAgentId: 'agent-1',
       hostCapturedAgentType: 'flowguard-reviewer',
       hostCaptureSource: 'post_tool_use_hook',
     });
     expect(result.success).toBe(false);
-    if (result.success) throw new TypeError('expected schema rejection');
-    expect(JSON.stringify(result.error.issues)).toContain('consistent invocation provenance');
+  });
+
+  it('rejects the removed non-host invocation modes', () => {
+    for (const invocationMode of ['native_subagent_attested', 'manual_attested']) {
+      const result = assuranceWithInvocation({ ...VALID_INVOCATION, invocationMode });
+      expect(result.success, invocationMode).toBe(false);
+    }
   });
 
   it('rejects a host transport claiming agent-submitted source', () => {
@@ -418,7 +392,7 @@ describe('Current persisted authority schemas are strict', () => {
     });
     expect(result.success).toBe(false);
     if (result.success) throw new TypeError('expected schema rejection');
-    expect(JSON.stringify(result.error.issues)).toContain('consistent invocation provenance');
+    expect(JSON.stringify(result.error.issues)).toContain('host-orchestrated');
   });
 });
 
@@ -752,6 +726,7 @@ describe('Host invocation, obligation foreign keys and status relations', () => 
       fulfilledAt: FIXED_TIME,
       consumedByObligationId: null,
       attemptId: ATTEMPT_ID,
+      capturedRawFindings: { overallVerdict: 'accept' },
       reviewOutputMode: 'structured_output' as const,
       structuredOutputUsed: true,
       reviewAssuranceLevel: 'structured_high' as const,

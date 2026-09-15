@@ -151,7 +151,7 @@ describe('SEED_REASONS completeness (F1 guard)', () => {
 
 // P10c: reason code split validation
 describe('P10c — reason code split', () => {
-  it('all 284 codes from split arrays are registered exactly once (no duplicates)', async () => {
+  it('all 281 codes from split arrays are registered exactly once (no duplicates)', async () => {
     const { PRECONDITION_REASONS } = await import('./reasons-precondition.js');
     const { ARCHITECTURE_REASONS } = await import('./reasons-architecture.js');
     const { VALIDATION_REASONS } = await import('./reasons-validation.js');
@@ -168,18 +168,18 @@ describe('P10c — reason code split', () => {
       ...MUTATION_REASONS.map((r: { code: string }) => r.code),
     ];
 
-    expect(allSplitCodes).toHaveLength(284);
+    expect(allSplitCodes).toHaveLength(281);
     // No duplicates across the six arrays.
-    expect(new Set(allSplitCodes).size).toBe(284);
+    expect(new Set(allSplitCodes).size).toBe(281);
     // All split codes are registered in the default registry
     for (const code of allSplitCodes) {
       expect(defaultReasonRegistry.get(code)).toBeDefined();
     }
   });
 
-  it('PRECONDITION_REASONS has exactly 78 entries', async () => {
+  it('PRECONDITION_REASONS has exactly 76 entries', async () => {
     const { PRECONDITION_REASONS } = await import('./reasons-precondition.js');
-    expect(PRECONDITION_REASONS.length).toBe(78);
+    expect(PRECONDITION_REASONS.length).toBe(76);
     for (const r of PRECONDITION_REASONS) {
       expect(r.category).toBe('precondition');
     }
@@ -193,9 +193,9 @@ describe('P10c — reason code split', () => {
     }
   });
 
-  it('ARCHITECTURE_REASONS has exactly 10 entries', async () => {
+  it('ARCHITECTURE_REASONS has exactly 9 entries', async () => {
     const { ARCHITECTURE_REASONS } = await import('./reasons-architecture.js');
-    expect(ARCHITECTURE_REASONS.length).toBe(10);
+    expect(ARCHITECTURE_REASONS.length).toBe(9);
     for (const r of ARCHITECTURE_REASONS) {
       expect(r.category).toBe('precondition');
     }

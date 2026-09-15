@@ -208,20 +208,8 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'Invalid flowguard_plan call sequence: plan submission and review verdict inputs must be separate calls.',
     recoverySteps: [
       'Submit the plan first with flowguard_plan({ planText, claims }) — no verdict inputs',
-      'Do not include reviewVerdict, reviewFindings, or reviewerUnavailable in the plan submission call',
+      'Do not include reviewVerdict or reviewerUnavailable in the plan submission call',
       'Read the tool response next field before constructing the review verdict call',
-    ],
-    quickFixCommand: '/plan',
-  },
-
-  {
-    code: 'PLAN_SUBMISSION_MIXED_INPUTS',
-    category: 'precondition',
-    messageTemplate:
-      'Plan submission included reviewFindings without a verdict. Findings belong to the verdict call, not the initial submission.',
-    recoverySteps: [
-      'Submit the plan with flowguard_plan({ planText, claims }) — no verdict inputs',
-      'Add reviewFindings in the verdict call: flowguard_plan({ reviewVerdict, reviewFindings })',
     ],
     quickFixCommand: '/plan',
   },
@@ -232,7 +220,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'Plan approval included planText (you sent reviewVerdict="{receivedVerdict}"). Approval and plan submission must be separate calls; planText is for initial submissions and revisions only.',
     recoverySteps: [
-      'Call flowguard_plan({ reviewVerdict: "accept", reviewFindings }) with the exact reviewer output',
+      'Call flowguard_plan({ reviewVerdict: "accept" }) after FlowGuard binds the host-observed structured reviewer evidence',
       'Include planText only when reviewVerdict is "changes_requested" (revised plan)',
     ],
     quickFixCommand: '/plan',
@@ -244,20 +232,8 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'The plan review loop is already active. Submit a review verdict to continue it, not a new plan.',
     recoverySteps: [
-      'The review loop is active — submit a reviewVerdict to continue it',
-      'Include the exact reviewer output as reviewFindings',
-    ],
-    quickFixCommand: '/plan',
-  },
-
-  {
-    code: 'PLAN_FINDINGS_WITHOUT_VERDICT',
-    category: 'precondition',
-    messageTemplate:
-      'Review findings were submitted without a verdict. Include reviewVerdict alongside reviewFindings.',
-    recoverySteps: [
-      'Include reviewVerdict alongside reviewFindings',
-      'Call flowguard_plan({ reviewVerdict: "accept"|"changes_requested", reviewFindings })',
+      'The review loop is active — submit only the bound reviewVerdict to continue it',
+      'FlowGuard has already captured and bound the host-observed structured reviewer evidence',
     ],
     quickFixCommand: '/plan',
   },
@@ -279,7 +255,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate: 'A plan review verdict requires an active plan review loop.',
     recoverySteps: [
       'Submit the plan first and wait for the review obligation',
-      'Then submit reviewVerdict together with reviewFindings',
+      'Then submit only the bound reviewVerdict once FlowGuard captures the structured reviewer evidence',
     ],
     quickFixCommand: '/plan',
   },
@@ -584,11 +560,11 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   {
     code: 'SUBAGENT_REVIEW_NOT_INVOKED',
     category: 'precondition',
-    messageTemplate: `FlowGuard signaled INDEPENDENT_REVIEW_REQUIRED but no host-observed structured ${REVIEWER_SUBAGENT_TYPE} invocation was recorded. The reviewer transport must run before a verdict is submitted.`,
+    messageTemplate: `FlowGuard signaled INDEPENDENT_REVIEW_REQUIRED but no host-observed structured ${REVIEWER_SUBAGENT_TYPE} invocation was recorded. The structured reviewer invocation must complete before a verdict is submitted.`,
     recoverySteps: [
       `Re-run the originating FlowGuard command so the host can create the reviewer child session`,
       'Submit only the reviewVerdict; the host resolves the bound structured reviewer evidence automatically',
-      'Do NOT submit copied or reconstructed reviewFindings',
+      'Do NOT submit, copy, or reconstruct reviewer findings — only the bound verdict is accepted',
     ],
   },
 
@@ -635,7 +611,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     category: 'precondition',
     messageTemplate: `Subagent type '{subagentType}' is not authorized by FlowGuard governance. Only ${REVIEWER_SUBAGENT_TYPE} is allowed.`,
     recoverySteps: [
-      `Use the ${REVIEWER_SUBAGENT_TYPE} subagent type for reviewer Task calls`,
+      `Use the ${REVIEWER_SUBAGENT_TYPE} subagent type for reviewer invocations`,
       'Do not spawn unauthorized subagents — FlowGuard governance restricts subagent types',
     ],
   },

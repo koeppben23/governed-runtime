@@ -14,9 +14,9 @@ export const ENVELOPE_PRECONDITION_REASONS: readonly BlockedReason[] = [
     code: 'ENVELOPE_CAPTURE_FAILED',
     category: 'precondition',
     messageTemplate:
-      'The reviewer Task tool completed but produced no bindable output (capture failed).',
+      'The reviewer child session completed but produced no bindable structured output (capture failed).',
     recoverySteps: [
-      `Re-invoke the ${REVIEWER_SUBAGENT_TYPE} subagent via the Task tool`,
+      `Re-run the originating FlowGuard command so the host can create a fresh structured ${REVIEWER_SUBAGENT_TYPE} reviewer child session`,
       'Ensure the reviewer returns structured output; verify the subagent is reachable',
     ],
   },
@@ -25,11 +25,11 @@ export const ENVELOPE_PRECONDITION_REASONS: readonly BlockedReason[] = [
     code: 'ENVELOPE_PAYLOAD_NOT_FOUND',
     category: 'precondition',
     messageTemplate:
-      'The reviewer Task completed, but its output did not contain extractable ReviewFindings JSON.',
+      'The reviewer child session completed, but its captured output contained no extractable structured ReviewFindings JSON.',
     recoverySteps: [
       'Re-run the originating FlowGuard command (plan, implement, architecture, or review) to authorize a fresh output-repair attempt',
       'Follow the returned recovery steps; do not retry or reconstruct the rejected reviewer output yourself',
-      'Do not hand-edit, copy, or submit rejected reviewFindings; validated evidence remains the only review authority',
+      'Do not hand-edit or copy rejected reviewer output; host-observed structured evidence remains the only review authority',
     ],
   },
 
@@ -39,7 +39,7 @@ export const ENVELOPE_PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate: `FlowGuard enforcement: host-owned review context (obligation {obligationId}) could not be materialized for the pending review. This is a structural host-context defect — a ${REVIEWER_SUBAGENT_TYPE} invocation cannot repair it.`,
     recoverySteps: [
       'Re-run the originating FlowGuard command (plan, implement, architecture, or review) to re-issue the canonical review signal carrying requiredReviewAttestation',
-      `Do not re-invoke the ${REVIEWER_SUBAGENT_TYPE} Task — reviewer output cannot replace missing host attestation constants`,
+      `Do not re-invoke the ${REVIEWER_SUBAGENT_TYPE} reviewer — reviewer output cannot replace the missing host-owned review context`,
     ],
   },
 
@@ -58,11 +58,11 @@ export const ENVELOPE_PRECONDITION_REASONS: readonly BlockedReason[] = [
     code: 'ENVELOPE_SCHEMA_INVALID',
     category: 'precondition',
     messageTemplate:
-      'The reviewer Task completed, but its output failed canonical ReviewFindings schema validation: {message}',
+      'The reviewer child session completed, but its captured output failed canonical ReviewFindings schema validation: {message}',
     recoverySteps: [
       'Re-run the originating FlowGuard command (plan, implement, architecture, or review) to authorize a fresh output-repair attempt',
       'Follow the returned recovery steps; do not retry or reconstruct the rejected reviewer output yourself',
-      'Do not hand-edit, copy, or submit rejected reviewFindings; schema-valid evidence remains the only review authority',
+      'Do not hand-edit or copy rejected reviewer output; schema-valid evidence remains the only review authority',
     ],
   },
 

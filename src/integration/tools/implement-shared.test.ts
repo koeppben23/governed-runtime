@@ -173,12 +173,18 @@ describe('buildImplementRuntime', () => {
 // ─── validateImplementSequence ────────────────────────────────────────────────
 
 describe('validateImplementSequence', () => {
-  it('findings without verdict => INVALID_IMPLEMENT_TOOL_SEQUENCE', () => {
+  it('a stray reviewFindings key is not a verdict shape (rejected at the schema boundary)', () => {
+    // Findings are never part of the tool args: the strict published schema
+    // rejects unknown reviewFindings keys; the runtime classifier sees only
+    // verdict/unavailable, so a findings-only call is an initial submission.
     const result = validateImplementSequence(
-      implementArgs({ reviewFindings: {} as unknown as ImplementArgs['reviewFindings'] }),
+      {
+        ...implementArgs(),
+        reviewFindings: {},
+      } as unknown as ImplementArgs,
       state('IMPLEMENTATION'),
     );
-    expect(result).toContain('INVALID_IMPLEMENT_TOOL_SEQUENCE');
+    expect(result).toBeNull();
   });
 
   it('reviewerUnavailable retry is allowed only at IMPL_REVIEW with implementation evidence', () => {

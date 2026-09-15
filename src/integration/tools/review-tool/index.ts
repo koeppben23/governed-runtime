@@ -3,7 +3,7 @@
  * @description FlowGuard review tool — standalone review flow (READY → REVIEW → REVIEW_COMPLETE).
  *
  * Orchestrates the review lifecycle: preparation, execution, completion.
- * Delegates to obligation.ts, invocation.ts, and completion.ts for domain logic.
+ * Delegates to obligation.ts and completion.ts for domain logic.
  *
  * @version v1
  */
@@ -20,11 +20,7 @@ import {
   type PreparedReviewContent,
   type ReviewReferenceInput,
 } from '../../../rails/review.js';
-import {
-  InputOriginSchema,
-  ExternalReferenceSchema,
-  ReviewFindings,
-} from '../../../state/evidence.js';
+import { InputOriginSchema, ExternalReferenceSchema } from '../../../state/evidence.js';
 import type { ReviewExecutionContext, ReviewPreparation } from './types.js';
 import type { StartedReviewResult } from './types.js';
 import type { SessionState } from '../../../state/schema.js';
@@ -33,13 +29,11 @@ import type { ReviewToolArgs } from './types.js';
 import {
   ensureMissingAnalysisObligation,
   hasImplicitContentSignal,
-  resolveSubmittedReviewObligation,
   validateSubmittedReviewFindings,
   consumeValidatedReviewObligation,
 } from './obligation.js';
 import { resolveStructuredFindings } from '../review-validation-structured-evidence.js';
 import { formatStructuredResolutionFailure } from '../review-validation.js';
-import { recordSubmittedReviewInvocation } from './invocation.js';
 import {
   buildReviewExecutors,
   formatBlockedReviewReport,
@@ -110,17 +104,12 @@ async function prepareReviewExecution(
       ...(missingResult.attemptId && { reviewAttemptId: missingResult.attemptId }),
     };
   }
-  if (exec.args.reviewFindings === undefined) {
-    const structured = prepareStructuredEvidenceSubmission(
-      state,
-      result,
-      exec,
-      materializedContent,
-    );
-    if (structured) return structured;
-    return prepareMissingFindingsSubmission(result, refInput, missingResult, materializedContent);
-  }
-  return finishFindingsSubmission(sessDir, state, result, exec, { refInput, materializedContent });
+  // Findings are only ever resolved from host-captured structured evidence:
+  // bound evidence resolves the submission; otherwise the caller is told that
+  // the reviewer evidence is missing.
+  const structured = prepareStructuredEvidenceSubmission(state, result, exec, materializedContent);
+  if (structured) return structured;
+  return prepareMissingFindingsSubmission(result, refInput, missingResult, materializedContent);
 }
 
 function prepareMissingFindingsSubmission(
@@ -138,50 +127,6 @@ function prepareMissingFindingsSubmission(
     blockMessage: missingResult.message ?? undefined,
     materializedContent,
     reviewSubject: materializedContent?.reviewSubject,
-  };
-}
-
-async function finishFindingsSubmission(
-  sessDir: string,
-  state: SessionState,
-  result: StartedReviewResult,
-  exec: ReviewExecutionContext,
-  content: {
-    refInput: ReviewReferenceInput | undefined;
-    materializedContent: PreparedReviewContent | null;
-  },
-): Promise<ReviewPreparation | string> {
-  const resolved = await resolveSubmittedReviewObligation(
-    sessDir,
-    state,
-    exec.args,
-    exec.now,
-    exec.context.worktree,
-  );
-  if (resolved.blocked || !resolved.obligation) {
-    return resolved.blocked ?? formatBlocked('REVIEW_OBLIGATION_NOT_FOUND', {});
-  }
-  const validationBlock = validateSubmittedReviewFindings(state, exec.args, resolved.obligation);
-  if (validationBlock) return validationBlock;
-  const recorded = await recordSubmittedReviewInvocation(
-    result,
-    resolved.obligation,
-    exec,
-    sessDir,
-  );
-  if (recorded.blocked) return recorded.blocked;
-  const refInput = content.refInput
-    ? { ...content.refInput, skipExternalContentLoad: true }
-    : undefined;
-  return {
-    result: recorded.result,
-    refInput,
-    validatedReviewObligation: resolved.obligation,
-    materializedContent: content.materializedContent,
-    reviewSubject: content.materializedContent?.reviewSubject,
-    ...(recorded.nativeAttestationRejection
-      ? { nativeAttestationRejection: recorded.nativeAttestationRejection }
-      : {}),
   };
 }
 
@@ -208,11 +153,7 @@ function prepareStructuredEvidenceSubmission(
     exec.context.sessionID,
   );
   if (resolution.kind !== 'resolved') return formatStructuredResolutionFailure(resolution);
-  const validation = validateSubmittedReviewFindings(
-    state,
-    { ...exec.args, reviewFindings: resolution.findings },
-    obligation,
-  );
+  const validation = validateSubmittedReviewFindings(state, resolution.findings, obligation);
   if (validation) return validation;
   const refInput = populateRefInput(exec.args, state, undefined);
   return {
@@ -317,7 +258,6 @@ async function persistCompletedReview(
     let result = consumeValidatedReviewObligation(
       prepared.result,
       prepared.validatedReviewObligation,
-      args,
       now,
       {
         acceptedInvocationId: prepared.evidenceInvocationId,
@@ -344,7 +284,7 @@ async function persistCompletedReview(
               evidence: state.standaloneReviewEvidence,
               prepared: taskEvidence,
               completedAt: now,
-              findings: prepared.effectiveReviewFindings ?? args.reviewFindings,
+              findings: prepared.effectiveReviewFindings,
             })
           : state.standaloneReviewEvidence,
       },
@@ -355,11 +295,9 @@ async function persistCompletedReview(
     }
     return buildReviewCompletionResponse({
       sessDir,
-      args,
       result,
       report: completion.report,
       validatedReviewObligation: prepared.validatedReviewObligation,
-      nativeAttestationRejection: prepared.nativeAttestationRejection,
       finalState: completion.finalState,
       allTransitions: completion.allTransitions,
       worktree: context.worktree,
@@ -457,12 +395,6 @@ export const review: ToolDefinition = {
       .describe(
         'Exact obligation ID from requiredReviewAttestation.toolObligationId. Required when consuming captured structured findings.',
       ),
-    reviewFindings: ReviewFindings.optional().describe(
-      'Complete findings from independent subagent analysis. ' +
-        'Required for content-aware review submissions unless a matching SDK structured capture is available. ' +
-        'Must include reviewMode="subagent", reviewedBy, and valid attestation with ' +
-        'mandateDigest and criteriaVersion.',
-    ),
     targetPaths: z
       .array(z.string())
       .optional()
@@ -495,7 +427,7 @@ export const review: ToolDefinition = {
       const reviewResult = await executeReview(
         content.reviewState,
         prepared.now,
-        buildReviewExecutors(args, prepared.effectiveReviewFindings),
+        buildReviewExecutors(prepared.effectiveReviewFindings),
         prepared.refInput,
         content.loadedContent === undefined
           ? undefined

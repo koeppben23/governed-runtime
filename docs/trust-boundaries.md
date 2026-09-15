@@ -199,19 +199,6 @@ The following sections are the review contract. Changes touching a boundary must
 | Required operational logs                 | `warn`/`error` for strict orchestration failure, findings rejection, or native attestation rejection with fields such as `obligationId`, `invocationId`, `reasonCode`, `reviewMode`, and `reviewHostPlatform`. Operational logs are diagnostic only.                                         |
 | Known gaps / residual risk / NOT_VERIFIED | Host transport can corroborate review activity but does not approve. Completion authority remains validated, obligation-bound ReviewFindings. Claims about human reviewer intent beyond submitted evidence are `NOT_VERIFIED`.                                                               |
 
-### Native Reviewer Capture Boundary
-
-| Field                                     | Contract                                                                                                                                                                                                                   |
-| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Signed / integrity-covered                | Accepted findings may be bound to an invocation and obligation. Native capture lines themselves are not hash-chain evidence.                                                                                               |
-| Mutable / diagnostic                      | `reviewer-captures.jsonl` is append-only plaintext corroboration and may be agent-writable depending on host path. It is not approval authority.                                                                           |
-| Writer / authority                        | Native capture acceptance is checked through review validation and assurance authorities, especially [`src/integration/tools/review-validation.ts`](../src/integration/tools/review-validation.ts).                        |
-| Attacker model                            | Agent writes or edits capture files, provides malformed lines, mismatches session IDs, or attempts to upgrade native transport to approval authority.                                                                      |
-| Fail-closed expectation                   | Malformed, skipped, missing, unbound, read-failed, session-mismatched, or plugin-handshake-missing native captures must not satisfy strict host-task-required review paths.                                                |
-| Required audit events                     | Review invocation/evidence state changes and blocked review submissions where the runtime records them. Capture file existence alone is never an audit event.                                                              |
-| Required operational logs                 | `warn` for native attestation not upgraded and `error` for capture read/write failure with fields such as `reasonCode`, `sessionId`, `childSessionId`, and `capturePath` where safe. Operational logs are diagnostic only. |
-| Known gaps / residual risk / NOT_VERIFIED | Native capture is diagnostic/corroborating evidence only. It does not protect against a malicious host runtime or local file writer.                                                                                       |
-
 ### Actor Identity And IdP Boundary
 
 | Field                                     | Contract                                                                                                                                                                                                   |

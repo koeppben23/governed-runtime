@@ -38,10 +38,8 @@ import {
 } from './types.js';
 import { signalAttestationOf, readHostAttestationConstants } from './extraction.js';
 import { buildPendingReview, type ReviewSignalBinding } from './pending-review.js';
-import { validateReviewFindingsConsistency } from './findings-consistency.js';
 
 import { TOOL_FLOWGUARD_REVIEW } from '../../tool-names.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import {
   obligationTypeForTool,
   resolveReviewObligationTool,
@@ -231,90 +229,6 @@ function checkPendingReview(
   };
 }
 
-function checkSessionMismatch(
-  pending: { subagentRecord?: { sessionId: string | null } | null },
-  reviewFindings: Record<string, unknown>,
-): EnforcementResult | null {
-  const reviewedBy = reviewFindings.reviewedBy as Record<string, unknown> | undefined;
-  const submittedSessionId =
-    typeof reviewedBy?.sessionId === 'string' ? reviewedBy.sessionId : null;
-  if (
-    submittedSessionId &&
-    pending.subagentRecord?.sessionId != null &&
-    submittedSessionId !== pending.subagentRecord.sessionId
-  ) {
-    return {
-      allowed: false,
-      code: 'SUBAGENT_SESSION_MISMATCH',
-      reason: `FlowGuard enforcement: reviewFindings.reviewedBy.sessionId ("${submittedSessionId}") does not match the actual subagent session ("${pending.subagentRecord.sessionId}"). The findings must come from the ${REVIEWER_SUBAGENT_TYPE} subagent that was invoked.`,
-    };
-  }
-  return null;
-}
-
-function checkFindingsMismatch(
-  pending: { capturedFindings?: { overallVerdict: string; blockingIssuesCount: number } | null },
-  reviewFindings: Record<string, unknown>,
-): EnforcementResult | null {
-  const submittedVerdict =
-    typeof reviewFindings.overallVerdict === 'string' ? reviewFindings.overallVerdict : null;
-  const submittedBlockingIssues = Array.isArray(reviewFindings.blockingIssues)
-    ? reviewFindings.blockingIssues
-    : null;
-
-  if (submittedVerdict !== null && submittedVerdict !== pending.capturedFindings!.overallVerdict) {
-    return {
-      allowed: false,
-      code: 'SUBAGENT_FINDINGS_VERDICT_MISMATCH',
-      reason: `FlowGuard enforcement: submitted reviewFindings.overallVerdict ("${submittedVerdict}") does not match the actual subagent verdict ("${pending.capturedFindings!.overallVerdict}"). The findings must not be modified after the subagent produces them.`,
-    };
-  }
-  if (
-    submittedBlockingIssues !== null &&
-    submittedBlockingIssues.length !== pending.capturedFindings!.blockingIssuesCount
-  ) {
-    return {
-      allowed: false,
-      code: 'SUBAGENT_FINDINGS_ISSUES_MISMATCH',
-      reason: `FlowGuard enforcement: submitted reviewFindings.blockingIssues count (${submittedBlockingIssues.length}) does not match the actual subagent count (${pending.capturedFindings!.blockingIssuesCount}). The findings must not be modified after the subagent produces them.`,
-    };
-  }
-  return null;
-}
-
-/** F12: assert the internal coherence of the captured review record. */
-function checkCapturedFindingsConsistency(captured: {
-  overallVerdict: string;
-  blockingIssuesCount: number;
-}): EnforcementResult | null {
-  const consistency = validateReviewFindingsConsistency({
-    overallVerdict: captured.overallVerdict,
-    blockingIssueCount: captured.blockingIssuesCount,
-  });
-  if (consistency.ok) return null;
-  return {
-    allowed: false,
-    code: consistency.code,
-    reason: `FlowGuard enforcement: overallVerdict "accept" is incoherent with ${consistency.details.blockingIssueCount} blocking issue(s). An accepted review must contain no blocking issues; return a non-accept verdict or reclassify the findings.`,
-  };
-}
-
-function verifyFindingsIntegrity(
-  pending: {
-    subagentRecord?: { sessionId: string | null } | null;
-    capturedFindings?: { overallVerdict: string; blockingIssuesCount: number } | null;
-  },
-  reviewFindings: Record<string, unknown> | undefined,
-): EnforcementResult | null {
-  if (!reviewFindings || !pending.subagentRecord) return null;
-  const sessionIssue = checkSessionMismatch(pending, reviewFindings);
-  if (sessionIssue) return sessionIssue;
-  if (!pending.capturedFindings) return null;
-  const consistencyIssue = checkCapturedFindingsConsistency(pending.capturedFindings);
-  if (consistencyIssue) return consistencyIssue;
-  return checkFindingsMismatch(pending, reviewFindings);
-}
-
 export function enforceBeforeVerdict(
   state: SessionEnforcementState,
   toolName: string,
@@ -338,14 +252,6 @@ export function enforceBeforeVerdict(
   const pending = state.pendingReviews.get(reviewTool);
   if (!pending) return { allowed: true };
 
-  if (!pending.subagentCalled) {
-    return {
-      allowed: false,
-      code: 'SUBAGENT_REVIEW_NOT_INVOKED',
-      reason: `FlowGuard enforcement: ${reviewTool} signaled INDEPENDENT_REVIEW_REQUIRED but no SDK reviewer invocation was recorded before the self-review verdict.`,
-    };
-  }
-
   if (
     sessionState?.reviewAssurance?.invocations.some(
       (invocation) => invocation.invocationMode === 'sdk_session_prompt',
@@ -353,13 +259,11 @@ export function enforceBeforeVerdict(
   )
     return { allowed: true };
 
-  const findingsCheck = verifyFindingsIntegrity(
-    pending,
-    args.reviewFindings as Record<string, unknown> | undefined,
-  );
-  if (findingsCheck) return findingsCheck;
-
-  return { allowed: true };
+  return {
+    allowed: false,
+    code: 'SUBAGENT_REVIEW_NOT_INVOKED',
+    reason: `FlowGuard enforcement: ${reviewTool} signaled INDEPENDENT_REVIEW_REQUIRED but no host-observed structured reviewer invocation was recorded before the verdict.`,
+  };
 }
 
 // ─── Plugin-Initiated Review Recording ───────────────────────────────────────

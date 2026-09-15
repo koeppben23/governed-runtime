@@ -79,16 +79,6 @@ describe('Claude Code plugin templates', () => {
       args: ['${CLAUDE_PLUGIN_ROOT}/dist/hooks/stop.js'],
       timeout: 15,
     });
-
-    // SubagentStop — no matcher, has timeout
-    const subStop = hooks.hooks.SubagentStop[0];
-    expect(subStop.matcher).toBeUndefined();
-    expect(subStop.hooks[0]).toMatchObject({
-      type: 'command',
-      command: 'node',
-      args: ['${CLAUDE_PLUGIN_ROOT}/dist/hooks/subagent-stop.js'],
-      timeout: 15,
-    });
   });
 
   it('renders MCP config for the existing FlowGuard MCP server', () => {

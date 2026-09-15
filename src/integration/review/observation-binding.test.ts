@@ -456,6 +456,7 @@ describe('direct/submitted validator path', () => {
       invokedAt: NOW_ISO,
       fulfilledAt: NOW_ISO,
       consumedByObligationId: null,
+      capturedRawFindings: findings,
     };
     return fixtureAssuranceWith({
       obligation: boundObligation,

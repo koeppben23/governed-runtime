@@ -2,32 +2,32 @@
  * @module integration/tools/implement
  * @description FlowGuard implement tool — record implementation or review verdict.
  *
- * Agent-Orchestrated Independent Review for /implement
+ * Host-Observed Independent Review for /implement
  *
  * Architecture: FlowGuard does NOT call subagents. The OpenCode primary agent
  * orchestrates independent review by calling the flowguard-reviewer subagent
- * via the Task tool. FlowGuard accepts, validates, and persists the resulting
- * ReviewFindings.
+ * via the Task tool. The HOST captures the reviewer's structured findings into
+ * the review assurance evidence; the agent never resubmits findings.
  *
  * Flow:
  * 1. Primary agent performs implementation work
  * 2. Primary agent calls flowguard_implement (Mode A, records evidence)
  * 3. FlowGuard returns next-action instructing subagent invocation
  * 4. Primary agent calls flowguard-reviewer subagent via Task tool
- * 5. Subagent returns structured ReviewFindings
- * 6. Primary agent submits reviewVerdict + reviewFindings to FlowGuard (Mode B)
- * 7. FlowGuard validates and persists both (append-only, separate)
+ * 5. Host captures the reviewer's structured findings into invocation evidence
+ * 6. Primary agent submits the review verdict ONLY (Mode B)
+ * 7. FlowGuard resolves the host-captured findings, validates, and persists them
  *
  * Tool responsibilities:
- * - Input validation: reviewFindings vs policy, iteration binding
- * - Persistence: impl history (author), implReviewFindings (reviewer)
+ * - Input validation: verdict vs host-captured evidence binding
+ * - Persistence: impl history (author), implReviewFindings (host-captured)
  * - Response: summary of review findings
  * - Next-action: independent reviewer instructions
  *
  * Validation rules:
  * - reviewMode=self → BLOCKED
- * - reviewVerdict=approve + missing reviewFindings → BLOCKED
- * - reviewFindings.iteration mismatch → BLOCKED
+ * - reviewVerdict without bound structured evidence → SUBAGENT_EVIDENCE_MISSING
+ * - captured findings iteration mismatch → BLOCKED
  *
  * Multi-call pattern driven by the LLM:
  *
@@ -38,8 +38,8 @@
  *   -> Returns "review needed" with policy-conditional next-action
  *
  * Step 3: LLM calls flowguard-reviewer subagent via Task tool
- * Step 4: LLM calls flowguard_review_implementation({ reviewVerdict: "accept", reviewFindings })
- *   -> Tool records review iteration, checks convergence
+ * Step 4: LLM calls flowguard_review_implementation({ reviewVerdict: "accept" })
+ *   -> Tool resolves the host-captured findings and records the review iteration
  *   -> On convergence: auto-advance to EVIDENCE_REVIEW
  *
  * OR Step 4: LLM calls flowguard_review_implementation({ reviewVerdict: "changes_requested" })
@@ -81,12 +81,11 @@ import type { LoopVerdict, ReviewFindings } from '../../state/evidence.js';
 
 // Review findings validation (shared with plan.ts)
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
-import { requireReviewFindings, resolveStructuredEffectiveFindings } from './review-validation.js';
+import { resolveStructuredEffectiveFindings } from './review-validation.js';
 import { collectPreviouslyUsedChallengeIds } from '../review/challenge-history.js';
 import {
   consumeReviewObligation,
   ensureReviewAssurance,
-  findAcceptedInvocationForFindings,
   findLatestObligation,
 } from '../review/assurance.js';
 import { buildLatestImplementationReviewSummary } from './review-summary.js';
@@ -190,7 +189,6 @@ function resolveImplementationFindings(
     pendingObligation,
     expected: { obligationType: 'implement', iteration, planVersion },
     input: {
-      reviewFindings: input.args.reviewFindings,
       reviewerUnavailable: input.args.reviewerUnavailable,
       verdict: input.args.reviewVerdict,
     },
@@ -207,13 +205,10 @@ function resolveImplementationFindings(
 }
 
 function validateEffectiveFindings(
-  findings: ReviewFindings | undefined,
+  findings: ReviewFindings,
   submittedVerdict: LoopVerdict,
   obligationId: string,
 ): string | null {
-  if (!findings) {
-    return requireReviewFindings(false);
-  }
   if (findings.overallVerdict === 'unable_to_review') {
     return formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', { obligationId });
   }
@@ -230,8 +225,8 @@ function appendImplReviewState(input: {
   runtime: ImplementRuntime;
   iteration: number;
   planVersion: number;
-  effectiveFindings?: ReviewFindings;
-  evidenceInvocationId?: string;
+  effectiveFindings: ReviewFindings;
+  evidenceInvocationId: string;
   obligationToConsume?: ReturnType<typeof findPendingImplObligation>;
 }) {
   const {
@@ -255,17 +250,10 @@ function appendImplReviewState(input: {
     assuranceBase,
     consumedObligation,
     runtime.ctx.now(),
-    evidenceInvocationId ??
-      findAcceptedInvocationForFindings(
-        assuranceBase,
-        consumedObligation,
-        runtime.args.reviewFindings,
-      )?.invocationId,
+    evidenceInvocationId,
   );
   const existingFindings = runtime.state.implReviewFindings ?? [];
-  const newReviewFindings = effectiveFindings
-    ? [...existingFindings, normalizeHostFindings(effectiveFindings)]
-    : existingFindings;
+  const newReviewFindings = [...existingFindings, normalizeHostFindings(effectiveFindings)];
   const reviewedState: SessionState = {
     ...runtime.state,
     implReview: {
@@ -440,12 +428,11 @@ async function handleApprovedReview(input: {
 
 function handleTaskTransportFailureRetry(input: ImplementRuntime): string | null {
   if (input.args.reviewerUnavailable !== true) return null;
-  if (input.args.reviewVerdict !== undefined || input.args.reviewFindings !== undefined)
-    return null;
+  if (input.args.reviewVerdict !== undefined) return null;
   return formatBlocked('REVIEWER_UNAVAILABLE_STRICT', {
-    reason: 'reviewer unavailable; independent ReviewFindings remain required',
+    reason: 'reviewer unavailable; independent host-captured reviewer evidence remains required',
     recovery:
-      'Invoke a supported structured reviewer transport. flowguard_decision does not replace review evidence.',
+      'Invoke a supported structured reviewer transport; the host captures its findings. flowguard_decision does not replace review evidence.',
   });
 }
 
@@ -462,16 +449,16 @@ async function handleSubmittedImplementationReview(input: {
     iteration,
     planVersion,
   );
-  if (resolved.blocked) return resolved.blocked;
+  if (resolved.kind === 'blocked') return resolved.blocked;
 
-  if (resolved.effectiveFindings?.overallVerdict === 'unable_to_review') {
+  if (resolved.effectiveFindings.overallVerdict === 'unable_to_review') {
     if (submittedVerdict !== 'unable_to_review') {
       return formatBlocked('SUBAGENT_FINDINGS_VERDICT_MISMATCH', {
         reviewVerdict: submittedVerdict,
         overallVerdict: resolved.effectiveFindings.overallVerdict,
       });
     }
-    if (!pendingObligation || !resolved.evidenceInvocationId) {
+    if (!pendingObligation) {
       return formatBlocked('SUBAGENT_REVIEW_NOT_INVOKED', {
         reason: 'unable_to_review requires bound host-task reviewer evidence',
       });

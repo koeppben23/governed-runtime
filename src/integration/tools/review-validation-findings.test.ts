@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   validateReviewFindings,
-  requireReviewFindings,
   type ReviewFindingsValidationContext,
 } from './review-validation.js';
 import type { ReviewFindings } from '../../state/evidence.js';
@@ -147,6 +146,7 @@ function strictAssuranceFixture(
         mandateDigest: REVIEW_MANDATE_DIGEST,
         criteriaVersion: REVIEW_CRITERIA_VERSION,
         findingsHash: hashFindings(findings),
+        capturedRawFindings: findings as unknown as Record<string, unknown>,
         invokedAt: new Date().toISOString(),
         fulfilledAt: new Date().toISOString(),
         consumedByObligationId: null,
@@ -817,29 +817,5 @@ describe('validateReviewFindings — implementation challenge freshness', () => 
     );
     expect(result).not.toBeNull();
     expect(parseBlocked(result!).code).toBe('SUBAGENT_CHALLENGE_EVIDENCE_MISSING');
-  });
-});
-
-// ═════════════════════════════════════════════════════════════════════════════
-// requireReviewFindings
-// ═════════════════════════════════════════════════════════════════════════════
-
-describe('requireReviewFindings', () => {
-  it('blocks when findings are missing', () => {
-    const result = requireReviewFindings(false);
-    expect(result).not.toBeNull();
-    expect(parseBlocked(result!).code).toBe('REVIEW_FINDINGS_REQUIRED');
-  });
-
-  it('returns null when findings are present', () => {
-    expect(requireReviewFindings(true)).toBeNull();
-  });
-
-  it('returns structured JSON with error=true', () => {
-    const result = requireReviewFindings(false);
-    const blocked = parseBlocked(result!);
-    expect(blocked.error).toBe(true);
-    expect(blocked.message).toContain('required for all review verdicts');
-    expect(JSON.parse(result!).recovery).toBeTruthy();
   });
 });

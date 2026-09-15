@@ -35,7 +35,7 @@ describe('templates/commands Discovery review parity (Item 2)', () => {
       // HAPPY — FlowGuard remains responsible for independent review evidence.
       it('keeps independent review evidence bound by FlowGuard', () => {
         expect(template).toContain('FlowGuard');
-        expect(template).toContain('reviewFindings');
+        expect(template).toContain('host-observed structured reviewer invocation evidence');
       });
 
       // BAD — unverifiable Discovery yields NOT_VERIFIED, never invented truth.
@@ -47,7 +47,7 @@ describe('templates/commands Discovery review parity (Item 2)', () => {
       // EDGE — Discovery is evidence, not verdict authority.
       it('states Discovery context is advisory, NOT review verdict authority', () => {
         expect(template).toMatch(/advisory[\s\S]*NOT review verdict[\s\S]*authority/);
-        expect(template).toContain('ReviewFindings');
+        expect(template).toContain('host-observed structured reviewer invocation evidence');
       });
 
       // EDGE — Done-when enforces the Discovery checks.

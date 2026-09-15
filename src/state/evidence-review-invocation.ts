@@ -2,13 +2,12 @@
  * @module state/evidence-review-invocation
  * @description Independent-review invocation-evidence schema.
  *
- * `ReviewInvocationEvidence` captures how an independent reviewer was invoked
- * for an obligation and the host-authoritative outcome of that invocation
- * (verdict, raw findings, transport mode, host corroboration). Extracted from
- * `evidence-review.ts` to keep that schema module within the production
- * file-size budget; re-exported there for the historical import surface.
+ * `ReviewInvocationEvidence` captures the single sanctioned way an independent
+ * reviewer is invoked: a host-observed SDK child session whose structured
+ * findings were captured by the host. There is exactly one generation of this
+ * evidence; any other mode or provenance is invalid state and fails parsing.
  *
- * @version v1
+ * @version v2
  */
 
 import { z } from 'zod';
@@ -27,10 +26,9 @@ export const ReviewInvocationEvidence = z
     agentType: z.literal(REVIEWER_SUBAGENT_TYPE),
     /** Persisted host-authoritative attempt identity. */
     attemptId: z.string().uuid(),
-    /** How the reviewer was invoked: SDK, manual attested, or manual attested corroborated by a
-     *  FlowGuard-captured host hook (native_subagent_attested). */
-    invocationMode: z.enum(['sdk_session_prompt', 'manual_attested', 'native_subagent_attested']),
-    /** Whether this invocation produced a host-visible child session in the OpenCode GUI. */
+    /** The only sanctioned invocation transport: a host-observed SDK session prompt. */
+    invocationMode: z.literal('sdk_session_prompt'),
+    /** Whether this invocation produced a host-visible child session in the host GUI. */
     hostVisible: z.boolean(),
     promptHash: z.string().min(1),
     canonicalPromptDigest: Sha256Digest.optional(),
@@ -41,43 +39,18 @@ export const ReviewInvocationEvidence = z
     invokedAt: z.string().datetime(),
     fulfilledAt: z.string().datetime().nullable(),
     consumedByObligationId: z.string().uuid().nullable(),
-    /** Captured verdict from the reviewer's actual output. */
+    /** Verdict derived from the host-captured structured findings. */
     capturedVerdict: z.string().optional(),
-    /** Complete raw findings captured by the plugin from the reviewer's output.
-     *  Enables evidence-based findings resolution: the tool reads findings directly from
-     *  invocation evidence, eliminating agent-side reconstruction of the ReviewFindings object. */
-    capturedRawFindings: z.record(z.string(), z.unknown()).optional(),
-    /**
-     * Evidence source, fully determined by `invocationMode`:
-     * sdk_session_prompt → host-orchestrated,
-     * manual_attested/native_subagent_attested → agent-submitted-attested.
-     */
-    source: z.enum(['host-orchestrated', 'agent-submitted-attested']),
-    /**
-     * Reviewer output transport used to obtain the findings.
-     *
-     * `structured_output` — host-observed structured model output
-     * (`sdk_session_prompt`).
-     * `agent_submitted_structured` — schema-valid ReviewFindings submitted by
-     * the agent (`manual_attested`, `native_subagent_attested`). Structured,
-     * but NOT host-observed model output.
-     */
-    reviewOutputMode: z.enum(['structured_output', 'agent_submitted_structured']),
-    /** True ONLY when host-observed structured model output was used. */
-    structuredOutputUsed: z.boolean(),
-    /**
-     * Output assurance tier derived from the transport:
-     * `structured_high` for host-observed structured output,
-     * `structured_submitted` for agent-submitted structured findings.
-     */
-    reviewAssuranceLevel: z.enum(['structured_high', 'structured_submitted']),
-    /** Host-captured corroboration (native_subagent_attested only).
-     *  Populated from a FlowGuard hook (SubagentStop / PostToolUse) that fired inside the
-     *  reviewer subagent. These fields are the independent host witness that the review tool
-     *  was invoked from within a genuine `flowguard-reviewer` subagent, not the main thread. */
-    hostCapturedAgentId: z.string().min(1).optional(),
-    hostCapturedAgentType: z.literal(REVIEWER_SUBAGENT_TYPE).optional(),
-    hostCaptureSource: z.enum(['subagent_stop_hook', 'post_tool_use_hook']).optional(),
+    /** Complete structured findings captured by the host from the reviewer's output. */
+    capturedRawFindings: z.record(z.string(), z.unknown()),
+    /** Evidence is always host-orchestrated. */
+    source: z.literal('host-orchestrated'),
+    /** Findings are always host-observed structured model output. */
+    reviewOutputMode: z.literal('structured_output'),
+    /** Host-observed structured model output was used. */
+    structuredOutputUsed: z.literal(true),
+    /** Output assurance tier for host-observed structured output. */
+    reviewAssuranceLevel: z.literal('structured_high'),
     /** Resolved full head commit SHA (branch reviews only). */
     resolvedBranchSha: z
       .string()

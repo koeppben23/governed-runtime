@@ -13,7 +13,6 @@ import type {
   ReviewAssuranceState,
   ReviewFindings,
   ReviewInvocationEvidence,
-  ReviewInvocationMode,
   ReviewObligation,
   ReviewObligationType,
   ReviewProfile,
@@ -567,22 +566,16 @@ export function buildInvocationEvidence(input: {
   criteriaVersion: string;
   parentSessionId: string;
   childSessionId: string;
-  invocationMode: ReviewInvocationMode;
   promptHash: string;
   canonicalPromptDigest?: string;
   modelPromptDigest?: string | null;
   findingsHash: string;
   invokedAt: string;
   fulfilledAt?: string;
-  /** Captured verdict from the reviewer's actual output (host-task authoritative). */
-  capturedVerdict?: string;
-  /** Complete raw findings from the reviewer's output (host-task only).
-   *  Enables evidence-based findings resolution without agent reconstruction. */
-  capturedRawFindings?: Record<string, unknown>;
-  /** Independent host-captured reviewer corroboration (native_subagent_attested only). */
-  hostCapturedAgentId?: string;
-  hostCapturedAgentType?: typeof REVIEWER_SUBAGENT_TYPE;
-  hostCaptureSource?: 'subagent_stop_hook' | 'post_tool_use_hook';
+  /** Complete structured findings captured by the host from the reviewer's output.
+   *  The captured verdict is derived from them — callers cannot assert a verdict
+   *  that disagrees with the captured findings. */
+  capturedRawFindings: Record<string, unknown>;
   /** Resolved full head commit SHA (branch reviews only). */
   resolvedBranchSha?: string | null;
   /** Resolved full base commit SHA (branch reviews only). */
@@ -592,10 +585,7 @@ export function buildInvocationEvidence(input: {
   /** Persisted host-authoritative attempt ID bound at evidence-assembly time. */
   attemptId: string;
 }): ReviewInvocationEvidence {
-  // Provenance is DERIVED from how the reviewer was invoked — callers cannot
-  // assert host observation for agent-submitted transport.
-  const hostObservedStructured = input.invocationMode === 'sdk_session_prompt';
-  const hostVisible = false;
+  const capturedVerdict = input.capturedRawFindings.overallVerdict;
   return {
     invocationId: randomUUID(),
     obligationId: input.obligationId,
@@ -603,8 +593,8 @@ export function buildInvocationEvidence(input: {
     parentSessionId: input.parentSessionId,
     childSessionId: input.childSessionId,
     agentType: REVIEWER_SUBAGENT_TYPE,
-    invocationMode: input.invocationMode,
-    hostVisible,
+    invocationMode: 'sdk_session_prompt',
+    hostVisible: false,
     promptHash: input.promptHash,
     canonicalPromptDigest: input.canonicalPromptDigest,
     modelPromptDigest: input.modelPromptDigest,
@@ -614,31 +604,16 @@ export function buildInvocationEvidence(input: {
     invokedAt: input.invokedAt,
     fulfilledAt: input.fulfilledAt ?? null,
     consumedByObligationId: null,
-    source: hostObservedStructured ? 'host-orchestrated' : 'agent-submitted-attested',
-    reviewOutputMode: hostObservedStructured ? 'structured_output' : 'agent_submitted_structured',
-    structuredOutputUsed: hostObservedStructured,
-    reviewAssuranceLevel: hostObservedStructured ? 'structured_high' : 'structured_submitted',
+    capturedRawFindings: input.capturedRawFindings,
+    ...(typeof capturedVerdict === 'string' ? { capturedVerdict } : {}),
+    source: 'host-orchestrated',
+    reviewOutputMode: 'structured_output',
+    structuredOutputUsed: true,
+    reviewAssuranceLevel: 'structured_high',
     resolvedBranchSha: input.resolvedBranchSha ?? null,
     resolvedBaseSha: input.resolvedBaseSha ?? null,
     reviewedContentDigest: input.reviewedContentDigest ?? null,
     attemptId: input.attemptId,
-    ...buildOptionalInvocationFields(input),
-  };
-}
-
-function buildOptionalInvocationFields(input: {
-  capturedVerdict?: string;
-  capturedRawFindings?: Record<string, unknown>;
-  hostCapturedAgentId?: string;
-  hostCapturedAgentType?: typeof REVIEWER_SUBAGENT_TYPE;
-  hostCaptureSource?: 'subagent_stop_hook' | 'post_tool_use_hook';
-}): Record<string, unknown> {
-  return {
-    ...(input.capturedVerdict ? { capturedVerdict: input.capturedVerdict } : {}),
-    ...(input.capturedRawFindings ? { capturedRawFindings: input.capturedRawFindings } : {}),
-    ...(input.hostCapturedAgentId ? { hostCapturedAgentId: input.hostCapturedAgentId } : {}),
-    ...(input.hostCapturedAgentType ? { hostCapturedAgentType: input.hostCapturedAgentType } : {}),
-    ...(input.hostCaptureSource ? { hostCaptureSource: input.hostCaptureSource } : {}),
   };
 }
 

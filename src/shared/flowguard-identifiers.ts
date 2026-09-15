@@ -13,9 +13,6 @@
 /** Subagent type identifier for the FlowGuard reviewer subagent. */
 export const REVIEWER_SUBAGENT_TYPE = 'flowguard-reviewer';
 
-/** Block code when first-party plugin enforcement is unavailable for review acceptance. */
-export const REASON_PLUGIN_ENFORCEMENT_UNAVAILABLE = 'PLUGIN_ENFORCEMENT_UNAVAILABLE';
-
 /**
  * Block code when the session write lock could not be acquired before timeout
  * because a concurrent operation held it (#429). Hydrate maps a
@@ -51,32 +48,3 @@ export const LOCK_CONTENDED_OUTPUT_FIELD = 'lockContended';
  * `SESSION_LOCK_CONTENDED` BLOCKED case (which keeps the registered reason).
  */
 export const DIAGNOSTIC_SESSION_LOCK_WAITED = 'SESSION_LOCK_WAITED';
-
-/**
- * Structured host-task findings rejection field on BLOCKED tool results (#424).
- * The plugin boundary reads this marker to log host-task-only guard denials
- * without coupling to validation internals or parsing human-readable messages.
- */
-export const HOST_TASK_FINDINGS_REJECTION_FIELD = 'hostTaskFindingsRejection';
-
-/**
- * Structured review identity rejection field on BLOCKED tool results (#425).
- * The plugin boundary reads this marker to log reviewer-author denials without
- * parsing human-readable messages or duplicating identity comparison logic.
- */
-export const REVIEW_IDENTITY_REJECTION_FIELD = 'reviewIdentityRejection';
-
-/**
- * Structured native-attestation non-upgrade field on successful review outputs (#427).
- * The plugin boundary reads this marker to log skipped/unbound native capture
- * denials without parsing human-readable messages or re-running attestation logic.
- */
-export const NATIVE_ATTESTATION_REJECTION_FIELD = 'nativeAttestationRejection';
-
-/**
- * Review-acceptance path discriminator for the native_subagent_attested tier.
- *
- * Surfaced in blocked-result diagnostics so the plugin boundary can log a
- * fail-closed denial without re-deriving the path or parsing human messages (#419).
- */
-export const REVIEW_ACCEPTANCE_PATH_NATIVE = 'native';

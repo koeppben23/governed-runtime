@@ -34,11 +34,31 @@ function attemptIdForIndex(index: number): string {
   return `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`;
 }
 
+/** Minimal host-captured structured findings record for a bound invocation. */
+function capturedFindingsRecord(entry: AssuranceEntry, index: number): Record<string, unknown> {
+  const createdAt = entry.createdAt ?? '2026-01-01T00:00:00.000Z';
+  return {
+    iteration: entry.iteration ?? 0,
+    planVersion: entry.planVersion ?? 1,
+    reviewMode: 'subagent',
+    overallVerdict: entry.capturedVerdict === 'changes_requested' ? 'changes_requested' : 'accept',
+    blockingIssues: [],
+    majorRisks: [],
+    missingVerification: [],
+    scopeCreep: [],
+    unknowns: [],
+    reviewedBy: { sessionId: `child-${index}` },
+    reviewedAt: createdAt,
+    challenges: [],
+  };
+}
+
 function invocationsFromEntries(entries: AssuranceEntry[]): ReviewAssuranceState['invocations'] {
   return entries
     .filter((e) => e.invocationId !== undefined)
     .map((e, index) => {
       const createdAt = e.createdAt ?? '2026-01-01T00:00:00.000Z';
+      const capturedRawFindings = capturedFindingsRecord(e, index);
       return {
         invocationId:
           e.invocationId === null
@@ -61,6 +81,7 @@ function invocationsFromEntries(entries: AssuranceEntry[]): ReviewAssuranceState
         fulfilledAt: e.invokedAt ?? createdAt,
         consumedByObligationId: e.consumedByObligationId ?? null,
         ...(e.capturedVerdict ? { capturedVerdict: e.capturedVerdict } : {}),
+        capturedRawFindings,
         reviewOutputMode: 'structured_output',
         structuredOutputUsed: true,
         reviewAssuranceLevel: 'structured_high',

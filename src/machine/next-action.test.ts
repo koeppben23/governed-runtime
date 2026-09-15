@@ -430,6 +430,7 @@ describe('resolveNextAction', () => {
               fulfilledAt: '2026-01-01T00:00:00.000Z',
               consumedByObligationId: null,
               capturedVerdict: 'unable_to_review',
+              capturedRawFindings: { overallVerdict: 'unable_to_review' },
               attemptId: '22222222-2222-4222-8222-222222222222',
               reviewOutputMode: 'structured_output',
               structuredOutputUsed: true,

@@ -63,8 +63,8 @@ describe('templates/commands/review (#401 Discovery context)', () => {
   describe('EDGE — evidence, not verdict authority', () => {
     it('states Discovery context is advisory evidence, not verdict authority', () => {
       expect(REVIEW_COMMAND).toMatch(/advisory[\s\S]*NOT review verdict[\s\S]*authority/);
-      expect(REVIEW_COMMAND).toContain('ReviewFindings');
-      expect(REVIEW_COMMAND).toContain('attestation');
+      expect(REVIEW_COMMAND).toContain('host-observed structured reviewer invocation evidence');
+      expect(REVIEW_COMMAND).not.toMatch(/attestation remain the review authority/);
     });
 
     it('Done-when requires Discovery health/drift and correlation checks', () => {

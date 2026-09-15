@@ -53,18 +53,6 @@ export const ARCHITECTURE_REASONS: readonly BlockedReason[] = [
   },
 
   {
-    code: 'ADR_FINDINGS_WITHOUT_VERDICT',
-    category: 'precondition',
-    messageTemplate:
-      'Review findings were submitted without a verdict. Include reviewVerdict alongside reviewFindings.',
-    recoverySteps: [
-      'Include reviewVerdict alongside reviewFindings',
-      'Call flowguard_architecture({ reviewVerdict: "accept"|"changes_requested", reviewFindings })',
-    ],
-    quickFixCommand: '/architecture',
-  },
-
-  {
     code: 'ADR_REVIEW_IN_PROGRESS',
     category: 'precondition',
     messageTemplate:

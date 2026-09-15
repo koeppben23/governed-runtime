@@ -39,21 +39,8 @@ describe('review orchestration mode projection', () => {
     ).toBe('unsupported_blocked');
   });
 
-  it('returns manual_attested_required for unavailable Claude/Codex native review when manual allowed', () => {
-    expect(
-      resolveReviewOrchestrationMode({
-        platform: 'claude-code',
-        nativeReviewerAvailable: false,
-        manualAttestedAllowed: true,
-      }),
-    ).toBe('manual_attested_required');
-  });
-
-  it('fails closed for unknown platform unless manual attested is explicitly allowed', () => {
+  it('fails closed for unknown platform', () => {
     expect(resolveReviewOrchestrationMode({ platform: 'unknown' })).toBe('unsupported_blocked');
-    expect(
-      resolveReviewOrchestrationMode({ platform: 'unknown', manualAttestedAllowed: true }),
-    ).toBe('manual_attested_required');
   });
 
   it('normalizes unsupported platform labels to unknown', () => {

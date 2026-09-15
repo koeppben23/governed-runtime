@@ -94,13 +94,12 @@ false-positive and false-negative rates.
 
 ### Multi-Platform Reviewer Transport
 
-FlowGuard projects one of four reviewer transport modes in tool output:
+FlowGuard projects one of three reviewer transport modes in tool output:
 
 | Mode                           | Meaning                                                                                                       |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------- |
 | `host_structured`              | OpenCode high-assurance path: host-created reviewer child session with required structured output.            |
 | `external_instruction_pending` | Claude/Codex instruction transport. The runtime remains pending until ReviewFindings validate and bind.       |
-| `manual_attested_required`     | Policy-gated fallback requiring bindable ReviewFindings with exact Obligation/Attestation values.             |
 | `unsupported_blocked`          | No safe reviewer transport is available; the session fails closed instead of accepting unverifiable evidence. |
 
 External transport files under `.flowguard/sessions/<session-id>/review-evidence/*.json` are not approval evidence by existence. `flowguard_continue` reads them only as transport, then parses, schema-validates, binds to the active obligation/attestation, records invocation evidence, and leaves review completion to the existing verdict submission path. Invalid or mismatched files remain pending/blocked.

@@ -25,6 +25,7 @@ import {
   appendInvocationEvidence,
   buildInvocationEvidence,
   ensureReviewAssurance,
+  fulfillObligation,
   hashFindings,
 } from './review/assurance.js';
 import { ReviewAttestation, ReviewInvocationEvidence } from '../state/evidence.js';
@@ -41,12 +42,6 @@ import {
   archive,
 } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
-import {
-  appendReviewerCapture,
-  reviewerCapturePath,
-} from '../adapters/persistence-reviewer-capture.js';
-import { NATIVE_ATTESTATION_REJECTION_FIELD } from '../shared/flowguard-identifiers.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import {
   makeState,
   makeProgressedState,
@@ -335,6 +330,7 @@ describe('review (standalone flow)', () => {
     // The structured-evidence contract binds the invocation's child session to
     // the reviewer identity the captured findings attest to.
     const childSessionId = findings.reviewedBy.sessionId;
+    const fulfilledAt = '2026-01-01T00:00:00.000Z';
     const invocation = buildInvocationEvidence({
       obligationId,
       obligationType: 'review',
@@ -342,12 +338,10 @@ describe('review (standalone flow)', () => {
       criteriaVersion: obligation.criteriaVersion,
       parentSessionId: ctx.sessionID,
       childSessionId,
-      invocationMode: 'sdk_session_prompt',
       promptHash: 'host-task-review-prompt',
       findingsHash: hashFindings(findings),
-      invokedAt: '2026-01-01T00:00:00.000Z',
-      fulfilledAt: '2026-01-01T00:00:00.000Z',
-      capturedVerdict: findings.overallVerdict,
+      invokedAt: fulfilledAt,
+      fulfilledAt,
       capturedRawFindings: findings,
       attemptId: boundAttempt.attemptId,
     });
@@ -360,8 +354,7 @@ describe('review (standalone flow)', () => {
                 ...attempt,
                 childSessionId: invocation.childSessionId,
                 status: 'bound' as const,
-                completedAt:
-                  attempt.completedAt ?? invocation.fulfilledAt ?? new Date().toISOString(),
+                completedAt: attempt.completedAt ?? fulfilledAt,
               }
             : attempt,
         ),
@@ -370,7 +363,12 @@ describe('review (standalone flow)', () => {
     );
     await writeState(sessDir, {
       ...state,
-      reviewAssurance: assuranceWithEvidence,
+      reviewAssurance: fulfillObligation(
+        assuranceWithEvidence,
+        obligationId,
+        invocation.invocationId,
+        fulfilledAt,
+      ),
     });
     return invocation;
   }
@@ -397,12 +395,13 @@ describe('review (standalone flow)', () => {
   ) {
     const uuid = await obtainObligationUuid(contentArg);
     const findings = { ...buildAnalysisFindings(overallVerdict, uuid), ...findingOverrides };
-    const raw = await review.execute({ ...contentArg, reviewFindings: findings as never }, ctx);
+    await bindHostTaskReviewEvidence(uuid, findings);
+    const raw = await review.execute({ ...contentArg, reviewObligationId: uuid }, ctx);
     return parseToolResult(raw);
   }
 
   describe('HAPPY', () => {
-    it('content-aware review with PR number succeeds with reviewFindings', async () => {
+    it('content-aware review with PR number succeeds with bound structured evidence', async () => {
       const result = await submitContentReview({ prNumber: 123, inputOrigin: 'pr' });
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('REVIEW_COMPLETE');
@@ -414,7 +413,7 @@ describe('review (standalone flow)', () => {
       });
     });
 
-    it('content-aware review with branch succeeds with reviewFindings', async () => {
+    it('content-aware review with branch succeeds with bound structured evidence', async () => {
       const result = await submitContentReview({ branch: 'feature-auth', inputOrigin: 'branch' });
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('REVIEW_COMPLETE');
@@ -484,13 +483,14 @@ describe('review (standalone flow)', () => {
           },
         ],
       };
+      await bindHostTaskReviewEvidence(obligationId, findings as never);
       const result = parseToolResult(
         await review.execute(
           {
             branch: 'feature-auth',
             inputOrigin: 'branch',
             targetPaths: ['src/auth/login.ts'],
-            reviewFindings: findings,
+            reviewObligationId: obligationId,
           },
           ctx,
         ),
@@ -500,10 +500,11 @@ describe('review (standalone flow)', () => {
       const invocation = afterSubmit.reviewAssurance!.invocations.find(
         (item) => item.obligationId === obligationId,
       );
-      // Manual submission carries honest agent-submitted provenance ...
-      expect(invocation?.reviewOutputMode).toBe('agent_submitted_structured');
-      expect(invocation?.structuredOutputUsed).toBe(false);
-      expect(invocation?.reviewAssuranceLevel).toBe('structured_submitted');
+      // Host-observed structured capture is the only accepted provenance.
+      expect(invocation?.source).toBe('host-orchestrated');
+      expect(invocation?.reviewOutputMode).toBe('structured_output');
+      expect(invocation?.structuredOutputUsed).toBe(true);
+      expect(invocation?.reviewAssuranceLevel).toBe('structured_high');
       // ... and the referenced attempt is bound atomically.
       const boundAttempt = afterSubmit.reviewAssurance!.attempts.find(
         (item) => item.attemptId === invocation?.attemptId,
@@ -680,7 +681,7 @@ describe('review (standalone flow)', () => {
       expect(result.reviewCard).toBeUndefined();
     });
 
-    it('content-aware review with URL succeeds with reviewFindings', async () => {
+    it('content-aware review with URL succeeds with bound structured evidence', async () => {
       const result = await submitContentReview({
         url: 'https://example.com/api-doc',
         inputOrigin: 'external_reference',
@@ -737,10 +738,8 @@ describe('review (standalone flow)', () => {
       );
       expect(contentAttempt?.repositoryDiscovery).toEqual({ kind: 'not_applicable' });
 
-      await review.execute(
-        { ...content, reviewFindings: buildAnalysisFindings('accept', obligationId) },
-        ctx,
-      );
+      await bindHostTaskReviewEvidence(obligationId, buildAnalysisFindings('accept', obligationId));
+      await review.execute({ ...content, reviewObligationId: obligationId }, ctx);
       const completedState = await readState(sessDir);
       const completedEvidence = completedState!.standaloneReviewEvidence;
 
@@ -758,7 +757,7 @@ describe('review (standalone flow)', () => {
       expect(completed.attestationDigest).toMatch(/^[a-f0-9]{64}$/);
     });
 
-    it('non-content review (no external content) succeeds without reviewFindings', async () => {
+    it('non-content review (no external content) succeeds without structured evidence', async () => {
       await hydrateAndGetReady();
 
       const raw = await review.execute({}, ctx);
@@ -787,7 +786,7 @@ describe('review (standalone flow)', () => {
   });
 
   describe('BAD', () => {
-    it('BLOCKED: content-aware review without reviewFindings', async () => {
+    it('BLOCKED: content-aware review without bound structured evidence', async () => {
       await hydrateAndGetReady();
 
       const raw = await review.execute({ prNumber: 123, inputOrigin: 'pr' }, ctx);
@@ -800,35 +799,17 @@ describe('review (standalone flow)', () => {
       expect(result.recovery.length).toBeGreaterThan(0);
     });
 
-    it('PR number with ReviewFindings (subagent found no issues)', async () => {
+    it('PR number with bound structured evidence (subagent found no issues)', async () => {
       const result = await submitContentReview({ prNumber: 456, inputOrigin: 'pr' });
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('REVIEW_COMPLETE');
-    });
-
-    it('BLOCKED: manual-attested reviewFindings from parent session are self-approval', async () => {
-      const uuid = await obtainObligationUuid({ prNumber: 457, inputOrigin: 'pr' });
-      const findings = {
-        ...buildAnalysisFindings('accept', uuid),
-        reviewedBy: { sessionId: ctx.sessionID },
-      };
-
-      const raw = await review.execute(
-        { prNumber: 457, inputOrigin: 'pr', reviewFindings: findings as never },
-        ctx,
-      );
-      const result = parseToolResult(raw);
-
-      expect(result.error).toBe(true);
-      expect(result.code).toBe('REVIEW_SELF_APPROVAL_DENIED');
     });
 
     it('BLOCKED: review in wrong phase (not READY)', async () => {
       await hydrateSession();
       await ticket.execute({ text: 'Some ticket', source: 'user' }, ctx);
 
-      const findings = buildAnalysisFindings('accept');
-      const raw = await review.execute({ prNumber: 123, reviewFindings: findings }, ctx);
+      const raw = await review.execute({ prNumber: 123 }, ctx);
       const result = parseToolResult(raw);
 
       expect(result.error).toBe(true);
@@ -946,7 +927,7 @@ describe('review (standalone flow)', () => {
 
   describe('attestation contract', () => {
     describe('HAPPY (attestation)', () => {
-      it('H1: content-aware /review without reviewFindings returns CONTENT_ANALYSIS_REQUIRED with requiredReviewAttestation', async () => {
+      it('H1: content-aware /review without bound structured evidence returns CONTENT_ANALYSIS_REQUIRED with requiredReviewAttestation', async () => {
         await hydrateAndGetReady();
 
         const raw = await review.execute({ prNumber: 42, inputOrigin: 'pr' }, ctx);
@@ -968,7 +949,7 @@ describe('review (standalone flow)', () => {
         expect(result.recovery.length).toBeGreaterThan(0);
       });
 
-      it('H2: complete ReviewFindings with obligation-bound toolObligationId is accepted, mapped, and skips external content reload', async () => {
+      it('H2: host-bound structured evidence with obligation-bound toolObligationId is accepted, mapped, and skips external content reload', async () => {
         // Full flow: create obligation -> submit findings with matching UUID -> success.
         const refs = [{ ref: 'https://github.com/owner/repo/pull/77', type: 'pr' as const }];
         const result = await submitContentReview(
@@ -993,7 +974,7 @@ describe('review (standalone flow)', () => {
         });
       });
 
-      it('H3: plain /review without content fields still works (no reviewFindings needed)', async () => {
+      it('H3: plain /review without content fields still works (no structured evidence needed)', async () => {
         await hydrateAndGetReady();
 
         const raw = await review.execute({}, ctx);
@@ -1018,17 +999,20 @@ describe('review (standalone flow)', () => {
         expect(result.reviewerSubagentType).toBe('flowguard-reviewer');
       }
 
-      it('B1: reviewMode !== "subagent" is rejected with requiredReviewAttestation', async () => {
+      it('B1: non-subagent captured findings are rejected before acceptance', async () => {
         const uuid = await obtainObligationUuid({ prNumber: 1, inputOrigin: 'pr' });
         const findings = {
           ...buildAnalysisFindings('accept', uuid),
           reviewMode: 'human',
-        } as unknown;
+        } as unknown as Parameters<typeof bindHostTaskReviewEvidence>[1];
+        await bindHostTaskReviewEvidence(uuid, findings);
         const raw = await review.execute(
-          { prNumber: 1, reviewFindings: findings as never, inputOrigin: 'pr' },
+          { prNumber: 1, reviewObligationId: uuid, inputOrigin: 'pr' },
           ctx,
         );
-        expectAttestationBlocked(parseToolResult(raw));
+        const result = parseToolResult(raw);
+        expect(result.error).toBe(true);
+        expect(result.code).toBe('SUBAGENT_EVIDENCE_MISSING');
       });
 
       it('B2: missing attestation is rejected with requiredReviewAttestation', async () => {
@@ -1036,10 +1020,10 @@ describe('review (standalone flow)', () => {
         const base = buildAnalysisFindings('accept', uuid) as Record<string, unknown>;
         const { attestation: _omit, ...rest } = base;
         void _omit;
+        await bindHostTaskReviewEvidence(uuid, rest as never);
         const raw = await review.execute(
           {
             prNumber: 1,
-            reviewFindings: rest as never,
             reviewObligationId: uuid,
             inputOrigin: 'pr',
           },
@@ -1048,18 +1032,23 @@ describe('review (standalone flow)', () => {
         expectAttestationBlocked(parseToolResult(raw));
       });
 
-      it('B3: attestation.reviewedBy !== "flowguard-reviewer" is rejected', async () => {
+      it('B3: attestation.reviewedBy !== "flowguard-reviewer" is rejected as unparseable evidence', async () => {
         const uuid = await obtainObligationUuid({ prNumber: 1, inputOrigin: 'pr' });
         const base = buildAnalysisFindings('accept', uuid);
         const findings = {
           ...base,
           attestation: { ...base.attestation, reviewedBy: 'someone-else' },
         };
+        await bindHostTaskReviewEvidence(uuid, findings as never);
         const raw = await review.execute(
-          { prNumber: 1, reviewFindings: findings as never, inputOrigin: 'pr' },
+          { prNumber: 1, reviewObligationId: uuid, inputOrigin: 'pr' },
           ctx,
         );
-        expectAttestationBlocked(parseToolResult(raw));
+        const result = parseToolResult(raw);
+        // The capture schema pins the reviewer identity: a foreign reviewer
+        // cannot even parse into ReviewFindings, so it fails as missing evidence.
+        expect(result.error).toBe(true);
+        expect(result.code).toBe('SUBAGENT_EVIDENCE_MISSING');
       });
 
       it('B4: attestation.mandateDigest mismatch is rejected', async () => {
@@ -1069,8 +1058,9 @@ describe('review (standalone flow)', () => {
           ...base,
           attestation: { ...base.attestation, mandateDigest: 'wrong-digest-value' },
         };
+        await bindHostTaskReviewEvidence(uuid, findings as never);
         const raw = await review.execute(
-          { prNumber: 1, reviewFindings: findings as never, inputOrigin: 'pr' },
+          { prNumber: 1, reviewObligationId: uuid, inputOrigin: 'pr' },
           ctx,
         );
         expectAttestationBlocked(parseToolResult(raw));
@@ -1083,29 +1073,30 @@ describe('review (standalone flow)', () => {
           ...base,
           attestation: { ...base.attestation, criteriaVersion: 'p99-bogus' },
         };
+        await bindHostTaskReviewEvidence(uuid, findings as never);
         const raw = await review.execute(
-          { prNumber: 1, reviewFindings: findings as never, inputOrigin: 'pr' },
+          { prNumber: 1, reviewObligationId: uuid, inputOrigin: 'pr' },
           ctx,
         );
         expectAttestationBlocked(parseToolResult(raw));
       });
 
       it('B6: consumed obligation (same toolObligationId after success) is rejected — single-use enforced', async () => {
-        // Step 1: Obtain an obligation UUID and submit valid findings.
+        // Step 1: Obtain an obligation UUID, bind host evidence, consume it.
         const uuid = await obtainObligationUuid({ prNumber: 42, inputOrigin: 'pr' });
-        const findings1 = buildAnalysisFindings('accept', uuid);
+        await bindHostTaskReviewEvidence(uuid, buildAnalysisFindings('accept', uuid));
         const raw1 = await review.execute(
-          { prNumber: 42, reviewFindings: findings1 as never, inputOrigin: 'pr' },
+          { prNumber: 42, reviewObligationId: uuid, inputOrigin: 'pr' },
           ctx,
         );
         const result1 = parseToolResult(raw1);
         expect(result1.error).toBeUndefined();
         expect(result1.phase).toBe('REVIEW_COMPLETE');
 
-        // Step 2: Re-submit the SAME findings with the SAME (now consumed) UUID.
+        // Step 2: Re-submit the SAME (now consumed) UUID.
         // The obligation was consumed on success — this must be rejected.
         const raw2 = await review.execute(
-          { prNumber: 42, reviewFindings: findings1 as never, inputOrigin: 'pr' },
+          { prNumber: 42, reviewObligationId: uuid, inputOrigin: 'pr' },
           ctx,
         );
         const result2 = parseToolResult(raw2);
@@ -1148,8 +1139,9 @@ describe('review (standalone flow)', () => {
           unknowns: ['behaviour under sustained load is unproven'],
         };
 
+        await bindHostTaskReviewEvidence(uuid, findings as never);
         const raw = await review.execute(
-          { text: 'diff content', reviewFindings: findings, inputOrigin: 'manual_text' },
+          { text: 'diff content', reviewObligationId: uuid, inputOrigin: 'manual_text' },
           ctx,
         );
         const result = parseToolResult(raw);
@@ -1241,7 +1233,7 @@ describe('review (standalone flow)', () => {
       it('EE1: hydrate -> blocked with attestation -> consume payload -> succeed with complete ReviewFindings', async () => {
         await hydrateAndGetReady();
 
-        // Step 1: call /review with content but no reviewFindings -> blocked
+        // Step 1: call /review with content but no bound structured evidence -> blocked
         const refs = [{ ref: 'https://github.com/owner/repo/pull/42', type: 'pr' as const }];
         const blockedRaw = await review.execute(
           { prNumber: 42, inputOrigin: 'pr', references: refs, targetPaths: ['docs/test.md'] },
@@ -1252,6 +1244,10 @@ describe('review (standalone flow)', () => {
         expect(blocked.requiredReviewAttestation).toBeDefined();
 
         const att = blocked.requiredReviewAttestation as Record<string, string>;
+        const obligationId = requiredString(att, 'toolObligationId');
+        const reviewedBy = requiredString(att, 'reviewedBy') as 'flowguard-reviewer';
+        const mandateDigest = requiredString(att, 'mandateDigest');
+        const criteriaVersion = requiredString(att, 'criteriaVersion');
 
         // Step 2: build ReviewFindings from the canonical attestation values returned
         const findings = {
@@ -1270,18 +1266,20 @@ describe('review (standalone flow)', () => {
           attestation: {
             iteration: 1,
             planVersion: 1,
-            reviewedBy: att.reviewedBy as 'flowguard-reviewer',
-            mandateDigest: att.mandateDigest,
-            criteriaVersion: att.criteriaVersion,
-            toolObligationId: att.toolObligationId,
+            reviewedBy,
+            mandateDigest,
+            criteriaVersion,
+            toolObligationId: obligationId,
           },
         };
 
-        // Step 3: re-call /review with the complete object
+        // Step 3: host-capture the reviewer's structured findings against the
+        // obligation, then re-call /review verdict-only.
+        await bindHostTaskReviewEvidence(obligationId, findings);
         const raw = await review.execute(
           {
             prNumber: 42,
-            reviewFindings: findings as never,
+            reviewObligationId: obligationId,
             inputOrigin: 'pr',
             references: refs,
           },
@@ -1310,19 +1308,22 @@ describe('review (standalone flow)', () => {
       it('S2: CONTENT_ANALYSIS_REQUIRED and SUBAGENT_REVIEW_NOT_INVOKED return identical attestation payload', async () => {
         await hydrateAndGetReady();
 
-        // CONTENT_ANALYSIS_REQUIRED: triggered by content fields without reviewFindings.
-        const rawA = await review.execute({ prNumber: 7, inputOrigin: 'pr' }, ctx);
+        // CONTENT_ANALYSIS_REQUIRED: triggered by content fields without bound evidence.
+        const rawA = await review.execute(
+          { prNumber: 7, inputOrigin: 'pr', targetPaths: ['docs/test.md'] },
+          ctx,
+        );
         const a = parseToolResult(rawA);
         expect(a.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+        const uuid = requiredString(a.requiredReviewAttestation, 'toolObligationId');
 
-        // SUBAGENT_REVIEW_NOT_INVOKED: triggered by malformed reviewMode.
-        await hydrateAndGetReady();
-        const tampered = {
-          ...buildAnalysisFindings('accept'),
-          reviewMode: 'human',
-        } as unknown;
+        // SUBAGENT_REVIEW_NOT_INVOKED: captured evidence missing its attestation.
+        const base = buildAnalysisFindings('accept', uuid) as Record<string, unknown>;
+        const { attestation: _omit, ...rest } = base;
+        void _omit;
+        await bindHostTaskReviewEvidence(uuid, rest as never);
         const rawB = await review.execute(
-          { prNumber: 7, reviewFindings: tampered as never, inputOrigin: 'pr' },
+          { prNumber: 7, reviewObligationId: uuid, inputOrigin: 'pr' },
           ctx,
         );
         const b = parseToolResult(rawB);
@@ -1334,17 +1335,18 @@ describe('review (standalone flow)', () => {
     });
 
     describe('INVOCATION EVIDENCE', () => {
-      it('H4: successful /review appends ReviewInvocationEvidence to reviewAssurance', async () => {
+      it('H4: successful /review consumes the host-bound ReviewInvocationEvidence', async () => {
         const uuid = await obtainObligationUuid({ prNumber: 42, inputOrigin: 'pr' });
         const findings = buildAnalysisFindings('accept', uuid);
+        await bindHostTaskReviewEvidence(uuid, findings);
         const raw = await review.execute(
-          { prNumber: 42, reviewFindings: findings as never, inputOrigin: 'pr' },
+          { prNumber: 42, reviewObligationId: uuid, inputOrigin: 'pr' },
           ctx,
         );
         const result = parseToolResult(raw);
         expect(result.error).toBeUndefined();
 
-        // Read state and verify invocation evidence was created.
+        // Read state and verify the host-bound invocation evidence.
         const { computeFingerprint, sessionDir: resolveSessionDir } =
           await import('../adapters/workspace/index.js');
         const fp = await computeFingerprint(ws.tmpDir);
@@ -1358,10 +1360,13 @@ describe('review (standalone flow)', () => {
         expect(invocation.agentType).toBe('flowguard-reviewer');
         expect(invocation.obligationType).toBe('review');
         expect(invocation.obligationId).toBe(uuid);
+        expect(invocation.source).toBe('host-orchestrated');
+        expect(invocation.reviewOutputMode).toBe('structured_output');
         expect(invocation.findingsHash).toMatch(/^[a-f0-9]{64}$/);
-        expect(invocation.promptHash).toMatch(/^[a-f0-9]{64}$/);
+        expect(invocation.promptHash).toBe('host-task-review-prompt');
         // childSessionId from the attested reviewedBy.sessionId in buildAnalysisFindings.
         expect(invocation.childSessionId).toBe('flowguard-reviewer-session-123');
+        expect(invocation.consumedByObligationId).toBe(uuid);
       });
 
       it('H4b: submit path fails closed with SUBAGENT_REVIEW_NOT_INVOKED on unable_to_review verdict', async () => {
@@ -1373,8 +1378,9 @@ describe('review (standalone flow)', () => {
           ...buildAnalysisFindings('accept', uuid),
           overallVerdict: 'unable_to_review',
         };
+        await bindHostTaskReviewEvidence(uuid, findings as never);
         const raw = await review.execute(
-          { prNumber: 91, reviewFindings: findings as never, inputOrigin: 'pr' },
+          { prNumber: 91, reviewObligationId: uuid, inputOrigin: 'pr' },
           ctx,
         );
         const result = parseToolResult(raw);
@@ -1386,14 +1392,19 @@ describe('review (standalone flow)', () => {
         const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
         const state = await readState(sessDir);
         if (!state) throw new TypeError('Expected persisted session state');
-        expect(state.reviewAssurance?.invocations ?? []).toHaveLength(0);
+        // The capture itself is retained for audit, but it must not be consumed
+        // and no passing findings may be recorded.
+        const obligation = state.reviewAssurance?.obligations.find((o) => o.obligationId === uuid);
+        expect(obligation?.status).not.toBe('consumed');
+        expect(state.standaloneReviewFindings ?? []).toHaveLength(0);
       });
 
       it('H5: obligation is consumed after successful /review', async () => {
         const uuid = await obtainObligationUuid({ prNumber: 43, inputOrigin: 'pr' });
         const findings = buildAnalysisFindings('accept', uuid);
+        await bindHostTaskReviewEvidence(uuid, findings);
         const raw = await review.execute(
-          { prNumber: 43, reviewFindings: findings as never, inputOrigin: 'pr' },
+          { prNumber: 43, reviewObligationId: uuid, inputOrigin: 'pr' },
           ctx,
         );
         const result = parseToolResult(raw);
@@ -1494,11 +1505,11 @@ describe('review (standalone flow)', () => {
           criteriaVersion: 'fixture-criteria-v1',
           parentSessionId: 'parent-session',
           childSessionId: 'child-session',
-          invocationMode: 'sdk_session_prompt',
           promptHash: 'a'.repeat(64),
           findingsHash: 'b'.repeat(64),
           invokedAt: new Date().toISOString(),
           fulfilledAt: new Date().toISOString(),
+          capturedRawFindings: { overallVerdict: 'accept' },
           attemptId: '11111111-2222-4333-8444-555555555555',
         });
         expect(ReviewInvocationEvidence.safeParse(inv).success).toBe(true);
@@ -1620,168 +1631,6 @@ describe('review (standalone flow)', () => {
         'REVIEW_BRANCH_PROVENANCE_MISSING',
       ]);
       expect(validCodes.has(String(parsed.code ?? ''))).toBe(true);
-    });
-  });
-
-  describe('native_subagent_attested e2e (claude-code host)', () => {
-    let prevPlatform: string | undefined;
-
-    beforeEach(() => {
-      prevPlatform = process.env.FLOWGUARD_HOST_PLATFORM;
-      process.env.FLOWGUARD_HOST_PLATFORM = 'claude-code';
-    });
-
-    afterEach(() => {
-      if (prevPlatform === undefined) delete process.env.FLOWGUARD_HOST_PLATFORM;
-      else process.env.FLOWGUARD_HOST_PLATFORM = prevPlatform;
-    });
-
-    /**
-     * Hydrate solo, create the review obligation, optionally inject a host
-     * capture keyed by `bindObligationId`, then submit inline attested findings.
-     * Returns the recorded invocation evidence and structured review output.
-     */
-    async function runWithCapture(
-      inject: ((obligationId: string, sessDir: string) => Promise<void>) | null,
-    ) {
-      const hy = parseToolResult(
-        await hydrate.execute({ policyMode: 'solo', profileId: 'baseline' }, ctx),
-      );
-      expect(hy.error).toBeFalsy();
-      const sessDir = await currentSessionDir();
-      const first = parseToolResult(
-        await review.execute(
-          { prNumber: 88, inputOrigin: 'pr', targetPaths: ['docs/test.md'] },
-          ctx,
-        ),
-      );
-      expect(first.code).toBe('CONTENT_ANALYSIS_REQUIRED');
-      const obligationId = requiredString(first.requiredReviewAttestation, 'toolObligationId');
-
-      if (inject) await inject(obligationId, sessDir);
-
-      const findings = buildAnalysisFindings('accept', obligationId);
-      const second = parseToolResult(
-        await review.execute(
-          { prNumber: 88, reviewFindings: findings as never, inputOrigin: 'pr' },
-          ctx,
-        ),
-      );
-      expect(second.error).toBeUndefined();
-      expect(second.phase).toBe('REVIEW_COMPLETE');
-
-      const state = (await readState(sessDir))!;
-      const invocation = state.reviewAssurance!.invocations.find(
-        (inv) => inv.obligationId === obligationId,
-      );
-      expect(invocation).toBeDefined();
-      return { invocation: invocation!, output: second, obligationId };
-    }
-
-    function postToolUseCapture(
-      obligationId: string,
-      overrides: Partial<Parameters<typeof appendReviewerCapture>[1]> = {},
-    ): Parameters<typeof appendReviewerCapture>[1] {
-      return {
-        capturedAt: '2026-01-01T00:00:00.000Z',
-        source: 'post_tool_use_hook',
-        sessionId: ctx.sessionID,
-        agentId: 'agent_native_e2e_001',
-        agentType: REVIEWER_SUBAGENT_TYPE,
-        toolName: 'mcp__flowguard__review',
-        reviewToolInvoked: true,
-        obligationId,
-        ...overrides,
-      };
-    }
-
-    it('upgrades to native_subagent_attested with an obligation-bound host capture', async () => {
-      const { invocation, output } = await runWithCapture(async (obligationId, sessDir) => {
-        await appendReviewerCapture(sessDir, postToolUseCapture(obligationId));
-      });
-      expect(invocation.invocationMode).toBe('native_subagent_attested');
-      expect(invocation.hostCapturedAgentId).toBe('agent_native_e2e_001');
-      expect(invocation.hostCapturedAgentType).toBe(REVIEWER_SUBAGENT_TYPE);
-      expect(invocation.hostCaptureSource).toBe('post_tool_use_hook');
-      expect(output[NATIVE_ATTESTATION_REJECTION_FIELD]).toBeUndefined();
-    });
-
-    it('stays manual_attested without any host capture (fail-closed default)', async () => {
-      const { invocation, output, obligationId } = await runWithCapture(null);
-      expect(invocation.invocationMode).toBe('manual_attested');
-      expect(invocation.hostCapturedAgentId).toBeUndefined();
-      expect(output[NATIVE_ATTESTATION_REJECTION_FIELD]).toEqual({
-        reason: 'capture_missing',
-        obligationId,
-      });
-    });
-
-    it('stays manual_attested when capture is bound to a different obligation', async () => {
-      const { invocation, output, obligationId } = await runWithCapture(
-        async (_obligationId, sessDir) => {
-          await appendReviewerCapture(
-            sessDir,
-            postToolUseCapture('99999999-9999-4999-8999-999999999999'),
-          );
-        },
-      );
-      expect(invocation.invocationMode).toBe('manual_attested');
-      expect(output[NATIVE_ATTESTATION_REJECTION_FIELD]).toEqual({
-        reason: 'capture_unbound',
-        obligationId,
-      });
-    });
-
-    it('stays manual_attested for a SubagentStop-source capture (no obligation binding)', async () => {
-      const { invocation, output, obligationId } = await runWithCapture(
-        async (_obligationId, sessDir) => {
-          await appendReviewerCapture(sessDir, {
-            capturedAt: '2026-01-01T00:00:00.000Z',
-            source: 'subagent_stop_hook',
-            sessionId: ctx.sessionID,
-            agentId: 'agent_native_e2e_002',
-            agentType: REVIEWER_SUBAGENT_TYPE,
-            reviewToolInvoked: false,
-          });
-        },
-      );
-      expect(invocation.invocationMode).toBe('manual_attested');
-      expect(output[NATIVE_ATTESTATION_REJECTION_FIELD]).toEqual({
-        reason: 'capture_unbound',
-        obligationId,
-      });
-    });
-
-    it('stays manual_attested when bound capture belongs to another sessionId', async () => {
-      const { invocation, output, obligationId } = await runWithCapture(
-        async (obligationId, sessDir) => {
-          await appendReviewerCapture(
-            sessDir,
-            postToolUseCapture(obligationId, { sessionId: 'ses_other_parent' }),
-          );
-        },
-      );
-      expect(invocation.invocationMode).toBe('manual_attested');
-      expect(invocation.hostCapturedAgentId).toBeUndefined();
-      expect(output[NATIVE_ATTESTATION_REJECTION_FIELD]).toEqual({
-        reason: 'capture_session_mismatch',
-        obligationId,
-      });
-    });
-
-    it('stays manual_attested when reviewer capture read skips any line', async () => {
-      const { invocation, output, obligationId } = await runWithCapture(
-        async (obligationId, sessDir) => {
-          await appendReviewerCapture(sessDir, postToolUseCapture(obligationId));
-          await fs.appendFile(reviewerCapturePath(sessDir), '{not-json}\n', 'utf-8');
-        },
-      );
-      expect(invocation.invocationMode).toBe('manual_attested');
-      expect(invocation.hostCapturedAgentId).toBeUndefined();
-      expect(output[NATIVE_ATTESTATION_REJECTION_FIELD]).toEqual({
-        reason: 'capture_lines_skipped',
-        obligationId,
-      });
     });
   });
 });

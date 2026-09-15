@@ -14,12 +14,8 @@ import { runWithAdapterLoggerAsync } from '../logging/adapter-logger.js';
 import { runWithLogContextAsync } from '../logging/log-context.js';
 import {
   getToolOutput,
-  isNativeEnforcementUnavailableDenial,
   getAutoAdvanceOverflow,
   getSessionLockSignal,
-  getHostTaskFindingsRejection,
-  getReviewIdentityRejection,
-  getNativeAttestationRejection,
   strictBlockedOutput,
 } from './plugin-helpers.js';
 import { trackFlowGuardEnforcement } from './plugin-enforcement-tracking.js';
@@ -35,8 +31,6 @@ import {
 } from './plugin-rework-continuation.js';
 export { updateCheckReworkContinuation } from './plugin-rework-continuation.js';
 import {
-  REASON_PLUGIN_ENFORCEMENT_UNAVAILABLE,
-  REVIEW_ACCEPTANCE_PATH_NATIVE,
   REASON_SESSION_LOCK_CONTENDED,
   DIAGNOSTIC_SESSION_LOCK_WAITED,
 } from '../shared/flowguard-identifiers.js';
@@ -47,11 +41,7 @@ import {
   getToolTraceId,
   type FlowGuardPluginRuntime,
 } from './plugin-shared.js';
-import {
-  TOOL_FLOWGUARD_REVIEW,
-  TOOL_FLOWGUARD_CONTINUE,
-  TOOL_FLOWGUARD_HYDRATE,
-} from './tool-names.js';
+import { TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
 import { enforceRiskClassificationAfterBash as enforceRiskAfterBash } from './plugin-risk.js';
 import { enforceDiscoveryHealthAfterBash } from './plugin-discovery-health.js';
 import { recordMutationCompletion } from './plugin-mutation-episodes.js';
@@ -122,21 +112,12 @@ async function handleAfterDiagnostics(
     return;
   }
   // Stryker disable next-line ConditionalExpression
-  if (ctx.toolName === TOOL_FLOWGUARD_CONTINUE)
-    logIdentityRejection(runtime, ctx.sessionId, ctx.hookOutput);
-  // Stryker disable next-line ConditionalExpression
   if (ctx.toolName === TOOL_FLOWGUARD_HYDRATE)
     logHydrateLockSignal(runtime, ctx.sessionId, ctx.hookOutput);
 }
 
 function handleReviewableAfter(runtime: FlowGuardPluginRuntime, ctx: AfterHookContext): void {
   // Diagnostics observe the tool's own output before the orchestration result is tracked.
-  logNativeEnforcementDenial(runtime, ctx.sessionId, ctx.hookOutput);
-  logHostTaskRejection(runtime, ctx.sessionId, ctx.hookOutput);
-  logIdentityRejection(runtime, ctx.sessionId, ctx.hookOutput);
-  // Stryker disable next-line ConditionalExpression
-  if (ctx.toolName === TOOL_FLOWGUARD_REVIEW)
-    logNativeAttestationRejection(runtime, ctx.sessionId, ctx.hookOutput);
   logAutoAdvanceOverflow(runtime, ctx.sessionId, ctx.hookOutput);
 }
 
@@ -161,66 +142,6 @@ function trackReviewableEnforcement(runtime: FlowGuardPluginRuntime, ctx: AfterH
   } catch (err) {
     runtime.logError('enforcement tracking failed', err);
   }
-}
-
-function logNativeEnforcementDenial(
-  runtime: FlowGuardPluginRuntime,
-  sessionId: string,
-  hookOutput: ToolHookAfterOutput,
-): void {
-  // Stryker disable next-line ConditionalExpression
-  if (!isNativeEnforcementUnavailableDenial(getToolOutput(hookOutput))) return;
-  // Stryker disable next-line ObjectLiteral
-  runtime.log.warn('review', 'native review acceptance denied: plugin enforcement unavailable', {
-    path: REVIEW_ACCEPTANCE_PATH_NATIVE,
-    reason: REASON_PLUGIN_ENFORCEMENT_UNAVAILABLE,
-    sessionId,
-  });
-}
-
-function logHostTaskRejection(
-  runtime: FlowGuardPluginRuntime,
-  sessionId: string,
-  hookOutput: ToolHookAfterOutput,
-): void {
-  const rejection = getHostTaskFindingsRejection(getToolOutput(hookOutput));
-  if (!rejection) return;
-  // Stryker disable next-line ObjectLiteral
-  runtime.log.warn('review', 'host-task findings rejected by shared guard', {
-    sessionId,
-    path: rejection.path,
-    reason: rejection.reason,
-    status: rejection.status,
-    ...(rejection.obligationId ? { obligationId: rejection.obligationId } : {}),
-  });
-}
-
-function logIdentityRejection(
-  runtime: FlowGuardPluginRuntime,
-  sessionId: string,
-  hookOutput: ToolHookAfterOutput,
-): void {
-  const rejection = getReviewIdentityRejection(getToolOutput(hookOutput));
-  if (!rejection) return;
-  runtime.log.warn('review', 'self-review rejected', {
-    sessionId,
-    reason: rejection.reason,
-    ...(rejection.obligationId ? { obligationId: rejection.obligationId } : {}),
-  });
-}
-
-function logNativeAttestationRejection(
-  runtime: FlowGuardPluginRuntime,
-  sessionId: string,
-  hookOutput: ToolHookAfterOutput,
-): void {
-  const rejection = getNativeAttestationRejection(getToolOutput(hookOutput));
-  if (!rejection) return;
-  runtime.log.warn('review', 'native attestation not upgraded', {
-    sessionId,
-    reason: rejection.reason,
-    ...(rejection.obligationId ? { obligationId: rejection.obligationId } : {}),
-  });
 }
 
 function logAutoAdvanceOverflow(

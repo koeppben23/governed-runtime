@@ -28,7 +28,6 @@ import {
 import { updateObligation } from './obligation-state.js';
 import { buildSdkEvidenceAuditIntents } from './sdk-evidence-recorder.js';
 import type { PipelineContext } from './pipeline-types.js';
-import { INVOCATION_MODE_SDK_SESSION } from './pipeline-types.js';
 import {
   validatePipelineAttestation,
   blockReviewOutcomeHelper,
@@ -300,16 +299,12 @@ function buildContentReviewInvocation(
     criteriaVersion: reviewCtx.criteriaVersion,
     parentSessionId: sessionId,
     childSessionId: reviewerResult.sessionId,
-    invocationMode: INVOCATION_MODE_SDK_SESSION,
     promptHash,
     findingsHash,
     invokedAt: reviewerResult.invokedAt ?? now,
     fulfilledAt: reviewerResult.fulfilledAt ?? now,
     attemptId,
-    capturedVerdict:
-      typeof reviewerResult.findings.overallVerdict === 'string'
-        ? reviewerResult.findings.overallVerdict
-        : undefined,
+    capturedRawFindings: reviewerResult.findings,
   });
 }
 

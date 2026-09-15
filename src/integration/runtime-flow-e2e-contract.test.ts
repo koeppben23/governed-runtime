@@ -240,7 +240,7 @@ async function inject(
     consumedByObligationId: null,
     capturedVerdict: 'accept',
     reviewOutputMode: 'structured_output' as const,
-    structuredOutputUsed: true,
+    structuredOutputUsed: true as const,
     reviewAssuranceLevel: 'structured_high' as const,
     attemptId,
   };
@@ -338,14 +338,7 @@ describe('FlowGuard tool-level E2E', () => {
       expect(st!.architecture).toBeTruthy();
       const { oblId } = await inject(s.sDir, st!, 'architecture', s.tc.sessionID);
       st = await readState(s.sDir);
-      const o1 = st!.reviewAssurance!.obligations.find((o) => o.obligationId === oblId)!;
-      const b = await architecture.execute(
-        {
-          reviewVerdict: 'accept',
-          reviewFindings: f(o1.obligationId, o1.iteration, o1.planVersion),
-        },
-        s.tc,
-      );
+      const b = await architecture.execute({ reviewVerdict: 'accept' }, s.tc);
       expect(typeof b).toBe('string');
       expect(b).not.toContain('INTERNAL_ERROR');
       st = await readState(s.sDir);
@@ -365,14 +358,7 @@ describe('FlowGuard tool-level E2E', () => {
       expect(st!.ticket).toBeTruthy();
       const { oblId } = await inject(s.sDir, st!, 'plan', s.tc.sessionID);
       st = await readState(s.sDir);
-      const o1 = st!.reviewAssurance!.obligations.find((o) => o.obligationId === oblId)!;
-      const b = await plan.execute(
-        {
-          reviewVerdict: 'accept',
-          reviewFindings: f(o1.obligationId, o1.iteration, o1.planVersion),
-        },
-        s.tc,
-      );
+      const b = await plan.execute({ reviewVerdict: 'accept' }, s.tc);
       expect(typeof b).toBe('string');
       expect(b).not.toContain('INTERNAL_ERROR');
       st = await readState(s.sDir);
@@ -426,14 +412,7 @@ describe('FlowGuard tool-level E2E', () => {
       expect(st!.implementation).toBeTruthy();
       const { oblId } = await inject(s.sDir, st!, 'implement', s.tc.sessionID);
       st = await readState(s.sDir);
-      const o1 = st!.reviewAssurance!.obligations.find((o) => o.obligationId === oblId)!;
-      const b = await review_implementation.execute(
-        {
-          reviewVerdict: 'accept',
-          reviewFindings: f(o1.obligationId, o1.iteration, o1.planVersion, challengesFor(st!, o1)),
-        },
-        s.tc,
-      );
+      const b = await review_implementation.execute({ reviewVerdict: 'accept' }, s.tc);
       expect(typeof b).toBe('string');
       expect(b).not.toContain('INTERNAL_ERROR');
       st = await readState(s.sDir);
@@ -456,14 +435,7 @@ describe('FlowGuard tool-level E2E', () => {
       // Step 2: inject evidence + approve plan
       const { oblId: pid } = await inject(s.sDir, st!, 'plan', s.tc.sessionID);
       st = await readState(s.sDir);
-      const po = st!.reviewAssurance!.obligations.find((o) => o.obligationId === pid)!;
-      const r2 = await plan.execute(
-        {
-          reviewVerdict: 'accept',
-          reviewFindings: f(po.obligationId, po.iteration, po.planVersion),
-        },
-        s.tc,
-      );
+      const r2 = await plan.execute({ reviewVerdict: 'accept' }, s.tc);
       expect(typeof r2).toBe('string');
       expect(r2).not.toContain('INTERNAL_ERROR');
 
@@ -540,14 +512,7 @@ describe('FlowGuard tool-level E2E', () => {
       // Step 5: inject impl evidence + approve
       const { oblId: iid } = await inject(s.sDir, st!, 'implement', s.tc.sessionID);
       st = await readState(s.sDir);
-      const io = st!.reviewAssurance!.obligations.find((o) => o.obligationId === iid)!;
-      const r4 = await review_implementation.execute(
-        {
-          reviewVerdict: 'accept',
-          reviewFindings: f(io.obligationId, io.iteration, io.planVersion),
-        },
-        s.tc,
-      );
+      const r4 = await review_implementation.execute({ reviewVerdict: 'accept' }, s.tc);
       expect(typeof r4).toBe('string');
       expect(r4).not.toContain('INTERNAL_ERROR');
 
@@ -602,33 +567,16 @@ describe('FlowGuard tool-level E2E', () => {
       const oblId = p1.requiredReviewAttestation?.toolObligationId as string;
       expect(oblId).toBeTruthy();
 
-      // Step 2: complete with findings — review tool records its own evidence
+      // Step 2: host captures the reviewer's structured findings and binds them
+      // to the tool-created obligation, then the verdict-only call completes it.
       let st = await readState(s.sDir);
-      const obl = st!.reviewAssurance!.obligations.find((o) => o.obligationId === oblId)!;
-      await writeStateWithArtifacts(s.sDir, {
-        ...st!,
-        reviewAssurance: {
-          ...st!.reviewAssurance!,
-          obligations: st!.reviewAssurance!.obligations.map((item) =>
-            item.obligationId === oblId
-              ? {
-                  ...item,
-                  reviewSubjectScope: {
-                    kind: 'repository_change',
-                    paths: ['README.md'],
-                    revisions: ['base', 'head'],
-                  },
-                }
-              : item,
-          ),
-        },
-      });
+      await inject(s.sDir, st!, 'review', s.tc.sessionID);
       const r2 = await review.execute(
         {
           inputOrigin: 'manual_text',
           text: 'E2E review content',
           targetPaths: ['README.md'],
-          reviewFindings: f(oblId, obl.iteration, obl.planVersion),
+          reviewObligationId: oblId,
         },
         s.tc,
       );

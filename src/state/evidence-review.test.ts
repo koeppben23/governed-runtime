@@ -698,6 +698,7 @@ describe('evidence-review', () => {
         invokedAt: FIXED_TIME,
         fulfilledAt: null,
         consumedByObligationId: null,
+        capturedRawFindings: { overallVerdict: 'accept' },
         reviewOutputMode: 'structured_output' as const,
         structuredOutputUsed: true,
         reviewAssuranceLevel: 'structured_high' as const,
@@ -706,6 +707,7 @@ describe('evidence-review', () => {
       expect(parsed.reviewOutputMode).toBe('structured_output');
       expect(parsed.structuredOutputUsed).toBe(true);
       expect(parsed.reviewAssuranceLevel).toBe('structured_high');
+      expect(parsed.capturedRawFindings).toEqual({ overallVerdict: 'accept' });
     });
 
     it('ReviewAssuranceState parses valid assurance state', () => {
@@ -738,6 +740,7 @@ describe('evidence-review', () => {
         fulfilledAt: FIXED_TIME,
         consumedByObligationId: null,
         attemptId: '22222222-2222-4222-8222-222222222222',
+        capturedRawFindings: { overallVerdict: 'accept' },
         reviewOutputMode: 'structured_output' as const,
         structuredOutputUsed: true,
         reviewAssuranceLevel: 'structured_high' as const,
@@ -902,7 +905,7 @@ describe('evidence-review', () => {
       expect(parseAssuranceWith(structuredInvocation(), linkedAttempt()).success).toBe(true);
     });
 
-    it('CORNER: an agent-submitted invocation with honest provenance parses', () => {
+    it('rejects removed agent-submitted transport provenance', () => {
       const invocation = structuredInvocation({
         invocationMode: 'manual_attested' as const,
         hostVisible: false,
@@ -911,7 +914,8 @@ describe('evidence-review', () => {
         structuredOutputUsed: false,
         reviewAssuranceLevel: 'structured_submitted' as const,
       });
-      expect(parseAssuranceWith(invocation, linkedAttempt()).success).toBe(true);
+      const result = parseAssuranceWith(invocation, linkedAttempt());
+      expect(result.success).toBe(false);
     });
 
     it('rejects an invocation whose attempt never reached a bound lifecycle', () => {
@@ -946,7 +950,7 @@ describe('evidence-review', () => {
       expect(JSON.stringify(result.error.issues)).toContain('missing completedAt');
     });
 
-    it('rejects host-observed transport claiming agent-submitted provenance', () => {
+    it('rejects host-observed transport claiming agent-submitted output provenance', () => {
       const invocation = structuredInvocation({
         reviewOutputMode: 'agent_submitted_structured' as const,
         structuredOutputUsed: false,
@@ -955,7 +959,7 @@ describe('evidence-review', () => {
       const result = parseAssuranceWith(invocation, linkedAttempt());
       expect(result.success).toBe(false);
       if (result.success) throw new TypeError('expected schema rejection');
-      expect(JSON.stringify(result.error.issues)).toContain('consistent invocation provenance');
+      expect(JSON.stringify(result.error.issues)).toContain('structured_output');
     });
 
     it('rejects agent-submitted transport claiming host-structured provenance', () => {
@@ -963,14 +967,11 @@ describe('evidence-review', () => {
         invocationMode: 'manual_attested' as const,
         hostVisible: false,
         source: 'agent-submitted-attested' as const,
-        reviewOutputMode: 'structured_output' as const,
-        structuredOutputUsed: true,
-        reviewAssuranceLevel: 'structured_high' as const,
       });
       const result = parseAssuranceWith(invocation, linkedAttempt());
       expect(result.success).toBe(false);
       if (result.success) throw new TypeError('expected schema rejection');
-      expect(JSON.stringify(result.error.issues)).toContain('consistent invocation provenance');
+      expect(JSON.stringify(result.error.issues)).toContain('sdk_session_prompt');
     });
 
     it('rejects a capability-less repository-governed attempt', () => {
@@ -1070,6 +1071,7 @@ describe('evidence-review', () => {
         fulfilledAt: FIXED_TIME,
         consumedByObligationId: null,
         capturedVerdict: 'accept',
+        capturedRawFindings: { overallVerdict: 'accept' },
         attemptId: '22222222-2222-4222-8222-222222222222',
         reviewOutputMode: 'structured_output' as const,
         structuredOutputUsed: true,
@@ -1079,6 +1081,7 @@ describe('evidence-review', () => {
         ...invocation,
         findingsHash: 'sha256-findings-b',
         capturedVerdict: 'changes_requested',
+        capturedRawFindings: { overallVerdict: 'changes_requested' },
       };
       const result = ReviewAssuranceState.safeParse({
         assuranceSchemaVersion: 'review-assurance.v6' as const,

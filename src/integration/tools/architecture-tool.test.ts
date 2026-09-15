@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeState } from '../../fixtures.js';
+import { convertArgsToInputSchema } from '../../mcp-server/schema-converter.js';
 import { TEAM_POLICY } from '../../config/policy-presets.js';
 import { CHALLENGE_POLICY_V1 } from '../../config/policy-types.js';
 import type { SessionState } from '../../state/schema.js';
@@ -123,31 +124,6 @@ vi.mock('../../state/evidence.js', async (importOriginal) => {
 });
 
 describe('integration/tools/architecture (wrapper)', () => {
-  // F13 slice 7c: Mode B now requires reviewFindings (parity with plan/implement).
-  // This helper builds a minimal valid ReviewFindings object for tests that
-  // exercise the verdict-submission path. Tests for the missing-findings
-  // BLOCKED path explicitly omit it.
-  const makeFindings = (
-    overrides: Partial<{
-      iteration: number;
-      planVersion: number;
-      overallVerdict: 'accept' | 'changes_requested';
-    }> = {},
-  ) => ({
-    iteration: overrides.iteration ?? 1,
-    planVersion: overrides.planVersion ?? 1,
-    reviewMode: 'subagent' as const,
-    overallVerdict: overrides.overallVerdict ?? 'accept',
-    blockingIssues: [],
-    majorRisks: [],
-    missingVerification: [],
-    scopeCreep: [],
-    unknowns: [],
-    challenges: [],
-    reviewedBy: { sessionId: 'sess-test' },
-    reviewedAt: '2026-01-01T00:00:00.000Z',
-  });
-
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.changedFiles.mockResolvedValue([]);
@@ -584,106 +560,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     expect(JSON.parse(String(res)).code).toBe('NO_ARCHITECTURE');
   });
 
-  it('rejects manual findings before validating a revision without text', async () => {
-    mocks.state = makeState('ARCHITECTURE', {
-      architecture: {
-        id: 'ADR-001',
-        title: 'ADR',
-        adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
-        digest: 'digest-adr',
-        status: 'proposed',
-        reviewCompletion: 'pending',
-        createdAt: '2026-01-01T00:00:00.000Z',
-      },
-      selfReview: {
-        iteration: 0,
-        maxIterations: 3,
-        prevDigest: null,
-        currDigest: 'digest-adr',
-        revisionDelta: 'major',
-        verdict: 'changes_requested',
-      },
-    });
-    mocks.requireStateForMutation.mockResolvedValue(mocks.state);
-    const { architecture } = await import('./architecture.js');
-    const res = await architecture.execute(
-      {
-        reviewVerdict: 'changes_requested',
-        reviewFindings: makeFindings({ iteration: 0, overallVerdict: 'changes_requested' }),
-      },
-      {} as never,
-    );
-    expect(JSON.parse(String(res)).code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
-  });
-
-  it('rejects manual findings before validating revised ADR sections', async () => {
-    mocks.validateAdrSections.mockReturnValue(['## Decision']);
-    mocks.state = makeState('ARCHITECTURE', {
-      architecture: {
-        id: 'ADR-001',
-        title: 'ADR',
-        adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
-        digest: 'digest-adr',
-        status: 'proposed',
-        reviewCompletion: 'pending',
-        createdAt: '2026-01-01T00:00:00.000Z',
-      },
-      selfReview: {
-        iteration: 0,
-        maxIterations: 3,
-        prevDigest: null,
-        currDigest: 'digest-adr',
-        revisionDelta: 'major',
-        verdict: 'changes_requested',
-      },
-    });
-    mocks.requireStateForMutation.mockResolvedValue(mocks.state);
-    const { architecture } = await import('./architecture.js');
-    const res = await architecture.execute(
-      {
-        reviewVerdict: 'changes_requested',
-        adrText: '## Context\nOnly',
-        reviewFindings: makeFindings({ iteration: 0, overallVerdict: 'changes_requested' }),
-      },
-      {} as never,
-    );
-    expect(JSON.parse(String(res)).code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
-  });
-
-  it('rejects a manual findings revision', async () => {
-    mocks.state = makeState('ARCHITECTURE', {
-      architecture: {
-        id: 'ADR-001',
-        title: 'ADR',
-        adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
-        digest: 'digest-adr',
-        status: 'proposed',
-        reviewCompletion: 'pending',
-        createdAt: '2026-01-01T00:00:00.000Z',
-      },
-      selfReview: {
-        iteration: 0,
-        maxIterations: 3,
-        prevDigest: null,
-        currDigest: 'digest-adr',
-        revisionDelta: 'major',
-        verdict: 'changes_requested',
-      },
-    });
-    mocks.requireStateForMutation.mockResolvedValue(mocks.state);
-    const { architecture } = await import('./architecture.js');
-    const res = await architecture.execute(
-      {
-        reviewVerdict: 'changes_requested',
-        adrText: '## Context\nA2\n\n## Decision\nB\n\n## Consequences\nC',
-        reviewFindings: makeFindings({ iteration: 0, overallVerdict: 'changes_requested' }),
-      },
-      {} as never,
-    );
-    expect(JSON.parse(String(res)).code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
-  });
-
-  it('does not mutate an ADR when a revision provides manual findings', async () => {
+  it('does not mutate an ADR when a revision carries agent findings without host evidence', async () => {
     mocks.state = makeState('ARCHITECTURE', {
       architecture: {
         id: 'ADR-001',
@@ -731,7 +608,6 @@ describe('integration/tools/architecture (wrapper)', () => {
       {
         reviewVerdict: 'changes_requested',
         adrText: '## Context\nA2\n\n## Decision\nB\n\n## Consequences\nC',
-        reviewFindings: makeFindings({ iteration: 0, overallVerdict: 'changes_requested' }),
       },
       {} as never,
     );
@@ -739,7 +615,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     expect(mocks.writeStateWithArtifacts).not.toHaveBeenCalled();
   });
 
-  it('rejects a manually supplied reviewer acceptance', async () => {
+  it('fails closed on an agent-supplied reviewer acceptance without host-captured evidence', async () => {
     mocks.state = makeState('ARCHITECTURE', {
       architecture: {
         id: 'ADR-001',
@@ -767,64 +643,13 @@ describe('integration/tools/architecture (wrapper)', () => {
       transitions: [],
     }));
     const { architecture } = await import('./architecture.js');
-    const res = await architecture.execute(
-      {
-        reviewVerdict: 'accept',
-        reviewFindings: makeFindings({ iteration: 0, overallVerdict: 'accept' }),
-      },
-      {} as never,
-    );
+    const res = await architecture.execute({ reviewVerdict: 'accept' }, {} as never);
     const parsed = JSON.parse(String(res));
-    expect(parsed.code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+    expect(parsed.code).toBe('SUBAGENT_EVIDENCE_MISSING');
     expect(mocks.writeStateWithArtifacts).not.toHaveBeenCalled();
   });
 
-  it('rejects manual findings at the iteration limit', async () => {
-    mocks.state = makeState('ARCHITECTURE', {
-      architecture: {
-        id: 'ADR-001',
-        title: 'ADR',
-        adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
-        digest: 'digest-adr',
-        status: 'proposed',
-        reviewCompletion: 'pending',
-        createdAt: '2026-01-01T00:00:00.000Z',
-      },
-      // iteration 2 + this review → 3 == maxSelfReviewIterations: force-convergence.
-      selfReview: {
-        iteration: 2,
-        maxIterations: 3,
-        prevDigest: null,
-        currDigest: 'digest-adr',
-        revisionDelta: 'major',
-        verdict: 'changes_requested',
-      },
-    });
-    mocks.requireStateForMutation.mockResolvedValue(mocks.state);
-    mocks.autoAdvance.mockImplementation((state: SessionState) => ({
-      kind: 'advanced',
-      state: { ...state, phase: 'ARCH_REVIEW' },
-      evalResult: { kind: 'waiting', phase: 'ARCH_REVIEW', reason: 'human decision required' },
-      transitions: [],
-    }));
-    const { architecture } = await import('./architecture.js');
-    const parsed = JSON.parse(
-      String(
-        await architecture.execute(
-          {
-            reviewVerdict: 'changes_requested',
-            adrText: '## Context\nA3\n\n## Decision\nB\n\n## Consequences\nC',
-            reviewFindings: makeFindings({ iteration: 2, overallVerdict: 'changes_requested' }),
-          },
-          {} as never,
-        ),
-      ),
-    );
-
-    expect(parsed.code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
-  });
-
-  it('does not auto-finalize an exhausted ADR from manual findings', async () => {
+  it('never auto-finalizes an exhausted ADR from agent-supplied findings without host evidence', async () => {
     mocks.state = makeState('ARCHITECTURE', {
       architecture: {
         id: 'ADR-001',
@@ -858,45 +683,13 @@ describe('integration/tools/architecture (wrapper)', () => {
           {
             reviewVerdict: 'changes_requested',
             adrText: '## Context\nA3\n\n## Decision\nB\n\n## Consequences\nC',
-            reviewFindings: makeFindings({ iteration: 2, overallVerdict: 'changes_requested' }),
           },
           {} as never,
         ),
       ),
     );
 
-    expect(parsed.code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
-    expect(mocks.writeStateWithArtifacts).not.toHaveBeenCalled();
-  });
-
-  it('rejects reviewFindings without a verdict in a submission (#499: no silent discard)', async () => {
-    // #499 hardening: previously the architecture tool silently DISCARDED
-    // reviewFindings supplied on a Mode-A submission (no verdict). That mixed
-    // shape is now rejected with ADR_FINDINGS_WITHOUT_VERDICT, matching plan's
-    // PLAN_FINDINGS_WITHOUT_VERDICT and implement's INVALID_IMPLEMENT_TOOL_SEQUENCE.
-    const { architecture } = await import('./architecture.js');
-    const findings = {
-      iteration: 1,
-      planVersion: 1,
-      reviewMode: 'subagent' as const,
-      overallVerdict: 'accept' as const,
-      blockingIssues: [],
-      majorRisks: [],
-      missingVerification: [],
-      scopeCreep: [],
-      unknowns: [],
-      challenges: [],
-      reviewedBy: { sessionId: 'sess-test' },
-      reviewedAt: '2026-01-01T00:00:00.000Z',
-    };
-    const res = await architecture.execute(
-      { title: 'x', adrText: 'y', reviewFindings: findings },
-      {} as never,
-    );
-    const parsed = JSON.parse(String(res));
-    expect(parsed.error).toBe(true);
-    expect(parsed.code).toBe('ADR_FINDINGS_WITHOUT_VERDICT');
-    // Fail-closed: no state written on a rejected submission.
+    expect(parsed.code).toBe('SUBAGENT_EVIDENCE_MISSING');
     expect(mocks.writeStateWithArtifacts).not.toHaveBeenCalled();
   });
 
@@ -972,11 +765,12 @@ describe('integration/tools/architecture (wrapper)', () => {
     expect(writtenState.reviewAssurance?.obligations).toHaveLength(1);
   });
 
-  // ── F13 slice 7c: Mode-B reviewFindings ingestion + persistence ─────
+  // ── Mode-B host-captured evidence binding ───────────────────────────
 
-  it('blocks Mode B when reviewFindings is missing (slice 7c)', async () => {
-    // Slice 7c parity with plan/implement: Mode B MUST require reviewFindings.
-    // Returns SUBAGENT_EVIDENCE_MISSING before any verdict-specific check
+  it('blocks Mode B when no host-captured structured evidence is bound', async () => {
+    // Findings are never accepted from the agent: a verdict without
+    // host-captured structured evidence fails closed with
+    // SUBAGENT_EVIDENCE_MISSING before any verdict-specific check
     // (e.g. EMPTY_ADR_TEXT) is reached.
     mocks.state = makeState('ARCHITECTURE', {
       architecture: {
@@ -1003,10 +797,10 @@ describe('integration/tools/architecture (wrapper)', () => {
     expect(JSON.parse(String(res)).code).toBe('SUBAGENT_EVIDENCE_MISSING');
   });
 
-  it('does not persist manually supplied reviewFindings', async () => {
-    // Slice 7c: parallel storage to plan.reviewFindings — each Mode-B
-    // submission appends one entry to architecture.reviewFindings, never
-    // overwrites or replaces. Mirrors plan.ts:392-395 invariant.
+  it('persists no agent-supplied findings and retains prior host-captured findings', async () => {
+    // The append-only reviewFindings array is written ONLY from host-captured
+    // effective findings. A verdict with no bound evidence fails closed, so
+    // neither a new entry nor a wipe of the prior capture is ever persisted.
     const existingFinding = {
       iteration: 1,
       planVersion: 1,
@@ -1042,29 +836,17 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
     });
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
-    // autoAdvance mock must echo the input state for this persistence test
-    // (the default mock returns a fresh state without reviewFindings, which
-    // would mask the field on writeStateWithArtifacts).
-    mocks.autoAdvance.mockImplementation((s: SessionState) => ({
-      kind: 'advanced',
-      state: s,
-      evalResult: { kind: 'pending' },
-      transitions: [],
-    }));
-    const newFinding = makeFindings({ iteration: 1, overallVerdict: 'accept' });
     const { architecture } = await import('./architecture.js');
-    await architecture.execute(
-      { reviewVerdict: 'accept', reviewFindings: newFinding },
-      {} as never,
-    );
+    const res = await architecture.execute({ reviewVerdict: 'accept' }, {} as never);
+    expect(JSON.parse(String(res)).code).toBe('SUBAGENT_EVIDENCE_MISSING');
     expect(mocks.writeStateWithArtifacts).not.toHaveBeenCalled();
   });
 
-  it('routes overallVerdict=unable_to_review to BLOCKED in Mode B (slice 7c, P1.3 parity)', async () => {
-    // Slice 7c hooks into validateReviewFindings, which (per P1.3 slice 4e)
-    // fail-closes any unable_to_review findings at the tool layer with
-    // SUBAGENT_UNABLE_TO_REVIEW. This pin defends defense-in-depth for
-    // architecture, parity with plan/implement.
+  it('fails closed on an agent-supplied unable_to_review without host evidence', async () => {
+    // The third verdict is never a tool-submitted shortcut: with no bound
+    // captured evidence the call fails closed before any verdict semantics.
+    // The bound-evidence unable_to_review path is covered end-to-end by the
+    // planning/implementation tool suites.
     mocks.state = makeState('ARCHITECTURE', {
       architecture: {
         id: 'ADR-001',
@@ -1085,25 +867,16 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
     });
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
-    const findings = {
-      ...makeFindings({ iteration: 0 }),
-      overallVerdict: 'unable_to_review' as const,
-      reasonCode: 'INSUFFICIENT_CONTEXT' as const,
-      reasonDetail: 'no ticket text',
-    };
     const { architecture } = await import('./architecture.js');
-    const res = await architecture.execute(
-      { reviewVerdict: 'accept', reviewFindings: findings },
-      {} as never,
-    );
-    expect(JSON.parse(String(res)).code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
+    const res = await architecture.execute({ reviewVerdict: 'accept' }, {} as never);
+    expect(JSON.parse(String(res)).code).toBe('SUBAGENT_EVIDENCE_MISSING');
   });
 
   it('requires captured findings on a non-converged Mode B call', async () => {
     // Structured-only contract: a non-converged call's findings are authorized
-    // only by host-observed structured child-session evidence. Manual findings
-    // carry no strict assurance binding, so the call fails closed with
-    // PLUGIN_ENFORCEMENT_UNAVAILABLE instead of reissuing a reviewer Task.
+    // only by host-observed structured child-session evidence. Without a bound
+    // capture the call fails closed with SUBAGENT_EVIDENCE_MISSING instead of
+    // reissuing a reviewer Task.
     mocks.resolvePolicyFromState.mockReturnValue(TEAM_POLICY);
     mocks.state = makeState('ARCHITECTURE', {
       architecture: {
@@ -1130,59 +903,11 @@ describe('integration/tools/architecture (wrapper)', () => {
       {
         reviewVerdict: 'changes_requested',
         adrText: '## Context\nA2\n\n## Decision\nB\n\n## Consequences\nC',
-        reviewFindings: makeFindings({ iteration: 0, overallVerdict: 'changes_requested' }),
       },
       {} as never,
     );
     const parsed = JSON.parse(String(res));
-    expect(parsed.code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
-  });
-
-  it('rejects manual findings before checking verdict consistency', async () => {
-    mocks.state = makeState('ARCHITECTURE', {
-      architecture: {
-        id: 'ADR-001',
-        title: 'ADR',
-        adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
-        digest: 'digest-adr',
-        status: 'proposed',
-        reviewCompletion: 'pending',
-        createdAt: '2026-01-01T00:00:00.000Z',
-      },
-      selfReview: {
-        iteration: 1,
-        maxIterations: 3,
-        prevDigest: null,
-        currDigest: 'd2',
-        revisionDelta: 'major',
-        verdict: 'changes_requested',
-      },
-    });
-    mocks.requireStateForMutation.mockResolvedValue(mocks.state);
-    const { architecture } = await import('./architecture.js');
-    const res = await architecture.execute(
-      {
-        reviewVerdict: 'accept',
-        reviewFindings: {
-          iteration: 1,
-          planVersion: 1,
-          reviewMode: 'subagent',
-          overallVerdict: 'changes_requested',
-          blockingIssues: [],
-          majorRisks: [],
-          missingVerification: [],
-          scopeCreep: [],
-          unknowns: [],
-          challenges: [],
-          reviewedBy: { sessionId: 's1' },
-          reviewedAt: '2026-01-01T00:00:00.000Z',
-        },
-      },
-      {} as never,
-    );
-    const parsed = JSON.parse(String(res));
-    expect(parsed.error).toBe(true);
-    expect(parsed.code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+    expect(parsed.code).toBe('SUBAGENT_EVIDENCE_MISSING');
   });
 
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -1251,6 +976,24 @@ describe('integration/tools/architecture (wrapper)', () => {
       const parsed = JSON.parse(String(raw));
       expect(parsed.code).not.toBe('ADR_SUBMISSION_MIXED_INPUTS');
       expect(parsed.error).toBeUndefined();
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // Tool boundary: the published strict input schema rejects unknown args
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  describe('strict tool input schema', () => {
+    it('rejects an unknown reviewFindings argument (no agent findings submission)', async () => {
+      const { architecture } = await import('./architecture.js');
+      const schema = convertArgsToInputSchema(architecture.args);
+      const parsed = schema.safeParse({ reviewVerdict: 'accept', reviewFindings: {} });
+      expect(parsed.success).toBe(false);
+      if (!parsed.success) {
+        expect(parsed.error.issues.some((issue) => issue.code === 'unrecognized_keys')).toBe(true);
+      }
+      // Verdict-only submission remains representable.
+      expect(schema.safeParse({ reviewVerdict: 'accept' }).success).toBe(true);
     });
   });
 });

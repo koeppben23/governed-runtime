@@ -45,16 +45,12 @@ function frozenRequestedBaseOf(obligation: ReviewObligation | undefined): string
 }
 
 /** Resolve the obligation an explicit reviewObligationId references. */
-function obligationByIdOrAttestation(
+function obligationById(
   state: SessionState,
   exec: ReviewExecutionContext,
 ): ReviewObligation | undefined {
-  const findingsObligationId = (
-    exec.args.reviewFindings as { attestation?: { toolObligationId?: string } }
-  )?.attestation?.toolObligationId;
-  const obligationId = exec.args.reviewObligationId ?? findingsObligationId;
-  if (!obligationId) return undefined;
-  return findReviewObligationById(state.reviewAssurance, obligationId) ?? undefined;
+  if (!exec.args.reviewObligationId) return undefined;
+  return findReviewObligationById(state.reviewAssurance, exec.args.reviewObligationId) ?? undefined;
 }
 
 function getPersistedObligationBranchSource(
@@ -62,7 +58,7 @@ function getPersistedObligationBranchSource(
   exec: ReviewExecutionContext,
 ): ReturnType<typeof resolveBranchReviewSource> | undefined {
   if (!exec.args.branch) return undefined;
-  const obligation = obligationByIdOrAttestation(state, exec);
+  const obligation = obligationById(state, exec);
   const provenance = obligation?.repositoryRevisionProvenance;
   if (provenance?.kind !== 'available' || !provenance.baseSha) return undefined;
   return {

@@ -137,12 +137,7 @@ export type ExternalReference = z.infer<typeof ExternalReferenceSchema>;
 
 /**
  * How the reviewer was invoked.
- * - `sdk_session_prompt`: in-process SDK reviewer session.
- * - `manual_attested`: agent-submitted attested findings (out-of-process hosts, weakest sanctioned).
- * - `native_subagent_attested`: agent-submitted findings corroborated by a FlowGuard-captured
- *   host hook (SubagentStop / PostToolUse fired inside the `flowguard-reviewer` subagent).
- *   Strictly stronger than `manual_attested` (independent host witness of the reviewer subagent),
- *   with best-effort correlation.
+ * - `sdk_session_prompt`: host-observed SDK reviewer session (the only
+ *   sanctioned invocation transport).
  */
-export type ReviewInvocationMode =
-  'sdk_session_prompt' | 'manual_attested' | 'native_subagent_attested';
+export type ReviewInvocationMode = 'sdk_session_prompt';

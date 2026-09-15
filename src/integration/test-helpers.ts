@@ -372,7 +372,7 @@ export async function fulfillStrictReviewObligation(
     obligationType: ReviewObligationType;
     iteration: number;
     planVersion: number;
-    overallVerdict?: 'accept' | 'changes_requested';
+    overallVerdict?: ReviewFindings['overallVerdict'];
     childSessionId?: string;
   },
 ): Promise<ReviewFindings> {
@@ -475,21 +475,13 @@ export async function fulfillStrictReviewObligation(
     criteriaVersion: obligation.criteriaVersion,
     parentSessionId: state.binding.hostSessionId,
     childSessionId: findings.reviewedBy.sessionId,
-    invocationMode: 'sdk_session_prompt',
     promptHash: hashText(`${input.obligationType}:${input.iteration}:${input.planVersion}`),
     findingsHash: hashFindings(findings),
     invokedAt: new Date().toISOString(),
     fulfilledAt: new Date().toISOString(),
     attemptId: boundAttempt.attemptId,
-    // Production evidence carries the reviewer's explicit verdict
-    // (transport-evidence sets capturedVerdict from findings.overallVerdict;
-    // host-task captures set it from captured findings). The helper mirrors
-    // that contract so direct tool-flow tests exercise the same strict
-    // verdict-presence rules as production.
-    capturedVerdict: findings.overallVerdict,
-    // BUG-17 Batch 10: host_task_required mode resolves findings from invocation
-    // evidence (capturedRawFindings) rather than from agent-submitted args.
-    // Without this, resolveHostTaskFindings returns null → REVIEW_FINDINGS_REQUIRED.
+    // Host-observed contract: the structured capture is the only findings
+    // authority; the captured verdict is derived from it by the builder.
     capturedRawFindings: findings,
   });
   const obligationAcceptedByReviewer = true;
@@ -613,11 +605,12 @@ function bindHostTaskAttempt(
 }
 
 /**
- * Add strict subagent ReviewFindings to direct tool-test verdict calls.
+ * Bind strict host-captured review evidence to direct tool-test verdict calls.
  *
  * Production evidence is injected by plugin hooks. Direct integration tests call
- * tools without those hooks, so tests that drive unrelated lifecycle behavior
- * use this helper to satisfy the same strict obligation contract.
+ * tools without those hooks, so tests that drive unrelated lifecycle behavior use
+ * this helper to satisfy the same strict obligation contract. The tool resolves
+ * the captured evidence itself; the caller keeps submitting ONLY the verdict.
  */
 function findPendingObligation(
   allObligations: Array<{
@@ -647,7 +640,6 @@ function isValidVerdict(v: unknown): boolean {
 export async function withStrictReviewFindings(sessDir: string, args: unknown): Promise<unknown> {
   if (!args || typeof args !== 'object' || Array.isArray(args)) return args;
   const record = args as Record<string, unknown>;
-  if (record.reviewFindings) return args;
   if (!isValidVerdict(record.reviewVerdict)) return args;
   const verdict = String(record.reviewVerdict);
 
@@ -658,7 +650,7 @@ export async function withStrictReviewFindings(sessDir: string, args: unknown): 
   const pending = findPendingObligation(allObligations);
   if (!pending) return args;
 
-  const reviewFindings = await fulfillStrictReviewObligation(sessDir, {
+  await fulfillStrictReviewObligation(sessDir, {
     obligationType: pending.obligationType as Parameters<
       typeof fulfillStrictReviewObligation
     >[1]['obligationType'],
@@ -667,7 +659,7 @@ export async function withStrictReviewFindings(sessDir: string, args: unknown): 
     overallVerdict: verdict as 'accept' | 'changes_requested',
   });
 
-  return { ...record, reviewFindings };
+  return args;
 }
 
 // ─── Scoped Env Mutation ─────────────────────────────────────────────────────

@@ -8,7 +8,7 @@
 import { formatBlocked } from './helpers.js';
 import type { MutableSession } from './helpers.js';
 import type { SessionState } from '../../state/schema.js';
-import type { LoopVerdict, ReviewFindings } from '../../state/evidence.js';
+import type { LoopVerdict } from '../../state/evidence.js';
 import type { ArchitectureClaimDeclarationInput } from '../../state/proofgraph-approval.js';
 import { ensureReviewAssurance, createReviewObligation } from '../review/assurance.js';
 import { classifyToolCallMode } from './review-validation-mode.js';
@@ -26,7 +26,6 @@ export type ArchitectureArgs = {
   adrText?: string;
   claims?: ArchitectureClaimDeclarationInput[];
   reviewVerdict?: LoopVerdict;
-  reviewFindings?: ReviewFindings;
   reviewerUnavailable?: boolean;
   targetPaths?: string[];
 };
@@ -49,12 +48,11 @@ export function validateArchitectureCallShape(args: ArchitectureArgs): string | 
   }
 
   // Canonical argument-shape validation (closes the historical architecture gaps:
-  // adrText+verdict=accept, findings-without-verdict, reviewerUnavailable+submission).
+  // adrText+verdict=accept, reviewerUnavailable+submission).
   // `text` is the heavy ADR payload (adrText); title is handled above.
   const mode = classifyToolCallMode('architecture', {
     text: args.adrText,
     reviewVerdict: args.reviewVerdict,
-    reviewFindings: args.reviewFindings,
     reviewerUnavailable: args.reviewerUnavailable,
   });
   if (mode.kind === 'invalid') return formatBlocked(mode.code, mode.params);
@@ -108,7 +106,6 @@ export function buildArchitectureReviewInstruction(input: {
   const mode = resolveReviewOrchestrationMode({
     platform,
     nativeReviewerAvailable: platform === 'unknown' ? false : true,
-    manualAttestedAllowed: false,
   });
   return buildChildSessionReviewInstruction({
     mode,

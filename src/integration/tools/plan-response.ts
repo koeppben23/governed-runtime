@@ -206,7 +206,7 @@ function partialClaimAcceptancePresentation(
 export function buildPlanSubmissionResponse(
   input: PlanSubmissionResponseInput,
 ): Record<string, unknown> {
-  const { scope, finalState, planEvidence, planVersion, reviewFindings, transitions } = input;
+  const { scope, finalState, planEvidence, planVersion, transitions } = input;
   const { nextObligation, planAttemptId, reviewInstruction } = planSubmissionReviewContext(
     scope,
     finalState,
@@ -234,12 +234,6 @@ export function buildPlanSubmissionResponse(
   }
   const riskWarning = planRiskWarning(scope);
   if (riskWarning) response.proofGraphRiskWarning = riskWarning;
-  if (reviewFindings)
-    response.latestReview = latestPlanReviewSummary(
-      finalState.reviewAssurance,
-      reviewFindings,
-      planVersion,
-    );
   return response;
 }
 
@@ -265,7 +259,6 @@ export function buildPlanReviewInstruction(input: {
   const mode = resolveReviewOrchestrationMode({
     platform,
     nativeReviewerAvailable: platform === 'unknown' ? false : true,
-    manualAttestedAllowed: false,
   });
   return buildChildSessionReviewInstruction({
     mode,
@@ -541,12 +534,12 @@ export function nonConvergedPlanResponse(
 export async function persistPlanReview(
   scope: PlanExecutionScope,
   revision: PlanRevisionResult,
-  effectiveFindings: ReviewFindings | null,
+  effectiveFindings: ReviewFindings,
   consumedAssurance: ReturnType<typeof import('../review/assurance.js').consumeReviewObligation>,
   buildReviewedPlanState: (
     scope: PlanExecutionScope,
     revision: PlanRevisionResult,
-    effectiveFindings: ReviewFindings | null,
+    effectiveFindings: ReviewFindings,
     consumedAssurance: ReturnType<typeof import('../review/assurance.js').consumeReviewObligation>,
   ) => SessionState,
 ): Promise<string> {

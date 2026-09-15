@@ -293,7 +293,7 @@ async function inject(
     capturedRawFindings: ff,
     attemptId: boundAttempt.attemptId,
     reviewOutputMode: 'structured_output' as const,
-    structuredOutputUsed: true,
+    structuredOutputUsed: true as const,
     reviewAssuranceLevel: 'structured_high' as const,
   };
   const aug: SessionState = {
@@ -469,7 +469,6 @@ describe('implementation review without repository observation authority', () =>
     const r2 = await plan.execute(
       {
         reviewVerdict: 'accept',
-        reviewFindings: implFindings(planInjected.oblId, 0, 1, 'plan-digest', 'accept'),
       },
       s.tc,
     );
@@ -537,19 +536,10 @@ describe('implementation review without repository observation authority', () =>
 
     // Phase 3: genuine changes_requested with an implementation subject anchor
     // and empty evidenceLocations — the bind must pass (orthogonality proof).
-    const { oblId } = await inject('implement', 'changes_requested', implDigest1);
+    await inject('implement', 'changes_requested', implDigest1);
     const r3 = await review_implementation.execute(
       {
         reviewVerdict: 'changes_requested',
-        reviewFindings: implFindings(
-          oblId,
-          1,
-          1,
-          implDigest1,
-          'changes_requested',
-          true,
-          validationAttemptIdFor(state!, implDigest1),
-        ),
       },
       s.tc,
     );
@@ -584,19 +574,10 @@ describe('implementation review without repository observation authority', () =>
 
     const secondScope = second.reviewSubjectScope;
     if (secondScope.kind !== 'implementation') throw new Error('expected implementation scope');
-    const { oblId: oblId2 } = await inject('implement', 'accept', secondScope.implementationDigest);
+    await inject('implement', 'accept', secondScope.implementationDigest);
     const r5 = await review_implementation.execute(
       {
         reviewVerdict: 'accept',
-        reviewFindings: implFindings(
-          oblId2,
-          second.iteration,
-          second.planVersion,
-          secondScope.implementationDigest,
-          'accept',
-          true,
-          validationAttemptIdFor(state!, secondScope.implementationDigest),
-        ),
       },
       s.tc,
     );
@@ -615,11 +596,10 @@ describe('implementation review without repository observation authority', () =>
       s.tc,
     );
     expect(r1).not.toContain('INTERNAL_ERROR');
-    const planInjected = await inject('plan', 'accept', 'plan-digest');
+    await inject('plan', 'accept', 'plan-digest');
     const r2 = await plan.execute(
       {
         reviewVerdict: 'accept',
-        reviewFindings: implFindings(planInjected.oblId, 0, 1, 'plan-digest', 'accept'),
       },
       s.tc,
     );
@@ -667,19 +647,10 @@ describe('implementation review without repository observation authority', () =>
     expect(state!.phase).toBe('IMPL_REVIEW');
 
     // Phase 3: reviewer changes_requested → IMPLEMENTATION + rework(D1).
-    const { oblId } = await inject('implement', 'changes_requested', implDigest1);
+    await inject('implement', 'changes_requested', implDigest1);
     const r3 = await review_implementation.execute(
       {
         reviewVerdict: 'changes_requested',
-        reviewFindings: implFindings(
-          oblId,
-          1,
-          1,
-          implDigest1,
-          'changes_requested',
-          true,
-          validationAttemptIdFor(state!, implDigest1),
-        ),
       },
       s.tc,
     );
@@ -752,19 +723,10 @@ describe('implementation review without repository observation authority', () =>
     const obligation = implObligations.at(-1)!;
     const scope = obligation.reviewSubjectScope;
     if (scope.kind !== 'implementation') throw new Error('expected implementation scope');
-    const { oblId: oblIdAccept } = await inject('implement', 'accept', scope.implementationDigest);
+    await inject('implement', 'accept', scope.implementationDigest);
     const r6 = await review_implementation.execute(
       {
         reviewVerdict: 'accept',
-        reviewFindings: implFindings(
-          oblIdAccept,
-          obligation.iteration,
-          obligation.planVersion,
-          scope.implementationDigest,
-          'accept',
-          true,
-          validationAttemptIdFor(state!, scope.implementationDigest),
-        ),
       },
       s.tc,
     );
@@ -783,11 +745,10 @@ describe('implementation review without repository observation authority', () =>
       s.tc,
     );
     expect(r1).not.toContain('INTERNAL_ERROR');
-    const planInjected = await inject('plan', 'accept', 'plan-digest');
+    await inject('plan', 'accept', 'plan-digest');
     const r2 = await plan.execute(
       {
         reviewVerdict: 'accept',
-        reviewFindings: implFindings(planInjected.oblId, 0, 1, 'plan-digest', 'accept'),
       },
       s.tc,
     );
@@ -835,19 +796,10 @@ describe('implementation review without repository observation authority', () =>
     expect(state!.phase).toBe('IMPL_REVIEW');
 
     // Phase 3: Reviewer A changes_requested(D1) → IMPLEMENTATION + rework(D1).
-    const { oblId } = await inject('implement', 'changes_requested', implDigest1);
+    await inject('implement', 'changes_requested', implDigest1);
     const r3 = await review_implementation.execute(
       {
         reviewVerdict: 'changes_requested',
-        reviewFindings: implFindings(
-          oblId,
-          1,
-          1,
-          implDigest1,
-          'changes_requested',
-          true,
-          validationAttemptIdFor(state!, implDigest1),
-        ),
       },
       s.tc,
     );
@@ -880,19 +832,10 @@ describe('implementation review without repository observation authority', () =>
 
     // Phase 5: Reviewer B changes_requested(D2) → IMPLEMENTATION; the single-slot
     // marker moves on to D2.
-    const { oblId: oblId2 } = await inject('implement', 'changes_requested', implDigest2);
+    await inject('implement', 'changes_requested', implDigest2);
     const r5 = await review_implementation.execute(
       {
         reviewVerdict: 'changes_requested',
-        reviewFindings: implFindings(
-          oblId2,
-          second.iteration,
-          second.planVersion,
-          implDigest2,
-          'changes_requested',
-          true,
-          validationAttemptIdFor(state!, implDigest2),
-        ),
       },
       s.tc,
     );
@@ -943,23 +886,10 @@ describe('implementation review without repository observation authority', () =>
     if (thirdScope.kind !== 'implementation') throw new Error('expected implementation scope');
     expect(thirdScope.implementationDigest).not.toBe(implDigest1);
     expect(thirdScope.implementationDigest).not.toBe(implDigest2);
-    const { oblId: oblIdAccept } = await inject(
-      'implement',
-      'accept',
-      thirdScope.implementationDigest,
-    );
+    await inject('implement', 'accept', thirdScope.implementationDigest);
     const r7 = await review_implementation.execute(
       {
         reviewVerdict: 'accept',
-        reviewFindings: implFindings(
-          oblIdAccept,
-          third.iteration,
-          third.planVersion,
-          thirdScope.implementationDigest,
-          'accept',
-          true,
-          validationAttemptIdFor(state!, thirdScope.implementationDigest),
-        ),
       },
       s.tc,
     );

@@ -17,9 +17,6 @@ import type { SemanticAuditIntent } from '../tools/audit-outbox.js';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-/** Invocation mode for SDK-driven session prompts (not host-visible). */
-export const INVOCATION_MODE_SDK_SESSION = 'sdk_session_prompt' as const;
-
 // ─── Public interfaces ───────────────────────────────────────────────────────
 
 /**

@@ -28,7 +28,16 @@ import {
   type TestWorkspace,
   withTestEnv,
 } from './test-helpers.js';
-import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
+import {
+  REVIEW_CRITERIA_VERSION,
+  REVIEW_MANDATE_DIGEST,
+  appendInvocationEvidence,
+  buildInvocationEvidence,
+  ensureReviewAssurance,
+  fulfillObligation,
+  hashFindings,
+  updateAttemptStatus,
+} from './review/assurance.js';
 import {
   status,
   hydrate,
@@ -259,7 +268,7 @@ describe('review', () => {
       expect(review.args.prNumber).toBeDefined();
       expect(review.args.branch).toBeDefined();
       expect(review.args.url).toBeDefined();
-      expect(review.args.reviewFindings).toBeDefined();
+      expect(review.args.reviewObligationId).toBeDefined();
     });
 
     it('requires analysis findings for content-aware review inputs', async () => {
@@ -291,6 +300,9 @@ describe('review', () => {
       const obligationId = (blocked.requiredReviewAttestation as Record<string, string>)
         .toolObligationId;
       expect(obligationId).toMatch(/^[0-9a-f-]{36}$/);
+      if (typeof obligationId !== 'string') {
+        throw new TypeError('Expected toolObligationId');
+      }
       const sessDir = await currentSessionDir();
       const state = await readState(sessDir);
       if (!state) throw new TypeError('Expected persisted session state');
@@ -317,7 +329,8 @@ describe('review', () => {
         },
       });
 
-      // Step 2: submit valid ReviewFindings with the matching toolObligationId.
+      // Step 2: host-capture the reviewer's structured findings and bind them to
+      // the obligation's attempt (the only accepted evidence provenance).
       const findings = {
         iteration: 1,
         planVersion: 1,
@@ -355,12 +368,50 @@ describe('review', () => {
           criteriaVersion: REVIEW_CRITERIA_VERSION,
         },
       };
+      const scopedState = await readState(sessDir);
+      if (!scopedState) throw new TypeError('Expected persisted session state');
+      const assurance = ensureReviewAssurance(scopedState.reviewAssurance);
+      const boundAttempt = assurance.attempts.find((a) => a.obligationId === obligationId);
+      if (!boundAttempt) throw new TypeError('Expected review attempt');
+      const fulfilledAt = '2026-01-01T00:00:00.000Z';
+      const invocation = buildInvocationEvidence({
+        obligationId,
+        obligationType: 'review',
+        mandateDigest: REVIEW_MANDATE_DIGEST,
+        criteriaVersion: REVIEW_CRITERIA_VERSION,
+        parentSessionId: ctx.sessionID,
+        childSessionId: findings.reviewedBy.sessionId,
+        promptHash: 'host-task-review-prompt',
+        findingsHash: hashFindings(findings),
+        invokedAt: fulfilledAt,
+        fulfilledAt,
+        capturedRawFindings: findings,
+        attemptId: boundAttempt.attemptId,
+      });
+      const boundAssurance = updateAttemptStatus(
+        assurance,
+        boundAttempt.attemptId,
+        'bound',
+        fulfilledAt,
+        { childSessionId: findings.reviewedBy.sessionId },
+      );
+      const withInvocation = appendInvocationEvidence(boundAssurance, invocation);
+      await writeState(sessDir, {
+        ...scopedState,
+        reviewAssurance: fulfillObligation(
+          withInvocation,
+          obligationId,
+          invocation.invocationId,
+          fulfilledAt,
+        ),
+      });
 
+      // Step 3: verdict-only re-invocation consumes the bound structured evidence.
       const raw = await review.execute(
         {
           inputOrigin: 'manual_text',
           text: 'diff --git a/file.ts b/file.ts',
-          reviewFindings: findings,
+          reviewObligationId: obligationId,
         },
         ctx,
       );

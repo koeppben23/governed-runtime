@@ -4,7 +4,7 @@ import { makeState } from '../../../fixtures.js';
 import { validateSubmittedReviewFindings } from './obligation.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from '../../review/assurance.js';
 import type { ReviewObligation } from '../../../state/evidence-review.js';
-import type { ReviewToolArgs } from './types.js';
+import type { ReviewFindings } from '../../../state/evidence.js';
 
 // Findings B3/B5: standalone /review challenges must be obligation-scoped and
 // bound to the canonical content evidence. Before wiring `allowedEvidenceRefs`
@@ -64,15 +64,21 @@ function contentChallenge(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function argsWith(challenge: Record<string, unknown>): ReviewToolArgs {
+function findingsWith(challenge: Record<string, unknown>): ReviewFindings {
   return {
-    reviewFindings: {
-      reviewMode: 'subagent',
-      overallVerdict: 'accept',
-      blockingIssues: [],
-      challenges: [challenge],
-    },
-  } as unknown as ReviewToolArgs;
+    iteration: 0,
+    planVersion: 1,
+    reviewMode: 'subagent',
+    overallVerdict: 'accept',
+    blockingIssues: [],
+    majorRisks: [],
+    missingVerification: [],
+    scopeCreep: [],
+    unknowns: [],
+    challenges: [challenge],
+    reviewedBy: { sessionId: 'reviewer' },
+    reviewedAt: '2026-01-01T00:00:00.000Z',
+  } as unknown as ReviewFindings;
 }
 
 describe('validateSubmittedReviewFindings — content challenge binding (B3/B5)', () => {
@@ -81,7 +87,7 @@ describe('validateSubmittedReviewFindings — content challenge binding (B3/B5)'
   it('rejects a content challenge citing a fabricated (non-canonical) digest', () => {
     const result = validateSubmittedReviewFindings(
       state,
-      argsWith(contentChallenge({ evidenceRefs: [{ kind: 'content', digest: 'FABRICATED' }] })),
+      findingsWith(contentChallenge({ evidenceRefs: [{ kind: 'content', digest: 'FABRICATED' }] })),
       reviewObligation(),
     );
     expect(result).not.toBeNull();
@@ -92,7 +98,7 @@ describe('validateSubmittedReviewFindings — content challenge binding (B3/B5)'
   it('rejects a content challenge carrying a foreign obligation id', () => {
     const result = validateSubmittedReviewFindings(
       state,
-      argsWith(contentChallenge({ obligationId: '99999999-9999-4999-8999-999999999999' })),
+      findingsWith(contentChallenge({ obligationId: '99999999-9999-4999-8999-999999999999' })),
       reviewObligation(),
     );
     expect(result).not.toBeNull();
@@ -105,7 +111,7 @@ describe('validateSubmittedReviewFindings — content challenge binding (B3/B5)'
     // proving the obligation-scoped, evidence-bound challenge was accepted.
     const result = validateSubmittedReviewFindings(
       state,
-      argsWith(contentChallenge()),
+      findingsWith(contentChallenge()),
       reviewObligation(),
     );
     if (result !== null) {
@@ -114,10 +120,10 @@ describe('validateSubmittedReviewFindings — content challenge binding (B3/B5)'
   });
 
   it('rejects a standalone content challenge ID already persisted by an earlier standalone review', () => {
-    const prior = argsWith(contentChallenge()).reviewFindings!;
+    const prior = findingsWith(contentChallenge());
     const result = validateSubmittedReviewFindings(
       { ...makeState('REVIEW_COMPLETE'), standaloneReviewFindings: [prior] },
-      argsWith(contentChallenge()),
+      findingsWith(contentChallenge()),
       reviewObligation(),
     );
     expect(result).toContain('SUBAGENT_CHALLENGE_NOT_DISTINCT');
