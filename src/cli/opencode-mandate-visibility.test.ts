@@ -76,9 +76,10 @@ function writeChatCompletion(response: ServerResponse, streaming: boolean): void
   response.end('data: [DONE]\n\n');
 }
 
-async function runOpenCode(
-  port: number,
-): Promise<{ requestBody: Record<string, unknown>; output: string }> {
+async function runOpenCodeOnce(): Promise<{
+  requestBody: Record<string, unknown>;
+  output: string;
+}> {
   let captured: Record<string, unknown> | null = null;
   const server = createServer(async (request, response) => {
     if (request.method === 'GET' && request.url?.endsWith('/models')) {
@@ -103,10 +104,38 @@ async function runOpenCode(
 
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
-    server.listen(port, '127.0.0.1', resolve);
+    server.listen(0, '127.0.0.1', resolve);
   });
 
   try {
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Unable to allocate capture port');
+    await writeFile(
+      join(tmpRoot, 'opencode.json'),
+      JSON.stringify(
+        {
+          $schema: 'https://opencode.ai/config.json',
+          model: 'flowguard-capture/visibility',
+          instructions: ['.opencode/flowguard-mandates.md'],
+          provider: {
+            'flowguard-capture': {
+              npm: '@ai-sdk/openai-compatible',
+              name: 'FlowGuard Capture',
+              options: { baseURL: `http://127.0.0.1:${address.port}/v1`, apiKey: 'test-only' },
+              models: {
+                visibility: {
+                  name: 'Visibility',
+                  limit: { context: 32_000, output: 1_024 },
+                },
+              },
+            },
+          },
+        },
+        null,
+        2,
+      ) + '\n',
+      'utf8',
+    );
     const output = await new Promise<string>((resolve, reject) => {
       const child = spawn(
         host.command,
@@ -155,6 +184,23 @@ async function runOpenCode(
   }
 }
 
+function isTransientHostError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('Unexpected server error');
+}
+
+async function runOpenCode(): Promise<{ requestBody: Record<string, unknown>; output: string }> {
+  let transientFailure: Error | null = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await runOpenCodeOnce();
+    } catch (error) {
+      if (!(error instanceof Error) || !isTransientHostError(error) || attempt === 1) throw error;
+      transientFailure = error;
+    }
+  }
+  throw transientFailure ?? new Error('OpenCode model-visibility probe did not run');
+}
+
 describe('OpenCode installed mandate model visibility', () => {
   beforeAll(async () => {
     const hostBaseline = JSON.parse(
@@ -174,45 +220,7 @@ describe('OpenCode installed mandate model visibility', () => {
   it(
     'sends the installed kernel to the actual pinned OpenCode model dispatch',
     async () => {
-      const server = createServer();
-      await new Promise<void>((resolve, reject) => {
-        server.once('error', reject);
-        server.listen(0, '127.0.0.1', resolve);
-      });
-      const address = server.address();
-      if (!address || typeof address === 'string')
-        throw new Error('Unable to allocate capture port');
-      const port = address.port;
-      await new Promise<void>((resolve) => server.close(() => resolve()));
-
-      await writeFile(
-        join(tmpRoot, 'opencode.json'),
-        JSON.stringify(
-          {
-            $schema: 'https://opencode.ai/config.json',
-            model: 'flowguard-capture/visibility',
-            instructions: ['.opencode/flowguard-mandates.md'],
-            provider: {
-              'flowguard-capture': {
-                npm: '@ai-sdk/openai-compatible',
-                name: 'FlowGuard Capture',
-                options: { baseURL: `http://127.0.0.1:${port}/v1`, apiKey: 'test-only' },
-                models: {
-                  visibility: {
-                    name: 'Visibility',
-                    limit: { context: 32_000, output: 1_024 },
-                  },
-                },
-              },
-            },
-          },
-          null,
-          2,
-        ) + '\n',
-        'utf8',
-      );
-
-      const { requestBody } = await runOpenCode(port);
+      const { requestBody } = await runOpenCode();
       const dispatched = JSON.stringify(requestBody);
 
       expect(dispatched).toContain('FlowGuard governance');
