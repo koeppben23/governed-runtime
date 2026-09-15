@@ -469,7 +469,7 @@ describe('review (standalone flow)', () => {
             claim: 'The change preserves authorization.',
             locations: ['src/auth/login.ts'],
             kind: 'content_challenge' as const,
-            evidenceRefs: [{ kind: 'content' as const, digest: obligation.metadata!.fingerprint }],
+            evidenceRefs: [{ kind: 'content' as const, digest: obligation.subjectDigest }],
             outcome: 'supported' as const,
           },
         ],

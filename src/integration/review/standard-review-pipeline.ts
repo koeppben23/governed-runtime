@@ -28,8 +28,8 @@ import { obligationTypeForTool } from './obligation-tools.js';
 import { updateObligation } from './obligation-state.js';
 import { recordAssuranceWithAudit } from './shared-helpers.js';
 import type { PipelineContext } from './pipeline-types.js';
-import type { EvidenceRecordResult } from './pipeline-types.js';
 import { buildSdkEvidenceAuditIntents } from './sdk-evidence-recorder.js';
+import type { SdkEvidenceRecordResult } from './sdk-evidence-recorder.js';
 import { buildReviewChallengeContract } from './challenge-contract.js';
 import { collectPreviouslyUsedChallengeIds } from './challenge-history.js';
 import { validateChallengeConsistency } from './enforcement/challenge-consistency.js';
@@ -420,8 +420,18 @@ async function prepareStandardReviewerResult(
   return { ...reviewerResult, findings: prepared.findings };
 }
 
-function applyStandardEvidenceResult(ctx: PipelineContext, result: EvidenceRecordResult): boolean {
+async function applyStandardEvidenceResult(
+  ctx: PipelineContext,
+  result: SdkEvidenceRecordResult,
+): Promise<boolean> {
   const { output, reviewCtx } = ctx;
+  if (typeof result !== 'string') {
+    await blockReviewOutcomeHelper(ctx.deps, ctx, result.code, {
+      obligationId: reviewCtx.obligationId,
+      ...result.details,
+    });
+    return true;
+  }
   if (result === 'reused') {
     output.output = strictBlockedOutput('SUBAGENT_EVIDENCE_REUSED', {
       obligationId: reviewCtx.obligationId,

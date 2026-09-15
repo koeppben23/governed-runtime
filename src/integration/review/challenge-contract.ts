@@ -3,10 +3,10 @@
  * @description Host-authored challenge contract projection for structured review.
  */
 
-import type { SessionState } from '../../state/schema.js';
 import type { ReviewObligation } from '../../state/evidence.js';
 import { REVIEW_CHALLENGE_OUTCOMES } from '../../state/evidence.js';
 import { indexMarkdownSections } from '../../shared/markdown-sections.js';
+import type { SessionState } from '../../state/schema.js';
 
 export interface ReviewerChallengePromptContract {
   readonly requiredChallengeCount: number;
@@ -74,16 +74,22 @@ function evidenceFor(
   obligation: ReviewObligation,
 ): Record<string, unknown>[] | undefined {
   if (obligation.obligationType === 'plan') {
-    const plan = state.plan?.current;
-    return plan ? artifactEvidence('plan', plan.digest, plan.body) : undefined;
+    const scope = obligation.reviewSubjectScope;
+    return scope.kind === 'artifact' && scope.artifact.kind === 'plan'
+      ? artifactEvidence('plan', scope.artifact.digest, obligation.reviewMaterial.content)
+      : undefined;
   }
   if (obligation.obligationType === 'architecture') {
-    const adr = state.architecture;
-    return adr ? artifactEvidence('adr', adr.digest, adr.adrText) : undefined;
+    const scope = obligation.reviewSubjectScope;
+    return scope.kind === 'artifact' && scope.artifact.kind === 'adr'
+      ? artifactEvidence('adr', scope.artifact.digest, obligation.reviewMaterial.content)
+      : undefined;
   }
   if (obligation.obligationType === 'implement') {
-    const digest = state.implementation?.digest;
-    if (!digest) return undefined;
+    const scope = obligation.reviewSubjectScope;
+    if (scope.kind !== 'implementation') return undefined;
+    const digest = scope.implementationDigest;
+    if (digest !== obligation.subjectDigest) return undefined;
     const successful = state.validationAttempts.filter(
       (attempt) =>
         attempt.scope === 'implementation' &&
@@ -100,8 +106,23 @@ function evidenceFor(
           })),
         ];
   }
-  const digest = obligation.metadata?.fingerprint;
-  return typeof digest === 'string' ? [{ kind: 'content', digest }] : undefined;
+  return contentEvidenceFor(obligation);
+}
+
+/**
+ * Standalone review subjects bind content challenges to the FROZEN review
+ * subject digest — never `metadata.fingerprint` (workspace context) and never
+ * mutable runtime state. Divergence between the obligation subject digest, the
+ * frozen subject, and the frozen scope fails closed.
+ */
+function contentEvidenceFor(obligation: ReviewObligation): Record<string, unknown>[] | undefined {
+  const scope = obligation.reviewSubjectScope;
+  const subjectBound =
+    scope.kind === 'content'
+      ? scope.subjectDigest === obligation.subjectDigest
+      : scope.kind === 'repository_change' &&
+        obligation.reviewSubject?.subjectDigest === obligation.subjectDigest;
+  return subjectBound ? [{ kind: 'content', digest: obligation.subjectDigest }] : undefined;
 }
 
 export function buildReviewChallengeContract(

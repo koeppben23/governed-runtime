@@ -112,14 +112,6 @@ export function buildProductNextAction(
     'lastExportPackagePurpose' | 'lastExportIntegrityCapability' | 'lastExportVerificationStatus'
   >,
 ): ProductNextAction {
-  if (action.code === ACTION_CODES.RUN_REVIEWER_TASK) {
-    return {
-      text: action.text,
-      commands: action.commands,
-      presentationForm: 'review_pending',
-    };
-  }
-
   const code = action.code as ActionCode;
   const guidance = PRODUCT_GUIDANCE[code];
 

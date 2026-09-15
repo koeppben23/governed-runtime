@@ -801,7 +801,7 @@ describe('buildReviewContentMutatedOutput edge cases', () => {
     }),
   );
 
-  it('preserves original fields from the blocked output', () => {
+  it('replaces the blocked output with a success envelope', () => {
     const original = JSON.stringify({ code: 'CONTENT_ANALYSIS_REQUIRED', error: true });
     const result = buildReviewContentMutatedOutput(original, {
       sessionId: 's1',
@@ -811,8 +811,9 @@ describe('buildReviewContentMutatedOutput edge cases', () => {
       reviewAssuranceLevel: 'structured_high',
     });
     const parsed = JSON.parse(result!);
-    expect(parsed.code).toBe('CONTENT_ANALYSIS_REQUIRED');
-    expect(parsed.error).toBe(true);
+    expect(parsed).not.toHaveProperty('code');
+    expect(parsed).not.toHaveProperty('error');
+    expect(parsed.phase).toBe('REVIEW');
   });
 
   it('includes requiredReviewAttestation next instruction', () => {

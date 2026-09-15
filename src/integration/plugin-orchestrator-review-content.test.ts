@@ -420,12 +420,43 @@ describe('runReviewOrchestration strict /review content analysis', () => {
       }),
     ]);
     const parsed = JSON.parse(output.output) as Record<string, unknown>;
-    expect(parsed.error).toBe(true);
-    expect(parsed.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+    expect(parsed.error).toBeUndefined();
+    expect(parsed.code).toBeUndefined();
+    expect(parsed.phase).toBe('REVIEW');
     expect(String(parsed.next)).toContain('PLUGIN_REVIEW_COMPLETED');
     expect(String(parsed.next)).toContain('reviewVerdict=accept');
     expect(parsed).not.toHaveProperty('pluginReviewFindings');
     expect(parsed).not.toHaveProperty('_pluginReviewSessionId');
+  });
+
+  it('never fulfills the obligation when a content finding is out of the frozen subject scope', async () => {
+    const findings = buildFindings({
+      overallVerdict: 'changes_requested',
+      blockingIssues: [
+        {
+          severity: 'critical',
+          category: 'correctness',
+          message: 'Out-of-scope content finding.',
+          relation: {
+            subjectAnchors: [{ kind: 'content', subjectDigest: 'other-subject-digest' }],
+            evidenceLocations: [],
+          },
+        },
+      ],
+    });
+
+    const { output, blockReviewOutcome, state } = await runReviewContent(findings);
+
+    expect(blockReviewOutcome).toHaveBeenCalledWith(
+      expect.anything(),
+      OBLIGATION_ID,
+      'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE',
+      expect.anything(),
+      output,
+    );
+    expect(state.reviewAssurance?.obligations[0]?.status).not.toBe('fulfilled');
+    expect(state.reviewAssurance?.invocations).toHaveLength(0);
+    expect(state.reviewAssurance?.attempts[0]).toMatchObject({ status: 'created' });
   });
 
   it('blocks stale content-review generation before any SDK invocation or evidence mutation', async () => {

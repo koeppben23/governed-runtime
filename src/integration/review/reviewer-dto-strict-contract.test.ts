@@ -15,6 +15,7 @@ import { CHALLENGE_POLICY_V1 } from '../../config/policy-types.js';
 
 const OBLIGATION_ID = '00000000-0000-4000-8000-0000000000aa';
 const NOW = '2026-01-01T00:00:00.000Z';
+const PLAN_MARKDOWN = '## Plan\n\nSection body text.\n\n## Execution\n\nMore text.';
 
 function planObligation(): ReturnType<typeof createReviewObligation> {
   return createReviewObligation({
@@ -25,11 +26,11 @@ function planObligation(): ReturnType<typeof createReviewObligation> {
     now: NOW,
     subjectDigest: 'plan-subject-digest',
     reviewMaterial: {
-      content: 'frozen review material',
+      content: PLAN_MARKDOWN,
       materialDigest: 'a'.repeat(64),
       subjectDigest: 'plan-subject-digest',
     },
-    reviewSubjectScope: artifactReviewSubjectScope('plan', '# Plan\nBody', 'plan-subject-digest'),
+    reviewSubjectScope: artifactReviewSubjectScope('plan', PLAN_MARKDOWN, 'plan-subject-digest'),
     changedFiles: ['src/foo.ts'],
     policySnapshot: {
       challengePolicy: CHALLENGE_POLICY_V1,

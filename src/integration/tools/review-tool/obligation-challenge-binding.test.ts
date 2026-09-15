@@ -11,14 +11,17 @@ import type { ReviewFindings } from '../../../state/evidence.js';
 // and `expectedObligationId` on this path, a content challenge could cite a
 // fabricated digest or a foreign obligation id and still pass.
 
-const FINGERPRINT = 'content-fingerprint-abc';
+const WORKSPACE_FINGERPRINT = 'content-fingerprint-abc';
 const OBLIGATION_ID = '11111111-1111-4111-8111-111111111111';
+const SUBJECT_DIGEST = 'test-subject-digest';
+const BASE_SHA = 'b'.repeat(40);
+const HEAD_SHA = 'c'.repeat(40);
 
 function reviewObligation(): ReviewObligation {
   return {
     obligationId: OBLIGATION_ID,
     obligationType: 'review',
-    subjectDigest: 'test-subject-digest',
+    subjectDigest: SUBJECT_DIGEST,
     iteration: 0,
     planVersion: 1,
     criteriaVersion: REVIEW_CRITERIA_VERSION,
@@ -26,10 +29,21 @@ function reviewObligation(): ReviewObligation {
     maxReviewerAttempts: 1,
     reviewProfile: 'core',
     profileSource: 'policy_default',
+    reviewSubject: {
+      kind: 'repository_change',
+      source: { kind: 'branch', branch: 'feat/review' },
+      baseRepository: { host: 'github.com', owner: 'upstream', name: 'repo' },
+      headRepository: { host: 'github.com', owner: 'upstream', name: 'repo' },
+      baseSha: BASE_SHA,
+      headSha: HEAD_SHA,
+      changedPaths: ['src/foo.ts'],
+      materialDigest: 'd'.repeat(64),
+      subjectDigest: SUBJECT_DIGEST,
+    },
     reviewMaterial: {
       content: 'frozen review material',
       materialDigest: 'a'.repeat(64),
-      subjectDigest: 'test-subject-digest',
+      subjectDigest: SUBJECT_DIGEST,
     },
     createdAt: '2026-01-01T00:00:00.000Z',
     pluginHandshakeAt: null,
@@ -46,7 +60,7 @@ function reviewObligation(): ReviewObligation {
     requiredChallengeCount: 1,
     requiredChallengeKind: 'content_challenge' as const,
     challengePolicyVersion: 'challenge-policy.v1' as const,
-    metadata: { fingerprint: FINGERPRINT },
+    metadata: { fingerprint: WORKSPACE_FINGERPRINT },
   };
 }
 
@@ -58,7 +72,7 @@ function contentChallenge(overrides: Record<string, unknown> = {}) {
     claim: 'User input reaches the SQL sink without parameterization.',
     locations: ['src/search.ts:20'],
     kind: 'content_challenge',
-    evidenceRefs: [{ kind: 'content', digest: FINGERPRINT }],
+    evidenceRefs: [{ kind: 'content', digest: SUBJECT_DIGEST }],
     outcome: 'supported',
     ...overrides,
   };
@@ -88,6 +102,21 @@ describe('validateSubmittedReviewFindings — content challenge binding (B3/B5)'
     const result = validateSubmittedReviewFindings(
       state,
       findingsWith(contentChallenge({ evidenceRefs: [{ kind: 'content', digest: 'FABRICATED' }] })),
+      reviewObligation(),
+    );
+    expect(result).not.toBeNull();
+    expect(result!).toContain('SUBAGENT_CHALLENGE_EVIDENCE_MISSING');
+    expect(result!).toContain('evidence_mismatch');
+  });
+
+  it('rejects a content challenge bound to the workspace fingerprint instead of the frozen subject digest', () => {
+    const result = validateSubmittedReviewFindings(
+      state,
+      findingsWith(
+        contentChallenge({
+          evidenceRefs: [{ kind: 'content', digest: WORKSPACE_FINGERPRINT }],
+        }),
+      ),
       reviewObligation(),
     );
     expect(result).not.toBeNull();

@@ -21,6 +21,7 @@ import type { ReviewerSuccessResult } from './orchestrator.js';
 import type { EvidenceRecordResult, OrchestratorDeps } from './pipeline-types.js';
 import type { PipelineContext } from './pipeline-types.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
+import { validatePreBindFindings, type PreBindFindingsResult } from './pre-bind-findings.js';
 
 type SdkEvidenceParams = {
   obligationId: string;
@@ -60,7 +61,11 @@ type MutationFlags = {
   reused: boolean;
   missing: boolean;
   lineageUnavailable: boolean;
+  preBindFailure?: Exclude<PreBindFindingsResult, { readonly ok: true }>;
 };
+
+export type SdkEvidenceRecordResult =
+  EvidenceRecordResult | Exclude<PreBindFindingsResult, { readonly ok: true }>;
 
 export function buildSdkEvidenceAuditIntents(input: {
   ctx: PipelineContext;
@@ -199,6 +204,21 @@ function applyEvidenceMutation(
     flags.lineageUnavailable = true;
     return state;
   }
+  const attempt = assurance.attempts.find((item) => item.attemptId === lineage.attemptId);
+  if (!attempt) {
+    flags.lineageUnavailable = true;
+    return state;
+  }
+  const preBind = validatePreBindFindings({
+    findings: params.reviewerResult.findings,
+    obligation,
+    attempt,
+    childSessionId: params.childSessionId,
+  });
+  if (!preBind.ok) {
+    flags.preBindFailure = preBind;
+    return state;
+  }
 
   const invocation = buildSdkSessionInvocation(params, obligation);
   const boundAssurance = updateAttemptStatus(
@@ -229,7 +249,8 @@ function applyEvidenceMutation(
   };
 }
 
-function resultFromFlags(flags: MutationFlags): EvidenceRecordResult {
+function resultFromFlags(flags: MutationFlags): SdkEvidenceRecordResult {
+  if (flags.preBindFailure) return flags.preBindFailure;
   if (flags.missing) return 'missing';
   if (flags.lineageUnavailable) return 'lineage_unavailable';
   if (flags.reused) return 'reused';
@@ -240,14 +261,17 @@ export async function recordEvidenceOrBlockReuse(
   deps: OrchestratorDeps,
   sessDir: string,
   params: SdkEvidenceParams,
-): Promise<EvidenceRecordResult> {
+): Promise<SdkEvidenceRecordResult> {
   const flags: MutationFlags = { reused: false, missing: false, lineageUnavailable: false };
   await deps.updateReviewAssurance(
     sessDir,
     (state, now) => applyEvidenceMutation(state, now, params, flags),
     (state, now) => {
       const result = resultFromFlags(flags);
-      return result === 'missing' || result === 'lineage_unavailable' || !params.semanticIntents
+      return typeof result !== 'string' ||
+        result === 'missing' ||
+        result === 'lineage_unavailable' ||
+        !params.semanticIntents
         ? []
         : params.semanticIntents(result, state, now);
     },

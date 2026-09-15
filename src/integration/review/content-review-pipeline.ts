@@ -13,6 +13,7 @@ import { buildReviewContentPrompt, selectReviewerProfileRules } from './prompt-b
 import { buildReviewChallengeContract } from './challenge-contract.js';
 import { collectPreviouslyUsedChallengeIds } from './challenge-history.js';
 import { validateChallengeConsistency } from './enforcement/challenge-consistency.js';
+import { validatePreBindFindings, type PreBindFindingsResult } from './pre-bind-findings.js';
 import { buildReviewContentMutatedOutput, type ReviewerSuccessResult } from './orchestrator.js';
 import { strictBlockedOutput } from '../plugin-helpers.js';
 import { TOOL_FLOWGUARD_REVIEW } from '../tool-names.js';
@@ -228,7 +229,11 @@ async function validateContentFindings(
   const blocked = await enforceContentGate(ctx, narrowed, parsedFindings.data, prompt, attemptId);
   if (blocked) return false;
 
-  const mutated = buildReviewContentMutatedOutput(rawOutput, canonicalReviewerResult);
+  const mutated = buildReviewContentMutatedOutput(
+    rawOutput,
+    canonicalReviewerResult,
+    ctx.sessionState.phase,
+  );
   if (!mutated) {
     await blockReviewOutcomeHelper(deps, ctx, 'STRICT_REVIEW_ORCHESTRATION_FAILED', {
       obligationId: reviewCtx.obligationId,
@@ -447,6 +452,7 @@ type ContentEvidenceMutation = {
   invocation: ReturnType<typeof buildInvocationEvidence>;
   reused: boolean;
   lineageUnavailable: boolean;
+  preBindFailure?: Exclude<PreBindFindingsResult, { readonly ok: true }>;
 };
 
 function buildContentEvidenceAuditIntents(input: {
@@ -456,12 +462,14 @@ function buildContentEvidenceAuditIntents(input: {
   occurredAt: string;
 }) {
   const { mutation, promptHash, state, occurredAt } = input;
-  const result = mutation.lineageUnavailable
-    ? 'lineage_unavailable'
-    : mutation.reused
-      ? 'reused'
-      : 'fulfilled';
-  return result === 'lineage_unavailable'
+  const result = mutation.preBindFailure
+    ? 'pre_bind_invalid'
+    : mutation.lineageUnavailable
+      ? 'lineage_unavailable'
+      : mutation.reused
+        ? 'reused'
+        : 'fulfilled';
+  return result === 'lineage_unavailable' || result === 'pre_bind_invalid'
     ? []
     : buildSdkEvidenceAuditIntents({
         ctx: mutation.ctx,
@@ -522,6 +530,24 @@ function applyContentEvidenceMutation(
   }
   if (!contentEvidenceLineageAvailable(assurance, reviewCtx, attemptId, reviewerResult.sessionId)) {
     mutation.lineageUnavailable = true;
+    return state;
+  }
+  const obligation = assurance.obligations.find(
+    (item) => item.obligationId === reviewCtx.obligationId,
+  );
+  const attempt = assurance.attempts.find((item) => item.attemptId === attemptId);
+  if (!obligation || !attempt) {
+    mutation.lineageUnavailable = true;
+    return state;
+  }
+  const preBind = validatePreBindFindings({
+    findings: reviewerResult.findings,
+    obligation,
+    attempt,
+    childSessionId: reviewerResult.sessionId,
+  });
+  if (!preBind.ok) {
+    mutation.preBindFailure = preBind;
     return state;
   }
   const boundAssurance = updateAttemptStatus(
@@ -597,6 +623,14 @@ async function persistReviewInvocation(
     (state, occurredAt) =>
       buildContentEvidenceAuditIntents({ mutation, promptHash, state, occurredAt }),
   );
+
+  if (mutation.preBindFailure) {
+    await blockReviewOutcomeHelper(deps, ctx, mutation.preBindFailure.code, {
+      obligationId: ctx.reviewCtx.obligationId,
+      ...mutation.preBindFailure.details,
+    });
+    return true;
+  }
 
   return applyContentEvidenceResult(ctx, mutation.reused, mutation.lineageUnavailable);
 }

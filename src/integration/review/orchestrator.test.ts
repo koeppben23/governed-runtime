@@ -823,7 +823,7 @@ describe('buildMutatedOutput', () => {
     const output = JSON.stringify({
       next: 'INDEPENDENT_REVIEW_REQUIRED',
       reviewInvocation: { status: 'pending_review', next: 'INDEPENDENT_REVIEW_REQUIRED' },
-      nextAction: { code: 'RUN_REVIEWER_TASK' },
+      nextAction: { code: 'RUN_PLAN' },
       productNextAction: { presentationForm: 'review_pending' },
     });
 

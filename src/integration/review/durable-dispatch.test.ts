@@ -476,4 +476,50 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
     });
     expect(SessionState.safeParse(stateRef.current).success).toBe(true);
   });
+
+  it('BAD: an out-of-scope finding never binds the attempt or fulfills the obligation', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const deps = writeDeps(stateRef);
+    await persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+      attemptId: attempt.attemptId,
+      obligationId: obligation.obligationId,
+      childSessionId: CHILD,
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    });
+
+    const params = recordingParams(attempt.attemptId, obligation.obligationId);
+    const findings = params.reviewerResult.findings as Record<string, unknown>;
+    findings.blockingIssues = [
+      {
+        severity: 'critical',
+        category: 'correctness',
+        message: 'Out-of-scope finding.',
+        relation: {
+          subjectAnchors: [
+            {
+              kind: 'artifact_section',
+              artifactKind: 'plan',
+              artifactDigest: 'other-artifact-digest',
+              sectionPath: [{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }],
+            },
+          ],
+          evidenceLocations: [],
+        },
+      },
+    ];
+
+    const result = await recordEvidenceOrBlockReuse(deps as never, SESS_DIR, params);
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE',
+    });
+    const after = stateRef.current.reviewAssurance!;
+    expect(after.attempts[0]).toMatchObject({ status: 'created' });
+    expect(after.obligations[0]).toMatchObject({ status: 'pending' });
+    expect(after.invocations).toHaveLength(0);
+    expect(after.dispatches[0]).toMatchObject({ dispatchStatus: 'authorized' });
+  });
 });

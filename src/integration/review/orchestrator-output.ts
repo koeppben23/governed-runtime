@@ -45,16 +45,18 @@ export function buildMutatedOutput(
 export function buildReviewContentMutatedOutput(
   originalOutput: string,
   reviewerResult: ReviewerOutputInput,
+  phase = 'REVIEW',
 ): string | null {
   if (!reviewerResult.findings) return null;
 
   const parsed = parseToolResult(originalOutput);
   if (!parsed || Array.isArray(parsed)) return null;
 
-  parsed.next =
-    `PLUGIN_REVIEW_COMPLETED: FlowGuard bound the host-validated independent review. ` +
-    `Call flowguard_review again with the same content input and reviewVerdict=${String(reviewerResult.findings.overallVerdict)}. ` +
-    'Do not submit or reconstruct reviewer findings.';
-
-  return JSON.stringify(parsed);
+  return JSON.stringify({
+    phase,
+    next:
+      `PLUGIN_REVIEW_COMPLETED: FlowGuard bound the host-validated independent review. ` +
+      `Call flowguard_review again with the same content input and reviewVerdict=${String(reviewerResult.findings.overallVerdict)}. ` +
+      'Do not submit or reconstruct reviewer findings.',
+  });
 }
