@@ -101,13 +101,17 @@ export function completeReviewDispatch(
   };
 }
 
-/** Whether a durable `authorized` dispatch exists for the exact host call. */
+/** Whether a durable `authorized` dispatch exists for the exact host call and attempt. */
 export function hasAuthorizedDispatch(
   assurance: ReviewAssuranceState | undefined,
   hostCallId: string,
+  attemptId: string,
 ): boolean {
   return (assurance?.dispatches ?? []).some(
-    (record) => record.hostCallId === hostCallId && record.dispatchStatus === 'authorized',
+    (record) =>
+      record.hostCallId === hostCallId &&
+      record.attemptId === attemptId &&
+      record.dispatchStatus === 'authorized',
   );
 }
 

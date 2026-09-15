@@ -14,7 +14,6 @@
  * @version v1
  */
 
-import type { ReviewObligation } from '../../../state/evidence.js';
 import type { HostTaskBindResult } from './types.js';
 import { normalizeChallenges } from './normalize.js';
 import { canonicalJsonStringify } from '../../../shared/canonical-json.js';
@@ -155,37 +154,4 @@ export function normalizeFindingsChallenges(
   );
   if ('bindOutcome' in canonical) return canonical;
   return { findings: { ...findings, challenges: canonical.challenges } };
-}
-
-/**
- * Enforce the obligation's frozen challenge contract at binding time.
- *
- * The same count rule is enforced again when the verdict is submitted. Checking
- * it here as well is what keeps a failure recoverable: a rejected bind leaves
- * the attempt re-armable, whereas evidence that binds and only fails later has
- * already spent the obligation's single bindable attempt.
- */
-export function checkChallengeContract(
-  findings: Record<string, unknown>,
-  obligation: ReviewObligation,
-  childSessionId: string,
-): HostTaskBindResult | null {
-  const required = obligation.requiredChallengeCount;
-  if (required === undefined) return null;
-
-  const challenges = Array.isArray(findings.challenges) ? findings.challenges : [];
-  if (challenges.length === required) return null;
-
-  return {
-    evidence: null,
-    bindOutcome: 'challenge_contract_violation',
-    diagnostic: {
-      childSessionId,
-      obligationId: obligation.obligationId,
-      required,
-      actual: challenges.length,
-      requiredChallengeKind: obligation.requiredChallengeKind,
-      message: `Reviewer supplied ${challenges.length} challenge(s) but the obligation requires exactly ${required}.`,
-    },
-  };
 }

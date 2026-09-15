@@ -209,9 +209,8 @@ describe('buildPlanReviewPrompt', () => {
   });
 
   // CORNER: prompt length exceeds minimum (for L3 enforcement)
-  it('produces prompt longer than MIN_SUBAGENT_PROMPT_LENGTH', () => {
+  it('produces prompt longer than 200 chars', () => {
     const prompt = buildPlanReviewPrompt(baseOpts);
-    // MIN_SUBAGENT_PROMPT_LENGTH is 200 chars
     expect(prompt.length).toBeGreaterThan(200);
   });
 

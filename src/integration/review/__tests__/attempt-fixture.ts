@@ -9,7 +9,7 @@
 
 import type { ReviewAttempt } from '../../../state/evidence-review.js';
 
-export const ATTEMPT_FIXTURE_TIME = '2026-01-01T00:00:00.000Z';
+const ATTEMPT_FIXTURE_TIME = '2026-01-01T00:00:00.000Z';
 
 export function makePendingReviewAttempt(input: {
   readonly attemptId: string;

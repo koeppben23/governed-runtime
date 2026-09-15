@@ -23,6 +23,7 @@
 
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import { ReviewerFindingsInput } from '../../state/evidence-review-input.js';
+import { REVIEW_DISPATCH_PERSISTENCE_FAILED } from '../durable-dispatch.js';
 import type { OrchestratorClient } from './types.js';
 
 import { REVIEW_FINDINGS_JSON_SCHEMA } from './findings-schema.js';
@@ -45,7 +46,7 @@ export interface ReviewerBlockedResult {
     | 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE'
     | 'HOST_STRUCTURED_OUTPUT_REQUIRED'
     | 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION'
-    | 'REVIEW_DISPATCH_PERSISTENCE_FAILED';
+    | typeof REVIEW_DISPATCH_PERSISTENCE_FAILED;
   readonly reason: string;
   readonly reviewInvocation: {
     readonly status: 'blocked_capability_mismatch' | 'host_contract_violation';
@@ -218,13 +219,13 @@ async function authorizeDispatchBeforePrompt(
       kind: 'blocked',
       result: {
         blocked: true,
-        code: 'REVIEW_DISPATCH_PERSISTENCE_FAILED',
+        code: REVIEW_DISPATCH_PERSISTENCE_FAILED,
         reason:
           'The durable reviewer dispatch could not be persisted before the host release. ' +
           'The reviewer was NOT executed and no evidence exists.',
         reviewInvocation: {
           status: 'host_contract_violation',
-          code: 'REVIEW_DISPATCH_PERSISTENCE_FAILED',
+          code: REVIEW_DISPATCH_PERSISTENCE_FAILED,
           reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
           invocationMode: 'sdk_session',
           recovery: [

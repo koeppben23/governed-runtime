@@ -324,7 +324,6 @@ export {
   completeReviewDispatch,
   emptyReviewAssurance,
   ensureReviewAssurance,
-  hasAuthorizedDispatch,
   hasUnresolvedDispatch,
   markDispatchOutcomeUnknown,
 } from './review-dispatch.js';

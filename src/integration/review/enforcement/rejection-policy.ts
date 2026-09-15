@@ -65,10 +65,9 @@ export const BIND_OUTCOME_TO_REASON = {
   // Output-contract defect (repairable).
   schema_invalid: 'schema_invalid',
   client_reference_invalid: 'relation_invalid',
-  // Single cause at the bind boundary: challenge count mismatch
-  // (challenge-binding.ts checkChallengeContract). Semantic challenge
-  // inconsistencies surface separately at verdict time as
-  // SUBAGENT_CHALLENGE_* codes and map to `consistency_invalid`.
+  // Challenge count mismatch bind outcome. Semantic challenge inconsistencies
+  // surface separately at verdict time as SUBAGENT_CHALLENGE_* codes and map
+  // to `consistency_invalid`.
   challenge_contract_violation: 'relation_invalid',
   // Governance failures (never repairable).
   challenge_evidence_unknown: 'consistency_invalid',

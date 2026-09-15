@@ -207,14 +207,6 @@ export const CANONICAL_PROMPT_APPEND_MARKER = 'Append the';
 /** The subagent type name for the FlowGuard reviewer. */
 
 /**
- * Minimum prompt length for subagent calls (Level 3).
- * A real review prompt must include plan/implementation text, ticket context,
- * iteration, and planVersion. 200 characters is a generous floor that catches
- * empty or trivially short prompts.
- */
-export const MIN_SUBAGENT_PROMPT_LENGTH = 200;
-
-/**
  * Machine-readable outcome of a host-task bind attempt.
  * Used for diagnostic logging — NOT a governance reason code.
  */

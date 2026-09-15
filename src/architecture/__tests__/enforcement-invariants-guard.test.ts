@@ -12,21 +12,6 @@ import { describe, expect, it } from 'vitest';
 const SRC_ROOT = join(process.cwd(), 'src');
 
 describe('enforcement contract invariants', () => {
-  it('isPendingCaptureUsable returns false for schema-invalid captured findings', () => {
-    // The canonical capture-usability query applies the strict schema gate to
-    // the host-normalized candidate; an invalid capture is unusable, never
-    // silently accepted.
-    const authority = readFileSync(
-      join(SRC_ROOT, 'integration/review/enforcement/prepare-findings.ts'),
-      'utf8',
-    );
-    expect(authority).toContain('export function isPendingCaptureUsable');
-    // Must check ReviewFindings.safeParse of the normalized candidate
-    expect(authority).toContain('ReviewFindings.safeParse');
-    // Must return false when the parse fails (no deadlock)
-    expect(authority).toContain('return false');
-  });
-
   it('verdict guessing is impossible without a recorded structured invocation', () => {
     const content = readFileSync(
       join(SRC_ROOT, 'integration/review/enforcement/enforcement.ts'),

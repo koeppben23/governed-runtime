@@ -28,17 +28,12 @@ import {
   type ProbeRequest,
 } from './parallel-host-probe-harness.js';
 import type { OrchestratorClient } from '../types.js';
-import { extractStructuredOutputToolPart } from '../structured-output-tool-part.js';
 
 const LIVE = process.env.OPENCODE_LIVE === '1' && !!process.env.OPENCODE_CLI;
 
 // A free model keeps the parallelism run zero-cost; overridable if unavailable.
 const PROVIDER_ID = process.env.OPENCODE_PROBE_PROVIDER ?? 'opencode';
 const MODEL_ID = process.env.OPENCODE_PROBE_MODEL ?? 'deepseek-v4-flash-free';
-// Structured output requires a tool-calling-capable model; the free tier did not
-// emit tool calls in probing, so the structured check uses a capable default.
-const STRUCTURED_PROVIDER_ID = process.env.OPENCODE_PROBE_STRUCTURED_PROVIDER ?? 'github-copilot';
-const STRUCTURED_MODEL_ID = process.env.OPENCODE_PROBE_STRUCTURED_MODEL ?? 'claude-sonnet-4.6';
 const PROJECT_DIR = process.cwd().replace(/\\/g, '/');
 const PROMPT_TIMEOUT_MS = 120_000;
 
@@ -235,70 +230,5 @@ describe.skipIf(!LIVE)('LIVE parallel host-probe (#732 Strang 2)', () => {
       // asserted here, because either outcome is a valid honest finding.
     },
     5 * PROMPT_TIMEOUT_MS,
-  );
-
-  it(
-    'delivers schema-validated structured output for a reviewer-style prompt',
-    async () => {
-      const handleRef = handle!;
-      const dir = encodeURIComponent(PROJECT_DIR);
-      const auth = `Basic ${Buffer.from(`opencode:${handleRef.password}`).toString('base64')}`;
-      const headers = { Authorization: auth, 'Content-Type': 'application/json' };
-
-      // Minimal reviewer-shaped schema: a bindable verdict is the core of
-      // ReviewFindings, so proving the host returns a schema-valid verdict is
-      // the structured-output gate for parallel specialist reviews (#736).
-      const schema = {
-        type: 'object',
-        properties: { verdict: { type: 'string', enum: ['accept', 'reject'] } },
-        required: ['verdict'],
-        additionalProperties: false,
-      };
-
-      const parent = await fetch(`${handleRef.baseUrl}/session?directory=${dir}`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ title: 'FlowGuard Structured Probe Parent' }),
-      });
-      const parentId = ((await parent.json()) as { id: string }).id;
-      const child = await fetch(`${handleRef.baseUrl}/session?directory=${dir}`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ parentID: parentId, title: 'structured-child' }),
-      });
-      const childId = ((await child.json()) as { id: string }).id;
-
-      const res = await fetch(`${handleRef.baseUrl}/session/${childId}/message?directory=${dir}`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          parts: [{ type: 'text', text: 'Return a verdict of accept.' }],
-          model: { providerID: STRUCTURED_PROVIDER_ID, modelID: STRUCTURED_MODEL_ID },
-          format: { type: 'json_schema', schema, retryCount: 1 },
-        }),
-      });
-      expect(res.ok).toBe(true);
-      const body = (await res.json()) as {
-        parts?: Array<{
-          type?: string;
-          tool?: string;
-          state?: { status?: string; input?: unknown; metadata?: { valid?: unknown } };
-        }>;
-      };
-
-      // Live counter-check of the production extractor: the real host delivers
-      // structured output as a `StructuredOutput` tool part, and
-      // extractStructuredOutputToolPart must recover the schema-conformant object
-      // from it (there is no info.structured_output field on this host version).
-      const extracted = extractStructuredOutputToolPart(body.parts);
-      console.log(
-        '[structured-output-evidence]',
-        JSON.stringify({ parts: body.parts, extracted }, null, 2),
-      );
-
-      expect(extracted).not.toBeNull();
-      expect((extracted as { verdict?: string }).verdict).toBe('accept');
-    },
-    2 * PROMPT_TIMEOUT_MS,
   );
 });

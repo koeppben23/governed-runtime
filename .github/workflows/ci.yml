@@ -634,6 +634,9 @@ jobs:
         env:
           FORCE_COLOR: 0
           OPENCODE_DISABLE_AUTOUPDATE: '1'
+          # The pinned host is installed above; prove the frozen structured
+          # reviewer wire contract (child session + json_schema + info.structured).
+          FLOWGUARD_OPENCODE_HOST_E2E: '1'
           RUN_OPENCODE_ACP_TESTS: '1'
 
   independent-review-e2e:

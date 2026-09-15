@@ -29,6 +29,7 @@ import { updateObligation } from './obligation-state.js';
 import { buildSdkEvidenceAuditIntents } from './sdk-evidence-recorder.js';
 import { persistAuthorizedSdkDispatch, abandonSdkDispatch } from '../durable-dispatch.js';
 import { completeReviewDispatch, hasUnresolvedDispatch } from '../../state/review-continuation.js';
+import { hasAuthorizedDispatch } from '../../state/review-dispatch.js';
 import type { PipelineContext } from './pipeline-types.js';
 import {
   validatePipelineAttestation,
@@ -461,14 +462,7 @@ function contentEvidenceLineageAvailable(
   ) {
     return false;
   }
-  const dispatch = (assurance.dispatches ?? []).find(
-    (record) => record.hostCallId === childSessionId,
-  );
-  return (
-    dispatch !== undefined &&
-    dispatch.dispatchStatus === 'authorized' &&
-    dispatch.attemptId === attempt.attemptId
-  );
+  return hasAuthorizedDispatch(assurance, childSessionId, attempt.attemptId);
 }
 
 function applyContentEvidenceMutation(

@@ -15,6 +15,7 @@ import {
   updateAttemptStatus,
 } from './assurance.js';
 import { completeReviewDispatch } from '../../state/review-continuation.js';
+import { hasAuthorizedDispatch } from '../../state/review-dispatch.js';
 import { updateObligation } from './obligation-state.js';
 import type { ReviewerSuccessResult } from './orchestrator.js';
 import type { EvidenceRecordResult, OrchestratorDeps } from './pipeline-types.js';
@@ -165,14 +166,7 @@ function resolveEvidenceLineage(
     attempt.status === 'created' &&
     attempt.childSessionId === undefined;
   if (!lineageMatches || !attempt) return null;
-  const dispatch = (assurance.dispatches ?? []).find(
-    (record) => record.hostCallId === params.hostCallId,
-  );
-  if (
-    !dispatch ||
-    dispatch.dispatchStatus !== 'authorized' ||
-    dispatch.attemptId !== attempt.attemptId
-  ) {
+  if (!hasAuthorizedDispatch(assurance, params.hostCallId, attempt.attemptId)) {
     return null;
   }
   return { attemptId: attempt.attemptId };

@@ -46,7 +46,7 @@ import type { ReviewToolArgs } from './types.js';
  * at transaction start: that snapshot has no attempt, and re-deriving from it
  * silently drops the attempt record the host needs to bind reviewer evidence.
  */
-export async function persistReviewObligation(
+async function persistReviewObligation(
   sessDir: string,
   state: SessionState,
   obligation: ReviewObligation,
@@ -77,7 +77,7 @@ interface NewReviewObligationInput {
   readonly fingerprintVersion: 'v2';
 }
 
-export async function createNewReviewObligation(
+async function createNewReviewObligation(
   input: NewReviewObligationInput,
 ): Promise<{ obligation?: ReviewObligation; blocked?: string }> {
   const preparedContent = input.preparedContent;

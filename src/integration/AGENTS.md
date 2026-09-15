@@ -62,8 +62,14 @@ Never use bare `throw new Error(...)` at these boundaries.
 ## Test Placement
 
 - Contract tests: `sdk-contract-*.test.ts`, `cli-contract.test.ts`,
-  `runtime-flow-e2e-contract.test.ts`, `review-validation-host-contract.test.ts`,
+  `runtime-flow-e2e-contract.test.ts`, `review-modeb-contract.test.ts`,
+  `review/orchestrator-dispatch-authorization.test.ts`,
+  `review/durable-dispatch.test.ts`, `review-dispatch-replay-guard.test.ts`,
+  `tools/review-tool/structured-evidence-consumption.test.ts`,
   `policy-matrix.test.ts`.
+- Real host wire contract: `src/cli/opencode-reviewer-structured-live.test.ts`
+  (smoke project; runs in the CI smoke job with the pinned host, locally with
+  `OPENCODE_LIVE=1`).
 - Use `--project integration` for all runtime-facing behavior that crosses
   module boundaries.
 

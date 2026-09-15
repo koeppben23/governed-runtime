@@ -88,8 +88,8 @@ export const ReviewAttemptStatusValues = [
   'expired',
 ] as const;
 
-export const ReviewAttemptStatus = z.enum(ReviewAttemptStatusValues);
-export type ReviewAttemptStatus = z.infer<typeof ReviewAttemptStatus>;
+const ReviewAttemptStatus = z.enum(ReviewAttemptStatusValues);
+type ReviewAttemptStatus = z.infer<typeof ReviewAttemptStatus>;
 
 export {
   RepositoryDiscoverySnapshot,
@@ -269,7 +269,6 @@ export {
   ReviewChallenge,
   ChallengeResolution,
   ChallengeResolutionVerdict,
-  ReviewerChallengeInput,
 } from './evidence-review-challenge.js';
 import { ReviewChallenge, ChallengeResolutionVerdict } from './evidence-review-challenge.js';
 

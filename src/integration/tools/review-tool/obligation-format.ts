@@ -93,11 +93,7 @@ export function buildRequiredReviewAttestationPayload(obligationId: string): {
   };
 }
 
-export function formatBlockedWithAttestation(
-  code: string,
-  message: string,
-  obligationId: string,
-): string {
+function formatBlockedWithAttestation(code: string, message: string, obligationId: string): string {
   return JSON.stringify({
     error: true,
     code,

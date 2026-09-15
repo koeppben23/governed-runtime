@@ -15,9 +15,7 @@ import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js
 import { formatSubagentReviewNotInvoked } from './obligation-format.js';
 export {
   buildRequiredReviewAttestationPayload,
-  formatBlockedWithAttestation,
   formatMissingContentAnalysis,
-  formatSubagentReviewNotInvoked,
 } from './obligation-format.js';
 import { validateChallengeConsistency } from '../../review/enforcement/challenge-consistency.js';
 import {
@@ -34,14 +32,12 @@ export {
   validateReviewContentSource,
   hasImplicitContentSignal,
 } from './review-input.js';
-export { persistReviewObligation, ensureMissingAnalysisObligation } from './obligation-creation.js';
+export { ensureMissingAnalysisObligation } from './obligation-creation.js';
 
 // ─── Branch Review Provenance ────────────────────────────────────────────────
 export {
   BranchReviewSourceSchema,
   BranchReviewProvenanceSchema,
-  ReviewProvenanceError,
-  getRequiredBranchReviewSource,
   getRequiredBranchReviewProvenance,
   type RequiredBranchReviewSource,
   type RequiredBranchReviewProvenance,

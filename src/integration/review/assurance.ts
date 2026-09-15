@@ -104,7 +104,6 @@ export {
   EVIDENCE_AUTHORIZING_ATTEMPT_STATUSES,
   findBindableAttempt,
   updateAttemptStatus,
-  staleObligationAttempts,
 } from './attempt-lifecycle.js';
 import {
   ensureReviewAssurance,

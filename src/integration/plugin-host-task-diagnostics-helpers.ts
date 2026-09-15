@@ -18,10 +18,9 @@ import type { ReviewAttempt, ReviewObligation } from '../state/evidence.js';
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 export const NOW = '2026-05-10T12:00:00.000Z';
-export const LATER = '2026-05-10T12:01:00.000Z';
 export const SESSION_ID = 'ses_parent_001';
 export const CHILD_SESSION_ID = 'ses_child_001';
-export const MODE_A_OBLIGATION_ID = '44444444-4444-4444-8444-444444444444';
+const MODE_A_OBLIGATION_ID = '44444444-4444-4444-8444-444444444444';
 
 // ─── Factory Functions ───────────────────────────────────────────────────────
 
@@ -73,7 +72,7 @@ export function modeAResponse(
   });
 }
 
-/** Build a substantive prompt for the subagent (meets MIN_SUBAGENT_PROMPT_LENGTH). */
+/** Build a substantive prompt for the subagent. */
 export function validPrompt(iteration = 0, planVersion = 1): string {
   return (
     `Review this plan critically. The plan proposes implementing a new feature ` +
@@ -161,7 +160,7 @@ export function pendingObligation(overrides: Partial<ReviewObligation> = {}): Re
  * successful bind must provide it exactly as `createObligationAndAttempt` plus
  * the Task-start child-session binding would have produced it.
  */
-export function attemptFor(
+function attemptFor(
   obligation: ReviewObligation,
   childSessionId: string = CHILD_SESSION_ID,
   overrides: Partial<ReviewAttempt> = {},
