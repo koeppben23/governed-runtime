@@ -9,7 +9,7 @@ import {
 } from '../../audit/proofgraph/mutation-report.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { hashText } from '../../shared/hashing.js';
-import { computeRecordDigest } from '../../state/evidence-plan.js';
+import { makePlanRevision } from '../../state/evidence-test-constants.js';
 import { evaluateProofGraph } from '../../audit/proofgraph/evaluate.js';
 import { deriveProofGraph } from '../../audit/proofgraph/derive.js';
 import {
@@ -18,7 +18,8 @@ import {
 } from './materialize-contract.js';
 import type { PlanClaimDeclarations } from '../../state/proofgraph-approval.js';
 
-const PLAN_DIGEST = 'approved-plan';
+const PLAN_CURRENT = makePlanRevision({ body: 'approved plan' });
+const PLAN_DIGEST = PLAN_CURRENT.digest;
 const IMPL_DIGEST = 'current-implementation';
 const ATTEMPT_ID = '11111111-1111-4111-8111-111111111111';
 const CLAIM_ID = '22222222-2222-4222-8222-222222222222';
@@ -27,16 +28,10 @@ const NOW = '2026-01-01T00:00:00.000Z';
 /**
  * The plan's record digest. The approval certificate binds this exact value:
  * `hasCurrentPlanApprovalCertificate` rejects a certificate whose
- * `planRecordDigest` differs from the plan's, so the fixture must derive both
- * from the same computation rather than using a placeholder literal.
+ * `planRecordDigest` differs from the plan's, so the fixture derives both from
+ * the same canonical revision.
  */
-const PLAN_RECORD_DIGEST = computeRecordDigest({
-  contentDigest: PLAN_DIGEST,
-  planVersion: 1,
-  supersedesRecordDigest: null,
-  originatingReviewObligationId: null,
-  revisionReason: null,
-});
+const PLAN_RECORD_DIGEST = PLAN_CURRENT.recordDigest;
 
 function stateWithClaims() {
   const state = makeState('IMPL_REVIEW', {
@@ -66,18 +61,7 @@ function stateWithClaims() {
       },
     ],
     plan: {
-      current: {
-        body: 'approved plan',
-        digest: PLAN_DIGEST,
-        sections: [],
-        createdAt: NOW,
-        recordDigest: PLAN_RECORD_DIGEST,
-        planVersion: 1,
-        supersedesRecordDigest: null,
-        originatingReviewObligationId: null,
-        revisionReason: null,
-        lineageStatus: 'verified' as const,
-      },
+      current: PLAN_CURRENT,
       history: [],
       reviewCompletion: 'pending',
       claimDeclarations: {

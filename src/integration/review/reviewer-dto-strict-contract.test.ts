@@ -9,6 +9,7 @@ import { ReviewFindings } from '../../state/evidence.js';
 import { buildReviewChallengeContract } from './challenge-contract.js';
 import { normalizeFindingsChallenges } from './enforcement/challenge-binding.js';
 import { makeState } from '../../fixtures.js';
+import { makePlanRevision } from '../../state/evidence-test-constants.js';
 import { artifactReviewSubjectScope, createReviewObligation } from './assurance.js';
 import { CHALLENGE_POLICY_V1 } from '../../config/policy-types.js';
 
@@ -163,16 +164,11 @@ describe('reviewer DTO strict boundary', () => {
     const state = makeState('READY', {
       plan: {
         current: {
-          digest: 'plan-digest',
-          body: '## Plan\n\nSection body text.\n\n## Execution\n\nMore text.',
+          ...makePlanRevision({
+            body: '## Plan\n\nSection body text.\n\n## Execution\n\nMore text.',
+            createdAt: NOW,
+          }),
           sections: ['## Plan', '## Execution'],
-          createdAt: NOW,
-          recordDigest: 'plan-record-digest',
-          planVersion: 1,
-          supersedesRecordDigest: null,
-          originatingReviewObligationId: null,
-          revisionReason: null,
-          lineageStatus: 'verified',
         },
         history: [],
         reviewCompletion: 'pending',
@@ -207,8 +203,8 @@ describe('reviewer DTO strict boundary', () => {
       'ses_child',
       contract?.evidenceRefs,
     );
-    if ('bindOutcome' in normalized) {
-      throw new Error(`host normalization failed: ${normalized.bindOutcome}`);
+    if ('kind' in normalized) {
+      throw new Error(`host normalization failed: ${normalized.code}`);
     }
     const parsed = ReviewFindings.safeParse(normalized.findings);
     expect(parsed.success).toBe(true);

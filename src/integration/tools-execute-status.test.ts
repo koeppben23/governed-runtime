@@ -37,7 +37,8 @@ import {
 import { writeStateWithArtifacts } from './tools/helpers.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
 import { REVIEW_REPORT_SCHEMA_ID } from '../state/evidence-identifiers.js';
-import { computeRecordDigest } from '../state/evidence-plan.js';
+import { makePlanRevision } from '../state/evidence-test-constants.js';
+import { completedDispatchForInvocation } from '../state/evidence-test-constants.js';
 import {
   artifactReviewSubjectScope,
   buildInvocationEvidence,
@@ -747,7 +748,7 @@ describe('status', () => {
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           parentSessionId: ctx.sessionID,
           childSessionId: 'ses-child',
-          promptHash: 'sha256-prompt',
+          promptHash: 'a'.repeat(64),
           findingsHash: hashFindings(findings),
           invokedAt: '2026-01-01T00:00:00.000Z',
           capturedRawFindings: findings,
@@ -804,7 +805,7 @@ describe('status', () => {
               completedAt: '2026-01-01T00:00:00.000Z',
             },
           ],
-          dispatches: [],
+          dispatches: [completedDispatchForInvocation(invocation)],
         },
       };
       await writeState(sessDir, state);
@@ -1381,24 +1382,7 @@ describe('declare_contract', () => {
     await writeStateWithArtifacts(sessDir, {
       ...state!,
       plan: {
-        current: {
-          body: 'manual authority plan',
-          digest: 'plan-digest',
-          sections: [],
-          createdAt: NOW,
-          recordDigest: computeRecordDigest({
-            contentDigest: 'plan-digest',
-            planVersion: 1,
-            supersedesRecordDigest: null,
-            originatingReviewObligationId: null,
-            revisionReason: null,
-          }),
-          planVersion: 1,
-          supersedesRecordDigest: null,
-          originatingReviewObligationId: null,
-          revisionReason: null,
-          lineageStatus: 'verified' as const,
-        },
+        current: makePlanRevision({ body: 'manual authority plan', createdAt: NOW }),
         history: [],
         reviewCompletion: 'pending',
       },

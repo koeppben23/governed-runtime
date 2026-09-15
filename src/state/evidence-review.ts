@@ -65,6 +65,7 @@ import {
 import {
   refineAssuranceDiscoveryCoherence,
   refineAssuranceIdentityUniqueness,
+  refineAssuranceInvocationDispatchLinkage,
   refineAssuranceInvocationLinkageCoherence,
   refineAssuranceProvenanceCoherence,
   refineAuthorityStructure,
@@ -570,6 +571,7 @@ export const ReviewAssuranceState = z
   .superRefine(refineAssuranceAttemptLineageCoherence)
   .superRefine(refineAssuranceDispatchCoherence)
   .superRefine(refineAssuranceInvocationLinkageCoherence)
+  .superRefine(refineAssuranceInvocationDispatchLinkage)
   .readonly();
 export type ReviewAssuranceState = z.infer<typeof ReviewAssuranceState>;
 

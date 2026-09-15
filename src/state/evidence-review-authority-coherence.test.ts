@@ -205,7 +205,7 @@ describe('Current persisted authority schemas are strict', () => {
     invocationMode: 'sdk_session_prompt' as const,
     hostVisible: false,
     source: 'host-orchestrated' as const,
-    promptHash: 'sha256-prompt',
+    promptHash: 'a'.repeat(64),
     mandateDigest: 'sha256-mandate',
     criteriaVersion: 'p40-v1',
     findingsHash: 'sha256-findings',
@@ -277,7 +277,18 @@ describe('Current persisted authority schemas are strict', () => {
       obligations: [PLAN_OBLIGATION],
       invocations: [invocation],
       attempts: [VALID_ATTEMPT],
-      dispatches: [],
+      dispatches: [
+        {
+          dispatchId: '88888888-8888-4888-8888-888888888888',
+          attemptId: VALID_ATTEMPT.attemptId,
+          obligationId: FIXED_UUID,
+          hostCallId: VALID_ATTEMPT.childSessionId,
+          canonicalPromptDigest: VALID_INVOCATION.promptHash,
+          dispatchAuthorizedAt: FIXED_TIME,
+          dispatchStatus: 'completed' as const,
+          completedAt: FIXED_TIME,
+        },
+      ],
     });
   }
 
@@ -718,7 +729,7 @@ describe('Host invocation, obligation foreign keys and status relations', () => 
       invocationMode: 'sdk_session_prompt' as const,
       hostVisible: false,
       source: 'host-orchestrated' as const,
-      promptHash: 'sha256-prompt',
+      promptHash: 'a'.repeat(64),
       mandateDigest: 'sha256-mandate',
       criteriaVersion: 'p40-v1',
       findingsHash: 'sha256-findings',
@@ -748,8 +759,83 @@ describe('Host invocation, obligation foreign keys and status relations', () => 
     });
   }
 
-  it('HAPPY: SDK invocation parses without a host-task dispatch', () => {
-    expect(parseState({ invocations: [sdkInvocation()] }).success).toBe(true);
+  function completedDispatch(overrides: Record<string, unknown> = {}) {
+    return {
+      dispatchId: '88888888-8888-4888-8888-888888888888',
+      attemptId: ATTEMPT_ID,
+      obligationId: FIXED_UUID,
+      hostCallId: 'ses_child',
+      canonicalPromptDigest: 'a'.repeat(64),
+      dispatchAuthorizedAt: FIXED_TIME,
+      dispatchStatus: 'completed' as const,
+      completedAt: FIXED_TIME,
+      ...overrides,
+    };
+  }
+
+  it('BAD: SDK invocation without its completed dispatch is rejected', () => {
+    const result = parseState({ invocations: [sdkInvocation()] });
+    expect(result.success).toBe(false);
+    if (result.success) throw new TypeError('expected schema rejection');
+    expect(JSON.stringify(result.error.issues)).toContain(
+      'requires exactly one completed dispatch',
+    );
+  });
+
+  it('HAPPY: SDK invocation with its matching completed dispatch parses', () => {
+    const result = parseState({
+      invocations: [sdkInvocation()],
+      dispatches: [completedDispatch()],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a completed dispatch without a matching invocation', () => {
+    const result = parseState({ dispatches: [completedDispatch()] });
+    expect(result.success).toBe(false);
+    if (result.success) throw new TypeError('expected schema rejection');
+    expect(JSON.stringify(result.error.issues)).toContain(
+      'requires exactly one matching invocation',
+    );
+  });
+
+  it('rejects an authorized dispatch whose host call carries an invocation', () => {
+    const result = parseState({
+      invocations: [sdkInvocation()],
+      dispatches: [completedDispatch({ dispatchStatus: 'authorized', completedAt: undefined })],
+    });
+    expect(result.success).toBe(false);
+    if (result.success) throw new TypeError('expected schema rejection');
+    expect(JSON.stringify(result.error.issues)).toContain(
+      'requires exactly one completed dispatch',
+    );
+  });
+
+  it('rejects a dispatch/invocation prompt-digest mismatch', () => {
+    const result = parseState({
+      invocations: [sdkInvocation()],
+      dispatches: [completedDispatch({ canonicalPromptDigest: 'b'.repeat(64) })],
+    });
+    expect(result.success).toBe(false);
+    if (result.success) throw new TypeError('expected schema rejection');
+    expect(JSON.stringify(result.error.issues)).toContain(
+      'requires exactly one completed dispatch',
+    );
+  });
+
+  it('rejects duplicate invocations matching one completed dispatch', () => {
+    const result = parseState({
+      invocations: [
+        sdkInvocation(),
+        sdkInvocation({ invocationId: '88888888-8888-4888-8888-000000000000' }),
+      ],
+      dispatches: [completedDispatch()],
+    });
+    expect(result.success).toBe(false);
+    if (result.success) throw new TypeError('expected schema rejection');
+    expect(JSON.stringify(result.error.issues)).toContain(
+      'requires exactly one matching invocation',
+    );
   });
 
   it('rejects an obligation whose invocationId does not resolve', () => {
@@ -807,6 +893,7 @@ describe('Host invocation, obligation foreign keys and status relations', () => 
         },
       ],
       invocations: [sdkInvocation({ consumedByObligationId: FIXED_UUID })],
+      dispatches: [completedDispatch()],
     });
     expect(result.success).toBe(true);
   });

@@ -30,7 +30,7 @@ import { createTestAdapter } from './test-adapter-helper.js';
 import { TOOL_FLOWGUARD_PLAN } from './tool-names.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import type { SessionState } from '../state/schema.js';
-import { computeRecordDigest } from '../state/evidence-plan.js';
+import { makePlanRevision } from '../state/evidence-test-constants.js';
 import type { OrchestratorClient } from './review/types.js';
 
 const PARENT_SESSION_ID = 'parent-session-ssot-1';
@@ -180,10 +180,8 @@ function buildDeps(
       {
         tool,
         requestedAt: NOW,
-        subagentCalled: false,
-        subagentRecord: null,
-        contentMeta: { expectedIteration: 1, expectedPlanVersion: 1 },
-        capturedFindings: null,
+        attemptId: null,
+        obligationId: null,
       },
     ]),
   );
@@ -280,24 +278,7 @@ describe('BUG-09: plan text SSOT enforcement', () => {
     it('sessionState.plan.current.body is empty string -> empty plan in prompt', async () => {
       const emptyPlanState = {
         plan: {
-          current: {
-            body: '',
-            digest: 'digest-empty',
-            sections: [] as string[],
-            createdAt: NOW,
-            recordDigest: computeRecordDigest({
-              contentDigest: 'digest-empty',
-              planVersion: 1,
-              supersedesRecordDigest: null,
-              originatingReviewObligationId: null,
-              revisionReason: null,
-            }),
-            planVersion: 1,
-            supersedesRecordDigest: null,
-            originatingReviewObligationId: null,
-            revisionReason: null,
-            lineageStatus: 'verified' as const,
-          },
+          current: makePlanRevision({ body: '', createdAt: NOW }),
           history: [],
           reviewCompletion: 'pending' as const,
         },
@@ -341,24 +322,7 @@ describe('BUG-09: plan text SSOT enforcement', () => {
       const longPlan = 'A'.repeat(15_000);
       const longPlanState = {
         plan: {
-          current: {
-            body: longPlan,
-            digest: 'digest-long',
-            sections: ['Plan'] as string[],
-            createdAt: NOW,
-            recordDigest: computeRecordDigest({
-              contentDigest: 'digest-long',
-              planVersion: 1,
-              supersedesRecordDigest: null,
-              originatingReviewObligationId: null,
-              revisionReason: null,
-            }),
-            planVersion: 1,
-            supersedesRecordDigest: null,
-            originatingReviewObligationId: null,
-            revisionReason: null,
-            lineageStatus: 'verified' as const,
-          },
+          current: makePlanRevision({ body: longPlan, createdAt: NOW }),
           history: [],
           reviewCompletion: 'pending' as const,
         },

@@ -44,7 +44,6 @@ import { executeReviewDecision } from '../rails/review-decision.js';
 import { createTestContext } from '../testing.js';
 import { hashText } from '../shared/hashing.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
-import { computeRecordDigest } from '../state/evidence-plan.js';
 import { materializeApprovedPlanContractResult } from './proofgraph/materialize-contract.js';
 import { summarizeProofGraph, summarizePersistedProofGraph } from '../audit/proofgraph/summary.js';
 import { evaluateProofGraphGate } from '../audit/proofgraph/gate.js';
@@ -60,6 +59,10 @@ import {
   assuranceWith,
 } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
+import {
+  completedDispatchForInvocation,
+  makePlanRevision,
+} from '../state/evidence-test-constants.js';
 import type { ReviewAssuranceState } from '../state/evidence-review.js';
 import type {
   PlanClaimDeclaration,
@@ -104,6 +107,7 @@ function planReviewEvidenceFor(
           : obligation.reviewSubjectScope,
     },
     invocations: [invocation],
+    dispatches: PLAN_REVIEW_ASSURANCE.dispatches,
   });
 }
 
@@ -231,6 +235,9 @@ const PLAN_TEXT = [
   '## Verification',
   '1. `./mvnw verify` — Source: repo:mvnw',
 ].join('\n');
+
+/** Canonical coherent plan revision for the PLAN_TEXT fixture. */
+const PLAN_CURRENT = makePlanRevision({ body: PLAN_TEXT, createdAt: FIXED_TIME });
 
 /**
  * Rail context using the REAL digest function. Certificate validation in the
@@ -719,7 +726,7 @@ describe('standalone review hypotheses (runtime)', () => {
       criteriaVersion: obligation.criteriaVersion,
       parentSessionId: reviewEnv.tc.sessionID,
       childSessionId: capturedFindings.reviewedBy.sessionId,
-      promptHash: 'standalone-review-host-capture',
+      promptHash: 'a'.repeat(64),
       findingsHash: hashFindings(capturedFindings),
       invokedAt: FIXED_TIME,
       fulfilledAt: FIXED_TIME,
@@ -752,6 +759,7 @@ describe('standalone review hypotheses (runtime)', () => {
               }
             : item,
         ),
+        dispatches: [...assurance.dispatches, completedDispatchForInvocation(invocation)],
       },
     });
   }
@@ -896,30 +904,13 @@ describe('ProofGraph materialization and gate (runtime)', () => {
       activeChecks: ACTIVE_CHECKS,
       verificationCandidates,
       plan: {
-        current: {
-          body: PLAN_TEXT,
-          digest: 'plan-digest',
-          sections: [],
-          createdAt: FIXED_TIME,
-          recordDigest: computeRecordDigest({
-            contentDigest: 'plan-digest',
-            planVersion: 1,
-            supersedesRecordDigest: null,
-            originatingReviewObligationId: null,
-            revisionReason: null,
-          }),
-          planVersion: 1,
-          supersedesRecordDigest: null,
-          originatingReviewObligationId: null,
-          revisionReason: null,
-          lineageStatus: 'verified' as const,
-        },
+        current: PLAN_CURRENT,
         history: [],
         reviewFindings: undefined,
         claimDeclarations: { flow: 'plan', version: 'v2', claims: [claim] },
         reviewCompletion: 'reviewer_accepted',
       },
-      reviewAssurance: planReviewEvidenceFor('plan-digest', {
+      reviewAssurance: planReviewEvidenceFor(PLAN_CURRENT.digest, {
         flow: 'plan',
         version: 'v2',
         claims: [claim],
@@ -1105,24 +1096,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
       ticket: TICKET,
       activeChecks: ACTIVE_CHECKS,
       plan: {
-        current: {
-          body: PLAN_TEXT,
-          digest: 'plan-digest',
-          sections: [],
-          createdAt: FIXED_TIME,
-          recordDigest: computeRecordDigest({
-            contentDigest: 'plan-digest',
-            planVersion: 1,
-            supersedesRecordDigest: null,
-            originatingReviewObligationId: null,
-            revisionReason: null,
-          }),
-          planVersion: 1,
-          supersedesRecordDigest: null,
-          originatingReviewObligationId: null,
-          revisionReason: null,
-          lineageStatus: 'verified' as const,
-        },
+        current: PLAN_CURRENT,
         history: [],
         reviewFindings: undefined,
         claimDeclarations: { flow: 'plan', version: 'v2', claims: [CRITICAL_CLAIM] },
@@ -1137,7 +1111,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             requiredChallengeCount: 0,
             requiredChallengeKind: 'design_challenge' as const,
             challengePolicyVersion: 'challenge-policy.v1' as const,
-            subjectDigest: 'plan-digest',
+            subjectDigest: PLAN_CURRENT.digest,
             claimDeclarationsDigest: hashText(
               canonicalJsonStringify({ flow: 'plan', version: 'v2', claims: [CRITICAL_CLAIM] }),
             ),
@@ -1151,7 +1125,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             reviewMaterial: {
               content: 'frozen review material',
               materialDigest: 'a'.repeat(64),
-              subjectDigest: 'plan-digest',
+              subjectDigest: PLAN_CURRENT.digest,
             },
             createdAt: FIXED_TIME,
             pluginHandshakeAt: FIXED_TIME,
@@ -1174,7 +1148,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             invocationMode: 'sdk_session_prompt' as const,
             hostVisible: false,
             source: 'host-orchestrated' as const,
-            promptHash: 'abc',
+            promptHash: 'a'.repeat(64),
             mandateDigest: 'e78b6bab98fcf033874fcc07e17d87aaff73fca47b1a28209e5dd4a1a28eedb7',
             criteriaVersion: 'p40-v1',
             findingsHash,
@@ -1194,7 +1168,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             attemptId: '55555555-3333-4333-8333-333333333333',
             obligationId,
             obligationType: 'plan' as const,
-            subjectDigest: 'plan-digest',
+            subjectDigest: PLAN_CURRENT.digest,
             childSessionId: 'ses_child',
             ordinal: 0,
             status: 'bound' as const,
@@ -1202,9 +1176,21 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             repositoryDiscovery: { kind: 'not_applicable' } as const,
             observations: [],
             createdAt: FIXED_TIME,
+            completedAt: FIXED_TIME,
           },
         ],
-        dispatches: [],
+        dispatches: [
+          {
+            dispatchId: '55555555-5555-4555-8555-555555555555',
+            attemptId: '55555555-3333-4333-8333-333333333333',
+            obligationId,
+            hostCallId: 'ses_child',
+            canonicalPromptDigest: 'a'.repeat(64),
+            dispatchAuthorizedAt: FIXED_TIME,
+            dispatchStatus: 'completed' as const,
+            completedAt: FIXED_TIME,
+          },
+        ],
       },
     });
     const approved = executeReviewDecision(

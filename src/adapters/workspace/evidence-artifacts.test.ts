@@ -9,9 +9,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { makeState, PLAN_EVIDENCE, TICKET } from '../../fixtures.js';
-import { computeRecordDigest } from '../../state/evidence-plan.js';
 import type { PlanEvidence } from '../../state/evidence.js';
+import { makePlanRevision, makePlanRevisionAfter } from '../../state/evidence-test-constants.js';
 import { writeState } from '../persistence.js';
 import {
   EVIDENCE_ARTIFACTS_DIR,
@@ -20,34 +21,23 @@ import {
 } from './evidence-artifacts.js';
 
 /**
- * Build a coherent plan revision chained to its predecessor. Artifact identity
- * is the lineage ordinal (`planVersion`), so fixtures must model real lineage
- * (contiguous planVersion + `supersedesRecordDigest` chaining).
+ * Build a lineage-coherent plan revision chained to its predecessor. Artifact
+ * identity is the canonical revision identity (`recordDigest`), which includes
+ * the minted `revisionId`, so fixtures must model real lineage (contiguous
+ * planVersion + `supersedesRecordDigest` chaining).
  */
 function planRevision(
   predecessor: PlanEvidence | null,
-  input: { body: string; digest: string; createdAt: string },
+  input: { body: string; createdAt: string; revisionId?: string },
 ): PlanEvidence {
-  const planVersion = predecessor ? predecessor.planVersion + 1 : 1;
-  const supersedesRecordDigest = predecessor?.recordDigest ?? null;
-  return {
-    body: input.body,
-    digest: input.digest,
-    sections: ['Plan'],
-    createdAt: input.createdAt,
-    planVersion,
-    supersedesRecordDigest,
-    recordDigest: computeRecordDigest({
-      contentDigest: input.digest,
-      planVersion,
-      supersedesRecordDigest,
-      originatingReviewObligationId: null,
-      revisionReason: null,
-    }),
-    originatingReviewObligationId: null,
-    revisionReason: null,
-    lineageStatus: 'verified',
-  };
+  const revisionId = input.revisionId ?? randomUUID();
+  return predecessor
+    ? makePlanRevisionAfter(predecessor, {
+        body: input.body,
+        createdAt: input.createdAt,
+        revisionId,
+      })
+    : makePlanRevision({ body: input.body, createdAt: input.createdAt, revisionId });
 }
 
 let sessionDir: string;
@@ -120,12 +110,10 @@ describe('evidence-artifacts', () => {
     it('fails verification when expected plan artifact file is missing', async () => {
       const older = planRevision(null, {
         body: '## Plan\n1. Older',
-        digest: 'digest-plan-v1',
         createdAt: '2026-01-01T00:00:01.000Z',
       });
       const newer = planRevision(older, {
         body: '## Plan\n1. Newer',
-        digest: 'digest-plan-v2',
         createdAt: '2026-01-01T00:00:02.000Z',
       });
       const state = makeState('PLAN_REVIEW', {
@@ -273,17 +261,14 @@ describe('evidence-artifacts', () => {
     it('materializes full plan version chain from current+history', async () => {
       const v1 = planRevision(null, {
         body: '## Plan\n1. v1',
-        digest: 'digest-v1',
         createdAt: TICKET.createdAt,
       });
       const v2 = planRevision(v1, {
         body: '## Plan\n1. v2',
-        digest: 'digest-v2',
         createdAt: '2026-01-01T00:00:01.000Z',
       });
       const v3 = planRevision(v2, {
         body: '## Plan\n1. v3',
-        digest: 'digest-v3',
         createdAt: '2026-01-01T00:00:02.000Z',
       });
       const state = makeState('PLAN_REVIEW', {
@@ -383,12 +368,10 @@ describe('evidence-artifacts', () => {
   describe('REVISION IDENTITY', () => {
     it('materializes a distinct lineage artifact for an identical-body revision (v1(X) → v2(X))', async () => {
       const body = '## Plan\n1. Unchanged body';
-      const digest = 'digest-identical-body';
       const artifactsDir = path.join(sessionDir, EVIDENCE_ARTIFACTS_DIR);
 
       const v1 = planRevision(null, {
         body,
-        digest,
         createdAt: '2026-01-01T00:00:01.000Z',
       });
       const firstState = makeState('PLAN_REVIEW', {
@@ -402,7 +385,6 @@ describe('evidence-artifacts', () => {
       // advanced (planVersion 2, supersedes v1), so artifact identity must too.
       const v2 = planRevision(v1, {
         body,
-        digest,
         createdAt: '2026-01-01T00:00:02.000Z',
       });
       const secondState = makeState('PLAN_REVIEW', {
@@ -424,14 +406,16 @@ describe('evidence-artifacts', () => {
       ) as { contentHash: string; createdAt: string; version: number };
       expect(metaV1).toMatchObject({
         version: 1,
-        contentHash: digest,
+        contentHash: v1.digest,
         createdAt: '2026-01-01T00:00:01.000Z',
       });
       expect(metaV2).toMatchObject({
         version: 2,
-        contentHash: digest,
+        contentHash: v2.digest,
         createdAt: '2026-01-01T00:00:02.000Z',
       });
+      expect(metaV2.contentHash).toBe(metaV1.contentHash);
+      expect(v2.recordDigest).not.toBe(v1.recordDigest);
 
       await expect(verifyEvidenceArtifacts(sessionDir, secondState)).resolves.toBeUndefined();
     });
@@ -439,7 +423,6 @@ describe('evidence-artifacts', () => {
     it('catches up multiple missing lineage revisions in one materialization', async () => {
       const v1 = planRevision(null, {
         body: '## Plan\n1. v1',
-        digest: 'digest-catchup-v1',
         createdAt: '2026-01-01T00:00:01.000Z',
       });
       const artifactsDir = path.join(sessionDir, EVIDENCE_ARTIFACTS_DIR);
@@ -453,12 +436,10 @@ describe('evidence-artifacts', () => {
 
       const v2 = planRevision(v1, {
         body: '## Plan\n1. v2',
-        digest: 'digest-catchup-v2',
         createdAt: '2026-01-01T00:00:02.000Z',
       });
       const v3 = planRevision(v2, {
         body: '## Plan\n1. v3',
-        digest: 'digest-catchup-v3',
         createdAt: '2026-01-01T00:00:03.000Z',
       });
       const thirdState = makeState('PLAN_REVIEW', {
@@ -486,7 +467,6 @@ describe('evidence-artifacts', () => {
       const artifactsDir = path.join(sessionDir, EVIDENCE_ARTIFACTS_DIR);
       const firstLineageV1 = planRevision(null, {
         body: '## Plan\n1. First lineage',
-        digest: 'digest-lineage-a-v1',
         createdAt: '2026-01-01T00:00:01.000Z',
       });
       const firstState = makeState('PLAN_REVIEW', {
@@ -501,7 +481,6 @@ describe('evidence-artifacts', () => {
       // exists from the superseded lineage.
       const secondLineageV1 = planRevision(null, {
         body: '## Plan\n1. Second lineage',
-        digest: 'digest-lineage-b-v1',
         createdAt: '2026-01-02T00:00:01.000Z',
       });
       const secondState = makeState('PLAN_REVIEW', {
@@ -517,19 +496,18 @@ describe('evidence-artifacts', () => {
       const metaV2 = JSON.parse(
         await fs.readFile(path.join(artifactsDir, 'plan.v2.json'), 'utf-8'),
       ) as { contentHash: string; recordDigest: string };
-      expect(metaV2.contentHash).toBe('digest-lineage-b-v1');
+      expect(metaV2.contentHash).toBe(secondLineageV1.digest);
       expect(metaV2.recordDigest).toBe(secondLineageV1.recordDigest);
       await expect(verifyEvidenceArtifacts(sessionDir, secondState)).resolves.toBeUndefined();
     });
 
-    it('distinguishes identical lineage digests by revision timestamp', async () => {
+    it('distinguishes identical content/version/timestamp lineages by revisionId', async () => {
       const artifactsDir = path.join(sessionDir, EVIDENCE_ARTIFACTS_DIR);
-      // Same body/digest, planVersion 1, no predecessor: the record digest is
-      // byte-identical across both lineages; only the revision timestamp
-      // distinguishes the two revision instances.
+      // Same body, planVersion 1, no predecessor, same timestamp: the minted
+      // `revisionId` is inside the record digest, so the two revision
+      // instances still carry DISTINCT record digests and artifacts.
       const firstInstance = planRevision(null, {
         body: '## Plan\n1. Same body',
-        digest: 'digest-same-body',
         createdAt: '2026-01-01T00:00:01.000Z',
       });
       const firstState = makeState('PLAN_REVIEW', {
@@ -541,10 +519,10 @@ describe('evidence-artifacts', () => {
 
       const secondInstance = planRevision(null, {
         body: '## Plan\n1. Same body',
-        digest: 'digest-same-body',
-        createdAt: '2026-01-02T00:00:01.000Z',
+        createdAt: '2026-01-01T00:00:01.000Z',
       });
-      expect(secondInstance.recordDigest).toBe(firstInstance.recordDigest);
+      expect(secondInstance.revisionId).not.toBe(firstInstance.revisionId);
+      expect(secondInstance.recordDigest).not.toBe(firstInstance.recordDigest);
       const secondState = makeState('PLAN_REVIEW', {
         ticket: { ...TICKET, text: 'Second attempt', digest: 'digest-ticket-3' },
         plan: { current: secondInstance, history: [], reviewCompletion: 'pending' },
@@ -554,21 +532,69 @@ describe('evidence-artifacts', () => {
 
       const metaV2 = JSON.parse(
         await fs.readFile(path.join(artifactsDir, 'plan.v2.json'), 'utf-8'),
-      ) as { createdAt: string };
-      expect(metaV2.createdAt).toBe('2026-01-02T00:00:01.000Z');
+      ) as { createdAt: string; recordDigest: string };
+      expect(metaV2.createdAt).toBe('2026-01-01T00:00:01.000Z');
+      expect(metaV2.recordDigest).toBe(secondInstance.recordDigest);
       await expect(verifyEvidenceArtifacts(sessionDir, secondState)).resolves.toBeUndefined();
     });
 
-    it('fails closed on a non-contiguous plan lineage', async () => {
+    it('fails verification when one revision identity is materialized twice', async () => {
+      const state = makeState('PLAN_REVIEW', {
+        ticket: TICKET,
+        plan: { current: PLAN_EVIDENCE, history: [], reviewCompletion: 'pending' },
+      });
+      await writeState(sessionDir, state);
+      await materializeEvidenceArtifacts(sessionDir, state);
+
+      const artifactsDir = path.join(sessionDir, EVIDENCE_ARTIFACTS_DIR);
+      const meta = JSON.parse(
+        await fs.readFile(path.join(artifactsDir, 'plan.v1.json'), 'utf-8'),
+      ) as Record<string, unknown>;
+      await fs.writeFile(
+        path.join(artifactsDir, 'plan.v2.json'),
+        JSON.stringify(
+          { ...meta, version: 2, markdownPath: `${EVIDENCE_ARTIFACTS_DIR}/plan.v2.md` },
+          null,
+          2,
+        ) + '\n',
+        'utf-8',
+      );
+      await fs.copyFile(
+        path.join(artifactsDir, 'plan.v1.md'),
+        path.join(artifactsDir, 'plan.v2.md'),
+      );
+
+      await expect(verifyEvidenceArtifacts(sessionDir, state)).rejects.toMatchObject({
+        code: 'EVIDENCE_ARTIFACT_MISMATCH',
+      });
+    });
+
+    it('fails verification when an artifact timestamp does not match its revision', async () => {
+      const state = makeState('PLAN_REVIEW', {
+        ticket: TICKET,
+        plan: { current: PLAN_EVIDENCE, history: [], reviewCompletion: 'pending' },
+      });
+      await writeState(sessionDir, state);
+      await materializeEvidenceArtifacts(sessionDir, state);
+
+      const planMetaPath = path.join(sessionDir, EVIDENCE_ARTIFACTS_DIR, 'plan.v1.json');
+      const meta = JSON.parse(await fs.readFile(planMetaPath, 'utf-8')) as { createdAt: string };
+      meta.createdAt = '2020-01-01T00:00:00.000Z';
+      await fs.writeFile(planMetaPath, JSON.stringify(meta, null, 2) + '\n', 'utf-8');
+
+      await expect(verifyEvidenceArtifacts(sessionDir, state)).rejects.toMatchObject({
+        code: 'EVIDENCE_ARTIFACT_MISMATCH',
+      });
+    });
+
+    it('fails closed on a non-contiguous plan lineage at the state boundary', async () => {
       const v1 = planRevision(null, {
         body: '## Plan\n1. v1',
-        digest: 'digest-broken-v1',
         createdAt: '2026-01-01T00:00:01.000Z',
       });
       const v3 = {
         ...planRevision(v1, {
           body: '## Plan\n1. v3',
-          digest: 'digest-broken-v3',
           createdAt: '2026-01-01T00:00:03.000Z',
         }),
         planVersion: 3,
@@ -577,10 +603,11 @@ describe('evidence-artifacts', () => {
         ticket: TICKET,
         plan: { current: v3, history: [v1], reviewCompletion: 'pending' },
       });
-      await writeState(sessionDir, state);
 
-      await expect(materializeEvidenceArtifacts(sessionDir, state)).rejects.toMatchObject({
-        code: 'EVIDENCE_ARTIFACT_MISMATCH',
+      // Lineage coherence is enforced by the PlanRecord refinement: the
+      // artifact layer never sees an incoherent chain.
+      await expect(writeState(sessionDir, state)).rejects.toMatchObject({
+        code: 'SCHEMA_VALIDATION_FAILED',
       });
     });
   });
@@ -589,17 +616,14 @@ describe('evidence-artifacts', () => {
     it('verifies artifact set quickly (p95 < 120ms over 20 runs)', async () => {
       const v1 = planRevision(null, {
         body: '## Plan\n1. v1',
-        digest: 'digest-v1',
         createdAt: '2026-01-01T00:00:01.000Z',
       });
       const v2 = planRevision(v1, {
         body: '## Plan\n1. v2',
-        digest: 'digest-v2',
         createdAt: '2026-01-01T00:00:02.000Z',
       });
       const v3 = planRevision(v2, {
         body: '## Plan\n1. v3',
-        digest: 'digest-v3',
         createdAt: '2026-01-01T00:00:03.000Z',
       });
       const state = makeState('PLAN_REVIEW', {
@@ -644,17 +668,14 @@ describe('evidence-artifacts', () => {
     it('fails verification when plan history artifact is missing', async () => {
       const v1 = planRevision(null, {
         body: '## Plan\n1. v1',
-        digest: 'digest-v1',
         createdAt: '2026-01-01T00:00:01.000Z',
       });
       const v2 = planRevision(v1, {
         body: '## Plan\n1. v2',
-        digest: 'digest-v2',
         createdAt: '2026-01-01T00:00:02.000Z',
       });
       const v3 = planRevision(v2, {
         body: '## Plan\n1. v3',
-        digest: 'digest-v3',
         createdAt: '2026-01-01T00:00:03.000Z',
       });
       const state = makeState('PLAN_REVIEW', {
@@ -674,12 +695,10 @@ describe('evidence-artifacts', () => {
     it('fails verification when plan history artifact has wrong digest', async () => {
       const v1 = planRevision(null, {
         body: '## Plan\n1. v1',
-        digest: 'digest-v1',
         createdAt: '2026-01-01T00:00:01.000Z',
       });
       const v2 = planRevision(v1, {
         body: '## Plan\n1. v2',
-        digest: 'digest-v2',
         createdAt: '2026-01-01T00:00:02.000Z',
       });
       const state = makeState('PLAN_REVIEW', {

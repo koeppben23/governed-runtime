@@ -7,6 +7,7 @@ import {
   REVIEW_ASSURANCE_SCHEMA_VERSION,
   type ReviewAssuranceState,
 } from '../state/evidence-review.js';
+import { completedDispatchForInvocation } from '../state/evidence-test-constants.js';
 
 export const ARCH_OBLIGATION_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 export const ARCH_INVOCATION_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -73,7 +74,7 @@ function invocationsFromEntries(entries: AssuranceEntry[]): ReviewAssuranceState
         invocationMode: 'sdk_session_prompt',
         hostVisible: false,
         source: 'host-orchestrated',
-        promptHash: 'prompt-hash',
+        promptHash: `${'c'.repeat(63)}${(index % 16).toString(16)}`,
         mandateDigest: 'm'.repeat(64),
         criteriaVersion: 'criteria-v1',
         findingsHash: e.findingsHash ?? 'f'.repeat(64),
@@ -110,6 +111,7 @@ function attemptsFromEntries(entries: AssuranceEntry[]): ReviewAssuranceState['a
 
 /** Arbitrary assurance chains for resolver tests (one obligation per entry). */
 export function assuranceChain(entries: AssuranceEntry[]): ReviewAssuranceState {
+  const invocations = invocationsFromEntries(entries);
   const obligations: ReviewAssuranceState['obligations'] = entries.map((e) => {
     const createdAt = e.createdAt ?? '2026-01-01T00:00:00.000Z';
     const subjectDigest = e.subjectDigest;
@@ -157,8 +159,8 @@ export function assuranceChain(entries: AssuranceEntry[]): ReviewAssuranceState 
   return {
     assuranceSchemaVersion: REVIEW_ASSURANCE_SCHEMA_VERSION,
     obligations,
-    invocations: invocationsFromEntries(entries),
+    invocations,
     attempts: attemptsFromEntries(entries),
-    dispatches: [],
+    dispatches: invocations.map((invocation) => completedDispatchForInvocation(invocation)),
   };
 }

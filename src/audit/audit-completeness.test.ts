@@ -5,7 +5,7 @@ import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 import { ReviewDecision } from '../state/evidence-review.js';
 import type { ValidationResult } from '../state/evidence.js';
 import type { SessionState } from '../state/schema.js';
-import { computeRecordDigest } from '../state/evidence-plan.js';
+import { makePlanRevision } from '../state/evidence-test-constants.js';
 
 function validationResult(checkId: string, passed: boolean, detail: string): ValidationResult {
   return {
@@ -809,36 +809,19 @@ describe('audit completeness', () => {
     });
 
     it('getSlotDetail plan: digest.slice(0, 12) truncates', () => {
-      const longDigest = 'abcdef0123456789abcdef01234567890123456789';
+      const current = makePlanRevision({ body: 'plan', createdAt: FIXED_TIME });
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
         plan: {
-          current: {
-            body: 'plan',
-            digest: longDigest,
-            sections: [],
-            createdAt: FIXED_TIME,
-            recordDigest: computeRecordDigest({
-              contentDigest: longDigest,
-              planVersion: 1,
-              supersedesRecordDigest: null,
-              originatingReviewObligationId: null,
-              revisionReason: null,
-            }),
-            planVersion: 1,
-            supersedesRecordDigest: null,
-            originatingReviewObligationId: null,
-            revisionReason: null,
-            lineageStatus: 'verified' as const,
-          },
+          current,
           history: [],
           reviewCompletion: 'pending',
         },
       });
       const report = evaluateCompleteness(state);
       const slot = report.slots.find((s) => s.slot === 'plan');
-      expect(slot?.detail).toContain('abcdef012345...');
-      expect(slot?.detail).not.toContain(longDigest);
+      expect(slot?.detail).toContain(`${current.digest.slice(0, 12)}...`);
+      expect(slot?.detail).not.toContain(current.digest);
     });
 
     it('getSlotDetail implementation: digest.slice(0, 12) truncates', () => {

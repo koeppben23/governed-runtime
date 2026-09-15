@@ -27,6 +27,7 @@ import {
   REVIEW_MANDATE_DIGEST,
 } from './assurance.js';
 import { hashFindings } from './findings-hash.js';
+import { completedDispatchForInvocation } from '../../state/evidence-test-constants.js';
 import { resolveReviewedArtifactIdentity } from './reviewed-digest.js';
 
 const NOW = '2026-08-15T10:00:00.000Z';
@@ -91,7 +92,7 @@ function hostInvocation(
     criteriaVersion: REVIEW_CRITERIA_VERSION,
     parentSessionId: 'ses-parent',
     childSessionId: 'ses-child',
-    promptHash: 'sha256-prompt',
+    promptHash: 'a'.repeat(64),
     findingsHash: hashFindings(findings),
     invokedAt: NOW,
     capturedRawFindings: findings,
@@ -105,7 +106,7 @@ function assurance(obligations: ReviewObligation[], invocations: ReviewInvocatio
     obligations,
     invocations,
     attempts: [],
-    dispatches: [],
+    dispatches: invocations.map((invocation) => completedDispatchForInvocation(invocation)),
   };
 }
 

@@ -14,9 +14,15 @@
  * @version v1
  */
 
-import type { HostTaskBindResult } from './types.js';
 import { normalizeChallenges } from './normalize.js';
 import { canonicalJsonStringify } from '../../../shared/canonical-json.js';
+
+/** Host rejection of reviewer challenge evidence outside the frozen contract. */
+interface ChallengeBindingRejection {
+  readonly kind: 'rejected';
+  readonly code: 'challenge_evidence_unknown' | 'client_reference_invalid';
+  readonly diagnostic: Record<string, unknown>;
+}
 
 // eslint-disable-next-line complexity -- intentional identity key per ref-type
 function referenceIdentity(reference: unknown): string | null {
@@ -78,7 +84,7 @@ export function bindCanonicalEvidenceRefs(
   allowedEvidenceRefs: readonly unknown[] | undefined,
   obligationId: string,
   childSessionId: string,
-): { challenges: Record<string, unknown>[] } | HostTaskBindResult {
+): { challenges: Record<string, unknown>[] } | ChallengeBindingRejection {
   if (!allowedEvidenceRefs) return { challenges: [...challenges] };
   const canonicalByIdentity = new Map<string, unknown>();
   for (const reference of allowedEvidenceRefs) {
@@ -96,8 +102,8 @@ export function bindCanonicalEvidenceRefs(
       const canonical = identity ? canonicalByIdentity.get(identity) : undefined;
       if (canonical === undefined) {
         return {
-          evidence: null,
-          bindOutcome: 'challenge_evidence_unknown',
+          kind: 'rejected',
+          code: 'challenge_evidence_unknown',
           diagnostic: {
             childSessionId,
             obligationId,
@@ -128,15 +134,15 @@ export function normalizeFindingsChallenges(
   obligationId: string,
   childSessionId: string,
   allowedEvidenceRefs?: readonly unknown[],
-): { findings: Record<string, unknown> } | HostTaskBindResult {
+): { findings: Record<string, unknown> } | ChallengeBindingRejection {
   const raw = findings.challenges;
   if (!Array.isArray(raw)) return { findings };
 
   const normalized = normalizeChallenges(raw, obligationId);
   if (!normalized.ok) {
     return {
-      evidence: null,
-      bindOutcome: 'client_reference_invalid',
+      kind: 'rejected',
+      code: 'client_reference_invalid',
       diagnostic: {
         childSessionId,
         obligationId,
@@ -152,6 +158,6 @@ export function normalizeFindingsChallenges(
     obligationId,
     childSessionId,
   );
-  if ('bindOutcome' in canonical) return canonical;
+  if ('kind' in canonical) return canonical;
   return { findings: { ...findings, challenges: canonical.challenges } };
 }

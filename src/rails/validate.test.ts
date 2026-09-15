@@ -14,7 +14,7 @@ import { makeState, FIXED_TIME, TICKET } from '../fixtures.js';
 import type { RailContext } from './types.js';
 import type { PlanRecord, ValidationResult } from '../state/evidence.js';
 import { TEAM_POLICY } from '../config/policy.js';
-import { computeRecordDigest } from '../state/evidence-plan.js';
+import { makePlanRevision } from '../state/evidence-test-constants.js';
 
 vi.mock('../adapters/git.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
@@ -40,24 +40,7 @@ const ctx: RailContext = {
 
 function planWith(body: string): PlanRecord {
   return {
-    current: {
-      body,
-      digest: 'd',
-      sections: [],
-      createdAt: FIXED_TIME,
-      recordDigest: computeRecordDigest({
-        contentDigest: 'd',
-        planVersion: 1,
-        supersedesRecordDigest: null,
-        originatingReviewObligationId: null,
-        revisionReason: null,
-      }),
-      planVersion: 1,
-      supersedesRecordDigest: null,
-      originatingReviewObligationId: null,
-      revisionReason: null,
-      lineageStatus: 'verified' as const,
-    },
+    current: makePlanRevision({ body, createdAt: FIXED_TIME }),
     history: [],
     reviewCompletion: 'pending',
   };

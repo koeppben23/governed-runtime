@@ -34,6 +34,7 @@ import {
 } from './review/assurance.js';
 import { mintObservationCapabilityIfResolvable } from './review/attempt-lifecycle.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
+import { completedDispatchForInvocation } from '../state/evidence-test-constants.js';
 import { writeStateWithAuditOperations } from './tools/audit-outbox.js';
 
 // ─── Safety Guards ───────────────────────────────────────────────────────────
@@ -450,7 +451,10 @@ export async function fulfillStrictReviewObligation(
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
-    reviewedBy: { sessionId: input.childSessionId ?? `ses_${input.obligationType}_reviewer` },
+    reviewedBy: {
+      sessionId:
+        input.childSessionId ?? `ses_${input.obligationType}_reviewer_${obligation.obligationId}`,
+    },
     reviewedAt: new Date().toISOString(),
     attestation: {
       mandateDigest: REVIEW_MANDATE_DIGEST,
@@ -510,7 +514,7 @@ export async function fulfillStrictReviewObligation(
         ...assurance.attempts.filter((attempt) => attempt.attemptId !== boundAttempt.attemptId),
         boundAttempt,
       ],
-      dispatches: assurance.dispatches,
+      dispatches: [...assurance.dispatches, completedDispatchForInvocation(invocation)],
     },
   });
 

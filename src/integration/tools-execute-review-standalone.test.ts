@@ -53,6 +53,7 @@ import {
   IMPL_EVIDENCE,
   IMPL_REVIEW_CONVERGED,
 } from '../fixtures.js';
+import { completedDispatchForInvocation } from '../state/evidence-test-constants.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
 
 /** Test predicate for source-tagged standalone review report findings. */
@@ -338,7 +339,7 @@ describe('review (standalone flow)', () => {
       criteriaVersion: obligation.criteriaVersion,
       parentSessionId: ctx.sessionID,
       childSessionId,
-      promptHash: 'host-task-review-prompt',
+      promptHash: 'a'.repeat(64),
       findingsHash: hashFindings(findings),
       invokedAt: fulfilledAt,
       fulfilledAt,
@@ -364,7 +365,13 @@ describe('review (standalone flow)', () => {
     await writeState(sessDir, {
       ...state,
       reviewAssurance: fulfillObligation(
-        assuranceWithEvidence,
+        {
+          ...assuranceWithEvidence,
+          dispatches: [
+            ...assuranceWithEvidence.dispatches,
+            completedDispatchForInvocation(invocation),
+          ],
+        },
         obligationId,
         invocation.invocationId,
         fulfilledAt,
@@ -1363,7 +1370,7 @@ describe('review (standalone flow)', () => {
         expect(invocation.source).toBe('host-orchestrated');
         expect(invocation.reviewOutputMode).toBe('structured_output');
         expect(invocation.findingsHash).toMatch(/^[a-f0-9]{64}$/);
-        expect(invocation.promptHash).toBe('host-task-review-prompt');
+        expect(invocation.promptHash).toBe('a'.repeat(64));
         // childSessionId from the attested reviewedBy.sessionId in buildAnalysisFindings.
         expect(invocation.childSessionId).toBe('flowguard-reviewer-session-123');
         expect(invocation.consumedByObligationId).toBe(uuid);

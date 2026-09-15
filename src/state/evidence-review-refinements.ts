@@ -141,6 +141,7 @@ export interface AssuranceRefinementShape {
     readonly invocationMode?: string;
     readonly source?: string;
     readonly hostVisible?: boolean;
+    readonly promptHash: string;
     readonly canonicalPromptDigest?: string;
     readonly consumedByObligationId?: string | null;
     readonly reviewOutputMode?: string;
@@ -582,6 +583,85 @@ export function refineAssuranceInvocationLinkageCoherence(
         code: z.ZodIssueCode.custom,
         path: ['invocations'],
         message: `invocation ${invocation.invocationId} consumedByObligationId must equal its own obligationId`,
+      });
+      return;
+    }
+  }
+}
+
+/**
+ * Durable-dispatch linkage: persisted invocation evidence and the dispatch
+ * ledger are two halves of ONE host release. Every invocation requires EXACTLY
+ * one `completed` dispatch for its attempt, obligation, host call, and prompt
+ * digest (with a `completedAt`), and the reverse holds symmetrically; a
+ * non-completed dispatch (`authorized`, `outcome_unknown`) must not have a
+ * matching invocation. Duplicate matches are invalid states, not legacy data.
+ */
+type InvocationRefinementShape = AssuranceRefinementShape['invocations'][number];
+type DispatchRefinementShape = AssuranceRefinementShape['dispatches'][number];
+
+function dispatchLinksInvocation(
+  dispatch: DispatchRefinementShape,
+  invocation: InvocationRefinementShape,
+): boolean {
+  return (
+    dispatch.attemptId === invocation.attemptId &&
+    dispatch.obligationId === invocation.obligationId &&
+    dispatch.hostCallId === invocation.childSessionId &&
+    dispatch.canonicalPromptDigest === invocation.promptHash
+  );
+}
+
+export function refineAssuranceInvocationDispatchLinkage(
+  assurance: AssuranceRefinementShape,
+  context: z.RefinementCtx,
+): void {
+  const dispatchesByAttempt = new Map<string, DispatchRefinementShape[]>();
+  for (const dispatch of assurance.dispatches) {
+    const bucket = dispatchesByAttempt.get(dispatch.attemptId) ?? [];
+    bucket.push(dispatch);
+    dispatchesByAttempt.set(dispatch.attemptId, bucket);
+  }
+  const invocationsByAttempt = new Map<string, InvocationRefinementShape[]>();
+  for (const invocation of assurance.invocations) {
+    const key = invocation.attemptId ?? '';
+    const bucket = invocationsByAttempt.get(key) ?? [];
+    bucket.push(invocation);
+    invocationsByAttempt.set(key, bucket);
+  }
+  for (const invocation of assurance.invocations) {
+    const matches = (dispatchesByAttempt.get(invocation.attemptId ?? '') ?? []).filter(
+      (dispatch) =>
+        dispatchLinksInvocation(dispatch, invocation) &&
+        dispatch.dispatchStatus === 'completed' &&
+        dispatch.completedAt != null,
+    );
+    if (matches.length !== 1) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['invocations'],
+        message: `invocation ${invocation.invocationId} requires exactly one completed dispatch for its attempt, host call, and prompt digest (found ${String(matches.length)})`,
+      });
+      return;
+    }
+  }
+  for (const dispatch of assurance.dispatches) {
+    const matches = (invocationsByAttempt.get(dispatch.attemptId) ?? []).filter((invocation) =>
+      dispatchLinksInvocation(dispatch, invocation),
+    );
+    if (dispatch.dispatchStatus === 'completed' && matches.length !== 1) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['dispatches'],
+        message: `completed dispatch ${dispatch.dispatchId} requires exactly one matching invocation (found ${String(matches.length)})`,
+      });
+      return;
+    }
+    if (dispatch.dispatchStatus !== 'completed' && matches.length > 0) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['dispatches'],
+        message: `dispatch ${dispatch.dispatchId} is ${dispatch.dispatchStatus} but has a matching invocation`,
       });
       return;
     }

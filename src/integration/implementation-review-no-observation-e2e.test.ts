@@ -76,6 +76,10 @@ import { makeState, TICKET, FROZEN_IMPLEMENTATION_BASE } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
 import type { ReviewFindings } from '../state/evidence.js';
 import {
+  completedDispatchForInvocation,
+  makePlanRevision,
+} from '../state/evidence-test-constants.js';
+import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
   hashFindings,
@@ -200,6 +204,7 @@ function implFindings(
   verdict: 'accept' | 'changes_requested' | 'unable_to_review',
   withChallenge = false,
   attemptId = '',
+  childSessionId = 'ses_r',
 ): ReviewFindings {
   return {
     iteration: iter,
@@ -225,7 +230,7 @@ function implFindings(
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
-    reviewedBy: { sessionId: 'ses_r' },
+    reviewedBy: { sessionId: childSessionId },
     reviewedAt: FIXED_TIME,
     attestation: {
       mandateDigest: REVIEW_MANDATE_DIGEST,
@@ -250,6 +255,7 @@ async function inject(
     (o) => o.obligationType === oblType && o.status === 'pending',
   );
   if (!obl) throw new Error(`No pending ${oblType} obligation`);
+  const childSessionId = `ses_r_${obl.obligationId}`;
   const ff = implFindings(
     obl.obligationId,
     obl.iteration,
@@ -258,6 +264,7 @@ async function inject(
     verdict,
     oblType === 'implement' && verdict !== 'unable_to_review',
     validationAttemptIdFor(state!, digest),
+    childSessionId,
   );
   const fh = hashFindings(ff);
   const boundAttempt = state!.reviewAssurance!.attempts.find(
@@ -277,12 +284,12 @@ async function inject(
     obligationId: obl.obligationId,
     obligationType: obl.obligationType,
     parentSessionId: se.sId,
-    childSessionId: 'ses_r',
+    childSessionId,
     agentType: 'flowguard-reviewer' as const,
     invocationMode: 'sdk_session_prompt' as const,
     hostVisible: false,
     source: 'host-orchestrated' as const,
-    promptHash: 'abc',
+    promptHash: 'a'.repeat(64),
     mandateDigest: REVIEW_MANDATE_DIGEST,
     criteriaVersion: REVIEW_CRITERIA_VERSION,
     findingsHash: fh,
@@ -309,12 +316,12 @@ async function inject(
           ? {
               ...attempt,
               status: 'bound' as const,
-              childSessionId: 'ses_r',
+              childSessionId,
               completedAt: FIXED_TIME,
             }
           : attempt,
       ),
-      dispatches: state!.reviewAssurance!.dispatches,
+      dispatches: [...state!.reviewAssurance!.dispatches, completedDispatchForInvocation(inv)],
     },
     reviewDecision: {
       verdict: 'approve',
@@ -347,18 +354,10 @@ async function prepareBoundUnableReview(se: SE, implementationDigest: string) {
     binding: { ...makeState('IMPL_REVIEW').binding, worktree: se.worktree },
     ticket: TICKET,
     plan: {
-      current: {
+      current: makePlanRevision({
         body: '## Plan\n1. Verify implementation',
-        digest: 'plan-digest',
-        sections: [],
         createdAt: FIXED_TIME,
-        recordDigest: 'a'.repeat(64),
-        planVersion: 1,
-        supersedesRecordDigest: null,
-        originatingReviewObligationId: null,
-        revisionReason: null,
-        lineageStatus: 'verified',
-      },
+      }),
       history: [],
       reviewCompletion: 'pending',
       reviewFindings: [],

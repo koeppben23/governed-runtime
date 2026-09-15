@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { POLICY_DIGEST_VERSION } from '../../state/evidence-identifiers.js';
+import { makePlanRevision, makePlanRevisionAfter } from '../../state/evidence-test-constants.js';
 
 const POLICY_DIGEST = 'a'.repeat(64);
 
@@ -120,33 +121,11 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
     it('PlanRecord stores author history and review findings separately', async () => {
       const { PlanRecord } = await import('../../state/evidence.js');
 
+      const original = makePlanRevision({ body: '# Original' });
+      const revised = makePlanRevisionAfter(original, { body: '# Plan v1' });
       const planRecord = {
-        current: {
-          body: '# Plan v1',
-          digest: 'sha256-v1',
-          sections: ['Plan'],
-          createdAt: new Date().toISOString(),
-          recordDigest: 'record-v1',
-          planVersion: 1,
-          supersedesRecordDigest: null,
-          originatingReviewObligationId: null,
-          revisionReason: null,
-          lineageStatus: 'verified',
-        },
-        history: [
-          {
-            body: '# Original',
-            digest: 'sha256-orig',
-            sections: [],
-            createdAt: new Date().toISOString(),
-            recordDigest: 'record-orig',
-            planVersion: 1,
-            supersedesRecordDigest: null,
-            originatingReviewObligationId: null,
-            revisionReason: null,
-            lineageStatus: 'verified',
-          },
-        ],
+        current: revised,
+        history: [original],
         reviewCompletion: 'pending',
         reviewFindings: [
           {
@@ -187,7 +166,7 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
       if (result.success) {
         expect(result.data.history.length).toBe(1);
         expect(result.data.reviewFindings?.length).toBe(1);
-        expect(result.data.history[0]!.digest).toBe('sha256-orig');
+        expect(result.data.history[0]!.digest).toBe(original.digest);
         expect(result.data.reviewFindings?.[0]?.blockingIssues.length).toBe(1);
       }
     });
@@ -196,18 +175,7 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
       const { PlanRecord } = await import('../../state/evidence.js');
 
       const recordWithoutReview = {
-        current: {
-          body: '# Plan',
-          digest: 'sha256',
-          sections: [],
-          createdAt: new Date().toISOString(),
-          recordDigest: 'record',
-          planVersion: 1,
-          supersedesRecordDigest: null,
-          originatingReviewObligationId: null,
-          revisionReason: null,
-          lineageStatus: 'verified',
-        },
+        current: makePlanRevision({ body: '# Plan' }),
         history: [],
         reviewCompletion: 'pending',
       };
@@ -283,22 +251,11 @@ describe('P34a: Agent-Orchestrated Review Input Validation', () => {
     const { PlanRecord } = await import('../../state/evidence.js');
 
     const existingPlan = {
-      current: {
-        body: 'v1',
-        digest: 'd1',
-        sections: [],
-        createdAt: new Date().toISOString(),
-        recordDigest: 'record-d1',
-        planVersion: 1,
-        supersedesRecordDigest: null,
-        originatingReviewObligationId: null,
-        revisionReason: null,
-        lineageStatus: 'verified',
-      },
+      current: makePlanRevision({ body: 'v1' }),
       history: [],
       reviewCompletion: 'pending',
       reviewFindings: [validReviewFindingsSubagent],
-    } as any;
+    };
 
     const result = PlanRecord.safeParse(existingPlan);
     expect(result.success).toBe(true);

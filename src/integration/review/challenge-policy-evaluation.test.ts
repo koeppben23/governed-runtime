@@ -28,6 +28,7 @@ import {
   freezeReviewMaterial,
   hashFindings,
 } from './assurance.js';
+import { completedDispatchForInvocation } from '../../state/evidence-test-constants.js';
 
 type Fixture = {
   readonly name: string;
@@ -216,7 +217,7 @@ async function resolveCapturedFixture(
     criteriaVersion: obligation.criteriaVersion,
     parentSessionId: 'evaluation-parent',
     childSessionId: findings.reviewedBy.sessionId,
-    promptHash: `prompt-${fixture.name}`,
+    promptHash: 'a'.repeat(64),
     findingsHash: hashFindings(findings),
     invokedAt: '2026-07-26T00:00:00.000Z',
     capturedRawFindings: findings,
@@ -228,7 +229,7 @@ async function resolveCapturedFixture(
       obligations: [obligation],
       invocations: [invocation],
       attempts: [attempt],
-      dispatches: [],
+      dispatches: [completedDispatchForInvocation(invocation)],
     },
     obligation,
   );
@@ -284,7 +285,7 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
     criteriaVersion: firstObligation.criteriaVersion,
     parentSessionId: sessionID,
     childSessionId: firstFindings.reviewedBy.sessionId,
-    promptHash: 'initial-changes-requested-prompt',
+    promptHash: 'a'.repeat(64),
     findingsHash: hashFindings(firstFindings),
     invokedAt: '2026-07-26T00:00:00.000Z',
     capturedRawFindings: firstFindings,
@@ -302,7 +303,7 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
         obligations: [firstObligation],
         invocations: [firstInvocation],
         attempts: [firstAttempt],
-        dispatches: [],
+        dispatches: [completedDispatchForInvocation(firstInvocation)],
       },
       firstObligation,
     ).kind,
@@ -323,7 +324,7 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
         obligations: [firstObligation],
         invocations: [firstInvocation],
         attempts: [firstAttempt],
-        dispatches: [],
+        dispatches: [completedDispatchForInvocation(firstInvocation)],
       },
       validationAttempts: [
         {
@@ -382,7 +383,7 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
     criteriaVersion: secondObligation.criteriaVersion,
     parentSessionId: sessionID,
     childSessionId: secondFindings.reviewedBy.sessionId,
-    promptHash: 'independent-re-review-prompt',
+    promptHash: 'a'.repeat(64),
     findingsHash: hashFindings(secondFindings),
     invokedAt: '2026-07-26T00:01:00.000Z',
     capturedRawFindings: secondFindings,
@@ -399,7 +400,7 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
       obligations: [secondObligation],
       invocations: [secondInvocation],
       attempts: [secondAttempt],
-      dispatches: [],
+      dispatches: [completedDispatchForInvocation(secondInvocation)],
     },
     secondObligation,
     state ? computeTargetedResolutionChallengeIds(state) : undefined,

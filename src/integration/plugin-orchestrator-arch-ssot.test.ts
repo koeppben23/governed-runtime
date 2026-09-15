@@ -176,10 +176,8 @@ function buildDeps(
       {
         tool,
         requestedAt: NOW,
-        subagentCalled: false,
-        subagentRecord: null,
-        contentMeta: { expectedIteration: 1, expectedPlanVersion: 1 },
-        capturedFindings: null,
+        attemptId: null,
+        obligationId: null,
       },
     ]),
   );

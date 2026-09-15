@@ -23,7 +23,7 @@ import {
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
-import { computeRecordDigest } from '../state/evidence-plan.js';
+import { makePlanRevision } from '../state/evidence-test-constants.js';
 import { fileURLToPath } from 'node:url';
 
 // The test workspace carries a fake `.git` marker (not a real repository), but
@@ -61,6 +61,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
   const fp = await computeFingerprint(worktree);
   const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
   const obligationId = '11111111-1111-4111-8111-111111111111';
+  const planCurrent = makePlanRevision({ body: '## Plan\n1. Fix auth', createdAt: now });
 
   await fs.mkdir(sessDir, { recursive: true });
   await writeState(
@@ -73,24 +74,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
         createdAt: now,
       },
       plan: {
-        current: {
-          body: '## Plan\n1. Fix auth',
-          digest: 'plan-digest',
-          sections: ['Plan'],
-          createdAt: now,
-          recordDigest: computeRecordDigest({
-            contentDigest: 'plan-digest',
-            planVersion: 1,
-            supersedesRecordDigest: null,
-            originatingReviewObligationId: null,
-            revisionReason: null,
-          }),
-          planVersion: 1,
-          supersedesRecordDigest: null,
-          originatingReviewObligationId: null,
-          revisionReason: null,
-          lineageStatus: 'verified' as const,
-        },
+        current: planCurrent,
         history: [],
         reviewCompletion: 'pending',
         reviewFindings: [],
@@ -99,7 +83,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
         iteration: 0,
         maxIterations: 3,
         prevDigest: null,
-        currDigest: 'plan-digest',
+        currDigest: planCurrent.digest,
         revisionDelta: 'major',
         verdict: 'changes_requested',
       },

@@ -35,6 +35,7 @@ import {
   hashFindings,
   updateAttemptStatus,
 } from '../../review/assurance.js';
+import { completedDispatchForInvocation } from '../../../state/evidence-test-constants.js';
 import type { ReviewFindings } from '../../../state/evidence.js';
 
 vi.mock('../../../adapters/git', async (importOriginal) => {
@@ -178,7 +179,7 @@ async function bindStructuredEvidence(
     criteriaVersion: obligation.criteriaVersion,
     parentSessionId: ctx.sessionID,
     childSessionId: REVIEWER_SESSION_ID,
-    promptHash: 'structured-review-prompt',
+    promptHash: 'a'.repeat(64),
     findingsHash: hashFindings(findings),
     invokedAt: fulfilledAt,
     fulfilledAt,
@@ -192,7 +193,10 @@ async function bindStructuredEvidence(
   await writeStateWithArtifacts(sessDir, {
     ...state,
     reviewAssurance: fulfillObligation(
-      withInvocation,
+      {
+        ...withInvocation,
+        dispatches: [...withInvocation.dispatches, completedDispatchForInvocation(invocation)],
+      },
       obligationId,
       invocation.invocationId,
       fulfilledAt,

@@ -35,7 +35,7 @@ import { createPolicySnapshot } from '../config/policy-snapshot.js';
 import { makeState } from '../fixtures.js';
 import { isCommandAllowed, Command } from '../machine/commands.js';
 import { USER_GATES, TERMINAL } from '../machine/topology.js';
-import { computeRecordDigest } from '../state/evidence-plan.js';
+import { makePlanRevision } from '../state/evidence-test-constants.js';
 import { hashText } from '../shared/hashing.js';
 
 // ─── Test Fixtures ────────────────────────────────────────────────────────────
@@ -266,24 +266,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
     return {
       ...stateWithTicket(phase),
       plan: {
-        current: {
-          body: '## Plan\nShip status tests',
-          digest: 'plan-digest',
-          sections: [],
-          createdAt: fixedTime,
-          recordDigest: computeRecordDigest({
-            contentDigest: 'plan-digest',
-            planVersion: 1,
-            supersedesRecordDigest: null,
-            originatingReviewObligationId: null,
-            revisionReason: null,
-          }),
-          planVersion: 1,
-          supersedesRecordDigest: null,
-          originatingReviewObligationId: null,
-          revisionReason: null,
-          lineageStatus: 'verified' as const,
-        },
+        current: makePlanRevision({ body: '## Plan\nShip status tests', createdAt: fixedTime }),
         history: [],
         reviewCompletion: 'pending',
       },

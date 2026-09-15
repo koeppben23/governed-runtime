@@ -8,10 +8,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { SessionState } from '../../state/schema.js';
-import {
-  hasUnresolvedDispatch,
-  resolveReviewContinuation,
-} from '../../state/review-continuation.js';
+import { hasReleasedDispatch, resolveReviewContinuation } from '../../state/review-continuation.js';
 import { makeState } from '../../fixtures.js';
 import {
   abandonSdkDispatch,
@@ -27,7 +24,6 @@ import {
   ensureReviewAssurance,
   freezeReviewMaterial,
   hashFindings,
-  hashText,
 } from './assurance.js';
 import type { ReviewerSuccessResult } from './orchestrator.js';
 
@@ -158,7 +154,7 @@ describe('persistAuthorizedSdkDispatch', () => {
 });
 
 describe('abandonSdkDispatch and interrupted-dispatch recovery', () => {
-  it('HAPPY: abandoning marks the entry outcome_unknown and clears the interrupted state', async () => {
+  it('HAPPY: abandoning marks the entry outcome_unknown and keeps the attempt spent, not re-dispatchable', async () => {
     const { obligation, attempt, assurance } = baseAssurance();
     const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
     const deps = writeDeps(stateRef);
@@ -169,7 +165,7 @@ describe('abandonSdkDispatch and interrupted-dispatch recovery', () => {
       canonicalPromptDigest: PROMPT_DIGEST,
       authorizedAt: NOW,
     });
-    expect(hasUnresolvedDispatch(stateRef.current.reviewAssurance, attempt.attemptId)).toBe(true);
+    expect(hasReleasedDispatch(stateRef.current.reviewAssurance, attempt.attemptId)).toBe(true);
     expect(resolveReviewContinuation(stateRef.current.reviewAssurance, 'plan').kind).toBe(
       'interrupted_dispatch',
     );
@@ -177,9 +173,12 @@ describe('abandonSdkDispatch and interrupted-dispatch recovery', () => {
     await abandonSdkDispatch(deps, SESS_DIR, CHILD);
 
     expect(stateRef.current.reviewAssurance!.dispatches[0]!.dispatchStatus).toBe('outcome_unknown');
-    expect(hasUnresolvedDispatch(stateRef.current.reviewAssurance, attempt.attemptId)).toBe(false);
+    // A concluded host call leaves the attempt SPENT: it is still bindable but
+    // must never be released again. Recovery is a durable re-arm that consumes
+    // the shared reviewer-attempt budget — not a free retry of the same attempt.
+    expect(hasReleasedDispatch(stateRef.current.reviewAssurance, attempt.attemptId)).toBe(true);
     expect(resolveReviewContinuation(stateRef.current.reviewAssurance, 'plan').kind).toBe(
-      'awaiting_task',
+      'interrupted_dispatch',
     );
   });
 
@@ -212,6 +211,56 @@ describe('abandonSdkDispatch and interrupted-dispatch recovery', () => {
     });
     expect(rearmed.assurance!.dispatches[0]!.dispatchStatus).toBe('outcome_unknown');
   });
+
+  it('BUDGET: each concluded host release consumes one reviewer attempt, not per command', async () => {
+    const { obligation, attempt, assurance } = baseAssurance();
+    const stateRef = { current: makeState('PLAN', { reviewAssurance: assurance }) };
+    const deps = writeDeps(stateRef);
+
+    // Attempt A released and concluded without evidence (spent).
+    await persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+      attemptId: attempt.attemptId,
+      obligationId: obligation.obligationId,
+      childSessionId: CHILD,
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    });
+    await abandonSdkDispatch(deps, SESS_DIR, CHILD);
+
+    // First command re-invocation re-arms a fresh attempt (budget slot 1/1).
+    const first = buildInterruptedDispatchRearm(stateRef.current.reviewAssurance, attempt, NOW);
+    expect(first.kind).toBe('ok');
+    if (first.kind !== 'ok') return;
+    expect(first.attempt.origin).toMatchObject({
+      kind: 'task_rearm',
+      triggerReason: 'interrupted',
+    });
+
+    // The fresh attempt is released and concluded without evidence as well.
+    stateRef.current = makeState('PLAN', { reviewAssurance: first.assurance });
+    await persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+      attemptId: first.attempt.attemptId,
+      obligationId: obligation.obligationId,
+      childSessionId: 'child-session-dispatch-2',
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    });
+    await abandonSdkDispatch(deps, SESS_DIR, 'child-session-dispatch-2');
+    expect(resolveReviewContinuation(stateRef.current.reviewAssurance, 'plan').kind).toBe(
+      'interrupted_dispatch',
+    );
+
+    // Second re-arm must be refused: the frozen budget (maxReviewerAttempts=1)
+    // is consumed by the first re-arm instead of resetting per command.
+    const second = buildInterruptedDispatchRearm(
+      stateRef.current.reviewAssurance,
+      first.attempt,
+      NOW,
+    );
+    expect(second.kind).toBe('blocked');
+    if (second.kind !== 'blocked') return;
+    expect(second.reason).toContain('budget exhausted');
+  });
 });
 
 describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
@@ -237,7 +286,7 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
       childSessionId: CHILD,
       hostCallId: CHILD,
       attemptId,
-      promptHash: hashText('prompt'),
+      promptHash: PROMPT_DIGEST,
       findingsHash: hashFindings(findings),
       invokedAt: NOW,
       fulfilledAt: NOW,

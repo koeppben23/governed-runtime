@@ -9,8 +9,6 @@
 
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 import type { ReviewObligationType } from '../../state/evidence.js';
-import type { CapturedFindings } from './enforcement/types.js';
-import { recordPluginReview } from './enforcement/enforcement.js';
 import { prepareReviewerFindingsForValidation } from './enforcement/prepare-findings.js';
 import {
   REVIEW_CRITERIA_VERSION,
@@ -22,7 +20,7 @@ import {
 } from './assurance.js';
 import { buildMutatedOutput, type ReviewerSuccessResult } from './orchestrator.js';
 import { persistAuthorizedSdkDispatch, abandonSdkDispatch } from '../durable-dispatch.js';
-import { hasUnresolvedDispatch } from '../../state/review-continuation.js';
+import { hasReleasedDispatch } from '../../state/review-continuation.js';
 import { selectReviewerProfileRules } from './prompt-builders.js';
 import { getToolArgs, strictBlockedOutput } from '../plugin-helpers.js';
 import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_ARCHITECTURE } from '../tool-names.js';
@@ -123,9 +121,10 @@ export async function runStandardReviewPipeline(
 
 /**
  * Resolve the pre-authorized attempt or block the invocation. A missing
- * attempt and an attempt whose prior durable dispatch outcome is unresolved
- * both fail closed BEFORE the host release, so one attempt can never be
- * prompted twice (crash/restart replay).
+ * attempt and an attempt that was already released to the host (unresolved or
+ * spent) both fail closed BEFORE the host release, so one attempt can never be
+ * prompted twice (crash/restart replay) and the technical retry budget cannot
+ * reset per command invocation.
  */
 function resolveDispatchAuthorizedAttempt(
   ctx: PipelineContext,
@@ -139,13 +138,13 @@ function resolveDispatchAuthorizedAttempt(
     });
     return null;
   }
-  if (hasUnresolvedDispatch(sessionState.reviewAssurance, attempt.attemptId)) {
+  if (hasReleasedDispatch(sessionState.reviewAssurance, attempt.attemptId)) {
     output.output = strictBlockedOutput('REVIEW_ATTEMPT_UNAVAILABLE', {
       obligationId: reviewCtx.obligationId,
       reason:
-        'the pre-authorized reviewer attempt has an unresolved dispatch; re-run the originating command to re-arm a fresh reviewer attempt',
+        'the pre-authorized reviewer attempt was already released to the host; re-run the originating command to re-arm a fresh reviewer attempt',
     });
-    deps.log.warn('orchestrator', 'reviewer dispatch interrupted — refusing replay', {
+    deps.log.warn('orchestrator', 'reviewer dispatch already released — refusing replay', {
       obligationId: reviewCtx.obligationId,
       attemptId: attempt.attemptId,
     });
@@ -521,22 +520,8 @@ interface FinalizeOutputOpts {
 
 async function finalizeReviewOutput(ctx: PipelineContext, opts: FinalizeOutputOpts): Promise<void> {
   const { toolName, reviewerResult, mutated } = opts;
-  const { deps, output, sessionId, now } = ctx;
+  const { deps, output, sessionId } = ctx;
 
-  const eState = deps.getEnforcementState(sessionId);
-  const captured: CapturedFindings = {
-    overallVerdict:
-      typeof reviewerResult.findings.overallVerdict === 'string'
-        ? reviewerResult.findings.overallVerdict
-        : 'unknown',
-    blockingIssuesCount: Array.isArray(reviewerResult.findings.blockingIssues)
-      ? reviewerResult.findings.blockingIssues.length
-      : 0,
-    sessionId: reviewerResult.sessionId,
-    rawFindings: reviewerResult.findings,
-  };
-
-  recordPluginReview(eState, toolName, reviewerResult.sessionId, captured, now);
   output.output = mutated;
 
   deps.log.info('orchestrator', 'reviewer invocation succeeded', {

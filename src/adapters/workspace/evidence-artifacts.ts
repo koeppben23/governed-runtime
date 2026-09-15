@@ -6,6 +6,13 @@
  * - `session-state.json` is authoritative.
  * - Files in `artifacts/` are derived, append-only evidence surfaces.
  *
+ * Plan artifact identity is the canonical plan revision identity
+ * (`PlanEvidence.recordDigest`): the derived surface carries no identity of
+ * its own and does not duplicate the plan lineage rules. The state boundary
+ * (`PlanRecord` in `src/state/evidence-plan.ts`) is the authoritative lineage
+ * validator; this module only fails closed on artifact-specific evidence
+ * (missing, mismatched, duplicated, or immutable files).
+ *
  * Moved from integration/artifacts/ to adapters/workspace/ (P4b) because
  * this module's only dependencies are Node built-ins + state/schema —
  * it belongs in the adapters layer, not the integration layer.
@@ -274,9 +281,10 @@ async function materializeTicketArtifact(
 }
 
 /**
- * Canonical revision/lineage identity of one plan revision. Artifact identity is
- * the lineage ordinal (`planVersion`), never content equality: two revisions
- * with identical bodies are still two distinct lineage artifacts.
+ * Canonical revision identity of one plan revision. Artifact identity is the
+ * revision's `recordDigest` (which binds content, version, predecessor,
+ * obligation, reason, and minted `revisionId`), never content equality: two
+ * revisions with identical bodies are still two distinct lineage artifacts.
  */
 interface PlanRevisionIdentity {
   readonly planVersion: number;
@@ -284,41 +292,18 @@ interface PlanRevisionIdentity {
   readonly digest: string;
   readonly recordDigest: string;
   readonly createdAt: string;
-  readonly supersedesRecordDigest: string | null;
 }
 
 /**
- * Resolve the full plan revision chain in lineage order (v1..vN), fail-closed
- * on any incoherent lineage. The plan authority is `history + current`; the
- * artifact chain must mirror exactly this lineage, so both are derived from
- * `planVersion`/`recordDigest` — never from `contentHash`.
+ * Order the plan revisions in lineage order (v1..vN). The plan authority is
+ * `history + current`; lineage coherence (contiguity, chaining, head position)
+ * is enforced by the `PlanRecord` schema refinement at the state boundary and
+ * is not duplicated here.
  */
-function resolvePlanRevisionChain(plan: NonNullable<SessionState['plan']>): PlanRevisionIdentity[] {
-  const revisions = [...plan.history, plan.current];
-  const sorted = [...revisions].sort((a, b) => a.planVersion - b.planVersion);
-  for (let index = 0; index < sorted.length; index += 1) {
-    const revision = sorted[index]!;
-    if (revision.planVersion !== index + 1) {
-      throw new EvidenceArtifactError(
-        'EVIDENCE_ARTIFACT_MISMATCH',
-        `Plan lineage is not contiguous: expected planVersion ${index + 1}, got ${revision.planVersion}`,
-      );
-    }
-    const predecessor = index === 0 ? null : sorted[index - 1]!;
-    if (revision.supersedesRecordDigest !== (predecessor?.recordDigest ?? null)) {
-      throw new EvidenceArtifactError(
-        'EVIDENCE_ARTIFACT_MISMATCH',
-        `Plan lineage chain is broken at planVersion ${revision.planVersion}`,
-      );
-    }
-  }
-  if (plan.current.planVersion !== sorted.length) {
-    throw new EvidenceArtifactError(
-      'EVIDENCE_ARTIFACT_MISMATCH',
-      `Plan current revision is not the lineage head: current v${plan.current.planVersion} of ${sorted.length}`,
-    );
-  }
-  return sorted;
+function orderedPlanRevisions(plan: NonNullable<SessionState['plan']>): PlanRevisionIdentity[] {
+  return [...plan.history, plan.current].sort(
+    (left, right) => left.planVersion - right.planVersion,
+  );
 }
 
 async function materializePlanArtifacts(
@@ -330,12 +315,12 @@ async function materializePlanArtifacts(
   const plan = state.plan;
   if (!plan) return;
 
-  const chain = resolvePlanRevisionChain(plan);
+  const chain = orderedPlanRevisions(plan);
   let existing = await readArtifactVersions(artifactsDir, 'plan');
 
-  // One artifact per authority revision instance, keyed by the revision's
-  // lineage digest plus its revision timestamp. Content equality must never
-  // gate materialization: an identical-body revision is a new lineage revision
+  // One artifact per authority revision instance, keyed by the canonical
+  // revision identity (`recordDigest`). Content equality must never gate
+  // materialization: an identical-body revision is a new lineage revision
   // with a new `recordDigest` and receives its own immutable artifact.
   for (const revision of chain) {
     if (findPlanRevisionArtifact(existing, revision)) continue;
@@ -386,22 +371,18 @@ async function createPlanArtifact(input: CreatePlanArtifactInput): Promise<void>
   await writeImmutableFile(file.jsonAbsPath, JSON.stringify(meta, null, 2) + '\n', createdPaths);
 }
 
-/** The artifact of one exact revision instance, identified by its lineage identity. */
+/** The artifact of one exact revision instance, identified by its canonical revision identity. */
 function findPlanRevisionArtifact(
   entries: Array<{ meta: EvidenceArtifactMeta; relPath: string }>,
   revision: PlanRevisionIdentity,
 ): { meta: EvidenceArtifactMeta; relPath: string } | undefined {
-  return entries.find(
-    (candidate) =>
-      candidate.meta.recordDigest === revision.recordDigest &&
-      candidate.meta.createdAt === revision.createdAt,
-  );
+  return entries.find((candidate) => candidate.meta.recordDigest === revision.recordDigest);
 }
 
 /**
  * The artifact chain must cover the CURRENT authority lineage exactly: every
- * revision instance is identified by its lineage digest (`recordDigest`) plus
- * its revision timestamp, with `contentHash` as the body integrity attribute.
+ * revision instance is identified by `recordDigest` alone, with `contentHash`
+ * and `createdAt` as integrity attributes that must match the revision.
  * Artifacts from superseded lineages remain append-only history and are not
  * part of the coverage contract.
  */
@@ -414,9 +395,7 @@ function assertPlanRevisionCoverage(
   }
   for (const revision of chain) {
     const matches = entries.filter(
-      (candidate) =>
-        candidate.meta.recordDigest === revision.recordDigest &&
-        candidate.meta.createdAt === revision.createdAt,
+      (candidate) => candidate.meta.recordDigest === revision.recordDigest,
     );
     if (matches.length === 0) {
       throw new EvidenceArtifactError(
@@ -430,10 +409,17 @@ function assertPlanRevisionCoverage(
         `Plan revision v${revision.planVersion} is materialized more than once`,
       );
     }
-    if (matches[0]!.meta.contentHash !== revision.digest) {
+    const artifact = matches[0]!.meta;
+    if (artifact.contentHash !== revision.digest) {
       throw new EvidenceArtifactError(
         'EVIDENCE_ARTIFACT_MISMATCH',
-        `Plan artifact v${revision.planVersion} does not match its revision identity`,
+        `Plan artifact v${revision.planVersion} contentHash does not match its revision`,
+      );
+    }
+    if (artifact.createdAt !== revision.createdAt) {
+      throw new EvidenceArtifactError(
+        'EVIDENCE_ARTIFACT_MISMATCH',
+        `Plan artifact v${revision.planVersion} createdAt does not match its revision`,
       );
     }
   }
@@ -468,7 +454,7 @@ async function verifyPlanArtifacts(artifactsDir: string, state: SessionState): P
   const plan = state.plan;
   if (!plan) return;
 
-  const chain = resolvePlanRevisionChain(plan);
+  const chain = orderedPlanRevisions(plan);
   const entries = await readArtifactVersions(artifactsDir, 'plan');
   if (entries.length === 0) {
     throw new EvidenceArtifactError(

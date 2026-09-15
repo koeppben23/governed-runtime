@@ -732,7 +732,7 @@ describe('evidence-review', () => {
         invocationMode: 'sdk_session_prompt' as const,
         hostVisible: false,
         source: 'host-orchestrated' as const,
-        promptHash: 'sha256-prompt',
+        promptHash: 'a'.repeat(64),
         mandateDigest: 'sha256-mandate',
         criteriaVersion: 'p40-v1',
         findingsHash: 'sha256-findings',
@@ -897,7 +897,18 @@ describe('evidence-review', () => {
         obligations: [consumedContentObligation()],
         invocations: [invocation],
         attempts: [attempt],
-        dispatches: [],
+        dispatches: [
+          {
+            dispatchId: '99999999-9999-4999-8999-999999999998',
+            attemptId: String(invocation.attemptId),
+            obligationId: String(invocation.obligationId),
+            hostCallId: String(invocation.childSessionId),
+            canonicalPromptDigest: String(invocation.promptHash),
+            dispatchAuthorizedAt: FIXED_TIME,
+            dispatchStatus: 'completed' as const,
+            completedAt: FIXED_TIME,
+          },
+        ],
       });
     }
 

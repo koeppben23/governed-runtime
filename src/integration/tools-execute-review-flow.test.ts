@@ -64,6 +64,7 @@ import {
   IMPL_EVIDENCE,
   IMPL_REVIEW_CONVERGED,
 } from '../fixtures.js';
+import { completedDispatchForInvocation } from '../state/evidence-test-constants.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
 import { TEAM_POLICY } from '../config/policy.js';
 import { runWithAdapterLoggerAsync, type AdapterLogger } from '../logging/adapter-logger.js';
@@ -381,7 +382,7 @@ describe('review', () => {
         criteriaVersion: REVIEW_CRITERIA_VERSION,
         parentSessionId: ctx.sessionID,
         childSessionId: findings.reviewedBy.sessionId,
-        promptHash: 'host-task-review-prompt',
+        promptHash: 'a'.repeat(64),
         findingsHash: hashFindings(findings),
         invokedAt: fulfilledAt,
         fulfilledAt,
@@ -395,7 +396,13 @@ describe('review', () => {
         fulfilledAt,
         { childSessionId: findings.reviewedBy.sessionId },
       );
-      const withInvocation = appendInvocationEvidence(boundAssurance, invocation);
+      const withInvocation = appendInvocationEvidence(
+        {
+          ...boundAssurance,
+          dispatches: [...boundAssurance.dispatches, completedDispatchForInvocation(invocation)],
+        },
+        invocation,
+      );
       await writeState(sessDir, {
         ...scopedState,
         reviewAssurance: fulfillObligation(

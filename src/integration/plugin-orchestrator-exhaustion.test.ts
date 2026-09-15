@@ -179,10 +179,8 @@ function buildDeps(
       {
         tool,
         requestedAt: NOW,
-        subagentCalled: false,
-        subagentRecord: null,
-        contentMeta: { expectedIteration: 1, expectedPlanVersion: 1 },
-        capturedFindings: null,
+        attemptId: null,
+        obligationId: null,
       },
     ]),
   );
@@ -277,10 +275,8 @@ describe('BUG-07: obligation blocked after total invocation failure', () => {
           {
             tool,
             requestedAt: NOW,
-            subagentCalled: false,
-            subagentRecord: null,
-            contentMeta: { expectedIteration: 1, expectedPlanVersion: 1 },
-            capturedFindings: null,
+            attemptId: null,
+            obligationId: null,
           },
         ]),
       );

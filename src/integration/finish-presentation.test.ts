@@ -15,6 +15,7 @@ import { getPolicyPreset } from '../config/policy.js';
 import { createPolicySnapshot } from '../config/policy-snapshot.js';
 import { hashText } from '../shared/hashing.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { makePlanRevision } from '../state/evidence-test-constants.js';
 
 function sp(mode: 'solo' | 'team') {
   return createPolicySnapshot(getPolicyPreset(mode), '2026-01-01T00:00:00.000Z', hashText);
@@ -143,21 +144,25 @@ describe('buildFinishDocument', () => {
         },
       ],
     };
+    const current = makePlanRevision({
+      body: 'x',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
     const certificate = {
       flow: 'plan' as const,
-      authorityDigest: 'plan-digest',
+      authorityDigest: current.digest,
       claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations)),
       decisionAttestationDigest: 'd',
       approvedAt: '2026-01-01T00:00:00.000Z',
       approvedBy: 'reviewer',
       certificateId: '00000000-0000-4000-8000-0000000000ce',
       planVersion: 1,
-      planRecordDigest: 'record-digest',
+      planRecordDigest: current.recordDigest,
       reviewBinding: {
         kind: 'current_review' as const,
         reviewObligationId: '00000000-0000-4000-8000-0000000000cd',
         reviewEvidenceDigest: 'e'.repeat(64),
-        reviewedSubjectDigest: 'plan-digest',
+        reviewedSubjectDigest: current.digest,
       },
       reviewObligationId: '00000000-0000-4000-8000-0000000000cd',
       reviewEvidenceDigest: 'e'.repeat(64),
@@ -170,18 +175,7 @@ describe('buildFinishDocument', () => {
         hashText,
       ),
       plan: {
-        current: {
-          body: 'x',
-          digest: 'plan-digest',
-          sections: [],
-          createdAt: '2026-01-01T00:00:00.000Z',
-          recordDigest: 'record-digest',
-          planVersion: 1,
-          supersedesRecordDigest: null,
-          originatingReviewObligationId: null,
-          revisionReason: null,
-          lineageStatus: 'verified',
-        },
+        current,
         history: [],
         reviewCompletion: 'pending',
         claimDeclarations: declarations,

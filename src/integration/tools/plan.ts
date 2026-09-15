@@ -33,6 +33,7 @@
  */
 
 import { z } from 'zod';
+import { randomUUID } from 'node:crypto';
 import {
   freezeContextAuthorityAtHead,
   frozenAuthorityOrUndefined,
@@ -170,18 +171,21 @@ function buildPlanEvidence(
   const supersedesRecordDigest = lineage?.supersedesRecordDigest ?? null;
   const originatingReviewObligationId = lineage?.originatingReviewObligationId ?? null;
   const revisionReason = lineage?.revisionReason ?? null;
+  const revisionId = randomUUID();
 
   return {
     body: planBody,
     digest: contentDigest,
     sections: projectMarkdownHeadings(planBody),
     createdAt: scope.ctx.now(),
+    revisionId,
     recordDigest: computeRecordDigest({
       contentDigest,
       planVersion,
       supersedesRecordDigest,
       originatingReviewObligationId,
       revisionReason,
+      revisionId,
     }),
     planVersion,
     supersedesRecordDigest,

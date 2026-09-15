@@ -35,7 +35,7 @@ import { createPolicySnapshot } from '../config/policy-snapshot.js';
 import { makeState } from '../fixtures.js';
 import { isCommandAllowed, Command } from '../machine/commands.js';
 import { USER_GATES, TERMINAL } from '../machine/topology.js';
-import { computeRecordDigest } from '../state/evidence-plan.js';
+import { makePlanRevision } from '../state/evidence-test-constants.js';
 import type { PlanRecord } from '../state/evidence-plan.js';
 import type {
   PlanApprovalCertificate,
@@ -348,6 +348,7 @@ describe('buildBlockedProjection — ProofGraph gate', () => {
   const team = getPolicyPreset('team');
   const CLAIM_ID = '00000000-0000-4000-8000-000000000001';
   const CERT_ID = '00000000-0000-4000-8000-0000000000ce';
+  const PLAN_CURRENT = makePlanRevision({ body: 'x' });
 
   function declarations(): PlanClaimDeclarations {
     return {
@@ -370,37 +371,26 @@ describe('buildBlockedProjection — ProofGraph gate', () => {
     const decls = declarations();
     return {
       flow: 'plan',
-      authorityDigest: 'plan-digest',
+      authorityDigest: PLAN_CURRENT.digest,
       claimDeclarationsDigest: hashText(canonicalJsonStringify(decls)),
       decisionAttestationDigest: 'd',
       approvedAt: '2026-01-01T00:00:00.000Z',
       approvedBy: 'reviewer',
       certificateId: CERT_ID,
-      planVersion: 1,
-      planRecordDigest: 'record-digest',
+      planVersion: PLAN_CURRENT.planVersion,
+      planRecordDigest: PLAN_CURRENT.recordDigest,
       reviewBinding: {
         kind: 'current_review',
         reviewObligationId: '00000000-0000-4000-8000-0000000000cd',
         reviewEvidenceDigest: 'e'.repeat(64),
-        reviewedSubjectDigest: 'plan-digest',
+        reviewedSubjectDigest: PLAN_CURRENT.digest,
       },
     };
   }
 
   function approvedPlan(): PlanRecord {
     return {
-      current: {
-        body: 'x',
-        digest: 'plan-digest',
-        sections: [],
-        createdAt: '2026-01-01T00:00:00.000Z',
-        recordDigest: 'record-digest',
-        planVersion: 1,
-        supersedesRecordDigest: null,
-        originatingReviewObligationId: null,
-        revisionReason: null,
-        lineageStatus: 'verified',
-      },
+      current: PLAN_CURRENT,
       history: [],
       reviewCompletion: 'pending',
       claimDeclarations: declarations(),
@@ -508,24 +498,7 @@ describe('buildStatusProjection — EDGE evidence', () => {
         createdAt: new Date().toISOString(),
       },
       plan: {
-        current: {
-          body: '## Plan\n...',
-          digest: 'plan123',
-          sections: [],
-          createdAt: new Date().toISOString(),
-          recordDigest: computeRecordDigest({
-            contentDigest: 'plan123',
-            planVersion: 1,
-            supersedesRecordDigest: null,
-            originatingReviewObligationId: null,
-            revisionReason: null,
-          }),
-          planVersion: 1,
-          supersedesRecordDigest: null,
-          originatingReviewObligationId: null,
-          revisionReason: null,
-          lineageStatus: 'verified' as const,
-        },
+        current: makePlanRevision({ body: '## Plan\n...' }),
         history: [],
         reviewCompletion: 'pending',
       },
@@ -658,24 +631,7 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
         createdAt: new Date().toISOString(),
       },
       plan: {
-        current: {
-          body: '## Plan',
-          digest: 'plan_digest',
-          sections: [],
-          createdAt: new Date().toISOString(),
-          recordDigest: computeRecordDigest({
-            contentDigest: 'plan_digest',
-            planVersion: 1,
-            supersedesRecordDigest: null,
-            originatingReviewObligationId: null,
-            revisionReason: null,
-          }),
-          planVersion: 1,
-          supersedesRecordDigest: null,
-          originatingReviewObligationId: null,
-          revisionReason: null,
-          lineageStatus: 'verified' as const,
-        },
+        current: makePlanRevision({ body: '## Plan' }),
         history: [],
         reviewCompletion: 'pending',
       },
@@ -762,24 +718,7 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
         createdAt: new Date().toISOString(),
       },
       plan: {
-        current: {
-          body: '## Plan',
-          digest: 'plan_digest',
-          sections: [],
-          createdAt: new Date().toISOString(),
-          recordDigest: computeRecordDigest({
-            contentDigest: 'plan_digest',
-            planVersion: 1,
-            supersedesRecordDigest: null,
-            originatingReviewObligationId: null,
-            revisionReason: null,
-          }),
-          planVersion: 1,
-          supersedesRecordDigest: null,
-          originatingReviewObligationId: null,
-          revisionReason: null,
-          lineageStatus: 'verified' as const,
-        },
+        current: makePlanRevision({ body: '## Plan' }),
         history: [],
         reviewCompletion: 'pending',
       },

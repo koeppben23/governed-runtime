@@ -40,7 +40,7 @@ import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './review/assurance.js';
-import { computeRecordDigest } from '../state/evidence-plan.js';
+import { makePlanRevision } from '../state/evidence-test-constants.js';
 import { fileURLToPath } from 'node:url';
 import { clearUserDecisionIntents, consumeUserDecisionIntent } from './user-decision-intent.js';
 
@@ -75,6 +75,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
   const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
   const obligationId = '11111111-1111-4111-8111-111111111111';
   const reviewMaterial = freezeReviewMaterial('## Plan\n1. Fix auth', 'test-subject-digest');
+  const planCurrent = makePlanRevision({ body: '## Plan\n1. Fix auth', createdAt: now });
 
   await fs.mkdir(sessDir, { recursive: true });
   await writeState(
@@ -87,24 +88,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
         createdAt: now,
       },
       plan: {
-        current: {
-          body: '## Plan\n1. Fix auth',
-          digest: 'plan-digest',
-          sections: ['Plan'],
-          createdAt: now,
-          recordDigest: computeRecordDigest({
-            contentDigest: 'plan-digest',
-            planVersion: 1,
-            supersedesRecordDigest: null,
-            originatingReviewObligationId: null,
-            revisionReason: null,
-          }),
-          planVersion: 1,
-          supersedesRecordDigest: null,
-          originatingReviewObligationId: null,
-          revisionReason: null,
-          lineageStatus: 'verified' as const,
-        },
+        current: planCurrent,
         history: [],
         reviewCompletion: 'pending',
         reviewFindings: [],
@@ -113,7 +97,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
         iteration: 0,
         maxIterations: 3,
         prevDigest: null,
-        currDigest: 'plan-digest',
+        currDigest: planCurrent.digest,
         revisionDelta: 'major',
         verdict: 'changes_requested',
       },

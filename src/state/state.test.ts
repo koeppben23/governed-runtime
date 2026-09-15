@@ -26,6 +26,7 @@ import {
 } from '../state/evidence.js';
 import { Phase, Event, Transition, SessionState } from '../state/schema.js';
 import { makeState, FIXED_TIME, FIXED_UUID, FIXED_SESSION_UUID } from '../fixtures.js';
+import { makePlanRevision } from './evidence-test-constants.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 import { readState } from '../adapters/persistence.js';
 import { POLICY_DIGEST_VERSION } from './evidence-identifiers.js';
@@ -83,18 +84,10 @@ describe('state schemas', () => {
     });
 
     it('PlanEvidence parses valid plan', () => {
-      const plan = {
+      const plan = makePlanRevision({
         body: '## Plan\nStep 1',
-        digest: 'abc',
-        sections: ['Plan'],
         createdAt: FIXED_TIME,
-        recordDigest: 'record',
-        planVersion: 1,
-        supersedesRecordDigest: null,
-        originatingReviewObligationId: null,
-        revisionReason: null,
-        lineageStatus: 'verified',
-      };
+      });
       const parsed = PlanEvidence.parse(plan);
       expect(parsed.body).toBe(plan.body);
       expect(parsed.planVersion).toBe(1);
@@ -476,18 +469,7 @@ describe('state schemas', () => {
 
     it('PlanRecord with empty history is valid', () => {
       const record = {
-        current: {
-          body: 'Plan',
-          digest: 'abc',
-          sections: [],
-          createdAt: FIXED_TIME,
-          recordDigest: 'record',
-          planVersion: 1,
-          supersedesRecordDigest: null,
-          originatingReviewObligationId: null,
-          revisionReason: null,
-          lineageStatus: 'verified',
-        },
+        current: makePlanRevision({ body: 'Plan', createdAt: FIXED_TIME }),
         history: [],
         reviewCompletion: 'pending' as const,
       };
@@ -495,18 +477,7 @@ describe('state schemas', () => {
     });
 
     it('PlanEvidence with empty sections array is valid', () => {
-      const plan = {
-        body: 'No headers here',
-        digest: 'abc',
-        sections: [],
-        createdAt: FIXED_TIME,
-        recordDigest: 'record',
-        planVersion: 1,
-        supersedesRecordDigest: null,
-        originatingReviewObligationId: null,
-        revisionReason: null,
-        lineageStatus: 'verified',
-      };
+      const plan = makePlanRevision({ body: 'No headers here', createdAt: FIXED_TIME });
       expect(() => PlanEvidence.parse(plan)).not.toThrow();
     });
 

@@ -27,6 +27,7 @@ import {
   REVIEW_MANDATE_DIGEST,
 } from './assurance.js';
 import { mintObservationCapability } from './attempt-lifecycle.js';
+import { completedDispatchForInvocation } from '../../state/evidence-test-constants.js';
 import { validateReviewFindings } from '../tools/review-validation.js';
 import { NOW, SESSION_ID, CHILD_SESSION_ID } from '../plugin-host-task-diagnostics-helpers.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
@@ -449,7 +450,7 @@ describe('direct/submitted validator path', () => {
       reviewAssuranceLevel: 'structured_high',
       hostVisible: false,
       source: 'host-orchestrated',
-      promptHash: 'prompt-hash',
+      promptHash: 'a'.repeat(64),
       mandateDigest: REVIEW_MANDATE_DIGEST,
       criteriaVersion: REVIEW_CRITERIA_VERSION,
       findingsHash: hashFindings(findings),
@@ -462,6 +463,7 @@ describe('direct/submitted validator path', () => {
       obligation: boundObligation,
       attempts,
       invocations: [invocation],
+      dispatches: [completedDispatchForInvocation(invocation)],
     });
   }
 

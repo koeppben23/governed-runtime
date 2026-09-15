@@ -351,7 +351,7 @@ function reviewLifecycleAction(
     case 'interrupted_dispatch':
       return {
         code: ACTION_CODES.RUN_PLAN,
-        text: `Independent ${label.toLowerCase()} review was interrupted mid-dispatch (unresolved durable dispatch). Re-run ${command} to re-arm the review attempt durably on the existing obligation.`,
+        text: `Independent ${label.toLowerCase()} review was interrupted or spent mid-dispatch (released, no bound evidence). Re-run ${command} to re-arm the review attempt durably on the existing obligation.`,
         commands: [command],
       };
     case 'output_repair':

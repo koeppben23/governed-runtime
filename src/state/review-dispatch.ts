@@ -2,20 +2,22 @@
  * @module state/review-dispatch
  * @description Canonical authority for the durable reviewer-dispatch ledger.
  *
- * P1 (durable dispatch recovery) requires that every reviewer Task dispatch is
- * durably recorded BEFORE the host may release it, so a crash between Before
- * and After can never be mistaken for "never dispatched" after a restart. This
- * module owns the append-only ledger mutators used by every controlled writer
- * (`appendReviewDispatch`, `markDispatchOutcomeUnknown`,
- * `completeReviewDispatch`, `hasUnresolvedDispatch`) together with the shared
- * base `emptyReviewAssurance` / `ensureReviewAssurance` constructors.
+ * Durable dispatch recovery requires that every reviewer dispatch is durably
+ * recorded BEFORE the host may release it, so a crash between release and
+ * completion can never be mistaken for "never dispatched" after a restart.
+ * This module owns the append-only ledger mutators used by every controlled
+ * writer (`appendReviewDispatch`, `markDispatchOutcomeUnknown`,
+ * `completeReviewDispatch`, `abandonReviewDispatch`, `hasReleasedDispatch`)
+ * together with the shared base `emptyReviewAssurance` /
+ * `ensureReviewAssurance` constructors.
  *
  * The ledger record schema lives on `ReviewAssuranceState` in
  * `evidence-review.ts` (the canonical state authority); this module consumes
  * those types so no circular dependency exists between the layers.
  *
- * The ledger is append-only and fail-closed: an entry left `authorized` after a
- * restart forces a fresh append-only re-arm, never a duplicate bind.
+ * The ledger is append-only and fail-closed: a bindable attempt whose ledger
+ * already records a release (unresolved or spent) forces a fresh append-only
+ * re-arm, never a duplicate dispatch on the same attempt.
  *
  * @version v1
  */
@@ -26,14 +28,21 @@ import {
   type ReviewDispatchRecord,
 } from './evidence-review.js';
 
-/** Whether the attempt carries a durable dispatch whose outcome is still unknown. */
-export function hasUnresolvedDispatch(
+/**
+ * Whether the attempt was already released to the host at least once.
+ *
+ * `completed` implies the attempt is bound (never bindable), so on a still
+ * bindable attempt ANY dispatch record means a host release already happened:
+ * `authorized` = outcome unresolved (crash/restart), `outcome_unknown` = the
+ * call concluded without bindable evidence (spent). Both must never be
+ * silently re-released on the same attempt — the originating command must
+ * re-arm a fresh attempt, which consumes the frozen reviewer-attempt budget.
+ */
+export function hasReleasedDispatch(
   assurance: ReviewAssuranceState | undefined,
   attemptId: string,
 ): boolean {
-  return (assurance?.dispatches ?? []).some(
-    (record) => record.attemptId === attemptId && record.dispatchStatus === 'authorized',
-  );
+  return (assurance?.dispatches ?? []).some((record) => record.attemptId === attemptId);
 }
 
 /** The canonical empty assurance state. All requirement-bearing fields are present. */

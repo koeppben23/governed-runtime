@@ -44,7 +44,10 @@ import {
 } from './review/assurance.js';
 import { makeState, TICKET, FROZEN_IMPLEMENTATION_BASE } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
-import { computeRecordDigest } from '../state/evidence-plan.js';
+import {
+  completedDispatchForInvocation,
+  makePlanRevision,
+} from '../state/evidence-test-constants.js';
 
 vi.mock('../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
@@ -230,7 +233,7 @@ async function inject(
     invocationMode: 'sdk_session_prompt' as const,
     hostVisible: false,
     source: 'host-orchestrated' as const,
-    promptHash: 'abc',
+    promptHash: 'a'.repeat(64),
     mandateDigest: REVIEW_MANDATE_DIGEST,
     criteriaVersion: REVIEW_CRITERIA_VERSION,
     findingsHash: fh,
@@ -280,7 +283,7 @@ async function inject(
             }
           : attempt,
       ),
-      dispatches: state.reviewAssurance!.dispatches,
+      dispatches: [...state.reviewAssurance!.dispatches, completedDispatchForInvocation(inv)],
     },
     reviewDecision: {
       verdict: 'approve',
@@ -375,24 +378,7 @@ describe('FlowGuard tool-level E2E', () => {
           implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
           ticket: TICKET,
           plan: {
-            current: {
-              body: '# Plan',
-              digest: 'abc',
-              sections: [],
-              createdAt: FIXED_TIME,
-              recordDigest: computeRecordDigest({
-                contentDigest: 'abc',
-                planVersion: 1,
-                supersedesRecordDigest: null,
-                originatingReviewObligationId: null,
-                revisionReason: null,
-              }),
-              planVersion: 1,
-              supersedesRecordDigest: null,
-              originatingReviewObligationId: null,
-              revisionReason: null,
-              lineageStatus: 'verified' as const,
-            },
+            current: makePlanRevision({ body: '# Plan', createdAt: FIXED_TIME }),
             history: [],
             reviewCompletion: 'pending',
             reviewFindings: undefined,

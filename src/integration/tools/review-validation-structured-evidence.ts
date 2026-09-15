@@ -225,7 +225,7 @@ export function resolveStructuredFindings(
           // favour of the unchanged consistency check below.
           parentSessionId ?? '',
         );
-        return 'bindOutcome' in rebound
+        return 'kind' in rebound
           ? parsed.data.challenges
           : (rebound.challenges as typeof parsed.data.challenges);
       })();

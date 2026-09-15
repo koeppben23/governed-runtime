@@ -1,12 +1,15 @@
 /**
  * @module integration/review/reviewer-contract
- * @description Canonical reviewer-facing contract values. This is the SINGLE
- * source of truth for enum values and anchor shapes presented to reviewers.
- * Both findings-schema.ts (SDK JSON schema) and finding-relation-grammar.ts
- * (prompt grammar) derive from these values.
+ * @description Reviewer-facing projection of the canonical model-output
+ * authority `ReviewerFindingsInput` (src/state/evidence-review-input.ts).
  *
- * Drift from canonical Zod types is detected by reviewer-contract.test.ts
- * which validates against ReviewFindings.safeParse at build time.
+ * This module is a rendering helper, NOT a source of truth. It holds the enum
+ * values and anchor shape descriptors that the reviewer prompt grammar
+ * (finding-relation-grammar.ts) and the SDK JSON schema (findings-schema.ts)
+ * render for the model. The canonical contract is the Zod authority; parity is
+ * enforced behaviorally by reviewer-contract.test.ts and
+ * findings-schema-drift.test.ts, which validate these projections against the
+ * canonical Zod schemas.
  */
 export const SEVERITY_VALUES = ['critical', 'major', 'minor'] as const;
 

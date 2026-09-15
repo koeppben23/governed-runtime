@@ -28,7 +28,7 @@ import {
 import { updateObligation } from './obligation-state.js';
 import { buildSdkEvidenceAuditIntents } from './sdk-evidence-recorder.js';
 import { persistAuthorizedSdkDispatch, abandonSdkDispatch } from '../durable-dispatch.js';
-import { completeReviewDispatch, hasUnresolvedDispatch } from '../../state/review-continuation.js';
+import { completeReviewDispatch, hasReleasedDispatch } from '../../state/review-continuation.js';
 import { hasAuthorizedDispatch } from '../../state/review-dispatch.js';
 import type { PipelineContext } from './pipeline-types.js';
 import {
@@ -63,9 +63,9 @@ function matchesActiveReviewGeneration(
 }
 
 /**
- * A prior host call with an unresolved durable dispatch must never be
- * re-released on the same attempt (crash/restart replay). Returns true when
- * the invocation was blocked.
+ * An attempt that was already released to the host (unresolved or spent) must
+ * never be re-released on the same attempt (crash/restart replay, per-command
+ * retry-budget reset). Returns true when the invocation was blocked.
  */
 async function blockInterruptedDispatch(
   deps: PipelineContext['deps'],
@@ -73,11 +73,11 @@ async function blockInterruptedDispatch(
   attempt: ReturnType<typeof findBindableAttempt>,
 ): Promise<boolean> {
   if (!attempt) return false;
-  if (!hasUnresolvedDispatch(ctx.sessionState.reviewAssurance, attempt.attemptId)) return false;
+  if (!hasReleasedDispatch(ctx.sessionState.reviewAssurance, attempt.attemptId)) return false;
   await blockReviewOutcomeHelper(deps, ctx, 'REVIEW_ATTEMPT_UNAVAILABLE', {
     obligationId: ctx.reviewCtx.obligationId,
     reason:
-      'the pre-authorized reviewer attempt has an unresolved dispatch; re-run the originating command to re-arm a fresh reviewer attempt',
+      'the pre-authorized reviewer attempt was already released to the host; re-run the originating command to re-arm a fresh reviewer attempt',
   });
   return true;
 }

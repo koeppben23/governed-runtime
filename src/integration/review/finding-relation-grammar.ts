@@ -1,10 +1,11 @@
 /**
  * @module integration/review/finding-relation-grammar
  * @description Deterministic, machine-consistent FindingRelation grammar for
- * reviewer prompts. Rendered from reviewer-contract.ts (the canonical SSOT),
- * which is verified against the Zod schemas by reviewer-contract.test.ts.
- * Every reviewer transport MUST receive this grammar so no path can guess the
- * schema that the other path enforces.
+ * reviewer prompts. Rendered from reviewer-contract.ts, the reviewer-facing
+ * projection of the canonical `ReviewerFindingsInput` model-output authority,
+ * which is verified against the canonical Zod schemas by
+ * reviewer-contract.test.ts. Every reviewer transport MUST receive this
+ * grammar so no path can guess the schema that the other path enforces.
  */
 import {
   SEVERITY_VALUES,

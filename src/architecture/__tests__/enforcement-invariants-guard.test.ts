@@ -44,16 +44,18 @@ describe('enforcement contract invariants', () => {
     expect(content).toContain('invocationMode');
   });
 
-  it('a reviewer session may hold evidence for one pending review at most', () => {
-    // recordPluginReview must refuse a second capture for an already-called
-    // pending review; one reviewer invocation cannot authorize two verdicts.
+  it('enforcement holds no transient task-capture state', () => {
+    // Reviewer execution authority is the host-observed structured SDK
+    // invocation persisted in review assurance; the transient pending review
+    // tracks only signal identity and must never record captures itself.
     const content = readFileSync(
       join(SRC_ROOT, 'integration/review/enforcement/enforcement.ts'),
       'utf8',
     );
-    expect(content).toContain('export function recordPluginReview');
-    expect(content).toMatch(/pending\.subagentCalled/);
-    expect(content).toContain('return false');
+    expect(content).not.toContain('recordPluginReview');
+    expect(content).not.toContain('subagentCalled');
+    expect(content).not.toContain('capturedFindings');
+    expect(content).toContain('sdk_session_prompt');
   });
 
   it('removes the obsolete host-task prompt authority', () => {

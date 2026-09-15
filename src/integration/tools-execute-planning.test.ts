@@ -59,6 +59,7 @@ import {
   IMPL_EVIDENCE,
   IMPL_REVIEW_CONVERGED,
 } from '../fixtures.js';
+import { completedDispatchForInvocation } from '../state/evidence-test-constants.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
 import { convertArgsToInputSchema } from '../mcp-server/schema-converter.js';
 import { TEAM_POLICY } from '../config/policy.js';
@@ -1232,7 +1233,7 @@ describe('plan', () => {
           criteriaVersion: deps.REVIEW_CRITERIA_VERSION,
           parentSessionId: 'ses-parent',
           childSessionId: 'ses-child',
-          promptHash: 'sha256-prompt',
+          promptHash: 'a'.repeat(64),
           findingsHash: deps.hashFindings(findings),
           invokedAt: NOW,
           capturedRawFindings: findings as unknown as Record<string, unknown>,
@@ -1245,12 +1246,13 @@ describe('plan', () => {
       const deps = await dependencies();
       const obligation = producerObligation(deps, 'plan-digest-reviewed');
       const findings = findingsFor(deps, obligation);
+      const invocation = invocationFor(deps, obligation, findings, obligation.obligationId);
       const assuranceState = {
         assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [obligation],
-        invocations: [invocationFor(deps, obligation, findings, obligation.obligationId)],
+        invocations: [invocation],
         attempts: [],
-        dispatches: [],
+        dispatches: [completedDispatchForInvocation(invocation)],
       };
       const summary = deps.latestPlanReviewSummary(assuranceState, findings, 1);
       expect(summary.reviewedDigest).toBe('plan-digest-reviewed');

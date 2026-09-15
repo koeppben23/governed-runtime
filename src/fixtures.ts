@@ -48,6 +48,7 @@ export const FIXED_UUID = '00000000-0000-4000-8000-000000000001';
 export const FIXED_SESSION_UUID = '00000000-0000-4000-8000-000000000002';
 export const FIXED_DIGEST = 'digest-of-test';
 export const FIXED_FINGERPRINT = 'a1b2c3d4e5f6a1b2c3d4e5f6';
+const PLAN_DIGEST = hashText('## Plan\n1. Fix auth\n2. Add tests');
 
 // ─── Evidence Fixtures ────────────────────────────────────────────────────────
 
@@ -275,7 +276,7 @@ export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
       agentType: 'flowguard-reviewer',
       invocationMode: 'sdk_session_prompt',
       hostVisible: false,
-      promptHash: 'prompt-hash-of-architecture-review',
+      promptHash: 'a'.repeat(64),
       mandateDigest: 'mandate-digest-of-review-criteria',
       criteriaVersion: 'criteria-v1',
       findingsHash: capturedFindingsHash(ARCHITECTURE_REVIEW_CAPTURED_FINDINGS),
@@ -305,7 +306,18 @@ export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
       completedAt: FIXED_TIME,
     },
   ],
-  dispatches: [],
+  dispatches: [
+    {
+      dispatchId: '99999999-9999-4999-8999-999999999999',
+      attemptId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      obligationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      hostCallId: 'child-session-1',
+      canonicalPromptDigest: 'a'.repeat(64),
+      dispatchAuthorizedAt: FIXED_TIME,
+      dispatchStatus: 'completed',
+      completedAt: FIXED_TIME,
+    },
+  ],
 };
 
 /**
@@ -328,7 +340,7 @@ export const PLAN_REVIEW_ASSURANCE: ReviewAssuranceState = assuranceWith({
     blockedCode: null,
     fulfilledAt: FIXED_TIME,
     consumedAt: FIXED_TIME,
-    subjectDigest: 'digest-of-plan',
+    subjectDigest: PLAN_DIGEST,
     reviewProfile: 'core',
     profileSource: 'policy_default',
     // Bound to the (empty) claim declaration set of PLAN_RECORD: the plan
@@ -342,13 +354,13 @@ export const PLAN_REVIEW_ASSURANCE: ReviewAssuranceState = assuranceWith({
     reviewMaterial: {
       content: '## Plan\n1. Fix auth\n2. Add tests',
       materialDigest: 'material-digest-of-plan-review',
-      subjectDigest: 'digest-of-plan',
+      subjectDigest: PLAN_DIGEST,
     },
     reviewSubjectScope: {
       kind: 'artifact',
       artifact: {
         kind: 'plan',
-        digest: 'digest-of-plan',
+        digest: PLAN_DIGEST,
         sectionPaths: [[{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }]],
       },
     },
@@ -367,7 +379,7 @@ export const PLAN_REVIEW_ASSURANCE: ReviewAssuranceState = assuranceWith({
       agentType: 'flowguard-reviewer',
       invocationMode: 'sdk_session_prompt',
       hostVisible: false,
-      promptHash: 'prompt-hash-of-plan-review',
+      promptHash: 'b'.repeat(64),
       mandateDigest: 'mandate-digest-of-plan-review-criteria',
       criteriaVersion: 'criteria-v1',
       findingsHash: capturedFindingsHash(PLAN_REVIEW_CAPTURED_FINDINGS),
@@ -386,7 +398,7 @@ export const PLAN_REVIEW_ASSURANCE: ReviewAssuranceState = assuranceWith({
       attemptId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
       obligationId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
       obligationType: 'plan',
-      subjectDigest: 'digest-of-plan',
+      subjectDigest: PLAN_DIGEST,
       ordinal: 0,
       childSessionId: 'child-session-1',
       status: 'bound',
@@ -402,7 +414,7 @@ export const PLAN_REVIEW_ASSURANCE: ReviewAssuranceState = assuranceWith({
       dispatchId: '88888888-8888-4888-8888-888888888888',
       attemptId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
       obligationId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-      hostCallId: 'call-plan-review',
+      hostCallId: 'child-session-1',
       canonicalPromptDigest: 'b'.repeat(64),
       dispatchAuthorizedAt: FIXED_TIME,
       dispatchStatus: 'completed',
@@ -413,15 +425,17 @@ export const PLAN_REVIEW_ASSURANCE: ReviewAssuranceState = assuranceWith({
 
 export const PLAN_EVIDENCE: PlanEvidence = {
   body: '## Plan\n1. Fix auth\n2. Add tests',
-  digest: 'digest-of-plan',
+  digest: PLAN_DIGEST,
   sections: ['Plan'],
   createdAt: FIXED_TIME,
+  revisionId: FIXED_UUID,
   recordDigest: computeRecordDigest({
-    contentDigest: 'digest-of-plan',
+    contentDigest: PLAN_DIGEST,
     planVersion: 1,
     supersedesRecordDigest: null,
     originatingReviewObligationId: null,
     revisionReason: null,
+    revisionId: FIXED_UUID,
   }),
   planVersion: 1,
   supersedesRecordDigest: null,
@@ -440,7 +454,7 @@ export const SELF_REVIEW_CONVERGED: SelfReviewLoop = {
   iteration: 1,
   maxIterations: 3,
   prevDigest: null,
-  currDigest: 'digest-of-plan',
+  currDigest: PLAN_DIGEST,
   revisionDelta: 'none',
   verdict: 'accept',
 };
@@ -449,7 +463,7 @@ export const SELF_REVIEW_PENDING: SelfReviewLoop = {
   iteration: 1,
   maxIterations: 3,
   prevDigest: null,
-  currDigest: 'digest-of-plan',
+  currDigest: PLAN_DIGEST,
   revisionDelta: 'minor',
   verdict: 'changes_requested',
 };

@@ -6,37 +6,40 @@
  * a host-observed structured reviewer invocation before any FlowGuard verdict
  * submission is authorized.
  *
- * Four enforcement levels:
+ * Review verdict enforcement applies four integrity checks:
  * - L1 (Binary Gate): a verdict submission is blocked until a host-observed
- *   SDK reviewer invocation was recorded for the pending review.
- * - L2 (Session Identity): submitted `reviewedBy.sessionId` must match the
- *   child session recorded by the reviewer invocation.
- * - L3 (Capture Coherence): a captured reviewer record must be internally
- *   coherent (an `accept` verdict may not carry blocking issues).
- * - L4 (Findings Integrity): a submitted verdict and blocking-issue count must
- *   match the captured reviewer record exactly.
+ *   SDK reviewer invocation was recorded for the pending review. This module
+ *   owns the transient signal tracking and the L1 gate.
+ * - L2 (Session Identity): the evidence participant identity must match the
+ *   child session of the host-observed reviewer invocation.
+ * - L3 (Capture Coherence): the host-captured reviewer record must be
+ *   internally coherent (an `accept` verdict may not carry blocking issues).
+ * - L4 (Findings Integrity): the submitted verdict and findings hash must
+ *   match the host-captured invocation evidence exactly.
+ *
+ * L2-L4 are enforced on the host-observed structured evidence path
+ * (review-validation-structured-evidence.ts and the shared consistency
+ * authorities); this module never captures reviewer output itself.
  *
  * Extracted modules (FG-REL-038):
  * - review-enforcement-types.ts — Types, interfaces, constants
- * - review-enforcement-extraction.ts — Review-signal helpers
+ * - review-enforcement-pending-review.ts — Pending-review construction
  *
  * Architecture:
  * - Pure logic module — no OpenCode/plugin dependencies, fully unit-testable.
  * - Plugin integration happens in plugin.ts (delegates to this module).
  * - Session-scoped state tracked per session ID.
  *
- * @version v4
+ * @version v5
  */
 
 import type { SessionState } from '../../../state/schema.js';
 import {
   type SessionEnforcementState,
-  type CapturedFindings,
   type EnforcementResult,
   type PendingReviewTool,
   REVIEW_REQUIRED_PREFIX,
 } from './types.js';
-import { signalAttestationOf, readHostAttestationConstants } from './extraction.js';
 import { buildPendingReview, type ReviewSignalBinding } from './pending-review.js';
 
 import { TOOL_FLOWGUARD_REVIEW } from '../../tool-names.js';
@@ -61,13 +64,11 @@ export function createSessionState(): SessionEnforcementState {
 function trackReviewRequired(
   state: SessionEnforcementState,
   reviewTool: PendingReviewTool,
-  next: string,
   now: string,
   /** Identifiers the emitting tool published so the host can bind the reviewer. */
   binding: ReviewSignalBinding,
 ): void {
-  const prior = state.pendingReviews.get(reviewTool);
-  state.pendingReviews.set(reviewTool, buildPendingReview(reviewTool, next, now, binding, prior));
+  state.pendingReviews.set(reviewTool, buildPendingReview(reviewTool, now, binding));
 }
 
 function trackContentAnalysis(state: SessionEnforcementState, now: string): void {
@@ -76,19 +77,6 @@ function trackContentAnalysis(state: SessionEnforcementState, now: string): void
     requestedAt: now,
     attemptId: null,
     obligationId: null,
-    subagentCalled: false,
-    subagentRecord: null,
-    contentMeta: { expectedIteration: 1, expectedPlanVersion: 1 },
-    canonicalPromptAnchor: null,
-    canonicalPrompt: null,
-    capturedFindings: null,
-    retryCount: 0,
-    hostAttestationConstants: null,
-    enforcementFailure: null,
-    lastSchemaErrors: null,
-    repairPromptRequired: false,
-    expectedRepairPromptDigest: null,
-    expectedPromptDigest: null,
   });
 }
 
@@ -187,13 +175,9 @@ function trackRequiredReview(
   const next = typeof parsed.next === 'string' ? parsed.next : '';
   if (next.startsWith(REVIEW_REQUIRED_PREFIX) && (context.isReviewContent || context.signalOwner)) {
     const attemptId = typeof parsed.reviewAttemptId === 'string' ? parsed.reviewAttemptId : null;
-    trackReviewRequired(state, recordKey, next, now, {
+    trackReviewRequired(state, recordKey, now, {
       attemptId,
       obligationId: reviewObligationIdFromSignal(parsed, context.isReviewContent),
-      canonicalPromptAnchor: null,
-      canonicalPrompt: null,
-      canonicalPromptDigest: null,
-      hostAttestationConstants: readHostAttestationConstants(signalAttestationOf(parsed)),
     });
   }
 }
@@ -264,36 +248,4 @@ export function enforceBeforeVerdict(
     code: 'SUBAGENT_REVIEW_NOT_INVOKED',
     reason: `FlowGuard enforcement: ${reviewTool} signaled INDEPENDENT_REVIEW_REQUIRED but no host-observed structured reviewer invocation was recorded before the verdict.`,
   };
-}
-
-// ─── Plugin-Initiated Review Recording ───────────────────────────────────────
-
-/** Record a plugin-initiated review invocation on a pending review. */
-export function recordPluginReview(
-  state: SessionEnforcementState,
-  toolName: string,
-  sessionId: string,
-  capturedFindings: CapturedFindings | null,
-  now: string,
-): boolean {
-  const reviewTool = resolveReviewObligationTool(toolName);
-  if (reviewTool === undefined) return false;
-  const pending = state.pendingReviews.get(reviewTool);
-  if (!pending || pending.subagentCalled) return false;
-
-  pending.subagentCalled = true;
-  pending.subagentRecord = {
-    sessionId,
-    completedAt: now,
-  };
-  if (pending.obligationId != null && (pending.hostAttestationConstants ?? null) == null) {
-    pending.enforcementFailure = 'host_attestation_constants_missing';
-    pending.capturedFindings = null;
-    pending.lastSchemaErrors = null;
-    pending.repairPromptRequired = false;
-    pending.expectedRepairPromptDigest = null;
-    return true;
-  }
-  pending.capturedFindings = capturedFindings;
-  return true;
 }

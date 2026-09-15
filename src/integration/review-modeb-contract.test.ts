@@ -46,6 +46,7 @@ import {
   SELF_REVIEW_CONVERGED,
 } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
+import { completedDispatchForInvocation } from '../state/evidence-test-constants.js';
 import { hashCanonicalReviewContent } from '../shared/review-subject.js';
 
 const NOW = () => new Date().toISOString();
@@ -96,7 +97,7 @@ function buildAssuranceForObligation(
     invocationMode: 'sdk_session_prompt' as const,
     hostVisible: false,
     source: 'host-orchestrated' as const,
-    promptHash: 'abc',
+    promptHash: 'a'.repeat(64),
     mandateDigest: REVIEW_MANDATE_DIGEST,
     criteriaVersion: REVIEW_CRITERIA_VERSION,
     findingsHash: hashFindings(rawFindings),
@@ -138,7 +139,7 @@ function buildAssuranceForObligation(
           completedAt: NOW(),
         },
       ],
-      dispatches: [],
+      dispatches: [completedDispatchForInvocation(invocation, { completedAt: now })],
     },
     invocation,
   );

@@ -72,17 +72,20 @@ export interface PlanInput {
 /** Plan evidence for a first submission (version 1, no predecessor). */
 function initialPlanEvidence(planBody: string, ctx: RailContext): PlanEvidence {
   const contentDigest = ctx.digest(planBody);
+  const revisionId = crypto.randomUUID();
   return {
     body: planBody,
     digest: contentDigest,
     sections: projectMarkdownHeadings(planBody),
     createdAt: ctx.now(),
+    revisionId,
     recordDigest: computeRecordDigest({
       contentDigest,
       planVersion: 1,
       supersedesRecordDigest: null,
       originatingReviewObligationId: null,
       revisionReason: null,
+      revisionId,
     }),
     planVersion: 1,
     supersedesRecordDigest: null,
@@ -101,17 +104,20 @@ function revisedPlanEvidence(
   const contentDigest = ctx.digest(revisedBody);
   const planVersion = (predecessor.planVersion ?? 1) + 1;
   const revisionReason = 'Review requested changes';
+  const revisionId = crypto.randomUUID();
   return {
     body: revisedBody,
     digest: contentDigest,
     sections: projectMarkdownHeadings(revisedBody),
     createdAt: ctx.now(),
+    revisionId,
     recordDigest: computeRecordDigest({
       contentDigest,
       planVersion,
       supersedesRecordDigest: predecessor.recordDigest,
       originatingReviewObligationId: null,
       revisionReason,
+      revisionId,
     }),
     planVersion,
     supersedesRecordDigest: predecessor.recordDigest,

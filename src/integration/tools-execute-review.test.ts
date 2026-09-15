@@ -299,7 +299,7 @@ describe('P34a: Host-Captured Review', () => {
     if (!state?.plan) throw new TypeError('Expected persisted plan state');
     expect(state.plan.current).toBeDefined();
     expect(state.plan.current.body).toContain('## Plan');
-    expect(state.plan.reviewFindings?.[0]?.reviewedBy.sessionId).toBe('ses_plan_reviewer');
+    expect(state.plan.reviewFindings?.[0]?.reviewedBy.sessionId).toMatch(/^ses_plan_reviewer/);
     expect(state.plan.history).toHaveLength(0);
   });
 

@@ -5,11 +5,13 @@
  * This schema is passed to the OpenCode SDK `session.prompt()` format field
  * to enforce structured JSON output from the reviewer subagent.
  *
- * Enum values and discriminator variants are sourced from reviewer-contract.ts,
- * the canonical SSOT. Drift from canonical Zod types is detected by both
- * reviewer-contract.test.ts and findings-schema-drift.test.ts.
+ * Enum values and discriminator variants are rendered from reviewer-contract.ts,
+ * the reviewer-facing projection of the canonical model-output authority
+ * `ReviewerFindingsInput` (src/state/evidence-review-input.ts). Drift from the
+ * canonical Zod contract is detected by reviewer-contract.test.ts and
+ * findings-schema-drift.test.ts.
  *
- * @version v3 — canonical SSOT via reviewer-contract
+ * @version v4 — reviewer-facing projection of ReviewerFindingsInput
  */
 
 import {
