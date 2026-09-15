@@ -147,7 +147,7 @@ describe('integration/review-assurance', () => {
   });
 
   describe('standalone review material', () => {
-    it('keeps the obligation material authoritative across a reissued attempt', () => {
+    it('keeps the obligation material authoritative across a dispatch recovery attempt', () => {
       const materialDigest = hashText('line one\nline two\n');
       const subjectDigest = hashText(`content:${materialDigest}`);
       const material = {
@@ -178,7 +178,11 @@ describe('integration/review-assurance', () => {
         'child-session-2',
         NOW,
         {
-          origin: { kind: 'initial' } as const,
+          origin: {
+            kind: 'dispatch_rearm',
+            predecessorAttemptId: initial.attemptId,
+            triggerReason: 'interrupted',
+          } as const,
           repositoryDiscovery: { kind: 'not_applicable' } as const,
         },
       );
@@ -188,7 +192,7 @@ describe('integration/review-assurance', () => {
       expect(retried.attempt.childSessionId).toBe('child-session-2');
     });
 
-    it('omits childSessionId so a pre-Task reissue stays bindable', () => {
+    it('omits childSessionId so a dispatch recovery attempt stays bindable', () => {
       const subjectDigest = 'd'.repeat(64);
       const material = {
         content: 'frozen',
@@ -209,7 +213,11 @@ describe('integration/review-assurance', () => {
         undefined,
         NOW,
         {
-          origin: { kind: 'initial' } as const,
+          origin: {
+            kind: 'dispatch_rearm',
+            predecessorAttemptId: initial.attemptId,
+            triggerReason: 'interrupted',
+          } as const,
           repositoryDiscovery: { kind: 'not_applicable' } as const,
         },
       );
@@ -217,7 +225,7 @@ describe('integration/review-assurance', () => {
       expect(reissued.attempt.childSessionId).toBeUndefined();
       expect(reissued.attempt.status).toBe('created');
       expect(reissued.assurance.obligations.at(-1)?.reviewMaterial).toEqual(material);
-      // Bindable means: resolvable again by the host for a fresh reviewer Task.
+      // Bindable means: resolvable again by the host for a fresh reviewer task.
       expect(findBindableAttempt(reissued.assurance, obligation.obligationId)?.attemptId).toBe(
         reissued.attempt.attemptId,
       );
@@ -1311,7 +1319,7 @@ describe('findBindableAttempt', () => {
     expect(findBindableAttempt(assuranceWith([bound]), OBLIGATION_A)).toBeNull();
   });
 
-  it.each(['captured', 'rejected', 'bound', 'stale', 'expired'] as const)(
+  it.each(['rejected', 'bound', 'stale', 'expired'] as const)(
     'ignores an attempt with status %s',
     (status) => {
       const spent = attempt({ ordinal: 0, status });

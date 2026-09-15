@@ -40,28 +40,17 @@ type DispatchRearmTrigger = Extract<
  *
  *   created + an unresolved `authorized` dispatch → 'interrupted'
  *   created + only `outcome_unknown` releases     → 'spent'
- *   rejected                                       → 'rejected'
- *   stale                                          → 'stale'
- *   expired                                        → 'expired'
- *
- * A `created` attempt without any released dispatch (or with a completed
- * dispatch, which contradicts its status) has no legal re-arm trigger.
+ * A non-created attempt, an attempt without any durable release, or an
+ * attempt with a completed dispatch has no legal re-arm trigger.
  */
 function dispatchRearmTrigger(
   assurance: ReviewAssuranceState,
   spent: ReviewAttempt,
 ): DispatchRearmTrigger | null {
-  if (spent.status === 'created') {
-    const dispatches = (assurance.dispatches ?? []).filter(
-      (record) => record.attemptId === spent.attemptId,
-    );
-    if (dispatches.some((record) => record.dispatchStatus === 'authorized')) return 'interrupted';
-    if (dispatches.some((record) => record.dispatchStatus === 'outcome_unknown')) return 'spent';
-    return null;
-  }
-  if (spent.status === 'rejected') return 'rejected';
-  if (spent.status === 'stale') return 'stale';
-  if (spent.status === 'expired') return 'expired';
+  if (spent.status !== 'created') return null;
+  const dispatches = assurance.dispatches.filter((record) => record.attemptId === spent.attemptId);
+  if (dispatches.some((record) => record.dispatchStatus === 'authorized')) return 'interrupted';
+  if (dispatches.some((record) => record.dispatchStatus === 'outcome_unknown')) return 'spent';
   return null;
 }
 

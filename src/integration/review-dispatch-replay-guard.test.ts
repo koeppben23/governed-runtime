@@ -25,8 +25,8 @@ import { TOOL_FLOWGUARD_PLAN } from './tool-names.js';
 import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
+  appendObligationWithAttempt,
   artifactReviewSubjectScope,
-  createAttemptForExistingObligation,
   createReviewObligation,
   ensureReviewAssurance,
   freezeReviewMaterial,
@@ -64,17 +64,11 @@ function buildInterruptedState(): SessionState {
     reviewSubjectScope: artifactReviewSubjectScope('plan', '# Plan\nBody', 'subject-digest-replay'),
     repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
   });
-  const withObligation = {
-    ...ensureReviewAssurance(undefined),
-    obligations: [obligation],
-  };
-  const minted = createAttemptForExistingObligation(withObligation, obligation, undefined, NOW, {
-    origin: { kind: 'initial' },
-    repositoryDiscovery: { kind: 'not_applicable' },
-  });
+  const minted = appendObligationWithAttempt(ensureReviewAssurance(undefined), obligation, NOW);
+  const attempt = minted.assurance.attempts.find((entry) => entry.attemptId === minted.attemptId)!;
   const assurance = appendReviewDispatch(minted.assurance, {
     dispatchId: '00000000-0000-4000-8000-0000000000d1',
-    attemptId: minted.attempt.attemptId,
+    attemptId: attempt.attemptId,
     obligationId: obligation.obligationId,
     hostCallId: 'child-session-interrupted',
     canonicalPromptDigest: 'c'.repeat(64),

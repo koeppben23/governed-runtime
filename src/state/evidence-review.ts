@@ -82,7 +82,6 @@ export { classifyRepositoryPath, type RepositoryPathClassification } from './rep
 
 export const ReviewAttemptStatusValues = [
   'created',
-  'captured',
   'rejected',
   'bound',
   'stale',
@@ -124,11 +123,10 @@ export type ReviewAttemptRejectionReason = z.infer<typeof ReviewAttemptRejection
  *
  * Every attempt carries exactly one origin. `initial` marks the first attempt
  * minted with its obligation. `dispatch_rearm` marks a transport-neutral
- * dispatch-recovery re-arm: the predecessor attempt was released to the host
- * without producing bindable evidence (or was already terminally rejected,
- * stale, or expired), so the originating command re-arms a fresh append-only
- * attempt on the SAME obligation. Every re-arm draws on the shared frozen
- * reviewer-attempt budget.
+ * dispatch-recovery re-arm: the predecessor attempt was durably released to
+ * the host without producing bindable evidence, so the originating command
+ * re-arms a fresh append-only attempt on the SAME obligation. Every re-arm
+ * draws on the shared frozen reviewer-attempt budget.
  *
  * Invariant: no non-initial attempt exists without an explicit origin.
  */
@@ -138,7 +136,7 @@ export const ReviewAttemptOrigin = z.discriminatedUnion('kind', [
     .object({
       kind: z.literal('dispatch_rearm'),
       predecessorAttemptId: z.string().uuid(),
-      triggerReason: z.enum(['interrupted', 'spent', 'rejected', 'stale', 'expired']),
+      triggerReason: z.enum(['interrupted', 'spent']),
     })
     .readonly(),
 ]);

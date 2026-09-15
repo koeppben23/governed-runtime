@@ -484,7 +484,7 @@ describe('Attempt lineage and dispatch lifecycle', () => {
       origin: {
         kind: 'dispatch_rearm' as const,
         predecessorAttemptId: REJECTED_ATTEMPT_ID,
-        triggerReason: 'rejected' as const,
+        triggerReason: 'interrupted' as const,
       },
       repositoryDiscovery: { kind: 'not_applicable' as const },
       observations: [],
@@ -493,48 +493,82 @@ describe('Attempt lineage and dispatch lifecycle', () => {
     };
   }
 
-  function parseLineage(attempts: readonly unknown[]) {
+  function parseLineage(attempts: readonly unknown[], dispatches: readonly unknown[] = []) {
     return ReviewAssuranceState.safeParse({
       assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [PLAN_OBLIGATION],
       invocations: [],
       attempts,
-      dispatches: [],
+      dispatches,
     });
   }
 
-  it('HAPPY: coherent dispatch_rearm lineage parses', () => {
-    expect(parseLineage([REJECTED_ATTEMPT, rearmAttempt()]).success).toBe(true);
-  });
-
-  it('HAPPY: stale predecessors accept interrupted, spent, and stale re-arm triggers', () => {
+  it('HAPPY: stale predecessor with a durable release parses', () => {
     const stale = {
       ...REJECTED_ATTEMPT,
       status: 'stale' as const,
       rejectionReason: undefined,
-    } as unknown;
-    for (const triggerReason of ['interrupted', 'spent', 'stale'] as const) {
-      expect(
-        parseLineage([
+    };
+    expect(
+      parseLineage(
+        [
           stale,
           rearmAttempt({
             origin: {
               kind: 'dispatch_rearm',
               predecessorAttemptId: REJECTED_ATTEMPT_ID,
-              triggerReason,
+              triggerReason: 'spent',
             },
           }),
-        ]).success,
+        ],
+        [dispatch({ dispatchStatus: 'outcome_unknown' })],
+      ).success,
+    ).toBe(true);
+  });
+
+  it('HAPPY: stale predecessors retain a re-arm origin only with an outcome-unknown release', () => {
+    const stale = {
+      ...REJECTED_ATTEMPT,
+      status: 'stale' as const,
+      rejectionReason: undefined,
+    } as unknown;
+    for (const triggerReason of ['interrupted', 'spent'] as const) {
+      expect(
+        parseLineage(
+          [
+            stale,
+            rearmAttempt({
+              origin: {
+                kind: 'dispatch_rearm',
+                predecessorAttemptId: REJECTED_ATTEMPT_ID,
+                triggerReason,
+              },
+            }),
+          ],
+          [dispatch({ dispatchStatus: 'outcome_unknown' })],
+        ).success,
       ).toBe(true);
     }
   });
+
+  it.each(['rejected', 'stale', 'expired'] as const)(
+    'BAD: a %s predecessor without a durable release cannot authorize a re-arm',
+    (status) => {
+      const predecessor = {
+        ...REJECTED_ATTEMPT,
+        status,
+        ...(status === 'rejected' ? {} : { rejectionReason: undefined }),
+      };
+      expect(parseLineage([predecessor, rearmAttempt()]).success).toBe(false);
+    },
+  );
 
   it('BAD: the removed task_rearm origin kind is rejected', () => {
     const attempt = rearmAttempt({
       origin: {
         kind: 'task_rearm' as const,
         predecessorAttemptId: REJECTED_ATTEMPT_ID,
-        triggerReason: 'rejected' as const,
+        triggerReason: 'interrupted' as const,
       },
     });
     expect(ReviewAttempt.safeParse(attempt).success).toBe(false);
@@ -590,7 +624,7 @@ describe('Attempt lineage and dispatch lifecycle', () => {
         origin: {
           kind: 'dispatch_rearm' as const,
           predecessorAttemptId: '99999999-9999-4999-8999-999999999999',
-          triggerReason: 'rejected' as const,
+          triggerReason: 'interrupted' as const,
         },
       }),
     ]);
@@ -611,19 +645,34 @@ describe('Attempt lineage and dispatch lifecycle', () => {
   });
 
   it('rejects a predecessor that is not strictly earlier', () => {
-    const result = parseLineage([
-      REJECTED_ATTEMPT,
-      rearmAttempt({ ordinal: 2 }),
-      rearmAttempt({
-        attemptId: '66666666-6666-4666-8666-666666666666',
-        ordinal: 1,
-        origin: {
-          kind: 'dispatch_rearm' as const,
-          predecessorAttemptId: REPAIR_ATTEMPT_ID,
-          triggerReason: 'interrupted' as const,
-        },
-      }),
-    ]);
+    const stale = {
+      ...REJECTED_ATTEMPT,
+      status: 'stale' as const,
+      rejectionReason: undefined,
+    };
+    const result = parseLineage(
+      [
+        stale,
+        rearmAttempt({
+          ordinal: 2,
+          origin: {
+            kind: 'dispatch_rearm',
+            predecessorAttemptId: REJECTED_ATTEMPT_ID,
+            triggerReason: 'spent',
+          },
+        }),
+        rearmAttempt({
+          attemptId: '66666666-6666-4666-8666-666666666666',
+          ordinal: 1,
+          origin: {
+            kind: 'dispatch_rearm' as const,
+            predecessorAttemptId: REPAIR_ATTEMPT_ID,
+            triggerReason: 'interrupted' as const,
+          },
+        }),
+      ],
+      [dispatch({ dispatchStatus: 'outcome_unknown' })],
+    );
     expect(result.success).toBe(false);
     if (result.success) throw new TypeError('expected schema rejection');
     expect(JSON.stringify(result.error.issues)).toContain('not an earlier attempt');
@@ -636,7 +685,7 @@ describe('Attempt lineage and dispatch lifecycle', () => {
         origin: {
           kind: 'dispatch_rearm',
           predecessorAttemptId: REJECTED_ATTEMPT_ID,
-          triggerReason: 'expired',
+          triggerReason: 'spent',
         },
       }),
     ]);
@@ -666,12 +715,24 @@ describe('Attempt lineage and dispatch lifecycle', () => {
   });
 
   function parseDispatches(dispatches: readonly unknown[]) {
+    const stale = {
+      ...REJECTED_ATTEMPT,
+      status: 'stale' as const,
+      rejectionReason: undefined,
+    };
     return ReviewAssuranceState.safeParse({
       assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [PLAN_OBLIGATION],
       invocations: [],
-      attempts: [REJECTED_ATTEMPT, rearmAttempt()],
-      dispatches,
+      attempts: [stale, rearmAttempt()],
+      dispatches: [
+        dispatch({
+          dispatchId: '22222222-2222-4222-8222-222222222222',
+          hostCallId: 'recovery-call',
+          dispatchStatus: 'outcome_unknown',
+        }),
+        ...dispatches,
+      ],
     });
   }
 
@@ -1090,7 +1151,7 @@ describe('Single initial attempt root and attempt status relations', () => {
         origin: {
           kind: 'dispatch_rearm' as const,
           predecessorAttemptId: '11111111-1111-4111-8111-111111111111',
-          triggerReason: 'rejected' as const,
+          triggerReason: 'interrupted' as const,
         },
       }),
       initialAttempt({

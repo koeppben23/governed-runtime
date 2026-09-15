@@ -98,8 +98,8 @@ export function refineAssuranceDispatchCoherence(
  * Attempt predecessor lineage. Non-initial origins (`dispatch_rearm`) are
  * authority-bearing: the referenced predecessor must exist, belong to the same
  * obligation/subject, be a STRICTLY earlier attempt, and the trigger reason
- * must be coherent with the predecessor's terminal state AND durable release
- * record. Attempt ordinals are unique per obligation.
+ * must be coherent with the predecessor's durable release record. Attempt
+ * ordinals are unique per obligation.
  */
 export function refineAssuranceAttemptLineageCoherence(
   assurance: AssuranceRefinementShape,
@@ -243,17 +243,18 @@ function triggerReasonsForPredecessor(
   dispatches: AssuranceRefinementShape['dispatches'],
 ): readonly string[] | null {
   if (originKind !== 'dispatch_rearm') return null;
+  if (predecessor.status !== 'created' && predecessor.status !== 'stale') return null;
+  const released = dispatches.filter((record) => record.attemptId === predecessor.attemptId);
   if (predecessor.status === 'created') {
-    const released = dispatches.filter((record) => record.attemptId === predecessor.attemptId);
     if (released.some((record) => record.dispatchStatus === 'authorized')) return ['interrupted'];
     if (released.some((record) => record.dispatchStatus === 'outcome_unknown')) return ['spent'];
     return null;
   }
-  // A `created` predecessor is superseded to `stale` by the re-arm mint, so
-  // the interrupted, spent, and already-stale triggers are all coherent for a
-  // stale predecessor.
-  if (predecessor.status === 'stale') return ['interrupted', 'spent', 'stale'];
-  if (predecessor.status === 'rejected') return ['rejected'];
-  if (predecessor.status === 'expired') return ['expired'];
+  // Minting a re-arm stales its created predecessor and converts the release to
+  // outcome_unknown. That durable record proves recovery but no longer retains
+  // whether the pre-mint trigger was interrupted or already spent.
+  if (released.some((record) => record.dispatchStatus === 'outcome_unknown')) {
+    return ['interrupted', 'spent'];
+  }
   return null;
 }

@@ -496,11 +496,7 @@ export function refineAssuranceInvocationLinkageCoherence(
     // The invocation records that the attempt held reviewer evidence. A later
     // coherence rejection may revoke acceptance (`rejected`) without erasing
     // that lineage; `created`/`stale`/`expired` attempts never hold evidence.
-    if (
-      attempt.status !== 'bound' &&
-      attempt.status !== 'captured' &&
-      attempt.status !== 'rejected'
-    ) {
+    if (attempt.status !== 'bound' && attempt.status !== 'rejected') {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['invocations'],

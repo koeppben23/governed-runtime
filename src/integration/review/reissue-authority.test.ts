@@ -107,23 +107,6 @@ function createdWithDispatch(
   };
 }
 
-function terminalAttempt(
-  obligation: ReviewObligation,
-  status: 'rejected' | 'stale' | 'expired',
-): { assurance: ReviewAssuranceState; attempt: ReviewAttempt } {
-  const created = initialAttempt(obligation);
-  const updated = updateAttemptStatus(
-    assuranceWith(obligation, [created]),
-    created.attemptId,
-    status,
-    NOW,
-    status === 'rejected'
-      ? { childSessionId: 'child-session-1', rejectionReason: 'schema_invalid' as const }
-      : undefined,
-  );
-  return { assurance: updated, attempt: updated.attempts[0]! };
-}
-
 describe('authorizeDispatchRearm', () => {
   it('authorizes interrupted re-arm for a created attempt with an unresolved authorized dispatch', () => {
     const obligation = makeObligation();
@@ -165,35 +148,25 @@ describe('authorizeDispatchRearm', () => {
     expect(result).toMatchObject({ kind: 'blocked' });
   });
 
-  it('authorizes rejected re-arm after a rejected attempt', () => {
-    const obligation = makeObligation();
-    const { assurance, attempt } = terminalAttempt(obligation, 'rejected');
-    const result = authorizeDispatchRearm(assurance, attempt);
-    expect(result).toMatchObject({
-      kind: 'authorized',
-      origin: { kind: 'dispatch_rearm', triggerReason: 'rejected' },
-    });
-  });
-
-  it('authorizes stale re-arm after a stale attempt', () => {
-    const obligation = makeObligation();
-    const { assurance, attempt } = terminalAttempt(obligation, 'stale');
-    const result = authorizeDispatchRearm(assurance, attempt);
-    expect(result).toMatchObject({
-      kind: 'authorized',
-      origin: { kind: 'dispatch_rearm', triggerReason: 'stale' },
-    });
-  });
-
-  it('authorizes expired re-arm after an expired attempt', () => {
-    const obligation = makeObligation();
-    const { assurance, attempt } = terminalAttempt(obligation, 'expired');
-    const result = authorizeDispatchRearm(assurance, attempt);
-    expect(result).toMatchObject({
-      kind: 'authorized',
-      origin: { kind: 'dispatch_rearm', triggerReason: 'expired' },
-    });
-  });
+  it.each(['rejected', 'stale', 'expired'] as const)(
+    'blocks a %s attempt even without a dispatch',
+    (status) => {
+      const obligation = makeObligation();
+      const created = initialAttempt(obligation);
+      const assurance = updateAttemptStatus(
+        assuranceWith(obligation, [created]),
+        created.attemptId,
+        status,
+        NOW,
+        status === 'rejected'
+          ? { childSessionId: 'child-session-1', rejectionReason: 'schema_invalid' as const }
+          : undefined,
+      );
+      const attempt = assurance.attempts[0]!;
+      const result = authorizeDispatchRearm(assurance, attempt);
+      expect(result).toMatchObject({ kind: 'blocked' });
+    },
+  );
 
   it('blocks re-arm on settled obligations', () => {
     const obligation = makeObligation({ status: 'fulfilled' });
@@ -214,28 +187,21 @@ describe('authorizeDispatchRearm', () => {
   it('exhausts the frozen budget: one existing re-arm blocks the next', () => {
     const obligation = makeObligation({ maxReviewerAttempts: 1 });
     const initial = initialAttempt(obligation);
-    const rejected = updateAttemptStatus(
-      assuranceWith(obligation, [initial]),
-      initial.attemptId,
-      'rejected',
-      NOW,
-      { childSessionId: 'child-session-1', rejectionReason: 'schema_invalid' },
-    ).attempts[0]!;
     const rearmed = createAttemptForExistingObligation(
-      assuranceWith(obligation, [rejected]),
+      assuranceWith(obligation, [initial]),
       obligation,
       undefined,
       NOW,
       {
         origin: {
           kind: 'dispatch_rearm',
-          predecessorAttemptId: rejected.attemptId,
-          triggerReason: 'rejected',
+          predecessorAttemptId: initial.attemptId,
+          triggerReason: 'interrupted',
         },
         repositoryDiscovery: { kind: 'not_applicable' },
       },
     ).attempt;
-    const result = authorizeDispatchRearm(assuranceWith(obligation, [rejected, rearmed]), rejected);
+    const result = authorizeDispatchRearm(assuranceWith(obligation, [initial, rearmed]), initial);
     expect(result).toMatchObject({ kind: 'blocked' });
     expect(result.kind === 'blocked' && result.reason).toContain('budget exhausted');
   });

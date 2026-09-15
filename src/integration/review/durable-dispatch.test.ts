@@ -19,7 +19,7 @@ import {
 import { recordEvidenceOrBlockReuse } from './sdk-evidence-recorder.js';
 import {
   artifactReviewSubjectScope,
-  createAttemptForExistingObligation,
+  appendObligationWithAttempt,
   createReviewObligation,
   ensureReviewAssurance,
   freezeReviewMaterial,
@@ -44,15 +44,12 @@ function baseAssurance() {
     reviewSubjectScope: artifactReviewSubjectScope('plan', '# Plan\nBody', 'subject-digest-1'),
     repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
   });
-  const withObligation = {
-    ...ensureReviewAssurance(undefined),
-    obligations: [obligation],
+  const minted = appendObligationWithAttempt(ensureReviewAssurance(undefined), obligation, NOW);
+  return {
+    obligation,
+    attempt: minted.assurance.attempts.find((attempt) => attempt.attemptId === minted.attemptId)!,
+    assurance: minted.assurance,
   };
-  const minted = createAttemptForExistingObligation(withObligation, obligation, undefined, NOW, {
-    origin: { kind: 'initial' },
-    repositoryDiscovery: { kind: 'not_applicable' },
-  });
-  return { obligation, attempt: minted.attempt, assurance: minted.assurance };
 }
 
 function writeDeps(stateRef: { current: SessionState }): DispatchLedgerWriteDeps {
