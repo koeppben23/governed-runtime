@@ -124,8 +124,13 @@ describe('SDK Contract: HAI governance surface', () => {
         'assurance',
       ]);
       const props = transport.properties as Record<string, Record<string, unknown>>;
-      expect(props.kind!.enum).toEqual(['sdk_structured_session', 'native_task_subagent']);
-      expect(props.assurance!.enum).toEqual(['structured_high', 'unstructured']);
+      expect(props.kind!.enum).toEqual(['native_task_structured_followup']);
+      expect(props.structuredOutput!.const).toBe(true);
+      expect(props.parentVisible!.const).toBe(true);
+      expect(props.transcriptNavigable!.const).toBe(true);
+      expect(props.isolatedAgentIdentity!.const).toBe(true);
+      expect(props.permissionIsolation!.const).toBe(true);
+      expect(props.assurance!.const).toBe('structured_high');
     });
   });
 
@@ -236,12 +241,12 @@ describe('SDK Contract: HAI governance surface', () => {
 
     it('HostCapabilities has six top-level fields and transport capability is atomic', () => {
       const transport: HostReviewTransportCapability = {
-        kind: 'sdk_structured_session',
+        kind: 'native_task_structured_followup',
         structuredOutput: true,
-        parentVisible: false,
-        transcriptNavigable: false,
+        parentVisible: true,
+        transcriptNavigable: true,
         isolatedAgentIdentity: true,
-        permissionIsolation: false,
+        permissionIsolation: true,
         assurance: 'structured_high',
       };
       const caps: HostCapabilities = {
