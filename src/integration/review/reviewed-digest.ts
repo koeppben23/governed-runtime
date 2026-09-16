@@ -78,7 +78,7 @@ function findInvocationForFindingsProvenance(
     base.invocations.find(
       (invocation) =>
         invocation.obligationId === obligation.obligationId &&
-        invocation.invocationMode === 'sdk_session_prompt' &&
+        invocation.invocationMode === 'native_task_structured_followup' &&
         invocation.childSessionId === findings.reviewedBy.sessionId &&
         invocation.findingsHash === findingsHash &&
         consumable(invocation),
