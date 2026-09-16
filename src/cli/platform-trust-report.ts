@@ -31,12 +31,12 @@ const HOST_TRUST: Record<HostId, HostTrustProjection> = {
       contextInjection: true,
       reviewTransports: [
         {
-          kind: 'sdk_structured_session',
+          kind: 'native_task_structured_followup',
           structuredOutput: true,
-          parentVisible: false,
-          transcriptNavigable: false,
+          parentVisible: true,
+          transcriptNavigable: true,
           isolatedAgentIdentity: true,
-          permissionIsolation: false,
+          permissionIsolation: true,
           assurance: 'structured_high',
         },
       ],
@@ -49,11 +49,12 @@ const HOST_TRUST: Record<HostId, HostTrustProjection> = {
     hookSemantics: 'in-process plugin can synchronously block through FlowGuard runtime decisions',
     approvalPrimitive: 'FlowGuard /review-decision with validated obligation-bound ReviewFindings',
     reviewerTransport:
-      'sdk_structured_session is structured and isolated but parentVisible=false; the current hard visible-review contract therefore blocks before dispatch',
+      'native_task_structured_followup uses one native Task child for visible review execution and schema-constrained findings capture; the same child identity binds both phases',
     receiptPreservation: [
       'sessionId: preserved by FlowGuard state/audit',
       'reviewDecisionId: preserved by FlowGuard decision receipt',
       'obligationId: preserved by FlowGuard review assurance state',
+      'reviewerChildSessionId: preserved by native Task metadata and ReviewInvocationEvidence',
       'nativeHostApprovalId: not preserved by host transport',
     ],
   },
