@@ -1,5 +1,5 @@
 /**
- * @module integration/review/native-task-review
+ * @module integration/native-task-review
  * @description OpenCode-native visible independent-review transport.
  *
  * One reviewer identity spans one native Task child session:
@@ -9,53 +9,72 @@
  * The Task's free-form text is never findings authority.
  */
 
-import { readState } from '../../adapters/persistence.js';
-import { buildEnforcementError, strictBlockedOutput } from '../plugin-helpers.js';
-import type { FlowGuardPluginRuntime } from '../plugin-shared.js';
+import { readState } from '../adapters/persistence.js';
+import { buildEnforcementError, strictBlockedOutput } from './plugin-helpers.js';
+import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import type {
   ToolHookAfterInput,
   ToolHookAfterOutput,
   ToolHookBeforeInput,
   ToolHookBeforeOutput,
-} from '../types.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
-import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
-import type { ReviewObligation, ReviewObligationType } from '../../state/evidence.js';
-import type { SessionState } from '../../state/schema.js';
-import { hashText } from '../../shared/hashing.js';
+} from './types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
+import { ReviewFindings as ReviewFindingsSchema } from '../state/evidence.js';
+import type { ReviewObligation, ReviewObligationType } from '../state/evidence.js';
+import type { SessionState } from '../state/schema.js';
+import { hashText } from '../shared/hashing.js';
 import {
   ensureReviewAssurance,
   findBindableAttempt,
   hashFindings,
   isCurrentReviewGeneration,
-} from './assurance.js';
+} from './review/assurance.js';
 import {
   hasReleasedDispatch,
   verifyFrozenMaterialForObligation,
-} from '../../state/review-continuation.js';
-import { renderReviewerTaskPrompt } from './prompt-builders.js';
-import { reviewerPromptTypeForTask } from './reviewer-task-type.js';
-import { renderArtifactAnchorContract } from './frozen-reviewer-context.js';
-import { resolveObservationRevisions } from './observation-access.js';
-import { buildReviewChallengeContract } from './challenge-contract.js';
-import { buildReviewerProofContext } from './proof-context.js';
+} from '../state/review-continuation.js';
+import { renderReviewerTaskPrompt } from './review/prompt-builders.js';
+import { reviewerPromptTypeForTask } from './review/reviewer-task-type.js';
+import { renderArtifactAnchorContract } from './review/frozen-reviewer-context.js';
+import { resolveObservationRevisions } from './review/observation-access.js';
+import { buildReviewChallengeContract } from './review/challenge-contract.js';
+import { buildReviewerProofContext } from './review/proof-context.js';
 import {
   abandonReviewDispatchByHostCall,
   persistAuthorizedReviewDispatch,
-} from '../durable-dispatch.js';
-import { reconcilePendingAuditOperations } from '../plugin-audit-reconcile.js';
-import { replayAndPersistObservations } from './observation-replay-persist.js';
-import { captureStructuredFindingsFromVisibleChild } from './structured-followup.js';
-import { prepareReviewerFindingsForValidation } from './enforcement/prepare-findings.js';
-import { validatePipelineAttestation } from './shared-helpers.js';
-import { validateChallengeConsistency } from './enforcement/challenge-consistency.js';
-import { collectPreviouslyUsedChallengeIds } from './challenge-history.js';
-import { recordEvidenceOrBlockReuse } from './sdk-evidence-recorder.js';
-import type { ReviewerSuccessResult } from './orchestrator.js';
-import { projectReviewExecution } from './review-execution-projection.js';
+} from './durable-dispatch.js';
+import { reconcilePendingAuditOperations } from './plugin-audit-reconcile.js';
+import { replayAndPersistObservations } from './review/observation-replay-persist.js';
+import { captureStructuredFindingsFromVisibleChild } from './review/structured-followup.js';
+import { prepareReviewerFindingsForValidation } from './review/enforcement/prepare-findings.js';
+import { validatePipelineAttestation } from './review/shared-helpers.js';
+import { validateChallengeConsistency } from './review/enforcement/challenge-consistency.js';
+import { collectPreviouslyUsedChallengeIds } from './review/challenge-history.js';
+import { recordEvidenceOrBlockReuse } from './review/sdk-evidence-recorder.js';
+import type { ReviewerSuccessResult } from './review/orchestrator.js';
+import { projectReviewExecution } from './review/review-execution-projection.js';
 
 const TASK_TOOL = 'task';
 const TASK_DESCRIPTION = 'FlowGuard independent review';
+
+type PersistedState = NonNullable<Awaited<ReturnType<typeof readState>>>;
+type BindableAttempt = NonNullable<ReturnType<typeof findBindableAttempt>>;
+
+interface NativeReviewLineage {
+  readonly state: PersistedState;
+  readonly obligation: ReviewObligation;
+  readonly attempt: BindableAttempt;
+  readonly dispatch: PersistedState['reviewAssurance']['dispatches'][number];
+}
+
+interface BlockOutputInput {
+  readonly runtime: FlowGuardPluginRuntime;
+  readonly sessDir: string;
+  readonly callId: string;
+  readonly output: ToolHookAfterOutput;
+  readonly code: string;
+  readonly reason: string;
+}
 
 export function isNativeReviewerTaskBefore(output: unknown): boolean {
   const args = (output as ToolHookBeforeOutput | undefined)?.args;
@@ -88,9 +107,9 @@ function subjectLabel(type: ReviewObligationType): string {
 }
 
 function canonicalTaskPrompt(
-  state: NonNullable<Awaited<ReturnType<typeof readState>>>,
+  state: PersistedState,
   obligation: ReviewObligation,
-  attempt: NonNullable<ReturnType<typeof findBindableAttempt>>,
+  attempt: BindableAttempt,
 ): string {
   const material = verifyFrozenMaterialForObligation(obligation, obligation.reviewMaterial);
   if (material.kind === 'blocked') {
@@ -132,26 +151,10 @@ async function reconcileBeforeReviewerDispatch(
   }
 }
 
-/** Host boundary before native Task execution: inject canonical frozen authority and persist release. */
-export async function nativeReviewTaskBefore(
+async function requireState(
   runtime: FlowGuardPluginRuntime,
-  input: unknown,
-  output: unknown,
-): Promise<void> {
-  const hookInput = input as ToolHookBeforeInput;
-  const hookOutput = output as ToolHookBeforeOutput;
-  if (hookInput.tool !== TASK_TOOL || hookOutput.args.subagent_type !== REVIEWER_SUBAGENT_TYPE)
-    return;
-  const sessionId = hookInput.sessionID;
-  const callId = hookInput.callID;
-  if (!callId) {
-    throw buildEnforcementError(
-      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
-      'Visible independent review requires a host Task callID for durable dispatch binding.',
-    );
-  }
-
-  await reconcileBeforeReviewerDispatch(runtime, sessionId);
+  sessionId: string,
+): Promise<{ readonly sessDir: string; readonly state: PersistedState }> {
   const sessDir = runtime.ws.getSessionDir(sessionId);
   const state = sessDir ? await readState(sessDir) : null;
   if (!sessDir || !state) {
@@ -160,7 +163,14 @@ export async function nativeReviewTaskBefore(
       'Visible independent review requires readable persisted FlowGuard state.',
     );
   }
+  return { sessDir, state };
+}
 
+function requireCurrentAttempt(
+  runtime: FlowGuardPluginRuntime,
+  sessionId: string,
+  state: PersistedState,
+): { readonly obligation: ReviewObligation; readonly attempt: BindableAttempt } {
   const pending = pendingBinding(runtime, sessionId);
   if (!pending) {
     throw buildEnforcementError(
@@ -183,16 +193,45 @@ export async function nativeReviewTaskBefore(
       'The native reviewer Task is not bound to the exact current pending review attempt.',
     );
   }
-  // A bare second Task call must never reset a spent attempt. The originating
-  // FlowGuard command owns the durable re-arm and mints a fresh append-only
-  // attempt. This keeps retry authority out of the host transport surface.
   if (hasReleasedDispatch(assurance, attempt.attemptId)) {
     throw buildEnforcementError(
       'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
       'This reviewer attempt has already been released to the host. Re-run the originating FlowGuard command so it can re-arm the frozen obligation with a fresh attempt before invoking Task again.',
     );
   }
+  return { obligation, attempt };
+}
 
+function mutateNativeTask(output: ToolHookBeforeOutput, prompt: string): void {
+  output.args.subagent_type = REVIEWER_SUBAGENT_TYPE;
+  output.args.description = TASK_DESCRIPTION;
+  output.args.prompt = prompt;
+  output.args.background = false;
+  delete output.args.task_id;
+}
+
+/** Host boundary before native Task execution: inject canonical frozen authority and persist release. */
+export async function nativeReviewTaskBefore(
+  runtime: FlowGuardPluginRuntime,
+  input: unknown,
+  output: unknown,
+): Promise<void> {
+  const hookInput = input as ToolHookBeforeInput;
+  const hookOutput = output as ToolHookBeforeOutput;
+  if (hookInput.tool !== TASK_TOOL || hookOutput.args.subagent_type !== REVIEWER_SUBAGENT_TYPE) return;
+
+  const sessionId = hookInput.sessionID;
+  const callId = hookInput.callID;
+  if (!callId) {
+    throw buildEnforcementError(
+      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+      'Visible independent review requires a host Task callID for durable dispatch binding.',
+    );
+  }
+
+  await reconcileBeforeReviewerDispatch(runtime, sessionId);
+  const { sessDir, state } = await requireState(runtime, sessionId);
+  const { obligation, attempt } = requireCurrentAttempt(runtime, sessionId, state);
   const prompt = canonicalTaskPrompt(state, obligation, attempt);
   const authorizedAt = new Date().toISOString();
   await persistAuthorizedReviewDispatch(runtime.orchestratorDeps, sessDir, {
@@ -203,13 +242,7 @@ export async function nativeReviewTaskBefore(
     authorizedAt,
   });
 
-  // The model-authored Task prompt is never authority. The host replaces it
-  // with the exact frozen prompt after the durable-before-release write.
-  hookOutput.args.subagent_type = REVIEWER_SUBAGENT_TYPE;
-  hookOutput.args.description = TASK_DESCRIPTION;
-  hookOutput.args.prompt = prompt;
-  hookOutput.args.background = false;
-  delete hookOutput.args.task_id;
+  mutateNativeTask(hookOutput, prompt);
   runtime.log.info('orchestrator', 'native reviewer Task authorized', {
     sessionId,
     callId,
@@ -224,16 +257,13 @@ function taskChildSessionId(output: ToolHookAfterOutput): string | null {
     : null;
 }
 
-async function abandonAndBlock(
-  runtime: FlowGuardPluginRuntime,
-  sessDir: string,
-  callId: string,
-  output: ToolHookAfterOutput,
-  code: string,
-  reason: string,
-): Promise<void> {
-  await abandonReviewDispatchByHostCall(runtime.orchestratorDeps, sessDir, callId);
-  output.output = strictBlockedOutput(code, { reason });
+async function abandonAndBlock(input: BlockOutputInput): Promise<void> {
+  await abandonReviewDispatchByHostCall(
+    input.runtime.orchestratorDeps,
+    input.sessDir,
+    input.callId,
+  );
+  input.output.output = strictBlockedOutput(input.code, { reason: input.reason });
 }
 
 function nativeAuditIntents(input: {
@@ -245,11 +275,7 @@ function nativeAuditIntents(input: {
   findingsHash: string;
   phase: SessionState['phase'];
 }) {
-  return (
-    _result: 'fulfilled' | 'reused',
-    _state: SessionState,
-    occurredAt: string,
-  ) => [
+  return (_result: 'fulfilled' | 'reused', _state: SessionState, occurredAt: string) => [
     {
       phase: input.phase,
       event: 'review:subagent_invoked',
@@ -282,21 +308,12 @@ function nativeAuditIntents(input: {
   ] as const;
 }
 
-/** Host boundary after native Task: bind same-child structured findings and replace free-form text. */
-export async function nativeReviewTaskAfter(
+async function resolveNativeReviewLineage(
   runtime: FlowGuardPluginRuntime,
-  input: unknown,
-  output: unknown,
-): Promise<void> {
-  const hookInput = input as ToolHookAfterInput;
-  const hookOutput = output as ToolHookAfterOutput;
-  if (!isNativeReviewerTaskAfter(hookInput)) return;
-  const sessionId = hookInput.sessionID;
-  const callId = hookInput.callID;
-  const sessDir = runtime.ws.getSessionDir(sessionId);
-  if (!sessDir || !callId) return;
-
-  let state = await readState(sessDir);
+  sessDir: string,
+  callId: string,
+): Promise<NativeReviewLineage | null> {
+  const state = await readState(sessDir);
   const dispatch = state?.reviewAssurance?.dispatches.find(
     (item) => item.hostCallId === callId && item.dispatchStatus === 'authorized',
   );
@@ -306,26 +323,16 @@ export async function nativeReviewTaskAfter(
   const obligation = dispatch
     ? state?.reviewAssurance?.obligations.find((item) => item.obligationId === dispatch.obligationId)
     : undefined;
-  if (!state || !dispatch || !attempt || !obligation) {
-    hookOutput.output = strictBlockedOutput('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE', {
-      reason: 'The completed native Task has no exact durable review dispatch lineage.',
-    });
-    return;
-  }
+  if (!state || !dispatch || !attempt || !obligation) return null;
+  return { state, dispatch, attempt, obligation } as NativeReviewLineage;
+}
 
-  const childSessionId = taskChildSessionId(hookOutput);
-  if (!childSessionId) {
-    await abandonAndBlock(
-      runtime,
-      sessDir,
-      callId,
-      hookOutput,
-      'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
-      'OpenCode Task metadata did not expose the authoritative child session ID.',
-    );
-    return;
-  }
-
+async function persistReviewerObservations(
+  runtime: FlowGuardPluginRuntime,
+  sessionId: string,
+  attemptId: string,
+  childSessionId: string,
+): Promise<void> {
   await replayAndPersistObservations(
     {
       getSessionDir: runtime.orchestratorDeps.getSessionDir,
@@ -334,35 +341,23 @@ export async function nativeReviewTaskAfter(
       logError: runtime.logError,
     },
     readState,
-    {
-      sessionId,
-      attemptId: attempt.attemptId,
-      childSessionId,
-      now: new Date().toISOString(),
-    },
+    { sessionId, attemptId, childSessionId, now: new Date().toISOString() },
   );
-  state = await readState(sessDir);
-  if (!state) return;
+}
 
+async function capturePreparedFindings(
+  runtime: FlowGuardPluginRuntime,
+  obligation: ReviewObligation,
+  childSessionId: string,
+): Promise<
+  | { readonly kind: 'blocked'; readonly code: string; readonly reason: string }
+  | { readonly kind: 'captured'; readonly prepared: Record<string, unknown>; readonly fulfilledAt: string }
+> {
   const structured = await captureStructuredFindingsFromVisibleChild(
     runtime.orchestratorDeps.client,
-    {
-      childSessionId,
-      obligationId: obligation.obligationId,
-    },
+    { childSessionId, obligationId: obligation.obligationId },
   );
-  if (structured.kind === 'blocked') {
-    await abandonAndBlock(
-      runtime,
-      sessDir,
-      callId,
-      hookOutput,
-      structured.code,
-      structured.reason,
-    );
-    return;
-  }
-
+  if (structured.kind === 'blocked') return structured;
   const prepared = prepareReviewerFindingsForValidation({
     rawFindings: structured.findings,
     obligationId: obligation.obligationId,
@@ -373,18 +368,21 @@ export async function nativeReviewTaskAfter(
     hostProvenance: { childSessionId, reviewedAt: structured.fulfilledAt },
   });
   if (!prepared.ok) {
-    await abandonAndBlock(
-      runtime,
-      sessDir,
-      callId,
-      hookOutput,
-      'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
-      prepared.issues.join('; '),
-    );
-    return;
+    return {
+      kind: 'blocked',
+      code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+      reason: prepared.issues.join('; '),
+    };
   }
+  return { kind: 'captured', prepared: prepared.findings, fulfilledAt: structured.fulfilledAt };
+}
 
-  const findings = ReviewFindingsSchema.parse(prepared.findings);
+function validateCapturedFindings(
+  state: PersistedState,
+  obligation: ReviewObligation,
+  prepared: Record<string, unknown>,
+) {
+  const findings = ReviewFindingsSchema.parse(prepared);
   const attestation = validatePipelineAttestation(findings, {
     obligationId: obligation.obligationId,
     criteriaVersion: obligation.criteriaVersion,
@@ -395,15 +393,7 @@ export async function nativeReviewTaskAfter(
     checkUnableToReview: false,
   });
   if (!attestation.valid) {
-    await abandonAndBlock(
-      runtime,
-      sessDir,
-      callId,
-      hookOutput,
-      attestation.code,
-      'Reviewer attestation mismatch.',
-    );
-    return;
+    return { kind: 'blocked' as const, code: attestation.code, reason: 'Reviewer attestation mismatch.' };
   }
   const challenge = validateChallengeConsistency({
     overallVerdict: findings.overallVerdict,
@@ -416,40 +406,50 @@ export async function nativeReviewTaskAfter(
     previouslyUsedChallengeIds: collectPreviouslyUsedChallengeIds(state),
   });
   if (!challenge.ok) {
-    await abandonAndBlock(
-      runtime,
-      sessDir,
-      callId,
-      hookOutput,
-      challenge.code,
-      JSON.stringify(challenge.details),
-    );
-    return;
+    return {
+      kind: 'blocked' as const,
+      code: challenge.code,
+      reason: JSON.stringify(challenge.details),
+    };
   }
+  return { kind: 'valid' as const, findings };
+}
 
+async function bindNativeReviewEvidence(input: {
+  runtime: FlowGuardPluginRuntime;
+  sessDir: string;
+  sessionId: string;
+  callId: string;
+  childSessionId: string;
+  lineage: NativeReviewLineage;
+  prepared: Record<string, unknown>;
+  fulfilledAt: string;
+  phase: SessionState['phase'];
+}) {
+  const { obligation, attempt, dispatch } = input.lineage;
   const promptHash = dispatch.canonicalPromptDigest;
-  const findingsHash = hashFindings(prepared.findings);
+  const findingsHash = hashFindings(input.prepared);
   const reviewerResult: ReviewerSuccessResult & { findings: Record<string, unknown> } = {
-    sessionId: childSessionId,
-    rawResponse: JSON.stringify(structured.findings),
-    findings: prepared.findings,
+    sessionId: input.childSessionId,
+    rawResponse: JSON.stringify(input.prepared),
+    findings: input.prepared,
     reviewOutputMode: 'structured_output',
     structuredOutputUsed: true,
     reviewAssuranceLevel: 'structured_high',
     invokedAt: dispatch.dispatchAuthorizedAt,
-    fulfilledAt: structured.fulfilledAt,
+    fulfilledAt: input.fulfilledAt,
   };
-  const result = await recordEvidenceOrBlockReuse(runtime.orchestratorDeps, sessDir, {
+  return recordEvidenceOrBlockReuse(input.runtime.orchestratorDeps, input.sessDir, {
     obligationId: obligation.obligationId,
     obligationType: obligation.obligationType,
-    sessionId,
-    childSessionId,
-    hostCallId: callId,
+    sessionId: input.sessionId,
+    childSessionId: input.childSessionId,
+    hostCallId: input.callId,
     attemptId: attempt.attemptId,
     promptHash,
     findingsHash,
     invokedAt: dispatch.dispatchAuthorizedAt,
-    fulfilledAt: structured.fulfilledAt,
+    fulfilledAt: input.fulfilledAt,
     execution: {
       invocationMode: 'native_task_structured_followup',
       hostVisible: true,
@@ -458,58 +458,145 @@ export async function nativeReviewTaskAfter(
     reviewerResult,
     semanticIntents: nativeAuditIntents({
       obligation,
-      parentSessionId: sessionId,
-      childSessionId,
+      parentSessionId: input.sessionId,
+      childSessionId: input.childSessionId,
       attemptId: attempt.attemptId,
       promptHash,
       findingsHash,
-      phase: state.phase,
+      phase: input.phase,
     }),
   });
+}
 
+async function writeBindingFailure(
+  input: BlockOutputInput,
+  result: Exclude<Awaited<ReturnType<typeof bindNativeReviewEvidence>>, 'fulfilled'>,
+): Promise<void> {
+  if (typeof result === 'object') {
+    await abandonAndBlock({
+      ...input,
+      code: result.code,
+      reason: JSON.stringify(result.details),
+    });
+    return;
+  }
+  input.output.output = strictBlockedOutput(
+    result === 'reused'
+      ? 'SUBAGENT_EVIDENCE_REUSED'
+      : result === 'lineage_unavailable'
+        ? 'REVIEW_ATTEMPT_UNAVAILABLE'
+        : 'REVIEW_MATERIAL_INTEGRITY_FAILED',
+    { reason: `Native reviewer evidence binding returned ${result}.` },
+  );
+}
+
+async function projectFulfilledReview(input: {
+  readonly runtime: FlowGuardPluginRuntime;
+  readonly sessDir: string;
+  readonly sessionId: string;
+  readonly childSessionId: string;
+  readonly attemptId: string;
+  readonly obligationId: string;
+  readonly verdict: string;
+  readonly output: ToolHookAfterOutput;
+}): Promise<void> {
+  const boundState = await readState(input.sessDir);
+  const invocation = boundState?.reviewAssurance?.invocations.find(
+    (item) => item.attemptId === input.attemptId && item.childSessionId === input.childSessionId,
+  );
+  input.output.output = JSON.stringify({
+    status: 'Independent reviewer completed in a visible native child session.',
+    reviewDispatch: { required: true, completed: true, verdict: input.verdict },
+    ...(invocation ? { reviewExecution: projectReviewExecution(invocation) } : {}),
+  });
+  if (invocation) input.output.metadata.flowguardReviewExecution = projectReviewExecution(invocation);
+  input.runtime.log.info('orchestrator', 'native reviewer Task fulfilled review obligation', {
+    sessionId: input.sessionId,
+    childSessionId: input.childSessionId,
+    obligationId: input.obligationId,
+    attemptId: input.attemptId,
+    verdict: input.verdict,
+  });
+}
+
+/** Host boundary after native Task: bind same-child structured findings and replace free-form text. */
+export async function nativeReviewTaskAfter(
+  runtime: FlowGuardPluginRuntime,
+  input: unknown,
+  output: unknown,
+): Promise<void> {
+  const hookInput = input as ToolHookAfterInput;
+  const hookOutput = output as ToolHookAfterOutput;
+  if (!isNativeReviewerTaskAfter(hookInput)) return;
+
+  const sessionId = hookInput.sessionID;
+  const callId = hookInput.callID;
+  const sessDir = runtime.ws.getSessionDir(sessionId);
+  if (!sessDir || !callId) return;
+
+  const lineage = await resolveNativeReviewLineage(runtime, sessDir, callId);
+  if (!lineage) {
+    hookOutput.output = strictBlockedOutput('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE', {
+      reason: 'The completed native Task has no exact durable review dispatch lineage.',
+    });
+    return;
+  }
+
+  const childSessionId = taskChildSessionId(hookOutput);
+  if (!childSessionId) {
+    await abandonAndBlock({
+      runtime,
+      sessDir,
+      callId,
+      output: hookOutput,
+      code: 'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+      reason: 'OpenCode Task metadata did not expose the authoritative child session ID.',
+    });
+    return;
+  }
+
+  await persistReviewerObservations(runtime, sessionId, lineage.attempt.attemptId, childSessionId);
+  const refreshedState = await readState(sessDir);
+  if (!refreshedState) return;
+
+  const captured = await capturePreparedFindings(runtime, lineage.obligation, childSessionId);
+  if (captured.kind === 'blocked') {
+    await abandonAndBlock({ runtime, sessDir, callId, output: hookOutput, ...captured });
+    return;
+  }
+  const validation = validateCapturedFindings(refreshedState, lineage.obligation, captured.prepared);
+  if (validation.kind === 'blocked') {
+    await abandonAndBlock({ runtime, sessDir, callId, output: hookOutput, ...validation });
+    return;
+  }
+
+  const result = await bindNativeReviewEvidence({
+    runtime,
+    sessDir,
+    sessionId,
+    callId,
+    childSessionId,
+    lineage,
+    prepared: captured.prepared,
+    fulfilledAt: captured.fulfilledAt,
+    phase: refreshedState.phase,
+  });
   if (result !== 'fulfilled') {
-    if (typeof result === 'object') {
-      await abandonAndBlock(
-        runtime,
-        sessDir,
-        callId,
-        hookOutput,
-        result.code,
-        JSON.stringify(result.details),
-      );
-      return;
-    }
-    hookOutput.output = strictBlockedOutput(
-      result === 'reused'
-        ? 'SUBAGENT_EVIDENCE_REUSED'
-        : result === 'lineage_unavailable'
-          ? 'REVIEW_ATTEMPT_UNAVAILABLE'
-          : 'REVIEW_MATERIAL_INTEGRITY_FAILED',
-      { reason: `Native reviewer evidence binding returned ${result}.` },
+    await writeBindingFailure(
+      { runtime, sessDir, callId, output: hookOutput, code: '', reason: '' },
+      result,
     );
     return;
   }
 
-  const boundState = await readState(sessDir);
-  const invocation = boundState?.reviewAssurance?.invocations.find(
-    (item) => item.attemptId === attempt.attemptId && item.childSessionId === childSessionId,
-  );
-  hookOutput.output = JSON.stringify({
-    status: 'Independent reviewer completed in a visible native child session.',
-    reviewDispatch: {
-      required: true,
-      completed: true,
-      verdict: findings.overallVerdict,
-    },
-    ...(invocation ? { reviewExecution: projectReviewExecution(invocation) } : {}),
-  });
-  if (invocation)
-    hookOutput.metadata.flowguardReviewExecution = projectReviewExecution(invocation);
-  runtime.log.info('orchestrator', 'native reviewer Task fulfilled review obligation', {
+  await projectFulfilledReview({
+    runtime,
+    sessDir,
     sessionId,
     childSessionId,
-    obligationId: obligation.obligationId,
-    attemptId: attempt.attemptId,
-    verdict: findings.overallVerdict,
+    attemptId: lineage.attempt.attemptId,
+    obligationId: lineage.obligation.obligationId,
+    verdict: validation.findings.overallVerdict,
+    output: hookOutput,
   });
 }
