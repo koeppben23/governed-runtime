@@ -1,7 +1,7 @@
 /**
  * @module cli/opencode-live-host
  * @description Shared resolver for the pinned OpenCode host used by live smoke
- * tests (reviewer wire contract, mandate visibility).
+ * tests (reviewer wire contract).
  *
  * Resolution order:
  * 1. `OPENCODE_CLI` — explicit binary/command.
