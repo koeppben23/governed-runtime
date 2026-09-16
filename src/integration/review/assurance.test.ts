@@ -1320,11 +1320,10 @@ describe('findBindableAttempt', () => {
     },
   );
 
-  it('prefers the highest ordinal when several attempts qualify', () => {
+  it('fails closed when several attempts qualify', () => {
     const older = attempt({ ordinal: 1 });
     const newer = attempt({ ordinal: 2 });
-    const result = findBindableAttempt(assuranceWith([older, newer]), OBLIGATION_A);
-    expect(result?.attemptId).toBe(newer.attemptId);
+    expect(findBindableAttempt(assuranceWith([older, newer]), OBLIGATION_A)).toBeNull();
   });
 
   it('returns null when no attempt exists at all', () => {

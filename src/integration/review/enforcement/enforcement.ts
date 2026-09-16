@@ -293,7 +293,7 @@ export function enforceBeforeVerdict(
       invocation.hostVisible === true &&
       invocation.transcriptNavigable === true &&
       invocation.obligationId === pending.obligationId &&
-      (pending.attemptId === null || invocation.attemptId === pending.attemptId),
+      invocation.attemptId === pending.attemptId,
   );
   if (bound) return { allowed: true };
 

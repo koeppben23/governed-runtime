@@ -1007,6 +1007,11 @@ describe('review (standalone flow)', () => {
         // toolObligationId is always present — every content-aware /review
         // creates a real ReviewObligation with a canonical UUID.
         expect(attestation.toolObligationId).toMatch(/^[0-9a-f-]{36}$/);
+        expect(result.reviewAttemptId).toMatch(/^[0-9a-f-]{36}$/);
+        expect(result.reviewObligation).toMatchObject({
+          obligationId: attestation.toolObligationId,
+          obligationType: 'review',
+        });
         expect(result.reviewerSubagentType).toBe('flowguard-reviewer');
         expect(Array.isArray(result.recovery)).toBe(true);
         if (!Array.isArray(result.recovery)) throw new TypeError('Expected recovery array');

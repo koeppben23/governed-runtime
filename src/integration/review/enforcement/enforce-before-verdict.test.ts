@@ -91,14 +91,14 @@ describe('enforceBeforeVerdict — obligation/attempt-bound L1 gate', () => {
     expect(result.code).toBe('SUBAGENT_REVIEW_NOT_INVOKED');
   });
 
-  it('EDGE: a signal without an attempt identity matches on the obligation alone', () => {
+  it('BAD: a signal without an attempt identity cannot authorize a verdict', () => {
     const result = enforceBeforeVerdict(
       pendingState(null, OBLIGATION_A),
       'flowguard_plan',
       { reviewVerdict: 'accept' },
       stateWith([invocation({ obligationId: OBLIGATION_A, attemptId: ATTEMPT_A })]),
     );
-    expect(result).toEqual({ allowed: true });
+    expect(result).toMatchObject({ allowed: false, code: 'SUBAGENT_REVIEW_NOT_INVOKED' });
   });
 
   it('BAD: a pending signal without an obligation identity fails closed', () => {

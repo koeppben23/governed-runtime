@@ -35,7 +35,7 @@ import {
   updateCheckReworkContinuation,
 } from './plugin-rework-continuation.js';
 import { isReviewDispatchRequired } from './review/dispatch-signal.js';
-import { obligationTypeForTool } from './review/obligation-tools.js';
+import { obligationTypeForTool, reviewSignalOwner } from './review/obligation-tools.js';
 import { resolveReviewContinuation } from '../state/review-continuation.js';
 export { updateCheckReworkContinuation } from './plugin-rework-continuation.js';
 import {
@@ -174,7 +174,7 @@ function reviewSignalForAuthority(
     return {
       obligationId: typeof obligation?.obligationId === 'string' ? obligation.obligationId : null,
       attemptId: typeof parsed.reviewAttemptId === 'string' ? parsed.reviewAttemptId : null,
-      obligationType: obligationTypeForTool(toolName) ?? null,
+      obligationType: obligationTypeForTool(reviewSignalOwner(toolName) ?? '') ?? null,
     };
   }
   const attestation = parsed.requiredReviewAttestation as Record<string, unknown> | undefined;

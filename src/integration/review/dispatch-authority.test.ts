@@ -154,6 +154,26 @@ describe('resolveReviewDispatchAuthority', () => {
       expect(result).toMatchObject({ kind: 'blocked' });
       if (result.kind === 'blocked') expect(result.reason).toMatch(/already released/);
     });
+
+    it('blocks when more than one unbound created attempt could bind the obligation', () => {
+      const minted = mint();
+      const duplicate = {
+        ...minted.attempt,
+        attemptId: '77777777-7777-4777-8777-777777777777',
+        ordinal: 2,
+      };
+      const assurance: ReviewAssuranceState = {
+        ...minted.assurance,
+        attempts: [...minted.assurance.attempts, duplicate],
+      };
+
+      expect(
+        resolveReviewDispatchAuthority(assurance, minted.obligation.obligationId),
+      ).toMatchObject({
+        kind: 'blocked',
+        code: 'REVIEW_ATTEMPT_UNAVAILABLE',
+      });
+    });
   });
 
   describe('CORNER', () => {

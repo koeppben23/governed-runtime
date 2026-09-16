@@ -6,6 +6,10 @@ import type {
   ReviewRepositoryIdentity,
 } from '../../../state/evidence.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from '../../review/assurance.js';
+import {
+  reviewObligationResponseFields,
+  type ReviewDispatchAuthority,
+} from '../../review/dispatch-authority.js';
 
 /**
  * Structural equality for a frozen repository identity.
@@ -103,12 +107,18 @@ function formatBlockedWithAttestation(code: string, message: string, obligationI
   });
 }
 
-export function formatMissingContentAnalysis(obligationId: string): string {
-  return formatBlockedWithAttestation(
-    'CONTENT_ANALYSIS_REQUIRED',
-    `Content-aware /review requires SDK structured analysis by ${REVIEWER_SUBAGENT_TYPE}. Re-run flowguard_review with reviewObligationId after FlowGuard captures the reviewer findings.`,
-    obligationId,
-  );
+export function formatMissingContentAnalysis(authority: ReviewDispatchAuthority): string {
+  const obligationId = authority.obligation.obligationId;
+  return JSON.stringify({
+    error: true,
+    code: 'CONTENT_ANALYSIS_REQUIRED',
+    message:
+      `Content-aware /review requires a visible native Task review by ${REVIEWER_SUBAGENT_TYPE}. ` +
+      'Invoke the reviewer Task, wait for FlowGuard to capture its same-child structured findings, then re-run flowguard_review with reviewObligationId.',
+    reviewObligationId: obligationId,
+    ...reviewObligationResponseFields(authority),
+    ...buildRequiredReviewAttestationPayload(obligationId),
+  });
 }
 
 export function formatSubagentReviewNotInvoked(detail: string, obligationId: string): string {

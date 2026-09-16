@@ -1222,6 +1222,126 @@ describe('integration/plugin', () => {
       }
     });
 
+    it('accepts retry_transport recovery from the implementation verdict tool', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+        const { obligationId, attemptId, state } = await seedStrictImplementationSession(
+          ws.tmpDir,
+          sessionID,
+        );
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const authority = resolveReviewDispatchAuthority(state.reviewAssurance, obligationId);
+        expect(authority.kind).toBe('ok');
+        if (authority.kind !== 'ok') return;
+        const output = {
+          title: 'implementation review recovery',
+          output: JSON.stringify({
+            phase: 'IMPL_REVIEW',
+            reviewMode: 'subagent',
+            ...reviewObligationResponseFields(authority.authority),
+            reviewDispatch: { required: true },
+          }),
+          metadata: {},
+        };
+
+        await hooks['tool.execute.after']!(
+          {
+            tool: 'flowguard_review_implementation',
+            sessionID,
+            callID: 'retry-transport-call',
+            args: { reviewRecovery: 'retry_transport' },
+          },
+          output,
+        );
+
+        const accepted = JSON.parse(String(output.output)) as Record<string, unknown>;
+        expect(accepted.error).toBeUndefined();
+        expect(accepted.reviewAttemptId).toBe(attemptId);
+        await expect(dispatchReviewerTask(hooks, sessionID)).resolves.toBeDefined();
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('authorizes the native reviewer Task for a content-analysis peer review authority', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+        const { sessDir, obligationId } = await seedStrictPlanSession(ws.tmpDir, sessionID);
+        const state = await readState(sessDir);
+        expect(state).not.toBeNull();
+        if (!state?.reviewAssurance) return;
+        const reviewState = {
+          ...state,
+          reviewAssurance: {
+            ...state.reviewAssurance,
+            obligations: state.reviewAssurance.obligations.map((obligation) => {
+              const { repositoryEvidenceFreeze: _repositoryEvidenceFreeze, ...peerObligation } =
+                obligation;
+              const subjectDigest = 'b'.repeat(64);
+              return {
+                ...peerObligation,
+                obligationType: 'review' as const,
+                reviewCycle: null,
+                requiredChallengeKind: 'content_challenge' as const,
+                subjectDigest,
+                reviewMaterial: { ...obligation.reviewMaterial, subjectDigest },
+                reviewSubject: {
+                  kind: 'content' as const,
+                  source: { kind: 'inline' as const, mediaType: 'text' as const },
+                  materialDigest: obligation.reviewMaterial.materialDigest,
+                  subjectDigest,
+                  lineCount: 1,
+                },
+                reviewSubjectScope: {
+                  kind: 'content' as const,
+                  subjectDigest,
+                  lineCount: 1,
+                },
+              };
+            }),
+            attempts: state.reviewAssurance.attempts.map((attempt) => ({
+              ...attempt,
+              obligationType: 'review' as const,
+              subjectDigest: 'b'.repeat(64),
+            })),
+          },
+        };
+        await writeState(sessDir, reviewState);
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const authority = resolveReviewDispatchAuthority(reviewState.reviewAssurance, obligationId);
+        expect(authority.kind).toBe('ok');
+        if (authority.kind !== 'ok') return;
+        const output = {
+          title: 'peer review',
+          output: JSON.stringify({
+            error: true,
+            code: 'CONTENT_ANALYSIS_REQUIRED',
+            ...reviewObligationResponseFields(authority.authority),
+            requiredReviewAttestation: { toolObligationId: obligationId },
+          }),
+          metadata: {},
+        };
+
+        await hooks['tool.execute.after']!(
+          { tool: 'flowguard_review', sessionID, callID: 'peer-review-call', args: {} },
+          output,
+        );
+
+        const accepted = JSON.parse(String(output.output)) as Record<string, unknown>;
+        expect(accepted.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+        expect(accepted.reviewAttemptId).toBe(authority.authority.attempt.attemptId);
+        await expect(dispatchReviewerTask(hooks, sessionID)).resolves.toBeDefined();
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
     it('blocks a review-required response without the exact attempt authority', async () => {
       const ws = await createTestWorkspace();
       try {

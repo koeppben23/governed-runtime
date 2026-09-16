@@ -21,8 +21,8 @@ import {
   resolveFrozenReviewProfile,
   findLatestPendingReviewObligation,
   findReviewObligationById,
-  findBindableAttempt,
 } from '../../review/assurance.js';
+import { resolveReviewDispatchAuthority } from '../../review/dispatch-authority.js';
 import { resolveReviewAttemptDiscoveryContext } from '../../review/discovery-attempt-context.js';
 import type { ReviewAttemptDiscoveryContext } from '../../../state/evidence.js';
 import { fingerprintReviewInput } from './fingerprint.js';
@@ -265,20 +265,20 @@ function continuePendingReviewObligation(
   state: SessionState,
   existing: ReviewObligation,
 ): MissingAnalysisObligationResult {
-  const bindable = findBindableAttempt(state.reviewAssurance, existing.obligationId);
-  if (!bindable) {
+  const authority = resolveReviewDispatchAuthority(state.reviewAssurance, existing.obligationId);
+  if (authority.kind === 'blocked') {
     return {
       message: formatBlocked('REVIEW_ATTEMPT_UNAVAILABLE', {
         obligationId: existing.obligationId,
-        reason: 'no bindable reviewer attempt exists and output repair is no longer authorized',
+        reason: authority.reason,
       }),
       obligation: existing,
     };
   }
   return {
-    message: formatMissingContentAnalysis(existing.obligationId),
+    message: formatMissingContentAnalysis(authority.authority),
     obligation: existing,
-    attemptId: bindable.attemptId,
+    attemptId: authority.authority.attempt.attemptId,
   };
 }
 
@@ -339,10 +339,21 @@ async function createAndPrepareMissingAnalysisObligation(
     obligation,
     discovery.context,
   );
+  const authority = resolveReviewDispatchAuthority(persisted.assurance, obligation.obligationId);
+  if (authority.kind === 'blocked') {
+    return {
+      message: formatBlocked('REVIEW_ATTEMPT_UNAVAILABLE', {
+        obligationId: obligation.obligationId,
+        reason: authority.reason,
+      }),
+      obligation,
+      assurance: persisted.assurance,
+    };
+  }
   return {
-    message: formatMissingContentAnalysis(obligation.obligationId),
+    message: formatMissingContentAnalysis(authority.authority),
     obligation,
-    attemptId: persisted.attemptId,
+    attemptId: authority.authority.attempt.attemptId,
     assurance: persisted.assurance,
   };
 }

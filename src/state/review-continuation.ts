@@ -301,9 +301,9 @@ export {
  *
  * Bindable means: created but not yet correlated with a reviewer child
  * session, and not superseded (minting a newer attempt stales earlier ones, so
- * at most one attempt per obligation qualifies). Returns the highest ordinal
- * if that invariant is ever violated, and null when no attempt can accept a
- * binding — callers must not fall back to an arbitrary attempt.
+ * exactly one attempt per obligation must qualify). Returns null when that
+ * invariant is violated or no attempt can accept a binding — callers must not
+ * fall back to an arbitrary attempt.
  */
 export function findBindableAttempt(
   assurance: ReviewAssuranceState | undefined,
@@ -313,8 +313,7 @@ export function findBindableAttempt(
   const candidates = (base.attempts ?? []).filter(
     (a) => a.obligationId === obligationId && a.status === 'created' && !a.childSessionId,
   );
-  if (candidates.length === 0) return null;
-  return candidates.reduce((best, a) => (a.ordinal > best.ordinal ? a : best));
+  return candidates.length === 1 ? candidates[0]! : null;
 }
 
 // ─── Dispatch-rearm budget ───────────────────────────────────────────────────
