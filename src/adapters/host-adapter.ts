@@ -18,7 +18,7 @@
  *   must never be composed into a synthetic capability that no single transport owns.
  *
  * @see https://github.com/koeppben23/governed-runtime/issues/242
- * @version v3
+ * @version v4
  */
 
 export type EnforcementLevel = 'synchronous' | 'hook_gated' | 'advisory';
@@ -26,10 +26,7 @@ export type EnforcementLevel = 'synchronous' | 'hook_gated' | 'advisory';
 // ─── Host Capabilities ───────────────────────────────────────────────────────
 
 /** Canonical host transport used to execute an independent reviewer. */
-export type HostReviewTransportKind =
-  | 'sdk_structured_session'
-  | 'native_task_subagent'
-  | 'native_task_structured_followup';
+export type HostReviewTransportKind = 'native_task_structured_followup';
 
 /** Assurance produced by one concrete review transport. */
 export type HostReviewTransportAssurance = 'structured_high' | 'unstructured';
@@ -222,9 +219,9 @@ export interface HostAdapter {
   mutateToolResult(event: HostToolEvent, mutation: ToolResultMutation): void;
 
   /**
-   * Spawn a reviewer through one concrete transport that satisfies the complete
-   * review requirement set. Native host-Task transports are dispatched at the
-   * hook boundary and therefore reject direct adapter spawning fail-closed.
+   * Direct adapter spawning is not the OpenCode product path: native Task
+   * transports are dispatched at the host hook boundary and reject direct
+   * spawning fail-closed. The method remains host-agnostic for other adapters.
    */
   spawnReviewer(config: ReviewerSpawnConfig): Promise<HostReviewerResult | null>;
 
