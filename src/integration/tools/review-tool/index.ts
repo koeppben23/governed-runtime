@@ -75,6 +75,23 @@ async function resolveReviewContentForExecution(
   exec: ReviewExecutionContext,
   refInput: ReviewReferenceInput | undefined,
 ): Promise<PreparedReviewContent | null | string> {
+  if (exec.args.reviewObligationId) {
+    const obligation = findReviewObligationById(
+      state.reviewAssurance,
+      exec.args.reviewObligationId,
+    );
+    if (
+      obligation?.obligationType === 'review' &&
+      obligation.reviewMaterial &&
+      obligation.reviewSubject
+    ) {
+      return {
+        content: obligation.reviewMaterial.content,
+        reviewedContentDigest: obligation.reviewMaterial.materialDigest,
+        reviewSubject: obligation.reviewSubject,
+      };
+    }
+  }
   const derived = await prepareReviewContent(refInput, undefined);
   if (derived && 'kind' in derived) return formatBlockedReviewReport(derived);
   return derived;

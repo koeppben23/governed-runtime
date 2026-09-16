@@ -118,7 +118,7 @@ export function formatMissingContentAnalysis(authority: ReviewDispatchAuthority)
     planVersion: authority.obligation.planVersion,
   });
   return JSON.stringify({
-    error: true,
+    status: 'pending_review',
     code: 'CONTENT_ANALYSIS_REQUIRED',
     message:
       `Content-aware /review requires a visible native Task review by ${REVIEWER_SUBAGENT_TYPE}. ` +

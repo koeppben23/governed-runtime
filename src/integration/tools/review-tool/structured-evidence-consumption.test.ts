@@ -210,9 +210,7 @@ describe('verdict-only structured evidence consumption', () => {
     const obligationId = await startObligation();
     const invocationId = await bindStructuredEvidence(obligationId, buildFindings(obligationId));
 
-    const output = parseToolResult(
-      await review.execute({ branch: 'feature/structured', reviewObligationId: obligationId }, ctx),
-    );
+    const output = parseToolResult(await review.execute({ reviewObligationId: obligationId }, ctx));
 
     expect(output.error).toBeUndefined();
     expect(output.phase).toBe('PEER_REVIEW_COMPLETE');
@@ -237,7 +235,8 @@ describe('verdict-only structured evidence consumption', () => {
       await review.execute({ branch: 'feature/structured', reviewObligationId: obligationId }, ctx),
     );
 
-    expect(output.error).toBe(true);
+    expect(output.error).toBeUndefined();
+    expect(output.status).toBe('pending_review');
     expect(output.code).toBe('CONTENT_ANALYSIS_REQUIRED');
     expect(output.reviewDispatch).toEqual({ required: true });
     const state = (await readState(await currentSessionDir()))!;

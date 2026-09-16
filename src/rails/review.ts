@@ -119,18 +119,25 @@ export interface ReviewReferenceInput {
 
 type MechanicalFinding = Extract<ReviewReportFinding, { readonly source: 'mechanical' }>;
 
+function isPeerReviewTarget(
+  refInput: ReviewReferenceInput | undefined,
+  reviewSubject: FrozenReviewSubject | undefined,
+): boolean {
+  return refInput !== undefined || reviewSubject !== undefined;
+}
+
 function buildMechanicalFindings(
   state: SessionState,
   completeness: ReturnType<typeof evaluateCompleteness>,
   refInput?: ReviewReferenceInput,
+  reviewSubject?: FrozenReviewSubject,
 ): MechanicalFinding[] {
   const findings: MechanicalFinding[] = [];
   // Peer review of a foreign target never reports the local session's
   // lifecycle, completeness, four-eyes status, or validation state: those are
   // facts about this FlowGuard session, not about the reviewed subject. The
   // reviewer's structured findings are the authority for the target.
-  const isPeerReview = refInput !== undefined;
-  if (isPeerReview) return findings;
+  if (isPeerReviewTarget(refInput, reviewSubject)) return findings;
   if (!state.ticket) {
     findings.push({
       source: 'mechanical',
@@ -432,7 +439,12 @@ export async function executeReview(
   const content = await resolveReviewContent(preloadedContent, refInput, executors?.dnsLookup);
   if ('kind' in content) return content;
 
-  const findings: ReviewReportFinding[] = buildMechanicalFindings(state, completeness, refInput);
+  const findings: ReviewReportFinding[] = buildMechanicalFindings(
+    state,
+    completeness,
+    refInput,
+    content.reviewSubject,
+  );
 
   if (executors?.analyze) {
     const llmFindings = await executors.analyze(state, content.externalContent);
