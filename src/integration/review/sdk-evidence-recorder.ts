@@ -1,9 +1,14 @@
 /**
  * @module integration/review/sdk-evidence-recorder
- * @description Atomic persistence of SDK reviewer evidence and attempt lineage.
+ * @description Atomic persistence of reviewer evidence and attempt lineage.
+ *
+ * Historical filename retained to avoid import churn; the mutation authority is
+ * transport-neutral. Callers supply the concrete host execution facts when the
+ * evidence came from the native visible Task transport.
  */
 
 import type { ReviewObligationType } from '../../state/evidence.js';
+import type { ReviewInvocationEvidence } from '../../state/evidence-review-invocation.js';
 import type { SessionState } from '../../state/schema.js';
 import type { SemanticAuditIntent } from '../tools/audit-outbox.js';
 import {
@@ -23,22 +28,26 @@ import type { PipelineContext } from './pipeline-types.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import { validatePreBindFindings, type PreBindFindingsResult } from './pre-bind-findings.js';
 
+type ReviewExecutionFacts = {
+  readonly invocationMode: ReviewInvocationEvidence['invocationMode'];
+  readonly hostVisible: boolean;
+  readonly transcriptNavigable?: boolean;
+};
+
 type SdkEvidenceParams = {
   obligationId: string;
   obligationType: ReviewObligationType;
   sessionId: string;
   childSessionId: string;
-  /**
-   * Host call identity of the reviewer dispatch. For SDK child sessions this is
-   * the child session id; it must have an `authorized` durable dispatch entry
-   * that this recording completes atomically.
-   */
+  /** Host call identity whose durable dispatch authorization this evidence closes. */
   hostCallId: string;
   attemptId: string;
   promptHash: string;
   findingsHash: string;
   invokedAt: string;
   fulfilledAt: string;
+  /** Concrete transport facts. Omitted only by legacy SDK callers. */
+  execution?: ReviewExecutionFacts;
   reviewerResult: Omit<
     Pick<
       ReviewerSuccessResult,
@@ -133,11 +142,11 @@ export function buildSdkEvidenceAuditIntents(input: {
     : [first];
 }
 
-function buildSdkSessionInvocation(
+function buildReviewInvocation(
   params: SdkEvidenceParams,
   obligation: { mandateDigest: string; criteriaVersion: string },
-): ReturnType<typeof buildInvocationEvidence> {
-  return buildInvocationEvidence({
+): ReviewInvocationEvidence {
+  const base = buildInvocationEvidence({
     obligationId: params.obligationId,
     obligationType: params.obligationType,
     mandateDigest: obligation.mandateDigest,
@@ -151,6 +160,15 @@ function buildSdkSessionInvocation(
     attemptId: params.attemptId,
     capturedRawFindings: params.reviewerResult.findings,
   });
+  if (!params.execution) return base;
+  return {
+    ...base,
+    invocationMode: params.execution.invocationMode,
+    hostVisible: params.execution.hostVisible,
+    ...(params.execution.transcriptNavigable === undefined
+      ? {}
+      : { transcriptNavigable: params.execution.transcriptNavigable }),
+  };
 }
 
 /**
@@ -220,7 +238,7 @@ function applyEvidenceMutation(
     return state;
   }
 
-  const invocation = buildSdkSessionInvocation(params, obligation);
+  const invocation = buildReviewInvocation(params, obligation);
   const boundAssurance = updateAttemptStatus(
     assurance,
     lineage.attemptId,
