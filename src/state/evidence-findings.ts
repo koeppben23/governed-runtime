@@ -16,11 +16,33 @@ export const RepositoryPathSchema = z.string().transform((value, context) => {
 });
 export type RepositoryPath = z.infer<typeof RepositoryPathSchema>;
 
+/** Canonical finding severity vocabulary. Declared once and referenced by every projection. */
+export const FindingSeverity = z.enum(['critical', 'major', 'minor']);
+export type FindingSeverity = z.infer<typeof FindingSeverity>;
+
+/** Canonical finding category vocabulary. Declared once and referenced by every projection. */
+export const FindingCategory = z.enum([
+  'completeness',
+  'correctness',
+  'feasibility',
+  'risk',
+  'quality',
+]);
+export type FindingCategory = z.infer<typeof FindingCategory>;
+
+/** Canonical reviewed-artifact kind vocabulary (plan/ADR anchors). */
+export const ArtifactKind = z.enum(['plan', 'adr']);
+export type ArtifactKind = z.infer<typeof ArtifactKind>;
+
+/** Canonical frozen repository revision vocabulary. */
+export const ReviewRevision = z.enum(['base', 'head']);
+export type ReviewRevision = z.infer<typeof ReviewRevision>;
+
 /** A repository location at the frozen review base or head. */
 export const RepositoryLocation = z
   .object({
     path: RepositoryPathSchema,
-    revision: z.enum(['base', 'head']),
+    revision: ReviewRevision,
     line: z.number().int().positive().optional(),
     endLine: z.number().int().positive().optional(),
   })
@@ -51,7 +73,7 @@ export type MarkdownSectionPath = z.infer<typeof MarkdownSectionPath>;
 export const ArtifactSectionAnchor = z
   .object({
     kind: z.literal('artifact_section'),
-    artifactKind: z.enum(['plan', 'adr']),
+    artifactKind: ArtifactKind,
     artifactDigest: z.string().min(1),
     sectionPath: MarkdownSectionPath,
   })
@@ -198,8 +220,8 @@ export type FindingRelation = z.infer<typeof FindingRelation>;
 /** A relation-bound independent review finding. */
 export const Finding = z
   .object({
-    severity: z.enum(['critical', 'major', 'minor']),
-    category: z.enum(['completeness', 'correctness', 'feasibility', 'risk', 'quality']),
+    severity: FindingSeverity,
+    category: FindingCategory,
     message: z.string(),
     relation: FindingRelation,
     findingId: z.string().uuid().optional(),

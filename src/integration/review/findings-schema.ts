@@ -15,13 +15,24 @@
  */
 
 import {
-  SEVERITY_VALUES,
-  CATEGORY_VALUES,
-  REVISION_VALUES,
-  OVERALL_VERDICT_VALUES,
   ANCHOR_KINDS,
+  ARTIFACT_KIND_VALUES,
+  CATEGORY_VALUES,
   CHALLENGE_KINDS,
+  CHALLENGE_OUTCOMES,
+  CHALLENGE_RESOLUTION_VERDICT_VALUES,
+  OVERALL_VERDICT_VALUES,
+  REVISION_VALUES,
+  SEVERITY_VALUES,
 } from './reviewer-contract.js';
+
+/**
+ * RFC 4122 UUID pattern. Single declaration for every UUID-typed field in this
+ * schema; drift against `z.string().uuid()` is guarded by
+ * findings-schema-drift.test.ts.
+ */
+const UUID_PATTERN =
+  '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$';
 
 const REPOSITORY_LOCATION_JSON_SCHEMA = {
   oneOf: [
@@ -56,7 +67,7 @@ function buildAnchorVariant(kind: (typeof ANCHOR_KINDS)[number]): Record<string,
       type: 'object',
       properties: {
         kind: { type: 'string', const: kind },
-        artifactKind: { type: 'string', enum: ['plan', 'adr'] },
+        artifactKind: { type: 'string', enum: [...ARTIFACT_KIND_VALUES] },
         artifactDigest: { type: 'string', minLength: 1 },
         sectionPath: {
           type: 'array',
@@ -123,7 +134,7 @@ function challengeBase(kind: string) {
   return {
     obligationId: {
       type: 'string',
-      pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+      pattern: UUID_PATTERN,
     },
     clientReference: {
       type: 'string',
@@ -160,7 +171,7 @@ function buildDesignChallenge(base: Record<string, unknown>) {
           type: 'object',
           properties: {
             kind: { type: 'string', const: 'plan_adr_section' },
-            artifactKind: { type: 'string', enum: ['plan', 'adr'] },
+            artifactKind: { type: 'string', enum: [...ARTIFACT_KIND_VALUES] },
             artifactDigest: { type: 'string', minLength: 1 },
             sectionPath: {
               type: 'array',
@@ -182,7 +193,7 @@ function buildDesignChallenge(base: Record<string, unknown>) {
           additionalProperties: false,
         },
       },
-      outcome: { type: 'string', enum: ['supported', 'contradicted', 'not_verified'] },
+      outcome: { type: 'string', enum: [...CHALLENGE_OUTCOMES.design_challenge] },
     },
     required: CHALLENGE_REQUIRED,
     additionalProperties: false,
@@ -215,8 +226,7 @@ function buildImplementationChallenge(base: Record<string, unknown>) {
                 kind: { type: 'string', const: 'validation_attempt' },
                 attemptId: {
                   type: 'string',
-                  pattern:
-                    '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+                  pattern: UUID_PATTERN,
                 },
               },
               required: ['kind', 'attemptId'],
@@ -225,7 +235,7 @@ function buildImplementationChallenge(base: Record<string, unknown>) {
           ],
         },
       },
-      outcome: { type: 'string', enum: ['pass', 'fail', 'not_verified'] },
+      outcome: { type: 'string', enum: [...CHALLENGE_OUTCOMES.implementation_challenge] },
     },
     required: CHALLENGE_REQUIRED,
     additionalProperties: false,
@@ -250,7 +260,7 @@ function buildContentChallenge(base: Record<string, unknown>) {
           additionalProperties: false,
         },
       },
-      outcome: { type: 'string', enum: ['supported', 'contradicted', 'not_verified'] },
+      outcome: { type: 'string', enum: [...CHALLENGE_OUTCOMES.design_challenge] },
     },
     required: CHALLENGE_REQUIRED,
     additionalProperties: false,
@@ -328,10 +338,9 @@ export const REVIEW_FINDINGS_JSON_SCHEMA = {
         properties: {
           challengeId: {
             type: 'string',
-            pattern:
-              '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+            pattern: UUID_PATTERN,
           },
-          verdict: { type: 'string', enum: ['resolved', 'still_failing', 'not_verified'] },
+          verdict: { type: 'string', enum: [...CHALLENGE_RESOLUTION_VERDICT_VALUES] },
         },
         required: ['challengeId', 'verdict'],
         additionalProperties: false,
@@ -342,10 +351,7 @@ export const REVIEW_FINDINGS_JSON_SCHEMA = {
       properties: {
         toolObligationId: {
           type: 'string',
-          // RFC 4122 UUID pattern. Must stay in sync with z.string().uuid() in
-          // src/state/evidence.ts ReviewAttestation.toolObligationId.
-          // Drift guard: src/integration/review-findings-schema-drift.test.ts.
-          pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+          pattern: UUID_PATTERN,
         },
       },
       required: ['toolObligationId'],

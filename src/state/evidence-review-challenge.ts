@@ -13,13 +13,13 @@
 
 import { z } from 'zod';
 import { ActorInfoSchema } from './evidence-identity.js';
-import { MarkdownSectionPath } from './evidence-findings.js';
+import { ArtifactKind, MarkdownSectionPath } from './evidence-findings.js';
 
 /** Digest-bound reference to a Plan or ADR section excerpt. */
 export const PlanAdrSectionRef = z
   .object({
     kind: z.literal('plan_adr_section'),
-    artifactKind: z.enum(['plan', 'adr']),
+    artifactKind: ArtifactKind,
     artifactDigest: z.string().min(1),
     sectionPath: MarkdownSectionPath,
     excerptDigest: z.string().min(1),
@@ -194,10 +194,13 @@ export const ChallengeResolution = z
 export type ChallengeResolution = z.infer<typeof ChallengeResolution>;
 
 /** An independent reviewer's verdict on a prior implementation challenge resolution. */
+export const ChallengeResolutionOutcome = z.enum(['resolved', 'still_failing', 'not_verified']);
+export type ChallengeResolutionOutcome = z.infer<typeof ChallengeResolutionOutcome>;
+
 export const ChallengeResolutionVerdict = z
   .object({
     challengeId: z.string().uuid(),
-    verdict: z.enum(['resolved', 'still_failing', 'not_verified']),
+    verdict: ChallengeResolutionOutcome,
   })
   .strict()
   .readonly();

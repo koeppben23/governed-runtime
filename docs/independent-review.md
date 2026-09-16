@@ -382,15 +382,15 @@ Each `Finding` requires `severity`, `category`, `message`, and `relation`.
 anchors. `relation.evidenceLocations` is required but may be empty. The legacy
 free-text `location` field is not accepted.
 
-> **Attestation in subagent mode:** the `attestation` field is declared
-> optional in the Zod `ReviewFindings` schema (so self-review and legacy
-> findings remain shape-compatible) but the OpenCode SDK
-> `REVIEW_FINDINGS_JSON_SCHEMA` sent to the reviewer subagent declares
-> all six attestation fields as required. In strict subagent mode the
-> reviewer agent MUST emit a complete attestation block; missing fields
-> fail closed at SDK structured-output validation time, before the
-> findings ever reach plugin enforcement. `validateStrictAttestation`
-> in `src/integration/review/assurance.ts` is the second-line runtime check.
+> **Attestation in subagent mode:** the canonical `ReviewFindings.attestation`
+> is optional at the record level (human/self-review shapes do not carry it),
+> while the reviewer-facing `ReviewerFindingsInput` requires exactly
+> `toolObligationId`. The OpenCode SDK `REVIEW_FINDINGS_JSON_SCHEMA` sent to the
+> reviewer child requires that same single field; the host enriches the
+> attested record with `mandateDigest`, `criteriaVersion`, `iteration`,
+> `planVersion`, and `reviewedBy` before binding. `validateStrictAttestation`
+> in `src/integration/review/assurance.ts` is the runtime gate that rejects a
+> missing or mismatched strict attestation fail-closed.
 
 ---
 

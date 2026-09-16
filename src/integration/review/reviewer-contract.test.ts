@@ -137,6 +137,8 @@ describe('reviewer-contract ↔ ReviewerFindingsInput (model-side authority)', (
       const result = ReviewerFindingsInput.safeParse(modelPayload({ severity }));
       expect(result.success, `${severity} must be valid`).toBe(true);
     }
+
+    expect([...SEVERITY_VALUES].sort()).toEqual(['critical', 'major', 'minor']);
   });
 
   it('categories match canonical Finding.category', () => {
@@ -144,6 +146,14 @@ describe('reviewer-contract ↔ ReviewerFindingsInput (model-side authority)', (
       const result = ReviewerFindingsInput.safeParse(modelPayload({ category }));
       expect(result.success, `${category} must be valid`).toBe(true);
     }
+
+    expect([...CATEGORY_VALUES].sort()).toEqual([
+      'completeness',
+      'correctness',
+      'feasibility',
+      'quality',
+      'risk',
+    ]);
   });
 
   it('anchor kinds match canonical ReviewSubjectAnchor', () => {
@@ -198,6 +208,12 @@ describe('reviewer-contract ↔ ReviewerFindingsInput (model-side authority)', (
       const result = ReviewerFindingsInput.safeParse(modelPayload({ overallVerdict: verdict }));
       expect(result.success, `${verdict} must be valid`).toBe(true);
     }
+
+    expect([...OVERALL_VERDICT_VALUES].sort()).toEqual([
+      'accept',
+      'changes_requested',
+      'unable_to_review',
+    ]);
   });
 
   it('invalid severity "info" is rejected', () => {

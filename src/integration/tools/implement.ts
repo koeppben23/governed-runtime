@@ -16,6 +16,7 @@ import {
 } from './implement-record.js';
 import { handleImplReview } from './implement-review.js';
 import { responseReportsError, runActiveChecksAutomatically } from './auto-validation.js';
+import { LoopVerdict } from '../../state/evidence.js';
 
 /**
  * Record-mode execution: persist implementation evidence (auto-detected via git).
@@ -139,17 +140,14 @@ export const review_implementation: ToolDefinition = {
     'Review loop runs up to maxIterations (from policy). ' +
     'reviewerUnavailable without a verdict reports an actual reviewer transport failure; it never approves or persists review evidence.',
   args: {
-    reviewVerdict: z
-      .enum(['accept', 'changes_requested', 'unable_to_review'])
-      .optional()
-      .describe(
-        "The INDEPENDENT REVIEWER's verdict on the implementation — NOT user approval. " +
-          'Required unless reporting an actual host Task transport failure with reviewerUnavailable: true. ' +
-          "'accept' = the reviewer accepts the implementation; the loop converges and " +
-          'advances to the EVIDENCE_REVIEW user gate (the user still approves via /review-decision). ' +
-          "'changes_requested' = the implementation needs revision. 'unable_to_review' must match " +
-          'bound reviewer evidence and fails closed before a fresh review attempt is prepared.',
-      ),
+    reviewVerdict: LoopVerdict.optional().describe(
+      "The INDEPENDENT REVIEWER's verdict on the implementation — NOT user approval. " +
+        'Required unless reporting an actual host Task transport failure with reviewerUnavailable: true. ' +
+        "'accept' = the reviewer accepts the implementation; the loop converges and " +
+        'advances to the EVIDENCE_REVIEW user gate (the user still approves via /review-decision). ' +
+        "'changes_requested' = the implementation needs revision. 'unable_to_review' must match " +
+        'bound reviewer evidence and fails closed before a fresh review attempt is prepared.',
+    ),
     reviewerUnavailable: z
       .boolean()
       .optional()
