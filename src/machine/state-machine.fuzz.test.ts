@@ -42,8 +42,8 @@ const ALL_PHASES: Phase[] = [
   'ARCHITECTURE',
   'ARCH_REVIEW',
   'ARCH_COMPLETE',
-  'REVIEW',
-  'REVIEW_COMPLETE',
+  'PEER_REVIEW',
+  'PEER_REVIEW_COMPLETE',
   'REJECTED',
   'ABORTED',
 ];
@@ -108,7 +108,7 @@ describe('state machine fuzz', () => {
           'IMPLEMENTATION',
           'IMPL_REVIEW',
           'ARCHITECTURE',
-          'REVIEW' as Phase,
+          'PEER_REVIEW' as Phase,
         ),
         (phase) => {
           const state = makeState(phase, {
@@ -141,7 +141,7 @@ describe('state machine fuzz', () => {
         fc.constantFrom(
           'COMPLETE',
           'ARCH_COMPLETE',
-          'REVIEW_COMPLETE',
+          'PEER_REVIEW_COMPLETE',
           'REJECTED',
           'ABORTED' as Phase,
         ),
@@ -317,11 +317,15 @@ describe('state machine fuzz', () => {
   it('flow-selection events (TICKET_SELECTED, ARCHITECTURE_SELECTED, REVIEW_SELECTED) resolve from READY', () => {
     fc.assert(
       fc.property(
-        fc.constantFrom('TICKET_SELECTED', 'ARCHITECTURE_SELECTED', 'REVIEW_SELECTED' as Event),
+        fc.constantFrom(
+          'TICKET_SELECTED',
+          'ARCHITECTURE_SELECTED',
+          'PEER_REVIEW_SELECTED' as Event,
+        ),
         (event) => {
           const target = resolveTransition('READY', event);
           expect(target).toBeDefined();
-          expect(['TICKET', 'ARCHITECTURE', 'REVIEW']).toContain(target!);
+          expect(['TICKET', 'ARCHITECTURE', 'PEER_REVIEW']).toContain(target!);
         },
       ),
       {

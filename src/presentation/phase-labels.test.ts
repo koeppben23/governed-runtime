@@ -25,8 +25,8 @@ const ALL_PHASES: readonly Phase[] = [
   'ARCHITECTURE',
   'ARCH_REVIEW',
   'ARCH_COMPLETE',
-  'REVIEW',
-  'REVIEW_COMPLETE',
+  'PEER_REVIEW',
+  'PEER_REVIEW_COMPLETE',
   'REJECTED',
   'ABORTED',
 ];
@@ -72,7 +72,7 @@ describe('PHASE_LABELS', () => {
     expect(PHASE_LABELS.ARCHITECTURE).toBe('Architecture in progress');
     expect(PHASE_LABELS.ARCH_REVIEW).toBe('Ready for architecture review');
     expect(PHASE_LABELS.ARCH_COMPLETE).toBe('Architecture complete');
-    expect(PHASE_LABELS.REVIEW).toBe('Compliance review');
-    expect(PHASE_LABELS.REVIEW_COMPLETE).toBe('Review complete');
+    expect(PHASE_LABELS.PEER_REVIEW).toBe('Peer review');
+    expect(PHASE_LABELS.PEER_REVIEW_COMPLETE).toBe('Peer review complete');
   });
 });

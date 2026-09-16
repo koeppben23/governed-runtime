@@ -33,8 +33,8 @@ export const PHASE_LABELS = {
   ARCHITECTURE: 'Architecture in progress',
   ARCH_REVIEW: 'Ready for architecture review',
   ARCH_COMPLETE: 'Architecture complete',
-  REVIEW: 'Compliance review',
-  REVIEW_COMPLETE: 'Review complete',
+  PEER_REVIEW: 'Peer review',
+  PEER_REVIEW_COMPLETE: 'Peer review complete',
   REJECTED: 'Workflow rejected',
   ABORTED: 'Workflow aborted',
 } satisfies Record<Phase, string>;

@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
-  STANDALONE_REVIEW_OBJECTIVES_PROFILE_VERSION,
-  STANDALONE_REVIEW_EVIDENCE_SCHEMA_VERSION,
-  createStandaloneReviewTask,
-  resolveAuthoritativeStandaloneReviewTask,
-  type StandaloneReviewEvidence,
-  type StandaloneReviewPreparedEvidence,
-} from './standalone-review.js';
+  PEER_REVIEW_OBJECTIVES_PROFILE_VERSION,
+  PEER_REVIEW_EVIDENCE_SCHEMA_VERSION,
+  createPeerReviewTask,
+  resolveAuthoritativePeerReviewTask,
+  type PeerReviewEvidence,
+  type PeerReviewPreparedEvidence,
+} from './peer-review.js';
 import { deriveProofGraph } from '../audit/proofgraph/derive.js';
 import { assuranceWith, makeState } from '../fixtures.js';
 import { SessionState } from './schema.js';
@@ -14,7 +14,7 @@ import { createReviewObligation, freezeReviewMaterial } from '../integration/rev
 import {
   appendCompletedReviewEvidence,
   appendPreparedReviewEvidence,
-  prepareStandaloneReviewEvidence,
+  preparePeerReviewEvidence,
 } from '../integration/tools/review-tool/preparation.js';
 import type { ReviewAssuranceState } from './evidence-review.js';
 
@@ -49,14 +49,14 @@ function reviewObligation(): ReturnType<typeof createReviewObligation> {
 }
 
 function preparedEntry(
-  overrides: Partial<StandaloneReviewPreparedEvidence> = {},
-): StandaloneReviewPreparedEvidence {
-  const { task, requestedDigests } = createStandaloneReviewTask({
+  overrides: Partial<PeerReviewPreparedEvidence> = {},
+): PeerReviewPreparedEvidence {
+  const { task, requestedDigests } = createPeerReviewTask({
     subjectDigest: SUBJECT_DIGEST,
   });
   return {
     kind: 'prepared',
-    schemaVersion: STANDALONE_REVIEW_EVIDENCE_SCHEMA_VERSION,
+    schemaVersion: PEER_REVIEW_EVIDENCE_SCHEMA_VERSION,
     evidenceId: '00000000-0000-4000-8000-000000000001',
     reviewTaskId: REVIEW_TASK_ID,
     obligationId: OBLIGATION_ID,
@@ -67,13 +67,13 @@ function preparedEntry(
   };
 }
 
-describe('standalone review deterministic task', () => {
+describe('peer review deterministic task', () => {
   it('uses canonical defaults and stable null-provenance hypothesis claims', () => {
-    const first = createStandaloneReviewTask({ subjectDigest: 'a'.repeat(64) });
-    const second = createStandaloneReviewTask({ subjectDigest: 'a'.repeat(64) });
+    const first = createPeerReviewTask({ subjectDigest: 'a'.repeat(64) });
+    const second = createPeerReviewTask({ subjectDigest: 'a'.repeat(64) });
 
     expect(first).toEqual(second);
-    expect(first.task.profileVersion).toBe(STANDALONE_REVIEW_OBJECTIVES_PROFILE_VERSION);
+    expect(first.task.profileVersion).toBe(PEER_REVIEW_OBJECTIVES_PROFILE_VERSION);
     expect(first.task.objectives).toHaveLength(3);
     expect(first.task.claims).toEqual(
       expect.arrayContaining([
@@ -86,12 +86,12 @@ describe('standalone review deterministic task', () => {
       ]),
     );
     expect(
-      createStandaloneReviewTask({ subjectDigest: 'b'.repeat(64) }).task.claims[0]?.claimId,
+      createPeerReviewTask({ subjectDigest: 'b'.repeat(64) }).task.claims[0]?.claimId,
     ).not.toBe(first.task.claims[0]?.claimId);
   });
 
   it('uses structured custom objectives without deriving objectives from subject text', () => {
-    const { task } = createStandaloneReviewTask({
+    const { task } = createPeerReviewTask({
       subjectDigest: 'a'.repeat(64),
       objectives: [
         { objectiveId: 'api-contract', statement: 'The API contract remains compatible.' },
@@ -113,7 +113,7 @@ describe('standalone review deterministic task', () => {
     const prepared = preparedEntry();
     const projection = deriveProofGraph(
       makeState('READY', {
-        standaloneReviewEvidence: [prepared],
+        peerReviewEvidence: [prepared],
         reviewAssurance: assuranceWith({
           obligation: { ...reviewObligation(), obligationId: OBLIGATION_ID },
         }),
@@ -131,7 +131,7 @@ describe('standalone review deterministic task', () => {
 
   it('binds a branch review subject to its resolved head rather than its mutable branch name', () => {
     const args = { branch: 'feature', base: 'main' };
-    const first = prepareStandaloneReviewEvidence(
+    const first = preparePeerReviewEvidence(
       args,
       NOW,
       {
@@ -143,7 +143,7 @@ describe('standalone review deterministic task', () => {
       REVIEW_TASK_ID,
       OBLIGATION_ID,
     );
-    const second = prepareStandaloneReviewEvidence(
+    const second = preparePeerReviewEvidence(
       args,
       NOW,
       {
@@ -165,14 +165,8 @@ describe('standalone review deterministic task', () => {
     // the completion to the outstanding prepared incarnation instead of forking
     // the evidence chain and duplicating hypothesis claims (#762).
     const args = { branch: 'feature', base: 'main' };
-    const prepared = prepareStandaloneReviewEvidence(
-      args,
-      NOW,
-      undefined,
-      REVIEW_TASK_ID,
-      OBLIGATION_ID,
-    );
-    const recomputed = prepareStandaloneReviewEvidence(
+    const prepared = preparePeerReviewEvidence(args, NOW, undefined, REVIEW_TASK_ID, OBLIGATION_ID);
+    const recomputed = preparePeerReviewEvidence(
       args,
       '2026-01-01T00:00:01.000Z',
       {
@@ -200,14 +194,8 @@ describe('standalone review deterministic task', () => {
 
   it('keeps the hypothesis claim count at the objective count across the full lifecycle', () => {
     const args = { branch: 'feature', base: 'main' };
-    const prepared = prepareStandaloneReviewEvidence(
-      args,
-      NOW,
-      undefined,
-      REVIEW_TASK_ID,
-      OBLIGATION_ID,
-    );
-    const recomputed = prepareStandaloneReviewEvidence(
+    const prepared = preparePeerReviewEvidence(args, NOW, undefined, REVIEW_TASK_ID, OBLIGATION_ID);
+    const recomputed = preparePeerReviewEvidence(
       args,
       '2026-01-01T00:00:01.000Z',
       {
@@ -221,15 +209,15 @@ describe('standalone review deterministic task', () => {
     );
     const evidence = appendPreparedReviewEvidence([], prepared);
     const superseded = appendPreparedReviewEvidence(evidence, recomputed);
-    const standaloneReviewEvidence = appendCompletedReviewEvidence({
+    const peerReviewEvidence = appendCompletedReviewEvidence({
       evidence: superseded,
       prepared: recomputed,
       completedAt: '2026-01-01T00:00:02.000Z',
     });
 
     const projection = deriveProofGraph(
-      makeState('REVIEW_COMPLETE', {
-        standaloneReviewEvidence,
+      makeState('PEER_REVIEW_COMPLETE', {
+        peerReviewEvidence,
         reviewAssurance: assuranceWith({
           obligation: { ...reviewObligation(), obligationId: OBLIGATION_ID },
         }),
@@ -244,16 +232,16 @@ describe('standalone review deterministic task', () => {
   });
 });
 
-describe('resolveAuthoritativeStandaloneReviewTask lifecycle validation', () => {
+describe('resolveAuthoritativePeerReviewTask lifecycle validation', () => {
   it('resolves the completed incarnation after supersession (contract gate 2)', () => {
     const first = preparedEntry({ evidenceId: '00000000-0000-4000-8000-000000000001' });
     const second = preparedEntry({ evidenceId: '00000000-0000-4000-8000-000000000002' });
-    const evidence: StandaloneReviewEvidence[] = [
+    const evidence: PeerReviewEvidence[] = [
       first,
       second,
       {
         kind: 'superseded',
-        schemaVersion: STANDALONE_REVIEW_EVIDENCE_SCHEMA_VERSION,
+        schemaVersion: PEER_REVIEW_EVIDENCE_SCHEMA_VERSION,
         evidenceId: '00000000-0000-4000-8000-000000000003',
         reviewTaskId: REVIEW_TASK_ID,
         obligationId: OBLIGATION_ID,
@@ -264,7 +252,7 @@ describe('resolveAuthoritativeStandaloneReviewTask lifecycle validation', () => 
       },
       {
         kind: 'completed',
-        schemaVersion: STANDALONE_REVIEW_EVIDENCE_SCHEMA_VERSION,
+        schemaVersion: PEER_REVIEW_EVIDENCE_SCHEMA_VERSION,
         evidenceId: '00000000-0000-4000-8000-000000000004',
         reviewTaskId: REVIEW_TASK_ID,
         obligationId: OBLIGATION_ID,
@@ -274,7 +262,7 @@ describe('resolveAuthoritativeStandaloneReviewTask lifecycle validation', () => 
         attestationDigest: null,
       },
     ];
-    const result = resolveAuthoritativeStandaloneReviewTask(evidence, OBLIGATION_ID);
+    const result = resolveAuthoritativePeerReviewTask(evidence, OBLIGATION_ID);
     expect(result).toMatchObject({ kind: 'ok', reviewTaskId: REVIEW_TASK_ID });
     if (result.kind !== 'ok') throw new TypeError('expected ok');
     expect(result.task.subjectDigest).toBe(SUBJECT_DIGEST);
@@ -282,24 +270,24 @@ describe('resolveAuthoritativeStandaloneReviewTask lifecycle validation', () => 
 
   it('resolves the pending incarnation when nothing completed yet (contract gate 1)', () => {
     const first = preparedEntry();
-    const result = resolveAuthoritativeStandaloneReviewTask([first], OBLIGATION_ID);
+    const result = resolveAuthoritativePeerReviewTask([first], OBLIGATION_ID);
     expect(result).toMatchObject({ kind: 'ok', reviewTaskId: REVIEW_TASK_ID });
   });
 
   it('blocks two non-superseded pending incarnations of one review task (adversarial)', () => {
     const first = preparedEntry({ evidenceId: '00000000-0000-4000-8000-000000000001' });
     const second = preparedEntry({ evidenceId: '00000000-0000-4000-8000-000000000002' });
-    const result = resolveAuthoritativeStandaloneReviewTask([first, second], OBLIGATION_ID);
+    const result = resolveAuthoritativePeerReviewTask([first, second], OBLIGATION_ID);
     expect(result).toMatchObject({ kind: 'blocked' });
   });
 
   it('blocks a supersession marker with a dangling replacement reference', () => {
     const first = preparedEntry();
-    const evidence: StandaloneReviewEvidence[] = [
+    const evidence: PeerReviewEvidence[] = [
       first,
       {
         kind: 'superseded',
-        schemaVersion: STANDALONE_REVIEW_EVIDENCE_SCHEMA_VERSION,
+        schemaVersion: PEER_REVIEW_EVIDENCE_SCHEMA_VERSION,
         evidenceId: '00000000-0000-4000-8000-000000000003',
         reviewTaskId: REVIEW_TASK_ID,
         obligationId: OBLIGATION_ID,
@@ -309,19 +297,19 @@ describe('resolveAuthoritativeStandaloneReviewTask lifecycle validation', () => 
         reason: 'subject_frozen',
       },
     ];
-    const result = resolveAuthoritativeStandaloneReviewTask(evidence, OBLIGATION_ID);
+    const result = resolveAuthoritativePeerReviewTask(evidence, OBLIGATION_ID);
     expect(result).toMatchObject({ kind: 'blocked' });
   });
 
   it('blocks a completion referencing a superseded prepared entry', () => {
     const first = preparedEntry({ evidenceId: '00000000-0000-4000-8000-000000000001' });
     const second = preparedEntry({ evidenceId: '00000000-0000-4000-8000-000000000002' });
-    const evidence: StandaloneReviewEvidence[] = [
+    const evidence: PeerReviewEvidence[] = [
       first,
       second,
       {
         kind: 'superseded',
-        schemaVersion: STANDALONE_REVIEW_EVIDENCE_SCHEMA_VERSION,
+        schemaVersion: PEER_REVIEW_EVIDENCE_SCHEMA_VERSION,
         evidenceId: '00000000-0000-4000-8000-000000000003',
         reviewTaskId: REVIEW_TASK_ID,
         obligationId: OBLIGATION_ID,
@@ -332,7 +320,7 @@ describe('resolveAuthoritativeStandaloneReviewTask lifecycle validation', () => 
       },
       {
         kind: 'completed',
-        schemaVersion: STANDALONE_REVIEW_EVIDENCE_SCHEMA_VERSION,
+        schemaVersion: PEER_REVIEW_EVIDENCE_SCHEMA_VERSION,
         evidenceId: '00000000-0000-4000-8000-000000000004',
         reviewTaskId: REVIEW_TASK_ID,
         obligationId: OBLIGATION_ID,
@@ -342,19 +330,19 @@ describe('resolveAuthoritativeStandaloneReviewTask lifecycle validation', () => 
         attestationDigest: null,
       },
     ];
-    const result = resolveAuthoritativeStandaloneReviewTask(evidence, OBLIGATION_ID);
+    const result = resolveAuthoritativePeerReviewTask(evidence, OBLIGATION_ID);
     expect(result).toMatchObject({ kind: 'blocked' });
   });
 
   it('blocks a supersession cycle', () => {
     const first = preparedEntry({ evidenceId: '00000000-0000-4000-8000-000000000001' });
     const second = preparedEntry({ evidenceId: '00000000-0000-4000-8000-000000000002' });
-    const evidence: StandaloneReviewEvidence[] = [
+    const evidence: PeerReviewEvidence[] = [
       first,
       second,
       {
         kind: 'superseded',
-        schemaVersion: STANDALONE_REVIEW_EVIDENCE_SCHEMA_VERSION,
+        schemaVersion: PEER_REVIEW_EVIDENCE_SCHEMA_VERSION,
         evidenceId: '00000000-0000-4000-8000-000000000003',
         reviewTaskId: REVIEW_TASK_ID,
         obligationId: OBLIGATION_ID,
@@ -365,7 +353,7 @@ describe('resolveAuthoritativeStandaloneReviewTask lifecycle validation', () => 
       },
       {
         kind: 'superseded',
-        schemaVersion: STANDALONE_REVIEW_EVIDENCE_SCHEMA_VERSION,
+        schemaVersion: PEER_REVIEW_EVIDENCE_SCHEMA_VERSION,
         evidenceId: '00000000-0000-4000-8000-000000000004',
         reviewTaskId: REVIEW_TASK_ID,
         obligationId: OBLIGATION_ID,
@@ -375,24 +363,24 @@ describe('resolveAuthoritativeStandaloneReviewTask lifecycle validation', () => 
         reason: 'subject_frozen',
       },
     ];
-    const result = resolveAuthoritativeStandaloneReviewTask(evidence, OBLIGATION_ID);
+    const result = resolveAuthoritativePeerReviewTask(evidence, OBLIGATION_ID);
     expect(result).toMatchObject({ kind: 'blocked' });
   });
 
   it('returns none for an obligation without evidence', () => {
-    const result = resolveAuthoritativeStandaloneReviewTask([], OBLIGATION_ID);
+    const result = resolveAuthoritativePeerReviewTask([], OBLIGATION_ID);
     expect(result).toMatchObject({ kind: 'none' });
   });
 
   it('SessionState rejects a structurally broken lifecycle chain fail-closed', () => {
     const first = preparedEntry({ evidenceId: '00000000-0000-4000-8000-000000000001' });
     const second = preparedEntry({ evidenceId: '00000000-0000-4000-8000-000000000002' });
-    const brokenEvidence: StandaloneReviewEvidence[] = [
+    const brokenEvidence: PeerReviewEvidence[] = [
       first,
       second,
       {
         kind: 'superseded',
-        schemaVersion: STANDALONE_REVIEW_EVIDENCE_SCHEMA_VERSION,
+        schemaVersion: PEER_REVIEW_EVIDENCE_SCHEMA_VERSION,
         evidenceId: '00000000-0000-4000-8000-000000000003',
         reviewTaskId: REVIEW_TASK_ID,
         obligationId: OBLIGATION_ID,
@@ -403,7 +391,7 @@ describe('resolveAuthoritativeStandaloneReviewTask lifecycle validation', () => 
       },
       {
         kind: 'superseded',
-        schemaVersion: STANDALONE_REVIEW_EVIDENCE_SCHEMA_VERSION,
+        schemaVersion: PEER_REVIEW_EVIDENCE_SCHEMA_VERSION,
         evidenceId: '00000000-0000-4000-8000-000000000004',
         reviewTaskId: REVIEW_TASK_ID,
         obligationId: OBLIGATION_ID,
@@ -413,8 +401,8 @@ describe('resolveAuthoritativeStandaloneReviewTask lifecycle validation', () => 
         reason: 'subject_frozen',
       },
     ];
-    const state = makeState('REVIEW_COMPLETE', {
-      standaloneReviewEvidence: brokenEvidence,
+    const state = makeState('PEER_REVIEW_COMPLETE', {
+      peerReviewEvidence: brokenEvidence,
       reviewAssurance: assuranceWith({
         obligation: { ...reviewObligation(), obligationId: OBLIGATION_ID },
       }),
@@ -423,7 +411,15 @@ describe('resolveAuthoritativeStandaloneReviewTask lifecycle validation', () => 
     expect(parsed.success).toBe(false);
     if (parsed.success) throw new TypeError('expected schema rejection');
     expect(parsed.error.issues.map((issue) => issue.path.join('.'))).toContain(
-      'standaloneReviewEvidence',
+      'peerReviewEvidence',
     );
+  });
+});
+
+describe('peer review persisted state hard cut', () => {
+  it('rejects snapshots without the peerReviewEvidence slot', () => {
+    const withoutEvidence: Record<string, unknown> = { ...makeState('READY') };
+    delete withoutEvidence.peerReviewEvidence;
+    expect(SessionState.safeParse(withoutEvidence).success).toBe(false);
   });
 });

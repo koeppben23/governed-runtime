@@ -1,6 +1,6 @@
 # FlowGuard Review Report
 
-**Status:** Review complete
+**Status:** Peer review complete
 **Overall:** clean
 
 ## Verification

@@ -173,7 +173,7 @@ describe('workflow directive SSOT', () => {
     for (const phase of [
       'COMPLETE',
       'ARCH_COMPLETE',
-      'REVIEW_COMPLETE',
+      'PEER_REVIEW_COMPLETE',
       'REJECTED',
       'ABORTED',
     ] as const) {

@@ -38,7 +38,7 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 
 ### Deterministic Workflow Control
 
-- **3 independent flows** — Ticket (full dev lifecycle), Architecture (ADR creation), Review (compliance and content-aware review)
+- **3 independent flows** — Ticket (full dev lifecycle), Architecture (ADR creation), Peer review (peer and content-aware review)
 - **18 explicit phases** across three flows, starting from a shared READY entry point
 - **Phase gates** that require evidence before progression
 - **Computed next actions** — the system tells you exactly what is allowed, not guessed
@@ -126,7 +126,7 @@ Nineteen installed core FlowGuard commands cover workflow, diagnostics, and oper
 | `/ticket`                           | Record the task description for FlowGuard tracking. Supports external references (Jira, ADO, GitHub) via URLs.      |
 | `/plan`                             | Generate implementation plan with self-review loop. Converged plans display a **Plan Review Card**.                 |
 | `/architecture`                     | Submit Architecture Decision Record with self-review loop. Converged ADRs display an **Architecture Review Card**.  |
-| `/review`                           | Generate standalone compliance or content-aware review. Completed reviews display a **Review Report Card**.         |
+| `/review`                           | Generate peer or content-aware review. Completed reviews display a **Review Report Card**.         |
 | `/review-decision`                  | Record human verdict at User Gates (approve / changes_requested / reject)                                           |
 | `/implement`                        | Execute implementation, record evidence, run review loop                                                            |
 | `/export`                           | Materialize the required verifiable export; the workflow reaches COMPLETE only after export evidence is persisted   |
@@ -151,18 +151,18 @@ flowchart LR
     HYD[/hydrate/] --> READY
     READY --> TICKET
     READY --> ARCH[ARCHITECTURE]
-    READY --> REVIEW
+    READY --> PEER_REVIEW
 
     TICKET --> PLAN --> PLAN_REV[PLAN_REVIEW] --> VAL[VALIDATION] --> IMPL[IMPLEMENTATION] --> IMPL_VAL[IMPL_VALIDATION] --> IMPL_REV[IMPL_REVIEW] --> EVID_REV[EVIDENCE_REVIEW] --> EXPORT_READY --> COMPLETE
 
     ARCH --> ARCH_REV[ARCH_REVIEW] --> ARCH_COMPLETE
 
-    REVIEW --> REVIEW_COMPLETE
+    PEER_REVIEW --> PEER_REVIEW_COMPLETE
 ```
 
 **Ticket Flow:** `READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_VALIDATION → IMPL_REVIEW → EVIDENCE_REVIEW → EXPORT_READY → COMPLETE`
 **Architecture Flow:** `READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE`
-**Review Flow:** `READY → REVIEW → REVIEW_COMPLETE`
+**Peer review flow:** `READY → PEER_REVIEW → PEER_REVIEW_COMPLETE`
 
 **User Gates** (human decision required): PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW.
 

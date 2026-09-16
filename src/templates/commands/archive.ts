@@ -20,7 +20,7 @@ Archive the current completed FlowGuard session.
    non-default export:
     - \`none\` with \`includeRaw=true\` = raw evidence for auditors (requires allowRawExport=true).
     - \`pseudonymous\` = stable correlation tokens across redacted events.
-    - Only terminal sessions (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE, REJECTED, ABORTED) can be archived.
+    - Only terminal sessions (COMPLETE, ARCH_COMPLETE, PEER_REVIEW_COMPLETE, REJECTED, ABORTED) can be archived.
    - If not terminal: report the current phase and tell the user to complete or abort first.
 
 3. Report the archive result:

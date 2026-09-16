@@ -58,7 +58,7 @@ These features are available in FlowGuard 1.2.0.
 
 | Feature                  | Status    | Notes                                                                                                                                                          |
 | ------------------------ | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **18 explicit phases**   | Delivered | 3 flows: Ticket (READY→COMPLETE), Architecture (READY→ARCH_COMPLETE), Review (READY→REVIEW_COMPLETE)                                                           |
+| **18 explicit phases**   | Delivered | 3 flows: Ticket (READY→COMPLETE), Architecture (READY→ARCH_COMPLETE), Peer review (READY→PEER_REVIEW→PEER_REVIEW_COMPLETE)                                     |
 | **4 policy modes**       | Delivered | Solo, Team, Team-CI, Regulated                                                                                                                                 |
 | **4 built-in profiles**  | Delivered | Baseline, Java/Spring Boot, Angular/Nx, TypeScript/Node                                                                                                        |
 | **3 review loops**       | Delivered | Plan, Architecture (ADR), Implementation — all subagent-driven by default with iteration limit + digest-stop convergence                                       |

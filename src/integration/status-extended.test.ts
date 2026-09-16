@@ -53,8 +53,8 @@ const ALL_PHASES = [
   'ARCHITECTURE',
   'ARCH_REVIEW',
   'ARCH_COMPLETE',
-  'REVIEW',
-  'REVIEW_COMPLETE',
+  'PEER_REVIEW',
+  'PEER_REVIEW_COMPLETE',
 ] as const;
 const TICKET_FLOW_PHASES = [
   'READY',
@@ -68,7 +68,7 @@ const TICKET_FLOW_PHASES = [
   'COMPLETE',
 ] as const;
 const ARCH_FLOW_PHASES = ['READY', 'ARCHITECTURE', 'ARCH_REVIEW', 'ARCH_COMPLETE'] as const;
-const REVIEW_FLOW_PHASES = ['READY', 'REVIEW', 'REVIEW_COMPLETE'] as const;
+const REVIEW_FLOW_PHASES = ['READY', 'PEER_REVIEW', 'PEER_REVIEW_COMPLETE'] as const;
 
 function makeMinimalState(phase: SessionState['phase'] = 'READY'): SessionState {
   return {

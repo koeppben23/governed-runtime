@@ -26,8 +26,8 @@ const exportDirective: WorkflowDirective = {
 };
 
 const baseInput = {
-  phase: 'REVIEW_COMPLETE' as const,
-  phaseLabel: 'Review complete',
+  phase: 'PEER_REVIEW_COMPLETE' as const,
+  phaseLabel: 'Peer review complete',
   overallStatus: 'clean' as const,
   findings: [] as ReviewReportFinding[],
   completeness: {
@@ -115,7 +115,7 @@ describe('buildReviewReportCard', () => {
       },
     });
     expect(card).toContain('# FlowGuard Review Report');
-    expect(card).toContain('**Status:** Review complete');
+    expect(card).toContain('**Status:** Peer review complete');
     expect(card).toContain('**Reviewed subject:** Pull request #42 (1 changed paths)');
   });
 
@@ -210,7 +210,7 @@ describe('buildReviewReportCard', () => {
   });
 
   it('renders a terminal conclusion when the directive carries no command', () => {
-    // REVIEW_COMPLETE resolves the terminal PEER_REVIEW_COMPLETE directive with
+    // PEER_REVIEW_COMPLETE resolves the terminal PEER_REVIEW_COMPLETE directive with
     // no commands; the card must render a valid terminal document rather than
     // failing the success-form presentation contract.
     const card = buildReviewReportCard({
@@ -279,11 +279,11 @@ describe('implementation review golden fixtures', () => {
   });
 });
 
-describe('compliance review golden fixtures', () => {
+describe('peer review golden fixtures', () => {
   it('review-compliance-clean matches golden output', async () => {
     const card = buildReviewReportCard({
-      phase: 'REVIEW_COMPLETE',
-      phaseLabel: 'Review complete',
+      phase: 'PEER_REVIEW_COMPLETE',
+      phaseLabel: 'Peer review complete',
       overallStatus: 'clean',
       findings: [],
       completeness: {
@@ -300,8 +300,8 @@ describe('compliance review golden fixtures', () => {
 
   it('review-compliance-issues-found matches golden output', async () => {
     const card = buildReviewReportCard({
-      phase: 'REVIEW_COMPLETE',
-      phaseLabel: 'Review complete',
+      phase: 'PEER_REVIEW_COMPLETE',
+      phaseLabel: 'Peer review complete',
       overallStatus: 'issues',
       findings: [
         materialFinding('error', 'critical', 'completeness', 'Missing evidence'),

@@ -154,7 +154,7 @@ describe('buildHelpResult', () => {
   });
 
   it('CHANGES_REQUIRED review report yields ready_with_warnings and issues quality', () => {
-    const state = makeProgressedState('REVIEW_COMPLETE');
+    const state = makeProgressedState('PEER_REVIEW_COMPLETE');
     const reviewReport = makeReviewReport(state, 'issues');
 
     const resolution = resolveCurrentReviewReport(state, reviewReport);
@@ -168,12 +168,12 @@ describe('buildHelpResult', () => {
       scope: 'all',
       reviewReport,
     });
-    expect(result.lifecycle).toBe('Review complete');
+    expect(result.lifecycle).toBe('Peer review complete');
     expect(result.readiness).toBe('ready_with_warnings');
     expect(result.recommendationQuality.quality).toBe('issues');
     expect(result.recommendationQuality.advisoryStatus).toBe('changes_required');
     expect(result.reviewReportStatus).toBe('current');
-    // Standalone review completion is terminal: no user directive, and /export
+    // Peer review completion is terminal: no user directive, and /export
     // is only admissible at EXPORT_READY.
     expect(result.directive).toBeNull();
     const exportCmd = result.commands.find((command) => command.invocation === '/export');

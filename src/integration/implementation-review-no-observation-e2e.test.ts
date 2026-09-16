@@ -27,7 +27,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// The scenario verifies the REVIEW subject model — check execution itself is
+// The scenario verifies the review subject model — check execution itself is
 // not under test: the executor mock returns deterministic passing results.
 vi.mock('../verification/executor', () => ({
   executeCheck: vi

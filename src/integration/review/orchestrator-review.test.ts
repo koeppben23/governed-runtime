@@ -824,7 +824,7 @@ describe('buildReviewContentMutatedOutput edge cases', () => {
     const parsed = JSON.parse(result!);
     expect(parsed).not.toHaveProperty('code');
     expect(parsed).not.toHaveProperty('error');
-    expect(parsed.phase).toBe('REVIEW');
+    expect(parsed.phase).toBe('PEER_REVIEW');
   });
 
   it('includes the bound reviewer verdict in the completed dispatch signal', () => {
@@ -878,7 +878,7 @@ describe('P9c — selectReviewerProfileRules mapping', () => {
       PLAN_REVIEW: 'plan-review-rules',
       IMPL_REVIEW: 'impl-review-rules',
       ARCH_REVIEW: 'arch-review-rules',
-      REVIEW: 'standalone-review-rules',
+      PEER_REVIEW: 'peer-review-rules',
     },
   };
 
@@ -898,9 +898,9 @@ describe('P9c — selectReviewerProfileRules mapping', () => {
     expect(result.profileRules).toBe('arch-review-rules');
   });
 
-  it('maps REVIEW → standaloneReviewRules', () => {
-    const result = selectReviewerProfileRules(profile, 'REVIEW');
-    expect(result.profileRules).toBe('standalone-review-rules');
+  it('maps PEER_REVIEW → peerReviewRules', () => {
+    const result = selectReviewerProfileRules(profile, 'PEER_REVIEW');
+    expect(result.profileRules).toBe('peer-review-rules');
   });
 
   it('returns empty when activeProfile is null', () => {

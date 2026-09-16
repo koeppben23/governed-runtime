@@ -96,7 +96,7 @@ function findingsWith(challenge: Record<string, unknown>): ReviewFindings {
 }
 
 describe('validateSubmittedReviewFindings — content challenge binding (B3/B5)', () => {
-  const state = makeState('REVIEW_COMPLETE');
+  const state = makeState('PEER_REVIEW_COMPLETE');
 
   it('rejects a content challenge citing a fabricated (non-canonical) digest', () => {
     const result = validateSubmittedReviewFindings(
@@ -148,10 +148,10 @@ describe('validateSubmittedReviewFindings — content challenge binding (B3/B5)'
     }
   });
 
-  it('rejects a standalone content challenge ID already persisted by an earlier standalone review', () => {
+  it('rejects a standalone content challenge ID already persisted by an earlier peer review', () => {
     const prior = findingsWith(contentChallenge());
     const result = validateSubmittedReviewFindings(
-      { ...makeState('REVIEW_COMPLETE'), standaloneReviewFindings: [prior] },
+      { ...makeState('PEER_REVIEW_COMPLETE'), peerReviewFindings: [prior] },
       findingsWith(contentChallenge()),
       reviewObligation(),
     );

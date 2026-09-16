@@ -107,7 +107,7 @@ describe('buildRailConclusion', () => {
   });
 
   describe('CORNER — pending independent review', () => {
-    it('READY with a pending standalone review obligation still resolves the canonical CHOOSE_FLOW directive', () => {
+    it('READY with a pending peer review obligation still resolves the canonical CHOOSE_FLOW directive', () => {
       const obligation = createReviewObligation({
         policySnapshot: {
           challengePolicy: {

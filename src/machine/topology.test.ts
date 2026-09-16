@@ -87,12 +87,12 @@ describe('topology', () => {
     });
 
     // Review flow forward transitions
-    it('resolves READY + REVIEW_SELECTED → REVIEW', () => {
-      expect(resolveTransition('READY', 'REVIEW_SELECTED')).toBe('REVIEW');
+    it('resolves READY + PEER_REVIEW_SELECTED → PEER_REVIEW', () => {
+      expect(resolveTransition('READY', 'PEER_REVIEW_SELECTED')).toBe('PEER_REVIEW');
     });
 
-    it('resolves REVIEW + REVIEW_DONE → REVIEW_COMPLETE', () => {
-      expect(resolveTransition('REVIEW', 'REVIEW_DONE')).toBe('REVIEW_COMPLETE');
+    it('resolves PEER_REVIEW + PEER_REVIEW_DONE → PEER_REVIEW_COMPLETE', () => {
+      expect(resolveTransition('PEER_REVIEW', 'PEER_REVIEW_DONE')).toBe('PEER_REVIEW_COMPLETE');
     });
 
     // Revision transitions (ticket flow)
@@ -124,7 +124,7 @@ describe('topology', () => {
       const events: EventType[] = [
         'TICKET_SELECTED',
         'ARCHITECTURE_SELECTED',
-        'REVIEW_SELECTED',
+        'PEER_REVIEW_SELECTED',
         'PLAN_READY',
         'SELF_REVIEW_MET',
         'SELF_REVIEW_PENDING',
@@ -138,7 +138,7 @@ describe('topology', () => {
         'REDUCED_CEREMONY',
         'REVIEW_MET',
         'REVIEW_PENDING',
-        'REVIEW_DONE',
+        'PEER_REVIEW_DONE',
         'EXPORT_MATERIALIZED',
         'ERROR',
         'ABORT',
@@ -162,9 +162,9 @@ describe('topology', () => {
     });
 
     it('returns undefined for all events at REVIEW_COMPLETE', () => {
-      const events: Event[] = ['APPROVE', 'REVIEW_DONE', 'ERROR'];
+      const events: Event[] = ['APPROVE', 'PEER_REVIEW_DONE', 'ERROR'];
       for (const event of events) {
-        expect(resolveTransition('REVIEW_COMPLETE', event)).toBeUndefined();
+        expect(resolveTransition('PEER_REVIEW_COMPLETE', event)).toBeUndefined();
       }
     });
   });
@@ -179,7 +179,7 @@ describe('topology', () => {
         'IMPLEMENTATION',
         'IMPL_REVIEW',
         'ARCHITECTURE',
-        'REVIEW',
+        'PEER_REVIEW',
       ];
       for (const phase of phasesWithError) {
         expect(resolveTransition(phase, 'ERROR')).toBe(phase);
@@ -200,7 +200,7 @@ describe('topology', () => {
       for (const phase of [
         'COMPLETE',
         'ARCH_COMPLETE',
-        'REVIEW_COMPLETE',
+        'PEER_REVIEW_COMPLETE',
         'REJECTED',
         'ABORTED',
       ] as Phase[]) {
@@ -226,8 +226,8 @@ describe('topology', () => {
         'ARCHITECTURE',
         'ARCH_REVIEW',
         'ARCH_COMPLETE',
-        'REVIEW',
-        'REVIEW_COMPLETE',
+        'PEER_REVIEW',
+        'PEER_REVIEW_COMPLETE',
         'REJECTED',
         'ABORTED',
       ];
@@ -267,7 +267,7 @@ describe('topology', () => {
       expect(TERMINAL.size).toBe(5);
       expect(TERMINAL.has('COMPLETE')).toBe(true);
       expect(TERMINAL.has('ARCH_COMPLETE')).toBe(true);
-      expect(TERMINAL.has('REVIEW_COMPLETE')).toBe(true);
+      expect(TERMINAL.has('PEER_REVIEW_COMPLETE')).toBe(true);
       expect(TERMINAL.has('REJECTED')).toBe(true);
       expect(TERMINAL.has('ABORTED')).toBe(true);
     });
@@ -303,7 +303,7 @@ describe('topology', () => {
         'IMPLEMENTATION',
         'IMPL_REVIEW',
         'ARCHITECTURE',
-        'REVIEW',
+        'PEER_REVIEW',
       ];
       for (const phase of phases) {
         const map = TRANSITIONS.get(phase);

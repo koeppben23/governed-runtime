@@ -4,7 +4,7 @@
  *
  * Behavior depends on current phase:
  * - User Gate (PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW): return "waiting" — use /review-decision
- * - Terminal (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE): return "terminal"
+ * - Terminal (COMPLETE, ARCH_COMPLETE, PEER_REVIEW_COMPLETE): return "terminal"
  * - VALIDATION: run all active checks, then evaluate
  * - PLAN: run one more self-review iteration, then evaluate
  * - IMPL_REVIEW: run one more review iteration, then evaluate

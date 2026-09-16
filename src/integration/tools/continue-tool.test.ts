@@ -4,7 +4,7 @@
  *
  * Covers:
  * - ARCHITECTURE → guidance with /architecture command
- * - REVIEW phase → guidance
+ * - PEER_REVIEW phase → guidance
  * - READY → CONTINUE_AMBIGUOUS block
  * - User-gate phases (PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW) → manual_decision
  * - Terminal phases (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE) → terminal
@@ -45,7 +45,13 @@ const mocks = vi.hoisted(() => ({
     ...value,
     directive: {
       code: `DIRECTIVE_${value.phase}`,
-      commands: [`/${String(value.phase).toLowerCase()}`],
+      // The canonical command surface for the peer-review flow remains /review
+      // (and its terminal label) after the PEER_REVIEW phase rename.
+      commands: [
+        `/${String(value.phase)
+          .toLowerCase()
+          .replace(/^peer_/, '')}`,
+      ],
     },
   })),
   writeStateWithArtifacts: vi.fn(async (_sessDir: string, state: SessionState) => state),
@@ -144,12 +150,12 @@ describe('flowguard_continue (runtime)', () => {
     expect(parsed._continue.action).toBe('deterministic');
   });
 
-  it('REVIEW phase derives its action from the canonical product projection', async () => {
-    setPhase('REVIEW');
+  it('PEER_REVIEW phase derives its action from the canonical product projection', async () => {
+    setPhase('PEER_REVIEW');
     const { continue_cmd } = await import('./continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
-    expect(parsed.phase).toBe('REVIEW');
+    expect(parsed.phase).toBe('PEER_REVIEW');
     expect(parsed.directive.commands).toEqual(['/review']);
     expect(parsed._continue.action).toBe('deterministic');
   });
@@ -270,11 +276,11 @@ describe('flowguard_continue (runtime)', () => {
   });
 
   it('REVIEW_COMPLETE returns terminal action', async () => {
-    setPhase('REVIEW_COMPLETE');
+    setPhase('PEER_REVIEW_COMPLETE');
     const { continue_cmd } = await import('./continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
-    expect(parsed.phase).toBe('REVIEW_COMPLETE');
+    expect(parsed.phase).toBe('PEER_REVIEW_COMPLETE');
     expect(parsed._continue.action).toBe('terminal');
     expect(parsed.directive.commands).toEqual(['/review_complete']);
   });

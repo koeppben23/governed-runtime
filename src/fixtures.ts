@@ -619,7 +619,7 @@ export function makeState(
     implReview: null,
     reviewDecision: null,
     reviewReportPath: null,
-    standaloneReviewEvidence: [],
+    peerReviewEvidence: [],
     nextAdrNumber: 1,
     activeProfile: null,
     activeChecks: ['test', 'lint'],
@@ -738,10 +738,10 @@ export function makeProgressedState(phase: Phase): SessionState {
         selfReview: SELF_REVIEW_CONVERGED,
         reviewDecision: REVIEW_APPROVE,
       });
-    case 'REVIEW':
-      return makeState('REVIEW');
-    case 'REVIEW_COMPLETE':
-      return makeState('REVIEW_COMPLETE', {
+    case 'PEER_REVIEW':
+      return makeState('PEER_REVIEW');
+    case 'PEER_REVIEW_COMPLETE':
+      return makeState('PEER_REVIEW_COMPLETE', {
         reviewReportPath: '/tmp/test-repo/.flowguard/sessions/000-test/review-report.json',
       });
   }

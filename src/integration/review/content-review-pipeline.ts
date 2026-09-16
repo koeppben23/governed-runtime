@@ -255,7 +255,7 @@ export async function runReviewContentPipeline(ctx: PipelineContext): Promise<vo
 
   const { profileName, profileRules } = selectReviewerProfileRules(
     sessionState.activeProfile,
-    'REVIEW',
+    'PEER_REVIEW',
   );
   const ticketText = sessionState.ticket?.text ?? '';
   const prompt = buildReviewContentPrompt({

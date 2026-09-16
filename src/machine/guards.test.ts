@@ -99,7 +99,9 @@ describe('guards', () => {
     });
 
     it('reviewDone fires when report path is set', () => {
-      expect(reviewDone(makeState('REVIEW', { reviewReportPath: '/tmp/report.json' }))).toBe(true);
+      expect(reviewDone(makeState('PEER_REVIEW', { reviewReportPath: '/tmp/report.json' }))).toBe(
+        true,
+      );
     });
 
     it('reviewDone is phase-agnostic and only checks the report slot', () => {
@@ -107,9 +109,9 @@ describe('guards', () => {
       expect(reviewDone(makeState('READY', { reviewReportPath: '/tmp/report.json' }))).toBe(true);
     });
 
-    it('reviewDone does not fire when REVIEW phase has no report path (P8b)', () => {
-      expect(reviewDone(makeState('REVIEW', { reviewReportPath: null }))).toBe(false);
-      expect(reviewDone(makeState('REVIEW'))).toBe(false);
+    it('reviewDone does not fire when PEER_REVIEW phase has no report path (P8b)', () => {
+      expect(reviewDone(makeState('PEER_REVIEW', { reviewReportPath: null }))).toBe(false);
+      expect(reviewDone(makeState('PEER_REVIEW'))).toBe(false);
     });
 
     it('isConverged returns true on iteration limit', () => {
@@ -485,7 +487,7 @@ describe('guards', () => {
         'IMPLEMENTATION',
         'IMPL_REVIEW',
         'ARCHITECTURE',
-        'REVIEW',
+        'PEER_REVIEW',
       ];
       for (const phase of guardPhases) {
         expect(GUARDS.has(phase)).toBe(true);
@@ -499,7 +501,7 @@ describe('guards', () => {
       expect(GUARDS.has('ARCH_REVIEW')).toBe(false);
       expect(GUARDS.has('COMPLETE')).toBe(false);
       expect(GUARDS.has('ARCH_COMPLETE')).toBe(false);
-      expect(GUARDS.has('REVIEW_COMPLETE')).toBe(false);
+      expect(GUARDS.has('PEER_REVIEW_COMPLETE')).toBe(false);
     });
 
     it("ERROR guard is always first in each phase's guard list", () => {
@@ -638,17 +640,17 @@ describe('guards', () => {
     });
 
     it('REVIEW guards contain exactly ERROR and REVIEW_DONE', () => {
-      expect(GUARDS.get('REVIEW')!.map((g) => g.event)).toEqual(['ERROR', 'REVIEW_DONE']);
+      expect(GUARDS.get('PEER_REVIEW')!.map((g) => g.event)).toEqual(['ERROR', 'PEER_REVIEW_DONE']);
     });
   });
 
   // ─── MUTATION KILL: implReviewPending ───────────────────────
   describe('MUTATION_KILL', () => {
-    it('reviewDone: false when phase is REVIEW but reportPath null (kills conditional→true)', () => {
-      expect(reviewDone(makeState('REVIEW', { reviewReportPath: null }))).toBe(false);
+    it('reviewDone: false when phase is PEER_REVIEW but reportPath null (kills conditional→true)', () => {
+      expect(reviewDone(makeState('PEER_REVIEW', { reviewReportPath: null }))).toBe(false);
     });
 
-    it('reviewDone: true outside REVIEW when reportPath is set (phase-agnostic predicate)', () => {
+    it('reviewDone: true outside PEER_REVIEW when reportPath is set (phase-agnostic predicate)', () => {
       expect(reviewDone(makeState('PLAN', { reviewReportPath: '/report.json' }))).toBe(true);
     });
 

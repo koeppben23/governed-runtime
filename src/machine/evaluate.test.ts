@@ -33,7 +33,7 @@ describe('evaluate', () => {
     });
 
     it('REVIEW_COMPLETE → terminal', () => {
-      const result = evaluate(makeProgressedState('REVIEW_COMPLETE'));
+      const result = evaluate(makeProgressedState('PEER_REVIEW_COMPLETE'));
       expect(result.kind).toBe('terminal');
     });
 
@@ -217,13 +217,13 @@ describe('evaluate', () => {
       }
     });
 
-    it('REVIEW → transition REVIEW_DONE → REVIEW_COMPLETE', () => {
-      const state = makeState('REVIEW', { reviewReportPath: '/tmp/report.json' });
+    it('PEER_REVIEW → transition PEER_REVIEW_DONE → PEER_REVIEW_COMPLETE', () => {
+      const state = makeState('PEER_REVIEW', { reviewReportPath: '/tmp/report.json' });
       const result = evaluate(state);
       expect(result.kind).toBe('transition');
       if (result.kind === 'transition') {
-        expect(result.event).toBe('REVIEW_DONE');
-        expect(result.target).toBe('REVIEW_COMPLETE');
+        expect(result.event).toBe('PEER_REVIEW_DONE');
+        expect(result.target).toBe('PEER_REVIEW_COMPLETE');
       }
     });
   });

@@ -304,8 +304,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed for the structured review-dispatch hard cut: command templates
     // read `reviewDispatch`/`reviewInvocation`/`agentInstruction`/`directive`
     // instead of the removed textual `next` field.
+    // Refreshed for the peer-review domain hard cut: the /review and /archive
+    // command templates now use the renamed PEER_REVIEW / PEER_REVIEW_COMPLETE
+    // phases and peer-review flow wording. No template behavior changed.
     expect(sha256(commandsJson)).toBe(
-      '1b44c5b37a7b70636a226bc40b5e56698bd4290c6091d2ac85303420fc871d41',
+      'e00c36982a56fd3efbb779dc3a42f3d356b055cf523fe8e414667cbb9f0a3263',
     );
   });
 

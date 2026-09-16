@@ -76,7 +76,7 @@ describe('resolveCurrentReviewReport', () => {
   });
 
   it('null digest matches null state digest', () => {
-    const state = makeProgressedState('REVIEW_COMPLETE');
+    const state = makeProgressedState('PEER_REVIEW_COMPLETE');
     const report = makeReviewReport(state, { planDigest: null, implDigest: null });
     // review-complete state has no plan/impl
     const result = resolveCurrentReviewReport(state, report);

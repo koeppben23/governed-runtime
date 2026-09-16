@@ -4,7 +4,7 @@
  *
  * The tools have been extracted to focused modules:
  * - ticket-tool.ts     — ticket recording
- * - review-tool/       — standalone review flow (obligation, invocation, completion)
+ * - review-tool/       — peer review flow (obligation, invocation, completion)
  * - abort-tool.ts      — emergency session termination
  * - archive-tool.ts    — session archival (extracted earlier)
  *

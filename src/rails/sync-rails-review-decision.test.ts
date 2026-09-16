@@ -406,9 +406,9 @@ describe('review-decision rail', () => {
       }
     });
 
-    it('does not apply the gate to standalone review phases', () => {
+    it('does not apply the gate to peer review phases', () => {
       const result = executeReviewDecision(
-        makeState('REVIEW_COMPLETE', { proofGraph: proofGraph() }),
+        makeState('PEER_REVIEW_COMPLETE', { proofGraph: proofGraph() }),
         { verdict: 'approve', rationale: 'ok', decisionIdentity: DECISION_IDENTITY_REVIEWER },
         ctx,
       );

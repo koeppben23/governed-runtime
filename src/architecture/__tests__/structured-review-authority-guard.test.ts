@@ -42,7 +42,7 @@ describe('structured review authority hard cut', () => {
     expect(offenders.map(relative)).toEqual([]);
   });
 
-  it('removes the standalone review invocation recorder', () => {
+  it('removes the peer review invocation recorder', () => {
     expect(existsSync(join(SRC, 'integration/tools/review-tool/invocation.ts'))).toBe(false);
   });
 

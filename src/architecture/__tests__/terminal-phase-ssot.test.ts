@@ -2,7 +2,7 @@
  * @module architecture/terminal-phase-ssot.test
  * @description Anti-drift guard (#434, finding H4): terminal-phase membership
  * has exactly ONE authority — `TERMINAL` / `isTerminalPhase` in
- * `machine/topology.ts` (the set {COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE}).
+ * `machine/topology.ts` (the set {COMPLETE, ARCH_COMPLETE, PEER_REVIEW_COMPLETE}).
  * The H4 defect was `abort.ts` using a literal `=== 'COMPLETE'` that silently
  * excluded the other two terminals, letting abort overwrite a terminal phase.
  *
@@ -83,13 +83,13 @@ const SINGLE_PHASE_ALLOWLIST: readonly SinglePhaseAllowance[] = [
     file: 'adapters/workspace/archive-verify-regulated.ts',
     max: 1,
     reason:
-      'flow-specific completion contract: only the ticket-flow COMPLETE terminal is a valid regulated evidence-review completion (ARCH_COMPLETE/REVIEW_COMPLETE are out of scope)',
+      'flow-specific completion contract: only the ticket-flow COMPLETE terminal is a valid regulated evidence-review completion (ARCH_COMPLETE/PEER_REVIEW_COMPLETE are out of scope)',
   },
   {
     file: 'integration/services/regulated-completion.ts',
     max: 2,
     reason:
-      'flow-specific completion contract: recovery/resume must select only the ticket-flow COMPLETE terminal (phase AND transition target) and never touch regulated ARCH/REVIEW completions',
+      'flow-specific completion contract: recovery/resume must select only the ticket-flow COMPLETE terminal (phase AND transition target) and never touch regulated ARCH/PEER_REVIEW completions',
   },
   {
     file: 'integration/tools/export-tool.ts',
@@ -101,7 +101,7 @@ const SINGLE_PHASE_ALLOWLIST: readonly SinglePhaseAllowance[] = [
 
 /** Quoted terminal literal adjacent to an equality operator (a comparison). */
 const TERMINAL_CMP =
-  /(?:(?:===|!==)\s*'(COMPLETE|ARCH_COMPLETE|REVIEW_COMPLETE)')|(?:'(COMPLETE|ARCH_COMPLETE|REVIEW_COMPLETE)'\s*(?:===|!==))/g;
+  /(?:(?:===|!==)\s*'(COMPLETE|ARCH_COMPLETE|PEER_REVIEW_COMPLETE)')|(?:'(COMPLETE|ARCH_COMPLETE|PEER_REVIEW_COMPLETE)'\s*(?:===|!==))/g;
 
 interface SourceFile {
   readonly rel: string;

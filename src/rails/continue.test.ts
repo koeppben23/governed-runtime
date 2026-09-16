@@ -277,7 +277,7 @@ describe('continue rail', () => {
     });
 
     it('REVIEW_COMPLETE terminal phase blocks continue', async () => {
-      const state = makeState('REVIEW_COMPLETE');
+      const state = makeState('PEER_REVIEW_COMPLETE');
       const result = await executeContinue(state, ctx, makeExecutors());
       expect(result.kind).toBe('blocked');
       if (result.kind === 'blocked') {

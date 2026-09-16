@@ -1,6 +1,6 @@
 /**
- * @module standalone-review
- * @description Deterministic standalone-review task and append-only evidence schemas.
+ * @module peer-review
+ * @description Deterministic peer-review task and append-only evidence schemas.
  */
 
 import { z } from 'zod';
@@ -9,10 +9,9 @@ import { digestToId, hashText } from '../shared/hashing.js';
 import type { ReviewFindings } from './evidence.js';
 import { DeclaredClaim, type DeclaredClaim as DeclaredClaimType } from './proofgraph.js';
 
-export const STANDALONE_REVIEW_OBJECTIVES_PROFILE_VERSION =
-  'standalone-review-objectives.v1' as const;
+export const PEER_REVIEW_OBJECTIVES_PROFILE_VERSION = 'standalone-review-objectives.v1' as const;
 
-export const StandaloneReviewObjective = z
+export const PeerReviewObjective = z
   .object({
     objectiveId: z
       .string()
@@ -21,10 +20,10 @@ export const StandaloneReviewObjective = z
     statement: z.string().min(1),
   })
   .readonly();
-export type StandaloneReviewObjective = z.infer<typeof StandaloneReviewObjective>;
+export type PeerReviewObjective = z.infer<typeof PeerReviewObjective>;
 
 /** Canonical static objectives. They are never inferred from review subject text. */
-export const STANDALONE_REVIEW_DEFAULT_OBJECTIVES: readonly StandaloneReviewObjective[] = [
+export const PEER_REVIEW_DEFAULT_OBJECTIVES: readonly PeerReviewObjective[] = [
   { objectiveId: 'correctness', statement: 'The reviewed subject behaves correctly.' },
   {
     objectiveId: 'safety',
@@ -37,28 +36,28 @@ export const STANDALONE_REVIEW_DEFAULT_OBJECTIVES: readonly StandaloneReviewObje
   },
 ];
 
-export const StandaloneReviewRequestedDigests = z
+export const PeerReviewRequestedDigests = z
   .object({
     taskDigest: z.string().regex(/^[a-f0-9]{64}$/),
     objectivesDigest: z.string().regex(/^[a-f0-9]{64}$/),
     subjectDigest: z.string().regex(/^[a-f0-9]{64}$/),
   })
   .readonly();
-export type StandaloneReviewRequestedDigests = z.infer<typeof StandaloneReviewRequestedDigests>;
+export type PeerReviewRequestedDigests = z.infer<typeof PeerReviewRequestedDigests>;
 
-export const StandaloneReviewTask = z
+export const PeerReviewTask = z
   .object({
-    profileVersion: z.literal(STANDALONE_REVIEW_OBJECTIVES_PROFILE_VERSION),
-    objectives: z.array(StandaloneReviewObjective).min(1),
+    profileVersion: z.literal(PEER_REVIEW_OBJECTIVES_PROFILE_VERSION),
+    objectives: z.array(PeerReviewObjective).min(1),
     /** Digest only: the reviewed subject is evidence, never claim provenance. */
     subjectDigest: z.string().regex(/^[a-f0-9]{64}$/),
     claims: z.array(DeclaredClaim),
   })
   .readonly();
-export type StandaloneReviewTask = z.infer<typeof StandaloneReviewTask>;
+export type PeerReviewTask = z.infer<typeof PeerReviewTask>;
 
 /**
- * Hard version literal for standalone-review evidence entries.
+ * Hard version literal for peer-review evidence entries.
  *
  * v2 introduces an explicit lifecycle chain: every entry carries a stable
  * `reviewTaskId` (the logical review operation — deliberately NOT the
@@ -71,10 +70,10 @@ export type StandaloneReviewTask = z.infer<typeof StandaloneReviewTask>;
  * Entries persisted without this literal are invalid: there is no upgrade or
  * fallback path (see repository no-legacy policy).
  */
-export const STANDALONE_REVIEW_EVIDENCE_SCHEMA_VERSION = 'standalone-review-evidence.v2' as const;
+export const PEER_REVIEW_EVIDENCE_SCHEMA_VERSION = 'standalone-review-evidence.v2' as const;
 
 const evidenceIdentity = {
-  schemaVersion: z.literal(STANDALONE_REVIEW_EVIDENCE_SCHEMA_VERSION),
+  schemaVersion: z.literal(PEER_REVIEW_EVIDENCE_SCHEMA_VERSION),
   evidenceId: z.string().uuid(),
   /** Stable lifecycle identity of the logical review operation. */
   reviewTaskId: z.string().uuid(),
@@ -82,18 +81,18 @@ const evidenceIdentity = {
   obligationId: z.string().uuid(),
 } as const;
 
-export const StandaloneReviewPreparedEvidence = z
+export const PeerReviewPreparedEvidence = z
   .object({
     kind: z.literal('prepared'),
     ...evidenceIdentity,
     preparedAt: z.string().datetime(),
-    task: StandaloneReviewTask,
-    requestedDigests: StandaloneReviewRequestedDigests,
+    task: PeerReviewTask,
+    requestedDigests: PeerReviewRequestedDigests,
   })
   .readonly();
-export type StandaloneReviewPreparedEvidence = z.infer<typeof StandaloneReviewPreparedEvidence>;
+export type PeerReviewPreparedEvidence = z.infer<typeof PeerReviewPreparedEvidence>;
 
-export const StandaloneReviewCompletedEvidence = z
+export const PeerReviewCompletedEvidence = z
   .object({
     kind: z.literal('completed'),
     ...evidenceIdentity,
@@ -110,9 +109,9 @@ export const StandaloneReviewCompletedEvidence = z
       .nullable(),
   })
   .readonly();
-export type StandaloneReviewCompletedEvidence = z.infer<typeof StandaloneReviewCompletedEvidence>;
+export type PeerReviewCompletedEvidence = z.infer<typeof PeerReviewCompletedEvidence>;
 
-export const StandaloneReviewSupersededEvidence = z
+export const PeerReviewSupersededEvidence = z
   .object({
     kind: z.literal('superseded'),
     ...evidenceIdentity,
@@ -122,14 +121,14 @@ export const StandaloneReviewSupersededEvidence = z
     reason: z.enum(['subject_frozen', 'task_reprepared']),
   })
   .readonly();
-export type StandaloneReviewSupersededEvidence = z.infer<typeof StandaloneReviewSupersededEvidence>;
+export type PeerReviewSupersededEvidence = z.infer<typeof PeerReviewSupersededEvidence>;
 
-export const StandaloneReviewEvidence = z.discriminatedUnion('kind', [
-  StandaloneReviewPreparedEvidence,
-  StandaloneReviewCompletedEvidence,
-  StandaloneReviewSupersededEvidence,
+export const PeerReviewEvidence = z.discriminatedUnion('kind', [
+  PeerReviewPreparedEvidence,
+  PeerReviewCompletedEvidence,
+  PeerReviewSupersededEvidence,
 ]);
-export type StandaloneReviewEvidence = z.infer<typeof StandaloneReviewEvidence>;
+export type PeerReviewEvidence = z.infer<typeof PeerReviewEvidence>;
 
 function normalizedStatement(statement: string): string {
   return statement.trim().replace(/\s+/g, ' ').toLowerCase();
@@ -139,18 +138,16 @@ function deterministicUuid(input: string): string {
   return digestToId(hashText(input), 5);
 }
 
-export function createStandaloneReviewTask(input: {
+export function createPeerReviewTask(input: {
   readonly subjectDigest: string;
-  readonly objectives?: readonly StandaloneReviewObjective[];
-}): { task: StandaloneReviewTask; requestedDigests: StandaloneReviewRequestedDigests } {
-  const objectives = input.objectives
-    ? [...input.objectives]
-    : [...STANDALONE_REVIEW_DEFAULT_OBJECTIVES];
+  readonly objectives?: readonly PeerReviewObjective[];
+}): { task: PeerReviewTask; requestedDigests: PeerReviewRequestedDigests } {
+  const objectives = input.objectives ? [...input.objectives] : [...PEER_REVIEW_DEFAULT_OBJECTIVES];
   const objectivesDigest = hashText(canonicalJsonStringify(objectives));
   const claims: DeclaredClaimType[] = objectives.map((objective) => ({
     claimId: deterministicUuid(
       canonicalJsonStringify({
-        profileVersion: STANDALONE_REVIEW_OBJECTIVES_PROFILE_VERSION,
+        profileVersion: PEER_REVIEW_OBJECTIVES_PROFILE_VERSION,
         objectiveId: objective.objectiveId,
         statement: normalizedStatement(objective.statement),
         subjectDigest: input.subjectDigest,
@@ -164,7 +161,7 @@ export function createStandaloneReviewTask(input: {
     counterexampleRefs: [],
   }));
   const task = {
-    profileVersion: STANDALONE_REVIEW_OBJECTIVES_PROFILE_VERSION,
+    profileVersion: PEER_REVIEW_OBJECTIVES_PROFILE_VERSION,
     objectives,
     subjectDigest: input.subjectDigest,
     claims,
@@ -194,36 +191,36 @@ export function reviewFindingsDigests(findings: ReviewFindings | undefined): {
 
 // ─── Authoritative Task Resolution ────────────────────────────────────────────
 
-export type AuthoritativeStandaloneReviewTask =
+export type AuthoritativePeerReviewTask =
   | {
       readonly kind: 'ok';
-      readonly task: StandaloneReviewTask;
+      readonly task: PeerReviewTask;
       readonly reviewTaskId: string;
     }
   | { readonly kind: 'none'; readonly reason: string }
   | { readonly kind: 'blocked'; readonly reason: string };
 
 type EvidenceIndexes = {
-  readonly preparedById: ReadonlyMap<string, StandaloneReviewPreparedEvidence>;
-  readonly preparedByTask: ReadonlyMap<string, StandaloneReviewPreparedEvidence[]>;
-  readonly completedByTask: ReadonlyMap<string, StandaloneReviewCompletedEvidence[]>;
-  readonly supersededByTask: ReadonlyMap<string, StandaloneReviewSupersededEvidence[]>;
+  readonly preparedById: ReadonlyMap<string, PeerReviewPreparedEvidence>;
+  readonly preparedByTask: ReadonlyMap<string, PeerReviewPreparedEvidence[]>;
+  readonly completedByTask: ReadonlyMap<string, PeerReviewCompletedEvidence[]>;
+  readonly supersededByTask: ReadonlyMap<string, PeerReviewSupersededEvidence[]>;
 };
 
-function indexStandaloneEvidence(
-  evidence: readonly StandaloneReviewEvidence[],
+function indexPeerEvidence(
+  evidence: readonly PeerReviewEvidence[],
   obligationId: string,
 ): EvidenceIndexes {
   const prepared = evidence.filter(
-    (e): e is StandaloneReviewPreparedEvidence =>
+    (e): e is PeerReviewPreparedEvidence =>
       e.kind === 'prepared' && e.obligationId === obligationId,
   );
   const completed = evidence.filter(
-    (e): e is StandaloneReviewCompletedEvidence =>
+    (e): e is PeerReviewCompletedEvidence =>
       e.kind === 'completed' && e.obligationId === obligationId,
   );
   const superseded = evidence.filter(
-    (e): e is StandaloneReviewSupersededEvidence =>
+    (e): e is PeerReviewSupersededEvidence =>
       e.kind === 'superseded' && e.obligationId === obligationId,
   );
   return {
@@ -291,7 +288,7 @@ function validateSupersessionGraph(index: EvidenceIndexes): string | null {
 }
 
 /**
- * Resolve the single authoritative standalone-review task for an obligation.
+ * Resolve the single authoritative peer-review task for an obligation.
  *
  * The authoritative incarnation is the task payload of the latest non-
  * superseded `prepared` entry for the obligation's `reviewTaskId` chain:
@@ -301,11 +298,11 @@ function validateSupersessionGraph(index: EvidenceIndexes): string | null {
  * supersession, multiple replacements, cycles, completions on superseded
  * prepared entries, or multiple authoritative incarnations) fails closed.
  */
-export function resolveAuthoritativeStandaloneReviewTask(
-  evidence: readonly StandaloneReviewEvidence[],
+export function resolveAuthoritativePeerReviewTask(
+  evidence: readonly PeerReviewEvidence[],
   obligationId: string,
-): AuthoritativeStandaloneReviewTask {
-  const index = indexStandaloneEvidence(evidence, obligationId);
+): AuthoritativePeerReviewTask {
+  const index = indexPeerEvidence(evidence, obligationId);
 
   const graphError = validateSupersessionGraph(index);
   if (graphError) return { kind: 'blocked', reason: graphError };
@@ -321,7 +318,7 @@ export function resolveAuthoritativeStandaloneReviewTask(
     ...index.supersededByTask.keys(),
   ]);
   if (taskIds.size === 0) {
-    return { kind: 'none', reason: 'no standalone review evidence for this obligation' };
+    return { kind: 'none', reason: 'no peer review evidence for this obligation' };
   }
   if (taskIds.size > 1) {
     return {

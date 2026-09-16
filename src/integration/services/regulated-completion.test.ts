@@ -377,7 +377,7 @@ describe('executeRegulatedCompletion', () => {
     ).resolves.toBeNull();
   });
 
-  it.each(['ARCH_COMPLETE', 'REVIEW_COMPLETE'] as const)(
+  it.each(['ARCH_COMPLETE', 'PEER_REVIEW_COMPLETE'] as const)(
     'never touches a regulated %s session',
     async (phase) => {
       const foreign = makeState(phase, {

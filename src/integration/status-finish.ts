@@ -53,7 +53,7 @@ function hasUnverifiedEvidence(evidence: EvidenceDetailProjection): boolean {
  * 1. BLOCKED             — readiness projection reports blocked (waiting).
  * 2. NOT_VERIFIED        — a required evidence slot is missing or failed.
  * 3. IN_PROGRESS         — non-terminal phase; lifecycle not yet complete.
- * 4. CHANGES_REQUIRED    — completed standalone review report has issues.
+ * 4. CHANGES_REQUIRED    — completed peer review report has issues.
  * 5. READY_WITH_WARNINGS — terminal, evidence ok, but warnings present.
  * 6. READY               — otherwise.
  *

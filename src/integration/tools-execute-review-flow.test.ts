@@ -259,7 +259,7 @@ async function currentSessionDir(): Promise<string> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Tool: review (standalone review flow)
+// Tool: review (peer review flow)
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('review', () => {
@@ -444,7 +444,7 @@ describe('review', () => {
       const raw = await review.execute({}, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('REVIEW_COMPLETE');
+      expect(result.phase).toBe('PEER_REVIEW_COMPLETE');
       expect(result.completeness).toBeDefined();
     });
 
@@ -479,7 +479,7 @@ describe('review', () => {
       await hydrateSession();
       await review.execute({}, ctx);
       const s = parseToolResult(await status.execute({}, ctx));
-      expect(s.phase).toBe('REVIEW_COMPLETE');
+      expect(s.phase).toBe('PEER_REVIEW_COMPLETE');
     });
 
     it('review with references + inputOrigin but no content field is blocked', async () => {
@@ -546,11 +546,11 @@ describe('review', () => {
       expect(result.code).toBe('INTERNAL_ERROR');
       // Phase on disk should still be READY (session was at READY before review
       // was called, and the failed review didn't persist any state).
-      // Actually, startReviewFlow transitions in-memory to REVIEW, but that
+      // Actually, startReviewFlow transitions in-memory to PEER_REVIEW, but that
       // state was never persisted because writeReport failed before
       // writeStateWithArtifacts. The persisted state (from hydrate) remains READY.
       const s = parseToolResult(await status.execute({}, ctx));
-      expect(s.phase).not.toBe('REVIEW_COMPLETE');
+      expect(s.phase).not.toBe('PEER_REVIEW_COMPLETE');
     });
   });
 });

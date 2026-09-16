@@ -103,17 +103,17 @@ Three governed flows are available after `/start` (or `/hydrate`):
    Consequences honesty, MADR structure)
 3. `/approve` — accept the ADR
 
-**Compliance / Content review flow** — review session compliance or external content:
+**Peer / Content review flow** — review session compliance or external content:
 
 1. `/start`
-2. `/review` — plain compliance report (no external content)
+2. `/review` — plain peer review report (no external content)
    OR `/review prNumber=42` / `branch=feature` / `url=https://...` /
    `text="diff"` → blocked with `requiredReviewAttestation` (obligation UUID)
 3. When plugin orchestration is active, FlowGuard may invoke the reviewer
    subagent and inject `pluginReviewFindings`; otherwise the blocked response
    instructs manual subagent invocation.
 4. `/review prNumber=42 reviewFindings=<complete object>` →
-   REVIEW_COMPLETE, receives structured `reviewCard`
+   PEER_REVIEW_COMPLETE, receives structured `reviewCard`
 
 **Diagnostic commands:** `/help` — context-sensitive next action and relevant commands.
 `/commands` — currently available commands (`--all` for the complete reference).
@@ -221,7 +221,7 @@ For debugging FlowGuard inside the OpenCode runtime with IntelliJ IDEA Ultimate,
 | **build**                  | `npm run build`                                | Successful compilation to dist/                        |
 | **install-verify**         | `npm run build && npm run test:install-verify` | Tarball install + doctor (cross-platform)              |
 | **smoke**                  | `npm run build && npm run test:smoke`          | Built CLI starts, ACP works                            |
-| **independent-review-e2e** | `npm run test:independent-review-e2e`          | Standalone reviewer session contract                   |
+| **independent-review-e2e** | `npm run test:independent-review-e2e`          | Peer reviewer session contract                   |
 | **actionlint**             | —                                              | GitHub Actions workflow linting (docker)               |
 | **secrets-scan**           | —                                              | GitGuardian or Gitleaks secret detection               |
 | **security-policy**        | —                                              | OSV/GHAS vulnerability scan                            |

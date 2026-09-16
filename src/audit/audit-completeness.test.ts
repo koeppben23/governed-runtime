@@ -382,10 +382,10 @@ describe('audit completeness', () => {
     });
 
     it('review flow has no evidence slots (standalone artifact)', () => {
-      const state = makeState('REVIEW');
+      const state = makeState('PEER_REVIEW');
       const report = evaluateCompleteness(state);
       expect(report.slots).toHaveLength(0);
-      // REVIEW is still in progress; zero slots must not vacuously imply completion.
+      // PEER_REVIEW is still in progress; zero slots must not vacuously imply completion.
       expect(report.overallComplete).toBe(false);
       expect(report.summary.total).toBe(0);
       expect(

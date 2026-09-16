@@ -1,18 +1,18 @@
-/** Deterministic standalone-review task preparation and append-only evidence. */
+/** Deterministic peer-review task preparation and append-only evidence. */
 
 import { randomUUID } from 'node:crypto';
 
 import { canonicalJsonStringify } from '../../../shared/canonical-json.js';
 import { hashText } from '../../../shared/hashing.js';
 import {
-  STANDALONE_REVIEW_EVIDENCE_SCHEMA_VERSION,
-  createStandaloneReviewTask,
-  type StandaloneReviewCompletedEvidence,
-  type StandaloneReviewEvidence,
-  type StandaloneReviewPreparedEvidence,
-  type StandaloneReviewSupersededEvidence,
+  PEER_REVIEW_EVIDENCE_SCHEMA_VERSION,
+  createPeerReviewTask,
+  type PeerReviewCompletedEvidence,
+  type PeerReviewEvidence,
+  type PeerReviewPreparedEvidence,
+  type PeerReviewSupersededEvidence,
   reviewFindingsDigests,
-} from '../../../state/standalone-review.js';
+} from '../../../state/peer-review.js';
 import type { ReviewFindings } from '../../../state/evidence.js';
 import type { ReviewToolArgs } from './types.js';
 import type { ReviewReferenceInput } from '../../../rails/review.js';
@@ -37,33 +37,33 @@ function subjectDigest(args: ReviewToolArgs, refInput?: ReviewReferenceInput): s
 }
 
 /**
- * The stable lifecycle identity of the standalone review operation for an
+ * The stable lifecycle identity of the peer review operation for an
  * obligation. `reviewTaskId` is minted ONCE for the logical review operation
  * and survives subject freeze re-preparation, output repair, and verdict
  * continuation. It is deliberately NOT derived from any digest.
  */
 export function resolveReviewTaskIdentity(
-  evidence: readonly StandaloneReviewEvidence[],
+  evidence: readonly PeerReviewEvidence[],
   obligationId: string,
 ): { reviewTaskId: string } {
   const existing = evidence.find((entry) => entry.obligationId === obligationId);
   return { reviewTaskId: existing?.reviewTaskId ?? randomUUID() };
 }
 
-export function prepareStandaloneReviewEvidence(
+export function preparePeerReviewEvidence(
   args: ReviewToolArgs,
   preparedAt: string,
   refInput: ReviewReferenceInput | undefined,
   reviewTaskId: string,
   obligationId: string,
-): StandaloneReviewPreparedEvidence {
-  const { task, requestedDigests } = createStandaloneReviewTask({
+): PeerReviewPreparedEvidence {
+  const { task, requestedDigests } = createPeerReviewTask({
     subjectDigest: subjectDigest(args, refInput),
     objectives: args.objectives,
   });
   return {
     kind: 'prepared',
-    schemaVersion: STANDALONE_REVIEW_EVIDENCE_SCHEMA_VERSION,
+    schemaVersion: PEER_REVIEW_EVIDENCE_SCHEMA_VERSION,
     evidenceId: randomUUID(),
     reviewTaskId,
     obligationId,
@@ -78,12 +78,12 @@ export function prepareStandaloneReviewEvidence(
  * review operation (`reviewTaskId`).
  */
 function supersessionMarker(
-  superseded: StandaloneReviewPreparedEvidence,
-  replacement: StandaloneReviewPreparedEvidence,
-): StandaloneReviewSupersededEvidence {
+  superseded: PeerReviewPreparedEvidence,
+  replacement: PeerReviewPreparedEvidence,
+): PeerReviewSupersededEvidence {
   return {
     kind: 'superseded',
-    schemaVersion: STANDALONE_REVIEW_EVIDENCE_SCHEMA_VERSION,
+    schemaVersion: PEER_REVIEW_EVIDENCE_SCHEMA_VERSION,
     evidenceId: randomUUID(),
     reviewTaskId: superseded.reviewTaskId,
     obligationId: superseded.obligationId,
@@ -108,17 +108,17 @@ function supersessionMarker(
  * lifecycle chain is the authority.
  */
 export function appendPreparedReviewEvidence(
-  evidence: readonly StandaloneReviewEvidence[],
-  prepared: StandaloneReviewPreparedEvidence,
-): StandaloneReviewEvidence[] {
+  evidence: readonly PeerReviewEvidence[],
+  prepared: PeerReviewPreparedEvidence,
+): PeerReviewEvidence[] {
   const supersededIds = new Set(
     evidence
-      .filter((e): e is StandaloneReviewSupersededEvidence => e.kind === 'superseded')
+      .filter((e): e is PeerReviewSupersededEvidence => e.kind === 'superseded')
       .map((e) => e.supersededPreparedEvidenceId),
   );
   const completedIds = new Set(
     evidence
-      .filter((e): e is StandaloneReviewCompletedEvidence => e.kind === 'completed')
+      .filter((e): e is PeerReviewCompletedEvidence => e.kind === 'completed')
       .map((e) => e.preparedEvidenceId),
   );
   const identical = evidence.some(
@@ -130,7 +130,7 @@ export function appendPreparedReviewEvidence(
   if (identical) return [...evidence];
 
   const outstanding = evidence.filter(
-    (entry): entry is StandaloneReviewPreparedEvidence =>
+    (entry): entry is PeerReviewPreparedEvidence =>
       entry.kind === 'prepared' &&
       entry.obligationId === prepared.obligationId &&
       entry.reviewTaskId === prepared.reviewTaskId &&
@@ -145,23 +145,23 @@ export function appendPreparedReviewEvidence(
  * Resolve the outstanding pending prepared incarnation a completion binds to.
  */
 function pendingPreparedEvidence(
-  evidence: readonly StandaloneReviewEvidence[],
+  evidence: readonly PeerReviewEvidence[],
   obligationId: string,
   reviewTaskId: string,
-): StandaloneReviewPreparedEvidence | undefined {
+): PeerReviewPreparedEvidence | undefined {
   const supersededIds = new Set(
     evidence
-      .filter((e): e is StandaloneReviewSupersededEvidence => e.kind === 'superseded')
+      .filter((e): e is PeerReviewSupersededEvidence => e.kind === 'superseded')
       .map((e) => e.supersededPreparedEvidenceId),
   );
   const completedIds = new Set(
     evidence
-      .filter((e): e is StandaloneReviewCompletedEvidence => e.kind === 'completed')
+      .filter((e): e is PeerReviewCompletedEvidence => e.kind === 'completed')
       .map((e) => e.preparedEvidenceId),
   );
   return evidence
     .filter(
-      (entry): entry is StandaloneReviewPreparedEvidence =>
+      (entry): entry is PeerReviewPreparedEvidence =>
         entry.kind === 'prepared' &&
         entry.obligationId === obligationId &&
         entry.reviewTaskId === reviewTaskId &&
@@ -172,17 +172,17 @@ function pendingPreparedEvidence(
 }
 
 export function appendCompletedReviewEvidence(input: {
-  readonly evidence: readonly StandaloneReviewEvidence[];
-  readonly prepared: StandaloneReviewPreparedEvidence;
+  readonly evidence: readonly PeerReviewEvidence[];
+  readonly prepared: PeerReviewPreparedEvidence;
   readonly completedAt: string;
   readonly findings?: ReviewFindings;
-}): StandaloneReviewEvidence[] {
+}): PeerReviewEvidence[] {
   const { evidence, prepared, completedAt, findings } = input;
   // Exact digest match first (unchanged subject); otherwise bind the outstanding
   // pending incarnation of the same logical review operation so a resolved
   // branch SHA cannot fork the evidence chain.
   const exactPrepared = evidence.find(
-    (entry): entry is StandaloneReviewPreparedEvidence =>
+    (entry): entry is PeerReviewPreparedEvidence =>
       entry.kind === 'prepared' &&
       entry.obligationId === prepared.obligationId &&
       entry.requestedDigests.taskDigest === prepared.requestedDigests.taskDigest,
@@ -192,9 +192,9 @@ export function appendCompletedReviewEvidence(input: {
     pendingPreparedEvidence(evidence, prepared.obligationId, prepared.reviewTaskId) ??
     prepared;
   const { findingsDigest, attestationDigest } = reviewFindingsDigests(findings);
-  const completed: StandaloneReviewCompletedEvidence = {
+  const completed: PeerReviewCompletedEvidence = {
     kind: 'completed',
-    schemaVersion: STANDALONE_REVIEW_EVIDENCE_SCHEMA_VERSION,
+    schemaVersion: PEER_REVIEW_EVIDENCE_SCHEMA_VERSION,
     evidenceId: randomUUID(),
     reviewTaskId: boundPrepared.reviewTaskId,
     obligationId: boundPrepared.obligationId,

@@ -624,7 +624,7 @@ describe('status', () => {
       expect(Array.isArray(result.activeChecks)).toBe(true);
     });
 
-    it('reports CHANGES_REQUIRED for a completed standalone review with issues', async () => {
+    it('reports CHANGES_REQUIRED for a completed peer review with issues', async () => {
       await hydrateSession();
       const { computeFingerprint, sessionDir: resolveSessionDir } =
         await import('../adapters/workspace/index.js');
@@ -634,7 +634,7 @@ describe('status', () => {
       if (!current) throw new Error('expected hydrated state');
       const reviewState = {
         ...current,
-        phase: 'REVIEW_COMPLETE' as const,
+        phase: 'PEER_REVIEW_COMPLETE' as const,
         reviewReportPath: reportPath(sessDir),
       };
       await writeState(sessDir, reviewState);
@@ -643,7 +643,7 @@ describe('status', () => {
         schemaVersion: REVIEW_REPORT_SCHEMA_ID,
         sessionId: reviewState.id,
         generatedAt: '2026-01-01T00:00:00.000Z',
-        phase: 'REVIEW_COMPLETE',
+        phase: 'PEER_REVIEW_COMPLETE',
         planDigest: null,
         implDigest: null,
         validationSummary: [],

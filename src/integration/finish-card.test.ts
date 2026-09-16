@@ -42,13 +42,13 @@ function makeReviewReport(overallStatus: ReviewReport['overallStatus']): ReviewR
     schemaVersion: 'flowguard-review-report.v1',
     sessionId: '00000000-0000-4000-8000-000000000001',
     generatedAt: '2026-01-01T00:00:00.000Z',
-    phase: 'REVIEW_COMPLETE',
+    phase: 'PEER_REVIEW_COMPLETE',
     planDigest: null,
     implDigest: null,
     validationSummary: [],
     findings: [],
     overallStatus,
-    completeness: evaluateCompleteness(makeProgressedState('REVIEW_COMPLETE')),
+    completeness: evaluateCompleteness(makeProgressedState('PEER_REVIEW_COMPLETE')),
   };
 }
 
@@ -133,8 +133,8 @@ describe('deriveFinishOverallStatus — overall status matrix', () => {
     expect(deriveFinishOverallStatus(readiness, evidence)).toBe('READY');
   });
 
-  it('CHANGES_REQUIRED when a completed standalone review reports issues', () => {
-    const state = makeProgressedState('REVIEW_COMPLETE');
+  it('CHANGES_REQUIRED when a completed peer review reports issues', () => {
+    const state = makeProgressedState('PEER_REVIEW_COMPLETE');
     const card = buildFinishCard(state, policy, makeReviewReport('issues'));
     expect(card.overallStatus).toBe('CHANGES_REQUIRED');
     expect(card.actionGuidance.find((guidance) => guidance.action === 'create PR')?.status).toBe(
@@ -189,7 +189,7 @@ describe('buildFinishCard — read-only', () => {
 // ─── TERMINAL phases ────────────────────────────────────────────────────────
 
 describe('buildFinishCard — terminal phases', () => {
-  for (const phase of ['COMPLETE', 'ARCH_COMPLETE', 'REVIEW_COMPLETE'] as const) {
+  for (const phase of ['COMPLETE', 'ARCH_COMPLETE', 'PEER_REVIEW_COMPLETE'] as const) {
     it(`produces a Finish Card in ${phase}`, () => {
       const card = buildFinishCard(makeProgressedState(phase), policy);
       expect(card.phase).toBe(phase);

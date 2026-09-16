@@ -154,8 +154,8 @@ const PHASE_DIRECTIVES: Record<Phase, WorkflowDirective> = {
   ARCHITECTURE: systemWork('ARCHITECTURE_IN_PROGRESS'),
   ARCH_REVIEW: humanGate('ARCHITECTURE_DECISION_REQUIRED'),
   ARCH_COMPLETE: terminal('ARCHITECTURE_COMPLETE'),
-  REVIEW: systemWork('PEER_REVIEW_IN_PROGRESS'),
-  REVIEW_COMPLETE: terminal('PEER_REVIEW_COMPLETE'),
+  PEER_REVIEW: systemWork('PEER_REVIEW_IN_PROGRESS'),
+  PEER_REVIEW_COMPLETE: terminal('PEER_REVIEW_COMPLETE'),
 };
 
 /** Resolve the directive from complete persisted state without changing it. */

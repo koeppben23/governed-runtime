@@ -651,7 +651,7 @@ describe('discovery notice', () => {
   describe('finish hint', () => {
     const cleanDrift = makeDriftProjection();
 
-    for (const phase of ['COMPLETE', 'ARCH_COMPLETE', 'REVIEW_COMPLETE'] as const) {
+    for (const phase of ['COMPLETE', 'ARCH_COMPLETE', 'PEER_REVIEW_COMPLETE'] as const) {
       it(`surfaces the /finish hint in terminal phase ${phase}`, () => {
         const projection = makeBaseProjection({
           phase,

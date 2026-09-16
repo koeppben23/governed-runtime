@@ -8,7 +8,7 @@
  * - Command → Rail → State mutation → evaluate() → Event → Transition.
  * - /continue is the routing command (deterministic, guard-determined event).
  * - READY is the entry phase where users select a flow (/ticket, /architecture, /review).
- * - Terminal phases (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE) block all commands.
+ * - Terminal phases (COMPLETE, ARCH_COMPLETE, PEER_REVIEW_COMPLETE) block all commands.
  *
  * @version v3
  */

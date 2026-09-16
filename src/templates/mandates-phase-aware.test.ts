@@ -114,8 +114,8 @@ describe('phase-aware mandates rendering', () => {
       'ARCHITECTURE',
       'ARCH_REVIEW',
       'ARCH_COMPLETE',
-      'REVIEW',
-      'REVIEW_COMPLETE',
+      'PEER_REVIEW',
+      'PEER_REVIEW_COMPLETE',
       'REJECTED',
       'ABORTED',
     ]);

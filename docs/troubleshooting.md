@@ -69,8 +69,8 @@ ls ~/.config/opencode/workspaces/*/sessions/
 /continue
 ```
 
-`/review` is **not** a status command — it is the entry point of the standalone
-compliance-report flow (READY only). Use `/status` or `/why` instead.
+`/review` is **not** a status command — it is the entry point of the peer
+review flow (READY only). Use `/status` or `/why` instead.
 
 ### External Reviewer Evidence Not Accepted
 
@@ -221,7 +221,7 @@ real, registered reason.
 | `REVIEW_OBSERVATION_UNSUPPORTED_ENTRY` | Observed path is not materializable at the frozen revision | Submodule gitlink entries are not materialized as observations |
 | `REVIEW_REPOSITORY_IDENTITY_MISSING` | Branch source carries no remote or local repository identity | Re-run the review from its original content input so the identity is resolved again |
 | `REVIEW_SUBJECT_DIGEST_MISMATCH` | Re-derived review subject differs from the frozen obligation subject | Start a new review for the changed content; a frozen subject is immutable |
-| `REVIEW_SUBJECT_NOT_MATERIALIZED` | Standalone review source could not be frozen into immutable material | Resolve exactly one review source before creating or continuing the obligation |
+| `REVIEW_SUBJECT_NOT_MATERIALIZED` | Peer review source could not be frozen into immutable material | Resolve exactly one review source before creating or continuing the obligation |
 | `REVIEW_SUBJECT_SCOPE_UNAVAILABLE` | Review obligation has no verifiable frozen subject scope | Re-run the review after subject scope resolution succeeds |
 | `REVIEW_OBLIGATION_NOT_FOUND` | Review continuation ID is missing, consumed, blocked, or mismatched | Use the ID from the original `CONTENT_ANALYSIS_REQUIRED` response; otherwise start a fresh `/review` |
 | `REVIEW_OBLIGATION_ID_REQUIRED` | Host-task review verdict was submitted without its obligation ID | Submit the original content, `reviewObligationId`, and the captured reviewer verdict together |

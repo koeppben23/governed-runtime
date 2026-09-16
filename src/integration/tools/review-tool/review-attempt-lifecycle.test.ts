@@ -11,8 +11,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { appendPreparedReviewEvidence, prepareStandaloneReviewEvidence } from './preparation.js';
-import type { StandaloneReviewPreparedEvidence } from '../../../state/standalone-review.js';
+import { appendPreparedReviewEvidence, preparePeerReviewEvidence } from './preparation.js';
+import type { PeerReviewPreparedEvidence } from '../../../state/peer-review.js';
 import type { ReviewReferenceInput } from '../../../rails/review.js';
 import { populateRefInput } from './continuation.js';
 import { makeState } from '../../../fixtures.js';
@@ -22,8 +22,8 @@ function evidence(args: {
   readonly branch?: string;
   readonly base?: string;
   readonly refInput?: ReviewReferenceInput;
-}): StandaloneReviewPreparedEvidence {
-  return prepareStandaloneReviewEvidence(
+}): PeerReviewPreparedEvidence {
+  return preparePeerReviewEvidence(
     {
       branch: args.branch,
       base: args.base,
@@ -101,7 +101,7 @@ describe('subject digest stability', () => {
 
   it('rehydrates resolved SHAs from the verdict obligation when no source is available', () => {
     const obligationId = '33333333-1111-4111-8111-111111111111';
-    const state = makeState('REVIEW', {
+    const state = makeState('PEER_REVIEW', {
       reviewAssurance: {
         assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [

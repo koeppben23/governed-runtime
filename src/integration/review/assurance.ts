@@ -156,7 +156,7 @@ export function createReviewObligation(input: {
   subjectDigest: string;
   /** Exact plan-claim declaration digest frozen before reviewer invocation. */
   claimDeclarationsDigest?: string;
-  /** Frozen standalone content/repository subject, when this is a standalone review. */
+  /** Frozen standalone content/repository subject, when this is a peer review. */
   reviewSubject?: FrozenReviewSubject;
   /** Exact normalized artifact bytes frozen for host-task delivery. */
   reviewMaterial: ReviewMaterial;
@@ -186,7 +186,7 @@ export function createReviewObligation(input: {
    * pass an artifact scope (their subject is the frozen plan/ADR artifact,
    * never the repository diff — fail-closed, see `artifactReviewSubjectScope`);
    * implementation obligations MUST pass an implementation scope whose digest
-   * equals the subject digest. Standalone review obligations may derive their
+   * equals the subject digest. Peer review obligations may derive their
    * scope from the frozen review subject or changedFiles.
    */
   reviewSubjectScope?: ReviewSubjectScope;

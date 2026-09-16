@@ -54,7 +54,7 @@ function contentAnalysisRequiredOutput(): string {
   return JSON.stringify({
     error: true,
     code: 'CONTENT_ANALYSIS_REQUIRED',
-    phase: 'REVIEW',
+    phase: 'PEER_REVIEW',
     requiredReviewAttestation: {
       toolObligationId: OBLIGATION_ID,
       mandateDigest: REVIEW_MANDATE_DIGEST,
@@ -126,7 +126,7 @@ function buildSessionState(
   strictEnforcement = true,
   seedInvocations: NonNullable<SessionState['reviewAssurance']>['invocations'] = [],
 ) {
-  return makeState('REVIEW', {
+  return makeState('PEER_REVIEW', {
     ticket: {
       text: 'Review the authentication changes',
       digest: 'ticket-digest-review',
@@ -422,7 +422,7 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     const parsed = JSON.parse(output.output) as Record<string, unknown>;
     expect(parsed.error).toBeUndefined();
     expect(parsed.code).toBeUndefined();
-    expect(parsed.phase).toBe('REVIEW');
+    expect(parsed.phase).toBe('PEER_REVIEW');
     expect(parsed.reviewDispatch).toEqual({
       required: true,
       completed: true,

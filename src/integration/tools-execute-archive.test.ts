@@ -562,7 +562,7 @@ describe('archive', () => {
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
-      await writeState(sessDir, { ...state!, phase: 'REVIEW_COMPLETE' });
+      await writeState(sessDir, { ...state!, phase: 'PEER_REVIEW_COMPLETE' });
       const raw = await archive.execute({}, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();

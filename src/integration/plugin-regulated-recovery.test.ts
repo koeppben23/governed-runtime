@@ -276,7 +276,7 @@ describe('recoverRegulatedCompletion', () => {
     expect(archiveRegulatedEvidence).not.toHaveBeenCalled();
   });
 
-  it.each(['ARCH_COMPLETE', 'REVIEW_COMPLETE'] as const)(
+  it.each(['ARCH_COMPLETE', 'PEER_REVIEW_COMPLETE'] as const)(
     'leaves a regulated %s session byte-semantically unchanged',
     async (phase) => {
       const { fingerprint, sessDir } = await seedSession(

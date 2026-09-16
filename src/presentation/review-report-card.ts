@@ -5,7 +5,7 @@
  * Builds the Review Report Card as a typed PresentationDocument rendered
  * through the shared Markdown renderer (renderMarkdown). Presents standalone
  * /review findings with the completeness matrix and audit evidence. Called
- * when /review completes (phase REVIEW_COMPLETE).
+ * when /review completes (phase PEER_REVIEW_COMPLETE).
  *
  * This is a pure function — no state dependency, no side effects.
  * All fields are derived from the ReviewReport and State already available
@@ -36,7 +36,7 @@ import { buildProofGraphSection } from './proof-summary.js';
 // ─── Card Input ──────────────────────────────────────────────────────────────
 
 export interface ReviewReportCardInput {
-  /** Current workflow phase (expected: REVIEW_COMPLETE). */
+  /** Current workflow phase (expected: PEER_REVIEW_COMPLETE). */
   phase: Phase;
   /** Human-readable phase label (from PHASE_LABELS). */
   phaseLabel: string;
@@ -148,7 +148,7 @@ export function buildReviewReportCard(
   return renderMarkdown(buildReviewReportDocument(input), options);
 }
 
-/** Build the typed standalone-review document before Markdown rendering. */
+/** Build the typed peer-review document before Markdown rendering. */
 export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewCardDocument {
   const {
     phaseLabel,

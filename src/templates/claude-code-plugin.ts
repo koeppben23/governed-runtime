@@ -321,7 +321,7 @@ When the review returns changes_requested, make the actual code changes based on
 - Treat any blocked, failed, malformed, or nonconforming tool result as terminal: report it and stop. Do not auto-chain into the review decision.
 `,
   'skills/review/SKILL.md': `---
-description: Run the standalone FlowGuard compliance review flow (READY to REVIEW to REVIEW_COMPLETE) through FlowGuard MCP tools.
+description: Run the FlowGuard peer review flow (READY to PEER_REVIEW to PEER_REVIEW_COMPLETE) through FlowGuard MCP tools.
 ---
 
 # FlowGuard Review

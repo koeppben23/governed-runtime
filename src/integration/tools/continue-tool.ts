@@ -37,8 +37,8 @@ const PHASE_GUIDANCE: Record<string, { status: string | ((state: SessionState) =
   ARCHITECTURE: {
     status: 'Architecture review is pending.',
   },
-  REVIEW: {
-    status: 'Standalone review phase active.',
+  PEER_REVIEW: {
+    status: 'Peer review phase active.',
   },
   COMPLETE: {
     status: 'Workflow complete.',

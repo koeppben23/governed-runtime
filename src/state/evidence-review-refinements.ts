@@ -7,7 +7,7 @@
  * modules within the file-size budget. These are the ONLY structural
  * validators for frozen repository authority coherence:
  *
- * - standalone review obligations require a frozen reviewSubject whose
+ * - peer review obligations require a frozen reviewSubject whose
  *   subjectDigest matches;
  * - frozen repository authorities must be structurally consistent;
  * - an attempt's Discovery variant must match its obligation's frozen
@@ -177,8 +177,8 @@ export function refineReviewMaterialSubject(
   });
 }
 
-/** Standalone review obligations require a frozen, digest-matching subject. */
-export function refineStandaloneSubject(
+/** Peer review obligations require a frozen, digest-matching subject. */
+export function refinePeerReviewSubject(
   obligation: ObligationRefinementShape,
   context: z.RefinementCtx,
 ): void {
@@ -187,7 +187,7 @@ export function refineStandaloneSubject(
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['reviewSubject'],
-      message: 'Standalone review obligations require a frozen reviewSubject.',
+      message: 'Peer review obligations require a frozen reviewSubject.',
     });
     return;
   }
@@ -195,7 +195,7 @@ export function refineStandaloneSubject(
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['subjectDigest'],
-      message: 'Standalone review obligation subjectDigest must match reviewSubject.subjectDigest.',
+      message: 'Peer review obligation subjectDigest must match reviewSubject.subjectDigest.',
     });
   }
 }

@@ -50,10 +50,7 @@ import {
 } from './discovery-schemas.js';
 import { ProofGraphProjection } from './proofgraph.js';
 import { ProofContract, ProofContractCoverage } from './proofgraph-contract.js';
-import {
-  StandaloneReviewEvidence,
-  resolveAuthoritativeStandaloneReviewTask,
-} from './standalone-review.js';
+import { PeerReviewEvidence, resolveAuthoritativePeerReviewTask } from './peer-review.js';
 
 /** Immutable compatibility contract for executable session authority. */
 export const CURRENT_ASSURANCE_EPOCH = 'assurance-epoch.v3' as const;
@@ -77,8 +74,8 @@ export const CURRENT_AUDIT_CHAIN_FORMAT = 'audit-chain.v3' as const;
  * Architecture flow (ADR creation):
  *   READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE
  *
- * Review flow (compliance report):
- *   READY → REVIEW → REVIEW_COMPLETE
+ * Peer review flow (peer review report):
+ *   READY → PEER_REVIEW → PEER_REVIEW_COMPLETE
  *
  * Backward transitions:
  *   PLAN_REVIEW --changes_requested--> PLAN
@@ -103,8 +100,8 @@ export const Phase = z.enum([
   'ARCHITECTURE',
   'ARCH_REVIEW',
   'ARCH_COMPLETE',
-  'REVIEW',
-  'REVIEW_COMPLETE',
+  'PEER_REVIEW',
+  'PEER_REVIEW_COMPLETE',
   'REJECTED',
   'ABORTED',
 ]);
@@ -207,7 +204,7 @@ export const Event = z.enum([
   // READY → flow selection
   'TICKET_SELECTED',
   'ARCHITECTURE_SELECTED',
-  'REVIEW_SELECTED',
+  'PEER_REVIEW_SELECTED',
 
   // TICKET → PLAN
   'PLAN_READY',
@@ -238,8 +235,8 @@ export const Event = z.enum([
   'REVIEW_MET',
   'REVIEW_PENDING',
 
-  // REVIEW flow → REVIEW_COMPLETE
-  'REVIEW_DONE',
+  // Peer review flow → PEER_REVIEW_COMPLETE
+  'PEER_REVIEW_DONE',
 
   // IMPL_REVIEW → EVIDENCE_REVIEW when the review budget is exhausted with
   // changes requested; the final gate becomes a governance override gate.
@@ -461,7 +458,7 @@ export const SessionState = z
     implReviewFindings: z.array(ReviewFindings).optional(),
 
     /** Independent review findings for standalone /review, retained append-only for audit. */
-    standaloneReviewFindings: z.array(ReviewFindings).optional(),
+    peerReviewFindings: z.array(ReviewFindings).optional(),
 
     /** P35 strict independent-review obligations and invocation evidence. */
     reviewAssurance: ReviewAssuranceState.optional(),
@@ -469,11 +466,11 @@ export const SessionState = z
     /** Human review decision at PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REVIEW. */
     reviewDecision: ReviewDecision.nullable(),
 
-    /** Absolute path to the generated review report file (REVIEW phase, P8b). */
+    /** Absolute path to the generated review report file (PEER_REVIEW phase, P8b). */
     reviewReportPath: z.string().nullable(),
 
     /** Append-only deterministic task preparation and completion evidence for /review. */
-    standaloneReviewEvidence: z.array(StandaloneReviewEvidence),
+    peerReviewEvidence: z.array(PeerReviewEvidence),
 
     /**
      * Thin ProofGraph contract declaration (advisory; #762).
@@ -720,25 +717,25 @@ export const SessionState = z
       )
     )
       return;
-    // Standalone-review lifecycle invariant: a structurally broken evidence
+    // Peer-review lifecycle invariant: a structurally broken evidence
     // chain (dangling supersession, cycles, completions on superseded entries,
     // multiple authoritative incarnations) makes the STATE invalid — it must
     // fail closed at the schema boundary instead of silently collapsing to an
     // empty ProofGraph projection. The resolver is the single lifecycle
-    // authority (state/standalone-review.ts).
+    // authority (state/peer-review.ts).
     const assurance = state.reviewAssurance;
     if (!assurance) return;
     for (const obligation of assurance.obligations) {
       if (obligation.obligationType !== 'review') continue;
-      const resolved = resolveAuthoritativeStandaloneReviewTask(
-        state.standaloneReviewEvidence,
+      const resolved = resolveAuthoritativePeerReviewTask(
+        state.peerReviewEvidence,
         obligation.obligationId,
       );
       if (resolved.kind === 'blocked') {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ['standaloneReviewEvidence'],
-          message: `standalone review lifecycle is invalid: ${resolved.reason}`,
+          path: ['peerReviewEvidence'],
+          message: `peer review lifecycle is invalid: ${resolved.reason}`,
         });
         return;
       }

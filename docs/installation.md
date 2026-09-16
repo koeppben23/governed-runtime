@@ -331,7 +331,7 @@ Use these commands in OpenCode chat to drive workflows:
 | `/review-decision <verdict>`                      | Human approval                        |
 | `/override-approve`                               | Governance override at exhausted gate |
 | `/resolve-implementation-challenge <challengeId>` | Record advisory challenge resolution  |
-| `/review`                                         | Generate compliance report            |
+| `/review`                                         | Generate peer review report           |
 | `/architecture`                                   | Create/revise ADR                     |
 | `/export`                                         | Materialize verifiable export         |
 | `/abort`                                          | Terminate session                     |
@@ -368,7 +368,7 @@ These are the underlying tool names that FlowGuard installs into OpenCode:
 | `flowguard_run_check`             | Validation runner (executes the discovered verification commands and records pass/fail evidence; bound to `/validate` and the `/check` product alias) |
 | `flowguard_implement`             | Record implementation evidence                                                                                                                        |
 | `flowguard_review_implementation` | Submit implementation review verdict                                                                                                                  |
-| `flowguard_review`                | Generate compliance report                                                                                                                            |
+| `flowguard_review`                | Generate peer review report                                                                                                                           |
 | `flowguard_architecture`          | ADR authoring + review loop                                                                                                                           |
 | `flowguard_abort_session`         | Session termination                                                                                                                                   |
 | `flowguard_archive`               | Session archival                                                                                                                                      |

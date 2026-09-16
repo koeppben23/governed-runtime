@@ -134,9 +134,9 @@ where a human approves:
 `/request-changes` returns to `ARCHITECTURE` for further revision; `/reject`
 returns the session to `READY`.)
 
-## Review Flow (Compliance Report)
+## Peer Review Flow
 
-Generate a compliance review report from READY:
+Generate a peer review report from READY:
 
 ```
 /review
@@ -180,7 +180,7 @@ Or review a specific GitHub pull request:
 | `/architecture`                      | Create/revise ADR                    |
 | `/implement`                         | Execute approved plan                |
 | `/validate`                          | Run validation                       |
-| `/review <PR-URL or branch>`         | Start compliance review flow         |
+| `/review <PR-URL or branch>`         | Start peer review flow               |
 | `/continue`                          | Auto-advance                         |
 | `/review-decision approve`           | Approve                              |
 | `/review-decision changes_requested` | Request changes                      |

@@ -13,10 +13,10 @@
  *   READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE
  *
  * Review flow:
- *   READY → REVIEW → REVIEW_COMPLETE
+ *   READY → PEER_REVIEW → PEER_REVIEW_COMPLETE
  *
  * Rules:
- * - Terminal phases (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE, REJECTED, ABORTED) have empty maps.
+ * - Terminal phases (COMPLETE, ARCH_COMPLETE, PEER_REVIEW_COMPLETE, REJECTED, ABORTED) have empty maps.
  * - READY is command-driven (no guards, no auto-advance).
  * - ERROR loops back to the same phase in all non-gate, non-terminal, non-READY phases.
  * - User-gate phases (PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW) have NO error event.
@@ -47,7 +47,7 @@ export const TRANSITIONS: ReadonlyMap<Phase, ReadonlyMap<Event, Phase>> = new Ma
     new Map<Event, Phase>([
       ['TICKET_SELECTED', 'TICKET'],
       ['ARCHITECTURE_SELECTED', 'ARCHITECTURE'],
-      ['REVIEW_SELECTED', 'REVIEW'],
+      ['PEER_REVIEW_SELECTED', 'PEER_REVIEW'],
       ['ABORT', 'ABORTED'],
     ]),
   ],
@@ -216,22 +216,22 @@ export const TRANSITIONS: ReadonlyMap<Phase, ReadonlyMap<Event, Phase>> = new Ma
   ['ARCH_COMPLETE', new Map<Event, Phase>()],
 
   // ═══════════════════════════════════════════════════════════════
-  // REVIEW FLOW
+  // PEER_REVIEW FLOW
   // ═══════════════════════════════════════════════════════════════
 
-  // ── REVIEW ──────────────────────────────────────────────────
-  // Generates compliance report, then auto-advances to terminal.
+  // ── PEER_REVIEW ──────────────────────────────────────────────────
+  // Generates peer review report, then auto-advances to terminal.
   [
-    'REVIEW',
+    'PEER_REVIEW',
     new Map<Event, Phase>([
-      ['REVIEW_DONE', 'REVIEW_COMPLETE'],
-      ['ERROR', 'REVIEW'],
+      ['PEER_REVIEW_DONE', 'PEER_REVIEW_COMPLETE'],
+      ['ERROR', 'PEER_REVIEW'],
       ['ABORT', 'ABORTED'],
     ]),
   ],
 
   // ── REVIEW_COMPLETE (Terminal) ──────────────────────────────
-  ['REVIEW_COMPLETE', new Map<Event, Phase>()],
+  ['PEER_REVIEW_COMPLETE', new Map<Event, Phase>()],
 ]);
 
 // ─── Phase Classifications ────────────────────────────────────────────────────
@@ -252,7 +252,7 @@ export const USER_GATES: ReadonlySet<Phase> = new Set<Phase>(USER_GATE_PHASES);
 export const TERMINAL: ReadonlySet<Phase> = new Set<Phase>([
   'COMPLETE',
   'ARCH_COMPLETE',
-  'REVIEW_COMPLETE',
+  'PEER_REVIEW_COMPLETE',
   'REJECTED',
   'ABORTED',
 ]);

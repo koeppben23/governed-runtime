@@ -68,7 +68,7 @@ async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Prom
   const minted = await mintArchSubmissionObligation(ctx, resolvedTargetPaths, metadata);
   // Repository-governed attempts are minted WITH their host-owned Discovery
   // snapshot (persistence coherence). A structural projection failure blocks
-  // before any state mutation, mirroring the standalone review path.
+  // before any state mutation, mirroring the peer review path.
   const repositoryGoverned = minted ? hasFrozenRepositoryAuthority(minted) : false;
   const discovery = await resolveAttemptDiscoveryOrBlock({
     state: ctx.state,

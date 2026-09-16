@@ -928,7 +928,7 @@ describe('e2e-workflow', () => {
 
       // Review right after hydrate — standalone flow from READY
       const reviewResult = await callOk(review, {});
-      expect(reviewResult.phase).toBe('REVIEW_COMPLETE');
+      expect(reviewResult.phase).toBe('PEER_REVIEW_COMPLETE');
       expect(reviewResult.overallStatus).toBeDefined();
       const completeness = reviewResult.completeness as Record<string, unknown>;
       // Review flow has no evidence slots, so overallComplete is true

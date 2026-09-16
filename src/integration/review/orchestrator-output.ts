@@ -41,7 +41,7 @@ export function buildMutatedOutput(
 export function buildReviewContentMutatedOutput(
   originalOutput: string,
   reviewerResult: ReviewerOutputInput,
-  phase = 'REVIEW',
+  phase = 'PEER_REVIEW',
 ): string | null {
   if (!reviewerResult.findings) return null;
 

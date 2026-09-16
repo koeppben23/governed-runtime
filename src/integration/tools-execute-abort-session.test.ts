@@ -298,7 +298,7 @@ describe('abort_session', () => {
   // the terminal phase, emits a diagnostic warn, and delegates to the rail,
   // which performs an idempotent no-op (no overwrite, no transition).
   describe('#421 terminal-phase guard', () => {
-    it.each(['ARCH_COMPLETE', 'REVIEW_COMPLETE'] as const)(
+    it.each(['ARCH_COMPLETE', 'PEER_REVIEW_COMPLETE'] as const)(
       '%s: abort is a no-op and logs a boundary warn (no overwrite)',
       async (phase) => {
         await hydrateSession();

@@ -138,8 +138,8 @@ export function consumeValidatedReviewObligation(
     ...result,
     state: {
       ...result.state,
-      standaloneReviewFindings: [
-        ...(result.state.standaloneReviewFindings ?? []),
+      peerReviewFindings: [
+        ...(result.state.peerReviewFindings ?? []),
         ...(consumption?.effectiveReviewFindings ? [consumption.effectiveReviewFindings] : []),
       ],
       reviewAssurance: consumeReviewObligation(

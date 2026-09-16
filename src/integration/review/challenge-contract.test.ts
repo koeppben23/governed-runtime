@@ -38,7 +38,7 @@ function contentObligation() {
 
 describe('buildReviewChallengeContract frozen authority', () => {
   it('binds standalone content challenges to the frozen reviewed-content digest, never the workspace fingerprint', () => {
-    const contract = buildReviewChallengeContract(makeState('REVIEW'), contentObligation());
+    const contract = buildReviewChallengeContract(makeState('PEER_REVIEW'), contentObligation());
 
     expect(contract?.requiredChallengeCount).toBeGreaterThan(0);
     expect(contract?.requiredChallengeKind).toBe('content_challenge');
@@ -60,7 +60,7 @@ describe('buildReviewChallengeContract frozen authority', () => {
       },
     };
 
-    const contract = buildReviewChallengeContract(makeState('REVIEW'), diverged);
+    const contract = buildReviewChallengeContract(makeState('PEER_REVIEW'), diverged);
 
     expect(contract?.requiredChallengeCount).toBeGreaterThan(0);
     expect(contract?.evidenceRefs).toBeUndefined();
@@ -132,7 +132,7 @@ describe('buildReviewChallengeContract frozen authority', () => {
       metadata: { fingerprint: WORKSPACE_FINGERPRINT },
     });
 
-    const contract = buildReviewChallengeContract(makeState('REVIEW'), obligation);
+    const contract = buildReviewChallengeContract(makeState('PEER_REVIEW'), obligation);
 
     expect(contract?.requiredChallengeCount).toBeGreaterThan(0);
     expect(contract?.evidenceRefs).toEqual([{ kind: 'content', digest: SUBJECT }]);
@@ -145,7 +145,7 @@ describe('buildReviewChallengeContract frozen authority', () => {
       reviewSubjectScope: { kind: 'unavailable' as const, reason: 'scope_not_resolved' },
     };
 
-    const contract = buildReviewChallengeContract(makeState('REVIEW'), unknownScope);
+    const contract = buildReviewChallengeContract(makeState('PEER_REVIEW'), unknownScope);
 
     expect(contract?.requiredChallengeCount).toBeGreaterThan(0);
     expect(contract?.evidenceRefs).toBeUndefined();

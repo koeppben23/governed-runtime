@@ -700,5 +700,5 @@ describe('decision', () => {
 });
 
 // =============================================================================
-// Tool 10: review (standalone review flow with subagent pattern)
+// Tool 10: review (peer review flow with subagent pattern)
 // =============================================================================

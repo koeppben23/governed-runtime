@@ -3,7 +3,7 @@ import { createSessionState, onFlowGuardToolAfter } from './enforcement.js';
 import { reviewDispatchRequired } from '../dispatch-signal.js';
 import { NOW } from './test-helpers.js';
 
-describe('standalone review retry signal', () => {
+describe('peer review retry signal', () => {
   it('registers the reissued attempt before the next reviewer dispatch', () => {
     const state = createSessionState();
     const attemptId = '33333333-2222-4111-8111-111111111111';

@@ -66,7 +66,7 @@ describe('abort rail', () => {
     // REVIEW_COMPLETE are terminal too; the prior `phase === 'COMPLETE'` guard
     // let them be overwritten to COMPLETE + error.ABORTED, corrupting terminal
     // state. Abort on every terminal phase MUST be an idempotent no-op.
-    it.each(['ARCH_COMPLETE', 'REVIEW_COMPLETE', 'REJECTED', 'ABORTED'] as const)(
+    it.each(['ARCH_COMPLETE', 'PEER_REVIEW_COMPLETE', 'REJECTED', 'ABORTED'] as const)(
       '%s is terminal — abort is a no-op (no overwrite, no transition)',
       (phase) => {
         const state = makeProgressedState(phase);

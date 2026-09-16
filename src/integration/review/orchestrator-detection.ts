@@ -39,7 +39,7 @@ export function extractReviewContext(
   criteriaVersion: string;
   mandateDigest: string;
 } | null {
-  if (toolName === TOOL_FLOWGUARD_REVIEW) return extractStandaloneReviewContext(toolOutput);
+  if (toolName === TOOL_FLOWGUARD_REVIEW) return extractPeerReviewContext(toolOutput);
 
   const obligation = reviewObligationObject(toolOutput);
   if (!obligation) return null;
@@ -56,7 +56,7 @@ export function extractReviewContext(
   return { iteration, planVersion, obligationId, criteriaVersion, mandateDigest };
 }
 
-function extractStandaloneReviewContext(
+function extractPeerReviewContext(
   toolOutput: Record<string, unknown>,
 ): ReturnType<typeof extractReviewContext> {
   const att = toolOutput.requiredReviewAttestation as Record<string, unknown> | undefined;

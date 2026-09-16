@@ -35,7 +35,7 @@
  *
  * Review flow:
  * No evidence slots required — the review report is a standalone artifact.
- * Completeness is nevertheless false until the flow reaches REVIEW_COMPLETE.
+ * Completeness is nevertheless false until the flow reaches PEER_REVIEW_COMPLETE.
  *
  * @version v2
  */
@@ -135,8 +135,8 @@ const PHASE_ORDER: Readonly<Record<Phase, number>> = {
   ARCHITECTURE: -1,
   ARCH_REVIEW: -1,
   ARCH_COMPLETE: -1,
-  REVIEW: -1,
-  REVIEW_COMPLETE: -1,
+  PEER_REVIEW: -1,
+  PEER_REVIEW_COMPLETE: -1,
   REJECTED: -1,
   ABORTED: -1,
 };
@@ -297,7 +297,10 @@ const ARCHITECTURE_FLOW_PHASES: ReadonlySet<Phase> = new Set<Phase>([
   'ARCH_REVIEW',
   'ARCH_COMPLETE',
 ]);
-const REVIEW_FLOW_PHASES: ReadonlySet<Phase> = new Set<Phase>(['REVIEW', 'REVIEW_COMPLETE']);
+const REVIEW_FLOW_PHASES: ReadonlySet<Phase> = new Set<Phase>([
+  'PEER_REVIEW',
+  'PEER_REVIEW_COMPLETE',
+]);
 const ARCH_PHASE_ORDER: Readonly<Record<string, number>> = {
   ARCHITECTURE: 0,
   ARCH_REVIEW: 1,

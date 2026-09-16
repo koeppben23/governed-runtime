@@ -534,7 +534,7 @@ describe('review rail', () => {
       const result = executeReviewFlow(state, ctx);
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
-        expect(result.state.phase).toBe('REVIEW_COMPLETE');
+        expect(result.state.phase).toBe('PEER_REVIEW_COMPLETE');
         expect(result.transitions.length).toBeGreaterThanOrEqual(1);
       }
     });
@@ -565,8 +565,8 @@ describe('review rail', () => {
   describe('P8b: startReviewFlow', () => {
     const ctx = createTestContext();
 
-    it('transitions READY → REVIEW, NOT to REVIEW_COMPLETE', () => {
-      // P8b: startReviewFlow only applies the READY→REVIEW transition.
+    it('transitions READY → PEER_REVIEW, NOT to PEER_REVIEW_COMPLETE', () => {
+      // P8b: startReviewFlow only applies the READY→PEER_REVIEW transition.
       // The reviewDone guard requires reviewReportPath, which is not yet set.
       // This proves that if writeReport throws before the caller sets
       // reviewReportPath and calls autoAdvance, no REVIEW_COMPLETE is persisted.
@@ -574,7 +574,7 @@ describe('review rail', () => {
       const result = startReviewFlow(state, ctx);
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
-        expect(result.state.phase).toBe('REVIEW');
+        expect(result.state.phase).toBe('PEER_REVIEW');
         expect(result.state.reviewReportPath).toBeFalsy();
       }
     });

@@ -499,7 +499,7 @@ describe('continue rail', () => {
     });
 
     it('at REVIEW_COMPLETE → blocked (terminal)', async () => {
-      const state = makeProgressedState('REVIEW_COMPLETE');
+      const state = makeProgressedState('PEER_REVIEW_COMPLETE');
       const result = await executeContinue(state, ctx, continueExecutors);
       expect(result.kind).toBe('blocked');
       if (result.kind === 'blocked') {
@@ -610,12 +610,12 @@ describe('continue rail', () => {
     });
 
     it('at REVIEW → auto-advances to REVIEW_COMPLETE', async () => {
-      const state = makeState('REVIEW', { reviewReportPath: '/tmp/report.json' });
+      const state = makeState('PEER_REVIEW', { reviewReportPath: '/tmp/report.json' });
       const result = await executeContinue(state, ctx, continueExecutors);
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
-        // reviewDone guard fires when phase === "REVIEW" and reviewReportPath is set
-        expect(result.state.phase).toBe('REVIEW_COMPLETE');
+        // reviewDone guard fires when phase === "PEER_REVIEW" and reviewReportPath is set
+        expect(result.state.phase).toBe('PEER_REVIEW_COMPLETE');
       }
     });
 

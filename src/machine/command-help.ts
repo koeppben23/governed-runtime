@@ -99,7 +99,7 @@ export const COMMAND_HELP: Record<Command, CommandHelpEntry> = {
   },
   [Command.REVIEW]: {
     label: 'Review content',
-    description: 'Start a standalone compliance review.',
+    description: 'Start a peer review.',
     does: ['Creates a review report.'],
     doesNot: ['Create an audit package.'],
     examples: ['/review'],

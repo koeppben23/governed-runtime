@@ -486,7 +486,7 @@ When reviewing changes, MUST verify:
  *   - IMPLEMENTATION: detected stack + testing fundamentals + examples + negative test matrix
  *   - IMPL_REVIEW: detected stack + examples + review checklist
  *   - EVIDENCE_REVIEW: review checklist
- *   - REVIEW: detected stack + examples + review checklist
+ *   - PEER_REVIEW: detected stack + examples + review checklist
  */
 export const profileRuleContent: PhaseInstructions = {
   base: BASE_CONTENT,
@@ -513,7 +513,7 @@ export const profileRuleContent: PhaseInstructions = {
       '\n\n---\n\n' +
       REVIEW_CHECKLIST,
     EVIDENCE_REVIEW: REVIEW_CHECKLIST,
-    REVIEW:
+    PEER_REVIEW:
       DETECTED_STACK_INSTRUCTION +
       '\n\n---\n\n' +
       FEW_SHOT_EXAMPLES +

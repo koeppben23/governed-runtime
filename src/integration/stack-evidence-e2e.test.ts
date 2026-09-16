@@ -236,7 +236,7 @@ describe('stack-evidence E2E', () => {
       expect(state).not.toBeNull();
 
       // Phases that MUST include the rule
-      for (const phase of ['PLAN', 'IMPLEMENTATION', 'IMPL_REVIEW', 'REVIEW'] as const) {
+      for (const phase of ['PLAN', 'IMPLEMENTATION', 'IMPL_REVIEW', 'PEER_REVIEW'] as const) {
         await writeState(sessDir, {
           ...state!,
           phase,

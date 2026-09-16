@@ -69,7 +69,7 @@ describe('commands', () => {
         'EXPORT_READY',
         'ARCHITECTURE',
         'ARCH_REVIEW',
-        'REVIEW',
+        'PEER_REVIEW',
       ];
       for (const phase of phases) {
         expect(isCommandAllowed(phase, Command.HYDRATE)).toBe(true);
@@ -93,8 +93,8 @@ describe('commands', () => {
         'ARCHITECTURE',
         'ARCH_REVIEW',
         'ARCH_COMPLETE',
-        'REVIEW',
-        'REVIEW_COMPLETE',
+        'PEER_REVIEW',
+        'PEER_REVIEW_COMPLETE',
       ];
       for (const phase of blockedPhases) {
         expect(isCommandAllowed(phase, Command.TICKET)).toBe(false);
@@ -113,8 +113,8 @@ describe('commands', () => {
         'COMPLETE',
         'ARCH_REVIEW',
         'ARCH_COMPLETE',
-        'REVIEW',
-        'REVIEW_COMPLETE',
+        'PEER_REVIEW',
+        'PEER_REVIEW_COMPLETE',
       ];
       for (const phase of blockedPhases) {
         expect(isCommandAllowed(phase, Command.ARCHITECTURE)).toBe(false);
@@ -135,8 +135,8 @@ describe('commands', () => {
         'ARCHITECTURE',
         'ARCH_REVIEW',
         'ARCH_COMPLETE',
-        'REVIEW',
-        'REVIEW_COMPLETE',
+        'PEER_REVIEW',
+        'PEER_REVIEW_COMPLETE',
       ];
       for (const phase of blockedPhases) {
         expect(isCommandAllowed(phase, Command.REVIEW)).toBe(false);
@@ -185,8 +185,8 @@ describe('commands', () => {
         'ARCHITECTURE',
         'ARCH_REVIEW',
         'ARCH_COMPLETE',
-        'REVIEW',
-        'REVIEW_COMPLETE',
+        'PEER_REVIEW',
+        'PEER_REVIEW_COMPLETE',
       ];
       for (const phase of blockedPhases) {
         expect(isCommandAllowed(phase, Command.PLAN)).toBe(false);
@@ -200,7 +200,7 @@ describe('commands', () => {
       const terminals: Phase[] = [
         'COMPLETE',
         'ARCH_COMPLETE',
-        'REVIEW_COMPLETE',
+        'PEER_REVIEW_COMPLETE',
         'REJECTED',
         'ABORTED',
       ];
@@ -256,7 +256,7 @@ describe('commands', () => {
         'EVIDENCE_REVIEW',
         'ARCHITECTURE',
         'ARCH_REVIEW',
-        'REVIEW',
+        'PEER_REVIEW',
       ];
       const expectedAllowed: Record<Command, readonly Phase[] | '*'> = {
         [Command.HYDRATE]: '*',

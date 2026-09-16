@@ -1,6 +1,6 @@
 /**
  * @module integration/tools/review-tool/obligation-creation
- * @description Creation and re-invocation of standalone review obligations.
+ * @description Creation and re-invocation of peer review obligations.
  *
  * Owns how a content-aware /review call becomes a durable obligation with a
  * bindable attempt, including the repair path that re-arms an attempt for an
@@ -83,7 +83,7 @@ async function createNewReviewObligation(
   if (!reviewSubject || !preparedContent) {
     return {
       blocked: formatBlocked('REVIEW_SUBJECT_NOT_MATERIALIZED', {
-        reason: 'Standalone review requires a frozen subject before creating an obligation.',
+        reason: 'Peer review requires a frozen subject before creating an obligation.',
       }),
     };
   }

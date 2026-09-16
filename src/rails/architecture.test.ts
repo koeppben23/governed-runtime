@@ -171,7 +171,7 @@ describe('executeArchitecture', () => {
     });
 
     it('blocks from terminal phases', () => {
-      for (const phase of ['COMPLETE', 'ARCH_COMPLETE', 'REVIEW_COMPLETE'] as const) {
+      for (const phase of ['COMPLETE', 'ARCH_COMPLETE', 'PEER_REVIEW_COMPLETE'] as const) {
         const state = makeState(phase);
         const result = executeArchitecture(state, VALID_INPUT, ctx);
         expect(result.kind).toBe('blocked');

@@ -299,7 +299,7 @@ export function selectReviewerProfileRules(
       }
     | null
     | undefined,
-  phase: 'PLAN_REVIEW' | 'IMPL_REVIEW' | 'ARCH_REVIEW' | 'REVIEW',
+  phase: 'PLAN_REVIEW' | 'IMPL_REVIEW' | 'ARCH_REVIEW' | 'PEER_REVIEW',
 ): { profileName?: string; profileRules?: string } {
   if (!activeProfile) return {};
   return {

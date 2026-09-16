@@ -224,7 +224,7 @@ function reviewCardInvocationFields(
   };
 }
 
-function buildStandaloneReviewCard(
+function buildPeerReviewCard(
   input: {
     result: StartedReviewResult;
     finalState: SessionState;
@@ -258,7 +258,7 @@ function buildStandaloneReviewCard(
   );
 }
 
-async function materializeStandaloneReviewCard(input: {
+async function materializePeerReviewCard(input: {
   sessDir: string;
   result: StartedReviewResult;
   reviewCard: string;
@@ -344,19 +344,19 @@ export async function buildReviewCompletionResponse(input: {
     worktree,
     validatedReviewObligation,
   } = input;
-  const reviewCard = buildStandaloneReviewCard({
+  const reviewCard = buildPeerReviewCard({
     result,
     finalState,
     report,
     validatedReviewObligation,
   });
-  const artifactWarning = await materializeStandaloneReviewCard({
+  const artifactWarning = await materializePeerReviewCard({
     sessDir,
     result,
     reviewCard,
     validatedReviewObligation,
   });
-  const presentationMarkdown = buildStandaloneReviewCard(
+  const presentationMarkdown = buildPeerReviewCard(
     { result, finalState, report, validatedReviewObligation },
     { glyphProfile: (await readConfig(worktree)).presentation.opencode.glyphProfile },
   );

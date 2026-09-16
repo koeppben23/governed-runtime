@@ -1,7 +1,7 @@
 /**
  * @module evidence-review
  * @description Review findings, obligations, invocation evidence, assurance,
- *              completeness report, review decision, and standalone review report schemas.
+ *              completeness report, review decision, and peer review report schemas.
  *
  * @version v1
  */
@@ -72,7 +72,7 @@ import {
   refineObligationRepositoryAuthorityCoherence,
   refineRepositoryEvidenceFreezeCoherence,
   refineReviewMaterialSubject,
-  refineStandaloneSubject,
+  refinePeerReviewSubject,
 } from './evidence-review-refinements.js';
 import {
   refineAssuranceAttemptLineageCoherence,
@@ -426,7 +426,7 @@ export const ReviewObligation = z
     reviewMaterial: ReviewMaterial,
     reviewSubject: FrozenReviewSubject.optional(),
     /**
-     * Input-fingerprint generation. `v2` for standalone review obligations;
+     * Input-fingerprint generation. `v2` for peer review obligations;
      * absent for artifact flows (plan/architecture/implement) that do not
      * participate in input-fingerprint matching.
      */
@@ -455,7 +455,7 @@ export const ReviewObligation = z
     maxReviewerAttempts: z.number().int().min(0).max(5),
   })
   .strict()
-  .superRefine(refineStandaloneSubject)
+  .superRefine(refinePeerReviewSubject)
   .superRefine(refineReviewMaterialSubject)
   .superRefine(refineAuthorityStructure)
   .superRefine(refineObligationRepositoryAuthorityCoherence)

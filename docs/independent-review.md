@@ -421,7 +421,7 @@ against the obligation's `allowedEvidenceRefs`, and each challenge's
 `obligationId` must equal the active obligation (`expectedObligationId`). This
 obligation-scoping applies to **every** challenge-bearing obligation type —
 plan/architecture `design_challenge`, implement `implementation_challenge`, and
-standalone review `content_challenge` — not to implementation alone. For
+peer review `content_challenge` — not to implementation alone. For
 implementation challenges the allowed set additionally binds an `outcome='pass'`
 challenge to a validation attempt for the **current** implementation digest — a
 stale, failed, foreign, or wrong-obligation reference is rejected with

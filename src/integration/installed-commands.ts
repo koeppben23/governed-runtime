@@ -206,7 +206,7 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     target: { toolName: TOOL_FLOWGUARD_REVIEW, workflowCommand: Command.REVIEW },
     visibility: 'primary',
     presentationGroup: 'review',
-    description: 'Start a standalone compliance review.',
+    description: 'Start a peer review.',
     intent: 'rerun_review',
   },
   {

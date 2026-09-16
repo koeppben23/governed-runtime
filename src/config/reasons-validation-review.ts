@@ -568,7 +568,7 @@ export const REVIEW_VALIDATION_REASONS = [
     code: 'REVIEW_SUBJECT_NOT_MATERIALIZED',
     category: 'state',
     messageTemplate:
-      'Standalone review cannot create obligation {obligationId} because the reviewed subject was not materialized and frozen.',
+      'Peer review cannot create obligation {obligationId} because the reviewed subject was not materialized and frozen.',
     recoverySteps: [
       'Provide exactly one supported review source and resolve it successfully',
       'Do not create or continue a review obligation until immutable subject material is available',

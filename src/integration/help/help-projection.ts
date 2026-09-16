@@ -315,7 +315,7 @@ function projectRecommendationQuality(
     return {
       quality: 'not_applicable',
       advisoryStatus: 'not_applicable',
-      summary: 'No current standalone review recommendation is available.',
+      summary: 'No current peer review recommendation is available.',
     };
   }
   switch (reportResolution.report.overallStatus) {
@@ -335,7 +335,7 @@ function projectRecommendationQuality(
       return {
         quality: 'issues',
         advisoryStatus: 'changes_required',
-        summary: 'Standalone review found issues. Changes are recommended but do not block export.',
+        summary: 'Peer review found issues. Changes are recommended but do not block export.',
       };
   }
 }

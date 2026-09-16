@@ -1288,7 +1288,7 @@ describe('evidence-review', () => {
         schemaVersion: 'flowguard-review-report.v1' as const,
         sessionId: FIXED_UUID,
         generatedAt: FIXED_TIME,
-        phase: 'REVIEW_COMPLETE',
+        phase: 'PEER_REVIEW_COMPLETE',
         planDigest: null,
         implDigest: null,
         validationSummary: [],
@@ -1296,7 +1296,7 @@ describe('evidence-review', () => {
         overallStatus: 'clean' as const,
         completeness: {
           sessionId: FIXED_UUID,
-          phase: 'REVIEW_COMPLETE',
+          phase: 'PEER_REVIEW_COMPLETE',
           policyMode: 'team',
           overallComplete: true,
           slots: [],
@@ -1533,7 +1533,7 @@ describe('evidence-review', () => {
       expect(result.error?.issues.map((issue) => issue.path.join('.'))).toContain('subjectDigest');
     });
 
-    it('requires a frozen subject and matching subjectDigest for standalone reviews', () => {
+    it('requires a frozen subject and matching subjectDigest for peer reviews', () => {
       const base = {
         obligationId: FIXED_UUID,
         obligationType: 'review' as const,

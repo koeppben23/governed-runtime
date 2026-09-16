@@ -14,7 +14,7 @@
  *
  * Phase classification:
  * - READY: command-driven → returns "pending" (waiting for user to select a flow)
- * - Terminal (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE): returns "terminal"
+ * - Terminal (COMPLETE, ARCH_COMPLETE, PEER_REVIEW_COMPLETE): returns "terminal"
  * - User Gates (PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW): returns "waiting" or auto-approve
  * - Guard-based: evaluates guards top-to-bottom, first match wins
  *

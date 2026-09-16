@@ -146,7 +146,7 @@ describe('integration/review-assurance', () => {
     });
   });
 
-  describe('standalone review material', () => {
+  describe('peer review material', () => {
     it('keeps the obligation material authoritative across a dispatch recovery attempt', () => {
       const materialDigest = hashText('line one\nline two\n');
       const subjectDigest = hashText(`content:${materialDigest}`);

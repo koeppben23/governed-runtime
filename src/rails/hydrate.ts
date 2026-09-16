@@ -335,7 +335,7 @@ function buildNewHydrateState(
     implReview: null,
     reviewDecision: null,
     reviewReportPath: null,
-    standaloneReviewEvidence: [],
+    peerReviewEvidence: [],
     nextAdrNumber: 1,
     activeProfile,
     activeChecks,

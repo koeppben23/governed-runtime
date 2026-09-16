@@ -125,7 +125,7 @@ author's declared `claimedTaskClass`: TRIVIAL requires 0 challenges, STANDARD
 requires 1, and HIGH-RISK requires 2. A change declared HIGH-RISK therefore keeps
 its challenge requirement even if its declared paths look doc-only. Plan and
 architecture obligations require `design_challenge` evidence, implementation
-obligations require `implementation_challenge`, and standalone review obligations
+obligations require `implementation_challenge`, and peer review obligations
 require `content_challenge` (whose coverage is derived from the reviewed diff, not
 the session's task-class claim). The obligation stores the resolved count, kind,
 and policy version before reviewer invocation. The required challenges must be

@@ -61,8 +61,8 @@ const ALL_PHASES = [
   'ARCHITECTURE',
   'ARCH_REVIEW',
   'ARCH_COMPLETE',
-  'REVIEW',
-  'REVIEW_COMPLETE',
+  'PEER_REVIEW',
+  'PEER_REVIEW_COMPLETE',
 ] as const;
 const TICKET_FLOW_PHASES = [
   'READY',
@@ -76,7 +76,7 @@ const TICKET_FLOW_PHASES = [
   'COMPLETE',
 ] as const;
 const ARCH_FLOW_PHASES = ['READY', 'ARCHITECTURE', 'ARCH_REVIEW', 'ARCH_COMPLETE'] as const;
-const REVIEW_FLOW_PHASES = ['READY', 'REVIEW', 'REVIEW_COMPLETE'] as const;
+const REVIEW_FLOW_PHASES = ['READY', 'PEER_REVIEW', 'PEER_REVIEW_COMPLETE'] as const;
 
 function makeMinimalState(phase: SessionState['phase'] = 'READY'): SessionState {
   return {
@@ -175,10 +175,10 @@ describe('proofGraph — persisted coverage summary', () => {
   });
 
   it('separates advisory hypotheses from contract coverage so both stay readable', () => {
-    // A standalone review contributes hypotheses without declaring a contract.
+    // A peer review contributes hypotheses without declaring a contract.
     // Reporting NOT_DECLARED next to a non-zero claimCount is only coherent when
     // the two populations are counted separately (#762).
-    const state = makeMinimalState('REVIEW_COMPLETE');
+    const state = makeMinimalState('PEER_REVIEW_COMPLETE');
     const projection = buildStatusProjection(
       {
         ...state,
@@ -351,7 +351,7 @@ describe('buildStatusProjection — CORNER', () => {
   const TERMINAL_DIRECTIVE_CODES: Record<string, WorkflowDirectiveCode> = {
     COMPLETE: 'WORKFLOW_COMPLETE',
     ARCH_COMPLETE: 'ARCHITECTURE_COMPLETE',
-    REVIEW_COMPLETE: 'PEER_REVIEW_COMPLETE',
+    PEER_REVIEW_COMPLETE: 'PEER_REVIEW_COMPLETE',
     REJECTED: 'WORKFLOW_REJECTED',
     ABORTED: 'WORKFLOW_ABORTED',
   };
@@ -498,8 +498,8 @@ describe('buildBlockedProjection — ProofGraph gate', () => {
 describe('buildStatusProjection — EDGE evidence', () => {
   const policy = getPolicyPreset('solo');
 
-  it('should count all zero when no slots required (REVIEW flow)', () => {
-    const state = makeMinimalState('REVIEW_COMPLETE');
+  it('should count all zero when no slots required (PEER_REVIEW flow)', () => {
+    const state = makeMinimalState('PEER_REVIEW_COMPLETE');
     const projection = buildStatusProjection(state, policy);
 
     expect(projection.evidenceSummary.present).toBe(0);
@@ -569,8 +569,8 @@ describe('buildEvidenceDetailProjection — HAPPY', () => {
     expect(typeof detail.fourEyes.detail).toBe('string');
   });
 
-  it('should have no slots for REVIEW flow', () => {
-    const state = makeMinimalState('REVIEW');
+  it('should have no slots for PEER_REVIEW flow', () => {
+    const state = makeMinimalState('PEER_REVIEW');
     const detail = buildEvidenceDetailProjection(state);
 
     expect(detail.slots).toHaveLength(0);

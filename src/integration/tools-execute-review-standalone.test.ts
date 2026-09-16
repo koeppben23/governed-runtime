@@ -56,7 +56,7 @@ import {
 import { completedDispatchForInvocation } from '../state/evidence-test-constants.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
 
-/** Test predicate for source-tagged standalone review report findings. */
+/** Test predicate for source-tagged peer review report findings. */
 function hasMaterialFinding(
   findings: Array<Record<string, unknown>>,
   message: string,
@@ -411,7 +411,7 @@ describe('review (standalone flow)', () => {
     it('content-aware review with PR number succeeds with bound structured evidence', async () => {
       const result = await submitContentReview({ prNumber: 123, inputOrigin: 'pr' });
       expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('REVIEW_COMPLETE');
+      expect(result.phase).toBe('PEER_REVIEW_COMPLETE');
       expect(result.status).toBe('Review flow complete. Report generated.');
       expect(result.findingsCount).toBeGreaterThanOrEqual(0);
       expect(result.reviewSubject).toMatchObject({
@@ -423,7 +423,7 @@ describe('review (standalone flow)', () => {
     it('content-aware review with branch succeeds with bound structured evidence', async () => {
       const result = await submitContentReview({ branch: 'feature-auth', inputOrigin: 'branch' });
       expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('REVIEW_COMPLETE');
+      expect(result.phase).toBe('PEER_REVIEW_COMPLETE');
       expect(result.reviewSubject).toMatchObject({
         kind: 'repository_change',
         source: { kind: 'branch', branch: 'feature-auth' },
@@ -502,7 +502,7 @@ describe('review (standalone flow)', () => {
           ctx,
         ),
       );
-      expect(result).toMatchObject({ phase: 'REVIEW_COMPLETE' });
+      expect(result).toMatchObject({ phase: 'PEER_REVIEW_COMPLETE' });
       const afterSubmit = (await readState(await currentSessionDir()))!;
       const invocation = afterSubmit.reviewAssurance!.invocations.find(
         (item) => item.obligationId === obligationId,
@@ -684,7 +684,7 @@ describe('review (standalone flow)', () => {
 
       // 2. Must NOT reach REVIEW_COMPLETE (no phase field on a blocked result,
       //    or phase should NOT be REVIEW_COMPLETE).
-      expect(result.phase).not.toBe('REVIEW_COMPLETE');
+      expect(result.phase).not.toBe('PEER_REVIEW_COMPLETE');
       expect(result.reviewCard).toBeUndefined();
     });
 
@@ -694,7 +694,7 @@ describe('review (standalone flow)', () => {
         inputOrigin: 'external_reference',
       });
       expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('REVIEW_COMPLETE');
+      expect(result.phase).toBe('PEER_REVIEW_COMPLETE');
       expect(result.reviewSubject).toMatchObject({
         kind: 'content',
         source: { kind: 'url' },
@@ -707,7 +707,7 @@ describe('review (standalone flow)', () => {
         inputOrigin: 'manual_text',
       });
       expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('REVIEW_COMPLETE');
+      expect(result.phase).toBe('PEER_REVIEW_COMPLETE');
       expect(result.reviewSubject).toMatchObject({
         kind: 'content',
         source: { kind: 'inline', mediaType: 'text' },
@@ -719,7 +719,7 @@ describe('review (standalone flow)', () => {
       const obligationId = await obtainObligationUuid(content);
       const sessDir = await currentSessionDir();
       const preparedState = await readState(sessDir);
-      const preparedEvidence = preparedState!.standaloneReviewEvidence;
+      const preparedEvidence = preparedState!.peerReviewEvidence;
 
       expect(preparedEvidence).toHaveLength(1);
       expect(preparedEvidence[0]).toMatchObject({
@@ -748,7 +748,7 @@ describe('review (standalone flow)', () => {
       await bindHostTaskReviewEvidence(obligationId, buildAnalysisFindings('accept', obligationId));
       await review.execute({ ...content, reviewObligationId: obligationId }, ctx);
       const completedState = await readState(sessDir);
-      const completedEvidence = completedState!.standaloneReviewEvidence;
+      const completedEvidence = completedState!.peerReviewEvidence;
 
       expect(completedEvidence).toHaveLength(2);
       expect(completedEvidence[0]).toEqual(preparedEvidence[0]);
@@ -771,7 +771,7 @@ describe('review (standalone flow)', () => {
       const result = parseToolResult(raw);
 
       expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('REVIEW_COMPLETE');
+      expect(result.phase).toBe('PEER_REVIEW_COMPLETE');
       expect(result.status).toBe('Review flow complete. Report generated.');
     });
 
@@ -809,7 +809,7 @@ describe('review (standalone flow)', () => {
     it('PR number with bound structured evidence (subagent found no issues)', async () => {
       const result = await submitContentReview({ prNumber: 456, inputOrigin: 'pr' });
       expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('REVIEW_COMPLETE');
+      expect(result.phase).toBe('PEER_REVIEW_COMPLETE');
     });
 
     it('BLOCKED: review in wrong phase (not READY)', async () => {
@@ -832,7 +832,7 @@ describe('review (standalone flow)', () => {
         inputOrigin: 'mixed',
       });
       expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('REVIEW_COMPLETE');
+      expect(result.phase).toBe('PEER_REVIEW_COMPLETE');
       expect(result.reviewSubject).toMatchObject({
         kind: 'content',
         source: { kind: 'inline', mediaType: 'text' },
@@ -867,7 +867,7 @@ describe('review (standalone flow)', () => {
         ],
       });
       expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('REVIEW_COMPLETE');
+      expect(result.phase).toBe('PEER_REVIEW_COMPLETE');
       expect(result.reviewSubject).toMatchObject({
         kind: 'repository_change',
         source: { kind: 'pull_request', pullRequestNumber: 123 },
@@ -887,7 +887,7 @@ describe('review (standalone flow)', () => {
       );
 
       expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('REVIEW_COMPLETE');
+      expect(result.phase).toBe('PEER_REVIEW_COMPLETE');
       expect(result.overallStatus).toBeDefined();
       expect(result.completeness).toBeDefined();
       expect(result.findings).toBeDefined();
@@ -915,7 +915,7 @@ describe('review (standalone flow)', () => {
       const result = parseToolResult(raw);
 
       expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('REVIEW_COMPLETE');
+      expect(result.phase).toBe('PEER_REVIEW_COMPLETE');
       expect(result.status).toContain('Review flow complete');
     });
 
@@ -965,7 +965,7 @@ describe('review (standalone flow)', () => {
         );
 
         expect(result.error).toBeUndefined();
-        expect(result.phase).toBe('REVIEW_COMPLETE');
+        expect(result.phase).toBe('PEER_REVIEW_COMPLETE');
         const mapped = result.findings as Array<Record<string, unknown>>;
         expect(
           hasMaterialFinding(
@@ -988,7 +988,7 @@ describe('review (standalone flow)', () => {
         const result = parseToolResult(raw);
 
         expect(result.error).toBeUndefined();
-        expect(result.phase).toBe('REVIEW_COMPLETE');
+        expect(result.phase).toBe('PEER_REVIEW_COMPLETE');
         expect(result.requiredReviewAttestation).toBeUndefined();
       });
     });
@@ -1098,7 +1098,7 @@ describe('review (standalone flow)', () => {
         );
         const result1 = parseToolResult(raw1);
         expect(result1.error).toBeUndefined();
-        expect(result1.phase).toBe('REVIEW_COMPLETE');
+        expect(result1.phase).toBe('PEER_REVIEW_COMPLETE');
 
         // Step 2: Re-submit the SAME (now consumed) UUID.
         // The obligation was consumed on success — this must be rejected.
@@ -1182,7 +1182,7 @@ describe('review (standalone flow)', () => {
       it('C2: empty finding arrays (subagent found no issues) are accepted', async () => {
         const result = await submitContentReview({ prNumber: 99, inputOrigin: 'pr' }, 'accept');
         expect(result.error).toBeUndefined();
-        expect(result.phase).toBe('REVIEW_COMPLETE');
+        expect(result.phase).toBe('PEER_REVIEW_COMPLETE');
       });
     });
 
@@ -1294,7 +1294,7 @@ describe('review (standalone flow)', () => {
         );
         const result = parseToolResult(raw);
         expect(result.error).toBeUndefined();
-        expect(result.phase).toBe('REVIEW_COMPLETE');
+        expect(result.phase).toBe('PEER_REVIEW_COMPLETE');
         expect(result.reviewSubject).toMatchObject({
           kind: 'repository_change',
           source: { kind: 'pull_request', pullRequestNumber: 42 },
@@ -1403,7 +1403,7 @@ describe('review (standalone flow)', () => {
         // and no passing findings may be recorded.
         const obligation = state.reviewAssurance?.obligations.find((o) => o.obligationId === uuid);
         expect(obligation?.status).not.toBe('consumed');
-        expect(state.standaloneReviewFindings ?? []).toHaveLength(0);
+        expect(state.peerReviewFindings ?? []).toHaveLength(0);
       });
 
       it('H5: obligation is consumed after successful /review', async () => {
@@ -1529,7 +1529,7 @@ describe('review (standalone flow)', () => {
         expect(typeof result.reviewCard).toBe('string');
         const card = result.reviewCard as string;
         expect(card).toContain('# FlowGuard Review Report');
-        expect(card).toContain('Review complete');
+        expect(card).toContain('Peer review complete');
         expect(result.presentation).toEqual({ markdown: card });
 
         const { computeFingerprint, sessionDir: resolveSessionDir } =
@@ -1547,8 +1547,8 @@ describe('review (standalone flow)', () => {
 
         const reportRaw = await fs.readFile(`${sessDir}/review-report.json`, 'utf-8');
         const report = JSON.parse(reportRaw) as Record<string, unknown>;
-        expect(report.phase).toBe('REVIEW_COMPLETE');
-        expect((report.completeness as Record<string, unknown>).phase).toBe('REVIEW_COMPLETE');
+        expect(report.phase).toBe('PEER_REVIEW_COMPLETE');
+        expect((report.completeness as Record<string, unknown>).phase).toBe('PEER_REVIEW_COMPLETE');
       });
     });
   });
@@ -1585,7 +1585,7 @@ describe('review (standalone flow)', () => {
       expect(typeof result).toBe('string');
       const parsed = parseToolResult(result);
       expect(parsed.error).toBeUndefined();
-      expect(parsed.phase).toBe('REVIEW_COMPLETE');
+      expect(parsed.phase).toBe('PEER_REVIEW_COMPLETE');
     });
 
     it('BYPASS-3: inputOrigin=branch WITH branch field triggers content-aware flow', async () => {

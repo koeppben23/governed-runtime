@@ -12,7 +12,7 @@ import type { FrozenReviewSubject, ReviewObligation } from '../../../state/evide
 import type { ReviewFindings } from '../../../state/evidence.js';
 import type { ReviewAssuranceState } from '../../../state/evidence-review.js';
 import type { ToolContext } from '../helpers.js';
-import type { StandaloneReviewObjective } from '../../../state/standalone-review.js';
+import type { PeerReviewObjective } from '../../../state/peer-review.js';
 
 export type StartedReviewResult = Extract<ReturnType<typeof startReviewFlow>, { kind: 'ok' }>;
 
@@ -54,6 +54,6 @@ export type ReviewToolArgs = {
   url?: string;
   reviewObligationId?: string;
   /** Optional structured objectives; omitted uses the canonical static profile. */
-  objectives?: StandaloneReviewObjective[];
+  objectives?: PeerReviewObjective[];
   targetPaths?: string[];
 };

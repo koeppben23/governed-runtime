@@ -15,7 +15,7 @@
  *     -> evaluated verification state (real evaluator)
  *     -> gate decision (real gate)
  *
- * and the standalone review hypothesis count across its full lifecycle.
+ * and the peer review hypothesis count across its full lifecycle.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -659,7 +659,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
   });
 });
 
-describe('standalone review hypotheses (runtime)', () => {
+describe('peer review hypotheses (runtime)', () => {
   let env: Env | undefined;
   let prevConfig: string | undefined;
   let prevRequire: string | undefined;
@@ -706,7 +706,7 @@ describe('standalone review hypotheses (runtime)', () => {
     };
   }
 
-  /** Bind host-captured structured findings to the standalone review obligation. */
+  /** Bind host-captured structured findings to the peer review obligation. */
   async function bindStructuredReviewEvidence(
     reviewEnv: Env,
     obligationId: string,
@@ -717,7 +717,7 @@ describe('standalone review hypotheses (runtime)', () => {
     const obligation = assurance?.obligations.find((o) => o.obligationId === obligationId);
     const attempt = assurance?.attempts.find((a) => a.obligationId === obligationId);
     if (!state || !assurance || !obligation || !attempt) {
-      throw new Error('standalone review evidence requires a pending obligation and attempt');
+      throw new Error('peer review evidence requires a pending obligation and attempt');
     }
     const invocation = buildInvocationEvidence({
       obligationId,
@@ -816,13 +816,11 @@ describe('standalone review hypotheses (runtime)', () => {
     );
 
     const completed = await readState(env.sDir);
-    expect(completed!.phase).toBe('REVIEW_COMPLETE');
+    expect(completed!.phase).toBe('PEER_REVIEW_COMPLETE');
 
     // Preparation and completion must bind to ONE evidence chain. A second
     // prepared entry would duplicate every hypothesis claim in the projection.
-    const prepared_entries = completed!.standaloneReviewEvidence.filter(
-      (e) => e.kind === 'prepared',
-    );
+    const prepared_entries = completed!.peerReviewEvidence.filter((e) => e.kind === 'prepared');
     expect(prepared_entries).toHaveLength(1);
     expect(completed!.proofGraph?.claims).toHaveLength(3);
     expect(

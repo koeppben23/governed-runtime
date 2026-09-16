@@ -16,10 +16,10 @@ READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → 
 READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE
 ```
 
-### Review Flow (Compliance Report)
+### Peer Review Flow
 
 ```
-READY → REVIEW → REVIEW_COMPLETE
+READY → PEER_REVIEW → PEER_REVIEW_COMPLETE
 ```
 
 ## Flow Diagram
@@ -32,11 +32,11 @@ stateDiagram-v2
 
     state "TICKET FLOW" as TF
     state "ARCH FLOW" as AF
-    state "REVIEW FLOW" as RF
+    state "PEER REVIEW FLOW" as RF
 
     READY --> TICKET : /task
     READY --> ARCHITECTURE : /architecture
-    READY --> REVIEW : /review
+    READY --> PEER_REVIEW : /review
 
     TICKET --> PLAN : auto
     PLAN --> PLAN_REVIEW : review accepted
@@ -79,7 +79,7 @@ stateDiagram-v2
     ARCH_REVIEW --> ARCHITECTURE : changes_requested
     ARCH_REVIEW --> REJECTED : reject
 
-    REVIEW --> REVIEW_COMPLETE : auto
+    PEER_REVIEW --> PEER_REVIEW_COMPLETE : auto
     READY --> ABORTED : abort
 ```
 
@@ -125,10 +125,10 @@ stateDiagram-v2
 
 ### Peer Review Flow
 
-| Phase           | Description                               | Gate Type |
-| --------------- | ----------------------------------------- | --------- |
-| REVIEW          | Review a foreign target, no approver gate | Automatic |
-| REVIEW_COMPLETE | Peer review report delivered              | Terminal  |
+| Phase                | Description                               | Gate Type |
+| -------------------- | ----------------------------------------- | --------- |
+| PEER_REVIEW          | Review a foreign target, no approver gate | Automatic |
+| PEER_REVIEW_COMPLETE | Peer review report delivered              | Terminal  |
 
 ## Gate Types
 
@@ -309,19 +309,19 @@ governance override gate; the override binds the exact reviewed ADR digest.
 
 Architecture flow complete. ADR is accepted. MADR artifact is written. Can be archived with `/archive`.
 
-### REVIEW
+### PEER_REVIEW
 
 **Entry:** `/review` from READY
-**Exit:** Automatic (report generation advances to REVIEW_COMPLETE)
+**Exit:** Automatic (report generation advances to PEER_REVIEW_COMPLETE)
 
 The peer review flow reviews a foreign PR, branch, commit, diff, or text and
 produces findings for another developer. It never mutates the reviewed target
 and has no approval gate; `changes_requested` is a valid review outcome, not a
 workflow instruction.
 
-### REVIEW_COMPLETE
+### PEER_REVIEW_COMPLETE
 
-**Entry:** Automatic from REVIEW (report generated)
+**Entry:** Automatic from PEER_REVIEW (report generated)
 **Exit:** Terminal
 
 Peer review complete. Report delivered. Can be archived with `/archive`.

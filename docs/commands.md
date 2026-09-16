@@ -42,7 +42,7 @@ After `/hydrate`, the session starts in the **READY** phase. Three standalone fl
 | ---------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
 | **Development**  | `/task`         | READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_VALIDATION → IMPL_REVIEW → EVIDENCE_REVIEW → EXPORT_READY → COMPLETE | Full development lifecycle                         |
 | **Architecture** | `/architecture` | READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE                                                                                            | Create an Architecture Decision Record (ADR)       |
-| **Peer review**  | `/review`       | READY → REVIEW → REVIEW_COMPLETE                                                                                                              | Review a foreign PR, branch, commit, diff, or text |
+| **Peer review**  | `/review`       | READY → PEER_REVIEW → PEER_REVIEW_COMPLETE                                                                                                    | Review a foreign PR, branch, commit, diff, or text |
 
 ## Product Commands
 
@@ -117,7 +117,7 @@ It composes existing authorities (the readiness projection, evidence completenes
 
 Difference from `/status --readiness`: `/status --readiness` returns the compact readiness projection; `/finish` additionally derives the single `overallStatus`, the non-normative action guidance, and the exit options as a curated pre-export card. Fail-closed enforcement remains with `/export` and the existing gates — `/finish` reports a blocker, it does not enforce one.
 
-Available in any phase, including terminal phases (`COMPLETE`, `ARCH_COMPLETE`, `REVIEW_COMPLETE`). When no session exists, `/finish` reports this and recommends `/hydrate`.
+Available in any phase, including terminal phases (`COMPLETE`, `ARCH_COMPLETE`, `PEER_REVIEW_COMPLETE`). When no session exists, `/finish` reports this and recommends `/hydrate`.
 
 `/finish` maps internally to `flowguard_status` with `{ finish: true }`.
 
@@ -342,7 +342,7 @@ Start the peer review flow: review a foreign PR, branch, commit, diff, or text a
 
 **Examples:**
 
-- `/review` — plain compliance report (no external content)
+- `/review` — plain peer review report (no external content)
 - `/review prNumber=42` — content-aware review with PR diff (blocked, agent invokes subagent)
 - `/review prNumber=42 reviewFindings=<ReviewFindings>` — submit subagent findings
 
@@ -387,7 +387,7 @@ session remains in EXPORT_READY and must not be described as complete.
 Emergency session termination. The explicit `ABORT` topology event transitions
 every non-terminal phase to the terminal `ABORTED` position and records
 `error.code = 'ABORTED'`. It is irreversible. Aborting from any terminal phase
-(`COMPLETE`, `ARCH_COMPLETE`, `REVIEW_COMPLETE`, `REJECTED`, or `ABORTED`) is
+(`COMPLETE`, `ARCH_COMPLETE`, `PEER_REVIEW_COMPLETE`, `REJECTED`, or `ABORTED`) is
 an idempotent no-op that preserves state. Aborted sessions remain identifiable
 post-mortem via both `phase === 'ABORTED'` and `state.error.code === 'ABORTED'`.
 

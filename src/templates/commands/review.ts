@@ -1,7 +1,7 @@
 import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 
 export const REVIEW_COMMAND = `---
-description: FlowGuard — Start the standalone compliance review flow (READY -> REVIEW -> REVIEW_COMPLETE).
+description: FlowGuard — Start the peer review flow (READY -> PEER_REVIEW -> PEER_REVIEW_COMPLETE).
 agent: build
 ---
 
@@ -9,7 +9,7 @@ You are managing a FlowGuard-controlled development workflow.
 
 ## Goal
 
-Start the compliance review flow for the current FlowGuard session.
+Start the peer review flow for the current FlowGuard session.
 
 ## Steps
 
@@ -59,7 +59,7 @@ Start the compliance review flow for the current FlowGuard session.
 
 6. If no external content is supplied, call \`flowguard_review\` with optional \`inputOrigin\` and \`references\` only.
 
-7. The tool transitions READY -> REVIEW -> REVIEW_COMPLETE and generates a compliance report.
+7. The tool transitions READY -> PEER_REVIEW -> PEER_REVIEW_COMPLETE and generates a peer review report.
 
 8. Present the report per the Presentation section below.
 
@@ -99,12 +99,12 @@ If repo-dependent claims are made without checking Discovery health/drift, flag 
 ${renderCommandGovernanceRules()}
 ## Done-when
 
-- Compliance report generated and presented.
+- Peer review report generated and presented.
 - If \`presentation.markdown\` is present, it is displayed verbatim; otherwise the legacy \`reviewCard\` is displayed verbatim.
 - External references captured with audit provenance.
 - Discovery health and drift checked before repo-dependent quality claims.
 - Discovery-dependent claims marked NOT_VERIFIED when content could not be correlated to local Discovery.
 - Verification review checked for repo-native candidates vs generic mismatches.
-- Phase has reached REVIEW_COMPLETE.
+- Phase has reached PEER_REVIEW_COMPLETE.
 - The canonical presentation conclusion is the only visible closure.
 `;

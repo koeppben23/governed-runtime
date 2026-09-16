@@ -70,7 +70,7 @@ ignores whether it was ever proven — which contradicts the meaning of
 - only at the `EVIDENCE_REVIEW` human gate, on approval;
 - only for `fact` claims materialized from a valid plan approval certificate;
 - only when the author declared them `critical`;
-- `derived_signal` (architecture) and `hypothesis` (standalone review) claims are
+- `derived_signal` (architecture) and `hypothesis` (peer review) claims are
   never gate-eligible and remain advisory;
 - a session whose implementation has only `ceremony_only` risk triggers is
   unaffected.

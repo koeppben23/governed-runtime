@@ -108,7 +108,7 @@ const STATUS_CONTRACT: readonly StatusContractEntry[] = [
   },
   {
     label: '/archive',
-    phases: ['COMPLETE', 'ARCH_COMPLETE', 'REVIEW_COMPLETE', 'IMPL_REVIEW'],
+    phases: ['COMPLETE', 'ARCH_COMPLETE', 'PEER_REVIEW_COMPLETE', 'IMPL_REVIEW'],
     callShape: 'full',
     requiredTopLevel: ['phase'],
   },
@@ -147,8 +147,8 @@ const ALL_PHASES: readonly Phase[] = [
   'ARCHITECTURE',
   'ARCH_REVIEW',
   'ARCH_COMPLETE',
-  'REVIEW',
-  'REVIEW_COMPLETE',
+  'PEER_REVIEW',
+  'PEER_REVIEW_COMPLETE',
 ];
 
 describe('status-prompt-contract', () => {
