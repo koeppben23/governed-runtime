@@ -34,7 +34,11 @@ import { buildReviewerAgentContent } from './install-helpers.js';
 import { REVIEW_FINDINGS_JSON_SCHEMA } from '../integration/review/findings-schema.js';
 import { ReviewerFindingsInput } from '../state/evidence-review-input.js';
 import { TESTED_OPENCODE_HOST_VERSION } from './opencode-runtime-compat.js';
-import { resolvePinnedOpenCodeHost, type PinnedOpenCodeHost } from './opencode-live-host.js';
+import {
+  createIsolatedOpenCodeEnvironment,
+  resolvePinnedOpenCodeHost,
+  type PinnedOpenCodeHost,
+} from './opencode-live-host.js';
 
 const ROOT = join(fileURLToPath(new URL('../..', import.meta.url)));
 /**
@@ -216,12 +220,7 @@ async function startServe(cwd: string, capturePort: number): Promise<ServeHandle
     {
       cwd,
       env: {
-        ...process.env,
-        ...host.env,
-        HOME: tmpRoot,
-        USERPROFILE: tmpRoot,
-        XDG_CONFIG_HOME: join(tmpRoot, '.config'),
-        XDG_DATA_HOME: join(tmpRoot, '.local', 'share'),
+        ...createIsolatedOpenCodeEnvironment(tmpRoot, host),
         OPENCODE_SERVER_PASSWORD: password,
         FORCE_COLOR: '0',
       },
@@ -318,7 +317,7 @@ describe.skipIf(!CAN_RUN)('OpenCode structured reviewer wire contract (live, pin
       const versionProbe = spawnSync(host.command, [...host.argsPrefix, '--version'], {
         encoding: 'utf8',
         timeout: 60_000,
-        env: { ...process.env, ...host.env },
+        env: createIsolatedOpenCodeEnvironment(tmpRoot, host),
       });
       const reported = (versionProbe.stdout ?? '').trim();
       expect(reported, `pinned host version mismatch (${versionProbe.stderr ?? ''})`).toBe(

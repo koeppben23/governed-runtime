@@ -8,7 +8,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hashText } from '../shared/hashing.js';
 import { FLOWGUARD_MANDATES_KERNEL } from '../templates/mandates.js';
 import { buildMandatesContent } from './templates.js';
-import { resolvePinnedOpenCodeHost, type PinnedOpenCodeHost } from './opencode-live-host.js';
+import {
+  createIsolatedOpenCodeEnvironment,
+  resolvePinnedOpenCodeHost,
+  type PinnedOpenCodeHost,
+} from './opencode-live-host.js';
 
 const EXEC_TIMEOUT_MS = 60_000;
 const ROOT = join(fileURLToPath(new URL('../..', import.meta.url)));
@@ -76,7 +80,7 @@ function writeChatCompletion(response: ServerResponse, streaming: boolean): void
   response.end('data: [DONE]\n\n');
 }
 
-async function runOpenCodeOnce(): Promise<{
+async function runOpenCode(): Promise<{
   requestBody: Record<string, unknown>;
   output: string;
 }> {
@@ -148,14 +152,7 @@ async function runOpenCodeOnce(): Promise<{
         ],
         {
           cwd: tmpRoot,
-          env: {
-            ...process.env,
-            ...host.env,
-            HOME: tmpRoot,
-            USERPROFILE: tmpRoot,
-            XDG_CONFIG_HOME: join(tmpRoot, '.config'),
-            XDG_DATA_HOME: join(tmpRoot, '.local', 'share'),
-          },
+          env: createIsolatedOpenCodeEnvironment(tmpRoot, host),
           stdio: ['ignore', 'pipe', 'pipe'],
         },
       );
@@ -182,23 +179,6 @@ async function runOpenCodeOnce(): Promise<{
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
-}
-
-function isTransientHostError(error: unknown): boolean {
-  return error instanceof Error && error.message.includes('Unexpected server error');
-}
-
-async function runOpenCode(): Promise<{ requestBody: Record<string, unknown>; output: string }> {
-  let transientFailure: Error | null = null;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      return await runOpenCodeOnce();
-    } catch (error) {
-      if (!(error instanceof Error) || !isTransientHostError(error) || attempt === 1) throw error;
-      transientFailure = error;
-    }
-  }
-  throw transientFailure ?? new Error('OpenCode model-visibility probe did not run');
 }
 
 describe('OpenCode installed mandate model visibility', () => {

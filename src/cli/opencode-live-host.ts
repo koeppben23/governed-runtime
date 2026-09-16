@@ -33,6 +33,34 @@ export interface PinnedOpenCodeHost {
   readonly env: Readonly<Record<string, string>>;
 }
 
+/**
+ * Give each real-host smoke process its own OpenCode global directories.
+ * OpenCode uses XDG paths and `os.tmpdir()` for mutable state, so sharing the
+ * parent process values lets parallel probes interfere with one another.
+ */
+export function createIsolatedOpenCodeEnvironment(
+  root: string,
+  host: PinnedOpenCodeHost,
+): NodeJS.ProcessEnv {
+  const configDir = join(root, '.config', 'opencode');
+  mkdirSync(configDir, { recursive: true });
+  return {
+    ...process.env,
+    ...host.env,
+    HOME: root,
+    USERPROFILE: root,
+    OPENCODE_TEST_HOME: root,
+    OPENCODE_CONFIG_DIR: configDir,
+    XDG_CONFIG_HOME: join(root, '.config'),
+    XDG_DATA_HOME: join(root, '.local', 'share'),
+    XDG_CACHE_HOME: join(root, '.cache'),
+    XDG_STATE_HOME: join(root, '.local', 'state'),
+    TMPDIR: root,
+    TMP: root,
+    TEMP: root,
+  };
+}
+
 function installedVersionMatches(version: string): boolean {
   const probe = spawnSync('opencode', ['--version'], {
     encoding: 'utf8',

@@ -24,7 +24,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { resolvePinnedOpenCodeHost, type PinnedOpenCodeHost } from './opencode-live-host.js';
+import {
+  createIsolatedOpenCodeEnvironment,
+  resolvePinnedOpenCodeHost,
+  type PinnedOpenCodeHost,
+} from './opencode-live-host.js';
 
 const EXEC_TIMEOUT_MS = 300_000;
 const ROOT = join(fileURLToPath(new URL('../..', import.meta.url)));
@@ -204,12 +208,7 @@ function runOpenCode(port: number, markerPath: string): Promise<string> {
       {
         cwd: tmpRoot,
         env: {
-          ...process.env,
-          ...host.env,
-          HOME: tmpRoot,
-          USERPROFILE: tmpRoot,
-          XDG_CONFIG_HOME: join(tmpRoot, '.config'),
-          XDG_DATA_HOME: join(tmpRoot, '.local', 'share'),
+          ...createIsolatedOpenCodeEnvironment(tmpRoot, host),
           FG_E2E_MARKER: markerPath,
         },
         stdio: ['ignore', 'pipe', 'pipe'],
