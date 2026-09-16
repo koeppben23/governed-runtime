@@ -42,20 +42,30 @@ Start the peer review flow for the current FlowGuard session.
 3. **Create the review obligation** (content-aware only):
     If content was provided, the FIRST \`flowguard_review\` call MUST carry ONLY the matching
     content field (\`text\`, \`prNumber\`, \`branch\`, or \`url\`), optional \`inputOrigin\`,
-    and optional \`references\`. NEVER include \`reviewVerdict\` or \`reviewFindings\` in this
-     first call — a prefilled verdict is a fabrication-of-convergence attempt and is rejected
-     (\`CONTENT_ANALYSIS_REQUIRED\`). The verdict is submitted only AFTER FlowGuard completes
-     independent review.
+    and optional \`references\`. Do not include reviewer findings in this first call: FlowGuard
+     requires a visible native Task review before the peer review can complete.
 
-4. **Independent Review** (content-aware only): FlowGuard performs and binds the
-   independent review. Never invoke a reviewer yourself, construct reviewer context, or submit
-   \`reviewFindings\`.
+4. **Independent Review** (content-aware only): When \`reviewDispatch.required\` is true and
+   \`reviewDispatch.completed\` is not true:
+   - Require \`reviewInvocation.action === "call_task"\`,
+     \`reviewInvocation.transport === "native_task_structured_followup"\`, and
+     \`reviewInvocation.task.subagentType === "flowguard-reviewer"\`. If any differ, stop;
+     do not invent another transport.
+   - Call the host-native \`task\` tool with \`subagent_type: "flowguard-reviewer"\`,
+     \`description: "FlowGuard independent review"\`, and \`prompt: "FlowGuard independent
+     review"\`. The prompt is transport filler only; FlowGuard replaces it at the before-hook
+     with the exact frozen canonical reviewer prompt. Never paste, reconstruct, or modify the
+     reviewer material yourself.
+   - Wait for the Task call to return normally. Do not run a second reviewer and do not parse its
+     free-form text as findings. FlowGuard captures and binds same-child structured findings.
+   - Require \`reviewExecution.visible === true\`, \`reviewExecution.transcriptNavigable === true\`,
+     and \`reviewExecution.structuredOutput === true\`. Otherwise stop on the returned blocker.
 
 5. Complete content-aware \`flowguard_review\`: when \`reviewDispatch.completed\` is true,
-   call \`flowguard_review\` with the same content fields and matching \`reviewVerdict\`
-   (from \`reviewDispatch.verdict\`). Do not submit, copy, or alter \`reviewFindings\`.
-   If FlowGuard reports a capture or orchestration failure, report its recovery and stop; do not
-   fabricate findings or guess a verdict.
+   call \`flowguard_review({ reviewObligationId })\` with the exact obligation ID from the
+   dispatch. Do not submit, copy, or alter \`reviewFindings\`. If FlowGuard reports
+   \`SUBAGENT_UNABLE_TO_REVIEW\`, a capture failure, or an orchestration failure, report its
+   recovery and stop; do not fabricate findings or guess a verdict.
 
 6. If no external content is supplied, call \`flowguard_review\` with optional \`inputOrigin\` and \`references\` only.
 

@@ -554,6 +554,17 @@ async function projectFulfilledReview(input: {
   });
 }
 
+function projectUnableToReview(output: ToolHookAfterOutput, obligationId: string): void {
+  output.output = strictBlockedOutput('SUBAGENT_UNABLE_TO_REVIEW', { obligationId });
+}
+
+function resolveNativeTaskContext(runtime: FlowGuardPluginRuntime, hookInput: ToolHookAfterInput) {
+  const sessionId = hookInput.sessionID;
+  const callId = hookInput.callID;
+  const sessDir = runtime.ws.getSessionDir(sessionId);
+  return sessDir && callId ? { sessionId, callId, sessDir } : null;
+}
+
 /** Host boundary after native Task: bind same-child structured findings and replace free-form text. */
 export async function nativeReviewTaskAfter(
   runtime: FlowGuardPluginRuntime,
@@ -563,11 +574,9 @@ export async function nativeReviewTaskAfter(
   const hookInput = input as ToolHookAfterInput;
   const hookOutput = output as ToolHookAfterOutput;
   if (!isNativeReviewerTaskAfter(hookInput)) return;
-
-  const sessionId = hookInput.sessionID;
-  const callId = hookInput.callID;
-  const sessDir = runtime.ws.getSessionDir(sessionId);
-  if (!sessDir || !callId) return;
+  const taskContext = resolveNativeTaskContext(runtime, hookInput);
+  if (!taskContext) return;
+  const { sessionId, callId, sessDir } = taskContext;
 
   const lineage = await resolveNativeReviewLineage(runtime, sessDir, callId);
   if (!lineage) {
@@ -625,6 +634,10 @@ export async function nativeReviewTaskAfter(
       { runtime, sessDir, callId, output: hookOutput, code: '', reason: '' },
       result,
     );
+    return;
+  }
+  if (validation.findings.overallVerdict === 'unable_to_review') {
+    projectUnableToReview(hookOutput, lineage.obligation.obligationId);
     return;
   }
 

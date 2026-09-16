@@ -33,4 +33,25 @@ describe('peer review retry signal', () => {
       obligationId,
     });
   });
+
+  it('clears the peer pending record when the bound obligation completes', () => {
+    const state = createSessionState();
+    const obligationId = '33333333-1111-4111-8111-111111111111';
+    state.pendingReviews.set('flowguard_review', {
+      tool: 'flowguard_review',
+      requestedAt: NOW,
+      attemptId: '33333333-2222-4111-8111-111111111111',
+      obligationId,
+    });
+
+    onFlowGuardToolAfter(
+      state,
+      'flowguard_review',
+      { reviewObligationId: obligationId },
+      JSON.stringify({ phase: 'PEER_REVIEW_COMPLETE' }),
+      NOW,
+    );
+
+    expect(state.pendingReviews.has('flowguard_review')).toBe(false);
+  });
 });

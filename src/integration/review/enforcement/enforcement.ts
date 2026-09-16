@@ -50,6 +50,8 @@ import {
   type ReviewableTool,
 } from '../obligation-tools.js';
 import { parseToolResult } from '../../plugin-helpers.js';
+import { TOOL_FLOWGUARD_REVIEW } from '../../tool-names.js';
+import { isTerminalPhase } from '../../../machine/topology.js';
 
 // ─── State factory ───────────────────────────────────────────────────────────
 
@@ -125,7 +127,12 @@ function clearSubmittedReview(
 ): void {
   const hasSelfReviewVerdict =
     typeof args.reviewVerdict === 'string' && args.reviewVerdict.length > 0;
-  if (hasSelfReviewVerdict && parsed.error !== true) {
+  const completedPeerReview =
+    obligationTool === TOOL_FLOWGUARD_REVIEW &&
+    typeof args.reviewObligationId === 'string' &&
+    typeof parsed.phase === 'string' &&
+    isTerminalPhase(parsed.phase);
+  if ((hasSelfReviewVerdict || completedPeerReview) && parsed.error !== true) {
     if (obligationTool) state.pendingReviews.delete(obligationTool);
   }
 }

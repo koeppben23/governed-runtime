@@ -11,6 +11,7 @@ import type { ReviewObligationType } from '../../state/evidence.js';
 import type { ReviewInvocationEvidence } from '../../state/evidence-review-invocation.js';
 import {
   appendInvocationEvidence,
+  consumeReviewObligation,
   buildInvocationEvidence,
   ensureReviewAssurance,
   fulfillObligation,
@@ -122,6 +123,21 @@ function resolveEvidenceLineage(
   return { attemptId: attempt.attemptId };
 }
 
+function settleBoundEvidence(
+  assurance: ReturnType<typeof ensureReviewAssurance>,
+  obligation: Parameters<typeof consumeReviewObligation>[1],
+  params: SdkEvidenceParams,
+  invocationId: string,
+  now: string,
+): ReturnType<typeof ensureReviewAssurance> {
+  const unableToReview =
+    params.obligationType === 'review' &&
+    params.reviewerResult.findings.overallVerdict === 'unable_to_review';
+  return unableToReview
+    ? consumeReviewObligation(assurance, obligation, now, invocationId)
+    : fulfillObligation(assurance, params.obligationId, invocationId, now);
+}
+
 function applyEvidenceMutation(
   state: SessionState,
   now: string,
@@ -173,8 +189,8 @@ function applyEvidenceMutation(
     params.fulfilledAt,
     { childSessionId: params.childSessionId },
   );
-  // Attempt binding, invocation evidence, dispatch completion, and obligation
-  // fulfillment are ONE mutation: the ledger can never diverge from evidence.
+  // Attempt binding, invocation evidence, and dispatch completion are ONE
+  // mutation: the ledger can never diverge from evidence.
   const withBoundDispatch = params.authorizedHostCallId
     ? rebindReviewDispatchHostCall(boundAssurance, params.authorizedHostCallId, params.hostCallId)
     : boundAssurance;
@@ -188,9 +204,10 @@ function applyEvidenceMutation(
   };
   return {
     ...withInvocation,
-    reviewAssurance: fulfillObligation(
+    reviewAssurance: settleBoundEvidence(
       withInvocation.reviewAssurance,
-      params.obligationId,
+      obligation,
+      params,
       invocation.invocationId,
       now,
     ),
