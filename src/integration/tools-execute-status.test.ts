@@ -710,6 +710,7 @@ describe('status', () => {
           maxReviewerAttempts: 1,
         },
         obligationType: 'architecture',
+        reviewCycle: 1,
         iteration: 0,
         planVersion: 1,
         now: '2026-01-01T00:00:00.000Z',
@@ -778,6 +779,7 @@ describe('status', () => {
         },
         selfReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: 'adr-digest-reviewed',
           currDigest: 'adr-digest-current',

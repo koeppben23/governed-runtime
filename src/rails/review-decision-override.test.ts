@@ -64,6 +64,7 @@ const reviewerIdentity = {
 /** Minimal converged self-review for tests requiring a completed review loop. */
 const CONVERGED_SELF_REVIEW = {
   iteration: 1,
+  reviewCycle: 1,
   maxIterations: 3,
   prevDigest: null,
   currDigest: 'review-digest',
@@ -147,6 +148,7 @@ describe('review-decision rail', () => {
         implementationRework: { rejectedDigest: IMPL_EVIDENCE.digest, exhausted: true },
         implReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: IMPL_EVIDENCE.digest,
@@ -177,6 +179,7 @@ describe('review-decision rail', () => {
         implementation: IMPL_EVIDENCE,
         implReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: 'digest-of-another-implementation',

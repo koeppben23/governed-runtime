@@ -122,6 +122,7 @@ async function mintArchSubmissionObligation(
   return createReviewObligation({
     obligationType: 'architecture',
     iteration: 0,
+    reviewCycle: ctx.state.reviewCycles.architecture,
     planVersion: ctx.archPlanVersion,
     now: ctx.now,
     subjectDigest: digest,

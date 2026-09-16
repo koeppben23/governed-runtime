@@ -102,7 +102,11 @@ export async function runStandardReviewPipeline(
   const dispatchAttempt = resolveDispatchAuthorizedAttempt(ctx);
   if (!dispatchAttempt) return;
 
-  const assuranceResult = await recordObligationHandshake(ctx, obligationType);
+  const assuranceResult = await recordObligationHandshake(
+    ctx,
+    obligationType,
+    exactObligation.reviewCycle,
+  );
   if (blockOnAuditFailure(ctx, assuranceResult)) return;
 
   const prompt = await buildStandardPromptAndLog(ctx, toolName, input);
@@ -159,6 +163,7 @@ function resolveDispatchAuthorizedAttempt(
 async function recordObligationHandshake(
   ctx: PipelineContext,
   obligationType: ReviewObligationType,
+  reviewCycle: number | null,
 ): ReturnType<typeof recordAssuranceWithAudit> {
   const { deps, sessionState, sessDir, reviewCtx } = ctx;
   return recordAssuranceWithAudit(
@@ -178,6 +183,7 @@ async function recordObligationHandshake(
         obligationId: reviewCtx.obligationId,
         obligationType,
         iteration: reviewCtx.iteration,
+        reviewCycle,
         planVersion: reviewCtx.planVersion,
         criteriaVersion: reviewCtx.criteriaVersion,
         mandateDigest: reviewCtx.mandateDigest,

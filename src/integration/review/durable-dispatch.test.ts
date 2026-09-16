@@ -36,6 +36,7 @@ const PROMPT_DIGEST = 'b'.repeat(64);
 function baseAssurance() {
   const obligation = createReviewObligation({
     obligationType: 'plan',
+    reviewCycle: 1,
     iteration: 0,
     planVersion: 1,
     now: NOW,

@@ -324,6 +324,7 @@ describe('guards', () => {
       const atMax = makeState('PLAN', {
         selfReview: {
           iteration: 3,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: 'd1',
           currDigest: 'd2',
@@ -338,6 +339,7 @@ describe('guards', () => {
       const notAtMax = makeState('PLAN', {
         selfReview: {
           iteration: 2,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: 'd1',
           currDigest: 'd2',
@@ -352,6 +354,7 @@ describe('guards', () => {
       const atMax = makeState('IMPL_REVIEW', {
         implReview: {
           iteration: 3,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: 'd1',
           currDigest: 'd2',

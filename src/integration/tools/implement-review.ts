@@ -252,6 +252,7 @@ function appendImplReviewState(input: {
     ...runtime.state,
     implReview: {
       iteration,
+      reviewCycle: runtime.state.reviewCycles.implementation,
       maxIterations: runtime.maxImplementationReviewIterations,
       prevDigest: implementation.digest,
       currDigest: implementation.digest,

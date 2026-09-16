@@ -177,6 +177,7 @@ function buildSessionState() {
         {
           obligationId: OBLIGATION_ID,
           obligationType: 'plan' as const,
+          reviewCycle: 1,
           requiredChallengeCount: 0,
           requiredChallengeKind: 'design_challenge',
           challengePolicyVersion: 'challenge-policy.v1',

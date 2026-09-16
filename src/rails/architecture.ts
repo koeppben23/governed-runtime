@@ -116,6 +116,7 @@ export function executeArchitecture(
     architecture: adr,
     selfReview: {
       iteration: 0,
+      reviewCycle: state.reviewCycles.architecture,
       maxIterations,
       prevDigest: null,
       currDigest: adr.digest,

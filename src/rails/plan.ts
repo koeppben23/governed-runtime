@@ -204,7 +204,7 @@ export async function executePlan(
         loop.verdict,
       ),
     },
-    selfReview: buildSelfReviewState(loop),
+    selfReview: buildSelfReviewState(loop, state.reviewCycles.plan),
     error: null,
   };
 

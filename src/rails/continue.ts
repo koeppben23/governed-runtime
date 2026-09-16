@@ -252,7 +252,7 @@ async function runOneSelfReviewIteration(
   return {
     ...state,
     plan: updatedPlan,
-    selfReview: buildSelfReviewState(loop),
+    selfReview: buildSelfReviewState(loop, state.reviewCycles.plan),
   };
 }
 
@@ -298,7 +298,7 @@ async function runOneImplReviewIteration(
   return {
     ...state,
     implementation: loop.artifact,
-    implReview: buildImplReviewState(loop, ctx.now()),
+    implReview: buildImplReviewState(loop, ctx.now(), state.reviewCycles.implementation),
   };
 }
 
@@ -362,6 +362,6 @@ async function runOneArchitectureReviewIteration(
   return {
     ...state,
     architecture: updatedArchitecture,
-    selfReview: buildSelfReviewState(loop),
+    selfReview: buildSelfReviewState(loop, state.reviewCycles.architecture),
   };
 }

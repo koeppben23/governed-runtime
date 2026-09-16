@@ -117,6 +117,7 @@ describe('buildRailConclusion', () => {
           maxReviewerAttempts: 1,
         },
         obligationType: 'review',
+        reviewCycle: null,
         iteration: 1,
         planVersion: 1,
         now: '2026-01-01T00:00:00.000Z',

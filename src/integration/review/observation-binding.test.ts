@@ -61,6 +61,7 @@ function candidateObligation(
     },
     obligationType,
     iteration: 0,
+    reviewCycle: 1,
     planVersion: 1,
     now: NOW_ISO,
     subjectDigest: 'impl-digest',

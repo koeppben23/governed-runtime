@@ -24,6 +24,12 @@
  * | ARCH_REVIEW     | approve            | architecture, selfReview| (nothing — complete)                     |
  * | ARCH_REVIEW     | changes_requested  | architecture            | selfReview                               |
  *
+ * A `changes_requested` verdict also increments exactly the owning loop's human
+ * review-cycle counter (`state.reviewCycles.plan|architecture|implementation`):
+ * the cleared loop restarts `iteration` at 1, and the counter keeps the two
+ * iteration-1 passes distinguishable in persisted evidence and audit. Approve
+ * and reject NEVER change a counter.
+ *
  * @version v1
  */
 
@@ -139,8 +145,17 @@ function applyStateClearingPattern(state: SessionState, verdict: ReviewVerdict):
   if (verdict === 'reject') return state;
 
   // changes_requested
+  // A human request-changes decision ends the current human review cycle and
+  // starts a new one: the owning loop's counter advances exactly once and the
+  // corresponding loop state (and its `iteration`) is cleared below, so the
+  // restarted loop mints its next obligations/projections in the new cycle.
   if (state.phase === 'PLAN_REVIEW') {
-    return { ...state, selfReview: null, reviewDecision: null };
+    return {
+      ...state,
+      selfReview: null,
+      reviewDecision: null,
+      reviewCycles: { ...state.reviewCycles, plan: state.reviewCycles.plan + 1 },
+    };
   }
   if (state.phase === 'EVIDENCE_REVIEW') {
     return {
@@ -150,6 +165,10 @@ function applyStateClearingPattern(state: SessionState, verdict: ReviewVerdict):
       implReview: null,
       reducedCeremony: null,
       reviewDecision: null,
+      reviewCycles: {
+        ...state.reviewCycles,
+        implementation: state.reviewCycles.implementation + 1,
+      },
     };
   }
   if (state.phase === 'ARCH_REVIEW') {
@@ -163,6 +182,7 @@ function applyStateClearingPattern(state: SessionState, verdict: ReviewVerdict):
           }
         : null,
       selfReview: null,
+      reviewCycles: { ...state.reviewCycles, architecture: state.reviewCycles.architecture + 1 },
     };
   }
 

@@ -21,6 +21,7 @@ function reviewObligation(): ReviewObligation {
   return {
     obligationId: OBLIGATION_ID,
     obligationType: 'review',
+    reviewCycle: null,
     subjectDigest: SUBJECT_DIGEST,
     iteration: 0,
     planVersion: 1,

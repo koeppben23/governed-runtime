@@ -33,6 +33,7 @@ function reviewObligation(): ReturnType<typeof createReviewObligation> {
       maxReviewerAttempts: 1,
     },
     obligationType: 'review',
+    reviewCycle: null,
     iteration: 1,
     planVersion: 1,
     now: NOW,

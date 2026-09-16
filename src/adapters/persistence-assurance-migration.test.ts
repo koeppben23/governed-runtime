@@ -39,6 +39,7 @@ describe('review-assurance legacy rejection at the read boundary', () => {
       undefined,
       {
         obligationType: 'plan',
+        reviewCycle: 1,
         repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
         iteration: 0,
         planVersion: 1,
@@ -69,6 +70,7 @@ describe('review-assurance legacy rejection at the read boundary', () => {
       undefined,
       {
         obligationType: 'plan',
+        reviewCycle: 1,
         repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
         iteration: 0,
         planVersion: 1,
@@ -115,6 +117,7 @@ describe('review-assurance legacy rejection at the read boundary', () => {
       undefined,
       {
         obligationType: 'plan',
+        reviewCycle: 1,
         repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
         iteration: 0,
         planVersion: 1,
@@ -178,6 +181,7 @@ describe('review-assurance legacy rejection at the read boundary', () => {
           undefined,
           {
             obligationType: 'plan',
+            reviewCycle: 1,
             repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
             iteration: 0,
             planVersion: 1,
@@ -215,6 +219,7 @@ describe('review-assurance legacy rejection at the read boundary', () => {
           undefined,
           {
             obligationType: 'plan',
+            reviewCycle: 1,
             repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
             iteration: 0,
             planVersion: 1,
@@ -248,6 +253,7 @@ describe('review-assurance legacy rejection at the read boundary', () => {
   it('EDGE: writeState persists the v6 literal', async () => {
     const obligation = createReviewObligation({
       obligationType: 'plan',
+      reviewCycle: 1,
       repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
       iteration: 0,
       planVersion: 1,
@@ -261,6 +267,7 @@ describe('review-assurance legacy rejection at the read boundary', () => {
       undefined,
       {
         obligationType: 'plan',
+        reviewCycle: 1,
         repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
         iteration: 0,
         planVersion: 1,

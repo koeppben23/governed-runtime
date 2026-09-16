@@ -1502,6 +1502,7 @@ describe('review (standalone flow)', () => {
           challengePolicyVersion: 'challenge-policy.v1' as const,
           subjectDigest: 'test-subject-digest',
           iteration: 1,
+          reviewCycle: null,
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,

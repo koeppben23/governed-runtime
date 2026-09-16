@@ -86,6 +86,7 @@ beforeAll(async () => {
       maxReviewerAttempts: 1,
     },
     obligationType: 'implement',
+    reviewCycle: 1,
     iteration: 0,
     planVersion: 1,
     now: '2026-08-13T10:00:00.000Z',

@@ -118,6 +118,7 @@ export function pendingObligation(overrides: Partial<ReviewObligation> = {}): Re
   const base = createReviewObligation({
     obligationType: 'plan',
     iteration: 0,
+    reviewCycle: 1,
     planVersion: 1,
     now: NOW,
     subjectDigest: 'diagnostics-test-subject',

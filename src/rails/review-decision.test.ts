@@ -125,6 +125,7 @@ const reviewerIdentity = {
 /** Minimal converged self-review for tests requiring a completed review loop. */
 const CONVERGED_SELF_REVIEW = {
   iteration: 1,
+  reviewCycle: 1,
   maxIterations: 3,
   prevDigest: null,
   currDigest: 'review-digest',
@@ -244,6 +245,7 @@ describe('review-decision rail', () => {
       architecture: { ...ARCHITECTURE_DECISION, reviewCompletion: 'reviewer_accepted' },
       selfReview: {
         iteration: 1,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: ARCHITECTURE_DECISION.digest,
@@ -278,6 +280,7 @@ describe('review-decision rail', () => {
       implementation: IMPL_EVIDENCE,
       implReview: {
         iteration: 1,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: IMPL_EVIDENCE.digest,
@@ -315,6 +318,7 @@ describe('review-decision rail', () => {
       }),
       selfReview: {
         iteration: 1,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: ARCHITECTURE_DECISION.digest,
@@ -605,6 +609,7 @@ describe('review-decision rail', () => {
       architecture: ARCHITECTURE_DECISION,
       selfReview: {
         iteration: 1,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: ARCHITECTURE_DECISION.digest,
@@ -639,6 +644,7 @@ describe('review-decision rail', () => {
       reducedCeremony: reducedCeremonyDecision,
       implReview: {
         iteration: 1,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: IMPL_EVIDENCE.digest,
@@ -683,6 +689,7 @@ describe('review-decision rail', () => {
       reducedCeremony: reducedCeremonyDecision,
       implReview: {
         iteration: 1,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: IMPL_EVIDENCE.digest,
@@ -1407,6 +1414,7 @@ describe('review-decision rail', () => {
         implementation: IMPL_EVIDENCE,
         implReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: IMPL_EVIDENCE.digest,
           currDigest: IMPL_EVIDENCE.digest,
@@ -1799,6 +1807,7 @@ describe('review-decision rail', () => {
         implementation: IMPL_EVIDENCE,
         implReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: IMPL_EVIDENCE.digest,

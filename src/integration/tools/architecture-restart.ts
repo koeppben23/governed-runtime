@@ -253,6 +253,7 @@ async function mintRestartObligation(
   return createReviewObligation({
     obligationType: 'architecture',
     iteration: cycle.iteration,
+    reviewCycle: session.state.reviewCycles.architecture,
     planVersion: cycle.planVersion,
     now: cycle.now,
     subjectDigest: nextAdr.digest,

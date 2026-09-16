@@ -48,6 +48,20 @@ describe('hydrate rail', () => {
       }
     });
 
+    it('initializes the human review-cycle counters at cycle 1', () => {
+      const result = executeHydrate(null, HYDRATE_INPUT, ctx);
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        // Explicit counters for every governed review loop: no default and no
+        // read-time migration — hydrate writes them into the new state.
+        expect(result.state.reviewCycles).toEqual({
+          plan: 1,
+          architecture: 1,
+          implementation: 1,
+        });
+      }
+    });
+
     it('accepts OpenCode-style non-UUID session IDs', () => {
       const result = executeHydrate(
         null,

@@ -270,6 +270,7 @@ function buildReviewedState(
     },
     selfReview: {
       iteration,
+      reviewCycle: state.reviewCycles.architecture,
       maxIterations: policy.reviewBudget.architecture,
       prevDigest: revision.prevDigest,
       currDigest: revision.currentAdr.digest,
@@ -628,6 +629,7 @@ function createNextArchitectureReviewObligation(input: {
   return createReviewObligation({
     obligationType: 'architecture',
     iteration,
+    reviewCycle: state.reviewCycles.architecture,
     planVersion: review.expectedPlanVersion,
     now: session.ctx.now(),
     subjectDigest,

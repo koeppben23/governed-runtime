@@ -295,6 +295,7 @@ function buildPlanSubmissionState(
     validation: [],
     selfReview: {
       iteration: 0,
+      reviewCycle: scope.state.reviewCycles.plan,
       maxIterations: scope.maxPlanReviewIterations,
       prevDigest: null,
       currDigest: planEvidence.digest,
@@ -433,6 +434,7 @@ function buildReviewedPlanState(
     },
     selfReview: {
       iteration: nextIteration,
+      reviewCycle: scope.state.reviewCycles.plan,
       maxIterations: scope.maxPlanReviewIterations,
       prevDigest: revision.prevDigest,
       currDigest: revision.currentPlan.digest,

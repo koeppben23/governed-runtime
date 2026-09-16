@@ -95,6 +95,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
       },
       selfReview: {
         iteration: 0,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: planCurrent.digest,
@@ -110,6 +111,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
           {
             obligationId,
             obligationType: 'plan',
+            reviewCycle: 1,
             requiredChallengeCount: 0,
             requiredChallengeKind: 'design_challenge',
             challengePolicyVersion: 'challenge-policy.v1',

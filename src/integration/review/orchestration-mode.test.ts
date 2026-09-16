@@ -59,6 +59,7 @@ describe('child-session review instruction metadata', () => {
         maxReviewerAttempts: 1,
       },
       obligationType: 'plan',
+      reviewCycle: 1,
       repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
       iteration: 0,
       planVersion: 1,

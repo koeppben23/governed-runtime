@@ -92,6 +92,7 @@ function validationState(overrides?: Record<string, unknown>) {
     },
     selfReview: {
       iteration: 1,
+      reviewCycle: 1,
       maxIterations: 3,
       prevDigest: null,
       currDigest: 'd1',
@@ -219,6 +220,7 @@ describe('validate rail', () => {
         },
         selfReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: 'd1',

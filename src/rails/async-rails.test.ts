@@ -528,6 +528,7 @@ describe('continue rail', () => {
         architecture: ARCHITECTURE_DECISION,
         selfReview: {
           iteration: 0,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: ARCHITECTURE_DECISION.digest,
@@ -558,6 +559,7 @@ describe('continue rail', () => {
         architecture: ARCHITECTURE_DECISION,
         selfReview: {
           iteration: 0,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: ARCHITECTURE_DECISION.digest,
@@ -593,6 +595,7 @@ describe('continue rail', () => {
         architecture: ARCHITECTURE_DECISION,
         selfReview: {
           iteration: 0,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: ARCHITECTURE_DECISION.digest,
@@ -686,6 +689,7 @@ describe('continue rail', () => {
         architecture: ARCHITECTURE_DECISION,
         selfReview: {
           iteration: 0,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: ARCHITECTURE_DECISION.digest,

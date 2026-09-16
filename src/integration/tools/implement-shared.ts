@@ -107,6 +107,7 @@ function buildImplementationReviewObligation(
   return createReviewObligation({
     obligationType: 'implement',
     iteration: input.iteration,
+    reviewCycle: state.reviewCycles.implementation,
     planVersion: input.planVersion,
     now: input.now,
     subjectDigest: digest,

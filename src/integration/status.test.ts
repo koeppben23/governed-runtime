@@ -681,6 +681,7 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
       },
       selfReview: {
         iteration: 1,
+        reviewCycle: 1,
         maxIterations: 2,
         prevDigest: null,
         currDigest: 'self-review-digest',
@@ -726,6 +727,7 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
       },
       implReview: {
         iteration: 1,
+        reviewCycle: 1,
         maxIterations: 2,
         prevDigest: null,
         currDigest: 'impl-review-digest',
@@ -768,6 +770,7 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
       },
       selfReview: {
         iteration: 1,
+        reviewCycle: 1,
         maxIterations: 2,
         prevDigest: null,
         currDigest: 'self-review-digest',

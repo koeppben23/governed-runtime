@@ -34,6 +34,7 @@ describe('Obligation repository authority coherence (schema refinement)', () => 
     return {
       obligationId: FIXED_UUID,
       obligationType: 'review' as const,
+      reviewCycle: null,
       iteration: 0,
       planVersion: 1,
       criteriaVersion: 'p40-v1',
@@ -137,6 +138,7 @@ describe('Obligation repository authority coherence (schema refinement)', () => 
   it('rejects a context authority on an implement obligation', () => {
     const obligation = repositoryReviewObligation({
       obligationType: 'implement' as const,
+      reviewCycle: 1,
       requiredChallengeKind: 'implementation_challenge' as const,
       reviewSubject: undefined,
       reviewSubjectScope: {
@@ -154,6 +156,7 @@ describe('Obligation repository authority coherence (schema refinement)', () => 
   it('rejects a candidate-pair authority on a plan obligation', () => {
     const obligation = repositoryReviewObligation({
       obligationType: 'plan' as const,
+      reviewCycle: 1,
       requiredChallengeKind: 'design_challenge' as const,
       reviewSubject: undefined,
       reviewSubjectScope: {
@@ -237,6 +240,7 @@ describe('Current persisted authority schemas are strict', () => {
   const PLAN_OBLIGATION = {
     obligationId: FIXED_UUID,
     obligationType: 'plan' as const,
+    reviewCycle: 1,
     iteration: 0,
     planVersion: 1,
     criteriaVersion: 'p40-v1',
@@ -419,6 +423,7 @@ describe('Attempt lineage and dispatch lifecycle', () => {
   const PLAN_OBLIGATION = {
     obligationId: FIXED_UUID,
     obligationType: 'plan' as const,
+    reviewCycle: 1,
     iteration: 0,
     planVersion: 1,
     criteriaVersion: 'p40-v1',
@@ -799,6 +804,7 @@ describe('Host invocation, obligation foreign keys and status relations', () => 
   const PLAN_OBLIGATION = {
     obligationId: FIXED_UUID,
     obligationType: 'plan' as const,
+    reviewCycle: 1,
     iteration: 0,
     planVersion: 1,
     criteriaVersion: 'p40-v1',
@@ -1065,6 +1071,7 @@ describe('Single initial attempt root and attempt status relations', () => {
   const PLAN_OBLIGATION = {
     obligationId: FIXED_UUID,
     obligationType: 'plan' as const,
+    reviewCycle: 1,
     iteration: 0,
     planVersion: 1,
     criteriaVersion: 'p40-v1',

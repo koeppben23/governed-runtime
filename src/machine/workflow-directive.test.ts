@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { makeState, ARCHITECTURE_DECISION, PLAN_RECORD } from '../fixtures.js';
 import { Phase, type SessionState } from '../state/schema.js';
-import { resolveWorkflowDirective, type WorkflowDirective } from './workflow-directive.js';
+import {
+  resolveExecutionDisposition,
+  resolveWorkflowDirective,
+  type WorkflowDirective,
+} from './workflow-directive.js';
 
 describe('resolveWorkflowDirective', () => {
   it('resolves every persisted position exhaustively', () => {
@@ -121,5 +125,69 @@ describe('resolveWorkflowDirective', () => {
       allowedIntents: ['APPROVE', 'REQUEST_CHANGES', 'REJECT'],
       commands: ['/approve', '/request-changes', '/reject'],
     } satisfies WorkflowDirective);
+  });
+});
+
+describe('resolveExecutionDisposition', () => {
+  it('derives terminal, awaiting_human, and active from the workflow position', () => {
+    for (const phase of [
+      'COMPLETE',
+      'ARCH_COMPLETE',
+      'PEER_REVIEW_COMPLETE',
+      'REJECTED',
+    ] as const) {
+      expect(resolveExecutionDisposition(makeState(phase)), phase).toBe('terminal');
+    }
+    for (const phase of ['PLAN_REVIEW', 'EVIDENCE_REVIEW', 'ARCH_REVIEW'] as const) {
+      expect(resolveExecutionDisposition(makeState(phase)), phase).toBe('awaiting_human');
+    }
+    for (const phase of ['READY', 'TICKET', 'PLAN', 'VALIDATION', 'IMPLEMENTATION'] as const) {
+      expect(resolveExecutionDisposition(makeState(phase)), phase).toBe('active');
+    }
+  });
+
+  it('keeps the workflow position and reports blocked on a fail-closed error', () => {
+    const state: SessionState = {
+      ...makeState('IMPLEMENTATION'),
+      error: {
+        code: 'TEST_BLOCKED',
+        message: 'blocked for test',
+        recoveryHint: 'recover',
+        occurredAt: '2026-01-01T00:00:00.000Z',
+      },
+    };
+    expect(resolveExecutionDisposition(state)).toBe('blocked');
+    // The block never destroys the position.
+    expect(state.phase).toBe('IMPLEMENTATION');
+    expect(resolveWorkflowDirective(state).kind).toBe('blocked');
+  });
+
+  it('reports blocked for a blocked risk gate without changing the position', () => {
+    const state: SessionState = {
+      ...makeState('IMPLEMENTATION'),
+      riskGate: {
+        status: 'blocked',
+        code: 'RISK_GATE_BLOCKED',
+        message: 'risk gate blocked',
+        blockedAt: '2026-01-01T00:00:00.000Z',
+        lastDecisionId: 'decision-1',
+      },
+    };
+    expect(resolveExecutionDisposition(state)).toBe('blocked');
+    expect(state.phase).toBe('IMPLEMENTATION');
+  });
+
+  it('keeps ABORTED terminal even though it retains its audit error marker', () => {
+    const state: SessionState = {
+      ...makeState('ABORTED'),
+      error: {
+        code: 'ABORTED',
+        message: 'session aborted',
+        recoveryHint: 'Start a new session with /hydrate',
+        occurredAt: '2026-01-01T00:00:00.000Z',
+      },
+    };
+    expect(resolveExecutionDisposition(state)).toBe('terminal');
+    expect(resolveWorkflowDirective(state).code).toBe('WORKFLOW_ABORTED');
   });
 });

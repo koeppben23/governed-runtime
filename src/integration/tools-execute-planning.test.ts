@@ -1207,6 +1207,7 @@ describe('plan', () => {
           maxReviewerAttempts: 1,
         },
         obligationType: 'plan',
+        reviewCycle: 1,
         iteration: 0,
         planVersion: 1,
         now: NOW,

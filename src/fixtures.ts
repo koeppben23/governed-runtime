@@ -26,20 +26,26 @@ import type {
   ArchitectureDecision,
   PlanEvidence,
   PlanRecord,
-  SelfReviewLoop,
   ValidationResult,
   ImplEvidence,
-  ImplReviewResult,
   ReviewDecision,
   DecisionIdentity,
   ErrorInfo,
   BindingInfo,
   PolicySnapshot,
 } from './state/evidence.js';
+import { IMPL_REVIEW_CONVERGED, SELF_REVIEW_CONVERGED } from './state/evidence-test-constants.js';
 import { computeRecordDigest } from './state/evidence-plan.js';
 import { POLICY_DIGEST_VERSION } from './shared/policy-digest.js';
 import { canonicalJsonStringify } from './shared/canonical-json.js';
 import { hashText } from './shared/hashing.js';
+
+export {
+  IMPL_REVIEW_CONVERGED,
+  IMPL_REVIEW_PENDING_RESULT,
+  SELF_REVIEW_CONVERGED,
+  SELF_REVIEW_PENDING,
+} from './state/evidence-test-constants.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -230,6 +236,7 @@ export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
       obligationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       obligationType: 'architecture',
       iteration: 0,
+      reviewCycle: 1,
       planVersion: 1,
       criteriaVersion: 'criteria-v1',
       mandateDigest: 'mandate-digest-of-review-criteria',
@@ -329,6 +336,7 @@ export const PLAN_REVIEW_ASSURANCE: ReviewAssuranceState = assuranceWith({
     obligationId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
     obligationType: 'plan',
     iteration: 0,
+    reviewCycle: 1,
     planVersion: 1,
     criteriaVersion: 'criteria-v1',
     mandateDigest: 'mandate-digest-of-plan-review-criteria',
@@ -449,24 +457,6 @@ export const PLAN_RECORD: PlanRecord = {
   reviewCompletion: 'pending',
 };
 
-export const SELF_REVIEW_CONVERGED: SelfReviewLoop = {
-  iteration: 1,
-  maxIterations: 3,
-  prevDigest: null,
-  currDigest: PLAN_DIGEST,
-  revisionDelta: 'none',
-  verdict: 'accept',
-};
-
-export const SELF_REVIEW_PENDING: SelfReviewLoop = {
-  iteration: 1,
-  maxIterations: 3,
-  prevDigest: null,
-  currDigest: PLAN_DIGEST,
-  revisionDelta: 'minor',
-  verdict: 'changes_requested',
-};
-
 export const VALIDATION_PASSED: ValidationResult[] = [
   {
     checkId: 'test',
@@ -529,26 +519,6 @@ export const IMPL_EVIDENCE: ImplEvidence = {
   changedFiles: ['src/auth.ts', 'src/auth.test.ts'],
   domainFiles: ['src/auth.ts'],
   digest: 'digest-of-impl',
-  executedAt: FIXED_TIME,
-};
-
-export const IMPL_REVIEW_CONVERGED: ImplReviewResult = {
-  iteration: 1,
-  maxIterations: 3,
-  prevDigest: null,
-  currDigest: 'digest-of-impl',
-  revisionDelta: 'none',
-  verdict: 'accept',
-  executedAt: FIXED_TIME,
-};
-
-export const IMPL_REVIEW_PENDING_RESULT: ImplReviewResult = {
-  iteration: 1,
-  maxIterations: 3,
-  prevDigest: null,
-  currDigest: 'digest-of-impl',
-  revisionDelta: 'minor',
-  verdict: 'changes_requested',
   executedAt: FIXED_TIME,
 };
 
@@ -617,6 +587,7 @@ export function makeState(
     implementationRework: null,
     reducedCeremony: null,
     implReview: null,
+    reviewCycles: { plan: 1, architecture: 1, implementation: 1 },
     reviewDecision: null,
     reviewReportPath: null,
     peerReviewEvidence: [],

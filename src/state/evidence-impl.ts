@@ -34,10 +34,18 @@ export type ImplEvidence = z.infer<typeof ImplEvidence>;
 /**
  * Result of an implementation review iteration (IMPL_REVIEW phase).
  * Same convergence logic as SelfReviewLoop: digest-stop.
+ *
+ * `reviewCycle` is the human-cycle identity of this projection: the active
+ * `SessionState.reviewCycles.implementation` at creation. A human
+ * `changes_requested` decision at EVIDENCE_REVIEW restarts `iteration` at 1;
+ * `reviewCycle` keeps distinct human cycles distinguishable in persisted
+ * evidence and audit.
  */
 export const ImplReviewResult = z
   .object({
     iteration: z.number().int().nonnegative(),
+    /** Human review cycle this projection belongs to (positive, from state.reviewCycles). */
+    reviewCycle: z.number().int().positive(),
     maxIterations: z.number().int().positive(),
     prevDigest: z.string().nullable(),
     currDigest: z.string().min(1),

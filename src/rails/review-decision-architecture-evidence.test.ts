@@ -16,6 +16,7 @@ import {
 /** Minimal converged self-review for gate-path tests. */
 const CONVERGED_SELF_REVIEW = {
   iteration: 1,
+  reviewCycle: 1,
   maxIterations: 3,
   prevDigest: null,
   currDigest: 'review-digest',

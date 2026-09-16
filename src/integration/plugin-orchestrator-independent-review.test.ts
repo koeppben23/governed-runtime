@@ -147,6 +147,7 @@ function buildState(
           obligationType,
           subjectDigest: 'test-subject-digest',
           iteration: 1,
+          reviewCycle: 1,
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,

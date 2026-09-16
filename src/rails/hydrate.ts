@@ -333,6 +333,7 @@ function buildNewHydrateState(
     implementation: null,
     reducedCeremony: null,
     implReview: null,
+    reviewCycles: { plan: 1, architecture: 1, implementation: 1 },
     reviewDecision: null,
     reviewReportPath: null,
     peerReviewEvidence: [],

@@ -20,6 +20,7 @@ const PLAN_MARKDOWN = '## Plan\n\nSection body text.\n\n## Execution\n\nMore tex
 function planObligation(): ReturnType<typeof createReviewObligation> {
   return createReviewObligation({
     obligationType: 'plan',
+    reviewCycle: 1,
     repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
     iteration: 1,
     planVersion: 1,

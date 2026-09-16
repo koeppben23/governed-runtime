@@ -69,6 +69,7 @@ function makeObligation(overrides?: Partial<ReviewObligation>): ReviewObligation
   return createReviewObligation({
     obligationType,
     iteration: 0,
+    reviewCycle: overrides?.reviewCycle ?? (obligationType === 'review' ? null : 1),
     planVersion: 1,
     now: NOW,
     subjectDigest: 'test',
@@ -157,6 +158,7 @@ describe('integration/review-assurance', () => {
       };
       const obligation = createReviewObligation({
         obligationType: 'review',
+        reviewCycle: null,
         iteration: 1,
         planVersion: 1,
         now: NOW,
@@ -254,6 +256,7 @@ describe('integration/review-assurance', () => {
     it('creates a pending plan obligation with correct fields', () => {
       const result = createReviewObligation({
         obligationType: 'plan',
+        reviewCycle: 1,
         repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
         iteration: 0,
         planVersion: 1,
@@ -288,6 +291,7 @@ describe('integration/review-assurance', () => {
         const result = createReviewObligation({
           obligationType,
           iteration: 0,
+          reviewCycle: obligationType === 'review' ? null : 1,
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
@@ -345,6 +349,7 @@ describe('integration/review-assurance', () => {
         // The exact C1 attack: high-risk change declaring targetPaths=['docs/x.md'].
         const result = createReviewObligation({
           obligationType: 'plan',
+          reviewCycle: 1,
           repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
           iteration: 0,
           planVersion: 1,
@@ -362,6 +367,7 @@ describe('integration/review-assurance', () => {
       it('uses the computed HIGH-RISK when changedFiles outrank a low claim', () => {
         const result = createReviewObligation({
           obligationType: 'implement',
+          reviewCycle: 1,
           iteration: 0,
           planVersion: 1,
           now: NOW,
@@ -378,6 +384,7 @@ describe('integration/review-assurance', () => {
       it('takes the STANDARD claim over doc-only changedFiles', () => {
         const result = createReviewObligation({
           obligationType: 'plan',
+          reviewCycle: 1,
           repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
           iteration: 0,
           planVersion: 1,
@@ -395,6 +402,7 @@ describe('integration/review-assurance', () => {
       it('defaults to the computed minimum when no claim is present', () => {
         const result = createReviewObligation({
           obligationType: 'plan',
+          reviewCycle: 1,
           repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
           iteration: 0,
           planVersion: 1,
@@ -412,6 +420,7 @@ describe('integration/review-assurance', () => {
     it('does not enforce challenges for a legacy snapshot without challengePolicy', () => {
       const result = createReviewObligation({
         obligationType: 'implement',
+        reviewCycle: 1,
         iteration: 0,
         planVersion: 1,
         now: NOW,
@@ -464,6 +473,7 @@ describe('integration/review-assurance', () => {
       expect(() =>
         createReviewObligation({
           obligationType: 'plan',
+          reviewCycle: 1,
           repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
           iteration: 0,
           planVersion: 1,
@@ -478,6 +488,7 @@ describe('integration/review-assurance', () => {
       expect(() =>
         createReviewObligation({
           obligationType: 'architecture',
+          reviewCycle: 1,
           repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
           iteration: 0,
           planVersion: 1,
@@ -492,6 +503,7 @@ describe('integration/review-assurance', () => {
       expect(() =>
         createReviewObligation({
           obligationType: 'plan',
+          reviewCycle: 1,
           repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
           iteration: 0,
           planVersion: 1,
@@ -508,6 +520,7 @@ describe('integration/review-assurance', () => {
       expect(() =>
         createReviewObligation({
           obligationType: 'architecture',
+          reviewCycle: 1,
           repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
           iteration: 0,
           planVersion: 1,
@@ -527,6 +540,7 @@ describe('integration/review-assurance', () => {
     it('review + undefined changedFiles → unavailable', () => {
       const result = createReviewObligation({
         obligationType: 'review',
+        reviewCycle: null,
         iteration: 0,
         planVersion: 1,
         now: NOW,
@@ -543,6 +557,7 @@ describe('integration/review-assurance', () => {
       expect(() =>
         createReviewObligation({
           obligationType: 'implement',
+          reviewCycle: 1,
           iteration: 0,
           planVersion: 1,
           now: NOW,
@@ -556,6 +571,7 @@ describe('integration/review-assurance', () => {
       expect(() =>
         createReviewObligation({
           obligationType: 'implement',
+          reviewCycle: 1,
           iteration: 0,
           planVersion: 1,
           now: NOW,
@@ -570,6 +586,7 @@ describe('integration/review-assurance', () => {
       expect(() =>
         createReviewObligation({
           obligationType: 'implement',
+          reviewCycle: 1,
           iteration: 0,
           planVersion: 1,
           now: NOW,
@@ -584,6 +601,7 @@ describe('integration/review-assurance', () => {
       expect(() =>
         createReviewObligation({
           obligationType: 'implement',
+          reviewCycle: 1,
           iteration: 0,
           planVersion: 1,
           now: NOW,
@@ -597,6 +615,7 @@ describe('integration/review-assurance', () => {
     it('implement with a bound implementation scope mints the digest-bound subject', () => {
       const result = createReviewObligation({
         obligationType: 'implement',
+        reviewCycle: 1,
         iteration: 0,
         planVersion: 1,
         now: NOW,
@@ -614,6 +633,7 @@ describe('integration/review-assurance', () => {
     it('binds an explicit artifact scope to the authoritative subject digest', () => {
       const result = createReviewObligation({
         obligationType: 'plan',
+        reviewCycle: 1,
         repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
         iteration: 0,
         planVersion: 1,

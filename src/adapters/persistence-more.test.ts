@@ -118,6 +118,7 @@ describe('readState legacy migrations', () => {
     const state = makeState('PLAN', {
       selfReview: {
         iteration: 0,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: 'digest',

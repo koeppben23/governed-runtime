@@ -108,6 +108,7 @@ describe('subject digest stability', () => {
           {
             obligationId,
             obligationType: 'review',
+            reviewCycle: null,
             requiredChallengeCount: 0,
             requiredChallengeKind: 'content_challenge',
             challengePolicyVersion: 'challenge-policy.v1',

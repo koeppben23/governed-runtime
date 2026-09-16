@@ -20,6 +20,7 @@ const obligation = {
   challengePolicyVersion: 'challenge-policy.v1' as const,
   subjectDigest,
   iteration: 1,
+  reviewCycle: null,
   planVersion: 1,
   criteriaVersion: 'criteria-v1',
   mandateDigest: 'a'.repeat(64),
@@ -80,6 +81,7 @@ describe('verifyFrozenMaterialForObligation', () => {
   const artifactObligation: ReviewObligation = {
     obligationId: '44444444-4444-4444-8444-444444444444',
     obligationType: 'architecture',
+    reviewCycle: 1,
     requiredChallengeCount: 0,
     requiredChallengeKind: 'design_challenge' as const,
     challengePolicyVersion: 'challenge-policy.v1' as const,

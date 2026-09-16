@@ -186,6 +186,7 @@ describe('rails/types', () => {
         plan: PLAN_RECORD,
         selfReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: 'd',

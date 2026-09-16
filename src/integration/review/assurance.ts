@@ -142,6 +142,17 @@ function assertSubjectDigest(subjectDigest: string): void {
 export function createReviewObligation(input: {
   obligationType: ReviewObligationType;
   iteration: number;
+  /**
+   * Human review-cycle identity of the obligation. REQUIRED and persisted
+   * verbatim: peer reviews (`obligationType: 'review'`) have exactly one pass
+   * and pass `null`; plan/architecture/implement obligations pass the owning
+   * loop's active `ReviewCycles` counter (positive integer). A human
+   * `changes_requested` decision at the owning gate increments that counter and
+   * restarts `iteration` at 1 — the cycle keeps the two passes distinct in
+   * persisted evidence and audit. There is no default: a mint without an
+   * explicit cycle is a caller error, not an implicit cycle 1.
+   */
+  reviewCycle: number | null;
   planVersion: number;
   now: string;
   /**
@@ -227,6 +238,7 @@ export function createReviewObligation(input: {
     obligationId: randomUUID(),
     obligationType: input.obligationType,
     iteration: input.iteration,
+    reviewCycle: input.reviewCycle,
     planVersion: input.planVersion,
     criteriaVersion: REVIEW_CRITERIA_VERSION,
     mandateDigest: REVIEW_MANDATE_DIGEST,

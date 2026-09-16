@@ -465,6 +465,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
         ...stateWithPlan('IMPLEMENTATION'),
         selfReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: 'self-review-digest',

@@ -538,6 +538,7 @@ describe('audit completeness', () => {
         architecture: makeProgressedState('ARCH_COMPLETE').architecture,
         selfReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: 'abc',

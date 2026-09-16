@@ -56,6 +56,7 @@ function reviewRequiredOutput(obligationId: string): string {
 function buildInterruptedState(): SessionState {
   const obligation = createReviewObligation({
     obligationType: 'plan',
+    reviewCycle: 1,
     iteration: 1,
     planVersion: 1,
     now: NOW,

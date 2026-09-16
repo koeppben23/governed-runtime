@@ -137,6 +137,7 @@ async function createNewReviewObligation(
     obligation: createReviewObligation({
       obligationType: 'review',
       iteration: 1,
+      reviewCycle: null,
       planVersion: 1,
       now: input.now,
       subjectDigest: reviewSubject.subjectDigest,

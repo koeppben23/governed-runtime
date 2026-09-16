@@ -499,6 +499,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
       selfReview: {
         iteration: 0,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: 'digest-adr',
@@ -547,6 +548,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     mocks.state = makeState('ARCHITECTURE', {
       selfReview: {
         iteration: 0,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: 'digest-adr',
@@ -588,6 +590,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
       selfReview: {
         iteration: 0,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: 'digest-adr',
@@ -628,6 +631,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
       selfReview: {
         iteration: 0,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: 'digest-adr',
@@ -662,6 +666,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
       selfReview: {
         iteration: 2,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: 'digest-adr',
@@ -784,6 +789,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
       selfReview: {
         iteration: 0,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: 'digest-adr',
@@ -828,6 +834,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
       selfReview: {
         iteration: 1,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: 'digest-prev',
         currDigest: 'digest-adr',
@@ -859,6 +866,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
       selfReview: {
         iteration: 0,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: 'digest-adr',
@@ -890,6 +898,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
       selfReview: {
         iteration: 0,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: 'digest-adr',

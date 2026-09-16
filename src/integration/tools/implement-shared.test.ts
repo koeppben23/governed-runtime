@@ -39,6 +39,7 @@ function state(phase: Phase, overrides: Partial<SessionState> = {}): SessionStat
     implementation: null,
     reducedCeremony: null,
     implReview: null,
+    reviewCycles: { plan: 1, architecture: 1, implementation: 1 },
     reviewDecision: null,
     reviewReportPath: null,
     nextAdrNumber: 1,
@@ -134,6 +135,7 @@ describe('nextImplementationReviewIteration', () => {
     const s = state('IMPL_REVIEW', {
       implReview: {
         iteration: 1,
+        reviewCycle: 1,
         maxIterations: 5,
         prevDigest: null,
         currDigest: 'digest-impl',

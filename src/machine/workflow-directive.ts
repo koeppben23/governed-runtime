@@ -1,6 +1,7 @@
 /** Canonical, presentation-neutral authority for the current workflow directive. */
 
 import type { Phase, SessionState } from '../state/schema.js';
+import { TERMINAL, USER_GATES } from './topology.js';
 
 export type WorkflowIntent =
   | 'CAPTURE_TASK'
@@ -46,6 +47,13 @@ export interface DirectiveContext {
   readonly reasonCode?: string;
   readonly recovery?: string;
 }
+
+/**
+ * Execution disposition — derived, never persisted. It separates "where is the
+ * governed work?" (workflowPosition) from "what can execution do right now?" so
+ * a block never destroys the workflow position.
+ */
+export type ExecutionDisposition = 'active' | 'awaiting_human' | 'blocked' | 'terminal';
 
 export interface WorkflowDirective {
   readonly kind: WorkflowDirectiveKind;
@@ -157,6 +165,28 @@ const PHASE_DIRECTIVES: Record<Phase, WorkflowDirective> = {
   PEER_REVIEW: systemWork('PEER_REVIEW_IN_PROGRESS'),
   PEER_REVIEW_COMPLETE: terminal('PEER_REVIEW_COMPLETE'),
 };
+
+/**
+ * Derive the execution disposition from persisted state.
+ *
+ * Priority: a persisted execution block (risk gate, discovery health gate, or
+ * the fail-closed error state) wins for non-terminal positions; terminal
+ * positions are terminal even when they retain a diagnostic error marker
+ * (ABORTED). Human gates require a human decision. Everything else is active.
+ */
+export function resolveExecutionDisposition(state: SessionState): ExecutionDisposition {
+  if (TERMINAL.has(state.phase)) return 'terminal';
+  if (isExecutionBlocked(state)) return 'blocked';
+  if (USER_GATES.has(state.phase)) return 'awaiting_human';
+  return 'active';
+}
+
+function isExecutionBlocked(state: SessionState): boolean {
+  if (state.error !== null) return true;
+  if (state.riskGate?.status === 'blocked') return true;
+  if (state.discoveryHealthGate?.status === 'blocked') return true;
+  return false;
+}
 
 /** Resolve the directive from complete persisted state without changing it. */
 export function resolveWorkflowDirective(state: SessionState): WorkflowDirective {

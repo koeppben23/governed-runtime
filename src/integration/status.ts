@@ -29,7 +29,12 @@ import type { DecisionIdentity } from '../state/evidence-identity.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 import { evaluate } from '../machine/evaluate.js';
 import { allValidationsPassed, implValidationPassed } from '../machine/guards.js';
-import { resolveWorkflowDirective, type WorkflowDirective } from '../machine/workflow-directive.js';
+import {
+  resolveExecutionDisposition,
+  resolveWorkflowDirective,
+  type ExecutionDisposition,
+  type WorkflowDirective,
+} from '../machine/workflow-directive.js';
 import { evaluateValidationEvidence } from '../machine/validation-evidence.js';
 import {
   isCommandAllowed,
@@ -96,6 +101,11 @@ export interface StatusProjection {
   };
   /** Commands that are currently admissible. */
   allowedCommands: string[];
+  /**
+   * Derived execution disposition — never persisted. `blocked` never destroys
+   * the workflow position; `awaiting_human` marks an open human gate.
+   */
+  executionDisposition: ExecutionDisposition;
   /** Canonical workflow directive, including the allowed commands verbatim. */
   directive: WorkflowDirective;
   /**
@@ -426,6 +436,7 @@ export function buildStatusProjection(
     archiveStatus: state.regulatedArchiveStatus ?? null,
     lastExport: buildLastExport(state),
     allowedCommands: allowed.map((cmd: FlowGuardCommand) => `/${cmd}`),
+    executionDisposition: resolveExecutionDisposition(state),
     directive,
     blocker,
     evidenceSummary: {

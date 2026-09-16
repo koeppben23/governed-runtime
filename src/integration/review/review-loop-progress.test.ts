@@ -43,6 +43,7 @@ describe('getReviewLoopProgress', () => {
       const state = reviewState('PLAN_REVIEW', {
         selfReview: {
           iteration: 2,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: 'prev',
           currDigest: 'curr',
@@ -104,6 +105,7 @@ describe('getReviewLoopProgress', () => {
       const state = reviewState('ARCH_REVIEW', {
         selfReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 5,
           prevDigest: 'p',
           currDigest: 'c',
@@ -123,6 +125,7 @@ describe('getReviewLoopProgress', () => {
       const state = reviewState('IMPL_REVIEW', {
         implReview: {
           iteration: 0,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: 'd',
@@ -160,6 +163,7 @@ describe('getReviewLoopProgress', () => {
       const state = reviewState('IMPL_REVIEW', {
         implReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: 'd',
@@ -193,6 +197,7 @@ describe('getReviewLoopProgress', () => {
       const state = reviewState('PLAN', {
         selfReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: 'p',
           currDigest: 'c',
@@ -207,6 +212,7 @@ describe('getReviewLoopProgress', () => {
       const state = reviewState('ARCHITECTURE', {
         selfReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: 'p',
           currDigest: 'c',
@@ -245,6 +251,7 @@ describe('getReviewLoopProgress', () => {
       const state = reviewState('PLAN_REVIEW', {
         selfReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: 'p',
           currDigest: 'c',
@@ -294,6 +301,7 @@ describe('getReviewLoopProgress', () => {
       const state = reviewState('PLAN_REVIEW', {
         selfReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: 'p',
           currDigest: 'c',
@@ -342,6 +350,7 @@ describe('getReviewLoopProgress', () => {
       const state = reviewState('PLAN_REVIEW', {
         selfReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: 'p',
           currDigest: 'c',
@@ -356,6 +365,7 @@ describe('getReviewLoopProgress', () => {
       const state = reviewState('PLAN_REVIEW', {
         selfReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: 'p',
           currDigest: 'c',
@@ -377,6 +387,7 @@ describe('getReviewLoopProgress', () => {
       const state = makeState('PLAN_REVIEW', {
         selfReview: {
           iteration: 2,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: 'p',
           currDigest: 'c',
@@ -427,6 +438,7 @@ describe('getReviewLoopProgress', () => {
       const state = makeState('IMPL_REVIEW', {
         implReview: {
           iteration: 0,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: 'd',

@@ -77,6 +77,7 @@ import {
   refineReviewMaterialSubject,
   refinePeerReviewSubject,
 } from './evidence-review-refinements.js';
+import { refineReviewCycleCoherence } from './review-cycles.js';
 import {
   refineAssuranceAttemptLineageCoherence,
   refineAssuranceDispatchCoherence,
@@ -388,6 +389,8 @@ export type ReviewProfileSource = z.infer<typeof ReviewProfileSource>;
 export const ReviewInputFingerprintVersion = z.literal('v2');
 export type ReviewInputFingerprintVersion = z.infer<typeof ReviewInputFingerprintVersion>;
 
+/** Human review-cycle identity; canonical schema and invariants live in `review-cycles.ts`. */
+export { ReviewCycles } from './review-cycles.js';
 export { ReviewRepositoryRevisionProvenance } from './evidence-primitives.js';
 
 /**
@@ -399,6 +402,21 @@ export const ReviewObligation = z
     obligationId: z.string().uuid(),
     obligationType: ReviewObligationType,
     iteration: z.number().int().nonnegative(),
+    /**
+     * Human-cycle identity of this obligation. The value is the owning loop's
+     * active `ReviewCycles` counter at mint time:
+     *
+     * - peer review (`obligationType === 'review'`) → `null`: it has exactly
+     *   one pass and no human convergence cycle.
+     * - plan/architecture/implement → a positive integer. A human
+     *   `changes_requested` decision at the owning gate starts a new cycle and
+     *   restarts `iteration` at 1; `reviewCycle` is what keeps cycle N
+     *   iteration 1 distinguishable from cycle N+1 iteration 1 in persisted
+     *   evidence and audit.
+     *
+     * REQUIRED and never defaulted: absence is not a legal current shape.
+     */
+    reviewCycle: z.number().int().positive().nullable(),
     planVersion: z.number().int().positive(),
     criteriaVersion: z.string().min(1),
     mandateDigest: z.string().min(1),
@@ -473,6 +491,7 @@ export const ReviewObligation = z
   .strict()
   .superRefine(refinePeerReviewSubject)
   .superRefine(refineReviewMaterialSubject)
+  .superRefine(refineReviewCycleCoherence)
   .superRefine(refineAuthorityStructure)
   .superRefine(refineObligationRepositoryAuthorityCoherence)
   .superRefine(refineRepositoryEvidenceFreezeCoherence);

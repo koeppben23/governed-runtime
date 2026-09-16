@@ -114,6 +114,7 @@ export function buildPlanReviewObligationInput(
   return {
     obligationType: 'plan',
     iteration: 0,
+    reviewCycle: scope.state.reviewCycles.plan,
     planVersion,
     now: scope.ctx.now(),
     subjectDigest: planEvidence.digest,
@@ -455,6 +456,7 @@ async function mintPlanRevisionAttempt(input: {
     {
       obligationType: 'plan',
       iteration,
+      reviewCycle: finalState.reviewCycles.plan,
       planVersion: nextPlanVersion,
       now: scope.ctx.now(),
       subjectDigest: revision.currentPlan.digest,

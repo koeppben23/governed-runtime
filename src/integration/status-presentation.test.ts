@@ -141,6 +141,7 @@ function makeBaseProjection(overrides: Partial<StatusProjection> = {}): StatusPr
       verificationStatus: null,
     },
     allowedCommands: ['/ticket', '/architecture', '/review'],
+    executionDisposition: 'active',
     directive: {
       kind: 'user_action',
       code: 'CHOOSE_FLOW',

@@ -25,6 +25,7 @@ const WORKSPACE_FINGERPRINT = 'workspace-fingerprint-not-content';
 function contentObligation() {
   return createReviewObligation({
     obligationType: 'review',
+    reviewCycle: null,
     iteration: 1,
     planVersion: 1,
     now: NOW,
@@ -70,6 +71,7 @@ describe('buildReviewChallengeContract frozen authority', () => {
     const frozen = '# Frozen heading\n\nFrozen body text.';
     const obligation = createReviewObligation({
       obligationType: 'plan',
+      reviewCycle: 1,
       iteration: 1,
       planVersion: 1,
       now: NOW,
@@ -107,6 +109,7 @@ describe('buildReviewChallengeContract frozen authority', () => {
   it('binds repository-backed standalone challenges to the frozen review-subject digest', () => {
     const obligation = createReviewObligation({
       obligationType: 'review',
+      reviewCycle: null,
       iteration: 1,
       planVersion: 1,
       now: NOW,

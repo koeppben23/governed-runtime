@@ -30,6 +30,7 @@ import {
   PlanRecord,
   PolicySnapshotSchema,
   ReviewAssuranceState,
+  ReviewCycles,
   ReviewDecision,
   ReviewFindings,
   SelfReviewLoop,
@@ -453,6 +454,9 @@ export const SessionState = z
 
     /** Implementation review iteration result (IMPL_REVIEW phase, digest-stop). */
     implReview: ImplReviewResult.nullable(),
+
+    /** Human review-cycle counters for the governed loops; REQUIRED — see `review-cycles.ts`. */
+    reviewCycles: ReviewCycles,
 
     /** Independent review findings for /implement (parallel, NOT mixed with ImplEvidence). */
     implReviewFindings: z.array(ReviewFindings).optional(),

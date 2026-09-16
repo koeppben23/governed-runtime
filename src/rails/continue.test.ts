@@ -110,6 +110,7 @@ describe('continue rail', () => {
         },
         selfReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: 'd',
@@ -210,6 +211,7 @@ describe('continue rail', () => {
         },
         selfReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: 'd',
@@ -233,6 +235,7 @@ describe('continue rail', () => {
         plan: PLAN_RECORD,
         selfReview: {
           iteration: 3,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: 'd2',
           currDigest: 'd3',
@@ -256,6 +259,7 @@ describe('continue rail', () => {
         architecture: ARCHITECTURE_DECISION,
         selfReview: {
           iteration: 0,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: ARCHITECTURE_DECISION.digest,

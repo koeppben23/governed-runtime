@@ -99,6 +99,7 @@ describe('plan rail', () => {
         plan: PLAN_RECORD,
         selfReview: {
           iteration: 0,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: 'd1',
@@ -136,6 +137,7 @@ describe('plan rail', () => {
         plan: PLAN_RECORD,
         selfReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: 'd1',
           currDigest: 'd2',

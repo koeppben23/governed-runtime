@@ -1106,6 +1106,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
           {
             obligationId,
             obligationType: 'plan' as const,
+            reviewCycle: 1,
             requiredChallengeCount: 0,
             requiredChallengeKind: 'design_challenge' as const,
             challengePolicyVersion: 'challenge-policy.v1' as const,

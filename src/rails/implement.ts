@@ -152,7 +152,7 @@ export async function executeImplement(
   const finalState: SessionState = {
     ...nextState,
     implementation: loop.artifact,
-    implReview: buildImplReviewState(loop, ctx.now()),
+    implReview: buildImplReviewState(loop, ctx.now(), state.reviewCycles.implementation),
   };
   const advanced = autoAdvance(finalState, evalFn, ctx);
   if (advanced.kind === 'overflow') return blockedFromOverflow(advanced);
