@@ -87,16 +87,16 @@
       "properties": {
         "kind": {
           "type": "string",
-          "enum": ["sdk_structured_session", "native_task_subagent"]
+          "enum": ["native_task_structured_followup"]
         },
-        "structuredOutput": { "type": "boolean" },
-        "parentVisible": { "type": "boolean" },
-        "transcriptNavigable": { "type": "boolean" },
-        "isolatedAgentIdentity": { "type": "boolean" },
-        "permissionIsolation": { "type": "boolean" },
+        "structuredOutput": { "type": "boolean", "const": true },
+        "parentVisible": { "type": "boolean", "const": true },
+        "transcriptNavigable": { "type": "boolean", "const": true },
+        "isolatedAgentIdentity": { "type": "boolean", "const": true },
+        "permissionIsolation": { "type": "boolean", "const": true },
         "assurance": {
           "type": "string",
-          "enum": ["structured_high", "unstructured"]
+          "const": "structured_high"
         }
       },
       "additionalProperties": false
