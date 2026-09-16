@@ -1,10 +1,22 @@
 import { readState } from '../adapters/persistence.js';
 import { withSessionWriteLock } from '../adapters/persistence-lock.js';
 import { completeMutationEpisode } from '../state/evidence-mutation-episode.js';
+import { strictBlockedOutput } from './plugin-helpers.js';
 import type { ToolHookAfterInput, ToolHookAfterOutput } from './types.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import { writeStateWithAuditOperationsAlreadyLocked } from './tools/audit-outbox.js';
 import { MUTATING_HOST_TOOLS } from './phase-tool-gate.js';
+
+/**
+ * A mutating host tool is governed by the Before-hook boundary: no host call
+ * reaches execution without a resolvable session directory, readable state, and
+ * an authorized mutation episode. The After-hook therefore treats missing
+ * governed context as an invariant violation and blocks instead of silently
+ * skipping completion.
+ */
+function blockUnavailableCompletion(output: ToolHookAfterOutput, reason: string): void {
+  output.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', { reason });
+}
 
 export async function recordMutationCompletion(input: {
   readonly runtime: FlowGuardPluginRuntime;
@@ -14,16 +26,42 @@ export async function recordMutationCompletion(input: {
   readonly now: string;
 }): Promise<void> {
   const { runtime, sessionId, hookInput, hookOutput, now } = input;
-  if (!MUTATING_HOST_TOOLS.has(hookInput.tool) || !hookInput.callID) return;
+  if (!MUTATING_HOST_TOOLS.has(hookInput.tool)) return;
+  const callId = hookInput.callID;
+  if (!callId) {
+    blockUnavailableCompletion(
+      hookOutput,
+      'The completed mutating host tool has no host callID; its authorized mutation episode cannot be closed.',
+    );
+    return;
+  }
   const sessDir = runtime.ws.getSessionDir(sessionId);
-  if (!sessDir) return;
+  if (!sessDir) {
+    blockUnavailableCompletion(
+      hookOutput,
+      'The completed mutating host tool has no resolvable FlowGuard session directory; its authorized mutation episode cannot be closed.',
+    );
+    return;
+  }
   await withSessionWriteLock(sessDir, async () => {
     const state = await readState(sessDir);
-    const episode = state?.mutationEpisodes.find(
-      (candidate) =>
-        candidate.hostCallId === hookInput.callID && candidate.toolName === hookInput.tool,
+    if (!state) {
+      blockUnavailableCompletion(
+        hookOutput,
+        'FlowGuard session state disappeared before the mutation episode could be completed.',
+      );
+      return;
+    }
+    const episode = state.mutationEpisodes.find(
+      (candidate) => candidate.hostCallId === callId && candidate.toolName === hookInput.tool,
     );
-    if (!state || !episode) return;
+    if (!episode) {
+      blockUnavailableCompletion(
+        hookOutput,
+        'No authorized mutation episode exists for this host call; the mutation is not acknowledged as governed.',
+      );
+      return;
+    }
     // A fenced recovery makes a prior host outcome permanently unobservable.
     // Ignore a delayed After hook instead of invalidating the append-only resolution.
     if (
@@ -36,7 +74,7 @@ export async function recordMutationCompletion(input: {
       ...state,
       mutationEpisodes: completeMutationEpisode(
         state.mutationEpisodes,
-        hookInput.callID,
+        callId,
         hookInput.tool,
         now,
         mutationOutcome(hookInput.tool, hookOutput),

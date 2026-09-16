@@ -558,11 +558,46 @@ function projectUnableToReview(output: ToolHookAfterOutput, obligationId: string
   output.output = strictBlockedOutput('SUBAGENT_UNABLE_TO_REVIEW', { obligationId });
 }
 
-function resolveNativeTaskContext(runtime: FlowGuardPluginRuntime, hookInput: ToolHookAfterInput) {
+type NativeTaskContextResolution =
+  | {
+      readonly kind: 'resolved';
+      readonly sessionId: string;
+      readonly callId: string;
+      readonly sessDir: string;
+    }
+  | { readonly kind: 'context_unavailable'; readonly reason: string };
+
+/**
+ * Governed after-hook context for one native reviewer Task.
+ *
+ * A reviewer Task is governed by its identity, so context loss is an invariant
+ * violation — never a reason to skip enforcement. The only non-governed
+ * invocation is rejected by `isNativeReviewerTaskAfter` before this point.
+ */
+function resolveNativeTaskContext(
+  runtime: FlowGuardPluginRuntime,
+  hookInput: ToolHookAfterInput,
+): NativeTaskContextResolution {
   const sessionId = hookInput.sessionID;
   const callId = hookInput.callID;
   const sessDir = runtime.ws.getSessionDir(sessionId);
-  return sessDir && callId ? { sessionId, callId, sessDir } : null;
+  if (!sessDir) {
+    return {
+      kind: 'context_unavailable',
+      reason:
+        'The completed native reviewer Task has no resolvable FlowGuard session directory; ' +
+        'the governed reviewer invocation cannot be observed or bound.',
+    };
+  }
+  if (!callId) {
+    return {
+      kind: 'context_unavailable',
+      reason:
+        'The completed native reviewer Task has no host callID; the governed reviewer invocation ' +
+        'cannot be matched to its durable dispatch authorization.',
+    };
+  }
+  return { kind: 'resolved', sessionId, callId, sessDir };
 }
 
 /** Host boundary after native Task: bind same-child structured findings and replace free-form text. */
@@ -575,7 +610,23 @@ export async function nativeReviewTaskAfter(
   const hookOutput = output as ToolHookAfterOutput;
   if (!isNativeReviewerTaskAfter(hookInput)) return;
   const taskContext = resolveNativeTaskContext(runtime, hookInput);
-  if (!taskContext) return;
+  if (taskContext.kind === 'context_unavailable') {
+    hookOutput.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
+      reason: taskContext.reason,
+    });
+    runtime.log.warn('orchestrator', 'native reviewer Task after-hook context unavailable', {
+      reason: taskContext.reason,
+    });
+    return;
+  }
+  await fulfillNativeReviewTask(runtime, taskContext, hookOutput);
+}
+
+async function fulfillNativeReviewTask(
+  runtime: FlowGuardPluginRuntime,
+  taskContext: Extract<NativeTaskContextResolution, { kind: 'resolved' }>,
+  hookOutput: ToolHookAfterOutput,
+): Promise<void> {
   const { sessionId, callId, sessDir } = taskContext;
 
   const lineage = await resolveNativeReviewLineage(runtime, sessDir, callId);
@@ -599,9 +650,44 @@ export async function nativeReviewTaskAfter(
     return;
   }
 
+  await completeStructuredReview(runtime, {
+    sessionId,
+    callId,
+    sessDir,
+    lineage,
+    childSessionId,
+    hookOutput,
+  });
+}
+
+async function completeStructuredReview(
+  runtime: FlowGuardPluginRuntime,
+  input: {
+    readonly sessionId: string;
+    readonly callId: string;
+    readonly sessDir: string;
+    readonly lineage: NativeReviewLineage;
+    readonly childSessionId: string;
+    readonly hookOutput: ToolHookAfterOutput;
+  },
+): Promise<void> {
+  const { sessionId, callId, sessDir, lineage, childSessionId, hookOutput } = input;
+
   await persistReviewerObservations(runtime, sessionId, lineage.attempt.attemptId, childSessionId);
   const refreshedState = await readState(sessDir);
-  if (!refreshedState) return;
+  if (!refreshedState) {
+    await abandonAndBlock({
+      runtime,
+      sessDir,
+      callId,
+      output: hookOutput,
+      code: 'REVIEW_ASSURANCE_STATE_UNAVAILABLE',
+      reason:
+        'Persisted FlowGuard state disappeared after reviewer observation replay; ' +
+        'the captured findings cannot be validated or bound.',
+    });
+    return;
+  }
 
   const captured = await capturePreparedFindings(runtime, lineage.obligation, childSessionId);
   if (captured.kind === 'blocked') {

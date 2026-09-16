@@ -169,7 +169,7 @@ describe('toolAfter — audit block output mutation', () => {
     expect(parsed.code).toBe('AUDIT_PERSISTENCE_FAILED');
   });
 
-  it('does not touch non-flowguard tool outputs', async () => {
+  it('does not touch non-mutating host tool outputs', async () => {
     const runtime = makeRuntime({
       auditDeps: makeAuditDeps({
         resolveSessionPolicy: vi.fn(async () => {
@@ -177,13 +177,26 @@ describe('toolAfter — audit block output mutation', () => {
         }),
       }),
     });
+    const output = { title: 'read', output: 'ok', metadata: {} };
+    await toolAfter(
+      runtime,
+      { tool: 'read', sessionID: SESSION_ID, callID: 'c1', args: {} },
+      output,
+    );
+    expect(output.output).toBe('ok');
+  });
+
+  it('fails closed when a mutating host tool after-hook has no governed context', async () => {
+    const runtime = makeRuntime();
     const output = { title: 'bash', output: 'ok', metadata: {} };
     await toolAfter(
       runtime,
       { tool: 'bash', sessionID: SESSION_ID, callID: 'c1', args: {} },
       output,
     );
-    expect(output.output).toBe('ok');
+    const parsed = JSON.parse(output.output) as Record<string, unknown>;
+    expect(parsed.error).toBe(true);
+    expect(parsed.code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
   });
 
   it('a foreign after-hook call without a prior before does not throw', async () => {

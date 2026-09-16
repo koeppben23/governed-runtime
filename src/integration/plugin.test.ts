@@ -1638,7 +1638,7 @@ describe('integration/plugin', () => {
       }
     });
 
-    it('tool.execute.after handles task tool events via enforcement tracking', async () => {
+    it('fails closed on a native reviewer Task after-hook without governed lineage', async () => {
       const ws = await createTestWorkspace();
       try {
         const sessionID = crypto.randomUUID();
@@ -1649,7 +1649,7 @@ describe('integration/plugin', () => {
           }),
         );
 
-        // Task tool events should be tracked by task enforcement
+        const output = { title: 'task', output: '{}', metadata: {} };
         await expect(
           hooks['tool.execute.after']!(
             {
@@ -1658,13 +1658,45 @@ describe('integration/plugin', () => {
               callID: 'c1',
               args: { subagent_type: 'flowguard-reviewer' },
             },
-            {
-              title: 'task',
-              output: '{}',
-              metadata: {},
-            },
+            output,
           ),
         ).resolves.toBeUndefined();
+
+        const parsed = JSON.parse(output.output) as { error?: boolean; code?: string };
+        expect(parsed.error).toBe(true);
+        expect([
+          'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+          'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+        ]).toContain(parsed.code);
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('fails closed on a native reviewer Task after-hook without a host callID', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({
+            worktree: ws.tmpDir,
+            directory: ws.tmpDir,
+          }),
+        );
+
+        const output = { title: 'task', output: '{}', metadata: {} };
+        await hooks['tool.execute.after']!(
+          {
+            tool: 'task',
+            sessionID: crypto.randomUUID(),
+            callID: '',
+            args: { subagent_type: 'flowguard-reviewer' },
+          },
+          output,
+        );
+
+        const parsed = JSON.parse(output.output) as { error?: boolean; code?: string };
+        expect(parsed.error).toBe(true);
+        expect(parsed.code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
       } finally {
         await ws.cleanup();
       }
