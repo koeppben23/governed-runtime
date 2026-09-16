@@ -52,10 +52,12 @@ function hasUnverifiedEvidence(evidence: EvidenceDetailProjection): boolean {
  * Precedence (highest first):
  * 1. BLOCKED             — readiness projection reports blocked (waiting).
  * 2. NOT_VERIFIED        — a required evidence slot is missing or failed.
- * 3. IN_PROGRESS         — non-terminal phase; lifecycle not yet complete.
- * 4. CHANGES_REQUIRED    — completed peer review report has issues.
- * 5. READY_WITH_WARNINGS — terminal, evidence ok, but warnings present.
- * 6. READY               — otherwise.
+ * 3. READY/READY_WITH_WARNINGS — EXPORT_READY: evidence is complete and the
+ *    canonical directive requires `/export`; completion is ready, not pending.
+ * 4. IN_PROGRESS         — other non-terminal phase; lifecycle not yet complete.
+ * 5. CHANGES_REQUIRED    — completed peer review report has issues.
+ * 6. READY_WITH_WARNINGS — terminal, evidence ok, but warnings present.
+ * 7. READY               — otherwise.
  *
  * BLOCKED intentionally wins over NOT_VERIFIED so a blocked session is not
  * mislabelled merely because evidence is also incomplete.
@@ -67,7 +69,13 @@ export function deriveFinishOverallStatus(
 ): FinishOverallStatus {
   if (readiness.blocked) return 'BLOCKED';
   if (hasUnverifiedEvidence(evidence)) return 'NOT_VERIFIED';
-  // Non-terminal phases are in progress regardless of warnings or review status.
+  // EXPORT_READY is the explicit completion gate: the canonical directive
+  // requires `/export`, so the session is ready for completion, not "in
+  // progress". Reporting IN_PROGRESS here would contradict the directive.
+  if (readiness.phase === 'EXPORT_READY') {
+    return readiness.warnings.length > 0 ? 'READY_WITH_WARNINGS' : 'READY';
+  }
+  // Other non-terminal phases are in progress regardless of warnings or review status.
   if (!isTerminalPhase(readiness.phase)) return 'IN_PROGRESS';
   if (reviewReport?.overallStatus === 'issues') return 'CHANGES_REQUIRED';
   if (readiness.warnings.length > 0) return 'READY_WITH_WARNINGS';

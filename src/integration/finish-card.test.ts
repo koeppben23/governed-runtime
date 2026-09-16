@@ -130,6 +130,24 @@ describe('deriveFinishOverallStatus — overall status matrix', () => {
     }
   });
 
+  it('reports READY at EXPORT_READY, never IN_PROGRESS', () => {
+    // EXPORT_READY is the explicit completion gate: the canonical directive
+    // requires `/export`. Reporting IN_PROGRESS (with "export is not
+    // applicable") would contradict the directive.
+    const state = makeProgressedState('EXPORT_READY');
+    const card = buildFinishCard(state, policy);
+    expect(card.phase).toBe('EXPORT_READY');
+    expect(card.directive.code).toBe('EXPORT_REQUIRED');
+    expect(card.directive.commands).toEqual(['/export']);
+    expect(card.overallStatus).toBe('READY');
+    expect(
+      card.actionGuidance.find((guidance) => guidance.action === 'export evidence')?.status,
+    ).toBe('recommended');
+    expect(card.actionGuidance.find((guidance) => guidance.action === 'create PR')?.status).toBe(
+      'recommended',
+    );
+  });
+
   it('does not invent a stale evidence status (not_yet_required never NOT_VERIFIED)', () => {
     // deriveFinishOverallStatus must only react to missing/failed required slots.
     const readiness = {

@@ -75,8 +75,41 @@ vi.mock('../adapters/git', async (importOriginal) => {
     remoteOriginUrl: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl),
     changedFiles: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.changedFiles),
     listRepoSignals: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.repoSignals),
+    // Solo plan convergence now enters VALIDATION and runs the active checks
+    // automatically; the IMPLEMENTATION transition freezes the pre-mutation
+    // base from HEAD.
+    headCommitFull: vi.fn().mockResolvedValue('d'.repeat(40)),
   };
 });
+
+vi.mock('../adapters/frozen-repository.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/frozen-repository.js')>();
+  return {
+    ...original,
+    freezeRepositoryIdentity: vi.fn(() => ({
+      kind: 'local' as const,
+      rootCommitDigest: 'sha256:' + 'b'.repeat(64),
+    })),
+    freezeWorktreeCandidate: vi.fn().mockResolvedValue('c'.repeat(40)),
+  };
+});
+
+// Mock the verification executor: the automatic validation run must never spawn
+// real subprocesses in the temp worktree.
+vi.mock('../verification/executor', () => ({
+  executeCheck: vi.fn().mockImplementation(async (input: { kind: string; command: string }) => ({
+    kind: input.kind,
+    command: input.command,
+    exitCode: 0,
+    passed: true,
+    executionMs: 100,
+    outputDigest: 'a'.repeat(64),
+    stdout: 'OK',
+    stderr: '',
+    timedOut: false,
+    startedAt: new Date().toISOString(),
+  })),
+}));
 
 // ─── Workspace Mock (P26) ────────────────────────────────────────────────────
 // Partial mock: archiveSession and verifyArchive are vi.fn() wrappers that
@@ -359,12 +392,13 @@ describe('plan', () => {
       const raw = await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      // In solo mode, max iterations is 1, so should converge
-      expect(
-        result.converged === true ||
-          result.phase === 'PLAN_REVIEW' ||
-          result.phase === 'VALIDATION',
-      ).toBe(true);
+      // Solo convergence auto-approves PLAN_REVIEW into VALIDATION and the
+      // runtime runs the active checks automatically; the resulting validation
+      // response supersedes the plan response and advances to IMPLEMENTATION.
+      expect(result.phase).toBe('IMPLEMENTATION');
+      const state = await readState(await currentSessionDir());
+      expect(state?.validation.length).toBeGreaterThan(0);
+      expect(state?.validation.every((entry) => entry.passed)).toBe(true);
     });
 
     it('Mode B: changes_requested with revised plan', async () => {

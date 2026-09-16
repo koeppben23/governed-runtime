@@ -52,9 +52,9 @@ cd demos/java-task-manager
 
 ### Step A2 — Submit the Architecture Task
 
-| Action          | Phase        | What I Say                                                                                                                                                                                                                                                                                                                  |
-| --------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/architecture` | ARCHITECTURE | "Ich ubergebe den Architecture Task (`Read ADR_TICKET.md and create an ADR based on it`). FlowGuard erzwingt, dass ein ADR in MADR-Format erstellt wird — mit `## Context`, `## Decision`, `## Consequences`. Der LLM analysiert den Code, erkennt die Inkonsistenz und generiert eine strukturierte Entscheidungsvorlage." |
+| Action                                                           | Phase        | What I Say                                                                                                                                                                                                                                                                                                                     |
+| ---------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/architecture Read ADR_TICKET.md and create an ADR based on it` | ARCHITECTURE | "Ich ubergebe den Architecture Task mit explizitem Input: der Command liest `ADR_TICKET.md`. FlowGuard erzwingt, dass ein ADR in MADR-Format erstellt wird — mit `## Context`, `## Decision`, `## Consequences`. Der LLM analysiert den Code, erkennt die Inkonsistenz und generiert eine strukturierte Entscheidungsvorlage." |
 
 ### Step A3 — ADR Generation and Autonomous Independent Review
 
@@ -149,17 +149,17 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 ### Step 2 — Record the Ticket
 
-| Action  | Phase  | What I Say                                                                                                          |
-| ------- | ------ | ------------------------------------------------------------------------------------------------------------------- |
-| `/task` | TICKET | "Ich übergebe das Ticket (`TICKET.md`). FlowGuard erzwingt, dass jede Änderung von einem erfassten Ticket ausgeht." |
+| Action                                           | Phase  | What I Say                                                                                                                                                                                                      |
+| ------------------------------------------------ | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/task Read TICKET.md and fix the described bug` | TICKET | "Ich übergebe das Ticket mit explizitem Input (`Read TICKET.md …`). `/task` konsumiert den Text als Task-Beschreibung; FlowGuard erzwingt anschließend, dass jede Änderung von einem erfassten Ticket ausgeht." |
 
 ---
 
 ### Step 2a — Prove Enforcement (the forbidden transition)
 
-| Action       | Phase  | What I Say                                                                                                                                                                                                                                                                                                                                                                                     |
-| ------------ | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/implement` | TICKET | "Ich versuche direkt zu implementieren — ohne Plan, ohne Review, ohne Freigabe. FlowGuard blockt mit `COMMAND_NOT_ALLOWED`; die Directive meldet `PLAN_REQUIRED` (\"Plan required\") und lässt nur `/plan` zu. Erst Plan, unabhängige Prüfung, menschliche Freigabe und Validation öffnen die Implementierungsphase. Der unzulässige Übergang wird technisch abgelehnt, nicht nur per Prompt." |
+| Action       | Phase  | What I Say                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ------------ | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/implement` | TICKET | "Ich versuche direkt zu implementieren — ohne Plan, ohne Review, ohne Freigabe. Der kanonische Command lässt den illegalen Pfad gar nicht erst beginnen: sein Preflight erkennt die falsche Phase und stoppt ohne Tool-Aufruf. Die darunterliegende Runtime lehnt den Übergang ebenfalls ab — eine direkte `flowguard_implement`-Invocation wird vom Machine Gate mit `COMMAND_NOT_ALLOWED` geblockt; die Directive meldet `PLAN_REQUIRED` (\"Plan required\") und lässt nur `/plan` zu. Erst Plan, unabhängige Prüfung, menschliche Freigabe und Validation öffnen die Implementierungsphase." |
 
 ---
 
@@ -175,9 +175,9 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 ### Step 4 — Approve the Plan
 
-| Action     | Phase                    | What I Say                                                                                               |
-| ---------- | ------------------------ | -------------------------------------------------------------------------------------------------------- |
-| `/approve` | PLAN_REVIEW → VALIDATION | "Ich genehmige den Plan. FlowGuard wechselt in die Validierungsphase. Kein Code wurde bisher angerührt." |
+| Action     | Phase                                            | What I Say                                                                                                                                                                                                                                                                                                    |
+| ---------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/approve` | PLAN_REVIEW → VALIDATION → IMPLEMENTATION (auto) | "Ich genehmige den Plan. FlowGuard wechselt in die Validierungsphase — und führt die aktiven Checks dort sofort automatisch aus. Die Antwort des Approval-Calls ist bereits das Validierungsergebnis: die Evidence ist persistiert und die Phase steht auf IMPLEMENTATION. Kein Code wurde bisher angerührt." |
 
 ---
 
@@ -185,12 +185,13 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 > The directive says: "No action required; FlowGuard runs the approved
 > validation automatically." There is no user-typed check command in the
-> canonical walkthrough: the agent executes the active checks in-flow via
-> `flowguard_run_check`, and each result is bound to the audit trail.
+> canonical walkthrough: the runtime executes the active checks in-flow through
+> the `flowguard_run_check` evidence path, and each result is bound to the audit
+> trail.
 
-| Action                               | Phase                       | What I Say                                                                                                                                                                                                                                                                                                                                                                                                 |
-| ------------------------------------ | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Automatic (in-flow, no user command) | VALIDATION → IMPLEMENTATION | "Kein User-Kommando: FlowGuard führt die erkannten Prüfungen automatisch aus, der Agent ruft die aktiven Checks in-flow über `flowguard_run_check` auf. `npm run build` startet `./mvnw verify`; `npm run test` führt die Controller-Testklasse gezielt aus. Im Baseline bleibt der Regressionstest noch `@Disabled`, deshalb sind beide Checks grün. Erst `ALL_PASSED` öffnet die Implementierungsphase." |
+| Action                               | Phase                       | What I Say                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------------------------ | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Automatic (in-flow, no user command) | VALIDATION → IMPLEMENTATION | "Kein User-Kommando: die Runtime führt die aktiven Checks in-flow über den `flowguard_run_check`-Evidenzpfad aus. `npm run build` startet `./mvnw verify`; `npm run test` führt die Controller-Testklasse gezielt aus. Im Baseline bleibt der Regressionstest noch `@Disabled`, deshalb sind beide Checks grün. Erst `ALL_PASSED` öffnet die Implementierungsphase." |
 
 ---
 
@@ -291,11 +292,11 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 > blocked or failed export stays in `EXPORT_READY`; only `EXPORT_MATERIALIZED`
 > reaches `COMPLETE`.
 
-| Action                | What I Say                                                                                                                                                                                                                                                                                                                                                                                                       |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/export`             | "Erst `/export` materialisiert und verifiziert das erforderliche Paket und persistiert `ExportCompletionEvidence` — genau dieser Übergang führt `EXPORT_READY → COMPLETE`. Die Antwort meldet Abschluss und Paket-Digest (`integrityCapability: verifiable`, `verificationStatus: passed`). Ein blockierter oder fehlgeschlagener Export bleibt in EXPORT_READY und darf nicht als complete beschrieben werden." |
-| `/archive` (optional) | "Optional danach: `/archive` ist **kein** Synonym fur `/export`. Es archiviert die bereits terminale Session und erzeugt das redigierte Sharing-Archiv (`integrityCapability: not_verifiable`, `verificationStatus: not_run`). Nur terminale Sessions konnen archiviert werden."                                                                                                                                 |
-| Show archive location | "Das Archiv liegt in `~/.config/opencode/workspaces/.../archive/` — außerhalb des Projektverzeichnisses. Es überlebt Workspace-Resets und ist unabhängig von der aktiven MCP-Session."                                                                                                                                                                                                                           |
+| Action                | What I Say                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/export`             | "Erst `/export` materialisiert und verifiziert das erforderliche Paket und persistiert `ExportCompletionEvidence` — genau dieser Übergang führt `EXPORT_READY → COMPLETE`. Die Antwort trägt die typisierte `exportCompletion`-Projektion mit Paket-Digest, `purpose`, `integrityCapability: verifiable` und `verificationStatus: passed`; die Werte sind damit direkt aus dem Tool-Ergebnis ablesbar, nicht nur im State. Ein blockierter oder fehlgeschlagener Export bleibt in EXPORT_READY und darf nicht als complete beschrieben werden." |
+| `/archive` (optional) | "Optional danach: `/archive` ist **kein** Synonym fur `/export`. Es archiviert die bereits terminale Session und erzeugt das redigierte Sharing-Archiv (`integrityCapability: not_verifiable`, `verificationStatus: not_run`). Nur terminale Sessions konnen archiviert werden."                                                                                                                                                                                                                                                                |
+| Show archive location | "Das Archiv liegt in `~/.config/opencode/workspaces/.../archive/` — außerhalb des Projektverzeichnisses. Es überlebt Workspace-Resets und ist unabhängig von der aktiven MCP-Session."                                                                                                                                                                                                                                                                                                                                                          |
 
 ---
 
@@ -428,8 +429,8 @@ If someone in the audience knows the other name, this is why both exist:
 - **`/check` vs `/validate`:** both are compatibility-only surfaces that call
   `flowguard_run_check` (`/check` is the generic surface, `/validate` the
   phase-specific variant). The canonical walkthrough does not type them:
-  validation runs automatically in-flow, and the agent executes the active checks
-  via `flowguard_run_check`.
+  validation runs automatically in-flow through the `flowguard_run_check`
+  evidence path.
 - **`/export` vs `/archive`:** `/export` is the canonical completion step at
   EXPORT_READY (tool `flowguard_export`). It materializes and verifies the
   required package, persists `ExportCompletionEvidence`, and only then reaches

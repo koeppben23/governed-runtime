@@ -112,6 +112,7 @@ import type {
 // ---- internal helpers ----
 
 import { classifyPlanCall, planInputFlags, planReviewPolicy } from './plan-types.js';
+import { responseReportsError, runActiveChecksAutomatically } from './auto-validation.js';
 import { routePlanInitialSubmission, blockedPlanReviewInProgress } from './plan-route.js';
 import { classifyPlanClaimSubmission } from './plan-claim-submission.js';
 import {
@@ -616,7 +617,7 @@ export const plan: ToolDefinition = {
   },
   async execute(args, context) {
     try {
-      return await withMutableSessionTransaction(context, async (mutableSession) => {
+      const response = await withMutableSessionTransaction(context, async (mutableSession) => {
         const typedArgs = normalizeInitialPlanSubmissionArgs(
           args as PlanArgs,
           mutableSession.state,
@@ -667,6 +668,19 @@ export const plan: ToolDefinition = {
           ? handlePlanSubmission(scope)
           : handlePlanReview(scope);
       });
+
+      // Automatic validation: when a solo-mode (or CI auto-gated) plan
+      // convergence auto-approves PLAN_REVIEW into VALIDATION, run the active
+      // checks in-flow. Executed AFTER the transaction releases the session
+      // write lock — the run-check path executes subprocesses outside the lock
+      // and must acquire it only to persist evidence. A blocked plan call (e.g.
+      // COMMAND_NOT_ALLOWED at an existing VALIDATION) did not enter the phase
+      // and must not trigger the runner. The plan response is superseded only
+      // when checks actually ran.
+      const autoValidationResponse = responseReportsError(response)
+        ? null
+        : await runActiveChecksAutomatically(context);
+      return autoValidationResponse ?? response;
     } catch (err) {
       return formatError(err);
     }

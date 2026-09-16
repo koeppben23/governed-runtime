@@ -278,20 +278,20 @@ async function completeRegulatedSession(): Promise<{ fingerprint: string; sessDi
     assurance: 'claim_validated' as const,
   });
   await callOk(decision, { verdict: 'approve', rationale: 'Plan approved' });
-  // Run all active verification checks for the current phase (VALIDATION baseline or
-  // IMPL_VALIDATION post-implementation). Discovery detects TypeScript → activeChecks=['typecheck'].
-  const runActiveChecks = async (): Promise<void> => {
-    const ids = await workspaceIds();
-    const st = await readState(ids.sessDir);
-    if (st && st.activeChecks.length > 0) {
-      for (const kind of st.activeChecks) {
-        await callOk(run_check, { kind });
-      }
-    }
-  };
-  await runActiveChecks();
+  // Approval enters VALIDATION and the runtime runs the active checks
+  // automatically (discovery detects TypeScript → activeChecks=['typecheck']),
+  // advancing to IMPLEMENTATION.
+  expect(await phase()).toBe('IMPLEMENTATION');
+  const postValidation = await readState((await workspaceIds()).sessDir);
+  expect(postValidation!.validation.length).toBeGreaterThan(0);
+
   await callOk(implement, {});
-  await runActiveChecks(); // IMPL_VALIDATION → IMPL_REVIEW
+  // Entering IMPL_VALIDATION runs the checks automatically against the recorded
+  // revision before advancing to IMPL_REVIEW.
+  expect(await phase()).toBe('IMPL_REVIEW');
+  const postImplValidation = await readState((await workspaceIds()).sessDir);
+  expect(postImplValidation!.implValidation.length).toBeGreaterThan(0);
+
   for (let i = 0; i < 8 && (await phase()) !== 'EVIDENCE_REVIEW'; i++) {
     await callOk(review_implementation, { reviewVerdict: 'accept' });
   }

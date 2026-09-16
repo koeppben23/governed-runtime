@@ -24,7 +24,7 @@
  * | validation              | IMPLEMENTATION         | all checks passed         |
  * | implementation          | IMPL_REVIEW            | state.impl !== null       |
  * | implReview              | EVIDENCE_REVIEW        | state.implReview !== null |
- * | evidenceReviewDecision  | COMPLETE               | COMPLETE + no error       |
+ * | evidenceReviewDecision  | EXPORT_READY           | EXPORT_READY/COMPLETE + no error |
  *
  * Architecture flow:
  * | Slot                    | Required from phase    | How to verify             |
@@ -209,7 +209,12 @@ const SLOT_PRESENT_CHECKS: Record<string, (state: SessionState, phaseOrd: number
   implementation: (s) => s.implementation !== null,
   implValidation: (s) => checksComplete(s, s.implValidation),
   implReview: (s) => s.implReview !== null,
-  evidenceReviewDecision: (s) => s.phase === 'COMPLETE' && s.error === null,
+  // The final human approval is recorded when the gate transitions to
+  // EXPORT_READY; completion (`/export`) adds the export evidence, not the
+  // decision. The slot is required from EXPORT_READY (SLOT_REQUIRED_FROM), so
+  // its presence must be recognized from EXPORT_READY too.
+  evidenceReviewDecision: (s) =>
+    (s.phase === 'COMPLETE' || s.phase === 'EXPORT_READY') && s.error === null,
   archReviewDecision: (s) => s.phase === 'ARCH_COMPLETE' && s.error === null,
 };
 
@@ -275,7 +280,7 @@ const SLOT_DETAIL_FNS: Record<
       ? `iteration ${s.implReview.iteration}/${s.implReview.maxIterations}, verdict: ${s.implReview.verdict}`
       : undefined,
   evidenceReviewDecision: (s) =>
-    s.phase === 'COMPLETE' && s.error === null
+    (s.phase === 'COMPLETE' || s.phase === 'EXPORT_READY') && s.error === null
       ? 'Approved (verified by topology invariant)'
       : s.error
         ? `Session has error: ${s.error.code}`

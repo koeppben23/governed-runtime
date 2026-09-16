@@ -76,8 +76,40 @@ vi.mock('../adapters/git', async (importOriginal) => {
     remoteOriginUrl: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl),
     changedFiles: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.changedFiles),
     listRepoSignals: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.repoSignals),
+    // Approval now enters VALIDATION and runs the active checks automatically;
+    // the IMPLEMENTATION transition freezes the pre-mutation base from HEAD.
+    headCommitFull: vi.fn().mockResolvedValue('d'.repeat(40)),
   };
 });
+
+vi.mock('../adapters/frozen-repository.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/frozen-repository.js')>();
+  return {
+    ...original,
+    freezeRepositoryIdentity: vi.fn(() => ({
+      kind: 'local' as const,
+      rootCommitDigest: 'sha256:' + 'b'.repeat(64),
+    })),
+    freezeWorktreeCandidate: vi.fn().mockResolvedValue('c'.repeat(40)),
+  };
+});
+
+// Mock the verification executor: the automatic validation run must never spawn
+// real subprocesses in the temp worktree.
+vi.mock('../verification/executor', () => ({
+  executeCheck: vi.fn().mockImplementation(async (input: { kind: string; command: string }) => ({
+    kind: input.kind,
+    command: input.command,
+    exitCode: 0,
+    passed: true,
+    executionMs: 100,
+    outputDigest: 'a'.repeat(64),
+    stdout: 'OK',
+    stderr: '',
+    timedOut: false,
+    startedAt: new Date().toISOString(),
+  })),
+}));
 
 // ─── Workspace Mock (P26) ────────────────────────────────────────────────────
 // Partial mock: archiveSession and verifyArchive are vi.fn() wrappers that
@@ -251,7 +283,10 @@ async function fulfillPlanReview(
 
 describe('P34a: Host-Captured Review', () => {
   it('reviewMode=subagent accepted by mandatory default', async () => {
-    await hydrateSession({ policyMode: 'solo' });
+    // Team mode stops at PLAN_REVIEW: the converged review response is observed
+    // directly (solo auto-approval would supersede it with the automatic
+    // validation response).
+    await hydrateSession({ policyMode: 'team' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
     await fulfillPlanReview(0, 'accept');
@@ -303,7 +338,8 @@ describe('P34a: Host-Captured Review', () => {
   });
 
   it('accepts a verdict-only call against bound captured evidence', async () => {
-    await hydrateSession({ policyMode: 'solo' });
+    // Team mode stops at PLAN_REVIEW so the converged response is observable.
+    await hydrateSession({ policyMode: 'team' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
     await fulfillPlanReview(0, 'accept');
@@ -314,7 +350,8 @@ describe('P34a: Host-Captured Review', () => {
   });
 
   it('converged Mode B response appears after reviewFindings submission', async () => {
-    await hydrateSession({ policyMode: 'solo' });
+    // Team mode stops at PLAN_REVIEW so the converged response is observable.
+    await hydrateSession({ policyMode: 'team' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
     await fulfillPlanReview(0, 'accept');
@@ -329,7 +366,8 @@ describe('P34a: Host-Captured Review', () => {
 
 describe('P34a: Policy-Driven Branches', () => {
   it('subagentEnabled=true + reviewMode=subagent → accepted', async () => {
-    await hydrateSession({ policyMode: 'solo' });
+    // Team mode stops at PLAN_REVIEW so the converged response is observable.
+    await hydrateSession({ policyMode: 'team' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
 
     const { computeFingerprint, sessionDir: resolveSessionDir } =
@@ -423,13 +461,18 @@ describe('decision', () => {
   }
 
   describe('HAPPY', () => {
-    it('approve at PLAN_REVIEW advances to VALIDATION', async () => {
+    it('approve at PLAN_REVIEW advances through automatic validation to IMPLEMENTATION', async () => {
       await reachPlanReview();
       recordUserDecision('approve');
       const raw = await decision.execute({ verdict: 'approve', rationale: 'Looks good' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('VALIDATION');
+      // Approval enters VALIDATION and the runtime runs the active checks
+      // automatically before IMPLEMENTATION.
+      expect(result.phase).toBe('IMPLEMENTATION');
+      const state = await readState(await currentSessionDir());
+      expect(state?.validation.length).toBeGreaterThan(0);
+      expect(state?.validation.every((entry) => entry.passed)).toBe(true);
     });
   });
 
@@ -589,7 +632,9 @@ describe('decision', () => {
       );
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('VALIDATION');
+      // The decision response is superseded by the automatic validation
+      // response: approval crossed VALIDATION into IMPLEMENTATION.
+      expect(result.phase).toBe('IMPLEMENTATION');
     });
   });
 
@@ -617,7 +662,7 @@ describe('decision', () => {
       const secondRaw = await decision.execute({ verdict: 'approve', rationale: 'Proceed' }, ctx);
       const second = parseToolResult(secondRaw);
       expect(second.error).toBeUndefined();
-      expect(second.phase).toBe('VALIDATION');
+      expect(second.phase).toBe('IMPLEMENTATION');
     });
 
     it('does not burn the intent when a decision fails before persistence (artifacts missing)', async () => {
@@ -652,7 +697,7 @@ describe('decision', () => {
         await decision.execute({ verdict: 'approve', rationale: 'Looks good' }, ctx),
       );
       expect(first.error).toBeUndefined();
-      expect(first.phase).toBe('VALIDATION');
+      expect(first.phase).toBe('IMPLEMENTATION');
 
       // Force the gate back to PLAN_REVIEW and replay: the consumed intent is gone.
       const state = await readState(await currentSessionDir());
@@ -693,8 +738,11 @@ describe('decision', () => {
       const raw = await decision.execute({ verdict: 'approve' } as { verdict: ReviewVerdict }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('VALIDATION');
-      expect(result.reviewDecision).toMatchObject({ rationale: '' });
+      // The automatic validation response supersedes the decision output; the
+      // normalized rationale is asserted from persisted state.
+      expect(result.phase).toBe('IMPLEMENTATION');
+      const state = await readState(await currentSessionDir());
+      expect(state?.reviewDecision).toMatchObject({ rationale: '' });
     });
   });
 });

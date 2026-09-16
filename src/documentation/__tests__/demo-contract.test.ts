@@ -162,4 +162,33 @@ describe('java demo workflow contract', () => {
   it('states that live execution is not in CI but the contract is', () => {
     expect(README).toMatch(/not wired into CI/i);
   });
+
+  it('backs the automatic validation claim with the executable runtime test', () => {
+    // The demo says approval runs the active checks automatically. That claim
+    // is only honest because the runtime implements it and proves it here;
+    // a prose-only change must fail this guard.
+    expect(DEMO_SCRIPT).toMatch(/automatic validation/i);
+    const autoValidationTest = readFileSync(
+      join(process.cwd(), 'src', 'integration', 'auto-validation.test.ts'),
+      'utf8',
+    );
+    expect(autoValidationTest).toContain(
+      'team plan approval runs every active check automatically and persists the evidence',
+    );
+    expect(autoValidationTest).toContain(
+      'team /implement runs the post-implementation checks automatically and activates the review obligation',
+    );
+    expect(autoValidationTest).toContain(
+      'solo plan convergence auto-approves into VALIDATION and runs the checks',
+    );
+  });
+
+  it('documents deterministic task/architecture inputs and the export completion projection', () => {
+    // Bare `/task` and `/architecture` do not read files; the demo must pass
+    // explicit input so the live run is deterministic.
+    expect(DEMO_SCRIPT).toContain('/task Read TICKET.md');
+    expect(DEMO_SCRIPT).toContain('/architecture Read ADR_TICKET.md');
+    // `/export` surfaces its persisted completion evidence in the response.
+    expect(DEMO_SCRIPT).toContain('exportCompletion');
+  });
 });

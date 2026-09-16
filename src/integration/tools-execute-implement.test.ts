@@ -334,17 +334,13 @@ describe('implement', () => {
     await hydrateAndTicket();
     await plan.execute({ planText: '## Plan\n1. Fix auth', targetPaths: ['docs/test.md'] }, ctx);
     await fulfillReview('plan', 0, 'accept');
+    // Solo auto-approves PLAN_REVIEW into VALIDATION and the runtime runs the
+    // active checks automatically (discovery detects TypeScript →
+    // activeChecks=['typecheck']), advancing to IMPLEMENTATION.
     await plan.execute({ reviewVerdict: 'accept' }, ctx);
-    // Solo: PLAN_REVIEW auto-approves → VALIDATION
-    // Discovery detects TypeScript → activeChecks=['typecheck'] → run check to advance
     const sessDir = await currentSessionDir();
-    const state = await readState(sessDir);
-    if (state && state.activeChecks.length > 0) {
-      for (const kind of state.activeChecks) {
-        await run_check.execute({ kind }, ctx);
-      }
-    }
     const readyForImplementation = await readState(sessDir);
+    expect(readyForImplementation?.phase).toBe('IMPLEMENTATION');
     await writeState(sessDir, {
       ...readyForImplementation!,
       policySnapshot: {
@@ -373,6 +369,21 @@ describe('implement', () => {
   describe('HAPPY', () => {
     it('defers implementation review obligation and invocation until post-implementation checks pass', async () => {
       await reachImplementation();
+      // Force the automatic post-implementation check to ERROR (timeout): an
+      // execution error stays in IMPL_VALIDATION for a retry, so no implement
+      // obligation may be minted until checks actually pass.
+      vi.mocked(executorMock.executeCheck).mockResolvedValueOnce({
+        kind: 'typecheck',
+        command: 'npx tsc --noEmit',
+        exitCode: -1,
+        passed: false,
+        executionMs: 60000,
+        outputDigest: '0'.repeat(64),
+        stdout: '',
+        stderr: '',
+        timedOut: true,
+        startedAt: new Date().toISOString(),
+      });
       const recordResult = parseToolResult(await implement.execute({}, ctx));
       const sessDir = await currentSessionDir();
 
@@ -392,6 +403,8 @@ describe('implement', () => {
         ) ?? [],
       ).toHaveLength(0);
 
+      // Retry the errored check through the compatibility surface: the passing
+      // re-run mints the review obligation and advances to IMPL_REVIEW.
       const validationResult = await passImplValidation();
       expect(validationResult?.phase).toBe('IMPL_REVIEW');
       expect(validationResult?.reviewObligation).toBeDefined();
@@ -407,11 +420,14 @@ describe('implement', () => {
     it('Mode A: records changed files from git', async () => {
       await reachImplementation();
       const raw = await implement.execute({}, ctx);
-      await passImplValidation();
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      expect(result.changedFiles).toBeDefined();
-      expect(result.domainFiles).toBeDefined();
+      // The automatic post-implementation validation supersedes the record
+      // response; the recorded evidence is asserted from persisted state.
+      const state = await readState(await currentSessionDir());
+      expect(state?.phase).toBe('IMPL_REVIEW');
+      expect(state?.implementation?.changedFiles).toEqual(GIT_MOCK_DEFAULTS.changedFiles);
+      expect(state?.implementation?.domainFiles).toEqual(GIT_MOCK_DEFAULTS.changedFiles);
     });
 
     it('F3: binds a content digest and writes the change diff artifact', async () => {
@@ -540,14 +556,15 @@ describe('implement', () => {
 
       vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['src/security/policy.ts']);
       const raw = await implement.execute({}, ctx);
-      await passImplValidation();
       const result = parseToolResult(raw);
       const finalState = await readState(sessDir);
 
       expect(result.error).toBeUndefined();
-      expect(result.ceremonyProfile).toBe('full');
-      expect(result.ceremonyReason).toBe('COMPUTED_MINIMUM_NOT_TRIVIAL');
-      expect(result.computedMinimumTaskClass).toBe('HIGH-RISK');
+      // The automatic post-implementation validation supersedes the record
+      // response; the full-ceremony decision is asserted from persisted state.
+      expect(finalState?.implementationRiskAssessment).toMatchObject({
+        computedMinimumTaskClass: 'HIGH-RISK',
+      });
       expect(finalState?.reducedCeremony).toBeNull();
       expect(finalState?.phase).toBe('IMPL_REVIEW');
       expect(
@@ -618,9 +635,8 @@ describe('implement', () => {
         'node_modules/dep/index.js',
       ]);
       const raw = await implement.execute({}, ctx);
-      await passImplValidation();
-      const result = parseToolResult(raw);
-      const domain = result.domainFiles as string[];
+      expect(parseToolResult(raw).error).toBeUndefined();
+      const domain = (await readState(await currentSessionDir()))!.implementation!.domainFiles;
       expect(domain).toContain('src/foo.ts');
       expect(domain).not.toContain('.opencode/tools/flowguard.ts');
       expect(domain).not.toContain('node_modules/dep/index.js');
@@ -636,10 +652,10 @@ describe('implement', () => {
         'tsconfig.json',
       ]);
       const raw = await implement.execute({}, ctx);
-      await passImplValidation();
-      const result = parseToolResult(raw);
-      const domain = result.domainFiles as string[];
-      const changed = result.changedFiles as string[];
+      expect(parseToolResult(raw).error).toBeUndefined();
+      const implementation = (await readState(await currentSessionDir()))!.implementation!;
+      const domain = implementation.domainFiles;
+      const changed = implementation.changedFiles;
       expect(domain).toContain('src/main/Service.java');
       expect(domain).not.toContain('opencode.json');
       expect(domain).not.toContain('tsconfig.json');
@@ -665,11 +681,11 @@ describe('implement', () => {
         'stale/preexisting.txt',
       ]);
       const raw = await implement.execute({}, ctx);
-      await passImplValidation();
-      const result = parseToolResult(raw);
-      expect(result.error).toBeUndefined();
-      expect(result.baselineScoping).toBe('applied');
-      const changed = result.changedFiles as string[];
+      expect(parseToolResult(raw).error).toBeUndefined();
+      // The scoping status is a record-response field superseded by the
+      // automatic validation response; the subtraction it performs is asserted
+      // from the persisted evidence.
+      const changed = (await readState(sessDir))!.implementation!.changedFiles;
       expect(changed).toContain('src/main/Service.java');
       expect(changed).not.toContain('stale/preexisting.txt');
     });
@@ -689,11 +705,8 @@ describe('implement', () => {
       });
       vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['src/main/Service.java']);
       const raw = await implement.execute({}, ctx);
-      await passImplValidation();
-      const result = parseToolResult(raw);
-      expect(result.error).toBeUndefined();
-      expect(result.baselineScoping).toBe('applied');
-      const changed = result.changedFiles as string[];
+      expect(parseToolResult(raw).error).toBeUndefined();
+      const changed = (await readState(sessDir))!.implementation!.changedFiles;
       expect(changed).toContain('src/main/Service.java');
     });
 
@@ -710,11 +723,8 @@ describe('implement', () => {
         'stale/preexisting.txt',
       ]);
       const raw = await implement.execute({}, ctx);
-      await passImplValidation();
-      const result = parseToolResult(raw);
-      expect(result.error).toBeUndefined();
-      expect(result.baselineScoping).toBe('unavailable');
-      const changed = result.changedFiles as string[];
+      expect(parseToolResult(raw).error).toBeUndefined();
+      const changed = (await readState(sessDir))!.implementation!.changedFiles;
       // No subtraction: the full worktree is recorded, nothing hidden.
       expect(changed).toContain('src/main/Service.java');
       expect(changed).toContain('stale/preexisting.txt');
@@ -1033,12 +1043,26 @@ describe('implement', () => {
       expect(parseToolResult(unchangedRaw).code).toBe('IMPLEMENTATION_REWORK_REQUIRED');
 
       // A changed revision is recordable: the exhausted marker is cleared only
-      // when the fresh validation fully passes and the machine advances.
+      // when the fresh validation fully passes and the machine advances. The
+      // automatic post-implementation check is forced to ERROR so the
+      // intermediate IMPL_VALIDATION state (marker still set) is observable.
       const gitMockForDigest = await import('../adapters/git.js');
       vi.mocked(gitMockForDigest.changedFiles).mockResolvedValueOnce([
         ...GIT_MOCK_DEFAULTS.changedFiles,
         'src/fixed-after-review.ts',
       ]);
+      vi.mocked(executorMock.executeCheck).mockResolvedValueOnce({
+        kind: 'typecheck',
+        command: 'npx tsc --noEmit',
+        exitCode: -1,
+        passed: false,
+        executionMs: 60000,
+        outputDigest: '0'.repeat(64),
+        stdout: '',
+        stderr: '',
+        timedOut: true,
+        startedAt: new Date().toISOString(),
+      });
       const recordRaw = await implement.execute({}, ctx);
       const recordResult = parseToolResult(recordRaw);
       expect(recordResult.error).toBeUndefined();
@@ -1207,7 +1231,7 @@ describe('implement', () => {
       const raw = await implement.execute({ reviewVerdict: null } as any, ctx);
       const result = parseToolResult(raw);
       expect(result.error).not.toBe(true);
-      expect(result.changedFiles).toBeDefined();
+      expect((await readState(await currentSessionDir()))?.implementation).not.toBeNull();
     });
 
     it('HAPPY: stray reviewFindings=null is ignored → records implementation', async () => {
@@ -1215,7 +1239,7 @@ describe('implement', () => {
       const raw = await implement.execute({ reviewFindings: null } as any, ctx);
       const result = parseToolResult(raw);
       expect(result.error).not.toBe(true);
-      expect(result.changedFiles).toBeDefined();
+      expect((await readState(await currentSessionDir()))?.implementation).not.toBeNull();
     });
 
     it('CORNER: both stray reviewVerdict=null + reviewFindings=null → records implementation', async () => {
@@ -1226,7 +1250,7 @@ describe('implement', () => {
       );
       const result = parseToolResult(raw);
       expect(result.error).not.toBe(true);
-      expect(result.changedFiles).toBeDefined();
+      expect((await readState(await currentSessionDir()))?.implementation).not.toBeNull();
     });
   });
 

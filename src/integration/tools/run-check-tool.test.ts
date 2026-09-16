@@ -217,8 +217,24 @@ async function driveToValidation(): Promise<void> {
   await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
   await callOk(ticket, { text: 'Test task', source: 'user' });
   await callOk(plan, { planText: '## Plan\nTest plan', targetPaths: ['docs/test.md'] });
+  // Solo plan convergence auto-approves into VALIDATION and the runtime now
+  // runs the active checks automatically, advancing to IMPLEMENTATION. These
+  // tests exercise the explicit run_check surface, so reset the projection to
+  // the pending VALIDATION wait state. The implementation-entry freeze is
+  // cleared too so a later run_check re-drives the ALL_PASSED transition under
+  // test (including the freeze-failure path).
   await callOk(plan, { reviewVerdict: 'accept' });
-  // Now should be in VALIDATION phase
+  const sd = await getSessDir();
+  const state = await readState(sd);
+  const patched = {
+    ...state!,
+    phase: 'VALIDATION' as const,
+    validation: [],
+    validationAttempts: [],
+    implementation: null,
+  };
+  delete (patched as { implementationBaseAuthority?: unknown }).implementationBaseAuthority;
+  await writeState(sd, patched);
 }
 
 // ─── HAPPY ───────────────────────────────────────────────────────────────────
@@ -984,6 +1000,9 @@ describe('CORNER', () => {
 
   it('fails closed when the phase-specific digest prerequisite is unavailable', async () => {
     await driveToValidation();
+    // The automatic plan-convergence run consumed the executor mock; clear it
+    // so this test measures only the blocked run_check calls below.
+    vi.mocked(executeCheck).mockClear();
     const sessDir = await getSessDir();
     const state = await readState(sessDir);
     await writeState(sessDir, { ...state!, plan: null });

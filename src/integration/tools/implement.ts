@@ -15,6 +15,7 @@ import {
   validateControlPlaneBinding,
 } from './implement-record.js';
 import { handleImplReview } from './implement-review.js';
+import { responseReportsError, runActiveChecksAutomatically } from './auto-validation.js';
 
 /**
  * Record-mode execution: persist implementation evidence (auto-detected via git).
@@ -43,7 +44,7 @@ async function executeImplementRecord(context: ToolContext): Promise<string> {
 
   // Git/worktree inspection can be slow and must not hold the session write lock.
   const files = await changedFiles(probe.worktree);
-  return withMutableSessionTransaction(
+  const recordResponse = await withMutableSessionTransaction(
     context,
     async ({ worktree, sessDir, state, policy, ctx }) => {
       const runtime = buildImplementRuntime({
@@ -62,6 +63,18 @@ async function executeImplementRecord(context: ToolContext): Promise<string> {
       return handleImplRecord(runtime, files);
     },
   );
+
+  // Automatic post-implementation validation: when the recorded evidence lands
+  // in IMPL_VALIDATION, run the active checks in-flow. Executed AFTER the
+  // transaction releases the session write lock — the run-check path executes
+  // subprocesses outside the lock and must acquire it only to persist evidence.
+  // A blocked record (e.g. COMMAND_NOT_ALLOWED while already in IMPL_VALIDATION)
+  // did not enter the phase and must not trigger the runner. The record
+  // response is superseded only when checks actually ran.
+  const autoValidationResponse = responseReportsError(recordResponse)
+    ? null
+    : await runActiveChecksAutomatically(context);
+  return autoValidationResponse ?? recordResponse;
 }
 
 /**

@@ -122,7 +122,9 @@ vi.mock('../verification/executor', () => ({
     stdout: 'OK',
     stderr: '',
     timedOut: false,
-    startedAt: FIXED_TIME,
+    // Literal (not the imported FIXED_TIME): the vi.mock factory is hoisted,
+    // and eager tool imports make the imported binding unavailable here.
+    startedAt: '2026-01-01T00:00:00.000Z',
   }),
 }));
 

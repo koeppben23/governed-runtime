@@ -234,10 +234,15 @@ async function getSessDir(context: TestToolContext = ctx): Promise<string> {
 }
 
 /**
- * Drive through a validation phase by running all active checks.
- * The executor mock returns passing results (defined in vi.mock above).
- * Handles the pre-implementation VALIDATION baseline and the post-implementation
- * IMPL_VALIDATION re-run. No-op if not in a validation phase or activeChecks is empty.
+ * Compatibility safety net for tests that assert the explicit check surface.
+ *
+ * The runtime now runs the active checks automatically when a session enters
+ * VALIDATION or IMPL_VALIDATION, so approval and /implement calls already cross
+ * both phases before returning and this helper is normally a no-op. It remains
+ * for the explicit-retry compatibility path: if a test manually leaves the
+ * session in a validation phase (e.g. after an execution error), it drives the
+ * remaining active checks through the explicit surface. No-op when the phase is
+ * not a validation phase or activeChecks is empty.
  */
 async function passValidation(context: TestToolContext = ctx): Promise<void> {
   const phase = await getPhase(context);
@@ -263,6 +268,16 @@ async function exportToComplete(context: TestToolContext = ctx): Promise<void> {
   expect(await getPhase(context)).toBe('EXPORT_READY');
   const result = await callOk(export_session, {}, context);
   expect(result.phase).toBe('COMPLETE');
+  // The typed export completion projection is surfaced in the response, not
+  // only persisted in state.
+  expect(result.exportCompletion).toMatchObject({
+    purpose: 'auditor',
+    integrityCapability: 'verifiable',
+    verificationStatus: 'passed',
+  });
+  expect(String((result.exportCompletion as { packageDigest?: string }).packageDigest)).toMatch(
+    /^[a-f0-9]{64}$/,
+  );
   expect(await getPhase(context)).toBe('COMPLETE');
   const state = await readState(await getSessDir(context));
   expect(state!.exportCompletionEvidence).not.toBeNull();
@@ -343,21 +358,30 @@ describe('e2e-workflow', () => {
       expect(planMeta.contentHash).toMatch(/^[0-9a-f]{64}$/);
 
       // 4. Plan (Mode B: approve self-review)
-      // Solo plan budget=1, so first approve should converge
+      // Solo plan budget=1, so first approve should converge. Solo auto-approves
+      // PLAN_REVIEW into VALIDATION, and the runtime runs the active checks
+      // automatically (discovery detects TypeScript → activeChecks=['typecheck']).
       await callOk(plan, { reviewVerdict: 'accept' });
-      // Solo: auto-approves PLAN_REVIEW → VALIDATION (discovery detects TypeScript → activeChecks=['typecheck'])
-      const afterPlan = await getPhase();
-      expect(afterPlan).toBe('VALIDATION');
-
-      // 5. Pass validation (executor mock always passes)
-      await passValidation();
       expect(await getPhase()).toBe('IMPLEMENTATION');
+      const afterAutoValidation = await readState(await getSessDir());
+      expect(afterAutoValidation!.validation).toHaveLength(1);
+      expect(afterAutoValidation!.validation[0]).toMatchObject({
+        checkId: 'typecheck',
+        passed: true,
+      });
 
-      // 6. Implement (Mode A: record changes)
+      // 5. Implement (Mode A: record changes). Entering IMPL_VALIDATION runs the
+      // active checks automatically against the recorded revision.
       await callOk(implement, {});
-      await passValidation(); // IMPL_VALIDATION -> IMPL_REVIEW
+      expect(await getPhase()).toBe('IMPL_REVIEW');
+      const afterImplValidation = await readState(await getSessDir());
+      expect(afterImplValidation!.implValidation).toHaveLength(1);
+      expect(afterImplValidation!.implValidation[0]).toMatchObject({
+        checkId: 'typecheck',
+        passed: true,
+      });
 
-      // 7. Implement (Mode B: approve review)
+      // 6. Implement (Mode B: approve review)
       await callOk(review_implementation, { reviewVerdict: 'accept' });
       // Solo: auto-approves EVIDENCE_REVIEW → EXPORT_READY, then canonical export → COMPLETE
       await exportToComplete();
@@ -369,7 +393,8 @@ describe('e2e-workflow', () => {
       expect(state!.ticket).not.toBeNull();
       expect(state!.plan).not.toBeNull();
       expect(state!.selfReview).not.toBeNull();
-      expect(state!.validation.length).toBeGreaterThan(0); // activeChecks passed via run_check
+      expect(state!.validation.length).toBeGreaterThan(0); // activeChecks passed automatically
+      expect(state!.implValidation.length).toBeGreaterThan(0); // post-implementation re-run
       expect(state!.implementation).not.toBeNull();
       expect(state!.implReview).not.toBeNull();
       expect(state!.exportCompletionEvidence).not.toBeNull();
@@ -393,29 +418,24 @@ describe('e2e-workflow', () => {
       }
       expect(await getPhase()).toBe('PLAN_REVIEW');
 
-      // 4. Decision: approve plan
-      // Discovery detects TypeScript → activeChecks=['typecheck'] → stops at VALIDATION
+      // 4. Decision: approve plan. Approval enters VALIDATION and the runtime
+      // runs the active checks automatically (discovery detects TypeScript →
+      // activeChecks=['typecheck']), advancing to IMPLEMENTATION.
       await callOk(decision, { verdict: 'approve', rationale: 'Good plan' });
-      expect(await getPhase()).toBe('VALIDATION');
-
-      // Contract guard (VALIDATION dead-state regression): a FOCUSED status call
-      // must still surface the verification-check fields that /check and /validate
-      // gate on. If a focused projection stripped them, the agent would report
-      // "no active checks" and the session could never leave VALIDATION.
-      const focusedInValidation = parseToolResult(await status.execute({ whyBlocked: true }, ctx));
-      expect(Array.isArray(focusedInValidation.activeChecks)).toBe(true);
-      expect((focusedInValidation.activeChecks as unknown[]).length).toBeGreaterThan(0);
-      expect(Array.isArray(focusedInValidation.verificationCandidates)).toBe(true);
-      expect(Array.isArray(focusedInValidation.remainingChecks)).toBe(true);
-      expect((focusedInValidation.remainingChecks as unknown[]).length).toBeGreaterThan(0);
-
-      // 5. Pass validation
-      await passValidation();
       expect(await getPhase()).toBe('IMPLEMENTATION');
+      const afterAutoValidation = await readState(await getSessDir());
+      expect(afterAutoValidation!.validation.length).toBeGreaterThan(0);
+      expect(afterAutoValidation!.validation[0]).toMatchObject({
+        checkId: 'typecheck',
+        passed: true,
+      });
 
-      // 6. Implement + review
+      // 5. Implement + review. Entering IMPL_VALIDATION runs the checks
+      // automatically against the recorded revision before IMPL_REVIEW.
       await callOk(implement, {});
-      await passValidation(); // IMPL_VALIDATION -> IMPL_REVIEW
+      expect(await getPhase()).toBe('IMPL_REVIEW');
+      const afterImplValidation = await readState(await getSessDir());
+      expect(afterImplValidation!.implValidation.length).toBeGreaterThan(0);
       let implementationReviewResult: Record<string, unknown> | undefined;
       for (let i = 0; i < 5; i++) {
         const phase = await getPhase();
@@ -508,15 +528,14 @@ describe('e2e-workflow', () => {
         }),
       );
 
-      // Solo workflow up to VALIDATION
+      // Solo workflow. With verificationCandidates, activeChecks is
+      // ['test', 'lint', 'typecheck'] and plan approval runs them automatically.
       await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
       await callOk(ticket, { text: 'Task', source: 'user' });
       await callOk(plan, { planText: '## Plan', targetPaths: ['docs/test.md'] });
-      await callOk(plan, { reviewVerdict: 'accept' });
-      // With verificationCandidates, activeChecks is not empty → stops at VALIDATION
-      expect(await getPhase()).toBe('VALIDATION');
 
-      // Fail the test check via executor mock
+      // Fail the first active check via executor mock — consumed by the
+      // automatic validation run inside the plan approval.
       vi.mocked(executorMock.executeCheck).mockResolvedValueOnce({
         kind: 'test',
         command: 'echo test',
@@ -529,8 +548,16 @@ describe('e2e-workflow', () => {
         timedOut: false,
         startedAt: new Date().toISOString(),
       });
-      await callOk(run_check, { kind: 'test' });
+      await callOk(plan, { reviewVerdict: 'accept' });
       expect(await getPhase()).toBe('PLAN');
+
+      // Failure evidence is persisted with the routing decision.
+      const failedState = await readState(await getSessDir());
+      expect(failedState!.validation[0]).toMatchObject({
+        checkId: 'test',
+        passed: false,
+        exitCode: 1,
+      });
 
       // Can re-plan and re-validate
       await callOk(plan, { planText: '## Better Plan with tests', targetPaths: ['docs/test.md'] });
@@ -543,13 +570,10 @@ describe('e2e-workflow', () => {
       expect(stateAfterReplan!.validation).toHaveLength(0);
 
       await callOk(plan, { reviewVerdict: 'accept' });
-      // In solo, may stop at PLAN_REVIEW (user gate) — need to advance
-      const phaseAfterReplan = await getPhase();
-      if (phaseAfterReplan === 'PLAN_REVIEW') {
-        // Solo auto-approves conceptually, but decision tool still needed
-        await callOk(decision, { verdict: 'approve', rationale: 'auto' });
-      }
-      expect(await getPhase()).toBe('VALIDATION');
+      expect(await getPhase()).toBe('IMPLEMENTATION');
+      const passedState = await readState(await getSessDir());
+      expect(passedState!.validation.map((v) => v.checkId)).toEqual(['test', 'lint', 'typecheck']);
+      expect(passedState!.validation.every((v) => v.passed)).toBe(true);
     });
 
     it('changes_requested at EVIDENCE_REVIEW sends back to IMPLEMENTATION', async () => {
@@ -694,28 +718,29 @@ describe('e2e-workflow', () => {
       await callOk(plan, { planText: '## Plan', targetPaths: ['docs/test.md'] });
       phases.push(await getPhase()); // After plan submit
 
+      // After self-review converge, solo auto-approves PLAN_REVIEW into
+      // VALIDATION and the runtime runs the active checks automatically
+      // (discovery detects TypeScript → activeChecks=['typecheck']).
       await callOk(plan, { reviewVerdict: 'accept' });
-      phases.push(await getPhase()); // After self-review converge (solo auto-approve → VALIDATION)
+      phases.push(await getPhase()); // IMPLEMENTATION (automatic validation passed)
 
-      // Pass validation (discovery detects TypeScript → activeChecks=['typecheck'])
-      await passValidation();
-      phases.push(await getPhase()); // IMPLEMENTATION
-
+      // Entering IMPL_VALIDATION runs the checks automatically against the
+      // recorded revision before advancing to IMPL_REVIEW.
       await callOk(implement, {});
-      await passValidation(); // IMPL_VALIDATION -> IMPL_REVIEW
-      phases.push(await getPhase()); // After impl record
+      phases.push(await getPhase()); // IMPL_REVIEW
 
       await callOk(review_implementation, { reviewVerdict: 'accept' });
       phases.push(await getPhase()); // EXPORT_READY (solo auto-approves the evidence gate)
       await exportToComplete();
       phases.push(await getPhase()); // COMPLETE
 
-      // Verify the canonical progression
+      // Verify the canonical progression. Validation phases are entered and
+      // exited inside the automatic runner, so they are not observed between
+      // tool calls.
       expect(phases).toEqual([
         'READY',
         'TICKET',
         'PLAN',
-        'VALIDATION',
         'IMPLEMENTATION',
         'IMPL_REVIEW',
         'EXPORT_READY',
@@ -784,8 +809,13 @@ describe('e2e-workflow', () => {
           planText: '## Plan\nAuto gate expected',
           targetPaths: ['docs/test.md'],
         });
+        // The CI auto-gate approves PLAN_REVIEW into VALIDATION, and the
+        // runtime runs the active checks automatically before IMPLEMENTATION.
         await callOk(plan, { reviewVerdict: 'accept' });
-        expect(await getPhase()).toBe('VALIDATION');
+        expect(await getPhase()).toBe('IMPLEMENTATION');
+        const state = await readState(await getSessDir());
+        expect(state!.validation.length).toBeGreaterThan(0);
+        expect(state!.validation.every((v) => v.passed)).toBe(true);
       } finally {
         cleanup();
       }

@@ -215,7 +215,14 @@ async function validateAndAttest(
   };
 }
 
-async function executeRunCheckPhased(
+/**
+ * Execute one verification check through the full production path: candidate
+ * resolution, execution-subject attestation, evidence persistence, and
+ * phase-aware auto-advance. Exported so the automatic validation runner
+ * (`auto-validation.ts`) can execute checks without the `/run_check` tool
+ * surface and without recursion through the tool definition.
+ */
+export async function executeRunCheckPhased(
   kind: VerificationCandidateKind,
   candidateId: string | undefined,
   context: ToolContext,

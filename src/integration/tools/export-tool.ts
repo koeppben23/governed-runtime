@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { archiveCompletionExport } from '../../adapters/workspace/archive.js';
 import { verifyArchive } from '../../adapters/workspace/index.js';
 import { readState } from '../../adapters/persistence.js';
+import type { ExportCompletionEvidence } from '../../state/evidence-export.js';
 import { executeExport } from '../../rails/export.js';
 import type { RailResult } from '../../rails/types.js';
 import type { ToolContext, ToolDefinition, ToolResult } from './helpers.js';
@@ -25,6 +26,7 @@ type CompletedExport = Readonly<{
   fingerprint: string;
   sessDir: string;
   result: Extract<RailResult, { kind: 'ok' }>;
+  evidence: ExportCompletionEvidence;
 }>;
 
 type ExportOutcome = CompletedExport | Readonly<{ kind: 'blocked'; output: ToolResult }>;
@@ -82,6 +84,7 @@ async function materializeExport(context: ToolContext): Promise<ExportOutcome> {
         fingerprint,
         sessDir,
         result: { ...result, state: persisted },
+        evidence,
       };
     },
   );
@@ -122,18 +125,48 @@ async function completeRegulatedExport(
   }
 }
 
+/**
+ * Surface the persisted export completion evidence in the tool response.
+ *
+ * The state transition is already durable when this runs; the projection lets
+ * the caller report the package digest and the successful verification
+ * directly from the `/export` result instead of re-reading persisted state.
+ * A malformed response is returned unchanged rather than turning an
+ * already-committed completion into an error response.
+ */
+function attachExportCompletion(
+  output: ToolResult,
+  evidence: ExportCompletionEvidence,
+): ToolResult {
+  const text = typeof output === 'string' ? output : output.output;
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return output;
+    (parsed as Record<string, unknown>).exportCompletion = {
+      ...evidence,
+      verificationStatus: 'passed' as const,
+    };
+    const enriched = JSON.stringify(parsed);
+    return typeof output === 'string' ? enriched : { ...output, output: enriched };
+  } catch {
+    return output;
+  }
+}
+
 export const export_session: ToolDefinition = {
   description:
-    'Materialize the required verifiable development export. Only available at EXPORT_READY; successful evidence persistence completes the workflow.',
+    'Materialize the required verifiable development export. Only available at EXPORT_READY; successful evidence persistence completes the workflow. ' +
+    'The response carries the typed exportCompletion projection (package digest, purpose, integrity capability, verification status).',
   args: {},
   async execute(_args, context) {
     try {
       const settled = await materializeExport(context);
       if (settled.kind !== 'completed') return settled.output;
-      if (settled.result.state.policySnapshot.mode !== 'regulated') {
-        return formatRailResult(settled.result);
-      }
-      return await completeRegulatedExport(settled, context.sessionID);
+      const output =
+        settled.result.state.policySnapshot.mode !== 'regulated'
+          ? formatRailResult(settled.result)
+          : await completeRegulatedExport(settled, context.sessionID);
+      return attachExportCompletion(output, settled.evidence);
     } catch (err) {
       return formatError(err);
     }

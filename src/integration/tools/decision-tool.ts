@@ -38,6 +38,9 @@ import { finalizeDecision } from '../services/decision-finalization.js';
 import { createSessionCompletionAuditDeps } from '../services/regulated-completion.js';
 import { consumeUserDecisionIntent, peekUserDecisionIntent } from '../user-decision-intent.js';
 
+// Automatic validation on entry to VALIDATION
+import { runActiveChecksAutomatically } from './auto-validation.js';
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_decision — Human Verdict at User Gates
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -184,6 +187,16 @@ export const decision: ToolDefinition = {
           verdict: args.verdict,
           ...getLogTraceFields(),
         });
+      }
+
+      // Automatic validation: an approval that lands in VALIDATION runs the
+      // active checks in-flow, so the user never has to type a check step. The
+      // decision itself is already persisted and audited; the check response
+      // (evidence + post-validation phase/directive) supersedes the decision
+      // output only when checks actually ran.
+      if (finalResult.kind === 'ok' && finalResult.state.phase === 'VALIDATION') {
+        const autoValidationResponse = await runActiveChecksAutomatically(context);
+        if (autoValidationResponse !== null) return autoValidationResponse;
       }
       return output;
     } catch (err) {

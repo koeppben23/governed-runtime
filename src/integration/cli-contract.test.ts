@@ -278,20 +278,12 @@ describe('HAPPY: status JSON shape is stable', () => {
     await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
     await callOk(ticket, { text: 'Complete test', source: 'user' });
     await callOk(plan, { planText: '## Plan\nTest', targetPaths: ['docs/test.md'] });
+    // Approval enters VALIDATION and the runtime runs the active checks
+    // automatically (discovery detects TypeScript → activeChecks=['typecheck']).
     await callOk(plan, { reviewVerdict: 'accept' });
-    // Pass validation: discovery detects TypeScript → activeChecks=['typecheck']
-    const runActiveChecks = async (): Promise<void> => {
-      const sd = await getSessDir();
-      const st = await readState(sd);
-      if (st && st.activeChecks.length > 0) {
-        for (const kind of st.activeChecks) {
-          await callOk(run_check, { kind });
-        }
-      }
-    };
-    await runActiveChecks();
+    // /implement records evidence; IMPL_VALIDATION runs the checks automatically
+    // against the recorded revision before advancing to IMPL_REVIEW.
     await callOk(implement, {});
-    await runActiveChecks(); // IMPL_VALIDATION → IMPL_REVIEW
 
     const result = parseToolResult<StatusResult>(await status.execute({}, ctx));
     expect(result.phase).toBe('IMPL_REVIEW');
@@ -338,17 +330,12 @@ describe('HAPPY: blocked/error output has stable structure', () => {
     await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
     await callOk(ticket, { text: 'Test', source: 'user' });
     await callOk(plan, { planText: '## Plan\nTest', targetPaths: ['docs/test.md'] });
+    // Approval runs the automatic validation and advances to IMPLEMENTATION;
+    // the decision tool is inadmissible there and must surface the structured
+    // COMMAND_NOT_ALLOWED shape.
     await callOk(plan, { reviewVerdict: 'accept' });
-    // Pass validation via run_check (discovery detects TypeScript → activeChecks=['typecheck'])
-    const sd = await getSessDir();
-    const st = await readState(sd);
-    if (st && st.activeChecks.length > 0) {
-      for (const kind of st.activeChecks) {
-        await callOk(run_check, { kind });
-      }
-    }
     const result = parseToolResult(
-      await decision.execute({ verdict: 'approve', rationale: 'At VALIDATION' }, ctx),
+      await decision.execute({ verdict: 'approve', rationale: 'At IMPLEMENTATION' }, ctx),
     );
 
     expect(result.error).toBe(true);

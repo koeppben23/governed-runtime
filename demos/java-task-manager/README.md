@@ -122,8 +122,12 @@ For a confidential auditor package, configure global
 /archive redactionMode=none includeRaw=true
 ```
 
-Only that raw-evidence package can report `integrityCapability: verifiable` and
-`verificationStatus: passed`.
+Among `/archive` outputs, only that raw-evidence package can report
+`integrityCapability: verifiable` and `verificationStatus: passed`. This is
+separate from the development completion step: `/export` at EXPORT_READY
+materializes its own required verifiable package (no arguments) and reports
+`integrityCapability: verifiable` and `verificationStatus: passed` in its typed
+`exportCompletion` projection.
 
 The retired form /export redactionMode=none includeRaw=true is not accepted:
 `/export` takes no arguments and is the development completion step, not an

@@ -47,6 +47,21 @@ vi.mock('../adapters/git', async (importOriginal) => {
     remoteOriginUrl: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl),
     changedFiles: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.changedFiles),
     listRepoSignals: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.repoSignals),
+    // Automatic validation crosses VALIDATION → IMPLEMENTATION, which freezes
+    // the pre-mutation implementation base from the worktree HEAD.
+    headCommitFull: vi.fn().mockResolvedValue('d'.repeat(40)),
+  };
+});
+
+vi.mock('../adapters/frozen-repository.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/frozen-repository.js')>();
+  return {
+    ...original,
+    freezeRepositoryIdentity: vi.fn(() => ({
+      kind: 'local' as const,
+      rootCommitDigest: 'sha256:' + 'b'.repeat(64),
+    })),
+    freezeWorktreeCandidate: vi.fn().mockResolvedValue('c'.repeat(40)),
   };
 });
 
@@ -182,12 +197,15 @@ async function drivePastPlan(mode: Mode, ctx: TestToolContext): Promise<string> 
     { planText: '## Plan\nTest matrix policy behavior.', targetPaths: ['docs/test.md'] },
     ctx,
   );
-  for (let i = 0; i < 5; i++) {
-    const phase = await currentPhase(ctx);
-    if (phase === 'PLAN_REVIEW' || phase === 'VALIDATION') return phase;
+  let phase = await currentPhase(ctx);
+  for (let i = 0; i < 5 && phase === 'PLAN'; i++) {
     await callOk(plan, { reviewVerdict: 'accept' }, ctx);
+    phase = await currentPhase(ctx);
   }
-  return currentPhase(ctx);
+  // Human-gated modes stop at PLAN_REVIEW. Auto-approving modes (solo) cross
+  // PLAN_REVIEW → VALIDATION and the automatic validation runner advances to
+  // IMPLEMENTATION when the active checks pass.
+  return phase;
 }
 
 async function scenarioSameActorApproval(mode: Mode): Promise<CellResult> {
@@ -272,7 +290,21 @@ async function scenarioMissingValidationEvidence(mode: Mode): Promise<CellResult
     });
     await callOk(decision, { verdict: 'approve', rationale: 'Move to validation' }, ctx);
   }
-  // In the new model: calling run_check with an unavailable kind → CHECK_KIND_NOT_AVAILABLE
+  // Approval enters VALIDATION and the runtime runs the active checks
+  // automatically. Reset the projection to the pending wait state so the
+  // explicit run_check surface resolves the unavailable kind under the
+  // validation-phase guard: an unavailable kind → CHECK_KIND_NOT_AVAILABLE.
+  const dir = await sessionDir(ctx);
+  const state = await readState(dir);
+  const patched = {
+    ...state!,
+    phase: 'VALIDATION' as const,
+    validation: [],
+    validationAttempts: [],
+    implementation: null,
+  };
+  delete (patched as { implementationBaseAuthority?: unknown }).implementationBaseAuthority;
+  await writeState(dir, patched);
   return callResult(run_check, { kind: 'security' }, ctx);
 }
 
@@ -314,9 +346,11 @@ const MATRIX: Array<{
     scenario: 'same_actor_approval',
     run: scenarioSameActorApproval,
     expected: {
-      solo: { allowed: true, phase: 'VALIDATION' },
-      team: { allowed: true, phase: 'VALIDATION' },
-      'team-ci': { allowed: true, phase: 'VALIDATION' },
+      // Approval enters VALIDATION and automatic validation advances to
+      // IMPLEMENTATION when the active checks pass.
+      solo: { allowed: true, phase: 'IMPLEMENTATION' },
+      team: { allowed: true, phase: 'IMPLEMENTATION' },
+      'team-ci': { allowed: true, phase: 'IMPLEMENTATION' },
       regulated: { allowed: false, code: 'FOUR_EYES_ACTOR_MATCH' },
     },
   },
@@ -324,19 +358,19 @@ const MATRIX: Array<{
     scenario: 'different_actor_approval',
     run: scenarioDifferentActorApproval,
     expected: {
-      solo: { allowed: true, phase: 'VALIDATION' },
-      team: { allowed: true, phase: 'VALIDATION' },
-      'team-ci': { allowed: true, phase: 'VALIDATION' },
-      regulated: { allowed: true, phase: 'VALIDATION' },
+      solo: { allowed: true, phase: 'IMPLEMENTATION' },
+      team: { allowed: true, phase: 'IMPLEMENTATION' },
+      'team-ci': { allowed: true, phase: 'IMPLEMENTATION' },
+      regulated: { allowed: true, phase: 'IMPLEMENTATION' },
     },
   },
   {
     scenario: 'low_assurance_approval',
     run: scenarioLowAssuranceApproval,
     expected: {
-      solo: { allowed: true, phase: 'VALIDATION' },
-      team: { allowed: true, phase: 'VALIDATION' },
-      'team-ci': { allowed: true, phase: 'VALIDATION' },
+      solo: { allowed: true, phase: 'IMPLEMENTATION' },
+      team: { allowed: true, phase: 'IMPLEMENTATION' },
+      'team-ci': { allowed: true, phase: 'IMPLEMENTATION' },
       regulated: { allowed: false, code: 'ACTOR_ASSURANCE_INSUFFICIENT' },
     },
   },
