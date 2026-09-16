@@ -8,8 +8,9 @@
  *
  * Review verdict enforcement applies four integrity checks:
  * - L1 (Binary Gate): a verdict submission is blocked until a host-observed
- *   SDK reviewer invocation was recorded for the pending review. This module
- *   owns the transient signal tracking and the L1 gate.
+ *   visible native Task reviewer invocation with structured same-child findings
+ *   was recorded for the pending review. This module owns the transient signal
+ *   tracking and the L1 gate.
  * - L2 (Session Identity): the evidence participant identity must match the
  *   child session of the host-observed reviewer invocation.
  * - L3 (Capture Coherence): the host-captured reviewer record must be
@@ -30,7 +31,7 @@
  * - Plugin integration happens in plugin.ts (delegates to this module).
  * - Session-scoped state tracked per session ID.
  *
- * @version v5
+ * @version v6
  */
 
 import type { SessionState } from '../../../state/schema.js';
@@ -203,7 +204,7 @@ function checkPendingReview(
       return {
         allowed: false,
         code: 'SUBAGENT_REVIEW_NOT_INVOKED',
-        reason: `FlowGuard enforcement: recovered from session state — obligation ${pendingObligation.obligationId} is pending but no SDK reviewer invocation was recorded in the transient enforcement state.`,
+        reason: `FlowGuard enforcement: recovered from session state — obligation ${pendingObligation.obligationId} is pending but no visible native reviewer invocation was recorded in the transient enforcement state.`,
       };
     }
     return { allowed: true };
@@ -240,8 +241,9 @@ export function enforceBeforeVerdict(
   if (!pending) return { allowed: true };
 
   // L1 binds to the SPECIFIC pending review, not to the mere existence of any
-  // SDK invocation: the recorded invocation must belong to the pending
-  // obligation (and to its pre-authorized attempt, when the signal named one).
+  // invocation: the recorded invocation must be the visible native Task
+  // transport, belong to the exact pending obligation/attempt, and expose a
+  // navigable host transcript.
   if (pending.obligationId === null) {
     return {
       allowed: false,
@@ -251,7 +253,9 @@ export function enforceBeforeVerdict(
   }
   const bound = sessionState?.reviewAssurance?.invocations.some(
     (invocation) =>
-      invocation.invocationMode === 'sdk_session_prompt' &&
+      invocation.invocationMode === 'native_task_structured_followup' &&
+      invocation.hostVisible === true &&
+      invocation.transcriptNavigable === true &&
       invocation.obligationId === pending.obligationId &&
       (pending.attemptId === null || invocation.attemptId === pending.attemptId),
   );
@@ -260,6 +264,6 @@ export function enforceBeforeVerdict(
   return {
     allowed: false,
     code: 'SUBAGENT_REVIEW_NOT_INVOKED',
-    reason: `FlowGuard enforcement: obligation ${pending.obligationId} signaled a review requirement but no host-observed structured reviewer invocation is bound to it before the verdict.`,
+    reason: `FlowGuard enforcement: obligation ${pending.obligationId} signaled a review requirement but no visible, navigable, host-observed structured reviewer invocation is bound to it before the verdict.`,
   };
 }
