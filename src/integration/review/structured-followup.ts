@@ -36,6 +36,9 @@ export type StructuredFollowupResult =
       readonly reason: string;
     };
 
+type BlockedFollowup = Extract<StructuredFollowupResult, { readonly kind: 'blocked' }>;
+type PromptResponse = Awaited<ReturnType<OrchestratorClient['session']['prompt']>>;
+
 function serializationPrompt(obligationId: string): string {
   return [
     'The independent FlowGuard review in this child session is complete.',
@@ -48,7 +51,7 @@ function serializationPrompt(obligationId: string): string {
   ].join('\n');
 }
 
-function classifyInfoError(error: unknown): StructuredFollowupResult | null {
+function classifyInfoError(error: unknown): BlockedFollowup | null {
   if (!error || typeof error !== 'object') return null;
   const value = error as Record<string, unknown>;
   const data =
@@ -64,27 +67,21 @@ function classifyInfoError(error: unknown): StructuredFollowupResult | null {
         `The visible ${REVIEWER_SUBAGENT_TYPE} child cannot serialize structured findings while its current reasoning mode conflicts with the host structured-output tool.`,
     };
   }
-  if (
+  const capabilityMismatch =
     text.includes('does not support') &&
-    ['tool_choice', 'tools', 'function calling', 'structured output'].some((term) => text.includes(term))
-  ) {
-    return {
-      kind: 'blocked',
-      code: 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE',
-      reason: `The visible ${REVIEWER_SUBAGENT_TYPE} child model does not support the required structured-output serialization.`,
-    };
-  }
-  return null;
+    ['tool_choice', 'tools', 'function calling', 'structured output'].some((term) => text.includes(term));
+  return capabilityMismatch
+    ? {
+        kind: 'blocked',
+        code: 'STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE',
+        reason: `The visible ${REVIEWER_SUBAGENT_TYPE} child model does not support the required structured-output serialization.`,
+      }
+    : null;
 }
 
-/** Serialize findings from an existing visible reviewer child. Never creates a child. */
-export async function captureStructuredFindingsFromVisibleChild(
-  client: OrchestratorClient,
-  input: { readonly childSessionId: string; readonly obligationId: string },
-): Promise<StructuredFollowupResult> {
-  let agent: string;
+async function resolveAgent(client: OrchestratorClient): Promise<string | BlockedFollowup> {
   try {
-    agent = await resolveReviewerAgent(client);
+    return await resolveReviewerAgent(client);
   } catch (error) {
     return {
       kind: 'blocked',
@@ -94,17 +91,9 @@ export async function captureStructuredFindingsFromVisibleChild(
       }`,
     };
   }
+}
 
-  const invokedAt = new Date().toISOString();
-  const response = await client.session.prompt({
-    path: { id: input.childSessionId },
-    body: {
-      agent,
-      parts: [{ type: 'text', text: serializationPrompt(input.obligationId) }],
-      format: { type: 'json_schema', schema: REVIEW_FINDINGS_JSON_SCHEMA, retryCount: 1 },
-    },
-  });
-
+function responseFailure(response: PromptResponse): BlockedFollowup | null {
   if (response.error || !response.data) {
     return {
       kind: 'blocked',
@@ -114,18 +103,19 @@ export async function captureStructuredFindingsFromVisibleChild(
       }`,
     };
   }
-
   if (response.data.info?.error?.name === 'StructuredOutputError') {
     return {
       kind: 'blocked',
       code: 'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
-      reason: 'OpenCode rejected the reviewer structured-output serialization after its schema retry budget.',
+      reason:
+        'OpenCode rejected the reviewer structured-output serialization after its schema retry budget.',
     };
   }
-  const classified = classifyInfoError(response.data.info?.error);
-  if (classified) return classified;
+  return classifyInfoError(response.data.info?.error);
+}
 
-  const structured = response.data.info?.structured;
+function parseStructuredFindings(response: PromptResponse): Record<string, unknown> | BlockedFollowup {
+  const structured = response.data?.info?.structured;
   if (!structured || typeof structured !== 'object' || Array.isArray(structured)) {
     return {
       kind: 'blocked',
@@ -141,10 +131,35 @@ export async function captureStructuredFindingsFromVisibleChild(
       reason: `OpenCode returned structured reviewer output outside the canonical ReviewerFindingsInput contract: ${parsed.error.message}`,
     };
   }
+  return { ...parsed.data };
+}
+
+/** Serialize findings from an existing visible reviewer child. Never creates a child. */
+export async function captureStructuredFindingsFromVisibleChild(
+  client: OrchestratorClient,
+  input: { readonly childSessionId: string; readonly obligationId: string },
+): Promise<StructuredFollowupResult> {
+  const agent = await resolveAgent(client);
+  if (typeof agent !== 'string') return agent;
+
+  const invokedAt = new Date().toISOString();
+  const response = await client.session.prompt({
+    path: { id: input.childSessionId },
+    body: {
+      agent,
+      parts: [{ type: 'text', text: serializationPrompt(input.obligationId) }],
+      format: { type: 'json_schema', schema: REVIEW_FINDINGS_JSON_SCHEMA, retryCount: 1 },
+    },
+  });
+
+  const failure = responseFailure(response);
+  if (failure) return failure;
+  const findings = parseStructuredFindings(response);
+  if ('kind' in findings && findings.kind === 'blocked') return findings;
 
   return {
     kind: 'ok',
-    findings: parsed.data as Record<string, unknown>,
+    findings,
     invokedAt,
     fulfilledAt: new Date().toISOString(),
   };
