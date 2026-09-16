@@ -298,6 +298,17 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     ],
   },
   {
+    code: 'GOVERNANCE_OVERRIDE_RATIONALE_REQUIRED',
+    category: 'precondition',
+    messageTemplate:
+      'A governance override requires a non-empty, durable rationale: the human takes explicit responsibility for the accepted risk. The rationale may not be empty or whitespace.',
+    recoverySteps: [
+      'Re-run /override-approve with a rationale that records why the reviewed risk is accepted',
+      'Choose /request-changes or /reject if no durable justification exists',
+    ],
+    quickFixCommand: '/override-approve',
+  },
+  {
     code: 'GOVERNANCE_OVERRIDE_NOT_REQUIRED',
     category: 'precondition',
     messageTemplate:

@@ -116,6 +116,14 @@ function enforceOverrideAgreement(
       intent: 'APPROVE_WITH_GOVERNANCE_OVERRIDE',
     });
   }
+  // The override is the strongest governance moment: it must carry a durable,
+  // non-empty rationale. Empty or whitespace-only justifications are
+  // fail-closed rejected; a plain approval has no rationale requirement.
+  if (input.verdict === 'approve_with_governance_override' && input.rationale.trim().length === 0) {
+    return blocked('GOVERNANCE_OVERRIDE_RATIONALE_REQUIRED', {
+      intent: 'APPROVE_WITH_GOVERNANCE_OVERRIDE',
+    });
+  }
   return null;
 }
 

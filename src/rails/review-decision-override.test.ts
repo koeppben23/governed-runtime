@@ -97,6 +97,35 @@ describe('review-decision rail', () => {
       expect(state.plan?.approvalCertificate).toBeUndefined();
     });
 
+    it('blocks a governance override with an empty or whitespace-only rationale', () => {
+      for (const rationale of ['', '   ', '\n\t']) {
+        const state = makeState('PLAN_REVIEW', {
+          plan: { ...PLAN_RECORD, reviewCompletion: 'review_exhausted' },
+          selfReview: CONVERGED_SELF_REVIEW,
+          reviewAssurance: planAssurance({
+            subjectDigest: PLAN_RECORD.current.digest,
+            status: 'consumed',
+            capturedVerdict: 'changes_requested',
+            findingsHash: 'e'.repeat(64),
+          }),
+        });
+        const result = executeReviewDecision(
+          state,
+          {
+            verdict: 'approve_with_governance_override',
+            rationale,
+            decisionIdentity: reviewerIdentity,
+          },
+          baseCtx,
+        );
+        expect(result).toMatchObject({
+          kind: 'blocked',
+          code: 'GOVERNANCE_OVERRIDE_RATIONALE_REQUIRED',
+        });
+        expect(state.plan?.approvalCertificate).toBeUndefined();
+      }
+    });
+
     it('blocks a governance override at a normal plan gate with GOVERNANCE_OVERRIDE_NOT_REQUIRED', () => {
       const state = makeState('PLAN_REVIEW', {
         plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },

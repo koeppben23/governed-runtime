@@ -602,6 +602,7 @@ export function makeState(
     error: null,
     createdAt: FIXED_TIME,
     exportCompletionEvidence: null,
+    pendingSystemWork: null,
     regulatedArchiveStatus: null,
     ...overrides,
   };

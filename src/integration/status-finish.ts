@@ -10,7 +10,7 @@
  * @version v1
  */
 
-import type { SessionState } from '../state/schema.js';
+import type { Phase, SessionState } from '../state/schema.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 import type { ReviewReport } from '../state/evidence.js';
 import { resolveWorkflowDirective } from '../machine/workflow-directive.js';
@@ -168,13 +168,38 @@ const FINISH_ACTION_TABLE: Record<
 };
 
 /**
- * Build non-normative action guidance from the overall status alone.
+ * Build the non-normative action guidance.
  *
- * No per-action eligibility logic exists — the label is a trivial, documented
- * lookup keyed by overallStatus. These labels are presentation-only and must
- * not be consumed for enforcement.
+ * At EXPORT_READY the canonical directive requires `/export`
+ * (`allowedIntents: ['EXPORT']`), so the guidance must not present
+ * "create PR" as an equal alternative to the required completion commit.
+ * Everywhere else the label is a trivial, documented lookup keyed by
+ * overallStatus. These labels are presentation-only and must not be consumed
+ * for enforcement.
  */
-function buildFinishActionGuidance(overallStatus: FinishOverallStatus): FinishActionGuidance[] {
+function buildFinishActionGuidance(
+  overallStatus: FinishOverallStatus,
+  phase: Phase,
+): FinishActionGuidance[] {
+  if (phase === 'EXPORT_READY') {
+    return [
+      {
+        action: 'create PR',
+        status: 'not_recommended',
+        reason: 'Complete the required /export before landing the change.',
+      },
+      {
+        action: 'export evidence',
+        status: 'recommended',
+        reason: 'Required: /export materializes the completion package and completes the workflow.',
+      },
+      {
+        action: 'keep branch',
+        status: 'not_recommended',
+        reason: 'The session is ready for its required export.',
+      },
+    ];
+  }
   const entry = FINISH_ACTION_TABLE[overallStatus];
   return FINISH_CANDIDATE_ACTIONS.map((action) => ({
     action,
@@ -211,7 +236,7 @@ export function buildFinishCard(
     directive,
     blocker,
     warnings: readiness.warnings,
-    actionGuidance: buildFinishActionGuidance(overallStatus),
+    actionGuidance: buildFinishActionGuidance(overallStatus, state.phase),
     exitOptions: [...FINISH_EXIT_OPTIONS],
     guarantees: {
       readOnly: true,

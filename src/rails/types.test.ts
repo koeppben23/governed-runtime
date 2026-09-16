@@ -85,6 +85,39 @@ describe('rails/types', () => {
       expect(next.error).toBeNull();
     });
 
+    it('applyTransition records pending system work when entering a validation phase', () => {
+      const at = '2026-01-01T00:00:00.000Z';
+      const entering = applyTransition(
+        makeState('PLAN_REVIEW'),
+        'PLAN_REVIEW',
+        'VALIDATION',
+        'APPROVE',
+        at,
+      );
+      expect(entering.pendingSystemWork).toEqual({ kind: 'validation', requestedAt: at });
+
+      const exiting = applyTransition(
+        { ...entering, pendingSystemWork: { kind: 'validation', requestedAt: at } },
+        'VALIDATION',
+        'IMPLEMENTATION',
+        'ALL_PASSED',
+        at,
+      );
+      expect(exiting.pendingSystemWork).toBeNull();
+    });
+
+    it('applyTransition records pending system work for IMPL_VALIDATION too', () => {
+      const at = '2026-01-01T00:00:00.000Z';
+      const entering = applyTransition(
+        makeState('IMPLEMENTATION'),
+        'IMPLEMENTATION',
+        'IMPL_VALIDATION',
+        'IMPL_COMPLETE',
+        at,
+      );
+      expect(entering.pendingSystemWork).toEqual({ kind: 'validation', requestedAt: at });
+    });
+
     it('applyTransition closes the rework marker exactly on IMPL_VALIDATION → IMPL_REVIEW', () => {
       const marker = { rejectedDigest: 'digest-d1', exhausted: false };
       const entering = applyTransition(

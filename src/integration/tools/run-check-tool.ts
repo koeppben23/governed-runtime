@@ -25,7 +25,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import type { ToolContext, ToolDefinition, ToolResult } from './helpers.js';
+import type { ToolDefinition, ToolResult, WorkspaceToolContext } from './helpers.js';
 import { formatError } from './error-format.js';
 import {
   withReadOnlySession,
@@ -165,7 +165,7 @@ type PhaseAResult =
 async function validateAndAttest(
   kind: VerificationCandidateKind,
   candidateId: string | undefined,
-  context: ToolContext,
+  context: WorkspaceToolContext,
 ): Promise<PhaseAResult> {
   const { sessDir, state } = await withReadOnlySession(context);
   if (!state) {
@@ -225,7 +225,7 @@ async function validateAndAttest(
 export async function executeRunCheckPhased(
   kind: VerificationCandidateKind,
   candidateId: string | undefined,
-  context: ToolContext,
+  context: WorkspaceToolContext,
 ): Promise<ToolResult> {
   // ── Phase A: Validate + attest (read-only, no lock) ──
   const phaseA = await validateAndAttest(kind, candidateId, context);

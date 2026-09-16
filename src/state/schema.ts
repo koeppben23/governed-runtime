@@ -42,6 +42,7 @@ import { MutationEpisode, MutationEpisodeResolution } from './evidence-mutation-
 import { enforceMutationEpisodeInvariants } from './evidence-mutation-episode.js';
 import { RuntimeLease } from './runtime-lease.js';
 import { ExportCompletionEvidence } from './evidence-export.js';
+import { SystemWorkOperation } from './system-work.js';
 import { DiscoveryHealthGate } from './discovery-schemas.js';
 import {
   DiscoverySummarySchema,
@@ -654,24 +655,20 @@ export const SessionState = z
       .optional(),
 
     // ── Metadata ────────────────────────────────────────────────
-
     /** Last transition (from → to via event). Null before first transition. */
     transition: Transition.nullable(),
-
     /**
      * State-owned audit outbox. Operations remain after reconciliation as
      * durable correlation evidence; their status is monotonic.
      */
     pendingAuditOperations: z.array(PendingAuditOperation),
-
     /** Error state. Non-null triggers ERROR event in guard evaluation. */
     error: ErrorInfo.nullable(),
-
     /** Session creation timestamp (set once by init()). */
     createdAt: z.string().datetime(),
-
     exportCompletionEvidence: ExportCompletionEvidence.nullable(),
-
+    /** Pending system work (validation); atomic with the entering transition. */
+    pendingSystemWork: SystemWorkOperation.nullable(),
     /** Removed persisted archive authority; old state must fail at this boundary. */
     archiveStatus: z.never().optional(),
     /** Lifecycle of the immutable raw-evidence package required at regulated completion. */

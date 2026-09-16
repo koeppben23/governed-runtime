@@ -34,6 +34,32 @@ import { authorizeMutationEpisode } from '../state/evidence-mutation-episode.js'
 import { getRuntimeInstanceId } from './runtime-instance.js';
 import { acquireRuntimeLease } from './runtime-lease.js';
 import { enforceGitPrerequisiteBeforeMutation } from './plugin-git-gate.js';
+import { resumePendingSystemWork } from './tools/auto-validation.js';
+
+/**
+ * Resume interrupted canonical system work on the next runtime contact.
+ * Failure to resume must never block the user's command: the helper inside
+ * fails closed on an unreadable session and the beforehook only logs here.
+ */
+async function resumeInterruptedSystemWork(
+  runtime: FlowGuardPluginRuntime,
+  sessionId: string,
+): Promise<void> {
+  const worktreeRoot = runtime.riskDeps.getWorktreeRoot?.();
+  if (!worktreeRoot) return;
+  try {
+    await resumePendingSystemWork({
+      sessionID: sessionId,
+      worktree: worktreeRoot,
+      directory: worktreeRoot,
+    });
+  } catch (err) {
+    runtime.log.warn('system-work', 'Pending system work resume failed', {
+      sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
 
 export async function commandBefore(
   runtime: FlowGuardPluginRuntime,
@@ -50,6 +76,11 @@ export async function commandBefore(
 
     // Stryker disable next-line OptionalChaining — equivalent: sessionID-missing inputs return at the guard above before this line is reached.
     updateCommandScope(runtime, rawSessionId, hookInput?.command ?? '');
+
+    // Resume canonical system work that was interrupted between the human
+    // decision and the automatic validation. Any command is a valid runtime
+    // contact; an unreadable session fails closed inside the helper.
+    await resumeInterruptedSystemWork(runtime, rawSessionId);
 
     const intent = recordUserDecisionIntentFromCommand({
       sessionId: rawSessionId,

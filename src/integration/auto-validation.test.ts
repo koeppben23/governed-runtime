@@ -32,7 +32,9 @@ import {
   type TestWorkspace,
 } from './test-helpers.js';
 import { status, hydrate, ticket, plan, decision, implement } from './tools/index.js';
-import { readState, writeState } from '../adapters/persistence.js';
+import { readState, statePath, writeState } from '../adapters/persistence.js';
+import { resumePendingSystemWork, runActiveChecksAutomatically } from './tools/auto-validation.js';
+import * as fs from 'node:fs/promises';
 import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
@@ -132,34 +134,42 @@ afterEach(async () => {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-async function callOk(tool: ToolDefinition, args: unknown): Promise<Record<string, unknown>> {
-  const finalArgs = await withStrictReviewFindings(await getSessDir(), args);
-  recordDecisionIntentForTool(tool, finalArgs);
-  const result = parseToolResult(await tool.execute(finalArgs, ctx));
+async function callOk(
+  tool: ToolDefinition,
+  args: unknown,
+  context: TestToolContext = ctx,
+): Promise<Record<string, unknown>> {
+  const finalArgs = await withStrictReviewFindings(await getSessDir(context), args);
+  recordDecisionIntentForTool(tool, finalArgs, context);
+  const result = parseToolResult(await tool.execute(finalArgs, context));
   if (result.error) {
     throw new Error(`Tool returned error: ${result.code} — ${result.message}`);
   }
   return result;
 }
 
-function recordDecisionIntentForTool(tool: ToolDefinition, args: unknown): void {
+function recordDecisionIntentForTool(
+  tool: ToolDefinition,
+  args: unknown,
+  context: TestToolContext = ctx,
+): void {
   if (tool !== decision || typeof args !== 'object' || args === null) return;
   const verdict = (args as { verdict?: unknown }).verdict;
   if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') return;
   recordUserDecisionIntent({
-    sessionId: ctx.sessionID,
+    sessionId: context.sessionID,
     command: '/review-decision',
     expectedVerdict: verdict,
   });
 }
 
-async function getPhase(): Promise<string> {
-  return (parseToolResult(await status.execute({}, ctx)).phase as string) ?? '';
+async function getPhase(context: TestToolContext = ctx): Promise<string> {
+  return (parseToolResult(await status.execute({}, context)).phase as string) ?? '';
 }
 
-async function getSessDir(): Promise<string> {
-  const fp = await computeFingerprint(ctx.worktree);
-  return resolveSessionDir(fp.fingerprint, ctx.sessionID);
+async function getSessDir(context: TestToolContext = ctx): Promise<string> {
+  const fp = await computeFingerprint(context.worktree);
+  return resolveSessionDir(fp.fingerprint, context.sessionID);
 }
 
 function failingCheck(kind: VerificationCandidateKind) {
@@ -193,17 +203,21 @@ function timedOutCheck(kind: VerificationCandidateKind) {
 }
 
 /** Reach PLAN_REVIEW in team mode (the plan review loop must converge first). */
-async function reachTeamPlanReview(): Promise<void> {
-  await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' });
-  await callOk(ticket, { text: 'Auto validation task', source: 'user' });
-  await callOk(plan, {
-    planText: '## Plan\n1. Apply the fix',
-    targetPaths: ['docs/test.md'],
-  });
-  for (let i = 0; i < 5 && (await getPhase()) !== 'PLAN_REVIEW'; i++) {
-    await callOk(plan, { reviewVerdict: 'accept' });
+async function reachTeamPlanReview(context: TestToolContext = ctx): Promise<void> {
+  await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' }, context);
+  await callOk(ticket, { text: 'Auto validation task', source: 'user' }, context);
+  await callOk(
+    plan,
+    {
+      planText: '## Plan\n1. Apply the fix',
+      targetPaths: ['docs/test.md'],
+    },
+    context,
+  );
+  for (let i = 0; i < 5 && (await getPhase(context)) !== 'PLAN_REVIEW'; i++) {
+    await callOk(plan, { reviewVerdict: 'accept' }, context);
   }
-  expect(await getPhase()).toBe('PLAN_REVIEW');
+  expect(await getPhase(context)).toBe('PLAN_REVIEW');
 }
 
 /** Reach IMPLEMENTATION in solo mode with the automatic baseline checks passed. */
@@ -454,6 +468,101 @@ describe('automatic validation', () => {
       expect(vi.mocked(executorMock.executeCheck).mock.calls).toHaveLength(
         state!.activeChecks.length,
       );
+    });
+
+    it('validates two sessions concurrently instead of blocking process-wide', async () => {
+      const wsB = await createTestWorkspace();
+      const ctxB = createToolContext({
+        worktree: wsB.tmpDir,
+        directory: wsB.tmpDir,
+        sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+      });
+      try {
+        await reachTeamPlanReview();
+        await reachTeamPlanReview(ctxB);
+
+        // Hold the first executor call open so both sessions overlap inside
+        // the automatic runner.
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const defaultExecuteCheck = vi.mocked(executorMock.executeCheck).getMockImplementation();
+        expect(defaultExecuteCheck).toBeDefined();
+        vi.mocked(executorMock.executeCheck).mockImplementationOnce(async (input) => {
+          await gate;
+          return defaultExecuteCheck!(input);
+        });
+
+        recordUserDecisionIntent({
+          sessionId: ctx.sessionID,
+          command: '/approve',
+          expectedVerdict: 'approve',
+        });
+        recordUserDecisionIntent({
+          sessionId: ctxB.sessionID,
+          command: '/approve',
+          expectedVerdict: 'approve',
+        });
+        const pendingA = decision.execute({ verdict: 'approve', rationale: 'ok' }, ctx);
+        const pendingB = decision.execute({ verdict: 'approve', rationale: 'ok' }, ctxB);
+
+        // Give session A time to enter the runner and block on the gate.
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        release();
+        const [rawA, rawB] = await Promise.all([pendingA, pendingB]);
+
+        // Session-scoped isolation: B must not have been suppressed by A's
+        // in-flight validation.
+        expect(parseToolResult(rawA).phase).toBe('IMPLEMENTATION');
+        expect(parseToolResult(rawB).phase).toBe('IMPLEMENTATION');
+        expect(await getPhase(ctx)).toBe('IMPLEMENTATION');
+        expect(await getPhase(ctxB)).toBe('IMPLEMENTATION');
+        const stateA = await readState(await getSessDir(ctx));
+        const stateB = await readState(await getSessDir(ctxB));
+        expect(stateA!.validation).toHaveLength(stateA!.activeChecks.length);
+        expect(stateB!.validation).toHaveLength(stateB!.activeChecks.length);
+      } finally {
+        await wsB.cleanup();
+      }
+    });
+
+    it('resumes interrupted system work from the persisted marker', async () => {
+      await reachTeamPlanReview();
+
+      // Simulate a crash between the persisted approval and the automatic run:
+      // the session sits in VALIDATION with the pending marker and no evidence.
+      const sessDir = await getSessDir();
+      const state = await readState(sessDir);
+      const requestedAt = new Date().toISOString();
+      await writeState(sessDir, {
+        ...state!,
+        phase: 'VALIDATION',
+        pendingSystemWork: { kind: 'validation', requestedAt },
+        validation: [],
+      });
+      vi.mocked(executorMock.executeCheck).mockClear();
+
+      const resumed = await resumePendingSystemWork(ctx);
+
+      expect(resumed).not.toBeNull();
+      expect(await getPhase()).toBe('IMPLEMENTATION');
+      const finalState = await readState(sessDir);
+      expect(finalState!.pendingSystemWork).toBeNull();
+      expect(finalState!.validation).toHaveLength(finalState!.activeChecks.length);
+      expect(finalState!.validation.every((entry) => entry.passed)).toBe(true);
+    });
+
+    it('fails closed with SYSTEM_WORK_STATE_UNREADABLE on an unreadable session state', async () => {
+      await reachTeamPlanReview();
+      const sessDir = await getSessDir();
+      await fs.writeFile(statePath(sessDir), '{ this is not valid json', 'utf-8');
+
+      const result = JSON.parse((await runActiveChecksAutomatically(ctx))!);
+
+      // Never a silent "do not run": an unreadable system-work session is a
+      // typed fail-closed result.
+      expect(result).toMatchObject({ error: true, code: 'SYSTEM_WORK_STATE_UNREADABLE' });
     });
   });
 });

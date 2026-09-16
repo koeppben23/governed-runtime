@@ -129,6 +129,11 @@ describe('java demo workflow contract', () => {
   it('documents the governance override for an exhausted review', () => {
     expect(DEMO_SCRIPT).toContain('/override-approve');
     expect(DEMO_SCRIPT).toContain('GOVERNANCE_OVERRIDE_REQUIRED');
+    // The override carries a mandatory non-empty rationale.
+    expect(DEMO_SCRIPT).toContain('GOVERNANCE_OVERRIDE_RATIONALE_REQUIRED');
+    expect(DEMO_SCRIPT).toMatch(
+      /override-approve[^\n]*Begrundung|override-approve[^\n]*rationale/i,
+    );
     for (const [file, text] of Object.entries(DOCS)) {
       expect(text.toLowerCase(), file).not.toContain('force-convergence');
     }

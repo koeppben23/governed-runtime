@@ -197,6 +197,14 @@ export function applyTransition(
     phase: to,
     transition: { from, to, event, at },
     error: null,
+    // System work is durable: entering a validation phase records the pending
+    // operation in the SAME atomic state write as the transition, and leaving
+    // it clears the marker. A crash between the human decision and the check
+    // execution is therefore recoverable instead of a dead state.
+    pendingSystemWork:
+      to === 'VALIDATION' || to === 'IMPL_VALIDATION'
+        ? { kind: 'validation', requestedAt: at }
+        : null,
     // Entering IMPL_REVIEW is possible only from IMPL_VALIDATION with a FULLY
     // passing fresh validation of the current record. That is the exact point
     // where the repair loop converges, so the rework marker closes here: after

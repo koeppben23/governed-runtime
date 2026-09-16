@@ -140,11 +140,21 @@ describe('deriveFinishOverallStatus — overall status matrix', () => {
     expect(card.directive.code).toBe('EXPORT_REQUIRED');
     expect(card.directive.commands).toEqual(['/export']);
     expect(card.overallStatus).toBe('READY');
+    // Directive-aware guidance: /export is the required completion commit, so
+    // "create PR" must not be presented as an equal alternative.
     expect(
-      card.actionGuidance.find((guidance) => guidance.action === 'export evidence')?.status,
-    ).toBe('recommended');
-    expect(card.actionGuidance.find((guidance) => guidance.action === 'create PR')?.status).toBe(
-      'recommended',
+      card.actionGuidance.find((guidance) => guidance.action === 'export evidence'),
+    ).toMatchObject({ status: 'recommended' });
+    expect(
+      card.actionGuidance.find((guidance) => guidance.action === 'export evidence')?.reason,
+    ).toContain('/export');
+    expect(card.actionGuidance.find((guidance) => guidance.action === 'create PR')).toMatchObject({
+      status: 'not_recommended',
+    });
+    expect(card.actionGuidance.find((guidance) => guidance.action === 'keep branch')).toMatchObject(
+      {
+        status: 'not_recommended',
+      },
     );
   });
 

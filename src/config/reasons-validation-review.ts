@@ -3,6 +3,16 @@ import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 
 export const REVIEW_VALIDATION_REASONS = [
   {
+    code: 'SYSTEM_WORK_STATE_UNREADABLE',
+    category: 'state',
+    messageTemplate:
+      'Canonical system work (validation) cannot run because the session state is unreadable or incompatible: {reason}.',
+    recoverySteps: [
+      'Restore the session state from trusted evidence or start a fresh session',
+      'Do not treat an unreadable session as "no work required"',
+    ],
+  },
+  {
     code: 'IMPLEMENTATION_REVIEW_EVIDENCE_REQUIRED',
     category: 'state',
     messageTemplate:

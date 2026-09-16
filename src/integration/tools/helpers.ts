@@ -76,6 +76,13 @@ export interface ToolContext {
 }
 
 /**
+ * The workspace/session subset that session resolution and rail execution
+ * need. Host hooks (which have no message/agent context) can resume canonical
+ * system work with this narrower context.
+ */
+export type WorkspaceToolContext = Pick<ToolContext, 'sessionID' | 'worktree' | 'directory'>;
+
+/**
  * Result type for FlowGuard tools.
  *
  * Matches the OpenCode SDK `ToolResult` union:
