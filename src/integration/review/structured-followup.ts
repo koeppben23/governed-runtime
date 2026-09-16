@@ -37,6 +37,9 @@ export type StructuredFollowupResult =
     };
 
 type BlockedFollowup = Extract<StructuredFollowupResult, { readonly kind: 'blocked' }>;
+type ParsedFollowup =
+  | { readonly kind: 'ok'; readonly findings: Record<string, unknown> }
+  | BlockedFollowup;
 type PromptResponse = Awaited<ReturnType<OrchestratorClient['session']['prompt']>>;
 
 function serializationPrompt(obligationId: string): string {
@@ -114,7 +117,7 @@ function responseFailure(response: PromptResponse): BlockedFollowup | null {
   return classifyInfoError(response.data.info?.error);
 }
 
-function parseStructuredFindings(response: PromptResponse): Record<string, unknown> | BlockedFollowup {
+function parseStructuredFindings(response: PromptResponse): ParsedFollowup {
   const structured = response.data?.info?.structured;
   if (!structured || typeof structured !== 'object' || Array.isArray(structured)) {
     return {
@@ -131,7 +134,7 @@ function parseStructuredFindings(response: PromptResponse): Record<string, unkno
       reason: `OpenCode returned structured reviewer output outside the canonical ReviewerFindingsInput contract: ${parsed.error.message}`,
     };
   }
-  return { ...parsed.data };
+  return { kind: 'ok', findings: { ...parsed.data } };
 }
 
 /** Serialize findings from an existing visible reviewer child. Never creates a child. */
@@ -154,12 +157,12 @@ export async function captureStructuredFindingsFromVisibleChild(
 
   const failure = responseFailure(response);
   if (failure) return failure;
-  const findings = parseStructuredFindings(response);
-  if ('kind' in findings && findings.kind === 'blocked') return findings;
+  const parsed = parseStructuredFindings(response);
+  if (parsed.kind === 'blocked') return parsed;
 
   return {
     kind: 'ok',
-    findings,
+    findings: parsed.findings,
     invokedAt,
     fulfilledAt: new Date().toISOString(),
   };
