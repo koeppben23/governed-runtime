@@ -360,6 +360,10 @@ describe('automatic validation', () => {
       const state = await readState(await getSessDir());
       expect(state!.phase).toBe('VALIDATION');
       expect(state!.validation[0]).toMatchObject({ checkId: 'typecheck', passed: false });
+      // A technical outcome must NOT consume the pending marker: the phase is
+      // still validation, so the retry authority stays durable.
+      expect(state!.pendingSystemWork).not.toBeNull();
+      expect(state!.pendingSystemWork?.kind).toBe('validation');
 
       // VALIDATION dead-state regression guard: while the session waits for a
       // retry, the focused status projection must still expose the

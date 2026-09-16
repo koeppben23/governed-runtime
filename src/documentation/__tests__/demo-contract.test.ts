@@ -16,6 +16,9 @@ import { Phase } from '../../state/schema.js';
 import type { Event, Phase as PhaseType } from '../../state/schema.js';
 import { resolveTransition } from '../../machine/topology.js';
 import { INSTALLED_COMMANDS } from '../../integration/installed-commands.js';
+import { buildFinishCard } from '../../integration/status-finish.js';
+import { getPolicyPreset } from '../../config/policy.js';
+import { makeProgressedState } from '../../fixtures.js';
 
 const DEMO_DIR = join(process.cwd(), 'demos', 'java-task-manager');
 const read = (file: string): string => readFileSync(join(DEMO_DIR, file), 'utf8');
@@ -186,6 +189,22 @@ describe('java demo workflow contract', () => {
     expect(autoValidationTest).toContain(
       'solo plan convergence auto-approves into VALIDATION and runs the checks',
     );
+  });
+
+  it('documents the EXPORT_READY finish guidance that the runtime emits', () => {
+    // Bind the demo statement to the runtime projection: at EXPORT_READY,
+    // /export is required, so 'export evidence' is recommended while
+    // 'create PR' and 'keep branch' are not_recommended.
+    const card = buildFinishCard(makeProgressedState('EXPORT_READY'), getPolicyPreset('solo'));
+    const statusOf = (action: string): string | undefined =>
+      card.actionGuidance.find((guidance) => guidance.action === action)?.status;
+    expect(statusOf('export evidence')).toBe('recommended');
+    expect(statusOf('create PR')).toBe('not_recommended');
+    expect(statusOf('keep branch')).toBe('not_recommended');
+
+    // The demo must tell the same story.
+    expect(DEMO_SCRIPT).toContain('`export evidence` ist `recommended`');
+    expect(DEMO_SCRIPT).toContain('`create PR` und `keep branch` stehen auf `not_recommended`');
   });
 
   it('documents deterministic task/architecture inputs and the export completion projection', () => {

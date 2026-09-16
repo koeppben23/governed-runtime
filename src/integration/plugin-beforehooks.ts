@@ -37,14 +37,45 @@ import { enforceGitPrerequisiteBeforeMutation } from './plugin-git-gate.js';
 import { resumePendingSystemWork } from './tools/auto-validation.js';
 
 /**
- * Resume interrupted canonical system work on the next runtime contact.
+ * Commands that must never trigger a recovery side effect:
+ * - read-only orientation surfaces (`/status`, `/why`, `/finish`, `/help`,
+ *   `/commands`): their guarantee is that they do not mutate state;
+ * - `/archive`: an operational action, not workflow guidance;
+ * - `/abort`: emergency termination must not start a potentially long build.
+ *
+ * The pending marker stays visible through the directive (`system_work`); the
+ * next workflow-mutating command resumes it.
+ */
+const READ_ONLY_OR_EMERGENCY_COMMANDS: ReadonlySet<string> = new Set([
+  '/status',
+  '/why',
+  '/finish',
+  '/help',
+  '/commands',
+  '/archive',
+  '/abort',
+]);
+
+/** Whether an incoming command may resume interrupted canonical system work. */
+export function mayResumeSystemWorkOnCommand(command: string): boolean {
+  const trimmed = command.trim();
+  if (trimmed.length === 0) return false;
+  const withoutSlash = trimmed.replace(/^\/+/, '');
+  const name = withoutSlash.split(/\s+/)[0] ?? '';
+  return !READ_ONLY_OR_EMERGENCY_COMMANDS.has(`/${name}`);
+}
+
+/**
+ * Resume interrupted canonical system work before a workflow-mutating command.
  * Failure to resume must never block the user's command: the helper inside
  * fails closed on an unreadable session and the beforehook only logs here.
  */
 async function resumeInterruptedSystemWork(
   runtime: FlowGuardPluginRuntime,
   sessionId: string,
+  command: string,
 ): Promise<void> {
+  if (!mayResumeSystemWorkOnCommand(command)) return;
   const worktreeRoot = runtime.riskDeps.getWorktreeRoot?.();
   if (!worktreeRoot) return;
   try {
@@ -78,9 +109,9 @@ export async function commandBefore(
     updateCommandScope(runtime, rawSessionId, hookInput?.command ?? '');
 
     // Resume canonical system work that was interrupted between the human
-    // decision and the automatic validation. Any command is a valid runtime
-    // contact; an unreadable session fails closed inside the helper.
-    await resumeInterruptedSystemWork(runtime, rawSessionId);
+    // decision and the automatic validation — but never as a side effect of a
+    // read-only or emergency command.
+    await resumeInterruptedSystemWork(runtime, rawSessionId, hookInput?.command ?? '');
 
     const intent = recordUserDecisionIntentFromCommand({
       sessionId: rawSessionId,

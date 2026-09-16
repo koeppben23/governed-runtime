@@ -169,10 +169,14 @@ export async function runActiveChecksAutomatically(
     return lastResponse;
   } finally {
     activeValidationSessions.delete(sessionKey);
-    // A completed attempt (success, failure, or execution error) consumes the
-    // pending marker. If the process dies mid-run the marker survives and the
-    // next runtime contact resumes the work.
-    await clearPendingSystemWorkIfStillValidation(context);
+    // The pending marker is consumed ONLY when the run leaves validation:
+    // success (VALIDATION → IMPLEMENTATION) and a genuine negative result
+    // (VALIDATION → PLAN, IMPL_VALIDATION → IMPLEMENTATION) both transition,
+    // and `applyTransition` clears it atomically. A technical outcome that
+    // keeps the phase in validation (execution error, lock/subject/integrity
+    // problem, unexpected response) MUST leave the marker pending so the next
+    // runtime contact retries instead of stranding a `system_work` phase with
+    // no commands.
   }
 }
 
@@ -191,10 +195,13 @@ export async function resumePendingSystemWork(
   if (outcome.kind === 'none') return null;
   const { phase, activeChecks, pendingSystemWork } = outcome.session;
   if (pendingSystemWork === null) return null;
-  if (!isValidationPhase(phase) || activeChecks.length === 0) {
-    await clearPendingSystemWorkIfStillValidation(context);
+  if (!isValidationPhase(phase)) {
+    // The marker can only be stale if the phase already left validation in a
+    // way that bypassed applyTransition (not a legal path). Clear defensively.
+    await clearStalePendingSystemWork(context);
     return null;
   }
+  if (activeChecks.length === 0) return null;
   return runActiveChecksAutomatically(context);
 }
 
@@ -214,13 +221,16 @@ async function executeCheckResponse(
  * validation phase: a transition out of validation already cleared it
  * atomically, and re-reading prevents clobbering a newer state.
  */
-async function clearPendingSystemWorkIfStillValidation(
-  context: WorkspaceToolContext,
-): Promise<void> {
+/**
+ * Clear a marker that is stale because the session already left validation.
+ * Never clear while the phase is still a validation phase: a pending marker
+ * there is authoritative retry authority, not garbage.
+ */
+async function clearStalePendingSystemWork(context: WorkspaceToolContext): Promise<void> {
   try {
     await withMutableSessionTransaction(context, async ({ sessDir, state }) => {
       if (state.pendingSystemWork === null) return;
-      if (!isValidationPhase(state.phase)) return;
+      if (isValidationPhase(state.phase)) return;
       await writeStateWithArtifacts(sessDir, { ...state, pendingSystemWork: null });
     });
   } catch (err) {

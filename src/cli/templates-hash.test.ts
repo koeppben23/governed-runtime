@@ -307,8 +307,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed for the peer-review domain hard cut: the /review and /archive
     // command templates now use the renamed PEER_REVIEW / PEER_REVIEW_COMPLETE
     // phases and peer-review flow wording. No template behavior changed.
+    // Refreshed for the mandatory override rationale: /override-approve now
+    // refuses an empty/whitespace rationale and reports it instead of calling
+    // flowguard_decision.
     expect(sha256(commandsJson)).toBe(
-      'e00c36982a56fd3efbb779dc3a42f3d356b055cf523fe8e414667cbb9f0a3263',
+      'dc6836c562bd7b3dee9b1d2de9f5be5658ee80ad0b20015283c83a8a43920656',
     );
   });
 
