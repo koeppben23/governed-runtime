@@ -7,7 +7,12 @@
  * post-execution output handling. Before-hook Allow/Deny enforcement
  * remains in plugin.ts.
  *
- * @version v1
+ * Independent review is intentionally NOT auto-spawned here. A review-required
+ * FlowGuard response remains pending so the parent agent invokes OpenCode's
+ * native Task surface; that host-visible Task is the single productive review
+ * transport and owns the child-session lifecycle.
+ *
+ * @version v2
  */
 
 import { runWithAdapterLoggerAsync } from '../logging/adapter-logger.js';
@@ -19,7 +24,6 @@ import {
   strictBlockedOutput,
 } from './plugin-helpers.js';
 import { trackFlowGuardEnforcement } from './plugin-enforcement-tracking.js';
-import { runReviewOrchestration as runOrchestrator } from './plugin-orchestrator.js';
 import { runAudit as runAuditModule } from './plugin-audit.js';
 import { handleEvent, type EventHandlerDeps } from './plugin-events.js';
 import { appendReviewAuditEventForState } from './review/audit-events.js';
@@ -77,18 +81,11 @@ export async function toolAfter(
       await handleAfterDiagnostics(runtime, afterCtx);
       await recordMutationCompletion({ runtime, ...afterCtx });
       await handleBashAfter(runtime, toolName, sessionId, hookOutput);
-      // The durable transition outbox must be reconciled BEFORE the orchestrator
-      // may persist its post-commit side effects (obligations, attempts):
-      // otherwise the operation's committed postStateDigest no longer matches
-      // the persisted state and the mutation cycle would fail closed.
+      // Reconcile the FlowGuard mutation/audit boundary before the pending
+      // review signal is exposed. The response itself stays untouched: native
+      // Task invocation is a subsequent host-visible action, never a hidden
+      // post-hook side effect.
       await runFlowGuardAuditAfter({ runtime, toolName, input, output, sessionId, hookOutput });
-      await runOrchestrator(runtime.orchestratorDeps, {
-        toolName,
-        input,
-        output: hookOutput,
-        sessionId,
-        now,
-      });
       await updateCheckReworkContinuation(runtime, toolName, sessionId);
       trackReviewableEnforcement(runtime, afterCtx);
     });
@@ -118,16 +115,12 @@ async function handleAfterDiagnostics(
 }
 
 function handleReviewableAfter(runtime: FlowGuardPluginRuntime, ctx: AfterHookContext): void {
-  // Diagnostics observe the tool's own output before the orchestration result is tracked.
+  // Diagnostics observe the FlowGuard tool's own output before the pending
+  // review signal is registered in transient enforcement state.
   logAutoAdvanceOverflow(runtime, ctx.sessionId, ctx.hookOutput);
 }
 
-/**
- * Track review enforcement against the output the agent actually receives.
- *
- * Must run AFTER orchestration because it attaches the review attempt identity
- * emitted by the SDK review pipeline.
- */
+/** Track the exact pending review signal exposed to the parent agent. */
 function trackReviewableEnforcement(runtime: FlowGuardPluginRuntime, ctx: AfterHookContext): void {
   // Stryker disable next-line ConditionalExpression
   if (!isReviewableFlowGuardTool(ctx.toolName)) return;
