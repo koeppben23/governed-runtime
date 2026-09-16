@@ -22,10 +22,7 @@ import {
   type TestWorkspace,
 } from './test-helpers.js';
 import { hydrate, ticket, plan, decision, status } from './tools/index.js';
-import {
-  rearmPendingSystemWork,
-  resumePendingSystemWork,
-} from './tools/auto-validation.js';
+import { rearmPendingSystemWork, resumePendingSystemWork } from './tools/auto-validation.js';
 import { readState, writeState } from '../adapters/persistence.js';
 import {
   computeFingerprint,
@@ -141,10 +138,7 @@ function recordDecisionIntentForTool(tool: ToolDefinition, args: unknown): void 
   });
 }
 
-async function callOk(
-  tool: ToolDefinition,
-  args: unknown,
-): Promise<Record<string, unknown>> {
+async function callOk(tool: ToolDefinition, args: unknown): Promise<Record<string, unknown>> {
   const finalArgs = await withStrictReviewFindings(await getSessDir(), args);
   recordDecisionIntentForTool(tool, finalArgs);
   const result = parseToolResult(await tool.execute(finalArgs, ctx));

@@ -277,10 +277,7 @@ async function runAutomaticValidationAttempt(
     const { phase, activeChecks, pendingSystemWork } = before.session;
     if (!isValidationPhase(phase)) return { kind: 'none' };
     if (activeChecks.length === 0) return { kind: 'none' };
-    if (
-      pendingSystemWork !== null &&
-      isBackoffActive(pendingSystemWork.retryAfter, deps.nowMs())
-    ) {
+    if (pendingSystemWork !== null && isBackoffActive(pendingSystemWork.retryAfter, deps.nowMs())) {
       return { kind: 'none' };
     }
 
@@ -398,14 +395,9 @@ const inFlightSystemWorkResumes = new Set<string>();
  * runtime owns the continuation.
  */
 type PendingOperationDecision =
-  | { readonly kind: 'none' }
-  | { readonly kind: 'stale' }
-  | { readonly kind: 'attempt' };
+  { readonly kind: 'none' } | { readonly kind: 'stale' } | { readonly kind: 'attempt' };
 
-function classifyPendingOperation(
-  session: SessionRead,
-  nowMs: number,
-): PendingOperationDecision {
+function classifyPendingOperation(session: SessionRead, nowMs: number): PendingOperationDecision {
   const { phase, activeChecks, pendingSystemWork } = session;
   if (pendingSystemWork === null) return { kind: 'none' };
   if (!isValidationPhase(phase)) return { kind: 'stale' };
