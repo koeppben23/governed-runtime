@@ -18,24 +18,18 @@
  *   must never be composed into a synthetic capability that no single transport owns.
  *
  * @see https://github.com/koeppben23/governed-runtime/issues/242
- * @version v2
+ * @version v3
  */
 
-// ─── Enforcement Types ───────────────────────────────────────────────────────
-
-/**
- * Enforcement capability level advertised by the host adapter.
- *
- * - synchronous: guaranteed block (in-process throw or exit-code-2)
- * - hook_gated: hook can block but model may have theoretical workaround paths
- * - advisory: best-effort instruction following, no hard block mechanism
- */
 export type EnforcementLevel = 'synchronous' | 'hook_gated' | 'advisory';
 
 // ─── Host Capabilities ───────────────────────────────────────────────────────
 
 /** Canonical host transport used to execute an independent reviewer. */
-export type HostReviewTransportKind = 'sdk_structured_session' | 'native_task_subagent';
+export type HostReviewTransportKind =
+  | 'sdk_structured_session'
+  | 'native_task_subagent'
+  | 'native_task_structured_followup';
 
 /** Assurance produced by one concrete review transport. */
 export type HostReviewTransportAssurance = 'structured_high' | 'unstructured';
@@ -43,10 +37,10 @@ export type HostReviewTransportAssurance = 'structured_high' | 'unstructured';
 /**
  * Capabilities of ONE concrete review transport.
  *
- * These facts deliberately live on the transport, not on the host globally.
- * A host may expose a structured SDK child and a visible native Task at the same
- * time; FlowGuard must not combine those facts unless one selected transport
- * actually satisfies the complete requirement set.
+ * `native_task_structured_followup` is one concrete transport even though it
+ * has two host operations: both operate on the SAME Task child session and only
+ * their composition can mint review evidence. No capability from an unrelated
+ * SDK child is combined with the native Task.
  */
 export interface HostReviewTransportCapability {
   readonly kind: HostReviewTransportKind;
@@ -58,7 +52,6 @@ export interface HostReviewTransportCapability {
   readonly assurance: HostReviewTransportAssurance;
 }
 
-/** Required properties for the single transport selected for a review. */
 export interface ReviewTransportRequirements {
   readonly structuredOutput: boolean;
   readonly parentVisible: boolean;
@@ -70,39 +63,27 @@ export interface ReviewTransportRequirements {
 /**
  * Product-level independent-review contract.
  *
- * Visibility is a hard requirement: an invisible SDK child is real execution,
- * but it is not a sufficient user-observable independent reviewer. Navigation
- * and host-enforced permission isolation remain explicit capabilities and can be
- * tightened without inventing them before the host contract proves them.
+ * A reviewer is only authoritative when the SAME transport is structured,
+ * parent-visible, transcript-navigable, identity-isolated, and permission-
+ * isolated. This is the hard product contract, not an advisory preference.
  */
 export const REQUIRED_INDEPENDENT_REVIEW_TRANSPORT: ReviewTransportRequirements = {
   structuredOutput: true,
   parentVisible: true,
-  transcriptNavigable: false,
+  transcriptNavigable: true,
   isolatedAgentIdentity: true,
-  permissionIsolation: false,
+  permissionIsolation: true,
 };
 
-/**
- * Capabilities advertised by the host platform at initialization.
- * Used to derive enforcement level and determine available operations.
- */
 export interface HostCapabilities {
-  /** Can block tool execution before it runs (pre-tool gate). */
   readonly preToolBlock: boolean;
-  /** Can modify tool arguments before execution. */
   readonly argMutation: boolean;
-  /** Can replace tool output entirely (post-tool). */
   readonly outputReplacement: boolean;
-  /** Can inject system context during session (compaction, status). */
   readonly contextInjection: boolean;
-  /** Concrete, non-composable independent-review transports. */
   readonly reviewTransports: readonly HostReviewTransportCapability[];
-  /** Can inject governance context during compaction events. */
   readonly compactionInjection: boolean;
 }
 
-/** Return whether one transport satisfies the complete requirement set. */
 export function reviewTransportSatisfies(
   capability: HostReviewTransportCapability,
   requirements: ReviewTransportRequirements,
@@ -118,7 +99,6 @@ export function reviewTransportSatisfies(
 
 // ─── Host Tool Event ─────────────────────────────────────────────────────────
 
-/** Normalized representation of a host tool invocation. */
 export interface HostToolEvent {
   readonly tool: string;
   readonly sessionID: string;
@@ -151,22 +131,14 @@ export interface ToolResultMutation {
 
 // ─── Reviewer Types ──────────────────────────────────────────────────────────
 
-/** Configuration for spawning a reviewer subagent. */
 export interface ReviewerSpawnConfig {
   readonly prompt: string;
   readonly parentSessionId: string;
-  /**
-   * Optional stricter call-site requirements. When omitted the canonical
-   * product requirement above is used; callers can tighten, never silently
-   * weaken, the transport contract.
-   */
   readonly transportRequirements?: ReviewTransportRequirements;
-  /** Persist dispatch before the host may release the prompt. */
   readonly authorizeDispatch: (info: {
     readonly childSessionId: string;
     readonly invokedAt: string;
   }) => Promise<void>;
-  /** Resolve a host call that concluded without bindable evidence. */
   readonly abandonDispatch: (info: { readonly childSessionId: string }) => Promise<void>;
   readonly maxTransportRetries?: number;
   readonly baseDelayMs?: number;
@@ -200,7 +172,6 @@ export interface HostReviewerSuccessResult {
   readonly reviewOutputMode: 'structured_output';
   readonly structuredOutputUsed: boolean;
   readonly reviewAssuranceLevel: 'structured_high';
-  /** Exact host transport that produced this result. */
   readonly reviewTransport: HostReviewTransportKind;
   readonly hostVisible: boolean;
   readonly transcriptNavigable: boolean;
@@ -208,7 +179,7 @@ export interface HostReviewerSuccessResult {
 
 export type HostReviewerResult = HostReviewerSuccessResult | HostReviewerBlockedResult;
 
-// ─── Governance State Projection ─────────────────────────────────────────────
+// ─── Governance State Projection ──────────────────────────────────────────────
 
 export interface GovernanceStateProjection {
   readonly sessionId: string;
@@ -252,8 +223,8 @@ export interface HostAdapter {
 
   /**
    * Spawn a reviewer through one concrete transport that satisfies the complete
-   * review requirement set. A host with no such transport must return a typed
-   * blocked result before any child session is released.
+   * review requirement set. Native host-Task transports are dispatched at the
+   * hook boundary and therefore reject direct adapter spawning fail-closed.
    */
   spawnReviewer(config: ReviewerSpawnConfig): Promise<HostReviewerResult | null>;
 
