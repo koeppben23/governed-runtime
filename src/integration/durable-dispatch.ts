@@ -5,23 +5,9 @@
  * Every reviewer invocation must be recorded durably BEFORE the host releases
  * it, and every observed completion must close the matching ledger entry — so a
  * crash/restart between authorization and completion can never be mistaken for
- * "never dispatched". This module owns the host-facing persistence for that
- * ledger:
+ * "never dispatched".
  *
- *   - `persistAuthorizedSdkDispatch` — write an `authorized` entry after the
- *     reviewer child session exists and before `session.prompt` is released.
- *   - `abandonSdkDispatch` — classify a host call that concluded without bound
- *     evidence as `outcome_unknown` (transport failure, timeout, contract
- *     violation, rejected findings).
- *   - `buildInterruptedDispatchRearm` — recovery for an attempt whose durable
- *     ledger still reports an unresolved `authorized` outcome: the spent
- *     attempt is superseded and a fresh append-only attempt is minted on the
- *     SAME obligation.
- *
- * Every write runs through the canonical locked assurance update so the ledger
- * and attempt state cannot diverge under concurrency.
- *
- * @version v2
+ * @version v3
  */
 
 import { randomUUID } from 'node:crypto';
@@ -37,10 +23,8 @@ import {
 import type { ReviewAttempt, ReviewDispatchRecord } from '../state/evidence-review.js';
 import type { SessionState } from '../state/schema.js';
 
-/** Reason code emitted when the durable dispatch could not be persisted. */
 export const REVIEW_DISPATCH_PERSISTENCE_FAILED = 'REVIEW_DISPATCH_PERSISTENCE_FAILED' as const;
 
-/** Minimal write authority required to persist the dispatch ledger. */
 export interface DispatchLedgerWriteDeps {
   readonly updateReviewAssurance: (
     sessDir: string,
@@ -51,21 +35,11 @@ export interface DispatchLedgerWriteDeps {
 export interface AuthorizedSdkDispatchInput {
   readonly attemptId: string;
   readonly obligationId: string;
-  /** The host-observed child session that is about to receive the prompt. */
   readonly childSessionId: string;
-  /** Canonical digest of the exact prompt released to the host. */
   readonly canonicalPromptDigest: string;
-  /** Host-observed time at which the prompt may be released. */
   readonly authorizedAt: string;
 }
 
-/**
- * A host call ID may only be treated as an idempotent retry when the existing
- * ledger entry represents EXACTLY this authorization. Any other collision
- * (different attempt, obligation, or prompt digest, or an already-resolved
- * status) fails closed: no host release without a durable authorization for
- * exactly that release.
- */
 function resolveExistingDispatchForCall(
   existingForCall: readonly ReviewDispatchRecord[],
   input: AuthorizedSdkDispatchInput,
@@ -82,7 +56,6 @@ function resolveExistingDispatchForCall(
   return exactRetry ? 'retry' : 'conflict';
 }
 
-/** Require a pending obligation with a created, unbound attempt for the release. */
 function assertDispatchAuthorizable(
   assurance: ReturnType<typeof ensureReviewAssurance>,
   input: AuthorizedSdkDispatchInput,
@@ -104,12 +77,6 @@ function assertDispatchAuthorizable(
   );
 }
 
-/**
- * Persist the durable dispatch entry for a reviewer child session BEFORE the
- * host may release the prompt. Fails closed: a missing obligation, a
- * non-`created` attempt, or an already-bound attempt aborts the reviewer
- * invocation instead of prompting without a ledger entry.
- */
 export async function persistAuthorizedSdkDispatch(
   deps: DispatchLedgerWriteDeps,
   sessDir: string,
@@ -147,12 +114,6 @@ export async function persistAuthorizedSdkDispatch(
   });
 }
 
-/**
- * Classify a concluded host call without bound evidence as `outcome_unknown`.
- * The ledger stays append-only: the record is never removed, only resolved.
- * A persistence failure here leaves the entry `authorized`, which the next
- * command resolves as an interrupted dispatch — fail-closed either way.
- */
 export async function abandonSdkDispatch(
   deps: DispatchLedgerWriteDeps,
   sessDir: string,
@@ -167,15 +128,6 @@ export async function abandonSdkDispatch(
   });
 }
 
-/**
- * Pure, tool-route-friendly composition of the reviewer dispatch re-arm. It
- * takes an in-memory assurance + spent attempt (not a plugin runtime) and
- * performs NO write — the caller persists the resulting assurance with its own
- * write authority. This is the shared authority so the interrupted-dispatch
- * routes cannot drift.
- *
- * Fails closed: a settled obligation is refused with `rearm_obligation_settled`.
- */
 export type InterruptedDispatchRearm =
   | {
       readonly kind: 'ok';
@@ -208,4 +160,46 @@ export function buildInterruptedDispatchRearm(
     assurance: markDispatchOutcomeUnknown(minted.assurance, spent.attemptId),
     attempt: minted.attempt,
   };
+}
+
+/**
+ * A reviewer may execute successfully while its candidate findings fail the
+ * frozen pre-bind contract (scope/repository evidence/provenance). That is a
+ * failed REVIEW ATTEMPT, not a new artifact revision and not a terminally
+ * blocked review obligation.
+ *
+ * Re-arm the exact pending obligation under the same dispatch-recovery budget.
+ * The rejected dispatch is durably classified outcome_unknown and the previous
+ * created attempt becomes stale as the fresh attempt is minted. A late result
+ * from the rejected child therefore cannot satisfy the successor attempt.
+ */
+export async function rearmRejectedSdkFindings(
+  deps: DispatchLedgerWriteDeps,
+  sessDir: string,
+  spentAttemptId: string,
+): Promise<{ readonly kind: 'ok'; readonly attemptId: string } | { readonly kind: 'blocked'; readonly reason: string }> {
+  let result:
+    | { readonly kind: 'ok'; readonly attemptId: string }
+    | { readonly kind: 'blocked'; readonly reason: string } = {
+    kind: 'blocked',
+    reason: 'reviewer attempt not found',
+  };
+
+  await deps.updateReviewAssurance(sessDir, (state, now) => {
+    const assurance = ensureReviewAssurance(state.reviewAssurance);
+    const spent = assurance.attempts.find((attempt) => attempt.attemptId === spentAttemptId);
+    if (!spent) {
+      result = { kind: 'blocked', reason: 'reviewer attempt not found' };
+      return state;
+    }
+    const rearmed = buildInterruptedDispatchRearm(assurance, spent, now);
+    if (rearmed.kind === 'blocked') {
+      result = rearmed;
+      return state;
+    }
+    result = { kind: 'ok', attemptId: rearmed.attempt.attemptId };
+    return { ...state, reviewAssurance: rearmed.assurance };
+  });
+
+  return result;
 }
