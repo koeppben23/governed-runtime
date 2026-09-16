@@ -832,7 +832,8 @@ describe('review (standalone flow)', () => {
       const raw = await review.execute({ prNumber: 123, inputOrigin: 'pr' }, ctx);
       const result = parseToolResult(raw);
 
-      expect(result.error).toBe(true);
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe('pending_review');
       expect(result.code).toBe('CONTENT_ANALYSIS_REQUIRED');
       expect(result.recovery).toBeDefined();
       if (!Array.isArray(result.recovery)) throw new TypeError('Expected recovery array');
@@ -997,7 +998,8 @@ describe('review (standalone flow)', () => {
         const raw = await review.execute({ prNumber: 42, inputOrigin: 'pr' }, ctx);
         const result = parseToolResult(raw);
 
-        expect(result.error).toBe(true);
+        expect(result.error).toBeUndefined();
+        expect(result.status).toBe('pending_review');
         expect(result.code).toBe('CONTENT_ANALYSIS_REQUIRED');
         expect(result.requiredReviewAttestation).toBeDefined();
         const attestation = requiredRecord(result.requiredReviewAttestation, 'review attestation');

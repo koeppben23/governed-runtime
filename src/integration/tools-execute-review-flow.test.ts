@@ -279,7 +279,8 @@ describe('review', () => {
         ctx,
       );
       const result = parseToolResult(raw);
-      expect(result.error).toBe(true);
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe('pending_review');
       expect(result.code).toBe('CONTENT_ANALYSIS_REQUIRED');
     });
 
@@ -296,7 +297,8 @@ describe('review', () => {
         ctx,
       );
       const blocked = parseToolResult(blockedRaw);
-      expect(blocked.error).toBe(true);
+      expect(blocked.error).toBeUndefined();
+      expect(blocked.status).toBe('pending_review');
       expect(blocked.code).toBe('CONTENT_ANALYSIS_REQUIRED');
       const obligationId = (blocked.requiredReviewAttestation as Record<string, string>)
         .toolObligationId;
@@ -541,7 +543,8 @@ describe('review', () => {
       );
       const result = parseToolResult(raw);
       // With text as concrete content, the review is content-aware.
-      expect(result.error).toBe(true);
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe('pending_review');
       expect(result.code).toBe('CONTENT_ANALYSIS_REQUIRED');
       expect(result.requiredReviewAttestation).toBeDefined();
     });

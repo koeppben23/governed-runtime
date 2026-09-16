@@ -75,7 +75,7 @@ async function resolveReviewContentForExecution(
   exec: ReviewExecutionContext,
   refInput: ReviewReferenceInput | undefined,
 ): Promise<PreparedReviewContent | null | string> {
-  if (exec.args.reviewObligationId) {
+  if (exec.args.reviewObligationId && !refInput) {
     const obligation = findReviewObligationById(
       state.reviewAssurance,
       exec.args.reviewObligationId,
