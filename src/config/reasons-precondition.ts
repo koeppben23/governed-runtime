@@ -287,6 +287,50 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'GOVERNANCE_OVERRIDE_REQUIRED',
+    category: 'precondition',
+    messageTemplate:
+      'The independent review exhausted its authorized budget without reviewer acceptance. A plain approval is not legal at this gate; use /override-approve to accept with a recorded governance override, or /request-changes or /reject.',
+    recoverySteps: [
+      'Choose /override-approve to accept the reviewed subject with an explicit governance override',
+      'Choose /request-changes to continue the governed workflow with a new revision',
+      'Choose /reject to end the governed workflow',
+    ],
+  },
+  {
+    code: 'GOVERNANCE_OVERRIDE_RATIONALE_REQUIRED',
+    category: 'precondition',
+    messageTemplate:
+      'A governance override requires a non-empty, durable rationale: the human takes explicit responsibility for the accepted risk. The rationale may not be empty or whitespace.',
+    recoverySteps: [
+      'Re-run /override-approve with a rationale that records why the reviewed risk is accepted',
+      'Choose /request-changes or /reject if no durable justification exists',
+    ],
+    quickFixCommand: '/override-approve',
+  },
+  {
+    code: 'GOVERNANCE_OVERRIDE_NOT_REQUIRED',
+    category: 'precondition',
+    messageTemplate:
+      'The independent review accepted the current revision. A governance override is not legal here; use /approve.',
+    recoverySteps: [
+      'Choose /approve to accept the reviewer-accepted revision',
+      'Choose /request-changes or /reject if you disagree with the reviewed work',
+    ],
+  },
+  {
+    code: 'ARCHITECTURE_REVIEW_OVERRIDE_SUBJECT_MISMATCH',
+    category: 'precondition',
+    messageTemplate:
+      'Architecture approval is blocked: the review budget exhausted, but the last bound review evidence covered a different ADR than the one being approved. Reviewed subject digest: {reviewedSubjectDigest}, approved subject digest: {approvedSubjectDigest}. An exhaustion override may only release the exact ADR the last review covered.',
+    recoverySteps: [
+      'Request ADR changes with /request-changes',
+      'Run a fresh independent review of the current ADR revision',
+      'Then approve or override-approve the reviewed revision',
+    ],
+    quickFixCommand: '/request-changes',
+  },
+  {
     code: 'PLAN_REVIEW_OVERRIDE_SUBJECT_MISMATCH',
     category: 'precondition',
     messageTemplate:
@@ -362,24 +406,6 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'Call flowguard_implement again after the changed worktree produces a new digest',
     ],
     quickFixCommand: '/implement',
-  },
-  {
-    code: 'IMPLEMENTATION_REVIEW_EXTENSION_REQUIRED',
-    category: 'precondition',
-    messageTemplate:
-      'Implementation review exhausted its authorized iteration budget with changes requested. A user-authorized extension is required before implementation can be re-recorded.',
-    recoverySteps: [
-      'Ask the user to run /extend-implementation-review <positive integer>',
-      'Then make the requested changes and re-record implementation evidence',
-    ],
-    quickFixCommand: '/extend-implementation-review',
-  },
-  {
-    code: 'IMPLEMENTATION_REVIEW_NOT_EXHAUSTED',
-    category: 'precondition',
-    messageTemplate:
-      'Implementation review budget has not been exhausted with changes requested; no extension can be authorized.',
-    recoverySteps: ['Continue the required implementation review workflow.'],
   },
   {
     code: 'IMPLEMENT_REVIEW_LOOP_REQUIRED',
@@ -560,7 +586,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   {
     code: 'SUBAGENT_REVIEW_NOT_INVOKED',
     category: 'precondition',
-    messageTemplate: `FlowGuard signaled INDEPENDENT_REVIEW_REQUIRED but no host-observed structured ${REVIEWER_SUBAGENT_TYPE} invocation was recorded. The structured reviewer invocation must complete before a verdict is submitted.`,
+    messageTemplate: `FlowGuard signaled that independent review is required but no host-observed structured ${REVIEWER_SUBAGENT_TYPE} invocation was recorded. The structured reviewer invocation must complete before a verdict is submitted.`,
     recoverySteps: [
       `Re-run the originating FlowGuard command so the host can create the reviewer child session`,
       'Submit only the reviewVerdict; the host resolves the bound structured reviewer evidence automatically',

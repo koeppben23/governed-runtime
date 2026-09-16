@@ -19,7 +19,7 @@ import { PlanRecord } from '../state/evidence-plan.js';
 const ctx: RailContext = {
   now: () => FIXED_TIME,
   digest: (s: string) => hashText(s),
-  policy: { ...TEAM_POLICY, maxSelfReviewIterations: 3 },
+  policy: { ...TEAM_POLICY, reviewBudget: { ...TEAM_POLICY.reviewBudget, plan: 3 } },
 };
 
 function makeExecutors(overrides?: Partial<PlanExecutors>): PlanExecutors {
@@ -99,6 +99,7 @@ describe('plan rail', () => {
         plan: PLAN_RECORD,
         selfReview: {
           iteration: 0,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: 'd1',
@@ -136,6 +137,7 @@ describe('plan rail', () => {
         plan: PLAN_RECORD,
         selfReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: 'd1',
           currDigest: 'd2',

@@ -44,7 +44,7 @@ const FC_OPTIONS = {
 
 const paramsArb: fc.Arbitrary<RichEventParams> = fc.record({
   idHex: fc.string({ minLength: 1, maxLength: 12 }),
-  phase: fc.constantFrom('PLAN', 'VALIDATION', 'IMPLEMENTATION', 'COMPLETE', 'REVIEW'),
+  phase: fc.constantFrom('PLAN', 'VALIDATION', 'IMPLEMENTATION', 'COMPLETE', 'PEER_REVIEW'),
   eventName: fc.constantFrom('decision:DEC-1', 'transition:APPROVE', 'tool_call:run'),
   minute: fc.integer({ min: 0, max: 59 }),
   actor: fc.constantFrom('human', 'machine', 'system'),

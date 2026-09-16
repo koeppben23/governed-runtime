@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { createSessionState, enforceBeforeVerdict, onFlowGuardToolAfter } from './enforcement.js';
-import { formatReviewRequiredSignal } from './types.js';
+import { reviewDispatchRequired } from '../dispatch-signal.js';
 import { NOW } from './test-helpers.js';
 import { buildInvocationEvidence, ensureReviewAssurance, hashText } from '../assurance.js';
 import { makeState } from '../../../fixtures.js';
@@ -91,14 +91,14 @@ describe('enforceBeforeVerdict — obligation/attempt-bound L1 gate', () => {
     expect(result.code).toBe('SUBAGENT_REVIEW_NOT_INVOKED');
   });
 
-  it('EDGE: a signal without an attempt identity matches on the obligation alone', () => {
+  it('BAD: a signal without an attempt identity cannot authorize a verdict', () => {
     const result = enforceBeforeVerdict(
       pendingState(null, OBLIGATION_A),
       'flowguard_plan',
       { reviewVerdict: 'accept' },
       stateWith([invocation({ obligationId: OBLIGATION_A, attemptId: ATTEMPT_A })]),
     );
-    expect(result).toEqual({ allowed: true });
+    expect(result).toMatchObject({ allowed: false, code: 'SUBAGENT_REVIEW_NOT_INVOKED' });
   });
 
   it('BAD: a pending signal without an obligation identity fails closed', () => {
@@ -142,7 +142,7 @@ describe('enforceBeforeVerdict — obligation/attempt-bound L1 gate', () => {
       'flowguard_plan',
       {},
       JSON.stringify({
-        next: formatReviewRequiredSignal(1, 1),
+        reviewDispatch: reviewDispatchRequired(),
         reviewObligation: { obligationId: OBLIGATION_A },
         reviewAttemptId: ATTEMPT_A,
       }),
@@ -154,7 +154,49 @@ describe('enforceBeforeVerdict — obligation/attempt-bound L1 gate', () => {
     });
   });
 
-  it('SIGNAL: the content-analysis path records the obligation identity from the attestation', () => {
+  it('SIGNAL: a dispatch requirement without the attempt identity fails closed', () => {
+    const state = createSessionState();
+    const result = onFlowGuardToolAfter(
+      state,
+      'flowguard_plan',
+      {},
+      JSON.stringify({
+        reviewDispatch: reviewDispatchRequired(),
+        reviewObligation: { obligationId: OBLIGATION_A },
+      }),
+      NOW,
+    );
+    expect(result).toMatchObject({
+      kind: 'nonconforming',
+      code: 'REVIEW_ATTEMPT_UNAVAILABLE',
+      obligationId: OBLIGATION_A,
+    });
+    expect(state.pendingReviews.size).toBe(0);
+  });
+
+  it('SIGNAL: a peer review dispatch requirement without the attempt identity fails closed', () => {
+    const state = createSessionState();
+    const result = onFlowGuardToolAfter(
+      state,
+      'flowguard_review',
+      {},
+      JSON.stringify({
+        error: true,
+        code: 'CONTENT_ANALYSIS_REQUIRED',
+        reviewDispatch: reviewDispatchRequired(),
+        reviewObligation: { obligationId: OBLIGATION_B },
+      }),
+      NOW,
+    );
+    expect(result).toMatchObject({
+      kind: 'nonconforming',
+      code: 'REVIEW_ATTEMPT_UNAVAILABLE',
+      obligationId: OBLIGATION_B,
+    });
+    expect(state.pendingReviews.size).toBe(0);
+  });
+
+  it('SIGNAL: the peer review dispatch records the authority identity', () => {
     const state = createSessionState();
     onFlowGuardToolAfter(
       state,
@@ -163,7 +205,9 @@ describe('enforceBeforeVerdict — obligation/attempt-bound L1 gate', () => {
       JSON.stringify({
         error: true,
         code: 'CONTENT_ANALYSIS_REQUIRED',
-        requiredReviewAttestation: { toolObligationId: OBLIGATION_B },
+        reviewDispatch: reviewDispatchRequired(),
+        reviewObligation: { obligationId: OBLIGATION_B },
+        reviewAttemptId: ATTEMPT_B,
       }),
       NOW,
     );

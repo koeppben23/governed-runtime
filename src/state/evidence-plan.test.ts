@@ -65,6 +65,7 @@ describe('evidence-plan', () => {
     it('SelfReviewLoop parses converged state', () => {
       const loop = {
         iteration: 1,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: 'digest-of-plan',
@@ -77,6 +78,7 @@ describe('evidence-plan', () => {
     it('SelfReviewLoop parses pending state', () => {
       const loop = {
         iteration: 2,
+        reviewCycle: 2,
         maxIterations: 5,
         prevDigest: 'digest-v1',
         currDigest: 'digest-v2',
@@ -212,6 +214,7 @@ describe('evidence-plan', () => {
     it('SelfReviewLoop prevDigest can be null on first iteration', () => {
       const loop = {
         iteration: 0,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: 'abc',

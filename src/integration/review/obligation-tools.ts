@@ -14,6 +14,7 @@ import {
   TOOL_FLOWGUARD_ARCHITECTURE,
   TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_PLAN,
+  TOOL_FLOWGUARD_REVIEW,
   TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
   TOOL_FLOWGUARD_RUN_CHECK,
 } from '../tool-names.js';
@@ -29,12 +30,16 @@ import {
  * {@link resolveReviewObligationTool}.
  */
 export type ReviewableTool =
-  typeof TOOL_FLOWGUARD_PLAN | typeof TOOL_FLOWGUARD_IMPLEMENT | typeof TOOL_FLOWGUARD_ARCHITECTURE;
+  | typeof TOOL_FLOWGUARD_PLAN
+  | typeof TOOL_FLOWGUARD_IMPLEMENT
+  | typeof TOOL_FLOWGUARD_ARCHITECTURE
+  | typeof TOOL_FLOWGUARD_REVIEW;
 
 const REVIEW_OBLIGATION_BY_TOOL = {
   [TOOL_FLOWGUARD_PLAN]: 'plan',
   [TOOL_FLOWGUARD_IMPLEMENT]: 'implement',
   [TOOL_FLOWGUARD_ARCHITECTURE]: 'architecture',
+  [TOOL_FLOWGUARD_REVIEW]: 'review',
 } as const satisfies Readonly<Record<ReviewableTool, ReviewObligationType>>;
 
 /** Type-guard: is the given tool name a reviewable (obligation-owning) FlowGuard tool? */

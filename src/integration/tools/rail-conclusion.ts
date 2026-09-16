@@ -7,7 +7,7 @@
  * This is the rail-surface analogue of the /status, /why, and /finish
  * conclusion builders (see status-conclusion.ts, status-why-finish.ts). It
  * ONLY arranges already-decided data: it derives the user-facing next action
- * from the canonical resolveNextAction / buildProductNextAction authorities and
+ * from the canonical workflow-directive authority and
  * the installed-command metadata catalogue. It never invents commands,
  * descriptions, or decision questions.
  *
@@ -19,7 +19,7 @@
  * The rail surface is a success surface: after a successful rail transition
  * there is exactly one recommended next action, at a user gate there is an
  * explicit decision, and at a clean terminal there is no further action. The
- * governance `next` field on the tool response is UNCHANGED by this module —
+ * canonical `directive` on the tool response is UNCHANGED by this module —
  * this projection produces only the human-facing rendered conclusion.
  *
  * @version v1
@@ -27,9 +27,8 @@
 
 import type { SessionState } from '../../state/schema.js';
 import type { EvalResult } from '../../machine/evaluate.js';
-import type { PresentationConclusion } from '../../presentation/index.js';
-import { resolveNextAction } from '../../machine/next-action.js';
-import { buildProductNextAction } from '../../presentation/next-action-copy.js';
+import { directiveLabel, type PresentationConclusion } from '../../presentation/index.js';
+import { resolveWorkflowDirective } from '../../machine/workflow-directive.js';
 import { projectStatusActionFromCommand } from '../status-conclusion.js';
 
 /**
@@ -49,18 +48,12 @@ export function buildRailConclusion(
   state: SessionState,
   evalResult: EvalResult,
 ): PresentationConclusion {
-  const nextAction = resolveNextAction(state.phase, state);
-  const productNext = buildProductNextAction(
-    nextAction,
-    state.phase,
-    state.error?.code === 'ABORTED',
-    state.regulatedArchiveStatus ?? null,
-  );
+  const directive = resolveWorkflowDirective(state);
 
   // User gate → decision_required. Actions come from the product commands;
   // the question comes from the evaluator's waiting reason.
   if (evalResult.kind === 'waiting') {
-    const actions = productNext.commands.map((invocation) => ({
+    const actions = directive.commands.map((invocation) => ({
       ...projectStatusActionFromCommand(invocation, 'available'),
     }));
 
@@ -80,13 +73,13 @@ export function buildRailConclusion(
     };
   }
 
-  if (productNext.presentationForm === 'review_pending') {
-    return { kind: 'review_pending', message: productNext.text };
+  if (directive.kind === 'system_work') {
+    return { kind: 'review_pending', message: directiveLabel(directive.code) };
   }
 
   // Work remains or a terminal phase still routes to a product command
   // (e.g. COMPLETE → /export, aborted → /status): recommend the first command.
-  const command = productNext.commands[0];
+  const command = directive.commands[0];
   if (command !== undefined) {
     return {
       kind: 'next_action',
@@ -95,11 +88,5 @@ export function buildRailConclusion(
   }
 
   // No further product command exists → clean terminal.
-  if (productNext.text.trim().length === 0) {
-    throw Object.assign(new Error('RailConclusion: terminal projection requires non-empty text'), {
-      code: 'RAIL_TERMINAL_PROJECTION_EMPTY',
-    });
-  }
-
-  return { kind: 'terminal', message: productNext.text };
+  return { kind: 'terminal', message: directiveLabel(directive.code) };
 }

@@ -4,7 +4,7 @@
  *
  * Covers:
  * - ARCHITECTURE → guidance with /architecture command
- * - REVIEW phase → guidance
+ * - PEER_REVIEW phase → guidance
  * - READY → CONTINUE_AMBIGUOUS block
  * - User-gate phases (PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW) → manual_decision
  * - Terminal phases (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE) → terminal
@@ -31,9 +31,9 @@ const mocks = vi.hoisted(() => ({
     wsDir: '/tmp/ws',
   })),
   requireStateForMutation: vi.fn(async () => mocks.state),
-  resolvePolicyFromState: vi.fn(() => ({ maxSelfReviewIterations: 3 })),
+  resolvePolicyFromState: vi.fn(() => ({ reviewBudget: { plan: 3, architecture: 3 } })),
   createPolicyContext: vi.fn(() => ({
-    policy: { maxSelfReviewIterations: 3 },
+    policy: { reviewBudget: { plan: 3, architecture: 3 } },
     now: () => '2026-01-01T00:00:00.000Z',
     digest: (s: string) => `digest:${s}`,
   })),
@@ -41,15 +41,20 @@ const mocks = vi.hoisted(() => ({
   formatError: vi.fn((err: unknown) =>
     JSON.stringify({ error: true, code: 'INTERNAL_ERROR', message: String(err) }),
   ),
-  enrichWithNextAction: vi.fn((value: Record<string, unknown>) => ({
+  enrichWithWorkflowDirective: vi.fn((value: Record<string, unknown>) => ({
     ...value,
-    productNextAction: {
-      text: `Canonical action for ${value.phase}`,
-      commands: [`/${String(value.phase).toLowerCase()}`],
+    directive: {
+      code: `DIRECTIVE_${value.phase}`,
+      // The canonical command surface for the peer-review flow remains /review
+      // (and its terminal label) after the PEER_REVIEW phase rename.
+      commands: [
+        `/${String(value.phase)
+          .toLowerCase()
+          .replace(/^peer_/, '')}`,
+      ],
     },
   })),
   writeStateWithArtifacts: vi.fn(async (_sessDir: string, state: SessionState) => state),
-  formatEval: vi.fn(() => 'next'),
   // commands
   isCommandAllowed: vi.fn(() => true),
   Command: { IMPLEMENT: 'IMPLEMENT' as const },
@@ -96,9 +101,8 @@ vi.mock('./helpers.js', () => ({
   resolvePolicyFromState: mocks.resolvePolicyFromState,
   createPolicyContext: mocks.createPolicyContext,
   formatBlocked: mocks.formatBlocked,
-  enrichWithNextAction: mocks.enrichWithNextAction,
+  enrichWithWorkflowDirective: mocks.enrichWithWorkflowDirective,
   writeStateWithArtifacts: mocks.writeStateWithArtifacts,
-  formatEval: mocks.formatEval,
 }));
 
 vi.mock('./error-format.js', () => ({
@@ -142,17 +146,17 @@ describe('flowguard_continue (runtime)', () => {
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('ARCHITECTURE');
-    expect(parsed.next).toBe('/architecture');
+    expect(parsed.directive.commands).toEqual(['/architecture']);
     expect(parsed._continue.action).toBe('deterministic');
   });
 
-  it('REVIEW phase derives its action from the canonical product projection', async () => {
-    setPhase('REVIEW');
+  it('PEER_REVIEW phase derives its action from the canonical product projection', async () => {
+    setPhase('PEER_REVIEW');
     const { continue_cmd } = await import('./continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
-    expect(parsed.phase).toBe('REVIEW');
-    expect(parsed.next).toBe('/review');
+    expect(parsed.phase).toBe('PEER_REVIEW');
+    expect(parsed.directive.commands).toEqual(['/review']);
     expect(parsed._continue.action).toBe('deterministic');
   });
 
@@ -162,7 +166,7 @@ describe('flowguard_continue (runtime)', () => {
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('IMPL_REVIEW');
-    expect(parsed.next).toBe('/impl_review');
+    expect(parsed.directive.commands).toEqual(['/impl_review']);
     expect(parsed.status).toBe('Implementation review is pending.');
   });
 
@@ -205,7 +209,7 @@ describe('flowguard_continue (runtime)', () => {
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('VALIDATION');
-    expect(parsed.next).toBe('/validation');
+    expect(parsed.directive.commands).toEqual(['/validation']);
     expect(parsed._continue.action).toBe('deterministic');
   });
 
@@ -227,7 +231,7 @@ describe('flowguard_continue (runtime)', () => {
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('PLAN_REVIEW');
     expect(parsed._continue.action).toBe('manual_decision');
-    expect(parsed.next).toBe('/plan_review');
+    expect(parsed.directive.commands).toEqual(['/plan_review']);
     expect(parsed.decisionRequired).toBe(true);
   });
 
@@ -258,7 +262,7 @@ describe('flowguard_continue (runtime)', () => {
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('COMPLETE');
     expect(parsed._continue.action).toBe('terminal');
-    expect(parsed.next).toBe('/complete');
+    expect(parsed.directive.commands).toEqual(['/complete']);
   });
 
   it('ARCH_COMPLETE returns terminal action', async () => {
@@ -268,17 +272,17 @@ describe('flowguard_continue (runtime)', () => {
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('ARCH_COMPLETE');
     expect(parsed._continue.action).toBe('terminal');
-    expect(parsed.next).toBe('/arch_complete');
+    expect(parsed.directive.commands).toEqual(['/arch_complete']);
   });
 
   it('REVIEW_COMPLETE returns terminal action', async () => {
-    setPhase('REVIEW_COMPLETE');
+    setPhase('PEER_REVIEW_COMPLETE');
     const { continue_cmd } = await import('./continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
-    expect(parsed.phase).toBe('REVIEW_COMPLETE');
+    expect(parsed.phase).toBe('PEER_REVIEW_COMPLETE');
     expect(parsed._continue.action).toBe('terminal');
-    expect(parsed.next).toBe('/review_complete');
+    expect(parsed.directive.commands).toEqual(['/review_complete']);
   });
 
   it('COMPLETE aborted → redirects to /status, never /review or /export', async () => {
@@ -292,7 +296,7 @@ describe('flowguard_continue (runtime)', () => {
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('COMPLETE');
     expect(parsed._continue.action).toBe('terminal');
-    expect(parsed.next).toBe('/complete');
+    expect(parsed.directive.commands).toEqual(['/complete']);
     expect(String(parsed.status).toLowerCase()).toContain('aborted');
   });
 
@@ -301,7 +305,7 @@ describe('flowguard_continue (runtime)', () => {
   it('returns INTERNAL_ERROR when dependency throws', async () => {
     setPhase('TICKET');
     const { continue_cmd } = await import('./continue-tool.js');
-    mocks.enrichWithNextAction.mockImplementation(() => {
+    mocks.enrichWithWorkflowDirective.mockImplementation(() => {
       throw new Error('catastrophic');
     });
     const res = await continue_cmd.execute({}, {} as never);
@@ -317,10 +321,10 @@ describe('flowguard_continue (runtime)', () => {
 describe('implement: empty evidence guard (P8a.1)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.enrichWithNextAction.mockImplementation((value: Record<string, unknown>) => ({
+    mocks.enrichWithWorkflowDirective.mockImplementation((value: Record<string, unknown>) => ({
       ...value,
-      productNextAction: {
-        text: `Canonical action for ${value.phase}`,
+      directive: {
+        code: `DIRECTIVE_${value.phase}`,
         commands: [`/${String(value.phase).toLowerCase()}`],
       },
     }));

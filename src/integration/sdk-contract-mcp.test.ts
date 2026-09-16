@@ -47,6 +47,7 @@ const EXPECTED_TOOLS = [
   'flowguard_review',
   'flowguard_abort_session',
   'flowguard_archive',
+  'flowguard_export',
   'flowguard_continue',
   'flowguard_help',
   'flowguard_declare_contract',
@@ -76,9 +77,9 @@ describe('SDK Contract: MCP tool registry', () => {
       );
     });
 
-    it('version.json lists all 15 tool schemas', () => {
+    it('version.json lists all 17 tool schemas', () => {
       const version = loadSchema('version.json');
-      expect((version.schemas as string[]).length).toBe(16);
+      expect((version.schemas as string[]).length).toBe(17);
     });
   });
 

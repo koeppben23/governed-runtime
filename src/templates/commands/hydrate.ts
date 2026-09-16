@@ -18,7 +18,7 @@ Bootstrap the FlowGuard session for this project.
 3. If \`presentation.markdown\` is NOT present:
    - If the response is blocked or contains an error: report its code, message, and recovery, then stop.
    - Otherwise report the returned session state and render exactly one fallback action from
-     \`productNextAction\`.
+     \`directive\`.
 
 ## Rules
 

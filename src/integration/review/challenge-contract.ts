@@ -110,7 +110,7 @@ function evidenceFor(
 }
 
 /**
- * Standalone review subjects bind content challenges to the FROZEN review
+ * Peer review subjects bind content challenges to the FROZEN review
  * subject digest — never `metadata.fingerprint` (workspace context) and never
  * mutable runtime state. Divergence between the obligation subject digest, the
  * frozen subject, and the frozen scope fails closed.

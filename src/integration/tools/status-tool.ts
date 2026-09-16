@@ -19,8 +19,7 @@ import {
   resolveWorkspacePaths,
   withReadOnlySession,
   formatBlocked,
-  formatEval,
-  enrichWithNextAction,
+  enrichWithWorkflowDirective,
 } from './helpers.js';
 
 import type { SessionState } from '../../state/schema.js';
@@ -190,7 +189,7 @@ async function buildProofGraphProjectionResponse(
   const registrationConsistency = checkRegistrationConsistency();
   const configConsistency = checkConfigDefaultConsistency();
   return JSON.stringify(
-    enrichWithNextAction(
+    enrichWithWorkflowDirective(
       {
         phase: state.phase,
         sessionId: state.id,
@@ -228,7 +227,7 @@ async function buildFinishProjectionResponse(
   const finishPres = buildFinishPresentationProjection(state, finishCard);
   const finishDoc = buildFinishDocument(finishPres);
   return JSON.stringify(
-    enrichWithNextAction(
+    enrichWithWorkflowDirective(
       {
         phase: state.phase,
         sessionId: state.id,
@@ -255,7 +254,7 @@ async function resolveProjection(input: ResolveProjectionInput): Promise<string 
     const whyDoc = buildWhyDocument(whyPres);
     emitDetailRequested(state);
     return JSON.stringify(
-      enrichWithNextAction(
+      enrichWithWorkflowDirective(
         {
           phase: state.phase,
           sessionId: state.id,
@@ -270,7 +269,7 @@ async function resolveProjection(input: ResolveProjectionInput): Promise<string 
   if (args.evidence) {
     const evidenceDetail = buildEvidenceDetailProjection(state);
     return JSON.stringify(
-      enrichWithNextAction(
+      enrichWithWorkflowDirective(
         {
           phase: state.phase,
           sessionId: state.id,
@@ -284,7 +283,7 @@ async function resolveProjection(input: ResolveProjectionInput): Promise<string 
   if (args.context) {
     const contextDetail = buildContextProjection(state);
     return JSON.stringify(
-      enrichWithNextAction(
+      enrichWithWorkflowDirective(
         {
           phase: state.phase,
           sessionId: state.id,
@@ -298,7 +297,7 @@ async function resolveProjection(input: ResolveProjectionInput): Promise<string 
   if (args.readiness) {
     const readinessDetail = buildReadinessProjection(state, policy);
     return JSON.stringify(
-      enrichWithNextAction(
+      enrichWithWorkflowDirective(
         {
           phase: state.phase,
           sessionId: state.id,
@@ -617,7 +616,6 @@ function buildFullStatusResponse(input: FullStatusInput): string {
     ...buildEvidenceStatus(state),
     ...buildImplementationStatus(state),
     evalKind: ev.kind,
-    next: formatEval(ev),
     completeness: {
       overallComplete: completeness.overallComplete,
       fourEyes: completeness.fourEyes,
@@ -634,7 +632,7 @@ function buildFullStatusResponse(input: FullStatusInput): string {
     build: buildIdentityField(),
   };
 
-  const enriched = enrichWithNextAction(responseObj, state);
+  const enriched = enrichWithWorkflowDirective(responseObj, state);
 
   return JSON.stringify({
     ...enriched,
@@ -693,7 +691,7 @@ export const status: ToolDefinition = {
           status: 'No FlowGuard session found.',
           discoveryHealth: null,
           discoveryDrift: null,
-          next: 'Run /start to bootstrap a session.',
+          agentInstruction: 'Run /start to bootstrap a session.',
           governanceMandates: {
             source: 'src/templates/mandates.ts',
             projection: 'none-without-canonical-session-state',

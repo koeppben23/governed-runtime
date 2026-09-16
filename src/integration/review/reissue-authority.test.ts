@@ -39,6 +39,7 @@ function makeObligation(overrides: Partial<ReviewObligation> = {}): ReviewObliga
   return {
     ...createReviewObligation({
       obligationType: 'review',
+      reviewCycle: null,
       iteration: 1,
       planVersion: 1,
       now: NOW,

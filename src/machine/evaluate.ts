@@ -14,7 +14,7 @@
  *
  * Phase classification:
  * - READY: command-driven → returns "pending" (waiting for user to select a flow)
- * - Terminal (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE): returns "terminal"
+ * - Terminal (COMPLETE, ARCH_COMPLETE, PEER_REVIEW_COMPLETE): returns "terminal"
  * - User Gates (PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW): returns "waiting" or auto-approve
  * - Guard-based: evaluates guards top-to-bottom, first match wins
  *
@@ -30,6 +30,7 @@ import type { SessionState, Phase, Event } from '../state/schema.js';
 import { GUARDS } from './guards.js';
 import { resolveTransition, USER_GATES, TERMINAL } from './topology.js';
 import type { UserGatePhase } from './topology.js';
+import { requiresGovernanceOverride } from './workflow-directive.js';
 
 // ─── Result Types ─────────────────────────────────────────────────────────────
 
@@ -102,6 +103,38 @@ const GATE_REASONS = {
  * @param policy - Optional policy for mode-aware behavior.
  *                 If omitted, defaults to requireHumanGates: true (safe default).
  */
+/**
+ * User-gate evaluation.
+ *
+ * Architecture acceptance is always a human decision. Other gates retain
+ * their policy-controlled solo-mode auto-approval behavior — except when the
+ * independent review exhausted its budget: then the canonical directive
+ * requires the explicit governance override, so even
+ * `requireHumanGates=false` must NOT auto-approve.
+ */
+function evaluateUserGate(
+  state: SessionState,
+  policy?: { requireHumanGates?: boolean },
+): EvalResult {
+  const gatePhase = state.phase as UserGatePhase;
+  if (
+    gatePhase !== 'ARCH_REVIEW' &&
+    policy?.requireHumanGates === false &&
+    !requiresGovernanceOverride(state)
+  ) {
+    const target = resolveTransition(gatePhase, 'APPROVE');
+    if (target) {
+      return { kind: 'transition', event: 'APPROVE', target };
+    }
+  }
+
+  return {
+    kind: 'waiting',
+    phase: gatePhase,
+    reason: GATE_REASONS[gatePhase],
+  };
+}
+
 export function evaluate(
   state: SessionState,
   policy?: { requireHumanGates?: boolean },
@@ -120,22 +153,7 @@ export function evaluate(
 
   // 3. User Gate — policy-dependent
   if (USER_GATES.has(phase)) {
-    const gatePhase = phase as UserGatePhase;
-    // Architecture acceptance is always a human decision. Other gates retain
-    // their policy-controlled solo-mode auto-approval behavior.
-    if (gatePhase !== 'ARCH_REVIEW' && policy?.requireHumanGates === false) {
-      const target = resolveTransition(gatePhase, 'APPROVE');
-      if (target) {
-        return { kind: 'transition', event: 'APPROVE', target };
-      }
-    }
-
-    // Team/regulated mode (or no policy): wait for human decision.
-    return {
-      kind: 'waiting',
-      phase: gatePhase,
-      reason: GATE_REASONS[gatePhase],
-    };
+    return evaluateUserGate(state, policy);
   }
 
   // 4. Guard-based — evaluate guards in order

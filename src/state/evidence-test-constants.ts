@@ -4,12 +4,62 @@
  */
 
 import type { ReviewDispatchRecord, ReviewInvocationEvidence } from './evidence-review.js';
-import type { PlanEvidence } from './evidence-plan.js';
+import type { PlanEvidence, SelfReviewLoop } from './evidence-plan.js';
+import type { ImplReviewResult } from './evidence-impl.js';
 import { computeRecordDigest } from './evidence-plan.js';
 import { hashText } from '../shared/hashing.js';
 
 export const FIXED_TIME = '2026-01-01T00:00:00.000Z';
 export const FIXED_UUID = '00000000-0000-4000-8000-000000000001';
+
+const PLAN_DIGEST = hashText('## Plan\n1. Fix auth\n2. Add tests');
+
+/**
+ * Canonical converged/pending plan and implementation review-loop fixtures.
+ * They live here (and are re-exported by `fixtures.ts`) so the shared fixture
+ * base stays within the production file-size budget.
+ */
+export const SELF_REVIEW_CONVERGED: SelfReviewLoop = {
+  iteration: 1,
+  reviewCycle: 1,
+  maxIterations: 3,
+  prevDigest: null,
+  currDigest: PLAN_DIGEST,
+  revisionDelta: 'none',
+  verdict: 'accept',
+};
+
+export const SELF_REVIEW_PENDING: SelfReviewLoop = {
+  iteration: 1,
+  reviewCycle: 1,
+  maxIterations: 3,
+  prevDigest: null,
+  currDigest: PLAN_DIGEST,
+  revisionDelta: 'minor',
+  verdict: 'changes_requested',
+};
+
+export const IMPL_REVIEW_CONVERGED: ImplReviewResult = {
+  iteration: 1,
+  reviewCycle: 1,
+  maxIterations: 3,
+  prevDigest: null,
+  currDigest: 'digest-of-impl',
+  revisionDelta: 'none',
+  verdict: 'accept',
+  executedAt: FIXED_TIME,
+};
+
+export const IMPL_REVIEW_PENDING_RESULT: ImplReviewResult = {
+  iteration: 1,
+  reviewCycle: 1,
+  maxIterations: 3,
+  prevDigest: null,
+  currDigest: 'digest-of-impl',
+  revisionDelta: 'minor',
+  verdict: 'changes_requested',
+  executedAt: FIXED_TIME,
+};
 
 export interface PlanRevisionInput {
   readonly body: string;

@@ -1,10 +1,10 @@
 /**
  * @module integration/status-conclusion
  * @description Status conclusion projection — derives the canonical conclusion
- *              from evalResult and productNextAction.
+ *              from evalResult and directive.
  *
  * The conclusion is fully decided upstream: this module only translates
- * already-decided evalResults and productNextAction commands into a typed
+ * already-decided evalResults and directive commands into a typed
  * conclusion without inventing blocker semantics, recovery text, or
  * decision questions.
  *
@@ -15,9 +15,9 @@
  */
 
 import { evaluate } from '../machine/evaluate.js';
-import { buildProductNextAction } from '../presentation/next-action-copy.js';
+import type { WorkflowDirective } from '../machine/workflow-directive.js';
 import { getInstalledCommand } from './installed-commands.js';
-import type { PresentationAction } from '../presentation/index.js';
+import { directiveLabel, type PresentationAction } from '../presentation/index.js';
 
 // ─── Conclusion Projection ─────────────────────────────────────────────────────
 
@@ -43,7 +43,7 @@ export type StatusConclusionProjection =
 // ─── Conclusion Builder ────────────────────────────────────────────────────────
 
 /**
- * Project the canonical status conclusion from evalResult and productNextAction.
+ * Project the canonical status conclusion from evalResult and directive.
  *
  * Presentation-terminal (kind: 'terminal') means: there is NO further
  * recommended or required user action. This is NOT the same as the machine
@@ -52,10 +52,10 @@ export type StatusConclusionProjection =
  */
 export function projectStatusConclusion(
   evalResult: ReturnType<typeof evaluate>,
-  productNextAction: ReturnType<typeof buildProductNextAction>,
+  directive: WorkflowDirective,
 ): StatusConclusionProjection {
   if (evalResult.kind === 'waiting') {
-    const actions = productNextAction.commands.map((invocation) =>
+    const actions = directive.commands.map((invocation) =>
       projectStatusActionFromCommand(invocation, 'available'),
     );
 
@@ -71,11 +71,11 @@ export function projectStatusConclusion(
     return { kind: 'decision_required', question: evalResult.reason, actions };
   }
 
-  if (productNextAction.presentationForm === 'review_pending') {
-    return { kind: 'review_pending', message: productNextAction.text };
+  if (directive.kind === 'system_work') {
+    return { kind: 'review_pending', message: directiveLabel(directive.code) };
   }
 
-  const command = productNextAction.commands[0];
+  const command = directive.commands[0];
   if (command) {
     return {
       kind: 'next_action',
@@ -83,7 +83,7 @@ export function projectStatusConclusion(
     };
   }
 
-  return { kind: 'terminal', message: productNextAction.text };
+  return { kind: 'terminal', message: directiveLabel(directive.code) };
 }
 
 /**

@@ -47,7 +47,7 @@ import {
   withMutableSessionTransaction,
   formatBlocked,
   formatAutoAdvanceOverflow,
-  enrichWithNextAction,
+  enrichWithWorkflowDirective,
   writeStateWithArtifacts,
 } from './helpers.js';
 import type { SessionState } from '../../state/schema.js';
@@ -72,6 +72,10 @@ import {
   ensureReviewAssurance,
   findLatestObligation,
 } from '../review/assurance.js';
+import {
+  resolveReviewDispatchAuthority,
+  type ReviewDispatchAuthority,
+} from '../review/dispatch-authority.js';
 import { buildReviewChallengeContract } from '../review/challenge-contract.js';
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
 // presentation imports moved to plan-response.ts
@@ -112,6 +116,7 @@ import type {
 // ---- internal helpers ----
 
 import { classifyPlanCall, planInputFlags, planReviewPolicy } from './plan-types.js';
+import { responseReportsError, runActiveChecksAutomatically } from './auto-validation.js';
 import { routePlanInitialSubmission, blockedPlanReviewInProgress } from './plan-route.js';
 import { classifyPlanClaimSubmission } from './plan-claim-submission.js';
 import {
@@ -295,7 +300,8 @@ function buildPlanSubmissionState(
     validation: [],
     selfReview: {
       iteration: 0,
-      maxIterations: scope.maxSelfReviewIterations,
+      reviewCycle: scope.state.reviewCycles.plan,
+      maxIterations: scope.maxPlanReviewIterations,
       prevDigest: null,
       currDigest: planEvidence.digest,
       revisionDelta: 'major',
@@ -426,14 +432,15 @@ function buildReviewedPlanState(
       claimSubmissionHistory: appendClaimSubmissionHistory(scope, revision.currentPlan.planVersion),
       reviewCompletion: resolvePlanReviewCompletion(
         nextIteration,
-        scope.maxSelfReviewIterations,
+        scope.maxPlanReviewIterations,
         revision.revisionDelta,
         revision.verdict,
       ),
     },
     selfReview: {
       iteration: nextIteration,
-      maxIterations: scope.maxSelfReviewIterations,
+      reviewCycle: scope.state.reviewCycles.plan,
+      maxIterations: scope.maxPlanReviewIterations,
       prevDigest: revision.prevDigest,
       currDigest: revision.currentPlan.digest,
       revisionDelta: revision.revisionDelta,
@@ -468,6 +475,32 @@ function consumePlanObligation(
 }
 
 // ---- tool handlers ----
+
+function resolvePlanDispatchAuthority(
+  finalState: SessionState,
+  planVersion: number,
+):
+  | { readonly kind: 'ok'; readonly authority: ReviewDispatchAuthority }
+  | {
+      readonly kind: 'blocked';
+      readonly code: 'REVIEW_ATTEMPT_UNAVAILABLE';
+      readonly reason: string;
+    } {
+  const obligation = findLatestObligation(
+    finalState.reviewAssurance?.obligations ?? [],
+    'plan',
+    0,
+    planVersion,
+  );
+  if (!obligation) {
+    return {
+      kind: 'blocked',
+      code: 'REVIEW_ATTEMPT_UNAVAILABLE',
+      reason: 'the plan submission produced no review obligation authority',
+    };
+  }
+  return resolveReviewDispatchAuthority(finalState.reviewAssurance, obligation.obligationId);
+}
 
 async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> {
   const planBody = scope.args.planText?.trim();
@@ -504,14 +537,19 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
   const { state: finalState, transitions } = advanced;
 
   await writeStateWithArtifacts(scope.sessDir, finalState);
+  const authority = resolvePlanDispatchAuthority(finalState, planVersion);
+  if (authority.kind === 'blocked') {
+    return formatBlocked(authority.code, { reason: authority.reason });
+  }
   const response = buildSubmissionResponse({
     scope,
     finalState,
     planEvidence,
     planVersion,
     transitions,
+    authority: authority.authority,
   });
-  return JSON.stringify(enrichWithNextAction(response, finalState));
+  return JSON.stringify(enrichWithWorkflowDirective(response, finalState));
 }
 
 /**
@@ -614,7 +652,7 @@ export const plan: ToolDefinition = {
   },
   async execute(args, context) {
     try {
-      return await withMutableSessionTransaction(context, async (mutableSession) => {
+      const response = await withMutableSessionTransaction(context, async (mutableSession) => {
         const typedArgs = normalizeInitialPlanSubmissionArgs(
           args as PlanArgs,
           mutableSession.state,
@@ -625,7 +663,7 @@ export const plan: ToolDefinition = {
           context,
           input: planInputFlags(typedArgs),
           reviewPolicy: planReviewPolicy(mutableSession),
-          maxSelfReviewIterations: mutableSession.policy.maxSelfReviewIterations,
+          maxPlanReviewIterations: mutableSession.policy.reviewBudget.plan,
         };
         // Call-shape validation runs FIRST: mixed inputs are rejected before
         // any lifecycle routing can re-emit a review instruction.
@@ -665,6 +703,19 @@ export const plan: ToolDefinition = {
           ? handlePlanSubmission(scope)
           : handlePlanReview(scope);
       });
+
+      // Automatic validation: when a solo-mode (or CI auto-gated) plan
+      // convergence auto-approves PLAN_REVIEW into VALIDATION, run the active
+      // checks in-flow. Executed AFTER the transaction releases the session
+      // write lock — the run-check path executes subprocesses outside the lock
+      // and must acquire it only to persist evidence. A blocked plan call (e.g.
+      // COMMAND_NOT_ALLOWED at an existing VALIDATION) did not enter the phase
+      // and must not trigger the runner. The plan response is superseded only
+      // when checks actually ran.
+      const autoValidationResponse = responseReportsError(response)
+        ? null
+        : await runActiveChecksAutomatically(context);
+      return autoValidationResponse ?? response;
     } catch (err) {
       return formatError(err);
     }

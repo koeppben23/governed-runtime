@@ -317,38 +317,39 @@ FlowGuard integrates with OpenCode via a two-level command surface:
 
 Use these commands in OpenCode chat to drive workflows:
 
-**Canonical commands (13):**
+**Canonical commands (15):**
 
-| Command                                           | Description                          |
-| ------------------------------------------------- | ------------------------------------ |
-| `/hydrate`                                        | Bootstrap session                    |
-| `/status`                                         | Read session view                    |
-| `/ticket <text>`                                  | Record task                          |
-| `/plan`                                           | Generate plan                        |
-| `/continue`                                       | Auto-advance                         |
-| `/validate`                                       | Run checks                           |
-| `/implement`                                      | Execute plan                         |
-| `/review-decision <verdict>`                      | Human approval                       |
-| `/resolve-implementation-challenge <challengeId>` | Record advisory challenge resolution |
-| `/review`                                         | Generate compliance report           |
-| `/architecture`                                   | Create/revise ADR                    |
-| `/abort`                                          | Terminate session                    |
-| `/archive`                                        | Archive session                      |
+| Command                                           | Description                           |
+| ------------------------------------------------- | ------------------------------------- |
+| `/hydrate`                                        | Bootstrap session                     |
+| `/status`                                         | Read session view                     |
+| `/ticket <text>`                                  | Record task                           |
+| `/plan`                                           | Generate plan                         |
+| `/continue`                                       | Compatibility routing (auto-advance)  |
+| `/validate`                                       | Run checks (compatibility surface)    |
+| `/implement`                                      | Execute plan                          |
+| `/review-decision <verdict>`                      | Human approval                        |
+| `/override-approve`                               | Governance override at exhausted gate |
+| `/resolve-implementation-challenge <challengeId>` | Record advisory challenge resolution  |
+| `/review`                                         | Generate peer review report           |
+| `/architecture`                                   | Create/revise ADR                     |
+| `/export`                                         | Materialize verifiable export         |
+| `/abort`                                          | Terminate session                     |
+| `/archive`                                        | Archive session                       |
 
 `<verdict>` accepts `approve`, `changes_requested`, or `reject`.
 
-**Product aliases (8):**
+**Product aliases (7):**
 
-| Alias              | Routes to                                     |
-| ------------------ | --------------------------------------------- |
-| `/start`           | `/hydrate`                                    |
-| `/task`            | `/ticket`                                     |
-| `/approve`         | `/review-decision approve`                    |
-| `/request-changes` | `/review-decision changes_requested`          |
-| `/reject`          | `/review-decision reject`                     |
-| `/check`           | `/validate`                                   |
-| `/export`          | `/archive`                                    |
-| `/why`             | Diagnostic explanation of current next-action |
+| Alias              | Routes to                            |
+| ------------------ | ------------------------------------ |
+| `/start`           | `/hydrate`                           |
+| `/task`            | `/ticket`                            |
+| `/approve`         | `/review-decision approve`           |
+| `/request-changes` | `/review-decision changes_requested` |
+| `/reject`          | `/review-decision reject`            |
+| `/check`           | `/validate`                          |
+| `/why`             | `/status --why-blocked`              |
 
 Aliases inherit the canonical command's allowed-phase policy and gate identically;
 see `docs/commands.md` for the full mapping.
@@ -367,7 +368,7 @@ These are the underlying tool names that FlowGuard installs into OpenCode:
 | `flowguard_run_check`             | Validation runner (executes the discovered verification commands and records pass/fail evidence; bound to `/validate` and the `/check` product alias) |
 | `flowguard_implement`             | Record implementation evidence                                                                                                                        |
 | `flowguard_review_implementation` | Submit implementation review verdict                                                                                                                  |
-| `flowguard_review`                | Generate compliance report                                                                                                                            |
+| `flowguard_review`                | Generate peer review report                                                                                                                           |
 | `flowguard_architecture`          | ADR authoring + review loop                                                                                                                           |
 | `flowguard_abort_session`         | Session termination                                                                                                                                   |
 | `flowguard_archive`               | Session archival                                                                                                                                      |

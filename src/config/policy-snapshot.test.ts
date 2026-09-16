@@ -70,8 +70,7 @@ describe('createPolicySnapshot', () => {
     expect(snapshot.hashVersion).toBe(POLICY_DIGEST_VERSION);
     expect(snapshot.resolvedAt).toBe(NOW);
     expect(snapshot.requireHumanGates).toBe(SOLO_POLICY.requireHumanGates);
-    expect(snapshot.maxSelfReviewIterations).toBe(SOLO_POLICY.maxSelfReviewIterations);
-    expect(snapshot.maxImplReviewIterations).toBe(SOLO_POLICY.maxImplReviewIterations);
+    expect(snapshot.reviewBudget).toEqual(SOLO_POLICY.reviewBudget);
     expect(snapshot.maxIncoherentReviewerCaptureRetries).toBe(
       SOLO_POLICY.maxIncoherentReviewerCaptureRetries,
     );

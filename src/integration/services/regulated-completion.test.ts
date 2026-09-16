@@ -58,6 +58,27 @@ import { writeStateWithArtifactsAndAuditOperations } from '../tools/helpers.js';
 
 const AT = '2026-01-01T00:00:00.000Z';
 
+/** Durable approval transition outbox record: the terminal state retains only the export transition. */
+function approvalTransitionOperation() {
+  return {
+    kind: 'transition' as const,
+    operationId: '00000000-0000-4000-8000-000000000010',
+    preStateDigest: 'a'.repeat(64),
+    mutationDigest: 'b'.repeat(64),
+    postStateDigest: 'c'.repeat(64),
+    auditEventDigest: 'd'.repeat(64),
+    transition: {
+      from: 'EVIDENCE_REVIEW' as const,
+      to: 'EXPORT_READY' as const,
+      event: 'APPROVE' as const,
+      at: AT,
+      chainIndex: 0,
+      autoAdvanced: false,
+    },
+    status: 'reconciled' as const,
+  };
+}
+
 function reviewState(phase: 'EVIDENCE_REVIEW' | 'COMPLETE') {
   return makeState(phase, {
     ticket: TICKET,
@@ -68,16 +89,21 @@ function reviewState(phase: 'EVIDENCE_REVIEW' | 'COMPLETE') {
     implementation: IMPL_EVIDENCE,
     implReview: IMPL_REVIEW_CONVERGED,
     policySnapshot: REGULATED_POLICY_SNAPSHOT,
-    transition: {
-      from: 'EVIDENCE_REVIEW',
-      to: 'COMPLETE',
-      event: 'APPROVE',
-      at: AT,
-    },
+    ...(phase === 'COMPLETE'
+      ? {
+          transition: {
+            from: 'EXPORT_READY' as const,
+            to: 'COMPLETE' as const,
+            event: 'EXPORT_MATERIALIZED' as const,
+            at: AT,
+          },
+          pendingAuditOperations: [approvalTransitionOperation()],
+        }
+      : {}),
   });
 }
 
-/** The real entry path: the rail produced COMPLETE, but EVIDENCE_REVIEW is still persisted. */
+/** The real entry path: the rail persisted COMPLETE before the regulated chain ran. */
 function reviewEntryPath(): { persisted: SessionState; complete: SessionState } {
   return { persisted: reviewState('EVIDENCE_REVIEW'), complete: reviewState('COMPLETE') };
 }
@@ -94,7 +120,7 @@ function decisionEvent(overrides: Record<string, unknown> = {}): Record<string, 
       decisionIdentity: REVIEW_APPROVE.decisionIdentity,
       decidedAt: AT,
       fromPhase: 'EVIDENCE_REVIEW',
-      toPhase: 'COMPLETE',
+      toPhase: 'EXPORT_READY',
       transitionEvent: 'APPROVE',
       policyMode: 'regulated',
       ...overrides,
@@ -282,6 +308,7 @@ describe('executeRegulatedCompletion', () => {
     const persisted: SessionState = {
       ...reviewState('COMPLETE'),
       pendingAuditOperations: [
+        approvalTransitionOperation(),
         {
           kind: 'semantic',
           operationId: 'op-terminal-decision',
@@ -306,7 +333,12 @@ describe('executeRegulatedCompletion', () => {
     }));
     vi.mocked(reconcilePendingAuditOperations).mockImplementation(async () => {
       trail.push(decisionEvent() as unknown as ChainedAuditEvent);
-      persisted.pendingAuditOperations = [];
+      // Reconciliation is monotonic: operations stay as durable correlation
+      // evidence (they are never deleted from the outbox).
+      persisted.pendingAuditOperations = persisted.pendingAuditOperations.map((operation) => ({
+        ...operation,
+        status: 'reconciled' as const,
+      }));
     });
     trackPersistedState(persisted);
     vi.mocked(archiveRegulatedEvidence).mockResolvedValue('/archive.tar.gz');
@@ -345,7 +377,7 @@ describe('executeRegulatedCompletion', () => {
     ).resolves.toBeNull();
   });
 
-  it.each(['ARCH_COMPLETE', 'REVIEW_COMPLETE'] as const)(
+  it.each(['ARCH_COMPLETE', 'PEER_REVIEW_COMPLETE'] as const)(
     'never touches a regulated %s session',
     async (phase) => {
       const foreign = makeState(phase, {

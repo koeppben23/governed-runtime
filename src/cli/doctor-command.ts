@@ -452,8 +452,7 @@ function detectCustomConfig(config: {
 }): boolean {
   return (
     config.logging.level !== 'info' ||
-    config.policy.maxSelfReviewIterations !== undefined ||
-    config.policy.maxImplReviewIterations !== undefined ||
+    config.policy.reviewBudget !== undefined ||
     config.profile.defaultId !== undefined ||
     config.profile.activeChecks !== undefined
   );

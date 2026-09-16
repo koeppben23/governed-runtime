@@ -7,7 +7,7 @@
 import type { SessionState } from '../../state/schema.js';
 import type { ImplementRuntime } from './implement-shared.js';
 import type { ReviewAttempt, ReviewObligation } from '../../state/evidence.js';
-import { enrichWithNextAction, formatBlocked, writeStateWithArtifacts } from './helpers.js';
+import { enrichWithWorkflowDirective, formatBlocked, writeStateWithArtifacts } from './helpers.js';
 
 export async function handleUnableToReview(input: {
   runtime: ImplementRuntime;
@@ -27,7 +27,7 @@ export async function handleUnableToReview(input: {
   };
   await writeStateWithArtifacts(input.runtime.sessDir, finalState);
   return JSON.stringify(
-    enrichWithNextAction(
+    enrichWithWorkflowDirective(
       JSON.parse(
         formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', {
           obligationId: input.obligationId,

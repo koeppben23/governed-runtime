@@ -192,4 +192,49 @@ describe('resolveLatestPlanReviewEvidence (exhausted path)', () => {
     );
     expect(resolved?.subjectDigest).toBe('other-subject-digest');
   });
+
+  it('returns the divergent reviewed subject unchanged — reviewed/approved equality is the gate contract', () => {
+    // The resolver is a pure read: for an exhausted plan it surfaces the exact
+    // subject the last bound review covered, even when that subject differs
+    // from the plan under approval. The rail gate is the single authority that
+    // rejects the resulting review_exhausted_override binding with
+    // PLAN_REVIEW_OVERRIDE_SUBJECT_MISMATCH; the resolver must never normalize
+    // or hide the divergence.
+    const state = makeState('PLAN_REVIEW', {
+      plan: {
+        ...PLAN_RECORD,
+        reviewCompletion: 'review_exhausted',
+      },
+      reviewAssurance: assurance([
+        {
+          obligationId: O1,
+          obligationType: 'plan',
+          subjectDigest: 'other-subject-digest',
+          status: 'consumed',
+          iteration: 0,
+          planVersion: 1,
+          capturedVerdict: 'changes_requested',
+          invocationId: `${O1}-inv`,
+          findingsHash: 'a'.repeat(64),
+          claimDeclarationsDigest: DIGEST_A,
+        },
+      ]),
+    });
+
+    const resolved = resolveLatestPlanReviewEvidence(
+      state,
+      authority({ planVersion: 1, claimDeclarationsDigest: DIGEST_A }),
+    );
+    expect(resolved).toEqual({
+      obligationId: O1,
+      invocationId: `${O1}-inv`,
+      findingsHash: 'a'.repeat(64),
+      subjectDigest: 'other-subject-digest',
+      claimDeclarationsDigest: DIGEST_A,
+      reviewerVerdict: 'changes_requested',
+    });
+    // The approved subject is the plan's current digest; the resolver keeps
+    // the reviewed subject distinct rather than coercing it into equality.
+    expect(resolved?.subjectDigest).not.toBe(PLAN_RECORD.current.digest);
+  });
 });

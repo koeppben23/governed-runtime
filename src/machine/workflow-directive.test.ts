@@ -1,0 +1,274 @@
+import { describe, expect, it } from 'vitest';
+import { makeState, ARCHITECTURE_DECISION, PLAN_RECORD } from '../fixtures.js';
+import { Phase, type SessionState } from '../state/schema.js';
+import {
+  resolveExecutionDisposition,
+  resolveWorkflowDirective,
+  type WorkflowDirective,
+} from './workflow-directive.js';
+
+describe('resolveWorkflowDirective', () => {
+  it('resolves every persisted position exhaustively', () => {
+    for (const phase of Phase.options) {
+      const directive = resolveWorkflowDirective(makeState(phase));
+      expect(directive.commands).toBeDefined();
+      expect(directive.allowedIntents).toBeDefined();
+      if (directive.kind === 'system_work' || directive.kind === 'terminal') {
+        expect(directive.commands).toEqual([]);
+        expect(directive.allowedIntents).toEqual([]);
+      }
+    }
+  });
+
+  it('maps ready to the only product flow choices', () => {
+    expect(resolveWorkflowDirective(makeState('READY'))).toEqual({
+      kind: 'user_action',
+      code: 'CHOOSE_FLOW',
+      allowedIntents: ['CAPTURE_TASK', 'CREATE_ARCHITECTURE', 'RUN_PEER_REVIEW'],
+      commands: ['/task', '/architecture', '/review'],
+    } satisfies WorkflowDirective);
+  });
+
+  it('projects persisted block authority before the position', () => {
+    const state: SessionState = {
+      ...makeState('READY'),
+      error: {
+        code: 'TEST_BLOCKED',
+        message: 'blocked for test',
+        recoveryHint: 'clear the test error',
+        occurredAt: '2026-01-01T00:00:00.000Z',
+      },
+    };
+
+    expect(resolveWorkflowDirective(state)).toEqual({
+      kind: 'blocked',
+      code: 'WORKFLOW_BLOCKED',
+      allowedIntents: [],
+      commands: [],
+      context: { reasonCode: 'TEST_BLOCKED', recovery: 'clear the test error' },
+    });
+  });
+
+  it('resolves the plan override gate from persisted review exhaustion only', () => {
+    const exhausted = resolveWorkflowDirective(
+      makeState('PLAN_REVIEW', {
+        plan: { ...PLAN_RECORD, reviewCompletion: 'review_exhausted' },
+      }),
+    );
+    expect(exhausted).toEqual({
+      kind: 'human_gate',
+      code: 'PLAN_OVERRIDE_REQUIRED',
+      allowedIntents: ['APPROVE_WITH_GOVERNANCE_OVERRIDE', 'REQUEST_CHANGES', 'REJECT'],
+      commands: ['/override-approve', '/request-changes', '/reject'],
+    } satisfies WorkflowDirective);
+
+    const accepted = resolveWorkflowDirective(
+      makeState('PLAN_REVIEW', {
+        plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
+      }),
+    );
+    expect(accepted).toEqual({
+      kind: 'human_gate',
+      code: 'PLAN_DECISION_REQUIRED',
+      allowedIntents: ['APPROVE', 'REQUEST_CHANGES', 'REJECT'],
+      commands: ['/approve', '/request-changes', '/reject'],
+    } satisfies WorkflowDirective);
+  });
+
+  it('resolves the architecture override gate from persisted review exhaustion only', () => {
+    const exhausted = resolveWorkflowDirective(
+      makeState('ARCH_REVIEW', {
+        architecture: { ...ARCHITECTURE_DECISION, reviewCompletion: 'review_exhausted' },
+      }),
+    );
+    expect(exhausted).toEqual({
+      kind: 'human_gate',
+      code: 'ARCHITECTURE_OVERRIDE_REQUIRED',
+      allowedIntents: ['APPROVE_WITH_GOVERNANCE_OVERRIDE', 'REQUEST_CHANGES', 'REJECT'],
+      commands: ['/override-approve', '/request-changes', '/reject'],
+    } satisfies WorkflowDirective);
+
+    const accepted = resolveWorkflowDirective(
+      makeState('ARCH_REVIEW', {
+        architecture: { ...ARCHITECTURE_DECISION, reviewCompletion: 'reviewer_accepted' },
+      }),
+    );
+    expect(accepted).toEqual({
+      kind: 'human_gate',
+      code: 'ARCHITECTURE_DECISION_REQUIRED',
+      allowedIntents: ['APPROVE', 'REQUEST_CHANGES', 'REJECT'],
+      commands: ['/approve', '/request-changes', '/reject'],
+    } satisfies WorkflowDirective);
+  });
+
+  it('resolves the implementation override gate from the exhausted rework marker only', () => {
+    const exhausted = resolveWorkflowDirective(
+      makeState('EVIDENCE_REVIEW', {
+        implementationRework: { rejectedDigest: 'rejected-digest', exhausted: true },
+      }),
+    );
+    expect(exhausted).toEqual({
+      kind: 'human_gate',
+      code: 'IMPLEMENTATION_OVERRIDE_REQUIRED',
+      allowedIntents: ['APPROVE_WITH_GOVERNANCE_OVERRIDE', 'REQUEST_CHANGES', 'REJECT'],
+      commands: ['/override-approve', '/request-changes', '/reject'],
+    } satisfies WorkflowDirective);
+
+    const inProgress = resolveWorkflowDirective(
+      makeState('EVIDENCE_REVIEW', {
+        implementationRework: { rejectedDigest: 'rejected-digest', exhausted: false },
+      }),
+    );
+    expect(inProgress).toEqual({
+      kind: 'human_gate',
+      code: 'IMPLEMENTATION_DECISION_REQUIRED',
+      allowedIntents: ['APPROVE', 'REQUEST_CHANGES', 'REJECT'],
+      commands: ['/approve', '/request-changes', '/reject'],
+    } satisfies WorkflowDirective);
+  });
+});
+
+describe('resolveExecutionDisposition', () => {
+  it('derives terminal, awaiting_human, and active from the workflow position', () => {
+    for (const phase of [
+      'COMPLETE',
+      'ARCH_COMPLETE',
+      'PEER_REVIEW_COMPLETE',
+      'REJECTED',
+    ] as const) {
+      expect(resolveExecutionDisposition(makeState(phase)), phase).toBe('terminal');
+    }
+    for (const phase of ['PLAN_REVIEW', 'EVIDENCE_REVIEW', 'ARCH_REVIEW'] as const) {
+      expect(resolveExecutionDisposition(makeState(phase)), phase).toBe('awaiting_human');
+    }
+    for (const phase of ['READY', 'TICKET', 'PLAN', 'VALIDATION', 'IMPLEMENTATION'] as const) {
+      expect(resolveExecutionDisposition(makeState(phase)), phase).toBe('active');
+    }
+  });
+
+  it('keeps the workflow position and reports blocked on a fail-closed error', () => {
+    const state: SessionState = {
+      ...makeState('IMPLEMENTATION'),
+      error: {
+        code: 'TEST_BLOCKED',
+        message: 'blocked for test',
+        recoveryHint: 'recover',
+        occurredAt: '2026-01-01T00:00:00.000Z',
+      },
+    };
+    expect(resolveExecutionDisposition(state)).toBe('blocked');
+    // The block never destroys the position.
+    expect(state.phase).toBe('IMPLEMENTATION');
+    expect(resolveWorkflowDirective(state).kind).toBe('blocked');
+  });
+
+  it('reports blocked for a blocked risk gate without changing the position', () => {
+    const state: SessionState = {
+      ...makeState('IMPLEMENTATION'),
+      riskGate: {
+        status: 'blocked',
+        code: 'RISK_GATE_BLOCKED',
+        message: 'risk gate blocked',
+        blockedAt: '2026-01-01T00:00:00.000Z',
+        lastDecisionId: 'decision-1',
+      },
+    };
+    expect(resolveExecutionDisposition(state)).toBe('blocked');
+    expect(state.phase).toBe('IMPLEMENTATION');
+  });
+
+  it('projects a blocked risk gate through the directive as well as the disposition', () => {
+    const state: SessionState = {
+      ...makeState('IMPLEMENTATION'),
+      riskGate: {
+        status: 'blocked',
+        code: 'RISK_GATE_BLOCKED',
+        message: 'risk gate blocked',
+        blockedAt: '2026-01-01T00:00:00.000Z',
+        lastDecisionId: 'decision-1',
+      },
+    };
+    expect(resolveExecutionDisposition(state)).toBe('blocked');
+    expect(resolveWorkflowDirective(state)).toEqual({
+      kind: 'blocked',
+      code: 'WORKFLOW_BLOCKED',
+      allowedIntents: [],
+      commands: [],
+      context: { reasonCode: 'RISK_GATE_BLOCKED' },
+    });
+  });
+
+  it('projects a blocked discovery health gate through the directive as well as the disposition', () => {
+    const state: SessionState = {
+      ...makeState('VALIDATION'),
+      discoveryHealthGate: {
+        status: 'blocked',
+        code: 'DISCOVERY_DRIFT_BLOCKED',
+        message: 'discovery health blocked',
+        blockedAt: '2026-01-01T00:00:00.000Z',
+      },
+    };
+    expect(resolveExecutionDisposition(state)).toBe('blocked');
+    expect(resolveWorkflowDirective(state)).toEqual({
+      kind: 'blocked',
+      code: 'WORKFLOW_BLOCKED',
+      allowedIntents: [],
+      commands: [],
+      context: { reasonCode: 'DISCOVERY_DRIFT_BLOCKED' },
+    });
+  });
+
+  it('invariant: blocked disposition always implies a blocked directive with no commands', () => {
+    const blockSources: SessionState[] = [
+      {
+        ...makeState('IMPLEMENTATION'),
+        error: {
+          code: 'TEST_BLOCKED',
+          message: 'blocked',
+          recoveryHint: 'recover',
+          occurredAt: '2026-01-01T00:00:00.000Z',
+        },
+      },
+      {
+        ...makeState('IMPLEMENTATION'),
+        riskGate: {
+          status: 'blocked',
+          code: 'RISK_GATE_BLOCKED',
+          message: 'risk gate blocked',
+          blockedAt: '2026-01-01T00:00:00.000Z',
+          lastDecisionId: 'decision-1',
+        },
+      },
+      {
+        ...makeState('VALIDATION'),
+        discoveryHealthGate: {
+          status: 'blocked',
+          code: 'DISCOVERY_DRIFT_BLOCKED',
+          message: 'discovery health blocked',
+          blockedAt: '2026-01-01T00:00:00.000Z',
+        },
+      },
+    ];
+    for (const state of blockSources) {
+      expect(resolveExecutionDisposition(state), state.phase).toBe('blocked');
+      const directive = resolveWorkflowDirective(state);
+      expect(directive.kind, state.phase).toBe('blocked');
+      expect(directive.commands, state.phase).toEqual([]);
+      expect(directive.allowedIntents, state.phase).toEqual([]);
+    }
+  });
+
+  it('keeps ABORTED terminal even though it retains its audit error marker', () => {
+    const state: SessionState = {
+      ...makeState('ABORTED'),
+      error: {
+        code: 'ABORTED',
+        message: 'session aborted',
+        recoveryHint: 'Start a new session with /hydrate',
+        occurredAt: '2026-01-01T00:00:00.000Z',
+      },
+    };
+    expect(resolveExecutionDisposition(state)).toBe('terminal');
+    expect(resolveWorkflowDirective(state).code).toBe('WORKFLOW_ABORTED');
+  });
+});

@@ -16,6 +16,7 @@ import {
 /** Minimal converged self-review for gate-path tests. */
 const CONVERGED_SELF_REVIEW = {
   iteration: 1,
+  reviewCycle: 1,
   maxIterations: 3,
   prevDigest: null,
   currDigest: 'review-digest',
@@ -839,7 +840,7 @@ describe('architecture review evidence resolution', () => {
       const result = executeReviewDecision(
         state,
         {
-          verdict: 'approve',
+          verdict: 'approve_with_governance_override',
           rationale: 'ok',
           decisionIdentity: {
             actorId: 'reviewer-1',
@@ -876,7 +877,7 @@ describe('architecture review evidence resolution', () => {
       const result = executeReviewDecision(
         state,
         {
-          verdict: 'approve',
+          verdict: 'approve_with_governance_override',
           rationale: 'ok',
           decisionIdentity: {
             actorId: 'reviewer-1',
@@ -889,9 +890,14 @@ describe('architecture review evidence resolution', () => {
       );
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
-        expect(result.state.architecture?.approvalCertificate?.reviewBinding?.kind).toBe(
-          'review_exhausted_override',
-        );
+        expect(result.state.phase).toBe('ARCH_COMPLETE');
+        expect(result.state.architecture?.approvalCertificate?.reviewBinding).toEqual({
+          kind: 'review_exhausted_override',
+          lastReviewObligationId: 'ob-cr',
+          lastReviewEvidenceDigest: 'c'.repeat(64),
+          reviewedSubjectDigest: ARCHITECTURE_DECISION.digest,
+          approvedSubjectDigest: ARCHITECTURE_DECISION.digest,
+        });
       }
     });
   });

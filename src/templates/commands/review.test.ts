@@ -24,8 +24,9 @@ describe('templates/commands/review (#401 Discovery context)', () => {
       expect(REVIEW_COMMAND).toContain('repo-dependent quality claim');
     });
 
-    it('keeps reviewer findings bound by FlowGuard', () => {
-      expect(REVIEW_COMMAND).toMatch(/FlowGuard performs and binds the\s+independent review/);
+    it('requires the native Task transport and keeps findings bound by FlowGuard', () => {
+      expect(REVIEW_COMMAND).toContain('reviewInvocation.action === "call_task"');
+      expect(REVIEW_COMMAND).toContain('subagent_type: "flowguard-reviewer"');
       expect(REVIEW_COMMAND).toContain('Do not submit, copy, or alter `reviewFindings`');
     });
   });
@@ -83,9 +84,10 @@ describe('templates/commands/review (#401 Discovery context)', () => {
       expect(REVIEW_COMMAND).not.toContain('git diff <base>...<branch>');
     });
 
-    it('requires verdict-only completion after FlowGuard binds evidence', () => {
+    it('requires obligation-id completion after FlowGuard binds evidence', () => {
       expect(REVIEW_COMMAND).toContain('Do not submit, copy, or alter `reviewFindings`');
-      expect(REVIEW_COMMAND).toMatch(/matching `reviewVerdict`/);
+      expect(REVIEW_COMMAND).toContain('flowguard_review({ reviewObligationId })');
+      expect(REVIEW_COMMAND).not.toContain('reviewVerdict');
     });
   });
 });

@@ -203,10 +203,13 @@ describe('config/profile/byPhase-content', () => {
       },
     );
 
-    it.each(ALL_PROFILES)('$name profile has REVIEW phase with review checklist', ({ profile }) => {
-      const resolved = resolveProfileInstructions(profile.instructions, 'REVIEW');
-      expect(resolved).toContain('Review Checklist');
-    });
+    it.each(ALL_PROFILES)(
+      '$name profile has PEER_REVIEW phase with review checklist',
+      ({ profile }) => {
+        const resolved = resolveProfileInstructions(profile.instructions, 'PEER_REVIEW');
+        expect(resolved).toContain('Review Checklist');
+      },
+    );
 
     it.each(ALL_PROFILES)(
       '$name profile IMPLEMENTATION phase includes negative test matrix',
@@ -501,7 +504,7 @@ describe('config/profile/detected-stack-instruction', () => {
     { name: 'typescript', profile: typescriptProfile },
   ] as const;
 
-  const STACK_PHASES = ['PLAN', 'IMPLEMENTATION', 'IMPL_REVIEW', 'REVIEW'] as const;
+  const STACK_PHASES = ['PLAN', 'IMPLEMENTATION', 'IMPL_REVIEW', 'PEER_REVIEW'] as const;
   const NON_STACK_PHASES = ['PLAN_REVIEW', 'EVIDENCE_REVIEW'] as const;
 
   // ─── HAPPY ─────────────────────────────────────────────────

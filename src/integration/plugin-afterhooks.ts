@@ -7,7 +7,12 @@
  * post-execution output handling. Before-hook Allow/Deny enforcement
  * remains in plugin.ts.
  *
- * @version v1
+ * Independent review is intentionally NOT auto-spawned here. A review-required
+ * FlowGuard response remains pending so the parent agent invokes OpenCode's
+ * native Task surface; that host-visible Task is the single productive review
+ * transport and owns the child-session lifecycle.
+ *
+ * @version v2
  */
 
 import { runWithAdapterLoggerAsync } from '../logging/adapter-logger.js';
@@ -16,10 +21,10 @@ import {
   getToolOutput,
   getAutoAdvanceOverflow,
   getSessionLockSignal,
+  parseToolResult,
   strictBlockedOutput,
 } from './plugin-helpers.js';
 import { trackFlowGuardEnforcement } from './plugin-enforcement-tracking.js';
-import { runReviewOrchestration as runOrchestrator } from './plugin-orchestrator.js';
 import { runAudit as runAuditModule } from './plugin-audit.js';
 import { handleEvent, type EventHandlerDeps } from './plugin-events.js';
 import { appendReviewAuditEventForState } from './review/audit-events.js';
@@ -29,6 +34,9 @@ import {
   isReviewableFlowGuardTool,
   updateCheckReworkContinuation,
 } from './plugin-rework-continuation.js';
+import { isReviewDispatchRequired } from './review/dispatch-signal.js';
+import { obligationTypeForTool, reviewSignalOwner } from './review/obligation-tools.js';
+import { resolveReviewContinuation } from '../state/review-continuation.js';
 export { updateCheckReworkContinuation } from './plugin-rework-continuation.js';
 import {
   REASON_SESSION_LOCK_CONTENDED,
@@ -42,6 +50,7 @@ import {
   type FlowGuardPluginRuntime,
 } from './plugin-shared.js';
 import { TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
+import { resumePendingSystemWork as runSystemWorkResume } from './tools/auto-validation.js';
 import { enforceRiskClassificationAfterBash as enforceRiskAfterBash } from './plugin-risk.js';
 import { enforceDiscoveryHealthAfterBash } from './plugin-discovery-health.js';
 import { recordMutationCompletion } from './plugin-mutation-episodes.js';
@@ -76,20 +85,13 @@ export async function toolAfter(
       await handleAfterDiagnostics(runtime, afterCtx);
       await recordMutationCompletion({ runtime, ...afterCtx });
       await handleBashAfter(runtime, toolName, sessionId, hookOutput);
-      // The durable transition outbox must be reconciled BEFORE the orchestrator
-      // may persist its post-commit side effects (obligations, attempts):
-      // otherwise the operation's committed postStateDigest no longer matches
-      // the persisted state and the mutation cycle would fail closed.
+      // Reconcile the FlowGuard mutation/audit boundary before the pending
+      // review signal is exposed. The response itself stays untouched: native
+      // Task invocation is a subsequent host-visible action, never a hidden
+      // post-hook side effect.
       await runFlowGuardAuditAfter({ runtime, toolName, input, output, sessionId, hookOutput });
-      await runOrchestrator(runtime.orchestratorDeps, {
-        toolName,
-        input,
-        output: hookOutput,
-        sessionId,
-        now,
-      });
       await updateCheckReworkContinuation(runtime, toolName, sessionId);
-      trackReviewableEnforcement(runtime, afterCtx);
+      await trackReviewableEnforcement(runtime, afterCtx);
     });
   });
 }
@@ -117,31 +119,117 @@ async function handleAfterDiagnostics(
 }
 
 function handleReviewableAfter(runtime: FlowGuardPluginRuntime, ctx: AfterHookContext): void {
-  // Diagnostics observe the tool's own output before the orchestration result is tracked.
+  // Diagnostics observe the FlowGuard tool's own output before the pending
+  // review signal is registered in transient enforcement state.
   logAutoAdvanceOverflow(runtime, ctx.sessionId, ctx.hookOutput);
 }
 
-/**
- * Track review enforcement against the output the agent actually receives.
- *
- * Must run AFTER orchestration because it attaches the review attempt identity
- * emitted by the SDK review pipeline.
- */
-function trackReviewableEnforcement(runtime: FlowGuardPluginRuntime, ctx: AfterHookContext): void {
+/** Track the exact pending review signal exposed to the parent agent. */
+async function trackReviewableEnforcement(
+  runtime: FlowGuardPluginRuntime,
+  ctx: AfterHookContext,
+): Promise<void> {
   // Stryker disable next-line ConditionalExpression
   if (!isReviewableFlowGuardTool(ctx.toolName)) return;
+
+  const parsed = parseToolResult(getToolOutput(ctx.hookOutput));
+  if (parsed) {
+    const violation = await verifyPersistedReviewAuthority(runtime, ctx, parsed);
+    if (violation) {
+      blockNonconformingReviewResponse(runtime, ctx, violation.reason, violation.obligationId);
+      return;
+    }
+  }
+
   try {
-    trackFlowGuardEnforcement(
+    const tracking = trackFlowGuardEnforcement(
       runtime.ws.getEnforcementState(ctx.sessionId),
       ctx.toolName,
       ctx.input,
       ctx.hookOutput,
       ctx.now,
     );
+    if (tracking.kind === 'nonconforming') {
+      blockNonconformingReviewResponse(runtime, ctx, tracking.reason, tracking.obligationId);
+    }
     // Stryker disable next-line BlockStatement
   } catch (err) {
     runtime.logError('enforcement tracking failed', err);
   }
+}
+
+interface ReviewSignalForAuthority {
+  readonly obligationId: string | null;
+  readonly attemptId: string | null;
+  readonly obligationType: import('../state/evidence.js').ReviewObligationType | null;
+}
+
+/** The exact obligation/attempt a review requirement response claims. */
+function reviewSignalForAuthority(
+  toolName: string,
+  parsed: NonNullable<ReturnType<typeof parseToolResult>>,
+): ReviewSignalForAuthority | null {
+  if (isReviewDispatchRequired(parsed)) {
+    const obligation = parsed.reviewObligation as Record<string, unknown> | undefined;
+    return {
+      obligationId: typeof obligation?.obligationId === 'string' ? obligation.obligationId : null,
+      attemptId: typeof parsed.reviewAttemptId === 'string' ? parsed.reviewAttemptId : null,
+      obligationType: obligationTypeForTool(reviewSignalOwner(toolName) ?? '') ?? null,
+    };
+  }
+  return null;
+}
+
+/**
+ * Host invariant: the response authority and the persisted continuation must
+ * describe the same exact pending attempt. Anything else is a nonconforming
+ * response and is immediately transformed into a BLOCKED payload without
+ * registering a pending review.
+ */
+async function verifyPersistedReviewAuthority(
+  runtime: FlowGuardPluginRuntime,
+  ctx: AfterHookContext,
+  parsed: NonNullable<ReturnType<typeof parseToolResult>>,
+): Promise<{ readonly reason: string; readonly obligationId: string | null } | null> {
+  const signal = reviewSignalForAuthority(ctx.toolName, parsed);
+  if (!signal) return null;
+  if (!signal.obligationType) {
+    return {
+      reason: 'a review dispatch signal came from a tool with no canonical review obligation type',
+      obligationId: signal.obligationId,
+    };
+  }
+  const sessDir = runtime.ws.getSessionDir(ctx.sessionId);
+  const state = sessDir ? await readState(sessDir) : null;
+  const continuation = resolveReviewContinuation(state?.reviewAssurance, signal.obligationType);
+  const matches =
+    continuation.kind === 'awaiting_task' &&
+    continuation.obligation.obligationId === signal.obligationId &&
+    continuation.attemptId === signal.attemptId;
+  if (matches) return null;
+  return {
+    reason:
+      `the review dispatch response does not match the persisted pending attempt ` +
+      `(continuation: ${continuation.kind})`,
+    obligationId: signal.obligationId,
+  };
+}
+
+function blockNonconformingReviewResponse(
+  runtime: FlowGuardPluginRuntime,
+  ctx: AfterHookContext,
+  reason: string,
+  obligationId: string | null,
+): void {
+  ctx.hookOutput.output = strictBlockedOutput('REVIEW_ATTEMPT_UNAVAILABLE', {
+    ...(obligationId ? { obligationId } : {}),
+    reason,
+  });
+  runtime.log.warn('review', 'nonconforming review dispatch response blocked', {
+    tool: ctx.toolName,
+    sessionId: ctx.sessionId,
+    reason,
+  });
 }
 
 function logAutoAdvanceOverflow(
@@ -210,6 +298,37 @@ async function runFlowGuardAuditAfter(args: {
   });
 }
 
+/**
+ * Resume interrupted canonical system work at the session lifecycle boundary.
+ * `system_work` phases carry no commands, so the runtime — not a later user
+ * command — owns the continuation. Fail-safe: the event handler catches.
+ */
+async function resumeSystemWorkForSession(
+  runtime: FlowGuardPluginRuntime,
+  sessionId: string,
+): Promise<void> {
+  const worktreeRoot = runtime.riskDeps.getWorktreeRoot?.();
+  if (!worktreeRoot) return;
+  const outcome = await runSystemWorkResume({
+    sessionID: sessionId,
+    worktree: worktreeRoot,
+    directory: worktreeRoot,
+  });
+  if (outcome.kind === 'blocked') {
+    runtime.log.error('system-work', 'system work resume blocked', {
+      sessionId,
+      code: outcome.code,
+    });
+    return;
+  }
+  if (outcome.kind === 'none') return;
+  runtime.log.info('system-work', 'system work resume finished', {
+    sessionId,
+    outcome: outcome.kind,
+    phase: outcome.phase,
+  });
+}
+
 export async function handlePluginEvent(
   runtime: FlowGuardPluginRuntime,
   event: unknown,
@@ -218,6 +337,8 @@ export async function handlePluginEvent(
     const eventDeps: EventHandlerDeps = {
       log: runtime.log,
       cleanupSession: (sessionId: string) => cleanupSessionRuntime(runtime, sessionId),
+      resumePendingSystemWork: (sessionId: string) =>
+        resumeSystemWorkForSession(runtime, sessionId),
       async emitSessionErrorAudit(sessionId, errorMessage, detail) {
         const sessDir = runtime.ws.getSessionDir(sessionId);
         if (!sessDir) return;

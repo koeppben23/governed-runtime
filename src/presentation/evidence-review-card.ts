@@ -25,7 +25,7 @@ import { renderMarkdown } from './markdown.js';
 import type { PresentationRenderOptions } from './glyph-profile.js';
 import type { CompactProofPresentation } from './proof-model.js';
 import { buildProofGraphSection } from './proof-summary.js';
-import { buildReviewDecisionConclusion } from './review-decision.js';
+import { buildReviewDecisionConclusion, type DirectiveProjection } from './review-decision.js';
 import { projectReviewDecision } from './review-decision.js';
 import type { ReviewDecisionProjectionInput } from './review-decision.js';
 
@@ -34,11 +34,8 @@ import type { ReviewDecisionProjectionInput } from './review-decision.js';
 export interface EvidenceReviewCardInput {
   /** Human-readable phase label (from PHASE_LABELS). */
   phaseLabel: string;
-  /** Canonical product-next-action guidance (from buildProductNextAction). */
-  productNextAction: {
-    text: string;
-    commands: readonly string[];
-  };
+  /** Canonical workflow directive projection (code + commands verbatim). */
+  directive: DirectiveProjection;
   /** Optional compact ProofGraph summary for the review card (post-implementation evaluation). */
   proofSummary: CompactProofPresentation;
   /** Status line describing the review convergence (converged or force-converged). */
@@ -72,6 +69,8 @@ export interface EvidenceReviewCardInput {
 
 const EVIDENCE_ACTION_DESCRIPTIONS: Record<string, string> = {
   '/approve': 'approve the implementation evidence',
+  '/override-approve':
+    'accept the exhausted implementation review with a recorded governance override',
   '/request-changes': 'return to implementation for revision',
   '/reject': 'discard this implementation',
 };
@@ -125,16 +124,9 @@ export function buildEvidenceReviewDocument(input: EvidenceReviewCardInput): Rev
 
   const document: ReviewCardDocument = {
     kind: 'review_card',
-    form: input.productNextAction.commands.some((command) =>
-      ['/approve', '/request-changes', '/reject'].includes(command),
-    )
-      ? 'decision'
-      : 'terminal',
+    form: input.directive.kind === 'human_gate' ? 'decision' : 'terminal',
     sections,
-    conclusion: buildReviewDecisionConclusion(
-      input.productNextAction,
-      EVIDENCE_ACTION_DESCRIPTIONS,
-    ),
+    conclusion: buildReviewDecisionConclusion(input.directive, EVIDENCE_ACTION_DESCRIPTIONS),
   };
 
   return document;

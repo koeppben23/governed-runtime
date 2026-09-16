@@ -8,7 +8,8 @@ import {
   type ReviewReportCardInput,
 } from './review-report-card.js';
 import type { CompactProofPresentation } from './proof-model.js';
-import type { ReviewReportFinding } from '../state/evidence.js';
+import type { PeerReviewCoverage, ReviewReportFinding } from '../state/evidence.js';
+import type { WorkflowDirective } from '../machine/workflow-directive.js';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
@@ -17,17 +18,32 @@ async function readGolden(name: string): Promise<string> {
   return (await readFile(p, 'utf-8')).trimEnd();
 }
 
+const exportDirective: WorkflowDirective = {
+  kind: 'user_action',
+  code: 'EXPORT_REQUIRED',
+  allowedIntents: ['EXPORT'],
+  commands: ['/export'],
+};
+
+const baseCoverage = {
+  targetResolved: true,
+  targetFrozen: true,
+  repositoryIdentityVerified: true,
+  baseSha: 'a'.repeat(40),
+  headSha: 'b'.repeat(40),
+  changedPathCount: 1,
+  objectivesCovered: 3,
+  objectivesTotal: 3,
+  reviewAssurance: 'structured_high',
+  missingVerification: [],
+} satisfies PeerReviewCoverage;
+
 const baseInput = {
-  phase: 'REVIEW_COMPLETE' as const,
-  phaseLabel: 'Review complete',
+  phase: 'PEER_REVIEW_COMPLETE' as const,
+  phaseLabel: 'Peer review complete',
   overallStatus: 'clean' as const,
   findings: [] as ReviewReportFinding[],
-  completeness: {
-    overallComplete: true,
-    fourEyes: false,
-    total: 3,
-    summary: '3/3 complete, 0 missing',
-  },
+  coverage: baseCoverage,
   proofSummary: {
     kind: 'evaluation',
     overallStatus: 'NOT_DECLARED',
@@ -46,7 +62,7 @@ const baseInput = {
     approval: { attestations: [] },
     decisionContext: 'completion',
   } satisfies CompactProofPresentation,
-  productNextAction: { text: 'Export the review evidence.', commands: ['/export'] },
+  directive: exportDirective,
   conclusionAction: {
     invocation: '/export',
     description: 'Export the review evidence.',
@@ -76,8 +92,8 @@ function materialFinding(
   };
 }
 function buildReviewReportCard(
-  input: Omit<ReviewReportCardInput, 'proofSummary' | 'productNextAction' | 'conclusionAction'> &
-    Partial<Pick<ReviewReportCardInput, 'proofSummary' | 'productNextAction' | 'conclusionAction'>>,
+  input: Omit<ReviewReportCardInput, 'proofSummary' | 'directive' | 'conclusionAction'> &
+    Partial<Pick<ReviewReportCardInput, 'proofSummary' | 'directive' | 'conclusionAction'>>,
   options?: Parameters<typeof buildCard>[1],
 ) {
   return buildCard({ ...baseInput, ...input }, options);
@@ -107,7 +123,7 @@ describe('buildReviewReportCard', () => {
       },
     });
     expect(card).toContain('# FlowGuard Review Report');
-    expect(card).toContain('**Status:** Review complete');
+    expect(card).toContain('**Status:** Peer review complete');
     expect(card).toContain('**Reviewed subject:** Pull request #42 (1 changed paths)');
   });
 
@@ -192,11 +208,82 @@ describe('buildReviewReportCard', () => {
     expect(card).toContain('child-session-1');
   });
 
+  it('renders the Target coverage section from canonical coverage fields', () => {
+    const card = buildReviewReportCard(baseInput);
+    expect(card).toContain('## Target coverage');
+    expect(card).toContain('**Target resolved:** yes');
+    expect(card).toContain('**Target frozen:** yes');
+    expect(card).toContain('**Repository identity:** verified');
+    expect(card).toContain(`**Base SHA:** ${'a'.repeat(40)}`);
+    expect(card).toContain(`**Head SHA:** ${'b'.repeat(40)}`);
+    expect(card).toContain('**Changed paths:** 1');
+    expect(card).toContain('**Objectives covered:** 3/3');
+    expect(card).toContain('**Review assurance:** structured_high');
+    expect(card).toContain('**Missing verification:** none');
+  });
+
+  it('renders nullable target coverage and missing-verification messages', () => {
+    const card = buildReviewReportCard({
+      ...baseInput,
+      coverage: {
+        targetResolved: false,
+        targetFrozen: false,
+        repositoryIdentityVerified: null,
+        baseSha: null,
+        headSha: null,
+        changedPathCount: 0,
+        objectivesCovered: 0,
+        objectivesTotal: 0,
+        reviewAssurance: null,
+        missingVerification: ['Run the integration suite', 'Record the branch coverage'],
+      },
+    });
+    expect(card).toContain('**Target resolved:** no');
+    expect(card).toContain('**Target frozen:** no');
+    expect(card).toContain('**Repository identity:** not applicable');
+    expect(card).toContain('**Base SHA:** not recorded');
+    expect(card).toContain('**Head SHA:** not recorded');
+    expect(card).toContain('**Changed paths:** 0');
+    expect(card).toContain('**Objectives covered:** 0/0');
+    expect(card).toContain('**Review assurance:** not recorded');
+    expect(card).toContain(
+      '**Missing verification:** Run the integration suite; Record the branch coverage',
+    );
+  });
+
+  it('never renders the local-session completeness matrix or four-eyes line', () => {
+    const card = buildReviewReportCard(baseInput);
+    expect(card).not.toContain('## Completeness');
+    expect(card).not.toContain('Four-eyes');
+    expect(card).not.toContain('Not assessed');
+    expect(card).not.toContain('Overall complete');
+    expect(card).not.toContain('Incomplete');
+  });
+
   it('has no command footer (/approve, /request-changes, /reject)', () => {
     const card = buildReviewReportCard(baseInput);
     expect(card).not.toContain('/approve');
     expect(card).not.toContain('/request-changes');
     expect(card).not.toContain('/reject');
+    // The canonical export conclusion action is preserved verbatim.
+    expect(card).toContain('→ `/export` — Export the review evidence.');
+  });
+
+  it('renders a terminal conclusion when the directive carries no command', () => {
+    // PEER_REVIEW_COMPLETE resolves the terminal PEER_REVIEW_COMPLETE directive with
+    // no commands; the card must render a valid terminal document rather than
+    // failing the success-form presentation contract.
+    const card = buildReviewReportCard({
+      ...baseInput,
+      directive: {
+        kind: 'terminal',
+        code: 'PEER_REVIEW_COMPLETE',
+        commands: [],
+      },
+      conclusionAction: undefined,
+    });
+    expect(card).toContain('Peer review complete.');
+    expect(card).not.toContain('/export');
   });
 
   it('shows "no follow-up required" when findings are empty', () => {
@@ -223,12 +310,7 @@ describe('implementation review golden fixtures', () => {
       phaseLabel: 'Implementation review in progress',
       overallStatus: 'clean',
       findings: [],
-      completeness: {
-        overallComplete: true,
-        fourEyes: true,
-        total: 6,
-        summary: '6/6 complete, 0 missing',
-      },
+      coverage: baseCoverage,
     });
     expect(card).toBe(await readGolden('review-impl-accepted.md'));
   });
@@ -242,30 +324,24 @@ describe('implementation review golden fixtures', () => {
         materialFinding('error', 'critical', 'correctness', 'Missing null check'),
         materialFinding('error', 'major', 'quality', 'Missing test coverage'),
       ],
-      completeness: {
-        overallComplete: false,
-        fourEyes: false,
-        total: 6,
-        summary: '4/6 complete, 2 missing',
+      coverage: {
+        ...baseCoverage,
+        objectivesCovered: 2,
+        missingVerification: ['Add regression coverage'],
       },
     });
     expect(card).toBe(await readGolden('review-impl-changes-requested.md'));
   });
 });
 
-describe('compliance review golden fixtures', () => {
+describe('peer review golden fixtures', () => {
   it('review-compliance-clean matches golden output', async () => {
     const card = buildReviewReportCard({
-      phase: 'REVIEW_COMPLETE',
-      phaseLabel: 'Review complete',
+      phase: 'PEER_REVIEW_COMPLETE',
+      phaseLabel: 'Peer review complete',
       overallStatus: 'clean',
       findings: [],
-      completeness: {
-        overallComplete: true,
-        fourEyes: true,
-        total: 3,
-        summary: '3/3 complete, 0 missing',
-      },
+      coverage: baseCoverage,
       obligationId: 'oblig-001',
       invocationSource: 'host-orchestrated',
     });
@@ -274,19 +350,18 @@ describe('compliance review golden fixtures', () => {
 
   it('review-compliance-issues-found matches golden output', async () => {
     const card = buildReviewReportCard({
-      phase: 'REVIEW_COMPLETE',
-      phaseLabel: 'Review complete',
+      phase: 'PEER_REVIEW_COMPLETE',
+      phaseLabel: 'Peer review complete',
       overallStatus: 'issues',
       findings: [
         materialFinding('error', 'critical', 'completeness', 'Missing evidence'),
         materialFinding('error', 'major', 'risk', 'Untracked dependency'),
         materialFinding('warning', 'minor', 'quality', 'Missing changelog entry'),
       ],
-      completeness: {
-        overallComplete: false,
-        fourEyes: false,
-        total: 3,
-        summary: '1/3 complete, 2 missing',
+      coverage: {
+        ...baseCoverage,
+        objectivesCovered: 2,
+        missingVerification: ['Run the missing regression test'],
       },
       invocationSource: 'host-orchestrated',
       obligationId: 'oblig-002',

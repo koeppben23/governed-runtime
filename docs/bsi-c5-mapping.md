@@ -66,10 +66,10 @@ The RB domain covers change management, operational documentation, logging, and 
 
 **Change Management:**
 
-- 15 explicit workflow phases across 3 flows: Ticket (READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_VALIDATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE), Architecture (READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE), Review (READY → REVIEW → REVIEW_COMPLETE)
+- 18 explicit workflow phases across 3 flows: Ticket (READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_VALIDATION → IMPL_REVIEW → EVIDENCE_REVIEW → EXPORT_READY → COMPLETE), Architecture (READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE), Peer review (READY → PEER_REVIEW → PEER_REVIEW_COMPLETE)
 - Phase gates that require evidence before progression — no phase can be skipped
 - Fail-closed enforcement: execution blocks when evidence or state is invalid
-- Backward transitions on rejection: `changes_requested` returns to the previous authoring phase; `reject` returns to TICKET (ticket flow) or READY (architecture flow)
+- Backward transitions on rejection: `changes_requested` returns to the previous authoring phase; `reject` terminates the workflow at `REJECTED`
 - Validation checks defined by active profile must all pass before implementation begins
 - Every phase transition is governed by a pure, deterministic state machine with an immutable transition table
 
@@ -192,7 +192,7 @@ The COM domain covers compliance documentation, evidence retention, and audit su
 - Complete session history: ticket, plan versions, validation results, implementation evidence, review decisions
 - Hash-chained audit trail is tamper-evident (each event cryptographically links to its predecessor); non-repudiation requires an external trust anchor.
 - Policy snapshot records which rules governed each session; its digest supports integrity comparison against a trusted reference.
-- Read-only compliance report generation (`/review`) available at any phase without mutating state
+- Read-only peer review report generation (`/review`) available at any phase without mutating state
 
 #### Organization Must Provide
 

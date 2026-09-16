@@ -15,4 +15,6 @@ Status: NOT_DECLARED
 No verification obligations declared.
 Approval evidence: Not recorded
 
-→ `/check` — Run required verification checks.
+## Independent review pending
+
+Plan validation in progress.

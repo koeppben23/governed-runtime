@@ -35,7 +35,7 @@ function baseSession(stateOverrides: Record<string, unknown> = {}): Architecture
       selfReview: { iteration: 1 },
       ...stateOverrides,
     },
-    policy: { maxSelfReviewIterations: 3 },
+    policy: { reviewBudget: { architecture: 3 } },
     ctx: {},
   } as unknown as ArchitectureSession;
 }

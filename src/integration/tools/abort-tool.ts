@@ -20,8 +20,8 @@ import { safeExecute } from './ticket-tool.js';
 
 export const abort_session: ToolDefinition = {
   description:
-    'Emergency termination of the FlowGuard session. Bypasses the state machine ' +
-    'and directly sets phase to COMPLETE with an ABORTED error marker. ' +
+    'Emergency termination of the FlowGuard session. Transitions through the state machine ' +
+    'to the ABORTED terminal position with an ABORTED error marker. ' +
     'Use only when the session cannot or should not continue. Irreversible.',
   args: {
     reason: z

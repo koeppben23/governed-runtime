@@ -15,7 +15,7 @@ describe('knownIssuesNoteForChangedFiles', () => {
   it('stays silent when trust-boundary paths change together with KNOWN_ISSUES.md', () => {
     const result = knownIssuesNoteForChangedFiles([
       'KNOWN_ISSUES.md',
-      'src/integration/review/orchestrator.ts',
+      'src/integration/review/assurance.ts',
       'src/adapters/persistence.ts',
     ]);
     expect(result.kind).toBe('ok');

@@ -4,7 +4,7 @@ import { defineConfig } from 'vitest/config';
  * Stryker-specific vitest config.
  * Governance-core files with proven individual mutation scores.
  * FlowGuard decision chain: state, audit, config, identity, machine, rails, tools,
- * review orchestrator detection/output, multi-mode validation, and canonical JSON.
+ * review dispatch detection, multi-mode validation, and canonical JSON.
  */
 export default defineConfig({
   test: {
@@ -17,7 +17,7 @@ export default defineConfig({
       'src/identity/**/*.test.ts',
       'src/machine/**/*.test.ts',
       'src/rails/**/*.test.ts',
-      'src/integration/command-aliases.test.ts',
+      'src/integration/installed-commands.test.ts',
       'src/integration/status.test.ts',
       'src/integration/tool-classification.test.ts',
       'src/integration/tools/review-validation-mode.test.ts',
@@ -31,16 +31,8 @@ export default defineConfig({
       'src/integration/tools/architecture-tool-evidence-resolve.test.ts',
       'src/discovery/**/*.test.ts',
       'src/verification/**/*.test.ts',
-      'src/integration/review/orchestrator.test.ts',
-      'src/integration/review/orchestrator-detection.test.ts',
-      'src/integration/review/orchestrator-output.test.ts',
       'src/integration/review/agent-resolution.test.ts',
-      'src/integration/review/orchestrator-invoke-agent-edges.test.ts',
       'src/integration/review/structured-output-tool-part.test.ts',
-      'src/integration/review/orchestrator-invoke-diagnostics.test.ts',
-      'src/integration/review/orchestrator-invoke-errors.test.ts',
-      'src/integration/review/orchestrator-retry-core.test.ts',
-      'src/integration/review/orchestrator-timeout.test.ts',
       'src/integration/review/enforcement/enforcement.test.ts',
       'src/integration/review/enforcement/findings-consistency.test.ts',
       'src/integration/review/enforcement/challenge-consistency.test.ts',
@@ -87,13 +79,6 @@ export default defineConfig({
       'src/integration/plugin-helpers.test.ts',
       'src/integration/plugin-host-task-diagnostics-helpers.test.ts',
       'src/integration/plugin-logging.test.ts',
-      'src/integration/plugin-orchestrator-arch-ssot.test.ts',
-      'src/integration/plugin-orchestrator-bug16.test.ts',
-      'src/integration/plugin-orchestrator-exhaustion.test.ts',
-      'src/integration/plugin-orchestrator-independent-review.test.ts',
-      'src/integration/plugin-orchestrator-plan-ssot.test.ts',
-      'src/integration/plugin-orchestrator-review-content.test.ts',
-      'src/integration/plugin-orchestrator-unable.test.ts',
       'src/integration/plugin-policy.test.ts',
       'src/integration/plugin-risk.test.ts',
       'src/integration/plugin-task-evidence.test.ts',

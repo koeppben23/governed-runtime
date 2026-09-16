@@ -8,21 +8,23 @@ FlowGuard uses a two-level command surface:
 
 | Level           | Syntax                  | Example                                 | Purpose                |
 | --------------- | ----------------------- | --------------------------------------- | ---------------------- |
-| **User-facing** | `/<command>`            | `/hydrate`, `/ticket`                   | OpenCode chat commands |
+| **User-facing** | `/<command>`            | `/start`, `/task`, `/plan`              | OpenCode chat commands |
 | **Internal**    | `flowguard_<tool-name>` | `flowguard_hydrate`, `flowguard_ticket` | OpenCode tool bindings |
 
 The `/<command>` syntax invokes the corresponding `flowguard_<tool-name>` tool internally.
 
 **Naming exceptions** (slash command and tool name differ):
 
-| Slash command         | Tool binding              | Reason                                                                                        |
-| --------------------- | ------------------------- | --------------------------------------------------------------------------------------------- |
-| `/review-decision`    | `flowguard_decision`      | Tool kept short; verdict-routing is the surface                                               |
-| `/abort`              | `flowguard_abort_session` | Tool name disambiguates `abort` from `serve`/`run`                                            |
-| `/validate`, `/check` | `flowguard_run_check`     | The tool runs verification checks; `/validate` and the `/check` product alias both bind to it |
+| Slash command                                                  | Tool binding              | Reason                                                                                                         |
+| -------------------------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `/approve`, `/override-approve`, `/request-changes`, `/reject` | `flowguard_decision`      | One decision tool; the product commands carry the verdict intent                                               |
+| `/abort`                                                       | `flowguard_abort_session` | Tool name disambiguates `abort` from `serve`/`run`                                                             |
+| `/task`                                                        | `flowguard_ticket`        | Product naming; the canonical tool keeps the historical `ticket` name                                          |
+| `/review-decision` (compatibility)                             | `flowguard_decision`      | Verdict-routing surface, kept for scripts; the product variants above are the recommended interface            |
+| `/validate`, `/check` (compatibility)                          | `flowguard_run_check`     | Validation runs automatically; the explicit compatibility surfaces remain for scripts and manual evidence runs |
 
-For all other commands, slash and tool names match `1:1` (`/hydrate` →
-`flowguard_hydrate`, `/architecture` → `flowguard_architecture`, etc.).
+For all other commands, slash and tool names match `1:1` (`/plan` →
+`flowguard_plan`, `/architecture` → `flowguard_architecture`, etc.).
 
 ### Interactive vs Non-Interactive Execution
 
@@ -36,33 +38,38 @@ For all other commands, slash and tool names match `1:1` (`/hydrate` →
 
 After `/hydrate`, the session starts in the **READY** phase. Three standalone flows are available:
 
-| Flow             | Command         | Phases                                                                                                                         | Purpose                                              |
-| ---------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
-| **Ticket**       | `/ticket`       | READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_VALIDATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE | Full development lifecycle                           |
-| **Architecture** | `/architecture` | READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE                                                                             | Create an Architecture Decision Record (ADR)         |
-| **Review**       | `/review`       | READY → REVIEW → REVIEW_COMPLETE                                                                                               | Generate a compliance or content-aware review report |
+| Flow             | Command         | Phases                                                                                                                                        | Purpose                                            |
+| ---------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| **Development**  | `/task`         | READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_VALIDATION → IMPL_REVIEW → EVIDENCE_REVIEW → EXPORT_READY → COMPLETE | Full development lifecycle                         |
+| **Architecture** | `/architecture` | READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE                                                                                            | Create an Architecture Decision Record (ADR)       |
+| **Peer review**  | `/review`       | READY → PEER_REVIEW → PEER_REVIEW_COMPLETE                                                                                                    | Review a foreign PR, branch, commit, diff, or text |
 
 ## Product Commands
 
-Product commands invoke canonical FlowGuard tools. Runtime enforcement remains in the canonical command policy or in the target tool's fail-closed checks.
+Product commands are the recommended human surface. They invoke canonical FlowGuard tools; runtime enforcement remains in the canonical command policy, the workflow directive, or the target tool's fail-closed checks.
 
-| Product command    | Canonical command                    | Description                                                            |
-| ------------------ | ------------------------------------ | ---------------------------------------------------------------------- |
-| `/start`           | `/hydrate`                           | Start a governed session                                               |
-| `/task`            | `/ticket`                            | Capture a governed task                                                |
-| `/plan`            | `/plan`                              | Generate an implementation plan (same name)                            |
-| `/approve`         | `/review-decision approve`           | Approve the current review gate                                        |
-| `/request-changes` | `/review-decision changes_requested` | Request changes at the current review gate                             |
-| `/reject`          | `/review-decision reject`            | Reject the current review gate                                         |
-| `/implement`       | `/implement`                         | Execute the approved plan (same name)                                  |
-| `/check`           | `/validate`                          | Run validation checks                                                  |
-| `/export`          | `/archive`                           | Export a redacted sharing package or an authorized raw auditor package |
-| `/status`          | `/status`                            | Show current phase, evidence, and next action (same name)              |
-| `/why`             | `/status --why-blocked`              | Show why the workflow is blocked                                       |
-| `/review`          | `/review`                            | Generate a compliance/content review report (same name)                |
-| `/architecture`    | `/architecture`                      | Create an ADR (same name)                                              |
+| Product command     | Canonical target                     | Tool binding             | Description                                                          |
+| ------------------- | ------------------------------------ | ------------------------ | -------------------------------------------------------------------- |
+| `/start`            | `/hydrate`                           | `flowguard_hydrate`      | Bootstrap a governed session (persisted state starts at READY)       |
+| `/task`             | `/ticket`                            | `flowguard_ticket`       | Capture a governed task                                              |
+| `/plan`             | `/plan`                              | `flowguard_plan`         | Generate or revise the implementation plan                           |
+| `/approve`          | `/review-decision approve`           | `flowguard_decision`     | Approve a reviewer-accepted gate                                     |
+| `/override-approve` | `/override-approve`                  | `flowguard_decision`     | Accept an exhausted review gate with a recorded governance override  |
+| `/request-changes`  | `/review-decision changes_requested` | `flowguard_decision`     | Request changes at the current review gate                           |
+| `/reject`           | `/review-decision reject`            | `flowguard_decision`     | End the governed workflow at the terminal REJECTED position          |
+| `/implement`        | `/implement`                         | `flowguard_implement`    | Execute the approved plan                                            |
+| `/check`            | `/validate`                          | `flowguard_run_check`    | Compatibility: run the active checks manually (normally automatic)   |
+| `/export`           | `/export`                            | `flowguard_export`       | Materialize the required verifiable export and complete the workflow |
+| `/status`           | `/status`                            | `flowguard_status`       | Show current phase, directive, and evidence                          |
+| `/why`              | `/status --why-blocked`              | `flowguard_status`       | Explain the current blocker                                          |
+| `/review`           | `/review`                            | `flowguard_review`       | Run the peer review flow for a foreign target                        |
+| `/architecture`     | `/architecture`                      | `flowguard_architecture` | Create an ADR                                                        |
 
-Product commands are the recommended surface for daily use. Advanced/canonical commands are documented below and remain fully supported for scripts, CI, and power users.
+Compatibility surfaces such as `/hydrate`, `/ticket`, `/validate`, `/check`,
+`/review-decision`, and `/continue` remain invocable for scripts, CI, and manual
+recovery, but they are never recommended by the runtime directive and are not
+part of the happy path. The runtime directive resolved from persisted state is
+the single authority for what to do next.
 
 ## Workflow Commands (Advanced/Canonical)
 
@@ -110,7 +117,7 @@ It composes existing authorities (the readiness projection, evidence completenes
 
 Difference from `/status --readiness`: `/status --readiness` returns the compact readiness projection; `/finish` additionally derives the single `overallStatus`, the non-normative action guidance, and the exit options as a curated pre-export card. Fail-closed enforcement remains with `/export` and the existing gates — `/finish` reports a blocker, it does not enforce one.
 
-Available in any phase, including terminal phases (`COMPLETE`, `ARCH_COMPLETE`, `REVIEW_COMPLETE`). When no session exists, `/finish` reports this and recommends `/hydrate`.
+Available in any phase, including terminal phases (`COMPLETE`, `ARCH_COMPLETE`, `PEER_REVIEW_COMPLETE`). When no session exists, `/finish` reports this and recommends `/hydrate`.
 
 `/finish` maps internally to `flowguard_status` with `{ finish: true }`.
 
@@ -152,7 +159,7 @@ resolution evidence.
 
 ### /ticket
 
-Record the task description. Starts the ticket flow from READY or updates ticket in TICKET phase.
+Record the task description. Starts the development flow from READY or updates the task in TICKET phase. Compatibility surface: use the product command `/task` in normal work.
 
 **Allowed in:** READY, TICKET
 **Arguments:**
@@ -204,6 +211,8 @@ FlowGuard fail-closes governance commands when required ticket/plan artifacts ar
 ### /review-decision
 
 Record a human verdict at a User Gate (PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REVIEW).
+Compatibility surface: the product commands are `/approve`, `/override-approve`,
+`/request-changes`, and `/reject`.
 The slash command name `review-decision` differs from the tool name; the tool is
 registered as `flowguard_decision`.
 
@@ -211,9 +220,16 @@ registered as `flowguard_decision`.
 
 **Verdicts:**
 
-- `approve` → advance to next phase
+- `approve` → advance a reviewer-accepted gate
+- `approve_with_governance_override` → accept an exhausted review gate; legal only when the directive requires the override intent
 - `changes_requested` → return to previous phase for revision
-- `reject` → restart (TICKET for ticket flow, READY for architecture flow)
+- `reject` → terminal `REJECTED`; the reviewed evidence and decision remain available for audit
+
+The intent must match the gate type derived from persisted state: a plain
+`approve` at an exhausted gate is blocked with `GOVERNANCE_OVERRIDE_REQUIRED`,
+and a governance override at a reviewer-accepted gate is blocked with
+`GOVERNANCE_OVERRIDE_NOT_REQUIRED`. Override bindings are hardened to exact
+reviewed-subject equality.
 
 **Four-eyes (regulated mode):** `approve` requires reviewer identity different
 from session initiator, and both identities must be known. Same-actor approve
@@ -234,7 +250,9 @@ Every successful `/review-decision` emits a decision receipt in the audit trail
 
 ### /validate
 
-Run validation checks against the approved plan.
+Run validation checks against the approved plan. This is a compatibility surface:
+FlowGuard records validation automatically when the phase is entered, and
+`/validate` (or `/check`) remains available to record results explicitly.
 
 **Allowed in:** VALIDATION
 **Checks:** Derived from `verificationCandidates` (refer to `docs/configuration.md#profileactivechecks`)
@@ -249,7 +267,7 @@ Execute the implementation plan.
 1. LLM implements using OpenCode tools
 2. Changed files recorded via git
 3. Independent implementation review loop (`IMPLEMENTATION` → `IMPL_REVIEW` →
-   `REVIEW_MET` convergence; bounded by `maxImplReviewIterations`)
+   `REVIEW_MET` convergence; bounded by `reviewBudget.implementation`)
 4. Advances to EVIDENCE_REVIEW
 
 **Allowed in:** IMPLEMENTATION
@@ -269,18 +287,16 @@ Provide the challenge ID from the prior implementation review and one or more pa
 post-implementation validation attempt IDs for the current implementation digest. This
 does not accept the review, resolve the challenge by itself, or bypass EVIDENCE_REVIEW.
 
-### /extend-implementation-review
+### /override-approve
 
-Authorize a finite additional independent implementation review budget after the
-existing budget was exhausted with `changes_requested`.
+Accept an exhausted review gate with an explicit, recorded governance override.
 
-**Allowed in:** IMPL_REVIEW
+**Allowed in:** PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW — only when the independent
+review exhausted its authorized budget without reviewer acceptance.
 
-This is an explicit user authorization (recorded command intent
-`/extend-implementation-review <integer>`). It only opens the requested finite
-review budget; it never records implementation evidence, runs validation, or
-submits a review verdict. The implementation must still be re-recorded via
-`/implement` (or `flowguard_implement`) and re-validated before the next review.
+The override binds only the exact reviewed subject digest. A plain `/approve` at an
+exhausted gate is blocked with `GOVERNANCE_OVERRIDE_REQUIRED`; a reviewer-accepted
+revision uses `/approve` instead.
 
 ### /reconcile-mutation-episode
 
@@ -311,7 +327,7 @@ ADR review is **subagent-driven by default** in solo, team, and regulated profil
 
 ### /review
 
-Start the standalone review flow. Supports content-aware review (PR, branch, URL, text) with subagent-attested findings and an obligation-bound lifecycle.
+Start the peer review flow: review a foreign PR, branch, commit, diff, or text and produce findings for another developer. This flow never mutates the reviewed target and has no approval gate; `changes_requested` is a valid review outcome, not an instruction for FlowGuard to change the foreign work. Supports content-aware review (PR, branch, URL, text) with subagent-attested findings and an obligation-bound lifecycle.
 
 **Allowed in:** READY
 **Arguments (all optional):**
@@ -326,7 +342,7 @@ Start the standalone review flow. Supports content-aware review (PR, branch, URL
 
 **Examples:**
 
-- `/review` — plain compliance report (no external content)
+- `/review` — plain peer review report (no external content)
 - `/review prNumber=42` — content-aware review with PR diff (blocked, agent invokes subagent)
 - `/review prNumber=42 reviewFindings=<ReviewFindings>` — submit subagent findings
 
@@ -334,8 +350,7 @@ Start the standalone review flow. Supports content-aware review (PR, branch, URL
 
 - `requiredReviewAttestation` (blocked response with obligation UUID — content-aware only)
 - `reviewCard` (markdown, display verbatim)
-- Evidence completeness matrix
-- Four-eyes status
+- `peerReviewCoverage` (target resolved/frozen, repository identity, base/head SHA, changed-path count, objectives covered/total, review assurance, missing verification)
 - Validation summary
 - Findings
 - External references (if provided)
@@ -343,26 +358,37 @@ Start the standalone review flow. Supports content-aware review (PR, branch, URL
 
 ### /continue
 
-Universal routing command. Inspects current phase and does the next appropriate action.
+Compatibility routing surface. The canonical runtime directive is the next-action
+authority; `/continue` inspects the current phase and performs the next appropriate
+action only when explicitly requested.
 
-- At user gates: returns "waiting" (use /review-decision)
+- At user gates: returns "waiting" (use the gate commands from the runtime directive: `/approve`, `/override-approve`, `/request-changes`, or `/reject`)
 - At PLAN: runs one independent subagent review iteration
 - At ARCHITECTURE: runs one ADR review iteration
 - At IMPL_REVIEW: runs one independent implementation review iteration
 - At VALIDATION: runs all validation checks
 - At other phases: evaluates and auto-advances if evidence is present
 
+### /export
+
+Materialize the required verifiable export and complete the ticket flow. This is
+a canonical workflow command (tool binding `flowguard_export`), not an archive
+alias: the session advances to COMPLETE only after the export rail materializes
+a verifiable package and persists completion evidence.
+
+**Allowed in:** EXPORT_READY
+
+On success the workflow reaches COMPLETE. If the tool is blocked or fails, the
+session remains in EXPORT_READY and must not be described as complete.
+
 ### /abort
 
-Emergency session termination. Bypasses the topology and directly sets phase
-to `COMPLETE` with `error.code = 'ABORTED'`. Irreversible. Allowed in any
-non-terminal phase, **including the architecture and review flows**: aborted
-sessions always land in `COMPLETE`, not `ARCH_COMPLETE` or `REVIEW_COMPLETE`.
-Compliance consumers filtering for the natural terminal of each flow should
-therefore include `phase === 'COMPLETE' && error?.code === 'ABORTED'` as a
-distinct case. Aborting from a terminal phase (`COMPLETE`, `ARCH_COMPLETE`,
-`REVIEW_COMPLETE`) is an idempotent no-op that preserves state. Aborted
-sessions remain identifiable post-mortem via `state.error.code === 'ABORTED'`.
+Emergency session termination. The explicit `ABORT` topology event transitions
+every non-terminal phase to the terminal `ABORTED` position and records
+`error.code = 'ABORTED'`. It is irreversible. Aborting from any terminal phase
+(`COMPLETE`, `ARCH_COMPLETE`, `PEER_REVIEW_COMPLETE`, `REJECTED`, or `ABORTED`) is
+an idempotent no-op that preserves state. Aborted sessions remain identifiable
+post-mortem via both `phase === 'ABORTED'` and `state.error.code === 'ABORTED'`.
 
 ## Operational Tools
 

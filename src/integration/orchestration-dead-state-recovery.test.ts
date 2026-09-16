@@ -105,6 +105,7 @@ function makeBlockedObligation(
   return {
     obligationId: crypto.randomUUID(),
     obligationType,
+    reviewCycle: 1,
     subjectDigest: 'test-subject-digest-blocked',
     iteration,
     planVersion,
@@ -154,6 +155,7 @@ function makePendingObligation(
   return {
     obligationId: crypto.randomUUID(),
     obligationType,
+    reviewCycle: 1,
     subjectDigest: 'test-subject-digest-pending',
     iteration,
     planVersion,
@@ -267,6 +269,7 @@ async function setupImplementDeadState(blockedCount = 1): Promise<void> {
     phase: 'IMPL_REVIEW' as SessionState['phase'],
     selfReview: {
       iteration: 1,
+      reviewCycle: 1,
       maxIterations: 3,
       prevDigest: null,
       currDigest: 'test-digest',
@@ -318,6 +321,7 @@ async function setupArchitectureDeadState(blockedCount = 1): Promise<void> {
     },
     selfReview: {
       iteration: 0,
+      reviewCycle: 1,
       maxIterations: 3,
       prevDigest: null,
       currDigest: 'adr-digest',
@@ -667,6 +671,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
 
       const pending = createReviewObligation({
         obligationType: 'architecture',
+        reviewCycle: 1,
         repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
         iteration: 0,
         planVersion: 1,
@@ -733,6 +738,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
 
       const pending = createReviewObligation({
         obligationType: 'architecture',
+        reviewCycle: 1,
         repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
         iteration: 0,
         planVersion: 1,
@@ -803,6 +809,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
 
       const pending = createReviewObligation({
         obligationType: 'architecture',
+        reviewCycle: 1,
         repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
         iteration: 0,
         planVersion: 1,
@@ -882,7 +889,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
       expect(result.selfReviewIteration).toBe(2);
       // Under the structured-evidence contract the restart emits a child-session
       // invocation instruction carrying the review cycle, not a reviewer prompt.
-      expect(result.next).toBe('INDEPENDENT_REVIEW_REQUIRED');
+      expect(result.reviewDispatch).toEqual({ required: true });
       const invocation = result.reviewInvocation as Record<string, unknown> | undefined;
       expect(invocation?.mode).toBeDefined();
       expect(
@@ -922,6 +929,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
 
       const pending = createReviewObligation({
         obligationType: 'architecture',
+        reviewCycle: 1,
         repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
         iteration: 0,
         planVersion: 1,
@@ -956,6 +964,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
 
       const pending = createReviewObligation({
         obligationType: 'architecture',
+        reviewCycle: 1,
         repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
         iteration: 0,
         planVersion: 1,

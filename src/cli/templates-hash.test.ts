@@ -26,7 +26,6 @@ import {
   TOOL_FLOWGUARD_TICKET,
   TOOL_FLOWGUARD_PLAN,
   TOOL_FLOWGUARD_DECISION,
-  TOOL_FLOWGUARD_EXTEND_IMPLEMENTATION_REVIEW,
   TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
   TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE,
@@ -35,6 +34,7 @@ import {
   TOOL_FLOWGUARD_CONTINUE,
   TOOL_FLOWGUARD_ABORT,
   TOOL_FLOWGUARD_ARCHIVE,
+  TOOL_FLOWGUARD_EXPORT,
   TOOL_FLOWGUARD_ARCHITECTURE,
   TOOL_FLOWGUARD_HELP,
   TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE,
@@ -46,8 +46,14 @@ function sha256(value: string): string {
 
 describe('TEMPLATE_HASH_STABILITY', () => {
   it('TOOL_WRAPPER matches compiled output hash', () => {
+    // Refreshed for the workflow-directive hard cut: `/export` is a canonical
+    // workflow command backed by the dedicated flowguard_export tool, so the
+    // OpenCode wrapper must re-export the `export` binding for the installed
+    // command surface to resolve.
+    // Refreshed for the governance-override hard cut: the removed
+    // `/extend-implementation-review` surface no longer exports its tool.
     expect(sha256(TOOL_WRAPPER)).toBe(
-      '2832703d740a9a77afeb0f81fa145ae48d9a8e4e55d6edaf31dc176d18dc5e29',
+      'd226008372fe59034590eead8ceae63d797c9c2bbd6402d632adeeb2a203514a',
     );
   });
 
@@ -267,7 +273,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // COMMANDS hash.
     // Refreshed for presentation fallback consistency: task, ticket, check,
     // validate, abort, archive, and export now render presentation.markdown
-    // verbatim or render productNextAction.text as one fallback, never both.
+    // verbatim or render the canonical directive as one fallback, never both.
     // Refreshed for outcome-/contract-first implementation guidance: /implement
     // no longer treats local implementation mechanics as approved-plan authority.
     // Refreshed for explicit plan contract authority: /plan now materializes the
@@ -287,8 +293,31 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // against host-observed structured reviewer invocation evidence, with no
     // reviewFindings or attestation-as-transport wording.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
+    // Refreshed for the workflow-directive hard cut: `/export` became a
+    // canonical workflow command (export.md + flowguard_export), EVIDENCE_REVIEW
+    // approve now advances to EXPORT_READY, REJECTED/ABORTED are terminal
+    // positions, and the revised command templates render the canonical
+    // workflow directive instead of the removed next-action projection.
+    // Refreshed for the governance-override hard cut: `/override-approve` is a
+    // canonical command, `/extend-implementation-review` is removed, and the
+    // decision templates describe the override gate.
+    // Refreshed for the structured review-dispatch hard cut: command templates
+    // read `reviewDispatch`/`reviewInvocation`/`agentInstruction`/`directive`
+    // instead of the removed textual `next` field.
+    // Refreshed for the peer-review domain hard cut: the /review and /archive
+    // command templates now use the renamed PEER_REVIEW / PEER_REVIEW_COMPLETE
+    // phases and peer-review flow wording. No template behavior changed.
+    // Refreshed for the mandatory override rationale: /override-approve now
+    // refuses an empty/whitespace rationale and reports it instead of calling
+    // flowguard_decision.
+    // Refreshed for the native visible reviewer transport hard cut: review
+    // commands describe the host Task dispatch instead of the removed invisible
+    // SDK reviewer session.
+    // Refreshed for peer review native-task parity: /review now follows its
+    // canonical reviewDispatch/reviewInvocation loop and completes with the
+    // bound reviewObligationId rather than a non-existent reviewVerdict field.
     expect(sha256(commandsJson)).toBe(
-      '6df018c6a9d371ffe6b6d8a2ad1c3beac93388f453586532d65ad61f386b1644',
+      'f3af49e7e6045b93a99c2d91fa80802cc043751ce4a598de86dce4e3ba27f623',
     );
   });
 
@@ -302,11 +331,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
       'commands.md',
       'continue.md',
       'export.md',
-      'extend-implementation-review.md',
       'finish.md',
       'help.md',
       'hydrate.md',
       'implement.md',
+      'override-approve.md',
       'plan.md',
       'reconcile-mutation-episode.md',
       'reject.md',
@@ -331,7 +360,6 @@ describe('TEMPLATE_HASH_STABILITY', () => {
       TOOL_FLOWGUARD_TICKET,
       TOOL_FLOWGUARD_PLAN,
       TOOL_FLOWGUARD_DECISION,
-      TOOL_FLOWGUARD_EXTEND_IMPLEMENTATION_REVIEW,
       TOOL_FLOWGUARD_IMPLEMENT,
       TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
       TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE,
@@ -340,6 +368,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
       TOOL_FLOWGUARD_CONTINUE,
       TOOL_FLOWGUARD_ABORT,
       TOOL_FLOWGUARD_ARCHIVE,
+      TOOL_FLOWGUARD_EXPORT,
       TOOL_FLOWGUARD_ARCHITECTURE,
       TOOL_FLOWGUARD_HELP,
       TOOL_FLOWGUARD_OBSERVE_REPOSITORY,

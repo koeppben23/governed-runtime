@@ -102,7 +102,6 @@ describe('adapters/workspace/index.ts barrel', () => {
 describe('presentation/index.ts barrel', () => {
   const EXPECTED_EXPORTS = [
     'PHASE_LABELS',
-    'buildProductNextAction',
     'buildPlanReviewCard',
     'buildEvidenceReviewCard',
     'buildEvidenceApprovalCompletionDocument',
@@ -147,6 +146,9 @@ describe('presentation/index.ts barrel', () => {
     'projectReviewDecision',
     'REVIEW_DECISION_COPY',
     'buildReviewDecisionConclusion',
+    'DIRECTIVE_COPY',
+    'directiveLabel',
+    'directiveDescription',
   ] as const;
 
   const INTERNAL_SYMBOLS = [
@@ -161,11 +163,6 @@ describe('presentation/index.ts barrel', () => {
       const mod = await import('./presentation/index.js');
       expect(typeof mod.PHASE_LABELS).toBe('object');
       expect(mod.PHASE_LABELS.READY).toBe('Ready');
-    });
-
-    it('re-exports buildProductNextAction', async () => {
-      const mod = await import('./presentation/index.js');
-      expect(typeof mod.buildProductNextAction).toBe('function');
     });
 
     it('re-exports buildPlanReviewCard', async () => {
@@ -209,13 +206,18 @@ describe('presentation/index.ts barrel', () => {
       const mod = await import('./presentation/index.js');
       expect('PRODUCT_GUIDANCE' in mod).toBe(false);
     });
+
+    it('does NOT export the removed buildProductNextAction', async () => {
+      const mod = await import('./presentation/index.js');
+      expect('buildProductNextAction' in mod).toBe(false);
+    });
   });
 
   describe('CORNER — index.ts uses explicit named exports (no export *)', () => {
     it('index.ts has explicit named re-exports from each module', () => {
       const source = readSource('presentation/index.ts');
       expect(source).toContain("from './phase-labels.js'");
-      expect(source).toContain("from './next-action-copy.js'");
+      expect(source).toContain("from './evidence-review-card.js'");
       expect(source).toContain("from './plan-review-card.js'");
       expect(source).toContain("from './architecture-review-card.js'");
       expect(source).toContain("from './review-report-card.js'");
@@ -233,6 +235,45 @@ describe('presentation/index.ts barrel', () => {
       const keys = Object.keys(mod).sort();
       const expected = [...EXPECTED_EXPORTS].sort();
       expect(keys).toEqual(expected);
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// src/index.ts barrel — canonical workflow-directive surface
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('src/index.ts barrel', () => {
+  describe('HAPPY — canonical workflow-directive surface is exported', () => {
+    it('re-exports resolveWorkflowDirective', async () => {
+      const mod = await import('./index.js');
+      expect(typeof mod.resolveWorkflowDirective).toBe('function');
+    });
+  });
+
+  describe('BAD — legacy next-action surface is removed', () => {
+    it('does NOT export buildProductNextAction', async () => {
+      const mod = await import('./index.js');
+      expect('buildProductNextAction' in mod).toBe(false);
+    });
+
+    it('does NOT export resolveNextAction', async () => {
+      const mod = await import('./index.js');
+      expect('resolveNextAction' in mod).toBe(false);
+    });
+
+    it('does NOT export ACTION_CODES', async () => {
+      const mod = await import('./index.js');
+      expect('ACTION_CODES' in mod).toBe(false);
+    });
+  });
+
+  describe('CORNER — index.ts re-exports the canonical module, never the deleted one', () => {
+    it('index.ts re-exports machine/workflow-directive.js', () => {
+      const source = readSource('index.ts');
+      expect(source).toContain("from './machine/workflow-directive.js'");
+      expect(source).not.toContain('next-action');
+      expect(source).not.toContain('buildProductNextAction');
     });
   });
 });
@@ -261,10 +302,17 @@ describe('integration tools use barrel imports', () => {
       }
     });
 
-    it('no integration file deep-imports next-action-copy.js', () => {
+    it('no integration file deep-imports the deleted next-action-copy.js', () => {
       for (const file of INTEGRATION_FILES) {
         const source = readSource(file);
         expect(source).not.toContain('../../presentation/next-action-copy.js');
+      }
+    });
+
+    it('no integration file deep-imports the deleted machine next-action.js', () => {
+      for (const file of INTEGRATION_FILES) {
+        const source = readSource(file);
+        expect(source).not.toContain('machine/next-action.js');
       }
     });
 
@@ -342,10 +390,10 @@ describe('E2E — symbol identity through barrel', () => {
     expect(barrel.PHASE_LABELS).toBe(direct.PHASE_LABELS);
   });
 
-  it('buildProductNextAction direct import equals barrel import', async () => {
-    const direct = await import('./presentation/next-action-copy.js');
-    const barrel = await import('./presentation/index.js');
-    expect(barrel.buildProductNextAction).toBe(direct.buildProductNextAction);
+  it('resolveWorkflowDirective direct import equals barrel import', async () => {
+    const direct = await import('./machine/workflow-directive.js');
+    const barrel = await import('./index.js');
+    expect(barrel.resolveWorkflowDirective).toBe(direct.resolveWorkflowDirective);
   });
 
   it('buildPlanReviewCard direct import equals barrel import', async () => {

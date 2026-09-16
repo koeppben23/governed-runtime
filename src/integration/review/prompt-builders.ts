@@ -36,7 +36,7 @@ import {
 
 // ─── Canonical Review Context Serializer ─────────────────────────────────────
 
-export { renderReviewContext, CORE_REVIEW_PROFILE_MARKER } from './prompt-sections.js';
+export { renderReviewContext } from './prompt-sections.js';
 export { renderVerificationEvidence } from './impl-review-prompt.js';
 export {
   buildImplReviewPrompt,
@@ -289,23 +289,6 @@ export interface ArchitectureReviewPromptOpts {
   readonly observationCapability?: string;
   readonly observationRevisions?: readonly ('base' | 'head')[];
   readonly challengeContract?: ReviewerChallengePromptContract;
-}
-
-export function selectReviewerProfileRules(
-  activeProfile:
-    | {
-        name: string;
-        phaseRuleContent?: Record<string, string>;
-      }
-    | null
-    | undefined,
-  phase: 'PLAN_REVIEW' | 'IMPL_REVIEW' | 'ARCH_REVIEW' | 'REVIEW',
-): { profileName?: string; profileRules?: string } {
-  if (!activeProfile) return {};
-  return {
-    profileName: activeProfile.name,
-    profileRules: activeProfile.phaseRuleContent?.[phase],
-  };
 }
 
 export function buildPlanReviewPrompt(opts: PlanReviewPromptOpts): string {

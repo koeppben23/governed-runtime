@@ -122,6 +122,7 @@ describe('plugin-review-state', () => {
     return {
       obligationId: id,
       obligationType: 'plan',
+      reviewCycle: 1,
       requiredChallengeCount: 0,
       requiredChallengeKind: 'design_challenge',
       challengePolicyVersion: 'challenge-policy.v1',

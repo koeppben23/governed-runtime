@@ -10,17 +10,20 @@ Usage: $0 save <label> <workspace>
 
 Create or restore demo workspace checkpoints for pitch recovery.
 
-Labels:
-  00-seed, 01-plan-approved, 02-implemented, 03-complete, 04-exported,
-  A02-adr-reviewed, A03-arch-complete
+All checkpoints are VISUAL ONLY: they capture and restore workspace files and
+NEVER FlowGuard session authority. Session state, review obligations, audit
+chain, review cycles, and human decisions live outside the workspace (under
+~/.config/opencode/). After a restore, start a fresh session with /start or
+use the prerecorded reference run. See FALLBACK.md and RESET.md.
 
-Note: Architecture snapshots (A02, A03) restore workspace evidence only.
-They do NOT restore FlowGuard session state (stored in ~/.config/opencode/).
-See FALLBACK.md for recovery strategy.
+Labels:
+  00-seed-visual-only, 01-plan-approved-visual-only, 02-implemented-visual-only,
+  03-export-ready-visual-only, 04-exported-visual-only,
+  A02-adr-reviewed-visual-only, A03-arch-complete-visual-only
 
 Examples:
-  $0 save 02-implemented /tmp/flowguard-java-demo
-  $0 restore 01-plan-approved /tmp/flowguard-java-demo
+  $0 save 02-implemented-visual-only /tmp/flowguard-java-demo
+  $0 restore 01-plan-approved-visual-only /tmp/flowguard-java-demo
 EOF
     exit 1
 }
@@ -52,7 +55,7 @@ fi
 
 # ─── Validate label ──────────────────────────────────────────────────────────
 
-ALLOWED_LABELS=('00-seed' '01-plan-approved' '02-implemented' '03-complete' '04-exported' 'A02-adr-reviewed' 'A03-arch-complete')
+ALLOWED_LABELS=('00-seed-visual-only' '01-plan-approved-visual-only' '02-implemented-visual-only' '03-export-ready-visual-only' '04-exported-visual-only' 'A02-adr-reviewed-visual-only' 'A03-arch-complete-visual-only')
 LABEL_VALID=0
 for allowed in "${ALLOWED_LABELS[@]}"; do
     if [[ "$LABEL" == "$allowed" ]]; then
@@ -150,9 +153,10 @@ mkdir -p "$CHECKPOINT_ROOT"
 
 case "$ACTION" in
     save)
-        echo "Saving checkpoint: $LABEL"
+        echo "Saving visual-only checkpoint: $LABEL"
         echo "  Source: $WORKSPACE"
         echo "  Target: $CHECKPOINT_DIR"
+        echo "  Workspace files only: no FlowGuard session authority is captured."
 
         # Build exclude arguments for rsync
         EXCLUDE_ARGS=()
@@ -164,7 +168,7 @@ case "$ACTION" in
         echo "  Done. Checkpoint saved: $CHECKPOINT_DIR"
         ;;
     restore)
-        echo "Restoring checkpoint: $LABEL"
+        echo "Restoring visual-only checkpoint: $LABEL"
         echo "  Source: $CHECKPOINT_DIR"
         echo "  Target: $WORKSPACE"
 
@@ -179,7 +183,9 @@ case "$ACTION" in
         done
 
         rsync $RSYNC_FLAGS "${EXCLUDE_ARGS[@]}" "$CHECKPOINT_DIR/" "$WORKSPACE/"
-        echo "  Done. Workspace restored from checkpoint."
+        echo "  Done. Workspace restored from visual-only checkpoint."
+        echo "  FlowGuard session authority was NOT restored: start a fresh session"
+        echo "  with /start, or use the prerecorded reference run (FALLBACK.md)."
         echo "  Reopen $WORKSPACE in OpenCode Desktop to continue."
         ;;
 esac

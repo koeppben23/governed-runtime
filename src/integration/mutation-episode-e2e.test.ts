@@ -41,6 +41,7 @@ import {
   implement,
   review_implementation,
   reconcile_mutation_episode,
+  export as exportTool,
 } from './tools/index.js';
 import {
   hasUnresolvedMutationEpisodes,
@@ -697,6 +698,13 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       );
 
       expect(approval.code).not.toBe('MUTATION_EPISODE_BINDING_REQUIRED');
+      // Approval stops at EXPORT_READY; the canonical export materializes the
+      // completion package and only then reaches COMPLETE.
+      expect((await readState(sessDir))!.phase).toBe('EXPORT_READY');
+      const completion = parseToolResult<{ code?: string; error?: boolean }>(
+        await exportTool.execute({}, ctx as never),
+      );
+      expect(completion.error).not.toBe(true);
       expect((await readState(sessDir))!.phase).toBe('COMPLETE');
     } finally {
       await ws.cleanup();

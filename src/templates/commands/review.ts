@@ -1,7 +1,7 @@
 import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 
 export const REVIEW_COMMAND = `---
-description: FlowGuard — Start the standalone compliance review flow (READY -> REVIEW -> REVIEW_COMPLETE).
+description: FlowGuard — Start the peer review flow (READY -> PEER_REVIEW -> PEER_REVIEW_COMPLETE).
 agent: build
 ---
 
@@ -9,7 +9,7 @@ You are managing a FlowGuard-controlled development workflow.
 
 ## Goal
 
-Start the compliance review flow for the current FlowGuard session.
+Start the peer review flow for the current FlowGuard session.
 
 ## Steps
 
@@ -42,24 +42,34 @@ Start the compliance review flow for the current FlowGuard session.
 3. **Create the review obligation** (content-aware only):
     If content was provided, the FIRST \`flowguard_review\` call MUST carry ONLY the matching
     content field (\`text\`, \`prNumber\`, \`branch\`, or \`url\`), optional \`inputOrigin\`,
-    and optional \`references\`. NEVER include \`reviewVerdict\` or \`reviewFindings\` in this
-     first call — a prefilled verdict is a fabrication-of-convergence attempt and is rejected
-     (\`CONTENT_ANALYSIS_REQUIRED\`). The verdict is submitted only AFTER FlowGuard completes
-     independent review.
+    and optional \`references\`. Do not include reviewer findings in this first call: FlowGuard
+     requires a visible native Task review before the peer review can complete.
 
-4. **Independent Review** (content-aware only): FlowGuard performs and binds the
-   independent review. Never invoke a reviewer yourself, construct reviewer context, or submit
-   \`reviewFindings\`.
+4. **Independent Review** (content-aware only): When \`reviewDispatch.required\` is true and
+   \`reviewDispatch.completed\` is not true:
+   - Require \`reviewInvocation.action === "call_task"\`,
+     \`reviewInvocation.transport === "native_task_structured_followup"\`, and
+     \`reviewInvocation.task.subagentType === "flowguard-reviewer"\`. If any differ, stop;
+     do not invent another transport.
+   - Call the host-native \`task\` tool with \`subagent_type: "flowguard-reviewer"\`,
+     \`description: "FlowGuard independent review"\`, and \`prompt: "FlowGuard independent
+     review"\`. The prompt is transport filler only; FlowGuard replaces it at the before-hook
+     with the exact frozen canonical reviewer prompt. Never paste, reconstruct, or modify the
+     reviewer material yourself.
+   - Wait for the Task call to return normally. Do not run a second reviewer and do not parse its
+     free-form text as findings. FlowGuard captures and binds same-child structured findings.
+   - Require \`reviewExecution.visible === true\`, \`reviewExecution.transcriptNavigable === true\`,
+     and \`reviewExecution.structuredOutput === true\`. Otherwise stop on the returned blocker.
 
-5. Complete content-aware \`flowguard_review\`: when \`next\` reports the bound reviewer verdict,
-   call \`flowguard_review\` with the same content fields and matching \`reviewVerdict\`
-   (\`"accept"\` or \`"changes_requested"\`). Do not submit, copy, or alter \`reviewFindings\`.
-   If FlowGuard reports a capture or orchestration failure, report its recovery and stop; do not
-   fabricate findings or guess a verdict.
+5. Complete content-aware \`flowguard_review\`: when \`reviewDispatch.completed\` is true,
+   call \`flowguard_review({ reviewObligationId })\` with the exact obligation ID from the
+   dispatch. Do not submit, copy, or alter \`reviewFindings\`. If FlowGuard reports
+   \`SUBAGENT_UNABLE_TO_REVIEW\`, a capture failure, or an orchestration failure, report its
+   recovery and stop; do not fabricate findings or guess a verdict.
 
 6. If no external content is supplied, call \`flowguard_review\` with optional \`inputOrigin\` and \`references\` only.
 
-7. The tool transitions READY -> REVIEW -> REVIEW_COMPLETE and generates a compliance report.
+7. The tool transitions READY -> PEER_REVIEW -> PEER_REVIEW_COMPLETE and generates a peer review report.
 
 8. Present the report per the Presentation section below.
 
@@ -99,12 +109,12 @@ If repo-dependent claims are made without checking Discovery health/drift, flag 
 ${renderCommandGovernanceRules()}
 ## Done-when
 
-- Compliance report generated and presented.
+- Peer review report generated and presented.
 - If \`presentation.markdown\` is present, it is displayed verbatim; otherwise the legacy \`reviewCard\` is displayed verbatim.
 - External references captured with audit provenance.
 - Discovery health and drift checked before repo-dependent quality claims.
 - Discovery-dependent claims marked NOT_VERIFIED when content could not be correlated to local Discovery.
 - Verification review checked for repo-native candidates vs generic mismatches.
-- Phase has reached REVIEW_COMPLETE.
+- Phase has reached PEER_REVIEW_COMPLETE.
 - The canonical presentation conclusion is the only visible closure.
 `;

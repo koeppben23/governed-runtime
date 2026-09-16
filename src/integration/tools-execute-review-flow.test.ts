@@ -259,7 +259,7 @@ async function currentSessionDir(): Promise<string> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Tool: review (standalone review flow)
+// Tool: review (peer review flow)
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('review', () => {
@@ -279,7 +279,8 @@ describe('review', () => {
         ctx,
       );
       const result = parseToolResult(raw);
-      expect(result.error).toBe(true);
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe('pending_review');
       expect(result.code).toBe('CONTENT_ANALYSIS_REQUIRED');
     });
 
@@ -296,7 +297,8 @@ describe('review', () => {
         ctx,
       );
       const blocked = parseToolResult(blockedRaw);
-      expect(blocked.error).toBe(true);
+      expect(blocked.error).toBeUndefined();
+      expect(blocked.status).toBe('pending_review');
       expect(blocked.code).toBe('CONTENT_ANALYSIS_REQUIRED');
       const obligationId = (blocked.requiredReviewAttestation as Record<string, string>)
         .toolObligationId;
@@ -439,21 +441,35 @@ describe('review', () => {
       );
     });
 
-    it('starts review flow from READY and transitions to REVIEW_COMPLETE', async () => {
+    it('starts review flow from READY and transitions to REVIEW_COMPLETE with exact target coverage', async () => {
       await hydrateSession();
       const raw = await review.execute({}, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('REVIEW_COMPLETE');
-      expect(result.completeness).toBeDefined();
+      expect(result.phase).toBe('PEER_REVIEW_COMPLETE');
+      expect(result.peerReviewCoverage).toEqual({
+        targetResolved: false,
+        targetFrozen: false,
+        repositoryIdentityVerified: null,
+        baseSha: null,
+        headSha: null,
+        changedPathCount: 0,
+        objectivesCovered: 0,
+        objectivesTotal: 0,
+        reviewAssurance: null,
+        missingVerification: [],
+      });
     });
 
-    it('report includes completeness matrix', async () => {
+    it('response exposes no local session completeness or four-eyes fields', async () => {
       await hydrateSession();
       const result = parseToolResult(await review.execute({}, ctx));
-      const comp = result.completeness as Record<string, unknown>;
-      expect(typeof comp.overallComplete).toBe('boolean');
-      expect(comp.slots).toBeDefined();
+      expect(result.completeness).toBeUndefined();
+      expect(result.fourEyes).toBeUndefined();
+      const coverage = result.peerReviewCoverage as Record<string, unknown>;
+      expect(coverage.slots).toBeUndefined();
+      expect(coverage.overallComplete).toBeUndefined();
+      expect(coverage.phase).toBeUndefined();
     });
   });
 
@@ -479,7 +495,7 @@ describe('review', () => {
       await hydrateSession();
       await review.execute({}, ctx);
       const s = parseToolResult(await status.execute({}, ctx));
-      expect(s.phase).toBe('REVIEW_COMPLETE');
+      expect(s.phase).toBe('PEER_REVIEW_COMPLETE');
     });
 
     it('review with references + inputOrigin but no content field is blocked', async () => {
@@ -527,7 +543,8 @@ describe('review', () => {
       );
       const result = parseToolResult(raw);
       // With text as concrete content, the review is content-aware.
-      expect(result.error).toBe(true);
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe('pending_review');
       expect(result.code).toBe('CONTENT_ANALYSIS_REQUIRED');
       expect(result.requiredReviewAttestation).toBeDefined();
     });
@@ -546,11 +563,11 @@ describe('review', () => {
       expect(result.code).toBe('INTERNAL_ERROR');
       // Phase on disk should still be READY (session was at READY before review
       // was called, and the failed review didn't persist any state).
-      // Actually, startReviewFlow transitions in-memory to REVIEW, but that
+      // Actually, startReviewFlow transitions in-memory to PEER_REVIEW, but that
       // state was never persisted because writeReport failed before
       // writeStateWithArtifacts. The persisted state (from hydrate) remains READY.
       const s = parseToolResult(await status.execute({}, ctx));
-      expect(s.phase).not.toBe('REVIEW_COMPLETE');
+      expect(s.phase).not.toBe('PEER_REVIEW_COMPLETE');
     });
   });
 });

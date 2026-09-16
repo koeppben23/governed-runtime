@@ -254,9 +254,16 @@ export type PlanRecord = z.infer<typeof PlanRecord>;
  * State of the PLAN phase self-review loop.
  * Convergence: iteration >= maxIterations OR (revisionDelta === "none" AND verdict === "accept").
  * This is the "digest-stop" mechanism.
+ *
+ * `reviewCycle` is the human-cycle identity of this loop projection: the active
+ * `SessionState.reviewCycles.plan` at creation. `iteration` restarts at 1 when
+ * a human requests changes at PLAN_REVIEW; `reviewCycle` makes the two
+ * iteration-1 passes distinguishable in persisted evidence and audit.
  */
 export const SelfReviewLoop = z.object({
   iteration: z.number().int().nonnegative(),
+  /** Human review cycle this projection belongs to (positive, from state.reviewCycles). */
+  reviewCycle: z.number().int().positive(),
   maxIterations: z.number().int().positive(),
   prevDigest: z.string().nullable(),
   currDigest: z.string().min(1),

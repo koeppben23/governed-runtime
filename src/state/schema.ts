@@ -24,13 +24,13 @@ import {
   ErrorInfo,
   FrozenRepositoryRevisionTarget,
   ImplementationRework,
-  ImplementationReviewExtension,
   ImplEvidence,
   ImplReviewResult,
   MutationAttempt,
   PlanRecord,
   PolicySnapshotSchema,
   ReviewAssuranceState,
+  ReviewCycles,
   ReviewDecision,
   ReviewFindings,
   SelfReviewLoop,
@@ -41,6 +41,8 @@ import {
 import { MutationEpisode, MutationEpisodeResolution } from './evidence-mutation-episode.js';
 import { enforceMutationEpisodeInvariants } from './evidence-mutation-episode.js';
 import { RuntimeLease } from './runtime-lease.js';
+import { ExportCompletionEvidence } from './evidence-export.js';
+import { SystemWorkOperation } from './system-work.js';
 import { DiscoveryHealthGate } from './discovery-schemas.js';
 import {
   DiscoverySummarySchema,
@@ -50,43 +52,40 @@ import {
 } from './discovery-schemas.js';
 import { ProofGraphProjection } from './proofgraph.js';
 import { ProofContract, ProofContractCoverage } from './proofgraph-contract.js';
-import {
-  StandaloneReviewEvidence,
-  resolveAuthoritativeStandaloneReviewTask,
-} from './standalone-review.js';
+import { PeerReviewEvidence, resolveAuthoritativePeerReviewTask } from './peer-review.js';
 
 /** Immutable compatibility contract for executable session authority. */
 export const CURRENT_ASSURANCE_EPOCH = 'assurance-epoch.v3' as const;
-export const CURRENT_SESSION_STATE_SCHEMA_VERSION = 'v4' as const;
+export const CURRENT_SESSION_STATE_SCHEMA_VERSION = 'v5' as const;
 export const CURRENT_STATE_DIGEST_FORMAT = 'state-digest.v2' as const;
 export const CURRENT_AUDIT_CHAIN_FORMAT = 'audit-chain.v3' as const;
 
 // ─── Phase ────────────────────────────────────────────────────────────────────
 
 /**
- * The 14 FlowGuard phases across 3 standalone flows; init() is a
+ * The 18 FlowGuard phases across 3 standalone flows; init() is a
  * function (bootstrap, workspace, binding, discovery) — not a phase.
  *
  * After /hydrate, the session starts at READY — a routing phase
  * where the user selects one of 3 standalone flows:
  *
  * Ticket flow (full development lifecycle):
- *   READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE
+ *   READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → EXPORT_READY → COMPLETE
  *   Reduced ceremony: IMPLEMENTATION → EVIDENCE_REVIEW only with explicit reducedCeremony evidence.
  *
  * Architecture flow (ADR creation):
  *   READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE
  *
- * Review flow (compliance report):
- *   READY → REVIEW → REVIEW_COMPLETE
+ * Peer review flow (peer review report):
+ *   READY → PEER_REVIEW → PEER_REVIEW_COMPLETE
  *
  * Backward transitions:
  *   PLAN_REVIEW --changes_requested--> PLAN
- *   PLAN_REVIEW --reject--> TICKET
+ *   PLAN_REVIEW --reject--> REJECTED
  *   EVIDENCE_REVIEW --changes_requested--> IMPLEMENTATION
- *   EVIDENCE_REVIEW --reject--> TICKET
+ *   EVIDENCE_REVIEW --reject--> REJECTED
  *   ARCH_REVIEW --changes_requested--> ARCHITECTURE
- *   ARCH_REVIEW --reject--> READY
+ *   ARCH_REVIEW --reject--> REJECTED
  */
 export const Phase = z.enum([
   'READY',
@@ -98,12 +97,15 @@ export const Phase = z.enum([
   'IMPL_VALIDATION',
   'IMPL_REVIEW',
   'EVIDENCE_REVIEW',
+  'EXPORT_READY',
   'COMPLETE',
   'ARCHITECTURE',
   'ARCH_REVIEW',
   'ARCH_COMPLETE',
-  'REVIEW',
-  'REVIEW_COMPLETE',
+  'PEER_REVIEW',
+  'PEER_REVIEW_COMPLETE',
+  'REJECTED',
+  'ABORTED',
 ]);
 export type Phase = z.infer<typeof Phase>;
 
@@ -204,7 +206,7 @@ export const Event = z.enum([
   // READY → flow selection
   'TICKET_SELECTED',
   'ARCHITECTURE_SELECTED',
-  'REVIEW_SELECTED',
+  'PEER_REVIEW_SELECTED',
 
   // TICKET → PLAN
   'PLAN_READY',
@@ -235,16 +237,25 @@ export const Event = z.enum([
   'REVIEW_MET',
   'REVIEW_PENDING',
 
-  // REVIEW flow → REVIEW_COMPLETE
-  'REVIEW_DONE',
+  // Peer review flow → PEER_REVIEW_COMPLETE
+  'PEER_REVIEW_DONE',
+
+  // IMPL_REVIEW → EVIDENCE_REVIEW when the review budget is exhausted with
+  // changes requested; the final gate becomes a governance override gate.
+  'REVIEW_EXHAUSTED',
+
+  // EXPORT_READY → COMPLETE after a verifiable package is materialized.
+  'EXPORT_MATERIALIZED',
 
   // Error recovery (non-user-gate, non-terminal phases)
   'ERROR',
 
-  // Emergency escape — bypasses topology, used only by /abort rail
+  // Emergency termination — explicitly transitions every non-terminal phase to ABORTED.
   'ABORT',
 ]);
 export type Event = z.infer<typeof Event>;
+
+export type { ExportCompletionEvidence } from './evidence-export.js';
 
 // ─── Transition ───────────────────────────────────────────────────────────────
 
@@ -365,7 +376,6 @@ export const SessionState = z
     implementationRiskAssessment: ImplementationRiskAssessment.optional(),
 
     implementationRework: ImplementationRework.nullable(),
-    implementationReviewExtensions: z.array(ImplementationReviewExtension),
     /** Persistent Discovery health gate block state for mutating host tools (#399). */
     discoveryHealthGate: DiscoveryHealthGate.optional(),
 
@@ -446,11 +456,14 @@ export const SessionState = z
     /** Implementation review iteration result (IMPL_REVIEW phase, digest-stop). */
     implReview: ImplReviewResult.nullable(),
 
+    /** Human review-cycle counters for the governed loops; REQUIRED — see `review-cycles.ts`. */
+    reviewCycles: ReviewCycles,
+
     /** Independent review findings for /implement (parallel, NOT mixed with ImplEvidence). */
     implReviewFindings: z.array(ReviewFindings).optional(),
 
     /** Independent review findings for standalone /review, retained append-only for audit. */
-    standaloneReviewFindings: z.array(ReviewFindings).optional(),
+    peerReviewFindings: z.array(ReviewFindings).optional(),
 
     /** P35 strict independent-review obligations and invocation evidence. */
     reviewAssurance: ReviewAssuranceState.optional(),
@@ -458,11 +471,11 @@ export const SessionState = z
     /** Human review decision at PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REVIEW. */
     reviewDecision: ReviewDecision.nullable(),
 
-    /** Absolute path to the generated review report file (REVIEW phase, P8b). */
+    /** Absolute path to the generated review report file (PEER_REVIEW phase, P8b). */
     reviewReportPath: z.string().nullable(),
 
     /** Append-only deterministic task preparation and completion evidence for /review. */
-    standaloneReviewEvidence: z.array(StandaloneReviewEvidence),
+    peerReviewEvidence: z.array(PeerReviewEvidence),
 
     /**
      * Thin ProofGraph contract declaration (advisory; #762).
@@ -642,22 +655,20 @@ export const SessionState = z
       .optional(),
 
     // ── Metadata ────────────────────────────────────────────────
-
     /** Last transition (from → to via event). Null before first transition. */
     transition: Transition.nullable(),
-
     /**
      * State-owned audit outbox. Operations remain after reconciliation as
      * durable correlation evidence; their status is monotonic.
      */
     pendingAuditOperations: z.array(PendingAuditOperation),
-
     /** Error state. Non-null triggers ERROR event in guard evaluation. */
     error: ErrorInfo.nullable(),
-
     /** Session creation timestamp (set once by init()). */
     createdAt: z.string().datetime(),
-
+    exportCompletionEvidence: ExportCompletionEvidence.nullable(),
+    /** Pending system work (validation); atomic with the entering transition. */
+    pendingSystemWork: SystemWorkOperation.nullable(),
     /** Removed persisted archive authority; old state must fail at this boundary. */
     archiveStatus: z.never().optional(),
     /** Lifecycle of the immutable raw-evidence package required at regulated completion. */
@@ -707,25 +718,25 @@ export const SessionState = z
       )
     )
       return;
-    // Standalone-review lifecycle invariant: a structurally broken evidence
+    // Peer-review lifecycle invariant: a structurally broken evidence
     // chain (dangling supersession, cycles, completions on superseded entries,
     // multiple authoritative incarnations) makes the STATE invalid — it must
     // fail closed at the schema boundary instead of silently collapsing to an
     // empty ProofGraph projection. The resolver is the single lifecycle
-    // authority (state/standalone-review.ts).
+    // authority (state/peer-review.ts).
     const assurance = state.reviewAssurance;
     if (!assurance) return;
     for (const obligation of assurance.obligations) {
       if (obligation.obligationType !== 'review') continue;
-      const resolved = resolveAuthoritativeStandaloneReviewTask(
-        state.standaloneReviewEvidence,
+      const resolved = resolveAuthoritativePeerReviewTask(
+        state.peerReviewEvidence,
         obligation.obligationId,
       );
       if (resolved.kind === 'blocked') {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ['standaloneReviewEvidence'],
-          message: `standalone review lifecycle is invalid: ${resolved.reason}`,
+          path: ['peerReviewEvidence'],
+          message: `peer review lifecycle is invalid: ${resolved.reason}`,
         });
         return;
       }

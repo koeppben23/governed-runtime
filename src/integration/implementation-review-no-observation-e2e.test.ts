@@ -27,7 +27,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// The scenario verifies the REVIEW subject model — check execution itself is
+// The scenario verifies the review subject model — check execution itself is
 // not under test: the executor mock returns deterministic passing results.
 vi.mock('../verification/executor', () => ({
   executeCheck: vi
@@ -85,7 +85,7 @@ import {
   hashFindings,
 } from './review/assurance.js';
 import { resolveAttemptDiscoveryOrBlock } from './review/discovery-attempt-context.js';
-import { resolveNextAction, ACTION_CODES } from '../machine/next-action.js';
+import { resolveWorkflowDirective } from '../machine/workflow-directive.js';
 import { executeCheck } from '../verification/executor.js';
 
 const FIXED_TIME = '2026-08-15T14:00:00.000Z';
@@ -286,8 +286,9 @@ async function inject(
     parentSessionId: se.sId,
     childSessionId,
     agentType: 'flowguard-reviewer' as const,
-    invocationMode: 'sdk_session_prompt' as const,
-    hostVisible: false,
+    invocationMode: 'native_task_structured_followup' as const,
+    hostVisible: true as const,
+    transcriptNavigable: true as const,
     source: 'host-orchestrated' as const,
     promptHash: 'a'.repeat(64),
     mandateDigest: REVIEW_MANDATE_DIGEST,
@@ -395,9 +396,14 @@ describe('implementation review without repository observation authority', () =>
     const first = await prepareBoundUnableReview(se, implementationDigest);
 
     const boundState = await readState(se.sDir);
-    expect(resolveNextAction('IMPL_REVIEW', boundState!).code).toBe(
-      ACTION_CODES.SUBMIT_REVIEWER_VERDICT,
-    );
+    // The canonical directive is position-based: a bound reviewer verdict keeps
+    // the session in IMPL_REVIEW system work (verdict submission is a tool
+    // obligation, not a user slash command).
+    expect(resolveWorkflowDirective(boundState!)).toMatchObject({
+      kind: 'system_work',
+      code: 'IMPLEMENTATION_REVIEW_IN_PROGRESS',
+      commands: [],
+    });
 
     const result = await review_implementation.execute(
       { reviewVerdict: 'unable_to_review' },
@@ -449,9 +455,11 @@ describe('implementation review without repository observation authority', () =>
     expect(obligations).toHaveLength(1);
     expect(obligations[0]).toMatchObject({ obligationId: first.obligationId, status: 'fulfilled' });
     expect(finalState!.reviewAssurance!.invocations.at(-1)!.consumedByObligationId).toBeNull();
-    expect(resolveNextAction('IMPL_REVIEW', finalState!).code).toBe(
-      ACTION_CODES.SUBMIT_REVIEWER_VERDICT,
-    );
+    expect(resolveWorkflowDirective(finalState!)).toMatchObject({
+      kind: 'system_work',
+      code: 'IMPLEMENTATION_REVIEW_IN_PROGRESS',
+      commands: [],
+    });
   });
 
   it('changes_requested binds via implementation anchor, re-record mints a fresh obligation, second review accepts', async () => {
@@ -553,7 +561,7 @@ describe('implementation review without repository observation authority', () =>
     execSync('git add src/auth.ts', { cwd: s.worktree, stdio: 'pipe' });
     const r4 = await implement.execute({}, se2.tc);
     expect(r4).not.toContain('INTERNAL_ERROR');
-    await run_check.execute({ kind: 'typecheck' }, s.tc);
+    // The automatic post-implementation check ran against the repaired revision.
     state = await readState(se2.sDir);
     expect(state!.phase).toBe('IMPL_REVIEW');
     const implObligations2 = state!.reviewAssurance!.obligations.filter(
@@ -658,16 +666,11 @@ describe('implementation review without repository observation authority', () =>
     expect(state!.phase).toBe('IMPLEMENTATION');
     expect(state!.implementationRework).toMatchObject({ exhausted: false });
 
-    // Phase 4: repair D2, re-record (marker RETAINED), then a FRESH check FAILS:
-    // the machine routes IMPL_VALIDATION → IMPLEMENTATION with the rejected-D1
-    // marker still present — restoring D1 must now be blocked again.
+    // Phase 4: repair D2, re-record (marker RETAINED), then the FRESH automatic
+    // check FAILS: the machine routes IMPL_VALIDATION → IMPLEMENTATION with the
+    // rejected-D1 marker still present — restoring D1 must now be blocked again.
     writeFileSync(join(s.worktree, 'src', 'auth.ts'), 'export const auth = () => false;\n');
     execSync('git add src/auth.ts', { cwd: s.worktree, stdio: 'pipe' });
-    const r4 = await implement.execute({}, se2.tc);
-    expect(r4).not.toContain('INTERNAL_ERROR');
-    state = await readState(se2.sDir);
-    expect(state!.phase).toBe('IMPL_VALIDATION');
-    expect(state!.implementationRework).toMatchObject({ rejectedDigest: implDigest1 });
     vi.mocked(executeCheck).mockResolvedValueOnce({
       kind: 'typecheck',
       command: 'npx tsc --noEmit',
@@ -680,7 +683,8 @@ describe('implementation review without repository observation authority', () =>
       timedOut: false,
       startedAt: new Date().toISOString(),
     });
-    await run_check.execute({ kind: 'typecheck' }, se2.tc);
+    const r4 = await implement.execute({}, se2.tc);
+    expect(r4).not.toContain('INTERNAL_ERROR');
     state = await readState(se2.sDir);
     expect(state!.phase).toBe('IMPLEMENTATION');
     expect(state!.implementation).toBeNull();
@@ -712,8 +716,9 @@ describe('implementation review without repository observation authority', () =>
     execSync('git add src/auth.ts', { cwd: s.worktree, stdio: 'pipe' });
     const r5 = await implement.execute({}, se2.tc);
     expect(r5).not.toContain('INTERNAL_ERROR');
-    await run_check.execute({ kind: 'typecheck' }, s.tc);
     state = await readState(se2.sDir);
+    // The automatic post-implementation check passed and closed the marker on
+    // the IMPL_VALIDATION → IMPL_REVIEW edge.
     expect(state!.phase).toBe('IMPL_REVIEW');
     expect(state!.implementationRework).toBeNull();
     const implObligations = state!.reviewAssurance!.obligations.filter(
@@ -814,8 +819,9 @@ describe('implementation review without repository observation authority', () =>
     execSync('git add src/auth.ts', { cwd: s.worktree, stdio: 'pipe' });
     const r4 = await implement.execute({}, se2.tc);
     expect(r4).not.toContain('INTERNAL_ERROR');
-    await run_check.execute({ kind: 'typecheck' }, s.tc);
     state = await readState(se2.sDir);
+    // The automatic post-implementation check passed and closed the marker on
+    // the IMPL_VALIDATION → IMPL_REVIEW edge.
     expect(state!.phase).toBe('IMPL_REVIEW');
     expect(state!.implementationRework).toBeNull();
     const implObligations2 = state!.reviewAssurance!.obligations.filter(
@@ -872,7 +878,7 @@ describe('implementation review without repository observation authority', () =>
     execSync('git add src/auth.ts', { cwd: s.worktree, stdio: 'pipe' });
     const r6 = await implement.execute({}, se2.tc);
     expect(r6).not.toContain('INTERNAL_ERROR');
-    await run_check.execute({ kind: 'typecheck' }, s.tc);
+    // The automatic post-implementation check ran against the repaired revision.
     state = await readState(se2.sDir);
     expect(state!.phase).toBe('IMPL_REVIEW');
     const implObligations3 = state!.reviewAssurance!.obligations.filter(

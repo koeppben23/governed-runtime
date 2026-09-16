@@ -30,6 +30,7 @@ function planInput(overrides: Record<string, unknown> = {}) {
   return {
     obligationType: 'plan' as const,
     iteration: 0,
+    reviewCycle: 1,
     planVersion: 1,
     now: NOW,
     subjectDigest: 'plan-digest',

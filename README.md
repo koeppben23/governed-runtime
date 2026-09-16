@@ -91,10 +91,9 @@ Three governed flows are available after `/start` (or `/hydrate`):
 2. `/task "description"` — capture your governed task
 3. `/plan` — generate an implementation plan (subagent-reviewed iteratively)
 4. `/approve` — approve the plan (or `/request-changes` to revise)
-5. `/check` — run validation checks on the baseline
-6. `/implement` — execute the approved plan (subagent-reviewed iteratively, including post-implementation validation)
-7. `/approve` — approve the implementation evidence
-8. `/export` — create a redacted audit-sharing package; authorized raw evidence is required for canonical verification
+5. `/implement` — execute the approved plan; FlowGuard runs the baseline validation automatically, then the post-implementation validation and the iterative subagent review
+6. `/approve` — approve the implementation evidence (advances to EXPORT_READY)
+7. `/export` — materialize the required verifiable export; the workflow reaches COMPLETE only after export evidence is persisted
 
 **Architecture flow** — record an Architecture Decision Record (ADR):
 
@@ -104,24 +103,24 @@ Three governed flows are available after `/start` (or `/hydrate`):
    Consequences honesty, MADR structure)
 3. `/approve` — accept the ADR
 
-**Compliance / Content review flow** — review session compliance or external content:
+**Peer / Content review flow** — review session compliance or external content:
 
 1. `/start`
-2. `/review` — plain compliance report (no external content)
+2. `/review` — plain peer review report (no external content)
    OR `/review prNumber=42` / `branch=feature` / `url=https://...` /
    `text="diff"` → blocked with `requiredReviewAttestation` (obligation UUID)
 3. When plugin orchestration is active, FlowGuard may invoke the reviewer
    subagent and inject `pluginReviewFindings`; otherwise the blocked response
    instructs manual subagent invocation.
 4. `/review prNumber=42 reviewFindings=<complete object>` →
-   REVIEW_COMPLETE, receives structured `reviewCard`
+   PEER_REVIEW_COMPLETE, receives structured `reviewCard`
 
 **Diagnostic commands:** `/help` — context-sensitive next action and relevant commands.
 `/commands` — currently available commands (`--all` for the complete reference).
 `/status` — current phase, next action, evidence summary. `/why` — explain and resolve blockers.
 
 **Advanced/canonical commands** (`/hydrate`, `/ticket`, `/review-decision`,
-`/validate`, `/architecture`, `/review`, `/archive`, `/abort`, `/continue`)
+`/validate`, `/architecture`, `/review`, `/export`, `/archive`, `/abort`, `/continue`)
 remain fully supported for scripts, CI, and power users.
 
 See [docs/commands.md](./docs/commands.md) for the complete command reference and
@@ -222,7 +221,7 @@ For debugging FlowGuard inside the OpenCode runtime with IntelliJ IDEA Ultimate,
 | **build**                  | `npm run build`                                | Successful compilation to dist/                        |
 | **install-verify**         | `npm run build && npm run test:install-verify` | Tarball install + doctor (cross-platform)              |
 | **smoke**                  | `npm run build && npm run test:smoke`          | Built CLI starts, ACP works                            |
-| **independent-review-e2e** | `npm run test:independent-review-e2e`          | Standalone reviewer session contract                   |
+| **independent-review-e2e** | `npm run test:independent-review-e2e`          | Peer reviewer session contract                   |
 | **actionlint**             | —                                              | GitHub Actions workflow linting (docker)               |
 | **secrets-scan**           | —                                              | GitGuardian or Gitleaks secret detection               |
 | **security-policy**        | —                                              | OSV/GHAS vulnerability scan                            |

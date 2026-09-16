@@ -2,7 +2,7 @@
  * @module integration/tools/review-tool/continuation
  * @description Review phase continuation helpers.
  *
- * When the initial review preparation materializes the REVIEW phase, subsequent
+ * When the initial review preparation materializes the PEER_REVIEW phase, subsequent
  * calls (verdict submission, retry) must continue the existing review rather
  * than re-entering the user-level /review start rail.
  */
@@ -17,11 +17,11 @@ export function ensureStartedReviewState(
   state: SessionState,
   ctx: Parameters<typeof startReviewFlow>[1],
 ): StartedReviewResult | string {
-  if (state.phase === 'REVIEW') {
+  if (state.phase === 'PEER_REVIEW') {
     return {
       kind: 'ok' as const,
       state,
-      evalResult: { kind: 'pending', phase: 'REVIEW' as const },
+      evalResult: { kind: 'pending', phase: 'PEER_REVIEW' as const },
       transitions: [],
     };
   }

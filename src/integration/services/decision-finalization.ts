@@ -4,8 +4,6 @@
  *
  * Orchestrates two side effects after executeReviewDecision():
  * 1. MADR artifact writing — when architecture flow completes (ARCH_COMPLETE).
- * 2. Regulated completion — P26 audit emit → archive → verify chain
- *    when EVIDENCE_REVIEW + APPROVE → COMPLETE in regulated mode.
  *
  * Returns the (potentially modified) RailResult for the caller to persist.
  *
@@ -15,13 +13,12 @@
 import type { RailResult } from '../../rails/types.js';
 import { writeMadrArtifact } from '../artifacts/madr-writer.js';
 import { materializeApprovedArchitectureContractResult } from '../proofgraph/materialize-architecture.js';
-import { executeRegulatedCompletion } from './regulated-completion.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import type { AuditDeps } from '../plugin-audit.js';
 
 /**
  * Finalize a decision rail result: write MADR artifact if needed,
- * execute regulated completion if applicable.
+ * apply architecture-only finalization when applicable.
  */
 export interface FinalizeDecisionInput {
   readonly sessDir: string;
@@ -38,7 +35,7 @@ export interface FinalizeDecisionInput {
  * @returns The (potentially modified) RailResult — caller must persist via persistAndFormat
  */
 export async function finalizeDecision(input: FinalizeDecisionInput): Promise<RailResult> {
-  const { sessDir, fingerprint, sessionID, priorPhase, verdict, result, auditDeps } = input;
+  const { sessDir, sessionID, result } = input;
   // ── Architecture completion: MADR artifact + ProofGraph contract ──
   // Both are architecture-flow finalization for the same transition, so they
   // share one phase check rather than duplicating terminal-phase intent.
@@ -59,28 +56,6 @@ export async function finalizeDecision(input: FinalizeDecisionInput): Promise<Ra
         proofContractCoverage: [...materialized.coverage],
       },
     };
-  }
-
-  // ── P26: Regulated clean completion requires archive + verification ──
-  // Scope: EVIDENCE_REVIEW + APPROVE → COMPLETE in regulated mode.
-  // Pre-condition guard: only triggers for the exact clean completion path.
-  // Excludes abort, non-regulated, and future rails that may also produce COMPLETE.
-  if (
-    result.kind === 'ok' &&
-    priorPhase === 'EVIDENCE_REVIEW' &&
-    verdict === 'approve' &&
-    result.state.phase === 'COMPLETE' &&
-    result.state.policySnapshot.mode === 'regulated' &&
-    !result.state.error
-  ) {
-    const finalState = await executeRegulatedCompletion(
-      sessDir,
-      fingerprint,
-      sessionID,
-      result.state,
-      auditDeps,
-    );
-    return { ...result, state: finalState };
   }
 
   return result;

@@ -1,6 +1,6 @@
 /**
  * @module integration/tools/review-tool/index
- * @description FlowGuard review tool — standalone review flow (READY → REVIEW → REVIEW_COMPLETE).
+ * @description FlowGuard review tool — peer review flow (READY → PEER_REVIEW → PEER_REVIEW_COMPLETE).
  *
  * Orchestrates the review lifecycle: preparation, execution, completion.
  * Delegates to obligation.ts and completion.ts for domain logic.
@@ -46,7 +46,7 @@ import { writeStateWithArtifacts } from '../helpers.js';
 import {
   appendCompletedReviewEvidence,
   appendPreparedReviewEvidence,
-  prepareStandaloneReviewEvidence,
+  preparePeerReviewEvidence,
   resolveReviewTaskIdentity,
 } from './preparation.js';
 import { ensureStartedReviewState, populateRefInput } from './continuation.js';
@@ -75,6 +75,23 @@ async function resolveReviewContentForExecution(
   exec: ReviewExecutionContext,
   refInput: ReviewReferenceInput | undefined,
 ): Promise<PreparedReviewContent | null | string> {
+  if (exec.args.reviewObligationId && !refInput) {
+    const obligation = findReviewObligationById(
+      state.reviewAssurance,
+      exec.args.reviewObligationId,
+    );
+    if (
+      obligation?.obligationType === 'review' &&
+      obligation.reviewMaterial &&
+      obligation.reviewSubject
+    ) {
+      return {
+        content: obligation.reviewMaterial.content,
+        reviewedContentDigest: obligation.reviewMaterial.materialDigest,
+        reviewSubject: obligation.reviewSubject,
+      };
+    }
+  }
   const derived = await prepareReviewContent(refInput, undefined);
   if (derived && 'kind' in derived) return formatBlockedReviewReport(derived);
   return derived;
@@ -152,6 +169,14 @@ function prepareStructuredEvidenceSubmission(
     undefined,
     exec.context.sessionID,
   );
+  // No bound findings means the pending obligation must project its canonical
+  // native dispatch authority, not a second evidence-missing transport.
+  if (
+    resolution.kind === 'not_found' ||
+    (resolution.kind === 'invalid' && resolution.code === 'SUBAGENT_EVIDENCE_MISSING')
+  ) {
+    return null;
+  }
   if (resolution.kind !== 'resolved') return formatStructuredResolutionFailure(resolution);
   const validation = validateSubmittedReviewFindings(state, resolution.findings, obligation);
   if (validation) return validation;
@@ -200,32 +225,32 @@ async function prepareReviewWithoutExternalCalls(
       now,
     });
     if (typeof prepared === 'string') return prepared;
-    // Only a durable obligation may materialize the REVIEW intermediate state.
+    // Only a durable obligation may materialize the PEER_REVIEW intermediate state.
     if (prepared.blockMessage && !prepared.persistedAssurance) return prepared.blockMessage;
     const obligationIdentity = prepared.pendingObligation ?? prepared.validatedReviewObligation;
     const taskEvidence = obligationIdentity
-      ? prepareStandaloneReviewEvidence(
+      ? preparePeerReviewEvidence(
           args,
           now,
           prepared.refInput,
-          resolveReviewTaskIdentity(state.standaloneReviewEvidence, obligationIdentity.obligationId)
+          resolveReviewTaskIdentity(state.peerReviewEvidence, obligationIdentity.obligationId)
             .reviewTaskId,
           obligationIdentity.obligationId,
         )
       : null;
     const stateWithTaskEvidence: SessionState = {
-      // Persist the REVIEW transition materialized by startReviewFlow so the
+      // Persist the PEER_REVIEW transition materialized by startReviewFlow so the
       // canonical session state reflects the active review obligation. The
-      // completion path continues an existing REVIEW rather than re-starting
+      // completion path continues an existing PEER_REVIEW rather than re-starting
       // the user-level /review command (which would require READY).
       ...result.state,
       // Obligation preparation already persisted the obligation AND its attempt.
       // Re-deriving from `state` (read before that write) dropped the attempt, so
       // the host could never bind reviewer evidence for a standalone /review.
       ...(prepared.persistedAssurance && { reviewAssurance: prepared.persistedAssurance }),
-      standaloneReviewEvidence: taskEvidence
-        ? appendPreparedReviewEvidence(state.standaloneReviewEvidence, taskEvidence)
-        : state.standaloneReviewEvidence,
+      peerReviewEvidence: taskEvidence
+        ? appendPreparedReviewEvidence(state.peerReviewEvidence, taskEvidence)
+        : state.peerReviewEvidence,
     };
     // The prepared entry is durable before a reviewer can be instructed.
     await writeStateWithArtifacts(sessDir, stateWithTaskEvidence);
@@ -266,11 +291,11 @@ async function persistCompletedReview(
     );
     const obligationIdentity = prepared.pendingObligation ?? prepared.validatedReviewObligation;
     const taskEvidence = obligationIdentity
-      ? prepareStandaloneReviewEvidence(
+      ? preparePeerReviewEvidence(
           args,
           now,
           prepared.refInput,
-          resolveReviewTaskIdentity(state.standaloneReviewEvidence, obligationIdentity.obligationId)
+          resolveReviewTaskIdentity(state.peerReviewEvidence, obligationIdentity.obligationId)
             .reviewTaskId,
           obligationIdentity.obligationId,
         )
@@ -279,17 +304,23 @@ async function persistCompletedReview(
       ...result,
       state: {
         ...result.state,
-        standaloneReviewEvidence: taskEvidence
+        peerReviewEvidence: taskEvidence
           ? appendCompletedReviewEvidence({
-              evidence: state.standaloneReviewEvidence,
+              evidence: state.peerReviewEvidence,
               prepared: taskEvidence,
               completedAt: now,
               findings: prepared.effectiveReviewFindings,
             })
-          : state.standaloneReviewEvidence,
+          : state.peerReviewEvidence,
       },
     };
-    const completion = await persistReviewCompletion(sessDir, result, reviewResult, ctx);
+    const completion = await persistReviewCompletion(
+      sessDir,
+      result,
+      reviewResult,
+      ctx,
+      prepared.validatedReviewObligation,
+    );
     if (completion.kind === 'overflow') {
       return formatAutoAdvanceOverflow(completion.overflow);
     }
@@ -354,9 +385,10 @@ async function loadAndBindReviewContent(
 
 export const review: ToolDefinition = {
   description:
-    'Start the standalone review flow. Transitions READY → REVIEW → REVIEW_COMPLETE. ' +
-    'Generates a compliance review report with evidence completeness matrix ' +
-    'and four-eyes principle status, written to the session directory. ' +
+    'Start the peer review flow. Transitions READY → PEER_REVIEW → PEER_REVIEW_COMPLETE. ' +
+    'Generates a peer review report with explicit target coverage (resolved/frozen target, ' +
+    'base/head revisions, changed paths, objectives, review assurance) and findings, ' +
+    'written to the session directory. ' +
     'Only allowed in READY phase.',
   args: {
     inputOrigin: InputOriginSchema.optional().describe(

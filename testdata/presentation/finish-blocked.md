@@ -31,4 +31,4 @@ Diagnostic: `flowguard_status({ proofGraph: true })`
 
 - Abandon this work
 
-→ `/review-decision` — Record the human decision at a review gate.
+→ `/approve` — Accept the reviewed work and advance.

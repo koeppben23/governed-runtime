@@ -15,9 +15,10 @@ FlowGuard's independent review system enables structured, policy-governed review
 │     (flowguard_plan / flowguard_architecture /          │
 │      flowguard_implement)                               │
 │  3. Read tool response:                                 │
-│     → INDEPENDENT_REVIEW_COMPLETED: host-observed       │
-│       structured findings bound (submit verdict only)   │
-│     → INDEPENDENT_REVIEW_REQUIRED: host reviewer        │
+│     → reviewDispatch.completed: host-observed           │
+│       structured findings bound, verdict in             │
+│       reviewDispatch.verdict (submit verdict only)      │
+│     → reviewDispatch.required: host reviewer            │
 │       dispatch incomplete — follow recovery steps       │
 │     → BLOCKED (strict mode orchestration/evidence fail) │
 │  4. Submit verdict via flowguard_review_implementation  │
@@ -28,11 +29,12 @@ FlowGuard's independent review system enables structured, policy-governed review
           │  (plan / arch /     │     │    FlowGuard Plugin   │
           │   implement)        │     │  (tool.execute.after) │
           │                     │     │                       │
-          │  • Validate         │────►│  Detects REVIEW_REQ'd │
-          │  • Persist          │     │  → session.create()   │
-          │  • Respond with     │     │  → session.prompt()   │
-          │    REVIEW_REQUIRED  │     │  → Mutates output to  │
-          └─────────────────────┘     │    REVIEW_COMPLETED   │
+          │  • Validate         │────►│  Detects review       │
+          │  • Persist          │     │  dispatch required    │
+          │  • Respond with     │     │  → session.create()   │
+          │    required signal  │     │  → session.prompt()   │
+          │                     │     │  → Mutates output to  │
+          └─────────────────────┘     │    completed signal   │
                                       │  → Updates enforcement│
                                       └───────────────────────┘
 
@@ -110,17 +112,17 @@ The four reviewable flows — `/plan`, `/architecture`, `/implement`, and standa
 
 ## How It Works
 
-### Mandatory Next-Action
+### Mandatory Review Dispatch
 
-When the primary agent submits a plan or implementation to FlowGuard, the tool response includes a `reviewMode` field and a `next` field:
+When the primary agent submits a plan or implementation to FlowGuard, the tool response includes a `reviewMode` field and a structured `reviewDispatch` field:
 
-- **Plugin-completed path:** `next` says `INDEPENDENT_REVIEW_COMPLETED` and includes `pluginReviewFindings`.
-- **Host dispatch pending path:** `next` says `INDEPENDENT_REVIEW_REQUIRED`; the host has not yet recorded a completed structured reviewer child session. Follow the recovery steps in the tool response (typically re-run the originating FlowGuard command). Do not submit a verdict, and do not reconstruct or submit reviewer findings.
+- **Plugin-completed path:** `reviewDispatch.completed` is `true`; `reviewDispatch.verdict` carries the bound reviewer verdict. Submit only that verdict.
+- **Host dispatch pending path:** `reviewDispatch.required` is `true` (and `completed` is not `true`); the host has not yet recorded a completed structured reviewer child session. Follow the `reviewInvocation` instructions and the recovery steps in the tool response (typically re-run the originating FlowGuard command). Do not submit a verdict, and do not reconstruct or submit reviewer findings.
 - **Blocked path:** strict orchestration or evidence failures return BLOCKED. The agent must stop and report the recovery action.
 
 ### Deterministic Invocation (Primary Path)
 
-When the plugin's `tool.execute.after` hook detects `INDEPENDENT_REVIEW_REQUIRED` in a FlowGuard tool response:
+When the plugin's `tool.execute.after` hook detects the review-dispatch-required signal (`reviewDispatch.required`) in a FlowGuard tool response:
 
 1. **Reads session state** to get ticket text, plan text, and implementation context
 2. **Builds a structured prompt** with the plan/implementation text, ticket context, iteration, and planVersion
@@ -128,12 +130,12 @@ When the plugin's `tool.execute.after` hook detects `INDEPENDENT_REVIEW_REQUIRED
 4. **Sends the prompt** to the `flowguard-reviewer` agent via `client.session.prompt({ path: { id }, body: { agent: "flowguard-reviewer", parts, format } })`
 5. **Uses host-validated structured output** as the only accepted high-assurance path (`format: json_schema`, `reviewOutputMode: "structured_output"`, `reviewAssuranceLevel: "structured_high"`). There is no text-compatibility fallback on this path: a model that cannot produce structured output blocks with `STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE`; an incompatible Thinking Mode blocks with `STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE`; and a host that does not return the required structured result blocks with `HOST_STRUCTURED_OUTPUT_REQUIRED` or `HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION`
 6. **Parses and validates ReviewFindings** with schema, obligation, mandate, criteria, reviewer, session, and invocation-evidence binding
-7. **Mutates `output.output`** from `INDEPENDENT_REVIEW_REQUIRED` to `INDEPENDENT_REVIEW_COMPLETED` with `pluginReviewFindings` and `pluginReviewOutput` injected only after evidence is valid
+7. **Mutates `output.output`** to the completed dispatch signal (`reviewDispatch.completed: true` with the bound verdict in `reviewDispatch.verdict`) only after evidence is valid
 8. **Updates enforcement state** to satisfy L1/L2/L4 checks for the subsequent verdict submission
 
-The LLM then sees the `INDEPENDENT_REVIEW_COMPLETED` response and submits the verdict with the pre-injected findings.
+The LLM then sees the completed `reviewDispatch` response and submits the verdict.
 
-**Contract:** `INDEPENDENT_REVIEW_COMPLETED` is only signaled when the reviewer's response contains valid `ReviewFindings` and matching `ReviewInvocationEvidence`. Only host-observed structured output (`structured_output` / `structured_high`) can bind. Unparseable, text-only, or contract-violating reviewer responses never produce `COMPLETED` and block with an explicit structured-output code.
+**Contract:** the completed dispatch signal (`reviewDispatch.completed`) is only signaled when the reviewer's response contains valid `ReviewFindings` and matching `ReviewInvocationEvidence`. Only host-observed structured output (`structured_output` / `structured_high`) can bind. Unparseable, text-only, or contract-violating reviewer responses never produce a completed dispatch and block with an explicit structured-output code.
 
 ### Evidence-Grounded Implementation Review
 
@@ -191,14 +193,14 @@ re-run the originating FlowGuard command.
 
 ### Reviewer Dispatch Recovery
 
-The reviewer is dispatched only by the host. When a tool response still says
-`INDEPENDENT_REVIEW_REQUIRED`, the host has not recorded a completed structured
-reviewer child session yet. The agent must:
+The reviewer is dispatched only by the host. When a tool response still carries
+`reviewDispatch.required` without `completed`, the host has not recorded a
+completed structured reviewer child session yet. The agent must:
 
-- Follow the recovery steps in the tool response — typically re-running the
+- Follow the `reviewInvocation` instructions and the recovery steps in the tool response — typically re-running the
   originating FlowGuard command to authorize a fresh reviewer dispatch.
-- Submit only `reviewVerdict` once `INDEPENDENT_REVIEW_COMPLETED` reports
-  host-observed structured findings.
+- Submit only `reviewVerdict` once `reviewDispatch.completed` reports
+  host-observed structured findings, using the verdict in `reviewDispatch.verdict`.
 - Never invoke a reviewer itself, never reconstruct findings from text output,
   and never submit copied `reviewFindings`.
 
@@ -263,7 +265,7 @@ FlowGuard enforces the subagent requirement at three layers:
 
 **Layer 2 — Deterministic invocation (`src/integration/review/orchestrator.ts` via `src/integration/plugin.ts`):**
 
-The plugin programmatically invokes the reviewer subagent via the OpenCode SDK client when it detects `INDEPENDENT_REVIEW_REQUIRED` in a tool response. This ensures invocation happens by code, not by LLM decision.
+The plugin programmatically invokes the reviewer subagent via the OpenCode SDK client when it detects the review-dispatch-required signal in a tool response. This ensures invocation happens by code, not by LLM decision.
 
 **Layer 3 — Plugin-level enforcement (`src/integration/review/enforcement/enforcement.ts` via `src/integration/plugin.ts`):**
 
@@ -285,11 +287,11 @@ The submitted `reviewFindings` are compared against the host-captured structured
 The former Level 3 (Task-prompt integrity) was removed with reviewer Task interception. Reviewer dispatch failures now surface as `STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE`, `HOST_STRUCTURED_OUTPUT_REQUIRED`, `HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION`, or `REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE`.
 
 ```
-flowguard_plan (initial)    →  tool signals INDEPENDENT_REVIEW_REQUIRED
+flowguard_plan (initial)    →  tool emits reviewDispatch.required
     ↓                          plugin creates reviewer child session (session.create)
     ↓                          plugin prompts it with format: json_schema
     ↓                          plugin captures host-owned structured output
-    ↓                          plugin mutates output to INDEPENDENT_REVIEW_COMPLETED
+    ↓                          plugin mutates reviewDispatch to completed
     ↓                          plugin records the invocation in enforcement state
     ↓
 flowguard_plan (verdict)    →  L1: host-observed invocation recorded?
@@ -419,7 +421,7 @@ against the obligation's `allowedEvidenceRefs`, and each challenge's
 `obligationId` must equal the active obligation (`expectedObligationId`). This
 obligation-scoping applies to **every** challenge-bearing obligation type —
 plan/architecture `design_challenge`, implement `implementation_challenge`, and
-standalone review `content_challenge` — not to implementation alone. For
+peer review `content_challenge` — not to implementation alone. For
 implementation challenges the allowed set additionally binds an `outcome='pass'`
 challenge to a validation attempt for the **current** implementation digest — a
 stale, failed, foreign, or wrong-obligation reference is rejected with
@@ -459,7 +461,7 @@ Author and reviewer artifacts are stored in parallel, never mixed:
 | `/architecture` | `state.architecture.decisions[id].adrText` + history | `state.architecture.decisions[id].reviewFindings` |
 | `/implement`    | `state.implementation`                               | `state.implReviewFindings`                        |
 
-Reviewer findings for `/plan`, `/architecture`, and `/implement` are **append-only** in their respective state locations. Each review submission adds to the array; no entries are ever removed or overwritten. ADR review findings are scoped per-decision-id (one append-only array per ADR), parity with how plan history is iteration-scoped. Standalone `/review` records accepted findings in the generated review report, invocation evidence, and derived review-card artifacts — these are evidence surfaces, not runtime authority.
+Reviewer findings for `/plan`, `/architecture`, and `/implement` are **append-only** in their respective state locations. Each review submission adds to the array; no entries are ever removed or overwritten. ADR review findings are scoped per-decision-id (one append-only array per ADR), parity with how plan history is iteration-scoped. Standalone `/review` records accepted findings in the generated review report together with explicit target coverage — target resolved/frozen, repository identity, base/head SHA, changed-path count, objectives covered/total, review assurance tier, and missing-verification messages — plus invocation evidence and derived review-card artifacts. These are evidence surfaces, not runtime authority.
 
 ### Standalone /review Obligation Lifecycle
 

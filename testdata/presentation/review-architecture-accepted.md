@@ -16,4 +16,4 @@ Approval evidence: Not recorded
 **Digest:** `abc123`
 **Review iteration:** 2
 
-Architecture approved.
+Architecture flow complete.

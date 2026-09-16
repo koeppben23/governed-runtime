@@ -7,10 +7,10 @@
  * Each test: Mode A (evidence + obligation creation) → inject structured
  * host-observed evidence into the tool-created obligation → Mode B (review
  * verdict validates and consumes). The main chain test links plan and implement
- * segments. The standalone review flow completes via content + findings.
+ * segments. The peer review flow completes via content + findings.
  *
  * Independent review is authorized only by host-observed structured child-session
- * evidence (sdk_session_prompt invocation with captured structured findings).
+ * evidence (native_task_structured_followup invocation with captured structured findings).
  * Does NOT test /check, /validate, /export, /review-decision as standalone tools.
  * (validate and archive are tested within the plan-to-implement segment.)
  * No LLM inference, no network, no secrets.
@@ -230,8 +230,9 @@ async function inject(
     parentSessionId: sessionId,
     childSessionId: 'ses_r',
     agentType: 'flowguard-reviewer' as const,
-    invocationMode: 'sdk_session_prompt' as const,
-    hostVisible: false,
+    invocationMode: 'native_task_structured_followup' as const,
+    hostVisible: true as const,
+    transcriptNavigable: true as const,
     source: 'host-orchestrated' as const,
     promptHash: 'a'.repeat(64),
     mandateDigest: REVIEW_MANDATE_DIGEST,
@@ -569,7 +570,7 @@ describe('FlowGuard tool-level E2E', () => {
       expect(typeof r2).toBe('string');
       expect(r2).not.toContain('INTERNAL_ERROR');
       st = await readState(s.sDir);
-      expect(st!.phase).toBe('REVIEW_COMPLETE');
+      expect(st!.phase).toBe('PEER_REVIEW_COMPLETE');
     });
   });
 });

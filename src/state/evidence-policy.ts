@@ -68,8 +68,11 @@ export const PolicySnapshotSchema = z
 
     // ─── Governance-critical fields (frozen copy) ───────────────
     requireHumanGates: z.boolean(),
-    maxSelfReviewIterations: z.number().int().positive(),
-    maxImplReviewIterations: z.number().int().positive(),
+    reviewBudget: z.object({
+      plan: z.number().int().positive(),
+      architecture: z.number().int().positive(),
+      implementation: z.number().int().positive(),
+    }),
     /** Frozen retry budget for F12-incoherent reviewer captures. */
     maxIncoherentReviewerCaptureRetries: z.number().int().nonnegative(),
     /** Frozen obligation-level reviewer-attempt budget. */

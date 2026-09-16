@@ -430,9 +430,7 @@ function checkReviewerUnavailableMisuse(ctx: StructuredResolutionContext): strin
   if (ctx.input.reviewerUnavailable !== true) return null;
   const existingInvs =
     ctx.state.assurance?.invocations.filter(
-      (inv) =>
-        inv.obligationId === ctx.pendingObligation?.obligationId &&
-        inv.invocationMode === 'sdk_session_prompt',
+      (inv) => inv.obligationId === ctx.pendingObligation?.obligationId,
     ) ?? [];
   if (existingInvs.length > 0) {
     return formatBlocked('INVALID_REVIEW_TOOL_SEQUENCE', {

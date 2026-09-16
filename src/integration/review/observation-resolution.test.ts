@@ -37,6 +37,7 @@ describe('resolveAttemptByCapability', () => {
         maxReviewerAttempts: 1,
       },
       obligationType: 'implement',
+      reviewCycle: 1,
       iteration: 1,
       planVersion: 1,
       subjectDigest: 'implementation-digest',

@@ -25,6 +25,7 @@ describe('PluginWorkspaceImpl semantic outbox', () => {
             {
               obligationId: OBLIGATION_ID,
               obligationType: 'plan',
+              reviewCycle: 1,
               requiredChallengeCount: 0,
               requiredChallengeKind: 'design_challenge',
               challengePolicyVersion: 'challenge-policy.v1',

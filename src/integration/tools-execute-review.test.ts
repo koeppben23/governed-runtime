@@ -61,7 +61,6 @@ import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers
 import { TEAM_POLICY } from '../config/policy.js';
 import {
   clearUserDecisionIntents,
-  consumeImplementationReviewExtensionIntent,
   peekUserDecisionIntent,
   recordUserDecisionIntent,
   recordUserDecisionIntentFromCommand,
@@ -77,8 +76,40 @@ vi.mock('../adapters/git', async (importOriginal) => {
     remoteOriginUrl: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl),
     changedFiles: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.changedFiles),
     listRepoSignals: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.repoSignals),
+    // Approval now enters VALIDATION and runs the active checks automatically;
+    // the IMPLEMENTATION transition freezes the pre-mutation base from HEAD.
+    headCommitFull: vi.fn().mockResolvedValue('d'.repeat(40)),
   };
 });
+
+vi.mock('../adapters/frozen-repository.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/frozen-repository.js')>();
+  return {
+    ...original,
+    freezeRepositoryIdentity: vi.fn(() => ({
+      kind: 'local' as const,
+      rootCommitDigest: 'sha256:' + 'b'.repeat(64),
+    })),
+    freezeWorktreeCandidate: vi.fn().mockResolvedValue('c'.repeat(40)),
+  };
+});
+
+// Mock the verification executor: the automatic validation run must never spawn
+// real subprocesses in the temp worktree.
+vi.mock('../verification/executor', () => ({
+  executeCheck: vi.fn().mockImplementation(async (input: { kind: string; command: string }) => ({
+    kind: input.kind,
+    command: input.command,
+    exitCode: 0,
+    passed: true,
+    executionMs: 100,
+    outputDigest: 'a'.repeat(64),
+    stdout: 'OK',
+    stderr: '',
+    timedOut: false,
+    startedAt: new Date().toISOString(),
+  })),
+}));
 
 // ─── Workspace Mock (P26) ────────────────────────────────────────────────────
 // Partial mock: archiveSession and verifyArchive are vi.fn() wrappers that
@@ -252,7 +283,10 @@ async function fulfillPlanReview(
 
 describe('P34a: Host-Captured Review', () => {
   it('reviewMode=subagent accepted by mandatory default', async () => {
-    await hydrateSession({ policyMode: 'solo' });
+    // Team mode stops at PLAN_REVIEW: the converged review response is observed
+    // directly (solo auto-approval would supersede it with the automatic
+    // validation response).
+    await hydrateSession({ policyMode: 'team' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
     await fulfillPlanReview(0, 'accept');
@@ -304,7 +338,8 @@ describe('P34a: Host-Captured Review', () => {
   });
 
   it('accepts a verdict-only call against bound captured evidence', async () => {
-    await hydrateSession({ policyMode: 'solo' });
+    // Team mode stops at PLAN_REVIEW so the converged response is observable.
+    await hydrateSession({ policyMode: 'team' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
     await fulfillPlanReview(0, 'accept');
@@ -315,7 +350,8 @@ describe('P34a: Host-Captured Review', () => {
   });
 
   it('converged Mode B response appears after reviewFindings submission', async () => {
-    await hydrateSession({ policyMode: 'solo' });
+    // Team mode stops at PLAN_REVIEW so the converged response is observable.
+    await hydrateSession({ policyMode: 'team' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
     await fulfillPlanReview(0, 'accept');
@@ -330,7 +366,8 @@ describe('P34a: Host-Captured Review', () => {
 
 describe('P34a: Policy-Driven Branches', () => {
   it('subagentEnabled=true + reviewMode=subagent → accepted', async () => {
-    await hydrateSession({ policyMode: 'solo' });
+    // Team mode stops at PLAN_REVIEW so the converged response is observable.
+    await hydrateSession({ policyMode: 'team' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
 
     const { computeFingerprint, sessionDir: resolveSessionDir } =
@@ -424,13 +461,18 @@ describe('decision', () => {
   }
 
   describe('HAPPY', () => {
-    it('approve at PLAN_REVIEW advances to VALIDATION', async () => {
+    it('approve at PLAN_REVIEW advances through automatic validation to IMPLEMENTATION', async () => {
       await reachPlanReview();
       recordUserDecision('approve');
       const raw = await decision.execute({ verdict: 'approve', rationale: 'Looks good' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('VALIDATION');
+      // Approval enters VALIDATION and the runtime runs the active checks
+      // automatically before IMPLEMENTATION.
+      expect(result.phase).toBe('IMPLEMENTATION');
+      const state = await readState(await currentSessionDir());
+      expect(state?.validation.length).toBeGreaterThan(0);
+      expect(state?.validation.every((entry) => entry.passed)).toBe(true);
     });
   });
 
@@ -502,31 +544,28 @@ describe('decision', () => {
       expect(result.code).toBe('HUMAN_DECISION_REQUIRED');
     });
 
-    it('P0: /extend-implementation-review intent never authorizes a decision verdict', async () => {
+    it('routes /override-approve intent to the governance-override gate (not a plain approval)', async () => {
       await reachPlanReview();
-      // Simulate OpenCode command.execute.before recording the extension command.
+      // Simulate OpenCode command.execute.before recording the override command.
       recordUserDecisionIntentFromCommand({
         sessionId: ctx.sessionID,
-        command: '/extend-implementation-review',
-        arguments: '1',
+        command: '/override-approve',
+        arguments: '',
       });
-      const blocked = parseToolResult(
-        await decision.execute({ verdict: 'reject', rationale: 'Not authorized' }, ctx),
+      const result = parseToolResult(
+        await decision.execute(
+          { verdict: 'approve_with_governance_override', rationale: 'Unnecessary override' },
+          ctx,
+        ),
       );
-      expect(blocked.error).toBe(true);
-      expect(blocked.code).toBe('HUMAN_DECISION_REQUIRED');
+      // The intent authorized the call (not HUMAN_DECISION_REQUIRED); the gate
+      // itself rejects the override because the plan review did not exhaust.
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('GOVERNANCE_OVERRIDE_NOT_REQUIRED');
 
-      // No state transition: the extension intent cannot gate a reject.
+      // No state transition: the plan gate is untouched.
       const state = await readState(await currentSessionDir());
       expect(state?.phase).toBe('PLAN_REVIEW');
-
-      // The extension intent is still intact for the extension tool.
-      expect(
-        consumeImplementationReviewExtensionIntent({
-          sessionId: ctx.sessionID,
-          additionalIterations: 1,
-        }),
-      ).toMatchObject({ ok: true });
     });
 
     it('consumes user-command intent once', async () => {
@@ -546,13 +585,24 @@ describe('decision', () => {
       expect(second.code).toBe('HUMAN_DECISION_REQUIRED');
     });
 
-    it('reject at PLAN_REVIEW returns to TICKET', async () => {
+    it('reject at PLAN_REVIEW enters the terminal REJECTED phase', async () => {
       await reachPlanReview();
       recordUserDecision('reject');
       const raw = await decision.execute({ verdict: 'reject', rationale: 'Need rethink' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('TICKET');
+      expect(result.phase).toBe('REJECTED');
+      expect(result.directive).toMatchObject({
+        kind: 'terminal',
+        code: 'WORKFLOW_REJECTED',
+        commands: [],
+      });
+
+      // Rejection preserves the reviewed evidence and the recorded decision.
+      const state = await readState(await currentSessionDir());
+      expect(state?.plan).not.toBeNull();
+      expect(state?.selfReview).not.toBeNull();
+      expect(state?.reviewDecision?.verdict).toBe('reject');
     });
 
     it('changes_requested at PLAN_REVIEW returns to PLAN', async () => {
@@ -582,7 +632,9 @@ describe('decision', () => {
       );
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('VALIDATION');
+      // The decision response is superseded by the automatic validation
+      // response: approval crossed VALIDATION into IMPLEMENTATION.
+      expect(result.phase).toBe('IMPLEMENTATION');
     });
   });
 
@@ -610,7 +662,7 @@ describe('decision', () => {
       const secondRaw = await decision.execute({ verdict: 'approve', rationale: 'Proceed' }, ctx);
       const second = parseToolResult(secondRaw);
       expect(second.error).toBeUndefined();
-      expect(second.phase).toBe('VALIDATION');
+      expect(second.phase).toBe('IMPLEMENTATION');
     });
 
     it('does not burn the intent when a decision fails before persistence (artifacts missing)', async () => {
@@ -645,7 +697,7 @@ describe('decision', () => {
         await decision.execute({ verdict: 'approve', rationale: 'Looks good' }, ctx),
       );
       expect(first.error).toBeUndefined();
-      expect(first.phase).toBe('VALIDATION');
+      expect(first.phase).toBe('IMPLEMENTATION');
 
       // Force the gate back to PLAN_REVIEW and replay: the consumed intent is gone.
       const state = await readState(await currentSessionDir());
@@ -686,12 +738,15 @@ describe('decision', () => {
       const raw = await decision.execute({ verdict: 'approve' } as { verdict: ReviewVerdict }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('VALIDATION');
-      expect(result.reviewDecision).toMatchObject({ rationale: '' });
+      // The automatic validation response supersedes the decision output; the
+      // normalized rationale is asserted from persisted state.
+      expect(result.phase).toBe('IMPLEMENTATION');
+      const state = await readState(await currentSessionDir());
+      expect(state?.reviewDecision).toMatchObject({ rationale: '' });
     });
   });
 });
 
 // =============================================================================
-// Tool 10: review (standalone review flow with subagent pattern)
+// Tool 10: review (peer review flow with subagent pattern)
 // =============================================================================

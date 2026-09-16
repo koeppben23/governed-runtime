@@ -33,7 +33,7 @@ describe('evaluate', () => {
     });
 
     it('REVIEW_COMPLETE → terminal', () => {
-      const result = evaluate(makeProgressedState('REVIEW_COMPLETE'));
+      const result = evaluate(makeProgressedState('PEER_REVIEW_COMPLETE'));
       expect(result.kind).toBe('terminal');
     });
 
@@ -217,13 +217,13 @@ describe('evaluate', () => {
       }
     });
 
-    it('REVIEW → transition REVIEW_DONE → REVIEW_COMPLETE', () => {
-      const state = makeState('REVIEW', { reviewReportPath: '/tmp/report.json' });
+    it('PEER_REVIEW → transition PEER_REVIEW_DONE → PEER_REVIEW_COMPLETE', () => {
+      const state = makeState('PEER_REVIEW', { reviewReportPath: '/tmp/report.json' });
       const result = evaluate(state);
       expect(result.kind).toBe('transition');
       if (result.kind === 'transition') {
-        expect(result.event).toBe('REVIEW_DONE');
-        expect(result.target).toBe('REVIEW_COMPLETE');
+        expect(result.event).toBe('PEER_REVIEW_DONE');
+        expect(result.target).toBe('PEER_REVIEW_COMPLETE');
       }
     });
   });
@@ -288,13 +288,44 @@ describe('evaluate', () => {
       expect(evidenceReview.kind).toBe('transition');
       if (evidenceReview.kind === 'transition') {
         expect(evidenceReview.event).toBe('APPROVE');
-        expect(evidenceReview.target).toBe('COMPLETE');
+        expect(evidenceReview.target).toBe('EXPORT_READY');
       }
 
       const archReview = evaluate(makeProgressedState('ARCH_REVIEW'), soloPolicy);
       expect(archReview.kind).toBe('waiting');
       if (archReview.kind === 'waiting') {
         expect(archReview.phase).toBe('ARCH_REVIEW');
+      }
+    });
+
+    it('solo mode never auto-approves an exhausted plan gate', () => {
+      const exhausted = makeState('PLAN_REVIEW', {
+        ticket: TICKET,
+        plan: { ...PLAN_RECORD, reviewCompletion: 'review_exhausted' },
+        selfReview: SELF_REVIEW_CONVERGED,
+      });
+      const result = evaluate(exhausted, { requireHumanGates: false });
+      expect(result.kind).toBe('waiting');
+      if (result.kind === 'waiting') {
+        expect(result.phase).toBe('PLAN_REVIEW');
+      }
+    });
+
+    it('solo mode never auto-approves an exhausted evidence gate', () => {
+      const exhausted = makeState('EVIDENCE_REVIEW', {
+        ticket: TICKET,
+        plan: PLAN_RECORD,
+        selfReview: SELF_REVIEW_CONVERGED,
+        validation: VALIDATION_PASSED,
+        implementation: IMPL_EVIDENCE,
+        implValidation: VALIDATION_PASSED,
+        implReview: IMPL_REVIEW_CONVERGED,
+        implementationRework: { rejectedDigest: IMPL_EVIDENCE.digest, exhausted: true },
+      });
+      const result = evaluate(exhausted, { requireHumanGates: false });
+      expect(result.kind).toBe('waiting');
+      if (result.kind === 'waiting') {
+        expect(result.phase).toBe('EVIDENCE_REVIEW');
       }
     });
 
@@ -379,10 +410,10 @@ describe('evaluate', () => {
     it('evaluateWithEvent resolves known phase+event combos', () => {
       expect(evaluateWithEvent('PLAN_REVIEW', 'APPROVE')).toBe('VALIDATION');
       expect(evaluateWithEvent('PLAN_REVIEW', 'CHANGES_REQUESTED')).toBe('PLAN');
-      expect(evaluateWithEvent('PLAN_REVIEW', 'REJECT')).toBe('TICKET');
+      expect(evaluateWithEvent('PLAN_REVIEW', 'REJECT')).toBe('REJECTED');
       expect(evaluateWithEvent('ARCH_REVIEW', 'APPROVE')).toBe('ARCH_COMPLETE');
       expect(evaluateWithEvent('ARCH_REVIEW', 'CHANGES_REQUESTED')).toBe('ARCHITECTURE');
-      expect(evaluateWithEvent('ARCH_REVIEW', 'REJECT')).toBe('READY');
+      expect(evaluateWithEvent('ARCH_REVIEW', 'REJECT')).toBe('REJECTED');
     });
 
     it('evaluateWithEvent returns undefined for invalid combo', () => {

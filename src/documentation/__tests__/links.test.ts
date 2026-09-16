@@ -484,7 +484,8 @@ describe('docs/delivery-scope.md', () => {
 
     it('should document workflow engine features', async () => {
       const content = await fs.readFile(DELIVERY_SCOPE_PATH, 'utf-8');
-      expect(content).toContain('15 explicit phases');
+      // Canonical phase count from src/state/schema.ts (18 phases across 3 flows).
+      expect(content).toContain('18 explicit phases');
       // 4 policy modes per src/config/policy.ts: solo, team, team-ci, regulated.
       // The previous '3 policy modes' pin was a drift artifact (corrected in
       // slice 0a.2). Pinning the corrected reality here keeps the doc-vs-code

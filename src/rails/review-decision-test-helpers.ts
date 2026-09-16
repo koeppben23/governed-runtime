@@ -18,6 +18,8 @@ export interface AssuranceEntry {
   subjectDigest: string;
   status: 'fulfilled' | 'consumed' | 'pending';
   iteration?: number;
+  /** Human review cycle the obligation belongs to (default 1). */
+  reviewCycle?: number;
   createdAt?: string;
   /** Plan version the obligation reviewed (default 1 — PLAN_RECORD's version). */
   planVersion?: number;
@@ -71,8 +73,9 @@ function invocationsFromEntries(entries: AssuranceEntry[]): ReviewAssuranceState
         parentSessionId: `parent-${index}`,
         childSessionId: `child-${index}`,
         agentType: 'flowguard-reviewer',
-        invocationMode: 'sdk_session_prompt',
-        hostVisible: false,
+        invocationMode: 'native_task_structured_followup',
+        hostVisible: true,
+        transcriptNavigable: true,
         source: 'host-orchestrated',
         promptHash: `${'c'.repeat(63)}${(index % 16).toString(16)}`,
         mandateDigest: 'm'.repeat(64),
@@ -120,6 +123,7 @@ export function assuranceChain(entries: AssuranceEntry[]): ReviewAssuranceState 
       obligationId: e.obligationId,
       obligationType: e.obligationType ?? 'architecture',
       iteration: e.iteration ?? 0,
+      reviewCycle: e.reviewCycle ?? 1,
       planVersion: e.planVersion ?? 1,
       criteriaVersion: 'criteria-v1',
       mandateDigest: 'm'.repeat(64),

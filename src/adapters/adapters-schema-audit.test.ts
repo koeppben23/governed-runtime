@@ -123,20 +123,17 @@ function makeValidReport(): ReviewReport {
     validationSummary: [],
     findings: [],
     overallStatus: 'clean',
-    completeness: {
-      sessionId: FIXED_SESSION_UUID,
-      phase: 'COMPLETE',
-      policyMode: 'solo',
-      overallComplete: true,
-      slots: [],
-      fourEyes: {
-        required: false,
-        satisfied: true,
-        initiatedBy: 'test',
-        decisionIdentity: null,
-        detail: 'Four-eyes not required by policy',
-      },
-      summary: { total: 0, complete: 0, missing: 0, notYetRequired: 0, failed: 0 },
+    peerReviewCoverage: {
+      targetResolved: false,
+      targetFrozen: false,
+      repositoryIdentityVerified: null,
+      baseSha: null,
+      headSha: null,
+      changedPathCount: 0,
+      objectivesCovered: 0,
+      objectivesTotal: 0,
+      reviewAssurance: null,
+      missingVerification: [],
     },
   };
 }

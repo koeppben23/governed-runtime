@@ -123,7 +123,7 @@ describe('review-decision rail', () => {
       }
     });
 
-    it('approve at EVIDENCE_REVIEW → COMPLETE', () => {
+    it('approve at EVIDENCE_REVIEW → EXPORT_READY', () => {
       const state = makeProgressedState('EVIDENCE_REVIEW');
       const result = executeReviewDecision(
         state,
@@ -136,7 +136,7 @@ describe('review-decision rail', () => {
       );
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
-        expect(result.state.phase).toBe('COMPLETE');
+        expect(result.state.phase).toBe('EXPORT_READY');
       }
     });
 
@@ -201,6 +201,10 @@ describe('review-decision rail', () => {
             digest: 'implementation-digest',
             executedAt: '2026-01-01T00:00:00.000Z',
           },
+          // The recorded review must cover the same revision as the
+          // implementation under decision; otherwise the subject guard would
+          // preempt the ProofGraph trigger gate this test exercises.
+          implReview: { ...state.implReview!, currDigest: 'implementation-digest' },
           implementationRiskAssessment: {
             computedMinimumTaskClass: 'HIGH-RISK',
             touchedSurfaces: ['src/state/schema.ts'],
@@ -227,6 +231,7 @@ describe('review-decision rail', () => {
             digest: 'implementation-digest',
             executedAt: '2026-01-01T00:00:00.000Z',
           },
+          implReview: { ...state.implReview!, currDigest: 'implementation-digest' },
           implementationRiskAssessment: {
             computedMinimumTaskClass: 'HIGH-RISK',
             touchedSurfaces: ['src/archive/verify.ts'],
@@ -253,6 +258,7 @@ describe('review-decision rail', () => {
             digest: 'implementation-digest',
             executedAt: '2026-01-01T00:00:00.000Z',
           },
+          implReview: { ...state.implReview!, currDigest: 'implementation-digest' },
           implementationRiskAssessment: {
             computedMinimumTaskClass: 'HIGH-RISK',
             touchedSurfaces: ['src/state/schema.ts'],
@@ -267,6 +273,31 @@ describe('review-decision rail', () => {
       expect(result).toMatchObject({ kind: 'blocked', code: 'PROOFGRAPH_RISK_ASSESSMENT_STALE' });
     });
 
+    it('blocks with IMPLEMENTATION_REVIEW_SUBJECT_MISMATCH before the ProofGraph gate can evaluate', () => {
+      const state = makeProgressedState('EVIDENCE_REVIEW');
+      const result = executeReviewDecision(
+        {
+          ...state,
+          // The implementation was replaced after review: the recorded review
+          // still covers 'digest-of-impl'. The unproven ProofGraph fact below
+          // would also gate approval — the subject guard must win as the
+          // earliest, most specific block.
+          implementation: { ...state.implementation!, digest: 'implementation-digest' },
+          proofGraph: proofGraph(),
+        },
+        { verdict: 'approve', rationale: 'Ship it', decisionIdentity: DECISION_IDENTITY_REVIEWER },
+        ctx,
+      );
+      expect(result).toMatchObject({
+        kind: 'blocked',
+        code: 'IMPLEMENTATION_REVIEW_SUBJECT_MISMATCH',
+      });
+      if (result.kind === 'blocked') {
+        expect(result.reason).toContain('digest-of-impl');
+        expect(result.reason).toContain('implementation-digest');
+      }
+    });
+
     it('does not apply the gate to hypothesis claims', () => {
       const state = makeProgressedState('EVIDENCE_REVIEW');
       const result = executeReviewDecision(
@@ -275,7 +306,7 @@ describe('review-decision rail', () => {
         ctx,
       );
       expect(result.kind).toBe('ok');
-      if (result.kind === 'ok') expect(result.state.phase).toBe('COMPLETE');
+      if (result.kind === 'ok') expect(result.state.phase).toBe('EXPORT_READY');
     });
 
     it('changes_requested at PLAN_REVIEW → PLAN', () => {
@@ -297,7 +328,7 @@ describe('review-decision rail', () => {
       }
     });
 
-    it('reject at PLAN_REVIEW → TICKET', () => {
+    it('reject at PLAN_REVIEW → REJECTED while preserving decision evidence', () => {
       const state = makeProgressedState('PLAN_REVIEW');
       const result = executeReviewDecision(
         state,
@@ -310,10 +341,10 @@ describe('review-decision rail', () => {
       );
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
-        expect(result.state.phase).toBe('TICKET');
-        expect(result.state.plan).toBeNull();
-        expect(result.state.selfReview).toBeNull();
-        expect(result.state.reviewDecision).toBeNull();
+        expect(result.state.phase).toBe('REJECTED');
+        expect(result.state.plan).not.toBeNull();
+        expect(result.state.selfReview).not.toBeNull();
+        expect(result.state.reviewDecision?.verdict).toBe('reject');
       }
     });
 
@@ -375,9 +406,9 @@ describe('review-decision rail', () => {
       }
     });
 
-    it('does not apply the gate to standalone review phases', () => {
+    it('does not apply the gate to peer review phases', () => {
       const result = executeReviewDecision(
-        makeState('REVIEW_COMPLETE', { proofGraph: proofGraph() }),
+        makeState('PEER_REVIEW_COMPLETE', { proofGraph: proofGraph() }),
         { verdict: 'approve', rationale: 'ok', decisionIdentity: DECISION_IDENTITY_REVIEWER },
         ctx,
       );
@@ -660,7 +691,7 @@ describe('review-decision rail', () => {
       }
     });
 
-    it('rejects at EVIDENCE_REVIEW clears everything back to TICKET', () => {
+    it('rejects at EVIDENCE_REVIEW into the terminal REJECTED phase', () => {
       const state = makeProgressedState('EVIDENCE_REVIEW');
       const result = executeReviewDecision(
         state,
@@ -673,9 +704,10 @@ describe('review-decision rail', () => {
       );
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
-        expect(result.state.phase).toBe('TICKET');
-        expect(result.state.plan).toBeNull();
-        expect(result.state.implementation).toBeNull();
+        expect(result.state.phase).toBe('REJECTED');
+        expect(result.state.plan).not.toBeNull();
+        expect(result.state.implementation).not.toBeNull();
+        expect(result.state.reviewDecision?.verdict).toBe('reject');
       }
     });
   });
@@ -766,7 +798,7 @@ describe('review-decision rail', () => {
       }
     });
 
-    it('reject at ARCH_REVIEW → READY with cleared architecture', () => {
+    it('reject at ARCH_REVIEW → REJECTED with preserved architecture', () => {
       const state = makeProgressedState('ARCH_REVIEW');
       const result = executeReviewDecision(
         state,
@@ -779,9 +811,10 @@ describe('review-decision rail', () => {
       );
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
-        expect(result.state.phase).toBe('READY');
-        expect(result.state.architecture).toBeNull();
-        expect(result.state.selfReview).toBeNull();
+        expect(result.state.phase).toBe('REJECTED');
+        expect(result.state.architecture).not.toBeNull();
+        expect(result.state.selfReview).not.toBeNull();
+        expect(result.state.reviewDecision?.verdict).toBe('reject');
       }
     });
 

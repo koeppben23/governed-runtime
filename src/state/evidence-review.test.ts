@@ -385,6 +385,7 @@ describe('evidence-review', () => {
       return {
         obligationId: FIXED_UUID,
         obligationType: 'review' as const,
+        reviewCycle: null,
         requiredChallengeCount: 0,
         requiredChallengeKind: 'content_challenge' as const,
         challengePolicyVersion: 'challenge-policy.v1' as const,
@@ -450,6 +451,7 @@ describe('evidence-review', () => {
       const obligation = {
         obligationId: FIXED_UUID,
         obligationType: 'plan' as const,
+        reviewCycle: 1,
         requiredChallengeCount: 0,
         requiredChallengeKind: 'design_challenge' as const,
         challengePolicyVersion: 'challenge-policy.v1' as const,
@@ -528,6 +530,7 @@ describe('evidence-review', () => {
       return {
         obligationId: FIXED_UUID,
         obligationType: 'plan' as const,
+        reviewCycle: 1,
         subjectDigest: 'a'.repeat(64),
         iteration: 0,
         planVersion: 1,
@@ -679,7 +682,7 @@ describe('evidence-review', () => {
       );
     });
 
-    it('ReviewInvocationEvidence parses SDK invocation', () => {
+    it('ReviewInvocationEvidence parses the native invocation', () => {
       const invocation = {
         invocationId: FIXED_UUID,
         obligationId: FIXED_UUID,
@@ -688,8 +691,9 @@ describe('evidence-review', () => {
         parentSessionId: 'ses_parent',
         childSessionId: 'ses_child',
         agentType: 'flowguard-reviewer' as const,
-        invocationMode: 'sdk_session_prompt' as const,
-        hostVisible: false,
+        invocationMode: 'native_task_structured_followup' as const,
+        hostVisible: true,
+        transcriptNavigable: true,
         source: 'host-orchestrated' as const,
         promptHash: 'sha256-prompt',
         mandateDigest: 'sha256-mandate',
@@ -729,8 +733,9 @@ describe('evidence-review', () => {
         parentSessionId: 'ses_parent',
         childSessionId: 'ses_child',
         agentType: 'flowguard-reviewer' as const,
-        invocationMode: 'sdk_session_prompt' as const,
-        hostVisible: false,
+        invocationMode: 'native_task_structured_followup' as const,
+        hostVisible: true,
+        transcriptNavigable: true,
         source: 'host-orchestrated' as const,
         promptHash: 'a'.repeat(64),
         mandateDigest: 'sha256-mandate',
@@ -982,7 +987,7 @@ describe('evidence-review', () => {
       const result = parseAssuranceWith(invocation, linkedAttempt());
       expect(result.success).toBe(false);
       if (result.success) throw new TypeError('expected schema rejection');
-      expect(JSON.stringify(result.error.issues)).toContain('sdk_session_prompt');
+      expect(JSON.stringify(result.error.issues)).toContain('native_task_structured_followup');
     });
 
     it('rejects a capability-less repository-governed attempt', () => {
@@ -1071,8 +1076,9 @@ describe('evidence-review', () => {
         parentSessionId: 'ses_parent',
         childSessionId: 'ses_child',
         agentType: 'flowguard-reviewer' as const,
-        invocationMode: 'sdk_session_prompt' as const,
-        hostVisible: false,
+        invocationMode: 'native_task_structured_followup' as const,
+        hostVisible: true,
+        transcriptNavigable: true,
         source: 'host-orchestrated' as const,
         promptHash: 'sha256-prompt',
         mandateDigest: 'sha256-mandate',
@@ -1263,20 +1269,17 @@ describe('evidence-review', () => {
         validationSummary: [],
         findings: [],
         overallStatus: 'clean' as const,
-        completeness: {
-          sessionId: FIXED_UUID,
-          phase: 'COMPLETE',
-          policyMode: 'team',
-          overallComplete: true,
-          slots: [],
-          fourEyes: {
-            required: false,
-            satisfied: true,
-            initiatedBy: 'test',
-            decisionIdentity: null,
-            detail: 'Four-eyes not required by policy',
-          },
-          summary: { total: 0, complete: 0, missing: 0, notYetRequired: 0, failed: 0 },
+        peerReviewCoverage: {
+          targetResolved: false,
+          targetFrozen: false,
+          repositoryIdentityVerified: null,
+          baseSha: null,
+          headSha: null,
+          changedPathCount: 0,
+          objectivesCovered: 0,
+          objectivesTotal: 0,
+          reviewAssurance: null,
+          missingVerification: [],
         },
       };
       expect(ReviewReport.parse(report)).toEqual(report);
@@ -1288,26 +1291,23 @@ describe('evidence-review', () => {
         schemaVersion: 'flowguard-review-report.v1' as const,
         sessionId: FIXED_UUID,
         generatedAt: FIXED_TIME,
-        phase: 'REVIEW_COMPLETE',
+        phase: 'PEER_REVIEW_COMPLETE',
         planDigest: null,
         implDigest: null,
         validationSummary: [],
         findings: [],
         overallStatus: 'clean' as const,
-        completeness: {
-          sessionId: FIXED_UUID,
-          phase: 'REVIEW_COMPLETE',
-          policyMode: 'team',
-          overallComplete: true,
-          slots: [],
-          fourEyes: {
-            required: false,
-            satisfied: true,
-            initiatedBy: 'test',
-            decisionIdentity: null,
-            detail: 'N/A',
-          },
-          summary: { total: 0, complete: 0, missing: 0, notYetRequired: 0, failed: 0 },
+        peerReviewCoverage: {
+          targetResolved: true,
+          targetFrozen: true,
+          repositoryIdentityVerified: null,
+          baseSha: null,
+          headSha: null,
+          changedPathCount: 0,
+          objectivesCovered: 3,
+          objectivesTotal: 3,
+          reviewAssurance: 'structured_high',
+          missingVerification: [],
         },
         reviewSubject: {
           kind: 'content' as const,
@@ -1384,20 +1384,17 @@ describe('evidence-review', () => {
           validationSummary: [],
           findings: [],
           overallStatus: 'perfect',
-          completeness: {
-            sessionId: FIXED_UUID,
-            phase: 'COMPLETE',
-            policyMode: 'team',
-            overallComplete: true,
-            slots: [],
-            fourEyes: {
-              required: false,
-              satisfied: true,
-              initiatedBy: 'test',
-              decisionIdentity: null,
-              detail: '',
-            },
-            summary: { total: 0, complete: 0, missing: 0, notYetRequired: 0, failed: 0 },
+          peerReviewCoverage: {
+            targetResolved: false,
+            targetFrozen: false,
+            repositoryIdentityVerified: null,
+            baseSha: null,
+            headSha: null,
+            changedPathCount: 0,
+            objectivesCovered: 0,
+            objectivesTotal: 0,
+            reviewAssurance: null,
+            missingVerification: [],
           },
         }),
       ).toThrow();
@@ -1468,6 +1465,7 @@ describe('evidence-review', () => {
       const obligation = {
         obligationId: FIXED_UUID,
         obligationType: 'review' as const,
+        reviewCycle: null,
         requiredChallengeCount: 0,
         requiredChallengeKind: 'content_challenge' as const,
         challengePolicyVersion: 'challenge-policy.v1' as const,
@@ -1516,6 +1514,7 @@ describe('evidence-review', () => {
       const withoutSubject = {
         obligationId: FIXED_UUID,
         obligationType: 'review' as const,
+        reviewCycle: null,
         iteration: 0,
         planVersion: 1,
         criteriaVersion: 'v1',
@@ -1533,10 +1532,11 @@ describe('evidence-review', () => {
       expect(result.error?.issues.map((issue) => issue.path.join('.'))).toContain('subjectDigest');
     });
 
-    it('requires a frozen subject and matching subjectDigest for standalone reviews', () => {
+    it('requires a frozen subject and matching subjectDigest for peer reviews', () => {
       const base = {
         obligationId: FIXED_UUID,
         obligationType: 'review' as const,
+        reviewCycle: null,
         subjectDigest: 'a'.repeat(64),
         iteration: 0,
         planVersion: 1,
@@ -1599,6 +1599,7 @@ describe('evidence-review', () => {
       const obligation = {
         obligationId: FIXED_UUID,
         obligationType: 'plan' as const,
+        reviewCycle: 1,
         requiredChallengeCount: 0,
         requiredChallengeKind: 'design_challenge' as const,
         challengePolicyVersion: 'challenge-policy.v1' as const,
@@ -1639,6 +1640,7 @@ describe('evidence-review', () => {
       const legacy = {
         obligationId: FIXED_UUID,
         obligationType: 'plan' as const,
+        reviewCycle: 1,
         requiredChallengeCount: 0,
         requiredChallengeKind: 'design_challenge' as const,
         challengePolicyVersion: 'challenge-policy.v1' as const,
@@ -1689,6 +1691,7 @@ describe('Implementation subject scope coherence (schema refinement)', () => {
     return {
       obligationId: FIXED_UUID,
       obligationType: 'implement' as const,
+      reviewCycle: 1,
       requiredChallengeCount: 0,
       requiredChallengeKind: 'implementation_challenge' as const,
       challengePolicyVersion: 'challenge-policy.v1' as const,

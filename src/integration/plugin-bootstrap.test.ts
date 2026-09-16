@@ -81,6 +81,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
       },
       selfReview: {
         iteration: 0,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: planCurrent.digest,
@@ -96,6 +97,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
           {
             obligationId,
             obligationType: 'plan',
+            reviewCycle: 1,
             requiredChallengeCount: 0,
             requiredChallengeKind: 'design_challenge',
             challengePolicyVersion: 'challenge-policy.v1',
@@ -151,7 +153,7 @@ function strictPlanReviewRequiredOutput(
     reviewObligationId: obligationId,
     reviewCriteriaVersion: REVIEW_CRITERIA_VERSION,
     reviewMandateDigest: REVIEW_MANDATE_DIGEST,
-    next: 'INDEPENDENT_REVIEW_REQUIRED: iteration=0, planVersion=1',
+    reviewDispatch: { required: true },
     ...overrides,
   });
 }

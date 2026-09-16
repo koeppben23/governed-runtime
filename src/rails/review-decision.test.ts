@@ -125,6 +125,7 @@ const reviewerIdentity = {
 /** Minimal converged self-review for tests requiring a completed review loop. */
 const CONVERGED_SELF_REVIEW = {
   iteration: 1,
+  reviewCycle: 1,
   maxIterations: 3,
   prevDigest: null,
   currDigest: 'review-digest',
@@ -239,11 +240,12 @@ describe('review-decision rail', () => {
     }
   });
 
-  it('reject at ARCH_REVIEW clears architecture and selfReview', () => {
+  it('reject at ARCH_REVIEW preserves reviewed evidence at the terminal position', () => {
     const state = makeState('ARCH_REVIEW', {
       architecture: { ...ARCHITECTURE_DECISION, reviewCompletion: 'reviewer_accepted' },
       selfReview: {
         iteration: 1,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: ARCHITECTURE_DECISION.digest,
@@ -264,8 +266,10 @@ describe('review-decision rail', () => {
 
     expect(result.kind).toBe('ok');
     if (result.kind === 'ok') {
-      expect(result.state.architecture).toBeNull();
-      expect(result.state.selfReview).toBeNull();
+      expect(result.state.phase).toBe('REJECTED');
+      expect(result.state.architecture).not.toBeNull();
+      expect(result.state.selfReview).not.toBeNull();
+      expect(result.state.reviewDecision?.verdict).toBe('reject');
     }
   });
 
@@ -276,6 +280,7 @@ describe('review-decision rail', () => {
       implementation: IMPL_EVIDENCE,
       implReview: {
         iteration: 1,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: IMPL_EVIDENCE.digest,
@@ -313,6 +318,7 @@ describe('review-decision rail', () => {
       }),
       selfReview: {
         iteration: 1,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: ARCHITECTURE_DECISION.digest,
@@ -603,6 +609,7 @@ describe('review-decision rail', () => {
       architecture: ARCHITECTURE_DECISION,
       selfReview: {
         iteration: 1,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: ARCHITECTURE_DECISION.digest,
@@ -637,6 +644,7 @@ describe('review-decision rail', () => {
       reducedCeremony: reducedCeremonyDecision,
       implReview: {
         iteration: 1,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: IMPL_EVIDENCE.digest,
@@ -681,6 +689,7 @@ describe('review-decision rail', () => {
       reducedCeremony: reducedCeremonyDecision,
       implReview: {
         iteration: 1,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: IMPL_EVIDENCE.digest,
@@ -703,7 +712,7 @@ describe('review-decision rail', () => {
     }
   });
 
-  it('reject clears reducedCeremony alongside all downstream', () => {
+  it('reject preserves reducedCeremony and implementation evidence at REJECTED', () => {
     const reducedCeremonyDecision = {
       profile: 'reduced' as const,
       reason: 'Trivial fix',
@@ -727,9 +736,10 @@ describe('review-decision rail', () => {
 
     expect(result.kind).toBe('ok');
     if (result.kind === 'ok') {
-      expect(result.state.reducedCeremony).toBeNull();
-      expect(result.state.implementation).toBeNull();
-      expect(result.state.reviewDecision).toBeNull();
+      expect(result.state.phase).toBe('REJECTED');
+      expect(result.state.reducedCeremony).toEqual(reducedCeremonyDecision);
+      expect(result.state.implementation).toEqual(IMPL_EVIDENCE);
+      expect(result.state.reviewDecision?.verdict).toBe('reject');
     }
   });
 
@@ -845,9 +855,15 @@ describe('review-decision rail', () => {
           }),
           selfReview: CONVERGED_SELF_REVIEW,
         });
+        // An exhausted loop requires the explicit override intent; the gate
+        // type is derived from persisted state, not chosen by the caller.
+        const verdict =
+          reviewCompletion === 'reviewer_accepted'
+            ? ('approve' as const)
+            : ('approve_with_governance_override' as const);
         const result = executeReviewDecision(
           state,
-          { verdict: 'approve', rationale: 'LGTM', decisionIdentity: reviewerIdentity },
+          { verdict, rationale: 'LGTM', decisionIdentity: reviewerIdentity },
           baseCtx,
         );
         expect(result.kind).toBe('ok');
@@ -935,7 +951,7 @@ describe('review-decision rail', () => {
       });
     });
 
-    it('review_exhausted_override records the digest difference explicitly', () => {
+    it('blocks a review_exhausted_override whose reviewed subject differs from the approved subject', () => {
       const revisedDigest = 'digest-of-revised-adr';
       const state = makeState('ARCH_REVIEW', {
         architecture: {
@@ -952,19 +968,21 @@ describe('review-decision rail', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'override', decisionIdentity: reviewerIdentity },
+        {
+          verdict: 'approve_with_governance_override',
+          rationale: 'override',
+          decisionIdentity: reviewerIdentity,
+        },
         baseCtx,
       );
-      expect(result.kind).toBe('ok');
-      if (result.kind === 'ok') {
-        expect(result.state.architecture?.approvalCertificate?.reviewBinding).toEqual({
-          kind: 'review_exhausted_override',
-          lastReviewObligationId: ARCH_OBLIGATION_ID,
-          lastReviewEvidenceDigest: 'f'.repeat(64),
-          reviewedSubjectDigest: ARCHITECTURE_DECISION.digest,
-          approvedSubjectDigest: revisedDigest,
-        });
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') {
+        expect(result.code).toBe('ARCHITECTURE_REVIEW_OVERRIDE_SUBJECT_MISMATCH');
+        // The exact-equality requirement is surfaced with both digests.
+        expect(result.reason).toContain(ARCHITECTURE_DECISION.digest);
+        expect(result.reason).toContain(revisedDigest);
       }
+      expect(state.architecture?.approvalCertificate).toBeUndefined();
     });
 
     it('relabeling the reviewBinding kind changes the certificate identity', () => {
@@ -994,7 +1012,11 @@ describe('review-decision rail', () => {
       );
       const exhaustedResult = executeReviewDecision(
         exhausted,
-        { verdict: 'approve', rationale: 'approved', decisionIdentity: reviewerIdentity },
+        {
+          verdict: 'approve_with_governance_override',
+          rationale: 'approved',
+          decisionIdentity: reviewerIdentity,
+        },
         ctx,
       );
       expect(acceptedResult.kind).toBe('ok');
@@ -1261,7 +1283,7 @@ describe('review-decision rail', () => {
       );
 
       expect(result.kind).toBe('ok');
-      if (result.kind === 'ok') expect(result.state.phase).toBe('COMPLETE');
+      if (result.kind === 'ok') expect(result.state.phase).toBe('EXPORT_READY');
     });
 
     it('does not block final approval for a historical episode bound stale by a later implementation', () => {
@@ -1392,6 +1414,7 @@ describe('review-decision rail', () => {
         implementation: IMPL_EVIDENCE,
         implReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: IMPL_EVIDENCE.digest,
           currDigest: IMPL_EVIDENCE.digest,
@@ -1430,7 +1453,7 @@ describe('review-decision rail', () => {
       }
     });
 
-    it('reject at PLAN_REVIEW clears all downstream evidence (survivor kill)', () => {
+    it('reject at PLAN_REVIEW preserves evidence at REJECTED (survivor kill)', () => {
       const state = makeState('PLAN_REVIEW', {
         ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
         plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
@@ -1443,14 +1466,15 @@ describe('review-decision rail', () => {
       );
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
-        expect(result.state.ticket).toBeNull();
-        expect(result.state.plan).toBeNull();
-        expect(result.state.selfReview).toBeNull();
-        expect(result.state.reviewDecision).toBeNull();
+        expect(result.state.phase).toBe('REJECTED');
+        expect(result.state.ticket).not.toBeNull();
+        expect(result.state.plan).not.toBeNull();
+        expect(result.state.selfReview).not.toBeNull();
+        expect(result.state.reviewDecision?.verdict).toBe('reject');
       }
     });
 
-    it('reject at ARCH_REVIEW clears architecture and selfReview (survivor kill)', () => {
+    it('reject at ARCH_REVIEW preserves architecture and selfReview at REJECTED', () => {
       const state = makeState('ARCH_REVIEW', {
         architecture: ARCHITECTURE_DECISION,
         selfReview: CONVERGED_SELF_REVIEW,
@@ -1462,8 +1486,9 @@ describe('review-decision rail', () => {
       );
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
-        expect(result.state.architecture).toBeNull();
-        expect(result.state.selfReview).toBeNull();
+        expect(result.state.phase).toBe('REJECTED');
+        expect(result.state.architecture).not.toBeNull();
+        expect(result.state.selfReview).not.toBeNull();
       }
     });
 
@@ -1622,7 +1647,11 @@ describe('review-decision rail', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'override', decisionIdentity: reviewerIdentity },
+        {
+          verdict: 'approve_with_governance_override',
+          rationale: 'override',
+          decisionIdentity: reviewerIdentity,
+        },
         baseCtx,
       );
       expect(result.kind).toBe('ok');
@@ -1650,7 +1679,11 @@ describe('review-decision rail', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'override', decisionIdentity: reviewerIdentity },
+        {
+          verdict: 'approve_with_governance_override',
+          rationale: 'override',
+          decisionIdentity: reviewerIdentity,
+        },
         baseCtx,
       );
       expect(result).toMatchObject({
@@ -1673,7 +1706,11 @@ describe('review-decision rail', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'override', decisionIdentity: reviewerIdentity },
+        {
+          verdict: 'approve_with_governance_override',
+          rationale: 'override',
+          decisionIdentity: reviewerIdentity,
+        },
         baseCtx,
       );
       expect(result).toMatchObject({
@@ -1698,7 +1735,11 @@ describe('review-decision rail', () => {
         });
         const result = executeReviewDecision(
           state,
-          { verdict: 'approve', rationale: 'override', decisionIdentity: reviewerIdentity },
+          {
+            verdict: 'approve_with_governance_override',
+            rationale: 'override',
+            decisionIdentity: reviewerIdentity,
+          },
           baseCtx,
         );
         expect(result).toMatchObject({
@@ -1721,7 +1762,11 @@ describe('review-decision rail', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'override', decisionIdentity: reviewerIdentity },
+        {
+          verdict: 'approve_with_governance_override',
+          rationale: 'override',
+          decisionIdentity: reviewerIdentity,
+        },
         baseCtx,
       );
       expect(result).toMatchObject({
@@ -1762,6 +1807,7 @@ describe('review-decision rail', () => {
         implementation: IMPL_EVIDENCE,
         implReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: IMPL_EVIDENCE.digest,
@@ -1793,7 +1839,11 @@ describe('review-decision rail', () => {
       });
       const result = executeReviewDecision(
         state,
-        { verdict: 'approve', rationale: 'override', decisionIdentity: reviewerIdentity },
+        {
+          verdict: 'approve_with_governance_override',
+          rationale: 'override',
+          decisionIdentity: reviewerIdentity,
+        },
         baseCtx,
       );
       // A pending obligation is not completed review evidence — the override

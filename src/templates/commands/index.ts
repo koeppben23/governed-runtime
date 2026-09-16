@@ -18,7 +18,6 @@ import { TICKET_COMMAND } from './ticket.js';
 import { PLAN_COMMAND } from './plan.js';
 import { CONTINUE_COMMAND } from './continue.js';
 import { IMPLEMENT_COMMAND } from './implement.js';
-import { EXTEND_IMPLEMENTATION_REVIEW_COMMAND } from './extend-implementation-review.js';
 import { RESOLVE_IMPLEMENTATION_CHALLENGE_COMMAND } from './resolve-implementation-challenge.js';
 import { RECONCILE_MUTATION_EPISODE_COMMAND } from './reconcile-mutation-episode.js';
 import { VALIDATE_COMMAND } from './validate.js';
@@ -30,6 +29,7 @@ import { ARCHIVE_COMMAND } from './archive.js';
 import { START_COMMAND } from './start.js';
 import { TASK_COMMAND } from './task.js';
 import { APPROVE_COMMAND } from './approve.js';
+import { OVERRIDE_APPROVE_COMMAND } from './override-approve.js';
 import { REQUEST_CHANGES_COMMAND } from './request-changes.js';
 import { REJECT_COMMAND } from './reject.js';
 import { CHECK_COMMAND } from './check.js';
@@ -47,7 +47,6 @@ const COMMAND_BODIES: Record<string, string> = {
   'plan.md': PLAN_COMMAND,
   'continue.md': CONTINUE_COMMAND,
   'implement.md': IMPLEMENT_COMMAND,
-  'extend-implementation-review.md': EXTEND_IMPLEMENTATION_REVIEW_COMMAND,
   'resolve-implementation-challenge.md': RESOLVE_IMPLEMENTATION_CHALLENGE_COMMAND,
   'reconcile-mutation-episode.md': RECONCILE_MUTATION_EPISODE_COMMAND,
   'validate.md': VALIDATE_COMMAND,
@@ -59,6 +58,7 @@ const COMMAND_BODIES: Record<string, string> = {
   'start.md': START_COMMAND,
   'task.md': TASK_COMMAND,
   'approve.md': APPROVE_COMMAND,
+  'override-approve.md': OVERRIDE_APPROVE_COMMAND,
   'request-changes.md': REQUEST_CHANGES_COMMAND,
   'reject.md': REJECT_COMMAND,
   'check.md': CHECK_COMMAND,

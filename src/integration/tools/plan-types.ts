@@ -7,6 +7,7 @@
 
 import type { PlanEvidence, LoopVerdict, RevisionDelta } from '../../state/evidence.js';
 import type { PlanClaimDeclarationInput } from '../../state/proofgraph-approval.js';
+import type { EvalResult } from '../../machine/evaluate.js';
 import type { MutableSession, ToolContext } from './helpers.js';
 import { classifyToolCallMode, toolCallFlags } from './review-validation-mode.js';
 
@@ -58,7 +59,7 @@ export type PlanExecutionScope = MutablePlanSession & {
   context: ToolContext;
   input: PlanInputFlags;
   reviewPolicy: PlanReviewPolicy;
-  maxSelfReviewIterations: number;
+  maxPlanReviewIterations: number;
   claimSubmissionDiagnostics?: PlanClaimSubmissionDiagnostics;
 };
 
@@ -76,12 +77,14 @@ export type PlanSubmissionResponseInput = {
   planEvidence: PlanEvidence;
   planVersion: number;
   transitions: unknown;
+  /** Exact current plan review obligation/attempt authority for the dispatch. */
+  authority: import('../review/dispatch-authority.js').ReviewDispatchAuthority;
 };
 
 export type ConvergedPlanReviewInput = {
   scope: PlanExecutionScope;
   finalState: import('../../state/schema.js').SessionState;
-  ev: Parameters<typeof import('./helpers.js').formatEval>[0];
+  ev: EvalResult;
   transitions: unknown;
   revision: PlanRevisionResult;
   iteration: number;

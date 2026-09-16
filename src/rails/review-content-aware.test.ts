@@ -15,14 +15,14 @@ import {
   type ReviewReferenceInput,
 } from './review.js';
 import { makeProgressedState } from '../fixtures.js';
-import type { ReviewReport, ReviewReportFinding } from '../state/evidence.js';
+import type { ReviewReportDraft, ReviewReportFinding } from '../state/evidence.js';
 import type { RailBlocked } from './types.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
 const NOW = '2026-01-15T10:00:00.000Z';
 
-type RenderedReviewReport = Omit<ReviewReport, 'findings'> & {
+type RenderedReviewReport = Omit<ReviewReportDraft, 'findings'> & {
   readonly findings: Array<{
     readonly source: ReviewReportFinding['source'];
     readonly severity: 'info' | 'warning' | 'error';
@@ -31,7 +31,7 @@ type RenderedReviewReport = Omit<ReviewReport, 'findings'> & {
   }>;
 };
 
-function renderReviewReport(report: ReviewReport): RenderedReviewReport {
+function renderReviewReport(report: ReviewReportDraft): RenderedReviewReport {
   return {
     ...report,
     findings: report.findings.map((finding) =>
@@ -54,7 +54,7 @@ function renderReviewReport(report: ReviewReport): RenderedReviewReport {
 
 async function executeReview(
   ...args: Parameters<typeof executeReviewUnsafe>
-): Promise<ReviewReport | RailBlocked> {
+): Promise<ReviewReportDraft | RailBlocked> {
   return executeReviewUnsafe(...args);
 }
 

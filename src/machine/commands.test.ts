@@ -41,8 +41,19 @@ describe('commands', () => {
       expect(isCommandAllowed('ARCH_REVIEW', Command.REVIEW_DECISION)).toBe(true);
     });
 
+    it('/override-approve is allowed at all user gates', () => {
+      expect(isCommandAllowed('PLAN_REVIEW', Command.OVERRIDE_APPROVE)).toBe(true);
+      expect(isCommandAllowed('EVIDENCE_REVIEW', Command.OVERRIDE_APPROVE)).toBe(true);
+      expect(isCommandAllowed('ARCH_REVIEW', Command.OVERRIDE_APPROVE)).toBe(true);
+    });
+
     it('/validate is allowed in VALIDATION', () => {
       expect(isCommandAllowed('VALIDATION', Command.VALIDATE)).toBe(true);
+    });
+
+    it('/export is allowed only in EXPORT_READY', () => {
+      expect(isCommandAllowed('EXPORT_READY', Command.EXPORT)).toBe(true);
+      expect(isCommandAllowed('EVIDENCE_REVIEW', Command.EXPORT)).toBe(false);
     });
 
     it('wildcard commands allowed in all non-terminal phases', () => {
@@ -55,9 +66,10 @@ describe('commands', () => {
         'IMPLEMENTATION',
         'IMPL_REVIEW',
         'EVIDENCE_REVIEW',
+        'EXPORT_READY',
         'ARCHITECTURE',
         'ARCH_REVIEW',
-        'REVIEW',
+        'PEER_REVIEW',
       ];
       for (const phase of phases) {
         expect(isCommandAllowed(phase, Command.HYDRATE)).toBe(true);
@@ -81,8 +93,8 @@ describe('commands', () => {
         'ARCHITECTURE',
         'ARCH_REVIEW',
         'ARCH_COMPLETE',
-        'REVIEW',
-        'REVIEW_COMPLETE',
+        'PEER_REVIEW',
+        'PEER_REVIEW_COMPLETE',
       ];
       for (const phase of blockedPhases) {
         expect(isCommandAllowed(phase, Command.TICKET)).toBe(false);
@@ -101,8 +113,8 @@ describe('commands', () => {
         'COMPLETE',
         'ARCH_REVIEW',
         'ARCH_COMPLETE',
-        'REVIEW',
-        'REVIEW_COMPLETE',
+        'PEER_REVIEW',
+        'PEER_REVIEW_COMPLETE',
       ];
       for (const phase of blockedPhases) {
         expect(isCommandAllowed(phase, Command.ARCHITECTURE)).toBe(false);
@@ -123,8 +135,8 @@ describe('commands', () => {
         'ARCHITECTURE',
         'ARCH_REVIEW',
         'ARCH_COMPLETE',
-        'REVIEW',
-        'REVIEW_COMPLETE',
+        'PEER_REVIEW',
+        'PEER_REVIEW_COMPLETE',
       ];
       for (const phase of blockedPhases) {
         expect(isCommandAllowed(phase, Command.REVIEW)).toBe(false);
@@ -142,6 +154,13 @@ describe('commands', () => {
       expect(isCommandAllowed('PLAN', Command.REVIEW_DECISION)).toBe(false);
       expect(isCommandAllowed('IMPLEMENTATION', Command.REVIEW_DECISION)).toBe(false);
       expect(isCommandAllowed('READY', Command.REVIEW_DECISION)).toBe(false);
+    });
+
+    it('/override-approve blocked outside user gates', () => {
+      expect(isCommandAllowed('TICKET', Command.OVERRIDE_APPROVE)).toBe(false);
+      expect(isCommandAllowed('PLAN', Command.OVERRIDE_APPROVE)).toBe(false);
+      expect(isCommandAllowed('IMPLEMENTATION', Command.OVERRIDE_APPROVE)).toBe(false);
+      expect(isCommandAllowed('READY', Command.OVERRIDE_APPROVE)).toBe(false);
     });
 
     it('/validate blocked outside VALIDATION', () => {
@@ -166,8 +185,8 @@ describe('commands', () => {
         'ARCHITECTURE',
         'ARCH_REVIEW',
         'ARCH_COMPLETE',
-        'REVIEW',
-        'REVIEW_COMPLETE',
+        'PEER_REVIEW',
+        'PEER_REVIEW_COMPLETE',
       ];
       for (const phase of blockedPhases) {
         expect(isCommandAllowed(phase, Command.PLAN)).toBe(false);
@@ -178,7 +197,13 @@ describe('commands', () => {
   // ─── CORNER ────────────────────────────────────────────────
   describe('CORNER', () => {
     it('terminal phases block all commands', () => {
-      const terminals: Phase[] = ['COMPLETE', 'ARCH_COMPLETE', 'REVIEW_COMPLETE'];
+      const terminals: Phase[] = [
+        'COMPLETE',
+        'ARCH_COMPLETE',
+        'PEER_REVIEW_COMPLETE',
+        'REJECTED',
+        'ABORTED',
+      ];
       for (const phase of terminals) {
         for (const cmd of Object.values(Command)) {
           expect(isCommandAllowed(phase, cmd)).toBe(false);
@@ -193,8 +218,8 @@ describe('commands', () => {
       expect(isCommandAllowed('TICKET', 'unknown' as Command)).toBe(false);
     });
 
-    it('Command enum has exactly 12 entries', () => {
-      expect(Object.keys(Command).length).toBe(12);
+    it('Command enum has exactly 13 entries', () => {
+      expect(Object.keys(Command).length).toBe(13);
     });
 
     it('/plan is allowed in TICKET and PLAN only (not READY)', () => {
@@ -231,7 +256,7 @@ describe('commands', () => {
         'EVIDENCE_REVIEW',
         'ARCHITECTURE',
         'ARCH_REVIEW',
-        'REVIEW',
+        'PEER_REVIEW',
       ];
       const expectedAllowed: Record<Command, readonly Phase[] | '*'> = {
         [Command.HYDRATE]: '*',
@@ -239,12 +264,13 @@ describe('commands', () => {
         [Command.PLAN]: ['TICKET', 'PLAN'],
         [Command.CONTINUE]: '*',
         [Command.IMPLEMENT]: ['IMPLEMENTATION'],
-        [Command.EXTEND_IMPLEMENTATION_REVIEW]: ['IMPLEMENTATION'],
         [Command.RESOLVE_IMPLEMENTATION_CHALLENGE]: ['IMPL_REVIEW'],
         [Command.REVIEW_DECISION]: ['PLAN_REVIEW', 'EVIDENCE_REVIEW', 'ARCH_REVIEW'],
+        [Command.OVERRIDE_APPROVE]: ['PLAN_REVIEW', 'EVIDENCE_REVIEW', 'ARCH_REVIEW'],
         [Command.VALIDATE]: ['VALIDATION'],
         [Command.REVIEW]: ['READY'],
         [Command.ARCHITECTURE]: ['READY', 'ARCHITECTURE'],
+        [Command.EXPORT]: ['EXPORT_READY'],
         [Command.ABORT]: '*',
       };
 

@@ -48,7 +48,7 @@ import { buildMutationAttempt, loadReportRaw } from '../proofgraph/mutation-prov
 import type { ToolDefinition } from './helpers.js';
 import { formatError } from './error-format.js';
 import {
-  enrichWithNextAction,
+  enrichWithWorkflowDirective,
   formatBlocked,
   getWorktree,
   withMutableSessionTransaction,
@@ -177,7 +177,7 @@ export const record_mutation_evidence: ToolDefinition = {
         };
         await writeStateWithArtifacts(sessDir, nextState);
         return JSON.stringify(
-          enrichWithNextAction(
+          enrichWithWorkflowDirective(
             {
               phase: nextState.phase,
               status: `Mutation evidence recorded for attempt ${attempt.attemptId}`,

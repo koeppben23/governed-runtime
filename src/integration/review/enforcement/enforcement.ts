@@ -8,8 +8,9 @@
  *
  * Review verdict enforcement applies four integrity checks:
  * - L1 (Binary Gate): a verdict submission is blocked until a host-observed
- *   SDK reviewer invocation was recorded for the pending review. This module
- *   owns the transient signal tracking and the L1 gate.
+ *   visible native Task reviewer invocation with structured same-child findings
+ *   was recorded for the pending review. This module owns the transient signal
+ *   tracking and the L1 gate.
  * - L2 (Session Identity): the evidence participant identity must match the
  *   child session of the host-observed reviewer invocation.
  * - L3 (Capture Coherence): the host-captured reviewer record must be
@@ -30,7 +31,7 @@
  * - Plugin integration happens in plugin.ts (delegates to this module).
  * - Session-scoped state tracked per session ID.
  *
- * @version v5
+ * @version v6
  */
 
 import type { SessionState } from '../../../state/schema.js';
@@ -38,11 +39,10 @@ import {
   type SessionEnforcementState,
   type EnforcementResult,
   type PendingReviewTool,
-  REVIEW_REQUIRED_PREFIX,
 } from './types.js';
+import { isReviewDispatchRequired } from '../dispatch-signal.js';
 import { buildPendingReview, type ReviewSignalBinding } from './pending-review.js';
 
-import { TOOL_FLOWGUARD_REVIEW } from '../../tool-names.js';
 import {
   obligationTypeForTool,
   resolveReviewObligationTool,
@@ -50,6 +50,8 @@ import {
   type ReviewableTool,
 } from '../obligation-tools.js';
 import { parseToolResult } from '../../plugin-helpers.js';
+import { TOOL_FLOWGUARD_REVIEW } from '../../tool-names.js';
+import { isTerminalPhase } from '../../../machine/topology.js';
 
 // ─── State factory ───────────────────────────────────────────────────────────
 
@@ -60,7 +62,26 @@ export function createSessionState(): SessionEnforcementState {
 
 // ─── Hook handlers (pure functions) ──────────────────────────────────────────
 
-/** Process a FlowGuard tool response (tool.execute.after). */
+/**
+ * Outcome of tracking one FlowGuard tool response.
+ *
+ * `nonconforming` means the response projects a review requirement without the
+ * full obligation/attempt binding the host must authorize. Callers fail closed
+ * on this result and never register a pending review for it.
+ */
+export type ReviewTrackingResult =
+  | { readonly kind: 'ok' }
+  | {
+      readonly kind: 'nonconforming';
+      readonly code: 'REVIEW_ATTEMPT_UNAVAILABLE';
+      readonly reason: string;
+      readonly obligationId: string | null;
+    };
+
+function nonconforming(obligationId: string | null, reason: string): ReviewTrackingResult {
+  return { kind: 'nonconforming', code: 'REVIEW_ATTEMPT_UNAVAILABLE', reason, obligationId };
+}
+
 function trackReviewRequired(
   state: SessionEnforcementState,
   reviewTool: PendingReviewTool,
@@ -71,64 +92,31 @@ function trackReviewRequired(
   state.pendingReviews.set(reviewTool, buildPendingReview(reviewTool, now, binding));
 }
 
-function trackContentAnalysis(
-  state: SessionEnforcementState,
-  parsed: NonNullable<ReturnType<typeof parseToolResult>>,
-  now: string,
-): void {
-  state.pendingReviews.set(TOOL_FLOWGUARD_REVIEW, {
-    tool: TOOL_FLOWGUARD_REVIEW,
-    requestedAt: now,
-    attemptId: typeof parsed.reviewAttemptId === 'string' ? parsed.reviewAttemptId : null,
-    obligationId: reviewObligationIdFromSignal(parsed, true),
-  });
-}
-
-function handleContentAnalysisFlag(
-  state: SessionEnforcementState,
-  parsed: NonNullable<ReturnType<typeof parseToolResult>>,
-  toolName: string,
-  now: string,
-): void {
-  const attestation = parsed.requiredReviewAttestation as Record<string, unknown> | undefined;
-  if (
-    parsed.error === true &&
-    parsed.code === 'CONTENT_ANALYSIS_REQUIRED' &&
-    attestation &&
-    toolName === TOOL_FLOWGUARD_REVIEW
-  ) {
-    trackContentAnalysis(state, parsed, now);
-  }
-}
-
 export function onFlowGuardToolAfter(
   state: SessionEnforcementState,
   toolName: string,
   args: Record<string, unknown>,
   output: string,
   now: string,
-): void {
+): ReviewTrackingResult {
   const reviewContext = resolveReviewTrackingContext(toolName);
-  if (!reviewContext) return;
+  if (!reviewContext) return { kind: 'ok' };
 
   const parsed = parseToolResult(output);
-  if (!parsed) return;
+  if (!parsed) return { kind: 'ok' };
 
   clearSubmittedReview(state, reviewContext.obligationTool, args, parsed);
-  trackRequiredReview(state, reviewContext, parsed, now);
-  handleContentAnalysisFlag(state, parsed, toolName, now);
+  return trackRequiredReview(state, reviewContext, parsed, now);
 }
 
 function resolveReviewTrackingContext(toolName: string): {
   obligationTool: ReviewableTool | undefined;
   signalOwner: ReviewableTool | undefined;
-  isReviewContent: boolean;
 } | null {
   const obligationTool = resolveReviewObligationTool(toolName);
   const signalOwner = reviewSignalOwner(toolName);
-  const isReviewContent = toolName === TOOL_FLOWGUARD_REVIEW;
-  if (obligationTool === undefined && signalOwner === undefined && !isReviewContent) return null;
-  return { obligationTool, signalOwner, isReviewContent };
+  if (obligationTool === undefined && signalOwner === undefined) return null;
+  return { obligationTool, signalOwner };
 }
 
 function clearSubmittedReview(
@@ -139,23 +127,19 @@ function clearSubmittedReview(
 ): void {
   const hasSelfReviewVerdict =
     typeof args.reviewVerdict === 'string' && args.reviewVerdict.length > 0;
-  if (hasSelfReviewVerdict && parsed.error !== true) {
-    const verdictKey: PendingReviewTool = obligationTool ?? TOOL_FLOWGUARD_REVIEW;
-    state.pendingReviews.delete(verdictKey);
+  const completedPeerReview =
+    obligationTool === TOOL_FLOWGUARD_REVIEW &&
+    typeof args.reviewObligationId === 'string' &&
+    typeof parsed.phase === 'string' &&
+    isTerminalPhase(parsed.phase);
+  if ((hasSelfReviewVerdict || completedPeerReview) && parsed.error !== true) {
+    if (obligationTool) state.pendingReviews.delete(obligationTool);
   }
 }
 
-// eslint-disable-next-line complexity -- accepts established response projections at one boundary.
 function reviewObligationIdFromSignal(
   parsed: NonNullable<ReturnType<typeof parseToolResult>>,
-  isReviewContent: boolean,
 ): string | null {
-  if (isReviewContent) {
-    const attestation = parsed.requiredReviewAttestation;
-    if (!attestation || typeof attestation !== 'object' || Array.isArray(attestation)) return null;
-    const obligationId = (attestation as Record<string, unknown>).toolObligationId;
-    return typeof obligationId === 'string' ? obligationId : null;
-  }
   const value = parsed.reviewObligation;
   const reviewInvocation = parsed.reviewInvocation;
   const source =
@@ -172,18 +156,21 @@ function trackRequiredReview(
   context: NonNullable<ReturnType<typeof resolveReviewTrackingContext>>,
   parsed: NonNullable<ReturnType<typeof parseToolResult>>,
   now: string,
-): void {
-  const recordKey: PendingReviewTool = context.isReviewContent
-    ? TOOL_FLOWGUARD_REVIEW
-    : (context.signalOwner as PendingReviewTool);
-  const next = typeof parsed.next === 'string' ? parsed.next : '';
-  if (next.startsWith(REVIEW_REQUIRED_PREFIX) && (context.isReviewContent || context.signalOwner)) {
-    const attemptId = typeof parsed.reviewAttemptId === 'string' ? parsed.reviewAttemptId : null;
-    trackReviewRequired(state, recordKey, now, {
-      attemptId,
-      obligationId: reviewObligationIdFromSignal(parsed, context.isReviewContent),
-    });
+): ReviewTrackingResult {
+  const recordKey = context.signalOwner;
+  if (!isReviewDispatchRequired(parsed) || !recordKey) {
+    return { kind: 'ok' };
   }
+  const obligationId = reviewObligationIdFromSignal(parsed);
+  const attemptId = typeof parsed.reviewAttemptId === 'string' ? parsed.reviewAttemptId : null;
+  if (!obligationId || !attemptId) {
+    return nonconforming(
+      obligationId,
+      'a review dispatch requirement must project both its obligation id and the exact reviewer attempt id',
+    );
+  }
+  trackReviewRequired(state, recordKey, now, { attemptId, obligationId });
+  return { kind: 'ok' };
 }
 
 function checkPendingReview(
@@ -204,7 +191,7 @@ function checkPendingReview(
       return {
         allowed: false,
         code: 'SUBAGENT_REVIEW_NOT_INVOKED',
-        reason: `FlowGuard enforcement: recovered from session state — obligation ${pendingObligation.obligationId} is pending but no SDK reviewer invocation was recorded in the transient enforcement state.`,
+        reason: `FlowGuard enforcement: recovered from session state — obligation ${pendingObligation.obligationId} is pending but no visible native reviewer invocation was recorded in the transient enforcement state.`,
       };
     }
     return { allowed: true };
@@ -241,8 +228,9 @@ export function enforceBeforeVerdict(
   if (!pending) return { allowed: true };
 
   // L1 binds to the SPECIFIC pending review, not to the mere existence of any
-  // SDK invocation: the recorded invocation must belong to the pending
-  // obligation (and to its pre-authorized attempt, when the signal named one).
+  // invocation: the recorded invocation must be the visible native Task
+  // transport, belong to the exact pending obligation/attempt, and expose a
+  // navigable host transcript.
   if (pending.obligationId === null) {
     return {
       allowed: false,
@@ -252,15 +240,17 @@ export function enforceBeforeVerdict(
   }
   const bound = sessionState?.reviewAssurance?.invocations.some(
     (invocation) =>
-      invocation.invocationMode === 'sdk_session_prompt' &&
+      invocation.invocationMode === 'native_task_structured_followup' &&
+      invocation.hostVisible === true &&
+      invocation.transcriptNavigable === true &&
       invocation.obligationId === pending.obligationId &&
-      (pending.attemptId === null || invocation.attemptId === pending.attemptId),
+      invocation.attemptId === pending.attemptId,
   );
   if (bound) return { allowed: true };
 
   return {
     allowed: false,
     code: 'SUBAGENT_REVIEW_NOT_INVOKED',
-    reason: `FlowGuard enforcement: obligation ${pending.obligationId} signaled INDEPENDENT_REVIEW_REQUIRED but no host-observed structured reviewer invocation is bound to it before the verdict.`,
+    reason: `FlowGuard enforcement: obligation ${pending.obligationId} signaled a review requirement but no visible, navigable, host-observed structured reviewer invocation is bound to it before the verdict.`,
   };
 }

@@ -170,7 +170,7 @@ describe('cli/doctor', () => {
         1 +
         1 +
         1 + // opencode-instruction-source-activation (instruction-source gate)
-        11 +
+        12 + // platform-trust rows for opencode (7 fixed + 5 receipt-preservation)
         executableChecks +
         buildInfoChecks;
       expect(checks.length).toBe(expectedChecks);

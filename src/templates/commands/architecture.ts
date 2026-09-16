@@ -45,11 +45,11 @@ ${DISCOVERY_REVIEW_CAPTURE}
    - Read the latest review findings from session state.
    - Revise the ADR to address the feedback.
    - Submit the revised verdict in step 4 below — do NOT call \`flowguard_architecture({ title, adrText, claims })\` again, that path is for a brand-new ADR.
-4. Read the response. The \`next\` field contains the review workflow instructions.
+4. Read the response. The \`reviewDispatch\` field carries the review state, \`reviewInvocation\` carries the exact reviewer dispatch instructions, and \`directive\` carries the canonical next action.
 
 ### Phase 3: Review Loop
 
-5. Follow the \`next\` field instructions exactly:
+5. Follow the review-dispatch contract exactly:
 ${SHARED_REVIEW_LOOP({
   toolName: 'flowguard_architecture',
   artifactName: 'ADR',
@@ -59,7 +59,7 @@ ${SHARED_REVIEW_LOOP({
     'flowguard_architecture({ title: <same title>, adrText: <same ADR text>, claims: <same claims> })',
   strictRecoveryVerb: 'Re-submit',
   strictRecoveryNoun: 're-submissions',
-  iterationNote: '(max iterations from policy.maxSelfReviewIterations)',
+  iterationNote: '(max iterations from policy.reviewBudget.architecture)',
   repeatStep: 5,
   subagentExtra:
     ' with subagent_type "flowguard-reviewer" only — FlowGuard supplies the frozen ADR, ticket/context, iteration, planVersion, and all canonical reviewer instructions by host injection',
@@ -92,13 +92,13 @@ ${SHARED_REVIEW_LOOP({
 
 Happy path:
 1. \`flowguard_status\` → phase: READY
-2. \`flowguard_architecture({ title, adrText, claims })\` → returns \`next: "INDEPENDENT_REVIEW_REQUIRED: ..."\` or "INDEPENDENT_REVIEW_COMPLETED: ..."
-3. FlowGuard completes and binds the independent review. Submit only the bound \`reviewVerdict\`; do not submit or reconstruct \`reviewFindings\`.
+2. \`flowguard_architecture({ title, adrText, claims })\` → returns \`reviewDispatch.required: true\` with the reviewer \`reviewInvocation\`
+3. FlowGuard completes and binds the independent review. Submit only the bound \`reviewVerdict\` from \`reviewDispatch.verdict\`; do not submit or reconstruct \`reviewFindings\`.
 4. \`flowguard_architecture({ reviewVerdict: "accept" })\` → ARCH_REVIEW (user gate — the USER approves via /review-decision; this call does NOT approve the ADR)
 
 Revision path (when review returns changes_requested):
 1. \`flowguard_architecture({ reviewVerdict: "changes_requested", adrText: <revised>, claims: <revised> })\`
-2. → new review starts, returns \`next: "INDEPENDENT_REVIEW_REQUIRED: ..."\` for the next iteration
+2. → new review starts, returns \`reviewDispatch.required: true\` for the next iteration
 3. After re-reviewing, \`flowguard_architecture({ reviewVerdict: "accept" })\` → ARCH_REVIEW (user gate — the USER decides via /review-decision)
 
 ${renderCommandGovernanceRules()}

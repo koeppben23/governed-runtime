@@ -107,7 +107,7 @@ export function executeArchitecture(
   };
 
   // 6. Build state with ADR + initial self-review loop
-  const maxIterations = ctx.policy?.maxSelfReviewIterations ?? DEFAULT_MAX_REVIEW_ITERATIONS;
+  const maxIterations = ctx.policy?.reviewBudget.architecture ?? DEFAULT_MAX_REVIEW_ITERATIONS;
 
   const nextState: SessionState = {
     ...state,
@@ -116,6 +116,7 @@ export function executeArchitecture(
     architecture: adr,
     selfReview: {
       iteration: 0,
+      reviewCycle: state.reviewCycles.architecture,
       maxIterations,
       prevDigest: null,
       currDigest: adr.digest,

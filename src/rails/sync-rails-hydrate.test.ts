@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { executeHydrate } from '../rails/hydrate.js';
 import { createTestContext } from '../testing.js';
 import { makeState, FIXED_SESSION_UUID, FIXED_FINGERPRINT } from '../fixtures.js';
+import { CURRENT_SESSION_STATE_SCHEMA_VERSION } from '../state/schema.js';
 import type { HydratePolicyResolution } from '../config/policy.js';
 import { TEAM_POLICY } from '../config/policy.js';
 
@@ -28,7 +29,7 @@ describe('hydrate rail', () => {
         expect(result.state.phase).toBe('READY');
         expect(result.state.binding.hostSessionId).toBe(FIXED_SESSION_UUID);
         expect(result.state.binding.worktree).toBe('/tmp/test');
-        expect(result.state.schemaVersion).toBe('v4');
+        expect(result.state.schemaVersion).toBe(CURRENT_SESSION_STATE_SCHEMA_VERSION);
         // No runtime instance governs the session until the first host
         // mutation dispatch acquires the fencing lease.
         expect(result.state.runtimeLease).toBeNull();
@@ -45,6 +46,20 @@ describe('hydrate rail', () => {
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
         expect(result.state).toBe(existing);
+      }
+    });
+
+    it('initializes the human review-cycle counters at cycle 1', () => {
+      const result = executeHydrate(null, HYDRATE_INPUT, ctx);
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        // Explicit counters for every governed review loop: no default and no
+        // read-time migration — hydrate writes them into the new state.
+        expect(result.state.reviewCycles).toEqual({
+          plan: 1,
+          architecture: 1,
+          implementation: 1,
+        });
       }
     });
 

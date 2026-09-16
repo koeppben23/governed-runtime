@@ -13,7 +13,7 @@
  * Source of truth for each field:
  * - phase              → state.phase
  * - allowedCommands    → isCommandAllowed() for each known command
- * - nextAction         → resolveNextAction()
+ * - directive          → resolveWorkflowDirective()
  * - blocker           → evaluate() waiting/pending reason
  * - evidenceSummary    → evaluateCompleteness()
  * - policyMode         → state.policySnapshot?.mode ?? 'unknown'
@@ -29,7 +29,12 @@ import type { DecisionIdentity } from '../state/evidence-identity.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 import { evaluate } from '../machine/evaluate.js';
 import { allValidationsPassed, implValidationPassed } from '../machine/guards.js';
-import { resolveNextAction, type NextAction } from '../machine/next-action.js';
+import {
+  resolveExecutionDisposition,
+  resolveWorkflowDirective,
+  type ExecutionDisposition,
+  type WorkflowDirective,
+} from '../machine/workflow-directive.js';
 import { evaluateValidationEvidence } from '../machine/validation-evidence.js';
 import {
   isCommandAllowed,
@@ -37,7 +42,7 @@ import {
   type Command as FlowGuardCommand,
 } from '../machine/commands.js';
 import { PHASE_LABELS } from '../presentation/phase-labels.js';
-import { buildProductNextAction } from '../presentation/next-action-copy.js';
+import { directiveLabel } from '../presentation/directive-copy.js';
 
 const ALL_COMMANDS = Object.values(Command) as FlowGuardCommand[];
 import { evaluateCompleteness } from '../audit/completeness.js';
@@ -96,16 +101,13 @@ export interface StatusProjection {
   };
   /** Commands that are currently admissible. */
   allowedCommands: string[];
-  /** Next action guidance from the machine (canonical commands). */
-  nextAction: {
-    primaryCommand: string | null;
-    summary: string;
-  };
-  /** Product-friendly next action guidance (presentation layer). */
-  productNextAction: {
-    primaryCommand: string | null;
-    summary: string;
-  };
+  /**
+   * Derived execution disposition — never persisted. `blocked` never destroys
+   * the workflow position; `awaiting_human` marks an open human gate.
+   */
+  executionDisposition: ExecutionDisposition;
+  /** Canonical workflow directive, including the allowed commands verbatim. */
+  directive: WorkflowDirective;
   /**
    * Active blocker, if the current phase is waiting or pending.
    * reasonCode is null when no structured code exists in the canonical source.
@@ -156,7 +158,7 @@ export interface StatusProjection {
   readiness: KnownPresentationStatusInput;
 
   /**
-   * Canonical conclusion derived from evalResult and productNextAction.
+   * Canonical conclusion derived from evalResult and directive.
    *
    * The presentation builder MUST NOT derive conclusion kind or actions itself.
    * This field carries the already-decided conclusion, typed by kind.
@@ -216,7 +218,8 @@ export interface BlockedProjection {
    * - transition → false (auto-advanced)
    *
    * This is a DISPLAY HINT, not an independent canonical fact.
-   * It mirrors the same signal that feeds formatEval() for user guidance.
+   * It mirrors the same EvalResult signal that drives the structured
+   * `directive` for user guidance.
    */
   humanActionRequired: boolean | null;
 }
@@ -282,7 +285,7 @@ export interface FinishActionGuidance {
  *
  * Composition-only: every field is either copied verbatim from an existing
  * projection ({@link buildReadinessProjection}, {@link buildEvidenceDetailProjection},
- * {@link resolveNextAction}) or derived by the single presentation classifier
+ * {@link resolveWorkflowDirective}) or derived by the single presentation classifier
  * {@link deriveFinishOverallStatus}. No independent evidence/gate evaluation.
  */
 export interface FinishCard {
@@ -292,11 +295,8 @@ export interface FinishCard {
   readiness: ReadinessProjection;
   /** Evidence detail, copied verbatim from buildEvidenceDetailProjection. */
   evidence: EvidenceDetailProjection;
-  /** Canonical next action from resolveNextAction. */
-  nextAction: {
-    primaryCommand: string | null;
-    summary: string;
-  };
+  /** Canonical workflow directive. */
+  directive: WorkflowDirective;
   /**
    * Canonical blocker detail, copied verbatim from buildBlockedProjection.
    * Explains WHY the session is blocked (reason code/text, missing evidence,
@@ -407,7 +407,7 @@ export function buildStatusProjection(
   policy: FlowGuardPolicy,
 ): StatusProjection {
   const completeness = evaluateCompleteness(state);
-  const next = resolveNextAction(state.phase, state);
+  const directive = resolveWorkflowDirective(state);
   const allowed = ALL_COMMANDS.filter((cmd: FlowGuardCommand) =>
     isCommandAllowed(state.phase, cmd),
   );
@@ -416,13 +416,6 @@ export function buildStatusProjection(
   const blocker = buildBlocker(evalResult, state);
   const policyMode = state.policySnapshot?.mode ?? 'unknown';
   const profileId = state.activeProfile?.id ?? 'none';
-  const productNext = buildProductNextAction(
-    next,
-    state.phase,
-    state.error?.code === 'ABORTED',
-    state.regulatedArchiveStatus,
-    state,
-  );
 
   const actor = state.actorInfo
     ? {
@@ -443,14 +436,8 @@ export function buildStatusProjection(
     archiveStatus: state.regulatedArchiveStatus ?? null,
     lastExport: buildLastExport(state),
     allowedCommands: allowed.map((cmd: FlowGuardCommand) => `/${cmd}`),
-    nextAction: {
-      primaryCommand: next.commands[0] ?? null,
-      summary: next.text,
-    },
-    productNextAction: {
-      primaryCommand: productNext.commands[0] ?? null,
-      summary: productNext.text,
-    },
+    executionDisposition: resolveExecutionDisposition(state),
+    directive,
     blocker,
     evidenceSummary: {
       present: completeness.summary.complete,
@@ -464,7 +451,7 @@ export function buildStatusProjection(
     reviewLoop: getReviewLoopProgress(state),
     implementationRework: projectImplementationRework(state),
     remainingChecks: remainingValidationChecks(state),
-    conclusion: projectStatusConclusion(evalResult, productNext),
+    conclusion: projectStatusConclusion(evalResult, directive),
     readiness: deriveReadinessField(evalResult, completeness),
   };
 }
@@ -511,14 +498,17 @@ function resolveBlockerReason(input: {
   readonly validationEvidenceCode: string | null;
   readonly proofGraphGateCode: string | null;
   readonly incompleteReview: boolean;
-  readonly next: NextAction;
+  readonly directive: WorkflowDirective;
 }): { reasonCode: string | null; reasonText: string | null } {
   if (input.validationEvidenceBlocked) {
-    return { reasonCode: input.validationEvidenceCode, reasonText: input.next.text };
+    return {
+      reasonCode: input.validationEvidenceCode,
+      reasonText: directiveLabel(input.directive.code),
+    };
   }
   if (input.proofGraphGateCode) return { reasonCode: input.proofGraphGateCode, reasonText: null };
   return input.incompleteReview
-    ? { reasonCode: 'REVIEW_STATE_INCOMPLETE', reasonText: input.next.text }
+    ? { reasonCode: 'REVIEW_STATE_INCOMPLETE', reasonText: directiveLabel(input.directive.code) }
     : { reasonCode: null, reasonText: null };
 }
 
@@ -536,10 +526,10 @@ export function buildBlockedProjection(
   policy: FlowGuardPolicy,
 ): BlockedProjection {
   const evalResult = evaluate(state, { requireHumanGates: policy.requireHumanGates });
-  const next = resolveNextAction(state.phase, state);
+  const directive = resolveWorkflowDirective(state);
   const completeness = evaluateCompleteness(state);
 
-  const incompleteReview = next.code === 'REVIEW_STATE_INCOMPLETE';
+  const incompleteReview = directive.code === 'WORKFLOW_BLOCKED';
   const blocked = evalResult.kind === 'waiting' || incompleteReview;
   const missingEvidence = completeness.slots
     .filter((slot) => slot.required && (slot.status === 'missing' || slot.status === 'failed'))
@@ -563,16 +553,16 @@ export function buildBlockedProjection(
     validationEvidenceCode: validationEvidence?.code ?? null,
     proofGraphGateCode,
     incompleteReview,
-    next,
+    directive,
   });
 
   return {
     blocked,
     reasonCode: reason.reasonCode,
     reasonText: evalResult.kind === 'waiting' ? evalResult.reason : reason.reasonText,
-    recoveryHint: next.text,
+    recoveryHint: directive.context?.recovery ?? null,
     missingEvidence,
-    nextResolvableCommand: next.commands[0] ?? null,
+    nextResolvableCommand: directive.commands[0] ?? null,
     humanActionRequired: resolveHumanActionRequired(evalResult, incompleteReview),
   };
 }
@@ -648,8 +638,8 @@ function deriveReadinessField(
  * Extract blocker from an EvalResult.
  *
  * The blocker surface mirrors the EvalResult semantics used for
- * human-facing guidance. This is the same truth that feeds
- * formatEval() — no new blocker logic is invented here.
+ * human-facing guidance. This is the same truth that feeds the
+ * structured `directive` — no new blocker logic is invented here.
  *
  * At EVIDENCE_REVIEW the waiting blocker carries the registered reason code
  * of the ProofGraph gate that the review-decision rail enforces (mirrors the

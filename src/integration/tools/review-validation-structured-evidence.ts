@@ -1,6 +1,6 @@
 /**
  * @module integration/tools/review-validation-structured-evidence
- * @description Structured review findings resolution from SDK invocation evidence.
+ * @description Structured review findings resolution from native Task invocation evidence.
  *
  * Extracted from review-validation.ts. The final acceptance/rejection
  * authority remains there. Imports only from state, shared, and the
@@ -108,7 +108,7 @@ export function resolveStructuredFindings(
   const matchingInvocations = assurance.invocations.filter(
     (inv) =>
       inv.obligationId === obligation.obligationId &&
-      inv.invocationMode === 'sdk_session_prompt' &&
+      inv.invocationMode === 'native_task_structured_followup' &&
       inv.capturedRawFindings != null,
   );
   // Track the first unparseable capture so the caller can emit a DISTINCT

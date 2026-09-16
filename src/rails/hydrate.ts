@@ -65,6 +65,7 @@ import {
 import type { EffectiveGateBehavior, PolicyDegradedReason, PolicyMode } from '../config/policy.js';
 import type { PolicySource, PolicyResolutionReason, CentralMinimumMode } from '../config/policy.js';
 import type { HydratePolicyResolution } from '../config/policy.js';
+import type { ReviewBudget } from '../config/policy-types.js';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
@@ -117,8 +118,7 @@ export interface HydratePolicyInput {
   readonly policyDigest?: string;
   readonly policyVersion?: string;
   readonly policyPathHint?: string;
-  readonly maxSelfReviewIterations?: number;
-  readonly maxImplReviewIterations?: number;
+  readonly reviewBudget?: Partial<ReviewBudget>;
   readonly identityProvider?: IdpConfig;
   readonly identityProviderMode?: IdentityProviderMode;
   readonly minimumActorAssuranceForApproval?: 'best_effort' | 'claim_validated' | 'idp_verified';
@@ -173,11 +173,8 @@ export function applyHydrateOverrides(
 ): FlowGuardPolicy {
   return {
     ...base,
-    ...(p.maxSelfReviewIterations !== undefined
-      ? { maxSelfReviewIterations: p.maxSelfReviewIterations }
-      : {}),
-    ...(p.maxImplReviewIterations !== undefined
-      ? { maxImplReviewIterations: p.maxImplReviewIterations }
+    ...(p.reviewBudget !== undefined
+      ? { reviewBudget: { ...base.reviewBudget, ...p.reviewBudget } }
       : {}),
     ...(p.identityProvider !== undefined ? { identityProvider: p.identityProvider } : {}),
     ...(p.identityProviderMode !== undefined
@@ -320,7 +317,6 @@ function buildNewHydrateState(
     // dispatch acquires the fencing lease.
     runtimeLease: null,
     implementationRework: null,
-    implementationReviewExtensions: [],
     ...(s.claimedTaskClass ? { claimedTaskClass: s.claimedTaskClass } : {}),
     binding,
     ticket: null,
@@ -337,9 +333,10 @@ function buildNewHydrateState(
     implementation: null,
     reducedCeremony: null,
     implReview: null,
+    reviewCycles: { plan: 1, architecture: 1, implementation: 1 },
     reviewDecision: null,
     reviewReportPath: null,
-    standaloneReviewEvidence: [],
+    peerReviewEvidence: [],
     nextAdrNumber: 1,
     activeProfile,
     activeChecks,
@@ -359,6 +356,8 @@ function buildNewHydrateState(
     error: null,
     createdAt: now,
     regulatedArchiveStatus: null,
+    exportCompletionEvidence: null,
+    pendingSystemWork: null,
   };
 
   const result = evaluate(newState, ctx.policy);

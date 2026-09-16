@@ -139,10 +139,14 @@ export const FlowGuardConfigSchema = z.object({
     .object({
       /** Default policy mode when /hydrate is called without an explicit mode. */
       defaultMode: PolicyModeSchema.optional(),
-      /** Override max self-review iterations (PLAN phase). */
-      maxSelfReviewIterations: z.number().int().min(1).max(10).optional(),
-      /** Override max impl-review iterations (IMPL_REVIEW phase). */
-      maxImplReviewIterations: z.number().int().min(1).max(10).optional(),
+      /** Field-wise review-loop budget overrides. */
+      reviewBudget: z
+        .object({
+          plan: z.number().int().min(1).max(10).optional(),
+          architecture: z.number().int().min(1).max(10).optional(),
+          implementation: z.number().int().min(1).max(10).optional(),
+        })
+        .optional(),
       /** Override retries after accept findings contain blocking issues (F12). */
       maxIncoherentReviewerCaptureRetries: z.number().int().min(0).max(5).optional(),
       /** Override obligation-level reviewer-attempt budget (output repairs and

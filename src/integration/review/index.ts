@@ -11,9 +11,9 @@
  * - Obligation state transforms (updateObligation, blockObligation)
  * - Enforcement types, pending-review state, and the host-observed
  *   structured-invocation verdict gate
- * - Reviewer subagent orchestration (SDK invocation, retry, output parsing)
+ * - Reviewer result DTO for the visible native Task transport
  * - Review assurance state management (obligations, invocations, evidence)
- * - Durable dispatch authorization and SDK invocation evidence recording
+ * - Durable dispatch authorization and reviewer evidence recording
  * - Prompt construction for all review types
  * - Agent resolution (registry probe + cache)
  * - Findings JSON Schema definition
@@ -40,7 +40,16 @@ export type {
   EnforcementResult,
 } from './enforcement/types.js';
 
-export { REVIEW_REQUIRED_PREFIX } from './enforcement/types.js';
+// ─── Dispatch Signal ─────────────────────────────────────────────────────────
+
+export type { ReviewDispatchSignal } from './dispatch-signal.js';
+
+export {
+  reviewDispatchCompleted,
+  readReviewDispatch,
+  isReviewDispatchRequired,
+  isReviewDispatchCompleted,
+} from './dispatch-signal.js';
 
 // ─── Obligation Tools ────────────────────────────────────────────────────────
 
@@ -64,7 +73,6 @@ export {
   ensureReviewAssurance,
   createReviewObligation,
   appendReviewObligation,
-  reviewObligationResponseFields,
   findLatestObligation,
   findLatestPendingReviewObligation,
   findReviewObligationById,
@@ -77,25 +85,21 @@ export {
   appendInvocationEvidence,
 } from './assurance.js';
 
-// ─── Orchestrator ────────────────────────────────────────────────────────────
+// ─── Dispatch Authority ──────────────────────────────────────────────────────
 
 export type {
-  ReviewerBlockedResult,
-  ReviewerSuccessResult,
-  ReviewerResult,
-  OrchestrationResult,
-  InvokeReviewerOptions,
-} from './orchestrator.js';
+  ReviewDispatchAuthority,
+  ReviewDispatchAuthorityResult,
+} from './dispatch-authority.js';
 
 export {
-  REVIEW_COMPLETED_PREFIX,
-  retrySleep,
-  invokeReviewer,
-  buildMutatedOutput,
-  buildReviewContentMutatedOutput,
-  isReviewRequired,
-  extractReviewContext,
-} from './orchestrator.js';
+  resolveReviewDispatchAuthority,
+  reviewObligationResponseFields,
+} from './dispatch-authority.js';
+
+// ─── Reviewer Result DTO ─────────────────────────────────────────────────────
+
+export type { ReviewerSuccessResult } from './types.js';
 
 // ─── Prompt Builders ─────────────────────────────────────────────────────────
 
@@ -106,7 +110,6 @@ export type {
 } from './prompt-builders.js';
 
 export {
-  selectReviewerProfileRules,
   buildPlanReviewPrompt,
   buildImplReviewPrompt,
   buildArchitectureReviewPrompt,

@@ -36,6 +36,7 @@ function planFixture(
   const frozen = '# Plan\n\nBody text.';
   const obligation = createReviewObligation({
     obligationType: 'plan',
+    reviewCycle: 1,
     iteration: 1,
     planVersion: 1,
     now: NOW,

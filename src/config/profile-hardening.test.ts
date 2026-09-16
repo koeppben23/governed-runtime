@@ -24,7 +24,7 @@ describe('config/profile/baseline-hardening', () => {
     });
 
     it('baseline profile has review checklist', () => {
-      const review = resolveProfileInstructions(baselineProfile.instructions, 'REVIEW');
+      const review = resolveProfileInstructions(baselineProfile.instructions, 'PEER_REVIEW');
       expect(review).toContain('Review Checklist');
       expect(review).toContain('Error Handling');
       expect(review).toContain('Input Validation');

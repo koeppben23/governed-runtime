@@ -49,10 +49,9 @@
  */
 
 import {
-  formatEval,
   formatBlocked,
   formatAutoAdvanceOverflow,
-  enrichWithNextAction,
+  enrichWithWorkflowDirective,
   writeStateWithArtifacts,
 } from './helpers.js';
 
@@ -60,7 +59,7 @@ import {
 import type { SessionState } from '../../state/schema.js';
 import { evaluate, evaluateWithEvent } from '../../machine/evaluate.js';
 import { implValidationPassed } from '../../machine/guards.js';
-import { resolveNextAction } from '../../machine/next-action.js';
+import { resolveWorkflowDirective } from '../../machine/workflow-directive.js';
 
 // Rail helpers
 import { applyTransition, autoAdvance } from '../../rails/types.js';
@@ -69,11 +68,7 @@ import { applyTransition, autoAdvance } from '../../rails/types.js';
 import { readConfig } from '../../adapters/persistence-config.js';
 
 // Presentation
-import {
-  buildEvidenceReviewCard,
-  PHASE_LABELS,
-  buildProductNextAction,
-} from '../../presentation/index.js';
+import { buildEvidenceReviewCard, PHASE_LABELS } from '../../presentation/index.js';
 import type { EvidenceReviewCardInput } from '../../presentation/evidence-review-card.js';
 
 // Evidence types
@@ -93,11 +88,11 @@ import { buildReviewChallengeContract } from '../review/challenge-contract.js';
 import type { ImplementRuntime } from './implement-shared.js';
 import {
   activateImplementationReviewObligation,
-  effectiveImplementationReviewIterations,
   nextImplementationReviewIteration,
   normalizeHostFindings,
   unknownOutcomeRevalidationBlock,
 } from './implement-shared.js';
+import { handleTransportRecovery } from './implement-review-recovery.js';
 import { latestUnknownOutcomeResolvedAt } from '../../state/evidence-mutation-episode.js';
 import { handleUnableToReview } from './implement-unable-review.js';
 import type { CompactProofPresentation } from '../../presentation/proof-model.js';
@@ -258,10 +253,8 @@ function appendImplReviewState(input: {
     ...runtime.state,
     implReview: {
       iteration,
-      maxIterations: effectiveImplementationReviewIterations(
-        runtime.state,
-        runtime.maxImplReviewIterations,
-      ),
+      reviewCycle: runtime.state.reviewCycles.implementation,
+      maxIterations: runtime.maxImplementationReviewIterations,
       prevDigest: implementation.digest,
       currDigest: implementation.digest,
       revisionDelta: 'none',
@@ -293,40 +286,55 @@ async function handleChangesRequestedReview(input: {
   reviewFindings: ReviewFindings[];
   proofSummary: CompactProofPresentation;
 }): Promise<string> {
-  const target = evaluateWithEvent(input.runtime.state.phase, 'CHANGES_REQUESTED');
+  const maxIterations = input.runtime.maxImplementationReviewIterations;
+  const exhausted = input.iteration >= maxIterations;
+  // An exhausted loop no longer clears the implementation. It advances to the
+  // final human gate, which becomes a governance override gate: the human may
+  // still accept the unchanged reviewed revision explicitly, request changes,
+  // or reject. Below the budget, changes_requested remains an internal repair
+  // continuation back to IMPLEMENTATION.
+  const event = exhausted ? 'REVIEW_EXHAUSTED' : 'CHANGES_REQUESTED';
+  const target = evaluateWithEvent(input.runtime.state.phase, event);
   if (target === undefined) {
     return formatBlocked('INVALID_TRANSITION', {
-      event: 'CHANGES_REQUESTED',
+      event,
       phase: input.runtime.state.phase,
     });
   }
 
   const at = input.runtime.ctx.now();
-  const maxIterations = effectiveImplementationReviewIterations(
-    input.runtime.state,
-    input.runtime.maxImplReviewIterations,
-  );
-  const exhausted = input.iteration >= maxIterations;
-  const finalState = applyTransition(
-    {
-      ...input.reviewedState,
-      implementation: null,
-      implementationRework: {
-        rejectedDigest: input.runtime.state.implementation!.digest,
-        exhausted,
-      },
-      implValidation: [],
-      implReview: null,
-      reducedCeremony: null,
-    },
-    input.runtime.state.phase,
-    target,
-    'CHANGES_REQUESTED',
-    at,
-  );
-  const transitions = [
-    { from: input.runtime.state.phase, to: finalState.phase, event: 'CHANGES_REQUESTED', at },
-  ];
+  const finalState = exhausted
+    ? applyTransition(
+        {
+          ...input.reviewedState,
+          implementationRework: {
+            rejectedDigest: input.runtime.state.implementation!.digest,
+            exhausted: true,
+          },
+        },
+        input.runtime.state.phase,
+        target,
+        event,
+        at,
+      )
+    : applyTransition(
+        {
+          ...input.reviewedState,
+          implementation: null,
+          implementationRework: {
+            rejectedDigest: input.runtime.state.implementation!.digest,
+            exhausted: false,
+          },
+          implValidation: [],
+          implReview: null,
+          reducedCeremony: null,
+        },
+        input.runtime.state.phase,
+        target,
+        event,
+        at,
+      );
+  const transitions = [{ from: input.runtime.state.phase, to: finalState.phase, event, at }];
   await writeStateWithArtifacts(input.runtime.sessDir, finalState);
 
   const response: Record<string, unknown> = {
@@ -335,10 +343,13 @@ async function handleChangesRequestedReview(input: {
     status: exhausted
       ? `Implementation review iteration ${input.iteration}/${maxIterations} exhausted with Changes requested.`
       : `Implementation review iteration ${input.iteration}/${maxIterations}. Changes requested.`,
-    next: exhausted
-      ? 'A user must explicitly authorize more review iterations with /extend-implementation-review <positive integer> before implementation evidence can be re-recorded.'
-      : 'Make the requested code changes using read/write/bash tools, then call flowguard_implement (without reviewVerdict) to re-record the implementation. ' +
-        `After re-recording, call the ${REVIEWER_SUBAGENT_TYPE} subagent again for independent review.`,
+    ...(exhausted
+      ? {}
+      : {
+          agentInstruction:
+            'Make the requested code changes using read/write/bash tools, then call flowguard_implement (without reviewVerdict) to re-record the implementation. ' +
+            `After re-recording, call the ${REVIEWER_SUBAGENT_TYPE} subagent again for independent review.`,
+        }),
     _audit: { transitions },
   };
   addLatestImplementationReview(response, input.reviewFindings);
@@ -348,18 +359,18 @@ async function handleChangesRequestedReview(input: {
   // re-record -> validation -> challenge resolution -> fresh independent
   // review), so the response carries compact status/next guidance and NO
   // presentation card. Only when the budget is exhausted does the loop end in
-  // a user decision; that terminal state renders the full card with the
-  // /extend-implementation-review action.
+  // a user decision at the governance override gate; that state renders the
+  // full card with the /override-approve action.
   if (exhausted) {
     response.presentation = {
       markdown: buildImplReviewChangesRequestedMarkdown(
         `Implementation review iteration ${input.iteration}/${maxIterations} exhausted with Changes requested.`,
         input.proofSummary,
-        buildProductNextAction(resolveNextAction(finalState.phase, finalState), finalState.phase),
+        resolveWorkflowDirective(finalState),
       ),
     };
   }
-  return JSON.stringify(enrichWithNextAction(response, finalState));
+  return JSON.stringify(enrichWithWorkflowDirective(response, finalState));
 }
 
 async function handleApprovedReview(input: {
@@ -383,13 +394,12 @@ async function handleApprovedReview(input: {
   if (advanced.kind === 'overflow') {
     return formatAutoAdvanceOverflow(advanced);
   }
-  const { state: finalState, evalResult: ev, transitions } = advanced;
+  const { state: finalState, transitions } = advanced;
   await writeStateWithArtifacts(input.runtime.sessDir, finalState);
 
   const response: Record<string, unknown> = {
     phase: finalState.phase,
     implReviewIteration: input.iteration,
-    next: input.runtime.args.reviewVerdict === 'accept' ? formatEval(ev) : undefined,
     _audit: { transitions },
   };
   addLatestImplementationReview(response, input.reviewFindings);
@@ -398,13 +408,12 @@ async function handleApprovedReview(input: {
   const statusLine =
     input.runtime.args.reviewVerdict === 'accept'
       ? `Implementation review converged at iteration ${input.iteration}. Reviewer accepted.`
-      : `Implementation review reached max iterations (${input.iteration}/${input.runtime.maxImplReviewIterations}). Force-converged.`;
-  const nextAction = resolveNextAction(finalState.phase, finalState);
-  const productNext = buildProductNextAction(nextAction, finalState.phase);
+      : `Implementation review reached max iterations (${input.iteration}/${input.runtime.maxImplementationReviewIterations}). Force-converged.`;
+  const directive = resolveWorkflowDirective(finalState);
   const latestFindings = input.reviewFindings.at(-1);
   const cardInput: EvidenceReviewCardInput = {
     phaseLabel: PHASE_LABELS[finalState.phase],
-    productNextAction: productNext,
+    directive,
     proofSummary: input.proofSummary,
     statusLine,
     forcedConvergence: input.runtime.args.reviewVerdict !== 'accept',
@@ -421,9 +430,9 @@ async function handleApprovedReview(input: {
   if (input.runtime.args.reviewVerdict === 'accept') {
     response.status = `Implementation review converged at iteration ${input.iteration}. Reviewer accepted.`;
   } else {
-    response.status = `Implementation review reached max iterations (${input.iteration}/${input.runtime.maxImplReviewIterations}). Force-converged.`;
+    response.status = `Implementation review reached max iterations (${input.iteration}/${input.runtime.maxImplementationReviewIterations}). Force-converged.`;
   }
-  return JSON.stringify(enrichWithNextAction(response, finalState));
+  return JSON.stringify(enrichWithWorkflowDirective(response, finalState));
 }
 
 function handleTaskTransportFailureRetry(input: ImplementRuntime): string | null {
@@ -471,9 +480,9 @@ async function handleSubmittedImplementationReview(input: {
       now: runtime.ctx.now(),
       worktree: runtime.worktree,
     });
-    if (reissued.blocked || !reissued.obligation || !reissued.attemptId) {
+    if (reissued.blocked || !reissued.obligation || !reissued.attempt) {
       return JSON.stringify(
-        enrichWithNextAction(
+        enrichWithWorkflowDirective(
           JSON.parse(
             formatBlocked('REVIEWER_CONTEXT_UNAVAILABLE', {
               reason:
@@ -484,14 +493,7 @@ async function handleSubmittedImplementationReview(input: {
         ),
       );
     }
-    const retryAttempt = reissued.state.reviewAssurance?.attempts.find(
-      (attempt) => attempt.attemptId === reissued.attemptId,
-    );
-    if (!retryAttempt) {
-      return formatBlocked('REVIEWER_CONTEXT_UNAVAILABLE', {
-        reason: 'a fresh reviewer attempt could not be activated',
-      });
-    }
+    const retryAttempt = reissued.attempt;
     const { reviewedState } = appendImplReviewState({
       runtime,
       iteration,
@@ -576,6 +578,9 @@ export async function handleImplReview(input: ImplementRuntime): Promise<string>
 
   const iteration = nextImplementationReviewIteration(input.state);
   const planVersion = (input.state.plan?.history.length ?? 0) + 1;
+  if (input.args.reviewRecovery === 'retry_transport') {
+    return handleTransportRecovery(input);
+  }
   const transportFailureRetry = handleTaskTransportFailureRetry(input);
   if (transportFailureRetry) return transportFailureRetry;
   const submittedVerdict = input.args.reviewVerdict;

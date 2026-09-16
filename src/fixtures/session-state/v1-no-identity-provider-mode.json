@@ -26,8 +26,7 @@
     "requestedMode": "team",
     "effectiveGateBehavior": "human_gated",
     "requireHumanGates": true,
-    "maxSelfReviewIterations": 3,
-    "maxImplReviewIterations": 3,
+    "reviewBudget": { "plan": 3, "architecture": 3, "implementation": 3 },
     "allowSelfApproval": true,
     "minimumActorAssuranceForApproval": "best_effort",
     "audit": {

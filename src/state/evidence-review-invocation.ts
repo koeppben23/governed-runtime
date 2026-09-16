@@ -2,12 +2,12 @@
  * @module state/evidence-review-invocation
  * @description Independent-review invocation-evidence schema.
  *
- * `ReviewInvocationEvidence` captures the single sanctioned way an independent
- * reviewer is invoked: a host-observed SDK child session whose structured
- * findings were captured by the host. There is exactly one generation of this
- * evidence; any other mode or provenance is invalid state and fails parsing.
+ * `ReviewInvocationEvidence` captures host-observed reviewer execution and the
+ * structured findings bound to it. The only sanctioned OpenCode transport keeps
+ * one native, host-visible Task child across review execution and the
+ * schema-constrained serialization follow-up.
  *
- * @version v2
+ * @version v4
  */
 
 import { z } from 'zod';
@@ -26,10 +26,16 @@ export const ReviewInvocationEvidence = z
     agentType: z.literal(REVIEWER_SUBAGENT_TYPE),
     /** Persisted host-authoritative attempt identity. */
     attemptId: z.string().uuid(),
-    /** The only sanctioned invocation transport: a host-observed SDK session prompt. */
-    invocationMode: z.literal('sdk_session_prompt'),
-    /** Whether this invocation produced a host-visible child session in the host GUI. */
-    hostVisible: z.boolean(),
+    /**
+     * The reviewer executes as a native OpenCode Task child and emits its
+     * authoritative structured findings through a schema-constrained follow-up
+     * in that same child session.
+     */
+    invocationMode: z.literal('native_task_structured_followup'),
+    /** Native Task execution must be visible from the parent host session. */
+    hostVisible: z.literal(true),
+    /** Native Task metadata must provide a navigable child transcript. */
+    transcriptNavigable: z.literal(true),
     promptHash: z.string().min(1),
     canonicalPromptDigest: Sha256Digest.optional(),
     modelPromptDigest: Sha256Digest.nullable().optional(),

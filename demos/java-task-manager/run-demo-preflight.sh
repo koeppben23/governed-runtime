@@ -94,6 +94,10 @@ fi
 # Resolve tarball to absolute path before cd, so relative paths survive the cd into WORKSPACE
 TARBALL="$(cd "$(dirname "$TARBALL")" && pwd)/$(basename "$TARBALL")"
 
+# Resolve this demo directory before cd, so the demo-contract docs are found
+# even when the script is invoked with a relative path.
+DEMO_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 # ─── Locate node version file ──────────────────────────────────────────────────
 
 if [[ -z "$NODE_VERSION_FILE" ]]; then
@@ -251,6 +255,91 @@ fi
 if [[ "$OPENCODE_VERSION" != "unknown" ]]; then
     echo "  OpenCode: $OPENCODE_VERSION"
     check "OpenCode version" 0
+fi
+
+# ─── Demo contract ─────────────────────────────────────────────────────────────
+
+echo ""
+echo "--- Demo contract ---"
+CONTRACT_DOCS=(
+    "$DEMO_DIR/DEMO_SCRIPT.md"
+    "$DEMO_DIR/README.md"
+    "$DEMO_DIR/FALLBACK.md"
+    "$DEMO_DIR/RESET.md"
+)
+
+# Retired phase tokens: standalone REVIEW or REVIEW_COMPLETE. The pattern only
+# matches token boundaries, so PEER_REVIEW, PEER_REVIEW_COMPLETE, IMPL_REVIEW,
+# ARCH_REVIEW, EVIDENCE_REVIEW, and REVIEW_MET do not match.
+if grep -nE '(^|[^A-Z_])REVIEW(_COMPLETE)?([^A-Z_]|$)' "${CONTRACT_DOCS[@]}" >/dev/null 2>&1; then
+    echo "  Retired REVIEW / REVIEW_COMPLETE phase token found in the demo docs:" >&2
+    grep -nE '(^|[^A-Z_])REVIEW(_COMPLETE)?([^A-Z_]|$)' "${CONTRACT_DOCS[@]}" >&2 || true
+    check "no retired REVIEW / REVIEW_COMPLETE phase tokens" 1
+else
+    check "no retired REVIEW / REVIEW_COMPLETE phase tokens" 0
+fi
+
+# Retired force-convergence story.
+if grep -niE 'force-convergence' "${CONTRACT_DOCS[@]}" >/dev/null 2>&1; then
+    echo "  Retired force-convergence claim found in the demo docs:" >&2
+    grep -niE 'force-convergence' "${CONTRACT_DOCS[@]}" >&2 || true
+    check "no force-convergence claims" 1
+else
+    check "no force-convergence claims" 0
+fi
+
+# /export and /archive are not synonyms.
+if grep -nF 'Both call flowguard_archive' "${CONTRACT_DOCS[@]}" >/dev/null 2>&1; then
+    echo "  Retired /export == /archive synonym claim found:" >&2
+    grep -nF 'Both call flowguard_archive' "${CONTRACT_DOCS[@]}" >&2 || true
+    check "no /export == /archive synonym claim" 1
+else
+    check "no /export == /archive synonym claim" 0
+fi
+
+# Required canonical mentions.
+if grep -qF '/override-approve' "${CONTRACT_DOCS[@]}"; then
+    check "docs mention /override-approve" 0
+else
+    echo "  Missing /override-approve in the demo docs." >&2
+    check "docs mention /override-approve" 1
+fi
+
+if grep -qF 'GOVERNANCE_OVERRIDE_REQUIRED' "${CONTRACT_DOCS[@]}"; then
+    check "docs mention GOVERNANCE_OVERRIDE_REQUIRED" 0
+else
+    echo "  Missing GOVERNANCE_OVERRIDE_REQUIRED in the demo docs." >&2
+    check "docs mention GOVERNANCE_OVERRIDE_REQUIRED" 1
+fi
+
+if grep -qF 'reviewDispatch' "${CONTRACT_DOCS[@]}"; then
+    check "docs mention reviewDispatch" 0
+else
+    echo "  Missing reviewDispatch in the demo docs." >&2
+    check "docs mention reviewDispatch" 1
+fi
+
+if grep -qF 'EXPORT_READY' "$DEMO_DIR/DEMO_SCRIPT.md"; then
+    check "development part documents EXPORT_READY" 0
+else
+    echo "  Missing EXPORT_READY in DEMO_SCRIPT.md." >&2
+    check "development part documents EXPORT_READY" 1
+fi
+
+if grep -qF 'PEER_REVIEW_COMPLETE' "${CONTRACT_DOCS[@]}"; then
+    check "docs document PEER_REVIEW_COMPLETE" 0
+else
+    echo "  Missing PEER_REVIEW_COMPLETE in the demo docs." >&2
+    check "docs document PEER_REVIEW_COMPLETE" 1
+fi
+
+# The peer review is host-orchestrated: the human never submits review findings.
+if grep -niE 'submits reviewFindings|submit reviewFindings' "$DEMO_DIR/DEMO_SCRIPT.md" >/dev/null 2>&1; then
+    echo "  Retired manual reviewFindings submission story found:" >&2
+    grep -niE 'submits reviewFindings|submit reviewFindings' "$DEMO_DIR/DEMO_SCRIPT.md" >&2 || true
+    check "no manual reviewFindings submission in the peer review" 1
+else
+    check "no manual reviewFindings submission in the peer review" 0
 fi
 
 # ─── Summary ───────────────────────────────────────────────────────────────────

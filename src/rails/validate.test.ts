@@ -92,6 +92,7 @@ function validationState(overrides?: Record<string, unknown>) {
     },
     selfReview: {
       iteration: 1,
+      reviewCycle: 1,
       maxIterations: 3,
       prevDigest: null,
       currDigest: 'd1',
@@ -116,6 +117,27 @@ describe('validate rail', () => {
       if (result.kind === 'ok') {
         expect(result.state.phase).toBe('IMPLEMENTATION');
         expect(result.state.validation).toHaveLength(2);
+      }
+    });
+
+    it('a blocked outcome (subject drift) keeps VALIDATION and clears no approval authority', async () => {
+      const state = validationState();
+      const executors: ValidateExecutors = {
+        runCheck: vi.fn(async (checkId) => ({
+          ...makeValidationResult(checkId, false, 'subject changed during execution'),
+          outcome: 'blocked' as const,
+          exitCode: 0,
+          classificationReason: 'VERIFICATION_SUBJECT_CHANGED: plan digest changed',
+        })),
+      };
+      const result = await executeValidate(state, ctx, executors);
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.phase).toBe('VALIDATION');
+        expect(result.state.plan).not.toBeNull();
+        expect(result.state.selfReview).not.toBeNull();
+        expect(result.state.reviewDecision).not.toBeNull();
+        expect(result.state.validation[0]).toMatchObject({ outcome: 'blocked', passed: false });
       }
     });
 
@@ -219,6 +241,7 @@ describe('validate rail', () => {
         },
         selfReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: 'd1',

@@ -132,7 +132,7 @@ describe('integration/plugin-compaction', () => {
 
       expect(result).toContain('**Phase**: Implementation review in progress (IMPL_REVIEW)');
       expect(result).toContain('**Pending review obligations**: 1');
-      expect(result).not.toContain('REVIEW_COMPLETE');
+      expect(result).not.toContain('PEER_REVIEW_COMPLETE');
       expect(result).not.toContain('**Phase**: Complete');
     });
 

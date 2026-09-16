@@ -39,6 +39,7 @@ function state(phase: Phase, overrides: Partial<SessionState> = {}): SessionStat
     implementation: null,
     reducedCeremony: null,
     implReview: null,
+    reviewCycles: { plan: 1, architecture: 1, implementation: 1 },
     reviewDecision: null,
     reviewReportPath: null,
     nextAdrNumber: 1,
@@ -51,8 +52,7 @@ function state(phase: Phase, overrides: Partial<SessionState> = {}): SessionStat
       requestedMode: 'team',
       effectiveGateBehavior: 'human_gated',
       requireHumanGates: true,
-      maxSelfReviewIterations: 3,
-      maxImplReviewIterations: 5,
+      reviewBudget: { plan: 3, architecture: 3, implementation: 5 },
       allowSelfApproval: false,
     },
     initiatedBy: 'initiator-1',
@@ -76,8 +76,7 @@ function flowGuardPolicy(overrides: Record<string, unknown> = {}) {
   return {
     mode: 'team',
     requireHumanGates: true,
-    maxSelfReviewIterations: 3,
-    maxImplReviewIterations: 5,
+    reviewBudget: { plan: 3, architecture: 3, implementation: 5 },
     allowSelfApproval: false,
     ...overrides,
   } as unknown as ImplementRuntime['policy'];
@@ -136,6 +135,7 @@ describe('nextImplementationReviewIteration', () => {
     const s = state('IMPL_REVIEW', {
       implReview: {
         iteration: 1,
+        reviewCycle: 1,
         maxIterations: 5,
         prevDigest: null,
         currDigest: 'digest-impl',
@@ -156,17 +156,17 @@ describe('nextImplementationReviewIteration', () => {
 // ─── buildImplementRuntime ────────────────────────────────────────────────────
 
 describe('buildImplementRuntime', () => {
-  it('derives maxImplReviewIterations from policy', () => {
+  it('derives the implementation review budget from policy', () => {
     const rt = buildImplementRuntime({
       args: implementArgs(),
       context: toolContext(),
       worktree: '/tmp/repo',
       sessDir: '/tmp/sess',
       state: state('IMPLEMENTATION'),
-      policy: flowGuardPolicy({ maxImplReviewIterations: 7 }),
+      policy: flowGuardPolicy({ reviewBudget: { plan: 3, architecture: 3, implementation: 7 } }),
       ctx: {} as unknown as ImplementRuntime['ctx'],
     });
-    expect(rt.maxImplReviewIterations).toBe(7);
+    expect(rt.maxImplementationReviewIterations).toBe(7);
   });
 });
 

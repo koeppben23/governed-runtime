@@ -4,7 +4,7 @@
  */
 
 import { createSessionState, onFlowGuardToolAfter } from './review/enforcement/enforcement.js';
-import { REVIEW_REQUIRED_PREFIX } from './review/enforcement/types.js';
+import { reviewDispatchRequired } from './review/dispatch-signal.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import {
   artifactReviewSubjectScope,
@@ -25,11 +25,11 @@ const MODE_A_OBLIGATION_ID = '44444444-4444-4444-8444-444444444444';
 // ─── Factory Functions ───────────────────────────────────────────────────────
 
 /**
- * Build a Mode A response with INDEPENDENT_REVIEW_REQUIRED containing iteration
- * and planVersion. `obligationId` defaults to a realistic fixture obligation
- * identity so the pending review satisfies the host attestation-constants
- * invariant; pass `null` to deliberately model a signal without obligation/
- * host attestation.
+ * Build a Mode A response carrying the structured review-dispatch signal with
+ * iteration and planVersion. `obligationId` defaults to a realistic fixture
+ * obligation identity so the pending review satisfies the host
+ * attestation-constants invariant; pass `null` to deliberately model a signal
+ * without obligation/host attestation.
  */
 export function modeAResponse(
   iteration = 0,
@@ -41,6 +41,7 @@ export function modeAResponse(
     status: `Plan submitted (v${planVersion}).`,
     selfReviewIteration: iteration,
     reviewMode: 'subagent',
+    reviewDispatch: reviewDispatchRequired(),
     ...(obligationId
       ? {
           reviewAttemptId: `att-${obligationId}`,
@@ -64,11 +65,6 @@ export function modeAResponse(
           },
         }
       : {}),
-    next:
-      `${REVIEW_REQUIRED_PREFIX}: Call the flowguard-reviewer subagent via Task tool. ` +
-      `Use subagent_type "flowguard-reviewer" with a prompt that includes: ` +
-      `(1) the full plan text, (2) the ticket text, (3) iteration=${iteration}, ` +
-      `(4) planVersion=${planVersion}.`,
   });
 }
 
@@ -122,6 +118,7 @@ export function pendingObligation(overrides: Partial<ReviewObligation> = {}): Re
   const base = createReviewObligation({
     obligationType: 'plan',
     iteration: 0,
+    reviewCycle: 1,
     planVersion: 1,
     now: NOW,
     subjectDigest: 'diagnostics-test-subject',
@@ -200,7 +197,7 @@ export function setupFullCycle(
   } = opts;
 
   const state = createSessionState();
-  // Step 1: Mode A — FlowGuard tool signals INDEPENDENT_REVIEW_REQUIRED
+  // Step 1: Mode A — FlowGuard tool carries the review-dispatch signal
   onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(iteration, planVersion), NOW);
 
   const obligation = pendingObligation({

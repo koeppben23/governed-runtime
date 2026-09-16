@@ -241,11 +241,11 @@ export type PlanApprovalCertificate = z.infer<typeof PlanApprovalCertificate>;
  *   review evidence whose obligation subjectDigest equals the certified ADR
  *   digest exactly (reviewer_accepted path).
  * - `review_exhausted_override`: the review budget ended without reviewer
- *   acceptance; the human overrode it. The certificate records which subject
- *   the last real bound evidence actually reviewed (`reviewedSubjectDigest`)
- *   separately from the approved subject (`approvedSubjectDigest`) so the
- *   difference stays explicit, machine-readable provenance. A reviewed digest
- *   equal to the approved digest is still an override — it was not accepted.
+ *   acceptance; the human overrode it. The binding is hardened to the exact
+ *   reviewed subject: `reviewedSubjectDigest === approvedSubjectDigest` is a
+ *   schema invariant. An override may release open findings of the reviewed
+ *   ADR, never a different revision. A reviewed digest equal to the approved
+ *   digest is still an override — it was not accepted.
  */
 export const ArchitectureReviewBinding = z.discriminatedUnion('kind', [
   z
@@ -302,6 +302,17 @@ export const ArchitectureApprovalCertificate = z
         path: ['reviewBinding', 'approvedSubjectDigest'],
         message:
           'A review_exhausted_override binding must approve exactly the certified ADR digest (approvedSubjectDigest === authorityDigest).',
+      });
+    }
+    if (
+      certificate.reviewBinding.reviewedSubjectDigest !==
+      certificate.reviewBinding.approvedSubjectDigest
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['reviewBinding', 'reviewedSubjectDigest'],
+        message:
+          'A review_exhausted_override binding may only release the exact subject the last review covered (reviewedSubjectDigest === approvedSubjectDigest).',
       });
     }
   })

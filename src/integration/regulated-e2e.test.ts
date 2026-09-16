@@ -31,6 +31,7 @@ import {
   run_check,
   implement,
   review_implementation,
+  export as exportTool,
 } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
@@ -193,21 +194,20 @@ async function approveWithReviewer(id = 'regulated-reviewer'): Promise<void> {
 
 async function driveToEvidenceReview(): Promise<void> {
   await approveWithReviewer('plan-reviewer');
-  expect(await phase()).toBe('VALIDATION');
-  // Discovery detects TypeScript → activeChecks=['typecheck']
-  // Run all active checks to pass VALIDATION and (post-implementation) IMPL_VALIDATION.
-  const runActiveChecks = async (): Promise<void> => {
-    const dir = await sessDir();
-    const state = await readState(dir);
-    if (state && state.activeChecks.length > 0) {
-      for (const kind of state.activeChecks) {
-        await callOk(run_check, { kind });
-      }
-    }
-  };
-  await runActiveChecks();
+  // Approval enters VALIDATION and the runtime runs the active checks
+  // automatically (discovery detects TypeScript → activeChecks=['typecheck']),
+  // advancing to IMPLEMENTATION.
+  expect(await phase()).toBe('IMPLEMENTATION');
+  const postValidation = await readState(await sessDir());
+  expect(postValidation!.validation.length).toBeGreaterThan(0);
+
   await callOk(implement, {});
-  await runActiveChecks(); // IMPL_VALIDATION → IMPL_REVIEW
+  // Entering IMPL_VALIDATION runs the checks automatically against the
+  // recorded revision before advancing to IMPL_REVIEW.
+  expect(await phase()).toBe('IMPL_REVIEW');
+  const postImplValidation = await readState(await sessDir());
+  expect(postImplValidation!.implValidation.length).toBeGreaterThan(0);
+
   for (let i = 0; i < 8 && (await phase()) !== 'EVIDENCE_REVIEW'; i++) {
     await callOk(review_implementation, { reviewVerdict: 'accept' });
   }
@@ -220,30 +220,45 @@ describe('regulated-e2e critical path', () => {
     await driveToEvidenceReview();
     await approveWithReviewer('evidence-reviewer');
 
-    expect(await phase()).toBe('COMPLETE');
+    expect(await phase()).toBe('EXPORT_READY');
+    const exportResult = await callOk(exportTool, {});
+    expect(exportResult.phase).toBe('COMPLETE');
+    expect(exportResult.archiveStatus).toBe('verified');
+
     const state = await readState(await sessDir());
     expect(state?.phase).toBe('COMPLETE');
     expect(state?.policySnapshot.mode).toBe('regulated');
-    expect(state?.regulatedArchiveStatus).toBeDefined();
+    expect(state?.regulatedArchiveStatus).toBe('verified');
+    expect(state?.exportCompletionEvidence).not.toBeNull();
     const events = (await readAuditTrail(await sessDir())).events;
-    const transitionIndex = events.findIndex(
+    const approvalTransitionIndex = events.findIndex(
       (event) =>
         event.detail.kind === 'transition' &&
         event.detail.from === 'EVIDENCE_REVIEW' &&
-        event.detail.to === 'COMPLETE',
+        event.detail.to === 'EXPORT_READY' &&
+        event.detail.event === 'APPROVE',
+    );
+    const exportTransitionIndex = events.findIndex(
+      (event) =>
+        event.detail.kind === 'transition' &&
+        event.detail.from === 'EXPORT_READY' &&
+        event.detail.to === 'COMPLETE' &&
+        event.detail.event === 'EXPORT_MATERIALIZED',
     );
     const decisionIndex = events.findIndex(
       (event) =>
         event.detail.kind === 'decision' &&
         event.detail.fromPhase === 'EVIDENCE_REVIEW' &&
-        event.detail.toPhase === 'COMPLETE',
+        event.detail.toPhase === 'EXPORT_READY',
     );
     const lifecycleIndex = events.findIndex(
       (event) => event.event === 'lifecycle:session_completed',
     );
-    expect(transitionIndex).toBeGreaterThanOrEqual(0);
-    expect(decisionIndex).toBeGreaterThan(transitionIndex);
+    expect(approvalTransitionIndex).toBeGreaterThanOrEqual(0);
+    expect(exportTransitionIndex).toBeGreaterThan(approvalTransitionIndex);
+    expect(decisionIndex).toBeGreaterThan(approvalTransitionIndex);
     expect(lifecycleIndex).toBeGreaterThan(decisionIndex);
+    expect(lifecycleIndex).toBeGreaterThan(exportTransitionIndex);
     const fingerprint = await computeFingerprint(ctx.worktree);
     expect((await verifyRegulatedArchive(fingerprint.fingerprint, ctx.sessionID)).passed).toBe(
       true,
@@ -288,6 +303,20 @@ describe('regulated-e2e critical path', () => {
   it('blocks run_check for a kind not in verificationCandidates', async () => {
     await bootstrapRegulatedPlanReview();
     await approveWithReviewer();
+    // Reset the validation projection to the pending wait state so the explicit
+    // run_check compatibility surface is gated directly (automatic validation
+    // already advanced to IMPLEMENTATION).
+    const dir = await sessDir();
+    const state = await readState(dir);
+    const patched = {
+      ...state!,
+      phase: 'VALIDATION' as const,
+      validation: [],
+      validationAttempts: [],
+      implementation: null,
+    };
+    delete (patched as { implementationBaseAuthority?: unknown }).implementationBaseAuthority;
+    await writeState(dir, patched);
 
     const result = await callBlocked(run_check, { kind: 'security' });
     expect(result.code).toBe('CHECK_KIND_NOT_AVAILABLE');

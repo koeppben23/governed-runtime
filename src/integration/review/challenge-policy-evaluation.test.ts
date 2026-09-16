@@ -188,6 +188,7 @@ async function resolveCapturedFixture(
   const obligation = withReviewMaterial(
     createReviewObligation({
       obligationType: 'implement',
+      reviewCycle: 1,
       iteration: 0,
       planVersion: 1,
       now: '2026-07-26T00:00:00.000Z',
@@ -248,6 +249,7 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
   const firstObligation = withReviewMaterial(
     createReviewObligation({
       obligationType: 'implement',
+      reviewCycle: 1,
       iteration: 0,
       planVersion: 1,
       now: '2026-07-26T00:00:00.000Z',
@@ -362,6 +364,7 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
   const secondObligation = withReviewMaterial(
     createReviewObligation({
       obligationType: 'implement',
+      reviewCycle: 1,
       iteration: 1,
       planVersion: 1,
       now: '2026-07-26T00:01:00.000Z',

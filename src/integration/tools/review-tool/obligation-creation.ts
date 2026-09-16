@@ -1,6 +1,6 @@
 /**
  * @module integration/tools/review-tool/obligation-creation
- * @description Creation and re-invocation of standalone review obligations.
+ * @description Creation and re-invocation of peer review obligations.
  *
  * Owns how a content-aware /review call becomes a durable obligation with a
  * bindable attempt, including the repair path that re-arms an attempt for an
@@ -21,8 +21,10 @@ import {
   resolveFrozenReviewProfile,
   findLatestPendingReviewObligation,
   findReviewObligationById,
-  findBindableAttempt,
 } from '../../review/assurance.js';
+import { resolveReviewDispatchAuthority } from '../../review/dispatch-authority.js';
+import { buildInterruptedDispatchRearm } from '../../durable-dispatch.js';
+import { resolveReviewContinuation } from '../../../state/review-continuation.js';
 import { resolveReviewAttemptDiscoveryContext } from '../../review/discovery-attempt-context.js';
 import type { ReviewAttemptDiscoveryContext } from '../../../state/evidence.js';
 import { fingerprintReviewInput } from './fingerprint.js';
@@ -83,7 +85,7 @@ async function createNewReviewObligation(
   if (!reviewSubject || !preparedContent) {
     return {
       blocked: formatBlocked('REVIEW_SUBJECT_NOT_MATERIALIZED', {
-        reason: 'Standalone review requires a frozen subject before creating an obligation.',
+        reason: 'Peer review requires a frozen subject before creating an obligation.',
       }),
     };
   }
@@ -137,6 +139,7 @@ async function createNewReviewObligation(
     obligation: createReviewObligation({
       obligationType: 'review',
       iteration: 1,
+      reviewCycle: null,
       planVersion: 1,
       now: input.now,
       subjectDigest: reviewSubject.subjectDigest,
@@ -180,12 +183,15 @@ export interface MissingAnalysisObligationResult {
  * mixing two authority identities would reset the per-obligation repair
  * budget and split the reviewer lineage.
  */
-function resolveExplicitObligationIdPath(
+async function resolveExplicitObligationIdPath(
+  sessDir: string,
   state: SessionState,
   args: ReviewToolArgs,
-):
+  now: string,
+): Promise<
   | { readonly handled: false }
-  | { readonly handled: true; readonly result: MissingAnalysisObligationResult } {
+  | { readonly handled: true; readonly result: MissingAnalysisObligationResult }
+> {
   if (!args.reviewObligationId) return { handled: false };
   const byId = findReviewObligationById(state.reviewAssurance, args.reviewObligationId);
   if (!byId) {
@@ -200,7 +206,7 @@ function resolveExplicitObligationIdPath(
   }
   return {
     handled: true,
-    result: continuePendingReviewObligation(state, byId),
+    result: await continuePendingReviewObligation(sessDir, state, byId, now),
   };
 }
 
@@ -219,7 +225,7 @@ export async function ensureMissingAnalysisObligation(
 
   if (!hasReviewContentInput(args)) return { message: null };
 
-  const explicit = resolveExplicitObligationIdPath(state, args);
+  const explicit = await resolveExplicitObligationIdPath(sessDir, state, args, now);
   if (explicit.handled) return explicit.result;
 
   const fingerprint = fingerprintReviewInput({
@@ -246,38 +252,72 @@ export async function ensureMissingAnalysisObligation(
       fingerprintVersion: 'v2',
     });
   }
-  return continuePendingReviewObligation(state, existing);
+  return continuePendingReviewObligation(sessDir, state, existing, now);
 }
 
 /**
- * Re-invocation of a still-pending review obligation: reuse the bindable
- * attempt when one exists, otherwise fail closed.
- *
- * There is deliberately NO repair reissue for an existing obligation. The only
- * producer of a non-initial attempt is the transport-neutral
- * dispatch-recovery re-arm, which runs through the originating
- * plan/architecture route. Standalone `/review` never mints an attempt on an
- * existing obligation: without a bindable attempt the obligation has no legal
- * continuation and the caller is told `REVIEW_ATTEMPT_UNAVAILABLE`.
+ * Re-invocation of a still-pending review obligation re-emits its current
+ * authority or durably re-arms an interrupted native Task release on the same
+ * frozen obligation. No other missing or malformed attempt state is repaired.
  */
-function continuePendingReviewObligation(
+async function continuePendingReviewObligation(
+  sessDir: string,
   state: SessionState,
   existing: ReviewObligation,
-): MissingAnalysisObligationResult {
-  const bindable = findBindableAttempt(state.reviewAssurance, existing.obligationId);
-  if (!bindable) {
+  now: string,
+): Promise<MissingAnalysisObligationResult> {
+  const continuation = resolveReviewContinuation(state.reviewAssurance, 'review');
+  if (
+    continuation.kind === 'interrupted_dispatch' &&
+    continuation.obligation.obligationId === existing.obligationId
+  ) {
+    const spent = state.reviewAssurance?.attempts.find(
+      (attempt) => attempt.attemptId === continuation.attemptId,
+    );
+    if (!spent) {
+      return {
+        message: formatBlocked('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE', {
+          obligationId: existing.obligationId,
+          reason: 'interrupted reviewer attempt is absent from assurance',
+        }),
+        obligation: existing,
+      };
+    }
+    const rearmed = buildInterruptedDispatchRearm(state.reviewAssurance, spent, now);
+    if (rearmed.kind === 'blocked') {
+      return {
+        message: formatBlocked('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE', {
+          obligationId: existing.obligationId,
+          reason: rearmed.reason,
+        }),
+        obligation: existing,
+      };
+    }
+    await writeStateWithArtifacts(sessDir, { ...state, reviewAssurance: rearmed.assurance });
+    const authority = resolveReviewDispatchAuthority(rearmed.assurance, existing.obligationId);
+    if (authority.kind === 'ok') {
+      return {
+        message: formatMissingContentAnalysis(authority.authority),
+        obligation: existing,
+        attemptId: authority.authority.attempt.attemptId,
+        assurance: rearmed.assurance,
+      };
+    }
+  }
+  const authority = resolveReviewDispatchAuthority(state.reviewAssurance, existing.obligationId);
+  if (authority.kind === 'blocked') {
     return {
       message: formatBlocked('REVIEW_ATTEMPT_UNAVAILABLE', {
         obligationId: existing.obligationId,
-        reason: 'no bindable reviewer attempt exists and output repair is no longer authorized',
+        reason: authority.reason,
       }),
       obligation: existing,
     };
   }
   return {
-    message: formatMissingContentAnalysis(existing.obligationId),
+    message: formatMissingContentAnalysis(authority.authority),
     obligation: existing,
-    attemptId: bindable.attemptId,
+    attemptId: authority.authority.attempt.attemptId,
   };
 }
 
@@ -338,10 +378,21 @@ async function createAndPrepareMissingAnalysisObligation(
     obligation,
     discovery.context,
   );
+  const authority = resolveReviewDispatchAuthority(persisted.assurance, obligation.obligationId);
+  if (authority.kind === 'blocked') {
+    return {
+      message: formatBlocked('REVIEW_ATTEMPT_UNAVAILABLE', {
+        obligationId: obligation.obligationId,
+        reason: authority.reason,
+      }),
+      obligation,
+      assurance: persisted.assurance,
+    };
+  }
   return {
-    message: formatMissingContentAnalysis(obligation.obligationId),
+    message: formatMissingContentAnalysis(authority.authority),
     obligation,
-    attemptId: persisted.attemptId,
+    attemptId: authority.authority.attempt.attemptId,
     assurance: persisted.assurance,
   };
 }

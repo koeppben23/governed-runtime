@@ -15,7 +15,7 @@
  *   falsifies; it never confers governing provenance.
  *
  * The evidence-side refs reuse the canonical digest-bound vocabulary from
- * `evidence-review.ts` rather than duplicating it.
+ * `evidence-review-challenge.ts` rather than duplicating it.
  *
  * @version v1
  */
@@ -26,7 +26,7 @@ import {
   ImplementationRef,
   ValidationAttemptRef,
   ContentRef,
-} from './evidence-review.js';
+} from './evidence-review-challenge.js';
 
 /**
  * Reference to a concrete, immutable mutation-attempt record produced by

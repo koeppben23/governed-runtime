@@ -28,7 +28,8 @@ import { renderMarkdown } from './markdown.js';
 import type { PresentationRenderOptions } from './glyph-profile.js';
 import type { CompactProofPresentation } from './proof-model.js';
 import { buildProofGraphSection } from './proof-summary.js';
-import { buildReviewDecisionConclusion } from './review-decision.js';
+import { buildReviewDecisionConclusion, type DirectiveProjection } from './review-decision.js';
+import { directiveLabel } from './directive-copy.js';
 
 // ─── Card Input ──────────────────────────────────────────────────────────────
 
@@ -69,11 +70,8 @@ export interface ArchitectureReviewCardInput {
   scopeCreep?: string[];
   /** Unknowns. */
   unknowns?: string[];
-  /** Product-friendly next action guidance. */
-  productNextAction: {
-    text: string;
-    commands: readonly string[];
-  };
+  /** Canonical workflow directive projection (code + commands verbatim). */
+  directive: DirectiveProjection;
   /** True when the ADR has been approved (ARCH_COMPLETE). */
   isApproved: boolean;
   /** Typed reviewer-cycle evidence, separate from human approval. */
@@ -90,6 +88,7 @@ export interface ArchitectureReviewCardInput {
 
 const ADR_ACTION_DESCRIPTIONS: Record<string, string> = {
   '/approve': 'approve the ADR if it is complete and acceptable',
+  '/override-approve': 'accept the exhausted ADR review with a recorded governance override',
   '/request-changes': 'send the ADR back for revision',
   '/reject': 'discard this ADR',
 };
@@ -136,7 +135,7 @@ export function buildArchitectureReviewDocument(
     missingVerification,
     scopeCreep,
     unknowns,
-    productNextAction,
+    directive,
     isApproved,
   } = input;
 
@@ -228,17 +227,11 @@ export function buildArchitectureReviewDocument(
 
   const document: ReviewCardDocument = {
     kind: 'review_card',
-    form:
-      !isApproved &&
-      productNextAction.commands.some((command) =>
-        ['/approve', '/request-changes', '/reject'].includes(command),
-      )
-        ? 'decision'
-        : 'terminal',
+    form: !isApproved && directive.kind === 'human_gate' ? 'decision' : 'terminal',
     sections,
     conclusion: isApproved
-      ? { kind: 'terminal', message: productNextAction.text }
-      : buildReviewDecisionConclusion(productNextAction, ADR_ACTION_DESCRIPTIONS),
+      ? { kind: 'terminal', message: directiveLabel(directive.code) }
+      : buildReviewDecisionConclusion(directive, ADR_ACTION_DESCRIPTIONS),
   };
 
   return document;

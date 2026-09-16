@@ -35,7 +35,6 @@ import {
   reportPath,
 } from '../adapters/persistence.js';
 import { writeStateWithArtifacts } from './tools/helpers.js';
-import { evaluateCompleteness } from '../audit/completeness.js';
 import { REVIEW_REPORT_SCHEMA_ID } from '../state/evidence-identifiers.js';
 import { makePlanRevision } from '../state/evidence-test-constants.js';
 import { completedDispatchForInvocation } from '../state/evidence-test-constants.js';
@@ -242,7 +241,8 @@ describe('status', () => {
       expect(result.policyMode).toBe('solo');
       expect(result.hasTicket).toBe(false);
       expect(result.evalKind).toBeTruthy();
-      expect(result.next).toBeTruthy();
+      expect(result.directive).toBeTruthy();
+      expect(result.next).toBeUndefined();
     });
 
     it('returns the advisory ProofGraph projection when proofGraph:true', async () => {
@@ -288,15 +288,11 @@ describe('status', () => {
       const aborted = parseToolResult(
         await abort_session.execute({ reason: 'Operator stopped the session' }, ctx),
       );
-      expect(aborted.phase).toBe('COMPLETE');
+      expect(aborted.phase).toBe('ABORTED');
 
       const result = parseToolResult(await status.execute({}, ctx));
-      expect(result.phase).toBe('COMPLETE');
-      const productNext = result.productNextAction as Record<string, unknown>;
-      expect(productNext.commands).toEqual(['/status']);
-      expect(productNext.text).toContain('/status');
-      expect(productNext.text).not.toContain('/finish');
-      expect(productNext.text).not.toContain('/export');
+      expect(result.phase).toBe('ABORTED');
+      expect(result.directive).toMatchObject({ kind: 'terminal', code: 'WORKFLOW_ABORTED' });
 
       // /status is read-only and therefore remains executable even though
       // terminal phases correctly reject every FlowGuard machine command.
@@ -336,7 +332,7 @@ describe('status', () => {
       const noSession = parseToolResult(await status.execute({}, ctx));
       expect(noSession.phase).toBeNull();
       expect(noSession.status).toContain('No FlowGuard session');
-      expect(noSession.next).toBe('Run /start to bootstrap a session.');
+      expect(noSession.agentInstruction).toBe('Run /start to bootstrap a session.');
       expect(noSession.flowguardFooter).toMatchObject({
         authority: 'diagnostic-only',
         phase: 'unknown',
@@ -345,8 +341,8 @@ describe('status', () => {
       await hydrateSession();
       const hydrated = parseToolResult(await status.execute({}, ctx));
       expect(hydrated.phase).toBe('READY');
-      expect(hydrated.next).toBeTruthy();
-      expect(hydrated.nextAction).toBeTruthy();
+      expect(hydrated.next).toBeUndefined();
+      expect(hydrated.directive).toBeTruthy();
       expect((hydrated.flowguardFooter as Record<string, unknown>).next).toBeUndefined();
     });
 
@@ -589,7 +585,7 @@ describe('status', () => {
       expect(result.phase).toBeNull();
       expect(result.finish).toBeUndefined();
       expect(result.status).toContain('No FlowGuard session');
-      expect(result.next).toBe('Run /start to bootstrap a session.');
+      expect(result.agentInstruction).toBe('Run /start to bootstrap a session.');
     });
 
     it('returns a Finish Card projection for an existing session', async () => {
@@ -608,7 +604,7 @@ describe('status', () => {
       expect(finish.readiness).toBeDefined();
       expect(finish.evidence).toBeDefined();
       expect(finish.blocker).toBeDefined();
-      expect(finish.nextAction).toBeDefined();
+      expect(finish.directive).toBeDefined();
       // Non-normative action framing + exit options.
       expect(Array.isArray(finish.actionGuidance)).toBe(true);
       expect(finish.exitOptions).toContain('abandon');
@@ -627,7 +623,7 @@ describe('status', () => {
       expect(Array.isArray(result.activeChecks)).toBe(true);
     });
 
-    it('reports CHANGES_REQUIRED for a completed standalone review with issues', async () => {
+    it('reports CHANGES_REQUIRED for a completed peer review with issues', async () => {
       await hydrateSession();
       const { computeFingerprint, sessionDir: resolveSessionDir } =
         await import('../adapters/workspace/index.js');
@@ -637,7 +633,7 @@ describe('status', () => {
       if (!current) throw new Error('expected hydrated state');
       const reviewState = {
         ...current,
-        phase: 'REVIEW_COMPLETE' as const,
+        phase: 'PEER_REVIEW_COMPLETE' as const,
         reviewReportPath: reportPath(sessDir),
       };
       await writeState(sessDir, reviewState);
@@ -646,7 +642,7 @@ describe('status', () => {
         schemaVersion: REVIEW_REPORT_SCHEMA_ID,
         sessionId: reviewState.id,
         generatedAt: '2026-01-01T00:00:00.000Z',
-        phase: 'REVIEW_COMPLETE',
+        phase: 'PEER_REVIEW_COMPLETE',
         planDigest: null,
         implDigest: null,
         validationSummary: [],
@@ -659,7 +655,18 @@ describe('status', () => {
           },
         ],
         overallStatus: 'issues',
-        completeness: evaluateCompleteness(reviewState),
+        peerReviewCoverage: {
+          targetResolved: false,
+          targetFrozen: false,
+          repositoryIdentityVerified: null,
+          baseSha: null,
+          headSha: null,
+          changedPathCount: 0,
+          objectivesCovered: 0,
+          objectivesTotal: 0,
+          reviewAssurance: null,
+          missingVerification: [],
+        },
       });
 
       const result = parseToolResult(await status.execute({ finish: true }, ctx));
@@ -703,6 +710,7 @@ describe('status', () => {
           maxReviewerAttempts: 1,
         },
         obligationType: 'architecture',
+        reviewCycle: 1,
         iteration: 0,
         planVersion: 1,
         now: '2026-01-01T00:00:00.000Z',
@@ -771,6 +779,7 @@ describe('status', () => {
         },
         selfReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: 'adr-digest-reviewed',
           currDigest: 'adr-digest-current',

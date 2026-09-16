@@ -11,12 +11,12 @@ import { SessionState } from '../../state/schema.js';
 import { hasReleasedDispatch, resolveReviewContinuation } from '../../state/review-continuation.js';
 import { makeState } from '../../fixtures.js';
 import {
-  abandonSdkDispatch,
+  abandonReviewDispatchByHostCall,
   buildInterruptedDispatchRearm,
-  persistAuthorizedSdkDispatch,
+  persistAuthorizedReviewDispatch,
   type DispatchLedgerWriteDeps,
 } from '../durable-dispatch.js';
-import { recordEvidenceOrBlockReuse } from './sdk-evidence-recorder.js';
+import { recordEvidenceOrBlockReuse } from './reviewer-evidence-recorder.js';
 import {
   artifactReviewSubjectScope,
   appendObligationWithAttempt,
@@ -25,7 +25,7 @@ import {
   freezeReviewMaterial,
   hashFindings,
 } from './assurance.js';
-import type { ReviewerSuccessResult } from './orchestrator.js';
+import type { ReviewerSuccessResult } from './types.js';
 
 const NOW = '2026-05-10T12:00:00.000Z';
 const CHILD = 'child-session-dispatch-1';
@@ -33,16 +33,19 @@ const PARENT = 'parent-session-dispatch-1';
 const SESS_DIR = '/tmp/fg-durable-dispatch-test';
 const PROMPT_DIGEST = 'b'.repeat(64);
 
-function baseAssurance() {
+function baseAssurance(obligationType: 'plan' | 'review' = 'plan') {
   const obligation = createReviewObligation({
-    obligationType: 'plan',
+    obligationType,
+    reviewCycle: 1,
     iteration: 0,
     planVersion: 1,
     now: NOW,
     subjectDigest: 'subject-digest-1',
     reviewMaterial: freezeReviewMaterial('frozen review material', 'subject-digest-1'),
     reviewSubjectScope: artifactReviewSubjectScope('plan', '# Plan\nBody', 'subject-digest-1'),
-    repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+    ...(obligationType === 'plan' && {
+      repositoryEvidenceFreeze: { kind: 'unavailable' as const, reason: 'repository_unavailable' },
+    }),
   });
   const minted = appendObligationWithAttempt(ensureReviewAssurance(undefined), obligation, NOW);
   return {
@@ -58,6 +61,31 @@ function writeDeps(stateRef: { current: SessionState }): DispatchLedgerWriteDeps
       stateRef.current = update(stateRef.current, NOW);
     }),
   };
+}
+
+function persistAuthorizedSdkDispatch(
+  deps: DispatchLedgerWriteDeps,
+  sessDir: string,
+  input: {
+    readonly attemptId: string;
+    readonly obligationId: string;
+    readonly childSessionId: string;
+    readonly canonicalPromptDigest: string;
+    readonly authorizedAt: string;
+  },
+): Promise<void> {
+  return persistAuthorizedReviewDispatch(deps, sessDir, {
+    ...input,
+    hostCallId: input.childSessionId,
+  });
+}
+
+function abandonSdkDispatch(
+  deps: DispatchLedgerWriteDeps,
+  sessDir: string,
+  childSessionId: string,
+): Promise<void> {
+  return abandonReviewDispatchByHostCall(deps, sessDir, childSessionId);
 }
 
 describe('persistAuthorizedSdkDispatch', () => {
@@ -383,12 +411,17 @@ describe('abandonSdkDispatch and interrupted-dispatch recovery', () => {
 });
 
 describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
-  function recordingParams(attemptId: string, obligationId: string) {
+  function recordingParams(
+    attemptId: string,
+    obligationId: string,
+    obligationType: 'plan' | 'review' = 'plan',
+    overallVerdict: 'accept' | 'unable_to_review' = 'accept',
+  ) {
     const findings = {
       iteration: 0,
       planVersion: 1,
       reviewMode: 'subagent',
-      overallVerdict: 'accept',
+      overallVerdict,
       blockingIssues: [],
       majorRisks: [],
       missingVerification: [],
@@ -400,7 +433,7 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
     };
     return {
       obligationId,
-      obligationType: 'plan' as const,
+      obligationType,
       sessionId: PARENT,
       childSessionId: CHILD,
       hostCallId: CHILD,
@@ -463,7 +496,7 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
     expect(after.invocations[0]).toMatchObject({
       childSessionId: CHILD,
       attemptId: attempt.attemptId,
-      invocationMode: 'sdk_session_prompt',
+      invocationMode: 'native_task_structured_followup',
     });
     expect(after.obligations[0]).toMatchObject({
       status: 'fulfilled',
@@ -475,6 +508,30 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
       completedAt: NOW,
     });
     expect(SessionState.safeParse(stateRef.current).success).toBe(true);
+  });
+
+  it('HAPPY: consumes unable peer-review evidence instead of marking its obligation fulfilled', async () => {
+    const { obligation, attempt, assurance } = baseAssurance('review');
+    const stateRef = { current: makeState('PEER_REVIEW', { reviewAssurance: assurance }) };
+    const deps = writeDeps(stateRef);
+    await persistAuthorizedSdkDispatch(deps, SESS_DIR, {
+      attemptId: attempt.attemptId,
+      obligationId: obligation.obligationId,
+      childSessionId: CHILD,
+      canonicalPromptDigest: PROMPT_DIGEST,
+      authorizedAt: NOW,
+    });
+
+    const result = await recordEvidenceOrBlockReuse(
+      deps as never,
+      SESS_DIR,
+      recordingParams(attempt.attemptId, obligation.obligationId, 'review', 'unable_to_review'),
+    );
+
+    expect(result).toBe('fulfilled');
+    const after = stateRef.current.reviewAssurance!;
+    expect(after.obligations[0]).toMatchObject({ status: 'consumed', fulfilledAt: null });
+    expect(after.invocations[0]?.consumedByObligationId).toBe(obligation.obligationId);
   });
 
   it('BAD: an out-of-scope finding never binds the attempt or fulfills the obligation', async () => {

@@ -17,7 +17,7 @@ describe('collectPreviouslyUsedChallengeIds', () => {
       plan: { reviewFindings: [findings(PLAN_ID)] },
       architecture: { reviewFindings: [findings(ARCHITECTURE_ID)] },
       implReviewFindings: [findings(IMPLEMENTATION_ID)],
-      standaloneReviewFindings: [findings(STANDALONE_ID)],
+      peerReviewFindings: [findings(STANDALONE_ID)],
     } as unknown as SessionState;
 
     expect(collectPreviouslyUsedChallengeIds(state)).toEqual(

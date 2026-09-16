@@ -6,7 +6,7 @@
  * The parent never submits findings. Once the host captures the reviewer's
  * structured output and binds it to the obligation, flowguard_review with the
  * explicit reviewObligationId must complete the review, persist the resolved
- * findings as standaloneReviewFindings, and mark the invocation consumed.
+ * findings as peerReviewFindings, and mark the invocation consumed.
  *
  * @test-policy HAPPY, BAD
  */
@@ -210,12 +210,10 @@ describe('verdict-only structured evidence consumption', () => {
     const obligationId = await startObligation();
     const invocationId = await bindStructuredEvidence(obligationId, buildFindings(obligationId));
 
-    const output = parseToolResult(
-      await review.execute({ branch: 'feature/structured', reviewObligationId: obligationId }, ctx),
-    );
+    const output = parseToolResult(await review.execute({ reviewObligationId: obligationId }, ctx));
 
     expect(output.error).toBeUndefined();
-    expect(output.phase).toBe('REVIEW_COMPLETE');
+    expect(output.phase).toBe('PEER_REVIEW_COMPLETE');
 
     const state = (await readState(await currentSessionDir()))!;
     const obligation = state.reviewAssurance!.obligations.find(
@@ -226,19 +224,21 @@ describe('verdict-only structured evidence consumption', () => {
       (item) => item.invocationId === invocationId,
     );
     expect(invocation?.consumedByObligationId).toBe(obligationId);
-    expect(state.standaloneReviewFindings).toHaveLength(1);
-    expect(state.standaloneReviewFindings![0]!.reviewedBy.sessionId).toBe(REVIEWER_SESSION_ID);
+    expect(state.peerReviewFindings).toHaveLength(1);
+    expect(state.peerReviewFindings![0]!.reviewedBy.sessionId).toBe(REVIEWER_SESSION_ID);
   });
 
-  it('BAD: explicit obligation without bound evidence blocks with SUBAGENT_EVIDENCE_MISSING', async () => {
+  it('BAD: explicit obligation without bound evidence re-emits its native dispatch authority', async () => {
     const obligationId = await startObligation();
 
     const output = parseToolResult(
       await review.execute({ branch: 'feature/structured', reviewObligationId: obligationId }, ctx),
     );
 
-    expect(output.error).toBe(true);
-    expect(output.code).toBe('SUBAGENT_EVIDENCE_MISSING');
+    expect(output.error).toBeUndefined();
+    expect(output.status).toBe('pending_review');
+    expect(output.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+    expect(output.reviewDispatch).toEqual({ required: true });
     const state = (await readState(await currentSessionDir()))!;
     const obligation = state.reviewAssurance!.obligations.find(
       (item) => item.obligationId === obligationId,

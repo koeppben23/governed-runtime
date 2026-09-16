@@ -26,7 +26,7 @@ const mocks = vi.hoisted(() => {
     requireStateForMutation: vi.fn(async () => makeState('READY')),
     resolvePolicyFromState: vi.fn(() => TEAM_POLICY),
     createPolicyContext: vi.fn(() => ({
-      policy: { maxSelfReviewIterations: 3 },
+      policy: { reviewBudget: { architecture: 3 } },
       now: () => '2026-01-01T00:00:00.000Z',
       digest: (s: string) => `digest:${s}`,
     })),
@@ -37,7 +37,7 @@ const mocks = vi.hoisted(() => {
     formatError: vi.fn((err: unknown) =>
       JSON.stringify({ error: true, code: 'INTERNAL_ERROR', message: String(err) }),
     ),
-    enrichWithNextAction: vi.fn((value: Record<string, unknown>) => value),
+    enrichWithWorkflowDirective: vi.fn((value: Record<string, unknown>) => value),
     writeStateWithArtifacts: vi.fn<(sessDir: string, state: SessionState) => Promise<SessionState>>(
       async (_sessDir: string, state: SessionState) => state,
     ),
@@ -54,7 +54,7 @@ vi.mock('./helpers.js', () => ({
   formatEval: mocks.formatEval,
   formatBlocked: mocks.formatBlocked,
   formatError: mocks.formatError,
-  enrichWithNextAction: mocks.enrichWithNextAction,
+  enrichWithWorkflowDirective: mocks.enrichWithWorkflowDirective,
   writeStateWithArtifacts: mocks.writeStateWithArtifacts,
   withMutableSession: vi.fn(async (ctx) => {
     const paths = await mocks.resolveWorkspacePaths();
@@ -499,6 +499,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
       selfReview: {
         iteration: 0,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: 'digest-adr',
@@ -547,6 +548,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     mocks.state = makeState('ARCHITECTURE', {
       selfReview: {
         iteration: 0,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: 'digest-adr',
@@ -588,6 +590,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
       selfReview: {
         iteration: 0,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: 'digest-adr',
@@ -628,6 +631,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
       selfReview: {
         iteration: 0,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: 'digest-adr',
@@ -662,6 +666,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
       selfReview: {
         iteration: 2,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: 'digest-adr',
@@ -702,21 +707,22 @@ describe('integration/tools/architecture (wrapper)', () => {
     expect(parsed.code).toBe('INTERNAL_ERROR');
   });
 
-  // ── F13 slice 7b: Mode-A INDEPENDENT_REVIEW_REQUIRED + reviewObligation ──
+  // ── F13 slice 7b: Mode-A review dispatch + reviewObligation ──
 
-  it('emits INDEPENDENT_REVIEW_REQUIRED next-action for mandatory review (Mode A)', async () => {
-    // The architecture tool MUST emit the review-required marker plus the
-    // host-observed child-session binding metadata. Under the structured-only
+  it('emits the review-dispatch signal for mandatory review (Mode A)', async () => {
+    // The architecture tool MUST emit the review-required dispatch signal plus
+    // the host-observed child-session binding metadata. Under the structured-only
     // contract no reviewer Task prompt is projected here: the host creates the
     // reviewer child session from the obligation and attestation metadata.
     mocks.resolvePolicyFromState.mockReturnValueOnce({
       ...TEAM_POLICY,
-      maxSelfReviewIterations: 3,
+      reviewBudget: { ...TEAM_POLICY.reviewBudget, architecture: 3 },
     });
     const { architecture } = await import('./architecture.js');
     const res = await architecture.execute({ title: 'x', adrText: 'y' }, {} as never);
     const parsed = JSON.parse(String(res));
-    expect(parsed.next).toContain('INDEPENDENT_REVIEW_REQUIRED');
+    expect(parsed.reviewDispatch).toEqual({ required: true });
+    expect(parsed.reviewAttemptId).toEqual(expect.any(String));
     expect(parsed.reviewMode).toBe('subagent');
     expect(parsed.reviewInvocation).toBeDefined();
     expect(parsed.reviewInvocation.reviewerSubagentType).toBe('flowguard-reviewer');
@@ -732,7 +738,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     //      validateReviewFindings (slice 7c).
     mocks.resolvePolicyFromState.mockReturnValueOnce({
       ...TEAM_POLICY,
-      maxSelfReviewIterations: 3,
+      reviewBudget: { ...TEAM_POLICY.reviewBudget, architecture: 3 },
     });
     const { architecture } = await import('./architecture.js');
     const res = await architecture.execute({ title: 'x', adrText: 'y' }, {} as never);
@@ -756,7 +762,8 @@ describe('integration/tools/architecture (wrapper)', () => {
     const { architecture } = await import('./architecture.js');
     const res = await architecture.execute({ title: 'x', adrText: 'y' }, {} as never);
     const parsed = JSON.parse(String(res));
-    expect(parsed.next).toContain('INDEPENDENT_REVIEW_REQUIRED');
+    expect(parsed.reviewDispatch).toEqual({ required: true });
+    expect(parsed.reviewAttemptId).toEqual(expect.any(String));
     expect(parsed.reviewMode).toBe('subagent');
     expect(parsed.reviewObligation).toBeDefined();
     const writtenState = mocks.writeStateWithArtifacts.mock.calls[0]?.[1] as {
@@ -784,6 +791,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
       selfReview: {
         iteration: 0,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: 'digest-adr',
@@ -828,6 +836,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
       selfReview: {
         iteration: 1,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: 'digest-prev',
         currDigest: 'digest-adr',
@@ -859,6 +868,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
       selfReview: {
         iteration: 0,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: 'digest-adr',
@@ -890,6 +900,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
       selfReview: {
         iteration: 0,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: 'digest-adr',

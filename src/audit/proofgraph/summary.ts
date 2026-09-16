@@ -79,7 +79,7 @@ export interface ProofGraphSummary {
  * Compact coverage summary for standard status surfaces.
  *
  * `coverage` describes the DECLARED CONTRACT only. A session can legitimately
- * report `NOT_DECLARED` while carrying claims: standalone review contributes
+ * report `NOT_DECLARED` while carrying claims: peer review contributes
  * advisory hypotheses that are deliberately not part of any contract. The split
  * counts make that combination self-explanatory instead of contradictory (#762).
  */

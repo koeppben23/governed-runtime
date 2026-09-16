@@ -41,7 +41,7 @@ Approval evidence: Not recorded
 
 ## Decision required
 
-Plan needs revision.
+Plan decision required.
 - `/approve` — approve the plan if it is complete and acceptable
 - `/request-changes` — send the plan back for revision
 - `/reject` — stop this task

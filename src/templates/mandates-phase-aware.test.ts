@@ -109,12 +109,15 @@ describe('phase-aware mandates rendering', () => {
       'IMPL_VALIDATION',
       'IMPL_REVIEW',
       'EVIDENCE_REVIEW',
+      'EXPORT_READY',
       'COMPLETE',
       'ARCHITECTURE',
       'ARCH_REVIEW',
       'ARCH_COMPLETE',
-      'REVIEW',
-      'REVIEW_COMPLETE',
+      'PEER_REVIEW',
+      'PEER_REVIEW_COMPLETE',
+      'REJECTED',
+      'ABORTED',
     ]);
   });
 

@@ -26,20 +26,26 @@ import type {
   ArchitectureDecision,
   PlanEvidence,
   PlanRecord,
-  SelfReviewLoop,
   ValidationResult,
   ImplEvidence,
-  ImplReviewResult,
   ReviewDecision,
   DecisionIdentity,
   ErrorInfo,
   BindingInfo,
   PolicySnapshot,
 } from './state/evidence.js';
+import { IMPL_REVIEW_CONVERGED, SELF_REVIEW_CONVERGED } from './state/evidence-test-constants.js';
 import { computeRecordDigest } from './state/evidence-plan.js';
 import { POLICY_DIGEST_VERSION } from './shared/policy-digest.js';
 import { canonicalJsonStringify } from './shared/canonical-json.js';
 import { hashText } from './shared/hashing.js';
+
+export {
+  IMPL_REVIEW_CONVERGED,
+  IMPL_REVIEW_PENDING_RESULT,
+  SELF_REVIEW_CONVERGED,
+  SELF_REVIEW_PENDING,
+} from './state/evidence-test-constants.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -67,8 +73,7 @@ export const POLICY_SNAPSHOT: PolicySnapshot = {
   requestedMode: 'team',
   effectiveGateBehavior: 'human_gated',
   requireHumanGates: true,
-  maxSelfReviewIterations: 3,
-  maxImplReviewIterations: 3,
+  reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
   maxIncoherentReviewerCaptureRetries: 1,
   maxReviewerAttempts: 1,
   allowSelfApproval: true,
@@ -231,6 +236,7 @@ export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
       obligationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       obligationType: 'architecture',
       iteration: 0,
+      reviewCycle: 1,
       planVersion: 1,
       criteriaVersion: 'criteria-v1',
       mandateDigest: 'mandate-digest-of-review-criteria',
@@ -274,8 +280,9 @@ export const ARCHITECTURE_REVIEW_ASSURANCE: ReviewAssuranceState = {
       source: 'host-orchestrated',
       childSessionId: 'child-session-1',
       agentType: 'flowguard-reviewer',
-      invocationMode: 'sdk_session_prompt',
-      hostVisible: false,
+      invocationMode: 'native_task_structured_followup',
+      hostVisible: true,
+      transcriptNavigable: true,
       promptHash: 'a'.repeat(64),
       mandateDigest: 'mandate-digest-of-review-criteria',
       criteriaVersion: 'criteria-v1',
@@ -330,6 +337,7 @@ export const PLAN_REVIEW_ASSURANCE: ReviewAssuranceState = assuranceWith({
     obligationId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
     obligationType: 'plan',
     iteration: 0,
+    reviewCycle: 1,
     planVersion: 1,
     criteriaVersion: 'criteria-v1',
     mandateDigest: 'mandate-digest-of-plan-review-criteria',
@@ -377,8 +385,9 @@ export const PLAN_REVIEW_ASSURANCE: ReviewAssuranceState = assuranceWith({
       source: 'host-orchestrated',
       childSessionId: 'child-session-1',
       agentType: 'flowguard-reviewer',
-      invocationMode: 'sdk_session_prompt',
-      hostVisible: false,
+      invocationMode: 'native_task_structured_followup',
+      hostVisible: true,
+      transcriptNavigable: true,
       promptHash: 'b'.repeat(64),
       mandateDigest: 'mandate-digest-of-plan-review-criteria',
       criteriaVersion: 'criteria-v1',
@@ -450,24 +459,6 @@ export const PLAN_RECORD: PlanRecord = {
   reviewCompletion: 'pending',
 };
 
-export const SELF_REVIEW_CONVERGED: SelfReviewLoop = {
-  iteration: 1,
-  maxIterations: 3,
-  prevDigest: null,
-  currDigest: PLAN_DIGEST,
-  revisionDelta: 'none',
-  verdict: 'accept',
-};
-
-export const SELF_REVIEW_PENDING: SelfReviewLoop = {
-  iteration: 1,
-  maxIterations: 3,
-  prevDigest: null,
-  currDigest: PLAN_DIGEST,
-  revisionDelta: 'minor',
-  verdict: 'changes_requested',
-};
-
 export const VALIDATION_PASSED: ValidationResult[] = [
   {
     checkId: 'test',
@@ -530,26 +521,6 @@ export const IMPL_EVIDENCE: ImplEvidence = {
   changedFiles: ['src/auth.ts', 'src/auth.test.ts'],
   domainFiles: ['src/auth.ts'],
   digest: 'digest-of-impl',
-  executedAt: FIXED_TIME,
-};
-
-export const IMPL_REVIEW_CONVERGED: ImplReviewResult = {
-  iteration: 1,
-  maxIterations: 3,
-  prevDigest: null,
-  currDigest: 'digest-of-impl',
-  revisionDelta: 'none',
-  verdict: 'accept',
-  executedAt: FIXED_TIME,
-};
-
-export const IMPL_REVIEW_PENDING_RESULT: ImplReviewResult = {
-  iteration: 1,
-  maxIterations: 3,
-  prevDigest: null,
-  currDigest: 'digest-of-impl',
-  revisionDelta: 'minor',
-  verdict: 'changes_requested',
   executedAt: FIXED_TIME,
 };
 
@@ -616,12 +587,12 @@ export function makeState(
     implValidation: [],
     implementation: null,
     implementationRework: null,
-    implementationReviewExtensions: [],
     reducedCeremony: null,
     implReview: null,
+    reviewCycles: { plan: 1, architecture: 1, implementation: 1 },
     reviewDecision: null,
     reviewReportPath: null,
-    standaloneReviewEvidence: [],
+    peerReviewEvidence: [],
     nextAdrNumber: 1,
     activeProfile: null,
     activeChecks: ['test', 'lint'],
@@ -632,14 +603,12 @@ export function makeState(
     pendingAuditOperations: [],
     error: null,
     createdAt: FIXED_TIME,
+    exportCompletionEvidence: null,
+    pendingSystemWork: null,
     regulatedArchiveStatus: null,
     ...overrides,
   };
 }
-
-/**
- * Create a state that's progressed to a specific phase with appropriate evidence.
- */
 export function makeProgressedState(phase: Phase): SessionState {
   switch (phase) {
     case 'READY':
@@ -707,8 +676,9 @@ export function makeProgressedState(phase: Phase): SessionState {
         implValidation: VALIDATION_PASSED,
         implReview: IMPL_REVIEW_CONVERGED,
       });
+    case 'EXPORT_READY':
     case 'COMPLETE':
-      return makeState('COMPLETE', {
+      return makeState(phase, {
         implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
         ticket: TICKET,
         plan: PLAN_RECORD,
@@ -719,6 +689,9 @@ export function makeProgressedState(phase: Phase): SessionState {
         implValidation: VALIDATION_PASSED,
         implReview: IMPL_REVIEW_CONVERGED,
       });
+    case 'REJECTED':
+    case 'ABORTED':
+      return makeState(phase);
     case 'ARCHITECTURE':
       return makeState('ARCHITECTURE', {
         architecture: ARCHITECTURE_DECISION,
@@ -739,10 +712,10 @@ export function makeProgressedState(phase: Phase): SessionState {
         selfReview: SELF_REVIEW_CONVERGED,
         reviewDecision: REVIEW_APPROVE,
       });
-    case 'REVIEW':
-      return makeState('REVIEW');
-    case 'REVIEW_COMPLETE':
-      return makeState('REVIEW_COMPLETE', {
+    case 'PEER_REVIEW':
+      return makeState('PEER_REVIEW');
+    case 'PEER_REVIEW_COMPLETE':
+      return makeState('PEER_REVIEW_COMPLETE', {
         reviewReportPath: '/tmp/test-repo/.flowguard/sessions/000-test/review-report.json',
       });
   }

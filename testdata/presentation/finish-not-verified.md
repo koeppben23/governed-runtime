@@ -27,4 +27,4 @@ Diagnostic: `flowguard_status({ proofGraph: true })`
 
 - Abandon this work
 
-→ `/task` — Record the task that the workflow will govern.
+→ `/plan` — Create or revise the implementation plan.

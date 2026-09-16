@@ -3,7 +3,7 @@
  * @description Shared projection for human decision gate conclusions.
  *
  * Used by decision-gated review cards so they share the same deterministic mapping from
- * product-next-action data to a typed PresentationConclusion.
+ * workflow-directive data to a typed PresentationConclusion.
  *
  * @version v1
  */
@@ -14,46 +14,47 @@ import type {
   PresentationConclusion,
 } from './model.js';
 import { formatFindingAffected, projectFindingRelation } from './finding-relation.js';
-
-const GATE_COMMANDS = ['/approve', '/request-changes', '/reject'] as const;
+import { directiveLabel } from './directive-copy.js';
+import type { WorkflowDirective } from '../machine/workflow-directive.js';
 
 /**
- * Project a human decision conclusion from the canonical product-next-action.
+ * The presentation-relevant projection of the canonical workflow directive.
+ * Commands are passed through verbatim; presentation never rewrites them.
+ */
+export type DirectiveProjection = Pick<WorkflowDirective, 'kind' | 'code' | 'commands'>;
+
+/**
+ * Project a human decision conclusion from the canonical workflow directive.
  *
- * When the product-next-action commands include `/approve`, `/request-changes`,
- * or `/reject`, this returns `decision_required` with the corresponding actions.
- * Otherwise it returns `terminal` with the action text as fallback.
+ * The decision kind comes from the directive kind, never from a local command
+ * whitelist: a `human_gate` renders every `directive.commands` entry verbatim
+ * as an available action (parity invariant: renderedCommands === commands),
+ * and any other directive kind renders its canonical terminal label. The
+ * descriptions map supplies presentation copy per command; a command without
+ * explicit copy renders its exact invocation.
  *
- * @param productNextAction  — canonical next-action data from
- *   `buildProductNextAction()` (see plan-response.ts / next-action-copy.ts).
+ * @param directive          — canonical workflow directive projection.
  * @param descriptions       — human-readable label for each gate command.
  *   Use distinct labels per card context (plan vs evidence vs architecture).
  */
 export function buildReviewDecisionConclusion(
-  productNextAction: { text: string; commands: readonly string[] },
+  directive: DirectiveProjection,
   descriptions: Record<string, string>,
 ): PresentationConclusion {
-  const commands = new Set(productNextAction.commands);
-  const actions: PresentationAction[] = [];
-  for (const command of GATE_COMMANDS) {
-    if (commands.has(command)) {
-      actions.push({
-        invocation: command,
-        description: descriptions[command] ?? command,
-        visibility: 'available',
-      });
-    }
-  }
-
-  if (actions.length > 0) {
+  if (directive.kind === 'human_gate') {
+    const actions: PresentationAction[] = directive.commands.map((command) => ({
+      invocation: command,
+      description: descriptions[command] ?? command,
+      visibility: 'available',
+    }));
     return {
       kind: 'decision_required',
-      question: productNextAction.text,
+      question: directiveLabel(directive.code),
       actions,
     };
   }
 
-  return { kind: 'terminal', message: productNextAction.text };
+  return { kind: 'terminal', message: directiveLabel(directive.code) };
 }
 
 // ─── Review Decision Projection ────────────────────────────────────────────────

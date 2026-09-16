@@ -52,7 +52,10 @@ export async function archiveSession(
   sessionId: string,
   opts: ArchiveSessionOptions,
 ): Promise<string> {
-  return archiveWithAuthorization(fingerprint, sessionId, opts, false);
+  return archiveWithAuthorization(fingerprint, sessionId, opts, {
+    authorizedRaw: false,
+    regulatedEvidence: false,
+  });
 }
 
 /**
@@ -70,22 +73,49 @@ export async function archiveRegulatedEvidence(
     fingerprint,
     sessionId,
     { redactionMode: 'none', includeRaw: true },
-    true,
+    { authorizedRaw: true, regulatedEvidence: true },
   );
+}
+
+/**
+ * Create the mandatory completion export package for the canonical export rail.
+ *
+ * Completion is a workflow obligation, not a user-configured sharing export, so
+ * raw evidence is authorized by the workflow itself — exactly like the regulated
+ * evidence package. The package uses the non-regulated archive name: a regulated
+ * session's immutable `regulated-{sessionId}.tar.gz` is produced separately by
+ * the regulated completion chain, which runs only after completion evidence
+ * exists, and must never be overwritten by a pre-completion export.
+ */
+export async function archiveCompletionExport(
+  fingerprint: string,
+  sessionId: string,
+): Promise<string> {
+  return archiveWithAuthorization(
+    fingerprint,
+    sessionId,
+    { redactionMode: 'none', includeRaw: true },
+    { authorizedRaw: true, regulatedEvidence: false },
+  );
+}
+
+interface ArchiveAuthorization {
+  readonly authorizedRaw: boolean;
+  readonly regulatedEvidence: boolean;
 }
 
 async function archiveWithAuthorization(
   fingerprint: string,
   sessionId: string,
   opts: ArchiveSessionOptions,
-  regulatedEvidence: boolean,
+  authorization: ArchiveAuthorization,
 ): Promise<string> {
   return withSpan(
     'archive.create',
     async () => {
       addFingerprint(fingerprint);
       addSessionId(sessionId);
-      return archiveSessionImpl(fingerprint, sessionId, opts, regulatedEvidence);
+      return archiveSessionImpl(fingerprint, sessionId, opts, authorization);
     },
     { 'flowguard.fingerprint': fingerprint, 'flowguard.session_id': sessionId },
   );
@@ -155,8 +185,9 @@ async function archiveSessionImpl(
   fingerprint: string,
   sessionId: string,
   opts: ArchiveSessionOptions,
-  regulatedEvidence: boolean,
+  authorization: ArchiveAuthorization,
 ): Promise<string> {
+  const { authorizedRaw, regulatedEvidence } = authorization;
   validateFingerprint(fingerprint);
   const validSessionId = validateSessionId(sessionId);
   const sessDir = sessionDir(fingerprint, validSessionId);
@@ -175,7 +206,7 @@ async function archiveSessionImpl(
   const state = await readState(sessDir);
   if (state) await verifyEvidenceArtifacts(sessDir, state);
   if (regulatedEvidence) assertRegulatedEvidenceState(state);
-  const archiveConfig = regulatedEvidence ? undefined : await readConfig();
+  const archiveConfig = authorizedRaw ? undefined : await readConfig();
   if (archiveConfig) validateArchiveOptions(opts, archiveConfig, false);
 
   await appendArtifactBindingAuditEvent(sessDir, validSessionId, state);
@@ -216,6 +247,14 @@ async function archiveSessionImpl(
   return archivePath;
 }
 
+function stripTrailingPublicationBindings(
+  events: Awaited<ReturnType<typeof readAuditTrail>>['events'],
+): Awaited<ReturnType<typeof readAuditTrail>>['events'] {
+  let end = events.length;
+  while (end > 0 && events[end - 1]!.event === ARCHIVE_PUBLICATION_BINDING_EVENT) end -= 1;
+  return events.slice(0, end);
+}
+
 async function stagePublishAndBind(input: {
   readonly archiveDir: string;
   readonly archivePath: string;
@@ -228,10 +267,12 @@ async function stagePublishAndBind(input: {
   readonly includeRaw: boolean;
 }): Promise<void> {
   // Publication bindings are external authorities and must never alter the
-  // self-contained v2 audit snapshot they attest.
-  const archiveEvents = input.events.filter(
-    (event) => event.event !== ARCHIVE_PUBLICATION_BINDING_EVENT,
-  );
+  // self-contained v2 audit snapshot they attest. Only the trailing run can
+  // belong to this publication attempt: a binding followed by later events has
+  // become part of the historical chain, and dropping it would break chain
+  // verification of the snapshot (the mandatory completion export publishes
+  // before terminal events are appended).
+  const archiveEvents = stripTrailingPublicationBindings(input.events);
   const staging = await createArchiveStaging({
     archiveDir: input.archiveDir,
     sessionId: input.sessionId,

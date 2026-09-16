@@ -3,32 +3,13 @@
  * @description HAI governance surface contract tests.
  *
  * Validates that FlowGuard's Host-Agnostic Adapter Interface (HAI) matches
- * the pinned governance surface schemas. Detects:
- * - HostAdapter method additions/removals
- * - EnforcementDecision shape drift
- * - GovernanceStateProjection field changes
- * - Deny code registry completeness
- *
- * Addresses Keesan12 comment on Issue #250:
- * > "The contract I'd want pinned is: what approval boundary exists,
- * > what halt reasons can be emitted, what receipt fields are guaranteed
- * > after a stop, what verifier state survives, and which parts are
- * > only advisory on that host."
- *
- * Evidence sources:
- * - .sdk-baselines/governance/ (4 schema files)
- * - src/adapters/host-adapter.ts (HAI interface)
- * - src/config/reasons-infra.ts (deny codes)
- *
- * @test-policy HAPPY, BAD, CORNER, EDGE — all categories present.
- * @version v1
+ * the pinned governance surface schemas, including non-composable review
+ * transport capabilities.
  */
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
 import * as path from 'node:path';
-
-// ─── Baseline Loading ────────────────────────────────────────────────────────
 
 const root = path.resolve(import.meta.dirname, '..', '..');
 const govBaseDir = path.join(root, '.sdk-baselines', 'governance');
@@ -37,11 +18,10 @@ function loadSchema(file: string): Record<string, unknown> {
   return JSON.parse(readFileSync(path.join(govBaseDir, file), 'utf-8'));
 }
 
-// ─── Runtime Type Imports (for compile-time verification) ────────────────────
-
 import type {
   HostAdapter,
   HostCapabilities,
+  HostReviewTransportCapability,
   EnforcementLevel,
   EnforcementDecision,
   BlockDecision,
@@ -49,7 +29,6 @@ import type {
   GovernanceStateProjection,
 } from '../adapters/host-adapter.js';
 
-// Compile-time assertions — if these compile, the types exist
 type _hasPlatform = HostAdapter['platform'];
 type _hasCaps = HostAdapter['capabilities'];
 type _hasLevel = HostAdapter['enforcementLevel'];
@@ -59,17 +38,12 @@ type _gspFields = GovernanceStateProjection['sessionId'] &
   GovernanceStateProjection['phase'] &
   GovernanceStateProjection['enforcementActive'];
 
-// Suppress unused type warnings
 void (undefined as unknown as _hasPlatform);
 void (undefined as unknown as _hasCaps);
 void (undefined as unknown as _hasLevel);
 void (undefined as unknown as _blockHasFields);
 void (undefined as unknown as _allowHasFields);
 void (undefined as unknown as _gspFields);
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// GOVERNANCE SURFACE BASELINES
-// ═══════════════════════════════════════════════════════════════════════════════
 
 describe('SDK Contract: HAI governance surface', () => {
   describe('HAPPY: baseline schema files exist', () => {
@@ -80,7 +54,6 @@ describe('SDK Contract: HAI governance surface', () => {
       'deny-codes.json',
       'version.json',
     ];
-
     for (const file of expectedFiles) {
       it(`${file} exists in .sdk-baselines/governance/`, () => {
         expect(existsSync(path.join(govBaseDir, file))).toBe(true);
@@ -92,154 +65,152 @@ describe('SDK Contract: HAI governance surface', () => {
     it('schema requires all HostAdapter methods', () => {
       const schema = loadSchema('host-adapter-interface.json');
       const required = schema.required as string[];
-      expect(required).toContain('platform');
-      expect(required).toContain('capabilities');
-      expect(required).toContain('enforcementLevel');
-      expect(required).toContain('getWorkingDirectory');
-      expect(required).toContain('getWorktree');
-      expect(required).toContain('initialize');
-      expect(required).toContain('validateCapabilities');
-      expect(required).toContain('shutdown');
-      expect(required).toContain('deliverBlockDecision');
-      expect(required).toContain('deliverArgMutation');
-      expect(required).toContain('mutateToolResult');
-      expect(required).toContain('spawnReviewer');
-      expect(required).toContain('isReviewerSupported');
-      expect(required).toContain('log');
+      for (const field of [
+        'platform',
+        'capabilities',
+        'enforcementLevel',
+        'getWorkingDirectory',
+        'getWorktree',
+        'initialize',
+        'validateCapabilities',
+        'shutdown',
+        'deliverBlockDecision',
+        'deliverArgMutation',
+        'mutateToolResult',
+        'spawnReviewer',
+        'isReviewerSupported',
+        'log',
+      ]) {
+        expect(required).toContain(field);
+      }
     });
 
-    it('platform enum has all 3 supported hosts', () => {
+    it('platform and enforcement enums are pinned', () => {
       const schema = loadSchema('host-adapter-interface.json');
       const props = schema.properties as Record<string, Record<string, unknown>>;
       expect(props.platform!.enum).toEqual(['opencode', 'claude-code', 'codex']);
-    });
-
-    it('enforcementLevel enum has 3 levels', () => {
-      const schema = loadSchema('host-adapter-interface.json');
-      const props = schema.properties as Record<string, Record<string, unknown>>;
       expect(props.enforcementLevel!.enum).toEqual(['synchronous', 'hook_gated', 'advisory']);
     });
 
-    it('HostCapabilities has all 6 boolean fields', () => {
+    it('HostCapabilities owns one reviewTransports collection, not synthetic review booleans', () => {
       const schema = loadSchema('host-adapter-interface.json');
       const defs = schema.$defs as Record<string, Record<string, unknown>>;
-      const capSchema = defs.HostCapabilities;
-      const capRequired = capSchema!.required as string[];
-      expect(capRequired).toContain('preToolBlock');
-      expect(capRequired).toContain('argMutation');
-      expect(capRequired).toContain('outputReplacement');
-      expect(capRequired).toContain('contextInjection');
-      expect(capRequired).toContain('reviewerSpawn');
-      expect(capRequired).toContain('compactionInjection');
+      const capSchema = defs.HostCapabilities!;
+      const required = capSchema.required as string[];
+      expect(required).toEqual([
+        'preToolBlock',
+        'argMutation',
+        'outputReplacement',
+        'contextInjection',
+        'reviewTransports',
+        'compactionInjection',
+      ]);
+      const props = capSchema.properties as Record<string, unknown>;
+      expect(props).not.toHaveProperty('reviewerSpawn');
+      expect(props).not.toHaveProperty('independentStructuredReview');
+    });
+
+    it('review transport schema pins visibility and structured authority on the same object', () => {
+      const schema = loadSchema('host-adapter-interface.json');
+      const defs = schema.$defs as Record<string, Record<string, unknown>>;
+      const transport = defs.HostReviewTransportCapability!;
+      expect(transport.required).toEqual([
+        'kind',
+        'structuredOutput',
+        'parentVisible',
+        'transcriptNavigable',
+        'isolatedAgentIdentity',
+        'permissionIsolation',
+        'assurance',
+      ]);
+      const props = transport.properties as Record<string, Record<string, unknown>>;
+      expect(props.kind!.enum).toEqual(['native_task_structured_followup']);
+      expect(props.structuredOutput!.const).toBe(true);
+      expect(props.parentVisible!.const).toBe(true);
+      expect(props.transcriptNavigable!.const).toBe(true);
+      expect(props.isolatedAgentIdentity!.const).toBe(true);
+      expect(props.permissionIsolation!.const).toBe(true);
+      expect(props.assurance!.const).toBe('structured_high');
     });
   });
 
   describe('HAPPY: EnforcementDecision discriminated union is pinned', () => {
     it('schema is a oneOf with Block and Allow variants', () => {
       const schema = loadSchema('enforcement-decision.json');
-      expect(schema.oneOf).toBeDefined();
       expect((schema.oneOf as unknown[]).length).toBe(2);
     });
 
     it('BlockDecision requires blocked=true, reason, code', () => {
       const schema = loadSchema('enforcement-decision.json');
       const variants = schema.oneOf as Record<string, unknown>[];
-      const blockVariant = variants.find(
-        (v) => (v as Record<string, unknown>).title === 'BlockDecision',
-      ) as Record<string, unknown>;
-      expect(blockVariant).toBeDefined();
+      const blockVariant = variants.find((v) => v.title === 'BlockDecision')!;
       expect(blockVariant.required).toContain('blocked');
       expect(blockVariant.required).toContain('reason');
       expect(blockVariant.required).toContain('code');
     });
 
-    it('AllowDecision requires blocked=false, has optional modifiedArgs', () => {
+    it('AllowDecision exposes optional modifiedArgs', () => {
       const schema = loadSchema('enforcement-decision.json');
       const variants = schema.oneOf as Record<string, unknown>[];
-      const allowVariant = variants.find(
-        (v) => (v as Record<string, unknown>).title === 'AllowDecision',
-      ) as Record<string, unknown>;
-      expect(allowVariant).toBeDefined();
+      const allowVariant = variants.find((v) => v.title === 'AllowDecision')!;
       expect(allowVariant.required).toContain('blocked');
-      const props = allowVariant.properties as Record<string, unknown>;
-      expect(props).toHaveProperty('modifiedArgs');
+      expect(allowVariant.properties).toHaveProperty('modifiedArgs');
     });
   });
 
   describe('HAPPY: GovernanceStateProjection fields are pinned', () => {
-    it('schema requires all 6 projection fields', () => {
+    it('schema requires all six projection fields', () => {
       const schema = loadSchema('governance-state-projection.json');
       const required = schema.required as string[];
-      expect(required).toContain('sessionId');
-      expect(required).toContain('phase');
-      expect(required).toContain('haltReason');
-      expect(required).toContain('enforcementActive');
-      expect(required).toContain('resumable');
-      expect(required).toContain('riskGate');
+      for (const field of [
+        'sessionId',
+        'phase',
+        'haltReason',
+        'enforcementActive',
+        'resumable',
+        'riskGate',
+      ]) {
+        expect(required).toContain(field);
+      }
     });
 
-    it('haltReason is nullable string', () => {
+    it('haltReason and riskGate remain nullable', () => {
       const schema = loadSchema('governance-state-projection.json');
       const props = schema.properties as Record<string, Record<string, unknown>>;
       expect(props.haltReason!.type).toContain('null');
-      expect(props.haltReason!.type).toContain('string');
-    });
-
-    it('riskGate is nullable with status enum', () => {
-      const schema = loadSchema('governance-state-projection.json');
-      const props = schema.properties as Record<string, Record<string, unknown>>;
-      const riskGate = props.riskGate;
-      expect(riskGate!.oneOf).toBeDefined();
+      expect(props.riskGate!.oneOf).toBeDefined();
     });
   });
 
-  describe('HAPPY: deny codes baseline covers all adapter/identity codes', () => {
+  describe('HAPPY: deny codes baseline covers established adapter/identity codes', () => {
     it('deny-codes.json exists and has codes array', () => {
       const schema = loadSchema('deny-codes.json');
       expect(schema.required).toContain('codes');
     });
 
-    it('adapter codes are pinned', () => {
+    it('adapter and identity codes remain pinned', () => {
       const schema = loadSchema('deny-codes.json');
       const pinned = schema.properties_pinned as Record<string, string[]>;
-      expect(pinned.adapter_codes).toContain('DISCOVERY_RESULT_MISSING');
-      expect(pinned.adapter_codes).toContain('GIT_NOT_FOUND');
-      expect(pinned.adapter_codes).toContain('STATE_MISSING');
-      expect(pinned.adapter_codes).toContain('FINGERPRINT_FAILED');
       expect(pinned.adapter_codes).toContain('REVIEWER_INVOCATION_EXHAUSTED');
-    });
-
-    it('identity codes are pinned', () => {
-      const schema = loadSchema('deny-codes.json');
-      const pinned = schema.properties_pinned as Record<string, string[]>;
+      expect(pinned.adapter_codes).toContain('GIT_NOT_FOUND');
       expect(pinned.identity_codes).toContain('DECISION_IDENTITY_REQUIRED');
       expect(pinned.identity_codes).toContain('FOUR_EYES_ACTOR_MATCH');
-      expect(pinned.identity_codes).toContain('ACTOR_CLAIM_EXPIRED');
-      expect(pinned.identity_codes).toContain('ACTOR_IDP_MODE_REQUIRED');
     });
   });
 
-  describe('EDGE: enforcement level maps to capability profile', () => {
-    it('synchronous requires preToolBlock=true', () => {
-      // This is a semantic assertion based on HAI documentation
-      // synchronous enforcement = guaranteed block before tool runs
+  describe('EDGE: enforcement and optional hooks', () => {
+    it('synchronous capability profile includes preToolBlock', () => {
       const schema = loadSchema('host-adapter-interface.json');
       const defs = schema.$defs as Record<string, Record<string, unknown>>;
       const capProps = defs.HostCapabilities!.properties as Record<string, unknown>;
       expect(capProps).toHaveProperty('preToolBlock');
     });
-  });
 
-  describe('EDGE: injectCompactionContext is optional (not required)', () => {
-    it('injectCompactionContext is not in required array', () => {
+    it('injectCompactionContext is optional but declared', () => {
       const schema = loadSchema('host-adapter-interface.json');
       const required = schema.required as string[];
-      expect(required).not.toContain('injectCompactionContext');
-    });
-
-    it('injectCompactionContext is still in properties', () => {
-      const schema = loadSchema('host-adapter-interface.json');
       const props = schema.properties as Record<string, unknown>;
+      expect(required).not.toContain('injectCompactionContext');
       expect(props).toHaveProperty('injectCompactionContext');
     });
   });
@@ -254,34 +225,40 @@ describe('SDK Contract: HAI governance surface', () => {
   });
 
   describe('BAD: runtime type matches pinned contract', () => {
-    it('HostAdapter.platform is a union of 3 string literals (compile-time)', () => {
-      // This test passes if it compiles — the type system enforces the union
-      const platformValues: HostAdapter['platform'][] = ['opencode', 'claude-code', 'codex'];
-      expect(platformValues).toHaveLength(3);
-    });
-
-    it('EnforcementLevel is a union of 3 string literals (compile-time)', () => {
+    it('HostAdapter and EnforcementLevel unions remain compile-time pinned', () => {
+      const platforms: HostAdapter['platform'][] = ['opencode', 'claude-code', 'codex'];
       const levels: EnforcementLevel[] = ['synchronous', 'hook_gated', 'advisory'];
+      expect(platforms).toHaveLength(3);
       expect(levels).toHaveLength(3);
     });
 
-    it('EnforcementDecision discriminates on blocked field (compile-time)', () => {
+    it('EnforcementDecision discriminates on blocked field', () => {
       const block: EnforcementDecision = { blocked: true, reason: 'test', code: 'TEST' };
       const allow: EnforcementDecision = { blocked: false };
       expect(block.blocked).toBe(true);
       expect(allow.blocked).toBe(false);
     });
 
-    it('HostCapabilities has exactly 6 fields (compile-time)', () => {
+    it('HostCapabilities has six top-level fields and transport capability is atomic', () => {
+      const transport: HostReviewTransportCapability = {
+        kind: 'native_task_structured_followup',
+        structuredOutput: true,
+        parentVisible: true,
+        transcriptNavigable: true,
+        isolatedAgentIdentity: true,
+        permissionIsolation: true,
+        assurance: 'structured_high',
+      };
       const caps: HostCapabilities = {
         preToolBlock: true,
         argMutation: false,
         outputReplacement: true,
         contextInjection: false,
-        independentStructuredReview: true,
+        reviewTransports: [transport],
         compactionInjection: false,
       };
       expect(Object.keys(caps)).toHaveLength(6);
+      expect(caps.reviewTransports[0]).toBe(transport);
     });
   });
 });

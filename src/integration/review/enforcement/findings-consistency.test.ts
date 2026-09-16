@@ -67,6 +67,7 @@ describe('review/enforcement/findings-consistency', () => {
       const obligation: ReviewObligation = {
         ...baseObligation,
         obligationType: 'plan',
+        reviewCycle: 1,
         reviewSubjectScope: {
           kind: 'artifact',
           artifact: {
@@ -83,6 +84,7 @@ describe('review/enforcement/findings-consistency', () => {
       const obligation: ReviewObligation = {
         ...baseObligation,
         obligationType: 'plan',
+        reviewCycle: 1,
         reviewSubjectScope: {
           kind: 'repository_change',
           paths: ['src/foo.ts'],
@@ -96,6 +98,7 @@ describe('review/enforcement/findings-consistency', () => {
       const obligation: ReviewObligation = {
         ...baseObligation,
         obligationType: 'architecture',
+        reviewCycle: 1,
         reviewSubjectScope: {
           kind: 'artifact',
           artifact: {
@@ -112,6 +115,7 @@ describe('review/enforcement/findings-consistency', () => {
       const obligation: ReviewObligation = {
         ...baseObligation,
         obligationType: 'implement',
+        reviewCycle: 1,
         reviewSubjectScope: {
           kind: 'artifact',
           artifact: {

@@ -8,7 +8,7 @@ export function normalizeReviewContent(content: string): string {
   return content.replace(/\r\n?/g, '\n');
 }
 
-/** Digest the normalized bytes that are persisted as standalone review material. */
+/** Digest the normalized bytes that are persisted as peer review material. */
 export function hashCanonicalReviewContent(content: string): string {
   return hashText(normalizeReviewContent(content));
 }

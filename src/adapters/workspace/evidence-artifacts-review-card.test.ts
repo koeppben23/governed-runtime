@@ -26,7 +26,7 @@ describe('materializeReviewCardArtifact', () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  const state = makeState('REVIEW_COMPLETE');
+  const state = makeState('PEER_REVIEW_COMPLETE');
 
   it('writes .md and .json artifacts with digest-based filename', async () => {
     const result = await materializeReviewCardArtifact(

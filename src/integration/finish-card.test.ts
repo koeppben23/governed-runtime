@@ -5,7 +5,7 @@
  * Contract under test:
  *   /finish is a thin, read-only presentation wrapper. buildFinishCard MUST
  *   compose the existing authorities (buildReadinessProjection,
- *   buildEvidenceDetailProjection, resolveNextAction) and add only the single
+ *   buildEvidenceDetailProjection, resolveWorkflowDirective) and add only the single
  *   presentation classifier deriveFinishOverallStatus. It performs NO
  *   independent evidence/gate evaluation, never mutates state, and never
  *   renders an exit option as forbidden.
@@ -29,8 +29,7 @@ import {
 } from './status.js';
 import { buildFinishCard, deriveFinishOverallStatus } from './status-finish.js';
 import { getPolicyPreset } from '../config/policy.js';
-import { resolveNextAction } from '../machine/next-action.js';
-import { evaluateCompleteness } from '../audit/completeness.js';
+import { resolveWorkflowDirective } from '../machine/workflow-directive.js';
 import { makeProgressedState } from '../fixtures.js';
 
 const policy = getPolicyPreset('solo');
@@ -42,13 +41,24 @@ function makeReviewReport(overallStatus: ReviewReport['overallStatus']): ReviewR
     schemaVersion: 'flowguard-review-report.v1',
     sessionId: '00000000-0000-4000-8000-000000000001',
     generatedAt: '2026-01-01T00:00:00.000Z',
-    phase: 'REVIEW_COMPLETE',
+    phase: 'PEER_REVIEW_COMPLETE',
     planDigest: null,
     implDigest: null,
     validationSummary: [],
     findings: [],
     overallStatus,
-    completeness: evaluateCompleteness(makeProgressedState('REVIEW_COMPLETE')),
+    peerReviewCoverage: {
+      targetResolved: false,
+      targetFrozen: false,
+      repositoryIdentityVerified: null,
+      baseSha: null,
+      headSha: null,
+      changedPathCount: 0,
+      objectivesCovered: 0,
+      objectivesTotal: 0,
+      reviewAssurance: null,
+      missingVerification: [],
+    },
   };
 }
 
@@ -120,6 +130,34 @@ describe('deriveFinishOverallStatus — overall status matrix', () => {
     }
   });
 
+  it('reports READY at EXPORT_READY, never IN_PROGRESS', () => {
+    // EXPORT_READY is the explicit completion gate: the canonical directive
+    // requires `/export`. Reporting IN_PROGRESS (with "export is not
+    // applicable") would contradict the directive.
+    const state = makeProgressedState('EXPORT_READY');
+    const card = buildFinishCard(state, policy);
+    expect(card.phase).toBe('EXPORT_READY');
+    expect(card.directive.code).toBe('EXPORT_REQUIRED');
+    expect(card.directive.commands).toEqual(['/export']);
+    expect(card.overallStatus).toBe('READY');
+    // Directive-aware guidance: /export is the required completion commit, so
+    // "create PR" must not be presented as an equal alternative.
+    expect(
+      card.actionGuidance.find((guidance) => guidance.action === 'export evidence'),
+    ).toMatchObject({ status: 'recommended' });
+    expect(
+      card.actionGuidance.find((guidance) => guidance.action === 'export evidence')?.reason,
+    ).toContain('/export');
+    expect(card.actionGuidance.find((guidance) => guidance.action === 'create PR')).toMatchObject({
+      status: 'not_recommended',
+    });
+    expect(card.actionGuidance.find((guidance) => guidance.action === 'keep branch')).toMatchObject(
+      {
+        status: 'not_recommended',
+      },
+    );
+  });
+
   it('does not invent a stale evidence status (not_yet_required never NOT_VERIFIED)', () => {
     // deriveFinishOverallStatus must only react to missing/failed required slots.
     const readiness = {
@@ -133,8 +171,8 @@ describe('deriveFinishOverallStatus — overall status matrix', () => {
     expect(deriveFinishOverallStatus(readiness, evidence)).toBe('READY');
   });
 
-  it('CHANGES_REQUIRED when a completed standalone review reports issues', () => {
-    const state = makeProgressedState('REVIEW_COMPLETE');
+  it('CHANGES_REQUIRED when a completed peer review reports issues', () => {
+    const state = makeProgressedState('PEER_REVIEW_COMPLETE');
     const card = buildFinishCard(state, policy, makeReviewReport('issues'));
     expect(card.overallStatus).toBe('CHANGES_REQUIRED');
     expect(card.actionGuidance.find((guidance) => guidance.action === 'create PR')?.status).toBe(
@@ -162,9 +200,11 @@ describe('buildFinishCard — composition-only (no independent evaluation)', () 
     expect(buildFinishCard(state, policy).blocker).toEqual(buildBlockedProjection(state, policy));
   });
 
-  it('nextAction.primaryCommand equals resolveNextAction commands[0] ?? null', () => {
-    const next = resolveNextAction(state.phase, state);
-    expect(buildFinishCard(state, policy).nextAction.primaryCommand).toBe(next.commands[0] ?? null);
+  it('directive equals resolveWorkflowDirective verbatim', () => {
+    expect(buildFinishCard(state, policy).directive).toEqual(resolveWorkflowDirective(state));
+    expect(buildFinishCard(state, policy).directive.commands[0] ?? null).toBe(
+      resolveWorkflowDirective(state).commands[0] ?? null,
+    );
   });
 
   it('warnings equal the readiness projection warnings', () => {
@@ -187,7 +227,7 @@ describe('buildFinishCard — read-only', () => {
 // ─── TERMINAL phases ────────────────────────────────────────────────────────
 
 describe('buildFinishCard — terminal phases', () => {
-  for (const phase of ['COMPLETE', 'ARCH_COMPLETE', 'REVIEW_COMPLETE'] as const) {
+  for (const phase of ['COMPLETE', 'ARCH_COMPLETE', 'PEER_REVIEW_COMPLETE'] as const) {
     it(`produces a Finish Card in ${phase}`, () => {
       const card = buildFinishCard(makeProgressedState(phase), policy);
       expect(card.phase).toBe(phase);

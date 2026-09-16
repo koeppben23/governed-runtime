@@ -36,5 +36,5 @@ ${renderCommandGovernanceRules()}
   \`## Decision required\` block) is the next-action guidance — do NOT append a
   separate \`Next action:\` line.
 - Only on the fallback projection (no \`presentation.markdown\`): derive one action from
-  \`productNextAction\`; do not invent a local action.
+  \`directive\`; do not invent a local action.
 `;

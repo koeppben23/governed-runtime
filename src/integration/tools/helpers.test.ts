@@ -15,12 +15,10 @@ import {
   formatBlocked,
   formatAutoAdvanceOverflow,
   getWorktree,
-  formatEval,
   formatRailResult,
 } from './helpers.js';
 import { projectMarkdownHeadings } from '../../shared/markdown-sections.js';
 import { formatError } from './error-format.js';
-import type { EvalResult } from '../../machine/evaluate.js';
 import type { RailResult, AutoAdvanceOverflow } from '../../rails/types.js';
 import { makeProgressedState } from '../../fixtures.js';
 
@@ -180,19 +178,36 @@ describe('projectMarkdownHeadings', () => {
   });
 });
 
-describe('formatEval', () => {
-  it('returns terminal message for kind terminal', () => {
-    const result = formatEval({ kind: 'terminal' } as EvalResult);
-    expect(result).toBe('Workflow complete. Session is terminal.');
+describe('formatRailResult structured next-action authority', () => {
+  it('reports the terminal directive and never a formatted eval text field', () => {
+    const state = makeProgressedState('COMPLETE');
+    const result = formatRailResult({
+      kind: 'ok',
+      state,
+      evalResult: { kind: 'terminal' },
+      transitions: [],
+    } as RailResult);
+    const output = typeof result === 'string' ? result : result.output;
+    const parsed = parseJSON(output);
+    expect(parsed.directive).toMatchObject({ kind: 'terminal', code: 'WORKFLOW_COMPLETE' });
+    expect(parsed.next).toBeUndefined();
   });
 
-  it('returns transition message for kind transition', () => {
-    const result = formatEval({
-      kind: 'transition',
-      target: 'PLAN',
-      event: 'PLAN_READY',
-    } as EvalResult);
-    expect(result).toContain('PLAN');
+  it('carries transition results in the structured phase and audit-transition channels', () => {
+    const state = makeProgressedState('TICKET');
+    const transitions = [
+      { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', at: '2026-01-01T00:00:00Z' },
+    ];
+    const result = formatRailResult({
+      kind: 'ok',
+      state,
+      evalResult: { kind: 'transition', target: 'PLAN', event: 'PLAN_READY' },
+      transitions,
+    } as RailResult);
+    expect(typeof result).not.toBe('string');
+    const structured = result as { output: string; metadata?: { transitions?: unknown } };
+    expect(structured.metadata?.transitions).toEqual(transitions);
+    expect(parseJSON(structured.output).next).toBeUndefined();
   });
 });
 

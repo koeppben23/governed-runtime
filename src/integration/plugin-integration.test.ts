@@ -112,8 +112,7 @@ beforeEach(async () => {
       requestedMode: 'team',
       effectiveGateBehavior: 'human_gated',
       requireHumanGates: true,
-      maxSelfReviewIterations: 3,
-      maxImplReviewIterations: 3,
+      reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
       allowSelfApproval: true,
       audit: {
         ...POLICY_SNAPSHOT.audit,
@@ -327,8 +326,7 @@ describe('plugin-integration', () => {
           requestedMode: 'team',
           effectiveGateBehavior: 'human_gated',
           requireHumanGates: true,
-          maxSelfReviewIterations: 3,
-          maxImplReviewIterations: 3,
+          reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
           allowSelfApproval: true,
           audit: {
             ...POLICY_SNAPSHOT.audit,
@@ -627,8 +625,7 @@ describe('plugin-integration', () => {
           requestedMode: 'solo',
           effectiveGateBehavior: 'auto_approve',
           requireHumanGates: false,
-          maxSelfReviewIterations: 1,
-          maxImplReviewIterations: 1,
+          reviewBudget: { plan: 1, architecture: 1, implementation: 1 },
           allowSelfApproval: true,
           audit: {
             ...POLICY_SNAPSHOT.audit,
@@ -692,8 +689,7 @@ describe('plugin-integration', () => {
           requestedMode: 'team',
           effectiveGateBehavior: 'human_gated',
           requireHumanGates: true,
-          maxSelfReviewIterations: 3,
-          maxImplReviewIterations: 3,
+          reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
           allowSelfApproval: true,
           audit: {
             ...POLICY_SNAPSHOT.audit,
@@ -859,8 +855,7 @@ describe('plugin-integration', () => {
           requestedMode: 'team',
           effectiveGateBehavior: 'human_gated',
           requireHumanGates: true,
-          maxSelfReviewIterations: 3,
-          maxImplReviewIterations: 3,
+          reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
           allowSelfApproval: true,
           audit: {
             ...POLICY_SNAPSHOT.audit,

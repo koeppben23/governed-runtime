@@ -9,7 +9,7 @@
  * - ERROR guard is always first (fail-closed: if error is present, it fires first).
  * - User-gate phases (PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW) are NOT in this table —
  *   they wait for explicit human commands.
- * - Terminal phases (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE) are NOT in this table.
+ * - Terminal phases (COMPLETE, ARCH_COMPLETE, PEER_REVIEW_COMPLETE) are NOT in this table.
  * - READY is NOT in this table — it is command-driven (no auto-advance).
  *
  * @version v2
@@ -17,7 +17,7 @@
 
 import type { LoopVerdict } from '../state/evidence.js';
 import type { SessionState, Phase, Event } from '../state/schema.js';
-import { isExecutionError } from '../state/evidence-validation.js';
+import { isTechnicalValidationBlock } from '../state/evidence-validation.js';
 import { evaluateValidationEvidence } from './validation-evidence.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -136,7 +136,7 @@ export const checkFailed: GuardFn = (s) => s.validation.some((v) => !v.passed);
  * CHECK_FAILED, which routes to PLAN. Evaluated BEFORE checkFailed so a transient
  * execution error is never misread as a deficient plan.
  */
-export const checkErrored: GuardFn = (s) => s.validation.some(isExecutionError);
+export const checkErrored: GuardFn = (s) => s.validation.some(isTechnicalValidationBlock);
 
 /**
  * Post-implementation validation passed (IMPL_VALIDATION phase). Mirrors
@@ -167,7 +167,7 @@ export const implCheckFailed: GuardFn = (s) => s.implValidation.some((v) => !v.p
  * A post-implementation check ERRORED (timeout / command-not-found). Keeps the
  * session in IMPL_VALIDATION for a retry, mirroring {@link checkErrored}.
  */
-export const implCheckErrored: GuardFn = (s) => s.implValidation.some(isExecutionError);
+export const implCheckErrored: GuardFn = (s) => s.implValidation.some(isTechnicalValidationBlock);
 
 /** Implementation evidence is present. */
 export const implComplete: GuardFn = (s) => s.implementation !== null;
@@ -208,7 +208,7 @@ export const reviewDone: GuardFn = (s) => s.reviewReportPath !== null;
  * Phases NOT in this table:
  * - READY: command-driven (no guards)
  * - PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW: user gates
- * - COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE: terminal
+ * - COMPLETE, ARCH_COMPLETE, PEER_REVIEW_COMPLETE, REJECTED, ABORTED: terminal
  */
 export const GUARDS: ReadonlyMap<Phase, readonly GuardEntry[]> = new Map<
   Phase,
@@ -279,14 +279,14 @@ export const GUARDS: ReadonlyMap<Phase, readonly GuardEntry[]> = new Map<
     ],
   ],
 
-  // REVIEW: auto-advances to REVIEW_COMPLETE after report generation.
-  // The reviewDone guard fires immediately (the rail sets phase to REVIEW
+  // PEER_REVIEW: auto-advances to PEER_REVIEW_COMPLETE after report generation.
+  // The reviewDone guard fires immediately (the rail sets phase to PEER_REVIEW
   // after generating the report, then autoAdvance fires this guard).
   [
-    'REVIEW',
+    'PEER_REVIEW',
     [
       { event: 'ERROR', guard: hasError },
-      { event: 'REVIEW_DONE', guard: reviewDone },
+      { event: 'PEER_REVIEW_DONE', guard: reviewDone },
     ],
   ],
 ]);

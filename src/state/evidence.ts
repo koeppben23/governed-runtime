@@ -63,6 +63,10 @@ export type * from './evidence-review.js';
 export * from './evidence-review-input.js';
 export type * from './evidence-review-input.js';
 
+// ─── Peer review (coverage projection over canonical peer-review evidence) ────
+
+export { PeerReviewCoverage } from './peer-review.js';
+
 // ─── Identity ──────────────────────────────────────────────────────────────────
 
 export * from './evidence-identity.js';

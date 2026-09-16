@@ -22,6 +22,7 @@ describe('evidence-impl', () => {
     it('ImplReviewResult parses converged review', () => {
       const result = {
         iteration: 1,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
         currDigest: 'sha256-abc',
@@ -35,6 +36,7 @@ describe('evidence-impl', () => {
     it('ImplReviewResult parses changes_requested review', () => {
       const result = {
         iteration: 2,
+        reviewCycle: 2,
         maxIterations: 5,
         prevDigest: 'sha256-old',
         currDigest: 'sha256-new',

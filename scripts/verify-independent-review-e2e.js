@@ -23,7 +23,8 @@ const testFiles = [
 ];
 
 const mustPassTestTitles = [
-  'fulfills strict obligation and mutates output when attestation is valid',
+  'leaves the review-required output pending and authorizes the native Task before release',
+  'records bound same-child evidence and fulfills the obligation',
   'accepts when strict evidence and attestation match',
   'blocks when strict attestation is missing',
   'blocks when strict obligation is blocked',
@@ -112,9 +113,18 @@ function runRequired(command, args, options = {}) {
 function resolveOpenCodeCommand() {
   const direct = spawnSync('opencode', ['--version'], { stdio: 'pipe', encoding: 'utf-8' });
   if (direct.status === 0) return { command: 'opencode', argsPrefix: [] };
+  // Fallback stays on the exact validated host baseline instead of resolving
+  // an unvetted latest release.
+  const baseline = JSON.parse(
+    readFileSync(
+      path.join(workspaceRoot, '.sdk-baselines', 'opencode', 'host-version.json'),
+      'utf-8',
+    ),
+  );
+  const spec = `opencode-ai@${baseline.version}`;
   const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-  runRequired(npx, ['-y', 'opencode-ai', '--version']);
-  return { command: npx, argsPrefix: ['-y', 'opencode-ai'] };
+  runRequired(npx, ['-y', spec, '--version']);
+  return { command: npx, argsPrefix: ['-y', spec] };
 }
 
 function waitForOpenCodeServer(proc, timeoutMs) {

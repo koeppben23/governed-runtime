@@ -8,7 +8,7 @@
  * review assurance, then invokes the tool to validate and consume.
  *
  * Host profiles: the single host-observed structured child-session evidence path
- * (sdk_session_prompt invocation with captured structured findings).
+ * (native_task_structured_followup invocation with captured structured findings).
  * Does NOT test full E2E flows — only the review-verdict gate for plan and architecture.
  * No LLM inference, no network, no secrets.
  */
@@ -94,8 +94,9 @@ function buildAssuranceForObligation(
     parentSessionId,
     childSessionId: 'ses_reviewer',
     agentType: 'flowguard-reviewer' as const,
-    invocationMode: 'sdk_session_prompt' as const,
-    hostVisible: false,
+    invocationMode: 'native_task_structured_followup' as const,
+    hostVisible: true as const,
+    transcriptNavigable: true as const,
     source: 'host-orchestrated' as const,
     promptHash: 'a'.repeat(64),
     mandateDigest: REVIEW_MANDATE_DIGEST,
@@ -224,6 +225,7 @@ describe('plan / architecture Mode-B review contract', () => {
             maxReviewerAttempts: 1,
           },
           obligationType: 'plan',
+          reviewCycle: 1,
           repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
           iteration: 0,
           planVersion: 1,
@@ -281,6 +283,7 @@ describe('plan / architecture Mode-B review contract', () => {
             maxReviewerAttempts: 1,
           },
           obligationType: 'architecture',
+          reviewCycle: 1,
           repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
           iteration: 0,
           planVersion: 1,

@@ -1,6 +1,57 @@
 import { describe, it, expect } from 'vitest';
-import { projectReviewDecision, REVIEW_DECISION_COPY } from './review-decision.js';
-import type { ReviewDecisionProjectionInput } from './review-decision.js';
+import {
+  buildReviewDecisionConclusion,
+  projectReviewDecision,
+  REVIEW_DECISION_COPY,
+} from './review-decision.js';
+import type { DirectiveProjection, ReviewDecisionProjectionInput } from './review-decision.js';
+
+describe('buildReviewDecisionConclusion', () => {
+  it('renders every directive command verbatim at a normal gate', () => {
+    const directive: DirectiveProjection = {
+      kind: 'human_gate',
+      code: 'PLAN_DECISION_REQUIRED',
+      commands: ['/approve', '/request-changes', '/reject'],
+    };
+    const conclusion = buildReviewDecisionConclusion(directive, {
+      '/approve': 'approve the plan',
+    });
+    expect(conclusion.kind).toBe('decision_required');
+    if (conclusion.kind !== 'decision_required') return;
+    expect(conclusion.actions.map((action) => action.invocation)).toEqual(directive.commands);
+    expect(conclusion.actions[0]?.description).toBe('approve the plan');
+    // Missing copy renders the exact invocation — never an invented command.
+    expect(conclusion.actions[1]?.description).toBe('/request-changes');
+  });
+
+  it('renders the override command at an exhausted gate without filtering it away', () => {
+    const directive: DirectiveProjection = {
+      kind: 'human_gate',
+      code: 'PLAN_OVERRIDE_REQUIRED',
+      commands: ['/override-approve', '/request-changes', '/reject'],
+    };
+    const conclusion = buildReviewDecisionConclusion(directive, {
+      '/override-approve': 'accept with a recorded governance override',
+    });
+    expect(conclusion.kind).toBe('decision_required');
+    if (conclusion.kind !== 'decision_required') return;
+    expect(conclusion.actions.map((action) => action.invocation)).toEqual(directive.commands);
+    expect(conclusion.actions[0]?.description).toBe('accept with a recorded governance override');
+    expect(conclusion.question).toBe('Plan review exhausted: governance override required.');
+  });
+
+  it('renders a terminal conclusion for non-gate directives', () => {
+    const directive: DirectiveProjection = {
+      kind: 'terminal',
+      code: 'WORKFLOW_REJECTED',
+      commands: [],
+    };
+    expect(buildReviewDecisionConclusion(directive, {})).toEqual({
+      kind: 'terminal',
+      message: 'Workflow rejected.',
+    });
+  });
+});
 
 describe('projectReviewDecision', () => {
   it('includes a compact affected-subject summary without changing readiness', () => {

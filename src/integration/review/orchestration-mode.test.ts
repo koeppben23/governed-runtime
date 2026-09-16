@@ -4,7 +4,8 @@ import {
   normalizeReviewHostPlatform,
 } from './orchestration-mode.js';
 import { buildChildSessionReviewInstruction } from './child-session-instruction.js';
-import { artifactReviewSubjectScope, createReviewObligation } from './assurance.js';
+import { artifactReviewSubjectScope, createObligationAndAttempt } from './assurance.js';
+import type { ReviewDispatchAuthority } from './dispatch-authority.js';
 
 describe('review orchestration mode projection', () => {
   it('keeps OpenCode on host_structured', () => {
@@ -50,38 +51,49 @@ describe('review orchestration mode projection', () => {
 
 describe('child-session review instruction metadata', () => {
   it('includes the binding envelope without projecting a reviewer prompt', () => {
-    const obligation = createReviewObligation({
-      policySnapshot: {
-        challengePolicy: {
-          version: 'challenge-policy.v1',
-          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+    const minted = createObligationAndAttempt(
+      undefined,
+      {
+        policySnapshot: {
+          challengePolicy: {
+            version: 'challenge-policy.v1',
+            counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+          },
+          maxReviewerAttempts: 1,
         },
-        maxReviewerAttempts: 1,
-      },
-      obligationType: 'plan',
-      repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
-      iteration: 0,
-      planVersion: 1,
-      now: '2026-01-01T00:00:00.000Z',
-      subjectDigest: 'test',
-      reviewMaterial: {
-        content: 'frozen review material',
-        materialDigest: 'a'.repeat(64),
+        obligationType: 'plan',
+        reviewCycle: 1,
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+        iteration: 0,
+        planVersion: 1,
+        now: '2026-01-01T00:00:00.000Z',
         subjectDigest: 'test',
+        reviewMaterial: {
+          content: 'frozen review material',
+          materialDigest: 'a'.repeat(64),
+          subjectDigest: 'test',
+        },
+        reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
       },
-      reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
-    });
+      '2026-01-01T00:00:00.000Z',
+    );
+    const authority: ReviewDispatchAuthority = {
+      obligation: minted.obligation,
+      attempt: minted.attempt,
+    };
     const instruction = buildChildSessionReviewInstruction({
       mode: 'external_instruction_pending',
       platform: 'claude-code',
-      obligation,
+      authority,
       iteration: 0,
       planVersion: 1,
     });
 
     expect(instruction.mode).toBe('external_instruction_pending');
     expect(instruction.authority).toBe('review_obligation_evidence_binding');
-    expect(instruction.requiredReviewAttestation?.toolObligationId).toBe(obligation.obligationId);
+    expect(instruction.requiredReviewAttestation?.toolObligationId).toBe(
+      minted.obligation.obligationId,
+    );
     expect(instruction).not.toHaveProperty('reviewerTaskPrompt');
   });
 });

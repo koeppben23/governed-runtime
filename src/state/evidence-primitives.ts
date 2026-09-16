@@ -26,8 +26,19 @@ import { z } from 'zod';
 export const CheckId = z.string().min(1);
 export type CheckId = z.infer<typeof CheckId>;
 
-/** User review verdict at a User Gate (approve, request changes, or reject). */
-export const ReviewVerdict = z.enum(['approve', 'changes_requested', 'reject']);
+/**
+ * User review verdict at a User Gate (approve, request changes, or reject).
+ *
+ * `approve_with_governance_override` is legal only at a governance override
+ * gate (an exhausted review loop); plain `approve` is legal only at a normal
+ * gate. The rail enforces the agreement against the canonical directive.
+ */
+export const ReviewVerdict = z.enum([
+  'approve',
+  'approve_with_governance_override',
+  'changes_requested',
+  'reject',
+]);
 export type ReviewVerdict = z.infer<typeof ReviewVerdict>;
 
 /** Revision delta between iterations (digest comparison result). */
@@ -137,7 +148,9 @@ export type ExternalReference = z.infer<typeof ExternalReferenceSchema>;
 
 /**
  * How the reviewer was invoked.
- * - `sdk_session_prompt`: host-observed SDK reviewer session (the only
- *   sanctioned invocation transport).
+ *
+ * `native_task_structured_followup` is the only sanctioned transport: OpenCode
+ * exposes the reviewer as a native Task child and FlowGuard captures structured
+ * findings from a schema-constrained follow-up in that same child session.
  */
-export type ReviewInvocationMode = 'sdk_session_prompt';
+export type ReviewInvocationMode = 'native_task_structured_followup';

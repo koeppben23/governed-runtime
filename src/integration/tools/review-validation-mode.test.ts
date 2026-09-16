@@ -22,6 +22,7 @@ describe('toolCallFlags', () => {
       hasText: false,
       hasVerdict: false,
       hasReviewerUnavailable: false,
+      hasReviewRecovery: false,
     });
   });
 

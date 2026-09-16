@@ -124,20 +124,17 @@ function makeValidReport(): ReviewReport {
     validationSummary: [],
     findings: [],
     overallStatus: 'clean',
-    completeness: {
-      sessionId: FIXED_SESSION_UUID,
-      phase: 'COMPLETE',
-      policyMode: 'solo',
-      overallComplete: true,
-      slots: [],
-      fourEyes: {
-        required: false,
-        satisfied: true,
-        initiatedBy: 'test',
-        decisionIdentity: null,
-        detail: 'Four-eyes not required by policy',
-      },
-      summary: { total: 0, complete: 0, missing: 0, notYetRequired: 0, failed: 0 },
+    peerReviewCoverage: {
+      targetResolved: false,
+      targetFrozen: false,
+      repositoryIdentityVerified: null,
+      baseSha: null,
+      headSha: null,
+      changedPathCount: 0,
+      objectivesCovered: 0,
+      objectivesTotal: 0,
+      reviewAssurance: null,
+      missingVerification: [],
     },
   };
 }
@@ -173,6 +170,23 @@ describe('persistence', () => {
       expect(loaded!.plan!.current.digest).toBe(state.plan!.current.digest);
     });
 
+    it('writeState + readState round-trip preserves export completion evidence', async () => {
+      const evidence = {
+        id: FIXED_UUID,
+        packageDigest: 'a'.repeat(64),
+        purpose: 'auditor' as const,
+        integrityCapability: 'verifiable' as const,
+        createdAt: FIXED_TIME,
+      };
+      await writeState(tmpDir, {
+        ...makeProgressedState('COMPLETE'),
+        exportCompletionEvidence: evidence,
+      });
+      const loaded = await readState(tmpDir);
+      expect(loaded!.phase).toBe('COMPLETE');
+      expect(loaded!.exportCompletionEvidence).toEqual(evidence);
+    });
+
     it('readState rejects current-epoch states missing authority fields (no read-time defaulting)', async () => {
       for (const mode of ['regulated', 'team-ci'] as const) {
         const state = makeProgressedState('TICKET');
@@ -194,6 +208,19 @@ describe('persistence', () => {
           code: 'SCHEMA_VALIDATION_FAILED',
         });
       }
+    });
+
+    it('readState rejects current-epoch states missing exportCompletionEvidence (no read-time defaulting)', async () => {
+      const state = makeProgressedState('TICKET') as unknown as Record<string, unknown>;
+      const incomplete = { ...state };
+      delete incomplete.exportCompletionEvidence;
+
+      await fs.mkdir(tmpDir, { recursive: true });
+      await fs.writeFile(statePath(tmpDir), JSON.stringify(incomplete), 'utf-8');
+
+      await expect(readState(tmpDir)).rejects.toMatchObject({
+        code: 'SCHEMA_VALIDATION_FAILED',
+      });
     });
 
     it('readState rejects current-epoch states missing mutation/audit authority arrays', async () => {
@@ -292,9 +319,20 @@ describe('persistence', () => {
         phaseLabel: 'Complete',
         overallStatus: 'issues',
         findings: loaded.findings,
-        completeness: { overallComplete: true, fourEyes: false, total: 0, summary: '0/0 complete' },
+        coverage: {
+          targetResolved: true,
+          targetFrozen: true,
+          repositoryIdentityVerified: true,
+          baseSha: 'a'.repeat(40),
+          headSha: 'b'.repeat(40),
+          changedPathCount: 1,
+          objectivesCovered: 3,
+          objectivesTotal: 3,
+          reviewAssurance: 'structured_high',
+          missingVerification: [],
+        },
         proofSummary,
-        productNextAction: { text: 'Export.', commands: ['/export'] },
+        directive: { kind: 'user_action', code: 'EXPORT_REQUIRED', commands: ['/export'] },
         conclusionAction: {
           invocation: '/export',
           description: 'Export.',

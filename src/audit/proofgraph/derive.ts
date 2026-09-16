@@ -13,9 +13,9 @@
 
 import type { SessionState } from '../../state/schema.js';
 import {
-  resolveAuthoritativeStandaloneReviewTask,
-  type StandaloneReviewTask,
-} from '../../state/standalone-review.js';
+  resolveAuthoritativePeerReviewTask,
+  type PeerReviewTask,
+} from '../../state/peer-review.js';
 import type {
   ProofGraphProjection,
   ProofProviderResult,
@@ -34,19 +34,19 @@ import { evaluateProofGraph } from './evaluate.js';
  * @param currentSurfaceDigests Current digest per surface id for `surface_set`-bound results.
  * @param claimDiagnostics Per-claim binding diagnostic codes persisted alongside the projection.
  */
-function collectAuthoritativeStandaloneClaims(
+function collectAuthoritativePeerReviewClaims(
   state: SessionState,
-): Map<string, StandaloneReviewTask['claims'][number]> {
-  // Standalone-review claims project ONLY from the single authoritative task per
-  // obligation (canonical lifecycle authority in state/standalone-review.ts).
+): Map<string, PeerReviewTask['claims'][number]> {
+  // Peer-review claims project ONLY from the single authoritative task per
+  // obligation (canonical lifecycle authority in state/peer-review.ts).
   // Superseded/predecessor incarnations are audit-only. A structurally broken
   // chain cannot reach this projection: the SessionState schema boundary
   // rejects it fail-closed (SCHEMA_VALIDATION_FAILED) before any derivation.
-  const claims = new Map<string, StandaloneReviewTask['claims'][number]>();
+  const claims = new Map<string, PeerReviewTask['claims'][number]>();
   for (const obligation of state.reviewAssurance?.obligations ?? []) {
     if (obligation.obligationType !== 'review') continue;
-    const resolved = resolveAuthoritativeStandaloneReviewTask(
-      state.standaloneReviewEvidence,
+    const resolved = resolveAuthoritativePeerReviewTask(
+      state.peerReviewEvidence,
       obligation.obligationId,
     );
     if (resolved.kind !== 'ok') continue;
@@ -67,13 +67,13 @@ export function deriveProofGraph(
     claimDiagnostics?: Readonly<Record<string, AssertionBindingReasonCode>>;
   },
 ): ProofGraphProjection {
-  // Standalone-review claims project ONLY from the single authoritative task per
-  // obligation (canonical lifecycle authority in state/standalone-review.ts).
-  const standaloneClaims = collectAuthoritativeStandaloneClaims(state);
+  // Peer-review claims project ONLY from the single authoritative task per
+  // obligation (canonical lifecycle authority in state/peer-review.ts).
+  const peerReviewClaims = collectAuthoritativePeerReviewClaims(state);
   const contractClaims = normalizeContractClaims(state);
   const base = evaluateProofGraph(
     {
-      claims: [...contractClaims, ...standaloneClaims.values()],
+      claims: [...contractClaims, ...peerReviewClaims.values()],
       providerResults,
       counterexamples,
       currentImplementationDigest: state.implementation?.digest ?? null,

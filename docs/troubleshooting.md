@@ -69,8 +69,8 @@ ls ~/.config/opencode/workspaces/*/sessions/
 /continue
 ```
 
-`/review` is **not** a status command — it is the entry point of the standalone
-compliance-report flow (READY only). Use `/status` or `/why` instead.
+`/review` is **not** a status command — it is the entry point of the peer
+review flow (READY only). Use `/status` or `/why` instead.
 
 ### External Reviewer Evidence Not Accepted
 
@@ -190,7 +190,7 @@ real, registered reason.
 
 | Code                          | Description                                                                                        | Solution                                                                                                            |
 | ----------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `SUBAGENT_REVIEW_NOT_INVOKED` | L1 — primary agent submitted a verdict without invoking the reviewer subagent                      | Read the previous tool response and follow the `next` action                                                        |
+| `SUBAGENT_REVIEW_NOT_INVOKED` | L1 — primary agent submitted a verdict without invoking the reviewer subagent                      | Read the previous tool response and follow its `directive` and recovery steps                                       |
 | `SUBAGENT_REVIEW_REQUIRED`    | Content-aware review requires validated, obligation-bound findings from the reviewer child session | Re-run the originating FlowGuard command so the host captures structured reviewer evidence; submit only the verdict |
 | `SUBAGENT_SESSION_MISMATCH`   | L2 — `reviewedBy.sessionId` does not match actual subagent session                                 | Do not edit `reviewedBy.sessionId`; the runtime authoritatively sets it                                             |
 
@@ -221,7 +221,7 @@ real, registered reason.
 | `REVIEW_OBSERVATION_UNSUPPORTED_ENTRY` | Observed path is not materializable at the frozen revision | Submodule gitlink entries are not materialized as observations |
 | `REVIEW_REPOSITORY_IDENTITY_MISSING` | Branch source carries no remote or local repository identity | Re-run the review from its original content input so the identity is resolved again |
 | `REVIEW_SUBJECT_DIGEST_MISMATCH` | Re-derived review subject differs from the frozen obligation subject | Start a new review for the changed content; a frozen subject is immutable |
-| `REVIEW_SUBJECT_NOT_MATERIALIZED` | Standalone review source could not be frozen into immutable material | Resolve exactly one review source before creating or continuing the obligation |
+| `REVIEW_SUBJECT_NOT_MATERIALIZED` | Peer review source could not be frozen into immutable material | Resolve exactly one review source before creating or continuing the obligation |
 | `REVIEW_SUBJECT_SCOPE_UNAVAILABLE` | Review obligation has no verifiable frozen subject scope | Re-run the review after subject scope resolution succeeds |
 | `REVIEW_OBLIGATION_NOT_FOUND` | Review continuation ID is missing, consumed, blocked, or mismatched | Use the ID from the original `CONTENT_ANALYSIS_REQUIRED` response; otherwise start a fresh `/review` |
 | `REVIEW_OBLIGATION_ID_REQUIRED` | Host-task review verdict was submitted without its obligation ID | Submit the original content, `reviewObligationId`, and the captured reviewer verdict together |
@@ -318,6 +318,7 @@ ARCHITECTURE_REVIEW_COMPLETION_REQUIRED
 ARCHITECTURE_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION
 ARCHITECTURE_REVIEW_EVIDENCE_REQUIRED
 ARCHITECTURE_REVIEW_LOOP_REQUIRED
+ARCHITECTURE_REVIEW_OVERRIDE_SUBJECT_MISMATCH
 ARTIFACT_SCHEMA_VALIDATION_FAILED
 AUDIT_PERSISTENCE_FAILED
 AUDIT_SESSION_AUTHORITY_UNAVAILABLE
@@ -369,6 +370,9 @@ FOUR_EYES_ACTOR_MATCH
 GIT_COMMAND_FAILED
 GIT_NOT_FOUND
 GIT_TIMEOUT
+GOVERNANCE_OVERRIDE_NOT_REQUIRED
+GOVERNANCE_OVERRIDE_RATIONALE_REQUIRED
+GOVERNANCE_OVERRIDE_REQUIRED
 HELP_ARGUMENTS_INVALID
 HOST_REVIEW_CONTEXT_UNAVAILABLE
 HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION
@@ -383,13 +387,13 @@ IMPLEMENTATION_CHALLENGE_UNKNOWN
 IMPLEMENTATION_EVIDENCE_EMPTY
 IMPLEMENTATION_REWORK_REQUIRED
 IMPLEMENTATION_EVIDENCE_REQUIRED
+IMPLEMENTATION_REVIEW_EVIDENCE_REQUIRED
+IMPLEMENTATION_REVIEW_SUBJECT_MISMATCH
 IMPLEMENTATION_VALIDATION_ATTEMPT_DUPLICATE
 IMPLEMENTATION_VALIDATION_ATTEMPT_DIGEST_MISMATCH
 IMPLEMENTATION_VALIDATION_ATTEMPT_FAILED
 IMPLEMENTATION_VALIDATION_ATTEMPT_UNKNOWN
 IMPLEMENTATION_VALIDATION_ATTEMPT_WRONG_SCOPE
-IMPLEMENTATION_REVIEW_EXTENSION_REQUIRED
-IMPLEMENTATION_REVIEW_NOT_EXHAUSTED
 IMPLEMENT_REVIEW_LOOP_REQUIRED
 IMPL_VALIDATION_EVIDENCE_REQUIRED
 INTERNAL_ERROR
@@ -419,6 +423,7 @@ MUTATION_EPISODE_RESOLVED
 MUTATION_EPISODE_RUNTIME_EPOCH_ACTIVE
 MUTATION_EPISODE_UNRESOLVED
 MUTATION_OUTCOME_UNKNOWN_REVALIDATION_REQUIRED
+NATIVE_REVIEW_TASK_REQUIRED
 NOT_GIT_REPO
 NO_ACTIVE_CHECKS
 NO_ARCHITECTURE
@@ -565,6 +570,7 @@ SUBAGENT_SESSION_MISMATCH
 SUBAGENT_TYPE_UNAUTHORIZED
 SUBAGENT_UNABLE_TO_REVIEW
 SUBAGENT_VERDICT_FINDINGS_INCOHERENT
+SYSTEM_WORK_STATE_UNREADABLE
 TICKET_REQUIRED
 TOOL_ERROR
 UNSUPPORTED_ASSERTION_CAPABILITY
@@ -578,6 +584,7 @@ VERIFIED_ACTOR_REQUIRED
 CONFIG_INVALID
 CONFIG_MISSING
 CONFIG_WRITE_FAILED
+VISIBLE_REVIEW_TRANSPORT_UNAVAILABLE
 WORKTREE_MISMATCH
 WRITE_FAILED
 WRONG_PHASE

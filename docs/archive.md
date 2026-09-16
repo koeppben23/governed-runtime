@@ -20,7 +20,7 @@ Raw-evidence archives include:
 - `context/discovery-snapshot.json` — Repository discovery snapshot
 - `context/profile-resolution-snapshot.json` — Profile resolution snapshot
 - `artifacts/ticket/`, `artifacts/plan/`, and `artifacts/reviews/` — Evidence artifacts
-- `reports/review-report.json` — Standalone review report when present
+- `reports/review-report.json` — Peer review report when present
 - `implementation/implementation-diff.<digest>.patch` — Implementation patch when present
 
 Redacted sharing archives instead contain redacted state, audit, receipt, and

@@ -1,12 +1,14 @@
 /**
  * @module evidence-review
  * @description Review findings, obligations, invocation evidence, assurance,
- *              completeness report, review decision, and standalone review report schemas.
+ *              completeness report, review decision, and peer review report schemas.
  *
  * @version v1
  */
 
 import { z } from 'zod';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { hashText } from '../shared/hashing.js';
 import { REVIEW_REPORT_SCHEMA_ID } from './evidence-identifiers.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { RepositoryEvidenceFreeze } from './evidence-review-freeze.js';
@@ -24,6 +26,7 @@ import {
 import { DecisionIdentity } from './evidence-identity.js';
 import { Finding } from './evidence-findings.js';
 import { FrozenReviewSubject, ReviewSubjectScope } from './evidence-review-subject.js';
+import { PeerReviewCoverage } from './peer-review.js';
 export {
   ArtifactSectionAnchor,
   ContentSubjectAnchor,
@@ -72,8 +75,9 @@ import {
   refineObligationRepositoryAuthorityCoherence,
   refineRepositoryEvidenceFreezeCoherence,
   refineReviewMaterialSubject,
-  refineStandaloneSubject,
+  refinePeerReviewSubject,
 } from './evidence-review-refinements.js';
+import { refineReviewCycleCoherence } from './review-cycles.js';
 import {
   refineAssuranceAttemptLineageCoherence,
   refineAssuranceDispatchCoherence,
@@ -341,6 +345,19 @@ export const ReviewFindingsObject = z
 export const ReviewFindings = ReviewFindingsObject.readonly();
 export type ReviewFindings = z.infer<typeof ReviewFindings>;
 
+export function reviewFindingsDigests(findings: ReviewFindings | undefined): {
+  findingsDigest: string | null;
+  attestationDigest: string | null;
+} {
+  if (!findings) return { findingsDigest: null, attestationDigest: null };
+  return {
+    findingsDigest: hashText(canonicalJsonStringify(findings)),
+    attestationDigest: findings.attestation
+      ? hashText(canonicalJsonStringify(findings.attestation))
+      : null,
+  };
+}
+
 // ─── Review Obligations and Invocation Evidence ────────────────────────────────
 
 /**
@@ -372,6 +389,8 @@ export type ReviewProfileSource = z.infer<typeof ReviewProfileSource>;
 export const ReviewInputFingerprintVersion = z.literal('v2');
 export type ReviewInputFingerprintVersion = z.infer<typeof ReviewInputFingerprintVersion>;
 
+/** Human review-cycle identity; canonical schema and invariants live in `review-cycles.ts`. */
+export { ReviewCycles } from './review-cycles.js';
 export { ReviewRepositoryRevisionProvenance } from './evidence-primitives.js';
 
 /**
@@ -383,6 +402,21 @@ export const ReviewObligation = z
     obligationId: z.string().uuid(),
     obligationType: ReviewObligationType,
     iteration: z.number().int().nonnegative(),
+    /**
+     * Human-cycle identity of this obligation. The value is the owning loop's
+     * active `ReviewCycles` counter at mint time:
+     *
+     * - peer review (`obligationType === 'review'`) → `null`: it has exactly
+     *   one pass and no human convergence cycle.
+     * - plan/architecture/implement → a positive integer. A human
+     *   `changes_requested` decision at the owning gate starts a new cycle and
+     *   restarts `iteration` at 1; `reviewCycle` is what keeps cycle N
+     *   iteration 1 distinguishable from cycle N+1 iteration 1 in persisted
+     *   evidence and audit.
+     *
+     * REQUIRED and never defaulted: absence is not a legal current shape.
+     */
+    reviewCycle: z.number().int().positive().nullable(),
     planVersion: z.number().int().positive(),
     criteriaVersion: z.string().min(1),
     mandateDigest: z.string().min(1),
@@ -426,7 +460,7 @@ export const ReviewObligation = z
     reviewMaterial: ReviewMaterial,
     reviewSubject: FrozenReviewSubject.optional(),
     /**
-     * Input-fingerprint generation. `v2` for standalone review obligations;
+     * Input-fingerprint generation. `v2` for peer review obligations;
      * absent for artifact flows (plan/architecture/implement) that do not
      * participate in input-fingerprint matching.
      */
@@ -455,8 +489,9 @@ export const ReviewObligation = z
     maxReviewerAttempts: z.number().int().min(0).max(5),
   })
   .strict()
-  .superRefine(refineStandaloneSubject)
+  .superRefine(refinePeerReviewSubject)
   .superRefine(refineReviewMaterialSubject)
+  .superRefine(refineReviewCycleCoherence)
   .superRefine(refineAuthorityStructure)
   .superRefine(refineObligationRepositoryAuthorityCoherence)
   .superRefine(refineRepositoryEvidenceFreezeCoherence);
@@ -658,7 +693,7 @@ const LifecycleReviewReportFinding = z
   ])
   .readonly();
 
-const ReviewReportBase = {
+const ReviewReportCommonBase = {
   schemaVersion: z.literal(REVIEW_REPORT_SCHEMA_ID),
   sessionId: z.string().uuid(),
   generatedAt: z.string().datetime(),
@@ -673,9 +708,13 @@ const ReviewReportBase = {
     }),
   ),
   overallStatus: z.enum(['clean', 'warnings', 'issues']),
-  completeness: CompletenessReportSchema,
   inputOrigin: InputOriginSchema.optional(),
   references: z.array(ExternalReferenceSchema).optional(),
+};
+
+const ReviewReportBase = {
+  ...ReviewReportCommonBase,
+  peerReviewCoverage: PeerReviewCoverage,
 };
 
 const LifecycleReviewReport = z
@@ -684,8 +723,7 @@ const LifecycleReviewReport = z
     reviewKind: z.literal('lifecycle_review'),
     findings: z.array(LifecycleReviewReportFinding),
   })
-  .strict()
-  .readonly();
+  .strict();
 
 const ContentReviewReport = z
   .object({
@@ -694,8 +732,15 @@ const ContentReviewReport = z
     reviewSubject: FrozenReviewSubject,
     findings: z.array(ReviewReportFinding),
   })
-  .strict()
+  .strict();
+
+export const ReviewReportDraft = z
+  .discriminatedUnion('reviewKind', [
+    ContentReviewReport.omit({ peerReviewCoverage: true }),
+    LifecycleReviewReport.omit({ peerReviewCoverage: true }),
+  ])
   .readonly();
+export type ReviewReportDraft = z.infer<typeof ReviewReportDraft>;
 
 export const ReviewReport = z
   .discriminatedUnion('reviewKind', [ContentReviewReport, LifecycleReviewReport])

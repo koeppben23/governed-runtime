@@ -17,4 +17,6 @@ Approval evidence: Not recorded
 ## Decision required
 
 Awaiting plan review decision (approve / changes_requested / reject)
-- `/review-decision` — Record the human decision at a review gate.
+- `/approve` — Accept the reviewed work and advance.
+- `/request-changes` — Request revisions to the reviewed work.
+- `/reject` — Reject the reviewed work.

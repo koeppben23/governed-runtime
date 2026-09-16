@@ -15,7 +15,7 @@
  *     -> evaluated verification state (real evaluator)
  *     -> gate decision (real gate)
  *
- * and the standalone review hypothesis count across its full lifecycle.
+ * and the peer review hypothesis count across its full lifecycle.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -122,7 +122,9 @@ vi.mock('../verification/executor', () => ({
     stdout: 'OK',
     stderr: '',
     timedOut: false,
-    startedAt: FIXED_TIME,
+    // Literal (not the imported FIXED_TIME): the vi.mock factory is hoisted,
+    // and eager tool imports make the imported binding unavailable here.
+    startedAt: '2026-01-01T00:00:00.000Z',
   }),
 }));
 
@@ -659,7 +661,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
   });
 });
 
-describe('standalone review hypotheses (runtime)', () => {
+describe('peer review hypotheses (runtime)', () => {
   let env: Env | undefined;
   let prevConfig: string | undefined;
   let prevRequire: string | undefined;
@@ -706,7 +708,7 @@ describe('standalone review hypotheses (runtime)', () => {
     };
   }
 
-  /** Bind host-captured structured findings to the standalone review obligation. */
+  /** Bind host-captured structured findings to the peer review obligation. */
   async function bindStructuredReviewEvidence(
     reviewEnv: Env,
     obligationId: string,
@@ -717,7 +719,7 @@ describe('standalone review hypotheses (runtime)', () => {
     const obligation = assurance?.obligations.find((o) => o.obligationId === obligationId);
     const attempt = assurance?.attempts.find((a) => a.obligationId === obligationId);
     if (!state || !assurance || !obligation || !attempt) {
-      throw new Error('standalone review evidence requires a pending obligation and attempt');
+      throw new Error('peer review evidence requires a pending obligation and attempt');
     }
     const invocation = buildInvocationEvidence({
       obligationId,
@@ -816,13 +818,11 @@ describe('standalone review hypotheses (runtime)', () => {
     );
 
     const completed = await readState(env.sDir);
-    expect(completed!.phase).toBe('REVIEW_COMPLETE');
+    expect(completed!.phase).toBe('PEER_REVIEW_COMPLETE');
 
     // Preparation and completion must bind to ONE evidence chain. A second
     // prepared entry would duplicate every hypothesis claim in the projection.
-    const prepared_entries = completed!.standaloneReviewEvidence.filter(
-      (e) => e.kind === 'prepared',
-    );
+    const prepared_entries = completed!.peerReviewEvidence.filter((e) => e.kind === 'prepared');
     expect(prepared_entries).toHaveLength(1);
     expect(completed!.proofGraph?.claims).toHaveLength(3);
     expect(
@@ -1108,6 +1108,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
           {
             obligationId,
             obligationType: 'plan' as const,
+            reviewCycle: 1,
             requiredChallengeCount: 0,
             requiredChallengeKind: 'design_challenge' as const,
             challengePolicyVersion: 'challenge-policy.v1' as const,
@@ -1145,8 +1146,9 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             parentSessionId: 'ses_parent',
             childSessionId: 'ses_child',
             agentType: 'flowguard-reviewer' as const,
-            invocationMode: 'sdk_session_prompt' as const,
-            hostVisible: false,
+            invocationMode: 'native_task_structured_followup' as const,
+            hostVisible: true,
+            transcriptNavigable: true,
             source: 'host-orchestrated' as const,
             promptHash: 'a'.repeat(64),
             mandateDigest: 'e78b6bab98fcf033874fcc07e17d87aaff73fca47b1a28209e5dd4a1a28eedb7',
