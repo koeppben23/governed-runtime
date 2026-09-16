@@ -2,15 +2,15 @@
  * @module integration/opencode-host-adapter
  * @description OpenCode platform adapter — concrete implementation of HostAdapter (HAI).
  *
- * Review capabilities are declared per concrete transport. OpenCode's SDK
- * session.create + session.prompt path provides schema-constrained structured
- * review in an isolated child session, but the parent TUI does not materialize
- * that direct child as a native Task/subagent. FlowGuard therefore reports the
- * capability honestly and fails closed when product policy requires a visible
- * independent reviewer.
+ * Independent review has exactly one productive OpenCode transport:
+ * `native_task_structured_followup`. OpenCode's native Task owns the visible,
+ * navigable, permission-isolated reviewer child; FlowGuard then requests
+ * schema-constrained serialization in that SAME child session. A direct
+ * session.create/session.prompt child is intentionally not advertised because
+ * OpenCode does not surface it as a native subagent in the parent UI.
  *
  * @see https://github.com/koeppben23/governed-runtime/issues/242
- * @version v4
+ * @version v5
  */
 
 import type {
@@ -31,7 +31,6 @@ import {
   reviewTransportSatisfies,
 } from '../adapters/host-adapter.js';
 import type { OrchestratorClient } from './review/types.js';
-import { invokeReviewer } from './review/orchestrator.js';
 import { buildEnforcementError } from './plugin-helpers.js';
 
 export interface OpenCodeAdapterConfig {
@@ -59,14 +58,15 @@ export class HostCapabilityMismatchError extends Error {
   }
 }
 
-const SDK_STRUCTURED_REVIEW_TRANSPORT: HostReviewTransportCapability = {
-  kind: 'sdk_structured_session',
+const NATIVE_TASK_STRUCTURED_REVIEW_TRANSPORT: HostReviewTransportCapability = {
+  kind: 'native_task_structured_followup',
   structuredOutput: true,
-  parentVisible: false,
-  transcriptNavigable: false,
+  parentVisible: true,
+  transcriptNavigable: true,
   isolatedAgentIdentity: true,
-  // session.create in the pinned SDK surface cannot bind a permission profile.
-  permissionIsolation: false,
+  // OpenCode's native Task derives child permissions from the parent and the
+  // selected subagent, and applies additional task/primary-tool denies.
+  permissionIsolation: true,
   assurance: 'structured_high',
 };
 
@@ -98,7 +98,7 @@ export class OpenCodeHostAdapter implements HostAdapter {
     argMutation: true,
     outputReplacement: true,
     contextInjection: true,
-    reviewTransports: [SDK_STRUCTURED_REVIEW_TRANSPORT],
+    reviewTransports: [NATIVE_TASK_STRUCTURED_REVIEW_TRANSPORT],
     compactionInjection: true,
   };
 
@@ -123,20 +123,24 @@ export class OpenCodeHostAdapter implements HostAdapter {
   }
 
   async initialize(): Promise<void> {
+    // Native Task creation is host-owned and therefore absent from the client
+    // API used here. FlowGuard only needs the agent registry and same-child
+    // session.prompt for the structured serialization half of the transport.
     if (
-      typeof this.client?.session?.create !== 'function' ||
+      typeof this.client?.app?.agents !== 'function' ||
       typeof this.client?.session?.prompt !== 'function'
     ) {
       throw new HostAdapterInitError(
         '[FlowGuard] OpenCode adapter initialization failed: SDK client missing ' +
-          'session.create or session.prompt methods. Cannot guarantee reviewer capability.',
+          'app.agents or session.prompt. Cannot guarantee native reviewer structured serialization.',
       );
     }
   }
 
   /**
-   * Boot validation is contract-attested only. Reviewer registry and transport
-   * usability are verified on the actual review path to avoid re-entrant host I/O.
+   * Boot validation is contract-attested only. The native Task lifecycle is
+   * runtime-observed at the before/after hook boundary and exact child metadata
+   * is required before evidence can bind.
    */
   async validateCapabilities(): Promise<CapabilityValidationResult> {
     return {
@@ -148,7 +152,7 @@ export class OpenCodeHostAdapter implements HostAdapter {
         'argMutation',
         'outputReplacement',
         'contextInjection',
-        'reviewTransports.sdk_structured_session',
+        'reviewTransports.native_task_structured_followup',
         'compactionInjection',
       ],
     };
@@ -170,22 +174,22 @@ export class OpenCodeHostAdapter implements HostAdapter {
     // OpenCode result mutation is performed directly on the hook output ref.
   }
 
+  /**
+   * A plugin callback cannot synthesize the parent's native Task tool record.
+   * Therefore `spawnReviewer` deliberately never falls back to an invisible SDK
+   * child. The caller must expose the pending review to the parent agent, which
+   * invokes Task; plugin before/after hooks then govern that exact host call.
+   */
   async spawnReviewer(config: ReviewerSpawnConfig): Promise<HostReviewerResult | null> {
     const requirements = effectiveRequirements(config);
     const transport = this.capabilities.reviewTransports.find((candidate) =>
       reviewTransportSatisfies(candidate, requirements),
     );
-
-    // Critical epistemic gate: do not execute a real-but-invisible child and
-    // then present its verdict as satisfying a visible independent-review
-    // contract. The block occurs before session.create and before dispatch
-    // authorization, so no hidden reviewer is released.
     if (!transport) {
       return {
         blocked: true,
         code: 'VISIBLE_REVIEW_TRANSPORT_UNAVAILABLE',
-        reason:
-          'OpenCode exposes no single review transport that is both schema-structured and parent-visible',
+        reason: 'OpenCode exposes no review transport satisfying the complete product contract.',
         reviewInvocation: {
           host: this.platform,
           requirements,
@@ -194,42 +198,24 @@ export class OpenCodeHostAdapter implements HostAdapter {
       };
     }
 
-    const options: Record<string, unknown> = {
-      _authorizeDispatch: config.authorizeDispatch,
-      _abandonDispatch: config.abandonDispatch,
-    };
-    if (config.maxTransportRetries !== undefined) {
-      options.maxTransportRetries = config.maxTransportRetries;
-    }
-    if (config.baseDelayMs !== undefined) {
-      options.baseDelayMs = config.baseDelayMs;
-    }
-    if (config.onAttemptFailed !== undefined) {
-      options._onAttemptFailed = config.onAttemptFailed;
-    }
-    if (config.onAttemptSucceeded !== undefined) {
-      options._onAttemptSucceeded = config.onAttemptSucceeded;
-    }
-
-    const result = await invokeReviewer(
-      this.client,
-      config.prompt,
-      config.parentSessionId,
-      options,
-    );
-    if (result === null) return null;
-    if (result.blocked) return result;
-
     return {
-      ...result,
-      reviewTransport: transport.kind,
-      hostVisible: transport.parentVisible,
-      transcriptNavigable: transport.transcriptNavigable,
+      blocked: true,
+      code: 'NATIVE_REVIEW_TASK_REQUIRED',
+      reason:
+        'Independent review must be dispatched through the parent OpenCode Task tool so the reviewer child is visible and navigable. Direct SDK autospawn is prohibited.',
+      reviewInvocation: {
+        host: this.platform,
+        transport: transport.kind,
+        action: 'call_task',
+        reviewerSubagentType: 'flowguard-reviewer',
+      },
     };
   }
 
   isReviewerSupported(): boolean {
-    return this.capabilities.reviewTransports.length > 0;
+    return this.capabilities.reviewTransports.some((transport) =>
+      reviewTransportSatisfies(transport, REQUIRED_INDEPENDENT_REVIEW_TRANSPORT),
+    );
   }
 
   log(level: 'debug' | 'info' | 'warn' | 'error', message: string, data?: unknown): void {
