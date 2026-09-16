@@ -1,24 +1,21 @@
 /**
  * @module implement
- * @description /implement rail — execute implementation and auto-advance through IMPL_REVIEW.
+ * @description /implement rail — record implementation and advance into fresh post-implementation validation.
  *
  * Behavior:
  * 1. Validate admissibility (allowed in IMPLEMENTATION)
- * 2. Verify preconditions: ticket, plan, validation passed
+ * 2. Verify preconditions: ticket, plan, baseline validation passed
  * 3. Execute implementation via LLM executor
  * 4. Record ImplEvidence
- * 5. Auto-advance to IMPL_REVIEW
- * 6. Run impl review loop (up to maxIterations from policy, digest-stop)
- * 7. Auto-advance to EVIDENCE_REVIEW if review converges
+ * 5. Enter IMPL_VALIDATION with an EMPTY post-implementation validation slot
+ * 6. Runtime system work executes every active check against the frozen
+ *    implementation subject before IMPL_REVIEW may become reachable
  *
- * maxIterations is resolved from policy:
- * - SOLO: 1 (fast, minimal ceremony)
- * - TEAM/REGULATED: 3 (deep convergence)
+ * Pre-implementation validation is baseline evidence only. It must never be
+ * copied into `implValidation`: any repository mutation makes those results
+ * stale for the implementation subject by definition.
  *
- * The auto-advance through IMPL_REVIEW eliminates /continue in the happy path.
- * If the review loop doesn't converge, stops at IMPL_REVIEW.
- *
- * @version v1
+ * @version v2
  */
 
 import type { SessionState } from '../state/schema.js';
@@ -48,9 +45,8 @@ export interface ImplExecutors {
   ) => Promise<{ changedFiles: string[]; domainFiles: string[] }>;
 
   /**
-   * Review the implementation against the plan.
-   * Returns verdict. If changes_requested, the executor may have revised the impl
-   * (reflected in updatedImpl).
+   * Historical bundled-review seam retained for rail-level tests. Production
+   * review is host-orchestrated after fresh IMPL_VALIDATION completes.
    */
   reviewAndRevise: (
     impl: ImplEvidence,
@@ -82,12 +78,11 @@ async function collectAndAdvance(
   const nextState: SessionState = {
     ...state,
     implementation: currentImpl,
-    // Test-only rail: the production flow re-runs the verification checks in
-    // IMPL_VALIDATION via an explicit /check. This bundled orchestrator simulates a
-    // passing post-implementation run by mirroring the (passing) pre-implementation
-    // checks, so it can auto-advance IMPLEMENTATION → IMPL_VALIDATION → IMPL_REVIEW
-    // and exercise the independent review loop.
-    implValidation: state.validation,
+    // Hard freshness boundary: baseline validation belongs to the approved plan
+    // and pre-mutation repository state. A newly recorded implementation is a
+    // different verification subject, so every post-implementation check starts
+    // unproven and must be executed again through the canonical run-check path.
+    implValidation: [],
     implReview: null,
     error: null,
   };
@@ -130,12 +125,18 @@ export async function executeImplement(
     evalFn,
   );
 
+  // With active checks, the freshness boundary above intentionally leaves the
+  // machine in IMPL_VALIDATION. Runtime-owned system work executes those checks
+  // and only then activates independent implementation review.
   const maxIterations = ctx.policy?.reviewBudget.implementation ?? DEFAULT_MAX_REVIEW_ITERATIONS;
   if (nextState.phase !== 'IMPL_REVIEW') {
     const result = evalFn(nextState);
     return { kind: 'ok', state: nextState, evalResult: result, transitions: allTransitions };
   }
 
+  // A zero-check policy may still reach IMPL_REVIEW directly. Preserve the
+  // rail's historical bundled-review behavior for that explicit vacuous case;
+  // normal production flows with active checks never enter this branch.
   const plan = state.plan;
   const loop = await runConvergenceLoop(currentImpl, maxIterations, async (impl, iter) => {
     const review = await executors.reviewAndRevise(impl, plan, iter);
