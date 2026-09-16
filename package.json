@@ -69,6 +69,7 @@
     "test:e2e-contract": "vitest run --project integration src/integration/runtime-flow-e2e-contract.test.ts",
     "test:unit": "vitest run --project unit",
     "test:architecture": "vitest run --project unit src/architecture/",
+    "test:demo-contract": "vitest run --project unit src/documentation/__tests__/demo-contract.test.ts",
     "test:integration": "vitest run --project integration",
     "test:integration:perf": "vitest run --project integration --testNamePattern 'PERF'",
     "test:sdk-contract": "vitest run --project integration src/integration/sdk-contract.test.ts",
