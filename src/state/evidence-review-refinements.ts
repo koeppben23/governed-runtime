@@ -67,12 +67,7 @@ export interface ObligationRefinementShape {
 
 /**
  * Implementation obligations bind their scope kind AND digest to the frozen
- * implementation subject: `obligationType === 'implement'` requires
- * `reviewSubjectScope.kind === 'implementation'` with a digest equal to the
- * obligation subject digest. Any other kind (repository_change, content,
- * artifact, unavailable) is an unsatisfiable current-contract state and is
- * rejected at the schema boundary. Mirror-side, no other obligation type may
- * carry an implementation scope.
+ * implementation subject.
  */
 export function refineImplementationScopeSubjectCoherence(
   obligation: ObligationRefinementShape,
@@ -140,6 +135,7 @@ export interface AssuranceRefinementShape {
     readonly invocationMode?: string;
     readonly source?: string;
     readonly hostVisible?: boolean;
+    readonly transcriptNavigable?: boolean;
     readonly promptHash: string;
     readonly canonicalPromptDigest?: string;
     readonly consumedByObligationId?: string | null;
@@ -205,8 +201,6 @@ export function refineAuthorityStructure(
   obligation: ObligationRefinementShape,
   context: z.RefinementCtx,
 ): void {
-  // Subject-scope coherence is part of the same authority-structure boundary:
-  // a modern implementation scope must bind to the obligation subject digest.
   refineImplementationScopeSubjectCoherence(obligation, context);
   if (!obligation.repositoryAuthority) return;
   const structural = verifyFrozenRepositoryAuthority(obligation.repositoryAuthority);
@@ -219,29 +213,12 @@ export function refineAuthorityStructure(
   }
 }
 
-/** Structural equality for a frozen repository identity. */
 function sameRepositoryIdentity(a: RepositoryIdentityValue, b: RepositoryIdentityValue): boolean {
   if ('kind' in a) return 'kind' in b && a.rootCommitDigest === b.rootCommitDigest;
   return !('kind' in b) && a.host === b.host && a.owner === b.owner && a.name === b.name;
 }
 
-/**
- * Obligation type ↔ frozen repository authority coherence.
- *
- * The repository authority union is shared by every obligation type, so the
- * schema must never rely on "the writer passes the right kind". Exactly one
- * relation is legal:
- *
- *   implement          → candidate_pair only
- *   plan/architecture  → context only (presence mirrors the freeze outcome)
- *   review + content   → no repository authority
- *   review + repository_change → candidate_pair | fork_pair, EXACTLY equal to
- *                                the frozen reviewSubject (identities + SHAs)
- *
- * A structurally valid authority that disagrees with the frozen reviewSubject
- * is a split-brain state: review material could describe repository A while
- * repository observations are authorized against repository B.
- */
+/** Obligation type ↔ frozen repository authority coherence. */
 export function refineObligationRepositoryAuthorityCoherence(
   obligation: ObligationRefinementShape,
   context: z.RefinementCtx,
@@ -324,19 +301,7 @@ export function refineObligationRepositoryAuthorityCoherence(
   }
 }
 
-/**
- * Durable audit coherence: the persisted freeze outcome must agree with the
- * actual frozen repository authority — and plan/architecture obligations MUST
- * carry the record (no third state, no legacy exception).
- *
- *   obligationType ∈ {plan, architecture}
- *     ⇒ repositoryEvidenceFreeze MUST exist
- *   freeze.kind === 'available'   ⇔ repositoryAuthority present
- *   freeze.kind === 'unavailable' ⇔ repositoryAuthority absent
- *
- * Review/implement obligations never run the context freeze and must not
- * carry the record.
- */
+/** Durable freeze outcome must agree with actual frozen repository authority. */
 export function refineRepositoryEvidenceFreezeCoherence(
   obligation: ObligationRefinementShape,
   context: z.RefinementCtx,
@@ -436,37 +401,33 @@ export function refineAssuranceDiscoveryCoherence(
 }
 
 /**
- * Canonical linkage coherence (CE2): when an obligation's canonical linkage
- * points at an invocation, the invocation must back-reference the SAME
- * obligation on both sides of the relation (`obligationId` AND
- * `obligationType`). Identifier equality alone is not a relation — an
- * invocation whose back-references disagree with the linked obligation is an
- * invalid state, not legacy data.
+ * Canonical linkage coherence. The native Task + structured follow-up is the
+ * only sanctioned review invocation generation.
  */
 export function refineAssuranceInvocationLinkageCoherence(
   assurance: AssuranceRefinementShape,
   context: z.RefinementCtx,
 ): void {
   for (const invocation of assurance.invocations) {
-    // There is exactly one sanctioned invocation generation: a host-observed
-    // SDK structured output. A state whose transport or output provenance
-    // disagrees claims more assurance than was observed.
     if (
-      invocation.invocationMode !== 'sdk_session_prompt' ||
+      invocation.invocationMode !== 'native_task_structured_followup' ||
       invocation.reviewOutputMode !== 'structured_output' ||
       invocation.reviewAssuranceLevel !== 'structured_high' ||
       invocation.structuredOutputUsed !== true ||
       invocation.source !== 'host-orchestrated' ||
-      invocation.hostVisible !== false
+      invocation.hostVisible !== true ||
+      invocation.transcriptNavigable !== true
     ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['invocations'],
-        message: 'Review invocation evidence requires consistent invocation provenance.',
+        message:
+          'Review invocation evidence requires one visible, navigable native Task with structured host-captured output.',
       });
       return;
     }
   }
+
   const attemptsByAttemptId = new Map(
     assurance.attempts.map((attempt) => [attempt.attemptId, attempt]),
   );
@@ -493,9 +454,6 @@ export function refineAssuranceInvocationLinkageCoherence(
       });
       return;
     }
-    // The invocation records that the attempt held reviewer evidence. A later
-    // coherence rejection may revoke acceptance (`rejected`) without erasing
-    // that lineage; `created`/`stale`/`expired` attempts never hold evidence.
     if (attempt.status !== 'bound' && attempt.status !== 'rejected') {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -521,6 +479,7 @@ export function refineAssuranceInvocationLinkageCoherence(
       return;
     }
   }
+
   const invocationsByInvocationId = new Map(
     assurance.invocations.map((invocation) => [invocation.invocationId, invocation]),
   );
@@ -567,9 +526,8 @@ export function refineAssuranceInvocationLinkageCoherence(
       return;
     }
   }
+
   for (const invocation of assurance.invocations) {
-    // Consumption is self-referential: an invocation that was consumed must
-    // name its OWN obligation, never an arbitrary (even existing) one.
     if (
       invocation.consumedByObligationId != null &&
       invocation.consumedByObligationId !== invocation.obligationId
@@ -584,14 +542,6 @@ export function refineAssuranceInvocationLinkageCoherence(
   }
 }
 
-/**
- * Durable-dispatch linkage: persisted invocation evidence and the dispatch
- * ledger are two halves of ONE host release. Every invocation requires EXACTLY
- * one `completed` dispatch for its attempt, obligation, host call, and prompt
- * digest (with a `completedAt`), and the reverse holds symmetrically; a
- * non-completed dispatch (`authorized`, `outcome_unknown`) must not have a
- * matching invocation. Duplicate matches are invalid states, not legacy data.
- */
 type InvocationRefinementShape = AssuranceRefinementShape['invocations'][number];
 type DispatchRefinementShape = AssuranceRefinementShape['dispatches'][number];
 
@@ -607,6 +557,7 @@ function dispatchLinksInvocation(
   );
 }
 
+/** Durable dispatch and invocation evidence must describe the same host release. */
 export function refineAssuranceInvocationDispatchLinkage(
   assurance: AssuranceRefinementShape,
   context: z.RefinementCtx,
@@ -663,14 +614,7 @@ export function refineAssuranceInvocationDispatchLinkage(
   }
 }
 
-/**
- * Canonical identity uniqueness (CE2 hardening): identifiers are only
- * canonical when they are unique. Duplicate `obligationId`s let one invocation
- * appear to canonically support several review subjects; duplicate
- * `invocationId`s let a `.find()` pick an arbitrary row as the authority;
- * duplicate `attemptId`s corrupt attempt binding. All three are invalid
- * states, not legacy data.
- */
+/** Canonical authority identifiers must be unique. */
 export function refineAssuranceIdentityUniqueness(
   assurance: AssuranceRefinementShape,
   context: z.RefinementCtx,
@@ -713,10 +657,7 @@ export function refineAssuranceIdentityUniqueness(
   }
 }
 
-/**
- * A persisted provenance projection must equal the canonical derivation from
- * frozen authority. Divergent projections are authority drift, not legacy data.
- */
+/** Persisted revision provenance must equal the derivation from frozen authority. */
 export function refineAssuranceProvenanceCoherence(
   assurance: AssuranceRefinementShape,
   context: z.RefinementCtx,
