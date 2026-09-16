@@ -29,7 +29,17 @@ const HOST_TRUST: Record<HostId, HostTrustProjection> = {
       argMutation: true,
       outputReplacement: true,
       contextInjection: true,
-      independentStructuredReview: true,
+      reviewTransports: [
+        {
+          kind: 'sdk_structured_session',
+          structuredOutput: true,
+          parentVisible: false,
+          transcriptNavigable: false,
+          isolatedAgentIdentity: true,
+          permissionIsolation: false,
+          assurance: 'structured_high',
+        },
+      ],
       compactionInjection: true,
     },
     runtimeVerification:
@@ -38,7 +48,8 @@ const HOST_TRUST: Record<HostId, HostTrustProjection> = {
       'configured when local plugin artifacts and import check pass; restart still required',
     hookSemantics: 'in-process plugin can synchronously block through FlowGuard runtime decisions',
     approvalPrimitive: 'FlowGuard /review-decision with validated obligation-bound ReviewFindings',
-    reviewerTransport: 'OpenCode subagent is transport/isolation only, not approval authority',
+    reviewerTransport:
+      'sdk_structured_session is structured and isolated but parentVisible=false; the current hard visible-review contract therefore blocks before dispatch',
     receiptPreservation: [
       'sessionId: preserved by FlowGuard state/audit',
       'reviewDecisionId: preserved by FlowGuard decision receipt',
@@ -53,7 +64,10 @@ const HOST_TRUST: Record<HostId, HostTrustProjection> = {
       argMutation: false,
       outputReplacement: false,
       contextInjection: true,
-      independentStructuredReview: true,
+      // No transport is advertised until a concrete Claude adapter proves the
+      // complete structured/visibility contract. Do not compose assumptions
+      // from generic agent and hook capabilities.
+      reviewTransports: [],
       compactionInjection: true,
     },
     runtimeVerification:
@@ -63,7 +77,8 @@ const HOST_TRUST: Record<HostId, HostTrustProjection> = {
     hookSemantics:
       'PreToolUse can deny selected tool calls; PostToolUse contextualizes but does not rollback',
     approvalPrimitive: 'FlowGuard /review-decision with validated obligation-bound ReviewFindings',
-    reviewerTransport: 'Claude Code agent is transport/isolation only, not approval authority',
+    reviewerTransport:
+      'NOT_VERIFIED: no Claude review transport is advertised until one concrete transport proves the complete contract',
     receiptPreservation: [
       'sessionId: preserved when FlowGuard MCP runtime receives host session context',
       'reviewDecisionId: preserved by FlowGuard decision receipt',
@@ -78,7 +93,9 @@ const HOST_TRUST: Record<HostId, HostTrustProjection> = {
       argMutation: true,
       outputReplacement: true,
       contextInjection: true,
-      independentStructuredReview: true,
+      // Same fail-closed rule as Claude: generic subagent support is not a
+      // review-transport capability until the exact authority contract is proven.
+      reviewTransports: [],
       compactionInjection: false,
     },
     runtimeVerification:
@@ -88,7 +105,8 @@ const HOST_TRUST: Record<HostId, HostTrustProjection> = {
       '[features].plugin_hooks = true plus /hooks trust review required; PreToolUse is a Bash/apply_patch guardrail, not a complete security boundary',
     approvalPrimitive:
       'FlowGuard flowguard_decision with validated obligation-bound ReviewFindings',
-    reviewerTransport: 'Codex subagent is transport/isolation only, not approval authority',
+    reviewerTransport:
+      'NOT_VERIFIED: no Codex review transport is advertised until one concrete transport proves the complete contract',
     receiptPreservation: [
       'sessionId: preserved when FlowGuard MCP runtime receives host session context',
       'reviewDecisionId: preserved by FlowGuard decision receipt',
