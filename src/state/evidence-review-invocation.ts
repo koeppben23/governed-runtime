@@ -2,12 +2,13 @@
  * @module state/evidence-review-invocation
  * @description Independent-review invocation-evidence schema.
  *
- * `ReviewInvocationEvidence` captures the single sanctioned way an independent
- * reviewer is invoked: a host-observed SDK child session whose structured
- * findings were captured by the host. There is exactly one generation of this
- * evidence; any other mode or provenance is invalid state and fails parsing.
+ * `ReviewInvocationEvidence` captures host-observed reviewer execution and the
+ * structured findings bound to it. The native OpenCode transport keeps one
+ * child session across the visible Task execution and the schema-constrained
+ * serialization follow-up; legacy SDK-session evidence remains parseable for
+ * existing v5 state/tests but cannot satisfy the visible-review product gate.
  *
- * @version v2
+ * @version v3
  */
 
 import { z } from 'zod';
@@ -26,10 +27,17 @@ export const ReviewInvocationEvidence = z
     agentType: z.literal(REVIEWER_SUBAGENT_TYPE),
     /** Persisted host-authoritative attempt identity. */
     attemptId: z.string().uuid(),
-    /** The only sanctioned invocation transport: a host-observed SDK session prompt. */
-    invocationMode: z.literal('sdk_session_prompt'),
+    /**
+     * `native_task_structured_followup` is the product transport: the same
+     * host-visible Task child executes the review and serializes its findings.
+     * `sdk_session_prompt` remains parseable for transport tests/older v5 state
+     * but is not accepted by the visible-review enforcement gate.
+     */
+    invocationMode: z.enum(['sdk_session_prompt', 'native_task_structured_followup']),
     /** Whether this invocation produced a host-visible child session in the host GUI. */
     hostVisible: z.boolean(),
+    /** Whether the host exposes navigation from the parent Task record to this child transcript. */
+    transcriptNavigable: z.boolean().optional(),
     promptHash: z.string().min(1),
     canonicalPromptDigest: Sha256Digest.optional(),
     modelPromptDigest: Sha256Digest.nullable().optional(),
