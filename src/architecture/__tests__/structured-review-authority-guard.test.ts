@@ -69,9 +69,13 @@ describe('structured review authority hard cut', () => {
     expect(native).toContain('abandonReviewDispatchByHostCall');
   });
 
-  it('never autospawns an invisible SDK reviewer', () => {
+  it('never autospawns an invisible SDK reviewer and exposes no spawn capability', () => {
     const adapter = readFileSync(join(SRC, 'integration/opencode-host-adapter.ts'), 'utf8');
-    expect(adapter).toContain('NATIVE_REVIEW_TASK_REQUIRED');
+    const hostAdapter = readFileSync(join(SRC, 'adapters/host-adapter.ts'), 'utf8');
+    // No HostAdapter member may claim a reviewer-spawn capability: the native
+    // Task is dispatched by the parent agent and governed at the hook boundary.
+    expect(adapter).not.toContain('spawnReviewer');
+    expect(hostAdapter).not.toContain('spawnReviewer');
     // The SDK child-session transport must not exist as an importable
     // authority surface anywhere in production, not merely stay unused.
     const sources = listProductionSources(SRC).map((file) => ({

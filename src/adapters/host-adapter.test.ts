@@ -9,9 +9,6 @@ import type {
   HostCapabilities,
   BlockDecision,
   HostToolEvent,
-  ReviewerSpawnConfig,
-  HostReviewerSuccessResult,
-  HostReviewerBlockedResult,
   CapabilityValidationResult,
   EnforcementLevel,
 } from './host-adapter.js';
@@ -49,16 +46,6 @@ function createAdapter(clientOverrides?: Record<string, unknown>): OpenCodeHostA
     directory: '/project/root',
     worktree: '/project/worktree',
   });
-}
-
-function reviewerConfig(overrides: Partial<ReviewerSpawnConfig> = {}): ReviewerSpawnConfig {
-  return {
-    prompt: 'Review this change',
-    parentSessionId: 'parent-session',
-    authorizeDispatch: vi.fn(async () => {}),
-    abandonDispatch: vi.fn(async () => {}),
-    ...overrides,
-  };
 }
 
 describe('HostAdapter Contract', () => {
@@ -200,60 +187,6 @@ describe('HostAdapter Contract', () => {
     });
   });
 
-  describe('spawnReviewer — native Task boundary', () => {
-    it('BAD: never synthesizes a hidden SDK child in place of the parent native Task', async () => {
-      const client = createMockClient();
-      const adap = new OpenCodeHostAdapter({
-        client: client as never,
-        directory: '/x',
-        worktree: '/x',
-      });
-
-      const result = await adap.spawnReviewer(reviewerConfig());
-
-      expect(result).toMatchObject({
-        blocked: true,
-        code: 'NATIVE_REVIEW_TASK_REQUIRED',
-        reviewInvocation: {
-          transport: 'native_task_structured_followup',
-          action: 'call_task',
-          reviewerSubagentType: 'flowguard-reviewer',
-        },
-      });
-      expect(client.session.create).not.toHaveBeenCalled();
-      expect(client.session.prompt).not.toHaveBeenCalled();
-      expect(client.app.agents).not.toHaveBeenCalled();
-    });
-
-    it('BAD: call sites cannot weaken the canonical native-review requirements', async () => {
-      const client = createMockClient();
-      const adap = new OpenCodeHostAdapter({
-        client: client as never,
-        directory: '/x',
-        worktree: '/x',
-      });
-
-      const result = await adap.spawnReviewer(
-        reviewerConfig({
-          transportRequirements: {
-            structuredOutput: true,
-            parentVisible: false,
-            transcriptNavigable: false,
-            isolatedAgentIdentity: true,
-            permissionIsolation: false,
-          },
-        }),
-      );
-
-      expect(result).toMatchObject({
-        blocked: true,
-        code: 'NATIVE_REVIEW_TASK_REQUIRED',
-      });
-      expect(client.session.create).not.toHaveBeenCalled();
-      expect(client.session.prompt).not.toHaveBeenCalled();
-    });
-  });
-
   describe('Logging and lifecycle', () => {
     it('HAPPY: warn/error may notify the TUI without becoming authority', () => {
       const client = createMockClient();
@@ -289,31 +222,5 @@ describe('HAI Type Contract', () => {
   it('HAPPY: EnforcementLevel accepts all valid values', () => {
     const levels: EnforcementLevel[] = ['synchronous', 'hook_gated', 'advisory'];
     expect(levels).toHaveLength(3);
-  });
-
-  it('HAPPY: HostReviewerSuccessResult carries concrete native transport provenance', () => {
-    const result: HostReviewerSuccessResult = {
-      sessionId: 'rev-1',
-      rawResponse: '{}',
-      findings: null,
-      reviewOutputMode: 'structured_output',
-      structuredOutputUsed: true,
-      reviewAssuranceLevel: 'structured_high',
-      reviewTransport: 'native_task_structured_followup',
-      hostVisible: true,
-      transcriptNavigable: true,
-    };
-    expect(result.reviewTransport).toBe('native_task_structured_followup');
-    expect(result.hostVisible).toBe(true);
-    expect(result.transcriptNavigable).toBe(true);
-  });
-
-  it('HAPPY: HostReviewerBlockedResult remains typed and explicit', () => {
-    const result: HostReviewerBlockedResult = {
-      blocked: true,
-      code: 'NATIVE_REVIEW_TASK_REQUIRED',
-      reason: 'Parent native Task dispatch required',
-    };
-    expect(result.blocked).toBe(true);
   });
 });

@@ -16,7 +16,6 @@
     "deliverBlockDecision",
     "deliverArgMutation",
     "mutateToolResult",
-    "spawnReviewer",
     "isReviewerSupported",
     "log"
   ],
@@ -41,10 +40,6 @@
     "deliverBlockDecision": { "type": "string", "const": "(event, decision) => void" },
     "deliverArgMutation": { "type": "string", "const": "(event, args) => void" },
     "mutateToolResult": { "type": "string", "const": "(event, mutation) => void" },
-    "spawnReviewer": {
-      "type": "string",
-      "const": "(config) => Promise<HostReviewerResult | null>"
-    },
     "isReviewerSupported": { "type": "string", "const": "() => boolean" },
     "log": { "type": "string", "const": "(level, message, data?) => void" },
     "injectCompactionContext": { "type": "string", "const": "(context) => void" }

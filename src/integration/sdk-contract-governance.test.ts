@@ -77,12 +77,19 @@ describe('SDK Contract: HAI governance surface', () => {
         'deliverBlockDecision',
         'deliverArgMutation',
         'mutateToolResult',
-        'spawnReviewer',
         'isReviewerSupported',
         'log',
       ]) {
         expect(required).toContain(field);
       }
+    });
+
+    it('exposes no direct reviewer spawn capability', () => {
+      const schema = loadSchema('host-adapter-interface.json');
+      const required = schema.required as string[];
+      const props = schema.properties as Record<string, unknown>;
+      expect(required).not.toContain('spawnReviewer');
+      expect(props).not.toHaveProperty('spawnReviewer');
     });
 
     it('platform and enforcement enums are pinned', () => {

@@ -98,15 +98,15 @@ false-positive and false-negative rates.
 
 FlowGuard projects one of three reviewer transport modes in tool output:
 
-| Mode                           | Meaning                                                                                                       |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| `host_structured`              | OpenCode high-assurance path: host-created reviewer child session with required structured output.            |
-| `external_instruction_pending` | Claude/Codex instruction transport. The runtime remains pending until ReviewFindings validate and bind.       |
-| `unsupported_blocked`          | No safe reviewer transport is available; the session fails closed instead of accepting unverifiable evidence. |
+| Mode                           | Meaning                                                                                                             |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| `host_structured`              | OpenCode high-assurance path: parent-dispatched native Task reviewer child session with required structured output. |
+| `external_instruction_pending` | Claude/Codex instruction transport. The runtime remains pending until ReviewFindings validate and bind.             |
+| `unsupported_blocked`          | No safe reviewer transport is available; the session fails closed instead of accepting unverifiable evidence.       |
 
 External transport files under `.flowguard/sessions/<session-id>/review-evidence/*.json` are not approval evidence by existence. `flowguard_continue` reads them only as transport, then parses, schema-validates, binds to the active obligation/attestation, records invocation evidence, and leaves review completion to the existing verdict submission path. Invalid or mismatched files remain pending/blocked.
 
-The four reviewable flows — `/plan`, `/architecture`, `/implement`, and standalone `/review` — share the same ReviewFindings schema and fail-closed attestation model. `/plan`, `/architecture`, and `/implement` share the plugin-orchestration pipeline; standalone `/review` supports host-structured invocation on OpenCode and the external/native transports on Claude Code and Codex. All paths are validated through the same `validateStrictAttestation` gate.
+The four reviewable flows — `/plan`, `/architecture`, `/implement`, and standalone `/review` — share the same ReviewFindings schema and fail-closed attestation model. `/plan`, `/architecture`, and `/implement` share the plugin-orchestration pipeline; standalone `/review` is fulfilled through the same host-visible native reviewer Task on OpenCode. All paths are validated through the same `validateStrictAttestation` gate.
 
 ---
 
@@ -122,20 +122,18 @@ When the primary agent submits a plan or implementation to FlowGuard, the tool r
 
 ### Deterministic Invocation (Primary Path)
 
-When the plugin's `tool.execute.after` hook detects the review-dispatch-required signal (`reviewDispatch.required`) in a FlowGuard tool response:
+The reviewer is a host-visible native Task child, never a hidden SDK session:
 
-1. **Reads session state** to get ticket text, plan text, and implementation context
-2. **Builds a structured prompt** with the plan/implementation text, ticket context, iteration, and planVersion
-3. **Creates a child session** via `client.session.create({ body: { parentID } })` for traceability
-4. **Sends the prompt** to the `flowguard-reviewer` agent via `client.session.prompt({ path: { id }, body: { agent: "flowguard-reviewer", parts, format } })`
-5. **Uses host-validated structured output** as the only accepted high-assurance path (`format: json_schema`, `reviewOutputMode: "structured_output"`, `reviewAssuranceLevel: "structured_high"`). There is no text-compatibility fallback on this path: a model that cannot produce structured output blocks with `STRUCTURED_REVIEW_CAPABILITY_UNAVAILABLE`; an incompatible Thinking Mode blocks with `STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE`; and a host that does not return the required structured result blocks with `HOST_STRUCTURED_OUTPUT_REQUIRED` or `HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION`
-6. **Parses and validates ReviewFindings** with schema, obligation, mandate, criteria, reviewer, session, and invocation-evidence binding
-7. **Mutates `output.output`** to the completed dispatch signal (`reviewDispatch.completed: true` with the bound verdict in `reviewDispatch.verdict`) only after evidence is valid
-8. **Updates enforcement state** to satisfy L1/L2/L4 checks for the subsequent verdict submission
+1. The parent agent calls the host `task` tool with `subagent_type: "flowguard-reviewer"`, following the `reviewDispatch` / `reviewInvocation` instruction (`action: "call_task"`) in the FlowGuard tool response.
+2. The plugin `tool.execute.before` hook authorizes the exact current pending obligation/attempt, persists a durable dispatch under the host `callID`, and overwrites the Task arguments with the canonical frozen reviewer prompt (the parent-supplied prompt is transport filler only).
+3. The host runs the visible, navigable `flowguard-reviewer` child Task session.
+4. The plugin `tool.execute.after` hook resolves the durable dispatch lineage by `callID`, requires the authoritative child session ID from Task metadata, replays the reviewer observations, and sends a schema-constrained serialization request (`format: json_schema`) to that SAME child session.
+5. The structured payload is validated against `ReviewerFindingsInput`, host provenance and attestation are stamped, and the canonical `ReviewFindings` is bound to the obligation.
+6. Only after a successful binding does the hook replace the Task output with the completed dispatch signal (`reviewDispatch.completed: true` and the bound verdict).
 
 The LLM then sees the completed `reviewDispatch` response and submits the verdict.
 
-**Contract:** the completed dispatch signal (`reviewDispatch.completed`) is only signaled when the reviewer's response contains valid `ReviewFindings` and matching `ReviewInvocationEvidence`. Only host-observed structured output (`structured_output` / `structured_high`) can bind. Unparseable, text-only, or contract-violating reviewer responses never produce a completed dispatch and block with an explicit structured-output code.
+**Contract:** the completed dispatch signal (`reviewDispatch.completed`) is only signaled when the reviewer's structured payload validates and binds against the durable dispatch and invocation evidence. Only host-observed structured output from the same native Task child (`structured_output` / `structured_high`) can bind. The Task's free-form text is never findings authority; unparseable, text-only, or contract-violating reviewer responses never produce a completed dispatch and block with an explicit structured-output code.
 
 ### Evidence-Grounded Implementation Review
 
@@ -539,7 +537,7 @@ For strict Independent Review enforcement in CI, the following checks must be **
 **Strict code hardening implemented.** The independent review system provides strict, fail-closed assurance with three enforcement layers:
 
 1. **Structural validation** — FlowGuard tools validate ReviewFindings schema, review mode vs. policy, plan-version binding, and iteration binding. Invalid findings are BLOCKED.
-2. **Deterministic invocation** — Plugin programmatically invokes the reviewer in a host-created child session via the OpenCode SDK client (`session.create()` + `session.prompt()` with `format: json_schema`). No LLM decision involved.
+2. **Deterministic invocation** — The parent agent dispatches the visible native `task` reviewer; the plugin before/after hooks bind the exact child session and capture schema-constrained findings in that same child. There is no hidden SDK auto-spawn and no text fallback.
 3. **Plugin-level enforcement** — Host-observed child-session enforcement via OpenCode `tool.execute.before/after` hooks:
    - L1: Invocation gate — a host-observed structured reviewer invocation must be recorded before any verdict
    - L2: Child session match — submitted session ID must match the host-observed reviewer child session

@@ -11,7 +11,6 @@
 import type { SessionEnforcementState } from './enforcement/types.js';
 import type { OrchestratorClient } from './types.js';
 import type { SessionState } from '../../state/schema.js';
-import type { HostAdapter } from '../../adapters/host-adapter.js';
 import type { SemanticAuditIntent } from '../tools/audit-outbox.js';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -52,11 +51,6 @@ export interface OrchestratorDeps {
     warn(service: string, message: string, extra?: Record<string, unknown>): void;
   };
   client: OrchestratorClient;
-  /**
-   * Host-agnostic adapter (HAI #242).
-   * Pipelines use adapter.spawnReviewer() instead of direct client SDK calls.
-   */
-  adapter: HostAdapter;
 }
 
 // ─── Internal types ──────────────────────────────────────────────────────────

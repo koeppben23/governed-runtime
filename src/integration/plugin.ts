@@ -126,7 +126,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     throw err;
   }
 
-  const orchestratorDeps = createOrchestratorDeps(ws, log, typedClient, adapter);
+  const orchestratorDeps = createOrchestratorDeps(ws, log, typedClient);
   const toolTraceIds = new Map<string, string>();
   const activeCommandScopes = new Map<string, ActiveCommandScope>();
   const checkReworkContinuations = new Set<string>();
@@ -180,7 +180,6 @@ function createOrchestratorDeps(
   ws: PluginWorkspaceRuntime,
   log: PluginLogger,
   client: OrchestratorClient,
-  adapter: OrchestratorDeps['adapter'],
 ): OrchestratorDeps {
   return {
     resolveFingerprint: ws.resolveFingerprint,
@@ -190,7 +189,6 @@ function createOrchestratorDeps(
     getEnforcementState: ws.getEnforcementState,
     log,
     client,
-    adapter,
   };
 }
 

@@ -126,56 +126,6 @@ export interface ToolResultMutation {
   readonly systemMessage?: string;
 }
 
-// ─── Reviewer Types ──────────────────────────────────────────────────────────
-
-export interface ReviewerSpawnConfig {
-  readonly prompt: string;
-  readonly parentSessionId: string;
-  readonly transportRequirements?: ReviewTransportRequirements;
-  readonly authorizeDispatch: (info: {
-    readonly childSessionId: string;
-    readonly invokedAt: string;
-  }) => Promise<void>;
-  readonly abandonDispatch: (info: { readonly childSessionId: string }) => Promise<void>;
-  readonly maxTransportRetries?: number;
-  readonly baseDelayMs?: number;
-  readonly onAttemptFailed?: (info: {
-    attempt: number;
-    step: string;
-    error?: unknown;
-    details?: Record<string, unknown>;
-  }) => void;
-  readonly onAttemptSucceeded?: (info: {
-    attempt: number;
-    step: 'session_create' | 'session_prompt';
-    parentSessionId: string;
-    childSessionId: string;
-    durationMs: number;
-  }) => void;
-}
-
-export interface HostReviewerBlockedResult {
-  readonly blocked: true;
-  readonly code: string;
-  readonly reason: string;
-  readonly reviewInvocation?: Record<string, unknown>;
-}
-
-export interface HostReviewerSuccessResult {
-  readonly blocked?: false;
-  readonly sessionId: string;
-  readonly rawResponse: string;
-  readonly findings: Record<string, unknown> | null;
-  readonly reviewOutputMode: 'structured_output';
-  readonly structuredOutputUsed: boolean;
-  readonly reviewAssuranceLevel: 'structured_high';
-  readonly reviewTransport: HostReviewTransportKind;
-  readonly hostVisible: boolean;
-  readonly transcriptNavigable: boolean;
-}
-
-export type HostReviewerResult = HostReviewerSuccessResult | HostReviewerBlockedResult;
-
 // ─── Governance State Projection ──────────────────────────────────────────────
 
 export interface GovernanceStateProjection {
@@ -217,13 +167,6 @@ export interface HostAdapter {
   deliverBlockDecision(event: HostToolEvent, decision: BlockDecision): void;
   deliverArgMutation(event: HostToolEvent, args: Record<string, unknown>): void;
   mutateToolResult(event: HostToolEvent, mutation: ToolResultMutation): void;
-
-  /**
-   * Direct adapter spawning is not the OpenCode product path: native Task
-   * transports are dispatched at the host hook boundary and reject direct
-   * spawning fail-closed. The method remains host-agnostic for other adapters.
-   */
-  spawnReviewer(config: ReviewerSpawnConfig): Promise<HostReviewerResult | null>;
 
   isReviewerSupported(): boolean;
 

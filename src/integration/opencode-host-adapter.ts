@@ -20,11 +20,8 @@ import type {
   HostToolEvent,
   BlockDecision,
   ToolResultMutation,
-  ReviewerSpawnConfig,
-  HostReviewerResult,
   CapabilityValidationResult,
   EnforcementLevel,
-  ReviewTransportRequirements,
 } from '../adapters/host-adapter.js';
 import {
   REQUIRED_INDEPENDENT_REVIEW_TRANSPORT,
@@ -69,26 +66,6 @@ const NATIVE_TASK_STRUCTURED_REVIEW_TRANSPORT: HostReviewTransportCapability = {
   permissionIsolation: true,
   assurance: 'structured_high',
 };
-
-function effectiveRequirements(config: ReviewerSpawnConfig): ReviewTransportRequirements {
-  const requested = config.transportRequirements;
-  if (!requested) return REQUIRED_INDEPENDENT_REVIEW_TRANSPORT;
-
-  // A call site may tighten the canonical product contract but must not weaken
-  // it. Product requirements remain the lower bound.
-  return {
-    structuredOutput:
-      REQUIRED_INDEPENDENT_REVIEW_TRANSPORT.structuredOutput || requested.structuredOutput,
-    parentVisible: REQUIRED_INDEPENDENT_REVIEW_TRANSPORT.parentVisible || requested.parentVisible,
-    transcriptNavigable:
-      REQUIRED_INDEPENDENT_REVIEW_TRANSPORT.transcriptNavigable || requested.transcriptNavigable,
-    isolatedAgentIdentity:
-      REQUIRED_INDEPENDENT_REVIEW_TRANSPORT.isolatedAgentIdentity ||
-      requested.isolatedAgentIdentity,
-    permissionIsolation:
-      REQUIRED_INDEPENDENT_REVIEW_TRANSPORT.permissionIsolation || requested.permissionIsolation,
-  };
-}
 
 export class OpenCodeHostAdapter implements HostAdapter {
   readonly platform = 'opencode' as const;
@@ -172,44 +149,6 @@ export class OpenCodeHostAdapter implements HostAdapter {
 
   mutateToolResult(_event: HostToolEvent, _mutation: ToolResultMutation): void {
     // OpenCode result mutation is performed directly on the hook output ref.
-  }
-
-  /**
-   * A plugin callback cannot synthesize the parent's native Task tool record.
-   * Therefore `spawnReviewer` deliberately never falls back to an invisible SDK
-   * child. The caller must expose the pending review to the parent agent, which
-   * invokes Task; plugin before/after hooks then govern that exact host call.
-   */
-  async spawnReviewer(config: ReviewerSpawnConfig): Promise<HostReviewerResult | null> {
-    const requirements = effectiveRequirements(config);
-    const transport = this.capabilities.reviewTransports.find((candidate) =>
-      reviewTransportSatisfies(candidate, requirements),
-    );
-    if (!transport) {
-      return {
-        blocked: true,
-        code: 'VISIBLE_REVIEW_TRANSPORT_UNAVAILABLE',
-        reason: 'OpenCode exposes no review transport satisfying the complete product contract.',
-        reviewInvocation: {
-          host: this.platform,
-          requirements,
-          availableTransports: this.capabilities.reviewTransports,
-        },
-      };
-    }
-
-    return {
-      blocked: true,
-      code: 'NATIVE_REVIEW_TASK_REQUIRED',
-      reason:
-        'Independent review must be dispatched through the parent OpenCode Task tool so the reviewer child is visible and navigable. Direct SDK autospawn is prohibited.',
-      reviewInvocation: {
-        host: this.platform,
-        transport: transport.kind,
-        action: 'call_task',
-        reviewerSubagentType: 'flowguard-reviewer',
-      },
-    };
   }
 
   isReviewerSupported(): boolean {
