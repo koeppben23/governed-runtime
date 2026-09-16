@@ -59,35 +59,31 @@ describe('structured review authority hard cut', () => {
     expect(classifier).not.toContain('reviewFindings');
   });
 
-  it('persists the durable dispatch before release on every production path', () => {
-    const adapter = readFileSync(join(SRC, 'integration/opencode-host-adapter.ts'), 'utf8');
-    expect(adapter).toContain('_authorizeDispatch: config.authorizeDispatch');
-    expect(adapter).toContain('_abandonDispatch: config.abandonDispatch');
-    for (const pipeline of [
-      'integration/review/standard-review-pipeline.ts',
-      'integration/review/content-review-pipeline.ts',
-    ]) {
-      const content = readFileSync(join(SRC, pipeline), 'utf8');
-      expect(content, `${pipeline} must authorize the dispatch`).toContain('authorizeDispatch:');
-      expect(content, `${pipeline} must abandon concluded host calls`).toContain(
-        'abandonDispatch:',
-      );
-      expect(content, `${pipeline} must persist the durable ledger entry`).toContain(
-        'persistAuthorizedSdkDispatch',
-      );
-    }
+  it('persists the durable dispatch before host release on the native path', () => {
+    const native = readFileSync(join(SRC, 'integration/native-task-review.ts'), 'utf8');
+    const persistIndex = native.indexOf('persistAuthorizedReviewDispatch(');
+    const releaseIndex = native.indexOf('mutateNativeTask(hookOutput');
+    expect(persistIndex, 'the dispatch must be persisted').toBeGreaterThan(-1);
+    expect(releaseIndex, 'the Task args must be overwritten before release').toBeGreaterThan(-1);
+    expect(persistIndex, 'no host release without a durable dispatch').toBeLessThan(releaseIndex);
+    expect(native).toContain('abandonReviewDispatchByHostCall');
   });
 
-  it('invokes the transport only through the host adapter', () => {
+  it('never autospawns an invisible SDK reviewer', () => {
+    const adapter = readFileSync(join(SRC, 'integration/opencode-host-adapter.ts'), 'utf8');
+    expect(adapter).toContain('NATIVE_REVIEW_TASK_REQUIRED');
+    expect(adapter).not.toMatch(/session\.create\s*\(/);
     const callers = listProductionSources(SRC).filter((file) =>
       /(?<!function )\binvokeReviewer\s*\(/.test(readFileSync(file, 'utf8')),
     );
-    expect(callers.map(relative)).toEqual(['integration/opencode-host-adapter.ts']);
+    expect(callers.map(relative)).toEqual([]);
   });
 
-  it('admits exactly the host-observed structured invocation generation', () => {
+  it('admits exactly the native visible structured invocation generation', () => {
     const schema = readFileSync(join(SRC, 'state/evidence-review-invocation.ts'), 'utf8');
-    expect(schema).toContain("invocationMode: z.literal('sdk_session_prompt')");
+    expect(schema).toContain("invocationMode: z.literal('native_task_structured_followup')");
+    expect(schema).toContain('hostVisible: z.literal(true)');
+    expect(schema).toContain('transcriptNavigable: z.literal(true)');
     expect(schema).toContain("source: z.literal('host-orchestrated')");
     expect(schema).toContain("reviewOutputMode: z.literal('structured_output')");
     expect(schema).toContain('structuredOutputUsed: z.literal(true)');

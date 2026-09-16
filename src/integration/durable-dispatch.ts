@@ -35,7 +35,11 @@ export interface DispatchLedgerWriteDeps {
 export interface AuthorizedReviewDispatchInput {
   readonly attemptId: string;
   readonly obligationId: string;
-  /** Host call identity: Task callID for native Task, child session ID for SDK transport. */
+  /**
+   * Host call identity carried by the durable release. Native Task releases are
+   * authorized under the Task call ID and rebound to the exact child session ID
+   * when evidence binds; SDK releases authorize under the child session ID.
+   */
   readonly hostCallId: string;
   readonly canonicalPromptDigest: string;
   readonly authorizedAt: string;

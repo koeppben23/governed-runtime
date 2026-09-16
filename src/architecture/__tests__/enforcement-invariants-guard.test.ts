@@ -20,7 +20,7 @@ describe('enforcement contract invariants', () => {
     // Only a host-observed structured invocation authorizes a verdict; no
     // submitted argument payload can satisfy the gate.
     expect(content).toContain('SUBAGENT_REVIEW_NOT_INVOKED');
-    expect(content).toContain('sdk_session_prompt');
+    expect(content).toContain('native_task_structured_followup');
     expect(content).not.toContain('args.reviewFindings');
   });
 
@@ -31,7 +31,7 @@ describe('enforcement contract invariants', () => {
       join(SRC_ROOT, 'integration/review/enforcement/enforcement.ts'),
       'utf8',
     );
-    expect(content).toContain('sdk_session_prompt');
+    expect(content).toContain('native_task_structured_followup');
     expect(content).toContain('SUBAGENT_REVIEW_NOT_INVOKED');
   });
 
@@ -40,8 +40,8 @@ describe('enforcement contract invariants', () => {
     // Must check for existing invocations before accepting reviewerUnavailable
     expect(content).toContain('checkReviewerUnavailableMisuse');
     expect(content).toContain('INVALID_REVIEW_TOOL_SEQUENCE');
-    expect(content).toContain('sdk_session_prompt');
-    expect(content).toContain('invocationMode');
+    expect(content).toContain('invocations.filter');
+    expect(content).toContain('pendingObligation');
   });
 
   it('enforcement holds no transient task-capture state', () => {
@@ -55,7 +55,7 @@ describe('enforcement contract invariants', () => {
     expect(content).not.toContain('recordPluginReview');
     expect(content).not.toContain('subagentCalled');
     expect(content).not.toContain('capturedFindings');
-    expect(content).toContain('sdk_session_prompt');
+    expect(content).toContain('native_task_structured_followup');
   });
 
   it('removes the obsolete host-task prompt authority', () => {

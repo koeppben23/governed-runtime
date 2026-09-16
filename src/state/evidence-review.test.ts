@@ -682,7 +682,7 @@ describe('evidence-review', () => {
       );
     });
 
-    it('ReviewInvocationEvidence parses SDK invocation', () => {
+    it('ReviewInvocationEvidence parses the native invocation', () => {
       const invocation = {
         invocationId: FIXED_UUID,
         obligationId: FIXED_UUID,
@@ -691,8 +691,9 @@ describe('evidence-review', () => {
         parentSessionId: 'ses_parent',
         childSessionId: 'ses_child',
         agentType: 'flowguard-reviewer' as const,
-        invocationMode: 'sdk_session_prompt' as const,
-        hostVisible: false,
+        invocationMode: 'native_task_structured_followup' as const,
+        hostVisible: true,
+        transcriptNavigable: true,
         source: 'host-orchestrated' as const,
         promptHash: 'sha256-prompt',
         mandateDigest: 'sha256-mandate',
@@ -732,8 +733,9 @@ describe('evidence-review', () => {
         parentSessionId: 'ses_parent',
         childSessionId: 'ses_child',
         agentType: 'flowguard-reviewer' as const,
-        invocationMode: 'sdk_session_prompt' as const,
-        hostVisible: false,
+        invocationMode: 'native_task_structured_followup' as const,
+        hostVisible: true,
+        transcriptNavigable: true,
         source: 'host-orchestrated' as const,
         promptHash: 'a'.repeat(64),
         mandateDigest: 'sha256-mandate',
@@ -985,7 +987,7 @@ describe('evidence-review', () => {
       const result = parseAssuranceWith(invocation, linkedAttempt());
       expect(result.success).toBe(false);
       if (result.success) throw new TypeError('expected schema rejection');
-      expect(JSON.stringify(result.error.issues)).toContain('sdk_session_prompt');
+      expect(JSON.stringify(result.error.issues)).toContain('native_task_structured_followup');
     });
 
     it('rejects a capability-less repository-governed attempt', () => {
@@ -1074,8 +1076,9 @@ describe('evidence-review', () => {
         parentSessionId: 'ses_parent',
         childSessionId: 'ses_child',
         agentType: 'flowguard-reviewer' as const,
-        invocationMode: 'sdk_session_prompt' as const,
-        hostVisible: false,
+        invocationMode: 'native_task_structured_followup' as const,
+        hostVisible: true,
+        transcriptNavigable: true,
         source: 'host-orchestrated' as const,
         promptHash: 'sha256-prompt',
         mandateDigest: 'sha256-mandate',

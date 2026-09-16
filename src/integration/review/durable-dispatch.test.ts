@@ -464,7 +464,7 @@ describe('recordEvidenceOrBlockReuse — durable dispatch gate', () => {
     expect(after.invocations[0]).toMatchObject({
       childSessionId: CHILD,
       attemptId: attempt.attemptId,
-      invocationMode: 'sdk_session_prompt',
+      invocationMode: 'native_task_structured_followup',
     });
     expect(after.obligations[0]).toMatchObject({
       status: 'fulfilled',

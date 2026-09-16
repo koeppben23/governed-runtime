@@ -988,7 +988,7 @@ describe('integration/review-assurance', () => {
       expect(result.agentType).toBe(REVIEWER_SUBAGENT_TYPE);
       expect(result.mandateDigest).toBe(FIXTURE_MANDATE_DIGEST);
       expect(result.consumedByObligationId).toBeNull();
-      expect(result.invocationMode).toBe('sdk_session_prompt');
+      expect(result.invocationMode).toBe('native_task_structured_followup');
       expect(result.source).toBe('host-orchestrated');
       expect(result.reviewOutputMode).toBe('structured_output');
       expect(result.structuredOutputUsed).toBe(true);

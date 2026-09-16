@@ -135,7 +135,9 @@ function canonicalTaskPrompt(
     frozenReviewerContext,
     artifactAnchorContract: artifactScope ? renderArtifactAnchorContract(artifactScope) : undefined,
     repositoryDiscoverySnapshot:
-      attempt.repositoryDiscovery.kind === 'repository' ? attempt.repositoryDiscovery.snapshot : null,
+      attempt.repositoryDiscovery.kind === 'repository'
+        ? attempt.repositoryDiscovery.snapshot
+        : null,
     observationCapability: attempt.observationCapability,
     observationRevisions,
   });
@@ -179,7 +181,9 @@ function requireCurrentAttempt(
     );
   }
   const assurance = ensureReviewAssurance(state.reviewAssurance);
-  const obligation = assurance.obligations.find((item) => item.obligationId === pending.obligationId);
+  const obligation = assurance.obligations.find(
+    (item) => item.obligationId === pending.obligationId,
+  );
   const attempt = obligation ? findBindableAttempt(assurance, obligation.obligationId) : null;
   if (
     !obligation ||
@@ -218,7 +222,8 @@ export async function nativeReviewTaskBefore(
 ): Promise<void> {
   const hookInput = input as ToolHookBeforeInput;
   const hookOutput = output as ToolHookBeforeOutput;
-  if (hookInput.tool !== TASK_TOOL || hookOutput.args.subagent_type !== REVIEWER_SUBAGENT_TYPE) return;
+  if (hookInput.tool !== TASK_TOOL || hookOutput.args.subagent_type !== REVIEWER_SUBAGENT_TYPE)
+    return;
 
   const sessionId = hookInput.sessionID;
   const callId = hookInput.callID;
@@ -275,37 +280,38 @@ function nativeAuditIntents(input: {
   findingsHash: string;
   phase: SessionState['phase'];
 }) {
-  return (_result: 'fulfilled' | 'reused', _state: SessionState, occurredAt: string) => [
-    {
-      phase: input.phase,
-      event: 'review:subagent_invoked',
-      occurredAt,
-      detail: {
-        obligationId: input.obligation.obligationId,
-        obligationType: input.obligation.obligationType,
-        parentSessionId: input.parentSessionId,
-        childSessionId: input.childSessionId,
-        agentType: REVIEWER_SUBAGENT_TYPE,
-        attemptId: input.attemptId,
-        promptHash: input.promptHash,
-        findingsHash: input.findingsHash,
-        invocationMode: 'native_task_structured_followup',
-        hostVisible: true,
-        transcriptNavigable: true,
-        structuredOutputUsed: true,
-        reviewAssuranceLevel: 'structured_high',
+  return (_result: 'fulfilled' | 'reused', _state: SessionState, occurredAt: string) =>
+    [
+      {
+        phase: input.phase,
+        event: 'review:subagent_invoked',
+        occurredAt,
+        detail: {
+          obligationId: input.obligation.obligationId,
+          obligationType: input.obligation.obligationType,
+          parentSessionId: input.parentSessionId,
+          childSessionId: input.childSessionId,
+          agentType: REVIEWER_SUBAGENT_TYPE,
+          attemptId: input.attemptId,
+          promptHash: input.promptHash,
+          findingsHash: input.findingsHash,
+          invocationMode: 'native_task_structured_followup',
+          hostVisible: true,
+          transcriptNavigable: true,
+          structuredOutputUsed: true,
+          reviewAssuranceLevel: 'structured_high',
+        },
       },
-    },
-    {
-      phase: input.phase,
-      event: 'review:obligation_fulfilled',
-      occurredAt,
-      detail: {
-        obligationId: input.obligation.obligationId,
-        childSessionId: input.childSessionId,
+      {
+        phase: input.phase,
+        event: 'review:obligation_fulfilled',
+        occurredAt,
+        detail: {
+          obligationId: input.obligation.obligationId,
+          childSessionId: input.childSessionId,
+        },
       },
-    },
-  ] as const;
+    ] as const;
 }
 
 async function resolveNativeReviewLineage(
@@ -314,17 +320,19 @@ async function resolveNativeReviewLineage(
   callId: string,
 ): Promise<NativeReviewLineage | null> {
   const state = await readState(sessDir);
-  const dispatch = state?.reviewAssurance?.dispatches.find(
+  const assurance = state?.reviewAssurance;
+  if (!state || !assurance) return null;
+  const dispatch = assurance.dispatches.find(
     (item) => item.hostCallId === callId && item.dispatchStatus === 'authorized',
   );
-  const attempt = dispatch
-    ? state?.reviewAssurance?.attempts.find((item) => item.attemptId === dispatch.attemptId)
-    : undefined;
-  const obligation = dispatch
-    ? state?.reviewAssurance?.obligations.find((item) => item.obligationId === dispatch.obligationId)
-    : undefined;
-  if (!state || !dispatch || !attempt || !obligation) return null;
-  return { state, dispatch, attempt, obligation } as NativeReviewLineage;
+  if (!dispatch) return null;
+  const attempt = assurance.attempts.find((item) => item.attemptId === dispatch.attemptId);
+  if (!attempt) return null;
+  const obligation = assurance.obligations.find(
+    (item) => item.obligationId === dispatch.obligationId,
+  );
+  if (!obligation) return null;
+  return { state, dispatch, attempt, obligation };
 }
 
 async function persistReviewerObservations(
@@ -351,7 +359,11 @@ async function capturePreparedFindings(
   childSessionId: string,
 ): Promise<
   | { readonly kind: 'blocked'; readonly code: string; readonly reason: string }
-  | { readonly kind: 'captured'; readonly prepared: Record<string, unknown>; readonly fulfilledAt: string }
+  | {
+      readonly kind: 'captured';
+      readonly prepared: Record<string, unknown>;
+      readonly fulfilledAt: string;
+    }
 > {
   const structured = await captureStructuredFindingsFromVisibleChild(
     runtime.orchestratorDeps.client,
@@ -448,17 +460,15 @@ async function bindNativeReviewEvidence(input: {
     obligationType: obligation.obligationType,
     sessionId: input.sessionId,
     childSessionId: input.childSessionId,
-    hostCallId: input.callId,
+    // Authorized under the Task call ID, bound to the exact child session by
+    // the evidence mutation.
+    hostCallId: input.childSessionId,
+    authorizedHostCallId: input.callId,
     attemptId: attempt.attemptId,
     promptHash,
     findingsHash,
     invokedAt: dispatch.dispatchAuthorizedAt,
     fulfilledAt: input.fulfilledAt,
-    execution: {
-      invocationMode: 'native_task_structured_followup',
-      hostVisible: true,
-      transcriptNavigable: true,
-    },
     reviewerResult,
     semanticIntents: nativeAuditIntents({
       obligation,
@@ -513,7 +523,8 @@ async function projectFulfilledReview(input: {
     reviewDispatch: { required: true, completed: true, verdict: input.verdict },
     ...(invocation ? { reviewExecution: projectReviewExecution(invocation) } : {}),
   });
-  if (invocation) input.output.metadata.flowguardReviewExecution = projectReviewExecution(invocation);
+  if (invocation)
+    input.output.metadata.flowguardReviewExecution = projectReviewExecution(invocation);
   input.runtime.log.info('orchestrator', 'native reviewer Task fulfilled review obligation', {
     sessionId: input.sessionId,
     childSessionId: input.childSessionId,
@@ -568,7 +579,11 @@ export async function nativeReviewTaskAfter(
     await abandonAndBlock({ runtime, sessDir, callId, output: hookOutput, ...captured });
     return;
   }
-  const validation = validateCapturedFindings(refreshedState, lineage.obligation, captured.prepared);
+  const validation = validateCapturedFindings(
+    refreshedState,
+    lineage.obligation,
+    captured.prepared,
+  );
   if (validation.kind === 'blocked') {
     await abandonAndBlock({ runtime, sessDir, callId, output: hookOutput, ...validation });
     return;

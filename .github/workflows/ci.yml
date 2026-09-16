@@ -618,6 +618,11 @@ jobs:
         run: |
           OPENCODE_VERSION=$(node -p "require('./.sdk-baselines/opencode/host-version.json').version")
           npm install -g --prefer-offline --no-audit --no-fund "opencode-ai@$OPENCODE_VERSION"
+          # npm may link global bins into a prefix that is not on PATH yet.
+          GLOBAL_BIN="$(npm prefix -g)/bin"
+          if [ -d "$GLOBAL_BIN" ]; then
+            echo "$GLOBAL_BIN" >> "$GITHUB_PATH"
+          fi
 
       - name: Verify OpenCode CLI availability
         run: |
@@ -689,6 +694,11 @@ jobs:
         run: |
           OPENCODE_VERSION=$(node -p "require('./.sdk-baselines/opencode/host-version.json').version")
           npm install -g --prefer-offline --no-audit --no-fund "opencode-ai@$OPENCODE_VERSION"
+          # npm may link global bins into a prefix that is not on PATH yet.
+          GLOBAL_BIN="$(npm prefix -g)/bin"
+          if [ -d "$GLOBAL_BIN" ]; then
+            echo "$GLOBAL_BIN" >> "$GITHUB_PATH"
+          fi
 
       - name: Verify OpenCode CLI availability
         run: |

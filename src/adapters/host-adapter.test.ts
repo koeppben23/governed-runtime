@@ -15,10 +15,7 @@ import type {
   CapabilityValidationResult,
   EnforcementLevel,
 } from './host-adapter.js';
-import {
-  REQUIRED_INDEPENDENT_REVIEW_TRANSPORT,
-  reviewTransportSatisfies,
-} from './host-adapter.js';
+import { REQUIRED_INDEPENDENT_REVIEW_TRANSPORT, reviewTransportSatisfies } from './host-adapter.js';
 import { OpenCodeHostAdapter } from '../integration/opencode-host-adapter.js';
 
 function createMockClient(overrides: Record<string, unknown> = {}) {

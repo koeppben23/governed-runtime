@@ -310,8 +310,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed for the mandatory override rationale: /override-approve now
     // refuses an empty/whitespace rationale and reports it instead of calling
     // flowguard_decision.
+    // Refreshed for the native visible reviewer transport hard cut: review
+    // commands describe the host Task dispatch instead of the removed invisible
+    // SDK reviewer session.
     expect(sha256(commandsJson)).toBe(
-      'dc6836c562bd7b3dee9b1d2de9f5be5658ee80ad0b20015283c83a8a43920656',
+      'b48f92cb124bed0ba33a8c268545a0d061ebe9ec60f1610cb0dcbef277f3e170',
     );
   });
 

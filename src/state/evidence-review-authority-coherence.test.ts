@@ -205,8 +205,9 @@ describe('Current persisted authority schemas are strict', () => {
     parentSessionId: 'ses_parent',
     childSessionId: 'ses_child',
     agentType: 'flowguard-reviewer' as const,
-    invocationMode: 'sdk_session_prompt' as const,
-    hostVisible: false,
+    invocationMode: 'native_task_structured_followup' as const,
+    hostVisible: true,
+    transcriptNavigable: true,
     source: 'host-orchestrated' as const,
     promptHash: 'a'.repeat(64),
     mandateDigest: 'sha256-mandate',
@@ -857,7 +858,7 @@ describe('Host invocation, obligation foreign keys and status relations', () => 
     completedAt: FIXED_TIME,
   };
 
-  function sdkInvocation(overrides: Record<string, unknown> = {}) {
+  function nativeInvocation(overrides: Record<string, unknown> = {}) {
     return {
       invocationId: INVOCATION_ID,
       obligationId: FIXED_UUID,
@@ -865,8 +866,9 @@ describe('Host invocation, obligation foreign keys and status relations', () => 
       parentSessionId: 'ses_parent',
       childSessionId: 'ses_child',
       agentType: 'flowguard-reviewer' as const,
-      invocationMode: 'sdk_session_prompt' as const,
-      hostVisible: false,
+      invocationMode: 'native_task_structured_followup' as const,
+      hostVisible: true,
+      transcriptNavigable: true,
       source: 'host-orchestrated' as const,
       promptHash: 'a'.repeat(64),
       mandateDigest: 'sha256-mandate',
@@ -912,8 +914,8 @@ describe('Host invocation, obligation foreign keys and status relations', () => 
     };
   }
 
-  it('BAD: SDK invocation without its completed dispatch is rejected', () => {
-    const result = parseState({ invocations: [sdkInvocation()] });
+  it('BAD: native invocation without its completed dispatch is rejected', () => {
+    const result = parseState({ invocations: [nativeInvocation()] });
     expect(result.success).toBe(false);
     if (result.success) throw new TypeError('expected schema rejection');
     expect(JSON.stringify(result.error.issues)).toContain(
@@ -921,9 +923,9 @@ describe('Host invocation, obligation foreign keys and status relations', () => 
     );
   });
 
-  it('HAPPY: SDK invocation with its matching completed dispatch parses', () => {
+  it('HAPPY: native invocation with its matching completed dispatch parses', () => {
     const result = parseState({
-      invocations: [sdkInvocation()],
+      invocations: [nativeInvocation()],
       dispatches: [completedDispatch()],
     });
     expect(result.success).toBe(true);
@@ -940,7 +942,7 @@ describe('Host invocation, obligation foreign keys and status relations', () => 
 
   it('rejects an authorized dispatch whose host call carries an invocation', () => {
     const result = parseState({
-      invocations: [sdkInvocation()],
+      invocations: [nativeInvocation()],
       dispatches: [completedDispatch({ dispatchStatus: 'authorized', completedAt: undefined })],
     });
     expect(result.success).toBe(false);
@@ -952,7 +954,7 @@ describe('Host invocation, obligation foreign keys and status relations', () => 
 
   it('rejects a dispatch/invocation prompt-digest mismatch', () => {
     const result = parseState({
-      invocations: [sdkInvocation()],
+      invocations: [nativeInvocation()],
       dispatches: [completedDispatch({ canonicalPromptDigest: 'b'.repeat(64) })],
     });
     expect(result.success).toBe(false);
@@ -965,8 +967,8 @@ describe('Host invocation, obligation foreign keys and status relations', () => 
   it('rejects duplicate invocations matching one completed dispatch', () => {
     const result = parseState({
       invocations: [
-        sdkInvocation(),
-        sdkInvocation({ invocationId: '88888888-8888-4888-8888-000000000000' }),
+        nativeInvocation(),
+        nativeInvocation({ invocationId: '88888888-8888-4888-8888-000000000000' }),
       ],
       dispatches: [completedDispatch()],
     });
@@ -1013,7 +1015,7 @@ describe('Host invocation, obligation foreign keys and status relations', () => 
           consumedAt: null,
         },
       ],
-      invocations: [sdkInvocation()],
+      invocations: [nativeInvocation()],
     });
     expect(result.success).toBe(false);
     if (result.success) throw new TypeError('expected schema rejection');
@@ -1031,7 +1033,7 @@ describe('Host invocation, obligation foreign keys and status relations', () => 
           consumedAt: FIXED_TIME,
         },
       ],
-      invocations: [sdkInvocation({ consumedByObligationId: FIXED_UUID })],
+      invocations: [nativeInvocation({ consumedByObligationId: FIXED_UUID })],
       dispatches: [completedDispatch()],
     });
     expect(result.success).toBe(true);
@@ -1040,7 +1042,7 @@ describe('Host invocation, obligation foreign keys and status relations', () => 
   it('rejects an invocation whose consumedByObligationId does not resolve', () => {
     const result = parseState({
       invocations: [
-        sdkInvocation({ consumedByObligationId: '99999999-9999-4999-8999-999999999999' }),
+        nativeInvocation({ consumedByObligationId: '99999999-9999-4999-8999-999999999999' }),
       ],
     });
     expect(result.success).toBe(false);
@@ -1057,7 +1059,7 @@ describe('Host invocation, obligation foreign keys and status relations', () => 
     };
     const result = parseState({
       obligations: [PLAN_OBLIGATION, otherObligation],
-      invocations: [sdkInvocation({ consumedByObligationId: otherObligation.obligationId })],
+      invocations: [nativeInvocation({ consumedByObligationId: otherObligation.obligationId })],
     });
     expect(result.success).toBe(false);
     if (result.success) throw new TypeError('expected schema rejection');

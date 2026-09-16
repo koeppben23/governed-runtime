@@ -1,16 +1,15 @@
 /**
  * @module integration/review/pipeline-types
- * @description Shared types, interfaces, and constants for review pipeline orchestration.
+ * @description Shared runtime types for review authority wiring.
  *
  * Extracted from plugin-orchestrator.ts and plugin-workspace.ts so review/ modules
  * do not depend on plugin-* files (FG-QUAL-002).
  *
- * @version v2 — added HostAdapter to OrchestratorDeps (HAI #242)
+ * @version v3 — removed the deleted SDK pipeline context types
  */
 
 import type { SessionEnforcementState } from './enforcement/types.js';
 import type { OrchestratorClient } from './orchestrator.js';
-import { extractReviewContext } from './orchestrator.js';
 import type { SessionState } from '../../state/schema.js';
 import type { HostAdapter } from '../../adapters/host-adapter.js';
 import type { SemanticAuditIntent } from '../tools/audit-outbox.js';
@@ -60,34 +59,7 @@ export interface OrchestratorDeps {
   adapter: HostAdapter;
 }
 
-/**
- * Tool invocation captured by the plugin hook.
- *
- * Bundles the input and output from tool.execute.after
- * into a single object for cleaner function signatures.
- */
-export interface ToolCallEvent {
-  readonly toolName: string;
-  readonly input: unknown;
-  readonly output: { output: string };
-  readonly sessionId: string;
-  readonly now: string;
-}
-
 // ─── Internal types ──────────────────────────────────────────────────────────
-
-/** Shared context passed to pipeline functions after validation. */
-export interface PipelineContext {
-  deps: OrchestratorDeps;
-  sessionState: SessionState;
-  sessDir: string;
-  reviewCtx: NonNullable<ReturnType<typeof extractReviewContext>>;
-  parsedOutput: Record<string, unknown>;
-  output: { output: string };
-  sessionId: string;
-  now: string;
-  rawOutput: string;
-}
 
 /** Result of attestation validation. */
 export type AttestationResult =
@@ -95,10 +67,3 @@ export type AttestationResult =
 
 /** Result of evidence recording (reuse detection + fulfillment + missing obligation). */
 export type EvidenceRecordResult = 'fulfilled' | 'reused' | 'missing' | 'lineage_unavailable';
-
-// ─── Re-exports for external consumers ───────────────────────────────────────
-
-export type { SessionEnforcementState } from './enforcement/types.js';
-export type { OrchestratorClient, ReviewerSuccessResult } from './orchestrator.js';
-export type { SessionState } from '../../state/schema.js';
-export type { ReviewObligationType } from '../../state/evidence.js';

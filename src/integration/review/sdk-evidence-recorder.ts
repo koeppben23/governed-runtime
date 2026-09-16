@@ -9,8 +9,6 @@
 
 import type { ReviewObligationType } from '../../state/evidence.js';
 import type { ReviewInvocationEvidence } from '../../state/evidence-review-invocation.js';
-import type { SessionState } from '../../state/schema.js';
-import type { SemanticAuditIntent } from '../tools/audit-outbox.js';
 import {
   appendInvocationEvidence,
   buildInvocationEvidence,
@@ -19,20 +17,17 @@ import {
   hasEvidenceReuse,
   updateAttemptStatus,
 } from './assurance.js';
-import { completeReviewDispatch } from '../../state/review-continuation.js';
+import {
+  completeReviewDispatch,
+  rebindReviewDispatchHostCall,
+} from '../../state/review-continuation.js';
 import { hasAuthorizedDispatch } from '../../state/review-dispatch.js';
 import { updateObligation } from './obligation-state.js';
 import type { ReviewerSuccessResult } from './orchestrator.js';
+import type { SemanticAuditIntent } from '../tools/audit-outbox.js';
+import type { SessionState } from '../../state/schema.js';
 import type { EvidenceRecordResult, OrchestratorDeps } from './pipeline-types.js';
-import type { PipelineContext } from './pipeline-types.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import { validatePreBindFindings, type PreBindFindingsResult } from './pre-bind-findings.js';
-
-type ReviewExecutionFacts = {
-  readonly invocationMode: ReviewInvocationEvidence['invocationMode'];
-  readonly hostVisible: boolean;
-  readonly transcriptNavigable?: boolean;
-};
 
 type AuditableEvidenceRecordResult = Extract<EvidenceRecordResult, 'fulfilled' | 'reused'>;
 
@@ -41,15 +36,19 @@ type SdkEvidenceParams = {
   obligationType: ReviewObligationType;
   sessionId: string;
   childSessionId: string;
-  /** Host call identity whose durable dispatch authorization this evidence closes. */
+  /** Bound host call identity (child session) whose dispatch this evidence closes. */
   hostCallId: string;
+  /**
+   * Pre-release host call identity the dispatch was authorized under when it
+   * differs from the final child session identity (native Task call ID). The
+   * binding mutation rebinds the authorized dispatch to `hostCallId`.
+   */
+  authorizedHostCallId?: string;
   attemptId: string;
   promptHash: string;
   findingsHash: string;
   invokedAt: string;
   fulfilledAt: string;
-  /** Concrete transport facts. Omitted only by legacy SDK callers. */
-  execution?: ReviewExecutionFacts;
   reviewerResult: Omit<
     Pick<
       ReviewerSuccessResult,
@@ -78,77 +77,11 @@ type MutationFlags = {
 export type SdkEvidenceRecordResult =
   EvidenceRecordResult | Exclude<PreBindFindingsResult, { readonly ok: true }>;
 
-export function buildSdkEvidenceAuditIntents(input: {
-  ctx: PipelineContext;
-  result: EvidenceRecordResult;
-  obligationType: string;
-  promptHash: string;
-  findingsHash: string;
-  reviewerResult: Pick<
-    ReviewerSuccessResult,
-    'sessionId' | 'reviewOutputMode' | 'structuredOutputUsed' | 'reviewAssuranceLevel'
-  >;
-  state: SessionState;
-  occurredAt: string;
-  reviewProfile: string;
-}): readonly SemanticAuditIntent[] {
-  const {
-    ctx,
-    result,
-    obligationType,
-    promptHash,
-    findingsHash,
-    reviewerResult,
-    state,
-    occurredAt,
-    reviewProfile,
-  } = input;
-  const { sessionId, reviewCtx } = ctx;
-  const detail =
-    result === 'reused'
-      ? { obligationId: reviewCtx.obligationId, code: 'SUBAGENT_EVIDENCE_REUSED' }
-      : {
-          obligationId: reviewCtx.obligationId,
-          obligationType,
-          parentSessionId: sessionId,
-          childSessionId: reviewerResult.sessionId,
-          agentType: REVIEWER_SUBAGENT_TYPE,
-          promptHash,
-          mandateDigest: reviewCtx.mandateDigest,
-          criteriaVersion: reviewCtx.criteriaVersion,
-          findingsHash,
-          reviewOutputMode: reviewerResult.reviewOutputMode,
-          structuredOutputUsed: reviewerResult.structuredOutputUsed,
-          reviewAssuranceLevel: reviewerResult.reviewAssuranceLevel,
-          reviewProfile,
-        };
-  const first: SemanticAuditIntent = {
-    phase: state.phase,
-    event: result === 'reused' ? 'review:obligation_blocked' : 'review:subagent_invoked',
-    occurredAt,
-    detail,
-  };
-  return result === 'fulfilled'
-    ? [
-        first,
-        {
-          phase: state.phase,
-          event: 'review:obligation_fulfilled',
-          occurredAt,
-          detail: {
-            obligationId: reviewCtx.obligationId,
-            childSessionId: reviewerResult.sessionId,
-          },
-        },
-      ]
-    : [first];
-}
-
 function buildReviewInvocation(
   params: SdkEvidenceParams,
   obligation: { mandateDigest: string; criteriaVersion: string },
 ): ReviewInvocationEvidence {
-  const base = buildInvocationEvidence({
+  return buildInvocationEvidence({
     obligationId: params.obligationId,
     obligationType: params.obligationType,
     mandateDigest: obligation.mandateDigest,
@@ -162,15 +95,6 @@ function buildReviewInvocation(
     attemptId: params.attemptId,
     capturedRawFindings: params.reviewerResult.findings,
   });
-  if (!params.execution) return base;
-  return {
-    ...base,
-    invocationMode: params.execution.invocationMode,
-    hostVisible: params.execution.hostVisible,
-    ...(params.execution.transcriptNavigable === undefined
-      ? {}
-      : { transcriptNavigable: params.execution.transcriptNavigable }),
-  };
 }
 
 /**
@@ -191,7 +115,8 @@ function resolveEvidenceLineage(
     attempt.status === 'created' &&
     attempt.childSessionId === undefined;
   if (!lineageMatches || !attempt) return null;
-  if (!hasAuthorizedDispatch(assurance, params.hostCallId, attempt.attemptId)) {
+  const authorizedHostCallId = params.authorizedHostCallId ?? params.hostCallId;
+  if (!hasAuthorizedDispatch(assurance, authorizedHostCallId, attempt.attemptId)) {
     return null;
   }
   return { attemptId: attempt.attemptId };
@@ -250,10 +175,13 @@ function applyEvidenceMutation(
   );
   // Attempt binding, invocation evidence, dispatch completion, and obligation
   // fulfillment are ONE mutation: the ledger can never diverge from evidence.
+  const withBoundDispatch = params.authorizedHostCallId
+    ? rebindReviewDispatchHostCall(boundAssurance, params.authorizedHostCallId, params.hostCallId)
+    : boundAssurance;
   const withInvocation = {
     ...state,
     reviewAssurance: completeReviewDispatch(
-      appendInvocationEvidence(boundAssurance, invocation),
+      appendInvocationEvidence(withBoundDispatch, invocation),
       params.hostCallId,
       params.fulfilledAt,
     ),

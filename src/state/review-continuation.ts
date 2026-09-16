@@ -293,6 +293,7 @@ export {
   ensureReviewAssurance,
   hasReleasedDispatch,
   markDispatchOutcomeUnknown,
+  rebindReviewDispatchHostCall,
 } from './review-dispatch.js';
 
 /**

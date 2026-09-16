@@ -38,8 +38,7 @@ export type StructuredFollowupResult =
 
 type BlockedFollowup = Extract<StructuredFollowupResult, { readonly kind: 'blocked' }>;
 type ParsedFollowup =
-  | { readonly kind: 'ok'; readonly findings: Record<string, unknown> }
-  | BlockedFollowup;
+  { readonly kind: 'ok'; readonly findings: Record<string, unknown> } | BlockedFollowup;
 type PromptResponse = Awaited<ReturnType<OrchestratorClient['session']['prompt']>>;
 
 function serializationPrompt(obligationId: string): string {
@@ -58,7 +57,9 @@ function classifyInfoError(error: unknown): BlockedFollowup | null {
   if (!error || typeof error !== 'object') return null;
   const value = error as Record<string, unknown>;
   const data =
-    value.data && typeof value.data === 'object' ? (value.data as Record<string, unknown>) : undefined;
+    value.data && typeof value.data === 'object'
+      ? (value.data as Record<string, unknown>)
+      : undefined;
   const text = `${typeof value.message === 'string' ? value.message : ''} ${
     typeof data?.message === 'string' ? data.message : ''
   }`.toLowerCase();
@@ -66,13 +67,14 @@ function classifyInfoError(error: unknown): BlockedFollowup | null {
     return {
       kind: 'blocked',
       code: 'STRUCTURED_REVIEW_EXECUTION_MODE_INCOMPATIBLE',
-      reason:
-        `The visible ${REVIEWER_SUBAGENT_TYPE} child cannot serialize structured findings while its current reasoning mode conflicts with the host structured-output tool.`,
+      reason: `The visible ${REVIEWER_SUBAGENT_TYPE} child cannot serialize structured findings while its current reasoning mode conflicts with the host structured-output tool.`,
     };
   }
   const capabilityMismatch =
     text.includes('does not support') &&
-    ['tool_choice', 'tools', 'function calling', 'structured output'].some((term) => text.includes(term));
+    ['tool_choice', 'tools', 'function calling', 'structured output'].some((term) =>
+      text.includes(term),
+    );
   return capabilityMismatch
     ? {
         kind: 'blocked',
@@ -102,7 +104,9 @@ function responseFailure(response: PromptResponse): BlockedFollowup | null {
       kind: 'blocked',
       code: 'HOST_STRUCTURED_OUTPUT_REQUIRED',
       reason: `OpenCode did not return structured findings from the visible reviewer child: ${
-        response.error instanceof Error ? response.error.message : String(response.error ?? 'missing response')
+        response.error instanceof Error
+          ? response.error.message
+          : String(response.error ?? 'missing response')
       }`,
     };
   }

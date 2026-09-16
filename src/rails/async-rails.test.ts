@@ -296,14 +296,16 @@ describe('implement rail', () => {
 
   // ─── HAPPY ─────────────────────────────────────────────────
   describe('HAPPY', () => {
-    it('executes impl and advances through IMPL_REVIEW to EVIDENCE_REVIEW', async () => {
+    it('executes impl and stops in IMPL_VALIDATION for fresh post-impl checks', async () => {
       const state = makeProgressedState('IMPLEMENTATION');
       const result = await executeImplement(state, ctx, implExecutors);
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
         expect(result.state.implementation).not.toBeNull();
-        expect(result.state.implReview).not.toBeNull();
-        expect(result.state.phase).toBe('EVIDENCE_REVIEW');
+        expect(result.state.phase).toBe('IMPL_VALIDATION');
+        // Independent review is activated by runtime-owned revalidation, not
+        // by this rail call.
+        expect(result.state.implReview).toBeNull();
       }
     });
   });
@@ -349,7 +351,9 @@ describe('implement rail', () => {
         },
       };
       const soloCtx = { ...ctx, policy: SOLO_POLICY };
-      const state = makeProgressedState('IMPLEMENTATION');
+      // Only the explicit vacuous zero-check policy reaches IMPL_REVIEW
+      // directly; active-check flows defer review to runtime-owned revalidation.
+      const state = { ...makeProgressedState('IMPLEMENTATION'), activeChecks: [] };
       await executeImplement(state, soloCtx, neverApprove);
       expect(count).toBe(SOLO_POLICY.reviewBudget.implementation);
     });
@@ -358,7 +362,9 @@ describe('implement rail', () => {
   // ─── EDGE ──────────────────────────────────────────────────
   describe('EDGE', () => {
     it('records multiple transitions (IMPLEMENTATION→IMPL_REVIEW→EVIDENCE_REVIEW)', async () => {
-      const state = makeProgressedState('IMPLEMENTATION');
+      // Vacuous zero-check policy: the bundled review path still advances
+      // through IMPL_REVIEW in one rail call.
+      const state = { ...makeProgressedState('IMPLEMENTATION'), activeChecks: [] };
       const result = await executeImplement(state, ctx, implExecutors);
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {

@@ -500,6 +500,8 @@ export function buildInvocationEvidence(input: {
     parentSessionId: input.parentSessionId,
     childSessionId: input.childSessionId,
     agentType: REVIEWER_SUBAGENT_TYPE,
+    // Canonical transport: one native, host-visible Task child executes the
+    // review and serializes its findings in a schema-constrained follow-up.
     invocationMode: 'native_task_structured_followup',
     hostVisible: true,
     transcriptNavigable: true,
