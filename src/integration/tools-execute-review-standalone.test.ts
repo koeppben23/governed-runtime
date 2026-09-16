@@ -428,6 +428,39 @@ describe('review (standalone flow)', () => {
         kind: 'repository_change',
         source: { kind: 'branch', branch: 'feature-auth' },
       });
+      expect(result.peerReviewCoverage).toEqual({
+        targetResolved: true,
+        targetFrozen: true,
+        repositoryIdentityVerified: true,
+        baseSha: 'b'.repeat(40),
+        headSha: 'a'.repeat(40),
+        changedPathCount: 3,
+        objectivesCovered: 3,
+        objectivesTotal: 3,
+        reviewAssurance: 'structured_high',
+        missingVerification: [],
+      });
+    });
+
+    it('peerReviewCoverage carries reviewer missing-verification messages', async () => {
+      const result = await submitContentReview(
+        { branch: 'feature-missing-verification', inputOrigin: 'branch' },
+        'accept',
+        { missingVerification: ['Add regression coverage for the branch review path'] },
+      );
+      expect(result.error, JSON.stringify(result)).toBeUndefined();
+      expect(result.peerReviewCoverage).toEqual({
+        targetResolved: true,
+        targetFrozen: true,
+        repositoryIdentityVerified: true,
+        baseSha: 'b'.repeat(40),
+        headSha: 'a'.repeat(40),
+        changedPathCount: 3,
+        objectivesCovered: 3,
+        objectivesTotal: 3,
+        reviewAssurance: 'structured_high',
+        missingVerification: ['Add regression coverage for the branch review path'],
+      });
     });
 
     it('binds branch material findings to the resolved base/head source scope', async () => {
@@ -889,7 +922,19 @@ describe('review (standalone flow)', () => {
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('PEER_REVIEW_COMPLETE');
       expect(result.overallStatus).toBeDefined();
-      expect(result.completeness).toBeDefined();
+      expect(result.peerReviewCoverage).toEqual({
+        targetResolved: true,
+        targetFrozen: true,
+        repositoryIdentityVerified: true,
+        baseSha: 'b'.repeat(40),
+        headSha: 'a'.repeat(40),
+        changedPathCount: 3,
+        objectivesCovered: 3,
+        objectivesTotal: 3,
+        reviewAssurance: 'structured_high',
+        missingVerification: [],
+      });
+      expect(result.completeness).toBeUndefined();
       expect(result.findings).toBeDefined();
       expect(Array.isArray(result.findings)).toBe(true);
       if (!Array.isArray(result.findings)) throw new TypeError('Expected review findings');
@@ -927,7 +972,19 @@ describe('review (standalone flow)', () => {
 
       expect(result.error).toBeUndefined();
       expect(result.overallStatus).toMatch(/clean|warnings|issues/);
-      expect(result.completeness).toBeDefined();
+      expect(result.peerReviewCoverage).toEqual({
+        targetResolved: false,
+        targetFrozen: false,
+        repositoryIdentityVerified: null,
+        baseSha: null,
+        headSha: null,
+        changedPathCount: 0,
+        objectivesCovered: 0,
+        objectivesTotal: 0,
+        reviewAssurance: null,
+        missingVerification: [],
+      });
+      expect(result.completeness).toBeUndefined();
       expect(result.validationSummary).toBeDefined();
     });
   });
@@ -1548,7 +1605,21 @@ describe('review (standalone flow)', () => {
         const reportRaw = await fs.readFile(`${sessDir}/review-report.json`, 'utf-8');
         const report = JSON.parse(reportRaw) as Record<string, unknown>;
         expect(report.phase).toBe('PEER_REVIEW_COMPLETE');
-        expect((report.completeness as Record<string, unknown>).phase).toBe('PEER_REVIEW_COMPLETE');
+        expect(report.completeness).toBeUndefined();
+        const persistedCoverage = report.peerReviewCoverage as Record<string, unknown>;
+        expect(persistedCoverage).toEqual(result.peerReviewCoverage);
+        expect(persistedCoverage).toEqual({
+          targetResolved: true,
+          targetFrozen: true,
+          repositoryIdentityVerified: true,
+          baseSha: 'b'.repeat(40),
+          headSha: 'a'.repeat(40),
+          changedPathCount: 3,
+          objectivesCovered: 3,
+          objectivesTotal: 3,
+          reviewAssurance: 'structured_high',
+          missingVerification: [],
+        });
       });
     });
   });

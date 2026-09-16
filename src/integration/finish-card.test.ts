@@ -30,7 +30,6 @@ import {
 import { buildFinishCard, deriveFinishOverallStatus } from './status-finish.js';
 import { getPolicyPreset } from '../config/policy.js';
 import { resolveWorkflowDirective } from '../machine/workflow-directive.js';
-import { evaluateCompleteness } from '../audit/completeness.js';
 import { makeProgressedState } from '../fixtures.js';
 
 const policy = getPolicyPreset('solo');
@@ -48,7 +47,18 @@ function makeReviewReport(overallStatus: ReviewReport['overallStatus']): ReviewR
     validationSummary: [],
     findings: [],
     overallStatus,
-    completeness: evaluateCompleteness(makeProgressedState('PEER_REVIEW_COMPLETE')),
+    peerReviewCoverage: {
+      targetResolved: false,
+      targetFrozen: false,
+      repositoryIdentityVerified: null,
+      baseSha: null,
+      headSha: null,
+      changedPathCount: 0,
+      objectivesCovered: 0,
+      objectivesTotal: 0,
+      reviewAssurance: null,
+      missingVerification: [],
+    },
   };
 }
 

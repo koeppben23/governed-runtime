@@ -6,7 +6,6 @@
 import { z } from 'zod';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { digestToId, hashText } from '../shared/hashing.js';
-import type { ReviewFindings } from './evidence.js';
 import { DeclaredClaim, type DeclaredClaim as DeclaredClaimType } from './proofgraph.js';
 
 export const PEER_REVIEW_OBJECTIVES_PROFILE_VERSION = 'standalone-review-objectives.v1' as const;
@@ -55,6 +54,23 @@ export const PeerReviewTask = z
   })
   .readonly();
 export type PeerReviewTask = z.infer<typeof PeerReviewTask>;
+
+export const PeerReviewCoverage = z
+  .object({
+    targetResolved: z.boolean(),
+    targetFrozen: z.boolean(),
+    repositoryIdentityVerified: z.boolean().nullable(),
+    baseSha: z.string().nullable(),
+    headSha: z.string().nullable(),
+    changedPathCount: z.number().int().nonnegative(),
+    objectivesCovered: z.number().int().nonnegative(),
+    objectivesTotal: z.number().int().nonnegative(),
+    reviewAssurance: z.literal('structured_high').nullable(),
+    missingVerification: z.array(z.string()),
+  })
+  .strict()
+  .readonly();
+export type PeerReviewCoverage = z.infer<typeof PeerReviewCoverage>;
 
 /**
  * Hard version literal for peer-review evidence entries.
@@ -173,19 +189,6 @@ export function createPeerReviewTask(input: {
       objectivesDigest,
       subjectDigest: input.subjectDigest,
     },
-  };
-}
-
-export function reviewFindingsDigests(findings: ReviewFindings | undefined): {
-  findingsDigest: string | null;
-  attestationDigest: string | null;
-} {
-  if (!findings) return { findingsDigest: null, attestationDigest: null };
-  return {
-    findingsDigest: hashText(canonicalJsonStringify(findings)),
-    attestationDigest: findings.attestation
-      ? hashText(canonicalJsonStringify(findings.attestation))
-      : null,
   };
 }
 

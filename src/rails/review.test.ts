@@ -15,7 +15,11 @@ import {
   type ReviewExecutors,
   type ReviewReferenceInput,
 } from './review.js';
-import type { ReviewReport, ReviewReportFinding, ValidationResult } from '../state/evidence.js';
+import type {
+  ReviewReportDraft,
+  ReviewReportFinding,
+  ValidationResult,
+} from '../state/evidence.js';
 import type { RailBlocked } from './types.js';
 import type { SessionState } from '../state/schema.js';
 import {
@@ -41,11 +45,11 @@ type RenderedReviewFinding = {
   readonly message: string;
 };
 
-type RenderedReviewReport = Omit<ReviewReport, 'findings'> & {
+type RenderedReviewReport = Omit<ReviewReportDraft, 'findings'> & {
   readonly findings: RenderedReviewFinding[];
 };
 
-function renderReviewReport(report: ReviewReport): RenderedReviewReport {
+function renderReviewReport(report: ReviewReportDraft): RenderedReviewReport {
   return {
     ...report,
     findings: report.findings.map((finding) =>
@@ -66,7 +70,7 @@ function renderReviewReport(report: ReviewReport): RenderedReviewReport {
   };
 }
 
-function isBlockedReview(result: ReviewReport | RailBlocked): result is RailBlocked {
+function isBlockedReview(result: ReviewReportDraft | RailBlocked): result is RailBlocked {
   return 'kind' in result && result.kind === 'blocked';
 }
 
@@ -123,12 +127,11 @@ describe('review rail', () => {
       expect(report.validationSummary[0]!.passed).toBe(true);
     });
 
-    it('includes evidence completeness matrix', async () => {
+    it('excludes local session completeness and integration-owned coverage from the rail draft', async () => {
       const state = makeProgressedState('COMPLETE');
       const report = await executeReview(state, NOW);
-      expect(report.completeness).toBeDefined();
-      expect(report.completeness.overallComplete).toBe(true);
-      expect(report.completeness.slots).toHaveLength(9);
+      expect(report).not.toHaveProperty('completeness');
+      expect(report).not.toHaveProperty('peerReviewCoverage');
     });
 
     it('is available at any phase (always allowed)', async () => {

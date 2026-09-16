@@ -6,7 +6,8 @@
  *
  * 1. Report generator (executeReview): Pure read-only report generation.
  *    Always available, does NOT mutate state.
- *    Produces a ReviewReport with completeness matrix and findings.
+ *    Produces a ReviewReportDraft with findings; the peer review coverage
+ *    projection is attached by the review-tool completion layer.
  *
  * 2. Flow mode (executeReviewFlow): Peer review flow.
  *    READY → PEER_REVIEW → PEER_REVIEW_COMPLETE.
@@ -19,7 +20,7 @@
 import type { SessionState } from '../state/schema.js';
 import type { ReviewRepositoryIdentity } from '../state/evidence-review-subject.js';
 import {
-  ReviewReport,
+  ReviewReportDraft,
   type ExternalReference,
   type FrozenReviewSubject,
   type InputOrigin,
@@ -124,25 +125,27 @@ function buildMechanicalFindings(
   refInput?: ReviewReferenceInput,
 ): MechanicalFinding[] {
   const findings: MechanicalFinding[] = [];
-  // Lifecycle gaps do not describe standalone external content reviews.
-  const isContentReview = refInput !== undefined;
-  if (!isContentReview) {
-    if (!state.ticket) {
-      findings.push({
-        source: 'mechanical',
-        reportSeverity: 'warning',
-        category: 'completeness',
-        message: 'No ticket evidence',
-      });
-    }
-    if (!state.plan) {
-      findings.push({
-        source: 'mechanical',
-        reportSeverity: 'warning',
-        category: 'completeness',
-        message: 'No plan evidence',
-      });
-    }
+  // Peer review of a foreign target never reports the local session's
+  // lifecycle, completeness, four-eyes status, or validation state: those are
+  // facts about this FlowGuard session, not about the reviewed subject. The
+  // reviewer's structured findings are the authority for the target.
+  const isPeerReview = refInput !== undefined;
+  if (isPeerReview) return findings;
+  if (!state.ticket) {
+    findings.push({
+      source: 'mechanical',
+      reportSeverity: 'warning',
+      category: 'completeness',
+      message: 'No ticket evidence',
+    });
+  }
+  if (!state.plan) {
+    findings.push({
+      source: 'mechanical',
+      reportSeverity: 'warning',
+      category: 'completeness',
+      message: 'No plan evidence',
+    });
   }
   if (state.error) {
     findings.push({
@@ -358,15 +361,14 @@ interface BuildReportOptions {
   now: string;
   validationSummary: Array<{ checkId: string; passed: boolean; detail: string }>;
   findings: ReviewReportFinding[];
-  completeness: ReturnType<typeof evaluateCompleteness>;
   refInput?: ReviewReferenceInput;
   reviewSubject?: FrozenReviewSubject;
 }
-export function buildReviewReport(opts: BuildReportOptions): ReviewReport {
-  const { state, now, validationSummary, findings, completeness, refInput, reviewSubject } = opts;
+export function buildReviewReport(opts: BuildReportOptions): ReviewReportDraft {
+  const { state, now, validationSummary, findings, refInput, reviewSubject } = opts;
   const overallStatus = computeOverallStatus(findings);
   const refs = computeRefs(refInput);
-  return ReviewReport.parse({
+  return ReviewReportDraft.parse({
     schemaVersion: REVIEW_REPORT_SCHEMA_ID,
     sessionId: state.id,
     generatedAt: now,
@@ -376,7 +378,6 @@ export function buildReviewReport(opts: BuildReportOptions): ReviewReport {
     validationSummary,
     findings,
     overallStatus,
-    completeness,
     reviewKind: reviewSubject ? 'content_review' : 'lifecycle_review',
     ...(reviewSubject && { reviewSubject }),
     ...(refInput?.inputOrigin !== undefined && { inputOrigin: refInput.inputOrigin }),
@@ -420,7 +421,7 @@ export async function executeReview(
   executors?: ReviewExecutors,
   refInput?: ReviewReferenceInput,
   preloadedContent?: PreparedReviewContent | string,
-): Promise<ReviewReport | RailBlocked> {
+): Promise<ReviewReportDraft | RailBlocked> {
   const validationSummary = state.validation.map((v) => ({
     checkId: v.checkId,
     passed: v.passed,
@@ -443,7 +444,6 @@ export async function executeReview(
     now,
     validationSummary,
     findings,
-    completeness,
     refInput,
     reviewSubject: content.reviewSubject,
   });

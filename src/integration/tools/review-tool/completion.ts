@@ -11,6 +11,8 @@ import { hashTextShort } from '../../../shared/hashing.js';
 
 import type { SessionState } from '../../../state/schema.js';
 import type {
+  FrozenReviewSubject,
+  PeerReviewCoverage,
   ReviewFindings,
   ReviewObligation,
   ReviewReportFinding,
@@ -18,7 +20,7 @@ import type {
 import type { ReviewInvocationEvidence } from '../../../state/evidence-review-invocation.js';
 import type { ReviewExecutors } from '../../../rails/review.js';
 import { ReviewReport } from '../../../state/evidence.js';
-import { evaluateCompleteness } from '../../../audit/completeness.js';
+import { resolveAuthoritativePeerReviewTask } from '../../../state/peer-review.js';
 import { autoAdvance, createPolicyEvalFn } from '../../../rails/types.js';
 import type { AutoAdvanceOverflow } from '../../../rails/types.js';
 import { PHASE_LABELS, buildReviewReportCard } from '../../../presentation/index.js';
@@ -146,12 +148,13 @@ export async function persistReviewCompletion(
   result: StartedReviewResult,
   report: ReviewReportResult,
   ctx: Parameters<typeof createPolicyEvalFn>[0],
+  validatedReviewObligation: ReviewObligation | null,
 ): Promise<
   | { kind: 'overflow'; overflow: AutoAdvanceOverflow }
   | {
       kind: 'ok';
       finalState: SessionState;
-      report: ReviewReportResult;
+      report: ReviewReport;
       allTransitions: StartedReviewResult['transitions'];
     }
 > {
@@ -164,7 +167,11 @@ export async function persistReviewCompletion(
   const finalReport = ReviewReport.parse({
     ...report,
     phase: finalState.phase,
-    completeness: evaluateCompleteness(finalState),
+    peerReviewCoverage: buildPeerReviewCoverage({
+      report,
+      state: finalState,
+      obligation: validatedReviewObligation,
+    }),
   });
   await writeReport(sessDir, finalReport);
   await writeStateWithArtifacts(sessDir, finalState);
@@ -177,28 +184,80 @@ export async function persistReviewCompletion(
 }
 
 function findBoundReviewInvocation(
-  result: StartedReviewResult,
+  state: SessionState,
   obligation: ReviewObligation | null,
-): ReturnType<typeof ensureReviewAssurance>['invocations'][number] | undefined {
+): ReviewInvocationEvidence | undefined {
   if (!obligation) return undefined;
-  return ensureReviewAssurance(result.state.reviewAssurance).invocations.find(
+  return ensureReviewAssurance(state.reviewAssurance).invocations.find(
     (inv) => inv.obligationId === obligation.obligationId,
   );
 }
 
-function reviewCardCompleteness(report: ReviewReportResult): {
-  overallComplete: boolean;
-  fourEyes: boolean;
-  summary: string;
-  total: number;
+function coverageTargetResolved(report: ReviewReportResult): boolean {
+  if (report.reviewKind === 'content_review') return true;
+  return report.planDigest !== null || report.implDigest !== null;
+}
+
+function coverageTargetFields(subject: FrozenReviewSubject | undefined): {
+  targetFrozen: boolean;
+  repositoryIdentityVerified: boolean | null;
+  baseSha: string | null;
+  headSha: string | null;
+  changedPathCount: number;
 } {
+  if (subject?.kind !== 'repository_change') {
+    return {
+      targetFrozen: subject !== undefined,
+      repositoryIdentityVerified: null,
+      baseSha: null,
+      headSha: null,
+      changedPathCount: 0,
+    };
+  }
   return {
-    overallComplete: report.completeness.overallComplete,
-    fourEyes: report.completeness.fourEyes?.satisfied ?? false,
-    total: report.completeness.summary.total,
-    summary:
-      `${report.completeness.summary.complete}/${report.completeness.summary.total} complete, ` +
-      `${report.completeness.summary.missing} missing`,
+    targetFrozen: true,
+    repositoryIdentityVerified: true,
+    baseSha: subject.baseSha,
+    headSha: subject.headSha,
+    changedPathCount: subject.changedPaths.length,
+  };
+}
+
+function coverageObjectives(
+  state: SessionState,
+  obligation: ReviewObligation | null,
+): {
+  objectivesCovered: number;
+  objectivesTotal: number;
+  reviewAssurance: PeerReviewCoverage['reviewAssurance'];
+} {
+  const authoritative = obligation
+    ? resolveAuthoritativePeerReviewTask(state.peerReviewEvidence, obligation.obligationId)
+    : null;
+  const objectivesTotal = authoritative?.kind === 'ok' ? authoritative.task.objectives.length : 0;
+  const boundInvocation = findBoundReviewInvocation(state, obligation);
+  return {
+    objectivesCovered: boundInvocation ? objectivesTotal : 0,
+    objectivesTotal,
+    reviewAssurance: boundInvocation?.reviewAssuranceLevel ?? null,
+  };
+}
+
+export function buildPeerReviewCoverage(input: {
+  readonly report: ReviewReportResult;
+  readonly state: SessionState;
+  readonly obligation: ReviewObligation | null;
+}): PeerReviewCoverage {
+  const { report, state, obligation } = input;
+  const subject = report.reviewKind === 'content_review' ? report.reviewSubject : undefined;
+  const findings: readonly ReviewReportFinding[] = report.findings;
+  return {
+    targetResolved: coverageTargetResolved(report),
+    ...coverageTargetFields(subject),
+    ...coverageObjectives(state, obligation),
+    missingVerification: findings
+      .filter((finding) => finding.source === 'missing_verification')
+      .map((finding) => finding.message),
   };
 }
 
@@ -228,13 +287,13 @@ function buildPeerReviewCard(
   input: {
     result: StartedReviewResult;
     finalState: SessionState;
-    report: ReviewReportResult;
+    report: ReviewReport;
     validatedReviewObligation: ReviewObligation | null;
   },
   options?: PresentationRenderOptions,
 ): string {
   const { result, finalState, report, validatedReviewObligation } = input;
-  const boundInvocation = findBoundReviewInvocation(result, validatedReviewObligation);
+  const boundInvocation = findBoundReviewInvocation(result.state, validatedReviewObligation);
   const directive = resolveWorkflowDirective(finalState);
   const primaryCommand = directive.commands[0];
   const conclusionAction = primaryCommand
@@ -246,7 +305,7 @@ function buildPeerReviewCard(
       phaseLabel: PHASE_LABELS[finalState.phase],
       overallStatus: report.overallStatus,
       findings: report.findings ?? [],
-      completeness: reviewCardCompleteness(report),
+      coverage: report.peerReviewCoverage,
       reviewSubject: report.reviewKind === 'content_review' ? report.reviewSubject : undefined,
       obligationId: validatedReviewObligation?.obligationId,
       proofSummary: projectCompletionProofStatus(finalState),
@@ -279,7 +338,7 @@ async function materializePeerReviewCard(input: {
 function formatReviewCompletionResponse(input: {
   result: StartedReviewResult;
   finalState: SessionState;
-  report: ReviewReportResult;
+  report: ReviewReport;
   allTransitions: StartedReviewResult['transitions'];
   reviewCard: string;
   presentationMarkdown: string;
@@ -304,17 +363,7 @@ function formatReviewCompletionResponse(input: {
         status: 'Review flow complete. Report generated.',
         overallStatus: report.overallStatus,
         policyMode: result.state.policySnapshot?.mode ?? 'unknown',
-        completeness: {
-          overallComplete: report.completeness.overallComplete,
-          fourEyes: report.completeness.fourEyes,
-          summary: report.completeness.summary,
-          slots: report.completeness.slots.map((s) => ({
-            slot: s.slot,
-            label: s.label,
-            status: s.status,
-            detail: s.detail,
-          })),
-        },
+        peerReviewCoverage: report.peerReviewCoverage,
         findingsCount: report.findings.length,
         findings: report.findings,
         validationSummary: report.validationSummary,
@@ -330,7 +379,7 @@ export async function buildReviewCompletionResponse(input: {
   sessDir: string;
   result: StartedReviewResult;
   finalState: SessionState;
-  report: ReviewReportResult;
+  report: ReviewReport;
   allTransitions: StartedReviewResult['transitions'];
   worktree: string;
   validatedReviewObligation: ReviewObligation | null;

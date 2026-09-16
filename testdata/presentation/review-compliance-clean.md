@@ -14,11 +14,17 @@ Diagnostic: `flowguard_status({ proofGraph: true })`
 
 - No issues found.
 
-## Completeness
+## Target coverage
 
-**Overall:** Complete
-**Four-eyes principle:** Satisfied
-**Summary:** 3/3 complete, 0 missing
+**Target resolved:** yes
+**Target frozen:** yes
+**Repository identity:** verified
+**Base SHA:** aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+**Head SHA:** bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+**Changed paths:** 1
+**Objectives covered:** 3/3
+**Review assurance:** structured_high
+**Missing verification:** none
 
 ## Evidence
 

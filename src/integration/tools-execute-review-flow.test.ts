@@ -439,21 +439,35 @@ describe('review', () => {
       );
     });
 
-    it('starts review flow from READY and transitions to REVIEW_COMPLETE', async () => {
+    it('starts review flow from READY and transitions to REVIEW_COMPLETE with exact target coverage', async () => {
       await hydrateSession();
       const raw = await review.execute({}, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('PEER_REVIEW_COMPLETE');
-      expect(result.completeness).toBeDefined();
+      expect(result.peerReviewCoverage).toEqual({
+        targetResolved: false,
+        targetFrozen: false,
+        repositoryIdentityVerified: null,
+        baseSha: null,
+        headSha: null,
+        changedPathCount: 0,
+        objectivesCovered: 0,
+        objectivesTotal: 0,
+        reviewAssurance: null,
+        missingVerification: [],
+      });
     });
 
-    it('report includes completeness matrix', async () => {
+    it('response exposes no local session completeness or four-eyes fields', async () => {
       await hydrateSession();
       const result = parseToolResult(await review.execute({}, ctx));
-      const comp = result.completeness as Record<string, unknown>;
-      expect(typeof comp.overallComplete).toBe('boolean');
-      expect(comp.slots).toBeDefined();
+      expect(result.completeness).toBeUndefined();
+      expect(result.fourEyes).toBeUndefined();
+      const coverage = result.peerReviewCoverage as Record<string, unknown>;
+      expect(coverage.slots).toBeUndefined();
+      expect(coverage.overallComplete).toBeUndefined();
+      expect(coverage.phase).toBeUndefined();
     });
   });
 

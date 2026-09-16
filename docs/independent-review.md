@@ -461,7 +461,7 @@ Author and reviewer artifacts are stored in parallel, never mixed:
 | `/architecture` | `state.architecture.decisions[id].adrText` + history | `state.architecture.decisions[id].reviewFindings` |
 | `/implement`    | `state.implementation`                               | `state.implReviewFindings`                        |
 
-Reviewer findings for `/plan`, `/architecture`, and `/implement` are **append-only** in their respective state locations. Each review submission adds to the array; no entries are ever removed or overwritten. ADR review findings are scoped per-decision-id (one append-only array per ADR), parity with how plan history is iteration-scoped. Standalone `/review` records accepted findings in the generated review report, invocation evidence, and derived review-card artifacts — these are evidence surfaces, not runtime authority.
+Reviewer findings for `/plan`, `/architecture`, and `/implement` are **append-only** in their respective state locations. Each review submission adds to the array; no entries are ever removed or overwritten. ADR review findings are scoped per-decision-id (one append-only array per ADR), parity with how plan history is iteration-scoped. Standalone `/review` records accepted findings in the generated review report together with explicit target coverage — target resolved/frozen, repository identity, base/head SHA, changed-path count, objectives covered/total, review assurance tier, and missing-verification messages — plus invocation evidence and derived review-card artifacts. These are evidence surfaces, not runtime authority.
 
 ### Standalone /review Obligation Lifecycle
 

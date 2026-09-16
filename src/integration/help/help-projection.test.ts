@@ -6,7 +6,6 @@ import { buildHelpResult, finishToReadiness } from './help-projection.js';
 import { buildFinishCard } from '../status-finish.js';
 import { resolveCurrentReviewReport } from '../review/report-coherence.js';
 import type { ReviewReport } from '../../state/evidence.js';
-import { evaluateCompleteness } from '../../audit/completeness.js';
 import { help } from '../tools/help-tool.js';
 import {
   createToolContext,
@@ -41,7 +40,18 @@ function makeReviewReport(
     validationSummary: [],
     findings: [],
     overallStatus,
-    completeness: evaluateCompleteness(state),
+    peerReviewCoverage: {
+      targetResolved: false,
+      targetFrozen: false,
+      repositoryIdentityVerified: null,
+      baseSha: null,
+      headSha: null,
+      changedPathCount: 0,
+      objectivesCovered: 0,
+      objectivesTotal: 0,
+      reviewAssurance: null,
+      missingVerification: [],
+    },
     ...overrides,
   };
 }

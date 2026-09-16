@@ -35,7 +35,6 @@ import {
   reportPath,
 } from '../adapters/persistence.js';
 import { writeStateWithArtifacts } from './tools/helpers.js';
-import { evaluateCompleteness } from '../audit/completeness.js';
 import { REVIEW_REPORT_SCHEMA_ID } from '../state/evidence-identifiers.js';
 import { makePlanRevision } from '../state/evidence-test-constants.js';
 import { completedDispatchForInvocation } from '../state/evidence-test-constants.js';
@@ -656,7 +655,18 @@ describe('status', () => {
           },
         ],
         overallStatus: 'issues',
-        completeness: evaluateCompleteness(reviewState),
+        peerReviewCoverage: {
+          targetResolved: false,
+          targetFrozen: false,
+          repositoryIdentityVerified: null,
+          baseSha: null,
+          headSha: null,
+          changedPathCount: 0,
+          objectivesCovered: 0,
+          objectivesTotal: 0,
+          reviewAssurance: null,
+          missingVerification: [],
+        },
       });
 
       const result = parseToolResult(await status.execute({ finish: true }, ctx));

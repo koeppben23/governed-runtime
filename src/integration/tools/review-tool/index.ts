@@ -289,7 +289,13 @@ async function persistCompletedReview(
           : state.peerReviewEvidence,
       },
     };
-    const completion = await persistReviewCompletion(sessDir, result, reviewResult, ctx);
+    const completion = await persistReviewCompletion(
+      sessDir,
+      result,
+      reviewResult,
+      ctx,
+      prepared.validatedReviewObligation,
+    );
     if (completion.kind === 'overflow') {
       return formatAutoAdvanceOverflow(completion.overflow);
     }
@@ -355,8 +361,9 @@ async function loadAndBindReviewContent(
 export const review: ToolDefinition = {
   description:
     'Start the peer review flow. Transitions READY → PEER_REVIEW → PEER_REVIEW_COMPLETE. ' +
-    'Generates a peer review report with evidence completeness matrix ' +
-    'and four-eyes principle status, written to the session directory. ' +
+    'Generates a peer review report with explicit target coverage (resolved/frozen target, ' +
+    'base/head revisions, changed paths, objectives, review assurance) and findings, ' +
+    'written to the session directory. ' +
     'Only allowed in READY phase.',
   args: {
     inputOrigin: InputOriginSchema.optional().describe(

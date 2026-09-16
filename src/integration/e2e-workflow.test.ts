@@ -930,10 +930,22 @@ describe('e2e-workflow', () => {
       const reviewResult = await callOk(review, {});
       expect(reviewResult.phase).toBe('PEER_REVIEW_COMPLETE');
       expect(reviewResult.overallStatus).toBeDefined();
-      const completeness = reviewResult.completeness as Record<string, unknown>;
-      // Review flow has no evidence slots, so overallComplete is true
-      expect(completeness.overallComplete).toBe(true);
-      expect(completeness.slots).toBeDefined();
+      // A content-free lifecycle review has no resolved/frozen target; the
+      // response carries explicit target coverage instead of a local-session
+      // completeness matrix.
+      expect(reviewResult.peerReviewCoverage).toEqual({
+        targetResolved: false,
+        targetFrozen: false,
+        repositoryIdentityVerified: null,
+        baseSha: null,
+        headSha: null,
+        changedPathCount: 0,
+        objectivesCovered: 0,
+        objectivesTotal: 0,
+        reviewAssurance: null,
+        missingVerification: [],
+      });
+      expect(reviewResult.completeness).toBeUndefined();
     });
 
     it('architecture solo flow: hydrate → architecture → human approval → ARCH_COMPLETE', async () => {

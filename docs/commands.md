@@ -350,8 +350,7 @@ Start the peer review flow: review a foreign PR, branch, commit, diff, or text a
 
 - `requiredReviewAttestation` (blocked response with obligation UUID — content-aware only)
 - `reviewCard` (markdown, display verbatim)
-- Evidence completeness matrix
-- Four-eyes status
+- `peerReviewCoverage` (target resolved/frozen, repository identity, base/head SHA, changed-path count, objectives covered/total, review assurance, missing verification)
 - Validation summary
 - Findings
 - External references (if provided)

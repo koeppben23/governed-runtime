@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { makeProgressedState } from '../../fixtures.js';
 import { resolveCurrentReviewReport } from './report-coherence.js';
 import type { ReviewReport } from '../../state/evidence.js';
-import { evaluateCompleteness } from '../../audit/completeness.js';
 
 function makeReviewReport(
   state: ReturnType<typeof makeProgressedState>,
@@ -19,7 +18,18 @@ function makeReviewReport(
     validationSummary: [],
     findings: [],
     overallStatus: 'clean',
-    completeness: evaluateCompleteness(state),
+    peerReviewCoverage: {
+      targetResolved: false,
+      targetFrozen: false,
+      repositoryIdentityVerified: null,
+      baseSha: null,
+      headSha: null,
+      changedPathCount: 0,
+      objectivesCovered: 0,
+      objectivesTotal: 0,
+      reviewAssurance: null,
+      missingVerification: [],
+    },
     ...overrides,
   };
 }

@@ -7,6 +7,8 @@
  */
 
 import { z } from 'zod';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { hashText } from '../shared/hashing.js';
 import { REVIEW_REPORT_SCHEMA_ID } from './evidence-identifiers.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { RepositoryEvidenceFreeze } from './evidence-review-freeze.js';
@@ -24,6 +26,7 @@ import {
 import { DecisionIdentity } from './evidence-identity.js';
 import { Finding } from './evidence-findings.js';
 import { FrozenReviewSubject, ReviewSubjectScope } from './evidence-review-subject.js';
+import { PeerReviewCoverage } from './peer-review.js';
 export {
   ArtifactSectionAnchor,
   ContentSubjectAnchor,
@@ -340,6 +343,19 @@ export const ReviewFindingsObject = z
   .strict();
 export const ReviewFindings = ReviewFindingsObject.readonly();
 export type ReviewFindings = z.infer<typeof ReviewFindings>;
+
+export function reviewFindingsDigests(findings: ReviewFindings | undefined): {
+  findingsDigest: string | null;
+  attestationDigest: string | null;
+} {
+  if (!findings) return { findingsDigest: null, attestationDigest: null };
+  return {
+    findingsDigest: hashText(canonicalJsonStringify(findings)),
+    attestationDigest: findings.attestation
+      ? hashText(canonicalJsonStringify(findings.attestation))
+      : null,
+  };
+}
 
 // ─── Review Obligations and Invocation Evidence ────────────────────────────────
 
@@ -658,7 +674,7 @@ const LifecycleReviewReportFinding = z
   ])
   .readonly();
 
-const ReviewReportBase = {
+const ReviewReportCommonBase = {
   schemaVersion: z.literal(REVIEW_REPORT_SCHEMA_ID),
   sessionId: z.string().uuid(),
   generatedAt: z.string().datetime(),
@@ -673,9 +689,13 @@ const ReviewReportBase = {
     }),
   ),
   overallStatus: z.enum(['clean', 'warnings', 'issues']),
-  completeness: CompletenessReportSchema,
   inputOrigin: InputOriginSchema.optional(),
   references: z.array(ExternalReferenceSchema).optional(),
+};
+
+const ReviewReportBase = {
+  ...ReviewReportCommonBase,
+  peerReviewCoverage: PeerReviewCoverage,
 };
 
 const LifecycleReviewReport = z
@@ -684,8 +704,7 @@ const LifecycleReviewReport = z
     reviewKind: z.literal('lifecycle_review'),
     findings: z.array(LifecycleReviewReportFinding),
   })
-  .strict()
-  .readonly();
+  .strict();
 
 const ContentReviewReport = z
   .object({
@@ -694,8 +713,15 @@ const ContentReviewReport = z
     reviewSubject: FrozenReviewSubject,
     findings: z.array(ReviewReportFinding),
   })
-  .strict()
+  .strict();
+
+export const ReviewReportDraft = z
+  .discriminatedUnion('reviewKind', [
+    ContentReviewReport.omit({ peerReviewCoverage: true }),
+    LifecycleReviewReport.omit({ peerReviewCoverage: true }),
+  ])
   .readonly();
+export type ReviewReportDraft = z.infer<typeof ReviewReportDraft>;
 
 export const ReviewReport = z
   .discriminatedUnion('reviewKind', [ContentReviewReport, LifecycleReviewReport])

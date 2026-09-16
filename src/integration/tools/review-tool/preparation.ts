@@ -11,9 +11,8 @@ import {
   type PeerReviewEvidence,
   type PeerReviewPreparedEvidence,
   type PeerReviewSupersededEvidence,
-  reviewFindingsDigests,
 } from '../../../state/peer-review.js';
-import type { ReviewFindings } from '../../../state/evidence.js';
+import { reviewFindingsDigests, type ReviewFindings } from '../../../state/evidence.js';
 import type { ReviewToolArgs } from './types.js';
 import type { ReviewReferenceInput } from '../../../rails/review.js';
 

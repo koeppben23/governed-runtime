@@ -4,7 +4,7 @@
  *
  * Builds the Review Report Card as a typed PresentationDocument rendered
  * through the shared Markdown renderer (renderMarkdown). Presents standalone
- * /review findings with the completeness matrix and audit evidence. Called
+ * /review findings with explicit target coverage and audit evidence. Called
  * when /review completes (phase PEER_REVIEW_COMPLETE).
  *
  * This is a pure function — no state dependency, no side effects.
@@ -15,7 +15,7 @@
  */
 
 import type { Phase } from '../state/schema.js';
-import type { ReviewReportFinding } from '../state/evidence.js';
+import type { PeerReviewCoverage, ReviewReportFinding } from '../state/evidence.js';
 import type { FrozenReviewSubject } from '../state/evidence.js';
 import type { ReviewInvocationEvidence } from '../state/evidence-review-invocation.js';
 import type {
@@ -40,18 +40,12 @@ export interface ReviewReportCardInput {
   phase: Phase;
   /** Human-readable phase label (from PHASE_LABELS). */
   phaseLabel: string;
-  /** Derived from report.completeness.overallComplete. */
+  /** Derived from report.overallStatus. */
   overallStatus: 'clean' | 'warnings' | 'issues';
   /** Review findings from the report. */
   findings: ReviewReportFinding[];
-  /** Completeness summary. */
-  completeness: {
-    overallComplete: boolean;
-    fourEyes: boolean;
-    summary: string;
-    /** Total slots evaluated. 0 means completeness was not assessed for any slots. */
-    total: number;
-  };
+  /** Explicit target coverage persisted with the peer review report. */
+  coverage: PeerReviewCoverage;
   /** Host-validated immutable identity of the reviewed content. */
   reviewSubject?: FrozenReviewSubject;
   /** Obligation UUID — present when content-aware review was performed. */
@@ -134,7 +128,7 @@ function categoryLabel(category: string): string {
  * 1. Title (H1)
  * 2. Metadata (status, overall, reviewed subject)
  * 3. Findings grouped by severity (critical > major > issues > warnings > notes)
- * 4. Completeness (4-eyes status + summary)
+ * 4. Target coverage (target, revisions, objectives, assurance)
  * 5. Evidence (obligationId, invocation source, reviewer — when present)
  * 6. Recommended follow-up (orientation, no governance commands)
  *
@@ -154,7 +148,7 @@ export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewC
     phaseLabel,
     overallStatus,
     findings,
-    completeness,
+    coverage,
     reviewSubject,
     obligationId,
     invocationSource,
@@ -219,25 +213,37 @@ export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewC
     });
   }
 
-  // ── Completeness ───────────────────────────────────────────────────
+  // ── Target coverage ────────────────────────────────────────────────
   sections.push({
     kind: 'keyValue',
-    heading: 'Completeness',
+    heading: 'Target coverage',
     items: [
+      { label: 'Target resolved', value: coverage.targetResolved ? 'yes' : 'no' },
+      { label: 'Target frozen', value: coverage.targetFrozen ? 'yes' : 'no' },
       {
-        label: 'Overall',
+        label: 'Repository identity',
         value:
-          completeness.total === 0
-            ? 'Not assessed'
-            : completeness.overallComplete
-              ? 'Complete'
-              : 'Incomplete',
+          coverage.repositoryIdentityVerified === null
+            ? 'not applicable'
+            : coverage.repositoryIdentityVerified
+              ? 'verified'
+              : 'missing',
       },
+      { label: 'Base SHA', value: coverage.baseSha ?? 'not recorded' },
+      { label: 'Head SHA', value: coverage.headSha ?? 'not recorded' },
+      { label: 'Changed paths', value: String(coverage.changedPathCount) },
       {
-        label: 'Four-eyes principle',
-        value: completeness.fourEyes ? 'Satisfied' : 'Not satisfied / Not recorded',
+        label: 'Objectives covered',
+        value: `${coverage.objectivesCovered}/${coverage.objectivesTotal}`,
       },
-      { label: 'Summary', value: completeness.summary },
+      { label: 'Review assurance', value: coverage.reviewAssurance ?? 'not recorded' },
+      {
+        label: 'Missing verification',
+        value:
+          coverage.missingVerification.length === 0
+            ? 'none'
+            : coverage.missingVerification.join('; '),
+      },
     ],
   });
 

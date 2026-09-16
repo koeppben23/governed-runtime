@@ -8,7 +8,7 @@ import {
   type ReviewReportCardInput,
 } from './review-report-card.js';
 import type { CompactProofPresentation } from './proof-model.js';
-import type { ReviewReportFinding } from '../state/evidence.js';
+import type { PeerReviewCoverage, ReviewReportFinding } from '../state/evidence.js';
 import type { WorkflowDirective } from '../machine/workflow-directive.js';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -25,17 +25,25 @@ const exportDirective: WorkflowDirective = {
   commands: ['/export'],
 };
 
+const baseCoverage = {
+  targetResolved: true,
+  targetFrozen: true,
+  repositoryIdentityVerified: true,
+  baseSha: 'a'.repeat(40),
+  headSha: 'b'.repeat(40),
+  changedPathCount: 1,
+  objectivesCovered: 3,
+  objectivesTotal: 3,
+  reviewAssurance: 'structured_high',
+  missingVerification: [],
+} satisfies PeerReviewCoverage;
+
 const baseInput = {
   phase: 'PEER_REVIEW_COMPLETE' as const,
   phaseLabel: 'Peer review complete',
   overallStatus: 'clean' as const,
   findings: [] as ReviewReportFinding[],
-  completeness: {
-    overallComplete: true,
-    fourEyes: false,
-    total: 3,
-    summary: '3/3 complete, 0 missing',
-  },
+  coverage: baseCoverage,
   proofSummary: {
     kind: 'evaluation',
     overallStatus: 'NOT_DECLARED',
@@ -200,6 +208,58 @@ describe('buildReviewReportCard', () => {
     expect(card).toContain('child-session-1');
   });
 
+  it('renders the Target coverage section from canonical coverage fields', () => {
+    const card = buildReviewReportCard(baseInput);
+    expect(card).toContain('## Target coverage');
+    expect(card).toContain('**Target resolved:** yes');
+    expect(card).toContain('**Target frozen:** yes');
+    expect(card).toContain('**Repository identity:** verified');
+    expect(card).toContain(`**Base SHA:** ${'a'.repeat(40)}`);
+    expect(card).toContain(`**Head SHA:** ${'b'.repeat(40)}`);
+    expect(card).toContain('**Changed paths:** 1');
+    expect(card).toContain('**Objectives covered:** 3/3');
+    expect(card).toContain('**Review assurance:** structured_high');
+    expect(card).toContain('**Missing verification:** none');
+  });
+
+  it('renders nullable target coverage and missing-verification messages', () => {
+    const card = buildReviewReportCard({
+      ...baseInput,
+      coverage: {
+        targetResolved: false,
+        targetFrozen: false,
+        repositoryIdentityVerified: null,
+        baseSha: null,
+        headSha: null,
+        changedPathCount: 0,
+        objectivesCovered: 0,
+        objectivesTotal: 0,
+        reviewAssurance: null,
+        missingVerification: ['Run the integration suite', 'Record the branch coverage'],
+      },
+    });
+    expect(card).toContain('**Target resolved:** no');
+    expect(card).toContain('**Target frozen:** no');
+    expect(card).toContain('**Repository identity:** not applicable');
+    expect(card).toContain('**Base SHA:** not recorded');
+    expect(card).toContain('**Head SHA:** not recorded');
+    expect(card).toContain('**Changed paths:** 0');
+    expect(card).toContain('**Objectives covered:** 0/0');
+    expect(card).toContain('**Review assurance:** not recorded');
+    expect(card).toContain(
+      '**Missing verification:** Run the integration suite; Record the branch coverage',
+    );
+  });
+
+  it('never renders the local-session completeness matrix or four-eyes line', () => {
+    const card = buildReviewReportCard(baseInput);
+    expect(card).not.toContain('## Completeness');
+    expect(card).not.toContain('Four-eyes');
+    expect(card).not.toContain('Not assessed');
+    expect(card).not.toContain('Overall complete');
+    expect(card).not.toContain('Incomplete');
+  });
+
   it('has no command footer (/approve, /request-changes, /reject)', () => {
     const card = buildReviewReportCard(baseInput);
     expect(card).not.toContain('/approve');
@@ -249,12 +309,7 @@ describe('implementation review golden fixtures', () => {
       phaseLabel: 'Implementation review in progress',
       overallStatus: 'clean',
       findings: [],
-      completeness: {
-        overallComplete: true,
-        fourEyes: true,
-        total: 6,
-        summary: '6/6 complete, 0 missing',
-      },
+      coverage: baseCoverage,
     });
     expect(card).toBe(await readGolden('review-impl-accepted.md'));
   });
@@ -268,11 +323,10 @@ describe('implementation review golden fixtures', () => {
         materialFinding('error', 'critical', 'correctness', 'Missing null check'),
         materialFinding('error', 'major', 'quality', 'Missing test coverage'),
       ],
-      completeness: {
-        overallComplete: false,
-        fourEyes: false,
-        total: 6,
-        summary: '4/6 complete, 2 missing',
+      coverage: {
+        ...baseCoverage,
+        objectivesCovered: 2,
+        missingVerification: ['Add regression coverage'],
       },
     });
     expect(card).toBe(await readGolden('review-impl-changes-requested.md'));
@@ -286,12 +340,7 @@ describe('peer review golden fixtures', () => {
       phaseLabel: 'Peer review complete',
       overallStatus: 'clean',
       findings: [],
-      completeness: {
-        overallComplete: true,
-        fourEyes: true,
-        total: 3,
-        summary: '3/3 complete, 0 missing',
-      },
+      coverage: baseCoverage,
       obligationId: 'oblig-001',
       invocationSource: 'host-orchestrated',
     });
@@ -308,11 +357,10 @@ describe('peer review golden fixtures', () => {
         materialFinding('error', 'major', 'risk', 'Untracked dependency'),
         materialFinding('warning', 'minor', 'quality', 'Missing changelog entry'),
       ],
-      completeness: {
-        overallComplete: false,
-        fourEyes: false,
-        total: 3,
-        summary: '1/3 complete, 2 missing',
+      coverage: {
+        ...baseCoverage,
+        objectivesCovered: 2,
+        missingVerification: ['Run the missing regression test'],
       },
       invocationSource: 'host-orchestrated',
       obligationId: 'oblig-002',
