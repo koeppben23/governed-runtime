@@ -177,6 +177,87 @@ describe('resolveExecutionDisposition', () => {
     expect(state.phase).toBe('IMPLEMENTATION');
   });
 
+  it('projects a blocked risk gate through the directive as well as the disposition', () => {
+    const state: SessionState = {
+      ...makeState('IMPLEMENTATION'),
+      riskGate: {
+        status: 'blocked',
+        code: 'RISK_GATE_BLOCKED',
+        message: 'risk gate blocked',
+        blockedAt: '2026-01-01T00:00:00.000Z',
+        lastDecisionId: 'decision-1',
+      },
+    };
+    expect(resolveExecutionDisposition(state)).toBe('blocked');
+    expect(resolveWorkflowDirective(state)).toEqual({
+      kind: 'blocked',
+      code: 'WORKFLOW_BLOCKED',
+      allowedIntents: [],
+      commands: [],
+      context: { reasonCode: 'RISK_GATE_BLOCKED' },
+    });
+  });
+
+  it('projects a blocked discovery health gate through the directive as well as the disposition', () => {
+    const state: SessionState = {
+      ...makeState('VALIDATION'),
+      discoveryHealthGate: {
+        status: 'blocked',
+        code: 'DISCOVERY_DRIFT_BLOCKED',
+        message: 'discovery health blocked',
+        blockedAt: '2026-01-01T00:00:00.000Z',
+      },
+    };
+    expect(resolveExecutionDisposition(state)).toBe('blocked');
+    expect(resolveWorkflowDirective(state)).toEqual({
+      kind: 'blocked',
+      code: 'WORKFLOW_BLOCKED',
+      allowedIntents: [],
+      commands: [],
+      context: { reasonCode: 'DISCOVERY_DRIFT_BLOCKED' },
+    });
+  });
+
+  it('invariant: blocked disposition always implies a blocked directive with no commands', () => {
+    const blockSources: SessionState[] = [
+      {
+        ...makeState('IMPLEMENTATION'),
+        error: {
+          code: 'TEST_BLOCKED',
+          message: 'blocked',
+          recoveryHint: 'recover',
+          occurredAt: '2026-01-01T00:00:00.000Z',
+        },
+      },
+      {
+        ...makeState('IMPLEMENTATION'),
+        riskGate: {
+          status: 'blocked',
+          code: 'RISK_GATE_BLOCKED',
+          message: 'risk gate blocked',
+          blockedAt: '2026-01-01T00:00:00.000Z',
+          lastDecisionId: 'decision-1',
+        },
+      },
+      {
+        ...makeState('VALIDATION'),
+        discoveryHealthGate: {
+          status: 'blocked',
+          code: 'DISCOVERY_DRIFT_BLOCKED',
+          message: 'discovery health blocked',
+          blockedAt: '2026-01-01T00:00:00.000Z',
+        },
+      },
+    ];
+    for (const state of blockSources) {
+      expect(resolveExecutionDisposition(state), state.phase).toBe('blocked');
+      const directive = resolveWorkflowDirective(state);
+      expect(directive.kind, state.phase).toBe('blocked');
+      expect(directive.commands, state.phase).toEqual([]);
+      expect(directive.allowedIntents, state.phase).toEqual([]);
+    }
+  });
+
   it('keeps ABORTED terminal even though it retains its audit error marker', () => {
     const state: SessionState = {
       ...makeState('ABORTED'),

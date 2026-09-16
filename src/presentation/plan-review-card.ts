@@ -62,6 +62,7 @@ export interface PlanReviewCardInput {
 
 const PLAN_ACTION_DESCRIPTIONS: Record<string, string> = {
   '/approve': 'approve the plan if it is complete and acceptable',
+  '/override-approve': 'accept the exhausted plan review with a recorded governance override',
   '/request-changes': 'send the plan back for revision',
   '/reject': 'stop this task',
 };
@@ -181,11 +182,7 @@ export function buildPlanReviewDocument(input: PlanReviewCardInput): ReviewCardD
 
   const document: ReviewCardDocument = {
     kind: 'review_card',
-    form: directive.commands.some((command) =>
-      ['/approve', '/request-changes', '/reject'].includes(command),
-    )
-      ? 'decision'
-      : 'terminal',
+    form: directive.kind === 'human_gate' ? 'decision' : 'terminal',
     sections,
     conclusion: buildReviewDecisionConclusion(directive, PLAN_ACTION_DESCRIPTIONS),
   };

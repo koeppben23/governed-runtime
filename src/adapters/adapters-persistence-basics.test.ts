@@ -332,7 +332,7 @@ describe('persistence', () => {
           missingVerification: [],
         },
         proofSummary,
-        directive: { code: 'EXPORT_REQUIRED', commands: ['/export'] },
+        directive: { kind: 'user_action', code: 'EXPORT_REQUIRED', commands: ['/export'] },
         conclusionAction: {
           invocation: '/export',
           description: 'Export.',

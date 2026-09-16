@@ -276,6 +276,7 @@ describe('buildReviewReportCard', () => {
     const card = buildReviewReportCard({
       ...baseInput,
       directive: {
+        kind: 'terminal',
         code: 'PEER_REVIEW_COMPLETE',
         commands: [],
       },

@@ -88,6 +88,7 @@ export interface ArchitectureReviewCardInput {
 
 const ADR_ACTION_DESCRIPTIONS: Record<string, string> = {
   '/approve': 'approve the ADR if it is complete and acceptable',
+  '/override-approve': 'accept the exhausted ADR review with a recorded governance override',
   '/request-changes': 'send the ADR back for revision',
   '/reject': 'discard this ADR',
 };
@@ -226,13 +227,7 @@ export function buildArchitectureReviewDocument(
 
   const document: ReviewCardDocument = {
     kind: 'review_card',
-    form:
-      !isApproved &&
-      directive.commands.some((command) =>
-        ['/approve', '/request-changes', '/reject'].includes(command),
-      )
-        ? 'decision'
-        : 'terminal',
+    form: !isApproved && directive.kind === 'human_gate' ? 'decision' : 'terminal',
     sections,
     conclusion: isApproved
       ? { kind: 'terminal', message: directiveLabel(directive.code) }

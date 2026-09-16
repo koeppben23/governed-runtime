@@ -69,6 +69,8 @@ export interface EvidenceReviewCardInput {
 
 const EVIDENCE_ACTION_DESCRIPTIONS: Record<string, string> = {
   '/approve': 'approve the implementation evidence',
+  '/override-approve':
+    'accept the exhausted implementation review with a recorded governance override',
   '/request-changes': 'return to implementation for revision',
   '/reject': 'discard this implementation',
 };
@@ -122,11 +124,7 @@ export function buildEvidenceReviewDocument(input: EvidenceReviewCardInput): Rev
 
   const document: ReviewCardDocument = {
     kind: 'review_card',
-    form: input.directive.commands.some((command) =>
-      ['/approve', '/request-changes', '/reject'].includes(command),
-    )
-      ? 'decision'
-      : 'terminal',
+    form: input.directive.kind === 'human_gate' ? 'decision' : 'terminal',
     sections,
     conclusion: buildReviewDecisionConclusion(input.directive, EVIDENCE_ACTION_DESCRIPTIONS),
   };

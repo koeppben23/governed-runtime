@@ -877,7 +877,7 @@ describe('plan', () => {
       expect(state!.phase).toBe('REJECTED');
     });
 
-    it('SOLO: force-convergence runs through without blocking (no inadmissible recovery)', async () => {
+    it('SOLO: an exhausted plan gate never auto-approves and requires the governance override', async () => {
       await hydrateSession({ policyMode: 'solo' });
       await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
 
@@ -886,11 +886,46 @@ describe('plan', () => {
 
       expect(result.error).not.toBe(true);
       expect(result.code).toBeUndefined();
-      // SOLO auto-approves the user gate by design → flow continues past PLAN_REVIEW.
-      expect(result.phase).not.toBe('PLAN_REVIEW');
-      expect(result.phase).not.toBe('PLAN');
+      // Review exhaustion is never a normal approval — not even in solo mode.
+      // The session stops at the human gate and the directive requires the
+      // explicit override intent instead of offering plain /approve.
+      expect(result.phase).toBe('PLAN_REVIEW');
+      expect(result.directive).toMatchObject({
+        kind: 'human_gate',
+        code: 'PLAN_OVERRIDE_REQUIRED',
+        allowedIntents: ['APPROVE_WITH_GOVERNANCE_OVERRIDE', 'REQUEST_CHANGES', 'REJECT'],
+        commands: ['/override-approve', '/request-changes', '/reject'],
+      });
       expect(result.status).toContain('iteration limit');
       expect(result.status).toContain('without reviewer approval');
+
+      // Plain approve is blocked; the override intent is the only approval path.
+      recordUserDecision('approve');
+      const plainApprove = parseToolResult(
+        await decision.execute({ verdict: 'approve', rationale: 'Ship it' }, ctx),
+      );
+      expect(plainApprove).toMatchObject({
+        error: true,
+        code: 'GOVERNANCE_OVERRIDE_REQUIRED',
+      });
+
+      // The governance override can never bypass evidence binding: this
+      // fixture's exhausted review loop does not bind the final revision, so
+      // the override is fail-closed too. The coherent-evidence override path
+      // is covered by the review-decision rail tests.
+      recordUserDecision('approve_with_governance_override');
+      const override = parseToolResult(
+        await decision.execute(
+          { verdict: 'approve_with_governance_override', rationale: 'Accepted with override' },
+          ctx,
+        ),
+      );
+      expect(override).toMatchObject({
+        error: true,
+        code: 'PLAN_REVIEW_EVIDENCE_REQUIRED',
+      });
+      const state = await readState(await currentSessionDir());
+      expect(state!.phase).toBe('PLAN_REVIEW');
     });
   });
 

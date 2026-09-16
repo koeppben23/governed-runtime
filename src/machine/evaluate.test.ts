@@ -298,6 +298,37 @@ describe('evaluate', () => {
       }
     });
 
+    it('solo mode never auto-approves an exhausted plan gate', () => {
+      const exhausted = makeState('PLAN_REVIEW', {
+        ticket: TICKET,
+        plan: { ...PLAN_RECORD, reviewCompletion: 'review_exhausted' },
+        selfReview: SELF_REVIEW_CONVERGED,
+      });
+      const result = evaluate(exhausted, { requireHumanGates: false });
+      expect(result.kind).toBe('waiting');
+      if (result.kind === 'waiting') {
+        expect(result.phase).toBe('PLAN_REVIEW');
+      }
+    });
+
+    it('solo mode never auto-approves an exhausted evidence gate', () => {
+      const exhausted = makeState('EVIDENCE_REVIEW', {
+        ticket: TICKET,
+        plan: PLAN_RECORD,
+        selfReview: SELF_REVIEW_CONVERGED,
+        validation: VALIDATION_PASSED,
+        implementation: IMPL_EVIDENCE,
+        implValidation: VALIDATION_PASSED,
+        implReview: IMPL_REVIEW_CONVERGED,
+        implementationRework: { rejectedDigest: IMPL_EVIDENCE.digest, exhausted: true },
+      });
+      const result = evaluate(exhausted, { requireHumanGates: false });
+      expect(result.kind).toBe('waiting');
+      if (result.kind === 'waiting') {
+        expect(result.phase).toBe('EVIDENCE_REVIEW');
+      }
+    });
+
     it('ERROR takes priority over all other guards (fail-closed)', () => {
       // State has both error AND valid evidence
       const state = makeState('TICKET', {

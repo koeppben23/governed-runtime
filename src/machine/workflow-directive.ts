@@ -95,8 +95,12 @@ function overrideGate(code: WorkflowDirectiveCode): WorkflowDirective {
  * loop. The gate type is derived from the workflow position; whether the
  * review actually exhausted its budget is derived from the persisted
  * obligation outcome, never from a second gate registry.
+ *
+ * Exported because the evaluator must never auto-approve an exhausted gate,
+ * even when the policy disables human gates: the canonical directive requires
+ * the explicit governance override intent there.
  */
-function isReviewExhausted(state: SessionState): boolean {
+export function requiresGovernanceOverride(state: SessionState): boolean {
   if (state.phase === 'PLAN_REVIEW') {
     return state.plan?.reviewCompletion === 'review_exhausted';
   }
@@ -110,7 +114,7 @@ function isReviewExhausted(state: SessionState): boolean {
 }
 
 function gateDirective(state: SessionState, code: WorkflowDirectiveCode): WorkflowDirective {
-  return isReviewExhausted(state)
+  return requiresGovernanceOverride(state)
     ? overrideGate(
         code === 'PLAN_DECISION_REQUIRED'
           ? 'PLAN_OVERRIDE_REQUIRED'
@@ -176,16 +180,32 @@ const PHASE_DIRECTIVES: Record<Phase, WorkflowDirective> = {
  */
 export function resolveExecutionDisposition(state: SessionState): ExecutionDisposition {
   if (TERMINAL.has(state.phase)) return 'terminal';
-  if (isExecutionBlocked(state)) return 'blocked';
+  if (resolveBlockingAuthority(state) !== null) return 'blocked';
   if (USER_GATES.has(state.phase)) return 'awaiting_human';
   return 'active';
 }
 
-function isExecutionBlocked(state: SessionState): boolean {
-  if (state.error !== null) return true;
-  if (state.riskGate?.status === 'blocked') return true;
-  if (state.discoveryHealthGate?.status === 'blocked') return true;
-  return false;
+/**
+ * Single authority for persisted execution blocks. Both the directive and the
+ * execution disposition derive from it, so the two projections can never
+ * disagree about whether execution is blocked.
+ */
+export function resolveBlockingAuthority(state: SessionState): DirectiveContext | null {
+  // Truthiness (not `!== null`) keeps partial read-only projections that omit
+  // `error` unblocked; the persisted schema guarantees `error: ErrorInfo | null`.
+  if (state.error) {
+    return {
+      reasonCode: state.error.code,
+      ...(state.error.recoveryHint ? { recovery: state.error.recoveryHint } : {}),
+    };
+  }
+  if (state.riskGate?.status === 'blocked') {
+    return { reasonCode: state.riskGate.code };
+  }
+  if (state.discoveryHealthGate?.status === 'blocked') {
+    return { reasonCode: state.discoveryHealthGate.code };
+  }
+  return null;
 }
 
 /** Resolve the directive from complete persisted state without changing it. */
@@ -194,13 +214,14 @@ export function resolveWorkflowDirective(state: SessionState): WorkflowDirective
   // In particular, ABORTED retains its error marker for audit provenance.
   const directive = PHASE_DIRECTIVES[state.phase];
   if (directive.kind === 'terminal') return directive;
-  if (state.error) {
+  const block = resolveBlockingAuthority(state);
+  if (block !== null) {
     return {
       kind: 'blocked',
       code: 'WORKFLOW_BLOCKED',
       allowedIntents: [],
       commands: [],
-      context: { reasonCode: state.error.code, recovery: state.error.recoveryHint },
+      context: block,
     };
   }
   // The gate type comes from the position; whether this gate requires the

@@ -21,18 +21,19 @@ import type { WorkflowDirective } from '../machine/workflow-directive.js';
  * The presentation-relevant projection of the canonical workflow directive.
  * Commands are passed through verbatim; presentation never rewrites them.
  */
-export type DirectiveProjection = Pick<WorkflowDirective, 'code' | 'commands'>;
-
-const GATE_COMMANDS = ['/approve', '/request-changes', '/reject'] as const;
+export type DirectiveProjection = Pick<WorkflowDirective, 'kind' | 'code' | 'commands'>;
 
 /**
- * Project a human decision conclusion from the canonical product-next-action.
+ * Project a human decision conclusion from the canonical workflow directive.
  *
- * When the product-next-action commands include `/approve`, `/request-changes`,
- * or `/reject`, this returns `decision_required` with the corresponding actions.
- * Otherwise it returns `terminal` with the action text as fallback.
+ * The decision kind comes from the directive kind, never from a local command
+ * whitelist: a `human_gate` renders every `directive.commands` entry verbatim
+ * as an available action (parity invariant: renderedCommands === commands),
+ * and any other directive kind renders its canonical terminal label. The
+ * descriptions map supplies presentation copy per command; a command without
+ * explicit copy renders its exact invocation.
  *
- * @param directive          — canonical workflow directive data.
+ * @param directive          — canonical workflow directive projection.
  * @param descriptions       — human-readable label for each gate command.
  *   Use distinct labels per card context (plan vs evidence vs architecture).
  */
@@ -40,17 +41,12 @@ export function buildReviewDecisionConclusion(
   directive: DirectiveProjection,
   descriptions: Record<string, string>,
 ): PresentationConclusion {
-  const actions: PresentationAction[] = directive.commands
-    .filter((command): command is (typeof GATE_COMMANDS)[number] =>
-      GATE_COMMANDS.includes(command as (typeof GATE_COMMANDS)[number]),
-    )
-    .map((command) => ({
+  if (directive.kind === 'human_gate') {
+    const actions: PresentationAction[] = directive.commands.map((command) => ({
       invocation: command,
       description: descriptions[command] ?? command,
       visibility: 'available',
     }));
-
-  if (actions.length > 0) {
     return {
       kind: 'decision_required',
       question: directiveLabel(directive.code),
