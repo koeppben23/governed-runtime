@@ -1,13 +1,13 @@
 /**
  * @module integration/review/enforcement/durable-dispatch
- * @description Durable reviewer dispatch ledger operations.
+ * @description Transport-neutral durable reviewer dispatch ledger operations.
  *
  * Every reviewer invocation must be recorded durably BEFORE the host releases
  * it, and every observed completion must close the matching ledger entry — so a
  * crash/restart between authorization and completion can never be mistaken for
  * "never dispatched".
  *
- * @version v3
+ * @version v4
  */
 
 import { randomUUID } from 'node:crypto';
@@ -32,17 +32,18 @@ export interface DispatchLedgerWriteDeps {
   ) => Promise<void>;
 }
 
-export interface AuthorizedSdkDispatchInput {
+export interface AuthorizedReviewDispatchInput {
   readonly attemptId: string;
   readonly obligationId: string;
-  readonly childSessionId: string;
+  /** Host call identity: Task callID for native Task, child session ID for SDK transport. */
+  readonly hostCallId: string;
   readonly canonicalPromptDigest: string;
   readonly authorizedAt: string;
 }
 
 function resolveExistingDispatchForCall(
   existingForCall: readonly ReviewDispatchRecord[],
-  input: AuthorizedSdkDispatchInput,
+  input: AuthorizedReviewDispatchInput,
 ): 'append' | 'retry' | 'conflict' {
   if (existingForCall.length === 0) return 'append';
   const [existing] = existingForCall;
@@ -58,7 +59,7 @@ function resolveExistingDispatchForCall(
 
 function assertDispatchAuthorizable(
   assurance: ReturnType<typeof ensureReviewAssurance>,
-  input: AuthorizedSdkDispatchInput,
+  input: AuthorizedReviewDispatchInput,
 ): void {
   const obligation = assurance.obligations.find((item) => item.obligationId === input.obligationId);
   const attempt = assurance.attempts.find((item) => item.attemptId === input.attemptId);
@@ -77,17 +78,18 @@ function assertDispatchAuthorizable(
   );
 }
 
-export async function persistAuthorizedSdkDispatch(
+/** Persist an exact reviewer host release before the host may execute it. */
+export async function persistAuthorizedReviewDispatch(
   deps: DispatchLedgerWriteDeps,
   sessDir: string,
-  input: AuthorizedSdkDispatchInput,
+  input: AuthorizedReviewDispatchInput,
 ): Promise<void> {
   await deps.updateReviewAssurance(sessDir, (state) => {
     const assurance = ensureReviewAssurance(state.reviewAssurance);
     assertDispatchAuthorizable(assurance, input);
 
     const existingForCall = (assurance.dispatches ?? []).filter(
-      (record) => record.hostCallId === input.childSessionId,
+      (record) => record.hostCallId === input.hostCallId,
     );
     const disposition = resolveExistingDispatchForCall(existingForCall, input);
     if (disposition === 'conflict') {
@@ -102,7 +104,7 @@ export async function persistAuthorizedSdkDispatch(
       dispatchId: randomUUID(),
       attemptId: input.attemptId,
       obligationId: input.obligationId,
-      hostCallId: input.childSessionId,
+      hostCallId: input.hostCallId,
       canonicalPromptDigest: input.canonicalPromptDigest,
       dispatchAuthorizedAt: input.authorizedAt,
       dispatchStatus: 'authorized',
@@ -114,18 +116,49 @@ export async function persistAuthorizedSdkDispatch(
   });
 }
 
-export async function abandonSdkDispatch(
+/** Compatibility wrapper for the SDK structured-session transport. */
+export async function persistAuthorizedSdkDispatch(
   deps: DispatchLedgerWriteDeps,
   sessDir: string,
-  childSessionId: string,
+  input: {
+    readonly attemptId: string;
+    readonly obligationId: string;
+    readonly childSessionId: string;
+    readonly canonicalPromptDigest: string;
+    readonly authorizedAt: string;
+  },
+): Promise<void> {
+  return persistAuthorizedReviewDispatch(deps, sessDir, {
+    attemptId: input.attemptId,
+    obligationId: input.obligationId,
+    hostCallId: input.childSessionId,
+    canonicalPromptDigest: input.canonicalPromptDigest,
+    authorizedAt: input.authorizedAt,
+  });
+}
+
+/** Resolve a concluded host call without bound evidence as outcome_unknown. */
+export async function abandonReviewDispatchByHostCall(
+  deps: DispatchLedgerWriteDeps,
+  sessDir: string,
+  hostCallId: string,
 ): Promise<void> {
   await deps.updateReviewAssurance(sessDir, (state) => {
     const assurance = ensureReviewAssurance(state.reviewAssurance);
     return {
       ...state,
-      reviewAssurance: abandonReviewDispatch(assurance, childSessionId),
+      reviewAssurance: abandonReviewDispatch(assurance, hostCallId),
     };
   });
+}
+
+/** Compatibility wrapper for SDK child-session host-call identity. */
+export async function abandonSdkDispatch(
+  deps: DispatchLedgerWriteDeps,
+  sessDir: string,
+  childSessionId: string,
+): Promise<void> {
+  return abandonReviewDispatchByHostCall(deps, sessDir, childSessionId);
 }
 
 export type InterruptedDispatchRearm =
@@ -160,46 +193,4 @@ export function buildInterruptedDispatchRearm(
     assurance: markDispatchOutcomeUnknown(minted.assurance, spent.attemptId),
     attempt: minted.attempt,
   };
-}
-
-/**
- * A reviewer may execute successfully while its candidate findings fail the
- * frozen pre-bind contract (scope/repository evidence/provenance). That is a
- * failed REVIEW ATTEMPT, not a new artifact revision and not a terminally
- * blocked review obligation.
- *
- * Re-arm the exact pending obligation under the same dispatch-recovery budget.
- * The rejected dispatch is durably classified outcome_unknown and the previous
- * created attempt becomes stale as the fresh attempt is minted. A late result
- * from the rejected child therefore cannot satisfy the successor attempt.
- */
-export async function rearmRejectedSdkFindings(
-  deps: DispatchLedgerWriteDeps,
-  sessDir: string,
-  spentAttemptId: string,
-): Promise<{ readonly kind: 'ok'; readonly attemptId: string } | { readonly kind: 'blocked'; readonly reason: string }> {
-  let result:
-    | { readonly kind: 'ok'; readonly attemptId: string }
-    | { readonly kind: 'blocked'; readonly reason: string } = {
-    kind: 'blocked',
-    reason: 'reviewer attempt not found',
-  };
-
-  await deps.updateReviewAssurance(sessDir, (state, now) => {
-    const assurance = ensureReviewAssurance(state.reviewAssurance);
-    const spent = assurance.attempts.find((attempt) => attempt.attemptId === spentAttemptId);
-    if (!spent) {
-      result = { kind: 'blocked', reason: 'reviewer attempt not found' };
-      return state;
-    }
-    const rearmed = buildInterruptedDispatchRearm(assurance, spent, now);
-    if (rearmed.kind === 'blocked') {
-      result = rearmed;
-      return state;
-    }
-    result = { kind: 'ok', attemptId: rearmed.attempt.attemptId };
-    return { ...state, reviewAssurance: rearmed.assurance };
-  });
-
-  return result;
 }
