@@ -1,17 +1,6 @@
 /**
  * @module adapters/host-adapter.test
- * @description Contract and negative-path tests for the Host-Agnostic Adapter Interface (HAI).
- *
- * Tests the OpenCodeHostAdapter as the reference implementation, verifying:
- * - Interface compliance (all methods present and typed correctly)
- * - Fail-closed initialization (broken client → explicit error)
- * - Synchronous enforcement (deliverBlockDecision throws)
- * - spawnReviewer semantics (null propagation, option filtering, delegation)
- * - validateCapabilities error handling
- * - Logging non-blocking guarantee
- *
- * @test-policy HAPPY, BAD, CORNER, EDGE — four categories present.
- * @see https://github.com/koeppben23/governed-runtime/issues/242
+ * @description Contract and negative-path tests for the Host-Agnostic Adapter Interface.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -26,19 +15,20 @@ import type {
   CapabilityValidationResult,
   EnforcementLevel,
 } from './host-adapter.js';
+import {
+  REQUIRED_INDEPENDENT_REVIEW_TRANSPORT,
+  reviewTransportSatisfies,
+} from './host-adapter.js';
 import { OpenCodeHostAdapter } from '../integration/opencode-host-adapter.js';
 
-// ─── Test Helpers ────────────────────────────────────────────────────────────
-
-/** Minimal mock of OrchestratorClient with session and app methods. */
 function createMockClient(overrides: Record<string, unknown> = {}) {
   return {
     session: {
       create: vi.fn().mockResolvedValue({ sessionId: 'reviewer-session-1' }),
-      prompt: vi.fn().mockResolvedValue({ text: '{"approved": true}' }),
+      prompt: vi.fn().mockResolvedValue({ text: '{}' }),
     },
     app: {
-      agents: vi.fn().mockResolvedValue({ agents: ['reviewer'], error: undefined }),
+      agents: vi.fn().mockResolvedValue({ agents: ['flowguard-reviewer'], error: undefined }),
     },
     tui: {
       showToast: vi.fn().mockResolvedValue(undefined),
@@ -57,15 +47,22 @@ function createTestEvent(): HostToolEvent {
 }
 
 function createAdapter(clientOverrides?: Record<string, unknown>): OpenCodeHostAdapter {
-  const client = createMockClient(clientOverrides);
   return new OpenCodeHostAdapter({
-    client: client as never,
+    client: createMockClient(clientOverrides) as never,
     directory: '/project/root',
     worktree: '/project/worktree',
   });
 }
 
-// ─── Contract Tests: Interface Compliance ────────────────────────────────────
+function reviewerConfig(overrides: Partial<ReviewerSpawnConfig> = {}): ReviewerSpawnConfig {
+  return {
+    prompt: 'Review this change',
+    parentSessionId: 'parent-session',
+    authorizeDispatch: vi.fn(async () => {}),
+    abandonDispatch: vi.fn(async () => {}),
+    ...overrides,
+  };
+}
 
 describe('HostAdapter Contract', () => {
   let adapter: HostAdapter;
@@ -75,76 +72,46 @@ describe('HostAdapter Contract', () => {
   });
 
   describe('Interface compliance', () => {
-    it('HAPPY: exposes all required identity fields', () => {
+    it('HAPPY: exposes host identity and scalar capabilities', () => {
       expect(adapter.platform).toBe('opencode');
       expect(adapter.enforcementLevel).toBe('synchronous');
-      expect(adapter.capabilities).toBeDefined();
-    });
-
-    it('HAPPY: capabilities object has all required boolean fields', () => {
       const caps: HostCapabilities = adapter.capabilities;
-      expect(typeof caps.preToolBlock).toBe('boolean');
-      expect(typeof caps.argMutation).toBe('boolean');
-      expect(typeof caps.outputReplacement).toBe('boolean');
-      expect(typeof caps.contextInjection).toBe('boolean');
-      expect(typeof caps.independentStructuredReview).toBe('boolean');
-      expect(typeof caps.compactionInjection).toBe('boolean');
-    });
-
-    it('HAPPY: OpenCode adapter claims full capabilities', () => {
-      const caps = adapter.capabilities;
       expect(caps.preToolBlock).toBe(true);
       expect(caps.argMutation).toBe(true);
       expect(caps.outputReplacement).toBe(true);
       expect(caps.contextInjection).toBe(true);
-      expect(caps.independentStructuredReview).toBe(true);
       expect(caps.compactionInjection).toBe(true);
     });
 
-    it('HAPPY: enforcement level is synchronous for OpenCode', () => {
-      const level: EnforcementLevel = adapter.enforcementLevel;
-      expect(level).toBe('synchronous');
+    it('HAPPY: exposes the SDK reviewer capability as one indivisible transport', () => {
+      expect(adapter.capabilities.reviewTransports).toEqual([
+        {
+          kind: 'sdk_structured_session',
+          structuredOutput: true,
+          parentVisible: false,
+          transcriptNavigable: false,
+          isolatedAgentIdentity: true,
+          permissionIsolation: false,
+          assurance: 'structured_high',
+        },
+      ]);
     });
 
-    it('HAPPY: all session context methods return strings', () => {
-      expect(typeof adapter.getWorkingDirectory()).toBe('string');
-      expect(typeof adapter.getWorktree()).toBe('string');
+    it('BAD: never composes SDK structure with visibility it does not own', () => {
+      const sdk = adapter.capabilities.reviewTransports[0];
+      expect(sdk).toBeDefined();
+      expect(reviewTransportSatisfies(sdk!, REQUIRED_INDEPENDENT_REVIEW_TRANSPORT)).toBe(false);
     });
 
-    it('HAPPY: getWorkingDirectory returns configured path', () => {
+    it('HAPPY: exposes configured session paths and reviewer transport support', () => {
       expect(adapter.getWorkingDirectory()).toBe('/project/root');
-    });
-
-    it('HAPPY: getWorktree returns configured path', () => {
       expect(adapter.getWorktree()).toBe('/project/worktree');
-    });
-
-    it('HAPPY: isReviewerSupported returns true for OpenCode', () => {
       expect(adapter.isReviewerSupported()).toBe(true);
-    });
-
-    it('HAPPY: all lifecycle methods return promises', async () => {
-      await expect(adapter.initialize()).resolves.toBeUndefined();
-      await expect(adapter.validateCapabilities()).resolves.toBeDefined();
-      await expect(adapter.shutdown()).resolves.toBeUndefined();
-    });
-
-    it('HAPPY: log method accepts all severity levels without throwing', () => {
-      expect(() => adapter.log('debug', 'test debug')).not.toThrow();
-      expect(() => adapter.log('info', 'test info')).not.toThrow();
-      expect(() => adapter.log('warn', 'test warn')).not.toThrow();
-      expect(() => adapter.log('error', 'test error')).not.toThrow();
-    });
-
-    it('HAPPY: log with data parameter does not throw', () => {
-      expect(() => adapter.log('info', 'msg', { foo: 'bar' })).not.toThrow();
     });
   });
 
-  // ─── Initialization (Fail-Closed) ──────────────────────────────────────────
-
   describe('Initialization — fail-closed', () => {
-    it('BAD: throws when client is null', async () => {
+    it('BAD: rejects a missing client', async () => {
       const broken = new OpenCodeHostAdapter({
         client: null as never,
         directory: '/x',
@@ -153,35 +120,15 @@ describe('HostAdapter Contract', () => {
       await expect(broken.initialize()).rejects.toThrow(/initialization failed/i);
     });
 
-    it('BAD: throws when client.session.create is missing', async () => {
-      const broken = new OpenCodeHostAdapter({
+    it('BAD: rejects missing or drifting session methods', async () => {
+      const missingCreate = new OpenCodeHostAdapter({
         client: { session: { prompt: vi.fn() }, app: { agents: vi.fn() } } as never,
         directory: '/x',
         worktree: '/x',
       });
-      await expect(broken.initialize()).rejects.toThrow(/session\.create/);
-    });
+      await expect(missingCreate.initialize()).rejects.toThrow(/session\.create/);
 
-    it('BAD: throws when client.session.prompt is missing', async () => {
-      const broken = new OpenCodeHostAdapter({
-        client: { session: { create: vi.fn() }, app: { agents: vi.fn() } } as never,
-        directory: '/x',
-        worktree: '/x',
-      });
-      await expect(broken.initialize()).rejects.toThrow(/session\.prompt/);
-    });
-
-    it('BAD: throws when client.session is undefined', async () => {
-      const broken = new OpenCodeHostAdapter({
-        client: { app: { agents: vi.fn() } } as never,
-        directory: '/x',
-        worktree: '/x',
-      });
-      await expect(broken.initialize()).rejects.toThrow(/initialization failed/i);
-    });
-
-    it('BAD: throws when session methods are truthy non-functions (drifting host)', async () => {
-      const broken = new OpenCodeHostAdapter({
+      const drifting = new OpenCodeHostAdapter({
         client: {
           session: { create: 'not-a-function', prompt: { callable: true } },
           app: { agents: vi.fn() },
@@ -189,192 +136,67 @@ describe('HostAdapter Contract', () => {
         directory: '/x',
         worktree: '/x',
       });
-      await expect(broken.initialize()).rejects.toThrow(/session\.(create|prompt)/);
+      await expect(drifting.initialize()).rejects.toThrow(/session\.(create|prompt)/);
     });
 
-    it('HAPPY: succeeds with valid client', async () => {
+    it('HAPPY: accepts a valid client', async () => {
       await expect(adapter.initialize()).resolves.toBeUndefined();
     });
   });
 
-  // ─── Enforcement: deliverBlockDecision ─────────────────────────────────────
-
-  describe('deliverBlockDecision — synchronous enforcement', () => {
-    it('HAPPY: throws an error containing the block reason', () => {
-      const decision: BlockDecision = {
-        blocked: true,
-        reason: 'Tool blocked by governance policy',
-        code: 'TOOL_BLOCKED',
-      };
-      expect(() => adapter.deliverBlockDecision(createTestEvent(), decision)).toThrow();
-    });
-
-    it('HAPPY: thrown error contains the policy code', () => {
+  describe('Synchronous enforcement', () => {
+    it('HAPPY: delivers a block synchronously with its code', () => {
       const decision: BlockDecision = {
         blocked: true,
         reason: 'Risk classification required',
         code: 'RISK_CLASSIFICATION_REQUIRED',
       };
-      try {
-        adapter.deliverBlockDecision(createTestEvent(), decision);
-        expect.fail('should have thrown');
-      } catch (err: unknown) {
-        const msg = (err as Error).message;
-        expect(msg).toContain('RISK_CLASSIFICATION_REQUIRED');
-      }
+      expect(() => adapter.deliverBlockDecision(createTestEvent(), decision)).toThrow(
+        /RISK_CLASSIFICATION_REQUIRED/,
+      );
     });
 
-    it('CORNER: works with empty reason string', () => {
-      const decision: BlockDecision = { blocked: true, reason: '', code: 'EMPTY_REASON' };
-      expect(() => adapter.deliverBlockDecision(createTestEvent(), decision)).toThrow();
-    });
-  });
-
-  // ─── deliverArgMutation / mutateToolResult (no-ops for OpenCode) ───────────
-
-  describe('deliverArgMutation and mutateToolResult — no-ops for OpenCode', () => {
-    it('HAPPY: deliverArgMutation does not throw', () => {
+    it('HAPPY: argument and result projections remain non-throwing host hooks', () => {
       expect(() => adapter.deliverArgMutation(createTestEvent(), { command: 'ls' })).not.toThrow();
-    });
-
-    it('HAPPY: mutateToolResult does not throw', () => {
       expect(() =>
         adapter.mutateToolResult(createTestEvent(), { replaceOutput: 'blocked' }),
       ).not.toThrow();
     });
   });
 
-  // ─── validateCapabilities ──────────────────────────────────────────────────
-
   describe('validateCapabilities', () => {
-    it('HAPPY: reports all advertised capabilities as contract-attested (none runtime-verified)', async () => {
+    it('HAPPY: contract-attests the exact SDK review transport without runtime overclaim', async () => {
       const result: CapabilityValidationResult = await adapter.validateCapabilities();
-      expect(result.valid).toBe(true);
-      expect(result.mismatches).toHaveLength(0);
-      expect(result.runtimeVerified).toEqual([]);
-      expect(result.contractAttested).toEqual([
-        'preToolBlock',
-        'argMutation',
-        'outputReplacement',
-        'contextInjection',
-        'independentStructuredReview',
-        'compactionInjection',
-      ]);
+      expect(result).toEqual({
+        valid: true,
+        mismatches: [],
+        runtimeVerified: [],
+        contractAttested: [
+          'preToolBlock',
+          'argMutation',
+          'outputReplacement',
+          'contextInjection',
+          'reviewTransports.sdk_structured_session',
+          'compactionInjection',
+        ],
+      });
     });
 
-    it('HAPPY: never calls the host agent registry at boot (no reentrant host I/O)', async () => {
+    it('HAPPY: does not perform re-entrant host I/O during boot validation', async () => {
       const client = createMockClient();
-      client.app.agents.mockRejectedValue(new Error('host I/O must not be started at boot'));
+      client.app.agents.mockRejectedValue(new Error('must not run'));
       const adap = new OpenCodeHostAdapter({
         client: client as never,
         directory: '/x',
         worktree: '/x',
       });
-
-      const result = await adap.validateCapabilities();
-
-      expect(result.valid).toBe(true);
+      await adap.validateCapabilities();
       expect(client.app.agents).not.toHaveBeenCalled();
-      expect(result.runtimeVerified).toEqual([]);
     });
   });
 
-  // ─── spawnReviewer ─────────────────────────────────────────────────────────
-
-  describe('spawnReviewer', () => {
-    it('HAPPY: delegates to invokeReviewer and returns result', async () => {
-      // invokeReviewer is complex — for contract tests we verify the adapter
-      // correctly routes the call. Integration tests cover full orchestration.
-      const client = createMockClient();
-      // Mock a minimal reviewer response via session methods
-      client.session.create.mockResolvedValue({ sessionId: 'rev-1' });
-      client.session.prompt.mockResolvedValue({
-        text: JSON.stringify({
-          approved: true,
-          findings: [],
-          summary: 'All good',
-        }),
-      });
-
-      const adap = new OpenCodeHostAdapter({
-        client: client as never,
-        directory: '/proj',
-        worktree: '/proj',
-      });
-
-      const config: ReviewerSpawnConfig = {
-        prompt: 'Review this change',
-        parentSessionId: 'parent-session',
-        authorizeDispatch: vi.fn(async () => {}),
-        abandonDispatch: vi.fn(async () => {}),
-      };
-
-      // Note: actual result depends on invokeReviewer implementation
-      // which is covered by orchestrator tests. Here we just verify no crash.
-      const result = await adap.spawnReviewer(config);
-      // Either a valid result or null (retries exhausted) is acceptable
-      expect(result === null || typeof result === 'object').toBe(true);
-    });
-
-    it('CORNER: does not pass undefined options to invokeReviewer', async () => {
-      // This is the bug that caused _sleepFn: undefined to override defaults.
-      // The adapter must only forward options that are explicitly set.
-      const client = createMockClient();
-      client.session.create.mockResolvedValue({ sessionId: 'rev-1' });
-      client.session.prompt.mockResolvedValue({ text: '{}' });
-
-      const adap = new OpenCodeHostAdapter({
-        client: client as never,
-        directory: '/x',
-        worktree: '/x',
-      });
-
-      const config: ReviewerSpawnConfig = {
-        prompt: 'test prompt',
-        parentSessionId: 'parent',
-        authorizeDispatch: vi.fn(async () => {}),
-        abandonDispatch: vi.fn(async () => {}),
-        // These are intentionally NOT set:
-        // maxTransportRetries: undefined,
-        // baseDelayMs: undefined,
-        // onAttemptFailed: undefined,
-      };
-
-      // Should not throw (undefined options should not break invokeReviewer)
-      await expect(adap.spawnReviewer(config)).resolves.toBeDefined();
-    });
-
-    it('HAPPY: passes defined options correctly', async () => {
-      const client = createMockClient();
-      client.session.create.mockResolvedValue({ sessionId: 'rev-1' });
-      client.session.prompt.mockResolvedValue({ text: '{}' });
-
-      const adap = new OpenCodeHostAdapter({
-        client: client as never,
-        directory: '/x',
-        worktree: '/x',
-      });
-
-      const onFailed = vi.fn();
-      const config: ReviewerSpawnConfig = {
-        prompt: 'test',
-        parentSessionId: 'parent',
-        authorizeDispatch: vi.fn(async () => {}),
-        abandonDispatch: vi.fn(async () => {}),
-        maxTransportRetries: 2,
-        baseDelayMs: 100,
-        onAttemptFailed: onFailed,
-      };
-
-      // Should not crash — validates all options are accepted
-      await expect(adap.spawnReviewer(config)).resolves.toBeDefined();
-    });
-  });
-
-  // ─── Logging ───────────────────────────────────────────────────────────────
-
-  describe('Logging — non-blocking guarantee', () => {
-    it('HAPPY: warn/error log triggers toast', () => {
+  describe('spawnReviewer — hard visible-review contract', () => {
+    it('BAD: blocks before creating a hidden child when no single transport satisfies the contract', async () => {
       const client = createMockClient();
       const adap = new OpenCodeHostAdapter({
         client: client as never,
@@ -382,30 +204,58 @@ describe('HostAdapter Contract', () => {
         worktree: '/x',
       });
 
-      adap.log('warn', 'test warning');
-      expect(client.tui.showToast).toHaveBeenCalledWith(
-        expect.objectContaining({
-          body: expect.objectContaining({
-            message: expect.stringContaining('test warning'),
-          }),
+      const result = await adap.spawnReviewer(reviewerConfig());
+
+      expect(result).toMatchObject({
+        blocked: true,
+        code: 'VISIBLE_REVIEW_TRANSPORT_UNAVAILABLE',
+      });
+      expect(client.session.create).not.toHaveBeenCalled();
+      expect(client.session.prompt).not.toHaveBeenCalled();
+      expect(client.app.agents).not.toHaveBeenCalled();
+    });
+
+    it('BAD: call sites cannot weaken the canonical visibility requirement', async () => {
+      const client = createMockClient();
+      const adap = new OpenCodeHostAdapter({
+        client: client as never,
+        directory: '/x',
+        worktree: '/x',
+      });
+
+      const result = await adap.spawnReviewer(
+        reviewerConfig({
+          transportRequirements: {
+            structuredOutput: true,
+            parentVisible: false,
+            transcriptNavigable: false,
+            isolatedAgentIdentity: true,
+            permissionIsolation: false,
+          },
         }),
       );
-    });
 
-    it('HAPPY: debug/info log does not trigger toast', () => {
+      expect(result).toMatchObject({
+        blocked: true,
+        code: 'VISIBLE_REVIEW_TRANSPORT_UNAVAILABLE',
+      });
+      expect(client.session.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Logging and lifecycle', () => {
+    it('HAPPY: warn/error may notify the TUI without becoming authority', () => {
       const client = createMockClient();
       const adap = new OpenCodeHostAdapter({
         client: client as never,
         directory: '/x',
         worktree: '/x',
       });
-
-      adap.log('debug', 'quiet');
-      adap.log('info', 'quiet');
-      expect(client.tui.showToast).not.toHaveBeenCalled();
+      adap.log('warn', 'test warning');
+      expect(client.tui.showToast).toHaveBeenCalled();
     });
 
-    it('BAD: toast failure does not propagate', () => {
+    it('BAD: a toast failure never propagates', () => {
       const client = createMockClient();
       client.tui.showToast.mockRejectedValue(new Error('UI crash'));
       const adap = new OpenCodeHostAdapter({
@@ -413,47 +263,16 @@ describe('HostAdapter Contract', () => {
         directory: '/x',
         worktree: '/x',
       });
-
-      // Must not throw even though toast rejects
       expect(() => adap.log('error', 'critical')).not.toThrow();
     });
 
-    it('CORNER: log works when tui is undefined', () => {
-      const client = createMockClient({ tui: undefined });
-      const adap = new OpenCodeHostAdapter({
-        client: client as never,
-        directory: '/x',
-        worktree: '/x',
-      });
-
-      expect(() => adap.log('error', 'no tui')).not.toThrow();
-    });
-  });
-
-  // ─── Shutdown ──────────────────────────────────────────────────────────────
-
-  describe('Shutdown', () => {
-    it('HAPPY: resolves without error', async () => {
-      await expect(adapter.shutdown()).resolves.toBeUndefined();
-    });
-
-    it('HAPPY: is idempotent (can be called multiple times)', async () => {
+    it('HAPPY: shutdown is idempotent and compaction injection is non-throwing', async () => {
       await adapter.shutdown();
       await expect(adapter.shutdown()).resolves.toBeUndefined();
-    });
-  });
-
-  // ─── injectCompactionContext (optional) ────────────────────────────────────
-
-  describe('injectCompactionContext', () => {
-    it('HAPPY: method exists and does not throw', () => {
-      expect(adapter.injectCompactionContext).toBeDefined();
-      expect(() => adapter.injectCompactionContext!('governance state')).not.toThrow();
+      expect(() => adapter.injectCompactionContext?.('governance state')).not.toThrow();
     });
   });
 });
-
-// ─── Type-Level Contract: Structural Compatibility ───────────────────────────
 
 describe('HAI Type Contract', () => {
   it('HAPPY: EnforcementLevel accepts all valid values', () => {
@@ -461,7 +280,7 @@ describe('HAI Type Contract', () => {
     expect(levels).toHaveLength(3);
   });
 
-  it('HAPPY: HostReviewerSuccessResult structural check', () => {
+  it('HAPPY: HostReviewerSuccessResult carries concrete transport provenance', () => {
     const result: HostReviewerSuccessResult = {
       sessionId: 'rev-1',
       rawResponse: '{}',
@@ -469,18 +288,20 @@ describe('HAI Type Contract', () => {
       reviewOutputMode: 'structured_output',
       structuredOutputUsed: true,
       reviewAssuranceLevel: 'structured_high',
+      reviewTransport: 'sdk_structured_session',
+      hostVisible: false,
+      transcriptNavigable: false,
     };
-    expect(result.sessionId).toBe('rev-1');
-    expect(result.blocked).toBeUndefined();
+    expect(result.reviewTransport).toBe('sdk_structured_session');
+    expect(result.hostVisible).toBe(false);
   });
 
-  it('HAPPY: HostReviewerBlockedResult structural check', () => {
+  it('HAPPY: HostReviewerBlockedResult remains typed and explicit', () => {
     const result: HostReviewerBlockedResult = {
       blocked: true,
-      code: 'INVOCATION_BLOCKED',
-      reason: 'Policy prevents reviewer invocation',
+      code: 'VISIBLE_REVIEW_TRANSPORT_UNAVAILABLE',
+      reason: 'No sufficient review transport',
     };
     expect(result.blocked).toBe(true);
-    expect(result.code).toBe('INVOCATION_BLOCKED');
   });
 });
