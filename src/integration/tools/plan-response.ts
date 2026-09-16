@@ -21,7 +21,6 @@ import type {
   ConvergedPlanReviewInput,
 } from './plan-types.js';
 import {
-  formatEval,
   formatAutoAdvanceOverflow,
   formatBlocked,
   enrichWithWorkflowDirective,
@@ -44,6 +43,7 @@ import {
 } from '../review/assurance.js';
 import { buildFrozenReviewMaterialContent } from '../review/reviewer-context.js';
 import { buildChildSessionReviewInstruction } from '../review/child-session-instruction.js';
+import { reviewDispatchRequired } from '../review/dispatch-signal.js';
 import { resolveAttemptObservationCapability } from '../review/assurance.js';
 import { repositoryEvidenceUnavailableField } from '../review/observation-access.js';
 import {
@@ -183,7 +183,6 @@ function planSubmissionReviewContext(
 
 function partialClaimAcceptancePresentation(
   diagnostics: NonNullable<SessionState['plan']>['claimSubmissionDiagnostics'],
-  next: string,
 ): { markdown: string } | undefined {
   if (!diagnostics?.rejectedClaims.length) return undefined;
   const rejected = diagnostics.rejectedClaims
@@ -195,7 +194,8 @@ function partialClaimAcceptancePresentation(
       `FlowGuard did not admit ${diagnostics.rejectedClaims.length} claim declaration(s) to the ProofGraph. Rejected critical claims block final evidence approval until corrected in a new plan revision.\n\n` +
       '## Declarations not admitted\n\n' +
       rejected +
-      `\n\n## Next action\n\n${next}`,
+      '\n\n## Next action\n\n' +
+      'Independent review is required. Dispatch the reviewer per the response `reviewInvocation`, then submit only the bound reviewer verdict.',
   };
 }
 
@@ -217,7 +217,7 @@ export function buildPlanSubmissionResponse(
     reviewMode: 'subagent',
     ...reviewObligationResponseFields(nextObligation, planAttemptId),
     ...planRepositoryEvidenceWarning(nextObligation),
-    next: 'INDEPENDENT_REVIEW_REQUIRED',
+    reviewDispatch: reviewDispatchRequired(),
     reviewInvocation: reviewInstruction,
     _audit: { transitions },
   };
@@ -225,7 +225,6 @@ export function buildPlanSubmissionResponse(
     response.claimSubmissionDiagnostics = finalState.plan.claimSubmissionDiagnostics;
     response.presentation = partialClaimAcceptancePresentation(
       finalState.plan.claimSubmissionDiagnostics,
-      reviewInstruction.next,
     );
   }
   const riskWarning = planRiskWarning(scope);
@@ -290,7 +289,7 @@ export function latestPlanReviewSummary(
 }
 
 export function convergedPlanResponse(input: ConvergedPlanReviewInput): Record<string, unknown> {
-  const { scope, finalState, ev, transitions, revision, iteration, forcedConvergence } = input;
+  const { scope, finalState, transitions, revision, iteration, forcedConvergence } = input;
   return {
     phase: finalState.phase,
     status: forcedConvergence
@@ -298,7 +297,6 @@ export function convergedPlanResponse(input: ConvergedPlanReviewInput): Record<s
       : `Independent review converged at iteration ${iteration}. Workflow advanced to ${finalState.phase}.`,
     planDigest: revision.currentPlan.digest,
     selfReviewIteration: iteration,
-    next: formatEval(ev),
     _audit: { transitions },
   };
 }
@@ -306,7 +304,7 @@ export function convergedPlanResponse(input: ConvergedPlanReviewInput): Record<s
 export async function convergedPlanReviewCardResponse(
   input: ConvergedPlanReviewInput,
 ): Promise<Record<string, unknown>> {
-  const { scope, finalState, ev, transitions, revision, iteration, forcedConvergence } = input;
+  const { scope, finalState, transitions, revision, iteration, forcedConvergence } = input;
   const directive = resolveWorkflowDirective(finalState);
   const reviewedIdentity = resolveReviewedArtifactIdentity(
     finalState.reviewAssurance,
@@ -349,7 +347,6 @@ export async function convergedPlanReviewCardResponse(
     selfReviewIteration: iteration,
     reviewCard,
     presentation: { markdown: presentationMarkdown },
-    next: formatEval(ev),
     _audit: { transitions },
   };
   if (artifactErr) response.artifactWarning = artifactErr;
@@ -520,7 +517,7 @@ export function nonConvergedPlanResponse(
     revisionDelta: revision.revisionDelta,
     reviewMode: 'subagent',
     ...reviewObligationResponseFields(nextObligation),
-    next: 'INDEPENDENT_REVIEW_REQUIRED',
+    reviewDispatch: reviewDispatchRequired(),
     reviewInvocation: reviewInstruction,
     _audit: { transitions },
   };

@@ -49,7 +49,6 @@
  */
 
 import {
-  formatEval,
   formatBlocked,
   formatAutoAdvanceOverflow,
   enrichWithWorkflowDirective,
@@ -342,10 +341,13 @@ async function handleChangesRequestedReview(input: {
     status: exhausted
       ? `Implementation review iteration ${input.iteration}/${maxIterations} exhausted with Changes requested.`
       : `Implementation review iteration ${input.iteration}/${maxIterations}. Changes requested.`,
-    next: exhausted
-      ? 'GOVERNANCE_OVERRIDE_REQUIRED'
-      : 'Make the requested code changes using read/write/bash tools, then call flowguard_implement (without reviewVerdict) to re-record the implementation. ' +
-        `After re-recording, call the ${REVIEWER_SUBAGENT_TYPE} subagent again for independent review.`,
+    ...(exhausted
+      ? {}
+      : {
+          agentInstruction:
+            'Make the requested code changes using read/write/bash tools, then call flowguard_implement (without reviewVerdict) to re-record the implementation. ' +
+            `After re-recording, call the ${REVIEWER_SUBAGENT_TYPE} subagent again for independent review.`,
+        }),
     _audit: { transitions },
   };
   addLatestImplementationReview(response, input.reviewFindings);
@@ -390,13 +392,12 @@ async function handleApprovedReview(input: {
   if (advanced.kind === 'overflow') {
     return formatAutoAdvanceOverflow(advanced);
   }
-  const { state: finalState, evalResult: ev, transitions } = advanced;
+  const { state: finalState, transitions } = advanced;
   await writeStateWithArtifacts(input.runtime.sessDir, finalState);
 
   const response: Record<string, unknown> = {
     phase: finalState.phase,
     implReviewIteration: input.iteration,
-    next: input.runtime.args.reviewVerdict === 'accept' ? formatEval(ev) : undefined,
     _audit: { transitions },
   };
   addLatestImplementationReview(response, input.reviewFindings);

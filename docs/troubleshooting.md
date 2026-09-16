@@ -190,7 +190,7 @@ real, registered reason.
 
 | Code                          | Description                                                                                        | Solution                                                                                                            |
 | ----------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `SUBAGENT_REVIEW_NOT_INVOKED` | L1 — primary agent submitted a verdict without invoking the reviewer subagent                      | Read the previous tool response and follow the `next` action                                                        |
+| `SUBAGENT_REVIEW_NOT_INVOKED` | L1 — primary agent submitted a verdict without invoking the reviewer subagent                      | Read the previous tool response and follow its `directive` and recovery steps                                       |
 | `SUBAGENT_REVIEW_REQUIRED`    | Content-aware review requires validated, obligation-bound findings from the reviewer child session | Re-run the originating FlowGuard command so the host captures structured reviewer evidence; submit only the verdict |
 | `SUBAGENT_SESSION_MISMATCH`   | L2 — `reviewedBy.sessionId` does not match actual subagent session                                 | Do not edit `reviewedBy.sessionId`; the runtime authoritatively sets it                                             |
 

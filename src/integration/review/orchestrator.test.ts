@@ -33,12 +33,11 @@ import {
   buildMutatedOutput,
   isReviewRequired,
   extractReviewContext,
-  REVIEW_COMPLETED_PREFIX,
   type OrchestratorClient,
   type ReviewerSuccessResult,
   type ReviewerResult,
 } from './orchestrator.js';
-import { REVIEW_REQUIRED_PREFIX } from './enforcement/types.js';
+import { isReviewDispatchCompleted, readReviewDispatch } from './dispatch-signal.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
 import { TOOL_FLOWGUARD_REVIEW } from '../tool-names.js';
@@ -122,7 +121,7 @@ function assertSuccessfulResult(
   expectSuccessfulResult(result);
 }
 
-/** Build a Mode A tool output with INDEPENDENT_REVIEW_REQUIRED. */
+/** Build a Mode A tool output carrying the review-dispatch signal. */
 function modeAOutput(
   opts: {
     iteration?: number;
@@ -139,20 +138,16 @@ function modeAOutput(
     reviewCriteriaVersion: 'p37-v1',
     reviewMandateDigest: 'test-mandate-digest',
     reviewMode: 'subagent',
-    next:
-      `${REVIEW_REQUIRED_PREFIX}: Call the flowguard-reviewer subagent via Task tool. ` +
-      `Use subagent_type "flowguard-reviewer" with iteration=${iteration}, ` +
-      `planVersion=${planVersion}.`,
+    reviewDispatch: { required: true },
   });
 }
 
-/** Build a Mode A output with no independent-review next action. */
+/** Build a Mode A output with no independent-review dispatch signal. */
 function noReviewRequiredOutput(): string {
   return JSON.stringify({
     phase: 'PLAN',
     status: 'Plan submitted (v1).',
     reviewMode: 'subagent',
-    next: 'Plan submitted. Await explicit review routing.',
   });
 }
 
@@ -773,16 +768,15 @@ describe('buildMutatedOutput', () => {
   };
 
   // HAPPY: successful mutation
-  it('replaces next field and injects findings', () => {
+  it('replaces the dispatch signal and preserves original fields', () => {
     const original = modeAOutput();
     const mutated = buildMutatedOutput(original, reviewerResult);
 
     expect(mutated).not.toBeNull();
     const parsed = JSON.parse(mutated!) as Record<string, unknown>;
 
-    // next field should start with REVIEW_COMPLETED_PREFIX
-    expect(typeof parsed.next).toBe('string');
-    expect((parsed.next as string).startsWith(REVIEW_COMPLETED_PREFIX)).toBe(true);
+    expect(isReviewDispatchCompleted(parsed)).toBe(true);
+    expect(readReviewDispatch(parsed)?.verdict).toBe('accept');
 
     expect(parsed.pluginReviewFindings).toBeUndefined();
     expect(parsed._pluginReviewSessionId).toBeUndefined();
@@ -816,13 +810,13 @@ describe('buildMutatedOutput', () => {
     expect(mutated).not.toBeNull();
 
     const parsed = JSON.parse(mutated!) as Record<string, unknown>;
-    expect(parsed.next).toContain('reviewVerdict=changes_requested');
+    expect(readReviewDispatch(parsed)?.verdict).toBe('changes_requested');
   });
 
   it('removes stale pending-review routing after evidence is bound', () => {
     const output = JSON.stringify({
-      next: 'INDEPENDENT_REVIEW_REQUIRED',
-      reviewInvocation: { status: 'pending_review', next: 'INDEPENDENT_REVIEW_REQUIRED' },
+      reviewDispatch: { required: true },
+      reviewInvocation: { status: 'pending_review', reviewDispatch: { required: true } },
       directive: { code: 'PLAN_REVIEW_IN_PROGRESS' },
     });
 
@@ -831,7 +825,7 @@ describe('buildMutatedOutput', () => {
       unknown
     >;
 
-    expect(parsed.next).toContain('INDEPENDENT_REVIEW_COMPLETED');
+    expect(isReviewDispatchCompleted(parsed)).toBe(true);
     expect(parsed).not.toHaveProperty('reviewInvocation');
     expect(parsed).not.toHaveProperty('directive');
   });
@@ -861,52 +855,52 @@ describe('buildMutatedOutput', () => {
   });
 
   // BAD: footer format — mutates JSON with NextAction footer
-  it('mutates output with NextAction footer', () => {
-    const output = JSON.stringify({ next: 'INDEPENDENT_REVIEW_REQUIRED: review me' });
+  it('mutates output that carried a required dispatch signal', () => {
+    const output = JSON.stringify({ reviewDispatch: { required: true } });
     const mutated = buildMutatedOutput(output, reviewerResult);
     expect(mutated).not.toBeNull();
     const parsed = JSON.parse(mutated!);
-    expect(parsed.next).toContain('INDEPENDENT_REVIEW_COMPLETED');
+    expect(isReviewDispatchCompleted(parsed)).toBe(true);
     expect(parsed.pluginReviewFindings).toBeUndefined();
     expect(parsed._pluginReviewSessionId).toBeUndefined();
   });
 
   // BAD: /plan footer mutation
-  it('mutates /plan footer output to INDEPENDENT_REVIEW_COMPLETED', () => {
+  it('mutates /plan output with a required dispatch signal', () => {
     const output = JSON.stringify({
       phase: 'PLAN',
-      next: 'INDEPENDENT_REVIEW_REQUIRED: call reviewer',
+      reviewDispatch: { required: true },
     });
     const mutated = buildMutatedOutput(output, reviewerResult);
     expect(mutated).not.toBeNull();
     const parsed = JSON.parse(mutated!);
-    expect(parsed.next).toContain('INDEPENDENT_REVIEW_COMPLETED');
+    expect(isReviewDispatchCompleted(parsed)).toBe(true);
     expect(parsed.pluginReviewFindings).toBeUndefined();
   });
 
   // BAD: /implement footer mutation
-  it('mutates /implement footer output to INDEPENDENT_REVIEW_COMPLETED', () => {
+  it('mutates /implement output with a required dispatch signal', () => {
     const output = JSON.stringify({
       phase: 'IMPLEMENTATION',
-      next: 'INDEPENDENT_REVIEW_REQUIRED: call reviewer',
+      reviewDispatch: { required: true },
     });
     const mutated = buildMutatedOutput(output, reviewerResult);
     expect(mutated).not.toBeNull();
     const parsed = JSON.parse(mutated!);
-    expect(parsed.next).toContain('INDEPENDENT_REVIEW_COMPLETED');
+    expect(isReviewDispatchCompleted(parsed)).toBe(true);
     expect(parsed.pluginReviewFindings).toBeUndefined();
   });
 
   // BAD: /architecture footer mutation
-  it('mutates /architecture footer output to INDEPENDENT_REVIEW_COMPLETED', () => {
+  it('mutates /architecture output with a required dispatch signal', () => {
     const output = JSON.stringify({
       phase: 'ARCHITECTURE',
-      next: 'INDEPENDENT_REVIEW_REQUIRED: call reviewer',
+      reviewDispatch: { required: true },
     });
     const mutated = buildMutatedOutput(output, reviewerResult);
     expect(mutated).not.toBeNull();
     const parsed = JSON.parse(mutated!);
-    expect(parsed.next).toContain('INDEPENDENT_REVIEW_COMPLETED');
+    expect(isReviewDispatchCompleted(parsed)).toBe(true);
     expect(parsed.pluginReviewFindings).toBeUndefined();
   });
 });

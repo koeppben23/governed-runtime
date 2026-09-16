@@ -161,7 +161,7 @@ describe('buildArchitectureReviewInstruction', () => {
       subjectLabel: 'ADR',
       state: state('ARCHITECTURE'),
     });
-    expect(result.next).toBe('INDEPENDENT_REVIEW_REQUIRED');
+    expect(result.reviewDispatch).toEqual({ required: true });
     expect(result).not.toHaveProperty('reviewerTaskPrompt');
     expect(result).toMatchObject({
       mode: 'host_structured',

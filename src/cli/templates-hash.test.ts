@@ -301,8 +301,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed for the governance-override hard cut: `/override-approve` is a
     // canonical command, `/extend-implementation-review` is removed, and the
     // decision templates describe the override gate.
+    // Refreshed for the structured review-dispatch hard cut: command templates
+    // read `reviewDispatch`/`reviewInvocation`/`agentInstruction`/`directive`
+    // instead of the removed textual `next` field.
     expect(sha256(commandsJson)).toBe(
-      'b60c270d02b2261cfebab2ffcc567f2e343dc99a1c1968ee24c2cb67e44f3f20',
+      '1b44c5b37a7b70636a226bc40b5e56698bd4290c6091d2ac85303420fc871d41',
     );
   });
 

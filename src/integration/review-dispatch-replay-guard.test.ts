@@ -42,7 +42,7 @@ const NOW = '2026-05-10T12:00:00.000Z';
 function reviewRequiredOutput(obligationId: string): string {
   return JSON.stringify({
     phase: 'PLAN',
-    next: 'INDEPENDENT_REVIEW_REQUIRED: reviewer evidence is required',
+    reviewDispatch: { required: true },
     reviewObligation: {
       obligationId,
       iteration: 1,

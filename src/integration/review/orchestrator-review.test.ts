@@ -33,12 +33,11 @@ import {
   buildMutatedOutput,
   isReviewRequired,
   extractReviewContext,
-  REVIEW_COMPLETED_PREFIX,
   type OrchestratorClient,
   type ReviewerResult,
   type ReviewerSuccessResult,
 } from './orchestrator.js';
-import { REVIEW_REQUIRED_PREFIX } from './enforcement/types.js';
+import { isReviewDispatchCompleted, readReviewDispatch } from './dispatch-signal.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
 import { TOOL_FLOWGUARD_REVIEW } from '../tool-names.js';
@@ -117,7 +116,7 @@ function mockClient(
   };
 }
 
-/** Build a Mode A tool output with INDEPENDENT_REVIEW_REQUIRED. */
+/** Build a Mode A tool output carrying the review-dispatch signal. */
 function modeAOutput(
   opts: {
     iteration?: number;
@@ -138,31 +137,27 @@ function modeAOutput(
       mandateDigest: 'test-mandate-digest',
     },
     reviewMode: 'subagent',
-    next:
-      `${REVIEW_REQUIRED_PREFIX}: Call the flowguard-reviewer subagent via Task tool. ` +
-      `Use subagent_type "flowguard-reviewer" with iteration=${iteration}, ` +
-      `planVersion=${planVersion}.`,
+    reviewDispatch: { required: true },
   });
 }
 
-/** Build a Mode A output with no independent-review next action. */
+/** Build a Mode A output with no independent-review dispatch signal. */
 function noReviewRequiredOutput(): string {
   return JSON.stringify({
     phase: 'PLAN',
     status: 'Plan submitted (v1).',
     reviewMode: 'subagent',
-    next: 'Plan submitted. Await explicit review routing.',
   });
 }
 
 describe('isReviewRequired', () => {
   // HAPPY: detects review required
-  it('returns true for INDEPENDENT_REVIEW_REQUIRED next field', () => {
+  it('returns true for a required review-dispatch signal', () => {
     expect(isReviewRequired(modeAOutput())).toBe(true);
   });
 
-  // HAPPY: not required without independent-review marker
-  it('returns false when required marker is absent', () => {
+  // HAPPY: not required without the structured dispatch signal
+  it('returns false when the required marker is absent', () => {
     expect(isReviewRequired(noReviewRequiredOutput())).toBe(false);
   });
 
@@ -176,53 +171,53 @@ describe('isReviewRequired', () => {
     expect(isReviewRequired('')).toBe(false);
   });
 
-  // EDGE: JSON without next field
-  it('returns false for JSON without next field', () => {
+  // EDGE: JSON without reviewDispatch field
+  it('returns false for JSON without a review-dispatch field', () => {
     expect(isReviewRequired(JSON.stringify({ phase: 'PLAN' }))).toBe(false);
   });
 
-  // EDGE: next field is not a string
-  it('returns false when next is not a string', () => {
-    expect(isReviewRequired(JSON.stringify({ next: 42 }))).toBe(false);
+  // EDGE: malformed signal
+  it('returns false when the dispatch signal is malformed', () => {
+    expect(isReviewRequired(JSON.stringify({ reviewDispatch: { required: 42 } }))).toBe(false);
   });
 
   // BAD: footer format — JSON + "\nNext action: ..."
-  it('detects INDEPENDENT_REVIEW_REQUIRED with NextAction footer', () => {
-    const output = JSON.stringify({ next: 'INDEPENDENT_REVIEW_REQUIRED: call reviewer' });
+  it('detects a required dispatch signal with a NextAction footer', () => {
+    const output = `${JSON.stringify({ reviewDispatch: { required: true } })}\nNext action: dispatch reviewer`;
     expect(isReviewRequired(output)).toBe(true);
   });
 
   // REGRESSION: clean JSON still detected
-  it('still detects INDEPENDENT_REVIEW_REQUIRED without footer', () => {
-    const output = JSON.stringify({ next: 'INDEPENDENT_REVIEW_REQUIRED: call reviewer' });
+  it('still detects a required dispatch signal without a footer', () => {
+    const output = JSON.stringify({ reviewDispatch: { required: true } });
     expect(isReviewRequired(output)).toBe(true);
   });
 
   // BAD: /plan footer format
-  it('detects /plan footer output', () => {
+  it('detects /plan output with a required dispatch signal', () => {
     const raw = JSON.stringify({
       phase: 'PLAN',
-      next: 'INDEPENDENT_REVIEW_REQUIRED: call flowguard-reviewer',
+      reviewDispatch: { required: true },
       reviewObligationId: 'test-obl-id',
     });
     expect(isReviewRequired(raw)).toBe(true);
   });
 
   // BAD: /implement footer format
-  it('detects /implement footer output', () => {
+  it('detects /implement output with a required dispatch signal', () => {
     const raw = JSON.stringify({
       phase: 'IMPLEMENTATION',
-      next: 'INDEPENDENT_REVIEW_REQUIRED: call flowguard-reviewer',
+      reviewDispatch: { required: true },
       reviewObligationId: 'test-obl-id',
     });
     expect(isReviewRequired(raw)).toBe(true);
   });
 
   // BAD: /architecture footer format
-  it('detects /architecture footer output', () => {
+  it('detects /architecture output with a required dispatch signal', () => {
     const raw = JSON.stringify({
       phase: 'ARCHITECTURE',
-      next: 'INDEPENDENT_REVIEW_REQUIRED: call flowguard-reviewer',
+      reviewDispatch: { required: true },
       reviewObligationId: 'test-obl-id',
     });
     expect(isReviewRequired(raw)).toBe(true);
@@ -245,9 +240,9 @@ describe('isReviewRequired', () => {
 
   // REGRESSION: parseToolResult and isReviewRequired agree
   it('parseToolResult and isReviewRequired agree on footer output', () => {
-    const raw = JSON.stringify({ next: 'INDEPENDENT_REVIEW_REQUIRED: review me' });
+    const raw = JSON.stringify({ reviewDispatch: { required: true } });
     const parsed = parseToolResult(raw);
-    expect(parsed?.next).toContain('INDEPENDENT_REVIEW_REQUIRED');
+    expect(readReviewDispatch(parsed)?.required).toBe(true);
     expect(isReviewRequired(raw)).toBe(true);
   });
 });
@@ -280,42 +275,57 @@ describe('extractReviewContext', () => {
   });
 
   // BAD: missing iteration
-  it('returns null when iteration is missing from next field', () => {
+  it('returns null when iteration is missing from the canonical obligation', () => {
     const parsed = {
-      next: `${REVIEW_REQUIRED_PREFIX}: missing iteration, planVersion=1`,
+      reviewObligation: {
+        obligationId: '11111111-1111-4111-8111-111111111111',
+        planVersion: 1,
+        criteriaVersion: 'p37-v1',
+        mandateDigest: 'test-mandate-digest',
+      },
       selfReviewIteration: 0,
     };
     expect(extractReviewContext('flowguard_plan', parsed)).toBeNull();
   });
 
   // BAD: missing planVersion
-  it('returns null when planVersion is missing from next field', () => {
+  it('returns null when planVersion is missing from the canonical obligation', () => {
     const parsed = {
-      next: `${REVIEW_REQUIRED_PREFIX}: iteration=0, missing version`,
+      reviewObligation: {
+        obligationId: '11111111-1111-4111-8111-111111111111',
+        iteration: 0,
+        criteriaVersion: 'p37-v1',
+        mandateDigest: 'test-mandate-digest',
+      },
       selfReviewIteration: 0,
     };
     expect(extractReviewContext('flowguard_plan', parsed)).toBeNull();
   });
 
-  // BAD: no next field
-  it('returns null when next is missing', () => {
+  // BAD: no review obligation
+  it('returns null when the review obligation is missing', () => {
     expect(extractReviewContext('flowguard_plan', { phase: 'PLAN' })).toBeNull();
   });
 
   it('returns null when obligation metadata is missing', () => {
     const parsed = {
-      next: `${REVIEW_REQUIRED_PREFIX}: iteration=0, planVersion=1`,
+      reviewDispatch: { required: true },
       selfReviewIteration: 0,
     };
     expect(extractReviewContext('flowguard_plan', parsed)).toBeNull();
   });
 
-  // EDGE: next field is not a string
-  it('returns null when next is not a string', () => {
-    expect(extractReviewContext('flowguard_plan', { next: 42 })).toBeNull();
+  // EDGE: structured dispatch signal alone carries no review context
+  it('returns null when only the dispatch signal is present', () => {
+    expect(
+      extractReviewContext('flowguard_plan', {
+        reviewDispatch: { required: true },
+        selfReviewIteration: 0,
+      }),
+    ).toBeNull();
   });
 
-  // CORNER: iteration in next field doesn't match selfReviewIteration
+  // CORNER: iteration in the canonical obligation doesn't match selfReviewIteration
   it('returns null when iteration is inconsistent with selfReviewIteration', () => {
     const parsed = JSON.parse(modeAOutput({ iteration: 0 })) as Record<string, unknown>;
     // Manually change selfReviewIteration to mismatch
@@ -326,7 +336,6 @@ describe('extractReviewContext', () => {
   // CORNER: implement tool (no selfReviewIteration check)
   it('does not validate selfReviewIteration for implement tool', () => {
     const parsed = {
-      next: `${REVIEW_REQUIRED_PREFIX}: iteration=1, planVersion=2`,
       reviewObligation: {
         obligationId: '11111111-1111-4111-8111-111111111111',
         iteration: 1,
@@ -383,7 +392,8 @@ describe('end-to-end orchestration flow', () => {
 
     // Verify mutated output
     const mutatedParsed = JSON.parse(mutated!) as Record<string, unknown>;
-    expect((mutatedParsed.next as string).startsWith(REVIEW_COMPLETED_PREFIX)).toBe(true);
+    expect(isReviewDispatchCompleted(mutatedParsed)).toBe(true);
+    expect(readReviewDispatch(mutatedParsed)?.verdict).toBe('accept');
     expect(mutatedParsed.pluginReviewFindings).toBeUndefined();
     expect(mutatedParsed._pluginReviewSessionId).toBeUndefined();
     // Original fields preserved
@@ -514,7 +524,7 @@ describe('buildReviewContentMutatedOutput', () => {
     expect(result).toBeNull();
   });
 
-  it('injects pluginReviewFindings and review-specific next instruction', () => {
+  it('injects pluginReviewFindings and the completed review dispatch', () => {
     const result = buildReviewContentMutatedOutput('{}', {
       sessionId: 'child-1',
       findings,
@@ -525,13 +535,12 @@ describe('buildReviewContentMutatedOutput', () => {
     expect(result).toBeDefined();
     const parsed = JSON.parse(result!);
     expect(parsed.pluginReviewFindings).toBeUndefined();
-    expect(parsed.next).toContain('flowguard_review');
-    expect(parsed.next).toContain('reviewVerdict=accept');
-    expect(parsed.next).toContain('Do not submit or reconstruct reviewer findings.');
+    expect(isReviewDispatchCompleted(parsed)).toBe(true);
+    expect(readReviewDispatch(parsed)?.verdict).toBe('accept');
     expect(parsed._pluginReviewSessionId).toBeUndefined();
   });
 
-  it('does not contain plan/implement/architecture next instruction', () => {
+  it('does not emit a plan/implement/architecture text instruction', () => {
     const result = buildReviewContentMutatedOutput('{}', {
       sessionId: 'child-1',
       findings,
@@ -540,8 +549,9 @@ describe('buildReviewContentMutatedOutput', () => {
       reviewAssuranceLevel: 'structured_high',
     });
     const parsed = JSON.parse(result!);
-    expect(parsed.next).not.toContain('flowguard_plan');
-    expect(parsed.next).toContain('reviewVerdict=accept');
+    expect(parsed.next).toBeUndefined();
+    expect(parsed.agentInstruction).toBeUndefined();
+    expect(readReviewDispatch(parsed)?.verdict).toBe('accept');
   });
 
   it('returns null on parse failure', () => {
@@ -592,7 +602,8 @@ describe('buildReviewContentMutatedOutput', () => {
     });
     expect(result).not.toBeNull();
     const parsed = JSON.parse(result!);
-    expect(parsed.next).toContain('PLUGIN_REVIEW_COMPLETED');
+    expect(isReviewDispatchCompleted(parsed)).toBe(true);
+    expect(readReviewDispatch(parsed)?.verdict).toBe('accept');
     expect(parsed.pluginReviewFindings).toBeUndefined();
   });
 });
@@ -622,9 +633,9 @@ describe('isReviewRequired for /review', () => {
     expect(isReviewRequired(output, 'flowguard_plan')).toBe(false);
   });
 
-  it('still detects INDEPENDENT_REVIEW_REQUIRED prefix', () => {
+  it('still detects a required dispatch signal from a non-review tool', () => {
     const output = JSON.stringify({
-      next: 'INDEPENDENT_REVIEW_REQUIRED: call the reviewer',
+      reviewDispatch: { required: true },
     });
     expect(isReviewRequired(output)).toBe(true);
   });
@@ -816,7 +827,7 @@ describe('buildReviewContentMutatedOutput edge cases', () => {
     expect(parsed.phase).toBe('REVIEW');
   });
 
-  it('includes requiredReviewAttestation next instruction', () => {
+  it('includes the bound reviewer verdict in the completed dispatch signal', () => {
     const result = buildReviewContentMutatedOutput('{}', {
       sessionId: 's1',
       findings,
@@ -825,8 +836,8 @@ describe('buildReviewContentMutatedOutput edge cases', () => {
       reviewAssuranceLevel: 'structured_high',
     });
     const parsed = JSON.parse(result!);
-    expect(parsed.next).toContain('reviewVerdict=accept');
-    expect(parsed.next).toContain('Do not submit or reconstruct reviewer findings.');
+    expect(isReviewDispatchCompleted(parsed)).toBe(true);
+    expect(readReviewDispatch(parsed)?.verdict).toBe('accept');
   });
 
   it('sets _pluginReviewSessionId correctly', () => {
@@ -844,8 +855,8 @@ describe('buildReviewContentMutatedOutput edge cases', () => {
 
 // ─── isReviewRequired with no toolName ────────────────────────────────────────
 describe('isReviewRequired without toolName', () => {
-  it('returns true for INDEPENDENT_REVIEW_REQUIRED without toolName arg', () => {
-    const output = JSON.stringify({ next: 'INDEPENDENT_REVIEW_REQUIRED: test' });
+  it('returns true for a required dispatch signal without toolName arg', () => {
+    const output = JSON.stringify({ reviewDispatch: { required: true } });
     expect(isReviewRequired(output)).toBe(true);
   });
 

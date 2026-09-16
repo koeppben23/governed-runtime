@@ -151,7 +151,7 @@ function strictPlanReviewRequiredOutput(
     reviewObligationId: obligationId,
     reviewCriteriaVersion: REVIEW_CRITERIA_VERSION,
     reviewMandateDigest: REVIEW_MANDATE_DIGEST,
-    next: 'INDEPENDENT_REVIEW_REQUIRED: iteration=0, planVersion=1',
+    reviewDispatch: { required: true },
     ...overrides,
   });
 }

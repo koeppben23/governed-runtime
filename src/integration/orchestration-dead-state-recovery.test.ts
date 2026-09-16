@@ -882,7 +882,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
       expect(result.selfReviewIteration).toBe(2);
       // Under the structured-evidence contract the restart emits a child-session
       // invocation instruction carrying the review cycle, not a reviewer prompt.
-      expect(result.next).toBe('INDEPENDENT_REVIEW_REQUIRED');
+      expect(result.reviewDispatch).toEqual({ required: true });
       const invocation = result.reviewInvocation as Record<string, unknown> | undefined;
       expect(invocation?.mode).toBeDefined();
       expect(

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createSessionState, onFlowGuardToolAfter } from './enforcement.js';
-import { formatReviewRequiredSignal } from './types.js';
+import { reviewDispatchRequired } from '../dispatch-signal.js';
 import { NOW } from './test-helpers.js';
 
 describe('standalone review retry signal', () => {
@@ -22,7 +22,7 @@ describe('standalone review retry signal', () => {
           mandateDigest: 'test-mandate-digest',
           criteriaVersion: 'p37-v1',
         },
-        next: formatReviewRequiredSignal(0, 1),
+        reviewDispatch: reviewDispatchRequired(),
       }),
       NOW,
     );

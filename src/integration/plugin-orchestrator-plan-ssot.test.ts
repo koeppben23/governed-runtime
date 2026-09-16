@@ -45,7 +45,7 @@ const STATE_PLAN_TEXT = '## Plan\n1. Fix auth\n2. Add tests';
 function reviewRequiredOutput(): string {
   return JSON.stringify({
     phase: 'PLAN',
-    next: 'INDEPENDENT_REVIEW_REQUIRED: call flowguard-reviewer with iteration=1 and planVersion=1',
+    reviewDispatch: { required: true },
     reviewObligation: {
       obligationId: OBLIGATION_ID,
       iteration: 1,

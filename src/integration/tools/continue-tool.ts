@@ -150,10 +150,5 @@ function formatDeterministicGuidance(state: SessionState, guidance: { status: st
   );
 }
 function formatContinueResponse(value: Record<string, unknown>, state: SessionState): string {
-  const response = enrichWithWorkflowDirective(value, state);
-  const commands = response.directive.commands;
-  if (Array.isArray(commands) && commands.every((command) => typeof command === 'string')) {
-    response.next = commands.join(', ');
-  }
-  return JSON.stringify(response);
+  return JSON.stringify(enrichWithWorkflowDirective(value, state));
 }

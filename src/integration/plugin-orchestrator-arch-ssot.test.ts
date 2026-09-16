@@ -45,7 +45,7 @@ const STATE_ADR_TITLE = ARCHITECTURE_DECISION.title;
 function reviewRequiredOutput(): string {
   return JSON.stringify({
     phase: 'ARCHITECTURE',
-    next: 'INDEPENDENT_REVIEW_REQUIRED: call flowguard-reviewer with iteration=1 and planVersion=1',
+    reviewDispatch: { required: true },
     reviewObligation: {
       obligationId: OBLIGATION_ID,
       iteration: 1,

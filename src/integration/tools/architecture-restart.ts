@@ -217,7 +217,7 @@ function architectureInstructionResponse(
     // Durable degradation: re-emits and repairs render the persisted freeze
     // cause, not only the immediate Mode-A response.
     ...repositoryEvidenceUnavailableField(input.obligation.repositoryEvidenceFreeze),
-    next: instruction.next,
+    reviewDispatch: instruction.reviewDispatch,
     reviewInvocation: instruction,
     _audit: { transitions: [] },
   };
@@ -452,7 +452,7 @@ function buildRestartResponse(
     reviewMode: input.subagentEnabled ? 'subagent' : 'self',
     ...reviewObligationResponseFields(input.obligation, input.restartAttemptId),
     ...repositoryEvidenceUnavailableField(input.obligation?.repositoryEvidenceFreeze),
-    next: input.instruction.next,
+    reviewDispatch: input.instruction.reviewDispatch,
     reviewInvocation: input.instruction,
     _audit: { transitions: [] },
   };

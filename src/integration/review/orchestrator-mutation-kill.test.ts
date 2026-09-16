@@ -32,12 +32,10 @@ import {
   buildMutatedOutput,
   isReviewRequired,
   extractReviewContext,
-  REVIEW_COMPLETED_PREFIX,
   type OrchestratorClient,
   type ReviewerResult,
   type ReviewerSuccessResult,
 } from './orchestrator.js';
-import { REVIEW_REQUIRED_PREFIX } from './enforcement/types.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
 import { TOOL_FLOWGUARD_REVIEW } from '../tool-names.js';
@@ -118,7 +116,7 @@ function mockClient(
   };
 }
 
-/** Build a Mode A tool output with INDEPENDENT_REVIEW_REQUIRED. */
+/** Build a Mode A tool output carrying the review-dispatch signal. */
 function modeAOutput(
   opts: {
     iteration?: number;
@@ -135,20 +133,16 @@ function modeAOutput(
     reviewCriteriaVersion: 'p37-v1',
     reviewMandateDigest: 'test-mandate-digest',
     reviewMode: 'subagent',
-    next:
-      `${REVIEW_REQUIRED_PREFIX}: Call the flowguard-reviewer subagent via Task tool. ` +
-      `Use subagent_type "flowguard-reviewer" with iteration=${iteration}, ` +
-      `planVersion=${planVersion}.`,
+    reviewDispatch: { required: true },
   });
 }
 
-/** Build a Mode A output with no independent-review next action. */
+/** Build a Mode A output with no independent-review dispatch signal. */
 function noReviewRequiredOutput(): string {
   return JSON.stringify({
     phase: 'PLAN',
     status: 'Plan submitted (v1).',
     reviewMode: 'subagent',
-    next: 'Plan submitted. Await explicit review routing.',
   });
 }
 

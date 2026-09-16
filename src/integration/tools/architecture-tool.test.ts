@@ -702,11 +702,11 @@ describe('integration/tools/architecture (wrapper)', () => {
     expect(parsed.code).toBe('INTERNAL_ERROR');
   });
 
-  // ── F13 slice 7b: Mode-A INDEPENDENT_REVIEW_REQUIRED + reviewObligation ──
+  // ── F13 slice 7b: Mode-A review dispatch + reviewObligation ──
 
-  it('emits INDEPENDENT_REVIEW_REQUIRED next-action for mandatory review (Mode A)', async () => {
-    // The architecture tool MUST emit the review-required marker plus the
-    // host-observed child-session binding metadata. Under the structured-only
+  it('emits the review-dispatch signal for mandatory review (Mode A)', async () => {
+    // The architecture tool MUST emit the review-required dispatch signal plus
+    // the host-observed child-session binding metadata. Under the structured-only
     // contract no reviewer Task prompt is projected here: the host creates the
     // reviewer child session from the obligation and attestation metadata.
     mocks.resolvePolicyFromState.mockReturnValueOnce({
@@ -716,7 +716,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     const { architecture } = await import('./architecture.js');
     const res = await architecture.execute({ title: 'x', adrText: 'y' }, {} as never);
     const parsed = JSON.parse(String(res));
-    expect(parsed.next).toContain('INDEPENDENT_REVIEW_REQUIRED');
+    expect(parsed.reviewDispatch).toEqual({ required: true });
     expect(parsed.reviewMode).toBe('subagent');
     expect(parsed.reviewInvocation).toBeDefined();
     expect(parsed.reviewInvocation.reviewerSubagentType).toBe('flowguard-reviewer');
@@ -756,7 +756,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     const { architecture } = await import('./architecture.js');
     const res = await architecture.execute({ title: 'x', adrText: 'y' }, {} as never);
     const parsed = JSON.parse(String(res));
-    expect(parsed.next).toContain('INDEPENDENT_REVIEW_REQUIRED');
+    expect(parsed.reviewDispatch).toEqual({ required: true });
     expect(parsed.reviewMode).toBe('subagent');
     expect(parsed.reviewObligation).toBeDefined();
     const writtenState = mocks.writeStateWithArtifacts.mock.calls[0]?.[1] as {

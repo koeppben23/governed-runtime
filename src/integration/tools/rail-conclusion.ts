@@ -19,7 +19,7 @@
  * The rail surface is a success surface: after a successful rail transition
  * there is exactly one recommended next action, at a user gate there is an
  * explicit decision, and at a clean terminal there is no further action. The
- * governance `next` field on the tool response is UNCHANGED by this module —
+ * canonical `directive` on the tool response is UNCHANGED by this module —
  * this projection produces only the human-facing rendered conclusion.
  *
  * @version v1

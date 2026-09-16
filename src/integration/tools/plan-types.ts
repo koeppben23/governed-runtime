@@ -7,6 +7,7 @@
 
 import type { PlanEvidence, LoopVerdict, RevisionDelta } from '../../state/evidence.js';
 import type { PlanClaimDeclarationInput } from '../../state/proofgraph-approval.js';
+import type { EvalResult } from '../../machine/evaluate.js';
 import type { MutableSession, ToolContext } from './helpers.js';
 import { classifyToolCallMode, toolCallFlags } from './review-validation-mode.js';
 
@@ -81,7 +82,7 @@ export type PlanSubmissionResponseInput = {
 export type ConvergedPlanReviewInput = {
   scope: PlanExecutionScope;
   finalState: import('../../state/schema.js').SessionState;
-  ev: Parameters<typeof import('./helpers.js').formatEval>[0];
+  ev: EvalResult;
   transitions: unknown;
   revision: PlanRevisionResult;
   iteration: number;

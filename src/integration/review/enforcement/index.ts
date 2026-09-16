@@ -16,6 +16,4 @@ export type {
   EnforcementResult,
 } from './types.js';
 
-export { REVIEW_REQUIRED_PREFIX } from './types.js';
-
 export { createSessionState, onFlowGuardToolAfter, enforceBeforeVerdict } from './enforcement.js';

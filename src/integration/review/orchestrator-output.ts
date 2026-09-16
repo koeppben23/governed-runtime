@@ -8,7 +8,7 @@
  * @version v1
  */
 
-import { REVIEW_COMPLETED_PREFIX } from './orchestrator-constants.js';
+import { reviewDispatchCompleted } from './dispatch-signal.js';
 import { parseToolResult } from '../plugin-helpers.js';
 
 /** Subset of ReviewerSuccessResult needed for output mutation. */
@@ -29,10 +29,7 @@ export function buildMutatedOutput(
   const parsed = parseToolResult(originalOutput);
   if (!parsed || Array.isArray(parsed)) return null;
 
-  parsed.next =
-    `${REVIEW_COMPLETED_PREFIX}: FlowGuard bound the host-validated independent review. ` +
-    `Submit only reviewVerdict=${String(reviewerResult.findings.overallVerdict)} to continue; ` +
-    'do not submit or reconstruct reviewer findings.';
+  parsed.reviewDispatch = reviewDispatchCompleted(String(reviewerResult.findings.overallVerdict));
   // The original tool response was projected before host dispatch. Its pending
   // review metadata and Task instruction are stale once evidence is bound.
   delete parsed.reviewInvocation;
@@ -53,9 +50,6 @@ export function buildReviewContentMutatedOutput(
 
   return JSON.stringify({
     phase,
-    next:
-      `PLUGIN_REVIEW_COMPLETED: FlowGuard bound the host-validated independent review. ` +
-      `Call flowguard_review again with the same content input and reviewVerdict=${String(reviewerResult.findings.overallVerdict)}. ` +
-      'Do not submit or reconstruct reviewer findings.',
+    reviewDispatch: reviewDispatchCompleted(String(reviewerResult.findings.overallVerdict)),
   });
 }

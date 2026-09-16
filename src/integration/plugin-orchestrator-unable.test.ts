@@ -42,7 +42,7 @@ import { runReviewOrchestration } from './plugin-orchestrator.js';
 import type { OrchestratorDeps, ToolCallEvent } from './plugin-orchestrator.js';
 import { createTestAdapter } from './test-adapter-helper.js';
 import { TOOL_FLOWGUARD_PLAN } from './tool-names.js';
-import { REVIEW_REQUIRED_PREFIX } from './review/enforcement/types.js';
+import { reviewDispatchRequired } from './review/dispatch-signal.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import { POLICY_SNAPSHOT, makeState } from '../fixtures.js';
 import { makePendingReviewAttempt } from './review/__tests__/attempt-fixture.js';
@@ -57,12 +57,12 @@ const OBLIGATION_ID = '11111111-1111-4111-8111-111111111111';
 const ATTEMPT_ID = '66666666-6666-4666-8666-666666666666';
 const SESS_DIR = '/tmp/fg-mock-sess-dir';
 
-/** Build a Mode A plan tool output with INDEPENDENT_REVIEW_REQUIRED. */
+/** Build a Mode A plan tool output carrying the review-dispatch signal. */
 function modeAPlanOutput(): string {
   return JSON.stringify({
     ok: true,
     phase: 'PLAN',
-    next: `${REVIEW_REQUIRED_PREFIX} obligationId=${OBLIGATION_ID} iteration=0 planVersion=1`,
+    reviewDispatch: reviewDispatchRequired(),
     reviewObligation: {
       obligationId: OBLIGATION_ID,
       obligationType: 'plan',

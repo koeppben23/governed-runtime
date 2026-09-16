@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { createSessionState, enforceBeforeVerdict, onFlowGuardToolAfter } from './enforcement.js';
-import { formatReviewRequiredSignal } from './types.js';
+import { reviewDispatchRequired } from '../dispatch-signal.js';
 import { NOW } from './test-helpers.js';
 import { buildInvocationEvidence, ensureReviewAssurance, hashText } from '../assurance.js';
 import { makeState } from '../../../fixtures.js';
@@ -142,7 +142,7 @@ describe('enforceBeforeVerdict — obligation/attempt-bound L1 gate', () => {
       'flowguard_plan',
       {},
       JSON.stringify({
-        next: formatReviewRequiredSignal(1, 1),
+        reviewDispatch: reviewDispatchRequired(),
         reviewObligation: { obligationId: OBLIGATION_A },
         reviewAttemptId: ATTEMPT_A,
       }),

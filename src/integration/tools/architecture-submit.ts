@@ -218,7 +218,7 @@ export async function handleAdrSubmission(
     reviewMode: subagentEnabled ? 'subagent' : 'self',
     ...reviewObligationResponseFields(nextObligation, subAttemptId),
     ...repositoryEvidenceUnavailableField(nextObligation?.repositoryEvidenceFreeze),
-    next: instruction.next,
+    reviewDispatch: instruction.reviewDispatch,
     reviewInvocation: instruction,
     _audit: { transitions: result.transitions },
   };

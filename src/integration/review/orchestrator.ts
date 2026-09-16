@@ -11,9 +11,9 @@
  * - review-prompt-builders.ts — Prompt construction for all review types
  * - review-agent-resolution.ts — Agent registry probe + cache
  *
- * Contract: INDEPENDENT_REVIEW_COMPLETED is only signaled when structured
+ * Contract: the completed review dispatch is only signaled when structured
  * ReviewFindings (with overallVerdict + blockingIssues) are available.
- * Unparseable reviewer responses never produce COMPLETED.
+ * Unparseable reviewer responses never produce a completed dispatch.
  *
  * Conformance: Uses documented OpenCode SDK client API
  * per https://opencode.ai/docs/plugins
@@ -690,6 +690,5 @@ function structuredReviewerResult(
   };
 }
 
-export { REVIEW_COMPLETED_PREFIX } from './orchestrator-constants.js';
 export { buildMutatedOutput, buildReviewContentMutatedOutput } from './orchestrator-output.js';
 export { isReviewRequired, extractReviewContext } from './orchestrator-detection.js';

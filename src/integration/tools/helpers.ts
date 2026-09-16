@@ -99,20 +99,6 @@ export type ToolDefinition = {
 
 // ─── Formatting Helpers ───────────────────────────────────────────────────────
 
-/** Format an EvalResult into a human-readable next-action string. */
-export function formatEval(ev: EvalResult): string {
-  switch (ev.kind) {
-    case 'transition':
-      return `Auto-advanced to ${ev.target} via ${ev.event}.`;
-    case 'waiting':
-      return ev.reason;
-    case 'terminal':
-      return 'Workflow complete. Session is terminal.';
-    case 'pending':
-      return `Phase ${ev.phase} needs more work.`;
-  }
-}
-
 /** Migrated reason-copy headline field, present only for authored codes. */
 function headlineFields(code: string): { headline?: string } {
   const copy = lookupReasonCopy(code);
@@ -125,7 +111,8 @@ function headlineFields(code: string): { headline?: string } {
  * Builds a conclusion-only compact-card PresentationDocument (no sections) and
  * renders it through the shared renderer, so the mutating-tool next action is
  * displayed identically to /status, /why, and /finish. Additive only — this is
- * the user-facing display; the machine-readable `next` field is unchanged.
+ * the user-facing display; the structured `directive` and `_audit.transitions`
+ * remain the machine-readable routing fields.
  */
 export function buildNextActionPresentation(
   state: SessionState,
@@ -199,13 +186,10 @@ export function formatRailResult(
     phase: result.state.phase,
     phaseLabel: PHASE_LABELS[result.state.phase],
     status: 'ok',
-    next: formatEval(result.evalResult),
     directive,
     // Render the user-facing next action through the shared renderer so mutating
-    // tools display it identically to /status, /why, and /finish. Additive: the
-    // machine-readable `next` and `directive` fields above are
-    // unchanged. The rendered conclusion is the display authority; the command
-    // template must not print a duplicate `Next action:` line when it is present.
+    // tools display it identically to /status, /why, and /finish. The
+    // machine-readable `directive` field above is the routing authority.
     presentation,
     // Governance integrity: mark an aborted terminal session explicitly so it is
     // never presented as an indistinguishable clean completion. Distinct from the

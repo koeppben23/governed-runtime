@@ -236,7 +236,7 @@ describe('integration/tools', () => {
       const result = attachGovernanceFooter({
         output: JSON.stringify({
           phase: 'PLAN',
-          next: 'Keep existing next action.',
+          agentInstruction: 'Keep existing agent instruction.',
           blocked: true,
           error: 'Original failure',
         }),
@@ -251,7 +251,7 @@ describe('integration/tools', () => {
       const output = JSON.parse(wrapped.output) as Record<string, unknown>;
 
       expect(output.phase).toBe('PLAN');
-      expect(output.next).toBe('Keep existing next action.');
+      expect(output.agentInstruction).toBe('Keep existing agent instruction.');
       expect(output.blocked).toBe(true);
       expect(output.error).toBe('Original failure');
       expect(output.flowguardFooter).toMatchObject({

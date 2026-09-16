@@ -174,7 +174,7 @@ function planInstructionResponse(
     selfReviewIteration: scope.state.selfReview!.iteration,
     reviewMode: 'subagent',
     ...reviewObligationResponseFields(obligation, attemptId),
-    next: instruction.next,
+    reviewDispatch: instruction.reviewDispatch,
     reviewInvocation: instruction,
     _audit: { transitions: [] },
   };

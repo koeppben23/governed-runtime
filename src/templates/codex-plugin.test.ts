@@ -101,8 +101,8 @@ describe('Codex plugin templates', () => {
     expect(implementSkill).toContain('mcp__flowguard__flowguard_status');
     expect(implementSkill).toContain('flowguard_run_check');
     expect(implementSkill).toContain('run EVERY active check');
-    // The SKILL stays next-driven: it never authorizes self-approval.
-    expect(implementSkill).toContain("Submit only the verdict FlowGuard's `next` field instructs");
+    // The SKILL stays dispatch-driven: it never authorizes self-approval.
+    expect(implementSkill).toContain('Submit only the verdict `reviewDispatch.verdict` reports');
   });
 
   it('pre-tool wrapper denies with Codex-compatible hookSpecificOutput when unreachable', async () => {

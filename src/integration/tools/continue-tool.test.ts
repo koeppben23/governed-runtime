@@ -49,7 +49,6 @@ const mocks = vi.hoisted(() => ({
     },
   })),
   writeStateWithArtifacts: vi.fn(async (_sessDir: string, state: SessionState) => state),
-  formatEval: vi.fn(() => 'next'),
   // commands
   isCommandAllowed: vi.fn(() => true),
   Command: { IMPLEMENT: 'IMPLEMENT' as const },
@@ -98,7 +97,6 @@ vi.mock('./helpers.js', () => ({
   formatBlocked: mocks.formatBlocked,
   enrichWithWorkflowDirective: mocks.enrichWithWorkflowDirective,
   writeStateWithArtifacts: mocks.writeStateWithArtifacts,
-  formatEval: mocks.formatEval,
 }));
 
 vi.mock('./error-format.js', () => ({
@@ -142,7 +140,7 @@ describe('flowguard_continue (runtime)', () => {
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('ARCHITECTURE');
-    expect(parsed.next).toBe('/architecture');
+    expect(parsed.directive.commands).toEqual(['/architecture']);
     expect(parsed._continue.action).toBe('deterministic');
   });
 
@@ -152,7 +150,7 @@ describe('flowguard_continue (runtime)', () => {
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('REVIEW');
-    expect(parsed.next).toBe('/review');
+    expect(parsed.directive.commands).toEqual(['/review']);
     expect(parsed._continue.action).toBe('deterministic');
   });
 
@@ -162,7 +160,7 @@ describe('flowguard_continue (runtime)', () => {
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('IMPL_REVIEW');
-    expect(parsed.next).toBe('/impl_review');
+    expect(parsed.directive.commands).toEqual(['/impl_review']);
     expect(parsed.status).toBe('Implementation review is pending.');
   });
 
@@ -205,7 +203,7 @@ describe('flowguard_continue (runtime)', () => {
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('VALIDATION');
-    expect(parsed.next).toBe('/validation');
+    expect(parsed.directive.commands).toEqual(['/validation']);
     expect(parsed._continue.action).toBe('deterministic');
   });
 
@@ -227,7 +225,7 @@ describe('flowguard_continue (runtime)', () => {
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('PLAN_REVIEW');
     expect(parsed._continue.action).toBe('manual_decision');
-    expect(parsed.next).toBe('/plan_review');
+    expect(parsed.directive.commands).toEqual(['/plan_review']);
     expect(parsed.decisionRequired).toBe(true);
   });
 
@@ -258,7 +256,7 @@ describe('flowguard_continue (runtime)', () => {
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('COMPLETE');
     expect(parsed._continue.action).toBe('terminal');
-    expect(parsed.next).toBe('/complete');
+    expect(parsed.directive.commands).toEqual(['/complete']);
   });
 
   it('ARCH_COMPLETE returns terminal action', async () => {
@@ -268,7 +266,7 @@ describe('flowguard_continue (runtime)', () => {
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('ARCH_COMPLETE');
     expect(parsed._continue.action).toBe('terminal');
-    expect(parsed.next).toBe('/arch_complete');
+    expect(parsed.directive.commands).toEqual(['/arch_complete']);
   });
 
   it('REVIEW_COMPLETE returns terminal action', async () => {
@@ -278,7 +276,7 @@ describe('flowguard_continue (runtime)', () => {
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('REVIEW_COMPLETE');
     expect(parsed._continue.action).toBe('terminal');
-    expect(parsed.next).toBe('/review_complete');
+    expect(parsed.directive.commands).toEqual(['/review_complete']);
   });
 
   it('COMPLETE aborted → redirects to /status, never /review or /export', async () => {
@@ -292,7 +290,7 @@ describe('flowguard_continue (runtime)', () => {
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('COMPLETE');
     expect(parsed._continue.action).toBe('terminal');
-    expect(parsed.next).toBe('/complete');
+    expect(parsed.directive.commands).toEqual(['/complete']);
     expect(String(parsed.status).toLowerCase()).toContain('aborted');
   });
 

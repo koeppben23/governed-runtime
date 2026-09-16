@@ -1,7 +1,7 @@
 /**
  * @module integration/review/orchestrator-detection
  * @description Review-required detection helpers — determine whether
- *              a tool output signals INDEPENDENT_REVIEW_REQUIRED and
+ *              a tool output carries the structured review-dispatch signal and
  *              extract review context from FlowGuard tool responses.
  *
  * Extracted from orchestrator.ts. Leaf module — no dependency on
@@ -10,15 +10,14 @@
  * @version v2
  */
 
-import { REVIEW_REQUIRED_PREFIX } from './enforcement/types.js';
+import { isReviewDispatchRequired } from './dispatch-signal.js';
 import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_REVIEW } from '../tool-names.js';
 import { parseToolResult } from '../plugin-helpers.js';
 
 export function isReviewRequired(toolOutput: string, toolName?: string): boolean {
   const parsed = parseToolResult(toolOutput);
   if (!parsed || Array.isArray(parsed)) return false;
-  const next = typeof parsed.next === 'string' ? parsed.next : '';
-  if (next.startsWith(REVIEW_REQUIRED_PREFIX)) return true;
+  if (isReviewDispatchRequired(parsed)) return true;
   if (
     toolName === TOOL_FLOWGUARD_REVIEW &&
     parsed.error === true &&

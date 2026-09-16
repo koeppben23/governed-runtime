@@ -40,7 +40,17 @@ export type {
   EnforcementResult,
 } from './enforcement/types.js';
 
-export { REVIEW_REQUIRED_PREFIX } from './enforcement/types.js';
+// ─── Dispatch Signal ─────────────────────────────────────────────────────────
+
+export type { ReviewDispatchSignal } from './dispatch-signal.js';
+
+export {
+  reviewDispatchRequired,
+  reviewDispatchCompleted,
+  readReviewDispatch,
+  isReviewDispatchRequired,
+  isReviewDispatchCompleted,
+} from './dispatch-signal.js';
 
 // ─── Obligation Tools ────────────────────────────────────────────────────────
 
@@ -88,7 +98,6 @@ export type {
 } from './orchestrator.js';
 
 export {
-  REVIEW_COMPLETED_PREFIX,
   retrySleep,
   invokeReviewer,
   buildMutatedOutput,

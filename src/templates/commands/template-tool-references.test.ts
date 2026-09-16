@@ -277,7 +277,8 @@ describe('implement command: validation-gate contract', () => {
 
   it('does not skip IMPL_VALIDATION into IMPL_REVIEW directly', () => {
     const body = COMMANDS['implement.md'];
-    expect(body).not.toContain('INDEPENDENT_REVIEW_COMPLETED: ..."');
+    expect(body).not.toContain('INDEPENDENT_REVIEW_COMPLETED');
+    expect(body).not.toContain('`next`');
   });
 
   it('limits executor retry to exactly once before failing', () => {

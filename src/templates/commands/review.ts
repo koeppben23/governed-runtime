@@ -51,9 +51,9 @@ Start the compliance review flow for the current FlowGuard session.
    independent review. Never invoke a reviewer yourself, construct reviewer context, or submit
    \`reviewFindings\`.
 
-5. Complete content-aware \`flowguard_review\`: when \`next\` reports the bound reviewer verdict,
+5. Complete content-aware \`flowguard_review\`: when \`reviewDispatch.completed\` is true,
    call \`flowguard_review\` with the same content fields and matching \`reviewVerdict\`
-   (\`"accept"\` or \`"changes_requested"\`). Do not submit, copy, or alter \`reviewFindings\`.
+   (from \`reviewDispatch.verdict\`). Do not submit, copy, or alter \`reviewFindings\`.
    If FlowGuard reports a capture or orchestration failure, report its recovery and stop; do not
    fabricate findings or guess a verdict.
 

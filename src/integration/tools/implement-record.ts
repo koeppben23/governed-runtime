@@ -59,7 +59,6 @@ import { existsSync } from 'node:fs';
 
 // State & Machine
 import { evaluate } from '../../machine/evaluate.js';
-import { resolveWorkflowDirective } from '../../machine/workflow-directive.js';
 import { autoAdvance } from '../../rails/types.js';
 import type { ReviewFindings, ImplEvidence, ReviewObligation } from '../../state/evidence.js';
 import type { SessionState } from '../../state/schema.js';
@@ -242,7 +241,6 @@ function buildImplRecordedResponse(input: {
           : undefined,
       })
     : null;
-  const directive = resolveWorkflowDirective(input.finalState);
   const response: Record<string, unknown> = {
     phase: input.finalState.phase,
     status: `Implementation recorded. ${input.files.length} files changed, ${input.domainFiles.length} domain files.`,
@@ -254,11 +252,13 @@ function buildImplRecordedResponse(input: {
     ceremonyReason: input.ceremony.reason,
     computedMinimumTaskClass: input.ceremony.computedMinimumTaskClass,
     ...reviewObligationResponseFields(input.nextObligation),
-    next: reduced
-      ? 'REDUCED_CEREMONY_APPLIED: Runtime evidence classified the changed files as TRIVIAL after passed validation. Reduced-ceremony evidence was recorded; implementation review evidence was not synthesized.'
-      : instruction
-        ? 'INDEPENDENT_REVIEW_REQUIRED'
-        : directive.code,
+    ...(reduced
+      ? {
+          agentInstruction:
+            'REDUCED_CEREMONY_APPLIED: Runtime evidence classified the changed files as TRIVIAL after passed validation. Reduced-ceremony evidence was recorded; implementation review evidence was not synthesized.',
+        }
+      : {}),
+    ...(instruction ? { reviewDispatch: instruction.reviewDispatch } : {}),
     ...(instruction ? { reviewInvocation: instruction } : {}),
     _audit: { transitions: input.transitions },
   };

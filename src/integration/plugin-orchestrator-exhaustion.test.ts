@@ -45,7 +45,7 @@ const NOW = '2026-05-10T12:00:00.000Z';
 function reviewRequiredOutput(): string {
   return JSON.stringify({
     phase: 'PLAN',
-    next: 'INDEPENDENT_REVIEW_REQUIRED: call flowguard-reviewer with iteration=1 and planVersion=1',
+    reviewDispatch: { required: true },
     reviewObligation: {
       obligationId: OBLIGATION_ID,
       iteration: 1,

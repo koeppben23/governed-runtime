@@ -242,7 +242,8 @@ describe('status', () => {
       expect(result.policyMode).toBe('solo');
       expect(result.hasTicket).toBe(false);
       expect(result.evalKind).toBeTruthy();
-      expect(result.next).toBeTruthy();
+      expect(result.directive).toBeTruthy();
+      expect(result.next).toBeUndefined();
     });
 
     it('returns the advisory ProofGraph projection when proofGraph:true', async () => {
@@ -332,7 +333,7 @@ describe('status', () => {
       const noSession = parseToolResult(await status.execute({}, ctx));
       expect(noSession.phase).toBeNull();
       expect(noSession.status).toContain('No FlowGuard session');
-      expect(noSession.next).toBe('Run /start to bootstrap a session.');
+      expect(noSession.agentInstruction).toBe('Run /start to bootstrap a session.');
       expect(noSession.flowguardFooter).toMatchObject({
         authority: 'diagnostic-only',
         phase: 'unknown',
@@ -341,7 +342,7 @@ describe('status', () => {
       await hydrateSession();
       const hydrated = parseToolResult(await status.execute({}, ctx));
       expect(hydrated.phase).toBe('READY');
-      expect(hydrated.next).toBeTruthy();
+      expect(hydrated.next).toBeUndefined();
       expect(hydrated.directive).toBeTruthy();
       expect((hydrated.flowguardFooter as Record<string, unknown>).next).toBeUndefined();
     });
@@ -585,7 +586,7 @@ describe('status', () => {
       expect(result.phase).toBeNull();
       expect(result.finish).toBeUndefined();
       expect(result.status).toContain('No FlowGuard session');
-      expect(result.next).toBe('Run /start to bootstrap a session.');
+      expect(result.agentInstruction).toBe('Run /start to bootstrap a session.');
     });
 
     it('returns a Finish Card projection for an existing session', async () => {

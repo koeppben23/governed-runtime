@@ -3,7 +3,7 @@
  * @description Deterministic review subagent orchestration — extracted from plugin.ts.
  *
  * Invokes the flowguard-reviewer subagent via the host adapter when a
- * FlowGuard tool response signals INDEPENDENT_REVIEW_REQUIRED. Handles:
+ * FlowGuard tool response carries the review-dispatch signal. Handles:
  * - Review obligation creation + audit
  * - Prompt building (plan, architecture, or impl)
  * - Subagent invocation

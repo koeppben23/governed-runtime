@@ -103,7 +103,7 @@ ${DISCOVERY_REVIEW_CAPTURE}
 
 ### Phase 5: Implementation Review Loop
 
-7. Read the \`next\` field from the tool response and follow its instructions exactly:
+7. Follow the review-dispatch contract from the tool response (\`reviewDispatch\`, \`reviewInvocation\`, \`agentInstruction\`, \`directive\`) exactly:
    - If prior failing implementation challenges are open, before the independent reviewer runs you MUST
      record each one with \`flowguard_resolve_implementation_challenge({ challengeId, validationAttemptIds })\`.
      Use only post-implementation validation attempt IDs for the current digest. This is advisory

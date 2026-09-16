@@ -6,7 +6,6 @@
 
 import { describe, it, expect } from 'vitest';
 import { isReviewRequired, extractReviewContext } from './orchestrator-detection.js';
-import { REVIEW_REQUIRED_PREFIX } from './enforcement/types.js';
 import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_REVIEW } from '../tool-names.js';
 
 const OTHER_TOOL = 'flowguard_implement';
@@ -25,8 +24,8 @@ function canonicalObligation(overrides: Record<string, unknown> = {}) {
 }
 
 describe('isReviewRequired', () => {
-  it('HAPPY: returns true when next starts with the REVIEW_REQUIRED prefix', () => {
-    const out = JSON.stringify({ next: `${REVIEW_REQUIRED_PREFIX}: do the review` });
+  it('HAPPY: returns true when the structured review-dispatch signal requires a dispatch', () => {
+    const out = JSON.stringify({ reviewDispatch: { required: true } });
     expect(isReviewRequired(out)).toBe(true);
   });
 
@@ -44,17 +43,27 @@ describe('isReviewRequired', () => {
   });
 
   it('BAD: returns false when parsed result is an array', () => {
-    expect(isReviewRequired(JSON.stringify([{ next: REVIEW_REQUIRED_PREFIX }]))).toBe(false);
+    expect(isReviewRequired(JSON.stringify([{ reviewDispatch: { required: true } }]))).toBe(false);
   });
 
-  it('CORNER: returns false when next is present but does not start with the prefix', () => {
-    expect(isReviewRequired(JSON.stringify({ next: `prefixed ${REVIEW_REQUIRED_PREFIX}` }))).toBe(
-      false,
-    );
+  it('CORNER: returns false when the signal does not require a dispatch', () => {
+    expect(isReviewRequired(JSON.stringify({ reviewDispatch: { required: false } }))).toBe(false);
   });
 
-  it('CORNER: returns false when next is not a string', () => {
-    expect(isReviewRequired(JSON.stringify({ next: 123 }))).toBe(false);
+  it('CORNER: returns false when the signal is completed', () => {
+    expect(
+      isReviewRequired(
+        JSON.stringify({ reviewDispatch: { required: true, completed: true, verdict: 'accept' } }),
+      ),
+    ).toBe(false);
+  });
+
+  it('CORNER: returns false when the signal is malformed', () => {
+    expect(isReviewRequired(JSON.stringify({ reviewDispatch: { required: 'yes' } }))).toBe(false);
+  });
+
+  it('CORNER: returns false when no review-dispatch field is present', () => {
+    expect(isReviewRequired(JSON.stringify({ next: 'INDEPENDENT_REVIEW_REQUIRED' }))).toBe(false);
   });
 
   it('EDGE: CONTENT_ANALYSIS_REQUIRED path requires the flowguard_review tool name', () => {
@@ -148,14 +157,14 @@ describe('extractReviewContext', () => {
       expect(extractReviewContext(OTHER_TOOL, out)).toBeNull();
     });
 
-    it('BAD: does not parse iteration or planVersion from presentation text', () => {
+    it('BAD: does not parse iteration or planVersion from non-canonical text fields', () => {
       const out = {
         reviewObligation: {
           obligationId: 'ob-9',
           criteriaVersion: 'p37-v1',
           mandateDigest: 'digest-9',
         },
-        next: 'INDEPENDENT_REVIEW_REQUIRED iteration=7 planVersion=8',
+        agentInstruction: 'Independent review required iteration=7 planVersion=8',
       };
       expect(extractReviewContext(OTHER_TOOL, out)).toBeNull();
     });

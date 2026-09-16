@@ -170,10 +170,10 @@ export const CLAUDE_CODE_PLUGIN_SETTINGS = json({});
 const CLAUDE_DISCOVERY_CAPTURE = `Capture the compact Discovery context from the status response: \`health\`, \`drift\`, \`detectedStack\`, repo-native \`verificationCandidates\`, and risk surfaces. Discovery is advisory falsification evidence, never review verdict authority. If Discovery is unavailable, degraded, drifted, timed out, or unchecked, mark every Discovery-dependent claim \`NOT_VERIFIED\`; do not invent repository truth.`;
 
 // Shared host-driven, fail-closed review loop for plan / architecture /
-// implement skills. FlowGuard's \`next\` field is the single authority; the
-// skill never infers verdicts and never self-approves. There is deliberately
-// no "reviewer unavailable" self-approval path: on this host, an unobtainable
-// reviewer fails closed.
+// implement skills. FlowGuard's structured review-dispatch field and directive
+// are the single authority; the skill never infers verdicts and never
+// self-approves. There is deliberately no "reviewer unavailable" self-approval
+// path: on this host, an unobtainable reviewer fails closed.
 //
 // Implementation-specific repair-recheck continuation (Patch E parity with the
 // OpenCode /implement template): the negative verdict is recorded FIRST, then
@@ -201,14 +201,14 @@ function claudeReviewLoop(
 ): string {
   return `## Independent review loop (host-driven, fail-closed)
 
-FlowGuard drives this loop. Read the \`next\` field of every tool response and follow it exactly. Never infer review state, verdicts, or policy yourself.
+FlowGuard drives this loop. Read the \`reviewDispatch\`, \`reviewInvocation\`, \`agentInstruction\`, and \`directive\` fields of every tool response and follow them exactly. Never infer review state, verdicts, or policy yourself.
 
-- When \`next\` starts with \`INDEPENDENT_REVIEW_COMPLETED\`: read the bound \`overallVerdict\` from \`next\`. For "accept", call \`${verdictTool}({ reviewVerdict: "accept" })\` (reviewer acceptance, not user approval). For "changes_requested", ${
+- When \`reviewDispatch.completed\` is true: read the bound \`overallVerdict\` from \`reviewDispatch.verdict\`. For "accept", call \`${verdictTool}({ reviewVerdict: "accept" })\` (reviewer acceptance, not user approval). For "changes_requested", ${
     options.verdictFirst
-      ? `record the reviewer's negative verdict FIRST by submitting the verdict exactly as \`next\` instructs (do NOT edit any files before FlowGuard records it). Then continue automatically: ${options.continuation ?? ''}`
-      : `revise the ${artifact} to resolve every blocking issue, then resubmit the verdict exactly as \`next\` instructs.`
+      ? `record the reviewer's negative verdict FIRST by submitting the verdict exactly as \`reviewDispatch.verdict\` instructs (do NOT edit any files before FlowGuard records it). Then continue automatically: ${options.continuation ?? ''}`
+      : `revise the ${artifact} to resolve every blocking issue, then resubmit the verdict exactly as \`reviewDispatch.verdict\` instructs.`
   }
-- When \`next\` starts with \`INDEPENDENT_REVIEW_REQUIRED\`: independent review is still in progress. Follow the recovery from the FlowGuard response; do not invoke a reviewer, construct reviewer context, or submit \`reviewFindings\`.
+- When \`reviewDispatch.required\` is true and \`reviewDispatch.completed\` is not true: independent review is still in progress. Follow the \`reviewInvocation\` instructions and the recovery from the FlowGuard response; do not invoke a reviewer, construct reviewer context, or submit \`reviewFindings\`.
 - Fail closed — never bypass independent review:
   - \`SUBAGENT_UNABLE_TO_REVIEW\`: the obligation is consumed. Do not retry the same ${artifact}. Report the reviewer's reason and stop.
   - \`STRICT_REVIEW_ORCHESTRATION_FAILED\`: transient — resubmit the ${artifact} to create a fresh obligation (max 3 attempts).
@@ -253,7 +253,7 @@ Use the existing FlowGuard MCP tools. Do not interpret FlowGuard phase or policy
    - Resolve open questions the repository can answer by exploring the codebase instead of asking the user; cross-check stated behavior against the actual code and surface contradictions in the plan.
 4. Derive structured claim declarations for the plan: each names a falsifiable statement (\`statement\`), its governing section (\`authoritySectionId\`), whether it is \`critical\`, its \`claimScope\` (\`specific_behavior\` or \`suite\`), and the \`expectedCheckId\` that must pass after implementation. Do NOT provide \`claimId\`: claim identity is host-owned and deterministically minted by FlowGuard. Keep each statement no broader than the observable evidence it names; internal side effects, ordering, or forbidden calls require direct evidence of that property. Critical \`specific_behavior\` claims require \`counterexampleRequirement\`: \`{ kind: "assertion", checkId: "...", assertion: { providerId: "...", localId: "..." } }\`. \`suite\` claims require \`{ kind: "aggregate_check", checkId: "..." }\`; structured assertion reports never establish aggregate coverage.
 5. Submit the plan only through \`mcp__flowguard__flowguard_plan({ planText, claims })\` with the full plan markdown and those declarations. When revising, include the COMPLETE plan text and claims, never a diff.
-6. Read the response; the \`next\` field carries the review workflow.
+6. Read the response; the \`reviewDispatch\` and \`reviewInvocation\` fields carry the review workflow.
 
 ## Phase 3 — Review
 ${claudeReviewLoop('mcp__flowguard__flowguard_plan', 'plan')}
@@ -278,7 +278,7 @@ Use the existing FlowGuard MCP tools. Do not interpret FlowGuard phase or policy
 ## Phase 2 — Submit the ADR
 3. For a new ADR (READY phase): write it in MADR format with the mandatory sections \`## Context\`, \`## Decision\`, and \`## Consequences\`, derive structured claim declarations (\`statement\`, \`critical\`, \`authoritySectionId\`, \`requiredReviewEvidence\`; do NOT provide \`claimId\`, which is host-owned and deterministically minted by FlowGuard), then call \`mcp__flowguard__flowguard_architecture({ title, adrText, claims })\` (the ADR id is auto-generated). Architecture claims are advisory \`derived_signal\` records and never block an approval.
 4. For a revision (ARCHITECTURE phase, after changes_requested): revise the ADR to address the findings and submit the verdict in the review loop below — do NOT call \`mcp__flowguard__flowguard_architecture({ title, adrText, claims })\` again; that path is for a brand-new ADR. When revising, include the COMPLETE ADR text.
-5. Read the response; the \`next\` field carries the review workflow.
+5. Read the response; the \`reviewDispatch\` and \`reviewInvocation\` fields carry the review workflow.
 
 ## Phase 3 — Review
 ${claudeReviewLoop('mcp__flowguard__flowguard_architecture', 'ADR')}
@@ -337,7 +337,7 @@ Use the existing FlowGuard MCP tools. Do not interpret FlowGuard phase or policy
    - Manual text: use it directly, set \`inputOrigin: "manual_text"\`.
    - Both text and a reference: set \`inputOrigin: "mixed"\`. No reference: omit \`inputOrigin\`.
 3. Call \`mcp__flowguard__flowguard_review\` with ONLY the matching content field (\`text\`, \`prNumber\`, \`branch\`, or \`url\`) and optional \`inputOrigin\` / \`references\`. Do NOT include \`reviewVerdict\` or \`reviewFindings\` on this first call.
-   - FlowGuard performs and binds the independent review. When \`next\` reports the bound reviewer verdict, re-call \`mcp__flowguard__flowguard_review\` with the same content field and matching \`reviewVerdict\`. Do not invoke a reviewer, construct reviewer context, or submit \`reviewFindings\`.
+   - FlowGuard performs and binds the independent review. When \`reviewDispatch.completed\` is true, re-call \`mcp__flowguard__flowguard_review\` with the same content field and the matching \`reviewVerdict\` from \`reviewDispatch.verdict\`. Do not invoke a reviewer, construct reviewer context, or submit \`reviewFindings\`.
 4. Fail closed — never bypass review:
    - \`STRICT_REVIEW_ORCHESTRATION_FAILED\`: transient — re-run this review to retry. \`ORCHESTRATION_PERMANENTLY_FAILED\` or any other blocked/failed result: report the exact blocker and stop.
 5. ${CLAUDE_REVIEW_CARD_RULE}

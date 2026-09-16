@@ -91,9 +91,9 @@ export interface ReviewLoopParams {
  */
 export function SHARED_REVIEW_LOOP(p: ReviewLoopParams): string {
   const verdictTool = p.verdictToolName ?? p.toolName;
-  return `   - \`reviewVerdict\` records the INDEPENDENT REVIEWER's result, never your own approval. On convergence it advances to the policy's terminal gate — the human review gate, where the USER approves the ${p.artifactName} via /review-decision, or a policy-permitted automatic terminal phase (e.g. \`COMPLETE\`) — whichever the tool response returns; the returned phase is authoritative. \`flowguard_decision\` is the only user approval.
-    - When \`next\` starts with "INDEPENDENT_REVIEW_COMPLETED":
-        1. Read the bound \`overallVerdict\` from \`next\`.
+  return `   - \`reviewVerdict\` records the INDEPENDENT REVIEWER's result, never your own approval. On convergence it advances to the policy's terminal gate — the human review gate, where the USER approves the ${p.artifactName} via /review-decision, or a policy-permitted automatic terminal phase (e.g. \`COMPLETE\`) — whichever the tool response returns; the returned phase is authoritative. \`flowguard_decision\` is the only user approval. When the response carries \`agentInstruction\`, follow it exactly; when it carries \`directive\`, the directive is the canonical routing.
+    - When \`reviewDispatch.completed\` is true:
+        1. Read the bound \`overallVerdict\` from \`reviewDispatch.verdict\`.
          2. Do not submit or reconstruct \`reviewFindings\`; FlowGuard has already validated and bound them.
          3. "accept": Call \`${verdictTool}({ reviewVerdict: "accept" })\`. This is the reviewer's acceptance, not user approval.
        5. "changes_requested": ${
@@ -102,7 +102,7 @@ export function SHARED_REVIEW_LOOP(p: ReviewLoopParams): string {
            : `Revise the ${p.artifactName} to address blocking issues, then call \`${verdictTool}({ reviewVerdict: "changes_requested"${p.reviseParams ? `, ${p.reviseParams}` : ''} })\`.${p.changesRequestedExtra}`
        }
        6. "unable_to_review": The reviewer declared the ${p.artifactName} unreviewable (${p.unableDescription}). The tool will be BLOCKED with reason \`SUBAGENT_UNABLE_TO_REVIEW\`. DO NOT retry the review with the same ${p.artifactName} — that obligation is consumed. Report the reviewer's findings to the user, then either ${p.unableRecoveryA} OR ${p.unableRecoveryB}.
-    - When \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED": independent review is still in progress. Re-run the originating FlowGuard command only when its recovery steps direct you to do so; do not submit a verdict or reconstruct reviewer findings.
+    - When \`reviewDispatch.required\` is true and \`reviewDispatch.completed\` is not true: independent review is still in progress. Follow the \`reviewInvocation\` instructions and the recovery steps from the response; do not submit a verdict or reconstruct reviewer findings.
    - If review converged: Report the result per the Presentation section below.
    - If another iteration is needed: CONTINUE AUTOMATICALLY — do not stop and do not wait for a new user command between iterations. Run the next iteration from step ${p.repeatStep}, looping until the reviewer accepts (convergence) or the budget is exhausted ${p.iterationNote}.
    - If the tool returns BLOCKED with code \`SUBAGENT_UNABLE_TO_REVIEW\`: Stop the review loop. Treat the obligation as consumed (no retry). Surface the recovery steps from the reason payload.

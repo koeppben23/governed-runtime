@@ -7,7 +7,6 @@
 
 import type { ToolContext } from './helpers.js';
 import {
-  formatEval,
   formatBlocked,
   formatAutoAdvanceOverflow,
   enrichWithWorkflowDirective,
@@ -368,7 +367,6 @@ async function persistAndFormatConvergedReview(input: ReviewResultContext): Prom
     adrId: revision.currentAdr.id,
     adrDigest: revision.currentAdr.digest,
     selfReviewIteration: iteration,
-    next: formatEval(advanced.evalResult),
     _audit: { transitions: advanced.transitions },
   };
   attachLatestReview(resp, review, iteration);
@@ -610,7 +608,7 @@ function buildNonConvergedReviewResponse(input: {
     reviewMode: 'subagent',
     ...reviewObligationResponseFields(nextObligation, input.attemptId),
     ...repositoryEvidenceUnavailableField(nextObligation?.repositoryEvidenceFreeze),
-    next: instruction.next,
+    reviewDispatch: instruction.reviewDispatch,
     reviewInvocation: instruction,
     _audit: { transitions: advanced.transitions },
   };

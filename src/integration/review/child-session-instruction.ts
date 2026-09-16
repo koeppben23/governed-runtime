@@ -1,6 +1,7 @@
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import type { ReviewObligation } from '../../state/evidence.js';
 import type { ReviewHostPlatform, ReviewOrchestrationMode } from './orchestration-mode.js';
+import { reviewDispatchRequired } from './dispatch-signal.js';
 
 export interface ChildSessionReviewInstructionInput {
   readonly mode: ReviewOrchestrationMode;
@@ -40,6 +41,6 @@ export function buildChildSessionReviewInstruction(input: ChildSessionReviewInst
   };
   return {
     ...metadata,
-    next: 'INDEPENDENT_REVIEW_REQUIRED',
+    reviewDispatch: reviewDispatchRequired(),
   };
 }

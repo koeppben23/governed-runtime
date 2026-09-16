@@ -208,7 +208,8 @@ export interface BlockedProjection {
    * - transition → false (auto-advanced)
    *
    * This is a DISPLAY HINT, not an independent canonical fact.
-   * It mirrors the same signal that feeds formatEval() for user guidance.
+   * It mirrors the same EvalResult signal that drives the structured
+   * `directive` for user guidance.
    */
   humanActionRequired: boolean | null;
 }
@@ -626,8 +627,8 @@ function deriveReadinessField(
  * Extract blocker from an EvalResult.
  *
  * The blocker surface mirrors the EvalResult semantics used for
- * human-facing guidance. This is the same truth that feeds
- * formatEval() — no new blocker logic is invented here.
+ * human-facing guidance. This is the same truth that feeds the
+ * structured `directive` — no new blocker logic is invented here.
  *
  * At EVIDENCE_REVIEW the waiting blocker carries the registered reason code
  * of the ProofGraph gate that the review-decision rail enforces (mirrors the

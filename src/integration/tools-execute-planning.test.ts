@@ -404,10 +404,10 @@ describe('plan', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(typeof result.selfReviewIteration).toBe('number');
-      expect(result.next).toBe('INDEPENDENT_REVIEW_REQUIRED');
+      expect(result.reviewDispatch).toEqual({ required: true });
 
       // The next iteration is carried by the child-session instruction metadata
-      // (the orchestration signal no longer embeds it in the `next` text).
+      // (the dispatch signal no longer embeds it in any text field).
       const reviewInvocation = result.reviewInvocation as {
         requiredReviewAttestation?: { iteration?: number };
       };

@@ -575,7 +575,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   {
     code: 'SUBAGENT_REVIEW_NOT_INVOKED',
     category: 'precondition',
-    messageTemplate: `FlowGuard signaled INDEPENDENT_REVIEW_REQUIRED but no host-observed structured ${REVIEWER_SUBAGENT_TYPE} invocation was recorded. The structured reviewer invocation must complete before a verdict is submitted.`,
+    messageTemplate: `FlowGuard signaled that independent review is required but no host-observed structured ${REVIEWER_SUBAGENT_TYPE} invocation was recorded. The structured reviewer invocation must complete before a verdict is submitted.`,
     recoverySteps: [
       `Re-run the originating FlowGuard command so the host can create the reviewer child session`,
       'Submit only the reviewVerdict; the host resolves the bound structured reviewer evidence automatically',

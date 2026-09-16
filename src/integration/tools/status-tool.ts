@@ -19,7 +19,6 @@ import {
   resolveWorkspacePaths,
   withReadOnlySession,
   formatBlocked,
-  formatEval,
   enrichWithWorkflowDirective,
 } from './helpers.js';
 
@@ -617,7 +616,6 @@ function buildFullStatusResponse(input: FullStatusInput): string {
     ...buildEvidenceStatus(state),
     ...buildImplementationStatus(state),
     evalKind: ev.kind,
-    next: formatEval(ev),
     completeness: {
       overallComplete: completeness.overallComplete,
       fourEyes: completeness.fourEyes,
@@ -693,7 +691,7 @@ export const status: ToolDefinition = {
           status: 'No FlowGuard session found.',
           discoveryHealth: null,
           discoveryDrift: null,
-          next: 'Run /start to bootstrap a session.',
+          agentInstruction: 'Run /start to bootstrap a session.',
           governanceMandates: {
             source: 'src/templates/mandates.ts',
             projection: 'none-without-canonical-session-state',

@@ -30,7 +30,6 @@ import { formatError } from './error-format.js';
 import {
   withReadOnlySession,
   formatBlocked,
-  formatEval,
   formatAutoAdvanceOverflow,
   enrichWithWorkflowDirective,
   getWorktree,
@@ -694,7 +693,7 @@ function formatRunCheckResponse(input: {
     advanced,
     finalState,
   } = input;
-  const { evalResult: ev, transitions } = advanced;
+  const { transitions } = advanced;
   const finalValidation =
     originalState.phase === 'IMPL_VALIDATION' ? finalState.implValidation : finalState.validation;
   const remainingChecks = finalState.activeChecks.filter(
@@ -728,7 +727,7 @@ function formatRunCheckResponse(input: {
         derivedRepairGuidance,
         remainingChecks,
         ...reviewObligationResponseFields(input.nextObligation),
-        next: reviewInstruction ? 'INDEPENDENT_REVIEW_REQUIRED' : formatEval(ev),
+        ...(reviewInstruction ? { reviewDispatch: reviewInstruction.reviewDispatch } : {}),
         ...(reviewInstruction ? { reviewInvocation: reviewInstruction } : {}),
         _audit: { transitions },
       },

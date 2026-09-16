@@ -51,7 +51,7 @@ type ReviewableCase = {
 function reviewRequiredOutput(phase: string): string {
   return JSON.stringify({
     phase,
-    next: 'INDEPENDENT_REVIEW_REQUIRED: call flowguard-reviewer with iteration=1 and planVersion=1',
+    reviewDispatch: { required: true },
     reviewObligation: {
       obligationId: OBLIGATION_ID,
       iteration: 1,
@@ -380,8 +380,11 @@ describe('runReviewOrchestration strict independent review with footer output', 
       ]);
 
       const parsed = JSON.parse(output.output) as Record<string, unknown>;
-      expect(parsed.next).toEqual(expect.stringContaining('INDEPENDENT_REVIEW_COMPLETED'));
-      expect(parsed.next).toContain('reviewVerdict=accept');
+      expect(parsed.reviewDispatch).toEqual({
+        required: true,
+        completed: true,
+        verdict: 'accept',
+      });
       expect(parsed).not.toHaveProperty('pluginReviewFindings');
       expect(parsed).not.toHaveProperty('pluginReviewOutput');
       expect(parsed).not.toHaveProperty('_pluginReviewSessionId');

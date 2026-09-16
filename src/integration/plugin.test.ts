@@ -178,7 +178,7 @@ function strictPlanReviewRequiredOutput(
       requiredChallengeCount: 0,
       requiredChallengeKind: 'design_challenge',
     },
-    next: 'INDEPENDENT_REVIEW_REQUIRED: iteration=0, planVersion=1',
+    reviewDispatch: { required: true },
     ...overrides,
   });
 }
@@ -1184,8 +1184,12 @@ describe('integration/plugin', () => {
         );
 
         const mutated = JSON.parse(String(output.output)) as Record<string, unknown>;
-        expect((mutated.next as string).startsWith('INDEPENDENT_REVIEW_COMPLETED')).toBe(true);
-        expect(mutated.next).toContain('reviewVerdict=accept');
+        expect(mutated.reviewDispatch).toEqual({
+          required: true,
+          completed: true,
+          verdict: 'accept',
+        });
+        expect(mutated.next).toBeUndefined();
         expect(mutated).not.toHaveProperty('_pluginReviewSessionId');
 
         const state = await readState(sessDir);
@@ -1212,7 +1216,6 @@ describe('integration/plugin', () => {
           title: 'plan',
           output: strictPlanReviewRequiredOutput(obligationId, {
             selfReviewIteration: 1,
-            next: 'INDEPENDENT_REVIEW_REQUIRED: iteration=0, planVersion=1',
           }),
           metadata: {},
         };
@@ -1273,7 +1276,7 @@ describe('integration/plugin', () => {
 
         const output = {
           title: 'plan',
-          output: JSON.stringify({ phase: 'PLAN', next: 'continue' }),
+          output: JSON.stringify({ phase: 'PLAN' }),
           metadata: {},
         };
         await hooks['tool.execute.after']!(

@@ -14,7 +14,7 @@ import type { SessionEnforcementState } from './review/enforcement/types.js';
 import { getToolArgs, getToolOutput } from './plugin-helpers.js';
 
 /**
- * Track FlowGuard tool responses for INDEPENDENT_REVIEW_REQUIRED signals.
+ * Track FlowGuard tool responses for the review-dispatch signal.
  *
  * Extracts args and raw output from the plugin hook input/output,
  * then delegates to review enforcement tracking.

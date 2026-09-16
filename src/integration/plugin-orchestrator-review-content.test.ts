@@ -423,8 +423,11 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     expect(parsed.error).toBeUndefined();
     expect(parsed.code).toBeUndefined();
     expect(parsed.phase).toBe('REVIEW');
-    expect(String(parsed.next)).toContain('PLUGIN_REVIEW_COMPLETED');
-    expect(String(parsed.next)).toContain('reviewVerdict=accept');
+    expect(parsed.reviewDispatch).toEqual({
+      required: true,
+      completed: true,
+      verdict: 'accept',
+    });
     expect(parsed).not.toHaveProperty('pluginReviewFindings');
     expect(parsed).not.toHaveProperty('_pluginReviewSessionId');
   });
@@ -504,8 +507,11 @@ describe('runReviewOrchestration strict /review content analysis', () => {
       }),
     );
     const parsed = JSON.parse(output.output) as Record<string, unknown>;
-    expect(String(parsed.next)).toContain('PLUGIN_REVIEW_COMPLETED');
-    expect(String(parsed.next)).toContain('reviewVerdict=accept');
+    expect(parsed.reviewDispatch).toEqual({
+      required: true,
+      completed: true,
+      verdict: 'accept',
+    });
     expect(parsed).not.toHaveProperty('pluginReviewFindings');
   });
 

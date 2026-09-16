@@ -38,8 +38,8 @@ import {
   type SessionEnforcementState,
   type EnforcementResult,
   type PendingReviewTool,
-  REVIEW_REQUIRED_PREFIX,
 } from './types.js';
+import { isReviewDispatchRequired } from '../dispatch-signal.js';
 import { buildPendingReview, type ReviewSignalBinding } from './pending-review.js';
 
 import { TOOL_FLOWGUARD_REVIEW } from '../../tool-names.js';
@@ -176,8 +176,7 @@ function trackRequiredReview(
   const recordKey: PendingReviewTool = context.isReviewContent
     ? TOOL_FLOWGUARD_REVIEW
     : (context.signalOwner as PendingReviewTool);
-  const next = typeof parsed.next === 'string' ? parsed.next : '';
-  if (next.startsWith(REVIEW_REQUIRED_PREFIX) && (context.isReviewContent || context.signalOwner)) {
+  if (isReviewDispatchRequired(parsed) && (context.isReviewContent || context.signalOwner)) {
     const attemptId = typeof parsed.reviewAttemptId === 'string' ? parsed.reviewAttemptId : null;
     trackReviewRequired(state, recordKey, now, {
       attemptId,
@@ -261,6 +260,6 @@ export function enforceBeforeVerdict(
   return {
     allowed: false,
     code: 'SUBAGENT_REVIEW_NOT_INVOKED',
-    reason: `FlowGuard enforcement: obligation ${pending.obligationId} signaled INDEPENDENT_REVIEW_REQUIRED but no host-observed structured reviewer invocation is bound to it before the verdict.`,
+    reason: `FlowGuard enforcement: obligation ${pending.obligationId} signaled a review requirement but no host-observed structured reviewer invocation is bound to it before the verdict.`,
   };
 }

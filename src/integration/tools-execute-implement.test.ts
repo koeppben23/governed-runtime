@@ -382,8 +382,8 @@ describe('implement', () => {
         code: 'IMPLEMENTATION_VALIDATION_IN_PROGRESS',
         commands: [],
       });
-      expect(recordResult.next).toBe('IMPLEMENTATION_VALIDATION_IN_PROGRESS');
-      expect(recordResult.next).not.toContain('INDEPENDENT_REVIEW_REQUIRED');
+      expect(recordResult.next).toBeUndefined();
+      expect(recordResult.reviewDispatch).toBeUndefined();
       expect(recordResult.reviewObligation).toBeUndefined();
       expect(recordResult.reviewInvocation).toBeUndefined();
       expect(
@@ -396,7 +396,7 @@ describe('implement', () => {
       expect(validationResult?.phase).toBe('IMPL_REVIEW');
       expect(validationResult?.reviewObligation).toBeDefined();
       expect(validationResult?.reviewInvocation).toBeDefined();
-      expect(String(validationResult?.next)).toContain('INDEPENDENT_REVIEW_REQUIRED');
+      expect(validationResult?.reviewDispatch).toEqual({ required: true });
       expect(
         (await readState(sessDir))?.reviewAssurance?.obligations.filter(
           (obligation) => obligation.obligationType === 'implement',
@@ -978,8 +978,9 @@ describe('implement', () => {
       expect(result.phase).toBe('IMPLEMENTATION');
       expect(result.status).toContain('iteration 1/3');
       expect(result.status).not.toContain('exhausted');
-      expect(String(result.next)).toContain('flowguard_implement');
-      expect(String(result.next)).toContain('re-record');
+      expect(String(result.agentInstruction)).toContain('flowguard_implement');
+      expect(String(result.agentInstruction)).toContain('re-record');
+      expect(result.next).toBeUndefined();
       // Active loop: no intermediate presentation card — the negative verdict
       // is an internal continuation (repair -> re-record -> validation ->
       // challenge resolution -> fresh review), not a terminal result.
