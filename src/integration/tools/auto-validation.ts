@@ -16,20 +16,19 @@
  * compatibility surface remains available and unchanged.
  *
  * Durability: entering a validation phase atomically records
- * `pendingSystemWork` in the same transition write (`applyTransition`). If the
- * process dies before or during the automatic run, `resumePendingSystemWork`
- * re-runs the checks on the next runtime contact and clears the marker once
- * the attempt completed. An unreadable session is a typed fail-closed
- * `SYSTEM_WORK_STATE_UNREADABLE` result, never a silent "do not run".
+ * `pendingSystemWork` in the same transition write (`applyTransition`). Every
+ * automatic attempt — initial or resumed — either leaves validation, durably
+ * re-arms the exact pending operation generation with backoff, or blocks. A
+ * retry metadata write is therefore never best-effort.
  *
  * Reentrancy: the runner is guarded per session, never process-globally. Two
  * sessions may validate concurrently; a second re-entrant call for the SAME
- * session is a no-op returning `null`.
+ * session is a no-op.
  *
- * @version v2
+ * @version v3
  */
 
-import type { Phase } from '../../state/schema.js';
+import type { Phase, SessionState } from '../../state/schema.js';
 import type { SystemWorkOperation } from '../../state/system-work.js';
 import type { ToolResult, WorkspaceToolContext } from './helpers.js';
 import {
@@ -45,6 +44,21 @@ import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logge
 import type { VerificationCandidateKind } from '../../state/discovery-schemas.js';
 
 type ValidationPhase = 'VALIDATION' | 'IMPL_VALIDATION';
+
+/**
+ * Retry persistence dependencies. The default is production persistence; the
+ * optional override keeps the durability boundary directly testable without
+ * weakening the production contract.
+ */
+export interface SystemWorkRetryDeps {
+  readonly persistState: (sessDir: string, state: SessionState) => Promise<SessionState>;
+  readonly nowMs: () => number;
+}
+
+const DEFAULT_SYSTEM_WORK_RETRY_DEPS: SystemWorkRetryDeps = {
+  persistState: writeStateWithArtifacts,
+  nowMs: Date.now,
+};
 
 /**
  * Sessions with an in-flight automatic validation. Session-scoped (not a
@@ -129,79 +143,43 @@ function unreadableResponse(outcome: Extract<ReadOutcome, { kind: 'unreadable' }
   return formatBlocked('SYSTEM_WORK_STATE_UNREADABLE', { reason: outcome.reason });
 }
 
-/**
- * Execute all active checks for the current validation phase.
- *
- * Additive to the primary mutation that entered the phase: callers return the
- * primary tool output when this runner returns `null`, and the runner's
- * response when it returns a string. The phase state, evidence, and audit trail
- * are all persisted by the run-check path, not here.
- */
-export async function runActiveChecksAutomatically(
+function retryPersistenceBlockedResponse(
   context: WorkspaceToolContext,
-): Promise<string | null> {
-  const sessionKey = context.sessionID;
-  if (activeValidationSessions.has(sessionKey)) return null;
-  activeValidationSessions.add(sessionKey);
-  try {
-    const outcome = await readSession(context);
-    if (outcome.kind === 'unreadable') return unreadableResponse(outcome);
-    if (outcome.kind === 'none') return null;
-    const { phase, activeChecks } = outcome.session;
-    if (!isValidationPhase(phase)) return null;
-    if (activeChecks.length === 0) return null;
-
-    getAdapterLogger().info('tool', 'auto_validation', {
-      sessionId: context.sessionID,
-      phase,
-      checks: activeChecks.join(','),
-      ...getLogTraceFields(),
-    });
-
-    let lastResponse: string | null = null;
-    for (const kind of activeChecks) {
-      const text = await executeCheckResponse(kind as VerificationCandidateKind, context);
-      lastResponse = text;
-      if (responseReportsError(text)) return lastResponse;
-      const fresh = await readSession(context);
-      if (fresh.kind !== 'ok' || fresh.session.phase !== phase) return lastResponse;
-    }
-    return lastResponse;
-  } finally {
-    activeValidationSessions.delete(sessionKey);
-    // The pending marker is consumed ONLY when the run leaves validation:
-    // success (VALIDATION → IMPLEMENTATION) and a genuine negative result
-    // (VALIDATION → PLAN, IMPL_VALIDATION → IMPLEMENTATION) both transition,
-    // and `applyTransition` clears it atomically. A technical outcome that
-    // keeps the phase in validation (execution error, lock/subject/integrity
-    // problem, unexpected response) MUST leave the marker pending so the next
-    // runtime contact retries instead of stranding a `system_work` phase with
-    // no commands.
-  }
+  err: unknown,
+): {
+  readonly kind: 'blocked';
+  readonly code: 'WRITE_FAILED';
+  readonly response: string;
+} {
+  const message = err instanceof Error ? err.message : String(err);
+  getAdapterLogger().error('tool', 'system_work_retry_state_failed', {
+    sessionId: context.sessionID,
+    error: message,
+    ...getLogTraceFields(),
+  });
+  return {
+    kind: 'blocked',
+    code: 'WRITE_FAILED',
+    response: formatBlocked('WRITE_FAILED', {
+      message: `system-work retry authority could not be persisted: ${message}`,
+    }),
+  };
 }
 
 /**
- * Typed outcome of a system-work resume attempt. Callers must consume the
- * result instead of discarding it:
- * - `none`          — no pending work (or the marker was already claimed).
+ * Typed outcome of a system-work attempt. Callers must consume the result
+ * instead of discarding it:
+ * - `none`          — no runnable pending work (or a concurrent attempt owns it).
  * - `completed`     — the run left the validation phase.
- * - `still_pending` — the run hit a technical outcome; the phase and the
- *                     pending marker remain for a later retry.
- * - `blocked`       — the session state is unreadable; fail closed.
+ * - `still_pending` — the run hit a technical outcome and the exact operation
+ *                     generation was durably re-armed for a later retry.
+ * - `blocked`       — state or retry-authority persistence failed; fail closed.
  */
 export type SystemWorkResumeOutcome =
   | { readonly kind: 'none' }
   | { readonly kind: 'completed'; readonly phase: Phase; readonly response: string }
   | { readonly kind: 'still_pending'; readonly phase: Phase; readonly response: string }
   | { readonly kind: 'blocked'; readonly code: string; readonly response: string };
-
-/**
- * In-flight resume attempts per session. The claim exists only for the
- * DURATION of an attempt (concurrent lifecycle events dedupe); it is released
- * when the attempt finishes, so a later lifecycle opportunity can retry a
- * `still_pending` operation after its backoff window.
- */
-const inFlightSystemWorkResumes = new Set<string>();
 
 /** Backoff before the next automatic retry of the same pending operation. */
 const SYSTEM_WORK_RETRY_BASE_MS = 5_000;
@@ -220,38 +198,225 @@ function isBackoffActive(retryAfter: string | null, nowMs: number): boolean {
   return Number.isFinite(at) && at > nowMs;
 }
 
+type RearmResult =
+  | { readonly kind: 'rearmed'; readonly marker: SystemWorkOperation }
+  | { readonly kind: 'superseded' }
+  | { readonly kind: 'completed' };
+
+/**
+ * Durably re-arm exactly the pending operation generation that produced the
+ * technical outcome. `requestedAt + attempt` is the generation fence: a stale
+ * attempt may never overwrite a newer operation or a concurrently re-armed
+ * attempt.
+ */
+export async function rearmPendingSystemWork(
+  context: WorkspaceToolContext,
+  expectedMarker: SystemWorkOperation,
+  deps: SystemWorkRetryDeps = DEFAULT_SYSTEM_WORK_RETRY_DEPS,
+): Promise<RearmResult> {
+  return withMutableSessionTransaction(context, async ({ sessDir, state }) => {
+    const current = state.pendingSystemWork;
+    if (current === null || !isValidationPhase(state.phase)) {
+      return { kind: 'completed' };
+    }
+    if (
+      current.requestedAt !== expectedMarker.requestedAt ||
+      current.attempt !== expectedMarker.attempt ||
+      current.retryAfter !== expectedMarker.retryAfter
+    ) {
+      return { kind: 'superseded' };
+    }
+
+    const nextAttempt = current.attempt + 1;
+    const marker: SystemWorkOperation = {
+      ...current,
+      attempt: nextAttempt,
+      retryAfter: new Date(deps.nowMs() + retryDelayMs(nextAttempt)).toISOString(),
+    };
+    await deps.persistState(sessDir, {
+      ...state,
+      pendingSystemWork: marker,
+    });
+    return { kind: 'rearmed', marker };
+  });
+}
+
+function unavailableAfterAttemptResponse(reason: string): SystemWorkResumeOutcome {
+  return {
+    kind: 'blocked',
+    code: 'SYSTEM_WORK_STATE_UNREADABLE',
+    response: formatBlocked('SYSTEM_WORK_STATE_UNREADABLE', { reason }),
+  };
+}
+
+/**
+ * Execute one canonical automatic-validation attempt. This owns the complete
+ * attempt lifecycle for both the initial in-flow run and lifecycle recovery:
+ * execute checks → inspect phase → either complete or durably re-arm.
+ */
+// eslint-disable-next-line complexity, max-lines-per-function -- owns the complete durable attempt lifecycle in one authority.
+async function runAutomaticValidationAttempt(
+  context: WorkspaceToolContext,
+  deps: SystemWorkRetryDeps,
+): Promise<SystemWorkResumeOutcome> {
+  const sessionKey = context.sessionID;
+  if (activeValidationSessions.has(sessionKey)) return { kind: 'none' };
+  activeValidationSessions.add(sessionKey);
+
+  try {
+    const before = await readSession(context);
+    if (before.kind === 'unreadable') {
+      return {
+        kind: 'blocked',
+        code: 'SYSTEM_WORK_STATE_UNREADABLE',
+        response: unreadableResponse(before),
+      };
+    }
+    if (before.kind === 'none') return { kind: 'none' };
+
+    const { phase, activeChecks, pendingSystemWork } = before.session;
+    if (!isValidationPhase(phase)) return { kind: 'none' };
+    if (activeChecks.length === 0) return { kind: 'none' };
+    if (
+      pendingSystemWork !== null &&
+      isBackoffActive(pendingSystemWork.retryAfter, deps.nowMs())
+    ) {
+      return { kind: 'none' };
+    }
+
+    getAdapterLogger().info('tool', 'auto_validation', {
+      sessionId: context.sessionID,
+      phase,
+      checks: activeChecks.join(','),
+      ...getLogTraceFields(),
+    });
+
+    let lastResponse: string | null = null;
+    for (const kind of activeChecks) {
+      const text = await executeCheckResponse(kind as VerificationCandidateKind, context);
+      lastResponse = text;
+
+      if (responseReportsError(text)) break;
+
+      const fresh = await readSession(context);
+      if (fresh.kind === 'unreadable') {
+        return {
+          kind: 'blocked',
+          code: 'SYSTEM_WORK_STATE_UNREADABLE',
+          response: unreadableResponse(fresh),
+        };
+      }
+      if (fresh.kind === 'none') {
+        return unavailableAfterAttemptResponse(
+          'session disappeared while automatic validation was running',
+        );
+      }
+      if (fresh.session.phase !== phase) {
+        return { kind: 'completed', phase: fresh.session.phase, response: text };
+      }
+    }
+
+    if (lastResponse === null) return { kind: 'none' };
+
+    const after = await readSession(context);
+    if (after.kind === 'unreadable') {
+      return {
+        kind: 'blocked',
+        code: 'SYSTEM_WORK_STATE_UNREADABLE',
+        response: unreadableResponse(after),
+      };
+    }
+    if (after.kind === 'none') {
+      return unavailableAfterAttemptResponse(
+        'session disappeared after automatic validation completed',
+      );
+    }
+    if (!isValidationPhase(after.session.phase)) {
+      return { kind: 'completed', phase: after.session.phase, response: lastResponse };
+    }
+
+    if (pendingSystemWork === null) {
+      return retryPersistenceBlockedResponse(
+        context,
+        new Error('pending system-work marker missing while validation remained active'),
+      );
+    }
+
+    try {
+      const rearmed = await rearmPendingSystemWork(context, pendingSystemWork, deps);
+      if (rearmed.kind === 'completed') {
+        const completed = await readSession(context);
+        if (completed.kind === 'ok' && !isValidationPhase(completed.session.phase)) {
+          return {
+            kind: 'completed',
+            phase: completed.session.phase,
+            response: lastResponse,
+          };
+        }
+      }
+      return {
+        kind: 'still_pending',
+        phase: after.session.phase,
+        response: lastResponse,
+      };
+    } catch (err) {
+      return retryPersistenceBlockedResponse(context, err);
+    }
+  } finally {
+    activeValidationSessions.delete(sessionKey);
+  }
+}
+
+/**
+ * Execute all active checks for the current validation phase.
+ *
+ * Additive to the primary mutation that entered the phase: callers return the
+ * primary tool output when this runner returns `null`, and the runner's
+ * response when it returns a string. A technical outcome is returned only
+ * after the exact pending operation generation has been durably re-armed.
+ */
+export async function runActiveChecksAutomatically(
+  context: WorkspaceToolContext,
+  deps: SystemWorkRetryDeps = DEFAULT_SYSTEM_WORK_RETRY_DEPS,
+): Promise<string | null> {
+  const outcome = await runAutomaticValidationAttempt(context, deps);
+  return outcome.kind === 'none' ? null : outcome.response;
+}
+
+/**
+ * In-flight lifecycle resumes per session. The claim exists only for the
+ * duration of a resume decision/attempt; `runAutomaticValidationAttempt` owns
+ * the execution guard and durable retry authority.
+ */
+const inFlightSystemWorkResumes = new Set<string>();
+
 /**
  * Resume a pending system-work operation.
  *
  * Triggered by the host session lifecycle (session becomes idle/active), never
  * by a user workflow command: `system_work` phases have no commands, so the
- * runtime owns the continuation. A marker whose phase already left validation
- * is stale and is cleared. A technical outcome keeps the operation pending and
- * records attempt/backoff so the next lifecycle opportunity retries without a
- * tight loop; the in-memory claim is released when the attempt ends.
+ * runtime owns the continuation.
  */
 type PendingOperationDecision =
   | { readonly kind: 'none' }
   | { readonly kind: 'stale' }
-  | { readonly kind: 'attempt'; readonly phase: ValidationPhase };
+  | { readonly kind: 'attempt' };
 
-/**
- * Decide whether a persisted session has a resumable pending operation. A
- * marker outside a validation phase is stale (defensive: applyTransition clears
- * it atomically); an active backoff window defers the retry to a later
- * lifecycle opportunity.
- */
-function classifyPendingOperation(session: SessionRead, nowMs: number): PendingOperationDecision {
+function classifyPendingOperation(
+  session: SessionRead,
+  nowMs: number,
+): PendingOperationDecision {
   const { phase, activeChecks, pendingSystemWork } = session;
   if (pendingSystemWork === null) return { kind: 'none' };
   if (!isValidationPhase(phase)) return { kind: 'stale' };
   if (activeChecks.length === 0) return { kind: 'none' };
   if (isBackoffActive(pendingSystemWork.retryAfter, nowMs)) return { kind: 'none' };
-  return { kind: 'attempt', phase };
+  return { kind: 'attempt' };
 }
 
 export async function resumePendingSystemWork(
   context: WorkspaceToolContext,
+  deps: SystemWorkRetryDeps = DEFAULT_SYSTEM_WORK_RETRY_DEPS,
 ): Promise<SystemWorkResumeOutcome> {
   const outcome = await readSession(context);
   if (outcome.kind === 'unreadable') {
@@ -262,73 +427,21 @@ export async function resumePendingSystemWork(
     };
   }
   if (outcome.kind === 'none') return { kind: 'none' };
-  const decision = classifyPendingOperation(outcome.session, Date.now());
+
+  const decision = classifyPendingOperation(outcome.session, deps.nowMs());
   if (decision.kind === 'none') return { kind: 'none' };
   if (decision.kind === 'stale') {
-    // The marker can only be stale if the phase already left validation in a
-    // way that bypassed applyTransition (not a legal path). Clear defensively.
     await clearStalePendingSystemWork(context);
     return { kind: 'none' };
   }
-  const phase = decision.phase;
 
   const sessionKey = context.sessionID;
   if (inFlightSystemWorkResumes.has(sessionKey)) return { kind: 'none' };
   inFlightSystemWorkResumes.add(sessionKey);
   try {
-    const response = await runActiveChecksAutomatically(context);
-    if (response === null) return { kind: 'none' };
-
-    const after = await readSession(context);
-    if (after.kind !== 'ok' || !isValidationPhase(after.session.phase)) {
-      const completedPhase = after.kind === 'ok' ? after.session.phase : phase;
-      return { kind: 'completed', phase: completedPhase, response };
-    }
-
-    // Technical outcome: keep the operation pending, record the attempt, and
-    // set the backoff for the next lifecycle opportunity.
-    const freshMarker = after.session.pendingSystemWork;
-    if (freshMarker !== null) {
-      await persistRetryState(
-        context,
-        freshMarker.attempt + 1,
-        retryDelayMs(freshMarker.attempt + 1),
-      );
-    }
-    return { kind: 'still_pending', phase: after.session.phase, response };
+    return await runAutomaticValidationAttempt(context, deps);
   } finally {
     inFlightSystemWorkResumes.delete(sessionKey);
-  }
-}
-
-/**
- * Persist the retry state for a pending operation that stayed in validation.
- * A no-op when the marker disappeared (the run left validation) or the phase
- * changed concurrently.
- */
-async function persistRetryState(
-  context: WorkspaceToolContext,
-  attempt: number,
-  delayMs: number,
-): Promise<void> {
-  try {
-    await withMutableSessionTransaction(context, async ({ sessDir, state }) => {
-      if (state.pendingSystemWork === null || !isValidationPhase(state.phase)) return;
-      await writeStateWithArtifacts(sessDir, {
-        ...state,
-        pendingSystemWork: {
-          ...state.pendingSystemWork,
-          attempt,
-          retryAfter: new Date(Date.now() + delayMs).toISOString(),
-        },
-      });
-    });
-  } catch (err) {
-    getAdapterLogger().warn('tool', 'system_work_retry_state_failed', {
-      sessionId: context.sessionID,
-      error: err instanceof Error ? err.message : String(err),
-      ...getLogTraceFields(),
-    });
   }
 }
 
@@ -343,11 +456,6 @@ async function executeCheckResponse(
   }
 }
 
-/**
- * Clear the pending marker, but only while the session still sits in a
- * validation phase: a transition out of validation already cleared it
- * atomically, and re-reading prevents clobbering a newer state.
- */
 /**
  * Clear a marker that is stale because the session already left validation.
  * Never clear while the phase is still a validation phase: a pending marker
