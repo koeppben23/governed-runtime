@@ -1,23 +1,22 @@
 /**
  * @module integration/opencode-host-adapter
- * @description OpenCode platform adapter — first concrete implementation of HostAdapter (HAI).
+ * @description OpenCode platform adapter — concrete implementation of HostAdapter (HAI).
  *
- * Wraps the OpenCode SDK client, providing FlowGuard core access to host-specific
- * mechanisms (reviewer spawning, UI logging, tool blocking) through the HAI contract.
- *
- * Design:
- * - Delegates to existing modules (invokeReviewer, plugin-logging) — zero behavior change
- * - Lives in integration/ because it imports from @opencode-ai/plugin SDK surface
- * - Structural typing ensures HostReviewerResult is satisfied by ReviewerResult
- * - No boot-time host I/O; reviewer capability is verified lazily on invocation
+ * Review capabilities are declared per concrete transport. OpenCode's SDK
+ * session.create + session.prompt path provides schema-constrained structured
+ * review in an isolated child session, but the parent TUI does not materialize
+ * that direct child as a native Task/subagent. FlowGuard therefore reports the
+ * capability honestly and fails closed when product policy requires a visible
+ * independent reviewer.
  *
  * @see https://github.com/koeppben23/governed-runtime/issues/242
- * @version v3
+ * @version v4
  */
 
 import type {
   HostAdapter,
   HostCapabilities,
+  HostReviewTransportCapability,
   HostToolEvent,
   BlockDecision,
   ToolResultMutation,
@@ -25,26 +24,22 @@ import type {
   HostReviewerResult,
   CapabilityValidationResult,
   EnforcementLevel,
+  ReviewTransportRequirements,
+} from '../adapters/host-adapter.js';
+import {
+  REQUIRED_INDEPENDENT_REVIEW_TRANSPORT,
+  reviewTransportSatisfies,
 } from '../adapters/host-adapter.js';
 import type { OrchestratorClient } from './review/types.js';
 import { invokeReviewer } from './review/orchestrator.js';
 import { buildEnforcementError } from './plugin-helpers.js';
 
-// ─── Configuration ───────────────────────────────────────────────────────────
-
-/** Configuration for creating an OpenCode host adapter. */
 export interface OpenCodeAdapterConfig {
-  /** OpenCode SDK client instance. */
   readonly client: OrchestratorClient;
-  /** Project working directory. */
   readonly directory: string;
-  /** Worktree path. */
   readonly worktree: string;
 }
 
-// ─── OpenCode Host Adapter ───────────────────────────────────────────────────
-
-/** Fail-closed boot error: the SDK client cannot guarantee the adapter contract. */
 export class HostAdapterInitError extends Error {
   readonly code = 'HOST_ADAPTER_INIT_FAILED' as const;
 
@@ -54,7 +49,6 @@ export class HostAdapterInitError extends Error {
   }
 }
 
-/** Fail-closed boot error: probed host capabilities do not match the contract. */
 export class HostCapabilityMismatchError extends Error {
   readonly code = 'HOST_CAPABILITY_MISMATCH' as const;
 
@@ -65,12 +59,37 @@ export class HostCapabilityMismatchError extends Error {
   }
 }
 
-/**
- * OpenCode platform adapter.
- *
- * Enforcement model: synchronous (in-process throw blocks tool execution).
- * All capabilities are supported (full mutation, reviewer spawn, compaction).
- */
+const SDK_STRUCTURED_REVIEW_TRANSPORT: HostReviewTransportCapability = {
+  kind: 'sdk_structured_session',
+  structuredOutput: true,
+  parentVisible: false,
+  transcriptNavigable: false,
+  isolatedAgentIdentity: true,
+  // session.create in the pinned SDK surface cannot bind a permission profile.
+  permissionIsolation: false,
+  assurance: 'structured_high',
+};
+
+function effectiveRequirements(config: ReviewerSpawnConfig): ReviewTransportRequirements {
+  const requested = config.transportRequirements;
+  if (!requested) return REQUIRED_INDEPENDENT_REVIEW_TRANSPORT;
+
+  // A call site may tighten the canonical product contract but must not weaken
+  // it. Product requirements remain the lower bound.
+  return {
+    structuredOutput:
+      REQUIRED_INDEPENDENT_REVIEW_TRANSPORT.structuredOutput || requested.structuredOutput,
+    parentVisible: REQUIRED_INDEPENDENT_REVIEW_TRANSPORT.parentVisible || requested.parentVisible,
+    transcriptNavigable:
+      REQUIRED_INDEPENDENT_REVIEW_TRANSPORT.transcriptNavigable || requested.transcriptNavigable,
+    isolatedAgentIdentity:
+      REQUIRED_INDEPENDENT_REVIEW_TRANSPORT.isolatedAgentIdentity ||
+      requested.isolatedAgentIdentity,
+    permissionIsolation:
+      REQUIRED_INDEPENDENT_REVIEW_TRANSPORT.permissionIsolation || requested.permissionIsolation,
+  };
+}
+
 export class OpenCodeHostAdapter implements HostAdapter {
   readonly platform = 'opencode' as const;
 
@@ -79,7 +98,7 @@ export class OpenCodeHostAdapter implements HostAdapter {
     argMutation: true,
     outputReplacement: true,
     contextInjection: true,
-    independentStructuredReview: true,
+    reviewTransports: [SDK_STRUCTURED_REVIEW_TRANSPORT],
     compactionInjection: true,
   };
 
@@ -95,8 +114,6 @@ export class OpenCodeHostAdapter implements HostAdapter {
     this.worktreePath = config.worktree;
   }
 
-  // ── Session Context ──────────────────────────────────────────────────────
-
   getWorkingDirectory(): string {
     return this.directoryPath;
   }
@@ -105,12 +122,7 @@ export class OpenCodeHostAdapter implements HostAdapter {
     return this.worktreePath;
   }
 
-  // ── Lifecycle ────────────────────────────────────────────────────────────
-
   async initialize(): Promise<void> {
-    // OpenCode SDK client is ready at plugin load time — no async init needed.
-    // Verify the client surface is structurally callable (fail-closed on a
-    // drifting SDK that exposes truthy non-functions).
     if (
       typeof this.client?.session?.create !== 'function' ||
       typeof this.client?.session?.prompt !== 'function'
@@ -123,54 +135,65 @@ export class OpenCodeHostAdapter implements HostAdapter {
   }
 
   /**
-   * Report which capabilities are runtime-verified versus contract-attested.
-   *
-   * Deliberately performs no host call at boot. An `app.agents()` probe during
-   * plugin initialization can start a re-entrant host request (deadlock risk),
-   * and a successful registry listing would not even prove that the
-   * `flowguard-reviewer` agent is resolvable. Reviewer capability is verified
-   * lazily on the real invocation path by `resolveReviewerAgent()`, so
-   * `independentStructuredReview` stays contract-attested here instead of being reported as
-   * runtime-verified.
+   * Boot validation is contract-attested only. Reviewer registry and transport
+   * usability are verified on the actual review path to avoid re-entrant host I/O.
    */
   async validateCapabilities(): Promise<CapabilityValidationResult> {
     return {
       valid: true,
       mismatches: [],
       runtimeVerified: [],
-      contractAttested: Object.keys(this.capabilities),
+      contractAttested: [
+        'preToolBlock',
+        'argMutation',
+        'outputReplacement',
+        'contextInjection',
+        'reviewTransports.sdk_structured_session',
+        'compactionInjection',
+      ],
     };
   }
 
   async shutdown(): Promise<void> {
-    // OpenCode plugin lifecycle is managed by the SDK — no cleanup needed.
+    // OpenCode plugin lifecycle is SDK-managed.
   }
 
-  // ── Enforcement (pre-tool) ───────────────────────────────────────────────
-
   deliverBlockDecision(_event: HostToolEvent, decision: BlockDecision): void {
-    // OpenCode enforcement: throw from hook handler to block tool execution.
     throw buildEnforcementError(decision.code, decision.reason);
   }
 
   deliverArgMutation(_event: HostToolEvent, _args: Record<string, unknown>): void {
-    // OpenCode: argument mutation happens directly on the mutable output.args
-    // reference provided by the hook system. No adapter action needed — the
-    // caller mutates the reference directly before this method would be called.
-    // This method exists for platforms (Codex) that need explicit arg delivery.
+    // OpenCode argument mutation is performed directly on the hook output ref.
   }
-
-  // ── Result Mutation (post-tool) ──────────────────────────────────────────
 
   mutateToolResult(_event: HostToolEvent, _mutation: ToolResultMutation): void {
-    // OpenCode: output mutation happens directly on the mutable hookOutput.output
-    // reference in the after-hook handler. The caller sets output.output = newString.
-    // This method exists for platforms (Claude Code) that use systemMessage injection.
+    // OpenCode result mutation is performed directly on the hook output ref.
   }
 
-  // ── Subagent / Reviewer ──────────────────────────────────────────────────
-
   async spawnReviewer(config: ReviewerSpawnConfig): Promise<HostReviewerResult | null> {
+    const requirements = effectiveRequirements(config);
+    const transport = this.capabilities.reviewTransports.find((candidate) =>
+      reviewTransportSatisfies(candidate, requirements),
+    );
+
+    // Critical epistemic gate: do not execute a real-but-invisible child and
+    // then present its verdict as satisfying a visible independent-review
+    // contract. The block occurs before session.create and before dispatch
+    // authorization, so no hidden reviewer is released.
+    if (!transport) {
+      return {
+        blocked: true,
+        code: 'VISIBLE_REVIEW_TRANSPORT_UNAVAILABLE',
+        reason:
+          'OpenCode exposes no single review transport that is both schema-structured and parent-visible',
+        reviewInvocation: {
+          host: this.platform,
+          requirements,
+          availableTransports: this.capabilities.reviewTransports,
+        },
+      };
+    }
+
     const options: Record<string, unknown> = {
       _authorizeDispatch: config.authorizeDispatch,
       _abandonDispatch: config.abandonDispatch,
@@ -194,22 +217,22 @@ export class OpenCodeHostAdapter implements HostAdapter {
       config.parentSessionId,
       options,
     );
-
-    // Preserve null semantics: null means all retries exhausted, no response.
     if (result === null) return null;
+    if (result.blocked) return result;
 
-    // ReviewerResult is structurally compatible with HostReviewerResult.
-    return result;
+    return {
+      ...result,
+      reviewTransport: transport.kind,
+      hostVisible: transport.parentVisible,
+      transcriptNavigable: transport.transcriptNavigable,
+    };
   }
 
   isReviewerSupported(): boolean {
-    return true;
+    return this.capabilities.reviewTransports.length > 0;
   }
 
-  // ── Logging ──────────────────────────────────────────────────────────────
-
   log(level: 'debug' | 'info' | 'warn' | 'error', message: string, data?: unknown): void {
-    // Delegate to OpenCode SDK UI log. Non-blocking: errors caught silently.
     if (this.client.tui?.showToast && (level === 'warn' || level === 'error')) {
       this.client.tui
         .showToast({
@@ -219,29 +242,17 @@ export class OpenCodeHostAdapter implements HostAdapter {
           },
         })
         .catch(() => {
-          /* non-blocking */
+          /* diagnostic-only */
         });
     }
-    // Structured log data is handled by the file/console sinks in plugin-logging.
-    // The adapter.log() is specifically for host UI feedback.
     void data;
   }
 
-  // ── Compaction Context ───────────────────────────────────────────────────
-
   injectCompactionContext(_context: string): void {
-    // OpenCode: compaction context injection happens directly via
-    // output.context.push() in the hook handler. This method exists for
-    // platforms that use a different injection mechanism.
+    // OpenCode compaction context is injected directly by the hook handler.
   }
 }
 
-// ─── Factory ─────────────────────────────────────────────────────────────────
-
-/**
- * Create an OpenCode host adapter from an SDK client.
- * Used by plugin.ts (composition root) and test helpers.
- */
 export function createOpenCodeHostAdapter(config: OpenCodeAdapterConfig): HostAdapter {
   return new OpenCodeHostAdapter(config);
 }
