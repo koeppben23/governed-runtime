@@ -190,7 +190,7 @@ export function resolveExecutionDisposition(state: SessionState): ExecutionDispo
  * execution disposition derive from it, so the two projections can never
  * disagree about whether execution is blocked.
  */
-export function resolveBlockingAuthority(state: SessionState): DirectiveContext | null {
+function resolveBlockingAuthority(state: SessionState): DirectiveContext | null {
   // Truthiness (not `!== null`) keeps partial read-only projections that omit
   // `error` unblocked; the persisted schema guarantees `error: ErrorInfo | null`.
   if (state.error) {
