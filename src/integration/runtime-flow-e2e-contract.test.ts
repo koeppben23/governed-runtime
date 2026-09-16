@@ -10,7 +10,7 @@
  * segments. The peer review flow completes via content + findings.
  *
  * Independent review is authorized only by host-observed structured child-session
- * evidence (sdk_session_prompt invocation with captured structured findings).
+ * evidence (native_task_structured_followup invocation with captured structured findings).
  * Does NOT test /check, /validate, /export, /review-decision as standalone tools.
  * (validate and archive are tested within the plan-to-implement segment.)
  * No LLM inference, no network, no secrets.

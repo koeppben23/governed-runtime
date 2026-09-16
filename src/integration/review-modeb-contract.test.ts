@@ -8,7 +8,7 @@
  * review assurance, then invokes the tool to validate and consume.
  *
  * Host profiles: the single host-observed structured child-session evidence path
- * (sdk_session_prompt invocation with captured structured findings).
+ * (native_task_structured_followup invocation with captured structured findings).
  * Does NOT test full E2E flows — only the review-verdict gate for plan and architecture.
  * No LLM inference, no network, no secrets.
  */

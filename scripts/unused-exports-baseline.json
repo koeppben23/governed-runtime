@@ -264,7 +264,6 @@
   "resolvePolicyForHydrate@src/config/index.ts",
   "resolvePolicyFromSnapshot@src/config/index.ts",
   "resolveRuntimePolicyMode@src/config/index.ts",
-  "retrySleep@src/integration/review/orchestrator.ts",
   "rollbackArtifacts@src/cli/install-command.ts",
   "runWithAdapterLogger@src/logging/index.ts",
   "runWithAdapterLoggerAsync@src/logging/index.ts",

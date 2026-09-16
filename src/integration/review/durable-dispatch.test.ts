@@ -16,7 +16,7 @@ import {
   persistAuthorizedSdkDispatch,
   type DispatchLedgerWriteDeps,
 } from '../durable-dispatch.js';
-import { recordEvidenceOrBlockReuse } from './sdk-evidence-recorder.js';
+import { recordEvidenceOrBlockReuse } from './reviewer-evidence-recorder.js';
 import {
   artifactReviewSubjectScope,
   appendObligationWithAttempt,
@@ -25,7 +25,7 @@ import {
   freezeReviewMaterial,
   hashFindings,
 } from './assurance.js';
-import type { ReviewerSuccessResult } from './orchestrator.js';
+import type { ReviewerSuccessResult } from './types.js';
 
 const NOW = '2026-05-10T12:00:00.000Z';
 const CHILD = 'child-session-dispatch-1';

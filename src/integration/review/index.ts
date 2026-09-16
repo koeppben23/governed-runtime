@@ -11,9 +11,9 @@
  * - Obligation state transforms (updateObligation, blockObligation)
  * - Enforcement types, pending-review state, and the host-observed
  *   structured-invocation verdict gate
- * - Reviewer subagent orchestration (SDK invocation, retry, output parsing)
+ * - Reviewer result DTO for the visible native Task transport
  * - Review assurance state management (obligations, invocations, evidence)
- * - Durable dispatch authorization and SDK invocation evidence recording
+ * - Durable dispatch authorization and reviewer evidence recording
  * - Prompt construction for all review types
  * - Agent resolution (registry probe + cache)
  * - Findings JSON Schema definition
@@ -87,24 +87,9 @@ export {
   appendInvocationEvidence,
 } from './assurance.js';
 
-// ─── Orchestrator ────────────────────────────────────────────────────────────
+// ─── Reviewer Result DTO ─────────────────────────────────────────────────────
 
-export type {
-  ReviewerBlockedResult,
-  ReviewerSuccessResult,
-  ReviewerResult,
-  OrchestrationResult,
-  InvokeReviewerOptions,
-} from './orchestrator.js';
-
-export {
-  retrySleep,
-  invokeReviewer,
-  buildMutatedOutput,
-  buildReviewContentMutatedOutput,
-  isReviewRequired,
-  extractReviewContext,
-} from './orchestrator.js';
+export type { ReviewerSuccessResult } from './types.js';
 
 // ─── Prompt Builders ─────────────────────────────────────────────────────────
 
@@ -115,7 +100,6 @@ export type {
 } from './prompt-builders.js';
 
 export {
-  selectReviewerProfileRules,
   buildPlanReviewPrompt,
   buildImplReviewPrompt,
   buildArchitectureReviewPrompt,

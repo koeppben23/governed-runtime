@@ -23,7 +23,7 @@ import {
 import type { ReviewAttempt, ReviewDispatchRecord } from '../state/evidence-review.js';
 import type { SessionState } from '../state/schema.js';
 
-export const REVIEW_DISPATCH_PERSISTENCE_FAILED = 'REVIEW_DISPATCH_PERSISTENCE_FAILED' as const;
+const REVIEW_DISPATCH_PERSISTENCE_FAILED = 'REVIEW_DISPATCH_PERSISTENCE_FAILED' as const;
 
 export interface DispatchLedgerWriteDeps {
   readonly updateReviewAssurance: (

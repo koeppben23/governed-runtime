@@ -72,11 +72,16 @@ describe('structured review authority hard cut', () => {
   it('never autospawns an invisible SDK reviewer', () => {
     const adapter = readFileSync(join(SRC, 'integration/opencode-host-adapter.ts'), 'utf8');
     expect(adapter).toContain('NATIVE_REVIEW_TASK_REQUIRED');
-    expect(adapter).not.toMatch(/session\.create\s*\(/);
-    const callers = listProductionSources(SRC).filter((file) =>
-      /(?<!function )\binvokeReviewer\s*\(/.test(readFileSync(file, 'utf8')),
-    );
-    expect(callers.map(relative)).toEqual([]);
+    // The SDK child-session transport must not exist as an importable
+    // authority surface anywhere in production, not merely stay unused.
+    const sources = listProductionSources(SRC).map((file) => ({
+      file,
+      content: readFileSync(file, 'utf8'),
+    }));
+    const offenders = (pattern: RegExp) =>
+      sources.filter(({ content }) => pattern.test(content)).map(({ file }) => relative(file));
+    expect(offenders(/\binvokeReviewer\b/)).toEqual([]);
+    expect(offenders(/session\.create\s*\(/)).toEqual([]);
   });
 
   it('admits exactly the native visible structured invocation generation', () => {

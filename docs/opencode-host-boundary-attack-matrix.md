@@ -180,11 +180,11 @@ files evolve.
 <!-- prettier-ignore -->
 | ID    | Scenario / vector                                                | Expected fail-closed behavior                                                 | Coverage                                                                                                                                                    | Status  | Finding |
 | ----- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------- |
-| RC-01 | Reviewer child creation or prompt fails transiently.             | Fresh child per attempt, bounded retry with backoff; no duplicate evidence.   | `src/integration/review/orchestrator-retry-core.test.ts:99`.                                | Covered | —       |
-| RC-02 | In-flight abort of a reviewer child.                             | Typed aborted outcome; unsupported abort fails closed.                        | Timeout abort tests: `src/integration/review/orchestrator-timeout.test.ts`; fake probe: `src/integration/review/__tests__/parallel-host-probe.test.ts:175`. | Covered | F-13    |
-| RC-03 | Reviewer child exceeds its time budget.                          | Deterministic timeout classification; no hang; parent remains resumable.      | Bounded prompt timeout and retry classification: `src/integration/review/orchestrator-timeout.test.ts`.                                                     | Covered | F-13    |
-| RC-04 | Parent session is deleted or crashes while the child is running. | No orphan authority; late callbacks from superseded sessions add no evidence. | Best-effort abort: `src/integration/review/orchestrator-timeout.test.ts`; logical coverage: `src/integration/runtime-flow-e2e-contract.test.ts`.            | Partial | F-13    |
-| RC-05 | Duplicate child binding or stale callback.                       | Second bind refused; no duplicate evidence.                                   | `src/integration/review/assurance.test.ts:1295`, `src/integration/review/orchestrator-retry-core.test.ts`.                                                  | Covered | —       |
+| RC-01 | Reviewer Task release yields no bindable evidence.               | The dispatch is spent as `outcome_unknown`; no evidence binds; a fresh command run re-arms a new attempt. | `src/integration/plugin.test.ts` (native visible review transport: provenance failure), `src/integration/review/durable-dispatch.test.ts`.                  | Covered | —       |
+| RC-02 | Completed Task metadata omits the reviewer child identity.       | Durable lineage cannot resolve; the dispatch is abandoned as `outcome_unknown` before any evidence binds. | `src/integration/plugin.test.ts` (native visible review transport: missing child metadata), `src/state/review-dispatch.test.ts`.                            | Covered | —       |
+| RC-03 | Same reviewer attempt is released to the host twice.             | Second release refused with `REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE` before host execution. | `src/integration/plugin.test.ts` (native visible review transport: refuses double release), `src/state/review-dispatch.test.ts`.                            | Covered | —       |
+| RC-04 | Parent session is deleted or crashes while the Task child runs.  | The authorized dispatch stays unresolved and can never satisfy a later bind; recovery requires a fresh attempt. | `src/integration/review/durable-dispatch.test.ts`, `src/integration/review/assurance.test.ts`.                                                              | Covered | —       |
+| RC-05 | Duplicate or stale reviewer evidence binding.                    | Second bind refused; the dispatch/completion/invocation/fulfillment mutation is atomic. | `src/integration/review/assurance.test.ts`, `src/integration/review/durable-dispatch.test.ts`.                                                              | Covered | —       |
 
 ---
 
@@ -198,8 +198,8 @@ addressing findings:
 - Runtime lease and fencing serialize concurrent workspace mutation (CI-06).
 - Mutation episodes keep unknown host outcomes from becoming success evidence
   (HS-03, HS-05, HS-08, TS-06).
-- Reviewer provenance, attempt lifecycle, and bounded child concurrency are
-  contract-tested (TS-04, RC-01, RC-05).
+- Reviewer provenance and attempt lifecycle are contract-tested against the
+  native Task transport (TS-04, RC-01, RC-05).
 - The reviewer agent permission surface is verified against the real
   `opencode` binary by the smoke-project capability probe (F-09).
 - Hook payload runtime shapes are validated with runtime schemas (HD-04).
@@ -349,13 +349,14 @@ foreign after-hook delivery.
 The compaction suite now asserts that active review obligations survive and are
 not represented as completed.
 
-### F-13 — Reviewer timeout and orphan cleanup are untested
+### F-13 — Reviewer timeout and orphan cleanup (superseded)
 
-**Severity:** P2. **Status:** Fixed — bounded prompt timeout plus best-effort child abort. **Scenarios:** RC-02, RC-03, RC-04.
+**Severity:** P2. **Status:** Superseded — the SDK child-session transport was removed; the host owns Task execution and cancellation. **Scenarios:** RC-01 to RC-04.
 
-Reviewer prompts are time-bounded and timeout classification is deterministic;
-timed-out child sessions are aborted best-effort. Process-level orphan cleanup
-remains residual evidence rather than a stronger claim.
+FlowGuard no longer creates, prompts, or aborts reviewer children. The native
+Task transport binds only host-observed completion evidence and spends any
+release without bindable evidence as `outcome_unknown`; a later (late)
+completion can never satisfy the durable dispatch contract again.
 
 ---
 
@@ -369,7 +370,7 @@ remains residual evidence rather than a stronger claim.
 6. F-06 — centralize session-scoped cleanup. **Done**.
 7. F-07 — remove mutable session-id state from the adapter. **Done**.
 8. F-08 — real-host hook lifecycle E2E. **Gated test removed; real-host run `NOT_VERIFIED`**.
-9. F-09 to F-13 — close executable coverage gaps. **Done** (process-level orphan evidence remains residual).
+9. F-09 to F-12 — close executable coverage gaps. **Done**. F-13 is superseded by the native Task transport.
 
 ---
 

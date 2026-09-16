@@ -2,11 +2,11 @@
  * @module integration/review/types
  * @description Shared type definitions for the review bounded context.
  *
- * This module breaks the circular type-only dependency between
- * orchestrator.ts and agent-resolution.ts by providing the shared
- * OrchestratorClient interface in a dedicated leaf module.
+ * This leaf module owns the host client surface and the reviewer result DTO
+ * used by the visible native Task transport and the evidence recorder. It has
+ * no runtime SDK dependency and no SDK child-session creation capability.
  *
- * @version v1
+ * @version v2 — removed the SDK child-session creation/cancellation surface
  */
 
 /**
@@ -21,9 +21,6 @@ export interface OrchestratorClient {
     agents(): Promise<{ data?: Array<Record<string, unknown>> | undefined; error?: unknown }>;
   };
   session: {
-    create(opts: {
-      body?: { parentID?: string; title?: string };
-    }): Promise<{ data?: { id: string } | undefined; error?: unknown }>;
     prompt(opts: {
       path: { id: string };
       body: {
@@ -56,13 +53,6 @@ export interface OrchestratorClient {
         | undefined;
       error?: unknown;
     }>;
-    /**
-     * Abort a running session. Optional and additive: existing mocks and call
-     * sites that only use create/prompt remain valid. Mirrors the documented
-     * OpenCode SDK `session.abort({ path })` shape. Used by the non-shipped
-     * parallel host-probe harness to exercise in-flight reviewer cancellation.
-     */
-    abort?(opts: { path: { id: string } }): Promise<{ data?: boolean; error?: unknown }>;
   };
   /** Optional TUI client for toast notifications. Not available in headless/CLI mode. */
   tui?: {
@@ -70,4 +60,23 @@ export interface OrchestratorClient {
       body: { message: string; variant?: 'info' | 'success' | 'error' };
     }): Promise<unknown>;
   };
+}
+
+/**
+ * Successful reviewer result bound to the exact visible child session.
+ *
+ * `rawResponse` and any free-form text are diagnostics only; findings become
+ * authority exclusively through the host-validated structured payload.
+ */
+export interface ReviewerSuccessResult {
+  readonly blocked?: false;
+  readonly sessionId: string;
+  readonly rawResponse: string;
+  readonly findings: Record<string, unknown> | null;
+  readonly reviewOutputMode: 'structured_output';
+  readonly structuredOutputUsed: boolean;
+  readonly reviewAssuranceLevel: 'structured_high';
+  /** Host-observed lifecycle timestamps for the successful reviewer prompt. */
+  readonly invokedAt?: string;
+  readonly fulfilledAt?: string;
 }

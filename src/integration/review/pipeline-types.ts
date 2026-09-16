@@ -9,7 +9,7 @@
  */
 
 import type { SessionEnforcementState } from './enforcement/types.js';
-import type { OrchestratorClient } from './orchestrator.js';
+import type { OrchestratorClient } from './types.js';
 import type { SessionState } from '../../state/schema.js';
 import type { HostAdapter } from '../../adapters/host-adapter.js';
 import type { SemanticAuditIntent } from '../tools/audit-outbox.js';

@@ -1,10 +1,10 @@
 /**
- * @module integration/review/sdk-evidence-recorder
+ * @module integration/review/reviewer-evidence-recorder
  * @description Atomic persistence of reviewer evidence and attempt lineage.
  *
- * Historical filename retained to avoid import churn; the mutation authority is
- * transport-neutral. Callers supply the concrete host execution facts when the
- * evidence came from the native visible Task transport.
+ * The mutation authority is transport-neutral but bound to the visible native
+ * Task lifecycle: callers supply the exact host execution facts observed at the
+ * Task before/after boundary.
  */
 
 import type { ReviewObligationType } from '../../state/evidence.js';
@@ -23,7 +23,7 @@ import {
 } from '../../state/review-continuation.js';
 import { hasAuthorizedDispatch } from '../../state/review-dispatch.js';
 import { updateObligation } from './obligation-state.js';
-import type { ReviewerSuccessResult } from './orchestrator.js';
+import type { ReviewerSuccessResult } from './types.js';
 import type { SemanticAuditIntent } from '../tools/audit-outbox.js';
 import type { SessionState } from '../../state/schema.js';
 import type { EvidenceRecordResult, OrchestratorDeps } from './pipeline-types.js';

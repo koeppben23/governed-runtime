@@ -31,7 +31,7 @@ import type { RiskEnforcementDeps } from './plugin-risk.js';
 import { type ActiveCommandScope, type FlowGuardPluginRuntime } from './plugin-shared.js';
 import { createOpenCodeHostAdapter, HostCapabilityMismatchError } from './opencode-host-adapter.js';
 import { createWorkspace } from './plugin-workspace.js';
-import type { OrchestratorClient } from './review/orchestrator.js';
+import type { OrchestratorClient } from './review/types.js';
 import {
   isNativeReviewerTaskAfter,
   isNativeReviewerTaskBefore,

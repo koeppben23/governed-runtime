@@ -50,8 +50,8 @@ import { prepareReviewerFindingsForValidation } from './review/enforcement/prepa
 import { validatePipelineAttestation } from './review/shared-helpers.js';
 import { validateChallengeConsistency } from './review/enforcement/challenge-consistency.js';
 import { collectPreviouslyUsedChallengeIds } from './review/challenge-history.js';
-import { recordEvidenceOrBlockReuse } from './review/sdk-evidence-recorder.js';
-import type { ReviewerSuccessResult } from './review/orchestrator.js';
+import { recordEvidenceOrBlockReuse } from './review/reviewer-evidence-recorder.js';
+import type { ReviewerSuccessResult } from './review/types.js';
 import { projectReviewExecution } from './review/review-execution-projection.js';
 
 const TASK_TOOL = 'task';
