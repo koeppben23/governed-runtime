@@ -58,7 +58,7 @@ import type {
   ValidationResult,
   ValidationOutcome,
 } from '../../state/evidence-validation.js';
-import { isExecutionError } from '../../state/evidence-validation.js';
+import { isTechnicalValidationBlock } from '../../state/evidence-validation.js';
 import type { ReviewObligation } from '../../state/evidence.js';
 import {
   prepareVerificationExecution,
@@ -620,15 +620,19 @@ function buildNextValidationState(
   validation: ValidationResult[],
   validationAttempt: ValidationAttempt,
 ): SessionState {
-  const hasExecutionError = validation.some(isExecutionError);
+  // Canonical disposition authority: only a proven artifact failure may clear
+  // approval/implementation authority. A technical block (blocked outcome,
+  // execution error, inconclusive extraction) keeps the phase and the
+  // authority for a retry.
+  const hasTechnicalBlock = validation.some(isTechnicalValidationBlock);
 
   if (state.phase === 'IMPL_VALIDATION') {
     // Post-implementation validation writes to implValidation. A genuine failure
     // routes IMPL_VALIDATION → IMPLEMENTATION (the delivered CODE is wrong, not the
     // plan); clear implementation so the agent must re-run /implement and the machine
-    // does not immediately re-fire IMPL_COMPLETE into an advance loop. Execution
-    // errors (timeout/not-found) stay in IMPL_VALIDATION for a retry.
-    const genuinelyFailed = validation.some((result) => !result.passed) && !hasExecutionError;
+    // does not immediately re-fire IMPL_COMPLETE into an advance loop. A technical
+    // block stays in IMPL_VALIDATION for a retry.
+    const genuinelyFailed = validation.some((result) => !result.passed) && !hasTechnicalBlock;
     return {
       ...state,
       implValidation: validation,
@@ -638,10 +642,10 @@ function buildNextValidationState(
     };
   }
 
-  // F5: preserve plan evidence when the non-pass is an execution error (timeout /
-  // command-not-found). The machine stays in VALIDATION (CHECK_ERRORED) for a retry
-  // rather than routing to PLAN, so the approved plan must survive.
-  const clearPlanEvidence = validation.some((result) => !result.passed) && !hasExecutionError;
+  // F5: preserve plan evidence when the non-pass is a technical block. The
+  // machine stays in VALIDATION (CHECK_ERRORED) for a retry rather than routing
+  // to PLAN, so the approved plan must survive.
+  const clearPlanEvidence = validation.some((result) => !result.passed) && !hasTechnicalBlock;
   return {
     ...state,
     validation,

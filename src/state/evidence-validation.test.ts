@@ -316,6 +316,32 @@ describe('evidence-validation', () => {
       ).toBe('technical_block');
     });
 
+    it('artifact_failure for a trustworthy extraction of a non-passing artifact', () => {
+      expect(
+        classifyValidationDisposition({
+          passed: false,
+          outcome: 'inconclusive',
+          timedOut: false,
+          exitCode: 1,
+          assertionExtraction: { status: 'extracted' },
+        }),
+      ).toBe('artifact_failure');
+    });
+
+    it('technical_block when the assertion extraction itself is inconclusive', () => {
+      // A missing/unparseable/ambiguous report is lack of trustworthy evidence,
+      // not proof that the artifact failed.
+      expect(
+        classifyValidationDisposition({
+          passed: false,
+          outcome: 'inconclusive',
+          timedOut: false,
+          exitCode: 1,
+          assertionExtraction: { status: 'inconclusive' },
+        }),
+      ).toBe('technical_block');
+    });
+
     it('technical_block for timeouts and command-not-found', () => {
       expect(
         classifyValidationDisposition({

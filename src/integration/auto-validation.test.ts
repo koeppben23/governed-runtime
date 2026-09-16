@@ -542,7 +542,7 @@ describe('automatic validation', () => {
       await writeState(sessDir, {
         ...state!,
         phase: 'VALIDATION',
-        pendingSystemWork: { kind: 'validation', requestedAt },
+        pendingSystemWork: { kind: 'validation', requestedAt, attempt: 0, retryAfter: null },
         validation: [],
       });
       vi.mocked(executorMock.executeCheck).mockClear();
@@ -573,7 +573,7 @@ describe('automatic validation', () => {
       await writeState(sessDir, {
         ...state!,
         phase: 'VALIDATION',
-        pendingSystemWork: { kind: 'validation', requestedAt },
+        pendingSystemWork: { kind: 'validation', requestedAt, attempt: 0, retryAfter: null },
         validation: [],
       });
       vi.mocked(executorMock.executeCheck).mockResolvedValueOnce(timedOutCheck('typecheck'));
@@ -584,6 +584,30 @@ describe('automatic validation', () => {
       const finalState = await readState(sessDir);
       expect(finalState!.phase).toBe('VALIDATION');
       expect(finalState!.pendingSystemWork).not.toBeNull();
+      // The operation records its attempt and a backoff window instead of
+      // becoming an unretryable one-shot.
+      expect(finalState!.pendingSystemWork!.attempt).toBeGreaterThanOrEqual(1);
+      expect(finalState!.pendingSystemWork!.retryAfter).not.toBeNull();
+
+      // While the backoff is active, a lifecycle event does not re-run checks.
+      vi.mocked(executorMock.executeCheck).mockClear();
+      const duringBackoff = await resumePendingSystemWork(ctx);
+      expect(duringBackoff).toEqual({ kind: 'none' });
+      expect(vi.mocked(executorMock.executeCheck)).not.toHaveBeenCalled();
+
+      // After the backoff window elapses, the operation is retryable again.
+      const afterBackoff = await readState(sessDir);
+      await writeState(sessDir, {
+        ...afterBackoff!,
+        pendingSystemWork: {
+          ...afterBackoff!.pendingSystemWork!,
+          retryAfter: new Date(Date.now() - 1000).toISOString(),
+        },
+      });
+      vi.mocked(executorMock.executeCheck).mockResolvedValueOnce(timedOutCheck('typecheck'));
+      const retried = await resumePendingSystemWork(ctx);
+      expect(retried).toMatchObject({ kind: 'still_pending', phase: 'VALIDATION' });
+      expect(vi.mocked(executorMock.executeCheck)).toHaveBeenCalledTimes(1);
     });
 
     it('fails closed with a blocked resume outcome on an unreadable session state', async () => {

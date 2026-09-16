@@ -94,10 +94,18 @@ describe('rails/types', () => {
         'APPROVE',
         at,
       );
-      expect(entering.pendingSystemWork).toEqual({ kind: 'validation', requestedAt: at });
+      expect(entering.pendingSystemWork).toEqual({
+        kind: 'validation',
+        requestedAt: at,
+        attempt: 0,
+        retryAfter: null,
+      });
 
       const exiting = applyTransition(
-        { ...entering, pendingSystemWork: { kind: 'validation', requestedAt: at } },
+        {
+          ...entering,
+          pendingSystemWork: { kind: 'validation', requestedAt: at, attempt: 1, retryAfter: null },
+        },
         'VALIDATION',
         'IMPLEMENTATION',
         'ALL_PASSED',
@@ -115,7 +123,12 @@ describe('rails/types', () => {
         'IMPL_COMPLETE',
         at,
       );
-      expect(entering.pendingSystemWork).toEqual({ kind: 'validation', requestedAt: at });
+      expect(entering.pendingSystemWork).toEqual({
+        kind: 'validation',
+        requestedAt: at,
+        attempt: 0,
+        retryAfter: null,
+      });
     });
 
     it('applyTransition closes the rework marker exactly on IMPL_VALIDATION → IMPL_REVIEW', () => {

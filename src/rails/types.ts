@@ -203,7 +203,7 @@ export function applyTransition(
     // execution is therefore recoverable instead of a dead state.
     pendingSystemWork:
       to === 'VALIDATION' || to === 'IMPL_VALIDATION'
-        ? { kind: 'validation', requestedAt: at }
+        ? { kind: 'validation', requestedAt: at, attempt: 0, retryAfter: null }
         : null,
     // Entering IMPL_REVIEW is possible only from IMPL_VALIDATION with a FULLY
     // passing fresh validation of the current record. That is the exact point

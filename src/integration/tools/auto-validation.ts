@@ -196,12 +196,29 @@ export type SystemWorkResumeOutcome =
   | { readonly kind: 'blocked'; readonly code: string; readonly response: string };
 
 /**
- * Markers already claimed for a resume attempt in this process. One attempt per
- * marker generation (`requestedAt`), so an idle event cannot loop on a
- * persistently failing check; a new transition re-arms the marker with a fresh
- * `requestedAt` and becomes claimable again.
+ * In-flight resume attempts per session. The claim exists only for the
+ * DURATION of an attempt (concurrent lifecycle events dedupe); it is released
+ * when the attempt finishes, so a later lifecycle opportunity can retry a
+ * `still_pending` operation after its backoff window.
  */
-const claimedSystemWorkMarkers = new Set<string>();
+const inFlightSystemWorkResumes = new Set<string>();
+
+/** Backoff before the next automatic retry of the same pending operation. */
+const SYSTEM_WORK_RETRY_BASE_MS = 5_000;
+const SYSTEM_WORK_RETRY_MAX_MS = 60_000;
+
+function retryDelayMs(attempt: number): number {
+  return Math.min(
+    SYSTEM_WORK_RETRY_BASE_MS * 2 ** Math.max(attempt - 1, 0),
+    SYSTEM_WORK_RETRY_MAX_MS,
+  );
+}
+
+function isBackoffActive(retryAfter: string | null, nowMs: number): boolean {
+  if (retryAfter === null) return false;
+  const at = Date.parse(retryAfter);
+  return Number.isFinite(at) && at > nowMs;
+}
 
 /**
  * Resume a pending system-work operation.
@@ -209,9 +226,30 @@ const claimedSystemWorkMarkers = new Set<string>();
  * Triggered by the host session lifecycle (session becomes idle/active), never
  * by a user workflow command: `system_work` phases have no commands, so the
  * runtime owns the continuation. A marker whose phase already left validation
- * is stale and is cleared; a marker in a validation phase with active checks
- * runs the automatic validation once per marker generation.
+ * is stale and is cleared. A technical outcome keeps the operation pending and
+ * records attempt/backoff so the next lifecycle opportunity retries without a
+ * tight loop; the in-memory claim is released when the attempt ends.
  */
+type PendingOperationDecision =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'stale' }
+  | { readonly kind: 'attempt'; readonly phase: ValidationPhase };
+
+/**
+ * Decide whether a persisted session has a resumable pending operation. A
+ * marker outside a validation phase is stale (defensive: applyTransition clears
+ * it atomically); an active backoff window defers the retry to a later
+ * lifecycle opportunity.
+ */
+function classifyPendingOperation(session: SessionRead, nowMs: number): PendingOperationDecision {
+  const { phase, activeChecks, pendingSystemWork } = session;
+  if (pendingSystemWork === null) return { kind: 'none' };
+  if (!isValidationPhase(phase)) return { kind: 'stale' };
+  if (activeChecks.length === 0) return { kind: 'none' };
+  if (isBackoffActive(pendingSystemWork.retryAfter, nowMs)) return { kind: 'none' };
+  return { kind: 'attempt', phase };
+}
+
 export async function resumePendingSystemWork(
   context: WorkspaceToolContext,
 ): Promise<SystemWorkResumeOutcome> {
@@ -224,28 +262,74 @@ export async function resumePendingSystemWork(
     };
   }
   if (outcome.kind === 'none') return { kind: 'none' };
-  const { phase, activeChecks, pendingSystemWork } = outcome.session;
-  if (pendingSystemWork === null) return { kind: 'none' };
-  if (!isValidationPhase(phase)) {
+  const decision = classifyPendingOperation(outcome.session, Date.now());
+  if (decision.kind === 'none') return { kind: 'none' };
+  if (decision.kind === 'stale') {
     // The marker can only be stale if the phase already left validation in a
     // way that bypassed applyTransition (not a legal path). Clear defensively.
     await clearStalePendingSystemWork(context);
     return { kind: 'none' };
   }
-  if (activeChecks.length === 0) return { kind: 'none' };
+  const phase = decision.phase;
 
-  const claimKey = `${context.sessionID}:${pendingSystemWork.requestedAt}`;
-  if (claimedSystemWorkMarkers.has(claimKey)) return { kind: 'none' };
-  claimedSystemWorkMarkers.add(claimKey);
+  const sessionKey = context.sessionID;
+  if (inFlightSystemWorkResumes.has(sessionKey)) return { kind: 'none' };
+  inFlightSystemWorkResumes.add(sessionKey);
+  try {
+    const response = await runActiveChecksAutomatically(context);
+    if (response === null) return { kind: 'none' };
 
-  const response = await runActiveChecksAutomatically(context);
-  if (response === null) return { kind: 'none' };
+    const after = await readSession(context);
+    if (after.kind !== 'ok' || !isValidationPhase(after.session.phase)) {
+      const completedPhase = after.kind === 'ok' ? after.session.phase : phase;
+      return { kind: 'completed', phase: completedPhase, response };
+    }
 
-  const after = await readSession(context);
-  const afterPhase = after.kind === 'ok' ? after.session.phase : phase;
-  return isValidationPhase(afterPhase)
-    ? { kind: 'still_pending', phase: afterPhase, response }
-    : { kind: 'completed', phase: afterPhase, response };
+    // Technical outcome: keep the operation pending, record the attempt, and
+    // set the backoff for the next lifecycle opportunity.
+    const freshMarker = after.session.pendingSystemWork;
+    if (freshMarker !== null) {
+      await persistRetryState(
+        context,
+        freshMarker.attempt + 1,
+        retryDelayMs(freshMarker.attempt + 1),
+      );
+    }
+    return { kind: 'still_pending', phase: after.session.phase, response };
+  } finally {
+    inFlightSystemWorkResumes.delete(sessionKey);
+  }
+}
+
+/**
+ * Persist the retry state for a pending operation that stayed in validation.
+ * A no-op when the marker disappeared (the run left validation) or the phase
+ * changed concurrently.
+ */
+async function persistRetryState(
+  context: WorkspaceToolContext,
+  attempt: number,
+  delayMs: number,
+): Promise<void> {
+  try {
+    await withMutableSessionTransaction(context, async ({ sessDir, state }) => {
+      if (state.pendingSystemWork === null || !isValidationPhase(state.phase)) return;
+      await writeStateWithArtifacts(sessDir, {
+        ...state,
+        pendingSystemWork: {
+          ...state.pendingSystemWork,
+          attempt,
+          retryAfter: new Date(Date.now() + delayMs).toISOString(),
+        },
+      });
+    });
+  } catch (err) {
+    getAdapterLogger().warn('tool', 'system_work_retry_state_failed', {
+      sessionId: context.sessionID,
+      error: err instanceof Error ? err.message : String(err),
+      ...getLogTraceFields(),
+    });
+  }
 }
 
 async function executeCheckResponse(

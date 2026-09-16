@@ -328,8 +328,8 @@ export function isExecutionError(result: {
  * - `technical_block`  — the check could not be run to a trustworthy verdict:
  *   timeout / not-found execution errors, a blocked outcome (subject drift
  *   during execution, suite infrastructure errors, missing assertion
- *   configuration), or an inconclusive extraction. The phase must stay and
- *   the pending system work must remain retryable.
+ *   configuration), or an inconclusive assertion extraction. The phase must
+ *   stay and the pending system work must remain retryable.
  */
 export type ValidationDisposition = 'supported' | 'artifact_failure' | 'technical_block';
 
@@ -338,6 +338,7 @@ export function classifyValidationDisposition(result: {
   readonly outcome: ValidationOutcome;
   readonly timedOut: boolean;
   readonly exitCode: number;
+  readonly assertionExtraction?: { readonly status: string };
 }): ValidationDisposition {
   if (result.passed && result.outcome === 'supported') return 'supported';
   // A blocked outcome means the check could not produce a trustworthy verdict:
@@ -345,8 +346,12 @@ export function classifyValidationDisposition(result: {
   // execution with no output at all.
   if (result.outcome === 'blocked') return 'technical_block';
   if (isExecutionError(result)) return 'technical_block';
-  // `inconclusive` is the genuine failure verdict: the check ran and produced
-  // output for a non-passing artifact (e.g. exit 1).
+  // An inconclusive assertion extraction (missing/unparseable/ambiguous report,
+  // provider format mismatch, ...) is lack of trustworthy evidence — not proof
+  // that the artifact failed.
+  if (result.assertionExtraction?.status === 'inconclusive') return 'technical_block';
+  // `inconclusive` with a trustworthy extraction is the genuine failure verdict:
+  // the check ran and produced output for a non-passing artifact (e.g. exit 1).
   return 'artifact_failure';
 }
 
@@ -356,6 +361,7 @@ export function isTechnicalValidationBlock(result: {
   readonly outcome: ValidationOutcome;
   readonly timedOut: boolean;
   readonly exitCode: number;
+  readonly assertionExtraction?: { readonly status: string };
 }): boolean {
   return classifyValidationDisposition(result) === 'technical_block';
 }
