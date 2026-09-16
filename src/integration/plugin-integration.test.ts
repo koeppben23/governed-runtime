@@ -232,7 +232,7 @@ describe('plugin-integration', () => {
         { title: 'status', output: makeToolOutput({ phase: 'TICKET' }), metadata: {} },
       );
 
-      const { events } = await getEvents();
+      const events = await getEvents();
       expect(events.length).toBeGreaterThanOrEqual(1);
       const toolCallEvents = events.filter((e) => eventKind(e) === 'tool_call');
       expect(toolCallEvents.length).toBe(1);
@@ -273,7 +273,7 @@ describe('plugin-integration', () => {
         },
       );
 
-      const { events } = await getEvents();
+      const events = await getEvents();
       const transEvents = events.filter((e) => eventKind(e) === 'transition');
       expect(transEvents.length).toBe(1);
       expect(transEvents[0]!.event).toBe('transition:PLAN_READY');
@@ -301,7 +301,7 @@ describe('plugin-integration', () => {
         },
       );
 
-      const { events } = await getEvents();
+      const events = await getEvents();
       const lifecycle = events.filter((e) => eventKind(e) === 'lifecycle');
       expect(lifecycle.length).toBeGreaterThanOrEqual(1);
       const created = lifecycle.find((e) => e.event.includes('session_created'));
@@ -355,7 +355,7 @@ describe('plugin-integration', () => {
         },
       );
 
-      const { events } = await getEvents();
+      const events = await getEvents();
       const lifecycle = events.filter((e) => eventKind(e) === 'lifecycle');
       const completed = lifecycle.find((e) => e.event.includes('session_completed'));
       expect(completed).toBeDefined();
@@ -380,7 +380,7 @@ describe('plugin-integration', () => {
         },
       );
 
-      const { events } = await getEvents();
+      const events = await getEvents();
       const toolCall = events.find((e) => eventKind(e) === 'tool_call');
       expect(toolCall).toBeDefined();
       expect(toolCall!.actor).toBe('human');
@@ -424,7 +424,7 @@ describe('plugin-integration', () => {
         },
       );
 
-      const { events } = await getEvents();
+      const events = await getEvents();
       const decision = events.find((e) => eventKind(e) === 'decision');
       expect(decision).toBeDefined();
       expect(decision!.event).toBe('decision:DEC-001');
@@ -458,7 +458,7 @@ describe('plugin-integration', () => {
         },
       );
 
-      const { events } = await getEvents();
+      const events = await getEvents();
       const lifecycle = events.find((e) => e.event === 'lifecycle:session_created');
       expect(lifecycle).toBeDefined();
       expect(String(lifecycle!.detail.reason)).toContain('requested_mode:team-ci');
@@ -477,7 +477,7 @@ describe('plugin-integration', () => {
         { title: 'bash', output: 'some output', metadata: {} },
       );
 
-      const { events } = await getEvents();
+      const events = await getEvents();
       expect(events.length).toBe(0);
     });
 
@@ -488,7 +488,7 @@ describe('plugin-integration', () => {
       );
 
       // Should not throw — fire-and-forget
-      const { events } = await getEvents();
+      const events = await getEvents();
       // A tool_call event should still be written (with phase="unknown")
       expect(events.length).toBeGreaterThanOrEqual(1);
     });
@@ -534,7 +534,7 @@ describe('plugin-integration', () => {
         },
       );
 
-      const { events } = await getEvents();
+      const events = await getEvents();
       const decisions = events.filter((e) => eventKind(e) === 'decision');
       expect(decisions).toHaveLength(0);
       expect(events.some((e) => eventKind(e) === 'tool_call')).toBe(true);
@@ -573,7 +573,7 @@ describe('plugin-integration', () => {
         },
       );
 
-      const { events } = await getEvents();
+      const events = await getEvents();
       const decisions = events.filter((e) => eventKind(e) === 'decision');
       expect(decisions).toHaveLength(0);
       const missingActorErr = events.find(
@@ -599,7 +599,7 @@ describe('plugin-integration', () => {
         );
       }
 
-      const { events } = await getEvents();
+      const events = await getEvents();
       expect(events.length).toBe(5);
 
       // Verify chain integrity
@@ -661,7 +661,7 @@ describe('plugin-integration', () => {
         { title: 'ticket', output: makeToolOutput({ phase: 'TICKET' }), metadata: {} },
       );
 
-      const { events } = await getEvents();
+      const events = await getEvents();
       expect(events.length).toBe(2);
 
       // Events should have chainHash but chain is NOT linked (each uses genesis)
@@ -735,7 +735,7 @@ describe('plugin-integration', () => {
         },
       );
 
-      const { events } = await getEvents();
+      const events = await getEvents();
       // Snapshot says emitToolCalls=false, so tool_call is suppressed.
       const toolCalls = events.filter((e) => eventKind(e) === 'tool_call');
       const trans = events.filter((e) => eventKind(e) === 'transition');
@@ -800,7 +800,7 @@ describe('plugin-integration', () => {
         ),
       ]);
 
-      const { events } = await getEvents();
+      const events = await getEvents();
       const decisions = events.filter((e) => eventKind(e) === 'decision');
       expect(decisions).toHaveLength(2);
       const ids = decisions.map((d) => d.event).sort();
@@ -829,7 +829,7 @@ describe('plugin-integration', () => {
         },
       );
 
-      const { events } = await getEvents();
+      const events = await getEvents();
       const errors = events.filter((e) => eventKind(e) === 'error');
       expect(errors.length).toBe(1);
       expect(errors[0]!.event).toContain('TOOL_ERROR');
@@ -892,10 +892,10 @@ describe('plugin-integration', () => {
       // Both should have independent events
       const trail1 = await readAuditTrail(sessDir);
       const trail2 = await readAuditTrail(sessDir2);
-      expect(trail1.events.length).toBe(1);
-      expect(trail2.events.length).toBe(1);
+      expect(trail1.length).toBe(1);
+      expect(trail2.length).toBe(1);
       // Chain hashes should be different (different session IDs in events)
-      expect(trail1.events[0]!.chainHash).not.toBe(trail2.events[0]!.chainHash);
+      expect(trail1[0]!.chainHash).not.toBe(trail2[0]!.chainHash);
     });
 
     it('lifecycle guard: hydrate produces session_created but NOT session_completed', async () => {
@@ -920,7 +920,7 @@ describe('plugin-integration', () => {
         },
       );
 
-      const { events } = await getEvents();
+      const events = await getEvents();
       const lifecycle = events.filter((e) => eventKind(e) === 'lifecycle');
       expect(lifecycle.some((e) => e.event.includes('session_created'))).toBe(true);
       expect(lifecycle.some((e) => e.event.includes('session_completed'))).toBe(false);
@@ -948,7 +948,7 @@ describe('plugin-integration', () => {
         },
       );
 
-      const { events } = await getEvents();
+      const events = await getEvents();
       const lifecycle = events.filter((e) => eventKind(e) === 'lifecycle');
       const aborted = lifecycle.find((e) => e.event.includes('session_aborted'));
       expect(aborted).toBeDefined();

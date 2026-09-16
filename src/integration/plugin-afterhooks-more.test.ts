@@ -256,7 +256,7 @@ describe('handlePluginEvent', () => {
       });
       const entries = await fs.readdir(sessDir);
       expect(entries).toContain('audit.jsonl');
-      const { events } = await readAuditTrail(sessDir);
+      const events = await readAuditTrail(sessDir);
       expect(events[0]).toMatchObject({
         phase: 'IMPLEMENTATION',
         detail: { code: 'SESSION_ERROR' },

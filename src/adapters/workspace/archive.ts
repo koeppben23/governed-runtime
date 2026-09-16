@@ -210,13 +210,7 @@ async function archiveSessionImpl(
   if (archiveConfig) validateArchiveOptions(opts, archiveConfig, false);
 
   await appendArtifactBindingAuditEvent(sessDir, validSessionId, state);
-  const { events, skipped } = await readAuditTrail(sessDir);
-  if (skipped > 0) {
-    throw new WorkspaceError(
-      'ARCHIVE_FAILED',
-      `Refusing to archive an audit trail with ${skipped} unparseable line(s)`,
-    );
-  }
+  const events = await readAuditTrail(sessDir);
   if (regulatedEvidence) assertCompletionAuditEvent(events);
 
   if (
@@ -248,8 +242,8 @@ async function archiveSessionImpl(
 }
 
 function stripTrailingPublicationBindings(
-  events: Awaited<ReturnType<typeof readAuditTrail>>['events'],
-): Awaited<ReturnType<typeof readAuditTrail>>['events'] {
+  events: Awaited<ReturnType<typeof readAuditTrail>>,
+): Awaited<ReturnType<typeof readAuditTrail>> {
   let end = events.length;
   while (end > 0 && events[end - 1]!.event === ARCHIVE_PUBLICATION_BINDING_EVENT) end -= 1;
   return events.slice(0, end);
@@ -262,7 +256,7 @@ async function stagePublishAndBind(input: {
   readonly sessionId: string;
   readonly sessDir: string;
   readonly state: import('../../state/schema.js').SessionState | null;
-  readonly events: Awaited<ReturnType<typeof readAuditTrail>>['events'];
+  readonly events: Awaited<ReturnType<typeof readAuditTrail>>;
   readonly redactionMode: RedactionMode;
   readonly includeRaw: boolean;
 }): Promise<void> {
@@ -508,7 +502,7 @@ async function appendArtifactBindingAuditEvent(
   const artifacts = await collectArtifactBindings(sessDir);
   if (artifacts.length === 0) return;
   if (!state) return;
-  const { events } = await readAuditTrail(sessDir);
+  const events = await readAuditTrail(sessDir);
   const previous = findBindingArtifacts(events);
   if (bindingMatches(previous, artifacts)) return;
   await appendAuditEvent(sessDir, {
@@ -535,7 +529,7 @@ async function appendPublicationBindingAuditEvent(
   publication: ArchivePublicationBinding,
 ): Promise<void> {
   if (!state) return;
-  const { events } = await readAuditTrail(sessDir);
+  const events = await readAuditTrail(sessDir);
   if (findPublicationBinding(events, publication)) return;
   await appendAuditEvent(sessDir, {
     id: crypto.randomUUID(),

@@ -170,7 +170,7 @@ async function emitDecisionReceipt(params: DecisionReceiptParams): Promise<strin
   const firstTransition = transition;
   const inferredVerdict = inferDecisionVerdict(firstTransition.event);
   if (inferredVerdict === null) return prevHash;
-  const existingDecision = (await readAuditTrail(ctx.sessDir)).events.some(
+  const existingDecision = (await readAuditTrail(ctx.sessDir)).some(
     (event) =>
       event.detail.kind === 'decision' &&
       event.detail.fromPhase === firstTransition.from &&

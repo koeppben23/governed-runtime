@@ -59,7 +59,7 @@ export const PRODUCT_INVENTORY = {
   reviewLoops: 3,
   enforcementLayers: 4,
   auditEventKinds: 7,
-  archiveFindingCodes: 32,
+  archiveFindingCodes: 31,
   archiveVerifyJsdocChecks: 9,
   cliBins: 7,
   mutationFiles: 86,

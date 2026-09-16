@@ -182,7 +182,7 @@ function recoveryRuntime(sessDir: string, fingerprint: string, state: SessionSta
 }
 
 async function auditEvents(sessDir: string) {
-  return (await readAuditTrail(sessDir)).events;
+  return await readAuditTrail(sessDir);
 }
 
 describe('recoverRegulatedCompletion', () => {

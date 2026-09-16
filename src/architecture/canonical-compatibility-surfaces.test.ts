@@ -81,11 +81,14 @@ describe('canonical compatibility surfaces', () => {
   });
 
   it('keeps dead legacy-tolerance surfaces out of the audit verification result', async () => {
-    const [integrity, summary, archiveVerifyChain] = await Promise.all([
-      source('audit/integrity.ts'),
-      source('audit/summary.ts'),
-      source('adapters/workspace/archive-verify-chain.ts'),
-    ]);
+    const [integrity, summary, archiveVerifyChain, persistenceAudit, archiveTypes] =
+      await Promise.all([
+        source('audit/integrity.ts'),
+        source('audit/summary.ts'),
+        source('adapters/workspace/archive-verify-chain.ts'),
+        source('adapters/persistence-audit.ts'),
+        source('archive/types.ts'),
+      ]);
 
     // verifyChain has no strict-vs-legacy mode and never skips records: an
     // always-zero `skippedCount` would be a dead legacy result surface.
@@ -93,6 +96,11 @@ describe('canonical compatibility surfaces', () => {
     expect(integrity).not.toContain('LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE');
     expect(summary).not.toContain('skippedCount');
     expect(archiveVerifyChain).not.toContain('skippedCount');
+    // readAuditTrail either returns every canonical audit-chain.v3 event or
+    // fails closed: a tolerance/skip result surface cannot come back.
+    expect(persistenceAudit).not.toMatch(/skipped\s*:/);
+    expect(persistenceAudit).not.toMatch(/\{\s*events\s*,\s*skipped\s*\}/);
+    expect(archiveTypes).not.toContain('audit_records_skipped');
   });
 
   it('does not restore removed compatibility projections or absent attempt lineage handling', async () => {

@@ -110,7 +110,7 @@ describe('command hook binaries', () => {
       expect(result.code).toBe(0);
       expect(result.stdout).toBe('');
       const trail = await readAuditTrail(initialized.sessionDir);
-      expect(trail.events).toContainEqual(
+      expect(trail).toContainEqual(
         expect.objectContaining({
           event: 'tool_call',
           detail: expect.objectContaining({ tool: 'flowguard_review' }),

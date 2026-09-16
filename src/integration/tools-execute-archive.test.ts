@@ -426,7 +426,7 @@ describe('archive', () => {
           includeRaw: true,
         });
 
-        const { events } = await readAuditTrail(sessDir);
+        const events = await readAuditTrail(sessDir);
         const bindingEvents = events.filter((e) => e.event === ARTIFACT_BINDING_EVENT);
         expect(bindingEvents.length).toBe(1);
 

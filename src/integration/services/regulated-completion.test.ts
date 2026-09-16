@@ -33,7 +33,7 @@ vi.mock('../../adapters/persistence-lock.js', () => ({
   })),
 }));
 vi.mock('../../adapters/persistence-audit.js', () => ({
-  readAuditTrail: vi.fn().mockResolvedValue({ events: [], skipped: 0 }),
+  readAuditTrail: vi.fn().mockResolvedValue([]),
   appendAuditEvent: vi.fn(),
 }));
 vi.mock('../../adapters/workspace/archive.js', () => ({ archiveRegulatedEvidence: vi.fn() }));
@@ -204,10 +204,10 @@ describe('executeRegulatedCompletion', () => {
     // the terminal completion evidence.
     const { persisted, complete } = reviewEntryPath();
     trackPersistedState(persisted);
-    vi.mocked(readAuditTrail).mockResolvedValue({
-      events: [planDecisionEvent(), sessionCreatedEvent()],
-      skipped: 0,
-    } as never);
+    vi.mocked(readAuditTrail).mockResolvedValue([
+      planDecisionEvent(),
+      sessionCreatedEvent(),
+    ] as never);
     vi.mocked(reconcilePendingAuditOperations).mockResolvedValue(undefined);
     vi.mocked(archiveRegulatedEvidence).mockResolvedValue('/archive.tar.gz');
     vi.mocked(verifyRegulatedArchive).mockResolvedValue({ passed: true } as never);
@@ -263,10 +263,10 @@ describe('executeRegulatedCompletion', () => {
   it('resumes without emitting a second terminal decision or lifecycle', async () => {
     const persisted = reviewState('COMPLETE');
     trackPersistedState(persisted);
-    vi.mocked(readAuditTrail).mockResolvedValue({
-      events: [decisionEvent(), sessionCompletedEvent()],
-      skipped: 0,
-    } as never);
+    vi.mocked(readAuditTrail).mockResolvedValue([
+      decisionEvent(),
+      sessionCompletedEvent(),
+    ] as never);
     vi.mocked(reconcilePendingAuditOperations).mockResolvedValue(undefined);
     vi.mocked(archiveRegulatedEvidence).mockResolvedValue('/archive.tar.gz');
     vi.mocked(verifyRegulatedArchive).mockResolvedValue({ passed: true } as never);
@@ -288,10 +288,10 @@ describe('executeRegulatedCompletion', () => {
   it('does not treat a PLAN_REVIEW decision as terminal checkpoint evidence', async () => {
     const persisted = reviewState('COMPLETE');
     trackPersistedState(persisted);
-    vi.mocked(readAuditTrail).mockResolvedValue({
-      events: [planDecisionEvent(), sessionCreatedEvent()],
-      skipped: 0,
-    } as never);
+    vi.mocked(readAuditTrail).mockResolvedValue([
+      planDecisionEvent(),
+      sessionCreatedEvent(),
+    ] as never);
     vi.mocked(reconcilePendingAuditOperations).mockResolvedValue(undefined);
     vi.mocked(archiveRegulatedEvidence).mockResolvedValue('/archive.tar.gz');
     vi.mocked(verifyRegulatedArchive).mockResolvedValue({ passed: true } as never);
@@ -327,10 +327,7 @@ describe('executeRegulatedCompletion', () => {
       ],
     };
     const trail: ChainedAuditEvent[] = [];
-    vi.mocked(readAuditTrail).mockImplementation(async () => ({
-      events: [...trail],
-      skipped: 0,
-    }));
+    vi.mocked(readAuditTrail).mockImplementation(async () => [...trail]);
     vi.mocked(reconcilePendingAuditOperations).mockImplementation(async () => {
       trail.push(decisionEvent() as unknown as ChainedAuditEvent);
       // Reconciliation is monotonic: operations stay as durable correlation
@@ -439,10 +436,10 @@ describe('executeRegulatedCompletion', () => {
       regulatedArchiveStatus: 'verified' as const,
     };
     trackPersistedState(verified);
-    vi.mocked(readAuditTrail).mockResolvedValue({
-      events: [decisionEvent(), sessionCompletedEvent()],
-      skipped: 0,
-    } as never);
+    vi.mocked(readAuditTrail).mockResolvedValue([
+      decisionEvent(),
+      sessionCompletedEvent(),
+    ] as never);
     vi.mocked(reconcilePendingAuditOperations).mockResolvedValue(undefined);
     vi.mocked(acquireNamedWriteLock).mockRejectedValue(
       new PersistenceError('LOCK_TIMEOUT', 'completion lock contention'),

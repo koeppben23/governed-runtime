@@ -84,7 +84,6 @@ export type ManifestPolicyMode = z.infer<typeof ManifestPolicyModeSchema>;
  * - state_missing: session-state.json not found in archive
  * - state_invalid: session-state.json exists but cannot be parsed or validated
  * - policy_state_unresolved: trusted policy state cannot determine verification strictness
- * - audit_records_skipped: audit records could not be parsed during verification
  * - archive_inventory_inconclusive: archive payload inventory could not be read completely
  * - archive_publication_unbound: published archive has no exact external audit binding
  * - archive_publication_binding_invalid: external binding audit trail is unreadable or invalid
@@ -113,7 +112,6 @@ export const ArchiveFindingCodeSchema = z.enum([
   'state_missing',
   'state_invalid',
   'policy_state_unresolved',
-  'audit_records_skipped',
   'archive_inventory_inconclusive',
   'archive_publication_unbound',
   'archive_publication_binding_invalid',

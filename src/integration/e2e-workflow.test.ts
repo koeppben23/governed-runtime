@@ -907,7 +907,7 @@ describe('e2e-workflow', () => {
       // Trail may be empty (tools don't write audit events — plugin does).
       // But readAuditTrail should not throw.
       expect(trail).toBeDefined();
-      expect(Array.isArray(trail.events)).toBe(true);
+      expect(Array.isArray(trail)).toBe(true);
     });
 
     it('self-review changes_requested loop: revise plan then complete', async () => {

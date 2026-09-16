@@ -171,7 +171,7 @@ export class PluginWorkspaceImpl implements PluginWorkspace {
       cs.initialized = true;
       return cs.lastHash;
     }
-    const { events } = await readAuditTrail(sessDir);
+    const events = await readAuditTrail(sessDir);
     cs.lastHash = getLastChainHash(events);
     cs.initialized = true;
     return cs.lastHash;
@@ -242,7 +242,7 @@ export class PluginWorkspaceImpl implements PluginWorkspace {
       this._decisionSequenceCache.set(sessionId, next);
       return next;
     }
-    const { events } = await readAuditTrail(sessDir);
+    const events = await readAuditTrail(sessDir);
     const receipts = decisionReceipts(events).filter(
       (r) => r.hostSessionId === sessionId || r.flowguardSessionId === sessionId,
     );

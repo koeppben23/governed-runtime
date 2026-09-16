@@ -734,7 +734,7 @@ describe('P26: regulated archive completion', () => {
       expect(result.archiveStatus).toBe('verified');
 
       // Read the actual audit trail from disk
-      const { events } = await readAuditTrail(sessDir);
+      const events = await readAuditTrail(sessDir);
       const completionEvents = events.filter((e) => e.event === 'lifecycle:session_completed');
       // Exactly one session_completed — tool-layer wrote it, no duplication
       expect(completionEvents).toHaveLength(1);

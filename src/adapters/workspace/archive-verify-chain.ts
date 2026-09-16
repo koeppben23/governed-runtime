@@ -354,7 +354,7 @@ export function addTimestampFindings(
 // ─── Chain Verification ───────────────────────────────────────────────────────
 
 async function verifyTimestampChain(
-  events: Awaited<ReturnType<typeof readAuditTrail>>['events'],
+  events: Awaited<ReturnType<typeof readAuditTrail>>,
   state: import('../../state/schema.js').SessionState | null,
   manifest: ArchiveManifest,
   findings: ArchiveFinding[],
@@ -392,18 +392,9 @@ async function verifyAuditChainIntegrity(
   strict: boolean,
 ): Promise<void> {
   try {
-    const { events, skipped } = await readAuditTrail(path.join(archiveRoot, 'audit'));
+    const events = await readAuditTrail(path.join(archiveRoot, 'audit'));
     verifyAuditCompleteness(manifest, events, findings);
     verifyRegulatedCompletionCompleteness(state, events, findings);
-
-    if (skipped > 0) {
-      findings.push({
-        code: 'audit_records_skipped',
-        severity: strict ? 'error' : 'warning',
-        message: `Audit trail contains ${skipped} unparseable line(s)`,
-        file: 'audit.jsonl',
-      });
-    }
 
     await verifyArtifactBinding(archiveRoot, manifest, events, findings);
 

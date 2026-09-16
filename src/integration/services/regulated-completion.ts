@@ -55,7 +55,7 @@ export function createSessionCompletionAuditDeps(input: {
       policy: state.policySnapshot,
       state: await readState(sessDir),
     }),
-    initChain: async () => getLastChainHash((await readAuditTrail(sessDir)).events),
+    initChain: async () => getLastChainHash(await readAuditTrail(sessDir)),
     invalidateChainState: () => undefined,
     appendAndTrack: async (event) => {
       const {
@@ -74,7 +74,7 @@ export function createSessionCompletionAuditDeps(input: {
       event.chainHash = appended.chainHash;
     },
     nextDecisionSequence: async () =>
-      (await readAuditTrail(sessDir)).events.reduce((max, event) => {
+      (await readAuditTrail(sessDir)).reduce((max, event) => {
         const sequence =
           event.detail.kind === 'decision' && typeof event.detail.decisionSequence === 'number'
             ? event.detail.decisionSequence
@@ -380,7 +380,7 @@ function isTerminalDecisionDetail(detail: Record<string, unknown>, state: Sessio
 }
 
 async function hasTerminalDecisionEvidence(sessDir: string, state: SessionState): Promise<boolean> {
-  return (await readAuditTrail(sessDir)).events.some((event) =>
+  return (await readAuditTrail(sessDir)).some((event) =>
     isTerminalDecisionDetail(event.detail, state),
   );
 }
@@ -431,7 +431,7 @@ async function hasTerminalLifecycleEvidence(
   sessDir: string,
   state: SessionState,
 ): Promise<boolean> {
-  return (await readAuditTrail(sessDir)).events.some(
+  return (await readAuditTrail(sessDir)).some(
     (event) =>
       event.event === 'lifecycle:session_completed' &&
       isTerminalLifecycleDetail(event.detail, state),
