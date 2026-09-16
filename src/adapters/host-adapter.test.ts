@@ -83,24 +83,24 @@ describe('HostAdapter Contract', () => {
       expect(caps.compactionInjection).toBe(true);
     });
 
-    it('HAPPY: exposes the SDK reviewer capability as one indivisible transport', () => {
+    it('HAPPY: exposes one native visible structured reviewer transport', () => {
       expect(adapter.capabilities.reviewTransports).toEqual([
         {
-          kind: 'sdk_structured_session',
+          kind: 'native_task_structured_followup',
           structuredOutput: true,
-          parentVisible: false,
-          transcriptNavigable: false,
+          parentVisible: true,
+          transcriptNavigable: true,
           isolatedAgentIdentity: true,
-          permissionIsolation: false,
+          permissionIsolation: true,
           assurance: 'structured_high',
         },
       ]);
     });
 
-    it('BAD: never composes SDK structure with visibility it does not own', () => {
-      const sdk = adapter.capabilities.reviewTransports[0];
-      expect(sdk).toBeDefined();
-      expect(reviewTransportSatisfies(sdk!, REQUIRED_INDEPENDENT_REVIEW_TRANSPORT)).toBe(false);
+    it('HAPPY: the single advertised transport satisfies the complete product contract', () => {
+      const native = adapter.capabilities.reviewTransports[0];
+      expect(native).toBeDefined();
+      expect(reviewTransportSatisfies(native!, REQUIRED_INDEPENDENT_REVIEW_TRANSPORT)).toBe(true);
     });
 
     it('HAPPY: exposes configured session paths and reviewer transport support', () => {
@@ -120,23 +120,31 @@ describe('HostAdapter Contract', () => {
       await expect(broken.initialize()).rejects.toThrow(/initialization failed/i);
     });
 
-    it('BAD: rejects missing or drifting session methods', async () => {
-      const missingCreate = new OpenCodeHostAdapter({
+    it('BAD: rejects a missing same-child structured prompt capability', async () => {
+      const missingPrompt = new OpenCodeHostAdapter({
+        client: { session: {}, app: { agents: vi.fn() } } as never,
+        directory: '/x',
+        worktree: '/x',
+      });
+      await expect(missingPrompt.initialize()).rejects.toThrow(/session\.prompt/);
+    });
+
+    it('BAD: rejects a missing reviewer registry capability', async () => {
+      const missingAgents = new OpenCodeHostAdapter({
+        client: { session: { prompt: vi.fn() }, app: {} } as never,
+        directory: '/x',
+        worktree: '/x',
+      });
+      await expect(missingAgents.initialize()).rejects.toThrow(/app\.agents/);
+    });
+
+    it('HAPPY: does not require direct session.create because native Task owns child creation', async () => {
+      const nativeOnly = new OpenCodeHostAdapter({
         client: { session: { prompt: vi.fn() }, app: { agents: vi.fn() } } as never,
         directory: '/x',
         worktree: '/x',
       });
-      await expect(missingCreate.initialize()).rejects.toThrow(/session\.create/);
-
-      const drifting = new OpenCodeHostAdapter({
-        client: {
-          session: { create: 'not-a-function', prompt: { callable: true } },
-          app: { agents: vi.fn() },
-        } as never,
-        directory: '/x',
-        worktree: '/x',
-      });
-      await expect(drifting.initialize()).rejects.toThrow(/session\.(create|prompt)/);
+      await expect(nativeOnly.initialize()).resolves.toBeUndefined();
     });
 
     it('HAPPY: accepts a valid client', async () => {
@@ -165,7 +173,7 @@ describe('HostAdapter Contract', () => {
   });
 
   describe('validateCapabilities', () => {
-    it('HAPPY: contract-attests the exact SDK review transport without runtime overclaim', async () => {
+    it('HAPPY: contract-attests the exact native review transport without runtime overclaim', async () => {
       const result: CapabilityValidationResult = await adapter.validateCapabilities();
       expect(result).toEqual({
         valid: true,
@@ -176,7 +184,7 @@ describe('HostAdapter Contract', () => {
           'argMutation',
           'outputReplacement',
           'contextInjection',
-          'reviewTransports.sdk_structured_session',
+          'reviewTransports.native_task_structured_followup',
           'compactionInjection',
         ],
       });
@@ -195,8 +203,8 @@ describe('HostAdapter Contract', () => {
     });
   });
 
-  describe('spawnReviewer — hard visible-review contract', () => {
-    it('BAD: blocks before creating a hidden child when no single transport satisfies the contract', async () => {
+  describe('spawnReviewer — native Task boundary', () => {
+    it('BAD: never synthesizes a hidden SDK child in place of the parent native Task', async () => {
       const client = createMockClient();
       const adap = new OpenCodeHostAdapter({
         client: client as never,
@@ -208,14 +216,19 @@ describe('HostAdapter Contract', () => {
 
       expect(result).toMatchObject({
         blocked: true,
-        code: 'VISIBLE_REVIEW_TRANSPORT_UNAVAILABLE',
+        code: 'NATIVE_REVIEW_TASK_REQUIRED',
+        reviewInvocation: {
+          transport: 'native_task_structured_followup',
+          action: 'call_task',
+          reviewerSubagentType: 'flowguard-reviewer',
+        },
       });
       expect(client.session.create).not.toHaveBeenCalled();
       expect(client.session.prompt).not.toHaveBeenCalled();
       expect(client.app.agents).not.toHaveBeenCalled();
     });
 
-    it('BAD: call sites cannot weaken the canonical visibility requirement', async () => {
+    it('BAD: call sites cannot weaken the canonical native-review requirements', async () => {
       const client = createMockClient();
       const adap = new OpenCodeHostAdapter({
         client: client as never,
@@ -237,9 +250,10 @@ describe('HostAdapter Contract', () => {
 
       expect(result).toMatchObject({
         blocked: true,
-        code: 'VISIBLE_REVIEW_TRANSPORT_UNAVAILABLE',
+        code: 'NATIVE_REVIEW_TASK_REQUIRED',
       });
       expect(client.session.create).not.toHaveBeenCalled();
+      expect(client.session.prompt).not.toHaveBeenCalled();
     });
   });
 
@@ -280,7 +294,7 @@ describe('HAI Type Contract', () => {
     expect(levels).toHaveLength(3);
   });
 
-  it('HAPPY: HostReviewerSuccessResult carries concrete transport provenance', () => {
+  it('HAPPY: HostReviewerSuccessResult carries concrete native transport provenance', () => {
     const result: HostReviewerSuccessResult = {
       sessionId: 'rev-1',
       rawResponse: '{}',
@@ -288,19 +302,20 @@ describe('HAI Type Contract', () => {
       reviewOutputMode: 'structured_output',
       structuredOutputUsed: true,
       reviewAssuranceLevel: 'structured_high',
-      reviewTransport: 'sdk_structured_session',
-      hostVisible: false,
-      transcriptNavigable: false,
+      reviewTransport: 'native_task_structured_followup',
+      hostVisible: true,
+      transcriptNavigable: true,
     };
-    expect(result.reviewTransport).toBe('sdk_structured_session');
-    expect(result.hostVisible).toBe(false);
+    expect(result.reviewTransport).toBe('native_task_structured_followup');
+    expect(result.hostVisible).toBe(true);
+    expect(result.transcriptNavigable).toBe(true);
   });
 
   it('HAPPY: HostReviewerBlockedResult remains typed and explicit', () => {
     const result: HostReviewerBlockedResult = {
       blocked: true,
-      code: 'VISIBLE_REVIEW_TRANSPORT_UNAVAILABLE',
-      reason: 'No sufficient review transport',
+      code: 'NATIVE_REVIEW_TASK_REQUIRED',
+      reason: 'Parent native Task dispatch required',
     };
     expect(result.blocked).toBe(true);
   });
