@@ -177,15 +177,6 @@ function reviewSignalForAuthority(
       obligationType: obligationTypeForTool(reviewSignalOwner(toolName) ?? '') ?? null,
     };
   }
-  const attestation = parsed.requiredReviewAttestation as Record<string, unknown> | undefined;
-  if (parsed.error === true && parsed.code === 'CONTENT_ANALYSIS_REQUIRED' && attestation) {
-    return {
-      obligationId:
-        typeof attestation.toolObligationId === 'string' ? attestation.toolObligationId : null,
-      attemptId: typeof parsed.reviewAttemptId === 'string' ? parsed.reviewAttemptId : null,
-      obligationType: 'review',
-    };
-  }
   return null;
 }
 

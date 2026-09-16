@@ -1323,6 +1323,8 @@ describe('integration/plugin', () => {
             error: true,
             code: 'CONTENT_ANALYSIS_REQUIRED',
             ...reviewObligationResponseFields(authority.authority),
+            reviewDispatch: { required: true },
+            reviewInvocation: { obligationId },
             requiredReviewAttestation: { toolObligationId: obligationId },
           }),
           metadata: {},

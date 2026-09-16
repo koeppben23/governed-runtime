@@ -25,13 +25,14 @@ describe('formatMissingContentAnalysis', () => {
         obligation: { obligationId: OBLIGATION_ID },
         attempt: { attemptId: '4b14d433-aa48-46e8-97c5-7d9a6f42419f' },
       } as ReviewDispatchAuthority),
-    ) as { message: string; reviewAttemptId: string };
+    ) as { message: string; reviewAttemptId: string; reviewDispatch: { required: boolean } };
 
     expect(parsed.message).toContain(REVIEWER_SUBAGENT_TYPE);
     expect(parsed.message).toContain('visible native Task review');
     expect(parsed.message).not.toContain('${obligationId}');
     expect(parsed.message).toContain('reviewObligationId');
     expect(parsed.reviewAttemptId).toBe('4b14d433-aa48-46e8-97c5-7d9a6f42419f');
+    expect(parsed.reviewDispatch).toEqual({ required: true });
   });
 });
 

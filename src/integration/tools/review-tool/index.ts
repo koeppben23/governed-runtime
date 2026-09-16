@@ -152,6 +152,14 @@ function prepareStructuredEvidenceSubmission(
     undefined,
     exec.context.sessionID,
   );
+  // No bound findings means the pending obligation must project its canonical
+  // native dispatch authority, not a second evidence-missing transport.
+  if (
+    resolution.kind === 'not_found' ||
+    (resolution.kind === 'invalid' && resolution.code === 'SUBAGENT_EVIDENCE_MISSING')
+  ) {
+    return null;
+  }
   if (resolution.kind !== 'resolved') return formatStructuredResolutionFailure(resolution);
   const validation = validateSubmittedReviewFindings(state, resolution.findings, obligation);
   if (validation) return validation;

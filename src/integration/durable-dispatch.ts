@@ -38,7 +38,7 @@ export interface AuthorizedReviewDispatchInput {
   /**
    * Host call identity carried by the durable release. Native Task releases are
    * authorized under the Task call ID and rebound to the exact child session ID
-   * when evidence binds; SDK releases authorize under the child session ID.
+   * when evidence binds.
    */
   readonly hostCallId: string;
   readonly canonicalPromptDigest: string;
@@ -120,27 +120,6 @@ export async function persistAuthorizedReviewDispatch(
   });
 }
 
-/** Compatibility wrapper for the SDK structured-session transport. */
-export async function persistAuthorizedSdkDispatch(
-  deps: DispatchLedgerWriteDeps,
-  sessDir: string,
-  input: {
-    readonly attemptId: string;
-    readonly obligationId: string;
-    readonly childSessionId: string;
-    readonly canonicalPromptDigest: string;
-    readonly authorizedAt: string;
-  },
-): Promise<void> {
-  return persistAuthorizedReviewDispatch(deps, sessDir, {
-    attemptId: input.attemptId,
-    obligationId: input.obligationId,
-    hostCallId: input.childSessionId,
-    canonicalPromptDigest: input.canonicalPromptDigest,
-    authorizedAt: input.authorizedAt,
-  });
-}
-
 /** Resolve a concluded host call without bound evidence as outcome_unknown. */
 export async function abandonReviewDispatchByHostCall(
   deps: DispatchLedgerWriteDeps,
@@ -154,15 +133,6 @@ export async function abandonReviewDispatchByHostCall(
       reviewAssurance: abandonReviewDispatch(assurance, hostCallId),
     };
   });
-}
-
-/** Compatibility wrapper for SDK child-session host-call identity. */
-export async function abandonSdkDispatch(
-  deps: DispatchLedgerWriteDeps,
-  sessDir: string,
-  childSessionId: string,
-): Promise<void> {
-  return abandonReviewDispatchByHostCall(deps, sessDir, childSessionId);
 }
 
 export type InterruptedDispatchRearm =

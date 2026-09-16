@@ -9,17 +9,16 @@
  *
  * The transient pending-review record tracks only the FlowGuard
  * review-requirement signal identity. Reviewer execution authority is the
- * host-observed structured SDK invocation persisted in review assurance; no
+ * host-observed native structured invocation persisted in review assurance; no
  * capture or extraction state lives here.
  *
  * @version v2
  */
 
-import { TOOL_FLOWGUARD_REVIEW } from '../../tool-names.js';
 import type { ReviewableTool } from '../obligation-tools.js';
 export type { ReviewableTool } from '../obligation-tools.js';
 
-export type PendingReviewTool = ReviewableTool | typeof TOOL_FLOWGUARD_REVIEW;
+export type PendingReviewTool = ReviewableTool;
 
 /** Per-tool pending review state. */
 export interface PendingReview {

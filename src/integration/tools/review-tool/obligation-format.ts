@@ -10,6 +10,7 @@ import {
   reviewObligationResponseFields,
   type ReviewDispatchAuthority,
 } from '../../review/dispatch-authority.js';
+import { buildChildSessionReviewInstruction } from '../../review/child-session-instruction.js';
 
 /**
  * Structural equality for a frozen repository identity.
@@ -90,8 +91,8 @@ export function buildRequiredReviewAttestationPayload(obligationId: string): {
     reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
     recovery: [
       'Load the referenced content (PR diff via gh CLI, URL via webfetch, or use manual text).',
-      `Run the ${REVIEWER_SUBAGENT_TYPE} through the configured SDK structured session.`,
-      'Bind the requiredReviewAttestation values to the structured reviewer invocation.',
+      `Invoke the visible native Task for ${REVIEWER_SUBAGENT_TYPE}.`,
+      'Bind the requiredReviewAttestation values to the same-child structured reviewer invocation.',
       'Wait for FlowGuard to capture a complete structured ReviewFindings object and re-run flowguard_review with reviewObligationId.',
     ],
   };
@@ -109,6 +110,13 @@ function formatBlockedWithAttestation(code: string, message: string, obligationI
 
 export function formatMissingContentAnalysis(authority: ReviewDispatchAuthority): string {
   const obligationId = authority.obligation.obligationId;
+  const instruction = buildChildSessionReviewInstruction({
+    mode: 'host_structured',
+    platform: 'opencode',
+    authority,
+    iteration: authority.obligation.iteration,
+    planVersion: authority.obligation.planVersion,
+  });
   return JSON.stringify({
     error: true,
     code: 'CONTENT_ANALYSIS_REQUIRED',
@@ -117,6 +125,8 @@ export function formatMissingContentAnalysis(authority: ReviewDispatchAuthority)
       'Invoke the reviewer Task, wait for FlowGuard to capture its same-child structured findings, then re-run flowguard_review with reviewObligationId.',
     reviewObligationId: obligationId,
     ...reviewObligationResponseFields(authority),
+    reviewDispatch: instruction.reviewDispatch,
+    reviewInvocation: instruction,
     ...buildRequiredReviewAttestationPayload(obligationId),
   });
 }

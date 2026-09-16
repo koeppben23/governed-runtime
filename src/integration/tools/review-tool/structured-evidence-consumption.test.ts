@@ -230,7 +230,7 @@ describe('verdict-only structured evidence consumption', () => {
     expect(state.peerReviewFindings![0]!.reviewedBy.sessionId).toBe(REVIEWER_SESSION_ID);
   });
 
-  it('BAD: explicit obligation without bound evidence blocks with SUBAGENT_EVIDENCE_MISSING', async () => {
+  it('BAD: explicit obligation without bound evidence re-emits its native dispatch authority', async () => {
     const obligationId = await startObligation();
 
     const output = parseToolResult(
@@ -238,7 +238,8 @@ describe('verdict-only structured evidence consumption', () => {
     );
 
     expect(output.error).toBe(true);
-    expect(output.code).toBe('SUBAGENT_EVIDENCE_MISSING');
+    expect(output.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+    expect(output.reviewDispatch).toEqual({ required: true });
     const state = (await readState(await currentSessionDir()))!;
     const obligation = state.reviewAssurance!.obligations.find(
       (item) => item.obligationId === obligationId,

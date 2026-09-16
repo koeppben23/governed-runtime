@@ -27,7 +27,8 @@ import {
 } from '../../test-helpers.js';
 import { review } from '../index.js';
 import { hydrate } from '../index.js';
-import { readState } from '../../../adapters/persistence.js';
+import { readState, writeState } from '../../../adapters/persistence.js';
+import { appendReviewDispatch } from '../../../state/review-dispatch.js';
 
 vi.mock('../../../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../../adapters/git.js')>();
@@ -137,7 +138,8 @@ describe('exact obligation identity dominates fingerprint matching', () => {
         ctx,
       ),
     );
-    expect(repeat.code).toBe('SUBAGENT_EVIDENCE_MISSING');
+    expect(repeat.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+    expect(repeat.reviewDispatch).toEqual({ required: true });
 
     const afterRepeat = await readState(sessDir);
     expect(afterRepeat!.reviewAssurance!.obligations).toHaveLength(1);
@@ -178,5 +180,47 @@ describe('exact obligation identity dominates fingerprint matching', () => {
     expect(after!.reviewAssurance!.obligations.every((o) => o.obligationId === obligationId)).toBe(
       true,
     );
+  });
+
+  it('RECOVERY: re-arms an outcome-unknown peer dispatch on the same frozen obligation', async () => {
+    await hydrateTeam();
+    const contentArgs = { branch: 'feature/add-due-date', inputOrigin: 'branch' as const };
+    const first = parseToolResult(await review.execute(contentArgs, ctx));
+    const obligationId = requiredString(first.requiredReviewAttestation, 'toolObligationId');
+    const firstAttemptId = first.reviewAttemptId as string;
+    const sessDir = await currentSessionDir();
+    const state = await readState(sessDir);
+    expect(state?.reviewAssurance).toBeDefined();
+    if (!state?.reviewAssurance) return;
+    await writeState(sessDir, {
+      ...state,
+      reviewAssurance: appendReviewDispatch(state.reviewAssurance, {
+        dispatchId: '00000000-0000-4000-8000-0000000000c1',
+        attemptId: firstAttemptId,
+        obligationId,
+        hostCallId: 'peer-review-task-call',
+        canonicalPromptDigest: 'd'.repeat(64),
+        dispatchAuthorizedAt: '2026-01-01T00:00:00.000Z',
+        dispatchStatus: 'outcome_unknown',
+      }),
+    });
+
+    const recovered = parseToolResult(
+      await review.execute({ ...contentArgs, reviewObligationId: obligationId }, ctx),
+    );
+    expect(recovered.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+    expect(recovered.reviewDispatch).toEqual({ required: true });
+    expect(recovered.reviewAttemptId).not.toBe(firstAttemptId);
+
+    const after = await readState(sessDir);
+    const attempts = after!.reviewAssurance!.attempts.filter(
+      (a) => a.obligationId === obligationId,
+    );
+    expect(attempts).toHaveLength(2);
+    expect(attempts.find((a) => a.attemptId === firstAttemptId)?.status).toBe('stale');
+    expect(attempts.find((a) => a.attemptId === recovered.reviewAttemptId)?.origin).toMatchObject({
+      kind: 'dispatch_rearm',
+      predecessorAttemptId: firstAttemptId,
+    });
   });
 });

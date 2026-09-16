@@ -217,9 +217,13 @@ function requireCurrentAttempt(
  * re-arm through their originating command.
  */
 function transportRecoveryInstruction(obligationType: ReviewObligationType): string {
-  return obligationType === 'implement'
-    ? 'Call flowguard_review_implementation with reviewRecovery: "retry_transport" to re-arm the same review obligation with a fresh attempt, then invoke Task again.'
-    : 'Re-run the originating FlowGuard command (/plan or /architecture) so it can re-arm the frozen obligation with a fresh attempt, then invoke Task again.';
+  if (obligationType === 'implement') {
+    return 'Call flowguard_review_implementation with reviewRecovery: "retry_transport" to re-arm the same review obligation with a fresh attempt, then invoke Task again.';
+  }
+  if (obligationType === 'review') {
+    return 'Re-run flowguard_review with reviewObligationId to re-arm the same frozen review obligation with a fresh attempt, then invoke Task again.';
+  }
+  return 'Re-run the originating FlowGuard command (/plan or /architecture) so it can re-arm the frozen obligation with a fresh attempt, then invoke Task again.';
 }
 
 function mutateNativeTask(output: ToolHookBeforeOutput, prompt: string): void {

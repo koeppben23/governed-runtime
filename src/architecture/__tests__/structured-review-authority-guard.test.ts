@@ -82,6 +82,7 @@ describe('structured review authority hard cut', () => {
       sources.filter(({ content }) => pattern.test(content)).map(({ file }) => relative(file));
     expect(offenders(/\binvokeReviewer\b/)).toEqual([]);
     expect(offenders(/session\.create\s*\(/)).toEqual([]);
+    expect(offenders(/\b(?:persistAuthorizedSdkDispatch|abandonSdkDispatch)\b/)).toEqual([]);
   });
 
   it('projects review dispatch requirements only from the authority-bound instruction builder', () => {

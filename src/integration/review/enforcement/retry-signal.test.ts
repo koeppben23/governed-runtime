@@ -17,6 +17,7 @@ describe('peer review retry signal', () => {
         error: true,
         code: 'REVIEW_ATTEMPT_UNAVAILABLE',
         reviewAttemptId: attemptId,
+        reviewObligation: { obligationId },
         requiredReviewAttestation: {
           toolObligationId: obligationId,
           mandateDigest: 'test-mandate-digest',

@@ -11,9 +11,9 @@ import { SessionState } from '../../state/schema.js';
 import { hasReleasedDispatch, resolveReviewContinuation } from '../../state/review-continuation.js';
 import { makeState } from '../../fixtures.js';
 import {
-  abandonSdkDispatch,
+  abandonReviewDispatchByHostCall,
   buildInterruptedDispatchRearm,
-  persistAuthorizedSdkDispatch,
+  persistAuthorizedReviewDispatch,
   type DispatchLedgerWriteDeps,
 } from '../durable-dispatch.js';
 import { recordEvidenceOrBlockReuse } from './reviewer-evidence-recorder.js';
@@ -59,6 +59,31 @@ function writeDeps(stateRef: { current: SessionState }): DispatchLedgerWriteDeps
       stateRef.current = update(stateRef.current, NOW);
     }),
   };
+}
+
+function persistAuthorizedSdkDispatch(
+  deps: DispatchLedgerWriteDeps,
+  sessDir: string,
+  input: {
+    readonly attemptId: string;
+    readonly obligationId: string;
+    readonly childSessionId: string;
+    readonly canonicalPromptDigest: string;
+    readonly authorizedAt: string;
+  },
+): Promise<void> {
+  return persistAuthorizedReviewDispatch(deps, sessDir, {
+    ...input,
+    hostCallId: input.childSessionId,
+  });
+}
+
+function abandonSdkDispatch(
+  deps: DispatchLedgerWriteDeps,
+  sessDir: string,
+  childSessionId: string,
+): Promise<void> {
+  return abandonReviewDispatchByHostCall(deps, sessDir, childSessionId);
 }
 
 describe('persistAuthorizedSdkDispatch', () => {

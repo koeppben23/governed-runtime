@@ -43,7 +43,6 @@ import {
 import { isReviewDispatchRequired } from '../dispatch-signal.js';
 import { buildPendingReview, type ReviewSignalBinding } from './pending-review.js';
 
-import { TOOL_FLOWGUARD_REVIEW } from '../../tool-names.js';
 import {
   obligationTypeForTool,
   resolveReviewObligationTool,
@@ -91,46 +90,6 @@ function trackReviewRequired(
   state.pendingReviews.set(reviewTool, buildPendingReview(reviewTool, now, binding));
 }
 
-function trackContentAnalysis(
-  state: SessionEnforcementState,
-  binding: ReviewSignalBinding,
-  now: string,
-): void {
-  state.pendingReviews.set(TOOL_FLOWGUARD_REVIEW, {
-    tool: TOOL_FLOWGUARD_REVIEW,
-    requestedAt: now,
-    attemptId: binding.attemptId ?? null,
-    obligationId: binding.obligationId ?? null,
-  });
-}
-
-function handleContentAnalysisFlag(
-  state: SessionEnforcementState,
-  parsed: NonNullable<ReturnType<typeof parseToolResult>>,
-  toolName: string,
-  now: string,
-): ReviewTrackingResult {
-  const attestation = parsed.requiredReviewAttestation as Record<string, unknown> | undefined;
-  if (
-    parsed.error !== true ||
-    parsed.code !== 'CONTENT_ANALYSIS_REQUIRED' ||
-    !attestation ||
-    toolName !== TOOL_FLOWGUARD_REVIEW
-  ) {
-    return { kind: 'ok' };
-  }
-  const obligationId = reviewObligationIdFromSignal(parsed, true);
-  const attemptId = typeof parsed.reviewAttemptId === 'string' ? parsed.reviewAttemptId : null;
-  if (!obligationId || !attemptId) {
-    return nonconforming(
-      obligationId,
-      'a content-analysis review requirement must project both its obligation id and the exact reviewer attempt id',
-    );
-  }
-  trackContentAnalysis(state, { obligationId, attemptId }, now);
-  return { kind: 'ok' };
-}
-
 export function onFlowGuardToolAfter(
   state: SessionEnforcementState,
   toolName: string,
@@ -145,21 +104,17 @@ export function onFlowGuardToolAfter(
   if (!parsed) return { kind: 'ok' };
 
   clearSubmittedReview(state, reviewContext.obligationTool, args, parsed);
-  const required = trackRequiredReview(state, reviewContext, parsed, now);
-  if (required.kind !== 'ok') return required;
-  return handleContentAnalysisFlag(state, parsed, toolName, now);
+  return trackRequiredReview(state, reviewContext, parsed, now);
 }
 
 function resolveReviewTrackingContext(toolName: string): {
   obligationTool: ReviewableTool | undefined;
   signalOwner: ReviewableTool | undefined;
-  isReviewContent: boolean;
 } | null {
   const obligationTool = resolveReviewObligationTool(toolName);
   const signalOwner = reviewSignalOwner(toolName);
-  const isReviewContent = toolName === TOOL_FLOWGUARD_REVIEW;
-  if (obligationTool === undefined && signalOwner === undefined && !isReviewContent) return null;
-  return { obligationTool, signalOwner, isReviewContent };
+  if (obligationTool === undefined && signalOwner === undefined) return null;
+  return { obligationTool, signalOwner };
 }
 
 function clearSubmittedReview(
@@ -171,22 +126,13 @@ function clearSubmittedReview(
   const hasSelfReviewVerdict =
     typeof args.reviewVerdict === 'string' && args.reviewVerdict.length > 0;
   if (hasSelfReviewVerdict && parsed.error !== true) {
-    const verdictKey: PendingReviewTool = obligationTool ?? TOOL_FLOWGUARD_REVIEW;
-    state.pendingReviews.delete(verdictKey);
+    if (obligationTool) state.pendingReviews.delete(obligationTool);
   }
 }
 
-// eslint-disable-next-line complexity -- accepts established response projections at one boundary.
 function reviewObligationIdFromSignal(
   parsed: NonNullable<ReturnType<typeof parseToolResult>>,
-  isReviewContent: boolean,
 ): string | null {
-  if (isReviewContent) {
-    const attestation = parsed.requiredReviewAttestation;
-    if (!attestation || typeof attestation !== 'object' || Array.isArray(attestation)) return null;
-    const obligationId = (attestation as Record<string, unknown>).toolObligationId;
-    return typeof obligationId === 'string' ? obligationId : null;
-  }
   const value = parsed.reviewObligation;
   const reviewInvocation = parsed.reviewInvocation;
   const source =
@@ -204,13 +150,11 @@ function trackRequiredReview(
   parsed: NonNullable<ReturnType<typeof parseToolResult>>,
   now: string,
 ): ReviewTrackingResult {
-  const recordKey: PendingReviewTool = context.isReviewContent
-    ? TOOL_FLOWGUARD_REVIEW
-    : (context.signalOwner as PendingReviewTool);
-  if (!isReviewDispatchRequired(parsed) || (!context.isReviewContent && !context.signalOwner)) {
+  const recordKey = context.signalOwner;
+  if (!isReviewDispatchRequired(parsed) || !recordKey) {
     return { kind: 'ok' };
   }
-  const obligationId = reviewObligationIdFromSignal(parsed, context.isReviewContent);
+  const obligationId = reviewObligationIdFromSignal(parsed);
   const attemptId = typeof parsed.reviewAttemptId === 'string' ? parsed.reviewAttemptId : null;
   if (!obligationId || !attemptId) {
     return nonconforming(
