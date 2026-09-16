@@ -74,7 +74,12 @@ export function hasValidStructuredInvocationContract(input: {
 }): boolean {
   const { obligation, invocation, parentSessionId } = input;
   return (
-    invocation.invocationMode === 'sdk_session_prompt' &&
+    invocation.invocationMode === 'native_task_structured_followup' &&
+    invocation.hostVisible === true &&
+    invocation.transcriptNavigable === true &&
+    invocation.structuredOutputUsed === true &&
+    invocation.reviewOutputMode === 'structured_output' &&
+    invocation.reviewAssuranceLevel === 'structured_high' &&
     invocation.agentType === REVIEWER_SUBAGENT_TYPE &&
     (parentSessionId === undefined || invocation.parentSessionId === parentSessionId) &&
     invocation.criteriaVersion === obligation.criteriaVersion &&
