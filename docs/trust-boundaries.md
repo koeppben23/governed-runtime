@@ -173,6 +173,23 @@ The following sections are the review contract. Changes touching a boundary must
 | Required operational logs                 | `error` for append failure and `warn`/`error` for verification failures with fields such as `sessionId`, `reasonCode`, `eventId`, `expectedChainHash`, and `actualChainHash` when available. Operational logs are diagnostic only.                                                                                                                                                                                                                                                                                                                               |
 | Known gaps / residual risk / NOT_VERIFIED | Hash chains are tamper-evident, not tamper-preventing. A local attacker with rewrite access can attempt full trail rewrite; external timestamp assurance is required for stronger regulated evidence. TSA tokens are verified against the enforced RFC 3161 signer contract (exactly one critical, exclusive id-kp-timeStamping EKU; signed ESSCertID/ESSCertIDv2 signer binding; independent SHA-256/384/512 allowlists; validated RSASSA-PSS parameters; unknown critical extensions reject; constant-time imprints — `src/audit/rfc-3161-pkijs-verifier.ts`). |
 
+Canonical audit authority map — there is exactly one surface per authority, and
+no parallel audit writer or tolerance layer:
+
+| Authority                  | Module                                                                                                                                   |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Event schema and format    | [`src/state/evidence-audit.ts`](../src/state/evidence-audit.ts), [`src/audit/types.ts`](../src/audit/types.ts) (`audit-chain.v3`)        |
+| Canonical digest           | [`src/audit/canonical-digest.ts`](../src/audit/canonical-digest.ts)                                                                      |
+| Chain verification         | [`src/audit/integrity.ts`](../src/audit/integrity.ts)                                                                                    |
+| Trail append and read      | [`src/adapters/persistence-audit.ts`](../src/adapters/persistence-audit.ts) (`appendAuditEvent`, `readAuditTrail`; v3-only, fail-closed) |
+| Outbox reconciliation gate | [`src/integration/plugin-audit-reconcile.ts`](../src/integration/plugin-audit-reconcile.ts)                                              |
+| Producer / outbox binding  | [`src/integration/tools/audit-outbox.ts`](../src/integration/tools/audit-outbox.ts)                                                      |
+
+Read helpers (`src/audit/query.ts`, `src/audit/summary.ts`, `src/audit/completeness.ts`)
+are pure projections over the canonical event array — they perform no I/O and
+never tolerate or reinterpret malformed records. The architecture guard
+`src/architecture/__tests__/audit-authority-guard.test.ts` pins this map.
+
 ### Archive Manifest And Content Digest Boundary
 
 | Field                                     | Contract                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |

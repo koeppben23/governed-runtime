@@ -9,7 +9,7 @@
  * - Functional filter combinators — compose for complex queries
  * - Type-safe predicate builders for each filterable dimension
  * - Chronological ordering guaranteed (input must be chronological)
- * - Works with both legacy (AuditEvent) and chained (ChainedAuditEvent) events
+ * - Covers canonical audit-chain.v3 events — the only trail format
  *
  * @version v1
  */
@@ -19,6 +19,7 @@ import type { DecisionIdentity } from '../state/evidence-identity.js';
 import { DecisionIdentity as DecisionIdentitySchema } from '../state/evidence-identity.js';
 import type { AuditEventKind } from './types.js';
 import { ENFORCEMENT_DENIED_EVENT_NAME, STATE_WRITE_EVENT_NAME } from './types.js';
+import { AuditQueryError } from './errors.js';
 
 /** Structured decision receipt derived from decision audit events. */
 export interface DecisionReceipt {
@@ -189,13 +190,18 @@ export function decisionEvents(events: AuditEvent[]): AuditEvent[] {
 }
 
 /**
- * Extract structured decision receipts from decision events.
- * Invalid/malformed decision event payloads are skipped.
+ * Extract a structured decision receipt from one decision event.
+ *
+ * Fails closed on a decision event whose payload does not satisfy the
+ * canonical receipt shape: malformed decision evidence is never silently
+ * dropped from a read model that also allocates decision sequence authority.
  */
-function toDecisionReceipt(event: AuditEvent): DecisionReceipt | null {
+function toDecisionReceipt(event: AuditEvent): DecisionReceipt {
   const detail = event.detail;
   const verdict = detail.verdict;
-  if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') return null;
+  if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') {
+    throw invalidDecisionReceipt(event, 'verdict');
+  }
 
   const stringFields = [
     'decisionId',
@@ -207,10 +213,13 @@ function toDecisionReceipt(event: AuditEvent): DecisionReceipt | null {
     'transitionEvent',
     'policyMode',
   ] as const;
-  if (stringFields.some((f) => typeof detail[f] !== 'string')) return null;
-  if (typeof detail.decisionSequence !== 'number') return null;
+  const missing = stringFields.find((field) => typeof detail[field] !== 'string');
+  if (missing) throw invalidDecisionReceipt(event, missing);
+  if (typeof detail.decisionSequence !== 'number') {
+    throw invalidDecisionReceipt(event, 'decisionSequence');
+  }
   const decisionIdentity = DecisionIdentitySchema.safeParse(detail.decisionIdentity);
-  if (!decisionIdentity.success) return null;
+  if (!decisionIdentity.success) throw invalidDecisionReceipt(event, 'decisionIdentity');
 
   return {
     decisionId: detail.decisionId as string,
@@ -231,13 +240,15 @@ function toDecisionReceipt(event: AuditEvent): DecisionReceipt | null {
   };
 }
 
+function invalidDecisionReceipt(event: AuditEvent, field: string): AuditQueryError {
+  return new AuditQueryError(
+    'AUDIT_DECISION_RECEIPT_INVALID',
+    `Decision audit event ${event.id} does not carry a canonical decision receipt field "${field}".`,
+  );
+}
+
 export function decisionReceipts(events: AuditEvent[]): DecisionReceipt[] {
-  const receipts: DecisionReceipt[] = [];
-  for (const event of decisionEvents(events)) {
-    const receipt = toDecisionReceipt(event);
-    if (receipt) receipts.push(receipt);
-  }
-  return receipts;
+  return decisionEvents(events).map(toDecisionReceipt);
 }
 
 /**

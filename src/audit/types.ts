@@ -209,7 +209,8 @@ export interface ChainedAuditEvent {
   readonly timestampEvidence?: TimestampEvidence;
   /**
    * Enforcement level active when this event was recorded.
-   * Optional for backward compatibility: pre-HAI events omit this field.
+   * Optional: event classes not bound to a host enforcement decision omit it;
+   * absence is not a legacy or migration signal (non-v3 trails are rejected).
    * @since v1.3.0 (HAI #242)
    */
   readonly enforcementLevel?: 'synchronous' | 'hook_gated' | 'advisory';

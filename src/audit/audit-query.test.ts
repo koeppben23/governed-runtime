@@ -272,15 +272,18 @@ describe('audit query', () => {
       expect(result).toHaveLength(6);
     });
 
-    it('decisionReceipts skips malformed decision payloads', () => {
+    it('decisionReceipts fails closed on malformed decision payloads', () => {
       const malformed = makeAuditEvent({
         id: 'bad-decision',
         event: 'decision:DEC-999',
         detail: { kind: 'decision', decisionId: 999 as unknown as string },
       });
-      const receipts = decisionReceipts([...events, malformed]);
-      expect(receipts).toHaveLength(1);
-      expect(receipts[0]!.decisionId).toBe('DEC-001');
+      try {
+        decisionReceipts([...events, malformed]);
+        expect.unreachable('malformed decision payloads must fail closed');
+      } catch (err) {
+        expect(err).toMatchObject({ code: 'AUDIT_DECISION_RECEIPT_INVALID' });
+      }
     });
 
     it('anyOf with zero filters matches nothing', () => {

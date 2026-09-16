@@ -138,9 +138,11 @@ function isDegradedStatus(status: string | undefined): boolean {
 /**
  * Verify TSA message imprint against recomputed canonical event digest.
  *
- * Only checks events that have TSA evidence. Events without TSA evidence pass
- * (backward compat — legacy events). Stored canonicalEventDigest is cross-check
- * evidence only; it is not the digest authority during verification.
+ * Only checks events that have TSA evidence. Events without timestamp evidence
+ * are not timestamp failures at this layer: presence and fatality are decided
+ * by the chain and policy gates, not by this imprint check. Stored
+ * canonicalEventDigest is cross evidence only; it is not the digest authority
+ * during verification.
  *
  * Trust model:
  * - AC2: the downgrade decision comes FIRST — a degraded status must never
