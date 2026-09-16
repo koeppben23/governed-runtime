@@ -44,8 +44,6 @@ import {
   buildReviewDiscoveryContextForPipeline,
 } from './shared-helpers.js';
 
-// ─── Standard Review Pipeline ────────────────────────────────────────────────
-
 export async function runStandardReviewPipeline(
   ctx: PipelineContext,
   toolName: string,
@@ -62,10 +60,6 @@ export async function runStandardReviewPipeline(
     return;
   }
 
-  // Hard subject-authority gate: no exact obligation ⇒ no reviewer execution.
-  // A missing or type-mismatched obligation must never let the pipeline fall
-  // back to mutable implementation identity (the prompt derives its anchor
-  // contract from the obligation; without it there is no frozen subject).
   const exactObligation = sessionState.reviewAssurance?.obligations.find(
     (o) => o.obligationId === ctx.reviewCtx.obligationId,
   );
@@ -96,9 +90,6 @@ export async function runStandardReviewPipeline(
     return;
   }
 
-  // Resolve the pre-authorized attempt BEFORE the host release: the durable
-  // dispatch ledger entry is written between session.create and
-  // session.prompt, so the attempt identity must exist up front.
   const dispatchAttempt = resolveDispatchAuthorizedAttempt(ctx);
   if (!dispatchAttempt) return;
 
@@ -126,13 +117,6 @@ export async function runStandardReviewPipeline(
   });
 }
 
-/**
- * Resolve the pre-authorized attempt or block the invocation. A missing
- * attempt and an attempt that was already released to the host (unresolved or
- * spent) both fail closed BEFORE the host release, so one attempt can never be
- * prompted twice (crash/restart replay) and the technical retry budget cannot
- * reset per command invocation.
- */
 function resolveDispatchAuthorizedAttempt(
   ctx: PipelineContext,
 ): { readonly attemptId: string } | null {
@@ -326,8 +310,6 @@ async function buildStandardPromptAndLog(
   return prompt;
 }
 
-// ─── Standard Pipeline: Success Handler ──────────────────────────────────────
-
 interface ReviewSuccessOpts {
   toolName: string;
   reviewerResult: ReviewerSuccessResult;
@@ -426,14 +408,29 @@ async function prepareStandardReviewerResult(
   return { ...reviewerResult, findings: prepared.findings };
 }
 
+/**
+ * Candidate findings that fail the frozen pre-bind contract terminate only the
+ * current reviewer ATTEMPT. The obligation remains pending and the already
+ * released dispatch remains durable; on the next originating command the
+ * continuation authority classifies it as interrupted and re-arms a fresh
+ * attempt on the SAME obligation. This is intentionally different from a
+ * reviewer verdict or artifact revision.
+ */
 async function applyStandardEvidenceResult(
   ctx: PipelineContext,
   result: SdkEvidenceRecordResult,
 ): Promise<boolean> {
-  const { output, reviewCtx } = ctx;
+  const { output, reviewCtx, deps } = ctx;
   if (typeof result !== 'string') {
-    await blockReviewOutcomeHelper(ctx.deps, ctx, result.code, {
+    output.output = strictBlockedOutput(result.code, {
       obligationId: reviewCtx.obligationId,
+      ...result.details,
+      recovery:
+        'Candidate reviewer findings were rejected before binding. Re-run the originating command unchanged; FlowGuard will re-arm a new ReviewAttempt on this frozen ReviewObligation.',
+    });
+    deps.log.warn('orchestrator', 'review findings rejected before binding — obligation kept pending', {
+      obligationId: reviewCtx.obligationId,
+      code: result.code,
       ...result.details,
     });
     return true;
@@ -583,8 +580,6 @@ async function finalizeReviewOutput(ctx: PipelineContext, opts: FinalizeOutputOp
     verdict: reviewerResult.findings.overallVerdict,
   });
 }
-
-// ─── Standard Pipeline: Failure Handler ──────────────────────────────────────
 
 async function handleReviewerFailure(ctx: PipelineContext, obligationType: string): Promise<void> {
   const { deps, sessDir, sessionId, reviewCtx, parsedOutput, sessionState, output } = ctx;
