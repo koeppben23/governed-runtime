@@ -196,9 +196,11 @@ function recordUserDecision(verdict: ReviewVerdict): void {
   const command =
     verdict === 'approve'
       ? '/approve'
-      : verdict === 'changes_requested'
-        ? '/request-changes'
-        : '/reject';
+      : verdict === 'approve_with_governance_override'
+        ? '/override-approve'
+        : verdict === 'changes_requested'
+          ? '/request-changes'
+          : '/reject';
   recordUserDecisionIntent({
     sessionId: ctx.sessionID,
     command,
@@ -750,7 +752,7 @@ describe('plan', () => {
       await hydrateSession({ policyMode: 'team' });
       await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
 
-      // TEAM maxSelfReviewIterations = 3 (SOLO=2) — see config/policy-presets.
+      // TEAM plan budget = 3 (SOLO=2) — see config/policy-presets.
       const result = await exhaustPlanReviews(3);
 
       // Never a block — the old MAX_REVIEW_ITERATIONS_REACHED hard block wedged
@@ -790,7 +792,28 @@ describe('plan', () => {
       expect(reviewed!.subjectDigest).not.toBe(state!.plan!.current.digest);
     });
 
-    it('TEAM: human approve of the force-converged plan blocks when the last review covered a prior plan version (CE5/P2)', async () => {
+    it('TEAM: plain approve of the force-converged plan requires the governance override verdict (CE5/P2)', async () => {
+      await hydrateSession({ policyMode: 'team' });
+      await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
+      await exhaustPlanReviews(3);
+
+      // The exhausted gate accepts only the explicit override intent; a plain
+      // approve must fail closed before any evidence resolution.
+      recordUserDecision('approve');
+      const decisionResult = parseToolResult(
+        await decision.execute(
+          { verdict: 'approve', rationale: 'Acceptable despite open findings' },
+          ctx,
+        ),
+      );
+      expect(decisionResult.error).toBe(true);
+      expect(decisionResult.code).toBe('GOVERNANCE_OVERRIDE_REQUIRED');
+      const state = await readState(await currentSessionDir());
+      expect(state!.phase).toBe('PLAN_REVIEW');
+      expect(state!.plan?.approvalCertificate).toBeUndefined();
+    });
+
+    it('TEAM: human governance override of the force-converged plan blocks when the last review covered a prior plan version (CE5/P2)', async () => {
       await hydrateSession({ policyMode: 'team' });
       await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
       await exhaustPlanReviews(3);
@@ -798,11 +821,15 @@ describe('plan', () => {
       // The last independent review covered the PRIOR plan revision; the final
       // revision was never reviewed. Resolution binds the exact
       // subjectDigest+planVersion+claimDeclarationsDigest tuple, so no
-      // current-version evidence exists — approve must fail closed.
-      recordUserDecision('approve');
+      // current-version evidence exists — even the override must fail closed:
+      // plan review evidence must be bindable for an override.
+      recordUserDecision('approve_with_governance_override');
       const decisionResult = parseToolResult(
         await decision.execute(
-          { verdict: 'approve', rationale: 'Acceptable despite open findings' },
+          {
+            verdict: 'approve_with_governance_override',
+            rationale: 'Acceptable despite open findings',
+          },
           ctx,
         ),
       );
@@ -832,7 +859,7 @@ describe('plan', () => {
       expect(state!.selfReview).toBeNull();
     });
 
-    it('TEAM: human reject returns the force-converged plan to TICKET', async () => {
+    it('TEAM: human reject closes the force-converged plan at the REJECTED terminal', async () => {
       await hydrateSession({ policyMode: 'team' });
       await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
       await exhaustPlanReviews(3);
@@ -842,16 +869,20 @@ describe('plan', () => {
         await decision.execute({ verdict: 'reject', rationale: 'Wrong approach entirely' }, ctx),
       );
       expect(decisionResult.error).not.toBe(true);
+      expect(decisionResult.directive).toMatchObject({
+        kind: 'terminal',
+        code: 'WORKFLOW_REJECTED',
+      });
       const state = await readState(await currentSessionDir());
-      expect(state!.phase).toBe('TICKET');
+      expect(state!.phase).toBe('REJECTED');
     });
 
     it('SOLO: force-convergence runs through without blocking (no inadmissible recovery)', async () => {
       await hydrateSession({ policyMode: 'solo' });
       await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
 
-      // SOLO maxSelfReviewIterations = 2 — see config/policy-presets.
-      const result = await exhaustPlanReviews(2);
+      // SOLO plan budget = 2 — see config/policy-presets.
+      const result = await exhaustPlanReviews(3);
 
       expect(result.error).not.toBe(true);
       expect(result.code).toBeUndefined();
@@ -983,7 +1014,7 @@ describe('plan', () => {
       expect(result.reviewCard).toContain('# FlowGuard Plan Review');
       expect(result.reviewCard).toContain('## Proposed Plan');
       expect(result.reviewCard).toContain('Implement payment validation');
-      expect(result.reviewCard).toContain('Review the plan and decide: /review-decision');
+      expect(result.reviewCard).toContain('Plan decision required.');
       expect(result.presentation).toEqual({ markdown: result.reviewCard });
     });
 
@@ -999,7 +1030,9 @@ describe('plan', () => {
       const result = parseToolResult(raw);
 
       expect(result.error).toBeUndefined();
-      expect(result.reviewCard).toContain('/review-decision');
+      expect(result.reviewCard).toContain('/approve');
+      expect(result.reviewCard).toContain('/request-changes');
+      expect(result.reviewCard).toContain('/reject');
     });
 
     it('non-PLAN_REVIEW convergence (solo auto-advance) does not include reviewCard', async () => {

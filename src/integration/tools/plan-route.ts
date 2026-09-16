@@ -19,7 +19,7 @@ import { blockObligation } from '../review/obligation-state.js';
 import { buildInterruptedDispatchRearm } from '../durable-dispatch.js';
 import type { PlanExecutionScope } from './plan-types.js';
 import { buildPlanReviewInstruction } from './plan-response.js';
-import { enrichWithNextAction, formatBlocked, writeStateWithArtifacts } from './helpers.js';
+import { enrichWithWorkflowDirective, formatBlocked, writeStateWithArtifacts } from './helpers.js';
 
 /**
  * Gate an initial plan submission against the plan review loop: a pending plan
@@ -178,5 +178,5 @@ function planInstructionResponse(
     reviewInvocation: instruction,
     _audit: { transitions: [] },
   };
-  return JSON.stringify(enrichWithNextAction(response, scope.state));
+  return JSON.stringify(enrichWithWorkflowDirective(response, scope.state));
 }

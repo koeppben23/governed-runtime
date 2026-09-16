@@ -310,8 +310,7 @@ describe('config/policy', () => {
         centralPolicyPath: POLICY_PATH,
         digestFn,
         readFileFn: async () => centralRegulated,
-        configMaxSelfReviewIterations: 10,
-        configMaxImplReviewIterations: 20,
+        configReviewBudget: { plan: 10, architecture: 9, implementation: 10 },
         configIdentityProvider: {
           mode: 'jwks',
           issuer: 'https://idp.example.com',
@@ -322,8 +321,7 @@ describe('config/policy', () => {
         },
         configIdentityProviderMode: 'required',
       });
-      expect(result.policy.maxSelfReviewIterations).toBe(10);
-      expect(result.policy.maxImplReviewIterations).toBe(20);
+      expect(result.policy.reviewBudget).toEqual({ plan: 10, architecture: 9, implementation: 10 });
       expect(result.policy.minimumActorAssuranceForApproval).toBe('claim_validated');
       expect(result.policy.identityProvider?.mode).toBe('jwks');
       expect(result.policy.identityProviderMode).toBe('required');

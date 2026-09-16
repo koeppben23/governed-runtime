@@ -208,7 +208,7 @@ export const reviewDone: GuardFn = (s) => s.reviewReportPath !== null;
  * Phases NOT in this table:
  * - READY: command-driven (no guards)
  * - PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW: user gates
- * - COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE: terminal
+ * - COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE, REJECTED, ABORTED: terminal
  */
 export const GUARDS: ReadonlyMap<Phase, readonly GuardEntry[]> = new Map<
   Phase,

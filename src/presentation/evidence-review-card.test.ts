@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { buildEvidenceReviewCard } from './evidence-review-card.js';
 import { buildReviewDecisionConclusion } from './review-decision.js';
 import type { CompactProofPresentation } from './proof-model.js';
+import type { WorkflowDirective } from '../machine/workflow-directive.js';
 
 const EVIDENCE_ACTION_DESCRIPTIONS: Record<string, string> = {
   '/approve': 'approve the implementation evidence',
@@ -20,14 +21,43 @@ const PLAN_ACTION_DESCRIPTIONS: Record<string, string> = {
   '/reject': 'stop this task',
 };
 
-const productNextAction = {
-  text: 'Review the implementation evidence.',
-  commands: ['/approve', '/request-changes', '/reject'] as readonly string[],
+const planDecisionDirective: WorkflowDirective = {
+  kind: 'human_gate',
+  code: 'PLAN_DECISION_REQUIRED',
+  allowedIntents: ['APPROVE', 'REQUEST_CHANGES', 'REJECT'],
+  commands: ['/approve', '/request-changes', '/reject'],
 };
 
-const terminalNextAction = {
-  text: 'Workflow complete.',
-  commands: [] as readonly string[],
+const planApproveOrRequestDirective: WorkflowDirective = {
+  ...planDecisionDirective,
+  allowedIntents: ['APPROVE', 'REQUEST_CHANGES'],
+  commands: ['/approve', '/request-changes'],
+};
+
+const planApproveDirective: WorkflowDirective = {
+  ...planDecisionDirective,
+  allowedIntents: ['APPROVE'],
+  commands: ['/approve'],
+};
+
+const implementationDecisionDirective: WorkflowDirective = {
+  kind: 'human_gate',
+  code: 'IMPLEMENTATION_DECISION_REQUIRED',
+  allowedIntents: ['APPROVE', 'REQUEST_CHANGES', 'REJECT'],
+  commands: ['/approve', '/request-changes', '/reject'],
+};
+
+const implementationApproveDirective: WorkflowDirective = {
+  ...implementationDecisionDirective,
+  allowedIntents: ['APPROVE'],
+  commands: ['/approve'],
+};
+
+const workflowCompleteDirective: WorkflowDirective = {
+  kind: 'terminal',
+  code: 'WORKFLOW_COMPLETE',
+  allowedIntents: [],
+  commands: [],
 };
 
 const evalProofSummary: CompactProofPresentation = {
@@ -52,30 +82,37 @@ const evalProofSummary: CompactProofPresentation = {
 };
 
 describe('buildReviewDecisionConclusion', () => {
-  it('returns decision_required when /approve is in commands', () => {
+  it('returns decision_required when /approve is in directive commands', () => {
     const conclusion = buildReviewDecisionConclusion(
-      { text: 'Decide.', commands: ['/approve', '/request-changes'] },
+      planApproveOrRequestDirective,
       PLAN_ACTION_DESCRIPTIONS,
     );
     expect(conclusion.kind).toBe('decision_required');
     if (conclusion.kind === 'decision_required') {
+      expect(conclusion.question).toBe('Plan decision required.');
       expect(conclusion.actions).toHaveLength(2);
       expect(conclusion.actions.map((a) => a.invocation)).toEqual(['/approve', '/request-changes']);
     }
   });
 
-  it('returns terminal when no gate commands are present', () => {
-    const conclusion = buildReviewDecisionConclusion(terminalNextAction, PLAN_ACTION_DESCRIPTIONS);
+  it('returns terminal with the directive label when no gate commands are present', () => {
+    const conclusion = buildReviewDecisionConclusion(
+      workflowCompleteDirective,
+      PLAN_ACTION_DESCRIPTIONS,
+    );
     expect(conclusion.kind).toBe('terminal');
+    if (conclusion.kind === 'terminal') {
+      expect(conclusion.message).toBe('Workflow complete.');
+    }
   });
 
   it('uses the provided description map per card context', () => {
     const planConclusion = buildReviewDecisionConclusion(
-      { text: 'Decide.', commands: ['/approve'] },
+      planApproveDirective,
       PLAN_ACTION_DESCRIPTIONS,
     );
     const evidenceConclusion = buildReviewDecisionConclusion(
-      { text: 'Decide.', commands: ['/approve'] },
+      implementationApproveDirective,
       EVIDENCE_ACTION_DESCRIPTIONS,
     );
     if (
@@ -91,7 +128,7 @@ describe('buildReviewDecisionConclusion', () => {
 describe('buildEvidenceReviewCard', () => {
   const baseInput = {
     phaseLabel: 'Ready for final review',
-    productNextAction,
+    directive: implementationDecisionDirective,
     proofSummary: evalProofSummary,
     statusLine: 'Implementation review converged at iteration 1. Reviewer accepted.',
   };
@@ -117,6 +154,7 @@ describe('buildEvidenceReviewCard', () => {
   it('includes ## Decision required with gate commands when commands present', () => {
     const card = buildEvidenceReviewCard(baseInput);
     expect(card).toContain('## Decision required');
+    expect(card).toContain('Implementation decision required.');
     expect(card).toContain('/approve');
     expect(card).toContain('/request-changes');
     expect(card).toContain('/reject');
@@ -128,9 +166,10 @@ describe('buildEvidenceReviewCard', () => {
   it('omits ## Decision required when no gate commands present', () => {
     const card = buildEvidenceReviewCard({
       ...baseInput,
-      productNextAction: terminalNextAction,
+      directive: workflowCompleteDirective,
     });
     expect(card).not.toContain('## Decision required');
+    expect(card).toContain('Workflow complete.');
   });
 
   it('renders the decision gate with its mandatory ProofGraph summary', () => {

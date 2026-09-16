@@ -35,6 +35,7 @@ import {
   implement,
   review_implementation,
   status,
+  export as exportTool,
 } from './tools/index.js';
 import { readState } from '../adapters/persistence.js';
 import { verifyChain } from '../audit/integrity.js';
@@ -116,6 +117,7 @@ vi.mock('../adapters/workspace/index.js', async (importOriginal) => {
 
 const regulatedArchiveMock = vi.hoisted(() => ({
   archiveRegulatedEvidence: vi.fn(),
+  archiveCompletionExport: vi.fn(),
   archiveFileName: (sessionId: string, regulatedEvidence = false) =>
     `${regulatedEvidence ? 'regulated-' : ''}${sessionId}.tar.gz`,
 }));
@@ -167,6 +169,13 @@ beforeEach(async () => {
         '../adapters/workspace/archive.js',
       )
     ).archiveRegulatedEvidence,
+  );
+  vi.mocked(regulatedArchive.archiveCompletionExport).mockImplementation(
+    (
+      await vi.importActual<typeof import('../adapters/workspace/archive.js')>(
+        '../adapters/workspace/archive.js',
+      )
+    ).archiveCompletionExport,
   );
 });
 
@@ -287,6 +296,8 @@ async function completeRegulatedSession(): Promise<{ fingerprint: string; sessDi
     await callOk(review_implementation, { reviewVerdict: 'accept' });
   }
   await callOk(decision, { verdict: 'approve', rationale: 'Evidence approved' });
+  expect(await phase()).toBe('EXPORT_READY');
+  await callOk(exportTool, {});
   expect(await phase()).toBe('COMPLETE');
   return workspaceIds();
 }

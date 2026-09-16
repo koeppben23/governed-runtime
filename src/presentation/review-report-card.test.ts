@@ -9,6 +9,7 @@ import {
 } from './review-report-card.js';
 import type { CompactProofPresentation } from './proof-model.js';
 import type { ReviewReportFinding } from '../state/evidence.js';
+import type { WorkflowDirective } from '../machine/workflow-directive.js';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
@@ -16,6 +17,13 @@ async function readGolden(name: string): Promise<string> {
   const p = resolve(__dirname, '..', '..', 'testdata', 'presentation', name);
   return (await readFile(p, 'utf-8')).trimEnd();
 }
+
+const exportDirective: WorkflowDirective = {
+  kind: 'user_action',
+  code: 'EXPORT_REQUIRED',
+  allowedIntents: ['EXPORT'],
+  commands: ['/export'],
+};
 
 const baseInput = {
   phase: 'REVIEW_COMPLETE' as const,
@@ -46,7 +54,7 @@ const baseInput = {
     approval: { attestations: [] },
     decisionContext: 'completion',
   } satisfies CompactProofPresentation,
-  productNextAction: { text: 'Export the review evidence.', commands: ['/export'] },
+  directive: exportDirective,
   conclusionAction: {
     invocation: '/export',
     description: 'Export the review evidence.',
@@ -76,8 +84,8 @@ function materialFinding(
   };
 }
 function buildReviewReportCard(
-  input: Omit<ReviewReportCardInput, 'proofSummary' | 'productNextAction' | 'conclusionAction'> &
-    Partial<Pick<ReviewReportCardInput, 'proofSummary' | 'productNextAction' | 'conclusionAction'>>,
+  input: Omit<ReviewReportCardInput, 'proofSummary' | 'directive' | 'conclusionAction'> &
+    Partial<Pick<ReviewReportCardInput, 'proofSummary' | 'directive' | 'conclusionAction'>>,
   options?: Parameters<typeof buildCard>[1],
 ) {
   return buildCard({ ...baseInput, ...input }, options);
@@ -197,6 +205,24 @@ describe('buildReviewReportCard', () => {
     expect(card).not.toContain('/approve');
     expect(card).not.toContain('/request-changes');
     expect(card).not.toContain('/reject');
+    // The canonical export conclusion action is preserved verbatim.
+    expect(card).toContain('→ `/export` — Export the review evidence.');
+  });
+
+  it('renders a terminal conclusion when the directive carries no command', () => {
+    // REVIEW_COMPLETE resolves the terminal PEER_REVIEW_COMPLETE directive with
+    // no commands; the card must render a valid terminal document rather than
+    // failing the success-form presentation contract.
+    const card = buildReviewReportCard({
+      ...baseInput,
+      directive: {
+        code: 'PEER_REVIEW_COMPLETE',
+        commands: [],
+      },
+      conclusionAction: undefined,
+    });
+    expect(card).toContain('Peer review complete.');
+    expect(card).not.toContain('/export');
   });
 
   it('shows "no follow-up required" when findings are empty', () => {

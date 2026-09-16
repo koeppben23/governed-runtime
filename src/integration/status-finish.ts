@@ -13,7 +13,7 @@
 import type { SessionState } from '../state/schema.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 import type { ReviewReport } from '../state/evidence.js';
-import { resolveNextAction } from '../machine/next-action.js';
+import { resolveWorkflowDirective } from '../machine/workflow-directive.js';
 import { projectCompletionProofStatus } from './proofgraph/proof-summary-projectors.js';
 import { isTerminalPhase } from '../machine/topology.js';
 import {
@@ -181,7 +181,7 @@ function buildFinishActionGuidance(overallStatus: FinishOverallStatus): FinishAc
  *
  * This function performs NO independent evidence, phase, obligation, or gate
  * evaluation — it only composes buildReadinessProjection,
- * buildEvidenceDetailProjection, resolveNextAction, and the single
+ * buildEvidenceDetailProjection, resolveWorkflowDirective, and the single
  * presentation classifier deriveFinishOverallStatus.
  */
 export function buildFinishCard(
@@ -192,7 +192,7 @@ export function buildFinishCard(
   const readiness = buildReadinessProjection(state, policy);
   const evidence = buildEvidenceDetailProjection(state);
   const blocker = buildBlockedProjection(state, policy);
-  const next = resolveNextAction(state.phase, state);
+  const directive = resolveWorkflowDirective(state);
   const overallStatus = deriveFinishOverallStatus(readiness, evidence, reviewReport);
 
   return {
@@ -200,10 +200,7 @@ export function buildFinishCard(
     overallStatus,
     readiness,
     evidence,
-    nextAction: {
-      primaryCommand: next.commands[0] ?? null,
-      summary: next.text,
-    },
+    directive,
     blocker,
     warnings: readiness.warnings,
     actionGuidance: buildFinishActionGuidance(overallStatus),

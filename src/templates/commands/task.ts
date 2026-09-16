@@ -34,5 +34,5 @@ ${renderCommandGovernanceRules()}
 - Task recorded via flowguard_ticket.
 - Phase and next action reported.
 - If \`presentation.markdown\` is present, render it verbatim and do not append a separate \`Next action:\` line.
-- Otherwise, render \`productNextAction.text\` as the single fallback conclusion.
+- Otherwise, render the canonical \`directive\` as the single fallback conclusion.
 `;

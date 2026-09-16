@@ -89,14 +89,13 @@ describe('executeArchitecture', () => {
       }
     });
 
-    it('uses maxSelfReviewIterations from policy', () => {
+    it('uses the architecture review budget from policy', () => {
       const state = makeState('READY');
       const soloCtx = { ...ctx, policy: SOLO_POLICY };
       const result = executeArchitecture(state, VALID_INPUT, soloCtx);
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
-        // SOLO: maxSelfReviewIterations = 2
-        expect(result.state.selfReview!.maxIterations).toBe(2);
+        expect(result.state.selfReview!.maxIterations).toBe(SOLO_POLICY.reviewBudget.architecture);
       }
     });
 

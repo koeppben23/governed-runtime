@@ -58,7 +58,7 @@ import {
   type ArchitectureArgs,
   type ArchitectureSession,
 } from './architecture-shared.js';
-import { enrichWithNextAction, formatBlocked, writeStateWithArtifacts } from './helpers.js';
+import { enrichWithWorkflowDirective, formatBlocked, writeStateWithArtifacts } from './helpers.js';
 
 export async function routeArchitectureInitialSubmission(
   args: ArchitectureArgs,
@@ -221,7 +221,7 @@ function architectureInstructionResponse(
     reviewInvocation: instruction,
     _audit: { transitions: [] },
   };
-  return JSON.stringify(enrichWithNextAction(response, state));
+  return JSON.stringify(enrichWithWorkflowDirective(response, state));
 }
 
 function restartBlockedCount(state: SessionState): number {
@@ -352,7 +352,7 @@ async function restartArchitectureReview(
     state: augmentedState,
   });
   return JSON.stringify(
-    enrichWithNextAction(
+    enrichWithWorkflowDirective(
       buildRestartResponse(augmentedState, {
         nextAdr,
         sameRevision,

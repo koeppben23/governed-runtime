@@ -41,8 +41,19 @@ describe('commands', () => {
       expect(isCommandAllowed('ARCH_REVIEW', Command.REVIEW_DECISION)).toBe(true);
     });
 
+    it('/override-approve is allowed at all user gates', () => {
+      expect(isCommandAllowed('PLAN_REVIEW', Command.OVERRIDE_APPROVE)).toBe(true);
+      expect(isCommandAllowed('EVIDENCE_REVIEW', Command.OVERRIDE_APPROVE)).toBe(true);
+      expect(isCommandAllowed('ARCH_REVIEW', Command.OVERRIDE_APPROVE)).toBe(true);
+    });
+
     it('/validate is allowed in VALIDATION', () => {
       expect(isCommandAllowed('VALIDATION', Command.VALIDATE)).toBe(true);
+    });
+
+    it('/export is allowed only in EXPORT_READY', () => {
+      expect(isCommandAllowed('EXPORT_READY', Command.EXPORT)).toBe(true);
+      expect(isCommandAllowed('EVIDENCE_REVIEW', Command.EXPORT)).toBe(false);
     });
 
     it('wildcard commands allowed in all non-terminal phases', () => {
@@ -55,6 +66,7 @@ describe('commands', () => {
         'IMPLEMENTATION',
         'IMPL_REVIEW',
         'EVIDENCE_REVIEW',
+        'EXPORT_READY',
         'ARCHITECTURE',
         'ARCH_REVIEW',
         'REVIEW',
@@ -144,6 +156,13 @@ describe('commands', () => {
       expect(isCommandAllowed('READY', Command.REVIEW_DECISION)).toBe(false);
     });
 
+    it('/override-approve blocked outside user gates', () => {
+      expect(isCommandAllowed('TICKET', Command.OVERRIDE_APPROVE)).toBe(false);
+      expect(isCommandAllowed('PLAN', Command.OVERRIDE_APPROVE)).toBe(false);
+      expect(isCommandAllowed('IMPLEMENTATION', Command.OVERRIDE_APPROVE)).toBe(false);
+      expect(isCommandAllowed('READY', Command.OVERRIDE_APPROVE)).toBe(false);
+    });
+
     it('/validate blocked outside VALIDATION', () => {
       expect(isCommandAllowed('TICKET', Command.VALIDATE)).toBe(false);
       expect(isCommandAllowed('PLAN', Command.VALIDATE)).toBe(false);
@@ -178,7 +197,13 @@ describe('commands', () => {
   // ─── CORNER ────────────────────────────────────────────────
   describe('CORNER', () => {
     it('terminal phases block all commands', () => {
-      const terminals: Phase[] = ['COMPLETE', 'ARCH_COMPLETE', 'REVIEW_COMPLETE'];
+      const terminals: Phase[] = [
+        'COMPLETE',
+        'ARCH_COMPLETE',
+        'REVIEW_COMPLETE',
+        'REJECTED',
+        'ABORTED',
+      ];
       for (const phase of terminals) {
         for (const cmd of Object.values(Command)) {
           expect(isCommandAllowed(phase, cmd)).toBe(false);
@@ -193,8 +218,8 @@ describe('commands', () => {
       expect(isCommandAllowed('TICKET', 'unknown' as Command)).toBe(false);
     });
 
-    it('Command enum has exactly 12 entries', () => {
-      expect(Object.keys(Command).length).toBe(12);
+    it('Command enum has exactly 13 entries', () => {
+      expect(Object.keys(Command).length).toBe(13);
     });
 
     it('/plan is allowed in TICKET and PLAN only (not READY)', () => {
@@ -239,12 +264,13 @@ describe('commands', () => {
         [Command.PLAN]: ['TICKET', 'PLAN'],
         [Command.CONTINUE]: '*',
         [Command.IMPLEMENT]: ['IMPLEMENTATION'],
-        [Command.EXTEND_IMPLEMENTATION_REVIEW]: ['IMPLEMENTATION'],
         [Command.RESOLVE_IMPLEMENTATION_CHALLENGE]: ['IMPL_REVIEW'],
         [Command.REVIEW_DECISION]: ['PLAN_REVIEW', 'EVIDENCE_REVIEW', 'ARCH_REVIEW'],
+        [Command.OVERRIDE_APPROVE]: ['PLAN_REVIEW', 'EVIDENCE_REVIEW', 'ARCH_REVIEW'],
         [Command.VALIDATE]: ['VALIDATION'],
         [Command.REVIEW]: ['READY'],
         [Command.ARCHITECTURE]: ['READY', 'ARCHITECTURE'],
+        [Command.EXPORT]: ['EXPORT_READY'],
         [Command.ABORT]: '*',
       };
 

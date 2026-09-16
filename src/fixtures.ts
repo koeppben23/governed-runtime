@@ -67,8 +67,7 @@ export const POLICY_SNAPSHOT: PolicySnapshot = {
   requestedMode: 'team',
   effectiveGateBehavior: 'human_gated',
   requireHumanGates: true,
-  maxSelfReviewIterations: 3,
-  maxImplReviewIterations: 3,
+  reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
   maxIncoherentReviewerCaptureRetries: 1,
   maxReviewerAttempts: 1,
   allowSelfApproval: true,
@@ -616,7 +615,6 @@ export function makeState(
     implValidation: [],
     implementation: null,
     implementationRework: null,
-    implementationReviewExtensions: [],
     reducedCeremony: null,
     implReview: null,
     reviewDecision: null,
@@ -632,14 +630,11 @@ export function makeState(
     pendingAuditOperations: [],
     error: null,
     createdAt: FIXED_TIME,
+    exportCompletionEvidence: null,
     regulatedArchiveStatus: null,
     ...overrides,
   };
 }
-
-/**
- * Create a state that's progressed to a specific phase with appropriate evidence.
- */
 export function makeProgressedState(phase: Phase): SessionState {
   switch (phase) {
     case 'READY':
@@ -707,8 +702,9 @@ export function makeProgressedState(phase: Phase): SessionState {
         implValidation: VALIDATION_PASSED,
         implReview: IMPL_REVIEW_CONVERGED,
       });
+    case 'EXPORT_READY':
     case 'COMPLETE':
-      return makeState('COMPLETE', {
+      return makeState(phase, {
         implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
         ticket: TICKET,
         plan: PLAN_RECORD,
@@ -719,6 +715,9 @@ export function makeProgressedState(phase: Phase): SessionState {
         implValidation: VALIDATION_PASSED,
         implReview: IMPL_REVIEW_CONVERGED,
       });
+    case 'REJECTED':
+    case 'ABORTED':
+      return makeState(phase);
     case 'ARCHITECTURE':
       return makeState('ARCHITECTURE', {
         architecture: ARCHITECTURE_DECISION,

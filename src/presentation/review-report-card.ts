@@ -26,6 +26,8 @@ import type {
   FindingItem,
 } from './model.js';
 import { projectFindingRelation } from './finding-relation.js';
+import { directiveLabel } from './directive-copy.js';
+import type { DirectiveProjection } from './review-decision.js';
 import { renderMarkdown } from './markdown.js';
 import type { PresentationRenderOptions } from './glyph-profile.js';
 import type { CompactProofPresentation } from './proof-model.js';
@@ -73,10 +75,14 @@ export interface ReviewReportCardInput {
   reviewAssuranceLevel?: ReviewInvocationEvidence['reviewAssuranceLevel'];
   /** Mandatory state-derived ProofGraph summary. */
   proofSummary: CompactProofPresentation;
-  /** Canonical next action resolved from the completed state. */
-  productNextAction: { text: string; commands: readonly string[] };
-  /** Pre-computed canonical conclusion action (with intent from installed metadata). */
-  conclusionAction: import('./model.js').PresentationAction;
+  /** Canonical workflow directive projection (code + commands verbatim). */
+  directive: DirectiveProjection;
+  /**
+   * Pre-computed canonical conclusion action (with intent from installed
+   * metadata). Absent when the directive carries no command, e.g. after a
+   * terminal peer review; the card then renders the terminal conclusion.
+   */
+  conclusionAction?: import('./model.js').PresentationAction;
 }
 
 // ─── Severity / Category Projection ─────────────────────────────────────────────
@@ -291,12 +297,11 @@ export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewC
 
   const document: ReviewCardDocument = {
     kind: 'review_card',
-    form: 'success',
+    form: input.conclusionAction ? 'success' : 'terminal',
     sections,
-    conclusion: {
-      kind: 'next_action',
-      action: input.conclusionAction,
-    },
+    conclusion: input.conclusionAction
+      ? { kind: 'next_action', action: input.conclusionAction }
+      : { kind: 'terminal', message: directiveLabel(input.directive.code) },
   };
 
   return document;

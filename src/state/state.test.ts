@@ -183,30 +183,6 @@ describe('state schemas', () => {
       ).toEqual({ rejectedDigest: 'rejected-implementation-digest', exhausted: false });
     });
 
-    it('rejects missing and preserves present implementation review extension evidence', () => {
-      const state = makeState('TICKET');
-      const incomplete: Record<string, unknown> = { ...state };
-      delete incomplete.implementationReviewExtensions;
-      expect(() => SessionState.parse(incomplete)).toThrow();
-      expect(
-        SessionState.parse({
-          ...state,
-          implementationReviewExtensions: [
-            {
-              additionalIterations: 1,
-              authorizedAt: '2025-01-01T00:00:00.000Z',
-              authorizedBy: {
-                actorId: 'reviewer-1',
-                actorEmail: null,
-                actorSource: 'oidc',
-                actorAssurance: 'idp_verified',
-              },
-            },
-          ],
-        }).implementationReviewExtensions,
-      ).toHaveLength(1);
-    });
-
     it('SessionState parses legacy state without risk classification fields', () => {
       const state = makeState('TICKET', { claimedTaskClass: 'HIGH-RISK' });
       const legacy: Record<string, unknown> = { ...state };
@@ -414,8 +390,7 @@ describe('state schemas', () => {
         requestedMode: 'team',
         effectiveGateBehavior: 'human_gated',
         requireHumanGates: true,
-        maxSelfReviewIterations: 3,
-        maxImplReviewIterations: 3,
+        reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
         allowSelfApproval: true,
         audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
       };
@@ -430,8 +405,7 @@ describe('state schemas', () => {
         resolvedAt: FIXED_TIME,
         effectiveGateBehavior: 'human_gated',
         requireHumanGates: true,
-        maxSelfReviewIterations: 3,
-        maxImplReviewIterations: 3,
+        reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
         allowSelfApproval: true,
         audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
         actorClassification: { flowguard_decision: 'human' },
@@ -446,8 +420,7 @@ describe('state schemas', () => {
         resolvedAt: FIXED_TIME,
         requestedMode: 'team',
         requireHumanGates: true,
-        maxSelfReviewIterations: 3,
-        maxImplReviewIterations: 3,
+        reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
         allowSelfApproval: true,
         audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
         actorClassification: { flowguard_decision: 'human' },
@@ -588,8 +561,7 @@ describe('state schemas', () => {
         requestedMode: 'team',
         effectiveGateBehavior: 'human_gated',
         requireHumanGates: true,
-        maxSelfReviewIterations: 3,
-        maxImplReviewIterations: 3,
+        reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
         allowSelfApproval: true,
         minimumActorAssuranceForApproval: 'best_effort',
         identityProviderMode: 'optional',
@@ -635,8 +607,7 @@ describe('state schemas', () => {
         requestedMode: 'team',
         effectiveGateBehavior: 'human_gated',
         requireHumanGates: true,
-        maxSelfReviewIterations: 3,
-        maxImplReviewIterations: 3,
+        reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
         allowSelfApproval: true,
         minimumActorAssuranceForApproval: 'best_effort',
         enforceRiskClassification: false,
@@ -688,8 +659,7 @@ describe('state schemas', () => {
         requestedMode: 'team',
         effectiveGateBehavior: 'human_gated',
         requireHumanGates: true,
-        maxSelfReviewIterations: 3,
-        maxImplReviewIterations: 3,
+        reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
         allowSelfApproval: true,
         minimumActorAssuranceForApproval: 'best_effort',
         identityProvider: {
@@ -728,8 +698,7 @@ describe('state schemas', () => {
         policyVersion: '2026.04',
         policyPathHint: 'basename:org-policy.json',
         requireHumanGates: true,
-        maxSelfReviewIterations: 3,
-        maxImplReviewIterations: 3,
+        reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
         allowSelfApproval: false,
         minimumActorAssuranceForApproval: 'best_effort',
         identityProviderMode: 'optional',

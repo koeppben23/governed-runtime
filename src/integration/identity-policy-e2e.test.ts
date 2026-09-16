@@ -228,7 +228,7 @@ describe('identity-policy-e2e', () => {
       expect(ps.actorClassification).toBeDefined();
       expect(ps.audit).toBeDefined();
       expect(ps.requireHumanGates).toBe(false);
-      expect(ps.maxSelfReviewIterations).toBeGreaterThan(0);
+      expect(ps.reviewBudget.plan).toBeGreaterThan(0);
     });
   });
 

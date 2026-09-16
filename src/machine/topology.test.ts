@@ -65,8 +65,12 @@ describe('topology', () => {
       expect(resolveTransition('IMPL_REVIEW', 'CHANGES_REQUESTED')).toBe('IMPLEMENTATION');
     });
 
-    it('resolves EVIDENCE_REVIEW + APPROVE → COMPLETE', () => {
-      expect(resolveTransition('EVIDENCE_REVIEW', 'APPROVE')).toBe('COMPLETE');
+    it('resolves EVIDENCE_REVIEW + APPROVE → EXPORT_READY', () => {
+      expect(resolveTransition('EVIDENCE_REVIEW', 'APPROVE')).toBe('EXPORT_READY');
+    });
+
+    it('resolves EXPORT_READY + EXPORT_MATERIALIZED → COMPLETE', () => {
+      expect(resolveTransition('EXPORT_READY', 'EXPORT_MATERIALIZED')).toBe('COMPLETE');
     });
 
     // Architecture flow forward transitions
@@ -91,19 +95,19 @@ describe('topology', () => {
       expect(resolveTransition('REVIEW', 'REVIEW_DONE')).toBe('REVIEW_COMPLETE');
     });
 
-    // Backward transitions (ticket flow)
-    it('resolves all ticket-flow backward transitions', () => {
+    // Revision transitions (ticket flow)
+    it('resolves ticket-flow revision and terminal rejection transitions', () => {
       expect(resolveTransition('PLAN_REVIEW', 'CHANGES_REQUESTED')).toBe('PLAN');
-      expect(resolveTransition('PLAN_REVIEW', 'REJECT')).toBe('TICKET');
+      expect(resolveTransition('PLAN_REVIEW', 'REJECT')).toBe('REJECTED');
       expect(resolveTransition('EVIDENCE_REVIEW', 'CHANGES_REQUESTED')).toBe('IMPLEMENTATION');
-      expect(resolveTransition('EVIDENCE_REVIEW', 'REJECT')).toBe('TICKET');
+      expect(resolveTransition('EVIDENCE_REVIEW', 'REJECT')).toBe('REJECTED');
       expect(resolveTransition('VALIDATION', 'CHECK_FAILED')).toBe('PLAN');
     });
 
-    // Backward transitions (architecture flow)
-    it('resolves all architecture-flow backward transitions', () => {
+    // Revision transitions (architecture flow)
+    it('resolves architecture-flow revision and terminal rejection transitions', () => {
       expect(resolveTransition('ARCH_REVIEW', 'CHANGES_REQUESTED')).toBe('ARCHITECTURE');
-      expect(resolveTransition('ARCH_REVIEW', 'REJECT')).toBe('READY');
+      expect(resolveTransition('ARCH_REVIEW', 'REJECT')).toBe('REJECTED');
     });
   });
 
@@ -135,6 +139,7 @@ describe('topology', () => {
         'REVIEW_MET',
         'REVIEW_PENDING',
         'REVIEW_DONE',
+        'EXPORT_MATERIALIZED',
         'ERROR',
         'ABORT',
       ];
@@ -192,14 +197,20 @@ describe('topology', () => {
     });
 
     it('all terminal phases have empty transition maps', () => {
-      for (const phase of ['COMPLETE', 'ARCH_COMPLETE', 'REVIEW_COMPLETE'] as Phase[]) {
+      for (const phase of [
+        'COMPLETE',
+        'ARCH_COMPLETE',
+        'REVIEW_COMPLETE',
+        'REJECTED',
+        'ABORTED',
+      ] as Phase[]) {
         const map = TRANSITIONS.get(phase);
         expect(map).toBeDefined();
         expect(map!.size).toBe(0);
       }
     });
 
-    it('transition table covers all 15 phases', () => {
+    it('transition table covers all 18 phases', () => {
       const phases: Phase[] = [
         'READY',
         'TICKET',
@@ -210,17 +221,20 @@ describe('topology', () => {
         'IMPL_VALIDATION',
         'IMPL_REVIEW',
         'EVIDENCE_REVIEW',
+        'EXPORT_READY',
         'COMPLETE',
         'ARCHITECTURE',
         'ARCH_REVIEW',
         'ARCH_COMPLETE',
         'REVIEW',
         'REVIEW_COMPLETE',
+        'REJECTED',
+        'ABORTED',
       ];
       for (const phase of phases) {
         expect(TRANSITIONS.has(phase)).toBe(true);
       }
-      expect(TRANSITIONS.size).toBe(15);
+      expect(TRANSITIONS.size).toBe(18);
     });
 
     it('self-loop: PLAN + SELF_REVIEW_PENDING → PLAN', () => {
@@ -249,11 +263,13 @@ describe('topology', () => {
       expect([...USER_GATES].sort()).toEqual([...USER_GATE_PHASES].sort());
     });
 
-    it('TERMINAL contains exactly COMPLETE, ARCH_COMPLETE, and REVIEW_COMPLETE', () => {
-      expect(TERMINAL.size).toBe(3);
+    it('TERMINAL contains every terminal position', () => {
+      expect(TERMINAL.size).toBe(5);
       expect(TERMINAL.has('COMPLETE')).toBe(true);
       expect(TERMINAL.has('ARCH_COMPLETE')).toBe(true);
       expect(TERMINAL.has('REVIEW_COMPLETE')).toBe(true);
+      expect(TERMINAL.has('REJECTED')).toBe(true);
+      expect(TERMINAL.has('ABORTED')).toBe(true);
     });
 
     it('no phase appears as both a user gate and terminal', () => {
@@ -262,10 +278,10 @@ describe('topology', () => {
       }
     });
 
-    it('READY has exactly 3 outgoing transitions (one per flow)', () => {
+    it('READY has three flow selections and an explicit abort transition', () => {
       const readyMap = TRANSITIONS.get('READY');
       expect(readyMap).toBeDefined();
-      expect(readyMap!.size).toBe(3);
+      expect(readyMap!.size).toBe(4);
     });
 
     it('Event enum is covered by topology or documented topology-bypass handling', () => {
@@ -276,10 +292,7 @@ describe('topology', () => {
         }
       }
 
-      const topologyBypassEvents: EventType[] = ['ABORT'];
-      expect([...transitionEvents, ...topologyBypassEvents].sort()).toEqual(
-        [...Event.options].sort(),
-      );
+      expect([...transitionEvents].sort()).toEqual([...Event.options].sort());
     });
 
     it('every non-terminal, non-gate, non-READY phase has at least one outgoing transition', () => {

@@ -18,7 +18,7 @@ import type { ValidationResult } from '../state/evidence.js';
 const ctx: RailContext = {
   now: () => FIXED_TIME,
   digest: (s: string) => `sha256:${s.length}`,
-  policy: { ...TEAM_POLICY, maxImplReviewIterations: 3 },
+  policy: { ...TEAM_POLICY, reviewBudget: { ...TEAM_POLICY.reviewBudget, implementation: 3 } },
 };
 
 function makeExecutors(overrides?: Partial<ImplExecutors>): ImplExecutors {

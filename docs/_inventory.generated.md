@@ -8,11 +8,11 @@ Verified by `npm run check:doc-drift`.
 
 | Entity                        | Count | Code Authority                                      |
 | ----------------------------- | ----- | --------------------------------------------------- |
-| Machine Commands              | 12    | `src/machine/commands.ts`                           |
+| Machine Commands              | 13    | `src/machine/commands.ts`                           |
 | Integration Tools             | 20    | `src/integration/tools/index.ts`                    |
 | MCP Tools                     | 18    | `src/mcp-server/server.ts`                          |
 | Installed Command Definitions | 27    | `src/integration/installed-commands.ts`             |
-| Phases                        | 15    | `src/state/schema.ts`                               |
+| Phases                        | 18    | `src/state/schema.ts`                               |
 | Policy Modes                  | 4     | `src/state/policy-mode.ts`                          |
 | Profiles                      | 4     | `src/config/profile.ts`                             |
 | Discovery Collectors          | 6     | `src/discovery/orchestrator.ts`                     |

@@ -10,7 +10,7 @@ import {
   formatEval,
   formatBlocked,
   formatAutoAdvanceOverflow,
-  enrichWithNextAction,
+  enrichWithWorkflowDirective,
   writeStateWithArtifacts,
 } from './helpers.js';
 
@@ -45,14 +45,10 @@ import { resolveStructuredEffectiveFindings } from './review-validation.js';
 import { collectPreviouslyUsedChallengeIds } from '../review/challenge-history.js';
 import { buildReviewChallengeContract } from '../review/challenge-contract.js';
 
-import {
-  PHASE_LABELS,
-  buildArchitectureReviewCard,
-  buildProductNextAction,
-} from '../../presentation/index.js';
+import { PHASE_LABELS, buildArchitectureReviewCard } from '../../presentation/index.js';
 import { materializeReviewCardArtifact } from '../../adapters/workspace/index.js';
 import { readConfig } from '../../adapters/persistence-config.js';
-import { resolveNextAction } from '../../machine/next-action.js';
+import { resolveWorkflowDirective } from '../../machine/workflow-directive.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import { normalizeArchitectureClaims } from '../../state/proofgraph-approval.js';
 import { projectArchitectureProofStatus } from '../proofgraph/proof-summary-projectors.js';
@@ -267,7 +263,7 @@ function buildReviewedState(
       ...revision.currentAdr,
       reviewCompletion: resolveArchitectureReviewCompletion(
         iteration,
-        policy.maxSelfReviewIterations,
+        policy.reviewBudget.architecture,
         revision.revisionDelta,
         args.reviewVerdict as LoopVerdict,
       ),
@@ -275,7 +271,7 @@ function buildReviewedState(
     },
     selfReview: {
       iteration,
-      maxIterations: policy.maxSelfReviewIterations,
+      maxIterations: policy.reviewBudget.architecture,
       prevDigest: revision.prevDigest,
       currDigest: revision.currentAdr.digest,
       revisionDelta: revision.revisionDelta,
@@ -342,7 +338,7 @@ async function persistAndFormatReviewResult(input: ReviewResultContext): Promise
       {
         sessDir: input.session.sessDir,
         iteration,
-        maxIterations: input.session.policy.maxSelfReviewIterations,
+        maxIterations: input.session.policy.reviewBudget.architecture,
         lastVerdict: verdict,
         phase: input.advanced.state.phase,
         adrDigest: input.revision.currentAdr.digest,
@@ -363,7 +359,7 @@ async function persistAndFormatConvergedReview(input: ReviewResultContext): Prom
   const completion = advanced.state.architecture?.reviewCompletion;
   const status =
     completion === 'review_exhausted'
-      ? `${reviewLabel} reached the iteration limit (${iteration}/${session.policy.maxSelfReviewIterations}) ` +
+      ? `${reviewLabel} reached the iteration limit (${iteration}/${session.policy.reviewBudget.architecture}) ` +
         'without reviewer approval. Human approval is required.'
       : `${reviewLabel} accepted the ADR at iteration ${iteration}. Human approval is required.`;
   const resp: Record<string, unknown> = {
@@ -386,7 +382,7 @@ async function persistAndFormatConvergedReview(input: ReviewResultContext): Prom
     reviewCompletion: completion,
     reviewedIdentity: resolveArchReviewedIdentity(review),
   });
-  return JSON.stringify(enrichWithNextAction(resp, advanced.state));
+  return JSON.stringify(enrichWithWorkflowDirective(resp, advanced.state));
 }
 
 /**
@@ -450,8 +446,7 @@ async function attachReviewCard(input: {
   reviewedIdentity: { reviewedDigest?: string; reviewedObligationId?: string };
 }): Promise<void> {
   const { resp, reviewFindings, session, revision, finalState, iteration } = input;
-  const nextAction = resolveNextAction(finalState.phase, finalState);
-  const productNext = buildProductNextAction(nextAction, finalState.phase);
+  const directive = resolveWorkflowDirective(finalState);
   const latestReview = resp.latestReview as Record<string, unknown> | undefined;
   const reviewCardInput = {
     phase: finalState.phase,
@@ -467,7 +462,7 @@ async function attachReviewCard(input: {
     missingVerification: reviewFindings?.missingVerification,
     scopeCreep: reviewFindings?.scopeCreep,
     unknowns: reviewFindings?.unknowns,
-    productNextAction: productNext,
+    directive,
     isApproved: finalState.architecture?.status === 'accepted',
     reviewCompletion: input.reviewCompletion,
     proofSummary: projectArchitectureProofStatus(finalState),
@@ -582,7 +577,7 @@ async function persistAndFormatNonConvergedReview(
     attemptId,
     persisted,
   });
-  return JSON.stringify(enrichWithNextAction(resp, stateToPersist));
+  return JSON.stringify(enrichWithWorkflowDirective(resp, stateToPersist));
 }
 
 function buildNonConvergedReviewResponse(input: {
@@ -607,7 +602,7 @@ function buildNonConvergedReviewResponse(input: {
   });
   return {
     phase: advanced.state.phase,
-    status: `Independent review iteration ${iteration}/${session.policy.maxSelfReviewIterations}. Verdict: ${verdict}.`,
+    status: `Independent review iteration ${iteration}/${session.policy.reviewBudget.architecture}. Verdict: ${verdict}.`,
     adrId: revision.currentAdr.id,
     adrDigest: revision.currentAdr.digest,
     selfReviewIteration: iteration,

@@ -42,7 +42,10 @@ vi.mock('../adapters/frozen-repository.js', async (importOriginal) => {
 const ctx: RailContext = {
   now: () => FIXED_TIME,
   digest: (s: string) => `sha256:${s.length}`,
-  policy: { ...TEAM_POLICY, maxSelfReviewIterations: 3, maxImplReviewIterations: 3 },
+  policy: {
+    ...TEAM_POLICY,
+    reviewBudget: { ...TEAM_POLICY.reviewBudget, plan: 3, implementation: 3 },
+  },
 };
 
 function makeExecutors(overrides?: Partial<ContinueExecutors>): ContinueExecutors {

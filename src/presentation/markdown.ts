@@ -511,13 +511,13 @@ function renderHelpSummary(section: HelpSummarySection, glyphs: PresentationGlyp
     }
   }
 
-  if (section.nextAction) {
-    if ('invocation' in section.nextAction) {
+  if (section.directive) {
+    if ('invocation' in section.directive) {
       lines.push(
-        `**Next:** \`${section.nextAction.invocation}\` — ${section.nextAction.description}`,
+        `**Next:** \`${section.directive.invocation}\` — ${section.directive.description}`,
       );
     } else {
-      lines.push(`**Next:** ${section.nextAction.summary}`);
+      lines.push(`**Next:** ${section.directive.summary}`);
     }
   }
 
@@ -672,7 +672,7 @@ function renderConclusion(conclusion: PresentationConclusion, glyphs: Presentati
       return renderAction(conclusion.action, glyphs);
     case 'decision_required': {
       // The question is free-form text sourced from upstream projections
-      // (e.g. productNextAction/evalResult). Validate it against the
+      // (e.g. directive/evalResult). Validate it against the
       // structural contract so a stray trailing newline/whitespace fails
       // closed instead of silently violating the document invariants.
       const question = normalizedMarkdown(conclusion.question);

@@ -3,6 +3,26 @@ import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 
 export const REVIEW_VALIDATION_REASONS = [
   {
+    code: 'IMPLEMENTATION_REVIEW_EVIDENCE_REQUIRED',
+    category: 'state',
+    messageTemplate:
+      'A governance override for the implementation requires the bound independent review result, but no implementation review result is recorded.',
+    recoverySteps: [
+      'Record the implementation and run the independent implementation review before deciding',
+      'Do not approve an implementation that has no bound review evidence',
+    ],
+  },
+  {
+    code: 'IMPLEMENTATION_REVIEW_SUBJECT_MISMATCH',
+    category: 'state',
+    messageTemplate:
+      'The recorded implementation review covers a different revision (reviewed {reviewedDigest}, current {currentDigest}). A review can never authorize a different revision.',
+    recoverySteps: [
+      'Re-record the current implementation and run a fresh independent review for it',
+      'Never approve a revision that was not the reviewed subject',
+    ],
+  },
+  {
     code: 'REVIEW_STATE_INCOMPLETE',
     category: 'state',
     messageTemplate:
@@ -453,7 +473,7 @@ export const REVIEW_VALIDATION_REASONS = [
     recoverySteps: [
       'Submit a fresh /plan or /implement (this resets the iteration counter to 0 and starts a new obligation)',
       'Review the subagent findings — addressing the outstanding issues may allow convergence in the next attempt',
-      'If the policy limit is too restrictive, adjust maxSelfReviewIterations in the policy configuration',
+      'If the policy limit is too restrictive, adjust reviewBudget in the policy configuration',
     ],
   },
 

@@ -14,7 +14,7 @@ Determine the canonical next workflow action without executing it.
 
 1. Call \`flowguard_continue\` to get deterministic guidance for the current phase.
    - If the tool returns \`_continue: { action: "deterministic" }\`, present the canonical
-     \`productNextAction\` recommendation. Do not execute another workflow command unless explicitly requested by the user.
+     \`directive\` recommendation. Do not execute another workflow command unless explicitly requested by the user.
    - If the tool returns \`_continue: { action: "manual_decision" }\`, present the decision-required
      context and canonical \`decisionCommands\` to the user.
    - If the tool returns \`_continue: { action: "terminal" }\`, report workflow complete.

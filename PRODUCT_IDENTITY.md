@@ -39,7 +39,7 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 ### Deterministic Workflow Control
 
 - **3 independent flows** — Ticket (full dev lifecycle), Architecture (ADR creation), Review (compliance and content-aware review)
-- **15 explicit phases** across three flows, starting from a shared READY entry point
+- **18 explicit phases** across three flows, starting from a shared READY entry point
 - **Phase gates** that require evidence before progression
 - **Computed next actions** — the system tells you exactly what is allowed, not guessed
 - **Explicit orientation surface** — `/status` provides read-only canonical projections for phase, blockers, evidence, context, and readiness
@@ -62,7 +62,7 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 - **Decision receipts** — every successful `/review-decision` emits immutable `decision:DEC-xxx` receipt events
 - **Evidence summary generation** — automated 7-check evidence summary from audit trail
 - **Four-eyes principle verification** — initiator vs. reviewer identity tracked and enforced in Regulated mode. FlowGuard supports three-tier minimum actor assurance (`best_effort`, `claim_validated`, `idp_verified`) with `minimumActorAssuranceForApproval` policy threshold. Solo, Team, and Team-CI default to `best_effort`; Regulated defaults to `claim_validated`, requiring a valid `FLOWGUARD_ACTOR_CLAIMS_PATH` claim file or stronger IdP-verified identity for approval. IdP verification supports static keys (`mode: static`) and JWKS mode (`mode: jwks`) with exactly one authority (`jwksPath` or HTTPS `jwksUri`), TTL cache, and strict fail-closed behavior (`identityProviderMode: required` blocks mutating decisions; `optional` degrades only on typed IdP errors). JWT verification is implemented with `jose` `jwtVerify` while key authority stays FlowGuard-owned. `/hydrate` resolves actor identity diagnostically, while `/review-decision` enforces the policy snapshot threshold fail-closed. OIDC discovery and stale/last-known-good fallback are not implemented.
-- **Policy snapshot** — immutable, hashed copy of active policy frozen at session creation (includes all governance fields: mode, gate behavior, review iterations, self-approval, audit settings, and actor classification)
+- **Policy snapshot** — immutable, hashed copy of active policy frozen at session creation (includes all governance fields: mode, gate behavior, review budgets, self-approval, audit settings, and actor classification)
 
 ### Enterprise Integration
 
@@ -114,7 +114,7 @@ The system establishes workspace binding (OpenCode session to git worktree via r
 
 ### 2. Governed Command Surface
 
-Eighteen installed core FlowGuard commands cover workflow, diagnostics, and operations:
+Nineteen installed core FlowGuard commands cover workflow, diagnostics, and operations:
 
 | Command                             | Purpose                                                                                                             |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -129,15 +129,16 @@ Eighteen installed core FlowGuard commands cover workflow, diagnostics, and oper
 | `/review`                           | Generate standalone compliance or content-aware review. Completed reviews display a **Review Report Card**.         |
 | `/review-decision`                  | Record human verdict at User Gates (approve / changes_requested / reject)                                           |
 | `/implement`                        | Execute implementation, record evidence, run review loop                                                            |
+| `/export`                           | Materialize the required verifiable export; the workflow reaches COMPLETE only after export evidence is persisted   |
 | `/resolve-implementation-challenge` | Record advisory evidence addressing an implementation review challenge                                              |
-| `/extend-implementation-review`     | Authorize a finite additional implementation review budget after exhaustion                                          |
+| `/override-approve`                 | Accept an exhausted review gate with an explicit, recorded governance override                                      |
 | `/reconcile-mutation-episode`       | Resolve a host mutation episode whose outcome can never be observed; forces a fresh worktree recapture              |
-| `/validate`                         | Run validation checks (test quality, rollback safety)                                                               |
-| `/continue`                         | Universal routing — do the next appropriate action for the current phase                                            |
+| `/validate`                         | Record validation checks (test quality, rollback safety); validation runs automatically (compatibility surface)     |
+| `/continue`                         | Compatibility routing — advance the workflow on explicit request, not workflow guidance                             |
 | `/abort`                            | Emergency session termination                                                                                       |
 | `/archive`                          | Archive a completed session as `.tar.gz`                                                                            |
 
-Product commands (`/start`, `/task`, `/approve`, `/request-changes`, `/reject`, `/check`, `/export`, `/why`) provide a user-friendly facade that invokes canonical tools with pre-configured arguments. Review cards (Plan, Architecture, Review Report) are derived presentation artifacts injected into tool responses — `session-state.json` remains the SSOT.
+Product commands (`/start`, `/task`, `/approve`, `/request-changes`, `/reject`, `/check`, `/why`) provide a user-friendly facade that invokes canonical tools with pre-configured arguments. Review cards (Plan, Architecture, Review Report) are derived presentation artifacts injected into tool responses — `session-state.json` remains the SSOT.
 
 Each command is tied to phase admissibility rules, evidence requirements, and state transitions.
 
@@ -152,14 +153,14 @@ flowchart LR
     READY --> ARCH[ARCHITECTURE]
     READY --> REVIEW
 
-    TICKET --> PLAN --> PLAN_REV[PLAN_REVIEW] --> VAL[VALIDATION] --> IMPL[IMPLEMENTATION] --> IMPL_VAL[IMPL_VALIDATION] --> IMPL_REV[IMPL_REVIEW] --> EVID_REV[EVIDENCE_REVIEW] --> COMPLETE
+    TICKET --> PLAN --> PLAN_REV[PLAN_REVIEW] --> VAL[VALIDATION] --> IMPL[IMPLEMENTATION] --> IMPL_VAL[IMPL_VALIDATION] --> IMPL_REV[IMPL_REVIEW] --> EVID_REV[EVIDENCE_REVIEW] --> EXPORT_READY --> COMPLETE
 
     ARCH --> ARCH_REV[ARCH_REVIEW] --> ARCH_COMPLETE
 
     REVIEW --> REVIEW_COMPLETE
 ```
 
-**Ticket Flow:** `READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_VALIDATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE`
+**Ticket Flow:** `READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_VALIDATION → IMPL_REVIEW → EVIDENCE_REVIEW → EXPORT_READY → COMPLETE`
 **Architecture Flow:** `READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE`
 **Review Flow:** `READY → REVIEW → REVIEW_COMPLETE`
 
@@ -168,7 +169,7 @@ flowchart LR
 **Independent Review Loops** (subagent-driven, mandatory): three reviewable
 obligation types — `plan`, `architecture`, `implement` — share one orchestration
 pipeline, one ReviewFindings schema, and one fail-closed strict-enforcement model
-(F12 + F13 + P1.3). Each loop runs up to a per-mode iteration limit with
+(F12 + F13 + P1.3). Each loop runs up to its `reviewBudget` entry with
 digest-stop convergence:
 
 - **PLAN phase** — plan review loop (`obligationType: 'plan'`)
@@ -200,11 +201,11 @@ verdict `unable_to_review` consumes the obligation and BLOCKS via
 **Backward Transitions**:
 
 - `changes_requested` at PLAN_REVIEW -> back to PLAN
-- `reject` at PLAN_REVIEW or EVIDENCE_REVIEW -> back to TICKET
+- `reject` at PLAN_REVIEW or EVIDENCE_REVIEW -> terminal `REJECTED`
 - `changes_requested` at EVIDENCE_REVIEW -> back to IMPLEMENTATION
 - `CHECK_FAILED` at VALIDATION -> back to PLAN (plan must be revised and re-approved)
 - `changes_requested` at ARCH_REVIEW -> back to ARCHITECTURE
-- `reject` at ARCH_REVIEW -> back to READY
+- `reject` at ARCH_REVIEW -> terminal `REJECTED`
 
 **Every phase transition requires evidence.** The system computes whether progression is allowed.
 
@@ -301,8 +302,8 @@ FlowGuard uses **Option A1: Pre-built proprietary GitHub Release distribution** 
 
 ### OpenCode Integration
 
-- **15 Integration Tools** (`src/integration/tools/`) — bridge between LLM and state machine, installed as thin wrappers. The canonical list lives in `src/integration/tool-names.ts` (`TOOL_FLOWGUARD_*` constants). 14 are exposed via MCP (`src/mcp-server/server.ts`); see `docs/mcp-tool-surface.md` for the one asymmetric exclusion.
-- **25 Installed Command Definitions** (`.opencode/commands/*.md`) backed by 24 templates. Templates live in `src/templates/commands/`. Includes 11 Machine Commands, 2 operational tools, 8 product aliases, 3 action variants, and 3 operational helpers. Canonical registry: `src/integration/installed-commands.ts`.
+- **20 Integration Tools** (`src/integration/tools/`) — bridge between LLM and state machine, installed as thin wrappers. The canonical list lives in `src/integration/tool-names.ts` (`TOOL_FLOWGUARD_*` constants). 18 are exposed via MCP (`src/mcp-server/server.ts`); see `docs/mcp-tool-surface.md` for the two asymmetric exclusions.
+- **27 Installed Command Definitions** (`.opencode/commands/*.md`) backed by 26 templates. Templates live in `src/templates/commands/`. Includes 13 workflow commands, 7 operational tools, 4 product aliases, and 3 action variants. Canonical registry: `src/integration/installed-commands.ts`.
 - **1 Review Agent** (`.opencode/agents/flowguard-reviewer.md`) — hidden subagent for mandatory independent adversarial review. The agent body is rendered programmatically from `src/templates/mandates.ts` at install time; there is no static asset of this name in the source tree.
 - **1 Audit Plugin** (`src/integration/plugin.ts`) — automatic event recording via `tool.execute.after` hook
 - **`flowguard-mandates.md`** — managed artifact with SHA-256 content-digest, loaded via `instructions` in `opencode.json` (or `opencode.jsonc` when present)
@@ -390,15 +391,14 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Language:** TypeScript (100%, zero-bridge architecture)
 - **Distribution:** Pre-built proprietary release artifact (`flowguard-core-{version}.tgz`) via GitHub Releases
 - **Release Integrity:** SHA-256 checksums + CycloneDX SBOM + GitHub provenance attestation
-- **Phase Count:** 15 explicit workflow phases across 3 flows
-- **Workflow Commands:** 11 Machine Commands (hydrate, ticket, plan, continue, implement, resolve-implementation-challenge, review-decision, validate, review, architecture, abort) plus operational tools (status, archive) and 8 product aliases. See `src/integration/installed-commands.ts` for the full 25-definition registry.
+- **Phase Count:** 18 explicit workflow phases across 3 flows
+- **Workflow Commands:** 13 Machine Commands (hydrate, ticket, plan, continue, implement, resolve-implementation-challenge, review-decision, override-approve, validate, review, architecture, export, abort) plus operational tools (status, archive) and 7 product aliases. See `src/integration/installed-commands.ts` for the full 27-definition registry.
 - **CLI Commands:** 6 (install, uninstall, doctor, run, serve, inspect)
 - **Operational Tools:** 2 user-facing read/export tools (`flowguard_status`, `flowguard_archive`)
-- **Custom Tools:** 15 OpenCode tool exports, 14 MCP tools (see `src/integration/tools/index.ts`, `src/mcp-server/server.ts`)
+- **Custom Tools:** 20 Integration Tool definitions, 18 MCP tools (see `src/integration/tools/index.ts`, `src/mcp-server/server.ts`)
 - **Audit Events:** 5 structured kinds (transition, tool_call, error, lifecycle, decision)
 - **Actor Assurance:** Three-tier source-labeled attribution (source labels `env` / `git` / `claim` / `oidc` / `unknown`; assurance tiers `best_effort` / `claim_validated` / `idp_verified`), immutable per session; Solo, Team, and Team-CI default to `best_effort`, while Regulated defaults to `claim_validated`; enforcement at `/review-decision` only (Option B), `/hydrate` is diagnostic. The `oidc` source label is historical — it covers any IdP-verified actor (static-key or JWKS-backed); no OIDC discovery is implemented.
-- **Self-Review Iterations:** SOLO: 2 | TEAM/TEAM-CI/REGULATED: 3
-- **Impl-Review Iterations:** SOLO: 1 | TEAM/TEAM-CI/REGULATED: 3
+- **Review Budgets:** `plan: 3`, `architecture: 3`, `implementation: 3` in every policy preset
 - **Policy Modes:** 4 (Solo, Team [default], Team-CI, Regulated)
 - **Central Policy Source:** Optional explicit central minimum via `FLOWGUARD_POLICY_PATH` (file-based, fail-closed when configured)
 - **Built-in Profiles:** 4 (`baseline`, `typescript`, `backend-java`, `frontend-angular` — IDs as declared in `src/config/profile.ts`)

@@ -40,7 +40,7 @@ const STATUS_CONTRACT: readonly StatusContractEntry[] = [
     label: '/ticket',
     phases: ['READY', 'TICKET'],
     callShape: 'full',
-    requiredTopLevel: ['phase', 'nextAction'],
+    requiredTopLevel: ['phase', 'directive'],
   },
   {
     label: '/plan',

@@ -52,14 +52,14 @@
 import {
   formatBlocked,
   formatAutoAdvanceOverflow,
-  enrichWithNextAction,
+  enrichWithWorkflowDirective,
   writeStateWithArtifacts,
 } from './helpers.js';
 import { existsSync } from 'node:fs';
 
 // State & Machine
 import { evaluate } from '../../machine/evaluate.js';
-import { resolveNextAction } from '../../machine/next-action.js';
+import { resolveWorkflowDirective } from '../../machine/workflow-directive.js';
 import { autoAdvance } from '../../rails/types.js';
 import type { ReviewFindings, ImplEvidence, ReviewObligation } from '../../state/evidence.js';
 import type { SessionState } from '../../state/schema.js';
@@ -242,7 +242,7 @@ function buildImplRecordedResponse(input: {
           : undefined,
       })
     : null;
-  const nextAction = resolveNextAction(input.finalState.phase, input.finalState);
+  const directive = resolveWorkflowDirective(input.finalState);
   const response: Record<string, unknown> = {
     phase: input.finalState.phase,
     status: `Implementation recorded. ${input.files.length} files changed, ${input.domainFiles.length} domain files.`,
@@ -258,7 +258,7 @@ function buildImplRecordedResponse(input: {
       ? 'REDUCED_CEREMONY_APPLIED: Runtime evidence classified the changed files as TRIVIAL after passed validation. Reduced-ceremony evidence was recorded; implementation review evidence was not synthesized.'
       : instruction
         ? 'INDEPENDENT_REVIEW_REQUIRED'
-        : nextAction.text,
+        : directive.code,
     ...(instruction ? { reviewInvocation: instruction } : {}),
     _audit: { transitions: input.transitions },
   };
@@ -380,9 +380,6 @@ async function buildImplementationDigest(
 }
 
 function reworkBlock(state: SessionState, digest: string): string | null {
-  if (state.implementationRework?.exhausted === true) {
-    return formatBlocked('IMPLEMENTATION_REVIEW_EXTENSION_REQUIRED');
-  }
   // The single-slot marker covers the immediate round, but the historical
   // projection is the load-bearing check: any digest an independent reviewer
   // EVER rejected (changes_requested, derived from the append-only obligations
@@ -547,7 +544,7 @@ export async function persistImplRecordAndRespond(args: PersistImplRecordArgs): 
   const persisted = await writeStateWithArtifacts(input.sessDir, activated.state);
 
   return JSON.stringify(
-    enrichWithNextAction(
+    enrichWithWorkflowDirective(
       buildImplRecordedResponse({
         finalState: persisted,
         files,

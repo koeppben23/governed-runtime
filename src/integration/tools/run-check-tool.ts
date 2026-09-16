@@ -32,7 +32,7 @@ import {
   formatBlocked,
   formatEval,
   formatAutoAdvanceOverflow,
-  enrichWithNextAction,
+  enrichWithWorkflowDirective,
   getWorktree,
   writeStateWithArtifactsAndAuditOperationsAlreadyLocked,
   requireStateForMutation,
@@ -706,7 +706,7 @@ function formatRunCheckResponse(input: {
     input.policy,
   );
   return JSON.stringify(
-    enrichWithNextAction(
+    enrichWithWorkflowDirective(
       {
         phase: finalState.phase,
         status: formatRunCheckStatus(input.kind, input.validationResult, evidence),

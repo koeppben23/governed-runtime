@@ -21,11 +21,9 @@ import {
   withMutableSession,
   withMutableSessionTransaction,
   formatBlocked,
-  formatRailResult,
   persistAndFormat,
 } from './helpers.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
-import { isTerminalPhase } from '../../machine/topology.js';
 import type { ReviewVerdict } from '../../state/evidence.js';
 
 // Rails
@@ -37,10 +35,7 @@ import { ActorIdentityError } from '../../adapters/actor.js';
 
 // Finalization service
 import { finalizeDecision } from '../services/decision-finalization.js';
-import {
-  createSessionCompletionAuditDeps,
-  executeRegulatedCompletion,
-} from '../services/regulated-completion.js';
+import { createSessionCompletionAuditDeps } from '../services/regulated-completion.js';
 import { consumeUserDecisionIntent, peekUserDecisionIntent } from '../user-decision-intent.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -71,16 +66,18 @@ function requireHumanDecisionIntent(input: {
 export const decision: ToolDefinition = {
   description:
     'Record a human review decision at a User Gate (PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REVIEW). ' +
-    "Verdicts: 'approve' (proceed), 'changes_requested' (revise), 'reject' (restart from ticket). " +
+    "Verdicts: 'approve' (proceed), 'approve_with_governance_override' (accept an exhausted review gate), " +
+    "'changes_requested' (revise), 'reject' (end the governed workflow). " +
     'This tool ONLY works at PLAN_REVIEW, EVIDENCE_REVIEW, and ARCH_REVIEW phases. ' +
     'In regulated mode, four-eyes principle is enforced: the reviewer must differ from the session initiator.',
   args: {
     verdict: z
-      .enum(['approve', 'changes_requested', 'reject'])
+      .enum(['approve', 'approve_with_governance_override', 'changes_requested', 'reject'])
       .describe(
-        "Review verdict. 'approve' advances the workflow. " +
+        "Review verdict. 'approve' advances a reviewer-accepted workflow. " +
+          "'approve_with_governance_override' accepts an exhausted review gate with a recorded override. " +
           "'changes_requested' returns to revision. " +
-          "'reject' restarts from TICKET (or READY for architecture flow).",
+          "'reject' ends the governed workflow at REJECTED.",
       ),
     rationale: z.string().default('').describe('Reason for the decision. Recorded in audit trail.'),
   },
@@ -137,31 +134,8 @@ export const decision: ToolDefinition = {
             ctx,
           );
 
-          const regulatedCompletion =
-            result.kind === 'ok' &&
-            state.phase === 'EVIDENCE_REVIEW' &&
-            args.verdict === 'approve' &&
-            isTerminalPhase(result.state.phase) &&
-            result.state.policySnapshot.mode === 'regulated' &&
-            !result.state.error;
-          // Regulated completion reconciles its own outbox and must run after
-          // this transaction releases the session lock.
-          if (regulatedCompletion) {
-            return {
-              kind: 'regulated_completion' as const,
-              fingerprint,
-              sessDir,
-              result,
-              auditDeps: createSessionCompletionAuditDeps({
-                sessDir,
-                sessionID: context.sessionID,
-                fingerprint,
-                state: result.state,
-              }),
-            };
-          }
-
-          // Delegate non-regulated post-rail finalization (MADR).
+          // Approval now stops at EXPORT_READY. Completion side effects belong
+          // exclusively to flowguard_export after package verification.
           const finalResult = await finalizeDecision({
             sessDir,
             fingerprint,
@@ -179,29 +153,16 @@ export const decision: ToolDefinition = {
 
           const persisted = await persistAndFormat(sessDir, finalResult, {
             evidenceApprovalCompletion:
-              state.phase === 'EVIDENCE_REVIEW' && args.verdict === 'approve',
+              state.phase === 'EVIDENCE_REVIEW' &&
+              (args.verdict === 'approve' || args.verdict === 'approve_with_governance_override'),
           });
 
           return { kind: 'formatted' as const, output: persisted, finalResult };
         },
       );
 
-      let finalResult;
-      let output;
-      if (settled.kind === 'regulated_completion') {
-        const finalState = await executeRegulatedCompletion(
-          settled.sessDir,
-          settled.fingerprint,
-          context.sessionID,
-          settled.result.state,
-          settled.auditDeps,
-        );
-        finalResult = { ...settled.result, state: finalState };
-        output = formatRailResult(finalResult, { evidenceApprovalCompletion: true });
-      } else {
-        finalResult = settled.finalResult;
-        output = settled.output;
-      }
+      const finalResult = settled.finalResult;
+      const output = settled.output;
 
       // Consume the user-decision intent ONLY on a fully successful decision,
       // and only in human-gated mode. Placing this after finalizeDecision (and

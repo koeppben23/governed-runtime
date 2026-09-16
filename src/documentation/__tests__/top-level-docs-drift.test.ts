@@ -13,11 +13,14 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { COMMAND_ALIASES } from '../../integration/command-aliases.js';
+import {
+  INSTALLED_COMMANDS,
+  INSTALLED_TEMPLATE_FILES,
+  type InstalledCommandDefinition,
+} from '../../integration/installed-commands.js';
 import { Command } from '../../machine/commands.js';
 import { TRANSITIONS, USER_GATES } from '../../machine/topology.js';
 import { Phase } from '../../state/schema.js';
-import { COMMANDS } from '../../templates/commands/index.js';
 import { REGULATED_POLICY, SOLO_POLICY, TEAM_CI_POLICY, TEAM_POLICY } from '../../config/policy.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -59,21 +62,45 @@ function extractCommandList(content: string, label: RegExp): string[] {
 function extractProductIdentityCoreCommandTable(): string[] {
   const content = readDoc('PRODUCT_IDENTITY.md');
   const section = content.match(
-    /Eighteen installed core FlowGuard commands[\s\S]*?\n\nProduct commands/,
+    /Nineteen installed core FlowGuard commands[\s\S]*?\n\nProduct commands/,
   );
   expect(section, 'PRODUCT_IDENTITY.md must contain the core command table').toBeTruthy();
   return extractSlashCommands(section![0]);
 }
 
+/**
+ * A product alias is a product-facing identity whose invocation differs from
+ * the canonical machine command it resolves to. Canonical same-name identities
+ * (for example `/override-approve`) are not aliases.
+ */
+function isProductAlias(definition: InstalledCommandDefinition): boolean {
+  const productKind =
+    definition.kind === 'preferred_name' ||
+    definition.kind === 'action_variant' ||
+    definition.kind === 'convenience';
+  if (!productKind) return false;
+  const canonical = definition.target.workflowCommand;
+  return canonical === undefined || definition.invocation !== slash(canonical);
+}
+
+const productAliasDefinitions = INSTALLED_COMMANDS.filter(isProductAlias);
+const productAliasTemplates = new Set<string>(
+  productAliasDefinitions.map((definition) => definition.templateFile),
+);
+
 describe('documentation/top-level-docs-drift', () => {
-  const installedCommands = Object.keys(COMMANDS)
-    .map((fileName) => slash(fileName.replace(/\.md$/, '')))
+  const installedCommands = INSTALLED_TEMPLATE_FILES.map((templateFile) =>
+    slash(templateFile.replace(/\.md$/, '')),
+  ).sort();
+
+  const productAliasCommands = productAliasDefinitions
+    .map((definition) => definition.invocation)
     .sort();
 
-  const productAliasCommands = Object.keys(COMMAND_ALIASES).map(slash).sort();
-
-  const coreInstalledCommands = installedCommands
-    .filter((command) => !productAliasCommands.includes(command))
+  const coreInstalledCommands = INSTALLED_TEMPLATE_FILES.filter(
+    (templateFile) => !productAliasTemplates.has(templateFile),
+  )
+    .map((templateFile) => slash(templateFile.replace(/\.md$/, '')))
     .sort();
 
   const policyModeLabels = [SOLO_POLICY, TEAM_POLICY, TEAM_CI_POLICY, REGULATED_POLICY]
@@ -94,7 +121,7 @@ describe('documentation/top-level-docs-drift', () => {
       expect(extractProductIdentityCoreCommandTable()).toEqual(coreInstalledCommands);
     });
 
-    it('product command facade lists match COMMAND_ALIASES exactly', () => {
+    it('product command facade lists match canonical product alias identities', () => {
       const identityAliases = extractCommandList(
         readDoc('PRODUCT_IDENTITY.md'),
         /Product commands \(([^)]*)\)/,
@@ -111,8 +138,14 @@ describe('documentation/top-level-docs-drift', () => {
 
   describe('BAD — stale counts are rejected', () => {
     it('phase and flow counts match topology/schema SSOTs', () => {
-      const flowCount = TRANSITIONS.get('READY')?.size;
+      const readyTransitions = TRANSITIONS.get('READY');
+      // READY also carries the emergency ABORT transition; the documented flow
+      // count is the number of flow-selection targets, not the raw event count.
+      const flowCount = [...(readyTransitions?.values() ?? [])].filter(
+        (phase) => phase !== 'ABORTED',
+      ).length;
       expect(flowCount, 'READY must route to the documented standalone flows').toBe(3);
+      expect(readyTransitions?.size, 'READY must expose the canonical transition surface').toBe(4);
 
       for (const doc of PRODUCT_DOCS) {
         const content = readDoc(doc);
@@ -127,7 +160,7 @@ describe('documentation/top-level-docs-drift', () => {
     it('ticket-flow phase sequence in commands.md includes IMPL_VALIDATION', () => {
       const content = readDoc('docs/commands.md');
       expect(content).toContain(
-        'IMPLEMENTATION → IMPL_VALIDATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE',
+        'IMPLEMENTATION → IMPL_VALIDATION → IMPL_REVIEW → EVIDENCE_REVIEW → EXPORT_READY → COMPLETE',
       );
     });
 

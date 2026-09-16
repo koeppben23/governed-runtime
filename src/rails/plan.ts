@@ -165,7 +165,7 @@ export async function executePlan(
 
   // 6. Self-review loop (digest-stop)
   // maxIterations from policy (SOLO=1, TEAM/REGULATED=3)
-  const maxIterations = ctx.policy?.maxSelfReviewIterations ?? DEFAULT_MAX_REVIEW_ITERATIONS;
+  const maxIterations = ctx.policy?.reviewBudget.plan ?? DEFAULT_MAX_REVIEW_ITERATIONS;
 
   const loop = await runConvergenceLoop(currentPlan, maxIterations, async (plan, iter) => {
     const review = await executors.selfReview(plan, iter);

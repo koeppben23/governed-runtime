@@ -206,7 +206,7 @@ export function defaultValidationEvidenceForMode(mode: PolicyMode): ValidationEv
  *
  * Determines:
  * - Whether human gates require explicit human decisions
- * - Max iterations for independent plan and implementation review loops
+ * - Review budgets for plan, architecture, and implementation loops
  * - Whether the session initiator can approve their own work (four-eyes)
  * - Which audit events are emitted and how
  * - How actors are classified in the audit trail
@@ -222,11 +222,8 @@ export interface FlowGuardPolicy {
    */
   readonly requireHumanGates: boolean;
 
-  /** Max independent review iterations in PLAN phase before force-convergence. */
-  readonly maxSelfReviewIterations: number;
-
-  /** Max impl-review iterations in IMPL_REVIEW phase before force-convergence. */
-  readonly maxImplReviewIterations: number;
+  /** Review-loop iteration budgets before force-convergence. */
+  readonly reviewBudget: ReviewBudget;
 
   /** Max fresh reviewer attempts after an F12-incoherent review result. */
   readonly maxIncoherentReviewerCaptureRetries: number;
@@ -325,6 +322,13 @@ export interface FlowGuardPolicy {
    * commands. Never fabricates evidence; verificationCandidates stays SSOT.
    */
   readonly validationEvidence: ValidationEvidencePolicy;
+}
+
+/** Canonical iteration budgets for each independent review loop. */
+export interface ReviewBudget {
+  readonly plan: number;
+  readonly architecture: number;
+  readonly implementation: number;
 }
 
 /**

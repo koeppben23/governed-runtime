@@ -47,20 +47,6 @@ export function nextImplementationReviewIteration(state: SessionState): number {
   return latest + 1;
 }
 
-/** The policy budget plus every durable user-authorized extension. */
-export function effectiveImplementationReviewIterations(
-  state: SessionState,
-  policyIterations: number,
-): number {
-  return (
-    policyIterations +
-    state.implementationReviewExtensions.reduce(
-      (total, extension) => total + extension.additionalIterations,
-      0,
-    )
-  );
-}
-
 /**
  * Create the implementation-review obligation only after post-implementation
  * validation has reached IMPL_REVIEW. Both /implement (vacuous checks) and
@@ -273,7 +259,7 @@ export type ImplementRuntime = {
   state: SessionState;
   policy: FlowGuardPolicy;
   ctx: RailContext;
-  maxImplReviewIterations: number;
+  maxImplementationReviewIterations: number;
 };
 
 export type ImplementationCeremony = ReturnType<typeof resolveCeremonyProfile>;
@@ -289,7 +275,7 @@ export function buildImplementRuntime(input: {
 }): ImplementRuntime {
   return {
     ...input,
-    maxImplReviewIterations: input.policy.maxImplReviewIterations,
+    maxImplementationReviewIterations: input.policy.reviewBudget.implementation,
   };
 }
 

@@ -288,15 +288,11 @@ describe('status', () => {
       const aborted = parseToolResult(
         await abort_session.execute({ reason: 'Operator stopped the session' }, ctx),
       );
-      expect(aborted.phase).toBe('COMPLETE');
+      expect(aborted.phase).toBe('ABORTED');
 
       const result = parseToolResult(await status.execute({}, ctx));
-      expect(result.phase).toBe('COMPLETE');
-      const productNext = result.productNextAction as Record<string, unknown>;
-      expect(productNext.commands).toEqual(['/status']);
-      expect(productNext.text).toContain('/status');
-      expect(productNext.text).not.toContain('/finish');
-      expect(productNext.text).not.toContain('/export');
+      expect(result.phase).toBe('ABORTED');
+      expect(result.directive).toMatchObject({ kind: 'terminal', code: 'WORKFLOW_ABORTED' });
 
       // /status is read-only and therefore remains executable even though
       // terminal phases correctly reject every FlowGuard machine command.
@@ -346,7 +342,7 @@ describe('status', () => {
       const hydrated = parseToolResult(await status.execute({}, ctx));
       expect(hydrated.phase).toBe('READY');
       expect(hydrated.next).toBeTruthy();
-      expect(hydrated.nextAction).toBeTruthy();
+      expect(hydrated.directive).toBeTruthy();
       expect((hydrated.flowguardFooter as Record<string, unknown>).next).toBeUndefined();
     });
 
@@ -608,7 +604,7 @@ describe('status', () => {
       expect(finish.readiness).toBeDefined();
       expect(finish.evidence).toBeDefined();
       expect(finish.blocker).toBeDefined();
-      expect(finish.nextAction).toBeDefined();
+      expect(finish.directive).toBeDefined();
       // Non-normative action framing + exit options.
       expect(Array.isArray(finish.actionGuidance)).toBe(true);
       expect(finish.exitOptions).toContain('abandon');

@@ -112,23 +112,23 @@ function makeActorState(
   };
 }
 
-describe('nextAction field mapping', () => {
+describe('directive field mapping', () => {
   const policy = getPolicyPreset('solo');
 
-  it('should map nextAction.primaryCommand to first available primaryCommand', () => {
+  it('should expose directive.commands[0] as the first canonical command', () => {
     const state = makeMinimalState('READY');
     const projection = buildStatusProjection(state, policy);
 
-    expect(projection.nextAction.primaryCommand).toBeTruthy();
-    expect(projection.nextAction.primaryCommand).toMatch(/^\//);
+    expect(projection.directive.commands[0]).toBeTruthy();
+    expect(projection.directive.commands[0]).toMatch(/^\//);
   });
 
-  it('should map nextAction.summary to text from resolveNextAction', () => {
+  it('should map directive.code to the canonical position code', () => {
     const state = makeMinimalState('READY');
     const projection = buildStatusProjection(state, policy);
 
-    expect(projection.nextAction.summary).toBeTruthy();
-    expect(projection.nextAction.summary.length).toBeGreaterThan(0);
+    expect(projection.directive.code).toBe('CHOOSE_FLOW');
+    expect(projection.directive.code.length).toBeGreaterThan(0);
   });
 });
 
@@ -199,18 +199,37 @@ describe('buildBlockedProjection', () => {
   });
 
   it('reports blocked=false on pending phase (no gate block)', () => {
-    const blocked = buildBlockedProjection(makeMinimalState('PLAN'), solo);
+    const state = makeMinimalState('PLAN');
+    const blocked = buildBlockedProjection(state, solo);
+    const directive = buildStatusProjection(state, solo).directive;
     expect(blocked.blocked).toBe(false);
     expect(blocked.missingEvidence.some((slot) => slot.slot === 'plan')).toBe(true);
-    expect(blocked.nextResolvableCommand).toBe('/continue');
+    // PLAN is system work: the directive exposes no user-runnable command.
+    expect(directive).toEqual({
+      kind: 'system_work',
+      code: 'PLAN_REVIEW_IN_PROGRESS',
+      allowedIntents: [],
+      commands: [],
+    });
+    expect(blocked.nextResolvableCommand).toBe(directive.commands[0] ?? null);
+    expect(blocked.nextResolvableCommand).toBeNull();
   });
 
   it('reports waiting reason at user gate under regulated policy', () => {
-    const blocked = buildBlockedProjection(makeMinimalState('PLAN_REVIEW'), regulated);
+    const state = makeMinimalState('PLAN_REVIEW');
+    const blocked = buildBlockedProjection(state, regulated);
+    const directive = buildStatusProjection(state, regulated).directive;
     expect(blocked.blocked).toBe(true);
     expect(typeof blocked.reasonText).toBe('string');
     expect(blocked.reasonText).toContain('Awaiting');
-    expect(blocked.nextResolvableCommand).toBe('/review-decision');
+    expect(directive).toEqual({
+      kind: 'human_gate',
+      code: 'PLAN_DECISION_REQUIRED',
+      allowedIntents: ['APPROVE', 'REQUEST_CHANGES', 'REJECT'],
+      commands: ['/approve', '/request-changes', '/reject'],
+    });
+    // The first gate command is the canonical resolvable command.
+    expect(blocked.nextResolvableCommand).toBe('/approve');
     expect(blocked.humanActionRequired).toBe(true);
   });
 });

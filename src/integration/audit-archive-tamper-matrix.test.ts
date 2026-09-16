@@ -25,6 +25,7 @@ import {
   implement,
   review_implementation,
   status,
+  export as exportTool,
 } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
 import type { SessionState } from '../state/schema.js';
@@ -191,6 +192,8 @@ async function completeRegulatedSession(): Promise<{
   }
 
   await callOk(decision, { verdict: 'approve', rationale: 'evidence approved' });
+  expect(await currentPhase()).toBe('EXPORT_READY');
+  await callOk(exportTool, {});
   expect(await currentPhase()).toBe('COMPLETE');
 
   return getSessionPaths();

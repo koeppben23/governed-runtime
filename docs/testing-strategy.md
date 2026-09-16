@@ -73,7 +73,7 @@ archive creation,
 publication, inventory validation, and digesting,
 audit (integrity + completeness + NTP + types), config (policy + policy snapshot + reasons + profile), hooks (HTTP hook server + command pre-tool-use + shared obligation-tracker +
 phase-gate), identity (token-verifier + key-resolver), integration
-(command-aliases, tool-classification, discovery-risk-paths, pre-implementation challenge, architecture submit, review-validation-mode,
+(installed-commands, tool-classification, discovery-risk-paths, pre-implementation challenge, architecture submit, review-validation-mode,
 plugin-audit, plugin-audit-reconcile, plugin-beforehooks, plugin-afterhooks, plugin-helpers, audit-outbox, plugin-audit-lifecycle-reason, review enforcement, review orchestrator,
 orchestrator detection/output, and agent resolution), logging (error-serialize),
 templates (codex-plugin, claude-code-plugin, mandates),

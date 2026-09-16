@@ -130,7 +130,7 @@ export async function executeImplement(
     evalFn,
   );
 
-  const maxIterations = ctx.policy?.maxImplReviewIterations ?? DEFAULT_MAX_REVIEW_ITERATIONS;
+  const maxIterations = ctx.policy?.reviewBudget.implementation ?? DEFAULT_MAX_REVIEW_ITERATIONS;
   if (nextState.phase !== 'IMPL_REVIEW') {
     const result = evalFn(nextState);
     return { kind: 'ok', state: nextState, evalResult: result, transitions: allTransitions };

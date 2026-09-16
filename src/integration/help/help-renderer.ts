@@ -58,7 +58,7 @@ function renderHelpJson(result: HelpResult, verbose: boolean, includeContent: bo
     nextActionSummary: result.nextActionSummary,
     evidenceCompleteness: result.evidenceCompleteness,
     archiveVerification: result.archiveVerification,
-    nextAction: result.nextAction ? renderCommandJson(result.nextAction, verbose) : null,
+    directive: result.directive ? renderCommandJson(result.directive, verbose) : null,
     commands: result.commands.map((command) => renderCommandJson(command, verbose)),
     artifacts: buildArtifactsJson(result, includeContent),
     ...(result.blocker
@@ -99,8 +99,8 @@ export function buildHelpDocument(result: HelpResult, includeContent: boolean): 
     blocker: result.blocker
       ? { message: result.blocker.message, reasonCode: result.blocker.reasonCode }
       : null,
-    // nextAction is rendered as its own `## Next` section (below), not inline.
-    nextAction: null,
+    // The directive is rendered as its own `## Next` section (below), not inline.
+    directive: null,
   });
 
   // ## Next — the recommended next action, as its own card section.
@@ -148,12 +148,12 @@ export function buildHelpDocument(result: HelpResult, includeContent: boolean): 
  * no next action is available.
  */
 function buildNextSection(result: HelpResult): PresentationSection | null {
-  if (result.nextAction) {
+  if (result.directive) {
     return {
       kind: 'text',
       heading: 'Next',
       content: normalizedMarkdown(
-        toSingleLine(`\`${result.nextAction.invocation}\` — ${result.nextAction.description}`),
+        toSingleLine(`\`${result.directive.invocation}\` — ${result.directive.description}`),
       ),
     };
   }

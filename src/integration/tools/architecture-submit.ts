@@ -7,7 +7,7 @@
 
 import type { ArchitectureArgs, ArchitectureSession } from './architecture-shared.js';
 import { buildArchitectureReviewInstruction } from './architecture-shared.js';
-import { formatBlocked, enrichWithNextAction, writeStateWithArtifacts } from './helpers.js';
+import { formatBlocked, enrichWithWorkflowDirective, writeStateWithArtifacts } from './helpers.js';
 import type { SessionState } from '../../state/schema.js';
 import { executeArchitecture } from '../../rails/architecture.js';
 import { normalizeArchitectureClaims } from '../../state/proofgraph-approval.js';
@@ -214,7 +214,7 @@ export async function handleAdrSubmission(
     adrId: augmentedState.architecture!.id,
     adrDigest: augmentedState.architecture!.digest,
     selfReviewIteration: 0,
-    maxSelfReviewIterations: policy.maxSelfReviewIterations,
+    maxArchitectureReviewIterations: policy.reviewBudget.architecture,
     reviewMode: subagentEnabled ? 'subagent' : 'self',
     ...reviewObligationResponseFields(nextObligation, subAttemptId),
     ...repositoryEvidenceUnavailableField(nextObligation?.repositoryEvidenceFreeze),
@@ -223,5 +223,5 @@ export async function handleAdrSubmission(
     _audit: { transitions: result.transitions },
   };
 
-  return JSON.stringify(enrichWithNextAction(modeAResponse, augmentedState));
+  return JSON.stringify(enrichWithWorkflowDirective(modeAResponse, augmentedState));
 }

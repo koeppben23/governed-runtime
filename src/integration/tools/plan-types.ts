@@ -58,7 +58,7 @@ export type PlanExecutionScope = MutablePlanSession & {
   context: ToolContext;
   input: PlanInputFlags;
   reviewPolicy: PlanReviewPolicy;
-  maxSelfReviewIterations: number;
+  maxPlanReviewIterations: number;
   claimSubmissionDiagnostics?: PlanClaimSubmissionDiagnostics;
 };
 

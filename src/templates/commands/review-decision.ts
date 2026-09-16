@@ -27,7 +27,7 @@ Decision: $ARGUMENTS
 4. Report the outcome:
    - **approve**: Confirm advancement, show new phase.
    - **changes_requested**: Explain workflow returns to revision phase.
-   - **reject**: Explain workflow returns to start (PLAN_REVIEW/EVIDENCE_REVIEW → TICKET; ARCH_REVIEW → READY).
+    - **reject**: Explain the workflow transitions to the terminal REJECTED phase.
 
 ## Rules
 

@@ -2,7 +2,11 @@
  * @module integration/services/regulated-completion
  * @description P26 regulated archive lifecycle: audit emit → archive → verify.
  *
- * Scope: EVIDENCE_REVIEW + APPROVE → COMPLETE in regulated mode.
+ * Scope: the regulated export/completion path. Approval stops at EXPORT_READY;
+ * the canonical export rail materializes and verifies the completion package and
+ * persists EXPORT_READY + EXPORT_MATERIALIZED → COMPLETE. This chain then binds
+ * the completion evidence (approval decision, session_completed, regulated
+ * archive) to that terminal state.
  * Fail-closed: any failure in the chain produces regulatedArchiveStatus: 'failed'.
  * No partial success can leak — the entire chain is atomic from the caller's perspective.
  *
@@ -101,11 +105,46 @@ export function isRegulatedTicketCompletion(state: SessionState): boolean {
   return (
     state.phase === 'COMPLETE' &&
     state.transition?.to === 'COMPLETE' &&
+    state.transition?.from === 'EXPORT_READY' &&
+    state.transition?.event === 'EXPORT_MATERIALIZED' &&
     state.policySnapshot.mode === 'regulated' &&
-    !state.error &&
-    state.transition?.from === 'EVIDENCE_REVIEW' &&
-    state.transition?.event === 'APPROVE'
+    !state.error
   );
+}
+
+/**
+ * The approval transition that authorized the export. The terminal state only
+ * retains the export transition, so the approval authority is recovered from
+ * the durable transition outbox (reconciled or not — operations are retained
+ * as correlation evidence).
+ */
+function findApprovalTransition(
+  state: SessionState,
+): NonNullable<SessionState['transition']> | null {
+  for (const operation of state.pendingAuditOperations) {
+    if (
+      operation.kind === 'transition' &&
+      operation.transition.from === 'EVIDENCE_REVIEW' &&
+      operation.transition.to === 'EXPORT_READY' &&
+      operation.transition.event === 'APPROVE'
+    ) {
+      return {
+        from: operation.transition.from,
+        to: operation.transition.to,
+        event: operation.transition.event,
+        at: operation.transition.at,
+      };
+    }
+  }
+  const transition = state.transition;
+  if (
+    transition?.from === 'EVIDENCE_REVIEW' &&
+    transition.to === 'EXPORT_READY' &&
+    transition.event === 'APPROVE'
+  ) {
+    return transition;
+  }
+  return null;
 }
 
 /**
@@ -114,9 +153,8 @@ export function isRegulatedTicketCompletion(state: SessionState): boolean {
  *
  * Pre-conditions (caller must verify before calling):
  * - Rail result kind === 'ok'
- * - Pre-decision phase was EVIDENCE_REVIEW
- * - Verdict was 'approve'
  * - result.state.phase === 'COMPLETE'
+ * - result.state.transition was EXPORT_READY + EXPORT_MATERIALIZED
  * - result.state.policySnapshot.mode === 'regulated'
  * - !result.state.error
  *
@@ -326,9 +364,9 @@ function isSameDecisionIdentity(detail: Record<string, unknown>, state: SessionS
 }
 
 function isTerminalDecisionDetail(detail: Record<string, unknown>, state: SessionState): boolean {
-  const transition = state.transition;
+  const transition = findApprovalTransition(state);
   const decision = state.reviewDecision;
-  if (!transition || !decision || transition.from !== 'EVIDENCE_REVIEW') return false;
+  if (!transition || !decision) return false;
   return (
     detail.kind === 'decision' &&
     detail.fromPhase === transition.from &&
@@ -443,12 +481,12 @@ async function decisionIntent(
   auditDeps: AuditDeps,
   sessionID: string,
 ): Promise<SemanticAuditIntent> {
-  const transition = state.transition;
+  const transition = findApprovalTransition(state);
   const decision = state.reviewDecision;
-  if (!transition || !decision || transition.from !== 'EVIDENCE_REVIEW') {
+  if (!transition || !decision) {
     throw new PersistenceError(
       'SCHEMA_VALIDATION_FAILED',
-      'Regulated completion requires terminal transition and decision authority',
+      'Regulated completion requires terminal approval transition and decision authority',
     );
   }
   const decisionSequence = await auditDeps.nextDecisionSequence(sessDir, sessionID);

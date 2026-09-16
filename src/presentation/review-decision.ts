@@ -3,7 +3,7 @@
  * @description Shared projection for human decision gate conclusions.
  *
  * Used by decision-gated review cards so they share the same deterministic mapping from
- * product-next-action data to a typed PresentationConclusion.
+ * workflow-directive data to a typed PresentationConclusion.
  *
  * @version v1
  */
@@ -14,6 +14,14 @@ import type {
   PresentationConclusion,
 } from './model.js';
 import { formatFindingAffected, projectFindingRelation } from './finding-relation.js';
+import { directiveLabel } from './directive-copy.js';
+import type { WorkflowDirective } from '../machine/workflow-directive.js';
+
+/**
+ * The presentation-relevant projection of the canonical workflow directive.
+ * Commands are passed through verbatim; presentation never rewrites them.
+ */
+export type DirectiveProjection = Pick<WorkflowDirective, 'code' | 'commands'>;
 
 const GATE_COMMANDS = ['/approve', '/request-changes', '/reject'] as const;
 
@@ -24,36 +32,33 @@ const GATE_COMMANDS = ['/approve', '/request-changes', '/reject'] as const;
  * or `/reject`, this returns `decision_required` with the corresponding actions.
  * Otherwise it returns `terminal` with the action text as fallback.
  *
- * @param productNextAction  — canonical next-action data from
- *   `buildProductNextAction()` (see plan-response.ts / next-action-copy.ts).
+ * @param directive          — canonical workflow directive data.
  * @param descriptions       — human-readable label for each gate command.
  *   Use distinct labels per card context (plan vs evidence vs architecture).
  */
 export function buildReviewDecisionConclusion(
-  productNextAction: { text: string; commands: readonly string[] },
+  directive: DirectiveProjection,
   descriptions: Record<string, string>,
 ): PresentationConclusion {
-  const commands = new Set(productNextAction.commands);
-  const actions: PresentationAction[] = [];
-  for (const command of GATE_COMMANDS) {
-    if (commands.has(command)) {
-      actions.push({
-        invocation: command,
-        description: descriptions[command] ?? command,
-        visibility: 'available',
-      });
-    }
-  }
+  const actions: PresentationAction[] = directive.commands
+    .filter((command): command is (typeof GATE_COMMANDS)[number] =>
+      GATE_COMMANDS.includes(command as (typeof GATE_COMMANDS)[number]),
+    )
+    .map((command) => ({
+      invocation: command,
+      description: descriptions[command] ?? command,
+      visibility: 'available',
+    }));
 
   if (actions.length > 0) {
     return {
       kind: 'decision_required',
-      question: productNextAction.text,
+      question: directiveLabel(directive.code),
       actions,
     };
   }
 
-  return { kind: 'terminal', message: productNextAction.text };
+  return { kind: 'terminal', message: directiveLabel(directive.code) };
 }
 
 // ─── Review Decision Projection ────────────────────────────────────────────────

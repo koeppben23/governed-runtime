@@ -47,5 +47,5 @@ ${renderCommandGovernanceRules()}
 - All active checks have been executed via flowguard_run_check.
 - Phase advanced to IMPLEMENTATION (all passed) or returned to PLAN (any failed).
 - If \`presentation.markdown\` is present, render it verbatim and do not append a separate \`Next action:\` line.
-- Otherwise, render \`productNextAction.text\` as the single fallback conclusion.
+- Otherwise, render the canonical \`directive\` as the single fallback conclusion.
 `;

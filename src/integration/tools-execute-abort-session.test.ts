@@ -255,28 +255,23 @@ async function currentSessionDir(): Promise<string> {
 
 describe('abort_session', () => {
   describe('HAPPY', () => {
-    it('aborts session to COMPLETE', async () => {
+    it('aborts session to the ABORTED terminal position', async () => {
       await hydrateAndTicket();
       const raw = await abort_session.execute({ reason: 'Testing abort' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('COMPLETE');
+      expect(result.phase).toBe('ABORTED');
       // Governance integrity: the aborted session is explicitly marked and is NOT
-      // presented as a clean completion — guidance redirects to /status and never
-      // offers /export as a verifiable audit package.
+      // presented as a clean completion; ABORTED has a terminal directive.
       expect(result.aborted).toBe(true);
-      const product = result.productNextAction as { text: string; commands: string[] };
-      expect(product.commands).toEqual(['/status']);
-      expect(product.text).not.toContain('/export');
-      expect(product.text).not.toContain('/finish');
-      expect(product.text).not.toContain('/review');
+      expect(result.directive).toMatchObject({ kind: 'terminal', code: 'WORKFLOW_ABORTED' });
     });
 
     it('abort is persisted on disk', async () => {
       await hydrateSession();
       await abort_session.execute({ reason: 'Done' }, ctx);
       const s = parseToolResult(await status.execute({}, ctx));
-      expect(s.phase).toBe('COMPLETE');
+      expect(s.phase).toBe('ABORTED');
     });
   });
 
@@ -295,7 +290,7 @@ describe('abort_session', () => {
       await hydrateSession();
       const raw = await abort_session.execute({ reason: 'Cancel' }, ctx);
       const result = parseToolResult(raw);
-      expect(result.phase).toBe('COMPLETE');
+      expect(result.phase).toBe('ABORTED');
     });
   });
 

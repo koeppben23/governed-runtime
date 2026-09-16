@@ -21,18 +21,14 @@ import { ReviewReport } from '../../../state/evidence.js';
 import { evaluateCompleteness } from '../../../audit/completeness.js';
 import { autoAdvance, createPolicyEvalFn } from '../../../rails/types.js';
 import type { AutoAdvanceOverflow } from '../../../rails/types.js';
-import {
-  PHASE_LABELS,
-  buildProductNextAction,
-  buildReviewReportCard,
-} from '../../../presentation/index.js';
+import { PHASE_LABELS, buildReviewReportCard } from '../../../presentation/index.js';
 import type { PresentationRenderOptions } from '../../../presentation/glyph-profile.js';
 import { materializeReviewCardArtifact } from '../../../adapters/workspace/index.js';
 import { readConfig } from '../../../adapters/persistence-config.js';
 import { writeReport, reportPath } from '../../../adapters/persistence.js';
-import { writeStateWithArtifacts, enrichWithNextAction } from '../helpers.js';
+import { writeStateWithArtifacts, enrichWithWorkflowDirective } from '../helpers.js';
 import { ensureReviewAssurance } from '../../review/assurance.js';
-import { resolveNextAction } from '../../../machine/next-action.js';
+import { resolveWorkflowDirective } from '../../../machine/workflow-directive.js';
 import { projectStatusActionFromCommand } from '../../status-conclusion.js';
 import { projectCompletionProofStatus } from '../../proofgraph/proof-summary-projectors.js';
 import type { StartedReviewResult, ReviewReportResult } from './types.js';
@@ -239,15 +235,11 @@ function buildStandaloneReviewCard(
 ): string {
   const { result, finalState, report, validatedReviewObligation } = input;
   const boundInvocation = findBoundReviewInvocation(result, validatedReviewObligation);
-  const nextAction = resolveNextAction(finalState.phase, finalState);
-  const productNextAction = buildProductNextAction(nextAction, finalState.phase);
-  const primaryCommand = productNextAction.commands[0];
-  if (!primaryCommand) {
-    throw new Error(
-      'review completion: productNextAction has no commands; cannot build conclusion action.',
-    );
-  }
-  const conclusionAction = projectStatusActionFromCommand(primaryCommand, 'recommended');
+  const directive = resolveWorkflowDirective(finalState);
+  const primaryCommand = directive.commands[0];
+  const conclusionAction = primaryCommand
+    ? projectStatusActionFromCommand(primaryCommand, 'recommended')
+    : undefined;
   return buildReviewReportCard(
     {
       phase: finalState.phase,
@@ -258,8 +250,8 @@ function buildStandaloneReviewCard(
       reviewSubject: report.reviewKind === 'content_review' ? report.reviewSubject : undefined,
       obligationId: validatedReviewObligation?.obligationId,
       proofSummary: projectCompletionProofStatus(finalState),
-      productNextAction,
-      conclusionAction,
+      directive,
+      ...(conclusionAction ? { conclusionAction } : {}),
       ...reviewCardInvocationFields(boundInvocation),
     },
     options,
@@ -303,7 +295,7 @@ function formatReviewCompletionResponse(input: {
     artifactWarning,
   } = input;
   return JSON.stringify(
-    enrichWithNextAction(
+    enrichWithWorkflowDirective(
       {
         reviewCard,
         presentation: { markdown: presentationMarkdown },

@@ -9,6 +9,7 @@ import { isCommandAllowed } from '../../machine/commands.js';
 import type { SessionState } from '../../state/schema.js';
 import type { ReviewReport } from '../../state/evidence.js';
 import { PHASE_LABELS } from '../../presentation/phase-labels.js';
+import { directiveLabel } from '../../presentation/directive-copy.js';
 import {
   buildStatusProjection,
   buildEvidenceDetailProjection,
@@ -96,7 +97,7 @@ export interface HelpResult {
   readonly nextActionSummary: string;
   readonly evidenceCompleteness: EvidenceCompleteness;
   readonly archiveVerification: ArchiveVerification;
-  readonly nextAction: ProjectedCommand | null;
+  readonly directive: ProjectedCommand | null;
   readonly commands: readonly ProjectedCommand[];
   readonly artifacts: HelpArtifacts;
   readonly blocker: HelpBlocker | null;
@@ -417,7 +418,7 @@ function buildCommandDetail(state: SessionState | null, requestedInvocation: str
     nextActionSummary: command ? command.description : 'Unknown FlowGuard command.',
     evidenceCompleteness: buildEvidenceCompleteness(state),
     archiveVerification: buildArchiveVerification(state),
-    nextAction: null,
+    directive: null,
     commands: command ? [command] : [],
     artifacts: EMPTY_ARTIFACTS,
     blocker: null,
@@ -443,7 +444,7 @@ function buildNoSessionResult(): HelpResult {
     nextActionSummary: 'Start a governed session.',
     evidenceCompleteness: buildEvidenceCompleteness(null),
     archiveVerification: buildArchiveVerification(null),
-    nextAction: projectCommand(start, null, 'recommended'),
+    directive: projectCommand(start, null, 'recommended'),
     commands: [
       projectCommand(start, null, 'recommended'),
       projectCommand(status, null, 'available'),
@@ -504,9 +505,9 @@ function buildSessionHelpResult(opts: SessionHelpOpts): HelpResult {
   const readiness = finishToReadiness(finish.overallStatus);
   const recommendationQuality = projectRecommendationQuality(reportResolution);
 
-  const recommended = findRecommendation(status.productNextAction.primaryCommand);
+  const recommended = findRecommendation(status.directive.commands[0] ?? null);
   const candidateNext = recommended ? projectCommand(recommended, state, 'recommended') : null;
-  const nextAction =
+  const directive =
     candidateNext && candidateNext.preflight.status === 'available' ? candidateNext : null;
 
   const commands = INSTALLED_COMMANDS.map((definition) =>
@@ -520,12 +521,12 @@ function buildSessionHelpResult(opts: SessionHelpOpts): HelpResult {
     readiness,
     recommendationQuality,
     reviewReportStatus: reportResolution?.status ?? 'not_available',
-    nextActionSummary: status.productNextAction.summary,
+    nextActionSummary: directiveLabel(status.directive.code),
     evidenceCompleteness: buildEvidenceCompleteness(state),
     archiveVerification: buildArchiveVerification(state),
-    nextAction,
+    directive,
     commands: contextCommands,
-    artifacts: buildArtifacts(state, includeArtifactContent, status.productNextAction.summary),
+    artifacts: buildArtifacts(state, includeArtifactContent, directiveLabel(status.directive.code)),
     blocker: buildBlocker(state, policy),
   };
 }

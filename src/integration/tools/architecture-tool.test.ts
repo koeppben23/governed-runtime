@@ -26,7 +26,7 @@ const mocks = vi.hoisted(() => {
     requireStateForMutation: vi.fn(async () => makeState('READY')),
     resolvePolicyFromState: vi.fn(() => TEAM_POLICY),
     createPolicyContext: vi.fn(() => ({
-      policy: { maxSelfReviewIterations: 3 },
+      policy: { reviewBudget: { architecture: 3 } },
       now: () => '2026-01-01T00:00:00.000Z',
       digest: (s: string) => `digest:${s}`,
     })),
@@ -37,7 +37,7 @@ const mocks = vi.hoisted(() => {
     formatError: vi.fn((err: unknown) =>
       JSON.stringify({ error: true, code: 'INTERNAL_ERROR', message: String(err) }),
     ),
-    enrichWithNextAction: vi.fn((value: Record<string, unknown>) => value),
+    enrichWithWorkflowDirective: vi.fn((value: Record<string, unknown>) => value),
     writeStateWithArtifacts: vi.fn<(sessDir: string, state: SessionState) => Promise<SessionState>>(
       async (_sessDir: string, state: SessionState) => state,
     ),
@@ -54,7 +54,7 @@ vi.mock('./helpers.js', () => ({
   formatEval: mocks.formatEval,
   formatBlocked: mocks.formatBlocked,
   formatError: mocks.formatError,
-  enrichWithNextAction: mocks.enrichWithNextAction,
+  enrichWithWorkflowDirective: mocks.enrichWithWorkflowDirective,
   writeStateWithArtifacts: mocks.writeStateWithArtifacts,
   withMutableSession: vi.fn(async (ctx) => {
     const paths = await mocks.resolveWorkspacePaths();
@@ -711,7 +711,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     // reviewer child session from the obligation and attestation metadata.
     mocks.resolvePolicyFromState.mockReturnValueOnce({
       ...TEAM_POLICY,
-      maxSelfReviewIterations: 3,
+      reviewBudget: { ...TEAM_POLICY.reviewBudget, architecture: 3 },
     });
     const { architecture } = await import('./architecture.js');
     const res = await architecture.execute({ title: 'x', adrText: 'y' }, {} as never);
@@ -732,7 +732,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     //      validateReviewFindings (slice 7c).
     mocks.resolvePolicyFromState.mockReturnValueOnce({
       ...TEAM_POLICY,
-      maxSelfReviewIterations: 3,
+      reviewBudget: { ...TEAM_POLICY.reviewBudget, architecture: 3 },
     });
     const { architecture } = await import('./architecture.js');
     const res = await architecture.execute({ title: 'x', adrText: 'y' }, {} as never);

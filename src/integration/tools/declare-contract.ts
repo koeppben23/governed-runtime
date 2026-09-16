@@ -49,7 +49,7 @@ import { refreshProofGraph } from '../proofgraph/refresh.js';
 import type { ToolDefinition } from './helpers.js';
 import { formatError } from './error-format.js';
 import {
-  enrichWithNextAction,
+  enrichWithWorkflowDirective,
   formatBlocked,
   getWorktree,
   withMutableSessionTransaction,
@@ -432,7 +432,7 @@ export const declare_contract: ToolDefinition = {
         const nextState = { ...state, proofContract, proofGraph };
         await writeStateWithArtifacts(sessDir, nextState);
         return JSON.stringify(
-          enrichWithNextAction(
+          enrichWithWorkflowDirective(
             {
               phase: nextState.phase,
               status: 'ProofGraph claims added; projection recorded.',

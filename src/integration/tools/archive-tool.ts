@@ -19,7 +19,7 @@ import { formatError } from './error-format.js';
 import {
   resolveWorkspacePaths,
   formatBlocked,
-  enrichWithNextAction,
+  enrichWithWorkflowDirective,
   writeStateWithArtifacts,
 } from './helpers.js';
 import { readState } from '../../adapters/persistence.js';
@@ -167,7 +167,7 @@ export const archive: ToolDefinition = {
       // Route the immediate response from the archive that was just created,
       // not from an earlier regulated completion archive retained in state.
       return JSON.stringify(
-        enrichWithNextAction(
+        enrichWithWorkflowDirective(
           {
             phase: state.phase,
             status,

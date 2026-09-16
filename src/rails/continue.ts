@@ -16,7 +16,7 @@
  *
  * maxIterations for review loops are resolved from policy:
  * - Existing state values are used if present (selfReview.maxIterations)
- * - Falls back to policy.maxSelfReviewIterations / policy.maxImplReviewIterations
+ * - Falls back to the applicable policy.reviewBudget value
  * - Ultimate fallback: 3 (TEAM_POLICY default)
  *
  * @version v1
@@ -199,7 +199,7 @@ async function runOneSelfReviewIteration(
   // maxIterations: existing state value > policy > fallback 3
   const maxIterations =
     state.selfReview?.maxIterations ??
-    ctx.policy?.maxSelfReviewIterations ??
+    ctx.policy?.reviewBudget.plan ??
     DEFAULT_MAX_REVIEW_ITERATIONS;
 
   const loop = await runSingleIteration(
@@ -270,7 +270,7 @@ async function runOneImplReviewIteration(
   // maxIterations: existing state value > policy > fallback 3
   const maxIterations =
     state.implReview?.maxIterations ??
-    ctx.policy?.maxImplReviewIterations ??
+    ctx.policy?.reviewBudget.implementation ??
     DEFAULT_MAX_REVIEW_ITERATIONS;
 
   const loop = await runSingleIteration(
@@ -315,7 +315,7 @@ async function runOneArchitectureReviewIteration(
   // maxIterations: existing state value > policy > fallback 3
   const maxIterations =
     state.selfReview?.maxIterations ??
-    ctx.policy?.maxSelfReviewIterations ??
+    ctx.policy?.reviewBudget.architecture ??
     DEFAULT_MAX_REVIEW_ITERATIONS;
 
   const loop = await runSingleIteration(

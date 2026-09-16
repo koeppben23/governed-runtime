@@ -165,7 +165,7 @@ describe('presentation.markdown rendering contract', () => {
     const markdown = buildImplReviewChangesRequestedMarkdown(
       'Implementation review iteration 1/3. Changes requested.',
       summary!,
-      { text: 'Re-record the revised implementation.', commands: ['/implement'] },
+      { code: 'IMPLEMENTATION_REQUIRED', commands: ['/implement'] },
     );
     expect(markdown).toContain('## Verification');
     expect(markdown).toContain('Record implementation evidence for the approved plan.');
@@ -177,7 +177,7 @@ describe('presentation.markdown rendering contract', () => {
     const markdown = buildImplReviewChangesRequestedMarkdown(
       'Implementation review iteration 1/3. Changes requested.',
       summary!,
-      { text: 'Re-record the revised implementation.', commands: ['/implement'] },
+      { code: 'IMPLEMENTATION_REQUIRED', commands: ['/implement'] },
     );
     expect(markdown).toContain('## Verification');
     expect(markdown).toContain('0 of 1 claims verified');
@@ -191,8 +191,8 @@ describe('presentation.markdown rendering contract', () => {
     });
     const cardInput: EvidenceReviewCardInput = {
       phaseLabel: 'Ready for final review',
-      productNextAction: {
-        text: 'Review the implementation evidence.',
+      directive: {
+        code: 'IMPLEMENTATION_DECISION_REQUIRED',
         commands: ['/approve', '/request-changes', '/reject'],
       },
       proofSummary: summary!,

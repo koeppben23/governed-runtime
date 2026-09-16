@@ -20,7 +20,7 @@ Archive the current completed FlowGuard session.
    non-default export:
     - \`none\` with \`includeRaw=true\` = raw evidence for auditors (requires allowRawExport=true).
     - \`pseudonymous\` = stable correlation tokens across redacted events.
-   - Only terminal sessions (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE) can be archived.
+    - Only terminal sessions (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE, REJECTED, ABORTED) can be archived.
    - If not terminal: report the current phase and tell the user to complete or abort first.
 
 3. Report the archive result:
@@ -43,5 +43,5 @@ ${renderCommandGovernanceRules()}
 - Session archive created as tar.gz.
 - Redaction parameters, guidance, and archive semantic fields reported to the user.
 - If \`presentation.markdown\` is present, render it verbatim and do not append a separate \`Next action:\` line.
-- Otherwise, render \`productNextAction.text\` as the single fallback conclusion.
+- Otherwise, render the canonical \`directive\` as the single fallback conclusion.
 `;

@@ -48,11 +48,11 @@
  * - **Mutation Files** — entries in `stryker.conf.json` `mutate` array
  */
 export const PRODUCT_INVENTORY = {
-  machineCommands: 12,
+  machineCommands: 13,
   integrationTools: 20,
   mcpTools: 18,
   installedCommandDefs: 27,
-  phases: 15,
+  phases: 18,
   policyModes: 4,
   profiles: 4,
   discoveryCollectors: 6,

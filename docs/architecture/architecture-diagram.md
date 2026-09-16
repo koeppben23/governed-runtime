@@ -114,10 +114,10 @@ From `READY`, three flows are available:
 ### 1. Ticket Flow (Full Development Lifecycle)
 
 ```
-READY → TICKET → PLAN ⇄ PLAN_REVIEW → VALIDATION → IMPLEMENTATION ⇄ IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE
+READY → TICKET → PLAN ⇄ PLAN_REVIEW → VALIDATION → IMPLEMENTATION ⇄ IMPL_VALIDATION ⇄ IMPL_REVIEW → EVIDENCE_REVIEW → EXPORT_READY → COMPLETE
 ```
 
-- `/task` → `/plan` → `/approve` → `/check` → `/implement` → `/approve`
+- `/task` → `/plan` → `/approve` → `/check` → `/implement` → `/approve` → `/export`
 - Subagent review loops at PLAN and IMPLEMENTATION for iterative convergence
 - User gates at PLAN_REVIEW, EVIDENCE_REVIEW (human approval required)
 - Self-review never accepted as evidence — mandatory independent subagent attestation

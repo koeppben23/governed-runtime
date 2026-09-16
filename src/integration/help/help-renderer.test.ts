@@ -43,7 +43,7 @@ function noSessionResult(overrides?: Partial<HelpResult>): HelpResult {
       currentSnapshotVerified: false,
       summary: 'No session.',
     },
-    nextAction: {
+    directive: {
       id: 'start',
       invocation: '/start',
       label: 'Start',
@@ -209,7 +209,7 @@ describe('renderHelp', () => {
     // contract forbids embedded newlines / trailing whitespace, so the renderer
     // must collapse them rather than throw.
     const result = noSessionResult({
-      nextAction: null,
+      directive: null,
       nextActionSummary: 'Choose your workflow:\n  /ticket   — start\n  /review   — compliance ',
     });
     let out = '';
@@ -340,7 +340,7 @@ describe('renderHelp', () => {
             alsoAvailableAs: [],
           },
         ],
-        nextAction: null,
+        directive: null,
       }),
       { format: 'markdown' },
     );
@@ -428,7 +428,7 @@ describe('help blocker edge cases', () => {
         phase: { id: 'TICKET', label: 'Task captured' },
         readiness: 'blocked',
         blocker: { message: null, reasonCode: 'MISSING_EVIDENCE' },
-        nextAction: null,
+        directive: null,
       }),
       false,
     );
@@ -470,7 +470,7 @@ describe('help blocker edge cases', () => {
             alsoAvailableAs: [],
           },
         ],
-        nextAction: null,
+        directive: null,
       }),
       false,
     );

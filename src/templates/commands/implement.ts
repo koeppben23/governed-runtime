@@ -78,7 +78,7 @@ ${DISCOVERY_REVIEW_CAPTURE}
     \`verificationCandidates\`.
     - If both \`activeChecks\`/\`remainingChecks\` and \`verificationCandidates\` are empty:
       report no active checks and stop without calling \`flowguard_run_check\`. The MACHINE
-      itself decides a vacuous transition — read the canonical \`nextAction\` and the actual
+      itself decides a vacuous transition — read the canonical \`directive\` and the actual
       phase from the tool response; never claim the IMPL_REVIEW gate is unreachable and never
       invent a transition path.
     - If \`activeChecks\`/\`remainingChecks\` is non-empty: for each kind, call
@@ -129,7 +129,7 @@ ${SHARED_REVIEW_LOOP({
   unableRecoveryB:
     'record substantially-new implementation evidence (new flowguard_implement({}) call after additional code changes, which starts a fresh review obligation)',
 })}
-   - The changes_requested branch is an INTERNAL continuation, not a terminal result: FlowGuard returns no presentation card while the review loop is still active. Never render an intermediate outcome as final, and never stop for user input between iterations. Only the loop's terminal responses — converged acceptance (EVIDENCE_REVIEW), exhausted budget (user extension decision), or a BLOCKED code — end the loop and carry a presentation card to display verbatim.
+   - The changes_requested branch is an INTERNAL continuation, not a terminal result: FlowGuard returns no presentation card while the review loop is still active. Never render an intermediate outcome as final, and never stop for user input between iterations. Only the loop's terminal responses — converged acceptance (EVIDENCE_REVIEW), exhausted budget (EVIDENCE_REVIEW override gate: \`/override-approve\`, \`/request-changes\`, or \`/reject\`), or a BLOCKED code — end the loop and carry a presentation card to display verbatim.
 
 ## Rules
 

@@ -154,8 +154,7 @@ describe('rails/types', () => {
           ...TEAM_POLICY,
           mode: 'solo',
           requireHumanGates: false,
-          maxSelfReviewIterations: 1,
-          maxImplReviewIterations: 1,
+          reviewBudget: { plan: 1, architecture: 1, implementation: 1 },
           allowSelfApproval: true,
         },
       };

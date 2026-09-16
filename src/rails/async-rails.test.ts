@@ -130,7 +130,7 @@ describe('plan rail', () => {
       }
     });
 
-    it('maxIterations from policy limits loop (solo = 1)', async () => {
+    it('uses the plan review budget from policy', async () => {
       let count = 0;
       const neverApprove = {
         generate: async () => '## Plan',
@@ -144,7 +144,7 @@ describe('plan rail', () => {
       const result = await executePlan(state, {}, soloCtx, neverApprove);
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
-        expect(result.state.selfReview!.iteration).toBe(2);
+        expect(result.state.selfReview!.iteration).toBe(SOLO_POLICY.reviewBudget.plan);
       }
     });
   });
@@ -339,7 +339,7 @@ describe('implement rail', () => {
 
   // ─── CORNER ────────────────────────────────────────────────
   describe('CORNER', () => {
-    it('impl review loop respects maxIterations from policy', async () => {
+    it('implementation review loop respects the policy budget', async () => {
       let count = 0;
       const neverApprove = {
         execute: async () => ({ changedFiles: ['a.ts'], domainFiles: [] }),
@@ -351,7 +351,7 @@ describe('implement rail', () => {
       const soloCtx = { ...ctx, policy: SOLO_POLICY };
       const state = makeProgressedState('IMPLEMENTATION');
       await executeImplement(state, soloCtx, neverApprove);
-      expect(count).toBe(1); // SOLO = maxImplReviewIterations: 1
+      expect(count).toBe(SOLO_POLICY.reviewBudget.implementation);
     });
   });
 

@@ -24,17 +24,13 @@ import {
   formatEval,
   formatAutoAdvanceOverflow,
   formatBlocked,
-  enrichWithNextAction,
+  enrichWithWorkflowDirective,
   writeStateWithArtifacts,
 } from './helpers.js';
-import {
-  PHASE_LABELS,
-  buildProductNextAction,
-  buildPlanReviewCard,
-} from '../../presentation/index.js';
+import { PHASE_LABELS, buildPlanReviewCard } from '../../presentation/index.js';
 import { materializeReviewCardArtifact } from '../../adapters/workspace/index.js';
 import { readConfig } from '../../adapters/persistence-config.js';
-import { resolveNextAction } from '../../machine/next-action.js';
+import { resolveWorkflowDirective } from '../../machine/workflow-directive.js';
 import { evaluate } from '../../machine/evaluate.js';
 import { autoAdvance } from '../../rails/types.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
@@ -217,7 +213,7 @@ export function buildPlanSubmissionResponse(
     status: 'Plan submitted (v' + planVersion + ').',
     planDigest: planEvidence.digest,
     selfReviewIteration: 0,
-    maxSelfReviewIterations: scope.maxSelfReviewIterations,
+    maxPlanReviewIterations: scope.maxPlanReviewIterations,
     reviewMode: 'subagent',
     ...reviewObligationResponseFields(nextObligation, planAttemptId),
     ...planRepositoryEvidenceWarning(nextObligation),
@@ -298,7 +294,7 @@ export function convergedPlanResponse(input: ConvergedPlanReviewInput): Record<s
   return {
     phase: finalState.phase,
     status: forcedConvergence
-      ? `Independent review reached the iteration limit (${iteration}/${scope.maxSelfReviewIterations}) without reviewer approval (last verdict: ${revision.verdict}). Workflow advanced to ${finalState.phase}.`
+      ? `Independent review reached the iteration limit (${iteration}/${scope.maxPlanReviewIterations}) without reviewer approval (last verdict: ${revision.verdict}). Workflow advanced to ${finalState.phase}.`
       : `Independent review converged at iteration ${iteration}. Workflow advanced to ${finalState.phase}.`,
     planDigest: revision.currentPlan.digest,
     selfReviewIteration: iteration,
@@ -311,8 +307,7 @@ export async function convergedPlanReviewCardResponse(
   input: ConvergedPlanReviewInput,
 ): Promise<Record<string, unknown>> {
   const { scope, finalState, ev, transitions, revision, iteration, forcedConvergence } = input;
-  const nextAction = resolveNextAction(finalState.phase, finalState);
-  const productNext = buildProductNextAction(nextAction, finalState.phase);
+  const directive = resolveWorkflowDirective(finalState);
   const reviewedIdentity = resolveReviewedArtifactIdentity(
     finalState.reviewAssurance,
     'plan',
@@ -322,7 +317,7 @@ export async function convergedPlanReviewCardResponse(
     planText: revision.currentPlan.body,
     phase: finalState.phase,
     phaseLabel: PHASE_LABELS[finalState.phase],
-    productNextAction: productNext,
+    directive,
     planVersion: revision.history.length + 1,
     policyMode: finalState.policySnapshot?.mode,
     taskTitle: firstLine(finalState.ticket?.text),
@@ -348,7 +343,7 @@ export async function convergedPlanReviewCardResponse(
   const response: Record<string, unknown> = {
     phase: finalState.phase,
     status: forcedConvergence
-      ? `Independent review reached the iteration limit (${iteration}/${scope.maxSelfReviewIterations}) without reviewer approval (last verdict: ${revision.verdict}). Your decision is required.`
+      ? `Independent review reached the iteration limit (${iteration}/${scope.maxPlanReviewIterations}) without reviewer approval (last verdict: ${revision.verdict}). Your decision is required.`
       : `Independent review converged at iteration ${iteration}. Plan ready for approval.`,
     planDigest: revision.currentPlan.digest,
     selfReviewIteration: iteration,
@@ -365,11 +360,11 @@ export async function persistConvergedPlanReview(input: ConvergedPlanReviewInput
   const { scope, finalState } = input;
   await writeStateWithArtifacts(scope.sessDir, finalState);
   if (finalState.phase !== 'PLAN_REVIEW') {
-    return JSON.stringify(enrichWithNextAction(convergedPlanResponse(input), finalState));
+    return JSON.stringify(enrichWithWorkflowDirective(convergedPlanResponse(input), finalState));
   }
 
   const response = await convergedPlanReviewCardResponse(input);
-  return JSON.stringify(enrichWithNextAction(response, finalState));
+  return JSON.stringify(enrichWithWorkflowDirective(response, finalState));
 }
 
 export async function persistNonConvergedPlanReview(
@@ -414,7 +409,7 @@ export async function persistNonConvergedPlanReview(
     : finalState;
   await writeStateWithArtifacts(scope.sessDir, stateToPersist);
   return JSON.stringify(
-    enrichWithNextAction(
+    enrichWithWorkflowDirective(
       nonConvergedPlanResponse(scope, finalState, transitions, revision, nextObligation),
       stateToPersist,
     ),
@@ -519,7 +514,7 @@ export function nonConvergedPlanResponse(
   });
   return {
     phase: finalState.phase,
-    status: `Independent review iteration ${scope.state.selfReview!.iteration + 1}/${scope.maxSelfReviewIterations}. Verdict: ${revision.verdict}.`,
+    status: `Independent review iteration ${scope.state.selfReview!.iteration + 1}/${scope.maxPlanReviewIterations}. Verdict: ${revision.verdict}.`,
     planDigest: revision.currentPlan.digest,
     selfReviewIteration: scope.state.selfReview!.iteration + 1,
     revisionDelta: revision.revisionDelta,
@@ -553,7 +548,7 @@ export async function persistPlanReview(
   const { state: finalState, evalResult: ev, transitions } = advanced;
   const iteration = scope.state.selfReview!.iteration + 1;
   const approvedConverged = revision.revisionDelta === 'none' && revision.verdict === 'accept';
-  const maxReached = iteration >= scope.maxSelfReviewIterations;
+  const maxReached = iteration >= scope.maxPlanReviewIterations;
 
   // Force-convergence: the review loop exhausted its iteration budget without
   // an approving verdict. Parity with the implementation-review flow
@@ -572,7 +567,7 @@ export async function persistPlanReview(
       {
         sessionId: scope.context.sessionID,
         iteration,
-        maxIterations: scope.maxSelfReviewIterations,
+        maxIterations: scope.maxPlanReviewIterations,
         lastVerdict: revision.verdict,
         phase: finalState.phase,
         planDigest: revision.currentPlan.digest,

@@ -25,13 +25,13 @@ import {
   decision,
   implement,
   review_implementation,
-  extend_implementation_review,
   resolve_implementation_challenge,
   run_check,
   review,
   continue as continueTool,
   abort_session,
   archive,
+  export as exportTool,
   architecture,
   help,
   declare_contract,
@@ -53,13 +53,13 @@ const TOOL_NAMES = [
   'decision',
   'implement',
   'review_implementation',
-  'extend_implementation_review',
   'resolve_implementation_challenge',
   'run_check',
   'review',
   'continue',
   'abort_session',
   'archive',
+  'export',
   'architecture',
   'help',
   'declare_contract',
@@ -76,13 +76,13 @@ const TOOLS: Record<string, unknown> = {
   decision,
   implement,
   review_implementation,
-  extend_implementation_review,
   resolve_implementation_challenge,
   run_check,
   review,
   continue: continueTool,
   abort_session,
   archive,
+  export: exportTool,
   architecture,
   help,
   declare_contract,
@@ -98,7 +98,6 @@ const TOOLS_WITH_ARGS = [
   'plan',
   'decision',
   'review_implementation',
-  'extend_implementation_review',
   'resolve_implementation_challenge',
   'run_check',
   'abort_session',
@@ -111,7 +110,7 @@ const TOOLS_WITH_ARGS = [
 ] as const;
 
 /** Tools that have no arguments (args: {}). */
-const TOOLS_WITHOUT_ARGS = ['implement'] as const;
+const TOOLS_WITHOUT_ARGS = ['implement', 'export'] as const;
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 

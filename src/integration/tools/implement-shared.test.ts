@@ -51,8 +51,7 @@ function state(phase: Phase, overrides: Partial<SessionState> = {}): SessionStat
       requestedMode: 'team',
       effectiveGateBehavior: 'human_gated',
       requireHumanGates: true,
-      maxSelfReviewIterations: 3,
-      maxImplReviewIterations: 5,
+      reviewBudget: { plan: 3, architecture: 3, implementation: 5 },
       allowSelfApproval: false,
     },
     initiatedBy: 'initiator-1',
@@ -76,8 +75,7 @@ function flowGuardPolicy(overrides: Record<string, unknown> = {}) {
   return {
     mode: 'team',
     requireHumanGates: true,
-    maxSelfReviewIterations: 3,
-    maxImplReviewIterations: 5,
+    reviewBudget: { plan: 3, architecture: 3, implementation: 5 },
     allowSelfApproval: false,
     ...overrides,
   } as unknown as ImplementRuntime['policy'];
@@ -156,17 +154,17 @@ describe('nextImplementationReviewIteration', () => {
 // ─── buildImplementRuntime ────────────────────────────────────────────────────
 
 describe('buildImplementRuntime', () => {
-  it('derives maxImplReviewIterations from policy', () => {
+  it('derives the implementation review budget from policy', () => {
     const rt = buildImplementRuntime({
       args: implementArgs(),
       context: toolContext(),
       worktree: '/tmp/repo',
       sessDir: '/tmp/sess',
       state: state('IMPLEMENTATION'),
-      policy: flowGuardPolicy({ maxImplReviewIterations: 7 }),
+      policy: flowGuardPolicy({ reviewBudget: { plan: 3, architecture: 3, implementation: 7 } }),
       ctx: {} as unknown as ImplementRuntime['ctx'],
     });
-    expect(rt.maxImplReviewIterations).toBe(7);
+    expect(rt.maxImplementationReviewIterations).toBe(7);
   });
 });
 

@@ -140,10 +140,9 @@ describe('config/policy', () => {
       });
     });
 
-    it('SOLO has no human gates and 1 iteration', () => {
+    it('SOLO has no human gates and default review budgets', () => {
       expect(SOLO_POLICY.requireHumanGates).toBe(false);
-      expect(SOLO_POLICY.maxSelfReviewIterations).toBe(2);
-      expect(SOLO_POLICY.maxImplReviewIterations).toBe(1);
+      expect(SOLO_POLICY.reviewBudget).toEqual({ plan: 3, architecture: 3, implementation: 3 });
       expect(SOLO_POLICY.allowSelfApproval).toBe(true);
       expect(SOLO_POLICY.audit.emitTransitions).toBe(true);
       expect(SOLO_POLICY.audit.emitToolCalls).toBe(true);
@@ -155,10 +154,9 @@ describe('config/policy', () => {
       expect(SOLO_POLICY.allowReducedCeremony).toBe(false);
     });
 
-    it('TEAM has human gates and 3 iterations', () => {
+    it('TEAM has human gates and default review budgets', () => {
       expect(TEAM_POLICY.requireHumanGates).toBe(true);
-      expect(TEAM_POLICY.maxSelfReviewIterations).toBe(3);
-      expect(TEAM_POLICY.maxImplReviewIterations).toBe(3);
+      expect(TEAM_POLICY.reviewBudget).toEqual({ plan: 3, architecture: 3, implementation: 3 });
       expect(TEAM_POLICY.allowSelfApproval).toBe(true);
       expect(TEAM_POLICY.audit.emitTransitions).toBe(true);
       expect(TEAM_POLICY.audit.emitToolCalls).toBe(true);
@@ -199,8 +197,7 @@ describe('config/policy', () => {
 
     it('TEAM-CI enables auto-approval with full audit', () => {
       expect(TEAM_CI_POLICY.requireHumanGates).toBe(false);
-      expect(TEAM_CI_POLICY.maxSelfReviewIterations).toBe(3);
-      expect(TEAM_CI_POLICY.maxImplReviewIterations).toBe(3);
+      expect(TEAM_CI_POLICY.reviewBudget).toEqual({ plan: 3, architecture: 3, implementation: 3 });
       expect(TEAM_CI_POLICY.allowSelfApproval).toBe(true);
       expect(TEAM_CI_POLICY.audit.emitTransitions).toBe(true);
       expect(TEAM_CI_POLICY.audit.emitToolCalls).toBe(true);
@@ -231,8 +228,7 @@ describe('config/policy', () => {
     it('all SOLO_POLICY fields match expected values', () => {
       expect(SOLO_POLICY.mode).toBe('solo');
       expect(SOLO_POLICY.requireHumanGates).toBe(false);
-      expect(SOLO_POLICY.maxSelfReviewIterations).toBe(2);
-      expect(SOLO_POLICY.maxImplReviewIterations).toBe(1);
+      expect(SOLO_POLICY.reviewBudget).toEqual({ plan: 3, architecture: 3, implementation: 3 });
       expect(SOLO_POLICY.allowSelfApproval).toBe(true);
       expect(SOLO_POLICY.audit.emitTransitions).toBe(true);
       expect(SOLO_POLICY.audit.emitToolCalls).toBe(true);
@@ -244,8 +240,7 @@ describe('config/policy', () => {
     it('all TEAM_POLICY fields match expected values', () => {
       expect(TEAM_POLICY.mode).toBe('team');
       expect(TEAM_POLICY.requireHumanGates).toBe(true);
-      expect(TEAM_POLICY.maxSelfReviewIterations).toBe(3);
-      expect(TEAM_POLICY.maxImplReviewIterations).toBe(3);
+      expect(TEAM_POLICY.reviewBudget).toEqual({ plan: 3, architecture: 3, implementation: 3 });
       expect(TEAM_POLICY.allowSelfApproval).toBe(true);
       expect(TEAM_POLICY.audit.emitTransitions).toBe(true);
       expect(TEAM_POLICY.audit.emitToolCalls).toBe(true);
@@ -257,8 +252,11 @@ describe('config/policy', () => {
     it('all REGULATED_POLICY fields match expected values', () => {
       expect(REGULATED_POLICY.mode).toBe('regulated');
       expect(REGULATED_POLICY.requireHumanGates).toBe(true);
-      expect(REGULATED_POLICY.maxSelfReviewIterations).toBe(3);
-      expect(REGULATED_POLICY.maxImplReviewIterations).toBe(3);
+      expect(REGULATED_POLICY.reviewBudget).toEqual({
+        plan: 3,
+        architecture: 3,
+        implementation: 3,
+      });
       expect(REGULATED_POLICY.allowSelfApproval).toBe(false);
       expect(REGULATED_POLICY.audit.emitTransitions).toBe(true);
       expect(REGULATED_POLICY.audit.emitToolCalls).toBe(true);
@@ -270,8 +268,7 @@ describe('config/policy', () => {
     it('all TEAM_CI_POLICY fields match expected values', () => {
       expect(TEAM_CI_POLICY.mode).toBe('team-ci');
       expect(TEAM_CI_POLICY.requireHumanGates).toBe(false);
-      expect(TEAM_CI_POLICY.maxSelfReviewIterations).toBe(3);
-      expect(TEAM_CI_POLICY.maxImplReviewIterations).toBe(3);
+      expect(TEAM_CI_POLICY.reviewBudget).toEqual({ plan: 3, architecture: 3, implementation: 3 });
       expect(TEAM_CI_POLICY.allowSelfApproval).toBe(true);
       expect(TEAM_CI_POLICY.audit.emitTransitions).toBe(true);
       expect(TEAM_CI_POLICY.audit.emitToolCalls).toBe(true);
@@ -357,38 +354,34 @@ describe('config/policy', () => {
       ).rejects.toMatchObject({ code: 'CENTRAL_POLICY_PATH_EMPTY' });
     });
 
-    it('resolvePolicyForHydrate applies config maxSelfReviewIterations override', async () => {
+    it('resolvePolicyForHydrate applies a plan review-budget override', async () => {
       const result = await resolvePolicyForHydrate({
         defaultMode: 'solo',
         ciContext: false,
         digestFn: (s) => `sha256:${s.length}`,
-        configMaxSelfReviewIterations: 5,
+        configReviewBudget: { plan: 5 },
       });
-      expect(result.policy.maxSelfReviewIterations).toBe(5);
-      expect(result.policy.maxImplReviewIterations).toBe(1);
+      expect(result.policy.reviewBudget).toEqual({ plan: 5, architecture: 3, implementation: 3 });
     });
 
-    it('resolvePolicyForHydrate applies config maxImplReviewIterations override', async () => {
+    it('resolvePolicyForHydrate applies an implementation review-budget override', async () => {
       const result = await resolvePolicyForHydrate({
         defaultMode: 'team',
         ciContext: false,
         digestFn: (s) => `sha256:${s.length}`,
-        configMaxImplReviewIterations: 10,
+        configReviewBudget: { implementation: 10 },
       });
-      expect(result.policy.maxSelfReviewIterations).toBe(3);
-      expect(result.policy.maxImplReviewIterations).toBe(10);
+      expect(result.policy.reviewBudget).toEqual({ plan: 3, architecture: 3, implementation: 10 });
     });
 
-    it('resolvePolicyForHydrate applies both config iteration overrides', async () => {
+    it('resolvePolicyForHydrate applies field-wise review-budget overrides', async () => {
       const result = await resolvePolicyForHydrate({
         defaultMode: 'team',
         ciContext: false,
         digestFn: (s) => `sha256:${s.length}`,
-        configMaxSelfReviewIterations: 7,
-        configMaxImplReviewIterations: 14,
+        configReviewBudget: { plan: 7, architecture: 9, implementation: 10 },
       });
-      expect(result.policy.maxSelfReviewIterations).toBe(7);
-      expect(result.policy.maxImplReviewIterations).toBe(14);
+      expect(result.policy.reviewBudget).toEqual({ plan: 7, architecture: 9, implementation: 10 });
     });
 
     it('resolvePolicyForHydrate uses preset when config undefined', async () => {
@@ -397,8 +390,7 @@ describe('config/policy', () => {
         ciContext: false,
         digestFn: (s) => `sha256:${s.length}`,
       });
-      expect(result.policy.maxSelfReviewIterations).toBe(2);
-      expect(result.policy.maxImplReviewIterations).toBe(1);
+      expect(result.policy.reviewBudget).toEqual({ plan: 3, architecture: 3, implementation: 3 });
     });
 
     it('resolvePolicyForHydrate applies config overrides with central policy', async () => {
@@ -409,11 +401,9 @@ describe('config/policy', () => {
         centralPolicyPath: '/tmp/org-policy.json',
         digestFn: (s) => `sha256:${s.length}`,
         readFileFn: async () => JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team' }),
-        configMaxSelfReviewIterations: 8,
-        configMaxImplReviewIterations: 16,
+        configReviewBudget: { plan: 8, architecture: 9, implementation: 10 },
       });
-      expect(result.policy.maxSelfReviewIterations).toBe(8);
-      expect(result.policy.maxImplReviewIterations).toBe(16);
+      expect(result.policy.reviewBudget).toEqual({ plan: 8, architecture: 9, implementation: 10 });
       expect(result.policy.minimumActorAssuranceForApproval).toBe('claim_validated');
     });
 
@@ -451,8 +441,7 @@ describe('config/policy', () => {
       const snap = createPolicySnapshot(REGULATED_POLICY, '2026-01-01T00:00:00.000Z', digest);
       expect(snap.mode).toBe('regulated');
       expect(snap.requireHumanGates).toBe(true);
-      expect(snap.maxSelfReviewIterations).toBe(3);
-      expect(snap.maxImplReviewIterations).toBe(3);
+      expect(snap.reviewBudget).toEqual({ plan: 3, architecture: 3, implementation: 3 });
       expect(snap.allowSelfApproval).toBe(false);
       expect(snap.audit.enableChainHash).toBe(true);
       expect(snap.actorClassification).toEqual(REGULATED_POLICY.actorClassification);

@@ -39,10 +39,12 @@ import {
   review,
   abort_session,
   archive,
+  export as export_session,
   architecture,
   declare_contract,
 } from './tools/index.js';
 import { readState } from '../adapters/persistence.js';
+import { Phase } from '../state/schema.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
 import { verifyChain } from '../audit/integrity.js';
 import {
@@ -155,6 +157,18 @@ let ctx: TestToolContext;
 
 beforeEach(async () => {
   ws = await createTestWorkspace();
+  // The canonical completion path materializes a raw, verifiable export via
+  // flowguard_export, which requires the operator to authorize raw export.
+  await fs.writeFile(
+    `${ws.tmpDir}/flowguard.json`,
+    JSON.stringify({
+      schemaVersion: 'v1',
+      archive: {
+        redaction: { allowedModes: ['none', 'basic', 'pseudonymous'], allowRawExport: true },
+      },
+    }),
+    'utf8',
+  );
   ctx = createToolContext({
     worktree: ws.tmpDir,
     directory: ws.tmpDir,
@@ -239,6 +253,33 @@ async function passValidation(context: TestToolContext = ctx): Promise<void> {
   }
 }
 
+/**
+ * Complete an approved workflow through the canonical export rail.
+ *
+ * EXPORT_READY advances to COMPLETE only when flowguard_export materializes
+ * and persists exact export evidence. No auto-advance crosses this boundary.
+ */
+async function exportToComplete(context: TestToolContext = ctx): Promise<void> {
+  expect(await getPhase(context)).toBe('EXPORT_READY');
+  const result = await callOk(export_session, {}, context);
+  expect(result.phase).toBe('COMPLETE');
+  expect(await getPhase(context)).toBe('COMPLETE');
+  const state = await readState(await getSessDir(context));
+  expect(state!.exportCompletionEvidence).not.toBeNull();
+}
+
+/** Assert that a command is blocked at the current (terminal) position. */
+async function expectBlockedCommand(
+  tool: ToolDefinition,
+  args: unknown,
+  expectedCode = 'COMMAND_NOT_ALLOWED',
+  context: TestToolContext = ctx,
+): Promise<void> {
+  const result = parseToolResult(await tool.execute(args, context));
+  expect(result.error).toBe(true);
+  expect(result.code).toBe(expectedCode);
+}
+
 // =============================================================================
 // E2E Workflows
 // =============================================================================
@@ -302,7 +343,7 @@ describe('e2e-workflow', () => {
       expect(planMeta.contentHash).toMatch(/^[0-9a-f]{64}$/);
 
       // 4. Plan (Mode B: approve self-review)
-      // Solo: maxSelfReviewIterations=1, so first approve should converge
+      // Solo plan budget=1, so first approve should converge
       await callOk(plan, { reviewVerdict: 'accept' });
       // Solo: auto-approves PLAN_REVIEW → VALIDATION (discovery detects TypeScript → activeChecks=['typecheck'])
       const afterPlan = await getPhase();
@@ -318,9 +359,8 @@ describe('e2e-workflow', () => {
 
       // 7. Implement (Mode B: approve review)
       await callOk(review_implementation, { reviewVerdict: 'accept' });
-      // Solo: auto-approves EVIDENCE_REVIEW → COMPLETE
-      const finalPhase = await getPhase();
-      expect(finalPhase).toBe('COMPLETE');
+      // Solo: auto-approves EVIDENCE_REVIEW → EXPORT_READY, then canonical export → COMPLETE
+      await exportToComplete();
 
       // Verify all evidence slots are filled
       const sessDir = await getSessDir();
@@ -332,6 +372,7 @@ describe('e2e-workflow', () => {
       expect(state!.validation.length).toBeGreaterThan(0); // activeChecks passed via run_check
       expect(state!.implementation).not.toBeNull();
       expect(state!.implReview).not.toBeNull();
+      expect(state!.exportCompletionEvidence).not.toBeNull();
     });
 
     it('complete team workflow with explicit decisions', async () => {
@@ -384,23 +425,34 @@ describe('e2e-workflow', () => {
         });
       }
       expect(await getPhase()).toBe('EVIDENCE_REVIEW');
+      // The evidence gate exposes the canonical human-gate directive; the
+      // retired /review-decision next action must not appear.
+      expect(implementationReviewResult?.directive).toMatchObject({
+        kind: 'human_gate',
+        code: 'IMPLEMENTATION_DECISION_REQUIRED',
+        commands: ['/approve', '/request-changes', '/reject'],
+      });
       const presentation = implementationReviewResult?.presentation as
         { markdown?: unknown } | undefined;
       expect(presentation?.markdown).toContain('## Decision');
-      expect(presentation?.markdown).toContain('/review-decision');
+      expect(presentation?.markdown).toContain('## Decision required');
+      expect(presentation?.markdown).toContain('/approve');
+      expect(presentation?.markdown).toContain('/request-changes');
+      expect(presentation?.markdown).toContain('/reject');
+      expect(presentation?.markdown).not.toContain('/review-decision');
       expect(presentation?.markdown).toContain('## Verification');
       expect(presentation?.markdown).toContain('No verification obligations declared');
 
-      // 7. Decision: approve evidence
+      // 7. Decision: approve evidence → EXPORT_READY, then canonical export → COMPLETE
       await callOk(decision, { verdict: 'approve', rationale: 'Ship it' });
-      expect(await getPhase()).toBe('COMPLETE');
+      await exportToComplete();
     });
   });
 
   // ─── BAD ───────────────────────────────────────────────────
 
   describe('BAD', () => {
-    it('reject at PLAN_REVIEW restarts from TICKET', async () => {
+    it('reject at PLAN_REVIEW transitions to terminal REJECTED and preserves plan evidence', async () => {
       await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' });
       await callOk(ticket, { text: 'Task', source: 'user' });
       await callOk(plan, { planText: '## Plan', targetPaths: ['docs/test.md'] });
@@ -410,14 +462,21 @@ describe('e2e-workflow', () => {
       }
       expect(await getPhase()).toBe('PLAN_REVIEW');
 
-      // Reject
+      // Reject — terminal REJECTED; reviewed evidence and the decision stay for audit
       await callOk(decision, { verdict: 'reject', rationale: 'Bad approach' });
-      expect(await getPhase()).toBe('TICKET');
+      expect(await getPhase()).toBe('REJECTED');
 
-      // Verify plan was cleared
+      // Verify the reviewed plan and reject decision are preserved (not cleared)
       const sessDir = await getSessDir();
       const state = await readState(sessDir);
-      expect(state!.plan).toBeNull();
+      expect(state!.plan).not.toBeNull();
+      expect(state!.reviewDecision).not.toBeNull();
+      expect(state!.reviewDecision!.verdict).toBe('reject');
+
+      // Terminal position: no further workflow command is admissible
+      await expectBlockedCommand(ticket, { text: 'Restart', source: 'user' });
+      await expectBlockedCommand(plan, { planText: '## Plan', targetPaths: ['docs/test.md'] });
+      expect(await getPhase()).toBe('REJECTED');
     });
 
     it('changes_requested at PLAN_REVIEW returns to PLAN for revision', async () => {
@@ -532,10 +591,10 @@ describe('e2e-workflow', () => {
         await callOk(review_implementation, { reviewVerdict: 'accept' });
       }
       await callOk(decision, { verdict: 'approve', rationale: 'Good now' });
-      expect(await getPhase()).toBe('COMPLETE');
+      await exportToComplete();
     });
 
-    it('reject at EVIDENCE_REVIEW restarts from TICKET with full clearing', async () => {
+    it('reject at EVIDENCE_REVIEW transitions to terminal REJECTED with evidence preserved', async () => {
       // Team workflow to EVIDENCE_REVIEW
       await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' });
       await callOk(ticket, { text: 'Rejected task', source: 'user' });
@@ -555,20 +614,25 @@ describe('e2e-workflow', () => {
       }
       expect(await getPhase()).toBe('EVIDENCE_REVIEW');
 
-      // Reject — sends back to TICKET, clears everything
+      // Reject — terminal REJECTED; the full reviewed evidence stays for audit
       await callOk(decision, { verdict: 'reject', rationale: 'Wrong approach entirely' });
-      expect(await getPhase()).toBe('TICKET');
+      expect(await getPhase()).toBe('REJECTED');
 
-      // Verify all downstream evidence is cleared
+      // Verify the reviewed evidence and reject decision are preserved
       const sessDir = await getSessDir();
       const state = await readState(sessDir);
-      expect(state!.plan).toBeNull();
-      expect(state!.selfReview).toBeNull();
-      expect(state!.validation).toHaveLength(0);
-      expect(state!.implementation).toBeNull();
-      expect(state!.implReview).toBeNull();
-      // Ticket is preserved (reject goes TO ticket, doesn't clear it)
       expect(state!.ticket).not.toBeNull();
+      expect(state!.plan).not.toBeNull();
+      expect(state!.selfReview).not.toBeNull();
+      expect(state!.validation.length).toBeGreaterThan(0);
+      expect(state!.implementation).not.toBeNull();
+      expect(state!.implReview).not.toBeNull();
+      expect(state!.reviewDecision).not.toBeNull();
+      expect(state!.reviewDecision!.verdict).toBe('reject');
+
+      // Terminal position: export is the only completion rail and it is closed
+      await expectBlockedCommand(export_session, {});
+      expect(await getPhase()).toBe('REJECTED');
     });
   });
 
@@ -580,14 +644,21 @@ describe('e2e-workflow', () => {
       await callOk(ticket, { text: 'Task', source: 'user' });
       await callOk(plan, { planText: '## Plan', targetPaths: ['docs/test.md'] });
 
-      await callOk(abort_session, { reason: 'Cancel everything' });
-      expect(await getPhase()).toBe('COMPLETE');
+      const abortResult = await callOk(abort_session, { reason: 'Cancel everything' });
+      expect(abortResult.phase).toBe('ABORTED');
+      expect(abortResult.aborted).toBe(true);
+      expect(await getPhase()).toBe('ABORTED');
 
-      // Verify abort marker in state
+      // Verify abort marker in state (retained for audit)
       const sessDir = await getSessDir();
       const state = await readState(sessDir);
       expect(state!.error).not.toBeNull();
       expect(state!.error!.code).toBe('ABORTED');
+
+      // Terminal position: the session cannot be advanced or exported
+      await expectBlockedCommand(export_session, {});
+      await expectBlockedCommand(ticket, { text: 'Continue', source: 'user' });
+      expect(await getPhase()).toBe('ABORTED');
     });
 
     it.skipIf(!tarOk)('archive after complete creates tar.gz', async () => {
@@ -601,7 +672,7 @@ describe('e2e-workflow', () => {
       await callOk(implement, {});
       await passValidation(); // IMPL_VALIDATION -> IMPL_REVIEW
       await callOk(review_implementation, { reviewVerdict: 'accept' });
-      expect(await getPhase()).toBe('COMPLETE');
+      await exportToComplete();
 
       // Archive
       const archiveResult = await callOk(archive, {});
@@ -635,27 +706,25 @@ describe('e2e-workflow', () => {
       phases.push(await getPhase()); // After impl record
 
       await callOk(review_implementation, { reviewVerdict: 'accept' });
+      phases.push(await getPhase()); // EXPORT_READY (solo auto-approves the evidence gate)
+      await exportToComplete();
       phases.push(await getPhase()); // COMPLETE
 
-      // Verify progression
-      expect(phases[0]).toBe('READY');
-      expect(phases[1]).toBe('TICKET'); // Ticket transitions READY → TICKET
-      expect(phases[phases.length - 1]).toBe('COMPLETE');
-
-      // All phases should be valid phase names
-      const validPhases = new Set([
+      // Verify the canonical progression
+      expect(phases).toEqual([
         'READY',
         'TICKET',
         'PLAN',
-        'PLAN_REVIEW',
         'VALIDATION',
         'IMPLEMENTATION',
         'IMPL_REVIEW',
-        'EVIDENCE_REVIEW',
+        'EXPORT_READY',
         'COMPLETE',
       ]);
+
+      // All observed phases must be members of the canonical Phase authority
       for (const p of phases) {
-        expect(validPhases.has(p)).toBe(true);
+        expect(Phase.safeParse(p).success).toBe(true);
       }
     });
   });
@@ -779,7 +848,7 @@ describe('e2e-workflow', () => {
       await callOk(implement, {});
       await passValidation(); // IMPL_VALIDATION -> IMPL_REVIEW
       await callOk(review_implementation, { reviewVerdict: 'accept' });
-      expect(await getPhase()).toBe('COMPLETE');
+      await exportToComplete();
 
       // Verify fingerprint is path-based
       const fp = await computeFingerprint(ws.tmpDir);
@@ -797,7 +866,7 @@ describe('e2e-workflow', () => {
       await callOk(implement, {});
       await passValidation(); // IMPL_VALIDATION -> IMPL_REVIEW
       await callOk(review_implementation, { reviewVerdict: 'accept' });
-      expect(await getPhase()).toBe('COMPLETE');
+      await exportToComplete();
 
       // Read and verify audit trail
       // Note: Audit trail is written by the plugin, not by tools directly.
@@ -851,7 +920,7 @@ describe('e2e-workflow', () => {
         await callOk(review_implementation, { reviewVerdict: 'accept' });
       }
       await callOk(decision, { verdict: 'approve', rationale: 'Ship it' });
-      expect(await getPhase()).toBe('COMPLETE');
+      await exportToComplete();
     });
 
     it('review flow transitions from READY to REVIEW_COMPLETE with report', async () => {
@@ -963,7 +1032,7 @@ describe('e2e-workflow', () => {
       expect(state!.architecture!.status).toBe('accepted');
     });
 
-    it('architecture reject at ARCH_REVIEW returns to READY', async () => {
+    it('architecture reject at ARCH_REVIEW transitions to terminal REJECTED and preserves evidence', async () => {
       await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' });
       const adrText =
         '## Context\nLogging.\n\n## Decision\nUse ELK.\n\n## Consequences\nComplex setup.';
@@ -978,15 +1047,18 @@ describe('e2e-workflow', () => {
       }
       expect(await getPhase()).toBe('ARCH_REVIEW');
 
-      // Reject → back to READY (architecture flow reject clears architecture evidence)
+      // Reject — terminal REJECTED; reviewed architecture and decision stay for audit
       await callOk(decision, { verdict: 'reject', rationale: 'Wrong approach' });
-      expect(await getPhase()).toBe('READY');
+      expect(await getPhase()).toBe('REJECTED');
 
-      // Verify architecture was cleared
+      // Verify the reviewed ADR evidence and reject decision are preserved
       const sessDir = await getSessDir();
       const state = await readState(sessDir);
-      expect(state!.architecture).toBeNull();
-      expect(state!.selfReview).toBeNull();
+      expect(state!.architecture).not.toBeNull();
+      expect(state!.architecture!.status).toBe('proposed');
+      expect(state!.selfReview).not.toBeNull();
+      expect(state!.reviewDecision).not.toBeNull();
+      expect(state!.reviewDecision!.verdict).toBe('reject');
     });
 
     it('architecture changes_requested at ARCH_REVIEW returns to ARCHITECTURE', async () => {
@@ -1108,7 +1180,9 @@ describe('e2e-workflow', () => {
       const rejRaw = await decision.execute({ verdict: 'reject', rationale: 'Start over' }, ctx);
       const rejResult = parseToolResult(rejRaw);
       expect(rejResult.error).toBeUndefined();
-      expect(rejResult.phase).toBe('TICKET');
+      expect(rejResult.phase).toBe('REJECTED');
+      const rejectedState = await readState(await getSessDir());
+      expect(rejectedState!.reviewDecision?.verdict).toBe('reject');
     });
 
     it('regulated mode blocks approve when actor identity is unknown', async () => {
@@ -1141,8 +1215,8 @@ describe('e2e-workflow', () => {
       expect(result.code).toBe('REGULATED_ACTOR_UNKNOWN');
     });
 
-    it('full re-traversal after EVIDENCE_REVIEW reject completes successfully', async () => {
-      // Team workflow to EVIDENCE_REVIEW, then reject, then complete from scratch
+    it('EVIDENCE_REVIEW reject is terminal; a fresh session re-traverses and completes', async () => {
+      // Team workflow to EVIDENCE_REVIEW
       await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' });
       await callOk(ticket, { text: 'First attempt', source: 'user' });
       await callOk(plan, { planText: '## Bad Plan', targetPaths: ['docs/test.md'] });
@@ -1159,35 +1233,54 @@ describe('e2e-workflow', () => {
         if ((await getPhase()) === 'EVIDENCE_REVIEW') break;
         await callOk(review_implementation, { reviewVerdict: 'accept' });
       }
+      expect(await getPhase()).toBe('EVIDENCE_REVIEW');
 
-      // Reject at EVIDENCE_REVIEW — back to TICKET
+      // Reject at EVIDENCE_REVIEW — terminal REJECTED, not a restart
       await callOk(decision, { verdict: 'reject', rationale: 'Start over' });
-      expect(await getPhase()).toBe('TICKET');
+      expect(await getPhase()).toBe('REJECTED');
 
-      // Full re-traversal with new ticket
-      await callOk(ticket, { text: 'Second attempt — better approach', source: 'user' });
-      await callOk(plan, { planText: '## Better Plan', targetPaths: ['docs/test.md'] });
+      // The rejected session cannot be restarted or exported in place
+      await expectBlockedCommand(ticket, { text: 'Second attempt', source: 'user' });
+      await expectBlockedCommand(export_session, {});
+      expect(await getPhase()).toBe('REJECTED');
+
+      // Recovery is a fresh session, which re-traverses the full workflow
+      const retryCtx = createToolContext({
+        worktree: ws.tmpDir,
+        directory: ws.tmpDir,
+        sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+      });
+      await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' }, retryCtx);
+      await callOk(ticket, { text: 'Second attempt — better approach', source: 'user' }, retryCtx);
+      await callOk(plan, { planText: '## Better Plan', targetPaths: ['docs/test.md'] }, retryCtx);
       for (let i = 0; i < 5; i++) {
-        if ((await getPhase()) === 'PLAN_REVIEW') break;
-        await callOk(plan, { reviewVerdict: 'accept' });
+        if ((await getPhase(retryCtx)) === 'PLAN_REVIEW') break;
+        await callOk(plan, { reviewVerdict: 'accept' }, retryCtx);
       }
-      await callOk(decision, { verdict: 'approve', rationale: 'Good' });
+      await callOk(decision, { verdict: 'approve', rationale: 'Good' }, retryCtx);
       // VALIDATION: pass checks again
-      await passValidation();
-      await callOk(implement, {});
-      await passValidation(); // IMPL_VALIDATION -> IMPL_REVIEW
+      await passValidation(retryCtx);
+      await callOk(implement, {}, retryCtx);
+      await passValidation(retryCtx); // IMPL_VALIDATION -> IMPL_REVIEW
       for (let i = 0; i < 5; i++) {
-        if ((await getPhase()) === 'EVIDENCE_REVIEW') break;
-        await callOk(review_implementation, { reviewVerdict: 'accept' });
+        if ((await getPhase(retryCtx)) === 'EVIDENCE_REVIEW') break;
+        await callOk(review_implementation, { reviewVerdict: 'accept' }, retryCtx);
       }
-      await callOk(decision, { verdict: 'approve', rationale: 'Ship it' });
-      expect(await getPhase()).toBe('COMPLETE');
+      await callOk(decision, { verdict: 'approve', rationale: 'Ship it' }, retryCtx);
+      await exportToComplete(retryCtx);
 
-      // Verify final state has second attempt's data
-      const sessDir = await getSessDir();
-      const state = await readState(sessDir);
-      expect(state!.ticket!.text).toBe('Second attempt — better approach');
-      expect(state!.plan!.current.body).toContain('Better Plan');
+      // Verify the fresh session's final state holds the second attempt's data
+      const retrySessDir = await getSessDir(retryCtx);
+      const retryState = await readState(retrySessDir);
+      expect(retryState!.ticket!.text).toBe('Second attempt — better approach');
+      expect(retryState!.plan!.current.body).toContain('Better Plan');
+
+      // The rejected session is unchanged and remains terminal
+      const rejectedSessDir = await getSessDir();
+      const rejectedState = await readState(rejectedSessDir);
+      expect(rejectedState!.phase).toBe('REJECTED');
+      expect(rejectedState!.ticket!.text).toBe('First attempt');
+      expect(rejectedState!.plan!.current.body).toContain('Bad Plan');
     });
   });
 
@@ -1208,7 +1301,7 @@ describe('e2e-workflow', () => {
       await callOk(implement, {});
       await passValidation(); // IMPL_VALIDATION -> IMPL_REVIEW
       await callOk(review_implementation, { reviewVerdict: 'accept' });
-      expect(await getPhase()).toBe('COMPLETE');
+      await exportToComplete();
       const elapsed = Date.now() - start;
       expect(elapsed).toBeLessThan(5000);
     });
@@ -1226,7 +1319,7 @@ describe('e2e-workflow', () => {
         await callOk(implement, {}, ic);
         await passValidation(ic); // IMPL_VALIDATION -> IMPL_REVIEW
         await callOk(review_implementation, { reviewVerdict: 'accept' }, ic);
-        expect(await getPhase(ic)).toBe('COMPLETE');
+        await exportToComplete(ic);
       }
       const elapsed = Date.now() - start;
       expect(elapsed).toBeLessThan(8000);

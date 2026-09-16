@@ -20,12 +20,15 @@ const ALL_PHASES: readonly Phase[] = [
   'IMPL_VALIDATION',
   'IMPL_REVIEW',
   'EVIDENCE_REVIEW',
+  'EXPORT_READY',
   'COMPLETE',
   'ARCHITECTURE',
   'ARCH_REVIEW',
   'ARCH_COMPLETE',
   'REVIEW',
   'REVIEW_COMPLETE',
+  'REJECTED',
+  'ABORTED',
 ];
 
 describe('PHASE_LABELS', () => {

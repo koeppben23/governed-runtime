@@ -37,12 +37,15 @@ const ALL_PHASES: Phase[] = [
   'IMPL_VALIDATION',
   'IMPL_REVIEW',
   'EVIDENCE_REVIEW',
+  'EXPORT_READY',
   'COMPLETE',
   'ARCHITECTURE',
   'ARCH_REVIEW',
   'ARCH_COMPLETE',
   'REVIEW',
   'REVIEW_COMPLETE',
+  'REJECTED',
+  'ABORTED',
 ];
 
 const POLICY_MODES = ['solo', 'team', 'regulated'] as const;
@@ -135,7 +138,13 @@ describe('state machine fuzz', () => {
   it('terminal phases return kind: terminal', () => {
     fc.assert(
       fc.property(
-        fc.constantFrom('COMPLETE', 'ARCH_COMPLETE', 'REVIEW_COMPLETE' as Phase),
+        fc.constantFrom(
+          'COMPLETE',
+          'ARCH_COMPLETE',
+          'REVIEW_COMPLETE',
+          'REJECTED',
+          'ABORTED' as Phase,
+        ),
         (phase) => {
           const state = makeState(phase) as SessionState;
           const result = evaluate(state, {});
@@ -218,28 +227,21 @@ describe('state machine fuzz', () => {
     );
   });
 
-  it('REJECT and CHANGES_REQUESTED resolve to expected backward phases', () => {
+  it('REJECT ends the workflow at REJECTED and CHANGES_REQUESTED returns to revision', () => {
     fc.assert(
       fc.property(
         fc.constantFrom('PLAN_REVIEW', 'EVIDENCE_REVIEW', 'ARCH_REVIEW' as Phase),
         (gatePhase) => {
-          // REJECT always goes far backward.
+          // REJECT terminates the governed workflow at the dedicated terminal.
           const rejectTarget = resolveTransition(gatePhase, 'REJECT');
-          expect(rejectTarget).toBeDefined();
-          // CHANGES_REQUESTED goes one step backward.
+          expect(rejectTarget).toBe('REJECTED');
+          expect(TERMINAL.has(rejectTarget!)).toBe(true);
+
+          // CHANGES_REQUESTED returns to the subject's revision position.
           const crTarget = resolveTransition(gatePhase, 'CHANGES_REQUESTED');
           expect(crTarget).toBeDefined();
-
-          // Both targets must be valid phases.
-          expect(ALL_PHASES).toContain(rejectTarget!);
-          expect(ALL_PHASES).toContain(crTarget!);
-
-          // REJECT and CHANGES_REQUESTED should resolve to different targets
-          // (different reversal distance).
-          if (gatePhase !== 'ARCH_REVIEW') {
-            // PLAN_REVIEW and EVIDENCE_REVIEW: REJECT goes further than CHANGES_REQUESTED.
-            expect(rejectTarget).not.toBe(crTarget);
-          }
+          expect(['PLAN', 'IMPLEMENTATION', 'ARCHITECTURE']).toContain(crTarget!);
+          expect(crTarget).not.toBe(rejectTarget);
         },
       ),
       {
@@ -270,11 +272,16 @@ describe('state machine fuzz', () => {
     );
   });
 
-  it('ABORT is never reachable through topology — always fail-closed', () => {
+  it('ABORT resolves to ABORTED from every non-terminal phase and fails closed at terminals', () => {
     fc.assert(
       fc.property(fc.constantFrom(...ALL_PHASES), (phase) => {
         const target = resolveTransition(phase, 'ABORT');
-        expect(target).toBeUndefined();
+        if (TERMINAL.has(phase)) {
+          // Already terminal: abort is a no-op, never a second transition.
+          expect(target).toBeUndefined();
+        } else {
+          expect(target).toBe('ABORTED');
+        }
       }),
       {
         numRuns: Number(process.env.FAST_CHECK_NUM_RUNS) || 100,
@@ -282,6 +289,29 @@ describe('state machine fuzz', () => {
         endOnFailure: true,
       },
     );
+  });
+
+  it('EXPORT_READY completes only through EXPORT_MATERIALIZED', () => {
+    const events = TRANSITIONS.get('EXPORT_READY')!;
+    expect([...events.keys()].sort()).toEqual(['ABORT', 'EXPORT_MATERIALIZED']);
+    expect(resolveTransition('EXPORT_READY', 'EXPORT_MATERIALIZED')).toBe('COMPLETE');
+    expect(resolveTransition('EXPORT_READY', 'ABORT')).toBe('ABORTED');
+    // No approval or validation event may complete the workflow directly.
+    for (const event of [
+      'APPROVE',
+      'CHANGES_REQUESTED',
+      'ALL_PASSED',
+      'IMPL_COMPLETE',
+    ] as Event[]) {
+      expect(resolveTransition('EXPORT_READY', event)).toBeUndefined();
+    }
+  });
+
+  it('REVIEW_EXHAUSTED routes the exhausted implementation loop to the final gate', () => {
+    expect(resolveTransition('IMPL_REVIEW', 'REVIEW_EXHAUSTED')).toBe('EVIDENCE_REVIEW');
+    // Ordinary convergence still routes to the same gate; exhaustion changes the
+    // gate type via the directive, never the topology target.
+    expect(resolveTransition('IMPL_REVIEW', 'REVIEW_MET')).toBe('EVIDENCE_REVIEW');
   });
 
   it('flow-selection events (TICKET_SELECTED, ARCHITECTURE_SELECTED, REVIEW_SELECTED) resolve from READY', () => {

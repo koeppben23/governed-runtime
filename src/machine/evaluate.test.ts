@@ -288,7 +288,7 @@ describe('evaluate', () => {
       expect(evidenceReview.kind).toBe('transition');
       if (evidenceReview.kind === 'transition') {
         expect(evidenceReview.event).toBe('APPROVE');
-        expect(evidenceReview.target).toBe('COMPLETE');
+        expect(evidenceReview.target).toBe('EXPORT_READY');
       }
 
       const archReview = evaluate(makeProgressedState('ARCH_REVIEW'), soloPolicy);
@@ -379,10 +379,10 @@ describe('evaluate', () => {
     it('evaluateWithEvent resolves known phase+event combos', () => {
       expect(evaluateWithEvent('PLAN_REVIEW', 'APPROVE')).toBe('VALIDATION');
       expect(evaluateWithEvent('PLAN_REVIEW', 'CHANGES_REQUESTED')).toBe('PLAN');
-      expect(evaluateWithEvent('PLAN_REVIEW', 'REJECT')).toBe('TICKET');
+      expect(evaluateWithEvent('PLAN_REVIEW', 'REJECT')).toBe('REJECTED');
       expect(evaluateWithEvent('ARCH_REVIEW', 'APPROVE')).toBe('ARCH_COMPLETE');
       expect(evaluateWithEvent('ARCH_REVIEW', 'CHANGES_REQUESTED')).toBe('ARCHITECTURE');
-      expect(evaluateWithEvent('ARCH_REVIEW', 'REJECT')).toBe('READY');
+      expect(evaluateWithEvent('ARCH_REVIEW', 'REJECT')).toBe('REJECTED');
     });
 
     it('evaluateWithEvent returns undefined for invalid combo', () => {

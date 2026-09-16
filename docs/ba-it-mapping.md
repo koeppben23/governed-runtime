@@ -18,7 +18,7 @@ How FlowGuard capabilities map to BAIT (Bankenaufsichtliche Anforderungen an die
 
 | BAIT Section | Requirement Area       | Relevance      | FlowGuard Contribution                              |
 | ------------ | ---------------------- | -------------- | --------------------------------------------------- |
-| § 8          | IT Governance          | Partial        | Policy-bound execution, 15 explicit workflow phases |
+| § 8          | IT Governance          | Partial        | Policy-bound execution, 18 explicit workflow phases |
 | § 9          | IT Strategic Planning  | Partial        | Evidence-based workflow forces documentation        |
 | § 10         | IT Risk Management     | **Direct**     | Structured change workflow, risk documentation      |
 | § 11         | Information Security   | **Direct**     | Four-eyes principle, audit trail, approval workflow |
@@ -180,8 +180,8 @@ BAIT § 14 requires structured system development processes.
 
 **Development Workflow:**
 
-- 15 explicit workflow phases across 3 flows
-- Ticket → Plan → Validation → Implementation → IMPL_REVIEW → EVIDENCE_REVIEW → Complete
+- 18 explicit workflow phases across 3 flows
+- Ticket → Plan → Validation → Implementation → IMPL_VALIDATION → IMPL_REVIEW → EVIDENCE_REVIEW → EXPORT_READY → Complete
 - Phase gates require evidence before progression
 
 **Testing & Quality:**

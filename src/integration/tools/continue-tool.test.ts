@@ -31,9 +31,9 @@ const mocks = vi.hoisted(() => ({
     wsDir: '/tmp/ws',
   })),
   requireStateForMutation: vi.fn(async () => mocks.state),
-  resolvePolicyFromState: vi.fn(() => ({ maxSelfReviewIterations: 3 })),
+  resolvePolicyFromState: vi.fn(() => ({ reviewBudget: { plan: 3, architecture: 3 } })),
   createPolicyContext: vi.fn(() => ({
-    policy: { maxSelfReviewIterations: 3 },
+    policy: { reviewBudget: { plan: 3, architecture: 3 } },
     now: () => '2026-01-01T00:00:00.000Z',
     digest: (s: string) => `digest:${s}`,
   })),
@@ -41,10 +41,10 @@ const mocks = vi.hoisted(() => ({
   formatError: vi.fn((err: unknown) =>
     JSON.stringify({ error: true, code: 'INTERNAL_ERROR', message: String(err) }),
   ),
-  enrichWithNextAction: vi.fn((value: Record<string, unknown>) => ({
+  enrichWithWorkflowDirective: vi.fn((value: Record<string, unknown>) => ({
     ...value,
-    productNextAction: {
-      text: `Canonical action for ${value.phase}`,
+    directive: {
+      code: `DIRECTIVE_${value.phase}`,
       commands: [`/${String(value.phase).toLowerCase()}`],
     },
   })),
@@ -96,7 +96,7 @@ vi.mock('./helpers.js', () => ({
   resolvePolicyFromState: mocks.resolvePolicyFromState,
   createPolicyContext: mocks.createPolicyContext,
   formatBlocked: mocks.formatBlocked,
-  enrichWithNextAction: mocks.enrichWithNextAction,
+  enrichWithWorkflowDirective: mocks.enrichWithWorkflowDirective,
   writeStateWithArtifacts: mocks.writeStateWithArtifacts,
   formatEval: mocks.formatEval,
 }));
@@ -301,7 +301,7 @@ describe('flowguard_continue (runtime)', () => {
   it('returns INTERNAL_ERROR when dependency throws', async () => {
     setPhase('TICKET');
     const { continue_cmd } = await import('./continue-tool.js');
-    mocks.enrichWithNextAction.mockImplementation(() => {
+    mocks.enrichWithWorkflowDirective.mockImplementation(() => {
       throw new Error('catastrophic');
     });
     const res = await continue_cmd.execute({}, {} as never);
@@ -317,10 +317,10 @@ describe('flowguard_continue (runtime)', () => {
 describe('implement: empty evidence guard (P8a.1)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.enrichWithNextAction.mockImplementation((value: Record<string, unknown>) => ({
+    mocks.enrichWithWorkflowDirective.mockImplementation((value: Record<string, unknown>) => ({
       ...value,
-      productNextAction: {
-        text: `Canonical action for ${value.phase}`,
+      directive: {
+        code: `DIRECTIVE_${value.phase}`,
         commands: [`/${String(value.phase).toLowerCase()}`],
       },
     }));

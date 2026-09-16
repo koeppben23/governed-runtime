@@ -37,7 +37,6 @@ import {
   decision,
   implement,
   review_implementation,
-  extend_implementation_review,
   run_check,
   review,
   abort_session,
@@ -57,13 +56,11 @@ import {
   IMPL_EVIDENCE,
   IMPL_REVIEW_CONVERGED,
 } from '../fixtures.js';
-import type { SessionState } from '../state/schema.js';
 import type { ReviewFindings } from '../state/evidence.js';
-import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
+import { resolvePolicyFromState } from './tools/helpers.js';
 import { convertArgsToInputSchema } from '../mcp-server/schema-converter.js';
 import { TEAM_POLICY } from '../config/policy.js';
 import { runWithAdapterLoggerAsync, type AdapterLogger } from '../logging/adapter-logger.js';
-import { recordUserDecisionIntentFromCommand } from './user-decision-intent.js';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
@@ -347,6 +344,14 @@ describe('implement', () => {
         await run_check.execute({ kind }, ctx);
       }
     }
+    const readyForImplementation = await readState(sessDir);
+    await writeState(sessDir, {
+      ...readyForImplementation!,
+      policySnapshot: {
+        ...readyForImplementation!.policySnapshot,
+        reviewBudget: { ...readyForImplementation!.policySnapshot.reviewBudget, implementation: 1 },
+      },
+    });
   }
 
   /**
@@ -372,7 +377,12 @@ describe('implement', () => {
       const sessDir = await currentSessionDir();
 
       expect(recordResult.phase).toBe('IMPL_VALIDATION');
-      expect(recordResult.next).toContain('/check');
+      expect(recordResult.directive).toMatchObject({
+        kind: 'system_work',
+        code: 'IMPLEMENTATION_VALIDATION_IN_PROGRESS',
+        commands: [],
+      });
+      expect(recordResult.next).toBe('IMPLEMENTATION_VALIDATION_IN_PROGRESS');
       expect(recordResult.next).not.toContain('INDEPENDENT_REVIEW_REQUIRED');
       expect(recordResult.reviewObligation).toBeUndefined();
       expect(recordResult.reviewInvocation).toBeUndefined();
@@ -475,11 +485,9 @@ describe('implement', () => {
       const raw = await review_implementation.execute({ reviewVerdict: 'accept' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      expect(
-        result.converged === true ||
-          result.phase === 'EVIDENCE_REVIEW' ||
-          result.phase === 'COMPLETE',
-      ).toBe(true);
+      // Solo auto-approves the evidence gate; completion now stops at the
+      // explicit EXPORT_READY position and waits for /export.
+      expect(result.phase).toBe('EXPORT_READY');
     });
 
     it('reduced ceremony records evidence and skips implementation review obligation only for runtime-verified TRIVIAL changes', async () => {
@@ -511,7 +519,8 @@ describe('implement', () => {
         computedMinimumTaskClass: 'TRIVIAL',
       });
       expect(finalState?.transition?.event).toBe('APPROVE');
-      expect(finalState?.phase).toBe('COMPLETE');
+      // Solo auto-approval stops at EXPORT_READY; completion requires /export.
+      expect(finalState?.phase).toBe('EXPORT_READY');
       expect(
         finalState?.reviewAssurance?.obligations.some(
           (obligation) => obligation.obligationType === 'implement',
@@ -908,7 +917,7 @@ describe('implement', () => {
       expect(result.status).toContain('Changes requested');
     });
 
-    it('Mode B: exhausted changes_requested carries the terminal extension card', async () => {
+    it('Mode B: exhausted changes_requested ends at EVIDENCE_REVIEW with the governance override gate', async () => {
       await reachImplementation();
       await implement.execute({}, ctx);
       await passImplValidation();
@@ -916,14 +925,33 @@ describe('implement', () => {
       await fulfillReview('implement', 1, 'changes_requested');
       const raw = await review_implementation.execute({ reviewVerdict: 'changes_requested' }, ctx);
       const result = parseToolResult(raw);
-      // Solo preset maxImplReviewIterations=1 -> the single negative verdict
-      // exhausts the budget, so the loop ENDS in a user decision and the
-      // terminal presentation card IS rendered.
+      // Solo implementation budget=1: the single negative verdict exhausts the
+      // budget, so the review loop transitions IMPL_REVIEW --REVIEW_EXHAUSTED-->
+      // EVIDENCE_REVIEW and hands the decision to the user as a governance
+      // override gate.
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('EVIDENCE_REVIEW');
       expect(result.status).toContain('exhausted');
+      expect(result.directive).toMatchObject({
+        kind: 'human_gate',
+        code: 'IMPLEMENTATION_OVERRIDE_REQUIRED',
+        commands: ['/override-approve', '/request-changes', '/reject'],
+      });
       expect(result.presentation).toBeDefined();
-      expect((result.presentation as { markdown: string } | undefined)?.markdown).toContain(
-        'extend-implementation-review',
-      );
+      const markdown = (result.presentation as { markdown: string } | undefined)?.markdown ?? '';
+      expect(markdown).toContain('`/override-approve`');
+      expect(markdown).not.toContain('IMPLEMENTATION_OVERRIDE_REQUIRED');
+
+      const sessDir = await currentSessionDir();
+      const after = await readState(sessDir);
+      expect(after?.phase).toBe('EVIDENCE_REVIEW');
+      expect(after?.implementationRework).toEqual({
+        rejectedDigest: expect.any(String),
+        exhausted: true,
+      });
+      // The exhausted loop keeps the reviewed implementation: the override and
+      // the request-changes paths both bind to the exact reviewed revision.
+      expect(after?.implementation).not.toBeNull();
     });
 
     it('Mode B: non-exhausted changes_requested is an internal continuation without an intermediate card', async () => {
@@ -937,7 +965,10 @@ describe('implement', () => {
       const state = await readState(sessDir);
       await writeState(sessDir, {
         ...state!,
-        policySnapshot: { ...state!.policySnapshot, maxImplReviewIterations: 3 },
+        policySnapshot: {
+          ...state!.policySnapshot,
+          reviewBudget: { ...state!.policySnapshot.reviewBudget, implementation: 3 },
+        },
       });
 
       await fulfillReview('implement', 1, 'changes_requested');
@@ -957,7 +988,7 @@ describe('implement', () => {
       expect(after?.implementationRework?.exhausted).toBe(false);
     });
 
-    it('Mode B: changes_requested returns to IMPLEMENTATION for fresh implementation evidence', async () => {
+    it('Mode B: request-changes at the exhausted gate returns to IMPLEMENTATION and permits a changed re-record', async () => {
       await reachImplementation();
       await implement.execute({}, ctx);
       await passImplValidation();
@@ -969,136 +1000,91 @@ describe('implement', () => {
       );
       const reviewResult = parseToolResult(reviewRaw);
       expect(reviewResult.error).toBeUndefined();
-      expect(reviewResult.phase).toBe('IMPLEMENTATION');
+      expect(reviewResult.phase).toBe('EVIDENCE_REVIEW');
 
       const sessDir = await currentSessionDir();
-      const afterReviewState = await readState(sessDir);
-      expect(afterReviewState?.implementation).toBeNull();
-      expect(afterReviewState?.implReview).toBeNull();
-      expect(afterReviewState?.reducedCeremony).toBeNull();
-      expect(afterReviewState?.implementationRework).toEqual({
+      const exhaustedState = await readState(sessDir);
+      expect(exhaustedState?.implementationRework).toEqual({
         rejectedDigest: expect.any(String),
         exhausted: true,
       });
+      const rejectedDigest = exhaustedState!.implementationRework!.rejectedDigest;
 
-      const rejectedState = afterReviewState!;
-      const blockedRaw = await implement.execute({}, ctx);
-      const blockedResult = parseToolResult(blockedRaw);
-      expect(blockedResult.code).toBe('IMPLEMENTATION_REVIEW_EXTENSION_REQUIRED');
-      expect(await readState(sessDir)).toEqual(rejectedState);
-
-      recordUserDecisionIntentFromCommand({
-        sessionId: ctx.sessionID,
-        command: '/extend-implementation-review',
-        arguments: '1',
-      });
-      const extensionRaw = await extend_implementation_review.execute(
-        { additionalIterations: 1 },
+      // The user chooses /request-changes at the override gate: the machine
+      // returns to IMPLEMENTATION. The exhausted marker survives so the
+      // rejected revision can never be re-recorded.
+      const changesRaw = await decision.execute(
+        { verdict: 'changes_requested', rationale: 'Continue with fixes' },
         ctx,
       );
-      const extensionResult = parseToolResult(extensionRaw);
-      expect(extensionResult.error).toBeUndefined();
-      const extendedState = await readState(sessDir);
-      expect(extendedState?.implementationRework?.exhausted).toBe(false);
-      expect(extendedState?.implementationReviewExtensions).toEqual([
-        expect.objectContaining({
-          additionalIterations: 1,
-          authorizedBy: expect.objectContaining({ actorId: expect.any(String) }),
-        }),
+      const changesResult = parseToolResult(changesRaw);
+      expect(changesResult.error).toBeUndefined();
+      expect(changesResult.phase).toBe('IMPLEMENTATION');
+      const reopened = await readState(sessDir);
+      expect(reopened?.implementation).toBeNull();
+      expect(reopened?.implementationRework).toEqual({
+        rejectedDigest,
+        exhausted: true,
+      });
+
+      // Re-recording the unchanged rejected revision stays blocked.
+      const unchangedRaw = await implement.execute({}, ctx);
+      expect(parseToolResult(unchangedRaw).code).toBe('IMPLEMENTATION_REWORK_REQUIRED');
+
+      // A changed revision is recordable: the exhausted marker is cleared only
+      // when the fresh validation fully passes and the machine advances.
+      const gitMockForDigest = await import('../adapters/git.js');
+      vi.mocked(gitMockForDigest.changedFiles).mockResolvedValueOnce([
+        ...GIT_MOCK_DEFAULTS.changedFiles,
+        'src/fixed-after-review.ts',
       ]);
-    });
-
-    it('Mode B: extension without a matching explicit user command intent is BLOCKED', async () => {
-      await reachImplementation();
-      await implement.execute({}, ctx);
-      await passImplValidation();
-      await fulfillReview('implement', 1, 'changes_requested');
-      const reviewRaw = await review_implementation.execute(
-        { reviewVerdict: 'changes_requested' },
-        ctx,
-      );
-      expect(parseToolResult(reviewRaw).phase).toBe('IMPLEMENTATION');
-      const sessDir = await currentSessionDir();
-      const before = await readState(sessDir);
-      expect(before?.implementationRework?.exhausted).toBe(true);
-
-      const extensionRaw = await extend_implementation_review.execute(
-        { additionalIterations: 1 },
-        ctx,
-      );
-      const extensionResult = parseToolResult(extensionRaw);
-      expect(extensionResult.code).toBe('HUMAN_DECISION_REQUIRED');
-      expect(await readState(sessDir)).toEqual(before);
-    });
-
-    it('Mode B: extension is BLOCKED when the implementation review budget is not exhausted', async () => {
-      await reachImplementation();
-      await implement.execute({}, ctx);
-      await passImplValidation();
-      await fulfillReview('implement', 1, 'changes_requested');
-      await review_implementation.execute({ reviewVerdict: 'changes_requested' }, ctx);
-      const sessDir = await currentSessionDir();
-      const state = await readState(sessDir);
-      const notExhausted: SessionState = {
-        ...state!,
-        implementationRework: {
-          rejectedDigest: state!.implementationRework!.rejectedDigest,
-          exhausted: false,
-        },
-      };
-      await writeStateWithArtifacts(sessDir, notExhausted);
-
-      const extensionRaw = await extend_implementation_review.execute(
-        { additionalIterations: 1 },
-        ctx,
-      );
-      expect(parseToolResult(extensionRaw).code).toBe('IMPLEMENTATION_REVIEW_NOT_EXHAUSTED');
-      expect((await readState(sessDir))?.implementationRework?.exhausted).toBe(false);
-      expect((await readState(sessDir))?.implementationReviewExtensions).toHaveLength(0);
-    });
-
-    it('Mode B: extension authorizes a changed re-record that retains the rejected digest', async () => {
-      await reachImplementation();
-      await implement.execute({}, ctx);
-      await passImplValidation();
-      await fulfillReview('implement', 1, 'changes_requested');
-      await review_implementation.execute({ reviewVerdict: 'changes_requested' }, ctx);
-
-      const gitMock = await import('../adapters/git.js');
-      vi.mocked(gitMock.hashWorktreeFiles).mockImplementationOnce(async (_w, paths) => {
-        const out: Record<string, string | null> = {};
-        for (const p of paths) out[p] = `fixed:${p}`;
-        return out;
-      });
-
-      const sessDir = await currentSessionDir();
-      recordUserDecisionIntentFromCommand({
-        sessionId: ctx.sessionID,
-        command: '/extend-implementation-review',
-        arguments: '1',
-      });
-      const extensionRaw = await extend_implementation_review.execute(
-        { additionalIterations: 1 },
-        ctx,
-      );
-      const extensionResult = parseToolResult(extensionRaw);
-      expect(extensionResult.error).toBeUndefined();
-      const extendedState = await readState(sessDir);
-      expect(extendedState?.implementationRework?.exhausted).toBe(false);
-
       const recordRaw = await implement.execute({}, ctx);
       const recordResult = parseToolResult(recordRaw);
       expect(recordResult.error).toBeUndefined();
       expect(recordResult.phase).toBe('IMPL_VALIDATION');
       const afterRecord = await readState(sessDir);
-      expect(afterRecord?.implementationRework).toEqual({
-        rejectedDigest: extendedState?.implementationRework?.rejectedDigest,
-        exhausted: false,
-      });
-      expect(afterRecord?.implementationReviewExtensions).toHaveLength(1);
-      expect(afterRecord?.implementation?.digest).not.toBe(
-        extendedState?.implementationRework?.rejectedDigest,
+      expect(afterRecord?.implementation?.digest).not.toBe(rejectedDigest);
+      expect(afterRecord?.implementationRework?.exhausted).toBe(true);
+
+      const validationResult = await passImplValidation();
+      expect(validationResult?.phase).toBe('IMPL_REVIEW');
+      const atImplReview = await readState(sessDir);
+      expect(atImplReview?.implementationRework).toBeNull();
+    });
+
+    it('Mode B: plain /approve at the exhausted gate is BLOCKED with GOVERNANCE_OVERRIDE_REQUIRED', async () => {
+      await reachImplementation();
+      await implement.execute({}, ctx);
+      await passImplValidation();
+
+      await fulfillReview('implement', 1, 'changes_requested');
+      await review_implementation.execute({ reviewVerdict: 'changes_requested' }, ctx);
+
+      const raw = await decision.execute({ verdict: 'approve', rationale: 'Ship it' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('GOVERNANCE_OVERRIDE_REQUIRED');
+
+      // No state transition: the gate still awaits the explicit override.
+      const state = await readState(await currentSessionDir());
+      expect(state?.phase).toBe('EVIDENCE_REVIEW');
+    });
+
+    it('Mode B: /override-approve accepts the exhausted gate', async () => {
+      await reachImplementation();
+      await implement.execute({}, ctx);
+      await passImplValidation();
+
+      await fulfillReview('implement', 1, 'changes_requested');
+      await review_implementation.execute({ reviewVerdict: 'changes_requested' }, ctx);
+
+      const raw = await decision.execute(
+        { verdict: 'approve_with_governance_override', rationale: 'Accepted with override' },
+        ctx,
       );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('EXPORT_READY');
     });
 
     it('approve + subagentEnabled=true + missing host-captured findings -> BLOCKED', async () => {

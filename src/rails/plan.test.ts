@@ -19,7 +19,7 @@ import { PlanRecord } from '../state/evidence-plan.js';
 const ctx: RailContext = {
   now: () => FIXED_TIME,
   digest: (s: string) => hashText(s),
-  policy: { ...TEAM_POLICY, maxSelfReviewIterations: 3 },
+  policy: { ...TEAM_POLICY, reviewBudget: { ...TEAM_POLICY.reviewBudget, plan: 3 } },
 };
 
 function makeExecutors(overrides?: Partial<PlanExecutors>): PlanExecutors {

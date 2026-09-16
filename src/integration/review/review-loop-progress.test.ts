@@ -439,8 +439,7 @@ describe('getReviewLoopProgress', () => {
       const projection = buildStatusProjection(state, {
         mode: 'solo',
         requireHumanGates: false,
-        maxSelfReviewIterations: 3,
-        maxImplReviewIterations: 3,
+        reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
         allowSelfApproval: true,
         audit: { emitToolCalls: false, emitTransitions: false, enableChainHash: false },
         actorClassification: {},
@@ -460,8 +459,7 @@ describe('getReviewLoopProgress', () => {
       const projection = buildStatusProjection(state, {
         mode: 'solo',
         requireHumanGates: false,
-        maxSelfReviewIterations: 3,
-        maxImplReviewIterations: 3,
+        reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
         allowSelfApproval: true,
         audit: { emitToolCalls: false, emitTransitions: false, enableChainHash: false },
         actorClassification: {},

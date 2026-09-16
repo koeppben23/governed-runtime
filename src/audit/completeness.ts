@@ -130,12 +130,15 @@ const PHASE_ORDER: Readonly<Record<Phase, number>> = {
   IMPL_VALIDATION: 5,
   IMPL_REVIEW: 6,
   EVIDENCE_REVIEW: 7,
-  COMPLETE: 8,
+  EXPORT_READY: 8,
+  COMPLETE: 9,
   ARCHITECTURE: -1,
   ARCH_REVIEW: -1,
   ARCH_COMPLETE: -1,
   REVIEW: -1,
   REVIEW_COMPLETE: -1,
+  REJECTED: -1,
+  ABORTED: -1,
 };
 
 const SLOT_REQUIRED_FROM: Readonly<Record<string, number>> = {

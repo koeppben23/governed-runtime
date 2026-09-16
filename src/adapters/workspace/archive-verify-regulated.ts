@@ -4,7 +4,7 @@ import type { ChainedAuditEvent } from '../../audit/types.js';
 import type { SessionState } from '../../state/schema.js';
 import type { DecisionIdentity } from '../../state/evidence-identity.js';
 
-// eslint-disable-next-line complexity -- each branch maps a distinct regulated archive finding.
+// eslint-disable-next-line complexity, max-lines-per-function -- each branch maps a distinct regulated archive finding.
 export function verifyRegulatedCompletionCompleteness(
   state: SessionState | null,
   events: readonly ChainedAuditEvent[],
@@ -34,15 +34,15 @@ export function verifyRegulatedCompletionCompleteness(
   const transition = state.transition;
   const isExactCompletionTransition =
     !!transition &&
-    transition.from === 'EVIDENCE_REVIEW' &&
+    transition.from === 'EXPORT_READY' &&
     transition.to === 'COMPLETE' &&
-    transition.event === 'APPROVE';
+    transition.event === 'EXPORT_MATERIALIZED';
   if (!isExactCompletionTransition) {
     findings.push({
       code: 'regulated_terminal_transition_missing',
       severity: 'error',
       message:
-        'Regulated completion archive lacks the authoritative EVIDENCE_REVIEW APPROVE to COMPLETE transition',
+        'Regulated completion archive lacks the authoritative EXPORT_READY EXPORT_MATERIALIZED to COMPLETE transition',
       file: 'state/session-state.json',
     });
     return;
@@ -58,28 +58,32 @@ export function verifyRegulatedCompletionCompleteness(
     });
     return;
   }
-  const transitionIndex = locateCompletionEvidence(events, transition);
+  const completionEvidence = locateCompletionEvidence(events, transition);
   addCompletenessFindings(
     findings,
-    transitionIndex.transitionIndex,
-    transitionIndex.decisions.length,
-    transitionIndex.lifecycle.length,
+    completionEvidence.approvalTransitionIndex,
+    completionEvidence.exportTransitionIndex,
+    completionEvidence.decisions.length,
+    completionEvidence.lifecycle.length,
   );
-  const { decisions, lifecycle } = transitionIndex;
+  const { decisions, lifecycle } = completionEvidence;
   if (
-    transitionIndex.transitionIndex >= 0 &&
+    completionEvidence.approvalTransitionIndex >= 0 &&
+    completionEvidence.exportTransitionIndex >= 0 &&
     decisions.length === 1 &&
     lifecycle.length === 1 &&
     !(
-      transitionIndex.transitionIndex < decisions[0]!.index &&
-      decisions[0]!.index < lifecycle[0]!.index
+      completionEvidence.approvalTransitionIndex < decisions[0]!.index &&
+      decisions[0]!.index < lifecycle[0]!.index &&
+      completionEvidence.approvalTransitionIndex < completionEvidence.exportTransitionIndex &&
+      completionEvidence.exportTransitionIndex < lifecycle[0]!.index
     )
   ) {
     findings.push({
       code: 'regulated_completion_order_invalid',
       severity: 'error',
       message:
-        'Regulated completion evidence must order transition, decision, then session_completed',
+        'Regulated completion evidence must order the approval transition, decision, export transition, then session_completed',
       file: 'audit/audit.jsonl',
     });
   }
@@ -89,7 +93,8 @@ export function verifyRegulatedCompletionCompleteness(
 }
 
 interface CompletionEvidence {
-  readonly transitionIndex: number;
+  readonly approvalTransitionIndex: number;
+  readonly exportTransitionIndex: number;
   readonly decisions: ReadonlyArray<{ event: ChainedAuditEvent; index: number }>;
   readonly lifecycle: ReadonlyArray<{ event: ChainedAuditEvent; index: number }>;
 }
@@ -98,7 +103,14 @@ function locateCompletionEvidence(
   events: readonly ChainedAuditEvent[],
   transition: NonNullable<SessionState['transition']>,
 ): CompletionEvidence {
-  const transitionIndex = events.findIndex(
+  const approvalTransitionIndex = events.findIndex(
+    (event) =>
+      event.detail.kind === 'transition' &&
+      event.detail.from === 'EVIDENCE_REVIEW' &&
+      event.detail.to === 'EXPORT_READY' &&
+      event.detail.event === 'APPROVE',
+  );
+  const exportTransitionIndex = events.findIndex(
     (event) =>
       event.detail.kind === 'transition' &&
       event.detail.from === transition.from &&
@@ -111,9 +123,9 @@ function locateCompletionEvidence(
     .filter(
       ({ event }) =>
         event.detail.kind === 'decision' &&
-        event.detail.fromPhase === transition.from &&
-        event.detail.toPhase === transition.to &&
-        event.detail.transitionEvent === transition.event,
+        event.detail.fromPhase === 'EVIDENCE_REVIEW' &&
+        event.detail.toPhase === 'EXPORT_READY' &&
+        event.detail.transitionEvent === 'APPROVE',
     );
   const lifecycle = events
     .map((event, index) => ({ event, index }))
@@ -123,7 +135,7 @@ function locateCompletionEvidence(
         event.detail.action === 'session_completed' &&
         event.detail.finalPhase === transition.to,
     );
-  return { transitionIndex, decisions, lifecycle };
+  return { approvalTransitionIndex, exportTransitionIndex, decisions, lifecycle };
 }
 
 function addDecisionBindingFindings(
@@ -182,15 +194,23 @@ function addDecisionIdentityBindingFindings(
 
 function addCompletenessFindings(
   findings: ArchiveFinding[],
-  transitionIndex: number,
+  approvalTransitionIndex: number,
+  exportTransitionIndex: number,
   decisionCount: number,
   lifecycleCount: number,
 ): void {
-  if (transitionIndex < 0)
+  if (approvalTransitionIndex < 0)
     findings.push({
       code: 'regulated_terminal_transition_missing',
       severity: 'error',
-      message: 'Regulated completion archive lacks terminal transition audit evidence',
+      message: 'Regulated completion archive lacks the approval transition audit evidence',
+      file: 'audit/audit.jsonl',
+    });
+  if (exportTransitionIndex < 0)
+    findings.push({
+      code: 'regulated_terminal_transition_missing',
+      severity: 'error',
+      message: 'Regulated completion archive lacks the export transition audit evidence',
       file: 'audit/audit.jsonl',
     });
   if (decisionCount !== 1)

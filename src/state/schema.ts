@@ -24,7 +24,6 @@ import {
   ErrorInfo,
   FrozenRepositoryRevisionTarget,
   ImplementationRework,
-  ImplementationReviewExtension,
   ImplEvidence,
   ImplReviewResult,
   MutationAttempt,
@@ -41,6 +40,7 @@ import {
 import { MutationEpisode, MutationEpisodeResolution } from './evidence-mutation-episode.js';
 import { enforceMutationEpisodeInvariants } from './evidence-mutation-episode.js';
 import { RuntimeLease } from './runtime-lease.js';
+import { ExportCompletionEvidence } from './evidence-export.js';
 import { DiscoveryHealthGate } from './discovery-schemas.js';
 import {
   DiscoverySummarySchema,
@@ -64,14 +64,14 @@ export const CURRENT_AUDIT_CHAIN_FORMAT = 'audit-chain.v3' as const;
 // ─── Phase ────────────────────────────────────────────────────────────────────
 
 /**
- * The 14 FlowGuard phases across 3 standalone flows; init() is a
+ * The 18 FlowGuard phases across 3 standalone flows; init() is a
  * function (bootstrap, workspace, binding, discovery) — not a phase.
  *
  * After /hydrate, the session starts at READY — a routing phase
  * where the user selects one of 3 standalone flows:
  *
  * Ticket flow (full development lifecycle):
- *   READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE
+ *   READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → EXPORT_READY → COMPLETE
  *   Reduced ceremony: IMPLEMENTATION → EVIDENCE_REVIEW only with explicit reducedCeremony evidence.
  *
  * Architecture flow (ADR creation):
@@ -82,11 +82,11 @@ export const CURRENT_AUDIT_CHAIN_FORMAT = 'audit-chain.v3' as const;
  *
  * Backward transitions:
  *   PLAN_REVIEW --changes_requested--> PLAN
- *   PLAN_REVIEW --reject--> TICKET
+ *   PLAN_REVIEW --reject--> REJECTED
  *   EVIDENCE_REVIEW --changes_requested--> IMPLEMENTATION
- *   EVIDENCE_REVIEW --reject--> TICKET
+ *   EVIDENCE_REVIEW --reject--> REJECTED
  *   ARCH_REVIEW --changes_requested--> ARCHITECTURE
- *   ARCH_REVIEW --reject--> READY
+ *   ARCH_REVIEW --reject--> REJECTED
  */
 export const Phase = z.enum([
   'READY',
@@ -98,12 +98,15 @@ export const Phase = z.enum([
   'IMPL_VALIDATION',
   'IMPL_REVIEW',
   'EVIDENCE_REVIEW',
+  'EXPORT_READY',
   'COMPLETE',
   'ARCHITECTURE',
   'ARCH_REVIEW',
   'ARCH_COMPLETE',
   'REVIEW',
   'REVIEW_COMPLETE',
+  'REJECTED',
+  'ABORTED',
 ]);
 export type Phase = z.infer<typeof Phase>;
 
@@ -238,13 +241,22 @@ export const Event = z.enum([
   // REVIEW flow → REVIEW_COMPLETE
   'REVIEW_DONE',
 
+  // IMPL_REVIEW → EVIDENCE_REVIEW when the review budget is exhausted with
+  // changes requested; the final gate becomes a governance override gate.
+  'REVIEW_EXHAUSTED',
+
+  // EXPORT_READY → COMPLETE after a verifiable package is materialized.
+  'EXPORT_MATERIALIZED',
+
   // Error recovery (non-user-gate, non-terminal phases)
   'ERROR',
 
-  // Emergency escape — bypasses topology, used only by /abort rail
+  // Emergency termination — explicitly transitions every non-terminal phase to ABORTED.
   'ABORT',
 ]);
 export type Event = z.infer<typeof Event>;
+
+export type { ExportCompletionEvidence } from './evidence-export.js';
 
 // ─── Transition ───────────────────────────────────────────────────────────────
 
@@ -365,7 +377,6 @@ export const SessionState = z
     implementationRiskAssessment: ImplementationRiskAssessment.optional(),
 
     implementationRework: ImplementationRework.nullable(),
-    implementationReviewExtensions: z.array(ImplementationReviewExtension),
     /** Persistent Discovery health gate block state for mutating host tools (#399). */
     discoveryHealthGate: DiscoveryHealthGate.optional(),
 
@@ -657,6 +668,8 @@ export const SessionState = z
 
     /** Session creation timestamp (set once by init()). */
     createdAt: z.string().datetime(),
+
+    exportCompletionEvidence: ExportCompletionEvidence.nullable(),
 
     /** Removed persisted archive authority; old state must fail at this boundary. */
     archiveStatus: z.never().optional(),

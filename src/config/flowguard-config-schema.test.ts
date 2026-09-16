@@ -58,8 +58,7 @@ describe('FlowGuardConfigSchema', () => {
       logging: { level: 'debug' },
       policy: {
         defaultMode: 'regulated',
-        maxSelfReviewIterations: 5,
-        maxImplReviewIterations: 7,
+        reviewBudget: { plan: 5, architecture: 6, implementation: 7 },
         enforceRiskClassification: true,
         allowRiskDowngradeOverride: false,
         allowReducedCeremony: true,
@@ -84,8 +83,11 @@ describe('FlowGuardConfigSchema', () => {
     if (result.success) {
       expect(result.data.logging.level).toBe('debug');
       expect(result.data.policy.defaultMode).toBe('regulated');
-      expect(result.data.policy.maxSelfReviewIterations).toBe(5);
-      expect(result.data.policy.maxImplReviewIterations).toBe(7);
+      expect(result.data.policy.reviewBudget).toEqual({
+        plan: 5,
+        architecture: 6,
+        implementation: 7,
+      });
       expect(result.data.policy.enforceRiskClassification).toBe(true);
       expect(result.data.policy.allowRiskDowngradeOverride).toBe(false);
       expect(result.data.policy.allowReducedCeremony).toBe(true);
@@ -110,7 +112,7 @@ describe('FlowGuardConfigSchema', () => {
       expect(result.data.logging.level).toBe('info');
       // policy defaults to empty object (all fields optional)
       expect(result.data.policy.defaultMode).toBeUndefined();
-      expect(result.data.policy.maxSelfReviewIterations).toBeUndefined();
+      expect(result.data.policy.reviewBudget).toBeUndefined();
       // profile defaults to empty object
       expect(result.data.profile.defaultId).toBeUndefined();
       expect(result.data.profile.activeChecks).toBeUndefined();
@@ -552,42 +554,42 @@ describe('FlowGuardConfigSchema', () => {
     expect(result.success).toBe(false);
   });
 
-  it('rejects maxSelfReviewIterations out of range (0)', () => {
+  it('rejects a review-budget value out of range (0)', () => {
     const result = FlowGuardConfigSchema.safeParse({
       schemaVersion: 'v1',
-      policy: { maxSelfReviewIterations: 0 },
+      policy: { reviewBudget: { plan: 0 } },
     });
     expect(result.success).toBe(false);
   });
 
-  it('rejects maxSelfReviewIterations out of range (11)', () => {
+  it('rejects a review-budget value out of range (11)', () => {
     const result = FlowGuardConfigSchema.safeParse({
       schemaVersion: 'v1',
-      policy: { maxSelfReviewIterations: 11 },
+      policy: { reviewBudget: { architecture: 11 } },
     });
     expect(result.success).toBe(false);
   });
 
-  it('rejects maxImplReviewIterations out of range (0)', () => {
+  it('rejects an implementation review-budget value out of range (0)', () => {
     const result = FlowGuardConfigSchema.safeParse({
       schemaVersion: 'v1',
-      policy: { maxImplReviewIterations: 0 },
+      policy: { reviewBudget: { implementation: 0 } },
     });
     expect(result.success).toBe(false);
   });
 
-  it('rejects maxImplReviewIterations out of range (11)', () => {
+  it('rejects an implementation review-budget value out of range (11)', () => {
     const result = FlowGuardConfigSchema.safeParse({
       schemaVersion: 'v1',
-      policy: { maxImplReviewIterations: 11 },
+      policy: { reviewBudget: { implementation: 11 } },
     });
     expect(result.success).toBe(false);
   });
 
-  it('rejects non-integer maxSelfReviewIterations', () => {
+  it('rejects a non-integer review-budget value', () => {
     const result = FlowGuardConfigSchema.safeParse({
       schemaVersion: 'v1',
-      policy: { maxSelfReviewIterations: 2.5 },
+      policy: { reviewBudget: { plan: 2.5 } },
     });
     expect(result.success).toBe(false);
   });
@@ -758,15 +760,18 @@ describe('FlowGuardConfigSchema', () => {
 
   // ── CORNER ─────────────────────────────────────────────────────────────
 
-  it('accepts boundary values for iterations (1 and 10)', () => {
+  it('accepts review-budget boundary values (1 and 10)', () => {
     const result = FlowGuardConfigSchema.safeParse({
       schemaVersion: 'v1',
-      policy: { maxSelfReviewIterations: 1, maxImplReviewIterations: 10 },
+      policy: { reviewBudget: { plan: 1, architecture: 10, implementation: 10 } },
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.policy.maxSelfReviewIterations).toBe(1);
-      expect(result.data.policy.maxImplReviewIterations).toBe(10);
+      expect(result.data.policy.reviewBudget).toEqual({
+        plan: 1,
+        architecture: 10,
+        implementation: 10,
+      });
     }
   });
 

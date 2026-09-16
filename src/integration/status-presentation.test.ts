@@ -141,8 +141,12 @@ function makeBaseProjection(overrides: Partial<StatusProjection> = {}): StatusPr
       verificationStatus: null,
     },
     allowedCommands: ['/ticket', '/architecture', '/review'],
-    nextAction: { primaryCommand: '/hydrate', summary: 'Run /hydrate to bootstrap.' },
-    productNextAction: { primaryCommand: '/hydrate', summary: '' },
+    directive: {
+      kind: 'user_action',
+      code: 'CHOOSE_FLOW',
+      allowedIntents: ['CAPTURE_TASK', 'CREATE_ARCHITECTURE', 'RUN_PEER_REVIEW'],
+      commands: ['/task', '/architecture', '/review'],
+    },
     blocker: null,
     evidenceSummary: { present: 0, missing: 0, notYetRequired: 7, failed: 0 },
     proofGraph: {
@@ -332,7 +336,13 @@ describe('buildStatusDocument', () => {
   it('includes blocker section when blocked', () => {
     const projection = makeBaseProjection({
       blocker: { reasonCode: 'MISSING', reasonText: 'Missing evidence.' },
-      productNextAction: { primaryCommand: '/check', summary: 'Run checks.' },
+      directive: {
+        kind: 'blocked',
+        code: 'WORKFLOW_BLOCKED',
+        allowedIntents: [],
+        commands: [],
+        context: { reasonCode: 'MISSING' },
+      },
       conclusion: {
         kind: 'next_action' as const,
         action: {
@@ -359,7 +369,13 @@ describe('buildStatusDocument', () => {
         reasonCode: 'DISCOVERY_DRIFT_BLOCKED',
         reasonText: 'registry-verbatim interpolated message',
       },
-      productNextAction: { primaryCommand: '/hydrate', summary: 'Reconcile drift.' },
+      directive: {
+        kind: 'blocked',
+        code: 'WORKFLOW_BLOCKED',
+        allowedIntents: [],
+        commands: [],
+        context: { reasonCode: 'DISCOVERY_DRIFT_BLOCKED', recovery: 'Reconcile drift.' },
+      },
       conclusion: {
         kind: 'next_action' as const,
         action: {
@@ -468,7 +484,13 @@ describe('buildStatusDocument', () => {
   it('reason codes are backtick-wrapped in output', () => {
     const projection = makeBaseProjection({
       blocker: { reasonCode: 'VALIDATION_FAILED', reasonText: 'Checks did not pass.' },
-      productNextAction: { primaryCommand: '/check', summary: 'Re-run checks.' },
+      directive: {
+        kind: 'blocked',
+        code: 'WORKFLOW_BLOCKED',
+        allowedIntents: [],
+        commands: [],
+        context: { reasonCode: 'VALIDATION_FAILED', recovery: 'Re-run checks.' },
+      },
       conclusion: {
         kind: 'next_action' as const,
         action: {

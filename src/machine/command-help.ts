@@ -61,15 +61,6 @@ export const COMMAND_HELP: Record<Command, CommandHelpEntry> = {
     presentationGroup: 'work',
     displayOrder: 50,
   },
-  [Command.EXTEND_IMPLEMENTATION_REVIEW]: {
-    label: 'Extend implementation review',
-    description: 'Authorize a finite review-budget extension after exhausted rework.',
-    does: ['Opens only additional independent review iterations.'],
-    doesNot: ['Record implementation evidence or submit a review verdict.'],
-    examples: ['/extend-implementation-review 1'],
-    presentationGroup: 'recovery',
-    displayOrder: 52,
-  },
   [Command.RESOLVE_IMPLEMENTATION_CHALLENGE]: {
     label: 'Record challenge resolution',
     description: 'Record advisory validation evidence for one implementation challenge.',
@@ -87,6 +78,15 @@ export const COMMAND_HELP: Record<Command, CommandHelpEntry> = {
     examples: ['/approve'],
     presentationGroup: 'review',
     displayOrder: 60,
+  },
+  [Command.OVERRIDE_APPROVE]: {
+    label: 'Override exhausted review',
+    description: 'Accept an exhausted review gate with a recorded governance override.',
+    does: ['Binds the override to the exact reviewed subject digest.'],
+    doesNot: ['Override a reviewer-accepted or still-running review.'],
+    examples: ['/override-approve'],
+    presentationGroup: 'review',
+    displayOrder: 65,
   },
   [Command.VALIDATE]: {
     label: 'Run checks',
@@ -114,6 +114,15 @@ export const COMMAND_HELP: Record<Command, CommandHelpEntry> = {
     examples: ['/architecture'],
     presentationGroup: 'review',
     displayOrder: 90,
+  },
+  [Command.EXPORT]: {
+    label: 'Export completion package',
+    description: 'Materialize the required verifiable package and complete development.',
+    does: ['Persists exact export completion evidence.'],
+    doesNot: ['Create a redacted sharing archive.'],
+    examples: ['/export'],
+    presentationGroup: 'verify',
+    displayOrder: 95,
   },
   [Command.ABORT]: {
     label: 'Abort session',

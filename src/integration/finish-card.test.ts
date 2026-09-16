@@ -5,7 +5,7 @@
  * Contract under test:
  *   /finish is a thin, read-only presentation wrapper. buildFinishCard MUST
  *   compose the existing authorities (buildReadinessProjection,
- *   buildEvidenceDetailProjection, resolveNextAction) and add only the single
+ *   buildEvidenceDetailProjection, resolveWorkflowDirective) and add only the single
  *   presentation classifier deriveFinishOverallStatus. It performs NO
  *   independent evidence/gate evaluation, never mutates state, and never
  *   renders an exit option as forbidden.
@@ -29,7 +29,7 @@ import {
 } from './status.js';
 import { buildFinishCard, deriveFinishOverallStatus } from './status-finish.js';
 import { getPolicyPreset } from '../config/policy.js';
-import { resolveNextAction } from '../machine/next-action.js';
+import { resolveWorkflowDirective } from '../machine/workflow-directive.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
 import { makeProgressedState } from '../fixtures.js';
 
@@ -162,9 +162,11 @@ describe('buildFinishCard — composition-only (no independent evaluation)', () 
     expect(buildFinishCard(state, policy).blocker).toEqual(buildBlockedProjection(state, policy));
   });
 
-  it('nextAction.primaryCommand equals resolveNextAction commands[0] ?? null', () => {
-    const next = resolveNextAction(state.phase, state);
-    expect(buildFinishCard(state, policy).nextAction.primaryCommand).toBe(next.commands[0] ?? null);
+  it('directive equals resolveWorkflowDirective verbatim', () => {
+    expect(buildFinishCard(state, policy).directive).toEqual(resolveWorkflowDirective(state));
+    expect(buildFinishCard(state, policy).directive.commands[0] ?? null).toBe(
+      resolveWorkflowDirective(state).commands[0] ?? null,
+    );
   });
 
   it('warnings equal the readiness projection warnings', () => {

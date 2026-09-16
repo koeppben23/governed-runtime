@@ -25,7 +25,7 @@ import { renderMarkdown } from './markdown.js';
 import type { PresentationRenderOptions } from './glyph-profile.js';
 import type { CompactProofPresentation } from './proof-model.js';
 import { buildProofGraphSection } from './proof-summary.js';
-import { buildReviewDecisionConclusion } from './review-decision.js';
+import { buildReviewDecisionConclusion, type DirectiveProjection } from './review-decision.js';
 import { projectReviewDecision } from './review-decision.js';
 import type { ReviewDecisionProjectionInput } from './review-decision.js';
 
@@ -34,11 +34,8 @@ import type { ReviewDecisionProjectionInput } from './review-decision.js';
 export interface EvidenceReviewCardInput {
   /** Human-readable phase label (from PHASE_LABELS). */
   phaseLabel: string;
-  /** Canonical product-next-action guidance (from buildProductNextAction). */
-  productNextAction: {
-    text: string;
-    commands: readonly string[];
-  };
+  /** Canonical workflow directive projection (code + commands verbatim). */
+  directive: DirectiveProjection;
   /** Optional compact ProofGraph summary for the review card (post-implementation evaluation). */
   proofSummary: CompactProofPresentation;
   /** Status line describing the review convergence (converged or force-converged). */
@@ -125,16 +122,13 @@ export function buildEvidenceReviewDocument(input: EvidenceReviewCardInput): Rev
 
   const document: ReviewCardDocument = {
     kind: 'review_card',
-    form: input.productNextAction.commands.some((command) =>
+    form: input.directive.commands.some((command) =>
       ['/approve', '/request-changes', '/reject'].includes(command),
     )
       ? 'decision'
       : 'terminal',
     sections,
-    conclusion: buildReviewDecisionConclusion(
-      input.productNextAction,
-      EVIDENCE_ACTION_DESCRIPTIONS,
-    ),
+    conclusion: buildReviewDecisionConclusion(input.directive, EVIDENCE_ACTION_DESCRIPTIONS),
   };
 
   return document;

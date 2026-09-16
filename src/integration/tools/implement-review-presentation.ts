@@ -12,6 +12,8 @@ import {
 import { buildProofGraphSection } from '../../presentation/proof-summary.js';
 import type { CompactProofPresentation } from '../../presentation/proof-model.js';
 import { getInstalledCommand } from '../installed-commands.js';
+import { directiveLabel } from '../../presentation/directive-copy.js';
+import type { DirectiveProjection } from '../../presentation/review-decision.js';
 
 export function buildImplReviewBlockedMarkdown(
   message: string,
@@ -42,7 +44,7 @@ export function buildImplReviewBlockedMarkdown(
 export function buildImplReviewChangesRequestedMarkdown(
   statusLine: string,
   proofSummary: CompactProofPresentation,
-  productNextAction: { readonly text: string; readonly commands: readonly string[] },
+  directive: DirectiveProjection,
 ): string {
   const sections: PresentationSection[] = [
     { kind: 'text', content: normalizedMarkdown(statusLine) },
@@ -55,26 +57,23 @@ export function buildImplReviewChangesRequestedMarkdown(
     sections,
     conclusion: {
       kind: 'next_action',
-      action: implReviewAction(productNextAction),
+      action: implReviewAction(directive),
     },
   };
   return renderMarkdown(document);
 }
 
-function implReviewAction(productNextAction: {
-  readonly text: string;
-  readonly commands: readonly string[];
-}): {
+function implReviewAction(directive: DirectiveProjection): {
   invocation: string | null;
   description: string;
   visibility: 'recommended' | 'available';
   intent?: import('../../presentation/action-intent.js').ActionIntent;
 } {
-  const invocation = productNextAction.commands[0] ?? null;
+  const invocation = directive.commands[0] ?? null;
   if (!invocation) {
     return {
       invocation: null,
-      description: productNextAction.text,
+      description: directiveLabel(directive.code),
       visibility: 'recommended',
     };
   }

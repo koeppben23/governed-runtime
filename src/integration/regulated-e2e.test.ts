@@ -31,6 +31,7 @@ import {
   run_check,
   implement,
   review_implementation,
+  export as exportTool,
 } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
@@ -220,30 +221,45 @@ describe('regulated-e2e critical path', () => {
     await driveToEvidenceReview();
     await approveWithReviewer('evidence-reviewer');
 
-    expect(await phase()).toBe('COMPLETE');
+    expect(await phase()).toBe('EXPORT_READY');
+    const exportResult = await callOk(exportTool, {});
+    expect(exportResult.phase).toBe('COMPLETE');
+    expect(exportResult.archiveStatus).toBe('verified');
+
     const state = await readState(await sessDir());
     expect(state?.phase).toBe('COMPLETE');
     expect(state?.policySnapshot.mode).toBe('regulated');
-    expect(state?.regulatedArchiveStatus).toBeDefined();
+    expect(state?.regulatedArchiveStatus).toBe('verified');
+    expect(state?.exportCompletionEvidence).not.toBeNull();
     const events = (await readAuditTrail(await sessDir())).events;
-    const transitionIndex = events.findIndex(
+    const approvalTransitionIndex = events.findIndex(
       (event) =>
         event.detail.kind === 'transition' &&
         event.detail.from === 'EVIDENCE_REVIEW' &&
-        event.detail.to === 'COMPLETE',
+        event.detail.to === 'EXPORT_READY' &&
+        event.detail.event === 'APPROVE',
+    );
+    const exportTransitionIndex = events.findIndex(
+      (event) =>
+        event.detail.kind === 'transition' &&
+        event.detail.from === 'EXPORT_READY' &&
+        event.detail.to === 'COMPLETE' &&
+        event.detail.event === 'EXPORT_MATERIALIZED',
     );
     const decisionIndex = events.findIndex(
       (event) =>
         event.detail.kind === 'decision' &&
         event.detail.fromPhase === 'EVIDENCE_REVIEW' &&
-        event.detail.toPhase === 'COMPLETE',
+        event.detail.toPhase === 'EXPORT_READY',
     );
     const lifecycleIndex = events.findIndex(
       (event) => event.event === 'lifecycle:session_completed',
     );
-    expect(transitionIndex).toBeGreaterThanOrEqual(0);
-    expect(decisionIndex).toBeGreaterThan(transitionIndex);
+    expect(approvalTransitionIndex).toBeGreaterThanOrEqual(0);
+    expect(exportTransitionIndex).toBeGreaterThan(approvalTransitionIndex);
+    expect(decisionIndex).toBeGreaterThan(approvalTransitionIndex);
     expect(lifecycleIndex).toBeGreaterThan(decisionIndex);
+    expect(lifecycleIndex).toBeGreaterThan(exportTransitionIndex);
     const fingerprint = await computeFingerprint(ctx.worktree);
     expect((await verifyRegulatedArchive(fingerprint.fingerprint, ctx.sessionID)).passed).toBe(
       true,

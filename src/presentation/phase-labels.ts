@@ -28,12 +28,15 @@ export const PHASE_LABELS = {
   IMPL_VALIDATION: 'Re-validating implementation',
   IMPL_REVIEW: 'Implementation review in progress',
   EVIDENCE_REVIEW: 'Ready for final review',
+  EXPORT_READY: 'Ready to export',
   COMPLETE: 'Complete',
   ARCHITECTURE: 'Architecture in progress',
   ARCH_REVIEW: 'Ready for architecture review',
   ARCH_COMPLETE: 'Architecture complete',
   REVIEW: 'Compliance review',
   REVIEW_COMPLETE: 'Review complete',
+  REJECTED: 'Workflow rejected',
+  ABORTED: 'Workflow aborted',
 } satisfies Record<Phase, string>;
 
 /**

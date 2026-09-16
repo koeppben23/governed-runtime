@@ -1,7 +1,7 @@
 import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 
 export const REJECT_COMMAND = `---
-description: FlowGuard — Reject the currently active review gate, returning to the workflow start.
+description: FlowGuard — Reject the currently active review gate and terminate the workflow.
 ---
 
 You are managing a FlowGuard-controlled development workflow.
@@ -18,7 +18,7 @@ Rejection reason: $ARGUMENTS
 
 2. If FlowGuard blocks the decision: report the reason and stop.
 
-3. On success, report what was rejected, where the workflow returns to, and the next action.
+3. On success, report what was rejected and that the workflow is terminal.
 
 ## Rules
 
@@ -29,7 +29,7 @@ ${renderCommandGovernanceRules()}
 ## Done-when
 
 - Reject verdict recorded via flowguard_decision.
-- Phase transition and next action reported.
+- Terminal phase transition reported.
 - If \`presentation.markdown\` was present, it was printed verbatim and its
   rendered conclusion (the trailing \`→\`/\`•\` command line or the
   \`## Decision required\` block) is the next-action guidance — do NOT append a

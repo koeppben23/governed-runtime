@@ -91,6 +91,12 @@ const SINGLE_PHASE_ALLOWLIST: readonly SinglePhaseAllowance[] = [
     reason:
       'flow-specific completion contract: recovery/resume must select only the ticket-flow COMPLETE terminal (phase AND transition target) and never touch regulated ARCH/REVIEW completions',
   },
+  {
+    file: 'integration/tools/export-tool.ts',
+    max: 1,
+    reason:
+      'flow-specific contention re-read: the export rail can only have produced the ticket-flow COMPLETE position after materialization',
+  },
 ];
 
 /** Quoted terminal literal adjacent to an equality operator (a comparison). */

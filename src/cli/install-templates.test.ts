@@ -31,6 +31,7 @@ import {
   renderMandates,
   renderPhaseAwareMandates,
 } from '../rendering/mandates-renderer.js';
+import { INSTALLED_TEMPLATE_FILES } from '../integration/installed-commands.js';
 import { REPO_ROOT, setupCliTestEnvironment } from './install-test-helpers.test.js';
 
 setupCliTestEnvironment();
@@ -91,38 +92,8 @@ describe('DEV_REPO_INVARIANTS', () => {
     });
 
     it('COMMANDS template covers all slash commands', () => {
-      const commandNames = Object.keys(COMMANDS);
-      expect(commandNames).toHaveLength(26);
-      for (const expected of [
-        'hydrate.md',
-        'status.md',
-        'ticket.md',
-        'plan.md',
-        'continue.md',
-        'implement.md',
-        'extend-implementation-review.md',
-        'resolve-implementation-challenge.md',
-        'reconcile-mutation-episode.md',
-        'validate.md',
-        'review-decision.md',
-        'review.md',
-        'architecture.md',
-        'abort.md',
-        'archive.md',
-        'start.md',
-        'task.md',
-        'approve.md',
-        'request-changes.md',
-        'reject.md',
-        'check.md',
-        'export.md',
-        'why.md',
-        'finish.md',
-        'help.md',
-        'commands.md',
-      ]) {
-        expect(commandNames).toContain(expected);
-      }
+      const commandNames = Object.keys(COMMANDS).sort();
+      expect(commandNames).toEqual([...INSTALLED_TEMPLATE_FILES].sort());
     });
 
     it('all slash commands use Goal/Rules/Governance/Done-when structure', () => {

@@ -85,7 +85,7 @@ import {
   hashFindings,
 } from './review/assurance.js';
 import { resolveAttemptDiscoveryOrBlock } from './review/discovery-attempt-context.js';
-import { resolveNextAction, ACTION_CODES } from '../machine/next-action.js';
+import { resolveWorkflowDirective } from '../machine/workflow-directive.js';
 import { executeCheck } from '../verification/executor.js';
 
 const FIXED_TIME = '2026-08-15T14:00:00.000Z';
@@ -395,9 +395,14 @@ describe('implementation review without repository observation authority', () =>
     const first = await prepareBoundUnableReview(se, implementationDigest);
 
     const boundState = await readState(se.sDir);
-    expect(resolveNextAction('IMPL_REVIEW', boundState!).code).toBe(
-      ACTION_CODES.SUBMIT_REVIEWER_VERDICT,
-    );
+    // The canonical directive is position-based: a bound reviewer verdict keeps
+    // the session in IMPL_REVIEW system work (verdict submission is a tool
+    // obligation, not a user slash command).
+    expect(resolveWorkflowDirective(boundState!)).toMatchObject({
+      kind: 'system_work',
+      code: 'IMPLEMENTATION_REVIEW_IN_PROGRESS',
+      commands: [],
+    });
 
     const result = await review_implementation.execute(
       { reviewVerdict: 'unable_to_review' },
@@ -449,9 +454,11 @@ describe('implementation review without repository observation authority', () =>
     expect(obligations).toHaveLength(1);
     expect(obligations[0]).toMatchObject({ obligationId: first.obligationId, status: 'fulfilled' });
     expect(finalState!.reviewAssurance!.invocations.at(-1)!.consumedByObligationId).toBeNull();
-    expect(resolveNextAction('IMPL_REVIEW', finalState!).code).toBe(
-      ACTION_CODES.SUBMIT_REVIEWER_VERDICT,
-    );
+    expect(resolveWorkflowDirective(finalState!)).toMatchObject({
+      kind: 'system_work',
+      code: 'IMPLEMENTATION_REVIEW_IN_PROGRESS',
+      commands: [],
+    });
   });
 
   it('changes_requested binds via implementation anchor, re-record mints a fresh obligation, second review accepts', async () => {

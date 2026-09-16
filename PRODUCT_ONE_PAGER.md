@@ -27,12 +27,12 @@ FlowGuard governs the engineering process _around_ AI-assisted development — i
 ### Deterministic Workflows
 
 - Three independent flows: Ticket (full dev lifecycle), Architecture (ADR creation, ARCH_REVIEW → ARCH_COMPLETE), Review (content-aware, obligation-bound)
-- 15 explicit phases with computed next actions
+- 18 explicit phases with computed next actions
 - Explicit `/status` orientation surface (compact + focused detail views)
 - Phase gates require evidence before progression
 - Fail-closed enforcement: execution blocks when evidence or state is invalid. Enforcement strength is host-dependent: synchronous (in-process block) on OpenCode; best-effort fail-closed on hook-gated hosts (Claude Code, Codex).
 - External references for `/ticket` and `/review`: link Jira, ADO, GitHub Issues, PRs, branches, commits, and Confluence docs with full audit provenance (type, source, extractedAt)
-- Product command facade (`/start`, `/task`, `/approve`, `/request-changes`, `/reject`, `/check`, `/export`, `/why`) for intuitive daily use; canonical commands remain fully supported
+- Product command facade (`/start`, `/task`, `/approve`, `/request-changes`, `/reject`, `/check`, `/why`) for intuitive daily use; canonical commands remain fully supported. `/export` materializes the required verifiable export and completes the ticket flow
 - Review Cards: structured markdown cards (Plan Review Card, Architecture Review Card, Review Report Card) injected at review gates. Cards are derived presentation artifacts — `session-state.json` remains SSOT
 
 ### Policy Enforcement

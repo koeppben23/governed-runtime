@@ -61,7 +61,6 @@ import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers
 import { TEAM_POLICY } from '../config/policy.js';
 import {
   clearUserDecisionIntents,
-  consumeImplementationReviewExtensionIntent,
   peekUserDecisionIntent,
   recordUserDecisionIntent,
   recordUserDecisionIntentFromCommand,
@@ -502,31 +501,28 @@ describe('decision', () => {
       expect(result.code).toBe('HUMAN_DECISION_REQUIRED');
     });
 
-    it('P0: /extend-implementation-review intent never authorizes a decision verdict', async () => {
+    it('routes /override-approve intent to the governance-override gate (not a plain approval)', async () => {
       await reachPlanReview();
-      // Simulate OpenCode command.execute.before recording the extension command.
+      // Simulate OpenCode command.execute.before recording the override command.
       recordUserDecisionIntentFromCommand({
         sessionId: ctx.sessionID,
-        command: '/extend-implementation-review',
-        arguments: '1',
+        command: '/override-approve',
+        arguments: '',
       });
-      const blocked = parseToolResult(
-        await decision.execute({ verdict: 'reject', rationale: 'Not authorized' }, ctx),
+      const result = parseToolResult(
+        await decision.execute(
+          { verdict: 'approve_with_governance_override', rationale: 'Unnecessary override' },
+          ctx,
+        ),
       );
-      expect(blocked.error).toBe(true);
-      expect(blocked.code).toBe('HUMAN_DECISION_REQUIRED');
+      // The intent authorized the call (not HUMAN_DECISION_REQUIRED); the gate
+      // itself rejects the override because the plan review did not exhaust.
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('GOVERNANCE_OVERRIDE_NOT_REQUIRED');
 
-      // No state transition: the extension intent cannot gate a reject.
+      // No state transition: the plan gate is untouched.
       const state = await readState(await currentSessionDir());
       expect(state?.phase).toBe('PLAN_REVIEW');
-
-      // The extension intent is still intact for the extension tool.
-      expect(
-        consumeImplementationReviewExtensionIntent({
-          sessionId: ctx.sessionID,
-          additionalIterations: 1,
-        }),
-      ).toMatchObject({ ok: true });
     });
 
     it('consumes user-command intent once', async () => {
@@ -546,13 +542,24 @@ describe('decision', () => {
       expect(second.code).toBe('HUMAN_DECISION_REQUIRED');
     });
 
-    it('reject at PLAN_REVIEW returns to TICKET', async () => {
+    it('reject at PLAN_REVIEW enters the terminal REJECTED phase', async () => {
       await reachPlanReview();
       recordUserDecision('reject');
       const raw = await decision.execute({ verdict: 'reject', rationale: 'Need rethink' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('TICKET');
+      expect(result.phase).toBe('REJECTED');
+      expect(result.directive).toMatchObject({
+        kind: 'terminal',
+        code: 'WORKFLOW_REJECTED',
+        commands: [],
+      });
+
+      // Rejection preserves the reviewed evidence and the recorded decision.
+      const state = await readState(await currentSessionDir());
+      expect(state?.plan).not.toBeNull();
+      expect(state?.selfReview).not.toBeNull();
+      expect(state?.reviewDecision?.verdict).toBe('reject');
     });
 
     it('changes_requested at PLAN_REVIEW returns to PLAN', async () => {

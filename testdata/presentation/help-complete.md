@@ -5,16 +5,15 @@
 
 ## Next
 
-`/status` — Show the current phase and next action.
+Workflow complete.
 
 ## Available commands
 
-  - **`/status`** — Show the current phase and next action.
-  - `/continue` — Route to the next workflow step.
+  - `/status` — Show the current phase and next action.
   - `/abort` — End the current workflow without presenting it as completed.
   - `/start` — Prepare or restore a governed session.
-  - `/export` — Export audit package as tar.gz (redactionMode: none|basic|pseudonymous, default basic; includeRaw: true|false, default false). (aliases: `/archive`)
   - `/why` — Explain the current runtime blocker.
+  - `/finish` — Show completion readiness without changing the workflow.
 
 **Session artifacts:**
   ticket: available "Fix the auth bug in login.ts" (digest: digest-o...)

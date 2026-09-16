@@ -89,7 +89,9 @@ export function buildWhyDocument(
           ? 'review_pending'
           : projection.blocker.blocked
             ? 'blocked'
-            : 'success',
+            : conclusion.kind === 'terminal'
+              ? 'terminal'
+              : 'success',
     sections,
     conclusion,
   };

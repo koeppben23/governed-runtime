@@ -43,6 +43,8 @@ import type {
 } from '../state/proofgraph-approval.js';
 import { hashText } from '../shared/hashing.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { directiveLabel } from '../presentation/index.js';
+import type { WorkflowDirectiveCode } from '../machine/workflow-directive.js';
 
 // ─── Test Fixtures ────────────────────────────────────────────────────────────
 
@@ -209,12 +211,14 @@ describe('proofGraph — persisted coverage summary', () => {
   });
 });
 
-describe('productNextAction — aborted terminal session (governance integrity)', () => {
+describe('directive — aborted terminal session (governance integrity)', () => {
   const policy = getPolicyPreset('solo');
 
-  it('redirects an aborted COMPLETE session to read-only /status', () => {
+  it('an ABORTED session is terminal and never routed to an export command', () => {
     const state: SessionState = {
-      ...makeMinimalState('COMPLETE'),
+      ...makeMinimalState('ABORTED'),
+      // ABORTED retains its diagnostic error marker for audit provenance; the
+      // terminal position must remain authoritative over it.
       error: {
         code: 'ABORTED',
         message: 'Operator aborted',
@@ -224,16 +228,39 @@ describe('productNextAction — aborted terminal session (governance integrity)'
     };
     const projection = buildStatusProjection(state, policy);
     // An aborted session must not be routed to /export as a verifiable audit package.
-    expect(projection.productNextAction.primaryCommand).toBe('/status');
-    expect(String(projection.productNextAction.summary).toLowerCase()).toContain('aborted');
-    expect(projection.productNextAction.summary).not.toContain('/export');
-    expect(projection.productNextAction.summary).not.toContain('/finish');
-    expect(projection.productNextAction.summary).not.toContain('/review');
+    expect(projection.directive).toEqual({
+      kind: 'terminal',
+      code: 'WORKFLOW_ABORTED',
+      allowedIntents: [],
+      commands: [],
+    });
+    expect(projection.conclusion).toEqual({
+      kind: 'terminal',
+      message: directiveLabel('WORKFLOW_ABORTED'),
+    });
+    expect(projection.directive.commands).not.toContain('/export');
   });
 
-  it('a clean COMPLETE session is unaffected (still offers /export)', () => {
-    const projection = buildStatusProjection(makeMinimalState('COMPLETE'), policy);
-    expect(projection.productNextAction.summary).toContain('/export');
+  it('a clean completion path offers /export at EXPORT_READY, never at COMPLETE', () => {
+    const exportReady = buildStatusProjection(makeMinimalState('EXPORT_READY'), policy);
+    expect(exportReady.directive).toEqual({
+      kind: 'user_action',
+      code: 'EXPORT_REQUIRED',
+      allowedIntents: ['EXPORT'],
+      commands: ['/export'],
+    });
+    expect(exportReady.conclusion).toMatchObject({
+      kind: 'next_action',
+      action: { invocation: '/export' },
+    });
+
+    const complete = buildStatusProjection(makeMinimalState('COMPLETE'), policy);
+    expect(complete.directive).toEqual({
+      kind: 'terminal',
+      code: 'WORKFLOW_COMPLETE',
+      allowedIntents: [],
+      commands: [],
+    });
   });
 });
 
@@ -321,13 +348,30 @@ describe('buildStatusProjection — BAD', () => {
 describe('buildStatusProjection — CORNER', () => {
   const policy = getPolicyPreset('solo');
 
+  const TERMINAL_DIRECTIVE_CODES: Record<string, WorkflowDirectiveCode> = {
+    COMPLETE: 'WORKFLOW_COMPLETE',
+    ARCH_COMPLETE: 'ARCHITECTURE_COMPLETE',
+    REVIEW_COMPLETE: 'PEER_REVIEW_COMPLETE',
+    REJECTED: 'WORKFLOW_REJECTED',
+    ABORTED: 'WORKFLOW_ABORTED',
+  };
+
   for (const phase of TERMINAL) {
-    it(`terminal phase ${phase}: no blocker`, () => {
+    it(`terminal phase ${phase}: no blocker and a terminal directive`, () => {
       const state = makeMinimalState(phase);
       const projection = buildStatusProjection(state, policy);
 
       expect(projection.blocker).toBeNull();
-      expect(projection.nextAction.summary).toBeTruthy();
+      expect(projection.directive).toEqual({
+        kind: 'terminal',
+        code: TERMINAL_DIRECTIVE_CODES[phase],
+        allowedIntents: [],
+        commands: [],
+      });
+      expect(projection.conclusion).toEqual({
+        kind: 'terminal',
+        message: directiveLabel(TERMINAL_DIRECTIVE_CODES[phase]!),
+      });
     });
   }
 

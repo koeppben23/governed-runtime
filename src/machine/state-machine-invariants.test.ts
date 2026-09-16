@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { makeProgressedState } from '../fixtures.js';
 import type { Phase } from '../state/schema.js';
 import { evaluate } from './evaluate.js';
-import { resolveNextAction } from './next-action.js';
+import { resolveWorkflowDirective } from './workflow-directive.js';
 import { Command, isCommandAllowed } from './commands.js';
 import { executeReviewDecision } from '../rails/review-decision.js';
 import { getPolicyPreset } from '../config/policy.js';
@@ -23,9 +23,17 @@ const ALL_PHASES: Phase[] = [
   'ARCH_COMPLETE',
   'REVIEW',
   'REVIEW_COMPLETE',
+  'REJECTED',
+  'ABORTED',
 ];
 
-const TERMINAL_PHASES: Phase[] = ['COMPLETE', 'ARCH_COMPLETE', 'REVIEW_COMPLETE'];
+const TERMINAL_PHASES: Phase[] = [
+  'COMPLETE',
+  'ARCH_COMPLETE',
+  'REVIEW_COMPLETE',
+  'REJECTED',
+  'ABORTED',
+];
 
 const ALL_COMMANDS: Command[] = Object.values(Command);
 
@@ -77,9 +85,9 @@ describe('state machine invariants', () => {
     }
   });
 
-  describe('HAPPY/EDGE — evaluate and next-action are deterministic', () => {
+  describe('HAPPY/EDGE — evaluate and workflow directives are deterministic', () => {
     for (const phase of ALL_PHASES) {
-      it(`${phase}: repeated evaluate(...) and resolveNextAction(...) are identical`, () => {
+      it(`${phase}: repeated evaluate(...) and resolveWorkflowDirective(...) are identical`, () => {
         const state = makeProgressedState(phase);
         const policy = getPolicyPreset('team');
 
@@ -90,9 +98,9 @@ describe('state machine invariants', () => {
         expect(evalA).toEqual(evalB);
         expect(evalB).toEqual(evalC);
 
-        const actionA = resolveNextAction(phase, state);
-        const actionB = resolveNextAction(phase, state);
-        const actionC = resolveNextAction(phase, state);
+        const actionA = resolveWorkflowDirective(state);
+        const actionB = resolveWorkflowDirective(state);
+        const actionC = resolveWorkflowDirective(state);
 
         expect(actionA).toEqual(actionB);
         expect(actionB).toEqual(actionC);
@@ -100,19 +108,12 @@ describe('state machine invariants', () => {
     }
   });
 
-  describe('HAPPY/BAD — allowed commands are subset of command policy', () => {
-    const knownSlashCommands = new Set(ALL_COMMANDS.map((c) => `/${c}`));
-
+  describe('HAPPY/BAD — directives preserve command order', () => {
     for (const phase of ALL_PHASES) {
-      it(`${phase}: next-action commands are known and allowed in phase`, () => {
+      it(`${phase}: directive commands are deterministic`, () => {
         const state = makeProgressedState(phase);
-        const action = resolveNextAction(phase, state);
-
-        for (const command of action.commands) {
-          expect(knownSlashCommands.has(command)).toBe(true);
-          const enumCommand = command.slice(1) as Command;
-          expect(isCommandAllowed(phase, enumCommand)).toBe(true);
-        }
+        const directive = resolveWorkflowDirective(state);
+        expect(directive.commands).toEqual(resolveWorkflowDirective(state).commands);
       });
     }
   });

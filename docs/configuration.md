@@ -115,27 +115,27 @@ Re-install with `--force` updates the value; without `--force`, the existing con
 
 Invalid or unrecognized policy mode values are rejected with an explicit `PolicyConfigurationError` (fail-stop). No productive path silently maps unknown modes to a fallback.
 
-### policy.maxSelfReviewIterations
+### policy.reviewBudget
 
-**Type:** `number` (1-10)
-**Default:** Preset value (solo=2, team/team-ci/regulated=3)
+**Type:** object with integer `plan`, `architecture`, and `implementation` fields (1-10)
+**Default:** `3` for every budget in every policy preset
 
-Overrides the maximum independent review iterations in PLAN phase. The field name is retained as the persisted policy contract:
+Overrides review-loop budgets field-wise:
 
 ```json
 {
   "policy": {
-    "maxSelfReviewIterations": 5
+    "reviewBudget": {
+      "plan": 5,
+      "architecture": 4,
+      "implementation": 7
+    }
   }
 }
 ```
 
-**Resolution priority:**
-
-1. Config override (`config.policy.maxSelfReviewIterations`)
-2. Policy preset value (solo=2, team=3, team-ci=3, regulated=3)
-
-Applies only to new sessions. Existing sessions retain their snapshot value.
+Omitted budget fields use the resolved policy preset value. Applies only to new
+sessions. Existing sessions retain their snapshot value.
 
 ### policy.identityProvider
 
@@ -246,28 +246,6 @@ Minimum required actor assurance for `approve` verdicts at user gates. The
 approver's resolved assurance tier must be `>=` this value, otherwise
 `/review-decision approve` is rejected with `ACTOR_ASSURANCE_INSUFFICIENT`.
 
-### policy.maxImplReviewIterations
-
-**Type:** `number` (1-10)
-**Default:** Preset value (solo=1, team/team-ci/regulated=3)
-
-Overrides the maximum impl-review iterations in IMPL_REVIEW phase:
-
-```json
-{
-  "policy": {
-    "maxImplReviewIterations": 7
-  }
-}
-```
-
-**Resolution priority:**
-
-1. Config override (`config.policy.maxImplReviewIterations`)
-2. Policy preset value (solo=1, team=3, team-ci=3, regulated=3)
-
-Applies only to new sessions. Existing sessions retain their snapshot value.
-
 ### policy.allowReducedCeremony
 
 **Type:** `boolean`
@@ -330,8 +308,7 @@ fails closed rather than silently auto-approving.
 
 Config values are resolved once at session creation (first `/hydrate`). The resolved values become part of the immutable session snapshot:
 
-- `policySnapshot.maxSelfReviewIterations`
-- `policySnapshot.maxImplReviewIterations`
+- `policySnapshot.reviewBudget`
 - `policySnapshot.maxIncoherentReviewerCaptureRetries`
 - `policySnapshot.allowReducedCeremony`
 - `profileResolution.activeChecks`

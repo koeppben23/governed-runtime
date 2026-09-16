@@ -8,7 +8,7 @@ import type { ToolDefinition } from './helpers.js';
 import { formatError } from './error-format.js';
 import { isOpenImplementationChallenge } from './implement-review.js';
 import {
-  enrichWithNextAction,
+  enrichWithWorkflowDirective,
   formatBlocked,
   withMutableSessionTransaction,
   writeStateWithArtifacts,
@@ -129,7 +129,7 @@ export const resolve_implementation_challenge: ToolDefinition = {
         };
         await writeStateWithArtifacts(sessDir, nextState);
         return JSON.stringify(
-          enrichWithNextAction(
+          enrichWithWorkflowDirective(
             {
               phase: nextState.phase,
               status:

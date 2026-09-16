@@ -59,7 +59,7 @@ ${SHARED_REVIEW_LOOP({
     'flowguard_architecture({ title: <same title>, adrText: <same ADR text>, claims: <same claims> })',
   strictRecoveryVerb: 'Re-submit',
   strictRecoveryNoun: 're-submissions',
-  iterationNote: '(max iterations from policy.maxSelfReviewIterations)',
+  iterationNote: '(max iterations from policy.reviewBudget.architecture)',
   repeatStep: 5,
   subagentExtra:
     ' with subagent_type "flowguard-reviewer" only — FlowGuard supplies the frozen ADR, ticket/context, iteration, planVersion, and all canonical reviewer instructions by host injection',

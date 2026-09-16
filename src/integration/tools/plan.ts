@@ -47,7 +47,7 @@ import {
   withMutableSessionTransaction,
   formatBlocked,
   formatAutoAdvanceOverflow,
-  enrichWithNextAction,
+  enrichWithWorkflowDirective,
   writeStateWithArtifacts,
 } from './helpers.js';
 import type { SessionState } from '../../state/schema.js';
@@ -295,7 +295,7 @@ function buildPlanSubmissionState(
     validation: [],
     selfReview: {
       iteration: 0,
-      maxIterations: scope.maxSelfReviewIterations,
+      maxIterations: scope.maxPlanReviewIterations,
       prevDigest: null,
       currDigest: planEvidence.digest,
       revisionDelta: 'major',
@@ -426,14 +426,14 @@ function buildReviewedPlanState(
       claimSubmissionHistory: appendClaimSubmissionHistory(scope, revision.currentPlan.planVersion),
       reviewCompletion: resolvePlanReviewCompletion(
         nextIteration,
-        scope.maxSelfReviewIterations,
+        scope.maxPlanReviewIterations,
         revision.revisionDelta,
         revision.verdict,
       ),
     },
     selfReview: {
       iteration: nextIteration,
-      maxIterations: scope.maxSelfReviewIterations,
+      maxIterations: scope.maxPlanReviewIterations,
       prevDigest: revision.prevDigest,
       currDigest: revision.currentPlan.digest,
       revisionDelta: revision.revisionDelta,
@@ -511,7 +511,7 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
     planVersion,
     transitions,
   });
-  return JSON.stringify(enrichWithNextAction(response, finalState));
+  return JSON.stringify(enrichWithWorkflowDirective(response, finalState));
 }
 
 /**
@@ -625,7 +625,7 @@ export const plan: ToolDefinition = {
           context,
           input: planInputFlags(typedArgs),
           reviewPolicy: planReviewPolicy(mutableSession),
-          maxSelfReviewIterations: mutableSession.policy.maxSelfReviewIterations,
+          maxPlanReviewIterations: mutableSession.policy.reviewBudget.plan,
         };
         // Call-shape validation runs FIRST: mixed inputs are rejected before
         // any lifecycle routing can re-emit a review instruction.

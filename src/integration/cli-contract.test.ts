@@ -57,7 +57,7 @@ type StatusResult = {
   status: { phase?: string; policyMode?: string };
   appliedPolicy: { effectiveMode?: string; effectiveGateBehavior?: string };
   completeness: { overallComplete?: boolean; fourEyes?: unknown; summary?: unknown };
-  nextAction?: unknown;
+  directive?: unknown;
 };
 
 vi.mock('../adapters/git', async (importOriginal) => {
@@ -247,7 +247,7 @@ describe('HAPPY: status JSON shape is stable', () => {
     expect(typeof result.status).toBe('object');
     expect(result.status.phase).toBe('READY');
     expect(result.status.policyMode).toBe('solo');
-    expect(result.nextAction).toBeDefined();
+    expect(result.directive).toBeDefined();
   });
 
   it('status at TICKET has required fields', async () => {
@@ -258,7 +258,7 @@ describe('HAPPY: status JSON shape is stable', () => {
     expect(result.phase).toBe('TICKET');
     expect(result.status).toBeDefined();
     expect(result.status.phase).toBe('TICKET');
-    expect(result.nextAction).toBeDefined();
+    expect(result.directive).toBeDefined();
   });
 
   it('status at PLAN_REVIEW has policy info in appliedPolicy', async () => {

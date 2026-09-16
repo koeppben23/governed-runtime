@@ -91,10 +91,9 @@ Three governed flows are available after `/start` (or `/hydrate`):
 2. `/task "description"` — capture your governed task
 3. `/plan` — generate an implementation plan (subagent-reviewed iteratively)
 4. `/approve` — approve the plan (or `/request-changes` to revise)
-5. `/check` — run validation checks on the baseline
-6. `/implement` — execute the approved plan (subagent-reviewed iteratively, including post-implementation validation)
-7. `/approve` — approve the implementation evidence
-8. `/export` — create a redacted audit-sharing package; authorized raw evidence is required for canonical verification
+5. `/implement` — execute the approved plan; FlowGuard runs the baseline validation automatically, then the post-implementation validation and the iterative subagent review
+6. `/approve` — approve the implementation evidence (advances to EXPORT_READY)
+7. `/export` — materialize the required verifiable export; the workflow reaches COMPLETE only after export evidence is persisted
 
 **Architecture flow** — record an Architecture Decision Record (ADR):
 
@@ -121,7 +120,7 @@ Three governed flows are available after `/start` (or `/hydrate`):
 `/status` — current phase, next action, evidence summary. `/why` — explain and resolve blockers.
 
 **Advanced/canonical commands** (`/hydrate`, `/ticket`, `/review-decision`,
-`/validate`, `/architecture`, `/review`, `/archive`, `/abort`, `/continue`)
+`/validate`, `/architecture`, `/review`, `/export`, `/archive`, `/abort`, `/continue`)
 remain fully supported for scripts, CI, and power users.
 
 See [docs/commands.md](./docs/commands.md) for the complete command reference and

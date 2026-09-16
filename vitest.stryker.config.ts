@@ -17,7 +17,7 @@ export default defineConfig({
       'src/identity/**/*.test.ts',
       'src/machine/**/*.test.ts',
       'src/rails/**/*.test.ts',
-      'src/integration/command-aliases.test.ts',
+      'src/integration/installed-commands.test.ts',
       'src/integration/status.test.ts',
       'src/integration/tool-classification.test.ts',
       'src/integration/tools/review-validation-mode.test.ts',

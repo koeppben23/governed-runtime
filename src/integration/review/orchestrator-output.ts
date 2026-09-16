@@ -36,8 +36,7 @@ export function buildMutatedOutput(
   // The original tool response was projected before host dispatch. Its pending
   // review metadata and Task instruction are stale once evidence is bound.
   delete parsed.reviewInvocation;
-  delete parsed.nextAction;
-  delete parsed.productNextAction;
+  delete parsed.directive;
 
   return JSON.stringify(parsed);
 }

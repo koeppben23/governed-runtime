@@ -229,7 +229,7 @@ description: Start or resume a governed FlowGuard session through the FlowGuard 
 Use the existing FlowGuard MCP tools. Do not infer or mutate FlowGuard state yourself.
 
 1. Call \`mcp__flowguard__flowguard_hydrate\` with no arguments.
-2. Read the returned JSON (\`phase\`, \`phaseLabel\`, \`nextAction\`, optional \`productNextAction\`).
+2. Read the returned JSON (\`phase\`, \`phaseLabel\`, \`directive\`).
 3. Report the result: for a new session, confirm it is active and present the available workflows (plan, architecture, review); for an existing session, report the phase label, session id when present, and next action.
 4. Note briefly that this is a governed session — every step produces verifiable evidence.
 5. If the tool returns a blocked or failed result, report the exact blocker and stop.

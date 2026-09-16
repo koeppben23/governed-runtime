@@ -71,11 +71,11 @@ The Plan Review Card footer lists the available decision commands with short exp
 
 Use `/request-changes` to revise the plan or `/reject` to stop the task.
 
-### 4. Validate (Check)
+### 4. Validate (Automatic)
 
-```
-/check
-```
+FlowGuard runs the baseline validation checks automatically when the plan is
+approved and the phase advances. No command is required; `/check` remains
+available as a compatibility surface if checks need to be re-run explicitly.
 
 ### 5. Implement
 
@@ -102,11 +102,13 @@ approval.
 /export
 ```
 
-Creates a redacted audit-sharing package. Canonical verification requires an authorized raw auditor package.
+Materializes the required verifiable export and completes the workflow once
+export evidence is persisted. Canonical verification requires an authorized raw
+auditor package.
 
 All canonical commands (`/hydrate`, `/ticket`, `/review-decision`, `/validate`,
-`/architecture`, `/review`, `/archive`, `/abort`, `/continue`) remain fully
-supported for scripts, CI, and advanced workflows.
+`/architecture`, `/review`, `/export`, `/archive`, `/abort`, `/continue`) remain
+fully supported for scripts, CI, and advanced workflows.
 
 ## Architecture Flow (ADR Creation)
 
@@ -163,8 +165,8 @@ Or review a specific GitHub pull request:
 | `/approve`            | Approve at the current review gate          |
 | `/request-changes`    | Request changes at the current review gate  |
 | `/reject`             | Reject at the current review gate           |
-| `/check`              | Run validation                              |
-| `/export`             | Archive the session                         |
+| `/check`              | Compatibility: re-run validation            |
+| `/export`             | Materialize the verifiable export           |
 | `/why`                | Diagnostic: explain the current next-action |
 | `/status`             | Read-only session view                      |
 

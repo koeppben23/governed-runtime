@@ -823,8 +823,7 @@ describe('buildMutatedOutput', () => {
     const output = JSON.stringify({
       next: 'INDEPENDENT_REVIEW_REQUIRED',
       reviewInvocation: { status: 'pending_review', next: 'INDEPENDENT_REVIEW_REQUIRED' },
-      nextAction: { code: 'RUN_PLAN' },
-      productNextAction: { presentationForm: 'review_pending' },
+      directive: { code: 'PLAN_REVIEW_IN_PROGRESS' },
     });
 
     const parsed = JSON.parse(buildMutatedOutput(output, reviewerResult)!) as Record<
@@ -834,8 +833,7 @@ describe('buildMutatedOutput', () => {
 
     expect(parsed.next).toContain('INDEPENDENT_REVIEW_COMPLETED');
     expect(parsed).not.toHaveProperty('reviewInvocation');
-    expect(parsed).not.toHaveProperty('nextAction');
-    expect(parsed).not.toHaveProperty('productNextAction');
+    expect(parsed).not.toHaveProperty('directive');
   });
 
   // EDGE: findings is null (parsing failed) — fail-closed: returns null

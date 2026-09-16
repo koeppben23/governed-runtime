@@ -24,26 +24,26 @@ const ABORT_INPUT: AbortInput = { reason: 'Testing abort', actor: 'test-runner' 
 describe('abort rail', () => {
   // ── HAPPY ──────────────────────────────────────────────────────────────
   describe('HAPPY', () => {
-    it('transitions from TICKET to COMPLETE with ABORTED error', () => {
+    it('transitions from TICKET to ABORTED with an ABORTED error', () => {
       const state = makeState('TICKET');
       const result = executeAbort(state, ABORT_INPUT, ctx);
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
-        expect(result.state.phase).toBe('COMPLETE');
+        expect(result.state.phase).toBe('ABORTED');
         expect(result.state.error?.code).toBe('ABORTED');
         expect(result.state.error?.message).toBe('Testing abort');
         expect(result.transitions[0]!.event).toBe('ABORT');
         expect(result.transitions[0]!.from).toBe('TICKET');
-        expect(result.transitions[0]!.to).toBe('COMPLETE');
+        expect(result.transitions[0]!.to).toBe('ABORTED');
       }
     });
 
-    it('transitions from READY to COMPLETE (works from any phase)', () => {
+    it('transitions from READY to ABORTED (works from any phase)', () => {
       const state = makeState('READY');
       const result = executeAbort(state, ABORT_INPUT, ctx);
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
-        expect(result.state.phase).toBe('COMPLETE');
+        expect(result.state.phase).toBe('ABORTED');
         expect(result.state.error?.code).toBe('ABORTED');
       }
     });
@@ -66,7 +66,7 @@ describe('abort rail', () => {
     // REVIEW_COMPLETE are terminal too; the prior `phase === 'COMPLETE'` guard
     // let them be overwritten to COMPLETE + error.ABORTED, corrupting terminal
     // state. Abort on every terminal phase MUST be an idempotent no-op.
-    it.each(['ARCH_COMPLETE', 'REVIEW_COMPLETE'] as const)(
+    it.each(['ARCH_COMPLETE', 'REVIEW_COMPLETE', 'REJECTED', 'ABORTED'] as const)(
       '%s is terminal — abort is a no-op (no overwrite, no transition)',
       (phase) => {
         const state = makeProgressedState(phase);

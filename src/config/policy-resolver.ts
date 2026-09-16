@@ -14,6 +14,7 @@ import type {
   PolicyDegradedReason,
   PolicyMode,
   PolicySource,
+  ReviewBudget,
   ValidationEvidencePolicy,
 } from './policy-types.js';
 import { PolicyConfigurationError } from './policy-errors.js';
@@ -39,8 +40,7 @@ export interface HydratePolicyOptions {
   centralPolicyPath?: string;
   digestFn: (text: string) => string;
   readFileFn?: (path: string) => Promise<string>;
-  configMaxSelfReviewIterations?: number;
-  configMaxImplReviewIterations?: number;
+  configReviewBudget?: Partial<ReviewBudget>;
   configMaxIncoherentReviewerCaptureRetries?: number;
   configMaxReviewerOutputRepairAttempts?: number;
   configMinimumActorAssuranceForApproval?: 'best_effort' | 'claim_validated' | 'idp_verified';
@@ -94,12 +94,19 @@ function resolveValidationEvidence(
   };
 }
 
+function resolveReviewBudget(base: ReviewBudget, override?: Partial<ReviewBudget>): ReviewBudget {
+  return {
+    plan: override?.plan ?? base.plan,
+    architecture: override?.architecture ?? base.architecture,
+    implementation: override?.implementation ?? base.implementation,
+  };
+}
+
 /** Apply user-level config overrides (iteration limits, assurance, IdP) to a base policy. */
 function applyConfigOverrides(
   basePolicy: FlowGuardPolicy,
   opts: {
-    configMaxSelfReviewIterations?: number;
-    configMaxImplReviewIterations?: number;
+    configReviewBudget?: Partial<ReviewBudget>;
     configMaxIncoherentReviewerCaptureRetries?: number;
     configMaxReviewerOutputRepairAttempts?: number;
     configMinimumActorAssuranceForApproval?: 'best_effort' | 'claim_validated' | 'idp_verified';
@@ -114,10 +121,7 @@ function applyConfigOverrides(
 ): FlowGuardPolicy {
   return {
     ...basePolicy,
-    maxSelfReviewIterations:
-      opts.configMaxSelfReviewIterations ?? basePolicy.maxSelfReviewIterations,
-    maxImplReviewIterations:
-      opts.configMaxImplReviewIterations ?? basePolicy.maxImplReviewIterations,
+    reviewBudget: resolveReviewBudget(basePolicy.reviewBudget, opts.configReviewBudget),
     maxIncoherentReviewerCaptureRetries:
       opts.configMaxIncoherentReviewerCaptureRetries ??
       basePolicy.maxIncoherentReviewerCaptureRetries,

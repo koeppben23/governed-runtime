@@ -20,7 +20,7 @@ import type { PresentationRenderOptions } from './glyph-profile.js';
 import type { CompactProofPresentation } from './proof-model.js';
 import type { PlanClaimDeclarations } from '../state/proofgraph-approval.js';
 import { buildProofGraphSection } from './proof-summary.js';
-import { buildReviewDecisionConclusion } from './review-decision.js';
+import { buildReviewDecisionConclusion, type DirectiveProjection } from './review-decision.js';
 import { renderPlanClaimDeclarations } from './plan-claim-declarations.js';
 
 // ─── Card Input ──────────────────────────────────────────────────────────────
@@ -32,11 +32,8 @@ export interface PlanReviewCardInput {
   phase: Phase;
   /** Human-readable phase label (from PHASE_LABELS). */
   phaseLabel: string;
-  /** Product-friendly next action guidance (from buildProductNextAction). */
-  productNextAction: {
-    text: string;
-    commands: readonly string[];
-  };
+  /** Canonical workflow directive projection (code + commands verbatim). */
+  directive: DirectiveProjection;
   /** Plan version number (history.length + 1). Omitted when absent. */
   planVersion?: number;
   /** Active policy mode. Omitted when absent. */
@@ -83,7 +80,7 @@ const PLAN_ACTION_DESCRIPTIONS: Record<string, string> = {
  * The next action is the document conclusion:
  * - decision_required when human review commands are offered
  *   (/approve, /request-changes, /reject)
- * - terminal otherwise (productNextAction.text with no resolvable command)
+ * - terminal otherwise (directive code with no resolvable command)
  */
 export function buildPlanReviewCard(
   input: PlanReviewCardInput,
@@ -94,7 +91,7 @@ export function buildPlanReviewCard(
 
 /** Build the typed plan-review document before Markdown rendering. */
 export function buildPlanReviewDocument(input: PlanReviewCardInput): ReviewCardDocument {
-  const { planText, phaseLabel, productNextAction, planVersion, policyMode, taskTitle } = input;
+  const { planText, phaseLabel, directive, planVersion, policyMode, taskTitle } = input;
 
   const sections: PresentationSection[] = [];
 
@@ -184,13 +181,13 @@ export function buildPlanReviewDocument(input: PlanReviewCardInput): ReviewCardD
 
   const document: ReviewCardDocument = {
     kind: 'review_card',
-    form: productNextAction.commands.some((command) =>
+    form: directive.commands.some((command) =>
       ['/approve', '/request-changes', '/reject'].includes(command),
     )
       ? 'decision'
       : 'terminal',
     sections,
-    conclusion: buildReviewDecisionConclusion(productNextAction, PLAN_ACTION_DESCRIPTIONS),
+    conclusion: buildReviewDecisionConclusion(directive, PLAN_ACTION_DESCRIPTIONS),
   };
 
   return document;

@@ -31,4 +31,4 @@ Diagnostic: `flowguard_status({ proofGraph: true })`
 
 - Abandon this work
 
-→ `/status` — Show the current phase and next action.
+Workflow complete.

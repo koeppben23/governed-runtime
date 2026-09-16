@@ -27,8 +27,7 @@ const DEFAULT_TIMESTAMP_ASSURANCE: TimestampAssurancePolicy = {
 export const SOLO_POLICY: FlowGuardPolicy = {
   mode: 'solo',
   requireHumanGates: false,
-  maxSelfReviewIterations: 2,
-  maxImplReviewIterations: 1,
+  reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
   maxIncoherentReviewerCaptureRetries: 1,
   maxReviewerAttempts: DEFAULT_MAX_REVIEWER_ATTEMPTS,
   allowSelfApproval: true,
@@ -57,8 +56,7 @@ export const SOLO_POLICY: FlowGuardPolicy = {
 export const TEAM_POLICY: FlowGuardPolicy = {
   mode: 'team',
   requireHumanGates: true,
-  maxSelfReviewIterations: 3,
-  maxImplReviewIterations: 3,
+  reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
   maxIncoherentReviewerCaptureRetries: 1,
   maxReviewerAttempts: DEFAULT_MAX_REVIEWER_ATTEMPTS,
   allowSelfApproval: true,
@@ -87,8 +85,7 @@ export const TEAM_POLICY: FlowGuardPolicy = {
 export const TEAM_CI_POLICY: FlowGuardPolicy = {
   mode: 'team-ci',
   requireHumanGates: false,
-  maxSelfReviewIterations: 3,
-  maxImplReviewIterations: 3,
+  reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
   maxIncoherentReviewerCaptureRetries: 1,
   maxReviewerAttempts: DEFAULT_MAX_REVIEWER_ATTEMPTS,
   allowSelfApproval: true,
@@ -117,8 +114,7 @@ export const TEAM_CI_POLICY: FlowGuardPolicy = {
 export const REGULATED_POLICY: FlowGuardPolicy = {
   mode: 'regulated',
   requireHumanGates: true,
-  maxSelfReviewIterations: 3,
-  maxImplReviewIterations: 3,
+  reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
   maxIncoherentReviewerCaptureRetries: 1,
   maxReviewerAttempts: DEFAULT_MAX_REVIEWER_ATTEMPTS,
   allowSelfApproval: false,

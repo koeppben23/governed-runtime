@@ -173,6 +173,23 @@ describe('persistence', () => {
       expect(loaded!.plan!.current.digest).toBe(state.plan!.current.digest);
     });
 
+    it('writeState + readState round-trip preserves export completion evidence', async () => {
+      const evidence = {
+        id: FIXED_UUID,
+        packageDigest: 'a'.repeat(64),
+        purpose: 'auditor' as const,
+        integrityCapability: 'verifiable' as const,
+        createdAt: FIXED_TIME,
+      };
+      await writeState(tmpDir, {
+        ...makeProgressedState('COMPLETE'),
+        exportCompletionEvidence: evidence,
+      });
+      const loaded = await readState(tmpDir);
+      expect(loaded!.phase).toBe('COMPLETE');
+      expect(loaded!.exportCompletionEvidence).toEqual(evidence);
+    });
+
     it('readState rejects current-epoch states missing authority fields (no read-time defaulting)', async () => {
       for (const mode of ['regulated', 'team-ci'] as const) {
         const state = makeProgressedState('TICKET');
@@ -194,6 +211,19 @@ describe('persistence', () => {
           code: 'SCHEMA_VALIDATION_FAILED',
         });
       }
+    });
+
+    it('readState rejects current-epoch states missing exportCompletionEvidence (no read-time defaulting)', async () => {
+      const state = makeProgressedState('TICKET') as unknown as Record<string, unknown>;
+      const incomplete = { ...state };
+      delete incomplete.exportCompletionEvidence;
+
+      await fs.mkdir(tmpDir, { recursive: true });
+      await fs.writeFile(statePath(tmpDir), JSON.stringify(incomplete), 'utf-8');
+
+      await expect(readState(tmpDir)).rejects.toMatchObject({
+        code: 'SCHEMA_VALIDATION_FAILED',
+      });
     });
 
     it('readState rejects current-epoch states missing mutation/audit authority arrays', async () => {
@@ -294,7 +324,7 @@ describe('persistence', () => {
         findings: loaded.findings,
         completeness: { overallComplete: true, fourEyes: false, total: 0, summary: '0/0 complete' },
         proofSummary,
-        productNextAction: { text: 'Export.', commands: ['/export'] },
+        directive: { code: 'EXPORT_REQUIRED', commands: ['/export'] },
         conclusionAction: {
           invocation: '/export',
           description: 'Export.',

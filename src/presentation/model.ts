@@ -344,7 +344,7 @@ export interface HelpSummarySection {
     readonly message: string | null;
     readonly reasonCode: string | null;
   } | null;
-  readonly nextAction:
+  readonly directive:
     | { readonly invocation: string; readonly description: string }
     | { readonly summary: string }
     | null;

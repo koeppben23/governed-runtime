@@ -11,11 +11,10 @@
  * @version v1
  */
 
-import { withReadOnlySession, formatBlocked, enrichWithNextAction } from './helpers.js';
+import { withReadOnlySession, formatBlocked, enrichWithWorkflowDirective } from './helpers.js';
 import { formatError } from './error-format.js';
 import { USER_GATES, TERMINAL } from '../../machine/topology.js';
-import { resolveNextAction } from '../../machine/next-action.js';
-import { buildProductNextAction } from '../../presentation/next-action-copy.js';
+import { resolveWorkflowDirective } from '../../machine/workflow-directive.js';
 import type { ToolDefinition } from './helpers.js';
 import type { SessionState } from '../../state/schema.js';
 
@@ -108,23 +107,17 @@ export const continue_cmd: ToolDefinition = {
 
 function formatUserGateGuidance(state: SessionState): string {
   // Derive the gate decision commands from the canonical product projection
-  // instead of a local hardcoded list. buildProductNextAction resolves the
+  // instead of a local hardcoded list. resolveWorkflowDirective resolves the
   // user-gate phases (PLAN_REVIEW / EVIDENCE_REVIEW / ARCH_REVIEW) to their
   // decision commands from the machine authority, so /continue no longer keeps
   // a parallel copy of ['/approve', '/request-changes', '/reject'].
-  const nextAction = resolveNextAction(state.phase, state);
-  const productNext = buildProductNextAction(
-    nextAction,
-    state.phase,
-    state.error?.code === 'ABORTED',
-    state.regulatedArchiveStatus ?? null,
-  );
+  const directive = resolveWorkflowDirective(state);
   return formatContinueResponse(
     {
       phase: state.phase,
       status: `User gate active at ${state.phase}. A human decision is required.`,
       decisionRequired: true,
-      decisionCommands: productNext.commands,
+      decisionCommands: directive.commands,
       _continue: { action: 'manual_decision' },
     },
     state,
@@ -157,9 +150,8 @@ function formatDeterministicGuidance(state: SessionState, guidance: { status: st
   );
 }
 function formatContinueResponse(value: Record<string, unknown>, state: SessionState): string {
-  const response = enrichWithNextAction(value, state);
-  const productNext = response.productNextAction as { text?: unknown } | undefined;
-  const commands = (productNext as { commands?: unknown } | undefined)?.commands;
+  const response = enrichWithWorkflowDirective(value, state);
+  const commands = response.directive.commands;
   if (Array.isArray(commands) && commands.every((command) => typeof command === 'string')) {
     response.next = commands.join(', ');
   }

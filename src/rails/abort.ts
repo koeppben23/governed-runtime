@@ -2,38 +2,41 @@
  * @module abort
  * @description /abort rail — emergency clean termination of a FlowGuard session.
  *
- * Bypasses the topology entirely. Directly sets phase = COMPLETE with an error
- * marker (code: "ABORTED"). This is the escape hatch for:
+ * Transitions through the explicit ABORT topology event into the ABORTED terminal
+ * position with an error marker (code: "ABORTED"). This is the escape hatch for:
  * - CI/CD pipeline aborts
  * - User cancellation
  * - Unrecoverable errors where the session must be terminated cleanly
  *
  * Design:
- * - Does NOT use the topology (no ABORT transition in the transition table)
- * - Does NOT use the evaluator (no guard evaluation)
- * - Directly writes phase = COMPLETE + error = ABORTED
+ * - Resolves ABORT through the topology; undefined transitions fail closed
+ * - Does NOT use guard evaluation to select a transition
  * - The ABORT event is recorded in the transition field for audit trail
- * - Idempotent at any terminal phase (COMPLETE, ARCH_COMPLETE,
- *   REVIEW_COMPLETE) — already terminal, so abort is a no-op
+ * - Idempotent at any terminal phase — already terminal, so abort is a no-op
  *
  * After abort:
- * - state.phase === "COMPLETE"
+ * - state.phase === "ABORTED"
  * - state.error !== null (code: "ABORTED")
  * - state.transition.event === "ABORT"
  * - The session is terminal — no further commands except /review
  *
  * Distinguishing aborted from completed:
  * - Normal completion: state.error === null at COMPLETE
- * - Aborted: state.error.code === "ABORTED" at COMPLETE
+ * - Aborted: state.error.code === "ABORTED" at ABORTED
  *
  * @version v1
  */
 
 import type { SessionState } from '../state/schema.js';
 import type { ErrorInfo } from '../state/evidence.js';
-import { evaluate } from '../machine/evaluate.js';
+import { evaluate, evaluateWithEvent } from '../machine/evaluate.js';
 import { TERMINAL } from '../machine/topology.js';
-import type { RailResult, RailContext, TransitionRecord } from './types.js';
+import {
+  applyTransition,
+  type RailResult,
+  type RailContext,
+  type TransitionRecord,
+} from './types.js';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
@@ -63,23 +66,31 @@ export function executeAbort(state: SessionState, input: AbortInput, ctx: RailCo
     occurredAt: now,
   };
 
-  // 3. Directly set terminal state (bypasses topology)
-  const finalState: SessionState = {
-    ...state,
-    phase: 'COMPLETE',
-    transition: {
-      from: state.phase,
-      to: 'COMPLETE',
-      event: 'ABORT',
-      at: now,
+  // 3. Resolve the explicit terminal transition through the canonical topology.
+  const target = evaluateWithEvent(state.phase, 'ABORT');
+  if (target === undefined) {
+    return {
+      kind: 'blocked',
+      code: 'INVALID_TRANSITION',
+      reason: `No ABORT transition is defined for phase ${state.phase}`,
+    };
+  }
+  const transitionedState = applyTransition(
+    {
+      ...state,
+      error,
     },
-    error,
-  };
+    state.phase,
+    target,
+    'ABORT',
+    now,
+  );
+  const finalState: SessionState = { ...transitionedState, error };
 
   // Record the bypass transition for audit
   const transition: TransitionRecord = {
     from: state.phase,
-    to: 'COMPLETE',
+    to: target,
     event: 'ABORT',
     at: now,
   };
