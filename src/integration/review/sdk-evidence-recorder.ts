@@ -34,6 +34,8 @@ type ReviewExecutionFacts = {
   readonly transcriptNavigable?: boolean;
 };
 
+type AuditableEvidenceRecordResult = Extract<EvidenceRecordResult, 'fulfilled' | 'reused'>;
+
 type SdkEvidenceParams = {
   obligationId: string;
   obligationType: ReviewObligationType;
@@ -60,7 +62,7 @@ type SdkEvidenceParams = {
     'findings'
   > & { findings: Record<string, unknown> };
   semanticIntents?: (
-    result: EvidenceRecordResult,
+    result: AuditableEvidenceRecordResult,
     state: SessionState,
     now: string,
   ) => readonly SemanticAuditIntent[];
