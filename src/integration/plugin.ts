@@ -37,7 +37,7 @@ import {
   isNativeReviewerTaskBefore,
   nativeReviewTaskAfter,
   nativeReviewTaskBefore,
-} from './review/native-task-review.js';
+} from './native-task-review.js';
 import { initHumanProjectionTelemetrySink } from '../telemetry/human-projection/sink.js';
 
 export function isUsableWorktree(worktree: string | undefined): boolean {
