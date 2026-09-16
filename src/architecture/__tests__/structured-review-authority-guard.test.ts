@@ -84,6 +84,23 @@ describe('structured review authority hard cut', () => {
     expect(offenders(/session\.create\s*\(/)).toEqual([]);
   });
 
+  it('projects review dispatch requirements only from the authority-bound instruction builder', () => {
+    // `reviewDispatchRequired()` may only be referenced by the dispatch-signal
+    // definition, the authority-bound child-session instruction, and the
+    // explicit test factory. Producers must go through the instruction, which
+    // requires a full ReviewDispatchAuthority.
+    const allowed = new Set([
+      'integration/review/dispatch-signal.ts',
+      'integration/review/child-session-instruction.ts',
+      'integration/plugin-host-task-diagnostics-helpers.ts',
+    ]);
+    const offenders = listProductionSources(SRC)
+      .filter((file) => /\breviewDispatchRequired\b/.test(readFileSync(file, 'utf8')))
+      .map(relative)
+      .filter((rel) => !allowed.has(rel));
+    expect(offenders).toEqual([]);
+  });
+
   it('admits exactly the native visible structured invocation generation', () => {
     const schema = readFileSync(join(SRC, 'state/evidence-review-invocation.ts'), 'utf8');
     expect(schema).toContain("invocationMode: z.literal('native_task_structured_followup')");

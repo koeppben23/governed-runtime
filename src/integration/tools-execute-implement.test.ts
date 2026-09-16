@@ -43,6 +43,7 @@ import {
   archive,
 } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
+import { appendReviewDispatch } from '../state/review-dispatch.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
 import * as persistence from '../adapters/persistence.js';
 import {
@@ -410,6 +411,17 @@ describe('implement', () => {
       expect(validationResult?.reviewObligation).toBeDefined();
       expect(validationResult?.reviewInvocation).toBeDefined();
       expect(validationResult?.reviewDispatch).toEqual({ required: true });
+      const implState = await readState(sessDir);
+      const implObligation = implState?.reviewAssurance?.obligations.find(
+        (obligation) => obligation.obligationType === 'implement',
+      );
+      expect(implObligation).toBeDefined();
+      expect(validationResult?.reviewAttemptId).toBe(
+        implState?.reviewAssurance?.attempts.find(
+          (attempt) =>
+            attempt.obligationId === implObligation?.obligationId && attempt.status === 'created',
+        )?.attemptId,
+      );
       expect(
         (await readState(sessDir))?.reviewAssurance?.obligations.filter(
           (obligation) => obligation.obligationType === 'implement',
@@ -824,6 +836,105 @@ describe('implement', () => {
       expect(after?.phase).toBe('IMPL_REVIEW');
       expect(after?.reviewAssurance).toEqual(retryState.reviewAssurance);
       expect(after?.implReview).toEqual(retryState.implReview);
+    });
+
+    it('reviewRecovery retry_transport re-emits the current authorized attempt without a new one', async () => {
+      await reachImplementation();
+      await implement.execute({}, ctx);
+      await passImplValidation();
+
+      const sessDir = await currentSessionDir();
+      const before = await readState(sessDir);
+      const obligation = before!.reviewAssurance!.obligations.find(
+        (item) => item.obligationType === 'implement' && item.status === 'pending',
+      )!;
+      const attempt = before!.reviewAssurance!.attempts.find(
+        (item) => item.obligationId === obligation.obligationId && item.status === 'created',
+      )!;
+
+      const raw = await review_implementation.execute({ reviewRecovery: 'retry_transport' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).not.toBe(true);
+      expect(result.reviewDispatch).toEqual({ required: true });
+      expect(result.reviewAttemptId).toBe(attempt.attemptId);
+      expect((result.reviewObligation as { obligationId?: string }).obligationId).toBe(
+        obligation.obligationId,
+      );
+
+      const after = await readState(sessDir);
+      expect(after?.reviewAssurance?.attempts).toHaveLength(
+        before!.reviewAssurance!.attempts.length,
+      );
+      expect(after?.reviewAssurance?.dispatches).toHaveLength(
+        before!.reviewAssurance!.dispatches.length,
+      );
+    });
+
+    it('reviewRecovery retry_transport re-arms an interrupted release on the same obligation', async () => {
+      await reachImplementation();
+      await implement.execute({}, ctx);
+      await passImplValidation();
+
+      const sessDir = await currentSessionDir();
+      const before = await readState(sessDir);
+      const obligation = before!.reviewAssurance!.obligations.find(
+        (item) => item.obligationType === 'implement' && item.status === 'pending',
+      )!;
+      const spent = before!.reviewAssurance!.attempts.find(
+        (item) => item.obligationId === obligation.obligationId && item.status === 'created',
+      )!;
+      await writeState(sessDir, {
+        ...before!,
+        reviewAssurance: appendReviewDispatch(before!.reviewAssurance, {
+          dispatchId: crypto.randomUUID(),
+          attemptId: spent.attemptId,
+          obligationId: obligation.obligationId,
+          hostCallId: 'task-call-interrupted',
+          canonicalPromptDigest: 'a'.repeat(64),
+          dispatchAuthorizedAt: new Date().toISOString(),
+          dispatchStatus: 'authorized',
+        }),
+      });
+
+      const raw = await review_implementation.execute({ reviewRecovery: 'retry_transport' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).not.toBe(true);
+      expect(result.reviewDispatch).toEqual({ required: true });
+      const rearmedAttemptId = result.reviewAttemptId as string;
+      expect(rearmedAttemptId).not.toBe(spent.attemptId);
+      expect((result.reviewObligation as { obligationId?: string }).obligationId).toBe(
+        obligation.obligationId,
+      );
+
+      const after = await readState(sessDir);
+      const spentAfter = after!.reviewAssurance!.attempts.find(
+        (item) => item.attemptId === spent.attemptId,
+      )!;
+      const rearmed = after!.reviewAssurance!.attempts.find(
+        (item) => item.attemptId === rearmedAttemptId,
+      )!;
+      expect(spentAfter.status).toBe('stale');
+      expect(rearmed.origin.kind).toBe('dispatch_rearm');
+      expect(
+        after!.reviewAssurance!.dispatches.every(
+          (dispatch) =>
+            dispatch.attemptId !== spent.attemptId || dispatch.dispatchStatus === 'outcome_unknown',
+        ),
+      ).toBe(true);
+    });
+
+    it('blocks reviewRecovery mixed with a verdict as an invalid argument shape', async () => {
+      await reachImplementation();
+      await implement.execute({}, ctx);
+      await passImplValidation();
+
+      const raw = await review_implementation.execute(
+        { reviewRecovery: 'retry_transport', reviewVerdict: 'accept' },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('INVALID_IMPLEMENT_TOOL_SEQUENCE');
     });
 
     it('Mode B blocks with IMPLEMENTATION_EVIDENCE_REQUIRED when implementation is null', async () => {

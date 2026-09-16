@@ -72,6 +72,10 @@ import {
   ensureReviewAssurance,
   findLatestObligation,
 } from '../review/assurance.js';
+import {
+  resolveReviewDispatchAuthority,
+  type ReviewDispatchAuthority,
+} from '../review/dispatch-authority.js';
 import { buildReviewChallengeContract } from '../review/challenge-contract.js';
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
 // presentation imports moved to plan-response.ts
@@ -472,6 +476,32 @@ function consumePlanObligation(
 
 // ---- tool handlers ----
 
+function resolvePlanDispatchAuthority(
+  finalState: SessionState,
+  planVersion: number,
+):
+  | { readonly kind: 'ok'; readonly authority: ReviewDispatchAuthority }
+  | {
+      readonly kind: 'blocked';
+      readonly code: 'REVIEW_ATTEMPT_UNAVAILABLE';
+      readonly reason: string;
+    } {
+  const obligation = findLatestObligation(
+    finalState.reviewAssurance?.obligations ?? [],
+    'plan',
+    0,
+    planVersion,
+  );
+  if (!obligation) {
+    return {
+      kind: 'blocked',
+      code: 'REVIEW_ATTEMPT_UNAVAILABLE',
+      reason: 'the plan submission produced no review obligation authority',
+    };
+  }
+  return resolveReviewDispatchAuthority(finalState.reviewAssurance, obligation.obligationId);
+}
+
 async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> {
   const planBody = scope.args.planText?.trim();
   if (!planBody) return formatBlocked('EMPTY_PLAN');
@@ -507,12 +537,17 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
   const { state: finalState, transitions } = advanced;
 
   await writeStateWithArtifacts(scope.sessDir, finalState);
+  const authority = resolvePlanDispatchAuthority(finalState, planVersion);
+  if (authority.kind === 'blocked') {
+    return formatBlocked(authority.code, { reason: authority.reason });
+  }
   const response = buildSubmissionResponse({
     scope,
     finalState,
     planEvidence,
     planVersion,
     transitions,
+    authority: authority.authority,
   });
   return JSON.stringify(enrichWithWorkflowDirective(response, finalState));
 }

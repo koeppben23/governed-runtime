@@ -722,6 +722,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     const res = await architecture.execute({ title: 'x', adrText: 'y' }, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.reviewDispatch).toEqual({ required: true });
+    expect(parsed.reviewAttemptId).toEqual(expect.any(String));
     expect(parsed.reviewMode).toBe('subagent');
     expect(parsed.reviewInvocation).toBeDefined();
     expect(parsed.reviewInvocation.reviewerSubagentType).toBe('flowguard-reviewer');
@@ -762,6 +763,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     const res = await architecture.execute({ title: 'x', adrText: 'y' }, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.reviewDispatch).toEqual({ required: true });
+    expect(parsed.reviewAttemptId).toEqual(expect.any(String));
     expect(parsed.reviewMode).toBe('subagent');
     expect(parsed.reviewObligation).toBeDefined();
     const writtenState = mocks.writeStateWithArtifacts.mock.calls[0]?.[1] as {

@@ -10,14 +10,14 @@ import type { MutableSession } from './helpers.js';
 import type { SessionState } from '../../state/schema.js';
 import type { LoopVerdict } from '../../state/evidence.js';
 import type { ArchitectureClaimDeclarationInput } from '../../state/proofgraph-approval.js';
-import { ensureReviewAssurance, createReviewObligation } from '../review/assurance.js';
+import { ensureReviewAssurance } from '../review/assurance.js';
+import type { ReviewDispatchAuthority } from '../review/dispatch-authority.js';
 import { classifyToolCallMode } from './review-validation-mode.js';
 import {
   resolveRuntimeReviewPlatform,
   resolveReviewOrchestrationMode,
 } from '../review/orchestration-mode.js';
 import { buildChildSessionReviewInstruction } from '../review/child-session-instruction.js';
-import { resolveAttemptObservationCapability } from '../review/assurance.js';
 
 // ─── Shared Types ─────────────────────────────────────────────────────────
 
@@ -94,8 +94,7 @@ export function validateInitialSubmissionGate(
 }
 
 export function buildArchitectureReviewInstruction(input: {
-  policy: ArchitectureSession['policy'];
-  obligation: ReturnType<typeof createReviewObligation> | null;
+  authority: ReviewDispatchAuthority;
   iteration: number;
   planVersion: number;
   subjectLabel: string;
@@ -110,14 +109,9 @@ export function buildArchitectureReviewInstruction(input: {
   return buildChildSessionReviewInstruction({
     mode,
     platform,
-    obligation: input.obligation,
+    authority: input.authority,
     iteration: input.iteration,
     planVersion: input.planVersion,
-    observationCapability: input.obligation
-      ? (resolveAttemptObservationCapability(
-          input.state.reviewAssurance,
-          input.obligation.obligationId,
-        ) ?? undefined)
-      : undefined,
+    observationCapability: input.authority.attempt.observationCapability ?? undefined,
   });
 }

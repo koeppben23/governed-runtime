@@ -61,7 +61,26 @@ export function createSessionState(): SessionEnforcementState {
 
 // ─── Hook handlers (pure functions) ──────────────────────────────────────────
 
-/** Process a FlowGuard tool response (tool.execute.after). */
+/**
+ * Outcome of tracking one FlowGuard tool response.
+ *
+ * `nonconforming` means the response projects a review requirement without the
+ * full obligation/attempt binding the host must authorize. Callers fail closed
+ * on this result and never register a pending review for it.
+ */
+export type ReviewTrackingResult =
+  | { readonly kind: 'ok' }
+  | {
+      readonly kind: 'nonconforming';
+      readonly code: 'REVIEW_ATTEMPT_UNAVAILABLE';
+      readonly reason: string;
+      readonly obligationId: string | null;
+    };
+
+function nonconforming(obligationId: string | null, reason: string): ReviewTrackingResult {
+  return { kind: 'nonconforming', code: 'REVIEW_ATTEMPT_UNAVAILABLE', reason, obligationId };
+}
+
 function trackReviewRequired(
   state: SessionEnforcementState,
   reviewTool: PendingReviewTool,
@@ -74,14 +93,14 @@ function trackReviewRequired(
 
 function trackContentAnalysis(
   state: SessionEnforcementState,
-  parsed: NonNullable<ReturnType<typeof parseToolResult>>,
+  binding: ReviewSignalBinding,
   now: string,
 ): void {
   state.pendingReviews.set(TOOL_FLOWGUARD_REVIEW, {
     tool: TOOL_FLOWGUARD_REVIEW,
     requestedAt: now,
-    attemptId: typeof parsed.reviewAttemptId === 'string' ? parsed.reviewAttemptId : null,
-    obligationId: reviewObligationIdFromSignal(parsed, true),
+    attemptId: binding.attemptId ?? null,
+    obligationId: binding.obligationId ?? null,
   });
 }
 
@@ -90,16 +109,26 @@ function handleContentAnalysisFlag(
   parsed: NonNullable<ReturnType<typeof parseToolResult>>,
   toolName: string,
   now: string,
-): void {
+): ReviewTrackingResult {
   const attestation = parsed.requiredReviewAttestation as Record<string, unknown> | undefined;
   if (
-    parsed.error === true &&
-    parsed.code === 'CONTENT_ANALYSIS_REQUIRED' &&
-    attestation &&
-    toolName === TOOL_FLOWGUARD_REVIEW
+    parsed.error !== true ||
+    parsed.code !== 'CONTENT_ANALYSIS_REQUIRED' ||
+    !attestation ||
+    toolName !== TOOL_FLOWGUARD_REVIEW
   ) {
-    trackContentAnalysis(state, parsed, now);
+    return { kind: 'ok' };
   }
+  const obligationId = reviewObligationIdFromSignal(parsed, true);
+  const attemptId = typeof parsed.reviewAttemptId === 'string' ? parsed.reviewAttemptId : null;
+  if (!obligationId || !attemptId) {
+    return nonconforming(
+      obligationId,
+      'a content-analysis review requirement must project both its obligation id and the exact reviewer attempt id',
+    );
+  }
+  trackContentAnalysis(state, { obligationId, attemptId }, now);
+  return { kind: 'ok' };
 }
 
 export function onFlowGuardToolAfter(
@@ -108,16 +137,17 @@ export function onFlowGuardToolAfter(
   args: Record<string, unknown>,
   output: string,
   now: string,
-): void {
+): ReviewTrackingResult {
   const reviewContext = resolveReviewTrackingContext(toolName);
-  if (!reviewContext) return;
+  if (!reviewContext) return { kind: 'ok' };
 
   const parsed = parseToolResult(output);
-  if (!parsed) return;
+  if (!parsed) return { kind: 'ok' };
 
   clearSubmittedReview(state, reviewContext.obligationTool, args, parsed);
-  trackRequiredReview(state, reviewContext, parsed, now);
-  handleContentAnalysisFlag(state, parsed, toolName, now);
+  const required = trackRequiredReview(state, reviewContext, parsed, now);
+  if (required.kind !== 'ok') return required;
+  return handleContentAnalysisFlag(state, parsed, toolName, now);
 }
 
 function resolveReviewTrackingContext(toolName: string): {
@@ -173,17 +203,23 @@ function trackRequiredReview(
   context: NonNullable<ReturnType<typeof resolveReviewTrackingContext>>,
   parsed: NonNullable<ReturnType<typeof parseToolResult>>,
   now: string,
-): void {
+): ReviewTrackingResult {
   const recordKey: PendingReviewTool = context.isReviewContent
     ? TOOL_FLOWGUARD_REVIEW
     : (context.signalOwner as PendingReviewTool);
-  if (isReviewDispatchRequired(parsed) && (context.isReviewContent || context.signalOwner)) {
-    const attemptId = typeof parsed.reviewAttemptId === 'string' ? parsed.reviewAttemptId : null;
-    trackReviewRequired(state, recordKey, now, {
-      attemptId,
-      obligationId: reviewObligationIdFromSignal(parsed, context.isReviewContent),
-    });
+  if (!isReviewDispatchRequired(parsed) || (!context.isReviewContent && !context.signalOwner)) {
+    return { kind: 'ok' };
   }
+  const obligationId = reviewObligationIdFromSignal(parsed, context.isReviewContent);
+  const attemptId = typeof parsed.reviewAttemptId === 'string' ? parsed.reviewAttemptId : null;
+  if (!obligationId || !attemptId) {
+    return nonconforming(
+      obligationId,
+      'a review dispatch requirement must project both its obligation id and the exact reviewer attempt id',
+    );
+  }
+  trackReviewRequired(state, recordKey, now, { attemptId, obligationId });
+  return { kind: 'ok' };
 }
 
 function checkPendingReview(

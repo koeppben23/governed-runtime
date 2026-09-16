@@ -45,7 +45,6 @@ export type {
 export type { ReviewDispatchSignal } from './dispatch-signal.js';
 
 export {
-  reviewDispatchRequired,
   reviewDispatchCompleted,
   readReviewDispatch,
   isReviewDispatchRequired,
@@ -74,7 +73,6 @@ export {
   ensureReviewAssurance,
   createReviewObligation,
   appendReviewObligation,
-  reviewObligationResponseFields,
   findLatestObligation,
   findLatestPendingReviewObligation,
   findReviewObligationById,
@@ -86,6 +84,18 @@ export {
   hasEvidenceReuse,
   appendInvocationEvidence,
 } from './assurance.js';
+
+// ─── Dispatch Authority ──────────────────────────────────────────────────────
+
+export type {
+  ReviewDispatchAuthority,
+  ReviewDispatchAuthorityResult,
+} from './dispatch-authority.js';
+
+export {
+  resolveReviewDispatchAuthority,
+  reviewObligationResponseFields,
+} from './dispatch-authority.js';
 
 // ─── Reviewer Result DTO ─────────────────────────────────────────────────────
 

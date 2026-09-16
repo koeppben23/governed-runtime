@@ -177,7 +177,10 @@ function requireCurrentAttempt(
   if (!pending) {
     throw buildEnforcementError(
       'SUBAGENT_REVIEW_NOT_INVOKED',
-      'No unique pending FlowGuard review obligation is authorized for this native reviewer Task.',
+      'No unique pending FlowGuard review obligation is authorized for this native reviewer Task. ' +
+        'If a reviewer Task was already attempted, use the canonical recovery for its obligation ' +
+        'type (implementation: flowguard_review_implementation with reviewRecovery "retry_transport"; ' +
+        'plan/architecture: re-run the originating command).',
     );
   }
   const assurance = ensureReviewAssurance(state.reviewAssurance);
@@ -200,10 +203,23 @@ function requireCurrentAttempt(
   if (hasReleasedDispatch(assurance, attempt.attemptId)) {
     throw buildEnforcementError(
       'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
-      'This reviewer attempt has already been released to the host. Re-run the originating FlowGuard command so it can re-arm the frozen obligation with a fresh attempt before invoking Task again.',
+      `This reviewer attempt has already been released to the host. ${transportRecoveryInstruction(
+        obligation.obligationType,
+      )}`,
     );
   }
   return { obligation, attempt };
+}
+
+/**
+ * Phase-legal recovery for a spent/interrupted reviewer release. The
+ * implementation review has a typed in-tool recovery; plan and architecture
+ * re-arm through their originating command.
+ */
+function transportRecoveryInstruction(obligationType: ReviewObligationType): string {
+  return obligationType === 'implement'
+    ? 'Call flowguard_review_implementation with reviewRecovery: "retry_transport" to re-arm the same review obligation with a fresh attempt, then invoke Task again.'
+    : 'Re-run the originating FlowGuard command (/plan or /architecture) so it can re-arm the frozen obligation with a fresh attempt, then invoke Task again.';
 }
 
 function mutateNativeTask(output: ToolHookBeforeOutput, prompt: string): void {

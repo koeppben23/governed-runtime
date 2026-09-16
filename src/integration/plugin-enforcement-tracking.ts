@@ -10,6 +10,7 @@
  */
 
 import { onFlowGuardToolAfter } from './review/enforcement/enforcement.js';
+import type { ReviewTrackingResult } from './review/enforcement/enforcement.js';
 import type { SessionEnforcementState } from './review/enforcement/types.js';
 import { getToolArgs, getToolOutput } from './plugin-helpers.js';
 
@@ -25,8 +26,8 @@ export function trackFlowGuardEnforcement(
   input: unknown,
   output: unknown,
   now: string,
-): void {
+): ReviewTrackingResult {
   const args = getToolArgs(input);
   const rawOutput = getToolOutput(output);
-  onFlowGuardToolAfter(eState, toolName, args, rawOutput, now);
+  return onFlowGuardToolAfter(eState, toolName, args, rawOutput, now);
 }

@@ -1,12 +1,13 @@
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
-import type { ReviewObligation } from '../../state/evidence.js';
 import type { ReviewHostPlatform, ReviewOrchestrationMode } from './orchestration-mode.js';
 import { reviewDispatchRequired } from './dispatch-signal.js';
+import type { ReviewDispatchAuthority } from './dispatch-authority.js';
 
 export interface ChildSessionReviewInstructionInput {
   readonly mode: ReviewOrchestrationMode;
   readonly platform: ReviewHostPlatform;
-  readonly obligation: ReviewObligation | null;
+  /** Exact current obligation/attempt authority; a dispatch cannot exist without it. */
+  readonly authority: ReviewDispatchAuthority;
   readonly iteration: number;
   readonly planVersion: number;
   readonly observationCapability?: string;
@@ -20,7 +21,7 @@ export interface ChildSessionReviewInstructionInput {
  * authority.
  */
 export function buildChildSessionReviewInstruction(input: ChildSessionReviewInstructionInput) {
-  const obligation = input.obligation;
+  const obligation = input.authority.obligation;
   const status = input.mode === 'unsupported_blocked' ? 'unsupported_blocked' : 'pending_review';
   const nativeTask =
     input.mode === 'host_structured' && input.platform === 'opencode'
@@ -43,22 +44,19 @@ export function buildChildSessionReviewInstruction(input: ChildSessionReviewInst
     reviewerSubagentType: REVIEWER_SUBAGENT_TYPE as typeof REVIEWER_SUBAGENT_TYPE,
     authority: 'review_obligation_evidence_binding' as const,
     ...nativeTask,
-    ...(obligation ? { obligationId: obligation.obligationId } : {}),
-    ...(obligation
-      ? {
-          requiredReviewAttestation: {
-            reviewedBy: REVIEWER_SUBAGENT_TYPE as typeof REVIEWER_SUBAGENT_TYPE,
-            mandateDigest: obligation.mandateDigest,
-            criteriaVersion: obligation.criteriaVersion,
-            toolObligationId: obligation.obligationId,
-            iteration: input.iteration,
-            planVersion: input.planVersion,
-            ...(input.observationCapability
-              ? { observationCapability: input.observationCapability }
-              : {}),
-          },
-        }
-      : {}),
+    obligationId: obligation.obligationId,
+    reviewAttemptId: input.authority.attempt.attemptId,
+    requiredReviewAttestation: {
+      reviewedBy: REVIEWER_SUBAGENT_TYPE as typeof REVIEWER_SUBAGENT_TYPE,
+      mandateDigest: obligation.mandateDigest,
+      criteriaVersion: obligation.criteriaVersion,
+      toolObligationId: obligation.obligationId,
+      iteration: input.iteration,
+      planVersion: input.planVersion,
+      ...(input.observationCapability
+        ? { observationCapability: input.observationCapability }
+        : {}),
+    },
   };
   return {
     ...metadata,

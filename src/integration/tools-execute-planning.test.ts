@@ -439,6 +439,15 @@ describe('plan', () => {
       expect(result.error).toBeUndefined();
       expect(typeof result.selfReviewIteration).toBe('number');
       expect(result.reviewDispatch).toEqual({ required: true });
+      const revisionState = await readState(await currentSessionDir());
+      expect(result.reviewAttemptId).toBe(
+        revisionState?.reviewAssurance?.attempts.find(
+          (attempt) =>
+            attempt.obligationId ===
+              (result.reviewObligation as { obligationId?: string }).obligationId &&
+            attempt.status === 'created',
+        )?.attemptId,
+      );
 
       // The next iteration is carried by the child-session instruction metadata
       // (the dispatch signal no longer embeds it in any text field).

@@ -16,9 +16,12 @@ import {
   artifactReviewSubjectScope,
   createReviewObligation,
   freezeReviewMaterial,
-  reviewObligationResponseFields,
   resolveFrozenReviewProfile,
 } from '../review/assurance.js';
+import {
+  resolveReviewDispatchAuthority,
+  reviewObligationResponseFields,
+} from '../review/dispatch-authority.js';
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
 import {
   freezeContextAuthorityAtHead,
@@ -193,17 +196,24 @@ export async function handleAdrSubmission(
     policySnapshot: result.state.policySnapshot,
   });
   if (classification.kind === 'blocked') return classification.message;
-  const {
-    state: augmentedState,
-    obligation: nextObligation,
-    attemptId: subAttemptId,
-  } = classification;
+  const { state: augmentedState, obligation: nextObligation } = classification;
 
   const persisted = await writeStateWithArtifacts(sessDir, augmentedState);
 
+  if (!nextObligation) {
+    return formatBlocked('REVIEW_ATTEMPT_UNAVAILABLE', {
+      reason: 'the ADR submission minted no review obligation authority',
+    });
+  }
+  const authority = resolveReviewDispatchAuthority(
+    persisted.reviewAssurance,
+    nextObligation.obligationId,
+  );
+  if (authority.kind === 'blocked') {
+    return formatBlocked(authority.code, { reason: authority.reason });
+  }
   const instruction = buildArchitectureReviewInstruction({
-    policy: session.policy,
-    obligation: nextObligation,
+    authority: authority.authority,
     iteration: 0,
     planVersion: archPlanVersion,
     subjectLabel: 'full ADR text, ADR title, and ticket text',
@@ -217,8 +227,8 @@ export async function handleAdrSubmission(
     selfReviewIteration: 0,
     maxArchitectureReviewIterations: policy.reviewBudget.architecture,
     reviewMode: subagentEnabled ? 'subagent' : 'self',
-    ...reviewObligationResponseFields(nextObligation, subAttemptId),
-    ...repositoryEvidenceUnavailableField(nextObligation?.repositoryEvidenceFreeze),
+    ...reviewObligationResponseFields(authority.authority),
+    ...repositoryEvidenceUnavailableField(authority.authority.obligation.repositoryEvidenceFreeze),
     reviewDispatch: instruction.reviewDispatch,
     reviewInvocation: instruction,
     _audit: { transitions: result.transitions },

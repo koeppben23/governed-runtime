@@ -92,6 +92,7 @@ import {
   normalizeHostFindings,
   unknownOutcomeRevalidationBlock,
 } from './implement-shared.js';
+import { handleTransportRecovery } from './implement-review-recovery.js';
 import { latestUnknownOutcomeResolvedAt } from '../../state/evidence-mutation-episode.js';
 import { handleUnableToReview } from './implement-unable-review.js';
 import type { CompactProofPresentation } from '../../presentation/proof-model.js';
@@ -479,7 +480,7 @@ async function handleSubmittedImplementationReview(input: {
       now: runtime.ctx.now(),
       worktree: runtime.worktree,
     });
-    if (reissued.blocked || !reissued.obligation || !reissued.attemptId) {
+    if (reissued.blocked || !reissued.obligation || !reissued.attempt) {
       return JSON.stringify(
         enrichWithWorkflowDirective(
           JSON.parse(
@@ -492,14 +493,7 @@ async function handleSubmittedImplementationReview(input: {
         ),
       );
     }
-    const retryAttempt = reissued.state.reviewAssurance?.attempts.find(
-      (attempt) => attempt.attemptId === reissued.attemptId,
-    );
-    if (!retryAttempt) {
-      return formatBlocked('REVIEWER_CONTEXT_UNAVAILABLE', {
-        reason: 'a fresh reviewer attempt could not be activated',
-      });
-    }
+    const retryAttempt = reissued.attempt;
     const { reviewedState } = appendImplReviewState({
       runtime,
       iteration,
@@ -584,6 +578,9 @@ export async function handleImplReview(input: ImplementRuntime): Promise<string>
 
   const iteration = nextImplementationReviewIteration(input.state);
   const planVersion = (input.state.plan?.history.length ?? 0) + 1;
+  if (input.args.reviewRecovery === 'retry_transport') {
+    return handleTransportRecovery(input);
+  }
   const transportFailureRetry = handleTaskTransportFailureRetry(input);
   if (transportFailureRetry) return transportFailureRetry;
   const submittedVerdict = input.args.reviewVerdict;

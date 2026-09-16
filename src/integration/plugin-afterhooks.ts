@@ -21,6 +21,7 @@ import {
   getToolOutput,
   getAutoAdvanceOverflow,
   getSessionLockSignal,
+  parseToolResult,
   strictBlockedOutput,
 } from './plugin-helpers.js';
 import { trackFlowGuardEnforcement } from './plugin-enforcement-tracking.js';
@@ -33,6 +34,9 @@ import {
   isReviewableFlowGuardTool,
   updateCheckReworkContinuation,
 } from './plugin-rework-continuation.js';
+import { isReviewDispatchRequired } from './review/dispatch-signal.js';
+import { obligationTypeForTool } from './review/obligation-tools.js';
+import { resolveReviewContinuation } from '../state/review-continuation.js';
 export { updateCheckReworkContinuation } from './plugin-rework-continuation.js';
 import {
   REASON_SESSION_LOCK_CONTENDED,
@@ -87,7 +91,7 @@ export async function toolAfter(
       // post-hook side effect.
       await runFlowGuardAuditAfter({ runtime, toolName, input, output, sessionId, hookOutput });
       await updateCheckReworkContinuation(runtime, toolName, sessionId);
-      trackReviewableEnforcement(runtime, afterCtx);
+      await trackReviewableEnforcement(runtime, afterCtx);
     });
   });
 }
@@ -121,21 +125,120 @@ function handleReviewableAfter(runtime: FlowGuardPluginRuntime, ctx: AfterHookCo
 }
 
 /** Track the exact pending review signal exposed to the parent agent. */
-function trackReviewableEnforcement(runtime: FlowGuardPluginRuntime, ctx: AfterHookContext): void {
+async function trackReviewableEnforcement(
+  runtime: FlowGuardPluginRuntime,
+  ctx: AfterHookContext,
+): Promise<void> {
   // Stryker disable next-line ConditionalExpression
   if (!isReviewableFlowGuardTool(ctx.toolName)) return;
+
+  const parsed = parseToolResult(getToolOutput(ctx.hookOutput));
+  if (parsed) {
+    const violation = await verifyPersistedReviewAuthority(runtime, ctx, parsed);
+    if (violation) {
+      blockNonconformingReviewResponse(runtime, ctx, violation.reason, violation.obligationId);
+      return;
+    }
+  }
+
   try {
-    trackFlowGuardEnforcement(
+    const tracking = trackFlowGuardEnforcement(
       runtime.ws.getEnforcementState(ctx.sessionId),
       ctx.toolName,
       ctx.input,
       ctx.hookOutput,
       ctx.now,
     );
+    if (tracking.kind === 'nonconforming') {
+      blockNonconformingReviewResponse(runtime, ctx, tracking.reason, tracking.obligationId);
+    }
     // Stryker disable next-line BlockStatement
   } catch (err) {
     runtime.logError('enforcement tracking failed', err);
   }
+}
+
+interface ReviewSignalForAuthority {
+  readonly obligationId: string | null;
+  readonly attemptId: string | null;
+  readonly obligationType: import('../state/evidence.js').ReviewObligationType | null;
+}
+
+/** The exact obligation/attempt a review requirement response claims. */
+function reviewSignalForAuthority(
+  toolName: string,
+  parsed: NonNullable<ReturnType<typeof parseToolResult>>,
+): ReviewSignalForAuthority | null {
+  if (isReviewDispatchRequired(parsed)) {
+    const obligation = parsed.reviewObligation as Record<string, unknown> | undefined;
+    return {
+      obligationId: typeof obligation?.obligationId === 'string' ? obligation.obligationId : null,
+      attemptId: typeof parsed.reviewAttemptId === 'string' ? parsed.reviewAttemptId : null,
+      obligationType: obligationTypeForTool(toolName) ?? null,
+    };
+  }
+  const attestation = parsed.requiredReviewAttestation as Record<string, unknown> | undefined;
+  if (parsed.error === true && parsed.code === 'CONTENT_ANALYSIS_REQUIRED' && attestation) {
+    return {
+      obligationId:
+        typeof attestation.toolObligationId === 'string' ? attestation.toolObligationId : null,
+      attemptId: typeof parsed.reviewAttemptId === 'string' ? parsed.reviewAttemptId : null,
+      obligationType: 'review',
+    };
+  }
+  return null;
+}
+
+/**
+ * Host invariant: the response authority and the persisted continuation must
+ * describe the same exact pending attempt. Anything else is a nonconforming
+ * response and is immediately transformed into a BLOCKED payload without
+ * registering a pending review.
+ */
+async function verifyPersistedReviewAuthority(
+  runtime: FlowGuardPluginRuntime,
+  ctx: AfterHookContext,
+  parsed: NonNullable<ReturnType<typeof parseToolResult>>,
+): Promise<{ readonly reason: string; readonly obligationId: string | null } | null> {
+  const signal = reviewSignalForAuthority(ctx.toolName, parsed);
+  if (!signal) return null;
+  if (!signal.obligationType) {
+    return {
+      reason: 'a review dispatch signal came from a tool with no canonical review obligation type',
+      obligationId: signal.obligationId,
+    };
+  }
+  const sessDir = runtime.ws.getSessionDir(ctx.sessionId);
+  const state = sessDir ? await readState(sessDir) : null;
+  const continuation = resolveReviewContinuation(state?.reviewAssurance, signal.obligationType);
+  const matches =
+    continuation.kind === 'awaiting_task' &&
+    continuation.obligation.obligationId === signal.obligationId &&
+    continuation.attemptId === signal.attemptId;
+  if (matches) return null;
+  return {
+    reason:
+      `the review dispatch response does not match the persisted pending attempt ` +
+      `(continuation: ${continuation.kind})`,
+    obligationId: signal.obligationId,
+  };
+}
+
+function blockNonconformingReviewResponse(
+  runtime: FlowGuardPluginRuntime,
+  ctx: AfterHookContext,
+  reason: string,
+  obligationId: string | null,
+): void {
+  ctx.hookOutput.output = strictBlockedOutput('REVIEW_ATTEMPT_UNAVAILABLE', {
+    ...(obligationId ? { obligationId } : {}),
+    reason,
+  });
+  runtime.log.warn('review', 'nonconforming review dispatch response blocked', {
+    tool: ctx.toolName,
+    sessionId: ctx.sessionId,
+    reason,
+  });
 }
 
 function logAutoAdvanceOverflow(

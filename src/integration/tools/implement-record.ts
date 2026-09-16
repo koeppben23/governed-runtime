@@ -60,7 +60,7 @@ import { existsSync } from 'node:fs';
 // State & Machine
 import { evaluate } from '../../machine/evaluate.js';
 import { autoAdvance } from '../../rails/types.js';
-import type { ReviewFindings, ImplEvidence, ReviewObligation } from '../../state/evidence.js';
+import type { ReviewFindings, ImplEvidence } from '../../state/evidence.js';
 import type { SessionState } from '../../state/schema.js';
 import { isCommandAllowed, Command } from '../../machine/commands.js';
 
@@ -80,16 +80,15 @@ import { writeImplementationDiffArtifact } from './implement-diff-artifact.js';
 
 // Evidence types
 
-import { ensureReviewAssurance, reviewObligationResponseFields } from '../review/assurance.js';
+import { ensureReviewAssurance } from '../review/assurance.js';
+import {
+  resolveReviewDispatchAuthority,
+  reviewObligationResponseFields,
+} from '../review/dispatch-authority.js';
+import type { ReviewDispatchAuthority } from '../review/dispatch-authority.js';
 import { buildLatestImplementationReviewSummary } from './review-summary.js';
 import { collectHistoricallyRejectedImplementationDigests } from '../review/rejected-digests.js';
 import { resolveCeremonyProfile, isNonDomainConfigPath } from '../phase-tool-gate.js';
-import {
-  resolveRuntimeReviewPlatform,
-  resolveReviewOrchestrationMode,
-} from '../review/orchestration-mode.js';
-import { buildChildSessionReviewInstruction } from '../review/child-session-instruction.js';
-import { resolveAttemptObservationCapability } from '../review/assurance.js';
 import type { ImplementRuntime, ImplementationCeremony } from './implement-shared.js';
 import {
   hasUnresolvedMutationEpisodes,
@@ -97,6 +96,7 @@ import {
 } from '../../state/evidence-mutation-episode.js';
 import {
   activateReviewObligationAndPersist,
+  buildImplementationReviewInstruction,
   materializeImplReviewContract,
   nextImplementationReviewIteration,
 } from './implement-shared.js';
@@ -213,7 +213,7 @@ function buildImplRecordedResponse(input: {
   domainFiles: string[];
   reviewIteration: number;
   planVersion: number;
-  nextObligation: ReviewObligation | null;
+  authority: ReviewDispatchAuthority | null;
   transitions: ReadonlyArray<unknown>;
   reviewFindings: ReviewFindings[];
   ceremony: ImplementationCeremony;
@@ -221,25 +221,8 @@ function buildImplRecordedResponse(input: {
   baselineScoping: 'applied' | 'unavailable';
 }): Record<string, unknown> {
   const reduced = input.ceremony.profile === 'reduced';
-  const platform = resolveRuntimeReviewPlatform();
-  const mode = resolveReviewOrchestrationMode({
-    platform,
-    nativeReviewerAvailable: platform === 'unknown' ? false : true,
-  });
-  const instruction = input.nextObligation
-    ? buildChildSessionReviewInstruction({
-        mode,
-        platform,
-        obligation: input.nextObligation,
-        iteration: input.reviewIteration,
-        planVersion: input.planVersion,
-        observationCapability: input.nextObligation
-          ? (resolveAttemptObservationCapability(
-              input.finalState.reviewAssurance,
-              input.nextObligation.obligationId,
-            ) ?? undefined)
-          : undefined,
-      })
+  const instruction = input.authority
+    ? buildImplementationReviewInstruction(input.authority)
     : null;
   const response: Record<string, unknown> = {
     phase: input.finalState.phase,
@@ -251,7 +234,7 @@ function buildImplRecordedResponse(input: {
     ceremonyProfile: input.ceremony.profile,
     ceremonyReason: input.ceremony.reason,
     computedMinimumTaskClass: input.ceremony.computedMinimumTaskClass,
-    ...reviewObligationResponseFields(input.nextObligation),
+    ...(input.authority ? reviewObligationResponseFields(input.authority) : {}),
     ...(reduced
       ? {
           agentInstruction:
@@ -542,6 +525,17 @@ export async function persistImplRecordAndRespond(args: PersistImplRecordArgs): 
   // materialized contract; rendering `activated.state` would emit the pre-write
   // projection and understate claim coverage in the reviewer prompt (#762).
   const persisted = await writeStateWithArtifacts(input.sessDir, activated.state);
+  const authority = activated.obligation
+    ? resolveReviewDispatchAuthority(persisted.reviewAssurance, activated.obligation.obligationId)
+    : null;
+  if (authority?.kind === 'blocked') {
+    return formatBlocked(authority.code, { reason: authority.reason });
+  }
+  if (activated.obligation && authority?.kind !== 'ok') {
+    return formatBlocked('REVIEW_ATTEMPT_UNAVAILABLE', {
+      reason: 'the recorded implementation review obligation has no bindable attempt authority',
+    });
+  }
 
   return JSON.stringify(
     enrichWithWorkflowDirective(
@@ -551,7 +545,7 @@ export async function persistImplRecordAndRespond(args: PersistImplRecordArgs): 
         domainFiles,
         reviewIteration,
         planVersion,
-        nextObligation: activated.obligation,
+        authority: authority?.authority ?? null,
         transitions,
         reviewFindings: args.reviewFindings,
         ceremony: args.ceremony,

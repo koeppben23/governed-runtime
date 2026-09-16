@@ -119,17 +119,6 @@ import {
  * when no attempt exists or the obligation backs no frozen repository
  * revision — repository evidence is then unavailable for the attempt.
  */
-export function resolveAttemptObservationCapability(
-  assurance: ReviewAssuranceState | undefined,
-  obligationId: string,
-): string | null {
-  const base = ensureReviewAssurance(assurance);
-  const attempts = base.attempts.filter((a) => a.obligationId === obligationId);
-  if (attempts.length === 0) return null;
-  const latest = attempts.reduce((best, a) => (a.ordinal > best.ordinal ? a : best));
-  return latest.observationCapability ?? null;
-}
-
 function assertSubjectDigest(subjectDigest: string): void {
   if (!subjectDigest || subjectDigest.length === 0) {
     throw new Error(
@@ -249,28 +238,6 @@ export function appendReviewObligation(
   return {
     ...base,
     obligations: [...base.obligations, obligation],
-  };
-}
-
-export function reviewObligationResponseFields(
-  obligation: ReviewObligation | null,
-  attemptId?: string | null,
-): Record<string, unknown> {
-  if (!obligation) return {};
-  return {
-    reviewObligation: {
-      obligationId: obligation.obligationId,
-      obligationType: obligation.obligationType,
-      iteration: obligation.iteration,
-      planVersion: obligation.planVersion,
-      criteriaVersion: obligation.criteriaVersion,
-      mandateDigest: obligation.mandateDigest,
-      requiredChallengeCount: obligation.requiredChallengeCount,
-      requiredChallengeKind: obligation.requiredChallengeKind,
-    },
-    requiredChallengeCount: obligation.requiredChallengeCount,
-    requiredChallengeKind: obligation.requiredChallengeKind,
-    ...(attemptId ? { reviewAttemptId: attemptId } : {}),
   };
 }
 

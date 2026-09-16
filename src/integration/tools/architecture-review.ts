@@ -35,9 +35,13 @@ import {
   findLatestObligation,
   findLatestUnconsumedObligation,
   freezeReviewMaterial,
-  reviewObligationResponseFields,
   resolveFrozenReviewProfile,
 } from '../review/assurance.js';
+import {
+  resolveReviewDispatchAuthority,
+  reviewObligationResponseFields,
+} from '../review/dispatch-authority.js';
+import type { ReviewDispatchAuthority } from '../review/dispatch-authority.js';
 import { buildFrozenReviewMaterialContent } from '../review/reviewer-context.js';
 
 import { resolveStructuredEffectiveFindings } from './review-validation.js';
@@ -558,13 +562,20 @@ async function persistAndFormatNonConvergedReview(
       reason: discovery.reason,
     });
   }
-  const { stateToPersist, attemptId } = persistableArchitectureReviewState(
+  const { stateToPersist } = persistableArchitectureReviewState(
     advanced.state,
     nextObligation,
     session.ctx.now(),
     discovery.context,
   );
   const persisted = await writeStateWithArtifacts(session.sessDir, stateToPersist);
+  const authority = resolveReviewDispatchAuthority(
+    persisted.reviewAssurance,
+    nextObligation.obligationId,
+  );
+  if (authority.kind === 'blocked') {
+    return formatBlocked(authority.code, { reason: authority.reason });
+  }
   const resp = buildNonConvergedReviewResponse({
     session,
     review,
@@ -572,8 +583,7 @@ async function persistAndFormatNonConvergedReview(
     advanced,
     iteration,
     verdict,
-    nextObligation,
-    attemptId,
+    authority: authority.authority,
     persisted,
   });
   return JSON.stringify(enrichWithWorkflowDirective(resp, stateToPersist));
@@ -586,14 +596,12 @@ function buildNonConvergedReviewResponse(input: {
   readonly advanced: { readonly state: SessionState; readonly transitions: unknown };
   readonly iteration: number;
   readonly verdict: LoopVerdict;
-  readonly nextObligation: ReturnType<typeof createNextArchitectureReviewObligation>;
-  readonly attemptId: string | null;
+  readonly authority: ReviewDispatchAuthority;
   readonly persisted: SessionState;
 }): Record<string, unknown> {
-  const { session, review, revision, advanced, iteration, verdict, nextObligation } = input;
+  const { session, review, revision, advanced, iteration, verdict, authority } = input;
   const instruction = buildArchitectureReviewInstruction({
-    policy: session.policy,
-    obligation: nextObligation,
+    authority,
     iteration,
     planVersion: review.expectedPlanVersion,
     subjectLabel: 'revised ADR text, ADR title, and ticket text',
@@ -607,8 +615,8 @@ function buildNonConvergedReviewResponse(input: {
     selfReviewIteration: iteration,
     revisionDelta: revision.revisionDelta,
     reviewMode: 'subagent',
-    ...reviewObligationResponseFields(nextObligation, input.attemptId),
-    ...repositoryEvidenceUnavailableField(nextObligation?.repositoryEvidenceFreeze),
+    ...reviewObligationResponseFields(authority),
+    ...repositoryEvidenceUnavailableField(authority.obligation.repositoryEvidenceFreeze),
     reviewDispatch: instruction.reviewDispatch,
     reviewInvocation: instruction,
     _audit: { transitions: advanced.transitions },

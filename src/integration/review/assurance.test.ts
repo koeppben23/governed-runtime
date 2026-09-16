@@ -16,7 +16,6 @@ import {
   ensureReviewAssurance,
   createReviewObligation,
   appendReviewObligation,
-  reviewObligationResponseFields,
   findLatestObligation,
   consumeReviewObligation,
   hashText,
@@ -735,32 +734,6 @@ describe('integration/review-assurance', () => {
         attempts: [],
         dispatches: [],
       });
-    });
-  });
-
-  describe('reviewObligationResponseFields', () => {
-    it('builds structured response fields', () => {
-      const obligation = makeObligation({ obligationType: 'architecture', iteration: 2 });
-      const result = reviewObligationResponseFields(obligation);
-
-      expect(result.reviewObligation).toMatchObject({
-        obligationId: obligation.obligationId,
-        obligationType: 'architecture',
-        iteration: 2,
-      });
-      for (const field of [
-        'reviewObligationId',
-        'reviewObligationIteration',
-        'reviewObligationPlanVersion',
-        'reviewCriteriaVersion',
-        'reviewMandateDigest',
-      ]) {
-        expect(result).not.toHaveProperty(field);
-      }
-    });
-
-    it('returns empty fields when obligation is null', () => {
-      expect(reviewObligationResponseFields(null)).toEqual({});
     });
   });
 

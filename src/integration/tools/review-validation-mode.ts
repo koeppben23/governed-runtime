@@ -41,6 +41,8 @@ export interface ToolCallArgsView {
   readonly reviewVerdict?: 'accept' | 'changes_requested' | 'unable_to_review';
   /** reviewerUnavailable flag. */
   readonly reviewerUnavailable?: boolean;
+  /** Explicit typed transport-recovery intent (implementation review). */
+  readonly reviewRecovery?: 'retry_transport';
 }
 
 /** Pure boolean flags derived from the arguments (the once-canonical idiom). */
@@ -48,6 +50,7 @@ export interface ToolCallFlags {
   readonly hasText: boolean;
   readonly hasVerdict: boolean;
   readonly hasReviewerUnavailable: boolean;
+  readonly hasReviewRecovery: boolean;
 }
 
 /** Discriminated operation mode for a multi-mode tool call. */
@@ -56,6 +59,7 @@ export type ToolCallMode =
   | { readonly kind: 'revision' }
   | { readonly kind: 'approval' }
   | { readonly kind: 'transport_failure_retry' }
+  | { readonly kind: 'transport_recovery' }
   | { readonly kind: 'invalid'; readonly code: string; readonly params?: Record<string, string> };
 
 /**
@@ -75,6 +79,8 @@ interface FamilyCodes {
    * which have no legitimate preemptive-unavailable submission shape here).
    */
   readonly unavailableRequiresText: boolean;
+  /** reviewRecovery mixed with any other input. `undefined` disables the rule. */
+  readonly recoveryWithOtherInput?: string;
 }
 
 const FAMILY_CODES: Record<ToolFamily, FamilyCodes> = {
@@ -93,6 +99,7 @@ const FAMILY_CODES: Record<ToolFamily, FamilyCodes> = {
     approveWithText: undefined,
     unavailableWithSubmission: 'INVALID_IMPLEMENT_TOOL_SEQUENCE',
     unavailableRequiresText: false,
+    recoveryWithOtherInput: 'INVALID_IMPLEMENT_TOOL_SEQUENCE',
   },
 };
 
@@ -107,6 +114,7 @@ export function toolCallFlags(args: ToolCallArgsView): ToolCallFlags {
     hasText: typeof args.text === 'string' && args.text.trim().length > 0,
     hasVerdict: typeof args.reviewVerdict === 'string' && args.reviewVerdict.length > 0,
     hasReviewerUnavailable: args.reviewerUnavailable === true,
+    hasReviewRecovery: args.reviewRecovery === 'retry_transport',
   };
 }
 
@@ -141,6 +149,13 @@ function detectInvalidShape(
     },
     // reviewerUnavailable mixed into a submission (gated on text for plan).
     { when: unavailableInSubmission, code: codes.unavailableWithSubmission },
+    // reviewRecovery is a standalone intent; any other input makes it invalid.
+    {
+      when:
+        flags.hasReviewRecovery &&
+        (flags.hasVerdict || flags.hasText || flags.hasReviewerUnavailable),
+      code: codes.recoveryWithOtherInput,
+    },
   ];
 
   const matched = rules.find((rule) => rule.when && rule.code);
@@ -163,18 +178,32 @@ function detectInvalidShape(
  * The valid `text + verdict=changes_requested` (revision) shape is never
  * rejected — that is the revised-plan / revised-ADR path.
  */
+function classifyImplementTransportIntent(
+  family: ToolFamily,
+  flags: ToolCallFlags,
+): ToolCallMode | null {
+  if (family !== 'implement') return null;
+  const standalone = !flags.hasVerdict && !flags.hasText;
+  // The implementation verdict tool is the only admissible entrypoint once the
+  // workflow reaches IMPL_REVIEW. A bare reviewerUnavailable signal requests a
+  // transport retry; it is never a verdict submission.
+  if (flags.hasReviewerUnavailable && standalone && !flags.hasReviewRecovery) {
+    return { kind: 'transport_failure_retry' };
+  }
+  // An explicit typed recovery intent re-arms or re-emits the pending review
+  // dispatch; it is never mixed with a verdict or a transport-failure report.
+  if (flags.hasReviewRecovery && standalone && !flags.hasReviewerUnavailable) {
+    return { kind: 'transport_recovery' };
+  }
+  return null;
+}
+
 export function classifyToolCallMode(family: ToolFamily, args: ToolCallArgsView): ToolCallMode {
   const flags = toolCallFlags(args);
   const receivedVerdict = args.reviewVerdict;
 
-  // The implementation verdict tool is the only admissible entrypoint once the
-  // workflow reaches IMPL_REVIEW. A bare reviewerUnavailable signal requests a
-  // transport retry; it is never a verdict submission.
-  if (family === 'implement' && flags.hasReviewerUnavailable) {
-    if (!flags.hasVerdict && !flags.hasText) {
-      return { kind: 'transport_failure_retry' };
-    }
-  }
+  const transportIntent = classifyImplementTransportIntent(family, flags);
+  if (transportIntent) return transportIntent;
 
   const invalid = detectInvalidShape(FAMILY_CODES[family], flags, receivedVerdict);
   if (invalid) return invalid;

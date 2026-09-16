@@ -34,17 +34,18 @@ import { evaluate } from '../../machine/evaluate.js';
 import { autoAdvance } from '../../rails/types.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import {
-  reviewObligationResponseFields,
   artifactReviewSubjectScope,
   createObligationAndAttempt,
   freezeReviewMaterial,
-  findLatestObligation,
   resolveFrozenReviewProfile,
 } from '../review/assurance.js';
+import {
+  resolveReviewDispatchAuthority,
+  reviewObligationResponseFields,
+} from '../review/dispatch-authority.js';
+import type { ReviewDispatchAuthority } from '../review/dispatch-authority.js';
 import { buildFrozenReviewMaterialContent } from '../review/reviewer-context.js';
 import { buildChildSessionReviewInstruction } from '../review/child-session-instruction.js';
-import { reviewDispatchRequired } from '../review/dispatch-signal.js';
-import { resolveAttemptObservationCapability } from '../review/assurance.js';
 import { repositoryEvidenceUnavailableField } from '../review/observation-access.js';
 import {
   resolveReviewedArtifactIdentity,
@@ -152,36 +153,6 @@ function planRepositoryEvidenceWarning(
     : {};
 }
 
-function planSubmissionReviewContext(
-  scope: PlanExecutionScope,
-  finalState: SessionState,
-  planVersion: number,
-) {
-  const nextObligation = findLatestObligation(
-    finalState.reviewAssurance?.obligations ?? [],
-    'plan',
-    0,
-    planVersion,
-  );
-  const planAttemptId = nextObligation
-    ? (finalState.reviewAssurance?.attempts?.find(
-        (a) => a.obligationId === nextObligation.obligationId && a.status === 'created',
-      )?.attemptId ?? null)
-    : null;
-  return {
-    nextObligation,
-    planAttemptId,
-    reviewInstruction: buildPlanReviewInstruction({
-      scope,
-      obligation: nextObligation,
-      iteration: 0,
-      planVersion,
-      subjectLabel: 'full plan text and ticket text',
-      state: finalState,
-    }),
-  };
-}
-
 function partialClaimAcceptancePresentation(
   diagnostics: NonNullable<SessionState['plan']>['claimSubmissionDiagnostics'],
 ): { markdown: string } | undefined {
@@ -203,12 +174,15 @@ function partialClaimAcceptancePresentation(
 export function buildPlanSubmissionResponse(
   input: PlanSubmissionResponseInput,
 ): Record<string, unknown> {
-  const { scope, finalState, planEvidence, planVersion, transitions } = input;
-  const { nextObligation, planAttemptId, reviewInstruction } = planSubmissionReviewContext(
+  const { scope, finalState, planEvidence, planVersion, transitions, authority } = input;
+  const reviewInstruction = buildPlanReviewInstruction({
     scope,
-    finalState,
+    authority,
+    iteration: 0,
     planVersion,
-  );
+    subjectLabel: 'full plan text and ticket text',
+    state: finalState,
+  });
   const response: Record<string, unknown> = {
     phase: finalState.phase,
     status: 'Plan submitted (v' + planVersion + ').',
@@ -216,9 +190,9 @@ export function buildPlanSubmissionResponse(
     selfReviewIteration: 0,
     maxPlanReviewIterations: scope.maxPlanReviewIterations,
     reviewMode: 'subagent',
-    ...reviewObligationResponseFields(nextObligation, planAttemptId),
-    ...planRepositoryEvidenceWarning(nextObligation),
-    reviewDispatch: reviewDispatchRequired(),
+    ...reviewObligationResponseFields(authority),
+    ...planRepositoryEvidenceWarning(authority.obligation),
+    reviewDispatch: reviewInstruction.reviewDispatch,
     reviewInvocation: reviewInstruction,
     _audit: { transitions },
   };
@@ -244,7 +218,7 @@ function planRiskWarning(scope: PlanExecutionScope): ReturnType<typeof buildHeur
 
 export function buildPlanReviewInstruction(input: {
   scope: PlanExecutionScope;
-  obligation: ReturnType<typeof findLatestObligation>;
+  authority: ReviewDispatchAuthority;
   iteration: number;
   planVersion: number;
   subjectLabel: string;
@@ -259,15 +233,10 @@ export function buildPlanReviewInstruction(input: {
   return buildChildSessionReviewInstruction({
     mode,
     platform,
-    obligation: input.obligation,
+    authority: input.authority,
     iteration: input.iteration,
     planVersion: input.planVersion,
-    observationCapability: input.obligation
-      ? (resolveAttemptObservationCapability(
-          input.state.reviewAssurance,
-          input.obligation.obligationId,
-        ) ?? undefined)
-      : undefined,
+    observationCapability: input.authority.attempt.observationCapability ?? undefined,
   });
 }
 
@@ -401,14 +370,23 @@ export async function persistNonConvergedPlanReview(
   });
   if (mint.kind === 'blocked') return mint.message;
   const attemptResult = mint.attemptResult;
-  const nextObligation = attemptResult?.obligation ?? null;
-  const stateToPersist = attemptResult
-    ? { ...finalState, reviewAssurance: attemptResult.assurance }
-    : finalState;
+  if (!attemptResult) {
+    return formatBlocked('REVIEW_ATTEMPT_UNAVAILABLE', {
+      reason: 'the plan revision produced no review obligation authority',
+    });
+  }
+  const authorityResult = resolveReviewDispatchAuthority(
+    attemptResult.assurance,
+    attemptResult.obligation.obligationId,
+  );
+  if (authorityResult.kind === 'blocked') {
+    return formatBlocked(authorityResult.code, { reason: authorityResult.reason });
+  }
+  const stateToPersist = { ...finalState, reviewAssurance: attemptResult.assurance };
   await writeStateWithArtifacts(scope.sessDir, stateToPersist);
   return JSON.stringify(
     enrichWithWorkflowDirective(
-      nonConvergedPlanResponse(scope, finalState, transitions, revision, nextObligation),
+      nonConvergedPlanResponse(scope, finalState, transitions, revision, authorityResult.authority),
       stateToPersist,
     ),
   );
@@ -500,12 +478,12 @@ export function nonConvergedPlanResponse(
   finalState: SessionState,
   transitions: unknown,
   revision: PlanRevisionResult,
-  nextObligation: Parameters<typeof reviewObligationResponseFields>[0],
+  authority: ReviewDispatchAuthority,
 ): Record<string, unknown> {
   const nextPlanVersion = revision.history.length + 1;
   const reviewInstruction = buildPlanReviewInstruction({
     scope,
-    obligation: nextObligation,
+    authority,
     iteration: scope.state.selfReview!.iteration + 1,
     planVersion: nextPlanVersion,
     subjectLabel: 'revised plan text and ticket text',
@@ -518,8 +496,8 @@ export function nonConvergedPlanResponse(
     selfReviewIteration: scope.state.selfReview!.iteration + 1,
     revisionDelta: revision.revisionDelta,
     reviewMode: 'subagent',
-    ...reviewObligationResponseFields(nextObligation),
-    reviewDispatch: reviewDispatchRequired(),
+    ...reviewObligationResponseFields(authority),
+    reviewDispatch: reviewInstruction.reviewDispatch,
     reviewInvocation: reviewInstruction,
     _audit: { transitions },
   };

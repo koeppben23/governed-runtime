@@ -34,9 +34,13 @@ import {
   artifactReviewSubjectScope,
   createReviewObligation,
   freezeReviewMaterial,
-  reviewObligationResponseFields,
   resolveFrozenReviewProfile,
 } from '../review/assurance.js';
+import {
+  resolveReviewDispatchAuthority,
+  reviewObligationResponseFields,
+} from '../review/dispatch-authority.js';
+import type { ReviewDispatchAuthority } from '../review/dispatch-authority.js';
 import {
   resolveReviewContinuation,
   type ReviewContinuation,
@@ -119,9 +123,15 @@ async function routePendingArchitectureContinuation(
   // instead.
   const changed = changedSubjectWhilePending(args, continuation.obligation, session);
   if (changed) return changed;
+  const authority = resolveReviewDispatchAuthority(
+    session.state.reviewAssurance,
+    continuation.obligation.obligationId,
+  );
+  if (authority.kind === 'blocked') {
+    return formatBlocked(authority.code, { reason: authority.reason });
+  }
   return architectureInstructionResponse(session, {
-    obligation: continuation.obligation,
-    attemptId: continuation.attemptId,
+    authority: authority.authority,
     status: 'Architecture review is pending.',
     iteration: continuation.obligation.iteration,
     planVersion: continuation.obligation.planVersion,
@@ -174,14 +184,17 @@ async function routeArchitectureInterruptedDispatch(
     reviewAssurance: rearmed.assurance,
   });
   const fresh = (await readState(session.sessDir)) ?? session.state;
+  const authority = resolveReviewDispatchAuthority(fresh.reviewAssurance, obligation.obligationId);
+  if (authority.kind === 'blocked') {
+    return formatBlocked(authority.code, { reason: authority.reason });
+  }
   return architectureInstructionResponse(
     { ...session, state: fresh },
     {
-      obligation,
-      attemptId: rearmed.attempt.attemptId,
+      authority: authority.authority,
       status: 'Architecture review re-armed after interrupted dispatch.',
-      iteration: obligation.iteration,
-      planVersion: obligation.planVersion,
+      iteration: authority.authority.obligation.iteration,
+      planVersion: authority.authority.obligation.planVersion,
     },
   );
 }
@@ -189,18 +202,16 @@ async function routeArchitectureInterruptedDispatch(
 function architectureInstructionResponse(
   session: ArchitectureSession,
   input: {
-    obligation: ReviewObligation;
-    attemptId: string | null;
+    authority: ReviewDispatchAuthority;
     status: string;
     iteration: number;
     planVersion: number;
   },
 ): string {
-  const { state, policy } = session;
+  const { state } = session;
   const subagentEnabled = true;
   const instruction = buildArchitectureReviewInstruction({
-    policy,
-    obligation: input.obligation,
+    authority: input.authority,
     iteration: input.iteration,
     planVersion: input.planVersion,
     subjectLabel: 'full ADR text, ADR title, and ticket text',
@@ -213,10 +224,10 @@ function architectureInstructionResponse(
     adrDigest: state.architecture!.digest,
     selfReviewIteration: state.selfReview?.iteration ?? 0,
     reviewMode: subagentEnabled ? 'subagent' : 'self',
-    ...reviewObligationResponseFields(input.obligation, input.attemptId),
+    ...reviewObligationResponseFields(input.authority),
     // Durable degradation: re-emits and repairs render the persisted freeze
     // cause, not only the immediate Mode-A response.
-    ...repositoryEvidenceUnavailableField(input.obligation.repositoryEvidenceFreeze),
+    ...repositoryEvidenceUnavailableField(input.authority.obligation.repositoryEvidenceFreeze),
     reviewDispatch: instruction.reviewDispatch,
     reviewInvocation: instruction,
     _audit: { transitions: [] },
@@ -334,7 +345,11 @@ async function restartArchitectureReview(
   );
   if (mintResult.kind === 'blocked') return mintResult.message;
   const obligation = mintResult.obligation;
-  const restartAttemptId = mintResult.attemptId;
+  if (!obligation) {
+    return formatBlocked('REVIEW_ATTEMPT_UNAVAILABLE', {
+      reason: 'the architecture restart minted no review obligation authority',
+    });
+  }
   const augmentedState = buildRestartedState(state, {
     nextAdr,
     sameRevision,
@@ -344,26 +359,53 @@ async function restartArchitectureReview(
   });
   await writeStateWithArtifacts(session.sessDir, augmentedState);
 
-  const instruction = buildArchitectureReviewInstruction({
-    policy: session.policy,
-    obligation,
+  return respondRestartDispatch({
+    augmentedState,
+    nextAdr,
+    sameRevision,
+    revisionDelta: revision.revisionDelta,
+    subagentEnabled,
+    obligationId: obligation.obligationId,
     iteration,
     planVersion,
+  });
+}
+
+function respondRestartDispatch(input: {
+  augmentedState: SessionState;
+  nextAdr: NonNullable<SessionState['architecture']>;
+  sameRevision: boolean;
+  revisionDelta: 'none' | 'minor';
+  subagentEnabled: boolean;
+  obligationId: string;
+  iteration: number;
+  planVersion: number;
+}): string {
+  const authority = resolveReviewDispatchAuthority(
+    input.augmentedState.reviewAssurance,
+    input.obligationId,
+  );
+  if (authority.kind === 'blocked') {
+    return formatBlocked(authority.code, { reason: authority.reason });
+  }
+  const instruction = buildArchitectureReviewInstruction({
+    authority: authority.authority,
+    iteration: input.iteration,
+    planVersion: input.planVersion,
     subjectLabel: 'full ADR text, ADR title, and ticket text',
-    state: augmentedState,
+    state: input.augmentedState,
   });
   return JSON.stringify(
     enrichWithWorkflowDirective(
-      buildRestartResponse(augmentedState, {
-        nextAdr,
-        sameRevision,
-        revisionDelta: revision.revisionDelta,
-        subagentEnabled,
-        obligation,
-        restartAttemptId,
+      buildRestartResponse(input.augmentedState, {
+        nextAdr: input.nextAdr,
+        sameRevision: input.sameRevision,
+        revisionDelta: input.revisionDelta,
+        subagentEnabled: input.subagentEnabled,
+        authority: authority.authority,
         instruction,
       }),
-      augmentedState,
+      input.augmentedState,
     ),
   );
 }
@@ -436,8 +478,7 @@ function buildRestartResponse(
     sameRevision: boolean;
     revisionDelta: 'none' | 'minor';
     subagentEnabled: boolean;
-    obligation: ReturnType<typeof createReviewObligation> | null;
-    restartAttemptId: string | null;
+    authority: ReviewDispatchAuthority;
     instruction: ReturnType<typeof buildArchitectureReviewInstruction>;
   },
 ): Record<string, unknown> {
@@ -451,8 +492,8 @@ function buildRestartResponse(
     selfReviewIteration: augmentedState.selfReview!.iteration,
     revisionDelta: input.revisionDelta,
     reviewMode: input.subagentEnabled ? 'subagent' : 'self',
-    ...reviewObligationResponseFields(input.obligation, input.restartAttemptId),
-    ...repositoryEvidenceUnavailableField(input.obligation?.repositoryEvidenceFreeze),
+    ...reviewObligationResponseFields(input.authority),
+    ...repositoryEvidenceUnavailableField(input.authority.obligation.repositoryEvidenceFreeze),
     reviewDispatch: input.instruction.reviewDispatch,
     reviewInvocation: input.instruction,
     _audit: { transitions: [] },

@@ -59,7 +59,6 @@ import type {
   ValidationOutcome,
 } from '../../state/evidence-validation.js';
 import { isTechnicalValidationBlock } from '../../state/evidence-validation.js';
-import type { ReviewObligation } from '../../state/evidence.js';
 import {
   prepareVerificationExecution,
   type PreparedVerificationExecution,
@@ -68,15 +67,14 @@ import { completeAssertionExtraction } from '../../verification/assertion-extrac
 import { withSessionWriteLockRetry, PersistenceError } from '../../adapters/lock-retry.js';
 import { REASON_LOCK_TIMEOUT_EXHAUSTED } from '../../shared/flowguard-identifiers.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
-import { reviewObligationResponseFields } from '../review/assurance.js';
 import {
-  resolveRuntimeReviewPlatform,
-  resolveReviewOrchestrationMode,
-} from '../review/orchestration-mode.js';
-import { buildChildSessionReviewInstruction } from '../review/child-session-instruction.js';
-import { resolveAttemptObservationCapability } from '../review/assurance.js';
+  resolveReviewDispatchAuthority,
+  reviewObligationResponseFields,
+} from '../review/dispatch-authority.js';
+import type { ReviewDispatchAuthority } from '../review/dispatch-authority.js';
 import {
   activateReviewObligationAndPersist,
+  buildImplementationReviewInstruction,
   materializeImplReviewContract,
   nextImplementationReviewIteration,
 } from './implement-shared.js';
@@ -446,6 +444,8 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
         activated.state,
         advanced.transitions,
       );
+      const authorityResult = checkDispatchAuthority(activated, persisted);
+      if (typeof authorityResult === 'string') return authorityResult;
       logger.info('tool', 'check_persisted', {
         sessionId,
         checkId: kind,
@@ -464,7 +464,7 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
         executionObservedStateDigest,
         advanced,
         finalState: persisted,
-        nextObligation: activated.obligation,
+        authority: authorityResult?.authority ?? null,
         policy: freshPolicy,
       });
     },
@@ -657,30 +657,26 @@ function buildNextValidationState(
 
 // ─── Response Formatting ──────────────────────────────────────────────────────
 
-function buildRunCheckReviewInstruction(
-  finalState: SessionState,
-  nextObligation: ReviewObligation | null,
-  _policy: FlowGuardPolicy,
-) {
-  if (!nextObligation) return null;
+function buildRunCheckReviewInstruction(authority: ReviewDispatchAuthority | null) {
+  return authority ? buildImplementationReviewInstruction(authority) : null;
+}
 
-  const platform = resolveRuntimeReviewPlatform();
-  const mode = resolveReviewOrchestrationMode({
-    platform,
-    nativeReviewerAvailable: platform !== 'unknown',
-  });
-  return buildChildSessionReviewInstruction({
-    mode,
-    platform,
-    obligation: nextObligation,
-    iteration: nextObligation.iteration,
-    planVersion: nextObligation.planVersion,
-    observationCapability:
-      resolveAttemptObservationCapability(
-        finalState.reviewAssurance,
-        nextObligation.obligationId,
-      ) ?? undefined,
-  });
+function checkDispatchAuthority(
+  activated: Extract<
+    Awaited<ReturnType<typeof activateReviewObligationAndPersist>>,
+    { activated: unknown }
+  >['activated'],
+  persisted: SessionState,
+) {
+  if (!activated.obligation) return null;
+  const authority = resolveReviewDispatchAuthority(
+    persisted.reviewAssurance,
+    activated.obligation.obligationId,
+  );
+  if (authority.kind === 'blocked') {
+    return formatBlocked(authority.code, { reason: authority.reason });
+  }
+  return authority;
 }
 
 function formatRunCheckResponse(input: {
@@ -693,7 +689,7 @@ function formatRunCheckResponse(input: {
   executionObservedStateDigest: string;
   advanced: Exclude<ReturnType<typeof autoAdvance>, { kind: 'overflow' }>;
   finalState: SessionState;
-  nextObligation: ReviewObligation | null;
+  authority: ReviewDispatchAuthority | null;
   policy: FlowGuardPolicy;
 }): ToolResult {
   const {
@@ -710,11 +706,7 @@ function formatRunCheckResponse(input: {
   const remainingChecks = finalState.activeChecks.filter(
     (checkId) => !finalValidation.some((result) => result.checkId === checkId && result.passed),
   );
-  const reviewInstruction = buildRunCheckReviewInstruction(
-    finalState,
-    input.nextObligation,
-    input.policy,
-  );
+  const reviewInstruction = buildRunCheckReviewInstruction(input.authority);
   return JSON.stringify(
     enrichWithWorkflowDirective(
       {
@@ -737,7 +729,7 @@ function formatRunCheckResponse(input: {
           executionObservedStateDigest !== hashText(canonicalJsonStringify(originalState)),
         derivedRepairGuidance,
         remainingChecks,
-        ...reviewObligationResponseFields(input.nextObligation),
+        ...(input.authority ? reviewObligationResponseFields(input.authority) : {}),
         ...(reviewInstruction ? { reviewDispatch: reviewInstruction.reviewDispatch } : {}),
         ...(reviewInstruction ? { reviewInvocation: reviewInstruction } : {}),
         _audit: { transitions },

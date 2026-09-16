@@ -157,6 +157,15 @@ export const review_implementation: ToolDefinition = {
         'Set to true ONLY after a real reviewer-subagent spawn failure (Task tool fails, agent ' +
           'unavailable). It never enables self-review or approval.',
       ),
+    reviewRecovery: z
+      .literal('retry_transport')
+      .optional()
+      .describe(
+        'Typed transport-recovery intent. ONLY when the authorized native reviewer Task release ' +
+          'was technically interrupted or yielded no bindable evidence: re-emits the pending ' +
+          'review dispatch for the current attempt, or re-arms a fresh attempt on the SAME frozen ' +
+          'implementation subject after a released dispatch. Never a verdict and never approval.',
+      ),
   },
   async execute(args, context) {
     try {
