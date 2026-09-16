@@ -3,12 +3,11 @@
  * @description Independent-review invocation-evidence schema.
  *
  * `ReviewInvocationEvidence` captures host-observed reviewer execution and the
- * structured findings bound to it. The native OpenCode transport keeps one
- * child session across the visible Task execution and the schema-constrained
- * serialization follow-up; legacy SDK-session evidence remains parseable for
- * existing v5 state/tests but cannot satisfy the visible-review product gate.
+ * structured findings bound to it. The only sanctioned OpenCode transport keeps
+ * one native, host-visible Task child across review execution and the
+ * schema-constrained serialization follow-up.
  *
- * @version v3
+ * @version v4
  */
 
 import { z } from 'zod';
@@ -28,16 +27,15 @@ export const ReviewInvocationEvidence = z
     /** Persisted host-authoritative attempt identity. */
     attemptId: z.string().uuid(),
     /**
-     * `native_task_structured_followup` is the product transport: the same
-     * host-visible Task child executes the review and serializes its findings.
-     * `sdk_session_prompt` remains parseable for transport tests/older v5 state
-     * but is not accepted by the visible-review enforcement gate.
+     * The reviewer executes as a native OpenCode Task child and emits its
+     * authoritative structured findings through a schema-constrained follow-up
+     * in that same child session.
      */
-    invocationMode: z.enum(['sdk_session_prompt', 'native_task_structured_followup']),
-    /** Whether this invocation produced a host-visible child session in the host GUI. */
-    hostVisible: z.boolean(),
-    /** Whether the host exposes navigation from the parent Task record to this child transcript. */
-    transcriptNavigable: z.boolean().optional(),
+    invocationMode: z.literal('native_task_structured_followup'),
+    /** Native Task execution must be visible from the parent host session. */
+    hostVisible: z.literal(true),
+    /** Native Task metadata must provide a navigable child transcript. */
+    transcriptNavigable: z.literal(true),
     promptHash: z.string().min(1),
     canonicalPromptDigest: Sha256Digest.optional(),
     modelPromptDigest: Sha256Digest.nullable().optional(),
