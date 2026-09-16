@@ -64,7 +64,7 @@ interface NativeReviewLineage {
   readonly state: PersistedState;
   readonly obligation: ReviewObligation;
   readonly attempt: BindableAttempt;
-  readonly dispatch: PersistedState['reviewAssurance']['dispatches'][number];
+  readonly dispatch: NonNullable<PersistedState['reviewAssurance']>['dispatches'][number];
 }
 
 interface BlockOutputInput {
@@ -393,7 +393,11 @@ function validateCapturedFindings(
     checkUnableToReview: false,
   });
   if (!attestation.valid) {
-    return { kind: 'blocked' as const, code: attestation.code, reason: 'Reviewer attestation mismatch.' };
+    return {
+      kind: 'blocked' as const,
+      code: attestation.code,
+      reason: 'Reviewer attestation mismatch.',
+    };
   }
   const challenge = validateChallengeConsistency({
     overallVerdict: findings.overallVerdict,
