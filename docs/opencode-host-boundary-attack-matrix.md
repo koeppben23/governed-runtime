@@ -314,12 +314,12 @@ state. Authority paths receive session identity per call.
 
 ### F-08 — No real-host proof that a before-hook throw prevents tool execution
 
-**Severity:** P1. **Status:** Partial — gated real-host E2E added (`src/cli/opencode-host-boundary-live.test.ts`, smoke project); live execution is `NOT_VERIFIED` until run with `OPENCODE_LIVE=1`. **Scenarios:** HS-01.
+**Severity:** P1. **Status:** Gap — the gated real-host E2E was removed after it never passed reliably; no real-host execution proof exists today. **Scenarios:** HS-01.
 
 Blocked-mutation tests assert the throw at handler and composition-root level.
-The gated test loads the real plugin into OpenCode and checks a marker side
-effect, but its live model-dispatch path is intentionally not claimed verified
-until it completes in an enabled environment.
+A real-host E2E that loads the plugin into OpenCode, checks a marker side
+effect, and proves the enforcement error reaches the model dispatch is still
+missing.
 
 ### F-09 — Real-host reviewer capability test is orphaned from all vitest projects
 
@@ -368,15 +368,15 @@ remains residual evidence rather than a stronger claim.
 5. F-05 — define host compatibility classification. **Done**; unknown-host fail-closed policy remains **Partial**.
 6. F-06 — centralize session-scoped cleanup. **Done**.
 7. F-07 — remove mutable session-id state from the adapter. **Done**.
-8. F-08 — real-host hook lifecycle E2E. **Gated test added; live run `NOT_VERIFIED`**.
+8. F-08 — real-host hook lifecycle E2E. **Gated test removed; real-host run `NOT_VERIFIED`**.
 9. F-09 to F-13 — close executable coverage gaps. **Done** (process-level orphan evidence remains residual).
 
 ---
 
 ## Next Passes
 
-- Complete the gated real-host hook lifecycle E2E (F-08) in an environment where
-  the pinned host can complete model dispatch.
+- Add a real-host hook lifecycle E2E (F-08) in an environment where the pinned
+  host can complete model dispatch.
 - Decide the fail-closed policy for `compatible-unverified` OpenCode hosts (F-05).
 - Close PL-06 by deciding whether OpenCode mutation semantics belong entirely
   behind the HAI or remain an explicitly host-owned hook concern.

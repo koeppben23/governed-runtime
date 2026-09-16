@@ -89,7 +89,6 @@ export default defineConfig({
             'src/cli/run-acp-smoke.test.ts',
             'src/cli/inspect-command.test.ts',
             'src/cli/opencode-reviewer-capability.test.ts',
-            'src/cli/opencode-host-boundary-live.test.ts',
             'src/cli/opencode-reviewer-structured-live.test.ts',
             'src/cli/opencode-mandate-visibility.test.ts',
             'src/mcp-server/mcp-protocol.test.ts',

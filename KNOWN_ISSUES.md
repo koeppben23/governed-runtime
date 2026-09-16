@@ -549,7 +549,7 @@ intentionally not fixed there.
 `src/adapters/host-adapter.ts:27` describes `synchronous` as a "guaranteed
 block (in-process throw or exit-code-2)". That is the OpenCode enforcement
 model, but the real model-dispatch proof that a before-hook throw prevents tool
-execution is still `NOT_VERIFIED` (matrix F-08, gated `OPENCODE_LIVE=1` E2E).
+execution is still `NOT_VERIFIED` (matrix F-08; the gated real-host E2E was removed, so no live proof exists).
 Remediation: separate the enforcement model (host contract property) from the
 assurance level (observed evidence) and render the assurance level explicitly
 where `enforcementLevel` is surfaced today.
