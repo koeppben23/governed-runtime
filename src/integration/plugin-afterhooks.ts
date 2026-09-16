@@ -42,6 +42,7 @@ import {
   type FlowGuardPluginRuntime,
 } from './plugin-shared.js';
 import { TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
+import { resumePendingSystemWork as runSystemWorkResume } from './tools/auto-validation.js';
 import { enforceRiskClassificationAfterBash as enforceRiskAfterBash } from './plugin-risk.js';
 import { enforceDiscoveryHealthAfterBash } from './plugin-discovery-health.js';
 import { recordMutationCompletion } from './plugin-mutation-episodes.js';
@@ -210,6 +211,37 @@ async function runFlowGuardAuditAfter(args: {
   });
 }
 
+/**
+ * Resume interrupted canonical system work at the session lifecycle boundary.
+ * `system_work` phases carry no commands, so the runtime — not a later user
+ * command — owns the continuation. Fail-safe: the event handler catches.
+ */
+async function resumeSystemWorkForSession(
+  runtime: FlowGuardPluginRuntime,
+  sessionId: string,
+): Promise<void> {
+  const worktreeRoot = runtime.riskDeps.getWorktreeRoot?.();
+  if (!worktreeRoot) return;
+  const outcome = await runSystemWorkResume({
+    sessionID: sessionId,
+    worktree: worktreeRoot,
+    directory: worktreeRoot,
+  });
+  if (outcome.kind === 'blocked') {
+    runtime.log.error('system-work', 'system work resume blocked', {
+      sessionId,
+      code: outcome.code,
+    });
+    return;
+  }
+  if (outcome.kind === 'none') return;
+  runtime.log.info('system-work', 'system work resume finished', {
+    sessionId,
+    outcome: outcome.kind,
+    phase: outcome.phase,
+  });
+}
+
 export async function handlePluginEvent(
   runtime: FlowGuardPluginRuntime,
   event: unknown,
@@ -218,6 +250,8 @@ export async function handlePluginEvent(
     const eventDeps: EventHandlerDeps = {
       log: runtime.log,
       cleanupSession: (sessionId: string) => cleanupSessionRuntime(runtime, sessionId),
+      resumePendingSystemWork: (sessionId: string) =>
+        resumeSystemWorkForSession(runtime, sessionId),
       async emitSessionErrorAudit(sessionId, errorMessage, detail) {
         const sessDir = runtime.ws.getSessionDir(sessionId);
         if (!sessDir) return;

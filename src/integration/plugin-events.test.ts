@@ -34,6 +34,10 @@ function createMockDeps(): EventHandlerDeps & {
         calls.push({ method: 'log.error', args: [service, message, extra] });
       },
     },
+    resumePendingSystemWork(sessionId: string) {
+      calls.push({ method: 'resumePendingSystemWork', args: [sessionId] });
+      return Promise.resolve();
+    },
     cleanupSession(sessionId: string) {
       calls.push({ method: 'cleanupSession', args: [sessionId] });
     },
@@ -87,6 +91,37 @@ describe('integration/plugin-events', () => {
       const infoCall = deps.calls.find((c) => c.method === 'log.info');
       expect(infoCall).toBeDefined();
       expect(infoCall!.args[2]).toEqual({ sessionId: 'sess-xyz' });
+    });
+
+    it('session.idle resumes pending system work for the session', async () => {
+      const deps = createMockDeps();
+      await handleEvent(deps, { type: 'session.idle', properties: { sessionID: 'sess-idle' } });
+
+      const resumeCall = deps.calls.find((c) => c.method === 'resumePendingSystemWork');
+      expect(resumeCall).toBeDefined();
+      expect(resumeCall!.args[0]).toBe('sess-idle');
+    });
+
+    it('session.status idle resumes pending system work; busy does not', async () => {
+      const deps = createMockDeps();
+      await handleEvent(deps, {
+        type: 'session.status',
+        properties: { sessionID: 'sess-status', status: { type: 'idle' } },
+      });
+      await handleEvent(deps, {
+        type: 'session.status',
+        properties: { sessionID: 'sess-status', status: { type: 'busy' } },
+      });
+
+      const resumeCalls = deps.calls.filter((c) => c.method === 'resumePendingSystemWork');
+      expect(resumeCalls).toHaveLength(1);
+      expect(resumeCalls[0]!.args[0]).toBe('sess-status');
+    });
+
+    it('session.idle without a session id is ignored fail-safe', async () => {
+      const deps = createMockDeps();
+      await handleEvent(deps, { type: 'session.idle', properties: {} });
+      expect(deps.calls.some((c) => c.method === 'resumePendingSystemWork')).toBe(false);
     });
 
     it('session.error falls back to message property if error is missing', async () => {

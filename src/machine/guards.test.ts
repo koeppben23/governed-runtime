@@ -7,6 +7,7 @@ import {
   allValidationsPassed,
   checkFailed,
   checkErrored,
+  implCheckErrored,
   implComplete,
   implReviewMet,
   implReviewPending,
@@ -78,6 +79,25 @@ describe('guards', () => {
     it('checkErrored does NOT fire for an ordinary check failure (exit 1)', () => {
       // VALIDATION_FAILED has exitCode 1, timedOut false → a genuine failure, not an execution error.
       expect(checkErrored(makeState('VALIDATION', { validation: VALIDATION_FAILED }))).toBe(false);
+    });
+
+    it('checkErrored fires for a blocked outcome even with exit code 0 (subject drift)', () => {
+      // VERIFICATION_SUBJECT_CHANGED: the process succeeded but the reviewed
+      // subject changed during execution. This is a technical block, never a
+      // proven artifact failure.
+      const subjectChanged = [
+        { ...VALIDATION_FAILED[0]!, passed: false, outcome: 'blocked' as const, exitCode: 0 },
+      ];
+      expect(checkErrored(makeState('VALIDATION', { validation: subjectChanged }))).toBe(true);
+    });
+
+    it('implCheckErrored fires for a blocked post-implementation outcome with exit code 0', () => {
+      const subjectChanged = [
+        { ...VALIDATION_FAILED[0]!, passed: false, outcome: 'blocked' as const, exitCode: 0 },
+      ];
+      expect(
+        implCheckErrored(makeState('IMPL_VALIDATION', { implValidation: subjectChanged })),
+      ).toBe(true);
     });
 
     it('implComplete fires when implementation is present', () => {

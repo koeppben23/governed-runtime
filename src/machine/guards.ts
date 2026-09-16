@@ -17,7 +17,7 @@
 
 import type { LoopVerdict } from '../state/evidence.js';
 import type { SessionState, Phase, Event } from '../state/schema.js';
-import { isExecutionError } from '../state/evidence-validation.js';
+import { isTechnicalValidationBlock } from '../state/evidence-validation.js';
 import { evaluateValidationEvidence } from './validation-evidence.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -136,7 +136,7 @@ export const checkFailed: GuardFn = (s) => s.validation.some((v) => !v.passed);
  * CHECK_FAILED, which routes to PLAN. Evaluated BEFORE checkFailed so a transient
  * execution error is never misread as a deficient plan.
  */
-export const checkErrored: GuardFn = (s) => s.validation.some(isExecutionError);
+export const checkErrored: GuardFn = (s) => s.validation.some(isTechnicalValidationBlock);
 
 /**
  * Post-implementation validation passed (IMPL_VALIDATION phase). Mirrors
@@ -167,7 +167,7 @@ export const implCheckFailed: GuardFn = (s) => s.implValidation.some((v) => !v.p
  * A post-implementation check ERRORED (timeout / command-not-found). Keeps the
  * session in IMPL_VALIDATION for a retry, mirroring {@link checkErrored}.
  */
-export const implCheckErrored: GuardFn = (s) => s.implValidation.some(isExecutionError);
+export const implCheckErrored: GuardFn = (s) => s.implValidation.some(isTechnicalValidationBlock);
 
 /** Implementation evidence is present. */
 export const implComplete: GuardFn = (s) => s.implementation !== null;

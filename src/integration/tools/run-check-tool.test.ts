@@ -502,7 +502,10 @@ describe('HAPPY', () => {
       await run_check.execute({ kind: 'typecheck', candidateId }, ctx),
     );
 
-    expect(result).toMatchObject({ phase: 'PLAN' });
+    // Subject drift during execution is a TECHNICAL block, not a proven plan
+    // failure: the phase stays in validation and the blocked evidence is
+    // persisted for a retry instead of routing to PLAN.
+    expect(result).toMatchObject({ phase: 'VALIDATION' });
     expect(executeCheck).toHaveBeenCalledWith(
       expect.objectContaining({ command: 'npm run test --' }),
     );
@@ -570,7 +573,10 @@ describe('HAPPY', () => {
       await run_check.execute({ kind: 'typecheck', candidateId }, ctx),
     );
 
-    expect(result).toMatchObject({ phase: 'PLAN' });
+    // Subject drift during execution is a TECHNICAL block, not a proven plan
+    // failure: the phase stays in validation and the blocked evidence is
+    // persisted for a retry instead of routing to PLAN.
+    expect(result).toMatchObject({ phase: 'VALIDATION' });
     expect(executeCheck).toHaveBeenCalledWith(
       expect.objectContaining({ command: 'npm run test --' }),
     );
@@ -630,7 +636,10 @@ describe('HAPPY', () => {
       await run_check.execute({ kind: 'typecheck', candidateId }, ctx),
     );
 
-    expect(result).toMatchObject({ phase: 'PLAN' });
+    // Subject drift during execution is a TECHNICAL block, not a proven plan
+    // failure: the phase stays in validation and the blocked evidence is
+    // persisted for a retry instead of routing to PLAN.
+    expect(result).toMatchObject({ phase: 'VALIDATION' });
     const persisted = await readState(sd);
     expect(persisted!.validation[0]).toMatchObject({
       passed: false,

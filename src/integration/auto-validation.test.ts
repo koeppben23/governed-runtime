@@ -549,12 +549,55 @@ describe('automatic validation', () => {
 
       const resumed = await resumePendingSystemWork(ctx);
 
-      expect(resumed).not.toBeNull();
+      expect(resumed).toMatchObject({ kind: 'completed', phase: 'IMPLEMENTATION' });
       expect(await getPhase()).toBe('IMPLEMENTATION');
       const finalState = await readState(sessDir);
       expect(finalState!.pendingSystemWork).toBeNull();
       expect(finalState!.validation).toHaveLength(finalState!.activeChecks.length);
       expect(finalState!.validation.every((entry) => entry.passed)).toBe(true);
+
+      // One attempt per marker generation: a second resume of the same marker
+      // (e.g. a duplicate idle event) does not re-run the checks.
+      vi.mocked(executorMock.executeCheck).mockClear();
+      const again = await resumePendingSystemWork(ctx);
+      expect(again).toEqual({ kind: 'none' });
+      expect(vi.mocked(executorMock.executeCheck)).not.toHaveBeenCalled();
+    });
+
+    it('a technical resume outcome keeps the marker pending and reports still_pending', async () => {
+      await reachTeamPlanReview();
+
+      const sessDir = await getSessDir();
+      const state = await readState(sessDir);
+      const requestedAt = new Date().toISOString();
+      await writeState(sessDir, {
+        ...state!,
+        phase: 'VALIDATION',
+        pendingSystemWork: { kind: 'validation', requestedAt },
+        validation: [],
+      });
+      vi.mocked(executorMock.executeCheck).mockResolvedValueOnce(timedOutCheck('typecheck'));
+
+      const resumed = await resumePendingSystemWork(ctx);
+
+      expect(resumed).toMatchObject({ kind: 'still_pending', phase: 'VALIDATION' });
+      const finalState = await readState(sessDir);
+      expect(finalState!.phase).toBe('VALIDATION');
+      expect(finalState!.pendingSystemWork).not.toBeNull();
+    });
+
+    it('fails closed with a blocked resume outcome on an unreadable session state', async () => {
+      await reachTeamPlanReview();
+      const sessDir = await getSessDir();
+      await fs.writeFile(statePath(sessDir), '{ this is not valid json', 'utf-8');
+
+      const resumed = await resumePendingSystemWork(ctx);
+
+      expect(resumed).toMatchObject({ kind: 'blocked', code: 'SYSTEM_WORK_STATE_UNREADABLE' });
+      expect(JSON.parse(resumed.kind === 'blocked' ? resumed.response : '{}')).toMatchObject({
+        error: true,
+        code: 'SYSTEM_WORK_STATE_UNREADABLE',
+      });
     });
 
     it('fails closed with SYSTEM_WORK_STATE_UNREADABLE on an unreadable session state', async () => {

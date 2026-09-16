@@ -5,6 +5,9 @@
  * Implements handlers for:
  * - session.error: Logs unhandled session errors to the audit trail
  * - session.deleted: Cleans stale in-memory caches for terminated sessions
+ * - session idle (session.idle / session.status idle): resumes interrupted
+ *   canonical system work. `system_work` phases have no commands, so the
+ *   runtime — not a later user command — owns the continuation.
  *
  * All handlers are fail-safe: errors are logged but never thrown.
  * This prevents event-hook failures from breaking the host runtime.
@@ -25,7 +28,10 @@ import { redactExtra, sanitizeDiagnosticString } from '../logging/redact.js';
  * pinned to the real union instead of hand-written strings.
  */
 type HostEvent = Parameters<NonNullable<Hooks['event']>>[0]['event'];
-type HandledEventType = Extract<HostEvent, { type: 'session.error' | 'session.deleted' }>['type'];
+type HandledEventType = Extract<
+  HostEvent,
+  { type: 'session.error' | 'session.deleted' | 'session.idle' | 'session.status' }
+>['type'];
 
 /**
  * OpenCode Event shape (from @opencode-ai/sdk, used by plugin event hooks).
@@ -70,6 +76,13 @@ export interface EventHandlerDeps {
     errorMessage: string,
     detail: Record<string, unknown>,
   ): Promise<void>;
+  /**
+   * Resume interrupted canonical system work for an idle/active session.
+   * The runtime lifecycle owns this trigger; no user command is required.
+   * Fail-safe: the handler catches and logs; the implementation must never
+   * throw for an unavailable/resolved-elsewhere session.
+   */
+  resumePendingSystemWork(sessionId: string): Promise<void>;
 }
 
 /**
@@ -81,6 +94,8 @@ export interface EventHandlerDeps {
 const HANDLED_EVENT_TYPES: ReadonlySet<string> = new Set<HandledEventType>([
   'session.error',
   'session.deleted',
+  'session.idle',
+  'session.status',
 ]);
 
 /**
@@ -208,6 +223,34 @@ async function handleSessionDelete(deps: EventHandlerDeps, event: PluginEvent): 
 }
 
 /**
+ * Resolve the event session id (`properties.sessionID`). Missing or non-string
+ * ids are ignored fail-safe.
+ */
+function extractEventSessionId(
+  properties: Record<string, unknown> | undefined,
+): string | undefined {
+  const id = properties?.sessionID;
+  return typeof id === 'string' && id.length > 0 ? id : undefined;
+}
+
+/**
+ * Whether this event reports an idle/ready session: the lifecycle point at
+ * which interrupted system work may be resumed.
+ */
+function isSessionIdleEvent(event: PluginEvent): boolean {
+  if (event.type === 'session.idle') return true;
+  if (event.type !== 'session.status') return false;
+  const status = event.properties?.status;
+  return isRecord(status) && status.type === 'idle';
+}
+
+async function handleSessionIdle(deps: EventHandlerDeps, event: PluginEvent): Promise<void> {
+  const sessionId = extractEventSessionId(event.properties);
+  if (!sessionId) return;
+  await deps.resumePendingSystemWork(sessionId);
+}
+
+/**
  * Handle an OpenCode event.
  *
  * Fail-safe: never throws. All errors are caught and logged.
@@ -218,6 +261,7 @@ export async function handleEvent(deps: EventHandlerDeps, event: PluginEvent): P
   try {
     if (event.type === 'session.error') await handleSessionError(deps, event);
     else if (event.type === 'session.deleted') await handleSessionDelete(deps, event);
+    else if (isSessionIdleEvent(event)) await handleSessionIdle(deps, event);
   } catch (err) {
     deps.log.warn('event', 'event handler failed (non-blocking)', {
       eventType: event.type,

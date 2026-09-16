@@ -181,28 +181,71 @@ export async function runActiveChecksAutomatically(
 }
 
 /**
- * Resume a pending system-work operation after a crash or an interrupted run.
+ * Typed outcome of a system-work resume attempt. Callers must consume the
+ * result instead of discarding it:
+ * - `none`          — no pending work (or the marker was already claimed).
+ * - `completed`     — the run left the validation phase.
+ * - `still_pending` — the run hit a technical outcome; the phase and the
+ *                     pending marker remain for a later retry.
+ * - `blocked`       — the session state is unreadable; fail closed.
+ */
+export type SystemWorkResumeOutcome =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'completed'; readonly phase: Phase; readonly response: string }
+  | { readonly kind: 'still_pending'; readonly phase: Phase; readonly response: string }
+  | { readonly kind: 'blocked'; readonly code: string; readonly response: string };
+
+/**
+ * Markers already claimed for a resume attempt in this process. One attempt per
+ * marker generation (`requestedAt`), so an idle event cannot loop on a
+ * persistently failing check; a new transition re-arms the marker with a fresh
+ * `requestedAt` and becomes claimable again.
+ */
+const claimedSystemWorkMarkers = new Set<string>();
+
+/**
+ * Resume a pending system-work operation.
  *
- * Called on the next runtime contact (any host command). A marker whose phase
- * already left validation is stale and is cleared; a marker in a validation
- * phase with active checks runs the automatic validation.
+ * Triggered by the host session lifecycle (session becomes idle/active), never
+ * by a user workflow command: `system_work` phases have no commands, so the
+ * runtime owns the continuation. A marker whose phase already left validation
+ * is stale and is cleared; a marker in a validation phase with active checks
+ * runs the automatic validation once per marker generation.
  */
 export async function resumePendingSystemWork(
   context: WorkspaceToolContext,
-): Promise<string | null> {
+): Promise<SystemWorkResumeOutcome> {
   const outcome = await readSession(context);
-  if (outcome.kind === 'unreadable') return unreadableResponse(outcome);
-  if (outcome.kind === 'none') return null;
+  if (outcome.kind === 'unreadable') {
+    return {
+      kind: 'blocked',
+      code: 'SYSTEM_WORK_STATE_UNREADABLE',
+      response: unreadableResponse(outcome),
+    };
+  }
+  if (outcome.kind === 'none') return { kind: 'none' };
   const { phase, activeChecks, pendingSystemWork } = outcome.session;
-  if (pendingSystemWork === null) return null;
+  if (pendingSystemWork === null) return { kind: 'none' };
   if (!isValidationPhase(phase)) {
     // The marker can only be stale if the phase already left validation in a
     // way that bypassed applyTransition (not a legal path). Clear defensively.
     await clearStalePendingSystemWork(context);
-    return null;
+    return { kind: 'none' };
   }
-  if (activeChecks.length === 0) return null;
-  return runActiveChecksAutomatically(context);
+  if (activeChecks.length === 0) return { kind: 'none' };
+
+  const claimKey = `${context.sessionID}:${pendingSystemWork.requestedAt}`;
+  if (claimedSystemWorkMarkers.has(claimKey)) return { kind: 'none' };
+  claimedSystemWorkMarkers.add(claimKey);
+
+  const response = await runActiveChecksAutomatically(context);
+  if (response === null) return { kind: 'none' };
+
+  const after = await readSession(context);
+  const afterPhase = after.kind === 'ok' ? after.session.phase : phase;
+  return isValidationPhase(afterPhase)
+    ? { kind: 'still_pending', phase: afterPhase, response }
+    : { kind: 'completed', phase: afterPhase, response };
 }
 
 async function executeCheckResponse(

@@ -13,7 +13,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { commandBefore, mayResumeSystemWorkOnCommand, toolBefore } from './plugin-beforehooks.js';
+import { commandBefore, toolBefore } from './plugin-beforehooks.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import type { AuditDeps } from './plugin-audit.js';
 import type { PluginWorkspace } from './plugin-workspace.js';
@@ -99,43 +99,6 @@ async function seedSession(dir: string, state: SessionState): Promise<void> {
   await fs.mkdir(dir, { recursive: true });
   await writeState(dir, state);
 }
-
-describe('mayResumeSystemWorkOnCommand', () => {
-  it('never resumes for read-only or emergency commands', () => {
-    for (const command of [
-      '/status',
-      '/status --readiness',
-      '/why',
-      '/finish',
-      '/help',
-      '/commands',
-      '/archive',
-      '/abort',
-    ]) {
-      expect(mayResumeSystemWorkOnCommand(command), command).toBe(false);
-    }
-  });
-
-  it('resumes for workflow-mutating commands', () => {
-    for (const command of [
-      '/continue',
-      '/implement',
-      '/plan',
-      '/approve',
-      '/override-approve',
-      '/task',
-      '/architecture',
-      '/review',
-    ]) {
-      expect(mayResumeSystemWorkOnCommand(command), command).toBe(true);
-    }
-  });
-
-  it('never resumes without a command', () => {
-    expect(mayResumeSystemWorkOnCommand('')).toBe(false);
-    expect(mayResumeSystemWorkOnCommand('   ')).toBe(false);
-  });
-});
 
 describe('commandBefore', () => {
   it('warns and skips when the command has no sessionID', async () => {

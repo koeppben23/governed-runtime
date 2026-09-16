@@ -60,6 +60,10 @@ function createMockDeps(): EventHandlerDeps & { calls: { method: string; args: u
         calls.push({ method: 'log.error', args: [service, message, extra] });
       },
     },
+    resumePendingSystemWork(sessionId: string) {
+      calls.push({ method: 'resumePendingSystemWork', args: [sessionId] });
+      return Promise.resolve();
+    },
     cleanupSession(sessionId: string) {
       calls.push({ method: 'cleanupSession', args: [sessionId] });
     },
