@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';
-import { hashText, hashTextShort, hashBuffer } from './hashing.js';
+import { hashText, hashTextShort, hashBuffer, hashFile, digestToId } from './hashing.js';
 
 /**
  * @module shared/hashing.test
@@ -86,5 +86,53 @@ describe('hashBuffer', () => {
     // A Buffer built from a utf-8 string must hash identically to hashText(str).
     const s = 'governance-evidence';
     expect(hashBuffer(Buffer.from(s, 'utf-8'))).toBe(hashText(s));
+  });
+});
+
+describe('digestToId', () => {
+  // A digest whose first 32 hex chars are unambiguous under any case handling.
+  const DIGEST = '0123456789abcdef0123456789abcdef' + 'f'.repeat(32);
+
+  it('derives a deterministic UUID-shaped identifier from the digest prefix', () => {
+    expect(digestToId(DIGEST, 4)).toBe('01234567-89ab-4def-8123-456789abcdef');
+    expect(digestToId(DIGEST, 5)).toBe('01234567-89ab-5def-8123-456789abcdef');
+  });
+
+  it('normalizes case before slicing', () => {
+    expect(digestToId(DIGEST.toUpperCase(), 4)).toBe(digestToId(DIGEST, 4));
+  });
+
+  it('strips every non-hex character, including an algorithm prefix', () => {
+    // 'sha256:' contributes only its hex characters (a,2,5,6) after stripping.
+    expect(digestToId(`sha256:${DIGEST}`, 4)).toBe('a2560123-4567-49ab-8def-0123456789ab');
+  });
+
+  it('zero-pads short digests instead of producing a truncated id', () => {
+    const id = digestToId('abc', 4);
+    expect(id).toHaveLength(36);
+    expect(id.startsWith('abc00000-')).toBe(true);
+    expect(id).toBe('abc00000-0000-4000-8000-000000000000');
+  });
+});
+
+describe('hashFile', () => {
+  it('hashes file bytes identically to hashBuffer', async () => {
+    const { mkdtemp, rm, writeFile } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const dir = await mkdtemp(join(tmpdir(), 'fg-hash-file-'));
+    try {
+      const filePath = join(dir, 'payload.bin');
+      const bytes = Buffer.from([0x00, 0xff, 0x10, 0x41, 0x42]);
+      await writeFile(filePath, bytes);
+
+      await expect(hashFile(filePath)).resolves.toBe(hashBuffer(bytes));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects for a missing file instead of hanging', async () => {
+    await expect(hashFile('/nonexistent/flowguard-hash-file.bin')).rejects.toThrow();
   });
 });

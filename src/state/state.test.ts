@@ -24,7 +24,15 @@ import {
   AuditEvent,
   ReviewReport,
 } from '../state/evidence.js';
-import { Phase, Event, Transition, SessionState } from '../state/schema.js';
+import {
+  Phase,
+  Event,
+  Transition,
+  SessionState,
+  ReducedCeremonyDecision,
+  ImplementationRiskAssessment,
+  RiskGate,
+} from '../state/schema.js';
 import { makeState, FIXED_TIME, FIXED_UUID, FIXED_SESSION_UUID } from '../fixtures.js';
 import { makePlanRevision } from './evidence-test-constants.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
@@ -867,5 +875,146 @@ describe('state schemas', () => {
       );
       expect(result.p99Ms).toBeLessThan(PERF_BUDGETS.stateSerializeMs);
     });
+  });
+});
+
+describe('schema field-boundary contracts', () => {
+  const NOW = '2026-09-17T10:00:00.000Z';
+  const DIGEST = 'a'.repeat(64);
+  const UUID = '00000000-0000-4000-8000-000000000001';
+
+  it('requires non-empty reduced-ceremony reasons', () => {
+    const decision = {
+      profile: 'reduced',
+      reason: 'maintenance-only change',
+      claimedTaskClass: 'STANDARD',
+      computedMinimumTaskClass: 'STANDARD',
+      touchedSurfaces: [],
+      decidedAt: NOW,
+    };
+
+    expect(ReducedCeremonyDecision.safeParse(decision).success).toBe(true);
+    expect(ReducedCeremonyDecision.safeParse({ ...decision, reason: '' }).success).toBe(false);
+  });
+
+  it('requires a non-empty implementation digest in the risk assessment', () => {
+    const assessment = {
+      computedMinimumTaskClass: 'STANDARD',
+      touchedSurfaces: [],
+      assessedFrom: 'implementation_changed_files',
+      assessedFileCount: 3,
+      implementationDigest: DIGEST,
+    };
+
+    expect(ImplementationRiskAssessment.safeParse(assessment).success).toBe(true);
+    expect(
+      ImplementationRiskAssessment.safeParse({ ...assessment, implementationDigest: '' }).success,
+    ).toBe(false);
+  });
+
+  it('enforces the risk gate variants', () => {
+    expect(RiskGate.safeParse({ status: 'clear' }).success).toBe(true);
+    expect(RiskGate.safeParse({ status: 'clear', lastDecisionId: 'decision-1' }).success).toBe(
+      true,
+    );
+    expect(RiskGate.safeParse({ status: 'clear', lastDecisionId: '' }).success).toBe(false);
+
+    const blocked = {
+      status: 'blocked',
+      code: 'RISK_BLOCKED',
+      message: 'risk gate blocked',
+      blockedAt: NOW,
+      lastDecisionId: 'decision-1',
+    };
+    expect(RiskGate.safeParse(blocked).success).toBe(true);
+    expect(RiskGate.safeParse({ ...blocked, code: '' }).success).toBe(false);
+    expect(RiskGate.safeParse({ ...blocked, message: '' }).success).toBe(false);
+    expect(RiskGate.safeParse({ ...blocked, lastDecisionId: '' }).success).toBe(false);
+  });
+
+  it('enforces semantic audit operation fields', () => {
+    const operation = {
+      operationId: UUID,
+      preStateDigest: DIGEST,
+      mutationDigest: DIGEST,
+      postStateDigest: DIGEST,
+      auditEventDigest: DIGEST,
+      status: 'state_committed',
+      kind: 'semantic',
+      semantic: { phase: 'PLAN', event: 'plan_recorded', occurredAt: NOW, detail: {} },
+    };
+
+    expect(
+      SessionState.safeParse({ ...makeState('READY'), pendingAuditOperations: [operation] })
+        .success,
+    ).toBe(true);
+    expect(
+      SessionState.safeParse({
+        ...makeState('READY'),
+        pendingAuditOperations: [{ ...operation, semantic: { ...operation.semantic, event: '' } }],
+      }).success,
+    ).toBe(false);
+    expect(
+      SessionState.safeParse({
+        ...makeState('READY'),
+        pendingAuditOperations: [
+          { ...operation, semantic: { ...operation.semantic, occurredAt: 'not-a-date' } },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('requires a non-empty active profile identity when one is resolved', () => {
+    const state = makeState('READY');
+    const withProfile = (id: string, name: string) => ({
+      ...state,
+      activeProfile: { id, name, ruleContent: 'rules' },
+    });
+
+    expect(SessionState.safeParse(withProfile('profile-1', 'Profile')).success).toBe(true);
+    expect(SessionState.safeParse(withProfile('', 'Profile')).success).toBe(false);
+    expect(SessionState.safeParse(withProfile('profile-1', '')).success).toBe(false);
+  });
+
+  it('requires a non-empty initiator identity', () => {
+    const state = makeState('READY');
+    expect(SessionState.safeParse({ ...state, initiatedBy: 'initiator-1' }).success).toBe(true);
+    expect(SessionState.safeParse({ ...state, initiatedBy: '' }).success).toBe(false);
+  });
+
+  it('requires a non-empty control-plane marker when the baseline carries one', () => {
+    const state = makeState('READY');
+    const baseline = { dirtyFiles: [], capturedAt: NOW };
+
+    expect(SessionState.safeParse({ ...state, implementationBaseline: baseline }).success).toBe(
+      true,
+    );
+    expect(
+      SessionState.safeParse({
+        ...state,
+        implementationBaseline: { ...baseline, controlPlaneMarker: 'marker-1' },
+      }).success,
+    ).toBe(true);
+    expect(
+      SessionState.safeParse({
+        ...state,
+        implementationBaseline: { ...baseline, controlPlaneMarker: '' },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects a state whose flowguardSessionId diverges from id', () => {
+    const state = makeState('READY');
+    const result = SessionState.safeParse({
+      ...state,
+      flowguardSessionId: `${state.flowguardSessionId}-other`,
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) => issue.path[0] === 'flowguardSessionId')).toBe(
+        true,
+      );
+    }
   });
 });
