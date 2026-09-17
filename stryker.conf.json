@@ -12,6 +12,8 @@
   },
   "mutate": [
     "src/adapters/persistence-lock.ts",
+    "src/adapters/implementation-base-authority.ts",
+    "src/adapters/implementation-entry-guard.ts",
     "src/adapters/host-adapter.ts",
     "src/adapters/persistence.ts",
     "src/adapters/persistence-audit.ts",

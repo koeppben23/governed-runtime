@@ -110,10 +110,18 @@ export interface RequiredAuthorityEntry extends AuthorityMetadata {
 }
 
 export interface DeferredAuthorityEntry extends AuthorityMetadata {
-  readonly classification: 'admission-backlog' | 'not-mutation-suitable';
+  readonly classification: 'admission-backlog';
   readonly target: string;
   readonly reason: string;
   readonly profile?: MutationProfile;
+}
+
+/** A target that produces no meaningful mutants under ONE profile's regime. */
+export interface NotSuitableAuthorityEntry extends AuthorityMetadata {
+  readonly classification: 'not-mutation-suitable';
+  readonly target: string;
+  readonly reason: string;
+  readonly profile: MutationProfile;
 }
 
 export interface DeferredAuthorityGlobEntry extends AuthorityMetadata {
@@ -124,7 +132,10 @@ export interface DeferredAuthorityGlobEntry extends AuthorityMetadata {
 }
 
 export type MutationAuthorityEntry =
-  RequiredAuthorityEntry | DeferredAuthorityEntry | DeferredAuthorityGlobEntry;
+  | RequiredAuthorityEntry
+  | DeferredAuthorityEntry
+  | NotSuitableAuthorityEntry
+  | DeferredAuthorityGlobEntry;
 
 export interface AuthorityRoot {
   readonly root: string;
@@ -182,18 +193,34 @@ function deferred(
   authority: string,
   reason: string,
   options: {
-    readonly classification?: 'admission-backlog' | 'not-mutation-suitable';
     readonly profile?: MutationProfile;
     readonly source?: readonly string[];
   } = {},
 ): DeferredAuthorityEntry {
   return {
-    classification: options.classification ?? 'admission-backlog',
+    classification: 'admission-backlog',
     target,
     authority,
     source: options.source ?? [SOURCE.scope],
     reason,
     ...(options.profile === undefined ? {} : { profile: options.profile }),
+  };
+}
+
+function notSuitable(
+  target: string,
+  authority: string,
+  reason: string,
+  profile: MutationProfile,
+  options: { readonly source?: readonly string[] } = {},
+): NotSuitableAuthorityEntry {
+  return {
+    classification: 'not-mutation-suitable',
+    target,
+    authority,
+    source: options.source ?? [SOURCE.scope],
+    reason,
+    profile,
   };
 }
 
@@ -215,9 +242,6 @@ function deferredGlob(
 
 const DEFERRED_REASON =
   'Deferred surface behind the admission gate; admission requires a profile full run with per-target evidence.';
-
-const REASON_CATALOG_REASON =
-  'Reason-catalog authority deferred to the core admission bundle; the base-regime diagnostic must precede admission.';
 
 const DEEP_REASON =
   'Deferred to the deep authority expansion bundle; admission requires a profile full run with per-target evidence.';
@@ -742,81 +766,95 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
   ),
 
   // ── Base profile: candidate authorities pending admission ─────────────────
-  deferred('src/machine/topology.ts', 'Formal state transition table', DEFERRED_REASON, {
-    source: [SOURCE.machine],
-  }),
-  deferred('src/config/flowguard-config.ts', 'Runtime config schema authority', DEFERRED_REASON, {
-    source: [SOURCE.config],
-  }),
-  deferred(
-    'src/audit/canonical-digest.ts',
-    'TSA message imprint digest authority',
-    DEFERRED_REASON,
+  // ── Base profile: core authorities admitted in the base full run ─────────
+  required(
+    'src/adapters/implementation-base-authority.ts',
+    'Pre-mutation implementation base freeze',
+    ['src/adapters/implementation-base-authority.test.ts'],
+    {
+      source: [SOURCE.trustBoundaries],
+      admission: {
+        verifiedAt: '2026-09-17',
+        commitSha: 'a4db80e33bde4b0994fed24eb5c9114dae67bdef',
+        scoreAtAdmission: 100,
+        killed: 8,
+        survived: 0,
+        config: 'stryker.conf.json',
+      },
+    },
   ),
-  deferred('src/audit/constant-time.ts', 'Constant-time byte comparison', DEFERRED_REASON),
-  deferred('src/adapters/git.ts', 'Git subprocess boundary', DEFERRED_REASON, {
-    source: [SOURCE.trustBoundaries],
-  }),
+  required(
+    'src/adapters/implementation-entry-guard.ts',
+    'Pure persistence-side implementation entry guard',
+    ['src/adapters/implementation-base-authority.test.ts'],
+    {
+      source: [SOURCE.trustBoundaries],
+      admission: {
+        verifiedAt: '2026-09-17',
+        commitSha: 'a4db80e33bde4b0994fed24eb5c9114dae67bdef',
+        scoreAtAdmission: 100,
+        killed: 10,
+        survived: 0,
+        config: 'stryker.conf.json',
+      },
+    },
+  ),
+
+  // ── Base profile: measured admission verdicts (base full run 2026-09-17) ──
+  deferred(
+    'src/adapters/git.ts',
+    'Git subprocess boundary',
+    'Full-run verdict 34.97% (57 killed / 106 survived); test gaps must close before admission.',
+    { source: [SOURCE.trustBoundaries] },
+  ),
   deferred(
     'src/adapters/frozen-repository.ts',
     'Immutable frozen-repository acquisition boundary',
-    DEFERRED_REASON,
-    {
-      source: [SOURCE.trustBoundaries],
-    },
+    'Full-run verdict 58.65% (78 killed / 55 survived); test gaps must close before admission.',
+    { source: [SOURCE.trustBoundaries] },
   ),
   deferred(
-    'src/adapters/implementation-base-authority.ts',
-    'Pre-mutation implementation base freeze',
-    DEFERRED_REASON,
-    {
-      source: [SOURCE.trustBoundaries],
-    },
+    'src/audit/canonical-digest.ts',
+    'TSA message imprint digest authority',
+    'Full-run verdict 75.00% (3 killed / 1 survived); the mutant set is too small to carry an admission.',
   ),
   deferred(
-    'src/adapters/implementation-entry-guard.ts',
-    'Pure persistence-side implementation entry guard',
-    DEFERRED_REASON,
-    {
-      source: [SOURCE.trustBoundaries],
-    },
+    'src/config/flowguard-config.ts',
+    'Runtime config schema authority',
+    'Full-run verdict 20.00% (9 killed / 36 survived); default/parse branches lack assertions.',
+    { source: [SOURCE.config] },
   ),
-  deferred('src/state/runtime-lease.ts', 'Persisted runtime lease fencing shape', DEFERRED_REASON, {
-    source: [SOURCE.trustBoundaries],
-  }),
   deferred(
     'src/state/schema.ts',
     'Session state schema validated on every write',
-    DEFERRED_REASON,
-    {
-      source: [SOURCE.rootAgents],
-    },
+    'Full-run verdict 33.33% (9 killed / 18 survived); invariant branches lack negative-path tests.',
+    { source: [SOURCE.rootAgents] },
   ),
-  deferred('src/state/policy-mode.ts', 'Canonical policy mode enum', DEFERRED_REASON, {
-    source: [SOURCE.rootAgents],
-  }),
-  deferred('src/shared/hashing.ts', 'Hash primitives for digests', DEFERRED_REASON, {
-    source: [SOURCE.rootAgents],
-  }),
-  deferred('src/redaction/export-redaction.ts', 'Export-time redaction boundary', DEFERRED_REASON, {
-    source: [SOURCE.trustBoundaries],
-  }),
+  deferred(
+    'src/shared/hashing.ts',
+    'Hash primitives for digests',
+    'Full-run verdict 38.46% (5 killed / 8 survived); boundary inputs are untested.',
+    { source: [SOURCE.rootAgents] },
+  ),
+  deferred(
+    'src/redaction/export-redaction.ts',
+    'Export-time redaction boundary',
+    'Full-run verdict 51.81% (43 killed / 40 survived); masking modes need contract tests.',
+    { source: [SOURCE.trustBoundaries] },
+  ),
   deferred(
     'src/integration/review/reviewed-digest.ts',
     'Review provenance projection',
-    DEFERRED_REASON,
-    {
-      source: [SOURCE.trustBoundaries],
-    },
+    'Full-run verdict 46.67% (42 killed / 48 survived); provenance branches lack assertions.',
+    { source: [SOURCE.trustBoundaries] },
   ),
   deferred(
     'src/integration/review/findings-hash.ts',
     'Findings hash normalization',
-    DEFERRED_REASON,
-    {
-      source: [SOURCE.trustBoundaries],
-    },
+    'Full-run verdict 65.00% (13 killed / 7 survived); ordering and pass-through branches remain.',
+    { source: [SOURCE.trustBoundaries] },
   ),
+  deferred('src/audit/constant-time.ts', 'Constant-time byte comparison', DEFERRED_REASON),
   deferred(
     'src/integration/tools/record-mutation-evidence.ts',
     'Canonical MutationAttempt evidence producer',
@@ -860,80 +898,76 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
       source: [SOURCE.trustBoundaries],
     },
   ),
-  deferred(
+  // ── Reason catalog: no valid mutants under the base regime (diagnostic 2026-09-17)
+  notSuitable(
     'src/config/reasons-architecture.ts',
     'Reason catalog: architecture',
-    REASON_CATALOG_REASON,
-    {
-      source: [SOURCE.config],
-    },
+    'Base-regime diagnostic: every mutant is rejected by the TypeScript checker (175 CompileError across the catalog, 0 valid).',
+    'base',
+    { source: [SOURCE.config] },
   ),
-  deferred(
+  notSuitable(
     'src/config/reasons-envelope.ts',
     'Reason catalog: reason envelope',
-    REASON_CATALOG_REASON,
-    {
-      source: [SOURCE.config],
-    },
+    'Base-regime diagnostic: every mutant is rejected by the TypeScript checker (175 CompileError across the catalog, 0 valid).',
+    'base',
+    { source: [SOURCE.config] },
   ),
-  deferred('src/config/reasons-infra.ts', 'Reason catalog: infrastructure', REASON_CATALOG_REASON, {
-    source: [SOURCE.config],
-  }),
-  deferred(
+  notSuitable(
+    'src/config/reasons-infra.ts',
+    'Reason catalog: infrastructure',
+    'Base-regime diagnostic: every mutant is rejected by the TypeScript checker (175 CompileError across the catalog, 0 valid).',
+    'base',
+    { source: [SOURCE.config] },
+  ),
+  notSuitable(
     'src/config/reasons-mutation.ts',
     'Reason catalog: mutation episodes',
-    REASON_CATALOG_REASON,
-    {
-      source: [SOURCE.config],
-    },
+    'Base-regime diagnostic: every mutant is rejected by the TypeScript checker (175 CompileError across the catalog, 0 valid).',
+    'base',
+    { source: [SOURCE.config] },
   ),
-  deferred(
+  notSuitable(
     'src/config/reasons-precondition.ts',
     'Reason catalog: preconditions',
-    REASON_CATALOG_REASON,
-    {
-      source: [SOURCE.config],
-    },
+    'Base-regime diagnostic: every mutant is rejected by the TypeScript checker (175 CompileError across the catalog, 0 valid).',
+    'base',
+    { source: [SOURCE.config] },
   ),
-  deferred(
+  notSuitable(
     'src/config/reasons-proofgraph.ts',
     'Reason catalog: proof graph',
-    REASON_CATALOG_REASON,
-    {
-      source: [SOURCE.config],
-    },
+    'Base-regime diagnostic: every mutant is rejected by the TypeScript checker (175 CompileError across the catalog, 0 valid).',
+    'base',
+    { source: [SOURCE.config] },
   ),
-  deferred(
+  notSuitable(
     'src/config/reasons-validation.ts',
     'Reason catalog: validation',
-    REASON_CATALOG_REASON,
-    {
-      source: [SOURCE.config],
-    },
+    'Base-regime diagnostic: every mutant is rejected by the TypeScript checker (175 CompileError across the catalog, 0 valid).',
+    'base',
+    { source: [SOURCE.config] },
   ),
-  deferred(
+  notSuitable(
     'src/config/reasons-validation-observation.ts',
     'Reason catalog: validation observation',
-    REASON_CATALOG_REASON,
-    {
-      source: [SOURCE.config],
-    },
+    'Base-regime diagnostic: every mutant is rejected by the TypeScript checker (175 CompileError across the catalog, 0 valid).',
+    'base',
+    { source: [SOURCE.config] },
   ),
-  deferred(
+  notSuitable(
     'src/config/reasons-validation-review.ts',
     'Reason catalog: review validation',
-    REASON_CATALOG_REASON,
-    {
-      source: [SOURCE.config],
-    },
+    'Base-regime diagnostic: every mutant is rejected by the TypeScript checker (175 CompileError across the catalog, 0 valid).',
+    'base',
+    { source: [SOURCE.config] },
   ),
-  deferred(
+  notSuitable(
     'src/config/reasons-validation-structured.ts',
     'Reason catalog: structured validation',
-    REASON_CATALOG_REASON,
-    {
-      source: [SOURCE.config],
-    },
+    'Base-regime diagnostic: every mutant is rejected by the TypeScript checker (175 CompileError across the catalog, 0 valid).',
+    'base',
+    { source: [SOURCE.config] },
   ),
   deferred('src/rendering/mandates-renderer.ts', 'Mandate rendering projection', DEEP_REASON, {
     profile: 'mandates',
@@ -995,31 +1029,46 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
   }),
 
   // ── Explicitly not mutation-suitable ──────────────────────────────────────
-  deferred(
+  notSuitable(
+    'src/machine/topology.ts',
+    'Formal state transition table',
+    'No valid mutants in the base full run: the transition table is module-init data ignored under ignoreStatic.',
+    'base',
+    { source: [SOURCE.machine] },
+  ),
+  notSuitable(
+    'src/state/policy-mode.ts',
+    'Canonical policy mode enum',
+    'No valid mutants in the base full run: const tuple/enum only.',
+    'base',
+    { source: [SOURCE.rootAgents] },
+  ),
+  notSuitable(
+    'src/state/runtime-lease.ts',
+    'Persisted runtime lease fencing shape',
+    'No valid mutants in the base full run: pure Zod schema declarations.',
+    'base',
+    { source: [SOURCE.trustBoundaries] },
+  ),
+  notSuitable(
     'src/config/reasons-types.ts',
     'Reason catalog type contracts',
-    'Type-only module; no runtime mutants exist.',
-    {
-      classification: 'not-mutation-suitable',
-      source: [SOURCE.config],
-    },
+    'Type-only module; no runtime mutants exist in the base regime.',
+    'base',
+    { source: [SOURCE.config] },
   ),
-  deferred(
+  notSuitable(
     'src/shared/policy-digest.ts',
     'Policy digest re-export',
-    'Pure re-export of state-owned identifiers; no executable mutants.',
-    {
-      classification: 'not-mutation-suitable',
-    },
+    'Pure re-export of state-owned identifiers; no executable mutants in the base regime.',
+    'base',
   ),
-  deferred(
+  notSuitable(
     'src/machine/command-help.ts',
     'Command help text projection',
-    'Static help text projection; no semantic contract to mutate.',
-    {
-      classification: 'not-mutation-suitable',
-      source: [SOURCE.machine],
-    },
+    'Static help text projection; no semantic contract to mutate in the base regime.',
+    'base',
+    { source: [SOURCE.machine] },
   ),
 
   // ── Deferred surfaces (whole roots behind the admission gate) ─────────────

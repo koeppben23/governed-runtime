@@ -67,7 +67,7 @@ local composite-action dependencies: external GitHub Actions must use full
 40-character lowercase commit SHAs, local actions under `./` are allowed, local
 and Docker actions are allowed only when pinned by `sha256` digest.
 
-The `mutation` job runs StrykerJS mutation testing against 85 security-critical
+The `mutation` job runs StrykerJS mutation testing against 87 security-critical
 files spanning adapters (persistence-lock, host-adapter, persistence, IP validation),
 archive creation,
 publication, inventory validation, and digesting,
@@ -183,9 +183,10 @@ rewrite them.
 The machine-readable scope authority is
 `src/architecture/__tests__/mutation-authority-inventory.ts`. It classifies
 every authority under the declared roots as `required`, `admission-backlog`, or
-`not-mutation-suitable`, and the architecture guard enforces
-`required ⊆ mutate`, reverse closure per profile, and coverage of every
-production file under an authority root.
+`not-mutation-suitable`; the latter is always bound to the profile whose
+regime produced the evidence and never excludes a target from other profiles.
+The architecture guard enforces `required ⊆ mutate`, reverse closure per
+profile, and coverage of every production file under an authority root.
 
 `StringLiteral`, `ArrayDeclaration`, and `Regex` mutators are excluded globally
 because they produce low-signal literal churn in governance template and schema
@@ -195,13 +196,13 @@ protects a security-relevant literal: `stryker.identity-jwks.conf.json` enables
 
 ### Scope
 
-85 files are mutated in the base profile, covering the fail-closed governance
+87 files are mutated in the base profile, covering the fail-closed governance
 core (see `stryker.conf.json` for the canonical list; the authority inventory
 above is the classification authority):
 
 | Area                                                                                                                                        | Files  | Representative score            |
 | ------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------------------------------- |
-| Adapters (`persistence-lock`, `host-adapter`, `persistence`, `persistence-audit`, `ip-validation`)                                          | 5      | see `reports/mutation/`         |
+| Adapters (`persistence-lock`, `host-adapter`, `persistence`, `persistence-audit`, `ip-validation`, implementation base freeze/entry)        | 7      | see `reports/mutation/`         |
 | Archive (`content-digest`, archive creation, publication, tar/manifest inspection, chain and helper verification)                           | 8      | see `reports/mutation/`         |
 | Audit (`integrity`, `completeness`, `ntp-check`, `types`, timestamp and RFC3161 verification)                                               | 7      | see `reports/mutation/`         |
 | Audit ProofGraph (`evaluate`, `gate`, evidence binders, `enforcement-projection`)                                                           | 6      | see `reports/mutation/`         |
@@ -219,7 +220,7 @@ above is the classification authority):
 | Logging (`error-serialize`)                                                                                                                 | 1      | see `reports/mutation/`         |
 | Machine (`commands`, `evaluate`, `guards`, `workflow-directive`, `validation-evidence`)                                                     | 5      | see `reports/mutation/`         |
 | Rails (`architecture`, `hydrate`, `review`, `review-url`, `review-decision`, `ticket`, plan and review evidence)                            | 8      | see `reports/mutation/`         |
-| **Total**                                                                                                                                   | **85** | uploaded as `reports/mutation/` |
+| **Total**                                                                                                                                   | **87** | uploaded as `reports/mutation/` |
 
 Per-file mutation scores are produced fresh in CI; consult the latest
 `reports/mutation/` artifact for current numbers.
@@ -253,17 +254,12 @@ aggregate thresholds; a score below the threshold never converts a target into
 
 Candidate authorities awaiting admission (basis profile unless noted):
 
-- `src/machine/topology.ts`
 - `src/config/flowguard-config.ts`
 - `src/audit/canonical-digest.ts`
 - `src/audit/constant-time.ts`
 - `src/adapters/git.ts`
 - `src/adapters/frozen-repository.ts`
-- `src/adapters/implementation-base-authority.ts`
-- `src/adapters/implementation-entry-guard.ts`
-- `src/state/runtime-lease.ts`
 - `src/state/schema.ts`
-- `src/state/policy-mode.ts`
 - `src/shared/hashing.ts`
 - `src/redaction/export-redaction.ts`
 - `src/integration/review/reviewed-digest.ts`
@@ -281,19 +277,6 @@ diagnostic only; these targets must close their test gaps first):
 - `src/state/evidence-validation.ts` (18.68%)
 - `src/integration/review/shared-helpers.ts` (68.66%)
 - `src/integration/tools/run-check-result.ts` (0.00%)
-
-Reason-catalog authorities (base-regime diagnostic required before admission):
-
-- `src/config/reasons-architecture.ts`
-- `src/config/reasons-envelope.ts`
-- `src/config/reasons-infra.ts`
-- `src/config/reasons-mutation.ts`
-- `src/config/reasons-precondition.ts`
-- `src/config/reasons-proofgraph.ts`
-- `src/config/reasons-validation.ts`
-- `src/config/reasons-validation-observation.ts`
-- `src/config/reasons-validation-review.ts`
-- `src/config/reasons-validation-structured.ts`
 
 Deep authority expansion bundle:
 
@@ -315,11 +298,31 @@ Deferred surfaces (whole roots behind the admission gate):
 `src/logging/**`, `src/hooks/**`, `src/mcp-server/**`, `src/templates/**`,
 `src/presentation/**`, `src/integration/**`.
 
-Explicitly not mutation-suitable:
+Explicitly not mutation-suitable **for the named profile** (the exclusion is
+scoped; a target may still be a valid mutation target in another profile):
 
-- `src/config/reasons-types.ts` — type-only module.
-- `src/shared/policy-digest.ts` — pure re-export.
-- `src/machine/command-help.ts` — static help text projection.
+- `src/config/reasons-types.ts` — type-only module (base).
+- `src/shared/policy-digest.ts` — pure re-export (base).
+- `src/machine/command-help.ts` — static help text projection (base).
+- `src/machine/topology.ts` — module-init transition table, ignored under `ignoreStatic` (base).
+- `src/state/policy-mode.ts` — const tuple/enum only (base).
+- `src/state/runtime-lease.ts` — pure Zod schema declarations (base).
+- `src/config/reasons-architecture.ts` (base)
+- `src/config/reasons-envelope.ts` (base)
+- `src/config/reasons-infra.ts` (base)
+- `src/config/reasons-mutation.ts` (base)
+- `src/config/reasons-precondition.ts` (base)
+- `src/config/reasons-proofgraph.ts` (base)
+- `src/config/reasons-validation.ts` (base)
+- `src/config/reasons-validation-observation.ts` (base)
+- `src/config/reasons-validation-review.ts` (base)
+- `src/config/reasons-validation-structured.ts` (base)
+
+Reason-catalog diagnostic (2026-09-17, base regime): all 175 mutants across the
+ten catalog files are rejected by the TypeScript checker (CompileError, 0
+valid mutants), so the catalog carries no admission evidence under the base
+profile. The runtime registry logic in `src/config/reasons.ts` remains a
+required mutation target.
 
 ### Running Locally
 

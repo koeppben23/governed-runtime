@@ -189,8 +189,13 @@ describe('mutation scope', () => {
           problems.push(`${label}: root missing or not a directory`);
         }
         if (entry.pattern !== '**') problems.push(`${label}: unsupported deferred pattern`);
-      } else if (!existsSync(join(ROOT, entry.target))) {
-        problems.push(`${label}: deferred target missing`);
+      } else {
+        if (!existsSync(join(ROOT, entry.target))) {
+          problems.push(`${label}: deferred target missing`);
+        }
+        if (entry.classification === 'not-mutation-suitable' && entry.profile === undefined) {
+          problems.push(`${label}: not-mutation-suitable must name the profile it was measured in`);
+        }
       }
     }
     expect(problems).toEqual([]);
@@ -218,17 +223,27 @@ describe('mutation scope', () => {
     expect(problems).toEqual([]);
   });
 
-  it('A4: deferred targets and effective glob files are never mutated', () => {
-    const mutated = allMutateTargets();
+  it('A4: deferred targets are never mutated in their declared scope', () => {
+    const mutatedAnywhere = allMutateTargets();
     const overlap: string[] = [];
     for (const entry of deferredEntries) {
       if ('root' in entry) {
         for (const file of effectiveGlobFiles(entry)) {
-          if (mutated.has(file)) overlap.push(`${entry.root}/${entry.pattern}: ${file}`);
+          if (mutatedAnywhere.has(file)) overlap.push(`${entry.root}/${entry.pattern}: ${file}`);
         }
-      } else if (mutated.has(entry.target)) {
-        overlap.push(entry.target);
+        continue;
       }
+      // A target classified 'not-mutation-suitable' for one profile may still
+      // be a legitimate target in another profile; the exclusion is scoped.
+      let scope: Set<string>;
+      if (entry.classification === 'not-mutation-suitable') {
+        scope = mutateTargets(entry.profile);
+      } else if (entry.profile !== undefined) {
+        scope = mutateTargets(entry.profile);
+      } else {
+        scope = mutatedAnywhere;
+      }
+      if (scope.has(entry.target)) overlap.push(`${entry.profile ?? 'all'}: ${entry.target}`);
     }
     expect(overlap).toEqual([]);
   });
