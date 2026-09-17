@@ -61,24 +61,17 @@ export default tseslint.config(
     },
   },
   {
-    // Complexity metrics keep their historical scope until the dedicated
-    // metrics tranche (PR 2b) turns them default-wide. They are maintainability
-    // signals, not correctness rules, and do not use type information.
-    files: [
-      'src/audit/**/*.ts',
-      'src/config/**/*.ts',
-      'src/redaction/**/*.ts',
-      'src/adapters/workspace/**/*.ts',
-      'src/rails/**/*.ts',
-      'src/machine/**/*.ts',
-      'src/integration/**/*.ts',
-      'src/cli/**/*.ts',
-    ],
+    // Maintainability metrics: default-wide for production code under src/.
+    // Tests are excluded as a file class (suites are allowed to be broader),
+    // never by directory allowlist. Thresholds are repository-wide ceilings
+    // calibrated against the measured distribution (see PR 2b); the tail above
+    // them is refactored, never exempted. They do not use type information.
+    files: ['src/**/*.ts'],
     ignores: ['src/**/*.test.ts', 'src/**/__tests__/**/*.ts'],
     rules: {
       'max-params': ['warn', { max: 5 }],
-      complexity: ['warn', { max: 12 }],
-      'max-lines-per-function': ['warn', { max: 80, skipBlankLines: true, skipComments: true }],
+      complexity: ['warn', { max: 25 }],
+      'max-lines-per-function': ['warn', { max: 120, skipBlankLines: true, skipComments: true }],
     },
   },
 );
