@@ -53,10 +53,10 @@ interface RunOptions {
 
 async function runHook(options: RunOptions = {}): Promise<string> {
   let stderr = '';
-  vi.spyOn(process.stderr, 'write').mockImplementation(((chunk) => {
+  vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
     stderr += Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
     return true;
-  }) as typeof process.stderr.write);
+  });
 
   const payload = options.payload ?? {
     tool_name: 'Bash',

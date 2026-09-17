@@ -150,6 +150,12 @@ export function isDiscoveryHealthAvailable(
  *
  * Single source of truth shared by status projection and the #399 health gate
  * so that both surfaces classify read/parse/schema failures identically.
+ *
+ * Exhaustive over `PersistenceErrorCode`: an artifact from an incompatible
+ * state contract is `schema_invalid` (regenerate it), a missing digest marks
+ * the artifact itself as `corrupt`, and anything that merely prevented the
+ * read (including exhausted lock retries) is `read_failed`. Unknown errors
+ * never fabricate a healthy state and fall through to `read_failed`.
  */
 export function classifyDiscoveryHealthUnavailable(
   error: unknown,
@@ -157,12 +163,15 @@ export function classifyDiscoveryHealthUnavailable(
   if (error instanceof PersistenceError) {
     switch (error.code) {
       case 'PARSE_FAILED':
+      case 'MISSING_FILE_DIGEST':
         return 'corrupt';
       case 'SCHEMA_VALIDATION_FAILED':
+      case 'SESSION_STATE_INCOMPATIBLE':
         return 'schema_invalid';
       case 'READ_FAILED':
       case 'WRITE_FAILED':
       case 'LOCK_TIMEOUT':
+      case 'LOCK_TIMEOUT_EXHAUSTED':
         return 'read_failed';
     }
   }

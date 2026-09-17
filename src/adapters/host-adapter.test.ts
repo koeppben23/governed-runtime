@@ -42,7 +42,7 @@ function createTestEvent(): HostToolEvent {
 
 function createAdapter(clientOverrides?: Record<string, unknown>): OpenCodeHostAdapter {
   return new OpenCodeHostAdapter({
-    client: createMockClient(clientOverrides) as never,
+    client: createMockClient(clientOverrides),
     directory: '/project/root',
     worktree: '/project/worktree',
   });
@@ -124,7 +124,7 @@ describe('HostAdapter Contract', () => {
 
     it('HAPPY: does not require direct session.create because native Task owns child creation', async () => {
       const nativeOnly = new OpenCodeHostAdapter({
-        client: { session: { prompt: vi.fn() }, app: { agents: vi.fn() } } as never,
+        client: { session: { prompt: vi.fn() }, app: { agents: vi.fn() } },
         directory: '/x',
         worktree: '/x',
       });
@@ -178,7 +178,7 @@ describe('HostAdapter Contract', () => {
       const client = createMockClient();
       client.app.agents.mockRejectedValue(new Error('must not run'));
       const adap = new OpenCodeHostAdapter({
-        client: client as never,
+        client: client,
         directory: '/x',
         worktree: '/x',
       });
@@ -191,7 +191,7 @@ describe('HostAdapter Contract', () => {
     it('HAPPY: warn/error may notify the TUI without becoming authority', () => {
       const client = createMockClient();
       const adap = new OpenCodeHostAdapter({
-        client: client as never,
+        client: client,
         directory: '/x',
         worktree: '/x',
       });
@@ -203,7 +203,7 @@ describe('HostAdapter Contract', () => {
       const client = createMockClient();
       client.tui.showToast.mockRejectedValue(new Error('UI crash'));
       const adap = new OpenCodeHostAdapter({
-        client: client as never,
+        client: client,
         directory: '/x',
         worktree: '/x',
       });

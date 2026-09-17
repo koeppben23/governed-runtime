@@ -100,7 +100,7 @@ function hostInvocation(
     invokedAt: NOW,
     capturedRawFindings: findings,
   });
-  return { ...invocation, ...overrides } as ReviewInvocationEvidence;
+  return { ...invocation, ...overrides };
 }
 
 function assurance(obligations: ReviewObligation[], invocations: ReviewInvocationEvidence[]) {

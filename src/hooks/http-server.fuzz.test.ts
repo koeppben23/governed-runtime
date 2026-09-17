@@ -229,7 +229,7 @@ describe('HTTP hook fuzz', () => {
           const body: string | Buffer =
             typeof rawBody === 'object' && !Buffer.isBuffer(rawBody)
               ? JSON.stringify(rawBody)
-              : (rawBody as string | Buffer);
+              : rawBody;
           const req = makeRequest(body, { contentLength: contentLength ?? undefined });
           const res = makeResponse();
 
@@ -308,7 +308,7 @@ describe('HTTP hook fuzz', () => {
           const body: string | Buffer =
             typeof rawBody === 'object' && !Buffer.isBuffer(rawBody)
               ? JSON.stringify(rawBody)
-              : (rawBody as string | Buffer);
+              : rawBody;
           const req = makeRequest(body, { url });
           const res = makeResponse();
 

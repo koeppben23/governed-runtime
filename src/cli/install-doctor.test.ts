@@ -205,7 +205,7 @@ describe('cli/doctor', () => {
 
       const toolPath = path.join(tmpDir, '.opencode', 'tools', 'flowguard.ts');
       const realImpl = vi.mocked(fs.readFile).getMockImplementation()!;
-      vi.mocked(fs.readFile).mockImplementation(((...args: Parameters<typeof fs.readFile>) => {
+      vi.mocked(fs.readFile).mockImplementation((...args: Parameters<typeof fs.readFile>) => {
         const p =
           args[0] instanceof Buffer
             ? args[0].toString()
@@ -215,7 +215,7 @@ describe('cli/doctor', () => {
         if (p.replace(/\\/g, '/').includes('tools/flowguard.ts'))
           return Promise.reject(Object.assign(new Error('EACCES'), { code: 'EACCES' }));
         return realImpl(...args);
-      }) as typeof fs.readFile);
+      });
 
       try {
         const checks = await doctor(repoArgs({ action: 'doctor' }));
@@ -235,12 +235,12 @@ describe('cli/doctor', () => {
 
       const pluginPath = path.join(tmpDir, '.opencode', 'plugins', 'flowguard-audit.ts');
       const realImpl = vi.mocked(fs.readFile).getMockImplementation()!;
-      vi.mocked(fs.readFile).mockImplementation(((...args: Parameters<typeof fs.readFile>) => {
+      vi.mocked(fs.readFile).mockImplementation((...args: Parameters<typeof fs.readFile>) => {
         const p = typeof args[0] === 'string' ? args[0] : String(args[0]);
         if (p.replace(/\\/g, '/').includes('plugins/flowguard-audit.ts'))
           return Promise.reject(Object.assign(new Error('EACCES'), { code: 'EACCES' }));
         return realImpl(...args);
-      }) as typeof fs.readFile);
+      });
 
       try {
         const checks = await doctor(repoArgs({ action: 'doctor' }));
@@ -260,12 +260,12 @@ describe('cli/doctor', () => {
 
       const pkgPath = path.join(tmpDir, '.opencode', 'package.json');
       const realImpl = vi.mocked(fs.readFile).getMockImplementation()!;
-      vi.mocked(fs.readFile).mockImplementation(((...args: Parameters<typeof fs.readFile>) => {
+      vi.mocked(fs.readFile).mockImplementation((...args: Parameters<typeof fs.readFile>) => {
         const p = typeof args[0] === 'string' ? args[0] : String(args[0]);
         if (p.replace(/\\/g, '/').includes('.opencode/package.json'))
           return Promise.reject(Object.assign(new Error('EACCES'), { code: 'EACCES' }));
         return realImpl(...args);
-      }) as typeof fs.readFile);
+      });
 
       try {
         const checks = await doctor(repoArgs({ action: 'doctor' }));
@@ -285,12 +285,12 @@ describe('cli/doctor', () => {
 
       const cmdPath = path.join(tmpDir, '.opencode', 'commands', 'plan.md');
       const realImpl = vi.mocked(fs.readFile).getMockImplementation()!;
-      vi.mocked(fs.readFile).mockImplementation(((...args: Parameters<typeof fs.readFile>) => {
+      vi.mocked(fs.readFile).mockImplementation((...args: Parameters<typeof fs.readFile>) => {
         const p = typeof args[0] === 'string' ? args[0] : String(args[0]);
         if (p.replace(/\\/g, '/').includes('commands/plan.md'))
           return Promise.reject(Object.assign(new Error('EACCES'), { code: 'EACCES' }));
         return realImpl(...args);
-      }) as typeof fs.readFile);
+      });
 
       try {
         const checks = await doctor(repoArgs({ action: 'doctor' }));
@@ -310,14 +310,14 @@ describe('cli/doctor', () => {
 
       const opencodePath = path.join(tmpDir, 'opencode.json');
       const realImpl = vi.mocked(fs.readFile).getMockImplementation()!;
-      vi.mocked(fs.readFile).mockImplementation(((...args: Parameters<typeof fs.readFile>) => {
+      vi.mocked(fs.readFile).mockImplementation((...args: Parameters<typeof fs.readFile>) => {
         const p = typeof args[0] === 'string' ? args[0] : String(args[0]);
         // Match opencode.json at project root, not inside .opencode/
         const norm = p.replace(/\\/g, '/');
         if (norm.endsWith('/opencode.json') && !norm.includes('.opencode/'))
           return Promise.reject(Object.assign(new Error('EACCES'), { code: 'EACCES' }));
         return realImpl(...args);
-      }) as typeof fs.readFile);
+      });
 
       try {
         const checks = await doctor(repoArgs({ action: 'doctor' }));

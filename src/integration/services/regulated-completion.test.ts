@@ -167,7 +167,7 @@ function completionDeps(): AuditDeps {
     logError: vi.fn(),
     cachedFingerprint: 'fp',
     mode: 'regulated',
-  } as unknown as AuditDeps;
+  };
 }
 
 /** Simulate persisted state advancing with every write, as the real adapter does. */

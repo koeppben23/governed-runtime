@@ -51,7 +51,7 @@ function reviewFindings(overrides: Record<string, unknown>): ReviewFindings {
     reviewedBy: { sessionId: 'reviewer' },
     reviewedAt: '2026-01-01T00:00:00.000Z',
     ...overrides,
-  } as ReviewFindings;
+  };
 }
 
 describe('mapReviewFindingsToReport: challenges reach the author', () => {

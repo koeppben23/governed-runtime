@@ -198,7 +198,7 @@ describe('UI sink error observability', () => {
     const { sinks } = buildLogSinks(uiConfig, client, null);
 
     expect(sinks).toHaveLength(1);
-    sinks[0]!(testEntry);
+    await sinks[0]!(testEntry);
 
     // Allow microtask queue to flush (the .catch runs on next tick)
     await new Promise((r) => setTimeout(r, 10));
@@ -275,7 +275,7 @@ describe('UI sink error observability', () => {
       message: 'integrity check',
       extra: { chain: 'ok', duration: 42 },
     };
-    sinks[0]!(entryWithExtra);
+    await sinks[0]!(entryWithExtra);
     await new Promise((r) => setTimeout(r, 10));
 
     expect(client.app.log).toHaveBeenCalledWith({

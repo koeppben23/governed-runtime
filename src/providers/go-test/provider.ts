@@ -10,13 +10,12 @@ import {
 } from '../../verification/assertion-parsers/go-test-json.js';
 import type { AssertionProviderExtension } from '../contract.js';
 import type { ParsedAssertion } from '../../verification/assertion-parsers/types.js';
-import type { ProviderId } from '../../state/assertion-identity.js';
 import type { ReportFormatId } from '../../state/assertion-identity.js';
 
 const GO_LOCAL_ID_RE = /^[^:]+::[^:]+$/;
 
 export const goTestProvider: AssertionProviderExtension = {
-  manifest: { providerId: 'go_test' as ProviderId, label: 'Go test' },
+  manifest: { providerId: 'go_test', label: 'Go test' },
 
   discovery: {
     detectionIds: ['testFramework:go_test', 'language:go'],
@@ -74,9 +73,9 @@ export const goTestProvider: AssertionProviderExtension = {
   verification: {
     formats: [
       {
-        format: 'go_test_json' as ReportFormatId,
+        format: 'go_test_json',
         parser: {
-          format: 'go_test_json' as ReportFormatId,
+          format: 'go_test_json',
           parse(content: string, _fileName: string, context: { providerId: string }) {
             return parseGoTestJson(content, context);
           },
@@ -85,7 +84,7 @@ export const goTestProvider: AssertionProviderExtension = {
       },
     ],
     identityCodec: {
-      providerId: 'go_test' as ProviderId,
+      providerId: 'go_test',
       assertionBindingFormats: new Set<ReportFormatId>(['go_test_json']),
       buildLocalId(parsed: ParsedAssertion) {
         if (parsed.kind !== 'go_test_json')

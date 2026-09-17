@@ -91,7 +91,7 @@ function archDispatchAuthority(): ReviewDispatchAuthority {
       repositoryDiscovery: { kind: 'not_applicable' },
       observations: [],
       createdAt: '2026-01-01T00:00:00.000Z',
-    } as NonNullable<SessionState['reviewAssurance']>['attempts'][number],
+    },
   };
 }
 

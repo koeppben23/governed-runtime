@@ -118,14 +118,14 @@ describe('verifyFrozenMaterialForObligation', () => {
   it('accepts an artifact obligation whose material generation matches the subject digest', () => {
     const result = verifyFrozenMaterialForObligation(
       artifactObligation,
-      artifactObligation.reviewMaterial!,
+      artifactObligation.reviewMaterial,
     );
     expect(result).toEqual({ kind: 'ok', context: null });
   });
 
   it('blocks an artifact obligation whose material generation binds to a different digest', () => {
     const mismatched = {
-      ...artifactObligation.reviewMaterial!,
+      ...artifactObligation.reviewMaterial,
       subjectDigest: 'artifact-digest-D1',
     };
     const result = verifyFrozenMaterialForObligation(artifactObligation, mismatched);
@@ -154,7 +154,7 @@ describe('verifyFrozenMaterialForObligation', () => {
         },
       },
     };
-    const result = verifyFrozenMaterialForObligation(tampered, tampered.reviewMaterial!);
+    const result = verifyFrozenMaterialForObligation(tampered, tampered.reviewMaterial);
     expect(result).toEqual({
       kind: 'blocked',
       code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
@@ -178,7 +178,7 @@ describe('verifyFrozenMaterialForObligation', () => {
         },
       },
     };
-    const result = verifyFrozenMaterialForObligation(tampered, tampered.reviewMaterial!);
+    const result = verifyFrozenMaterialForObligation(tampered, tampered.reviewMaterial);
     expect(result).toMatchObject({
       kind: 'blocked',
       code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',
@@ -197,7 +197,7 @@ describe('verifyFrozenMaterialForObligation', () => {
         revisions: ['base', 'head'],
       },
     };
-    const result = verifyFrozenMaterialForObligation(tampered, tampered.reviewMaterial!);
+    const result = verifyFrozenMaterialForObligation(tampered, tampered.reviewMaterial);
     expect(result).toEqual({
       kind: 'blocked',
       code: 'REVIEW_MATERIAL_INTEGRITY_FAILED',

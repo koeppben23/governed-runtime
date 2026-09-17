@@ -67,9 +67,9 @@ describe('discovery/diagnostics (#372)', () => {
       const result = await runDiscovery(EMPTY_INPUT);
 
       expect(result.diagnostics).toBeDefined();
-      expect(result.diagnostics!.length).toBe(6);
+      expect(result.diagnostics.length).toBe(6);
 
-      for (const diag of result.diagnostics!) {
+      for (const diag of result.diagnostics) {
         const parsed = CollectorDiagnosticSchema.safeParse(diag);
         expect(parsed.success).toBe(true);
         expect(diag.durationMs).toBeGreaterThanOrEqual(0);
@@ -84,7 +84,7 @@ describe('discovery/diagnostics (#372)', () => {
     it('diagnostics identify each collector', async () => {
       const result = await runDiscovery(EMPTY_INPUT);
 
-      for (const diag of result.diagnostics!) {
+      for (const diag of result.diagnostics) {
         expect(diag.name).toBeTruthy();
       }
     });
@@ -471,7 +471,7 @@ describe('discovery/diagnostics (#372)', () => {
       const d1 = computeStableDriftDigest(result);
       const shifted = {
         ...result,
-        diagnostics: result.diagnostics!.map((d) => ({ ...d, durationMs: d.durationMs + 5000 })),
+        diagnostics: result.diagnostics.map((d) => ({ ...d, durationMs: d.durationMs + 5000 })),
       };
       const d2 = computeStableDriftDigest(shifted);
       expect(d1).toBe(d2);
@@ -484,7 +484,7 @@ describe('discovery/diagnostics (#372)', () => {
       const shifted = {
         ...result,
         collectedAt: new Date(Date.now() + 86_400_000).toISOString(),
-        diagnostics: result.diagnostics!.map((d) => ({ ...d, durationMs: d.durationMs + 5000 })),
+        diagnostics: result.diagnostics.map((d) => ({ ...d, durationMs: d.durationMs + 5000 })),
       };
       const d2 = computeStableDriftDigest(shifted);
       expect(d1).toBe(d2);

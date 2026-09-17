@@ -37,7 +37,7 @@ describe('prepareVerificationExecution', () => {
         outputArgumentTemplate: '--out={attemptId}',
         resultPatternTemplate: '{attemptId}.xml',
       },
-    } as VerificationCandidate);
+    });
     await expect(prepareVerificationExecution(candidate, '/tmp')).rejects.toThrow(
       'does not support report format',
     );
@@ -55,7 +55,7 @@ describe('prepareVerificationExecution', () => {
           '--reporter=json --outputFile=.flowguard/reports/{attemptId}/vitest.json',
         resultPatternTemplate: '.flowguard/reports/{attemptId}/vitest.json',
       },
-    } as VerificationCandidate);
+    });
     const prepared = await prepareVerificationExecution(candidate, '/tmp', 'test-id');
     expect(prepared.command).toContain('--reporter=json');
     expect(prepared.command).toContain('test-id');
@@ -78,7 +78,7 @@ describe('prepareVerificationExecution', () => {
         format: 'go_test_json' as const,
         providerId: 'go_test' as const,
       },
-    } as VerificationCandidate);
+    });
     const prepared = await prepareVerificationExecution(candidate, '/tmp');
     expect(prepared.command).toBe('npm test');
     expect(prepared.assertion.capability).toBe('structured');

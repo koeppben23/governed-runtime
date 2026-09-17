@@ -43,8 +43,7 @@ export const REVIEWER_CRITERIA: Record<Exclude<ReviewerPromptType, 'all'>, strin
 };
 
 export function renderReviewerCriteria(reviewType: ReviewerPromptType): string {
-  if (reviewType !== 'all')
-    return REVIEWER_CRITERIA[reviewType as Exclude<ReviewerPromptType, 'all'>]!;
+  if (reviewType !== 'all') return REVIEWER_CRITERIA[reviewType];
   return [
     REVIEWER_CRITERIA.plan,
     REVIEWER_CRITERIA.implementation,

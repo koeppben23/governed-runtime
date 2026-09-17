@@ -45,7 +45,7 @@ function makeStructuredCandidate(
       outputArgumentTemplate: '--out={attemptId}',
       resultPatternTemplate: '{attemptId}.xml',
     },
-  } as VerificationCandidate;
+  };
 }
 
 describe('resolveProviderCapabilities', () => {

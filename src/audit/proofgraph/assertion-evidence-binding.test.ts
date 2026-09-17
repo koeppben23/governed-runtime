@@ -26,7 +26,7 @@ function extractedResult(
     status: 'extracted',
     attemptId: 'attempt-1',
     providerId,
-    format: format as never,
+    format: format,
     bindingCapability,
     reportDigests: ['abc123'],
     assertions: assertions.map((a) => ({
@@ -257,7 +257,7 @@ describe('bindAssertionEvidence', () => {
 describe('bindAssertionEvidence diagnostics contract', () => {
   it('rejects a requirement without an assertion identity and explains why', () => {
     const result = bindAssertionEvidence({
-      requirement: { kind: 'aggregate_check', checkId: 'test' } as CounterexampleRequirement,
+      requirement: { kind: 'aggregate_check', checkId: 'test' },
       checkId: 'test',
       extraction: extractedResult('pytest', 'pytest_json', [
         { localId: 'tests/test_user.py::test_create', status: 'passed' },

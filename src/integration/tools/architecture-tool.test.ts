@@ -107,7 +107,7 @@ vi.mock('../../adapters/git.js', () => ({
 }));
 
 vi.mock('../../adapters/persistence-discovery.js', async (importOriginal) => {
-  const original = (await importOriginal()) as Record<string, unknown>;
+  const original = await importOriginal<typeof import('../../adapters/persistence-discovery.js')>();
   return { ...original, readDiscovery: mocks.readDiscovery };
 });
 
@@ -116,7 +116,7 @@ vi.mock('../../machine/evaluate.js', () => ({
 }));
 
 vi.mock('../../state/evidence.js', async (importOriginal) => {
-  const original = (await importOriginal()) as Record<string, unknown>;
+  const original = await importOriginal<typeof import('../../state/evidence.js')>();
   return {
     ...original,
     validateAdrSections: mocks.validateAdrSections,

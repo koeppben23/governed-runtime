@@ -156,7 +156,7 @@ describe('settleReviewObligationAfterAttempt', () => {
     // Tampered material generation: subjectDigest no longer matches the artifact.
     const tampered: ReviewObligation = {
       ...obligation,
-      reviewMaterial: { ...obligation.reviewMaterial!, subjectDigest: 'other-digest' },
+      reviewMaterial: { ...obligation.reviewMaterial, subjectDigest: 'other-digest' },
     };
     const rejected = attemptFor(tampered, 1, 'rejected', 'schema_invalid');
     const state = stateWith(tampered, [rejected]);

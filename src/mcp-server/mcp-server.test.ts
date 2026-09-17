@@ -502,10 +502,10 @@ describe('Tool Adapter Session Identity', () => {
 
     const stderrWrites: string[] = [];
     const originalWrite = process.stderr.write.bind(process.stderr);
-    process.stderr.write = ((chunk: string | Uint8Array): boolean => {
+    process.stderr.write = (chunk: string | Uint8Array): boolean => {
       stderrWrites.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString());
       return true;
-    }) as typeof process.stderr.write;
+    };
 
     try {
       registerAllTools(fakeServer, { test: tool }, () => {
@@ -844,10 +844,10 @@ describe('MCP fatal diagnostics', () => {
     const writes: string[] = [];
     const originalWrite = process.stderr.write.bind(process.stderr);
     const originalExitCode = process.exitCode;
-    process.stderr.write = ((chunk: string | Uint8Array): boolean => {
+    process.stderr.write = (chunk: string | Uint8Array): boolean => {
       writes.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString());
       return true;
-    }) as typeof process.stderr.write;
+    };
 
     try {
       reportMcpFatalError(

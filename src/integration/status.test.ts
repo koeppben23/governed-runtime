@@ -137,7 +137,7 @@ describe('policyMode — from policySnapshot', () => {
     const state = {
       ...makeMinimalState('READY'),
       policySnapshot: {
-        ...makeMinimalState('READY').policySnapshot!,
+        ...makeMinimalState('READY').policySnapshot,
         mode: 'regulated' as const,
         allowSelfApproval: false,
       },
@@ -622,7 +622,7 @@ describe('buildEvidenceDetailProjection — HAPPY', () => {
     const state = {
       ...makeMinimalState('READY'),
       policySnapshot: {
-        ...makeMinimalState('READY').policySnapshot!,
+        ...makeMinimalState('READY').policySnapshot,
         mode: 'regulated' as const,
         allowSelfApproval: false,
       },

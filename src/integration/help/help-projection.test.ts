@@ -518,7 +518,7 @@ describe('resume end-to-end via help.execute', () => {
         view: 'command',
         command: 'start',
         includeArtifactContent: true,
-      } as Record<string, unknown>,
+      },
       ctx,
     );
     const parsed = JSON.parse(out as string);

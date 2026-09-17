@@ -59,7 +59,7 @@ function makeValidationResult(checkId: string, passed: boolean, detail: string):
     executionMs: 1000,
     outputDigest: 'a'.repeat(64),
     timedOut: false,
-    outcome: (passed ? 'supported' : 'inconclusive') as 'supported' | 'inconclusive',
+    outcome: passed ? 'supported' : 'inconclusive',
   };
 }
 

@@ -26,6 +26,7 @@ const AUTHORITY_REF = {
 const IMPL = { changedFiles: ['a.ts'], domainFiles: [], digest: IMPL_DIGEST, executedAt: NOW };
 
 function validationResult(passed: boolean, over: Record<string, unknown> = {}) {
+  const outcome: 'supported' | 'inconclusive' = passed ? 'supported' : 'inconclusive';
   return {
     checkId: 'test',
     passed,
@@ -37,7 +38,7 @@ function validationResult(passed: boolean, over: Record<string, unknown> = {}) {
     executionMs: 5,
     outputDigest: SHA,
     timedOut: false,
-    outcome: (passed ? 'supported' : 'inconclusive') as 'supported' | 'inconclusive',
+    outcome,
     ...over,
   };
 }

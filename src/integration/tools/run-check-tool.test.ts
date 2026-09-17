@@ -1245,7 +1245,7 @@ describe('CONCURRENCY', () => {
     const raw = await runWithLogContextAsync({ traceId: 'trace-run-check' }, () =>
       run_check.execute({ kind: 'typecheck' }, ctx),
     );
-    const result = parseToolResult(raw) as Record<string, unknown>;
+    const result = parseToolResult(raw);
 
     expect(result.error).toBe(true);
     expect(result.code).toBe('LOCK_TIMEOUT_EXHAUSTED');
@@ -1360,7 +1360,7 @@ describe('CONCURRENCY', () => {
       run_check.execute({ kind: 'build' }, ctx),
     ]);
 
-    const parsedResults = results.map((r) => parseToolResult(r) as Record<string, unknown>);
+    const parsedResults = results.map((r) => parseToolResult(r));
     const errors = parsedResults.filter((r) => r.error);
     if (errors.length > 0) {
       console.error('Parallel check errors:', JSON.stringify(errors, null, 2));
@@ -1407,10 +1407,7 @@ describe('STALE_STATE', () => {
       };
     });
 
-    const result = parseToolResult(await run_check.execute({ kind: 'typecheck' }, ctx)) as Record<
-      string,
-      unknown
-    >;
+    const result = parseToolResult(await run_check.execute({ kind: 'typecheck' }, ctx));
     expect(result.error).toBe(true);
     // Phase C re-reads under lock, sees COMPLETE, blocks with COMMAND_NOT_ALLOWED
     expect(result.code).toBe('COMMAND_NOT_ALLOWED');
@@ -1454,10 +1451,7 @@ describe('STALE_STATE', () => {
       };
     });
 
-    const result = parseToolResult(await run_check.execute({ kind: 'typecheck' }, ctx)) as Record<
-      string,
-      unknown
-    >;
+    const result = parseToolResult(await run_check.execute({ kind: 'typecheck' }, ctx));
     expect(result.error).toBe(true);
     // Phase C re-reads under lock, sees empty activeChecks, blocks
     expect(result.code).toBe('NO_ACTIVE_CHECKS');

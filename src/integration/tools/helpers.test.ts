@@ -186,7 +186,7 @@ describe('formatRailResult structured next-action authority', () => {
       state,
       evalResult: { kind: 'terminal' },
       transitions: [],
-    } as RailResult);
+    });
     const output = typeof result === 'string' ? result : result.output;
     const parsed = parseJSON(output);
     expect(parsed.directive).toMatchObject({ kind: 'terminal', code: 'WORKFLOW_COMPLETE' });
@@ -217,7 +217,7 @@ describe('formatRailResult', () => {
       kind: 'blocked',
       code: 'TICKET_REQUIRED',
       reason: 'No ticket',
-    } as RailResult);
+    });
     const parsed = parseJSON(result as string);
     expect(parsed.error).toBe(true);
     expect(parsed.code).toBe('TICKET_REQUIRED');
@@ -239,7 +239,7 @@ describe('formatRailResult', () => {
             at: '2025-01-01T00:00:00Z',
           },
         ],
-      } as RailResult,
+      },
       { evidenceApprovalCompletion: true },
     );
     const output = typeof result === 'string' ? result : result.output;
@@ -275,7 +275,7 @@ describe('formatRailResult', () => {
         },
         evalResult: { kind: 'terminal' },
         transitions: [],
-      } as RailResult,
+      },
       { evidenceApprovalCompletion: true },
     );
     const output = typeof result === 'string' ? result : result.output;

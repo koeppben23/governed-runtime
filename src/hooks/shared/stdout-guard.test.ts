@@ -59,7 +59,7 @@ describe('installHookStdoutGuard', () => {
     let written = '';
     let callbackCalled = false;
 
-    process.stdout.write = ((chunk: unknown, encOrCb?: unknown, cb?: unknown): boolean => {
+    process.stdout.write = (chunk: unknown, encOrCb?: unknown, cb?: unknown): boolean => {
       written = typeof chunk === 'string' ? chunk : '';
       const callback = typeof encOrCb === 'function' ? encOrCb : cb;
       if (typeof callback === 'function') {
@@ -67,7 +67,7 @@ describe('installHookStdoutGuard', () => {
         (callback as (err?: Error | null) => void)(null);
       }
       return true;
-    }) as typeof process.stdout.write;
+    };
 
     const guard = installHookStdoutGuard();
 
@@ -84,11 +84,11 @@ describe('installHookStdoutGuard', () => {
   });
 
   it('second writeResponse after first works with restored stdout', async () => {
-    process.stdout.write = ((_chunk: unknown, encOrCb?: unknown, cb?: unknown): boolean => {
+    process.stdout.write = (_chunk: unknown, encOrCb?: unknown, cb?: unknown): boolean => {
       const callback = typeof encOrCb === 'function' ? encOrCb : cb;
       if (typeof callback === 'function') (callback as (err?: Error | null) => void)(null);
       return true;
-    }) as typeof process.stdout.write;
+    };
 
     const guard = installHookStdoutGuard();
     await guard.writeResponse('first');

@@ -156,7 +156,7 @@ describe('archive TSA deferred verification', () => {
     const { event, trustAnchorPem } = await stampedEventWithRealToken();
 
     // The synchronous layer defers — it cannot verify the token itself.
-    const chainResult = verifyChain([event as unknown as Record<string, unknown>], {
+    const chainResult = verifyChain([event], {
       strictTimestamps: true,
     });
     expect(chainResult.reason).toBe('TOKEN_VERIFICATION_REQUIRED');

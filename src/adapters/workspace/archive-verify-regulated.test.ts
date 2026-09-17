@@ -37,7 +37,7 @@ function chainedEvent(detail: Record<string, unknown>): ChainedAuditEvent {
     prevHash: 'genesis',
     chainHash: 'a'.repeat(64),
     semanticEventDigest: 'b'.repeat(64),
-  } as ChainedAuditEvent;
+  };
 }
 
 function approvalTransitionEvent(): ChainedAuditEvent {

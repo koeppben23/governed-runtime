@@ -261,13 +261,13 @@ describe('cli/uninstall', () => {
       await install(repoArgs({ coreTarball: tarball }));
 
       const realImpl = vi.mocked(fs.unlink).getMockImplementation()!;
-      vi.mocked(fs.unlink).mockImplementation(((...args: Parameters<typeof fs.unlink>) => {
+      vi.mocked(fs.unlink).mockImplementation((...args: Parameters<typeof fs.unlink>) => {
         const p = typeof args[0] === 'string' ? args[0] : String(args[0]);
         if (p.replace(/\\/g, '/').includes('tools/flowguard.ts')) {
           return Promise.reject(Object.assign(new Error('EPERM'), { code: 'EPERM' }));
         }
         return realImpl(...args);
-      }) as typeof fs.unlink);
+      });
 
       try {
         const result = await uninstall(repoArgs({ action: 'uninstall' }));

@@ -599,9 +599,9 @@ components = ["clippy", "rustfmt"]
       const statusScopes = statusDs.scopes as Array<Record<string, unknown>>;
       expect(statusScopes).toBeDefined();
       expect(statusScopes).toHaveLength(1);
-      expect(statusScopes![0]!.path).toBe('apps/web');
+      expect(statusScopes[0]!.path).toBe('apps/web');
 
-      const statusScopeItems = statusScopes![0]!.items as Array<Record<string, unknown>>;
+      const statusScopeItems = statusScopes[0]!.items as Array<Record<string, unknown>>;
       const statusItemIds = statusScopeItems.map((i) => i.id);
       expect(statusItemIds).toContain('react');
       expect(statusItemIds).toContain('vitest');
@@ -663,9 +663,9 @@ services:
       const statusScopes = statusDs.scopes as Array<Record<string, unknown>>;
       expect(statusScopes).toBeDefined();
       expect(statusScopes).toHaveLength(1);
-      expect(statusScopes![0]!.path).toBe('services/db');
+      expect(statusScopes[0]!.path).toBe('services/db');
 
-      const statusScopeItems = statusScopes![0]!.items as Array<Record<string, unknown>>;
+      const statusScopeItems = statusScopes[0]!.items as Array<Record<string, unknown>>;
       const statusItemIds = statusScopeItems.map((i) => i.id);
       expect(statusItemIds).toContain('postgresql');
       expect(statusItemIds).toContain('redis');

@@ -544,6 +544,14 @@ true })` returns the evaluated projection. Key invariants:
 
 ### Fixed
 
+- **Discovery health classifies every persistence error code.** The advisory
+  discovery-health projection previously routed `SESSION_STATE_INCOMPATIBLE`,
+  `LOCK_TIMEOUT_EXHAUSTED`, and `MISSING_FILE_DIGEST` through the generic
+  `read_failed` reason. They now map to `schema_invalid`, `read_failed`, and
+  `corrupt` respectively, so an incompatible or damaged artifact surfaces the
+  actionable recovery instead of a filesystem-access hint. Unknown errors
+  still fail closed to `read_failed`.
+
 - **`audit-chain.v3` contract defects in append, query, and diagnostics.** Six
   bugs in the contract introduced by the hard Assurance epoch cutover (#852),
   repaired without new events, outbox concepts, policy fields, or a format

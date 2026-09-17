@@ -105,7 +105,7 @@ export class JwtStaticTokenVerifier implements TokenVerifier {
       expiresAt: new Date(verifiedPayload.exp * 1000),
       keyId: kid,
       algorithm: header.alg,
-      rawClaims: verifiedPayload as Record<string, unknown>,
+      rawClaims: verifiedPayload,
     };
   }
 
@@ -154,7 +154,7 @@ export class JwtStaticTokenVerifier implements TokenVerifier {
         audience: this.config.audience,
         clockTolerance: 1,
       });
-      return verified.payload as JwtPayload;
+      return verified.payload;
     } catch (err) {
       if (err instanceof IdpError) throw err;
       getAdapterLogger().warn(

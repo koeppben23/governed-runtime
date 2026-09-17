@@ -84,7 +84,7 @@ export function computeStableDiscoveryContributorDigests(
   ]);
 
   for (const name of [...collectorNames].sort()) {
-    const outputKey = COLLECTOR_OUTPUTS[name as keyof typeof COLLECTOR_OUTPUTS];
+    const outputKey = COLLECTOR_OUTPUTS[name];
     digests.set(
       name,
       hashText(

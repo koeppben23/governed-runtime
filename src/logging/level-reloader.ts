@@ -19,7 +19,7 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { LogLevelSchema, type LogLevel } from './log-level.js';
+import { LogLevelSchema } from './log-level.js';
 import { type DynamicLogger } from './logger.js';
 import { serializeError } from './error-serialize.js';
 
@@ -77,7 +77,7 @@ export function createLevelReloader(registrar: SignalRegistrar): LevelReloader {
         });
         return;
       }
-      const newLevel = LogLevelSchema.parse(rawLevel) as LogLevel;
+      const newLevel = LogLevelSchema.parse(rawLevel);
       const oldLevel = _logger.getHealth().level;
       if (newLevel !== oldLevel) {
         _logger.setLevel(newLevel);

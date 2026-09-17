@@ -164,7 +164,7 @@ describe('presentation.markdown rendering contract', () => {
     const summary = projectImplementationProofStatus(proofGraphState());
     const markdown = buildImplReviewChangesRequestedMarkdown(
       'Implementation review iteration 1/3. Changes requested.',
-      summary!,
+      summary,
       { kind: 'user_action', code: 'IMPLEMENTATION_REQUIRED', commands: ['/implement'] },
     );
     expect(markdown).toContain('## Verification');
@@ -176,7 +176,7 @@ describe('presentation.markdown rendering contract', () => {
     const summary = projectImplementationProofStatus(negativeProofGraphState());
     const markdown = buildImplReviewChangesRequestedMarkdown(
       'Implementation review iteration 1/3. Changes requested.',
-      summary!,
+      summary,
       { kind: 'user_action', code: 'IMPLEMENTATION_REQUIRED', commands: ['/implement'] },
     );
     expect(markdown).toContain('## Verification');
@@ -196,7 +196,7 @@ describe('presentation.markdown rendering contract', () => {
         code: 'IMPLEMENTATION_DECISION_REQUIRED',
         commands: ['/approve', '/request-changes', '/reject'],
       },
-      proofSummary: summary!,
+      proofSummary: summary,
       statusLine: 'Implementation review converged at iteration 1. Reviewer accepted.',
     };
     const markdown = buildEvidenceReviewCard(cardInput);

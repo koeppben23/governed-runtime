@@ -19,50 +19,54 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ── Shared mock handle ──────────────────────────────────────────────────────
 
-const mocks = vi.hoisted(() => ({
-  readOnlySession: null as unknown,
-  changedFilesResult: [] as string[],
-  state: null as unknown,
-  // helpers
-  resolveWorkspacePaths: vi.fn(async () => ({
-    sessDir: '/tmp/sess',
-    worktree: '/tmp/worktree',
-    fingerprint: 'test',
-    wsDir: '/tmp/ws',
-  })),
-  requireStateForMutation: vi.fn(async () => mocks.state),
-  resolvePolicyFromState: vi.fn(() => ({ reviewBudget: { plan: 3, architecture: 3 } })),
-  createPolicyContext: vi.fn(() => ({
-    policy: { reviewBudget: { plan: 3, architecture: 3 } },
-    now: () => '2026-01-01T00:00:00.000Z',
-    digest: (s: string) => `digest:${s}`,
-  })),
-  formatBlocked: vi.fn((code: string) => JSON.stringify({ error: true, code })),
-  formatError: vi.fn((err: unknown) =>
-    JSON.stringify({ error: true, code: 'INTERNAL_ERROR', message: String(err) }),
-  ),
-  enrichWithWorkflowDirective: vi.fn((value: Record<string, unknown>) => ({
-    ...value,
-    directive: {
-      code: `DIRECTIVE_${value.phase}`,
-      // The canonical command surface for the peer-review flow remains /review
-      // (and its terminal label) after the PEER_REVIEW phase rename.
-      commands: [
-        `/${String(value.phase)
-          .toLowerCase()
-          .replace(/^peer_/, '')}`,
-      ],
-    },
-  })),
-  writeStateWithArtifacts: vi.fn(async (_sessDir: string, state: SessionState) => state),
-  // commands
-  isCommandAllowed: vi.fn(() => true),
-  Command: { IMPLEMENT: 'IMPLEMENT' as const },
-  // git
-  changedFiles: vi.fn(async () => mocks.changedFilesResult),
-  // evaluate
-  evaluate: vi.fn(() => ({ kind: 'pending' as const })),
-}));
+const mocks = vi.hoisted(() => {
+  const state: unknown = null;
+  const readOnlySession: unknown = null;
+  return {
+    readOnlySession,
+    changedFilesResult: [] as string[],
+    state,
+    // helpers
+    resolveWorkspacePaths: vi.fn(async () => ({
+      sessDir: '/tmp/sess',
+      worktree: '/tmp/worktree',
+      fingerprint: 'test',
+      wsDir: '/tmp/ws',
+    })),
+    requireStateForMutation: vi.fn(async () => mocks.state),
+    resolvePolicyFromState: vi.fn(() => ({ reviewBudget: { plan: 3, architecture: 3 } })),
+    createPolicyContext: vi.fn(() => ({
+      policy: { reviewBudget: { plan: 3, architecture: 3 } },
+      now: () => '2026-01-01T00:00:00.000Z',
+      digest: (s: string) => `digest:${s}`,
+    })),
+    formatBlocked: vi.fn((code: string) => JSON.stringify({ error: true, code })),
+    formatError: vi.fn((err: unknown) =>
+      JSON.stringify({ error: true, code: 'INTERNAL_ERROR', message: String(err) }),
+    ),
+    enrichWithWorkflowDirective: vi.fn((value: Record<string, unknown>) => ({
+      ...value,
+      directive: {
+        code: `DIRECTIVE_${value.phase}`,
+        // The canonical command surface for the peer-review flow remains /review
+        // (and its terminal label) after the PEER_REVIEW phase rename.
+        commands: [
+          `/${String(value.phase)
+            .toLowerCase()
+            .replace(/^peer_/, '')}`,
+        ],
+      },
+    })),
+    writeStateWithArtifacts: vi.fn(async (_sessDir: string, state: SessionState) => state),
+    // commands
+    isCommandAllowed: vi.fn(() => true),
+    Command: { IMPLEMENT: 'IMPLEMENT' as const },
+    // git
+    changedFiles: vi.fn(async () => mocks.changedFilesResult),
+    // evaluate
+    evaluate: vi.fn(() => ({ kind: 'pending' as const })),
+  };
+});
 
 vi.mock('./helpers.js', () => ({
   withReadOnlySession: vi.fn(async () => mocks.readOnlySession),

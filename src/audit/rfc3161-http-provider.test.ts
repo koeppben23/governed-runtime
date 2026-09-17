@@ -70,7 +70,7 @@ describe('HttpTimestampAuthorityProvider', () => {
 
   it('fails explicitly for non-2xx TSA response', async () => {
     const provider = new HttpTimestampAuthorityProvider({
-      fetchImpl: vi.fn(async () => new Response('denied', { status: 503 })) as typeof fetch,
+      fetchImpl: vi.fn(async () => new Response('denied', { status: 503 })),
     });
 
     await expect(
@@ -85,9 +85,7 @@ describe('HttpTimestampAuthorityProvider', () => {
 
   it('fails explicitly for malformed ASN.1 response', async () => {
     const provider = new HttpTimestampAuthorityProvider({
-      fetchImpl: vi.fn(
-        async () => new Response(new Uint8Array([1, 2, 3]), { status: 200 }),
-      ) as typeof fetch,
+      fetchImpl: vi.fn(async () => new Response(new Uint8Array([1, 2, 3]), { status: 200 })),
     });
 
     await expect(
@@ -104,7 +102,7 @@ describe('HttpTimestampAuthorityProvider', () => {
     const provider = new HttpTimestampAuthorityProvider({
       fetchImpl: vi.fn(
         async () => new Response(makeResponse(PKIStatus.rejection), { status: 200 }),
-      ) as typeof fetch,
+      ),
     });
 
     await expect(

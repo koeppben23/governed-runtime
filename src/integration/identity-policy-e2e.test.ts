@@ -421,7 +421,7 @@ describe('identity-policy-e2e', () => {
               jwk: { kty: 'RSA' as const, n: 'dGVzdA', e: 'AQAB' },
             },
           ],
-        } as unknown as Record<string, unknown>,
+        },
       });
 
       // Fresh session with team mode
@@ -459,7 +459,7 @@ describe('identity-policy-e2e', () => {
               jwk: { kty: 'RSA' as const, n: 'dGVzdA', e: 'AQAB' },
             },
           ],
-        } as unknown as Record<string, unknown>,
+        },
       });
 
       // Actor mock default is best_effort — should be blocked
@@ -493,7 +493,7 @@ describe('identity-policy-e2e', () => {
               jwk: { kty: 'RSA' as const, n: 'dGVzdA', e: 'AQAB' },
             },
           ],
-        } as unknown as Record<string, unknown>,
+        },
       });
 
       // Override actor to claim_validated — still below idp_verified threshold
@@ -533,7 +533,7 @@ describe('identity-policy-e2e', () => {
               jwk: { kty: 'RSA' as const, n: 'dGVzdA', e: 'AQAB' },
             },
           ],
-        } as unknown as Record<string, unknown>,
+        },
       });
 
       // Override actor to idp_verified — meets threshold
@@ -622,7 +622,7 @@ describe('identity-policy-e2e', () => {
               jwk: { kty: 'RSA' as const, n: 'dGVzdA', e: 'AQAB' },
             },
           ],
-        } as unknown as Record<string, unknown>,
+        },
       });
 
       // Simulate: resolveActor throws because IdP mode is required but no token
@@ -664,7 +664,7 @@ describe('identity-policy-e2e', () => {
               jwk: { kty: 'RSA' as const, n: 'dGVzdA', e: 'AQAB' },
             },
           ],
-        } as unknown as Record<string, unknown>,
+        },
       });
 
       // Fresh session — hydrate does NOT pass IdP config to resolveActor
@@ -714,9 +714,7 @@ describe('identity-policy-e2e', () => {
       delete process.env.FLOWGUARD_ACTOR_TOKEN_PATH;
 
       // Use real resolveActor — not mocked
-      vi.mocked(actorMock.resolveActor).mockImplementation(
-        actorOriginal.resolveActor as unknown as typeof actorMock.resolveActor,
-      );
+      vi.mocked(actorMock.resolveActor).mockImplementation(actorOriginal.resolveActor);
 
       const raw = await executeDecision({ verdict: 'approve', rationale: 'runtime idp test' });
       const result = parseToolResult(raw);
@@ -783,9 +781,7 @@ describe('identity-policy-e2e', () => {
       delete process.env.FLOWGUARD_ACTOR_TOKEN_PATH;
 
       // 6. Use real resolveActor (not mocked) for the decision call
-      vi.mocked(actorMock.resolveActor).mockImplementation(
-        actorOriginal.resolveActor as unknown as typeof actorMock.resolveActor,
-      );
+      vi.mocked(actorMock.resolveActor).mockImplementation(actorOriginal.resolveActor);
 
       // 7. Decision should block — idpMode=required, idpConfig set, but no token
       const raw = await executeDecision({ verdict: 'approve', rationale: 'e2e enforcement test' });

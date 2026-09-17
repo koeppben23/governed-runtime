@@ -19,7 +19,7 @@ function validationResult(checkId: string, passed: boolean, detail: string): Val
     executionMs: 1,
     outputDigest: 'a'.repeat(64),
     timedOut: false,
-    outcome: (passed ? 'supported' : 'inconclusive') as 'supported' | 'inconclusive',
+    outcome: passed ? 'supported' : 'inconclusive',
   };
 }
 
@@ -133,7 +133,7 @@ describe('audit completeness', () => {
       const state = makeState('COMPLETE', {
         ...makeProgressedState('COMPLETE'),
         policySnapshot: {
-          ...makeProgressedState('COMPLETE').policySnapshot!,
+          ...makeProgressedState('COMPLETE').policySnapshot,
           allowSelfApproval: false,
         },
         initiatedBy: 'alice',
@@ -166,7 +166,7 @@ describe('audit completeness', () => {
       const state = makeState('COMPLETE', {
         ...makeProgressedState('COMPLETE'),
         policySnapshot: {
-          ...makeProgressedState('COMPLETE').policySnapshot!,
+          ...makeProgressedState('COMPLETE').policySnapshot,
           allowSelfApproval: false,
         },
         initiatedBy: 'alice',
@@ -203,7 +203,7 @@ describe('audit completeness', () => {
       const state = makeState('COMPLETE', {
         ...makeProgressedState('COMPLETE'),
         policySnapshot: {
-          ...makeProgressedState('COMPLETE').policySnapshot!,
+          ...makeProgressedState('COMPLETE').policySnapshot,
           allowSelfApproval: false,
         },
         initiatedBy: 'legacy-initiator',
@@ -235,7 +235,7 @@ describe('audit completeness', () => {
       const state = makeState('COMPLETE', {
         ...makeProgressedState('COMPLETE'),
         policySnapshot: {
-          ...makeProgressedState('COMPLETE').policySnapshot!,
+          ...makeProgressedState('COMPLETE').policySnapshot,
           allowSelfApproval: false,
         },
         initiatedByIdentity: {
@@ -266,7 +266,7 @@ describe('audit completeness', () => {
       const state = makeState('COMPLETE', {
         ...makeProgressedState('COMPLETE'),
         policySnapshot: {
-          ...makeProgressedState('COMPLETE').policySnapshot!,
+          ...makeProgressedState('COMPLETE').policySnapshot,
           allowSelfApproval: false,
         },
         initiatedBy: 'alice',
@@ -293,7 +293,7 @@ describe('audit completeness', () => {
       const state = makeState('PLAN_REVIEW', {
         ...makeProgressedState('PLAN_REVIEW'),
         policySnapshot: {
-          ...makeProgressedState('PLAN_REVIEW').policySnapshot!,
+          ...makeProgressedState('PLAN_REVIEW').policySnapshot,
           allowSelfApproval: false,
         },
         reviewDecision: null,
@@ -358,7 +358,7 @@ describe('audit completeness', () => {
     });
 
     it("no policy snapshot → policyMode is 'unknown'", () => {
-      const state = makeState('TICKET', { policySnapshot: undefined as any });
+      const state = makeState('TICKET', { policySnapshot: undefined });
       const report = evaluateCompleteness(state);
       expect(report.policyMode).toBe('unknown');
     });
@@ -407,7 +407,7 @@ describe('audit completeness', () => {
       const state = makeState('PLAN_REVIEW', {
         ...makeProgressedState('PLAN_REVIEW'),
         policySnapshot: {
-          ...makeProgressedState('PLAN_REVIEW').policySnapshot!,
+          ...makeProgressedState('PLAN_REVIEW').policySnapshot,
           allowSelfApproval: false,
         },
         reviewDecision: null,

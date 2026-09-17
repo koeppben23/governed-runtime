@@ -735,7 +735,7 @@ describe('decision', () => {
       await reachPlanReview();
       recordUserDecision('approve');
       // Simulate the MCP boundary having stripped a null rationale: the key is absent.
-      const raw = await decision.execute({ verdict: 'approve' } as { verdict: ReviewVerdict }, ctx);
+      const raw = await decision.execute({ verdict: 'approve' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       // The automatic validation response supersedes the decision output; the

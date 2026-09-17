@@ -7,7 +7,6 @@
 import { parseJestJson, buildJestLocalId } from '../../verification/assertion-parsers/jest-json.js';
 import type { AssertionProviderExtension } from '../contract.js';
 import type { ParsedAssertion } from '../../verification/assertion-parsers/types.js';
-import type { ProviderId } from '../../state/assertion-identity.js';
 import type { ReportFormatId } from '../../state/assertion-identity.js';
 
 const JS_LOCAL_ID_RE = /^[^:]+(::[^:]+)+$/;
@@ -20,7 +19,7 @@ function fallbackCmd(pm: string, cmd: string): string {
 }
 
 export const jestProvider: AssertionProviderExtension = {
-  manifest: { providerId: 'jest' as ProviderId, label: 'Jest' },
+  manifest: { providerId: 'jest', label: 'Jest' },
 
   discovery: {
     detectionIds: ['testFramework:jest'],
@@ -85,9 +84,9 @@ export const jestProvider: AssertionProviderExtension = {
   verification: {
     formats: [
       {
-        format: 'jest_json' as ReportFormatId,
+        format: 'jest_json',
         parser: {
-          format: 'jest_json' as ReportFormatId,
+          format: 'jest_json',
           parse(content: string, _fileName: string, context: { providerId: string }) {
             return parseJestJson(content, context);
           },
@@ -96,7 +95,7 @@ export const jestProvider: AssertionProviderExtension = {
       },
     ],
     identityCodec: {
-      providerId: 'jest' as ProviderId,
+      providerId: 'jest',
       assertionBindingFormats: new Set<ReportFormatId>(['jest_json']),
       buildLocalId(parsed: ParsedAssertion) {
         if (parsed.kind !== 'jest_json') throw new Error(`jest codec received ${parsed.kind}`);

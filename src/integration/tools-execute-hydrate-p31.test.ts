@@ -240,7 +240,7 @@ describe('P31 Config as Runtime Authority', () => {
         directory: tmpDir,
         sessionID: ctx1.sessionID, // Same session ID = existing session.
       });
-      const result = await parseToolResult(
+      const result = parseToolResult(
         // Note: args.profileId is effectively ignored for existing sessions in P31.
         await hydrate.execute({ profileId: 'typescript' }, ctx2),
       );

@@ -445,8 +445,8 @@ function generateSummary(
   ] as const;
 
   const sorted = [...items].sort((a, b) => {
-    const aKind = kindOrder.indexOf(a.kind as (typeof kindOrder)[number]);
-    const bKind = kindOrder.indexOf(b.kind as (typeof kindOrder)[number]);
+    const aKind = kindOrder.indexOf(a.kind);
+    const bKind = kindOrder.indexOf(b.kind);
     if (aKind !== bKind) return aKind - bKind;
     return a.id.localeCompare(b.id);
   });

@@ -160,7 +160,7 @@ describe('install-helpers', () => {
       const parsed = {
         agent: { build: { permission: { task: { '*': 'allow', 'customer-agent': 'ask' } } } },
       };
-      mergeReviewerTaskPermission(parsed as Record<string, unknown>);
+      mergeReviewerTaskPermission(parsed);
       expect(parsed.agent.build.permission.task).toEqual({
         '*': 'allow',
         'customer-agent': 'ask',

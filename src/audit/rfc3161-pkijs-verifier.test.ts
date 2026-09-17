@@ -390,7 +390,7 @@ describe('PkijsTimestampVerifier', () => {
 
   it('token verification cross-checks cached imprint against token-derived imprint', async () => {
     const event = makeAuditEvent({ event: 'decision:DEC-001' });
-    const canonicalDigest = computeCanonicalEventDigest(event as Record<string, unknown>);
+    const canonicalDigest = computeCanonicalEventDigest(event);
     const fixture = await makeRfc3161Fixture({
       digest: canonicalDigestToUint8Array(canonicalDigest),
     });
@@ -425,7 +425,7 @@ describe('PkijsTimestampVerifier', () => {
 
   it('AC9: a valid token whose cached imprint is missing is an explicit finding', async () => {
     const event = makeAuditEvent({ event: 'decision:DEC-001' });
-    const canonicalDigest = computeCanonicalEventDigest(event as Record<string, unknown>);
+    const canonicalDigest = computeCanonicalEventDigest(event);
     const fixture = await makeRfc3161Fixture({
       digest: canonicalDigestToUint8Array(canonicalDigest),
     });
@@ -459,7 +459,7 @@ describe('PkijsTimestampVerifier', () => {
 
   it('AC9: a valid token whose cached imprint is malformed is an explicit finding', async () => {
     const event = makeAuditEvent({ event: 'decision:DEC-001' });
-    const canonicalDigest = computeCanonicalEventDigest(event as Record<string, unknown>);
+    const canonicalDigest = computeCanonicalEventDigest(event);
     const fixture = await makeRfc3161Fixture({
       digest: canonicalDigestToUint8Array(canonicalDigest),
     });
@@ -497,7 +497,7 @@ describe('PkijsTimestampVerifier', () => {
       event: 'decision:DEC-001',
       detail: { kind: 'decision', verdict: 'approve', nested: { reviewed: true } },
     });
-    const originalDigest = computeCanonicalEventDigest(event as Record<string, unknown>);
+    const originalDigest = computeCanonicalEventDigest(event);
     const fixture = await makeRfc3161Fixture({
       digest: canonicalDigestToUint8Array(originalDigest),
     });
@@ -524,7 +524,7 @@ describe('PkijsTimestampVerifier', () => {
         nested: { reviewed: false, attackerEdited: true },
       },
     } as unknown as AuditEvent;
-    const attackerDigest = computeCanonicalEventDigest(tampered as Record<string, unknown>);
+    const attackerDigest = computeCanonicalEventDigest(tampered);
     const evidence = (tampered as Record<string, unknown>).timestampEvidence as Record<
       string,
       unknown

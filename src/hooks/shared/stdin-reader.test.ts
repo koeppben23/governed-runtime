@@ -132,7 +132,7 @@ describe('validateToolHookPayload', () => {
   it('defaults tool_input to empty object when it is an array', () => {
     const result = validateToolHookPayload({
       tool_name: 'Bash',
-      tool_input: [1, 2, 3] as unknown as Record<string, unknown>,
+      tool_input: [1, 2, 3] as unknown,
       session_id: 'sess-1',
       cwd: '/home',
     });
@@ -142,7 +142,7 @@ describe('validateToolHookPayload', () => {
   it('defaults tool_input to empty object when it is null', () => {
     const result = validateToolHookPayload({
       tool_name: 'Bash',
-      tool_input: null as unknown as Record<string, unknown>,
+      tool_input: null,
       session_id: 'sess-1',
       cwd: '/home',
     });
@@ -154,7 +154,7 @@ describe('validateToolHookPayload', () => {
       validateToolHookPayload({
         session_id: 'sess-1',
         cwd: '/home',
-      } as Record<string, unknown>),
+      }),
     ).toThrow(StdinReadError);
   });
 
@@ -173,7 +173,7 @@ describe('validateToolHookPayload', () => {
       validateToolHookPayload({
         tool_name: 'Bash',
         cwd: '/home',
-      } as Record<string, unknown>),
+      }),
     ).toThrow(StdinReadError);
   });
 
@@ -182,13 +182,13 @@ describe('validateToolHookPayload', () => {
       validateToolHookPayload({
         tool_name: 'Bash',
         session_id: 'sess-1',
-      } as Record<string, unknown>),
+      }),
     ).toThrow(StdinReadError);
   });
 
   it('collects multiple validation errors', () => {
     try {
-      validateToolHookPayload({} as Record<string, unknown>);
+      validateToolHookPayload({});
       expect.unreachable('should have thrown');
     } catch (e) {
       expect(e).toBeInstanceOf(StdinReadError);
@@ -272,15 +272,11 @@ describe('validateSessionPayload', () => {
   });
 
   it('throws when session_id is missing', () => {
-    expect(() => validateSessionPayload({ cwd: '/home' } as Record<string, unknown>)).toThrow(
-      StdinReadError,
-    );
+    expect(() => validateSessionPayload({ cwd: '/home' })).toThrow(StdinReadError);
   });
 
   it('throws when cwd is missing', () => {
-    expect(() =>
-      validateSessionPayload({ session_id: 'sess-1' } as Record<string, unknown>),
-    ).toThrow(StdinReadError);
+    expect(() => validateSessionPayload({ session_id: 'sess-1' })).toThrow(StdinReadError);
   });
 
   it('throws when session_id is empty string', () => {

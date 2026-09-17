@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../adapters/persistence-discovery.js', async (importOriginal) => {
-  const original = (await importOriginal()) as Record<string, unknown>;
+  const original = await importOriginal<typeof import('../../adapters/persistence-discovery.js')>();
   return { ...original, readDiscovery: mocks.readDiscovery };
 });
 

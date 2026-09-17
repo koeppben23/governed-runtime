@@ -191,7 +191,7 @@ describe('system-work retry authority', () => {
   it('re-arms the initial automatic technical outcome before returning', async () => {
     await reachTeamPlanReview();
     vi.mocked(executorMock.executeCheck).mockImplementationOnce(async (input) =>
-      timedOutCheck(input.kind as VerificationCandidateKind, input.command),
+      timedOutCheck(input.kind, input.command),
     );
 
     const result = await callOk(decision, {
@@ -245,7 +245,7 @@ describe('system-work retry authority', () => {
     };
     await forceValidationWithMarker(marker);
     vi.mocked(executorMock.executeCheck).mockImplementationOnce(async (input) =>
-      timedOutCheck(input.kind as VerificationCandidateKind, input.command),
+      timedOutCheck(input.kind, input.command),
     );
 
     const persistState = vi.fn(async () => {

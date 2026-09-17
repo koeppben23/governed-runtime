@@ -164,7 +164,7 @@ describe('projectImplementationProofStatus', () => {
     ];
     const result = projectImplementationProofStatus(makeEvalState(claims));
     expect(result).not.toBeNull();
-    expect(result!.kind).toBe('evaluation');
+    expect(result.kind).toBe('evaluation');
     expect((result as Record<string, unknown>).headlineStatus).toBe('PROVEN');
     expect((result as Record<string, unknown>).provenCount).toBe(1);
   });

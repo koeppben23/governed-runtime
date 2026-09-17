@@ -137,7 +137,7 @@ function buildFindings(obligationId: string): ReviewFindings {
       mandateDigest: REVIEW_MANDATE_DIGEST,
       criteriaVersion: REVIEW_CRITERIA_VERSION,
     },
-  } as ReviewFindings;
+  };
 }
 
 /** Start a branch review and return its pending obligation id. */

@@ -239,7 +239,7 @@ describe('recordAssuranceWithAudit', () => {
       fn(),
     );
 
-    const ws = new PluginWorkspaceImpl({ auditWorktree: '/tmp' } as WorkspaceDeps);
+    const ws = new PluginWorkspaceImpl({ auditWorktree: '/tmp' });
     const output: { output: string } = { output: '' };
 
     await ws.blockReviewOutcome(

@@ -282,7 +282,7 @@ describe('buildPlanReviewCard', () => {
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
         directive: planDecisionDirective,
-        planVersion: 1.5 as unknown as number,
+        planVersion: 1.5,
       });
 
       expect(card).not.toContain('**Plan version:**');

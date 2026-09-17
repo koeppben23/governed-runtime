@@ -190,7 +190,7 @@ describe('validate rail', () => {
       executionMs: 100,
       outputDigest: 'a'.repeat(64),
       timedOut: false,
-      outcome: (passed ? 'supported' : 'inconclusive') as 'supported' | 'inconclusive',
+      outcome: passed ? 'supported' : 'inconclusive',
     };
   }
 
@@ -427,7 +427,7 @@ describe('continue rail', () => {
       const state = makeProgressedState('VALIDATION');
       const failingExecutors = {
         ...continueExecutors,
-        runCheck: async (checkId: string, _state: SessionState) => ({
+        runCheck: async (checkId: string, _state: SessionState): Promise<ValidationResult> => ({
           checkId,
           passed: checkId !== 'test',
           detail: 'check result',
@@ -438,8 +438,7 @@ describe('continue rail', () => {
           executionMs: 100,
           outputDigest: 'a'.repeat(64),
           timedOut: false,
-          outcome: (checkId !== 'test' ? 'supported' : 'inconclusive') as
-            'supported' | 'inconclusive',
+          outcome: checkId !== 'test' ? 'supported' : 'inconclusive',
         }),
       };
       const result = await executeContinue(state, ctx, failingExecutors);

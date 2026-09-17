@@ -509,7 +509,7 @@ describe('persistence', () => {
         const canonicalDigest = computeCanonicalEventDigest({
           ...event,
           auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
-        } as Record<string, unknown>);
+        });
         const withTSA = {
           ...event,
           semanticEventDigest: canonicalDigest,
@@ -526,7 +526,7 @@ describe('persistence', () => {
             },
           },
         };
-        return withTSA as unknown as AuditEvent;
+        return withTSA;
       });
 
       await Promise.all(inputs.map((event) => appendAuditEvent(tmpDir, event)));
@@ -580,7 +580,7 @@ describe('persistence', () => {
           },
         },
       };
-      await appendAuditEvent(tmpDir, withTsa as unknown as AuditEvent);
+      await appendAuditEvent(tmpDir, withTsa);
       const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(1);
       const result = verifyChain(events, { strictTimestamps: true });

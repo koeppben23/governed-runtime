@@ -48,9 +48,7 @@ describe('file-sink failure propagation', () => {
       expect(mockAppendFile).toHaveBeenCalledTimes(1);
 
       mockAppendFile.mockResolvedValueOnce(undefined);
-      mockStat.mockResolvedValueOnce({ size: 0 } as unknown as Awaited<
-        ReturnType<typeof import('node:fs/promises').stat>
-      >);
+      mockStat.mockResolvedValueOnce({ size: 0 });
       await expect(sink({ ...ENTRY, message: 'recovered' })).resolves.not.toThrow();
       expect(mockAppendFile).toHaveBeenCalledTimes(2);
     } finally {
@@ -99,9 +97,7 @@ describe('file-sink failure propagation', () => {
     const onFailure = vi.fn();
 
     mockAppendFile.mockResolvedValueOnce(undefined);
-    mockStat.mockResolvedValueOnce({ size: 10 * 1024 * 1024 } as unknown as Awaited<
-      ReturnType<typeof import('node:fs/promises').stat>
-    >);
+    mockStat.mockResolvedValueOnce({ size: 10 * 1024 * 1024 });
     const renameErr = Object.assign(new Error('cross-device link'), { code: 'EXDEV' });
     mockRename.mockRejectedValueOnce(renameErr);
 

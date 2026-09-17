@@ -158,7 +158,7 @@ describe('review-decision rail', () => {
     it('blocks EVIDENCE_REVIEW approval when critical declarations lack a certificate', () => {
       const certified = withCertifiedCriticalPlan(makeProgressedState('EVIDENCE_REVIEW'));
       const result = executeReviewDecision(
-        { ...certified, plan: { ...certified.plan!, approvalCertificate: undefined } },
+        { ...certified, plan: { ...certified.plan, approvalCertificate: undefined } },
         { verdict: 'approve', rationale: 'Ship it', decisionIdentity: DECISION_IDENTITY_REVIEWER },
         ctx,
       );

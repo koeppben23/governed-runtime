@@ -106,7 +106,7 @@ function makeObservation(
     boundAt: NOW_ISO,
     acquisition: { kind: 'local_git_object' },
   };
-  return { ...base, ...overrides } as RepositoryObservation;
+  return { ...base, ...overrides };
 }
 
 function attemptFor(obligation: ReviewObligation, sessionId: string): ReviewAttempt {
@@ -420,7 +420,7 @@ describe('direct/submitted validator path', () => {
         planVersion: 1,
         reviewedBy: 'flowguard-reviewer',
       },
-    } as ReviewFindings;
+    };
   }
 
   function directAssurance(

@@ -130,7 +130,7 @@ export function normalizeArchitectureClaims(
       statement: claim.statement,
       authoritySectionId: claim.authoritySectionId,
     }),
-  })) as ArchitectureClaimDeclaration[];
+  }));
 }
 
 /**

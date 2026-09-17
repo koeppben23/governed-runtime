@@ -91,10 +91,7 @@ describe('strict timestamp verification branches', () => {
     const secondBody = { ...secondRest, recordedAt: TS3 };
     const resealedSecond = {
       ...secondBody,
-      chainHash: computeChainHash(
-        second.prevHash,
-        secondBody as unknown as Omit<ChainedAuditEvent, 'chainHash'>,
-      ),
+      chainHash: computeChainHash(second.prevHash, secondBody),
     };
     const result = verifyChain([{ ...first }, { ...resealedSecond }], {
       strictTimestamps: true,
@@ -191,7 +188,7 @@ describe('strict timestamp verification branches', () => {
       semanticEventDigest: computeCanonicalEventDigest({
         ...body,
         event: 'decision:approve',
-      } as unknown as Record<string, unknown>),
+      }),
     };
     const decisionEvent = {
       ...decisionBody,

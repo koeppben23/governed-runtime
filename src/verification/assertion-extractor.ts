@@ -93,10 +93,7 @@ function stripNonBindingAssertions(
 ): AssertionExtractionResult {
   if (result.status !== 'extracted') return result;
 
-  const bindingCapability = resolveBindingCapability(
-    spec.providerId,
-    spec.format as ReportFormatId,
-  );
+  const bindingCapability = resolveBindingCapability(spec.providerId, spec.format);
   if (bindingCapability !== 'check_only') return { ...result, bindingCapability };
 
   return {

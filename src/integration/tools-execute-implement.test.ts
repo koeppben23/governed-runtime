@@ -823,7 +823,7 @@ describe('implement', () => {
       const retryState = {
         ...state!,
         policySnapshot: {
-          ...state!.policySnapshot!,
+          ...state!.policySnapshot,
         },
       };
       await writeState(sessDir, retryState);

@@ -315,6 +315,10 @@ describe('error code type safety — SMOKE', () => {
         case 'WRITE_FAILED':
         case 'PARSE_FAILED':
         case 'SCHEMA_VALIDATION_FAILED':
+        case 'SESSION_STATE_INCOMPATIBLE':
+        case 'LOCK_TIMEOUT':
+        case 'LOCK_TIMEOUT_EXHAUSTED':
+        case 'MISSING_FILE_DIGEST':
           matched = true;
           break;
       }

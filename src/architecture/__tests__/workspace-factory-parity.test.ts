@@ -27,7 +27,7 @@ import type { WorkspaceDeps } from '../../integration/plugin-workspace.js';
 
 describe('createWorkspace delegation parity', () => {
   it('forwards every declared parameter of each delegated method', () => {
-    const workspace = createWorkspace({ auditWorktree: undefined } as WorkspaceDeps);
+    const workspace = createWorkspace({ auditWorktree: undefined });
 
     const mismatches: string[] = [];
     for (const key of Object.keys(workspace)) {
@@ -54,7 +54,7 @@ describe('createWorkspace delegation parity', () => {
   it('delegates every function member of the implementation surface', () => {
     // A member missing from the factory cannot be caught by the arity check
     // above, but is the same class of composition gap.
-    const workspace = createWorkspace({ auditWorktree: undefined } as WorkspaceDeps);
+    const workspace = createWorkspace({ auditWorktree: undefined });
     const exposed = new Set(Object.keys(workspace));
 
     const missing = Object.getOwnPropertyNames(PluginWorkspaceImpl.prototype).filter((key) => {

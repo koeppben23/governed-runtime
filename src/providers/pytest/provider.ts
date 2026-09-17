@@ -11,13 +11,12 @@ import {
 import { junitXmlParser } from '../../verification/assertion-parsers/parsers.js';
 import type { AssertionProviderExtension } from '../contract.js';
 import type { ParsedAssertion } from '../../verification/assertion-parsers/types.js';
-import type { ProviderId } from '../../state/assertion-identity.js';
 import type { ReportFormatId } from '../../state/assertion-identity.js';
 
 const PYTEST_LOCAL_ID_RE = /^[^:]+(::[^:]+)+$/;
 
 export const pytestProvider: AssertionProviderExtension = {
-  manifest: { providerId: 'pytest' as ProviderId, label: 'pytest' },
+  manifest: { providerId: 'pytest', label: 'pytest' },
 
   discovery: {
     detectionIds: ['testFramework:pytest'],
@@ -155,9 +154,9 @@ export const pytestProvider: AssertionProviderExtension = {
   verification: {
     formats: [
       {
-        format: 'pytest_json' as ReportFormatId,
+        format: 'pytest_json',
         parser: {
-          format: 'pytest_json' as ReportFormatId,
+          format: 'pytest_json',
           parse(content: string, _fileName: string, context: { providerId: string }) {
             return parsePytestJson(content, context);
           },
@@ -165,7 +164,7 @@ export const pytestProvider: AssertionProviderExtension = {
         bindingCapability: 'assertion' as const,
       },
       {
-        format: 'junit_xml' as ReportFormatId,
+        format: 'junit_xml',
         parser: junitXmlParser,
         // pytest's JUnit XML report attests complete suite totals, but does not
         // provide stable pytest node identities for assertion binding.
@@ -173,7 +172,7 @@ export const pytestProvider: AssertionProviderExtension = {
       },
     ],
     identityCodec: {
-      providerId: 'pytest' as ProviderId,
+      providerId: 'pytest',
       assertionBindingFormats: new Set<ReportFormatId>(['pytest_json']),
       buildLocalId(parsed: ParsedAssertion) {
         if (parsed.kind !== 'pytest_json') throw new Error(`pytest codec received ${parsed.kind}`);

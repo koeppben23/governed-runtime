@@ -86,7 +86,7 @@ vi.mock('node:child_process', async (importOriginal) => {
             if (next.fail.code) error.code = next.fail.code;
             throw error;
           }
-          return (next as string | Buffer | undefined) ?? '';
+          return next ?? '';
         }
         if (command === 'git' && Array.isArray(args)) {
           if (FAIL_WRITE_TREE.enabled && args.includes('write-tree')) {
@@ -96,11 +96,7 @@ vi.mock('node:child_process', async (importOriginal) => {
             return LS_TREE_OVERRIDE.value;
           }
         }
-        return (original.execFileSync as (...a: unknown[]) => string)(
-          command,
-          args as never,
-          options,
-        );
+        return (original.execFileSync as (...a: unknown[]) => string)(command, args, options);
       },
     ),
   };

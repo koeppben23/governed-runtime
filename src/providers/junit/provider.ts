@@ -564,7 +564,7 @@ function gradleCheckProfile() {
 
 export const junitProvider: AssertionProviderExtension = {
   manifest: {
-    providerId: 'junit' as ProviderId,
+    providerId: 'junit',
     label: 'JUnit',
   },
 
@@ -664,7 +664,7 @@ export const junitProvider: AssertionProviderExtension = {
   verification: {
     formats: [
       {
-        format: 'junit_xml' as ReportFormatId,
+        format: 'junit_xml',
         parser: junitXmlParser,
         bindingCapability: 'assertion' as const,
       },
