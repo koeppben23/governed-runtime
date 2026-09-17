@@ -775,7 +775,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
       source: [SOURCE.trustBoundaries],
       admission: {
         verifiedAt: '2026-09-17',
-        commitSha: '8eaefc75d001e3c91ff3a4adae461c38f6b36cb5',
+        commitSha: 'a4db80e33bde4b0994fed24eb5c9114dae67bdef',
         scoreAtAdmission: 100,
         killed: 8,
         survived: 0,
@@ -791,7 +791,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
       source: [SOURCE.trustBoundaries],
       admission: {
         verifiedAt: '2026-09-17',
-        commitSha: '8eaefc75d001e3c91ff3a4adae461c38f6b36cb5',
+        commitSha: 'a4db80e33bde4b0994fed24eb5c9114dae67bdef',
         scoreAtAdmission: 100,
         killed: 10,
         survived: 0,
