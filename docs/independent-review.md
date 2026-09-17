@@ -164,11 +164,19 @@ Execution-continuity binding:
   attempt is itself part of the committed state, so persisting it would create a
   recursive self-binding.
 - A changed continuity is a **continuity caveat, not a verdict on the check**.
-  Under the lock the request and the validation subject are re-validated, and
-  the execution subject is re-attested; only then is a result persisted, so a
-  PASS remains a PASS. The reviewer sees the caveat and must treat the
-  continuity — not the executed outcome — as not independently verified:
-  `NOT_VERIFIED: session-state continuity changed during execution; the verification subject itself was re-attested and remained bound.`
+  The canonical reviewer prompt carries a host-owned rule: when frozen
+  host-executed verification evidence records
+  `stateChangedDuringExecution: true`, the reviewer treats session-state
+  continuity as
+  `NOT_VERIFIED: session-state continuity changed during execution.` and never
+  changes the executed check verdict solely because of that signal.
+- The continuity caveat is deliberately silent about subject re-attestation.
+  Under the lock the request and the validation subject are re-validated and
+  the execution subject is re-attested before persistence, so an executed PASS
+  is bound to an unchanged subject; a subject-changed execution is persisted as
+  BLOCKED, never as PASS. Because the evidence section can also contain earlier
+  non-passing attempts, the caveat must not be read as a universal
+  subject-binding guarantee.
 
 Fail-closed binding rules:
 

@@ -17,7 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   review material carries the attempt identity plus the continuity observation
   to the reviewer, so an executed PASS can be re-bound to the concrete attempt
   and the session state it was observed under; a changed continuity is surfaced
-  as a continuity caveat, never as a silent re-verdict. `committedStateDigest`
+  as a host-owned continuity caveat in the canonical reviewer prompt, never as
+  a silent re-verdict. `committedStateDigest`
   deliberately stays response-only (the attempt is part of the committed state).
   State `schemaVersion` advances to `v6`; pre-v6 state is rejected with
   `SESSION_STATE_INCOMPATIBLE` at the `readState` contract preflight (no
