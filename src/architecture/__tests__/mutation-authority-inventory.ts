@@ -1056,7 +1056,18 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'src/config/flowguard-config.ts',
     'Runtime config schema authority',
     ['src/config/flowguard-config-schema.test.ts', 'src/config/flowguard-config-io.test.ts'],
-    { profile: 'schemas', source: [SOURCE.config] },
+    {
+      profile: 'schemas',
+      source: [SOURCE.config],
+      admission: {
+        verifiedAt: '2026-09-17',
+        commitSha: '77c38580f0eb8c2b2d7a58783b3f55fc22dbb13f',
+        scoreAtAdmission: 91.11,
+        killed: 41,
+        survived: 4,
+        config: 'stryker.schemas.conf.json',
+      },
+    },
   ),
   deferred(
     'src/state/schema.ts',
@@ -1066,6 +1077,14 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
   ),
   required('src/shared/hashing.ts', 'Hash primitives for digests', ['src/shared/hashing.test.ts'], {
     source: [SOURCE.rootAgents],
+    admission: {
+      verifiedAt: '2026-09-17',
+      commitSha: '77c38580f0eb8c2b2d7a58783b3f55fc22dbb13f',
+      scoreAtAdmission: 100,
+      killed: 13,
+      survived: 0,
+      config: 'stryker.conf.json',
+    },
   }),
   deferred(
     'src/redaction/export-redaction.ts',
