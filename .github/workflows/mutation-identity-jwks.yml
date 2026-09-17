@@ -31,3 +31,8 @@ jobs:
         run: npm ci
       - name: Run JWKS mutation tests
         run: node scripts/stryker-patch.js && npx stryker run stryker.identity-jwks.conf.json
+      - name: Verify mutation admission
+        run: >-
+          node scripts/verify-mutation-admission.mjs --profile identity-jwks
+          --report reports/mutation/mutation.json
+          --write-manifest reports/mutation/admission-manifest-identity-jwks.json

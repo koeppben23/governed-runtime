@@ -166,11 +166,17 @@ mutated modules (`stryker.conf.json`). There are no per-area lower thresholds.
 Admission policy (applied per profile): Targeted runs are diagnostic only.
 Admission evidence is the profile full run. In that run the aggregate score
 must meet the break threshold and every mutated target must meet the
-per-target break threshold. `scripts/verify-mutation-admission.mjs --profile <profile>`
-reads the profile's `reports/mutation/mutation.json` and fails closed on missing
-targets, invalid mutants, unknown statuses, or per-target/aggregate scores
-below the threshold. Admission records are historical and immutable; later runs
-never rewrite them.
+per-target break threshold; range selectors are scored only over mutants whose
+`location` lies inside the declared range. `scripts/verify-mutation-admission.mjs`
+validates the report against the mutation-testing-elements structure, requires
+the report's file set to match the profile's selectors exactly, and fails
+closed on missing targets, invalid mutant shapes, unknown statuses, or
+per-target/aggregate scores below the threshold. `--write-manifest` persists
+the profile, config digest, report digest, commit SHA and run timestamp;
+`--manifest` re-verifies those bindings against the profile config, the report
+bytes and HEAD, and `--emit-admission` refuses to emit without a verified
+manifest. Admission records are historical and immutable; later runs never
+rewrite them.
 
 The machine-readable scope authority is
 `src/architecture/__tests__/mutation-authority-inventory.ts`. It classifies
@@ -317,7 +323,12 @@ Explicitly not mutation-suitable:
 
 ```bash
 npm run mutation    # Runs scripts/stryker-patch.js pre-flight + base profile
-node scripts/verify-mutation-admission.mjs --profile base
+node scripts/verify-mutation-admission.mjs --profile base \
+  --write-manifest reports/mutation/admission-manifest-base.json
+
+# Re-verify the persisted admission evidence (profile/config/report/commit)
+node scripts/verify-mutation-admission.mjs --profile base \
+  --manifest reports/mutation/admission-manifest-base.json
 ```
 
 The pre-flight script applies version-guarded workarounds for
@@ -333,14 +344,16 @@ configuration:
 
 ```bash
 node scripts/stryker-patch.js && npx stryker run stryker.identity-jwks.conf.json
-node scripts/verify-mutation-admission.mjs --profile identity-jwks
+node scripts/verify-mutation-admission.mjs --profile identity-jwks \
+  --write-manifest reports/mutation/admission-manifest-identity-jwks.json
 ```
 
 The mandates profile runs on pull requests that change mandate surfaces:
 
 ```bash
 node scripts/stryker-patch.js && npx stryker run stryker.mandates.conf.json
-node scripts/verify-mutation-admission.mjs --profile mandates
+node scripts/verify-mutation-admission.mjs --profile mandates \
+  --write-manifest reports/mutation/admission-manifest-mandates.json
 ```
 
 The human-projection profile is reusable locally but has no dedicated CI
@@ -349,5 +362,6 @@ meets the per-target threshold first:
 
 ```bash
 node scripts/stryker-patch.js && npx stryker run stryker.human-projection.conf.json
-node scripts/verify-mutation-admission.mjs --profile human-projection
+node scripts/verify-mutation-admission.mjs --profile human-projection \
+  --write-manifest reports/mutation/admission-manifest-human-projection.json
 ```

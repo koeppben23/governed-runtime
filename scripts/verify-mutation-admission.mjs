@@ -6,27 +6,41 @@
  * - Admission evidence is a profile full run: the aggregate score and every
  *   mutated target score must meet the profile's break threshold.
  *
- * This script reads the profile's Stryker JSON report and fails closed unless:
- * - the report exists and parses,
- * - every configured mutate target appears in the report,
- * - every target has valid mutants and meets the break threshold,
- * - the aggregate score meets the break threshold.
+ * The verifier fails closed unless:
+ * - the report matches the mutation-testing-elements structure
+ *   (`schemaVersion`, `thresholds`, `files[path].{language,source,mutants}`,
+ *   mutants with `id`, `mutatorName`, `status` and `location`),
+ * - the report's file set matches the profile's mutate selectors exactly,
+ * - every selector has at least one valid mutant and meets the break
+ *   threshold; range selectors are scored only over mutants whose `location`
+ *   lies inside the declared line range,
+ * - the aggregate score meets the break threshold,
+ * - when a manifest is supplied, profile, config digest, report digest and
+ *   commit bind to the current run.
  *
- * `--emit-admission` prints inventory-compatible admission records (JSON) for
- * the current run; records are historical and are never rewritten by later
- * runs. The verifier is the authority for the *current* per-target threshold.
+ * Score semantics follow the canonical Stryker metric and the repository
+ * authority `src/audit/proofgraph/mutation-report.ts`:
+ *   detected   = Killed + Timeout
+ *   undetected = Survived + NoCoverage
+ *   excluded   = CompileError + RuntimeError + Ignored + Pending
  *
  * Usage:
- *   node scripts/verify-mutation-admission.mjs --profile base
- *   node scripts/verify-mutation-admission.mjs --profile mandates --report reports/mutation/mutation.json
- *   node scripts/verify-mutation-admission.mjs --profile base --emit-admission
+ *   # verify a full run and persist admission provenance
+ *   node scripts/verify-mutation-admission.mjs --profile base \
+ *     --write-manifest reports/mutation/admission-manifest.json
  *
- * All status handling is explicit: unknown mutant statuses fail the run
- * instead of being silently ignored.
+ *   # verify admission against a persisted manifest
+ *   node scripts/verify-mutation-admission.mjs --profile base \
+ *     --manifest reports/mutation/admission-manifest.json
+ *
+ *   # emit inventory-compatible admission records (requires a manifest)
+ *   node scripts/verify-mutation-admission.mjs --profile base \
+ *     --manifest reports/mutation/admission-manifest.json --emit-admission
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -39,9 +53,18 @@ const PROFILE_CONFIG = {
   mandates: 'stryker.mandates.conf.json',
 };
 
-const DETECTED_STATUSES = new Set(['Killed', 'Timeout', 'RuntimeError']);
+const DETECTED_STATUSES = new Set(['Killed', 'Timeout']);
 const UNDETECTED_STATUSES = new Set(['Survived', 'NoCoverage']);
-const EXCLUDED_STATUSES = new Set(['CompileError', 'Ignored']);
+const EXCLUDED_STATUSES = new Set(['CompileError', 'RuntimeError', 'Ignored', 'Pending']);
+const KNOWN_STATUSES = new Set([
+  ...DETECTED_STATUSES,
+  ...UNDETECTED_STATUSES,
+  ...EXCLUDED_STATUSES,
+]);
+
+const SCHEMA_VERSION_PATTERN = /^([1-2])(\.(([1-9]\d*)|0)){0,2}$/;
+const MANIFEST_VERSION = 1;
+const DEFAULT_REPORT = 'reports/mutation/mutation.json';
 
 function fail(message) {
   console.error(`[verify-mutation-admission] ERROR: ${message}`);
@@ -51,20 +74,21 @@ function fail(message) {
 function parseArguments(argv) {
   const options = {
     profile: undefined,
-    report: 'reports/mutation/mutation.json',
+    report: DEFAULT_REPORT,
+    manifest: undefined,
+    writeManifest: undefined,
     emitAdmission: false,
+    commit: undefined,
   };
   for (let index = 0; index < argv.length; index++) {
     const argument = argv[index];
-    if (argument === '--profile') {
-      options.profile = argv[++index];
-    } else if (argument === '--report') {
-      options.report = argv[++index];
-    } else if (argument === '--emit-admission') {
-      options.emitAdmission = true;
-    } else {
-      fail(`unsupported argument '${argument}'`);
-    }
+    if (argument === '--profile') options.profile = argv[++index];
+    else if (argument === '--report') options.report = argv[++index];
+    else if (argument === '--manifest') options.manifest = argv[++index];
+    else if (argument === '--write-manifest') options.writeManifest = argv[++index];
+    else if (argument === '--emit-admission') options.emitAdmission = true;
+    else if (argument === '--commit') options.commit = argv[++index];
+    else fail(`unsupported argument '${argument}'`);
   }
   if (options.profile === undefined) {
     fail('missing required --profile <base|human-projection|identity-jwks|mandates>');
@@ -75,24 +99,126 @@ function parseArguments(argv) {
   if (typeof options.report !== 'string' || options.report.length === 0) {
     fail('--report requires a path');
   }
+  if (
+    options.commit !== undefined &&
+    (typeof options.commit !== 'string' || options.commit.length === 0)
+  ) {
+    fail('--commit requires a value');
+  }
+  if (
+    options.manifest !== undefined &&
+    (typeof options.manifest !== 'string' || options.manifest.length === 0)
+  ) {
+    fail('--manifest requires a path');
+  }
+  if (
+    options.writeManifest !== undefined &&
+    (typeof options.writeManifest !== 'string' || options.writeManifest.length === 0)
+  ) {
+    fail('--write-manifest requires a path');
+  }
+  if (options.emitAdmission && options.manifest === undefined) {
+    fail('--emit-admission requires --manifest (provenance must bind to a verified run)');
+  }
   return options;
 }
 
-function targetOfSelector(selector) {
-  const separator = selector.lastIndexOf(':');
-  if (separator === -1) return selector;
-  const suffix = selector.slice(separator + 1);
-  return /^\d+-\d+$/.test(suffix) ? selector.slice(0, separator) : selector;
+function sha256(bytes) {
+  return createHash('sha256').update(bytes).digest('hex');
+}
+
+function currentCommitSha() {
+  try {
+    return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: REPO_ROOT, encoding: 'utf8' }).trim();
+  } catch (error) {
+    fail(`cannot resolve HEAD commit: ${error?.message ?? error}`);
+  }
+}
+
+function parseSelector(selector) {
+  const rangeMatch = /^(.*):(\d+)-(\d+)$/.exec(selector);
+  if (rangeMatch !== null) {
+    return {
+      target: rangeMatch[1],
+      range: { start: Number(rangeMatch[2]), end: Number(rangeMatch[3]) },
+    };
+  }
+  return { target: selector, range: undefined };
+}
+
+function isPlainObject(value) {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function validatePosition(value, label, problems) {
+  if (!isPlainObject(value) || !Number.isInteger(value.line) || !Number.isInteger(value.column)) {
+    problems.push(`${label} must be a position with integer line/column`);
+    return false;
+  }
+  if (value.line < 1 || value.column < 1) {
+    problems.push(`${label} must use 1-based line/column`);
+    return false;
+  }
+  return true;
+}
+
+function validateReportShape(report) {
+  const problems = [];
+  if (!isPlainObject(report)) return ['report must be an object'];
+
+  if (
+    typeof report.schemaVersion !== 'string' ||
+    !SCHEMA_VERSION_PATTERN.test(report.schemaVersion)
+  ) {
+    problems.push('report.schemaVersion missing or unsupported');
+  }
+  if (!isPlainObject(report.thresholds)) {
+    problems.push('report.thresholds missing');
+  }
+  if (!isPlainObject(report.files)) {
+    problems.push('report.files missing or not an object');
+    return problems;
+  }
+
+  for (const [filePath, file] of Object.entries(report.files)) {
+    if (!isPlainObject(file)) {
+      problems.push(`files['${filePath}'] must be an object`);
+      continue;
+    }
+    if (typeof file.language !== 'string') problems.push(`files['${filePath}'].language missing`);
+    if (typeof file.source !== 'string') problems.push(`files['${filePath}'].source missing`);
+    if (!Array.isArray(file.mutants)) {
+      problems.push(`files['${filePath}'].mutants missing or not an array`);
+      continue;
+    }
+    for (const [index, mutant] of file.mutants.entries()) {
+      const label = `files['${filePath}'].mutants[${index}]`;
+      if (!isPlainObject(mutant)) {
+        problems.push(`${label} must be an object`);
+        continue;
+      }
+      if (typeof mutant.id !== 'string') problems.push(`${label}.id missing`);
+      if (typeof mutant.mutatorName !== 'string') problems.push(`${label}.mutatorName missing`);
+      if (!KNOWN_STATUSES.has(mutant.status)) {
+        problems.push(`${label}.status '${String(mutant.status)}' is not a known mutant status`);
+      }
+      if (!isPlainObject(mutant.location)) {
+        problems.push(`${label}.location missing`);
+      } else {
+        validatePosition(mutant.location.start, `${label}.location.start`, problems);
+        validatePosition(mutant.location.end, `${label}.location.end`, problems);
+      }
+    }
+  }
+  return problems;
 }
 
 function computeMetrics(mutants) {
   const metrics = { detected: 0, undetected: 0, excluded: 0 };
   for (const mutant of mutants) {
-    const status = mutant?.status;
-    if (DETECTED_STATUSES.has(status)) metrics.detected++;
-    else if (UNDETECTED_STATUSES.has(status)) metrics.undetected++;
-    else if (EXCLUDED_STATUSES.has(status)) metrics.excluded++;
-    else fail(`unknown mutant status '${String(status)}'`);
+    if (DETECTED_STATUSES.has(mutant.status)) metrics.detected++;
+    else if (UNDETECTED_STATUSES.has(mutant.status)) metrics.undetected++;
+    else metrics.excluded++;
   }
   const valid = metrics.detected + metrics.undetected;
   return {
@@ -102,19 +228,100 @@ function computeMetrics(mutants) {
   };
 }
 
-function normalizeReportPath(key) {
-  return key.startsWith('./') ? key.slice(2) : key;
+function isInsideRange(mutant, range) {
+  return mutant.location.start.line >= range.start && mutant.location.end.line <= range.end;
+}
+
+function selectorsByTarget(selectors) {
+  const byTarget = new Map();
+  for (const selector of selectors) {
+    const parsed = parseSelector(selector);
+    const list = byTarget.get(parsed.target) ?? [];
+    list.push(parsed);
+    byTarget.set(parsed.target, list);
+  }
+  return byTarget;
+}
+
+function validateSelectorLayout(selectors) {
+  const problems = [];
+  for (const [target, parsedSelectors] of selectorsByTarget(selectors)) {
+    const ranges = parsedSelectors.filter((entry) => entry.range !== undefined);
+    const wholeFile = parsedSelectors.filter((entry) => entry.range === undefined);
+    if (wholeFile.length > 1) problems.push(`${target}: duplicate whole-file selectors`);
+    if (wholeFile.length > 0 && ranges.length > 0) {
+      problems.push(`${target}: whole-file and range selectors must not be mixed in one profile`);
+    }
+    const sorted = [...ranges].sort((left, right) => left.range.start - right.range.start);
+    for (let index = 1; index < sorted.length; index++) {
+      if (sorted[index].range.start <= sorted[index - 1].range.end) {
+        problems.push(
+          `${target}: overlapping ranges ${sorted[index - 1].range.start}-${sorted[index - 1].range.end} and ${sorted[index].range.start}-${sorted[index].range.end}`,
+        );
+      }
+    }
+  }
+  return problems;
+}
+
+function verifyManifest(manifestPath, options, configPath, reportBytes) {
+  if (!existsSync(manifestPath)) {
+    fail(`admission manifest not found at ${manifestPath}; run with --write-manifest first`);
+  }
+  let manifest;
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  } catch (error) {
+    fail(`cannot parse admission manifest at ${manifestPath}: ${error?.message ?? error}`);
+  }
+  if (!isPlainObject(manifest) || manifest.manifestVersion !== MANIFEST_VERSION) {
+    fail(`admission manifest at ${manifestPath} has an unsupported shape or version`);
+  }
+  const problems = [];
+  if (manifest.profile !== options.profile) {
+    problems.push(`profile '${String(manifest.profile)}' != '${options.profile}'`);
+  }
+  if (manifest.configFile !== PROFILE_CONFIG[options.profile]) {
+    problems.push(
+      `configFile '${String(manifest.configFile)}' != '${PROFILE_CONFIG[options.profile]}'`,
+    );
+  }
+  const configDigest = sha256(readFileSync(configPath));
+  if (manifest.configDigest !== configDigest) {
+    problems.push('configDigest does not match the current profile config');
+  }
+  const reportDigest = sha256(reportBytes);
+  if (manifest.reportDigest !== reportDigest) {
+    problems.push('reportDigest does not match the current report bytes');
+  }
+  const expectedCommit = options.commit ?? currentCommitSha();
+  if (manifest.commitSha !== expectedCommit) {
+    problems.push(`commitSha '${String(manifest.commitSha)}' != '${expectedCommit}'`);
+  }
+  if (typeof manifest.generatedAt !== 'string' || Number.isNaN(Date.parse(manifest.generatedAt))) {
+    problems.push('generatedAt missing or not an ISO timestamp');
+  }
+  if (problems.length > 0) {
+    fail(`admission manifest mismatch:\n  - ${problems.join('\n  - ')}`);
+  }
+  return manifest;
 }
 
 const options = parseArguments(process.argv.slice(2));
 
 const configPath = resolve(REPO_ROOT, PROFILE_CONFIG[options.profile]);
-if (!existsSync(configPath)) {
-  fail(`profile config not found at ${configPath}`);
-}
-const profileConfig = JSON.parse(readFileSync(configPath, 'utf8'));
+if (!existsSync(configPath)) fail(`profile config not found at ${configPath}`);
+const configBytes = readFileSync(configPath);
+const profileConfig = JSON.parse(configBytes.toString('utf8'));
 const mutateSelectors = profileConfig.mutate ?? [];
 const breakThreshold = profileConfig.thresholds?.break ?? 80;
+
+const selectorProblems = validateSelectorLayout(mutateSelectors);
+if (selectorProblems.length > 0) {
+  fail(
+    `invalid ${options.profile} mutate selector layout:\n  - ${selectorProblems.join('\n  - ')}`,
+  );
+}
 
 const reportPath = resolve(process.cwd(), options.report);
 if (!existsSync(reportPath)) {
@@ -123,38 +330,51 @@ if (!existsSync(reportPath)) {
       `Run the ${options.profile} profile full run first (targeted runs are diagnostic only).`,
   );
 }
+const reportBytes = readFileSync(reportPath);
 let report;
 try {
-  report = JSON.parse(readFileSync(reportPath, 'utf8'));
+  report = JSON.parse(reportBytes.toString('utf8'));
 } catch (error) {
   fail(`cannot parse mutation report at ${reportPath}: ${error?.message ?? error}`);
 }
-if (report?.files === null || typeof report?.files !== 'object') {
-  fail(`mutation report at ${reportPath} has no 'files' object`);
+
+const shapeProblems = validateReportShape(report);
+if (shapeProblems.length > 0) {
+  const shown = shapeProblems.slice(0, 10);
+  const rest = shapeProblems.length - shown.length;
+  fail(
+    `mutation report at ${reportPath} does not match the report schema:\n  - ${shown.join('\n  - ')}` +
+      (rest > 0 ? `\n  - ... and ${rest} more` : ''),
+  );
 }
 
-const reportFiles = new Map();
-for (const [key, value] of Object.entries(report.files)) {
-  reportFiles.set(normalizeReportPath(key), value);
-}
-
+const reportFiles = new Map(Object.entries(report.files));
 const violations = [];
 const records = [];
+const seenTargets = new Set();
 let aggregateDetected = 0;
 let aggregateValid = 0;
 
-const seenTargets = new Set();
 for (const selector of mutateSelectors) {
-  const target = targetOfSelector(selector);
+  const { target, range } = parseSelector(selector);
   seenTargets.add(target);
   const file = reportFiles.get(target);
-  if (file === undefined || !Array.isArray(file.mutants)) {
+  if (file === undefined) {
     violations.push({ target, selector, problem: 'missing from report' });
     continue;
   }
-  const metrics = computeMetrics(file.mutants);
+  const mutants =
+    range === undefined
+      ? file.mutants
+      : file.mutants.filter((mutant) => isInsideRange(mutant, range));
+  const metrics = computeMetrics(mutants);
   if (metrics.score === null) {
-    violations.push({ target, selector, problem: 'no valid mutants' });
+    violations.push({
+      target,
+      selector,
+      problem:
+        range === undefined ? 'no valid mutants' : 'no valid mutants inside the declared range',
+    });
     continue;
   }
   aggregateDetected += metrics.detected;
@@ -164,9 +384,6 @@ for (const selector of mutateSelectors) {
       target,
       selector,
       problem: `score ${metrics.score.toFixed(2)}% < ${breakThreshold}%`,
-      score: metrics.score,
-      killed: metrics.detected,
-      survived: metrics.undetected,
     });
   }
   records.push({
@@ -177,6 +394,15 @@ for (const selector of mutateSelectors) {
     killed: metrics.detected,
     survived: metrics.undetected,
     config: PROFILE_CONFIG[options.profile],
+  });
+}
+
+const extraFiles = [...reportFiles.keys()].filter((key) => !seenTargets.has(key));
+if (extraFiles.length > 0) {
+  violations.push({
+    target: '(report)',
+    selector: '(report)',
+    problem: `${extraFiles.length} file(s) are not ${options.profile} targets: ${extraFiles.slice(0, 5).join(', ')}`,
   });
 }
 
@@ -193,30 +419,49 @@ if (aggregateScore === null) {
 
 if (violations.length > 0) {
   console.error(`[verify-mutation-admission] ${violations.length} violation(s):`);
-  for (const violation of violations) {
-    console.error(`  - ${violation.target}: ${violation.problem}`);
-  }
+  for (const violation of violations)
+    console.error(`  - ${violation.selector}: ${violation.problem}`);
   process.exit(1);
 }
 
-const reportKeys = [...reportFiles.keys()].filter(
-  (key) => !seenTargets.has(key) && key.includes('/') && key.endsWith('.ts'),
-);
+let manifest = undefined;
+if (options.manifest !== undefined) {
+  manifest = verifyManifest(
+    resolve(process.cwd(), options.manifest),
+    options,
+    configPath,
+    reportBytes,
+  );
+}
+
+if (options.writeManifest !== undefined) {
+  const manifestPath = resolve(process.cwd(), options.writeManifest);
+  writeFileSync(
+    manifestPath,
+    `${JSON.stringify(
+      {
+        manifestVersion: MANIFEST_VERSION,
+        profile: options.profile,
+        configFile: PROFILE_CONFIG[options.profile],
+        configDigest: sha256(configBytes),
+        commitSha: options.commit ?? currentCommitSha(),
+        reportDigest: sha256(reportBytes),
+        generatedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+  console.log(`[verify-mutation-admission] manifest written to ${manifestPath}`);
+}
 
 if (options.emitAdmission) {
-  let commitSha = 'unknown';
-  try {
-    commitSha = execFileSync('git', ['rev-parse', 'HEAD'], {
-      cwd: REPO_ROOT,
-      encoding: 'utf8',
-    }).trim();
-  } catch {}
-  const verifiedAt = new Date().toISOString().slice(0, 10);
   const emitted = records.map((record) => ({
     ...record,
     admission: {
-      verifiedAt,
-      commitSha,
+      verifiedAt: manifest.generatedAt.slice(0, 10),
+      commitSha: manifest.commitSha,
       scoreAtAdmission: record.score,
       killed: record.killed,
       survived: record.survived,
@@ -229,9 +474,4 @@ if (options.emitAdmission) {
     `[verify-mutation-admission] profile=${options.profile} ` +
       `targets=${records.length} aggregate=${aggregateScore.toFixed(2)}% break=${breakThreshold}% OK`,
   );
-  if (reportKeys.length > 0) {
-    console.log(
-      `[verify-mutation-admission] note: ${reportKeys.length} report file(s) are not profile targets`,
-    );
-  }
 }

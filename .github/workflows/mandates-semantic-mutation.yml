@@ -44,3 +44,8 @@ jobs:
         run: npx stryker run stryker.mandates.conf.json
         env:
           FORCE_COLOR: '0'
+      - name: Verify mutation admission
+        run: >-
+          node scripts/verify-mutation-admission.mjs --profile mandates
+          --report reports/mutation/mutation.json
+          --write-manifest reports/mutation/admission-manifest-mandates.json

@@ -175,15 +175,25 @@ describe('mutation scope', () => {
         expect(existsSync(join(ROOT, suite)), `${suite} missing`).toBe(true);
       }
     }
+  });
 
+  it('A5: deferred entries carry an explicit reason and a valid root', () => {
+    const problems: string[] = [];
     for (const entry of deferredEntries) {
+      const label = 'root' in entry ? entry.root : entry.target;
+      if (entry.reason.trim().length === 0) problems.push(`${label}: empty reason`);
       if ('root' in entry) {
-        expect(existsSync(join(ROOT, entry.root)), `${entry.root} missing`).toBe(true);
-      } else {
-        expect(existsSync(join(ROOT, entry.target)), `${entry.target} missing`).toBe(true);
-        expect(entry.reason.length).toBeGreaterThan(0);
+        const rootPath = join(ROOT, entry.root);
+        if (!entry.root.startsWith('src/')) problems.push(`${label}: root must live under src/`);
+        if (!existsSync(rootPath) || !statSync(rootPath).isDirectory()) {
+          problems.push(`${label}: root missing or not a directory`);
+        }
+        if (entry.pattern !== '**') problems.push(`${label}: unsupported deferred pattern`);
+      } else if (!existsSync(join(ROOT, entry.target))) {
+        problems.push(`${label}: deferred target missing`);
       }
     }
+    expect(problems).toEqual([]);
   });
 
   it('A2: every required selector is in its profile mutate list', () => {
