@@ -44,10 +44,11 @@
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import * as fs from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { benchmarkAsync, PERF_BUDGETS } from '../../test-policy.js';
+import { CROSS_MODULE_ALLOWLIST, MODULE_CLASSIFICATION } from './module-classification.js';
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../../');
 const SRC_DIR = path.join(PROJECT_ROOT, 'src');
@@ -160,8 +161,10 @@ interface ImportInfo {
   module: string;
   raw: string;
   isNodeBuiltin: boolean;
+  isRelative: boolean;
   isFFModule: boolean;
   targetModule: string | null;
+  targetResolved: boolean;
 }
 
 interface FileAnalysis {
@@ -182,8 +185,10 @@ function mockImport(module: string): ImportInfo {
     module,
     raw: `import '${module}'`,
     isNodeBuiltin: false,
+    isRelative: module.startsWith('.'),
     isFFModule: false,
     targetModule: null,
+    targetResolved: false,
   };
 }
 
@@ -194,42 +199,62 @@ function isNodeBuiltinImport(module: string): boolean {
   return false;
 }
 
-function getTargetModule(importPath: string): string | null {
-  // Strip all leading ../ segments (supports nested subdirectories like integration/tools/)
-  const normalized = importPath.replace(/^(\.\.\/)+/, '').replace(/^\.\//, '');
-  const first = normalized.split('/')[0];
-  return first || null;
+const CLASSIFIED_ENTRIES: ReadonlySet<string> = new Set(
+  MODULE_CLASSIFICATION.map((entry) => entry.name),
+);
+const GOVERNED_MODULES: ReadonlySet<string> = new Set(
+  MODULE_CLASSIFICATION.filter((entry) => entry.kind === 'governed').map((entry) => entry.name),
+);
+const TEST_SUPPORT_ENTRIES: ReadonlySet<string> = new Set(
+  MODULE_CLASSIFICATION.filter((entry) => entry.kind === 'test-support').map((entry) => entry.name),
+);
+
+/**
+ * Resolve a relative import specifier to its classified top-level entry: the
+ * first path segment under `src/` (a module directory or a root-level file).
+ * Returns null when the specifier does not resolve to an existing source under
+ * `src/` — under default-deny that is a violation, never a silent non-match.
+ */
+function resolveTargetEntry(importerDir: string, specifier: string): string | null {
+  const resolved = resolveImportPath(importerDir, specifier);
+  if (!resolved) return null;
+  const relToSrc = normalizeSep(path.relative(SRC_DIR, resolved));
+  if (relToSrc.startsWith('..')) return null;
+  return relToSrc.split('/')[0] || null;
 }
 
-const FF_MODULES = new Set([
-  'state',
-  'machine',
-  'rails',
-  'adapters',
-  'integration',
-  'config',
-  'audit',
-  'discovery',
-  'archive',
-  'logging',
-  'cli',
-  'identity',
-  'telemetry',
-  'presentation',
-  'diagnostics',
-  'hooks',
-  'mcp-server',
-  'shared',
-]);
-
-function isFFModuleImport(module: string): boolean {
-  if (!module.startsWith('../')) return false;
-  const target = getTargetModule(module);
-  return target !== null && FF_MODULES.has(target);
+/** Test scaffolding may import test-support entries; production code may not. */
+function isTestScaffoldingFile(relativePath: string): boolean {
+  return (
+    relativePath.includes('.test.') ||
+    relativePath.includes('/__tests__/') ||
+    relativePath.endsWith('-test-helpers.ts')
+  );
 }
 
-function parseImports(fileContent: string): ImportInfo[] {
+function parseImports(
+  fileContent: string,
+  importerDir: string,
+  importerModule: string,
+): ImportInfo[] {
   const imports: ImportInfo[] = [];
+
+  const toImportInfo = (module: string, raw: string): ImportInfo => {
+    const isRelative = module.startsWith('.');
+    const targetModule = isRelative ? resolveTargetEntry(importerDir, module) : null;
+    return {
+      module,
+      raw,
+      isNodeBuiltin: isNodeBuiltinImport(module),
+      isRelative,
+      isFFModule:
+        targetModule !== null &&
+        GOVERNED_MODULES.has(targetModule) &&
+        targetModule !== importerModule,
+      targetModule,
+      targetResolved: isRelative && targetModule !== null,
+    };
+  };
 
   const importRegex =
     /^import\s+(?:(?:type\s+)?(?:\{[^}]*\}|[^;{}]+)\s+from\s+)?['"]([^'"]+)['"]|^import\s+['"]([^'"]+)['"]|^export\s+(?:\{[^}]*\}|[^;{}]+)\s+from\s+['"]([^'"]+)['"]|^export\s+from\s+['"]([^'"]+)['"]|^export\s+\*\s+as\s+\w+\s+from\s+['"]([^'"]+)['"]|^require\s*\(['"]([^'"]+)['"]\)/gm;
@@ -239,13 +264,7 @@ function parseImports(fileContent: string): ImportInfo[] {
     const module = match[1] || match[2] || match[3] || match[4] || match[5] || match[6];
     if (!module) continue;
 
-    imports.push({
-      module,
-      raw: match[0],
-      isNodeBuiltin: isNodeBuiltinImport(module),
-      isFFModule: isFFModuleImport(module),
-      targetModule: isFFModuleImport(module) ? getTargetModule(module) : null,
-    });
+    imports.push(toImportInfo(module, match[0]));
   }
 
   // Dynamic imports: await import('./foo.js'), import('./foo.js')
@@ -254,13 +273,7 @@ function parseImports(fileContent: string): ImportInfo[] {
     const module = match[1];
     if (!module) continue;
 
-    imports.push({
-      module,
-      raw: match[0],
-      isNodeBuiltin: isNodeBuiltinImport(module),
-      isFFModule: isFFModuleImport(module),
-      targetModule: isFFModuleImport(module) ? getTargetModule(module) : null,
-    });
+    imports.push(toImportInfo(module, match[0]));
   }
 
   return imports;
@@ -268,12 +281,13 @@ function parseImports(fileContent: string): ImportInfo[] {
 
 async function analyzeFile(filePath: string): Promise<FileAnalysis> {
   const content = await fs.readFile(filePath, 'utf-8');
-  const relativePath = path.relative(SRC_DIR, filePath);
-  const imports = parseImports(content);
+  const relativePath = normalizeSep(path.relative(SRC_DIR, filePath));
+  const importerModule = relativePath.split('/')[0]!;
+  const imports = parseImports(content, path.dirname(filePath), importerModule);
 
   return {
     filePath: normalizeSep(filePath),
-    relativePath: normalizeSep(relativePath),
+    relativePath,
     imports,
   };
 }
@@ -311,11 +325,73 @@ function getLayerFromPath(filePath: string): string | null {
   if (filePath.includes('/diagnostics/')) return 'diagnostics';
   if (filePath.includes('/mcp-server/')) return 'mcp-server';
   if (filePath.includes('/hooks/')) return 'hooks';
+  if (filePath.includes('/identity/')) return 'identity';
+  if (filePath.includes('/telemetry/')) return 'telemetry';
+  if (filePath.includes('/shared/')) return 'shared';
+  if (filePath.includes('/providers/')) return 'providers';
+  if (filePath.includes('/verification/')) return 'verification';
+  if (filePath.includes('/redaction/')) return 'redaction';
+  if (filePath.includes('/rendering/')) return 'rendering';
+  if (filePath.includes('/templates/')) return 'templates';
   return null;
 }
 
 function detectViolations(analyses: Map<string, FileAnalysis>): ImportViolation[] {
   const allViolations: ImportViolation[] = [];
+
+  // Default-deny: every relative import in production code must resolve to a
+  // classified entry, and test-support entries are closed to production
+  // importers. Unclassified targets are violations, never silent non-matches.
+  for (const [, analysis] of analyses) {
+    if (analysis.filePath.includes('.test.')) continue;
+    for (const imp of analysis.imports) {
+      if (!imp.isRelative) continue;
+      const label = `imports '${imp.module}'`;
+      if (!imp.targetResolved || imp.targetModule === null) {
+        allViolations.push({
+          file: analysis.relativePath,
+          rule: 'unclassified-import-target',
+          message: `${label} — does not resolve to a source under src/`,
+        });
+        continue;
+      }
+      if (!CLASSIFIED_ENTRIES.has(imp.targetModule)) {
+        allViolations.push({
+          file: analysis.relativePath,
+          rule: 'unclassified-module',
+          message: `${label} — '${imp.targetModule}' is not a classified top-level module`,
+        });
+        continue;
+      }
+      if (
+        TEST_SUPPORT_ENTRIES.has(imp.targetModule) &&
+        !isTestScaffoldingFile(analysis.relativePath)
+      ) {
+        allViolations.push({
+          file: analysis.relativePath,
+          rule: 'test-support-import',
+          message: `${label} — production code must not import test-support entry '${imp.targetModule}'`,
+        });
+      }
+    }
+  }
+
+  // Allow-list governance for the modules admitted by the default-deny tranche.
+  for (const [, analysis] of analyses) {
+    if (analysis.filePath.includes('.test.')) continue;
+    const layer = getLayerFromPath(analysis.filePath);
+    const allowlist = layer ? CROSS_MODULE_ALLOWLIST[layer] : undefined;
+    if (!layer || !allowlist) continue;
+    for (const imp of analysis.imports.filter((i) => i.isFFModule && i.targetModule)) {
+      if (imp.targetModule && !allowlist.has(imp.targetModule)) {
+        allViolations.push({
+          file: analysis.relativePath,
+          rule: `${layer}-allowlist`,
+          message: `${layer}/ may only import ${[...allowlist].sort().join(', ')} but imports: ${imp.targetModule}`,
+        });
+      }
+    }
+  }
 
   for (const [, analysis] of analyses) {
     if (analysis.filePath.includes('.test.')) continue;
@@ -1437,8 +1513,10 @@ describe('Layer Dependency Rules', () => {
             module: '../../integration/plugin.js',
             raw: "import { x } from '../../integration/plugin.js';",
             isNodeBuiltin: false,
+            isRelative: true,
             isFFModule: true,
             targetModule: 'integration',
+            targetResolved: true,
           },
         ],
       };
@@ -1462,8 +1540,10 @@ describe('Layer Dependency Rules', () => {
             module: '../../integration/plugin.js',
             raw: "export { x } from '../../integration/plugin.js';",
             isNodeBuiltin: false,
+            isRelative: true,
             isFFModule: true,
             targetModule: 'integration',
+            targetResolved: true,
           },
         ],
       };
@@ -1504,7 +1584,11 @@ describe('Layer Dependency Rules', () => {
 
       for (const filePath of reviewFiles) {
         const content = await fs.readFile(filePath, 'utf-8');
-        const imports = parseImports(content);
+        const imports = parseImports(
+          content,
+          path.dirname(filePath),
+          normalizeSep(path.relative(SRC_DIR, filePath)).split('/')[0]!,
+        );
         for (const imp of imports) {
           // plugin-helpers is a pure stateless utility (no lifecycle coupling),
           // so it's allowed as an inward dependency for review/
@@ -1572,7 +1656,7 @@ describe('Layer Dependency Rules', () => {
       // and the import is to adapters/ only, not to plugin-* or tools/.
       const auditEventsPath = path.join(SRC_DIR, 'integration', 'review', 'audit-events.ts');
       const content = await fs.readFile(auditEventsPath, 'utf-8');
-      const imports = parseImports(content);
+      const imports = parseImports(content, path.dirname(auditEventsPath), 'integration');
       const adapterImports = imports.filter((i) => i.module.includes('adapters/'));
       const pluginImports = imports.filter(
         (i) => i.module.includes('plugin-') || i.module.includes('/plugin.'),
@@ -1721,6 +1805,111 @@ describe('Layer Dependency Rules', () => {
 
       expect(violations).toHaveLength(0);
     });
+  });
+});
+
+// ─── Module classification (default-deny) ────────────────────────────────────
+
+describe('Module classification (default-deny)', () => {
+  it('classifies every top-level entry under src/ (ratchet)', () => {
+    const entries = readdirSync(SRC_DIR, { withFileTypes: true })
+      .filter(
+        (entry) =>
+          (entry.isDirectory() && !entry.name.includes('__')) ||
+          (entry.isFile() && entry.name.endsWith('.ts') && !entry.name.includes('.test.')),
+      )
+      .map((entry) => entry.name)
+      .sort();
+
+    const unclassified = entries.filter((name) => !CLASSIFIED_ENTRIES.has(name));
+    expect(unclassified).toEqual([]);
+
+    // Non-vacuity: the enumeration sees directories and root-level files.
+    expect(entries).toContain('state');
+    expect(entries).toContain('index.ts');
+  });
+
+  it('allow-lists reference classified, governed modules only', () => {
+    for (const [name, allowlist] of Object.entries(CROSS_MODULE_ALLOWLIST)) {
+      expect(GOVERNED_MODULES.has(name), `${name} must be governed`).toBe(true);
+      for (const target of allowlist) {
+        expect(CLASSIFIED_ENTRIES.has(target), `${name} -> ${target} must be classified`).toBe(
+          true,
+        );
+      }
+    }
+  });
+
+  it('every governed module is recognized by the path classifier', () => {
+    for (const name of GOVERNED_MODULES) {
+      const synthetic = normalizeSep(path.join(SRC_DIR, name, 'probe.ts'));
+      expect(getLayerFromPath(synthetic), `${name} must map to its own layer`).toBe(name);
+    }
+  });
+
+  function violationForImport(imp: ImportInfo): ImportViolation[] {
+    const relativePath = 'state/deliberate-violation.ts';
+    const fakeAnalysis: FileAnalysis = {
+      filePath: normalizeSep(path.join(SRC_DIR, relativePath)),
+      relativePath,
+      imports: [imp],
+    };
+    return detectViolations(new Map([[relativePath, fakeAnalysis]]));
+  }
+
+  it('flags an import of an unclassified top-level module', () => {
+    const violations = violationForImport({
+      module: '../newmodule/x.js',
+      raw: "import { x } from '../newmodule/x.js';",
+      isNodeBuiltin: false,
+      isRelative: true,
+      isFFModule: false,
+      targetModule: 'newmodule',
+      targetResolved: true,
+    });
+    expect(violations).toHaveLength(1);
+    expect(violations[0]!.rule).toBe('unclassified-module');
+  });
+
+  it('flags production imports of test-support entries', () => {
+    const violations = violationForImport({
+      module: '../fixtures.js',
+      raw: "import { makeState } from '../fixtures.js';",
+      isNodeBuiltin: false,
+      isRelative: true,
+      isFFModule: false,
+      targetModule: 'fixtures.ts',
+      targetResolved: true,
+    });
+    expect(violations).toHaveLength(1);
+    expect(violations[0]!.rule).toBe('test-support-import');
+  });
+
+  it('flags an unresolved relative import target', () => {
+    const violations = violationForImport({
+      module: '../missing/gone.js',
+      raw: "import { x } from '../missing/gone.js';",
+      isNodeBuiltin: false,
+      isRelative: true,
+      isFFModule: false,
+      targetModule: null,
+      targetResolved: false,
+    });
+    expect(violations).toHaveLength(1);
+    expect(violations[0]!.rule).toBe('unclassified-import-target');
+  });
+
+  it('does not flag a classified, allowed cross-module import', () => {
+    const violations = violationForImport({
+      module: '../shared/hashing.js',
+      raw: "import { hashText } from '../shared/hashing.js';",
+      isNodeBuiltin: false,
+      isRelative: true,
+      isFFModule: true,
+      targetModule: 'shared',
+      targetResolved: true,
+    });
+    expect(violations).toEqual([]);
   });
 });
 
