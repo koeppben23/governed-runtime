@@ -28,6 +28,18 @@ function sectionContent(section: (typeof MANDATES_SECTION_DEFINITIONS)[number]):
   return section.content;
 }
 
+function isSafetyCritical(section: (typeof MANDATES_SECTION_DEFINITIONS)[number]): boolean {
+  return 'safetyCritical' in section && section.safetyCritical === true;
+}
+
+function isConcise(section: (typeof MANDATES_SECTION_DEFINITIONS)[number]): boolean {
+  return 'concise' in section && section.concise === true;
+}
+
+function isEarlyPhase(section: (typeof MANDATES_SECTION_DEFINITIONS)[number]): boolean {
+  return 'earlyPhase' in section && section.earlyPhase === true;
+}
+
 function expectedSections(
   phase: string,
   predicate: (section: (typeof MANDATES_SECTION_DEFINITIONS)[number]) => boolean,
@@ -174,7 +186,7 @@ describe('phase-aware mandate projection', () => {
     const rendered = renderPhaseAwareMandates({ mandatesVerbosity: 'concise' }, 'REVIEW');
     const expected = expectedSections(
       'REVIEW',
-      (section) => section.safetyCritical === true || section.concise === true,
+      (section) => isSafetyCritical(section) || isConcise(section),
     );
 
     expect(rendered).toBe(expected);
@@ -184,7 +196,7 @@ describe('phase-aware mandate projection', () => {
     const rendered = renderPhaseAwareMandates({}, 'INVESTIGATION');
     const expected = expectedSections(
       'INVESTIGATION',
-      (section) => section.safetyCritical === true || section.earlyPhase === true,
+      (section) => isSafetyCritical(section) || isEarlyPhase(section),
     );
 
     expect(rendered).toBe(expected);
@@ -223,10 +235,7 @@ describe('compaction summary projection', () => {
 
   it('projects only safety-critical sections for a concrete phase', () => {
     const summary = renderCompactionMandatesSummary('IMPLEMENTATION');
-    const expected = expectedSections(
-      'IMPLEMENTATION',
-      (section) => section.safetyCritical === true,
-    );
+    const expected = expectedSections('IMPLEMENTATION', isSafetyCritical);
 
     expect(summary).toBe(expected);
     expect(summary).not.toBe(FLOWGUARD_MANDATES_FULL_BODY);
