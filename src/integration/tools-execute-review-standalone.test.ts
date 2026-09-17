@@ -1110,7 +1110,7 @@ describe('review (standalone flow)', () => {
           ...base,
           attestation: { ...base.attestation, reviewedBy: 'someone-else' },
         };
-        await bindHostTaskReviewEvidence(uuid, findings as never);
+        await bindHostTaskReviewEvidence(uuid, findings);
         const raw = await review.execute(
           { prNumber: 1, reviewObligationId: uuid, inputOrigin: 'pr' },
           ctx,
@@ -1129,7 +1129,7 @@ describe('review (standalone flow)', () => {
           ...base,
           attestation: { ...base.attestation, mandateDigest: 'wrong-digest-value' },
         };
-        await bindHostTaskReviewEvidence(uuid, findings as never);
+        await bindHostTaskReviewEvidence(uuid, findings);
         const raw = await review.execute(
           { prNumber: 1, reviewObligationId: uuid, inputOrigin: 'pr' },
           ctx,
@@ -1144,7 +1144,7 @@ describe('review (standalone flow)', () => {
           ...base,
           attestation: { ...base.attestation, criteriaVersion: 'p99-bogus' },
         };
-        await bindHostTaskReviewEvidence(uuid, findings as never);
+        await bindHostTaskReviewEvidence(uuid, findings);
         const raw = await review.execute(
           { prNumber: 1, reviewObligationId: uuid, inputOrigin: 'pr' },
           ctx,

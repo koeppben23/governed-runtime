@@ -228,8 +228,8 @@ describe('discovery/orchestrator', () => {
   describe('CORNER', () => {
     it('handles empty input gracefully', async () => {
       // Override git mocks to return null for empty-repo scenario
-      vi.mocked(gitMock.defaultBranch).mockResolvedValueOnce(null as unknown as string);
-      vi.mocked(gitMock.headCommit).mockResolvedValueOnce(null as unknown as string);
+      vi.mocked(gitMock.defaultBranch).mockResolvedValueOnce(null);
+      vi.mocked(gitMock.headCommit).mockResolvedValueOnce(null);
 
       const result = await runDiscovery(EMPTY_INPUT);
 
@@ -239,8 +239,8 @@ describe('discovery/orchestrator', () => {
     });
 
     it('extractDetectedStack returns null when no items have versions', async () => {
-      vi.mocked(gitMock.defaultBranch).mockResolvedValueOnce(null as unknown as string);
-      vi.mocked(gitMock.headCommit).mockResolvedValueOnce(null as unknown as string);
+      vi.mocked(gitMock.defaultBranch).mockResolvedValueOnce(null);
+      vi.mocked(gitMock.headCommit).mockResolvedValueOnce(null);
 
       const result = await runDiscovery(EMPTY_INPUT);
       const ds = await extractDetectedStack(result);
@@ -449,8 +449,8 @@ describe('discovery/orchestrator', () => {
     });
 
     it('extractDetectedStack returns null for completely empty stack', async () => {
-      vi.mocked(gitMock.defaultBranch).mockResolvedValueOnce(null as unknown as string);
-      vi.mocked(gitMock.headCommit).mockResolvedValueOnce(null as unknown as string);
+      vi.mocked(gitMock.defaultBranch).mockResolvedValueOnce(null);
+      vi.mocked(gitMock.headCommit).mockResolvedValueOnce(null);
 
       const result = await runDiscovery(EMPTY_INPUT);
       // Double-check: all categories are empty

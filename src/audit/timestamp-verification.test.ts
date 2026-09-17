@@ -11,7 +11,7 @@ import type { AuditEvent } from '../state/evidence.js';
 
 function makeTsaStampedEvent(overrides: Partial<AuditEvent> = {}): AuditEvent {
   const event = makeAuditEvent(overrides);
-  const canonicalDigest = computeCanonicalEventDigest(event as Record<string, unknown>);
+  const canonicalDigest = computeCanonicalEventDigest(event);
   return {
     ...event,
     semanticEventDigest: canonicalDigest,
@@ -30,7 +30,7 @@ function makeTsaStampedEvent(overrides: Partial<AuditEvent> = {}): AuditEvent {
 
 function makeTokenTsaStampedEvent(overrides: Partial<AuditEvent> = {}): AuditEvent {
   const event = makeAuditEvent(overrides);
-  const canonicalDigest = computeCanonicalEventDigest(event as Record<string, unknown>);
+  const canonicalDigest = computeCanonicalEventDigest(event);
   return {
     ...event,
     semanticEventDigest: canonicalDigest,
@@ -360,7 +360,7 @@ describe('verifyTsaMessageImprint', () => {
         nested: { verdict: 'reject', depth: { changed: true } },
       },
     } as unknown as AuditEvent;
-    const attackerUpdatedDigest = computeCanonicalEventDigest(tampered as Record<string, unknown>);
+    const attackerUpdatedDigest = computeCanonicalEventDigest(tampered);
     const event = {
       ...tampered,
       semanticEventDigest: attackerUpdatedDigest,
@@ -398,7 +398,7 @@ describe('verifyTsaMessageImprint', () => {
     const base = makeAuditEvent();
     const event = {
       ...base,
-      semanticEventDigest: computeCanonicalEventDigest(base as Record<string, unknown>),
+      semanticEventDigest: computeCanonicalEventDigest(base),
       timestampEvidence: {
         status: 'tsa_stamped',
         source: 'tsa',
@@ -425,7 +425,7 @@ describe('verifyTsaMessageImprint', () => {
         nested: { verdict: 'reject', depth: { changed: true } },
       },
     } as unknown as AuditEvent;
-    const attackerUpdatedDigest = computeCanonicalEventDigest(tampered as Record<string, unknown>);
+    const attackerUpdatedDigest = computeCanonicalEventDigest(tampered);
     const evidence = (tampered as Record<string, unknown>).timestampEvidence as Record<
       string,
       unknown

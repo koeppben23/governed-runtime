@@ -1347,7 +1347,7 @@ describe('plan', () => {
           promptHash: 'a'.repeat(64),
           findingsHash: deps.hashFindings(findings),
           invokedAt: NOW,
-          capturedRawFindings: findings as unknown as Record<string, unknown>,
+          capturedRawFindings: findings,
         }),
         consumedByObligationId: consumedBy,
       };

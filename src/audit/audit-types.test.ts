@@ -309,7 +309,7 @@ describe('audit types', () => {
       const result = summarizeArgs({
         api_key: true,
         token: 12345,
-        password: null as unknown,
+        password: null,
       });
       expect(result.api_key).toBe('[REDACTED]');
       expect(result.token).toBe('[REDACTED]');
@@ -745,7 +745,7 @@ describe('host session provenance on event bodies', () => {
           preStateDigest: 'a',
           mutationDigest: 'b',
           postStateDigest: 'c',
-        } as never,
+        },
         TS1,
         GENESIS_HASH,
       ),
@@ -791,7 +791,7 @@ describe('host session provenance on event bodies', () => {
         occurredAt: TS1,
         actor: 'machine',
         prevHash: GENESIS_HASH,
-      } as never),
+      }),
   } as const;
 
   it('carries hostSessionId on every event body when the host provides one', () => {

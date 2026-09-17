@@ -11,7 +11,6 @@ import {
 import { junitXmlParser } from '../../verification/assertion-parsers/parsers.js';
 import type { AssertionProviderExtension } from '../contract.js';
 import type { ParsedAssertion } from '../../verification/assertion-parsers/types.js';
-import type { ProviderId } from '../../state/assertion-identity.js';
 import type { ReportFormatId } from '../../state/assertion-identity.js';
 
 const JS_LOCAL_ID_RE = /^[^:]+(::[^:]+)+$/;
@@ -44,7 +43,7 @@ function fallbackCmd(pm: string, cmd: string): string {
 }
 
 export const vitestProvider: AssertionProviderExtension = {
-  manifest: { providerId: 'vitest' as ProviderId, label: 'Vitest' },
+  manifest: { providerId: 'vitest', label: 'Vitest' },
 
   discovery: {
     detectionIds: ['testFramework:vitest'],
@@ -157,9 +156,9 @@ export const vitestProvider: AssertionProviderExtension = {
   verification: {
     formats: [
       {
-        format: 'vitest_json' as ReportFormatId,
+        format: 'vitest_json',
         parser: {
-          format: 'vitest_json' as ReportFormatId,
+          format: 'vitest_json',
           parse(content: string, _fileName: string, context: { providerId: string }) {
             return parseVitestJson(content, context);
           },
@@ -167,13 +166,13 @@ export const vitestProvider: AssertionProviderExtension = {
         bindingCapability: 'assertion' as const,
       },
       {
-        format: 'junit_xml' as ReportFormatId,
+        format: 'junit_xml',
         parser: junitXmlParser,
         bindingCapability: 'aggregate' as const,
       },
     ],
     identityCodec: {
-      providerId: 'vitest' as ProviderId,
+      providerId: 'vitest',
       assertionBindingFormats: new Set<ReportFormatId>(['vitest_json']),
       buildLocalId(parsed: ParsedAssertion) {
         if (parsed.kind !== 'vitest_json') throw new Error(`vitest codec received ${parsed.kind}`);

@@ -250,7 +250,7 @@ export async function resolveActor(
     return {
       id: claim.actorId,
       email: claim.actorEmail ?? null,
-      displayName: (claim.actorDisplayName ?? null) as string | null,
+      displayName: claim.actorDisplayName ?? null,
       source: 'claim',
       assurance: 'claim_validated',
     };

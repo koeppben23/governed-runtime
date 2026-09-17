@@ -88,7 +88,7 @@ describe('redaction/export-redaction', () => {
           fourEyes: { initiatedBy: 'alice', decidedBy: 'bob', detail: 'lgtm' },
         },
       };
-      const output = redactReviewReport(input, 'basic') as Record<string, unknown>;
+      const output = redactReviewReport(input, 'basic');
       const fe = (output.completeness as Record<string, unknown>).fourEyes as Record<
         string,
         unknown
@@ -101,13 +101,13 @@ describe('redaction/export-redaction', () => {
 
     it('redacts findings message in review report basic mode', () => {
       const input = { findings: [{ message: 'Contains PII: alice@example.com' }] };
-      const output = redactReviewReport(input, 'basic') as Record<string, unknown>;
+      const output = redactReviewReport(input, 'basic');
       expect(recordArray(output, 'findings')[0]?.message).toBe('[REDACTED]');
     });
 
     it('redacts validationSummary detail in review report', () => {
       const input = { validationSummary: [{ checkId: 'test_quality', detail: 'secret detail' }] };
-      const output = redactReviewReport(input, 'basic') as Record<string, unknown>;
+      const output = redactReviewReport(input, 'basic');
       expect(recordArray(output, 'validationSummary')[0]?.detail).toBe('[REDACTED]');
     });
 
@@ -128,7 +128,7 @@ describe('redaction/export-redaction', () => {
           },
         ],
       };
-      const output = redactReviewReport(input, 'basic') as Record<string, unknown>;
+      const output = redactReviewReport(input, 'basic');
       const refs = output.references as Array<Record<string, unknown>>;
       expect(refs[0]!.ref).toBe('[REDACTED]');
       expect(refs[0]!.title).toBe('[REDACTED]');
@@ -144,7 +144,7 @@ describe('redaction/export-redaction', () => {
           { ref: 'https://jira.internal.example.com/PROJ-1', title: 'PROJ-1: Internal thing' },
         ],
       };
-      const output = redactReviewReport(input, 'pseudonymous') as Record<string, unknown>;
+      const output = redactReviewReport(input, 'pseudonymous');
       const refs = output.references as Array<Record<string, unknown>>;
       expect(String(refs[0]!.ref)).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
       expect(String(refs[0]!.title)).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
@@ -162,7 +162,7 @@ describe('redaction/export-redaction', () => {
           },
         ],
       };
-      const output = redactReviewReport(input, 'basic') as Record<string, unknown>;
+      const output = redactReviewReport(input, 'basic');
       const refs = output.references as Array<Record<string, unknown>>;
       expect(refs[0]!.ref).toBe('[REDACTED]');
       expect(refs[0]!.title).toBe('[REDACTED]');
@@ -209,11 +209,11 @@ describe('redaction/export-redaction', () => {
 
     it('handles null findings in review report without throwing', () => {
       expect(() => redactReviewReport({}, 'basic')).not.toThrow();
-      expect(() => redactReviewReport({ findings: null as unknown }, 'pseudonymous')).not.toThrow();
+      expect(() => redactReviewReport({ findings: null }, 'pseudonymous')).not.toThrow();
     });
 
     it('handles null completeness without throwing', () => {
-      expect(() => redactReviewReport({ completeness: null as unknown }, 'basic')).not.toThrow();
+      expect(() => redactReviewReport({ completeness: null }, 'basic')).not.toThrow();
     });
 
     it('handles non-array receipts gracefully', () => {
@@ -293,13 +293,13 @@ describe('redaction/export-redaction', () => {
 
     it('review report leaves non-string finding message unchanged', () => {
       const input = { findings: [{ message: 42 as unknown }] };
-      const out = redactReviewReport(input, 'basic') as Record<string, unknown>;
+      const out = redactReviewReport(input, 'basic');
       expect(recordArray(out, 'findings')[0]?.message).toBe(42);
     });
 
     it('review report leaves non-string slot detail unchanged', () => {
       const input = { completeness: { slots: [{ detail: true as unknown }] } };
-      const out = redactReviewReport(input, 'pseudonymous') as Record<string, unknown>;
+      const out = redactReviewReport(input, 'pseudonymous');
       const slot = (
         (out.completeness as Record<string, unknown>).slots as Array<Record<string, unknown>>
       )[0]!;
@@ -310,7 +310,7 @@ describe('redaction/export-redaction', () => {
       const input = {
         references: [{ ref: null as unknown, title: undefined as unknown, type: 'url' }],
       };
-      const out = redactReviewReport(input, 'basic') as Record<string, unknown>;
+      const out = redactReviewReport(input, 'basic');
       const refs = out.references as Array<Record<string, unknown>>;
       expect(refs[0]!.ref).toBe(null);
       expect(refs[0]!.title).toBeUndefined();
@@ -321,7 +321,7 @@ describe('redaction/export-redaction', () => {
       const input = {
         references: [{ ref: 42 as unknown, title: true as unknown }],
       };
-      const out = redactReviewReport(input, 'basic') as Record<string, unknown>;
+      const out = redactReviewReport(input, 'basic');
       const refs = out.references as Array<Record<string, unknown>>;
       expect(refs[0]!.ref).toBe(42);
       expect(refs[0]!.title).toBe(true);
@@ -360,13 +360,13 @@ describe('redaction/export-redaction', () => {
 
     it('redacts review report with empty findings array', () => {
       const input = { findings: [], completeness: {} };
-      const out = redactReviewReport(input, 'basic') as Record<string, unknown>;
+      const out = redactReviewReport(input, 'basic');
       expect(out.findings).toEqual([]);
     });
 
     it('strict mode review report findings message', () => {
       const input = { findings: [{ message: 'sensitive review detail' }] };
-      const out = redactReviewReport(input, 'pseudonymous') as Record<string, unknown>;
+      const out = redactReviewReport(input, 'pseudonymous');
       expect(String(recordArray(out, 'findings')[0]?.message)).toMatch(
         /^\[REDACTED:[a-f0-9]{12}\]$/,
       );
@@ -455,7 +455,7 @@ describe('redaction/export-redaction', () => {
           },
         ],
       };
-      const out = redactReviewReport(input, 'basic') as Record<string, unknown>;
+      const out = redactReviewReport(input, 'basic');
       const finding = (out.findings as Array<Record<string, unknown>>)[0]!;
       expect(finding.checkId).toBe('c1');
       expect(finding.message).toBe('[REDACTED]');
@@ -633,7 +633,7 @@ describe('redaction/export-redaction', () => {
 
     it('string array elements are always redacted', () => {
       const input = { source: ['safe-enum', 'Bearer ghp_secret', { injectedSecret: 'leaked' }] };
-      const out = redactReviewReport(input, 'basic') as Record<string, unknown>;
+      const out = redactReviewReport(input, 'basic');
       const arr = out.source as unknown[];
       expect(arr[0]).toBe('[REDACTED]');
       expect(arr[1]).toBe('[REDACTED]');
@@ -966,7 +966,7 @@ describe('raw string masking and traversal guards', () => {
   });
 
   it('tolerates absent or non-object identity fields', () => {
-    expect(() => redactSessionState({} as never, 'basic')).not.toThrow();
+    expect(() => redactSessionState({}, 'basic')).not.toThrow();
     expect(() =>
       redactSessionState({ actorInfo: 'not-an-object', initiatedByIdentity: 42 }, 'basic'),
     ).not.toThrow();

@@ -67,7 +67,7 @@ export function emitTelemetryEvent(
     const full: HumanProjectionTelemetryEvent = {
       ...body,
       ...envelope,
-    } as HumanProjectionTelemetryEvent;
+    };
     const result = sink.record(full);
     if (result instanceof Promise) {
       result.catch(() => {

@@ -209,7 +209,7 @@ describe('HAPPY: loadExternalContent content path', () => {
     expect(result).not.toBeNull();
     expect('content' in result!).toBe(true);
     if ('content' in result!) {
-      expect(result!.content).toBe('analysis content');
+      expect(result.content).toBe('analysis content');
     }
   });
 
@@ -218,7 +218,7 @@ describe('HAPPY: loadExternalContent content path', () => {
     expect(result).not.toBeNull();
     expect('content' in result!).toBe(true);
     if ('content' in result!) {
-      expect(result!.content).toBe('');
+      expect(result.content).toBe('');
     }
   });
 
@@ -254,8 +254,8 @@ describe('BAD: blocked paths', () => {
     expect(result).not.toBeNull();
     expect(!('content' in (result ?? {}))).toBe(true);
     if (result && 'kind' in result) {
-      expect(result!.kind).toBe('blocked');
-      expect(result!.code).toBe('REVIEW_BRANCH_PROVENANCE_MISSING');
+      expect(result.kind).toBe('blocked');
+      expect(result.code).toBe('REVIEW_BRANCH_PROVENANCE_MISSING');
     }
   });
 

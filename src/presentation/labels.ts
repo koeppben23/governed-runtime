@@ -61,7 +61,7 @@ Object.freeze(STATUS_LABELS);
  * has a label.
  */
 export function lookupStatusLabel(raw: KnownPresentationStatusInput): PresentationStatus {
-  return STATUS_LABELS[raw] as PresentationStatus;
+  return STATUS_LABELS[raw];
 }
 
 /**
@@ -71,7 +71,7 @@ export function lookupStatusLabel(raw: KnownPresentationStatusInput): Presentati
  */
 export function parseStatusLabel(raw: string): PresentationStatus {
   if (raw in STATUS_LABELS) {
-    return STATUS_LABELS[raw as KnownPresentationStatusInput] as PresentationStatus;
+    return STATUS_LABELS[raw as KnownPresentationStatusInput];
   }
   throw new PresentationContractError(
     `Unknown status label input: "${raw}". ` +

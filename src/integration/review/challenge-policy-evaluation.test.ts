@@ -299,7 +299,7 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
   const firstAttempt = boundAttempt(
     firstObligation,
     firstFindings.reviewedBy.sessionId,
-    firstInvocation.attemptId!,
+    firstInvocation.attemptId,
   );
   expect(
     resolveStructuredFindings(
@@ -399,7 +399,7 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
   const secondAttempt = boundAttempt(
     secondObligation,
     secondFindings.reviewedBy.sessionId,
-    secondInvocation.attemptId!,
+    secondInvocation.attemptId,
   );
   const reReview = resolveStructuredFindings(
     {

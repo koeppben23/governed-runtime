@@ -81,7 +81,7 @@ describe('runAudit', () => {
         resolveCanonicalSessionDir: vi
           .fn()
           .mockResolvedValue({ status: 'resolved', sessDir: os.tmpdir() }),
-      } as Partial<AuditDeps>);
+      });
 
       const result = await runAudit(deps, 'flowguard_plan', {}, {}, SESSION_ID);
 

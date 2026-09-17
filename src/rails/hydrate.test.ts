@@ -278,7 +278,7 @@ describe('hydrate rail unit tests', () => {
       const result = hydrateNew(minimalInput({ profile: { profileId: 'baseline' } }));
       const state = expectOk(result);
       // Mutating returned array should not affect the profile
-      const checks = state.activeChecks as string[];
+      const checks = state.activeChecks;
       checks.push('extra');
       // Re-hydrate to verify isolation
       const result2 = hydrateNew(minimalInput({ profile: { profileId: 'baseline' } }));

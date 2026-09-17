@@ -66,10 +66,7 @@ describe('buildExistingPolicyInput', () => {
 describe('buildNewPolicyInput', () => {
   it('maps policy resolution to hydrate policy input', () => {
     const res = policyResolution();
-    const result = buildNewPolicyInput(
-      res,
-      hydrateConfig() as Parameters<typeof buildNewPolicyInput>[1],
-    );
+    const result = buildNewPolicyInput(res, hydrateConfig());
     expect(result.policyMode).toBe('team');
     expect(result.policySource).toBe('default');
     expect(result.effectiveGateBehavior).toBe('human_gated');
@@ -83,7 +80,7 @@ describe('buildPolicyInput', () => {
     const result = buildPolicyInput(
       EXISTING as Parameters<typeof buildPolicyInput>[0],
       policyResolution(),
-      hydrateConfig() as Parameters<typeof buildPolicyInput>[2],
+      hydrateConfig(),
       undefined,
     );
     expect(result.policyMode).toBe('team');

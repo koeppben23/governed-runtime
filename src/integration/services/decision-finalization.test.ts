@@ -58,7 +58,7 @@ function completionDeps(): AuditDeps {
     logError: vi.fn(),
     cachedFingerprint: 'fp',
     mode: 'regulated',
-  } as unknown as AuditDeps;
+  };
 }
 
 function finalizeInput(input: Omit<Parameters<typeof finalizeDecision>[0], 'auditDeps'>) {

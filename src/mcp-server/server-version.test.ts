@@ -6,10 +6,13 @@ const mcpServerCalls = vi.hoisted(() => ({
   values: [] as { serverInfo: unknown; options: unknown }[],
 }));
 
-const transportEvents = vi.hoisted(() => ({
-  handlers: {} as Record<string, ((...args: unknown[]) => void) | undefined>,
-  connectFn: vi.fn().mockResolvedValue(undefined),
-}));
+const transportEvents = vi.hoisted(() => {
+  const handlers: Record<string, ((...args: unknown[]) => void) | undefined> = {};
+  return {
+    handlers,
+    connectFn: vi.fn().mockResolvedValue(undefined),
+  };
+});
 
 vi.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
   McpServer: class MockMcpServer {

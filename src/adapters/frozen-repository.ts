@@ -100,7 +100,7 @@ function gitSyncBuffer(args: string[], cwd: string): Buffer {
       timeout: 10000,
       maxBuffer: MAX_BUFFER,
     });
-    return stdout as Buffer;
+    return stdout;
   } catch (err) {
     throw classifyExecFailure(`git ${args.join(' ')}`, err);
   }

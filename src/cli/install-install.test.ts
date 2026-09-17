@@ -615,7 +615,7 @@ describe('cli/install', () => {
         if (cmd === 'bun --version') throw new Error('bun unavailable');
         if (cmd === 'npm --version') return Buffer.from('10.0.0\n');
         if (typeof cmd === 'string' && cmd.includes('install')) {
-          installCalls.push({ cmd, timeout: opts?.timeout as number | undefined });
+          installCalls.push({ cmd, timeout: opts?.timeout });
         }
         return originalImpl(cmd, opts);
       });
@@ -1398,8 +1398,7 @@ describe('cli/install', () => {
         },
       };
       mergeReviewerTaskPermission(parsed);
-      const task = ((parsed as Record<string, unknown>).agent as Record<string, unknown>)
-        .build as Record<string, unknown>;
+      const task = (parsed.agent as Record<string, unknown>).build as Record<string, unknown>;
       const perm = task.permission as Record<string, unknown>;
       const t = perm.task as Record<string, unknown>;
       expect(t['*']).toBe('deny');
@@ -1420,8 +1419,7 @@ describe('cli/install', () => {
         },
       };
       mergeReviewerTaskPermission(parsed);
-      const task = ((parsed as Record<string, unknown>).agent as Record<string, unknown>)
-        .build as Record<string, unknown>;
+      const task = (parsed.agent as Record<string, unknown>).build as Record<string, unknown>;
       const perm = task.permission as Record<string, unknown>;
       const t = perm.task as Record<string, unknown>;
       expect(t['*']).toBe('deny');
@@ -1431,8 +1429,7 @@ describe('cli/install', () => {
     it('mergeReviewerTaskPermission handles empty config', () => {
       const parsed: Record<string, unknown> = {};
       mergeReviewerTaskPermission(parsed);
-      const task = ((parsed as Record<string, unknown>).agent as Record<string, unknown>)
-        .build as Record<string, unknown>;
+      const task = (parsed.agent as Record<string, unknown>).build as Record<string, unknown>;
       const perm = task.permission as Record<string, unknown>;
       const t = perm.task as Record<string, unknown>;
       expect(t['*']).toBe('deny');

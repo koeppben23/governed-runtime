@@ -59,7 +59,7 @@ export function installHookStdoutGuard(): HookStdoutGuard {
     return true;
   };
 
-  process.stdout.write = guardedWrite as typeof process.stdout.write;
+  process.stdout.write = guardedWrite;
 
   function restoreOriginal(): void {
     process.stdout.write = originalWrite;

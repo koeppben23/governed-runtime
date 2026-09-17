@@ -266,7 +266,7 @@ async function setupImplementDeadState(blockedCount = 1): Promise<void> {
 
   const implState: SessionState = {
     ...state,
-    phase: 'IMPL_REVIEW' as SessionState['phase'],
+    phase: 'IMPL_REVIEW',
     selfReview: {
       iteration: 1,
       reviewCycle: 1,
@@ -309,7 +309,7 @@ async function setupArchitectureDeadState(blockedCount = 1): Promise<void> {
 
   const archState: SessionState = {
     ...state,
-    phase: 'ARCHITECTURE' as SessionState['phase'],
+    phase: 'ARCHITECTURE',
     architecture: {
       id: 'ADR-001',
       title: 'Test Decision',

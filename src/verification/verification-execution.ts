@@ -15,7 +15,6 @@ import { resolve, sep as pathSep } from 'node:path';
 import { createHash } from 'node:crypto';
 
 import type { VerificationCandidate } from '../state/discovery-schemas.js';
-import type { ReportFormatId } from '../state/assertion-identity.js';
 import type { AssertionReportSpec } from '../state/discovery-schemas.js';
 import { FORMATS_BY_PROVIDER, PARSER_BY_FORMAT } from '../providers/registry.js';
 
@@ -109,12 +108,12 @@ export async function prepareVerificationExecution(
 
 function validateAssertionReportSpec(spec: AssertionReportSpec): void {
   const supported = FORMATS_BY_PROVIDER.get(spec.providerId);
-  if (!supported?.has(spec.format as ReportFormatId)) {
+  if (!supported?.has(spec.format)) {
     throw new Error(
       `Provider '${spec.providerId}' does not support report format '${spec.format}'`,
     );
   }
-  const parser = PARSER_BY_FORMAT.get(spec.format as ReportFormatId);
+  const parser = PARSER_BY_FORMAT.get(spec.format);
   if (!parser) {
     throw new Error(`No parser registered for report format '${spec.format}'`);
   }
@@ -132,7 +131,7 @@ async function buildPreparedReport(
       const resultPattern = spec.resultPatternTemplate.replace(/\{attemptId\}/g, attemptId);
       return {
         kind: 'run_specific',
-        spec: spec as PreparedAssertionReportRunSpecific['spec'],
+        spec: spec,
         resultPattern,
       };
     }
@@ -140,12 +139,12 @@ async function buildPreparedReport(
       const preExecutionSnapshot = await takeSnapshot(cwd, spec.standardPatterns);
       return {
         kind: 'snapshot_diff',
-        spec: spec as PreparedAssertionReportSnapshotDiff['spec'],
+        spec: spec,
         preExecutionSnapshot,
       };
     }
     case 'stdout': {
-      return { kind: 'stdout', spec: spec as PreparedAssertionReportStdout['spec'] };
+      return { kind: 'stdout', spec: spec };
     }
   }
 }

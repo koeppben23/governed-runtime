@@ -5,7 +5,7 @@ import type { ClaimResolutionFacts } from './claim-resolution.js';
 
 function claim(overrides: Partial<ProofClaim> = {}): ProofClaim {
   return {
-    claimId: '00000000-0000-0000-0000-000000000001' as any,
+    claimId: '00000000-0000-0000-0000-000000000001',
     statement: 'The system rejects expired tokens',
     signalClass: 'fact',
     critical: true,
@@ -14,7 +14,7 @@ function claim(overrides: Partial<ProofClaim> = {}): ProofClaim {
     counterexampleRefs: [],
     verificationState: 'PROVEN',
     ...overrides,
-  } as ProofClaim;
+  };
 }
 
 describe('projectClaimResolutionFacts', () => {

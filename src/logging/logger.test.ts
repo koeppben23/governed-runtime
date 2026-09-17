@@ -597,10 +597,10 @@ describe('createLogger — rate limiting', () => {
       } as unknown as ReturnType<typeof setInterval>;
     }) as typeof setInterval;
 
-    global.clearInterval = (() => {
+    global.clearInterval = () => {
       timerCleared = true;
       timerCallback = null;
-    }) as typeof clearInterval;
+    };
 
     const cfg: LoggerConfig = {
       rateLimit: {

@@ -28,12 +28,12 @@ const TEST_HOOK_TOKEN = 'test-hook-token-with-at-least-thirty-two-characters';
 
 async function runPreToolUse(payload: Record<string, unknown>): Promise<string> {
   let stdout = '';
-  vi.spyOn(process.stdout, 'write').mockImplementation(((chunk, encodingOrCallback, callback) => {
+  vi.spyOn(process.stdout, 'write').mockImplementation((chunk, encodingOrCallback, callback) => {
     stdout += Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
     const done = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
     if (done) done(null);
     return true;
-  }) as typeof process.stdout.write);
+  });
   vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
   mockReadStdin.mockResolvedValue(payload);
 
@@ -150,10 +150,10 @@ describe('pre-tool-use review obligation enforcement', () => {
     });
 
     let stdout = '';
-    vi.spyOn(process.stdout, 'write').mockImplementation(((chunk) => {
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
       stdout += String(chunk);
       return true;
-    }) as typeof process.stdout.write);
+    });
     vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     mockReadStdin.mockResolvedValue(payload);
     await import('./pre-tool-use.js');
@@ -169,16 +169,16 @@ describe('pre-tool-use hook diagnostics', () => {
   ): Promise<{ stdout: string; stderr: string }> {
     let stdout = '';
     let stderr = '';
-    vi.spyOn(process.stdout, 'write').mockImplementation(((chunk, encodingOrCallback, callback) => {
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk, encodingOrCallback, callback) => {
       stdout += Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
       const done = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
       if (done) done(null);
       return true;
-    }) as typeof process.stdout.write);
-    vi.spyOn(process.stderr, 'write').mockImplementation(((chunk) => {
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
       stderr += Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
       return true;
-    }) as typeof process.stderr.write);
+    });
     mockReadStdin.mockResolvedValue(payload);
 
     await import('./pre-tool-use.js');

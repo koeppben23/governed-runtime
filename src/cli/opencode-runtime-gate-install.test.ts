@@ -39,7 +39,7 @@ vi.mock('node:child_process', async (importOriginal) => {
 
 // Classification authority mock: lets each test choose the status while keeping
 // the deny-list empty in production.
-const compatMock = vi.hoisted(() => ({ status: 'not-classified' as string }));
+const compatMock = vi.hoisted(() => ({ status: 'not-classified' }));
 vi.mock('./opencode-runtime-compat.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('./opencode-runtime-compat.js')>();
   return {

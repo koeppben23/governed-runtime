@@ -21,7 +21,7 @@ function stateWithChallengePolicy() {
   const base = makeState('PEER_REVIEW');
   return {
     ...base,
-    policySnapshot: { ...base.policySnapshot!, challengePolicy: CHALLENGE_POLICY_V1 },
+    policySnapshot: { ...base.policySnapshot, challengePolicy: CHALLENGE_POLICY_V1 },
   } as typeof base;
 }
 

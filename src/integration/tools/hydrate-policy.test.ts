@@ -21,8 +21,8 @@ vi.mock('../../config/policy.js', () => ({
 function existing(overrides = {}): NonNullable<ExistingHydrateState> {
   return {
     policySnapshot: {
-      mode: 'team' as PolicyMode,
-      requestedMode: 'team' as PolicyMode,
+      mode: 'team',
+      requestedMode: 'team',
       source: 'default' as const,
       effectiveGateBehavior: 'human_gated' as const,
       hash: 'snapshot-hash',

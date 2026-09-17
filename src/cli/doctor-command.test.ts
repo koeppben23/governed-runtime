@@ -93,7 +93,7 @@ describe('formatDoctor', () => {
     const result = formatDoctor(
       [
         { file: 'x', status: 'ok' },
-        { file: 'node', status: 'warn', check: 'shipped-executable' as unknown as string },
+        { file: 'node', status: 'warn', check: 'shipped-executable' },
         { file: 'y', status: 'warn' },
       ],
       'opencode',

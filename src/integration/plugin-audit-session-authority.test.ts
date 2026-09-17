@@ -58,7 +58,7 @@ describe('runAudit session authority', () => {
       await writeState(sessDir, makeState('PLAN', { id: SESSION_ID }));
       const deps = makeDeps({
         resolveCanonicalSessionDir: vi.fn().mockResolvedValue({ status: 'resolved', sessDir }),
-      } as Partial<AuditDeps>);
+      });
 
       const result = await runAudit(deps, 'flowguard_plan', {}, {}, SESSION_ID);
 
@@ -74,7 +74,7 @@ describe('runAudit session authority', () => {
     // Unavailable must never be treated as absent.
     const deps = makeDeps({
       resolveCanonicalSessionDir: vi.fn().mockResolvedValue({ status: 'unavailable' }),
-    } as Partial<AuditDeps>);
+    });
 
     const result = await runAudit(deps, 'flowguard_plan', {}, {}, SESSION_ID);
 
@@ -91,7 +91,7 @@ describe('runAudit session authority', () => {
     await withSessionDir(async (sessDir) => {
       const deps = makeDeps({
         resolveCanonicalSessionDir: vi.fn().mockResolvedValue({ status: 'resolved', sessDir }),
-      } as Partial<AuditDeps>);
+      });
 
       await expect(runAudit(deps, 'flowguard_plan', {}, {}, SESSION_ID)).resolves.toBeUndefined();
     });

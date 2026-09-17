@@ -191,7 +191,7 @@ describe('reviewer DTO strict boundary', () => {
           locations: ['src/foo.ts'],
           kind: 'design_challenge' as const,
           evidenceRefs: contract!.evidenceRefs!.map((ref) => ({
-            ...(ref as Record<string, unknown>),
+            ...ref,
             challengeId: 'reviewer-minted', // must be discarded by normalization
           })),
           outcome: 'supported' as const,
@@ -200,7 +200,7 @@ describe('reviewer DTO strict boundary', () => {
     };
 
     const normalized = normalizeFindingsChallenges(
-      findings as unknown as Record<string, unknown>,
+      findings,
       OBLIGATION_ID,
       'ses_child',
       contract?.evidenceRefs,
@@ -211,7 +211,7 @@ describe('reviewer DTO strict boundary', () => {
     const parsed = ReviewFindings.safeParse(normalized.findings);
     expect(parsed.success).toBe(true);
     if (!parsed.success) throw parsed.error;
-    const challenge = parsed.data.challenges![0]!;
+    const challenge = parsed.data.challenges[0]!;
     expect(challenge.challengeId).not.toBe('reviewer-minted');
     expect(challenge.evidenceRefs.length).toBe(contract!.evidenceRefs!.length);
   });

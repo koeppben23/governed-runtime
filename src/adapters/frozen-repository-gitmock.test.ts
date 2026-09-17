@@ -50,11 +50,7 @@ vi.mock('node:child_process', async (importOriginal) => {
           MOCK.ghCalls++;
           return Buffer.from('remote-bytes');
         }
-        return (original.execFileSync as (...a: unknown[]) => string)(
-          command,
-          args as never,
-          options,
-        );
+        return (original.execFileSync as (...a: unknown[]) => string)(command, args, options);
       },
     ),
     execFile: vi.fn(

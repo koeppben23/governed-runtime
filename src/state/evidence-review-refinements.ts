@@ -666,7 +666,7 @@ export function refineAssuranceProvenanceCoherence(
     if (!obligation.repositoryAuthority) continue;
     const derived = deriveRepositoryRevisionProvenance(obligation);
     if (derived.kind === 'unavailable') continue;
-    const persisted = obligation.repositoryRevisionProvenance as ProvenanceValue | undefined;
+    const persisted = obligation.repositoryRevisionProvenance;
     if (
       persisted &&
       (persisted.kind !== 'available' ||

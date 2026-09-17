@@ -63,7 +63,7 @@ describe('state machine fuzz', () => {
           const policy = { requireHumanGates: mode !== 'solo' };
 
           for (let i = 0; i < steps && !TERMINAL.has(phase); i++) {
-            const state = makeState(phase) as SessionState;
+            const state = makeState(phase);
             const result = evaluate(state, policy);
             expect(result).toBeDefined();
             expect(['transition', 'waiting', 'terminal', 'pending']).toContain(result.kind);
@@ -118,7 +118,7 @@ describe('state machine fuzz', () => {
               recoveryHint: 'none',
               occurredAt: new Date().toISOString(),
             },
-          }) as SessionState;
+          });
 
           const result = evaluate(state, {});
           expect(result.kind).toBe('transition');
@@ -146,7 +146,7 @@ describe('state machine fuzz', () => {
           'ABORTED' as Phase,
         ),
         (phase) => {
-          const state = makeState(phase) as SessionState;
+          const state = makeState(phase);
           const result = evaluate(state, {});
           expect(result.kind).toBe('terminal');
         },
@@ -164,7 +164,7 @@ describe('state machine fuzz', () => {
       fc.property(
         fc.constantFrom('PLAN_REVIEW', 'EVIDENCE_REVIEW', 'ARCH_REVIEW' as Phase),
         (phase) => {
-          const state = makeState(phase) as SessionState;
+          const state = makeState(phase);
           const result = evaluate(state, { requireHumanGates: true });
           expect(result.kind).toBe('waiting');
         },
@@ -180,7 +180,7 @@ describe('state machine fuzz', () => {
   it('solo mode auto-approves only plan and evidence gates', () => {
     fc.assert(
       fc.property(fc.constantFrom('PLAN_REVIEW', 'EVIDENCE_REVIEW' as Phase), (phase) => {
-        const state = makeState(phase) as SessionState;
+        const state = makeState(phase);
         const result = evaluate(state, { requireHumanGates: false });
         expect(result.kind).toBe('transition');
         if (result.kind === 'transition') {

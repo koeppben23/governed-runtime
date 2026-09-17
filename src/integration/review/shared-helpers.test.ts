@@ -61,7 +61,7 @@ describe('validatePipelineAttestation', () => {
 
   it('mandate digest mismatch returns MANDATE_MISMATCH', () => {
     const result = validatePipelineAttestation(
-      findings({ attestation: { ...findings().attestation!, mandateDigest: 'wrong' } }),
+      findings({ attestation: { ...findings().attestation, mandateDigest: 'wrong' } }),
       fullExpected(),
     );
     expect(result.valid).toBe(false);
@@ -77,7 +77,7 @@ describe('validatePipelineAttestation', () => {
   it('reviewedBy mismatch returns MANDATE_MISMATCH', () => {
     const result = validatePipelineAttestation(
       findings({
-        attestation: { ...findings().attestation!, reviewedBy: 'wrong-agent' },
+        attestation: { ...findings().attestation, reviewedBy: 'wrong-agent' },
       }),
       fullExpected(),
     );

@@ -174,10 +174,7 @@ describe('audit integrity', () => {
       };
       const lastValid = {
         ...lastResealed,
-        chainHash: computeChainHash(
-          lastResealed.prevHash,
-          lastResealed as unknown as Omit<ChainedAuditEvent, 'chainHash'>,
-        ),
+        chainHash: computeChainHash(lastResealed.prevHash, lastResealed),
       };
 
       const result = verifyChain([chain[0], invalidMiddle, lastValid] as unknown as Record<
@@ -334,9 +331,7 @@ describe('audit integrity', () => {
       // regenerate, so verification must fall through to the TSA check.
       const tamperedWithUpdatedLocalDigest = {
         ...tamperedBody,
-        semanticEventDigest: computeCanonicalEventDigest(
-          tamperedBody as unknown as Record<string, unknown>,
-        ),
+        semanticEventDigest: computeCanonicalEventDigest(tamperedBody),
       };
       const resealedTamper = {
         ...tamperedWithUpdatedLocalDigest,
@@ -531,7 +526,7 @@ describe('audit integrity', () => {
       const chain = buildChain(5);
       // Tamper event #2 by modifying its detail
       const tampered = chain.map((e, i) => {
-        if (i === 2) return { ...e, phase: 'TAMPERED' } as unknown as Record<string, unknown>;
+        if (i === 2) return { ...e, phase: 'TAMPERED' };
         return e as unknown as Record<string, unknown>;
       });
       const result = verifyChain(tampered);
@@ -545,7 +540,7 @@ describe('audit integrity', () => {
       const event = buildNestedDecisionEvent(GENESIS_HASH);
       const { auditFormatVersion: _auditFormatVersion, ...invalid } = event;
 
-      const result = verifyChain([invalid as unknown as Record<string, unknown>]);
+      const result = verifyChain([invalid]);
       expect(result.valid).toBe(false);
       expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
       expect(result.firstBreak?.reasonCode).toBe('AUDIT_ENVELOPE_INVALID');
@@ -557,7 +552,7 @@ describe('audit integrity', () => {
         auditFormatVersion: 'audit-chain.v1',
       };
 
-      const result = verifyChain([event as unknown as Record<string, unknown>]);
+      const result = verifyChain([event]);
       expect(result.valid).toBe(false);
       expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
       expect(result.firstBreak?.reasonCode).toBe('AUDIT_ENVELOPE_INVALID');
@@ -569,7 +564,7 @@ describe('audit integrity', () => {
         auditFormatVersion: 'audit-chain.v999',
       };
 
-      const result = verifyChain([event as unknown as Record<string, unknown>]);
+      const result = verifyChain([event]);
       expect(result.valid).toBe(false);
       expect(result.reason).toBe('AUDIT_ENVELOPE_INVALID');
       expect(result.firstBreak?.reasonCode).toBe('AUDIT_ENVELOPE_INVALID');
@@ -815,7 +810,7 @@ describe('audit integrity', () => {
       it('strict mode with tampered event → CHAIN_BREAK (not envelope-invalid)', () => {
         const chain = buildChain(3);
         const tampered = chain.map((e, i) => {
-          if (i === 1) return { ...e, phase: 'TAMPERED' } as unknown as Record<string, unknown>;
+          if (i === 1) return { ...e, phase: 'TAMPERED' };
           return e as unknown as Record<string, unknown>;
         });
         const result = verifyChain(tampered);

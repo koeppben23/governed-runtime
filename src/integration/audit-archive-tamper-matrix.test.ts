@@ -436,14 +436,11 @@ describe('audit/archive tamper matrix', () => {
             ...body,
             prevHash: rechainHead,
             flowguardSessionId: FOREIGN_SESSION_ID,
-          } as unknown as Record<string, unknown>),
+          }),
         };
         const event = {
           ...rebind,
-          chainHash: computeChainHash(
-            rebind.prevHash,
-            rebind as unknown as Omit<ChainedAuditEvent, 'chainHash'>,
-          ),
+          chainHash: computeChainHash(rebind.prevHash, rebind),
         } as unknown as Record<string, unknown>;
         rechainHead = event.chainHash as string;
         return event;
@@ -545,7 +542,7 @@ describe('audit/archive tamper matrix', () => {
     events[events.length - 1] = {
       ...resealedBody,
       chainHash: computeChainHash(last.prevHash, resealedBody),
-    } as unknown as Record<string, unknown>;
+    };
     await mutateArchive(ids, async (root) => {
       await fs.writeFile(
         path.join(root, 'audit', 'audit.jsonl'),
@@ -611,7 +608,7 @@ describe('audit/archive tamper matrix', () => {
       events[events.length - 1] = {
         ...resealedTamper,
         chainHash: computeChainHash(last.prevHash, resealedTamper),
-      } as unknown as Record<string, unknown>;
+      };
       await mutateArchive(ids, (root) =>
         fs.writeFile(
           path.join(root, 'audit', 'audit.jsonl'),
@@ -711,7 +708,7 @@ describe('audit/archive tamper matrix', () => {
       events[events.length - 1] = {
         ...coordinatedTamper,
         chainHash: computeChainHash(last.prevHash, coordinatedTamper),
-      } as unknown as Record<string, unknown>;
+      };
       await mutateArchive(ids, (root) =>
         fs.writeFile(
           path.join(root, 'audit', 'audit.jsonl'),

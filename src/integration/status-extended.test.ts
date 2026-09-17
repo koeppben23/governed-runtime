@@ -147,7 +147,7 @@ describe('buildStatusProjection — E2E', () => {
     const state: SessionState = {
       ...makeMinimalState('EVIDENCE_REVIEW'),
       policySnapshot: {
-        ...makeMinimalState('EVIDENCE_REVIEW').policySnapshot!,
+        ...makeMinimalState('EVIDENCE_REVIEW').policySnapshot,
         mode: 'regulated' as const,
         allowSelfApproval: false,
         requireHumanGates: true,
@@ -172,7 +172,7 @@ describe('buildStatusProjection — E2E', () => {
     const state: SessionState = {
       ...makeMinimalState('READY'),
       policySnapshot: {
-        ...makeMinimalState('READY').policySnapshot!,
+        ...makeMinimalState('READY').policySnapshot,
         mode: 'team' as const,
         degradedReason: 'ci_context_missing',
       },
@@ -530,7 +530,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
       const state: SessionState = {
         ...makeMinimalState('READY'),
         policySnapshot: {
-          ...makeMinimalState('READY').policySnapshot!,
+          ...makeMinimalState('READY').policySnapshot,
           mode: 'team' as const,
           allowSelfApproval: true,
           centralMinimumMode: undefined,
@@ -560,7 +560,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
         },
         regulatedArchiveStatus: 'pending',
         policySnapshot: {
-          ...makeMinimalState('READY').policySnapshot!,
+          ...makeMinimalState('READY').policySnapshot,
           mode: 'regulated' as const,
           allowSelfApproval: false,
           centralMinimumMode: 'team' as const,
@@ -590,7 +590,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
       const state: SessionState = {
         ...makeMinimalState('PLAN_REVIEW'),
         policySnapshot: {
-          ...makeMinimalState('PLAN_REVIEW').policySnapshot!,
+          ...makeMinimalState('PLAN_REVIEW').policySnapshot,
           mode: 'regulated' as const,
           requireHumanGates: true,
           allowSelfApproval: false,
@@ -609,7 +609,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
       const state: SessionState = {
         ...makeMinimalState('READY'),
         policySnapshot: {
-          ...makeMinimalState('READY').policySnapshot!,
+          ...makeMinimalState('READY').policySnapshot,
           mode: 'team' as const,
           minimumActorAssuranceForApproval: 'idp_verified' as const,
         },
@@ -735,7 +735,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
       const state: SessionState = {
         ...makeMinimalState('EVIDENCE_REVIEW'),
         policySnapshot: {
-          ...makeMinimalState('EVIDENCE_REVIEW').policySnapshot!,
+          ...makeMinimalState('EVIDENCE_REVIEW').policySnapshot,
           mode: 'regulated' as const,
           allowSelfApproval: false,
           minimumActorAssuranceForApproval: 'claim_validated',
@@ -747,7 +747,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
 
     it('fourEyesRelevant tracks allowSelfApproval === false (not just truthy) in regulated mode', () => {
       // Kills L333 ConditionalExpression `true` mutant.
-      const baseSnap = makeMinimalState('EVIDENCE_REVIEW').policySnapshot!;
+      const baseSnap = makeMinimalState('EVIDENCE_REVIEW').policySnapshot;
       const stateAllow: SessionState = {
         ...makeMinimalState('EVIDENCE_REVIEW'),
         policySnapshot: { ...baseSnap, mode: 'regulated' as const, allowSelfApproval: true },
@@ -775,7 +775,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
     it('does not emit a legacy selfReview warning when config is mandatory-strict', () => {
       // Kills L345 ConditionalExpression `true` mutant: warning must NOT appear
       // for the canonical mandatory-strict config.
-      const baseSnap = makeMinimalState('READY').policySnapshot!;
+      const baseSnap = makeMinimalState('READY').policySnapshot;
       const state: SessionState = {
         ...makeMinimalState('READY'),
         policySnapshot: {

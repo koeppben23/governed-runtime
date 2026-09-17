@@ -47,14 +47,14 @@ describe('validateProviderExtensions', () => {
 
   it('detects codec provider mismatch', () => {
     const ext: AssertionProviderExtension = {
-      manifest: { providerId: 'fake' as never, label: 'Fake' },
+      manifest: { providerId: 'fake', label: 'Fake' },
       discovery: { detectionIds: [], executionProfiles: [] },
       verification: {
         formats: [
           {
-            format: 'fake_json' as never,
+            format: 'fake_json',
             parser: {
-              format: 'fake_json' as never,
+              format: 'fake_json',
               parse: () => ({
                 assertions: [],
                 summary: {
@@ -71,7 +71,7 @@ describe('validateProviderExtensions', () => {
           },
         ],
         identityCodec: {
-          providerId: 'wrong' as never,
+          providerId: 'wrong',
           assertionBindingFormats: new Set(),
           buildLocalId: () => '',
           validateLocalId: () => true,
@@ -85,21 +85,21 @@ describe('validateProviderExtensions', () => {
   it('detects script signature referencing unknown profile', () => {
     const profile: ExecutionProfile = {
       profileId: 'test-profile',
-      providerId: 'unknown' as never,
-      format: 'junit_xml' as never,
+      providerId: 'unknown',
+      format: 'junit_xml',
       kind: 'test' as const,
       priority: 0,
       assertionReport: {
         collection: 'snapshot_diff' as const,
         transport: 'file' as const,
-        format: 'junit_xml' as never,
-        providerId: 'unknown' as never,
+        format: 'junit_xml',
+        providerId: 'unknown',
         standardPatterns: [],
       },
       createCandidate: () => null,
     };
     const ext: AssertionProviderExtension = {
-      manifest: { providerId: 'unknown' as never, label: 'Unknown' },
+      manifest: { providerId: 'unknown', label: 'Unknown' },
       discovery: {
         detectionIds: [],
         executionProfiles: [profile],
@@ -114,9 +114,9 @@ describe('validateProviderExtensions', () => {
       verification: {
         formats: [
           {
-            format: 'junit_xml' as never,
+            format: 'junit_xml',
             parser: {
-              format: 'junit_xml' as never,
+              format: 'junit_xml',
               parse: () => ({
                 assertions: [],
                 summary: {
@@ -141,21 +141,21 @@ describe('validateProviderExtensions', () => {
   it('detects script signature kind mismatch with profile', () => {
     const profile: ExecutionProfile = {
       profileId: 'test-profile',
-      providerId: 'unknown' as never,
-      format: 'junit_xml' as never,
+      providerId: 'unknown',
+      format: 'junit_xml',
       kind: 'build' as const,
       priority: 0,
       assertionReport: {
         collection: 'snapshot_diff' as const,
         transport: 'file' as const,
-        format: 'junit_xml' as never,
-        providerId: 'unknown' as never,
+        format: 'junit_xml',
+        providerId: 'unknown',
         standardPatterns: [],
       },
       createCandidate: () => null,
     };
     const ext: AssertionProviderExtension = {
-      manifest: { providerId: 'unknown' as never, label: 'Unknown' },
+      manifest: { providerId: 'unknown', label: 'Unknown' },
       discovery: {
         detectionIds: [],
         executionProfiles: [profile],
@@ -170,9 +170,9 @@ describe('validateProviderExtensions', () => {
       verification: {
         formats: [
           {
-            format: 'junit_xml' as never,
+            format: 'junit_xml',
             parser: {
-              format: 'junit_xml' as never,
+              format: 'junit_xml',
               parse: () => ({
                 assertions: [],
                 summary: {
@@ -197,29 +197,29 @@ describe('validateProviderExtensions', () => {
   it('detects profile assertionReport provider mismatch', () => {
     const profile: ExecutionProfile = {
       profileId: 'test-profile',
-      providerId: 'pytest' as never,
-      format: 'pytest_json' as never,
+      providerId: 'pytest',
+      format: 'pytest_json',
       kind: 'test' as const,
       priority: 0,
       assertionReport: {
         collection: 'run_specific' as const,
         transport: 'file' as const,
-        format: 'pytest_json' as never,
-        providerId: 'junit' as never,
+        format: 'pytest_json',
+        providerId: 'junit',
         outputArgumentTemplate: '',
         resultPatternTemplate: '',
       },
       createCandidate: () => null,
     };
     const ext: AssertionProviderExtension = {
-      manifest: { providerId: 'pytest' as never, label: 'PyTest' },
+      manifest: { providerId: 'pytest', label: 'PyTest' },
       discovery: { detectionIds: [], executionProfiles: [profile] },
       verification: {
         formats: [
           {
-            format: 'pytest_json' as never,
+            format: 'pytest_json',
             parser: {
-              format: 'pytest_json' as never,
+              format: 'pytest_json',
               parse: () => ({
                 assertions: [],
                 summary: {
@@ -244,29 +244,29 @@ describe('validateProviderExtensions', () => {
   it('detects profile assertionReport format mismatch', () => {
     const profile: ExecutionProfile = {
       profileId: 'test-profile',
-      providerId: 'junit' as never,
-      format: 'junit_xml' as never,
+      providerId: 'junit',
+      format: 'junit_xml',
       kind: 'test' as const,
       priority: 0,
       assertionReport: {
         collection: 'run_specific' as const,
         transport: 'file' as const,
-        format: 'pytest_json' as never,
-        providerId: 'junit' as never,
+        format: 'pytest_json',
+        providerId: 'junit',
         outputArgumentTemplate: '',
         resultPatternTemplate: '',
       },
       createCandidate: () => null,
     };
     const ext: AssertionProviderExtension = {
-      manifest: { providerId: 'junit' as never, label: 'JUnit' },
+      manifest: { providerId: 'junit', label: 'JUnit' },
       discovery: { detectionIds: [], executionProfiles: [profile] },
       verification: {
         formats: [
           {
-            format: 'junit_xml' as never,
+            format: 'junit_xml',
             parser: {
-              format: 'junit_xml' as never,
+              format: 'junit_xml',
               parse: () => ({
                 assertions: [],
                 summary: {
@@ -291,28 +291,28 @@ describe('validateProviderExtensions', () => {
   it('detects profile assertionReport format not assertion-capable', () => {
     const profile: ExecutionProfile = {
       profileId: 'test-profile',
-      providerId: 'junit' as never,
-      format: 'junit_xml' as never,
+      providerId: 'junit',
+      format: 'junit_xml',
       kind: 'test' as const,
       priority: 0,
       assertionReport: {
         collection: 'snapshot_diff' as const,
         transport: 'file' as const,
-        format: 'junit_xml' as never,
-        providerId: 'junit' as never,
+        format: 'junit_xml',
+        providerId: 'junit',
         standardPatterns: [],
       },
       createCandidate: () => null,
     };
     const ext: AssertionProviderExtension = {
-      manifest: { providerId: 'junit' as never, label: 'JUnit' },
+      manifest: { providerId: 'junit', label: 'JUnit' },
       discovery: { detectionIds: [], executionProfiles: [profile] },
       verification: {
         formats: [
           {
-            format: 'junit_xml' as never,
+            format: 'junit_xml',
             parser: {
-              format: 'junit_xml' as never,
+              format: 'junit_xml',
               parse: () => ({
                 assertions: [],
                 summary: {

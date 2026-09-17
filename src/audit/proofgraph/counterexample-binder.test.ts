@@ -36,6 +36,7 @@ const AGGREGATE_COUNTEREXAMPLE_REQ: CounterexampleRequirement = {
 };
 
 function validationResult(passed: boolean) {
+  const outcome: 'supported' | 'inconclusive' = passed ? 'supported' : 'inconclusive';
   return {
     checkId: 'security',
     passed,
@@ -47,7 +48,7 @@ function validationResult(passed: boolean) {
     executionMs: 5,
     outputDigest: SHA,
     timedOut: false,
-    outcome: (passed ? 'supported' : 'inconclusive') as 'supported' | 'inconclusive',
+    outcome,
   };
 }
 
@@ -231,7 +232,7 @@ describe('bindCounterexamples', () => {
         result: {
           ...aggregateValidationResult('full_check'),
           assertionExtraction: {
-            ...aggregateValidationResult('full_check').assertionExtraction!,
+            ...aggregateValidationResult('full_check').assertionExtraction,
             bindingCapability: 'assertion' as const,
           },
         },

@@ -11,10 +11,9 @@
 
 import { parseJUnitXml } from './junit-xml.js';
 import type { AssertionReportParser } from './types.js';
-import type { ReportFormatId } from '../../state/assertion-identity.js';
 
 export const junitXmlParser: AssertionReportParser = {
-  format: 'junit_xml' as ReportFormatId,
+  format: 'junit_xml',
   parse(content, fileName, context) {
     return parseJUnitXml(content, fileName, context);
   },

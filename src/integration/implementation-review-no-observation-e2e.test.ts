@@ -482,7 +482,7 @@ describe('implementation review without repository observation authority', () =>
     expect(r2).not.toContain('INTERNAL_ERROR');
 
     // Phase 2: implementation evidence WITHOUT any frozen base authority.
-    const se2 = s!;
+    const se2 = s;
     const st = await readState(se2.sDir);
     mkdirSync(join(s.worktree, 'src'), { recursive: true });
     writeFileSync(join(s.worktree, 'src', 'auth.ts'), 'export const auth = () => true;\n');
@@ -616,7 +616,7 @@ describe('implementation review without repository observation authority', () =>
     expect(r2).not.toContain('INTERNAL_ERROR');
 
     // Phase 2: implementation evidence.
-    const se2 = s!;
+    const se2 = s;
     const st = await readState(se2.sDir);
     mkdirSync(join(s.worktree, 'src'), { recursive: true });
     writeFileSync(join(s.worktree, 'src', 'auth.ts'), 'export const auth = () => true;\n');
@@ -765,7 +765,7 @@ describe('implementation review without repository observation authority', () =>
     expect(r2).not.toContain('INTERNAL_ERROR');
 
     // Phase 2: implementation evidence for D1 (no repository authority).
-    const se2 = s!;
+    const se2 = s;
     const st = await readState(se2.sDir);
     mkdirSync(join(s.worktree, 'src'), { recursive: true });
     writeFileSync(join(s.worktree, 'src', 'auth.ts'), 'export const auth = () => true;\n');

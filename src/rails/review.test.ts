@@ -94,7 +94,7 @@ function validationResult(checkId: string, passed: boolean, detail: string): Val
     executionMs: 1,
     outputDigest: 'a'.repeat(64),
     timedOut: false,
-    outcome: (passed ? 'supported' : 'inconclusive') as 'supported' | 'inconclusive',
+    outcome: passed ? 'supported' : 'inconclusive',
   };
 }
 
@@ -213,7 +213,7 @@ describe('review rail', () => {
       const state = makeState('COMPLETE', {
         ...makeProgressedState('COMPLETE'),
         policySnapshot: {
-          ...makeProgressedState('COMPLETE').policySnapshot!,
+          ...makeProgressedState('COMPLETE').policySnapshot,
           allowSelfApproval: false,
         },
         initiatedBy: 'alice',
@@ -247,7 +247,7 @@ describe('review rail', () => {
       const state = makeState('PLAN_REVIEW', {
         ...makeProgressedState('PLAN_REVIEW'),
         policySnapshot: {
-          ...makeProgressedState('PLAN_REVIEW').policySnapshot!,
+          ...makeProgressedState('PLAN_REVIEW').policySnapshot,
           allowSelfApproval: false,
         },
         reviewDecision: null,
@@ -458,7 +458,7 @@ describe('review rail', () => {
       const state = makeState('COMPLETE', {
         ...makeProgressedState('COMPLETE'),
         policySnapshot: {
-          ...makeProgressedState('COMPLETE').policySnapshot!,
+          ...makeProgressedState('COMPLETE').policySnapshot,
           allowSelfApproval: true,
         },
         initiatedBy: 'alice',
@@ -483,7 +483,7 @@ describe('review rail', () => {
       const state = makeState('PLAN_REVIEW', {
         ...makeProgressedState('PLAN_REVIEW'),
         policySnapshot: {
-          ...makeProgressedState('PLAN_REVIEW').policySnapshot!,
+          ...makeProgressedState('PLAN_REVIEW').policySnapshot,
           allowSelfApproval: false,
         },
         reviewDecision: null,
@@ -625,7 +625,7 @@ describe('review rail', () => {
       const state = makeState('COMPLETE', {
         ...makeProgressedState('COMPLETE'),
         policySnapshot: {
-          ...makeProgressedState('COMPLETE').policySnapshot!,
+          ...makeProgressedState('COMPLETE').policySnapshot,
           allowSelfApproval: true, // fourEyes.required = false
         },
         initiatedBy: 'alice',

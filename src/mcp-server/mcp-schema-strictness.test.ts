@@ -43,7 +43,7 @@ describe('MCP schema strictness (issue #565)', () => {
     client = new Client({ name: 'strictness-test', version: '0.0.0' });
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
     const listed = await client.listTools();
-    tools = listed.tools as unknown as ListedTool[];
+    tools = listed.tools;
   });
 
   afterAll(async () => {

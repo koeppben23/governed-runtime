@@ -68,11 +68,11 @@ interface VitestConfig {
 }
 
 const PROFILE_VITEST: Readonly<Record<MutationProfile, VitestConfig>> = {
-  base: baseStrykerVitest as VitestConfig,
-  'human-projection': humanProjectionVitest as VitestConfig,
-  'identity-jwks': identityJwksVitest as VitestConfig,
-  mandates: mandatesVitest as VitestConfig,
-  schemas: schemasVitest as VitestConfig,
+  base: baseStrykerVitest,
+  'human-projection': humanProjectionVitest,
+  'identity-jwks': identityJwksVitest,
+  mandates: mandatesVitest,
+  schemas: schemasVitest,
 };
 
 function readProfileConfig(profile: MutationProfile): ProfileConfig {

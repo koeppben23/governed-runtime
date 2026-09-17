@@ -88,7 +88,7 @@ describe('source-code comment drift prevention', () => {
       for (const pattern of STALE_COUNT_PATTERNS) {
         const match = content.match(pattern);
         if (match) {
-          const line = content.slice(0, match.index!).split('\n').length;
+          const line = content.slice(0, match.index).split('\n').length;
           violations.push(`${rel}:${line}: "${match[0]}" matches stale-count pattern`);
         }
       }

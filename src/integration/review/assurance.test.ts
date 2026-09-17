@@ -1112,8 +1112,8 @@ describe('integration/review-assurance', () => {
       });
       const parsed = ReviewInvocationEvidenceSchema.parse(evidence);
       expect(parsed.capturedRawFindings).toBeDefined();
-      expect(parsed.capturedRawFindings!.overallVerdict).toBe('accept');
-      expect(parsed.capturedRawFindings!.iteration).toBe(0);
+      expect(parsed.capturedRawFindings.overallVerdict).toBe('accept');
+      expect(parsed.capturedRawFindings.iteration).toBe(0);
     });
   });
 

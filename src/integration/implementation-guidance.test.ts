@@ -58,8 +58,8 @@ describe('buildImplementationGuidance', () => {
         { name: 'code-surface-analysis', status: 'failed', durationMs: 1, timedOut: true },
       ],
       codeSurfaces: {
-        ...makeDiscoveryResult().codeSurfaces!,
-        budget: { ...makeDiscoveryResult().codeSurfaces!.budget, budgetExhausted: true },
+        ...makeDiscoveryResult().codeSurfaces,
+        budget: { ...makeDiscoveryResult().codeSurfaces.budget, budgetExhausted: true },
       },
     });
 
@@ -112,7 +112,7 @@ describe('buildImplementationGuidance', () => {
         ],
       },
       codeSurfaces: {
-        ...makeDiscoveryResult().codeSurfaces!,
+        ...makeDiscoveryResult().codeSurfaces,
         authBoundaries: [
           {
             id: 'auth-check',

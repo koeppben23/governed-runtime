@@ -108,7 +108,7 @@ describe('product inventory vs archive finding codes authority', () => {
 describe('product inventory vs CLI bin authority', () => {
   it('count matches package.json bin field', () => {
     const pkg = readJson('package.json');
-    const bins = Object.keys((pkg as Record<string, unknown>).bin as Record<string, unknown>);
+    const bins = Object.keys(pkg.bin as Record<string, unknown>);
     expect(bins).toHaveLength(PRODUCT_INVENTORY.cliBins);
   });
 });

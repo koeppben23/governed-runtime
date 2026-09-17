@@ -22,7 +22,7 @@ import type { ReviewFindings } from '../../state/evidence.js';
 
 function state(phase: Phase, overrides: Partial<SessionState> = {}): SessionState {
   return {
-    id: '00000000-0000-4000-8000-000000000001' as SessionState['id'],
+    id: '00000000-0000-4000-8000-000000000001',
     schemaVersion: 'v1',
     phase,
     binding: {
@@ -148,7 +148,7 @@ describe('nextImplementationReviewIteration', () => {
           ? T
           : never,
       ],
-    } as Partial<SessionState>);
+    });
     expect(nextImplementationReviewIteration(s)).toBe(6);
   });
 });

@@ -154,11 +154,7 @@ describe('readState legacy migrations', () => {
         dispatches: [],
       },
     });
-    await fs.writeFile(
-      path.join(dir, 'session-state.json'),
-      JSON.stringify(state as unknown as Record<string, unknown>),
-      'utf8',
-    );
+    await fs.writeFile(path.join(dir, 'session-state.json'), JSON.stringify(state), 'utf8');
 
     await expect(readState(dir)).rejects.toMatchObject({
       code: 'SCHEMA_VALIDATION_FAILED',
@@ -213,11 +209,7 @@ describe('readState legacy migrations', () => {
     const state = makeState('IMPL_VALIDATION', {
       validationAttempts: [withoutObservation as never],
     });
-    await fs.writeFile(
-      path.join(dir, 'session-state.json'),
-      JSON.stringify(state as unknown as Record<string, unknown>),
-      'utf8',
-    );
+    await fs.writeFile(path.join(dir, 'session-state.json'), JSON.stringify(state), 'utf8');
 
     await expect(readState(dir)).rejects.toMatchObject({
       code: 'SCHEMA_VALIDATION_FAILED',
@@ -241,11 +233,7 @@ describe('readState legacy migrations', () => {
         } as never,
       ],
     });
-    await fs.writeFile(
-      path.join(dir, 'session-state.json'),
-      JSON.stringify(state as unknown as Record<string, unknown>),
-      'utf8',
-    );
+    await fs.writeFile(path.join(dir, 'session-state.json'), JSON.stringify(state), 'utf8');
 
     await expect(readState(dir)).rejects.toMatchObject({
       code: 'SCHEMA_VALIDATION_FAILED',

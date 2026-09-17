@@ -148,7 +148,7 @@ function strictAssuranceFixture(
         mandateDigest: REVIEW_MANDATE_DIGEST,
         criteriaVersion: REVIEW_CRITERIA_VERSION,
         findingsHash: hashFindings(findings),
-        capturedRawFindings: findings as unknown as Record<string, unknown>,
+        capturedRawFindings: findings,
         invokedAt: new Date().toISOString(),
         fulfilledAt: new Date().toISOString(),
         consumedByObligationId: null,

@@ -32,12 +32,12 @@ async function runPreToolUse(payload: unknown): Promise<string> {
   process.stderr.write = originalStderrWrite;
   vi.restoreAllMocks();
 
-  vi.spyOn(process.stdout, 'write').mockImplementation(((chunk, encodingOrCallback, callback) => {
+  vi.spyOn(process.stdout, 'write').mockImplementation((chunk, encodingOrCallback, callback) => {
     stdout += Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
     const cb = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
     if (cb) cb(null);
     return true;
-  }) as typeof process.stdout.write);
+  });
   vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
   mockReadStdin.mockResolvedValue(payload);

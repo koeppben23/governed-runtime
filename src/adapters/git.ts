@@ -170,9 +170,7 @@ async function gitRaw(
       throw new GitError('GIT_TIMEOUT', `git ${args[0]} timed out after ${timeoutMs}ms`);
     }
     const stderr =
-      typeof err === 'object' && err !== null && 'stderr' in err
-        ? String((err as { stderr: unknown }).stderr).trim()
-        : '';
+      typeof err === 'object' && err !== null && 'stderr' in err ? String(err.stderr).trim() : '';
     const msg = stderr || (err instanceof Error ? err.message : String(err));
     throw new GitError('GIT_COMMAND_FAILED', `git ${args.join(' ')} failed: ${msg}`);
   }
@@ -707,10 +705,5 @@ export async function gitUserEmail(cwd: string): Promise<string | null> {
 
 /** Type-safe timeout check (process killed). */
 function isTimedOut(err: unknown): boolean {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    'killed' in err &&
-    (err as { killed: unknown }).killed === true
-  );
+  return typeof err === 'object' && err !== null && 'killed' in err && err.killed === true;
 }

@@ -26,7 +26,7 @@ describe('verification planner', () => {
       );
       const candidate = first[0]!.candidate;
       expect(candidate.candidateId).toMatch(/^vc_[a-f0-9]{64}$/);
-      expect(extractExecutionSubjectInputsByCandidateId(first)[candidate.candidateId!]).toEqual(
+      expect(extractExecutionSubjectInputsByCandidateId(first)[candidate.candidateId]).toEqual(
         first[0]!.executionSubjectInputs,
       );
     });

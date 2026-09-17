@@ -248,7 +248,7 @@ describe('context and readiness projections', () => {
       },
       regulatedArchiveStatus: 'pending',
       policySnapshot: {
-        ...makeMinimalState('EVIDENCE_REVIEW').policySnapshot!,
+        ...makeMinimalState('EVIDENCE_REVIEW').policySnapshot,
         mode: 'regulated' as const,
         allowSelfApproval: false,
         centralMinimumMode: 'team' as const,
@@ -336,7 +336,7 @@ describe('context and readiness projections', () => {
     const regulatedState = {
       ...makeMinimalState('READY'),
       policySnapshot: {
-        ...makeMinimalState('READY').policySnapshot!,
+        ...makeMinimalState('READY').policySnapshot,
         mode: 'regulated' as const,
         minimumActorAssuranceForApproval: 'claim_validated' as const,
       },

@@ -256,10 +256,11 @@ describe('stdout-writer', () => {
     });
 
     it('should write deny to stdout', async () => {
-      const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(((_chunk, callback) => {
+      const writeImpl: typeof process.stdout.write = (_chunk, callback) => {
         if (typeof callback === 'function') callback();
         return true;
-      }) as typeof process.stdout.write);
+      };
+      const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(writeImpl);
       await writeDeny('PreToolUse', 'TEST_CODE', 'test reason');
       expect(writeSpy).toHaveBeenCalledTimes(1);
       const written = writeSpy.mock.calls[0]![0] as string;
@@ -292,13 +293,11 @@ describe('stdout-writer', () => {
 
     it('should fail closed when stdout deny write callback reports an error', async () => {
       const originalExitCode = process.exitCode;
-      const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(((
-        _chunk,
-        callback,
-      ) => {
+      const writeImpl: typeof process.stdout.write = (_chunk, callback) => {
         if (typeof callback === 'function') callback(new Error('callback EPIPE'));
         return true;
-      }) as typeof process.stdout.write);
+      };
+      const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(writeImpl);
       const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
       await expect(writeDeny('PreToolUse', 'TEST_DENY', 'deny reason')).rejects.toThrow(
@@ -318,14 +317,10 @@ describe('stdout-writer', () => {
 
     it('backpressure then callback success resolves', async () => {
       let writeCallback: ((err?: Error | null) => void) | null = null;
-      const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(((
-        _chunk,
-        callback,
-      ) => {
-        writeCallback =
-          typeof callback === 'function' ? (callback as (err?: Error | null) => void) : null;
+      const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation((_chunk, callback) => {
+        writeCallback = typeof callback === 'function' ? callback : null;
         return false;
-      }) as typeof process.stdout.write);
+      });
 
       const writePromise = writeDeny('PreToolUse', 'TEST_DENY', 'deny reason');
 
@@ -338,14 +333,10 @@ describe('stdout-writer', () => {
     it('backpressure then callback EPIPE rejects with DenyOutputError', async () => {
       const originalExitCode = process.exitCode;
       let writeCallback: ((err?: Error | null) => void) | null = null;
-      const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(((
-        _chunk,
-        callback,
-      ) => {
-        writeCallback =
-          typeof callback === 'function' ? (callback as (err?: Error | null) => void) : null;
+      const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation((_chunk, callback) => {
+        writeCallback = typeof callback === 'function' ? callback : null;
         return false;
-      }) as typeof process.stdout.write);
+      });
       const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
       const writePromise = writeDeny('PreToolUse', 'TEST_DENY', 'deny reason');
@@ -365,10 +356,10 @@ describe('stdout-writer', () => {
 
     it('should fail closed when stdout emits an error during deny write', async () => {
       const originalExitCode = process.exitCode;
-      const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation((() => {
+      const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => {
         process.stdout.emit('error', new Error('stream EPIPE'));
         return true;
-      }) as typeof process.stdout.write);
+      });
       const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
       await expect(writeDeny('PreToolUse', 'TEST_DENY', 'deny reason')).rejects.toThrow(
@@ -416,17 +407,15 @@ describe('stdout-guard', () => {
   describe('HAPPY', () => {
     it('writes deny payload and restores guard on success', async () => {
       const stdoutChunks: string[] = [];
-      const originalMock = vi.spyOn(process.stdout, 'write').mockImplementation(((
-        chunk,
-        encodingOrCallback,
-        callback,
-      ) => {
-        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
-        stdoutChunks.push(buf.toString('utf8'));
-        const cb = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
-        if (cb) cb(null);
-        return true;
-      }) as typeof process.stdout.write);
+      const originalMock = vi
+        .spyOn(process.stdout, 'write')
+        .mockImplementation((chunk, encodingOrCallback, callback) => {
+          const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+          stdoutChunks.push(buf.toString('utf8'));
+          const cb = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
+          if (cb) cb(null);
+          return true;
+        });
 
       const guard = installHookStdoutGuard();
       const guardedWrite = process.stdout.write;
@@ -445,19 +434,17 @@ describe('stdout-guard', () => {
 
     it('captures spurious stdout and warns on stderr on restore', async () => {
       const stderrChunks: string[] = [];
-      vi.spyOn(process.stderr, 'write').mockImplementation(((chunk) => {
+      vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
         stderrChunks.push(Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk));
         return true;
-      }) as typeof process.stderr.write);
-      const stdoutMock = vi.spyOn(process.stdout, 'write').mockImplementation(((
-        chunk,
-        encodingOrCallback,
-        callback,
-      ) => {
-        const cb = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
-        if (cb) cb(null);
-        return true;
-      }) as typeof process.stdout.write);
+      });
+      const stdoutMock = vi
+        .spyOn(process.stdout, 'write')
+        .mockImplementation((chunk, encodingOrCallback, callback) => {
+          const cb = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
+          if (cb) cb(null);
+          return true;
+        });
 
       const guard = installHookStdoutGuard();
       process.stdout.write('spurious log\n');
@@ -472,15 +459,13 @@ describe('stdout-guard', () => {
 
   describe('BAD', () => {
     it('rejects on callback EPIPE error and restores guard', async () => {
-      const originalMock = vi.spyOn(process.stdout, 'write').mockImplementation(((
-        chunk,
-        encodingOrCallback,
-        callback,
-      ) => {
-        const cb = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
-        if (cb) cb(new Error('EPIPE'));
-        return true;
-      }) as typeof process.stdout.write);
+      const originalMock = vi
+        .spyOn(process.stdout, 'write')
+        .mockImplementation((chunk, encodingOrCallback, callback) => {
+          const cb = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
+          if (cb) cb(new Error('EPIPE'));
+          return true;
+        });
 
       const guard = installHookStdoutGuard();
       const guardedWrite = process.stdout.write;
@@ -508,16 +493,14 @@ describe('stdout-guard', () => {
     it('backpressure with subsequent callback success resolves', async () => {
       const stdoutChunks: string[] = [];
       let writeCallback: ((err?: Error | null) => void) | null = null;
-      const originalMock = vi.spyOn(process.stdout, 'write').mockImplementation(((
-        chunk,
-        encodingOrCallback,
-        callback,
-      ) => {
-        stdoutChunks.push(String(chunk));
-        const cb = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
-        writeCallback = cb as (err?: Error | null) => void;
-        return false;
-      }) as typeof process.stdout.write);
+      const originalMock = vi
+        .spyOn(process.stdout, 'write')
+        .mockImplementation((chunk, encodingOrCallback, callback) => {
+          stdoutChunks.push(String(chunk));
+          const cb = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
+          writeCallback = cb as (err?: Error | null) => void;
+          return false;
+        });
 
       const guard = installHookStdoutGuard();
       const guardedWrite = process.stdout.write;
@@ -538,15 +521,13 @@ describe('stdout-guard', () => {
 
     it('backpressure with subsequent callback EPIPE rejects and restores guard', async () => {
       let writeCallback: ((err?: Error | null) => void) | null = null;
-      const originalMock = vi.spyOn(process.stdout, 'write').mockImplementation(((
-        chunk,
-        encodingOrCallback,
-        callback,
-      ) => {
-        const cb = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
-        writeCallback = cb as (err?: Error | null) => void;
-        return false;
-      }) as typeof process.stdout.write);
+      const originalMock = vi
+        .spyOn(process.stdout, 'write')
+        .mockImplementation((chunk, encodingOrCallback, callback) => {
+          const cb = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
+          writeCallback = cb as (err?: Error | null) => void;
+          return false;
+        });
 
       const guard = installHookStdoutGuard();
       const guardedWrite = process.stdout.write;
