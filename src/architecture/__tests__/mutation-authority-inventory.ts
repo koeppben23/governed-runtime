@@ -854,7 +854,11 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'Full-run verdict 65.00% (13 killed / 7 survived); ordering and pass-through branches remain.',
     { source: [SOURCE.trustBoundaries] },
   ),
-  deferred('src/audit/constant-time.ts', 'Constant-time byte comparison', DEFERRED_REASON),
+  deferred(
+    'src/audit/constant-time.ts',
+    'Constant-time byte comparison',
+    'Diagnostic run 2026-09-17 scored 66.67% with all six survivors semantically equivalent: the length XOR already short-circuits false on differing lengths, and out-of-bounds Uint8Array reads coerce to 0 through ToInt32. No further semantic tests can kill them; the module stays backlog until a mutation regime with finer operators exists.',
+  ),
   deferred(
     'src/integration/tools/record-mutation-evidence.ts',
     'Canonical MutationAttempt evidence producer',
@@ -885,7 +889,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
   deferred(
     'src/mcp-server/schema-converter.ts',
     'Strict MCP input schema conversion',
-    DEFERRED_REASON,
+    'Diagnostic run 2026-09-17 scored 100.00% (1 killed / 0 survived) on a single valid mutant; mutant density is insufficient to carry an authority admission. A broader or dedicated mutation regime is required before admission.',
     {
       source: [SOURCE.trustBoundaries],
     },

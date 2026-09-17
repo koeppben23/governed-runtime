@@ -94,3 +94,60 @@ describe('hashFindings', () => {
     expect(hashFindings(withoutArrays)).toBe(hashFindings({ verdict: 'approved' }));
   });
 });
+
+describe('hashFindings relation normalization boundaries', () => {
+  function finding(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return { findingId: 'finding-1', severity: 'high', ...overrides };
+  }
+
+  it('hashes a present relation differently from an absent one', () => {
+    const withRelation = findings({
+      blockingIssues: [finding({ relation: { subjectAnchors: ['src/a.ts::x'] } })],
+    });
+    const withoutRelation = findings({ blockingIssues: [finding()] });
+
+    expect(hashFindings(withRelation)).not.toBe(hashFindings(withoutRelation));
+  });
+
+  it.each([42, 'text', true])(
+    'drops non-object relation %p like an absent relation',
+    (relation) => {
+      const variant = findings({ blockingIssues: [finding({ relation })] });
+      const withoutRelation = findings({ blockingIssues: [finding()] });
+
+      expect(hashFindings(variant)).toBe(hashFindings(withoutRelation));
+    },
+  );
+
+  it('drops array relations like an absent relation', () => {
+    const variant = findings({
+      blockingIssues: [finding({ relation: { subjectAnchors: ['a'] } })],
+    });
+    const arrayRelation = findings({
+      blockingIssues: [finding({ relation: [{ subjectAnchors: ['a'] }] })],
+    });
+
+    expect(hashFindings(arrayRelation)).not.toBe(hashFindings(variant));
+    expect(hashFindings(arrayRelation)).toBe(
+      hashFindings(findings({ blockingIssues: [finding()] })),
+    );
+  });
+
+  it('preserves relation fields beyond the sorted anchors', () => {
+    const withNote = findings({
+      blockingIssues: [finding({ relation: { subjectAnchors: ['a'], note: 'keep-me' } })],
+    });
+    const withoutNote = findings({
+      blockingIssues: [finding({ relation: { subjectAnchors: ['a'] } })],
+    });
+
+    expect(hashFindings(withNote)).not.toBe(hashFindings(withoutNote));
+  });
+
+  it('treats primitive findings as content, not as objects', () => {
+    expect(hashFindings({ blockingIssues: [42] })).not.toBe(hashFindings({ blockingIssues: [{}] }));
+    expect(hashFindings({ blockingIssues: ['42'] })).not.toBe(
+      hashFindings({ blockingIssues: [42] }),
+    );
+  });
+});
