@@ -774,6 +774,14 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     authority: 'Mutation evidence binding',
     source: [SOURCE.trustBoundaries],
     coveringSuites: ['src/audit/proofgraph/mutation-binder.test.ts'],
+    admission: {
+      verifiedAt: '2026-09-17',
+      commitSha: '072936538ad0920300aa000514a7accbd2bfbe6f',
+      scoreAtAdmission: 100,
+      killed: 16,
+      survived: 0,
+      config: 'stryker.conf.json',
+    },
   },
   {
     classification: 'required',
@@ -787,6 +795,14 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
       'src/integration/proofgraph/materialize-contract.test.ts',
       'src/integration/proofgraph/mutation-verification.test.ts',
     ],
+    admission: {
+      verifiedAt: '2026-09-17',
+      commitSha: '072936538ad0920300aa000514a7accbd2bfbe6f',
+      scoreAtAdmission: 93.94,
+      killed: 31,
+      survived: 2,
+      config: 'stryker.conf.json',
+    },
   },
   {
     classification: 'required',
@@ -796,6 +812,14 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     authority: 'Central policy bundle resolution',
     source: [SOURCE.trustBoundaries],
     coveringSuites: ['src/config/policy-central.test.ts', 'src/config/policy-presets.test.ts'],
+    admission: {
+      verifiedAt: '2026-09-17',
+      commitSha: '072936538ad0920300aa000514a7accbd2bfbe6f',
+      scoreAtAdmission: 88.06,
+      killed: 59,
+      survived: 8,
+      config: 'stryker.conf.json',
+    },
   },
   {
     classification: 'required',
@@ -805,6 +829,14 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     authority: 'Policy resolution authority',
     source: [SOURCE.trustBoundaries],
     coveringSuites: ['src/config/policy-degradation-regression.test.ts'],
+    admission: {
+      verifiedAt: '2026-09-17',
+      commitSha: '072936538ad0920300aa000514a7accbd2bfbe6f',
+      scoreAtAdmission: 81.4,
+      killed: 35,
+      survived: 8,
+      config: 'stryker.conf.json',
+    },
   },
   {
     classification: 'required',
@@ -814,6 +846,14 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     authority: 'Config persistence boundary',
     source: [SOURCE.trustBoundaries],
     coveringSuites: ['src/config/flowguard-config-io.test.ts', 'src/integration/plugin.test.ts'],
+    admission: {
+      verifiedAt: '2026-09-17',
+      commitSha: '072936538ad0920300aa000514a7accbd2bfbe6f',
+      scoreAtAdmission: 100,
+      killed: 24,
+      survived: 0,
+      config: 'stryker.conf.json',
+    },
   },
   {
     classification: 'required',
@@ -827,6 +867,14 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
       'src/adapters/adapters-persistence-basics.test.ts',
       'src/adapters/persistence-more.test.ts',
     ],
+    admission: {
+      verifiedAt: '2026-09-17',
+      commitSha: '072936538ad0920300aa000514a7accbd2bfbe6f',
+      scoreAtAdmission: 100,
+      killed: 9,
+      survived: 0,
+      config: 'stryker.conf.json',
+    },
   },
   {
     classification: 'required',

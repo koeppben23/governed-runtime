@@ -67,7 +67,7 @@ local composite-action dependencies: external GitHub Actions must use full
 40-character lowercase commit SHAs, local actions under `./` are allowed, local
 and Docker actions are allowed only when pinned by `sha256` digest.
 
-The `mutation` job runs StrykerJS mutation testing against 92 security-critical
+The `mutation` job runs StrykerJS mutation testing against 98 security-critical
 files spanning adapters (persistence-lock, host-adapter, persistence, IP validation),
 archive creation,
 publication, inventory validation, and digesting,
@@ -196,7 +196,7 @@ protects a security-relevant literal: `stryker.identity-jwks.conf.json` enables
 
 ### Scope
 
-92 files are mutated in the base profile, covering the fail-closed governance
+98 files are mutated in the base profile, covering the fail-closed governance
 core (see `stryker.conf.json` for the canonical list; the authority inventory
 above is the classification authority):
 
@@ -220,7 +220,7 @@ above is the classification authority):
 | Logging (`error-serialize`)                                                                                                                                | 1      | see `reports/mutation/`         |
 | Machine (`commands`, `evaluate`, `guards`, `workflow-directive`, `validation-evidence`)                                                                    | 5      | see `reports/mutation/`         |
 | Rails (`architecture`, `hydrate`, `review`, `review-url`, `review-decision`, `ticket`, plan and review evidence)                                           | 8      | see `reports/mutation/`         |
-| **Total**                                                                                                                                                  | **92** | uploaded as `reports/mutation/` |
+| **Total**                                                                                                                                                  | **98** | uploaded as `reports/mutation/` |
 
 Per-file mutation scores are produced fresh in CI; consult the latest
 `reports/mutation/` artifact for current numbers.
@@ -275,15 +275,8 @@ diagnostic only; these targets must close their test gaps first):
 
 Deep authority expansion bundle:
 
-- `src/adapters/persistence-core.ts`
-- `src/adapters/persistence-config.ts`
-- `src/config/policy-resolver.ts`
-- `src/config/policy-central.ts`
-- `src/config/policy-ci.ts`
-- `src/config/policy-types.ts`
-- `src/config/profile-types.ts`
-- `src/audit/proofgraph/mutation-report.ts`
-- `src/audit/proofgraph/mutation-binder.ts`
+- `src/config/policy-ci.ts` — 100 % on five valid mutants; density too low (thin evidence).
+- `src/config/policy-types.ts` — 20 % on five valid mutants; evidence too weak.
 
 Mandates profile: `src/rendering/mandates-renderer.ts` — focused contract pass reached 72.40 % (below the per-target gate); dedicated mandates hardening pass required before admission.
 
@@ -299,6 +292,7 @@ scoped; a target may still be a valid mutation target in another profile):
 - `src/config/reasons-types.ts` — type-only module (base).
 - `src/shared/policy-digest.ts` — pure re-export (base).
 - `src/machine/command-help.ts` — static help text projection (base).
+- `src/config/profile-types.ts` — type-only module (base).
 - `src/machine/topology.ts` — module-init transition table, ignored under `ignoreStatic` (base).
 - `src/state/policy-mode.ts` — const tuple/enum only (base).
 - `src/state/runtime-lease.ts` — pure Zod schema declarations (base).
