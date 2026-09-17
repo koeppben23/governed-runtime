@@ -200,27 +200,27 @@ protects a security-relevant literal: `stryker.identity-jwks.conf.json` enables
 core (see `stryker.conf.json` for the canonical list; the authority inventory
 above is the classification authority):
 
-| Area                                                                                                                                                                        | Files   | Representative score            |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------------------------------- |
-| Adapters (`persistence-lock`, `host-adapter`, `persistence`, `persistence-audit`, `ip-validation`, implementation base freeze/entry)                                        | 7       | see `reports/mutation/`         |
-| Archive (`content-digest`, archive creation, publication, tar/manifest inspection, chain and helper verification)                                                           | 8       | see `reports/mutation/`         |
-| Audit (`integrity`, `completeness`, `ntp-check`, `types`, timestamp and RFC3161 verification)                                                                               | 7       | see `reports/mutation/`         |
-| Audit ProofGraph (`evaluate`, `gate`, evidence binders, `enforcement-projection`)                                                                                           | 6       | see `reports/mutation/`         |
-| Integration ProofGraph (`claim-contract`, `materialize-contract`)                                                                                                           | 2       | see `reports/mutation/`         |
-| Config (`policy`, `policy-snapshot`, `reasons`, `profile`)                                                                                                                  | 4       | see `reports/mutation/`         |
-| MCP (`execution-limiter`, `session-resolver`, `tool-adapter`, `server`)                                                                                                     | 4       | see `reports/mutation/`         |
-| Hooks (`http-server`, `pre-tool-use`, `post-tool-use`, `shared/obligation-tracker`, `shared/phase-gate`)                                                                    | 5       | see `reports/mutation/`         |
-| Identity (`token-verifier`, `key-resolver`)                                                                                                                                 | 2       | see `reports/mutation/`         |
-| Integration (plugin hooks, audit outbox, review-validation tools, mutation evidence tools, `plugin-workspace`, `plugin`, `runtime-lease`)                                   | 20      | see `reports/mutation/`         |
-| Integration Review (`enforcement`, `findings-consistency`, `challenge-consistency`, `challenge-binding`, agent resolution, dispatch signal, findings hash, reviewed digest) | 8       | see `reports/mutation/`         |
-| State (`evidence-mutation-episode`)                                                                                                                                         | 1       | see `reports/mutation/`         |
-| Verification/Discovery (`execution-subject`, `verification-planner`)                                                                                                        | 2       | see `reports/mutation/`         |
-| Templates (`codex-plugin`, `claude-code-plugin`)                                                                                                                            | 2       | see `reports/mutation/`         |
-| Shared (`canonical-json`)                                                                                                                                                   | 1       | see `reports/mutation/`         |
-| Logging (`error-serialize`)                                                                                                                                                 | 1       | see `reports/mutation/`         |
-| Machine (`commands`, `evaluate`, `guards`, `workflow-directive`, `validation-evidence`)                                                                                     | 5       | see `reports/mutation/`         |
-| Rails (`architecture`, `hydrate`, `review`, `review-url`, `review-decision`, `ticket`, plan and review evidence)                                                            | 8       | see `reports/mutation/`         |
-| **Total**                                                                                                                                                                   | **100** | uploaded as `reports/mutation/` |
+| Area                                                                                                                                                                           | Files   | Representative score            |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- | ------------------------------- |
+| Adapters (`persistence-lock`, `host-adapter`, `persistence`, `persistence-core`, `persistence-config`, `persistence-audit`, `ip-validation`, implementation base freeze/entry) | 9       | see `reports/mutation/`         |
+| Archive (`content-digest`, archive creation, publication, tar/manifest inspection, chain and helper verification)                                                              | 8       | see `reports/mutation/`         |
+| Audit (`integrity`, `completeness`, `ntp-check`, `types`, timestamp and RFC3161 verification)                                                                                  | 7       | see `reports/mutation/`         |
+| Audit ProofGraph (`evaluate`, `gate`, evidence binders, `enforcement-projection`, mutation report/binder)                                                                      | 8       | see `reports/mutation/`         |
+| Integration ProofGraph (`claim-contract`, `materialize-contract`)                                                                                                              | 2       | see `reports/mutation/`         |
+| Config (`policy`, `policy-snapshot`, `reasons`, `profile`, `policy-resolver`, `policy-central`)                                                                                | 6       | see `reports/mutation/`         |
+| MCP (`execution-limiter`, `session-resolver`, `tool-adapter`, `server`)                                                                                                        | 4       | see `reports/mutation/`         |
+| Hooks (`http-server`, `pre-tool-use`, `post-tool-use`, `shared/obligation-tracker`, `shared/phase-gate`)                                                                       | 5       | see `reports/mutation/`         |
+| Identity (`token-verifier`, `key-resolver`)                                                                                                                                    | 2       | see `reports/mutation/`         |
+| Integration (plugin hooks, audit outbox, review-validation tools, mutation evidence tools/episodes, `plugin-workspace`, `plugin`, `runtime-lease`)                             | 21      | see `reports/mutation/`         |
+| Integration Review (`enforcement`, `findings-consistency`, `challenge-consistency`, `challenge-binding`, agent resolution, dispatch signal, findings hash, reviewed digest)    | 8       | see `reports/mutation/`         |
+| State (`evidence-mutation-episode`)                                                                                                                                            | 1       | see `reports/mutation/`         |
+| Verification/Discovery (`execution-subject`, `verification-planner`)                                                                                                           | 2       | see `reports/mutation/`         |
+| Templates (`codex-plugin`, `claude-code-plugin`)                                                                                                                               | 2       | see `reports/mutation/`         |
+| Shared (`canonical-json`)                                                                                                                                                      | 1       | see `reports/mutation/`         |
+| Logging (`error-serialize`)                                                                                                                                                    | 1       | see `reports/mutation/`         |
+| Machine (`commands`, `evaluate`, `guards`, `workflow-directive`, `validation-evidence`)                                                                                        | 5       | see `reports/mutation/`         |
+| Rails (`architecture`, `hydrate`, `review`, `review-url`, `review-decision`, `ticket`, plan and review evidence)                                                               | 8       | see `reports/mutation/`         |
+| **Total**                                                                                                                                                                      | **100** | uploaded as `reports/mutation/` |
 
 Per-file mutation scores are produced fresh in CI; consult the latest
 `reports/mutation/` artifact for current numbers.
