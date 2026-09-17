@@ -49,7 +49,8 @@
  * configured range.
  */
 
-export type MutationProfile = 'base' | 'human-projection' | 'identity-jwks' | 'mandates';
+export type MutationProfile =
+  'base' | 'human-projection' | 'identity-jwks' | 'mandates' | 'schemas';
 
 export type MutationAuthorityClass = 'required' | 'admission-backlog' | 'not-mutation-suitable';
 
@@ -74,6 +75,10 @@ export const MUTATION_PROFILES: Readonly<Record<MutationProfile, MutationProfile
   mandates: {
     configFile: 'stryker.mandates.conf.json',
     vitestConfigFile: 'vitest.mandates.config.ts',
+  },
+  schemas: {
+    configFile: 'stryker.schemas.conf.json',
+    vitestConfigFile: 'vitest.stryker-schemas.config.ts',
   },
 };
 
@@ -1033,42 +1038,39 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
   deferred(
     'src/adapters/git.ts',
     'Git subprocess boundary',
-    'Full-run verdict 34.97% (57 killed / 106 survived); test gaps must close before admission. Tracked in the existing-authority hardening tranche (measured baseline above).',
+    'Measured 37.42% baseline and 57.06% after one focused behavior-test pass (91 killed / 60 survived / 10 uncovered, base profile 2026-09-17); below the admission gate, so it stays backlog with the measured post-pass verdict recorded in this tranche.',
     { source: [SOURCE.trustBoundaries] },
   ),
   deferred(
     'src/adapters/frozen-repository.ts',
     'Immutable frozen-repository acquisition boundary',
-    'Full-run verdict 58.65% (78 killed / 55 survived); test gaps must close before admission. Tracked in the existing-authority hardening tranche (measured baseline above).',
+    'Measured 58.65% baseline and 70.37% after one focused acquisition-boundary pass (including a production fix so OVERSIZED_BLOB is no longer reclassified as ACQUISITION_FAILED); below the admission gate, so it stays backlog with the measured post-pass verdict recorded in this tranche.',
     { source: [SOURCE.trustBoundaries] },
   ),
   deferred(
     'src/audit/canonical-digest.ts',
     'TSA message imprint digest authority',
-    'Full-run verdict 75.00% (3 killed / 1 survived); the mutant set is too small to carry an admission. Tracked in the existing-authority hardening tranche (measured baseline above).',
+    'Measured 75.00% (3 killed / 1 survived) on a four-mutant set; the single residual mutant is semantically equivalent (digest formatting), so no further semantic test can raise this score. Too thin for an admission: stays backlog (equivalence-limited, thin evidence).',
   ),
-  deferred(
+  required(
     'src/config/flowguard-config.ts',
     'Runtime config schema authority',
-    'Full-run verdict 20.00% (9 killed / 36 survived); default/parse branches lack assertions. Tracked in the existing-authority hardening tranche (measured baseline above).',
-    { source: [SOURCE.config] },
+    ['src/config/flowguard-config-schema.test.ts', 'src/config/flowguard-config-io.test.ts'],
+    { profile: 'schemas', source: [SOURCE.config] },
   ),
   deferred(
     'src/state/schema.ts',
     'Session state schema validated on every write',
-    'Full-run verdict 33.33% (9 killed / 18 survived); invariant branches lack negative-path tests. Tracked in the existing-authority hardening tranche (measured baseline above).',
-    { source: [SOURCE.rootAgents] },
+    'Schemas-profile verdict 77.78% (21 killed / 5 survived / 1 uncovered) after the invariant tests; the residual is the peer-review lifecycle fixture (invariant branches around lines 705-726) plus one uncovered branch, so it stays backlog under the schemas profile.',
+    { profile: 'schemas', source: [SOURCE.rootAgents] },
   ),
-  deferred(
-    'src/shared/hashing.ts',
-    'Hash primitives for digests',
-    'Full-run verdict 38.46% (5 killed / 8 survived); boundary inputs are untested. Tracked in the existing-authority hardening tranche (measured baseline above).',
-    { source: [SOURCE.rootAgents] },
-  ),
+  required('src/shared/hashing.ts', 'Hash primitives for digests', ['src/shared/hashing.test.ts'], {
+    source: [SOURCE.rootAgents],
+  }),
   deferred(
     'src/redaction/export-redaction.ts',
     'Export-time redaction boundary',
-    'Full-run verdict 51.81% (43 killed / 40 survived); masking modes need contract tests. Tracked in the existing-authority hardening tranche (measured baseline above).',
+    'Measured 63.86% (53 killed / 30 survived) after the masking and traversal-guard contracts; the residual survivors sit at the semantic-equivalence ceiling for these string/regex operators, so it stays backlog (measured equivalence-limited).',
     { source: [SOURCE.trustBoundaries] },
   ),
   deferred(

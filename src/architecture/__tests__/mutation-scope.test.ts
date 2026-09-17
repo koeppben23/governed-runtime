@@ -42,6 +42,7 @@ import baseStrykerVitest from '../../../vitest.stryker.config.js';
 import humanProjectionVitest from '../../../vitest.stryker-human-projection.config.js';
 import identityJwksVitest from '../../../vitest.stryker-identity-jwks.config.js';
 import mandatesVitest from '../../../vitest.mandates.config.js';
+import schemasVitest from '../../../vitest.stryker-schemas.config.js';
 import { PRODUCT_INVENTORY } from '../../shared/product-inventory.js';
 import {
   AUTHORITY_ROOTS,
@@ -71,6 +72,7 @@ const PROFILE_VITEST: Readonly<Record<MutationProfile, VitestConfig>> = {
   'human-projection': humanProjectionVitest as VitestConfig,
   'identity-jwks': identityJwksVitest as VitestConfig,
   mandates: mandatesVitest as VitestConfig,
+  schemas: schemasVitest as VitestConfig,
 };
 
 function readProfileConfig(profile: MutationProfile): ProfileConfig {

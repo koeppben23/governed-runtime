@@ -5,10 +5,7 @@
     "configFile": "vitest.stryker-schemas.config.ts",
     "related": false
   },
-  "mutate": [
-    "src/config/flowguard-config.ts",
-    "src/state/schema.ts"
-  ],
+  "mutate": ["src/config/flowguard-config.ts"],
   "reporters": ["clear-text", "progress", "html", "json"],
   "coverageAnalysis": "all",
   "timeoutMS": 30000,

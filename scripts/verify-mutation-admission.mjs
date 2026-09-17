@@ -61,6 +61,7 @@ const PROFILE_CONFIG = {
   'human-projection': 'stryker.human-projection.conf.json',
   'identity-jwks': 'stryker.identity-jwks.conf.json',
   mandates: 'stryker.mandates.conf.json',
+  schemas: 'stryker.schemas.conf.json',
 };
 
 const DETECTED_STATUSES = new Set(['Killed', 'Timeout']);
@@ -113,7 +114,7 @@ function parseArguments(argv) {
     } else fail(`unsupported argument '${argument}'`);
   }
   if (options.profile === undefined) {
-    fail('missing required --profile <base|human-projection|identity-jwks|mandates>');
+    fail('missing required --profile <base|human-projection|identity-jwks|mandates|schemas>');
   }
   if (!Object.hasOwn(PROFILE_CONFIG, options.profile)) {
     fail(`unknown profile '${options.profile}'`);

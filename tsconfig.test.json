@@ -12,6 +12,7 @@
     "vitest.stryker-human-projection.config.ts",
     "vitest.stryker-identity-jwks.config.ts",
     "vitest.mandates.config.ts",
+    "vitest.stryker-schemas.config.ts",
     "vitest.setup.ts"
   ],
   "exclude": ["node_modules", "dist", ".opencode", "test/conformance/assertions/projects"]
