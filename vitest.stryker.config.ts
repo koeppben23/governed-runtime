@@ -42,6 +42,12 @@ export default defineConfig({
       'src/integration/review/impl-review-prompt.test.ts',
       'src/integration/review/verification-evidence-projection.test.ts',
 
+      'src/state/state.test.ts',
+      'src/state/policy-mode.test.ts',
+      'src/shared/hashing.test.ts',
+      'src/redaction/export-redaction.test.ts',
+      'src/integration/review/reviewed-digest.test.ts',
+      'src/integration/review/findings-hash.test.ts',
       'src/shared/canonical-json.test.ts',
       'src/logging/error-serialize.test.ts',
 

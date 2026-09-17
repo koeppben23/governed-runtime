@@ -12,6 +12,10 @@
   },
   "mutate": [
     "src/adapters/persistence-lock.ts",
+    "src/adapters/git.ts",
+    "src/adapters/frozen-repository.ts",
+    "src/adapters/implementation-base-authority.ts",
+    "src/adapters/implementation-entry-guard.ts",
     "src/adapters/host-adapter.ts",
     "src/adapters/persistence.ts",
     "src/adapters/persistence-audit.ts",
@@ -23,6 +27,7 @@
     "src/archive/content-digest.ts",
 
     "src/audit/completeness.ts",
+    "src/audit/canonical-digest.ts",
     "src/audit/integrity.ts",
     "src/audit/types.ts",
     "src/audit/ntp-check.ts",
@@ -49,6 +54,7 @@
     "src/discovery/verification-planner.ts",
 
     "src/config/policy.ts",
+    "src/config/flowguard-config.ts",
     "src/config/policy-snapshot.ts",
     "src/config/reasons.ts",
     "src/config/profile.ts",
@@ -77,6 +83,9 @@
     "src/integration/plugin.ts",
     "src/integration/runtime-lease.ts",
     "src/state/evidence-mutation-episode.ts",
+    "src/state/runtime-lease.ts",
+    "src/state/schema.ts",
+    "src/state/policy-mode.ts",
     "src/integration/review/enforcement/challenge-binding.ts",
     "src/integration/tools/audit-outbox.ts",
     "src/templates/codex-plugin.ts",
@@ -88,15 +97,20 @@
     "src/integration/review/agent-resolution.ts",
 
     "src/shared/canonical-json.ts",
+    "src/shared/hashing.ts",
 
     "src/logging/error-serialize.ts",
 
     "src/machine/commands.ts",
+    "src/machine/topology.ts",
     "src/machine/evaluate.ts",
     "src/machine/guards.ts",
     "src/machine/workflow-directive.ts",
     "src/machine/validation-evidence.ts",
 
+    "src/redaction/export-redaction.ts",
+    "src/integration/review/reviewed-digest.ts",
+    "src/integration/review/findings-hash.ts",
     "src/rails/architecture.ts",
     "src/rails/hydrate.ts",
     "src/rails/plan-review-evidence.ts",
