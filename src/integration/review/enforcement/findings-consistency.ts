@@ -205,7 +205,6 @@ function relationFailureCode(
  * scope-matched: evidence may be external, but must be a structured valid
  * repository or artifact anchor.
  */
-// eslint-disable-next-line complexity -- independent schema, provenance, and subject-scope checks fail closed.
 export function validateReviewFindingsScope(input: {
   readonly findings: readonly FindingWithRelation[];
   readonly reviewSubjectScope?: ReviewSubjectScopeValue;

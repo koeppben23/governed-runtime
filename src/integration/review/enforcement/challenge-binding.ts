@@ -24,7 +24,6 @@ interface ChallengeBindingRejection {
   readonly diagnostic: Record<string, unknown>;
 }
 
-// eslint-disable-next-line complexity -- intentional identity key per ref-type
 function referenceIdentity(reference: unknown): string | null {
   if (typeof reference !== 'object' || reference === null || Array.isArray(reference)) return null;
   const ref = reference as Record<string, unknown>;

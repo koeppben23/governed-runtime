@@ -148,7 +148,6 @@ function isFlowGuardMarketplaceEntry(entry: CodexMarketplaceEntry, scope: Instal
   );
 }
 
-// eslint-disable-next-line complexity
 async function removeCodexMarketplaceEntry(scope: InstallScope): Promise<FileOp> {
   const marketplacePath = resolveCodexMarketplacePath(scope);
 

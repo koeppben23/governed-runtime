@@ -306,7 +306,6 @@ export async function buildRollbackSnapshot(
 
 // ─── Step: Write artifacts (tarball + mandates + platform plugins) ────────────
 
-// eslint-disable-next-line max-lines-per-function
 export async function writeArtifacts(
   ctx: InstallContext,
   tarball: ValidatedTarball,

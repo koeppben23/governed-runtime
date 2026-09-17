@@ -569,7 +569,6 @@ async function verifyArchiveIntegrity(
 }
 
 // Extraction, manifest validation, and cleanup must stay in one transaction.
-// eslint-disable-next-line max-lines-per-function, complexity -- each branch maps a distinct archive integrity finding.
 async function verifyArchiveImpl(
   fingerprint: string,
   sessionId: string,

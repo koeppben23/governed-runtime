@@ -445,7 +445,6 @@ function handleTaskTransportFailureRetry(input: ImplementRuntime): string | null
   });
 }
 
-// eslint-disable-next-line max-lines-per-function, complexity -- ordered evidence resolution, consumption, and convergence branches must remain together.
 async function handleSubmittedImplementationReview(input: {
   runtime: ImplementRuntime;
   iteration: number;

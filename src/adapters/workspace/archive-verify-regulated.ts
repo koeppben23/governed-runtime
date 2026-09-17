@@ -4,7 +4,6 @@ import type { ChainedAuditEvent } from '../../audit/types.js';
 import type { SessionState } from '../../state/schema.js';
 import type { DecisionIdentity } from '../../state/evidence-identity.js';
 
-// eslint-disable-next-line complexity, max-lines-per-function -- each branch maps a distinct regulated archive finding.
 export function verifyRegulatedCompletionCompleteness(
   state: SessionState | null,
   events: readonly ChainedAuditEvent[],

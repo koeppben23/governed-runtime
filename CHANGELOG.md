@@ -426,6 +426,19 @@ true })` returns the evaluated projection. Key invariants:
 
 ### Changed
 
+- **Default-wide maintainability metrics with recalibrated ceilings.** The
+  `complexity`, `max-params`, and `max-lines-per-function` rules now apply to
+  every production file under `src/` (test suites remain the only excluded file
+  class) instead of eight directory globs. The first repo-wide measurement
+  produced 84 findings across 57 files. The tail above the new repository-wide
+  ceilings (`complexity` 25, `max-lines-per-function` 120, `max-params` 5) was
+  refactored — 13 functions across `providers`, `discovery`, `presentation`,
+  the state evidence refinements, the MCP tool adapter, the assertion report
+  collector, and the JUnit/pytest parsers — and 17 `eslint-disable` directives
+  the historical thresholds had required were removed because they no longer
+  suppress anything. The architecture lint-scope guard pins the metric contract
+  and its ceilings, so directory carve-outs and silent weakening fail CI.
+
 - **BREAKING (hard epoch): ProofGraph manual claim identity comes from the
   single identity authority.** `/declare-contract` carried a second UUIDv5
   minting implementation seeded only by the raw statement, with its own copy of

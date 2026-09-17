@@ -94,7 +94,6 @@ export function codexPluginFilePaths(scope: InstallScope): string[] {
   return [...CODEX_PLUGIN_RELATIVE_FILES.map((relativePath) => join(pluginRoot, relativePath))];
 }
 
-// eslint-disable-next-line complexity
 async function withMarketplaceLock<T>(marketplacePath: string, fn: () => Promise<T>): Promise<T> {
   // Precondition: parent of marketplacePath must already exist
   const lockPath = `${marketplacePath}.flowguard.lock`;
