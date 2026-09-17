@@ -9,7 +9,6 @@ import {
   PlanClaimDeclaration,
   ProofGraphApprovalCertificate,
   PlanApprovalCertificate,
-  MANUAL_CLAIM_SCOPE,
   mintProofGraphClaimId,
   PlanClaimDeclarationInput,
   ArchitectureClaimDeclarationInput,
@@ -272,8 +271,16 @@ describe('ProofGraph approval schemas', () => {
 
 describe('mintProofGraphClaimId', () => {
   it('produces a deterministic UUID for identical inputs', () => {
-    const a = mintProofGraphClaimId({ flow: 'plan', statement: 'test', authoritySectionId: 's1' });
-    const b = mintProofGraphClaimId({ flow: 'plan', statement: 'test', authoritySectionId: 's1' });
+    const a = mintProofGraphClaimId({
+      domain: 'plan',
+      statement: 'test',
+      authoritySectionId: 's1',
+    });
+    const b = mintProofGraphClaimId({
+      domain: 'plan',
+      statement: 'test',
+      authoritySectionId: 's1',
+    });
     expect(a).toBe(b);
     expect(a).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   });
@@ -283,32 +290,28 @@ describe('mintProofGraphClaimId', () => {
     // normalized statement). A changed seed, separator, or normalization must
     // fail here rather than silently re-mint different claim identities.
     expect(
-      mintProofGraphClaimId({ flow: 'plan', statement: 'Test claim', authoritySectionId: 's1' }),
+      mintProofGraphClaimId({ domain: 'plan', statement: 'Test claim', authoritySectionId: 's1' }),
     ).toBe('01477157-160b-5ba2-b4db-e636a63459ac');
     expect(
       mintProofGraphClaimId({
-        flow: 'architecture',
+        domain: 'architecture',
         statement: 'Test claim',
         authoritySectionId: 's1',
       }),
     ).toBe('e1f4e10a-f4bc-5532-be2d-e312bdcdcbbe');
-    expect(
-      mintProofGraphClaimId({
-        flow: 'manual',
-        statement: 'Test claim',
-        authoritySectionId: MANUAL_CLAIM_SCOPE,
-      }),
-    ).toBe('db74950f-8c75-5819-8300-6b189d53c94e');
+    expect(mintProofGraphClaimId({ domain: 'manual', statement: 'Test claim' })).toBe(
+      'db74950f-8c75-5819-8300-6b189d53c94e',
+    );
   });
 
-  it('produces different IDs for different flows', () => {
+  it('produces different IDs for different domains', () => {
     const plan = mintProofGraphClaimId({
-      flow: 'plan',
+      domain: 'plan',
       statement: 'test',
       authoritySectionId: 's1',
     });
     const arch = mintProofGraphClaimId({
-      flow: 'architecture',
+      domain: 'architecture',
       statement: 'test',
       authoritySectionId: 's1',
     });
@@ -316,19 +319,27 @@ describe('mintProofGraphClaimId', () => {
   });
 
   it('produces different IDs for different authority sections', () => {
-    const a = mintProofGraphClaimId({ flow: 'plan', statement: 'test', authoritySectionId: 's1' });
-    const b = mintProofGraphClaimId({ flow: 'plan', statement: 'test', authoritySectionId: 's2' });
+    const a = mintProofGraphClaimId({
+      domain: 'plan',
+      statement: 'test',
+      authoritySectionId: 's1',
+    });
+    const b = mintProofGraphClaimId({
+      domain: 'plan',
+      statement: 'test',
+      authoritySectionId: 's2',
+    });
     expect(a).not.toBe(b);
   });
 
   it('normalises whitespace and casing in the statement', () => {
     const a = mintProofGraphClaimId({
-      flow: 'plan',
+      domain: 'plan',
       statement: '  The Change  Preserves Behavior.  ',
       authoritySectionId: 's1',
     });
     const b = mintProofGraphClaimId({
-      flow: 'plan',
+      domain: 'plan',
       statement: 'the change preserves behavior.',
       authoritySectionId: 's1',
     });
@@ -337,34 +348,28 @@ describe('mintProofGraphClaimId', () => {
 
   it('keeps the manual domain distinct from the authority domains', () => {
     const plan = mintProofGraphClaimId({
-      flow: 'plan',
+      domain: 'plan',
       statement: 'test',
-      authoritySectionId: MANUAL_CLAIM_SCOPE,
+      authoritySectionId: 's1',
     });
     const architecture = mintProofGraphClaimId({
-      flow: 'architecture',
+      domain: 'architecture',
       statement: 'test',
-      authoritySectionId: MANUAL_CLAIM_SCOPE,
+      authoritySectionId: 's1',
     });
-    const manual = mintProofGraphClaimId({
-      flow: 'manual',
-      statement: 'test',
-      authoritySectionId: MANUAL_CLAIM_SCOPE,
-    });
+    const manual = mintProofGraphClaimId({ domain: 'manual', statement: 'test' });
     expect(manual).not.toBe(plan);
     expect(manual).not.toBe(architecture);
   });
 
   it('normalises whitespace and casing in the manual domain', () => {
     const a = mintProofGraphClaimId({
-      flow: 'manual',
+      domain: 'manual',
       statement: 'User   data MUST be encrypted',
-      authoritySectionId: MANUAL_CLAIM_SCOPE,
     });
     const b = mintProofGraphClaimId({
-      flow: 'manual',
+      domain: 'manual',
       statement: ' user data must   be encrypted ',
-      authoritySectionId: MANUAL_CLAIM_SCOPE,
     });
     expect(a).toBe(b);
   });

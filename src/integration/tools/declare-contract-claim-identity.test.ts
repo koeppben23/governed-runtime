@@ -31,7 +31,7 @@ import {
 import { declare_contract, hydrate } from './index.js';
 import { readState } from '../../adapters/persistence.js';
 import { writeStateWithArtifacts } from './helpers.js';
-import { MANUAL_CLAIM_SCOPE, mintProofGraphClaimId } from '../../state/proofgraph-approval.js';
+import { mintProofGraphClaimId } from '../../state/proofgraph-approval.js';
 import { TEST_EXECUTION_OBSERVATION } from '../../state/evidence-test-constants.js';
 
 const NOW = '2026-01-01T00:00:00.000Z';
@@ -58,11 +58,7 @@ afterEach(async () => {
 });
 
 function manualId(statement: string): string {
-  return mintProofGraphClaimId({
-    flow: 'manual',
-    authoritySectionId: MANUAL_CLAIM_SCOPE,
-    statement,
-  });
+  return mintProofGraphClaimId({ domain: 'manual', statement });
 }
 
 /** Seed an IMPL_VALIDATION session with the one attempt the check needs. */
@@ -166,7 +162,7 @@ describe('declare_contract claim identity', () => {
       const sessDir = await seedImplValidation();
       const statement = 'A statement the approved authority also declares.';
       const authorityClaimId = mintProofGraphClaimId({
-        flow: domain,
+        domain,
         authoritySectionId: 'step-1',
         statement,
       });

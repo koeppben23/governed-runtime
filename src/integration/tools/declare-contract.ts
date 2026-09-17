@@ -23,7 +23,6 @@ import { z } from 'zod';
 import type { Phase, SessionState } from '../../state/schema.js';
 import {
   CounterexampleRequirement,
-  MANUAL_CLAIM_SCOPE,
   mintProofGraphClaimId,
 } from '../../state/proofgraph-approval.js';
 import type { CounterexampleRequirement as CounterexampleRequirementType } from '../../state/proofgraph-approval.js';
@@ -68,17 +67,14 @@ const DECLARE_CONTRACT_PHASES: ReadonlySet<Phase> = new Set<Phase>([
 /**
  * Mint the canonical identity of a manual (`/declare-contract`) claim.
  *
- * Manual claims have no governing authority section, so their identity uses
- * the identity authority's reserved manual scope. Deriving the id any other
+ * Manual claims have no governing authority section: the identity authority
+ * fixes the reserved manual scope internally, so neither the scope token nor
+ * the identity seed is known at this write boundary. Deriving the id any other
  * way would put manual claims outside the canonical identity space and make
  * collision checks against persisted contracts meaningless.
  */
 function manualClaimId(statement: string): string {
-  return mintProofGraphClaimId({
-    flow: 'manual',
-    authoritySectionId: MANUAL_CLAIM_SCOPE,
-    statement,
-  });
+  return mintProofGraphClaimId({ domain: 'manual', statement });
 }
 
 /** A digest-bound reference to an executed validation attempt. */

@@ -36,7 +36,7 @@ import {
 } from '../adapters/persistence.js';
 import { writeStateWithArtifacts } from './tools/helpers.js';
 import { REVIEW_REPORT_SCHEMA_ID } from '../state/evidence-identifiers.js';
-import { MANUAL_CLAIM_SCOPE, mintProofGraphClaimId } from '../state/proofgraph-approval.js';
+import { mintProofGraphClaimId } from '../state/proofgraph-approval.js';
 import { makePlanRevision, TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
 import { completedDispatchForInvocation } from '../state/evidence-test-constants.js';
 import {
@@ -1459,11 +1459,7 @@ describe('declare_contract', () => {
     const statement = 'A colliding manual claim.';
     // The collision is only detectable when the persisted id was minted by the
     // same identity authority the tool derives its candidate id from.
-    const claimId = mintProofGraphClaimId({
-      flow: 'manual',
-      authoritySectionId: MANUAL_CLAIM_SCOPE,
-      statement,
-    });
+    const claimId = mintProofGraphClaimId({ domain: 'manual', statement });
     const state = await readState(sessDir);
     await writeStateWithArtifacts(sessDir, {
       ...state!,

@@ -37,11 +37,29 @@ const CLAIM_NAMESPACE = Buffer.from('6ba7b8109dad11d180b400c04fd430c8', 'hex');
 export type ProofGraphClaimDomain = 'plan' | 'architecture' | 'manual';
 
 /**
- * Reserved authority-section scope for `manual` claims. A manual declaration
- * has no governing authority section, so the identity authority fixes its
- * scope here; callers never invent one.
+ * Reserved authority-section scope for `manual` claims. It is internal to the
+ * identity authority: a manual declaration has no governing authority section,
+ * so callers cannot name one for it (see `ProofGraphClaimIdentityInput`).
  */
-export const MANUAL_CLAIM_SCOPE = 'manual-contract';
+const MANUAL_CLAIM_SCOPE = 'manual-contract';
+
+/**
+ * Identity input of a ProofGraph claim.
+ *
+ * Only the authority domains carry an authority section. The `manual` domain
+ * deliberately has none — the authority fixes the reserved manual scope
+ * internally, so no caller can mint a manual claim under a foreign scope.
+ */
+export type ProofGraphClaimIdentityInput =
+  | {
+      readonly domain: 'plan' | 'architecture';
+      readonly statement: string;
+      readonly authoritySectionId: string;
+    }
+  | {
+      readonly domain: 'manual';
+      readonly statement: string;
+    };
 
 /**
  * Canonical statement key of a claim identity. Two statements that differ only
@@ -57,16 +75,12 @@ export function normalizeClaimStatement(statement: string): string {
  * across idempotent retries, while the same statement in a different authority
  * section or domain produces a distinct identity.
  */
-export function mintProofGraphClaimId(input: {
-  flow: ProofGraphClaimDomain;
-  statement: string;
-  authoritySectionId: string;
-}): string {
-  const seed = [
-    input.flow,
-    input.authoritySectionId,
-    normalizeClaimStatement(input.statement),
-  ].join('\u001f');
+export function mintProofGraphClaimId(input: ProofGraphClaimIdentityInput): string {
+  const authoritySectionId =
+    input.domain === 'manual' ? MANUAL_CLAIM_SCOPE : input.authoritySectionId;
+  const seed = [input.domain, authoritySectionId, normalizeClaimStatement(input.statement)].join(
+    '\u001f',
+  );
   const hash = crypto.createHash('sha1').update(CLAIM_NAMESPACE).update(seed, 'utf8').digest();
   hash[6] = (hash[6]! & 0x0f) | 0x50; // version 5
   hash[8] = (hash[8]! & 0x3f) | 0x80; // RFC 4122 variant
@@ -111,7 +125,7 @@ export function normalizeArchitectureClaims(
   return claims?.map((claim) => ({
     ...claim,
     claimId: mintProofGraphClaimId({
-      flow: 'architecture',
+      domain: 'architecture',
       statement: claim.statement,
       authoritySectionId: claim.authoritySectionId,
     }),
@@ -128,7 +142,7 @@ export function normalizePlanClaims(
   return claims?.map((claim) => ({
     ...claim,
     claimId: mintProofGraphClaimId({
-      flow: 'plan',
+      domain: 'plan',
       statement: claim.statement,
       authoritySectionId: claim.authoritySectionId,
     }),

@@ -14,6 +14,9 @@
  *   B. No other module implements claim-id UUIDv5 minting (SHA-1 digest plus
  *      UUID version/variant shaping in a module that names claim ids).
  *   C. Known claim-id producers import the authority instead of deriving ids.
+ *   D. The reserved manual scope stays internal to the authority: no consumer
+ *      names the scope token, so manual identities cannot be minted under a
+ *      caller-chosen scope.
  *
  * The negative fixtures prove each detector fires on the removed duplicate
  * (`claimIdFor`, statement-only minting) and does not flag unrelated
@@ -30,6 +33,9 @@ const SRC = resolve(join(import.meta.dirname, '..', '..'));
 
 /** The single minting authority for ProofGraph claim identities. */
 const CLAIM_ID_AUTHORITY = 'state/proofgraph-approval.ts';
+
+/** This guard owns the detector and its negative fixture, so it is exempt from invariant D. */
+const CLAIM_ID_SSOT_GUARD = 'architecture/__tests__/proofgraph-claim-id-ssot.test.ts';
 
 /** Modules that mint claim ids and must therefore consume the authority. */
 const CLAIM_ID_PRODUCERS = ['integration/tools/declare-contract.ts'];
@@ -104,6 +110,11 @@ function hasLocalClaimIdMint(content: string): boolean {
   );
 }
 
+/** The reserved manual scope token is authority-internal; consumers never name it. */
+function referencesManualScope(content: string): boolean {
+  return content.includes('MANUAL_CLAIM_SCOPE');
+}
+
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 describe('ProofGraph claim-id SSOT', () => {
@@ -145,11 +156,23 @@ describe('ProofGraph claim-id SSOT', () => {
     for (const symbol of [
       'mintProofGraphClaimId',
       'ProofGraphClaimDomain',
-      'MANUAL_CLAIM_SCOPE',
+      'ProofGraphClaimIdentityInput',
       'normalizeClaimStatement',
     ]) {
       expect(authority!.content, `authority must expose ${symbol}`).toContain(symbol);
     }
+  });
+
+  it('keeps the reserved manual scope internal to the authority', () => {
+    const offenders = files
+      .filter(
+        (f) =>
+          f.rel !== CLAIM_ID_AUTHORITY &&
+          f.rel !== CLAIM_ID_SSOT_GUARD &&
+          referencesManualScope(f.content),
+      )
+      .map((f) => f.rel);
+    expect(offenders).toEqual([]);
   });
 
   // ─── Negative fixtures ─────────────────────────────────────────────────────
@@ -186,6 +209,20 @@ describe('ProofGraph claim-id SSOT', () => {
     it('detects the authority mint itself (path exclusion, not detector weakness)', () => {
       const authority = files.find((f) => f.rel === CLAIM_ID_AUTHORITY);
       expect(hasLocalClaimIdMint(authority!.content)).toBe(true);
+    });
+
+    it('detects a consumer naming the reserved manual scope', () => {
+      expect(
+        referencesManualScope(
+          `mintProofGraphClaimId({ domain: 'manual', statement, authoritySectionId: MANUAL_CLAIM_SCOPE })`,
+        ),
+      ).toBe(true);
+    });
+
+    it('does not flag consumers that only name the manual domain', () => {
+      expect(referencesManualScope(`mintProofGraphClaimId({ domain: 'manual', statement })`)).toBe(
+        false,
+      );
     });
 
     it('does not flag unrelated identifier helpers', () => {
