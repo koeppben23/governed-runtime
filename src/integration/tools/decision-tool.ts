@@ -84,7 +84,6 @@ export const decision: ToolDefinition = {
       ),
     rationale: z.string().default('').describe('Reason for the decision. Recorded in audit trail.'),
   },
-  // eslint-disable-next-line max-lines-per-function -- regulated completion must release the transaction lock before synchronous reconciliation.
   async execute(args, context) {
     try {
       const probe = await withMutableSession(context);

@@ -144,77 +144,93 @@ export function buildReviewReportCard(
 
 /** Build the typed peer-review document before Markdown rendering. */
 export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewCardDocument {
-  const {
-    phaseLabel,
-    overallStatus,
-    findings,
-    coverage,
-    reviewSubject,
-    obligationId,
-    invocationSource,
-    invocationMode,
-    hostVisible,
-    reviewerSessionId,
-    reviewOutputMode,
-    structuredOutputUsed,
-    reviewAssuranceLevel,
-    proofSummary,
-  } = input;
-
   const sections: PresentationSection[] = [];
 
   // ── Title ──────────────────────────────────────────────────────────
   sections.push({ kind: 'title', text: 'FlowGuard Review Report' });
 
   // ── Metadata ───────────────────────────────────────────────────────
-  const metadata: KeyValueItem[] = [
-    { label: 'Status', value: phaseLabel },
-    { label: 'Overall', value: overallStatus },
-  ];
-  if (reviewSubject) {
-    metadata.push({ label: 'Reviewed subject', value: presentReviewSubject(reviewSubject) });
-  }
-  sections.push({ kind: 'keyValue', items: metadata });
-  sections.push(buildProofGraphSection(proofSummary));
+  sections.push(buildMetadataSection(input));
+  sections.push(buildProofGraphSection(input.proofSummary));
 
   // ── Findings ───────────────────────────────────────────────────────
-  if (findings.length > 0) {
-    const grouped = new Map<
-      number,
-      { label: string; severity: FindingGroup['severity']; items: FindingItem[] }
-    >();
-    for (const reportFinding of findings) {
-      const f = projectReviewReportFinding(reportFinding);
-      const g = severityGroup(f.severity);
-      let bucket = grouped.get(g.order);
-      if (!bucket) {
-        bucket = { label: g.label, severity: g.severity, items: [] };
-        grouped.set(g.order, bucket);
-      }
-      bucket.items.push({
-        category: categoryLabel(f.category),
-        message: f.message,
-        ...projectFindingRelation(f.relation),
-      });
-    }
-    const groups: FindingGroup[] = [...grouped.entries()]
-      .sort(([a], [b]) => a - b)
-      .map(([, bucket]) => ({
-        severity: bucket.severity,
-        label: bucket.label,
-        items: bucket.items,
-      }));
-    sections.push({ kind: 'findings', heading: 'Findings', detail: 'expanded', groups });
-  } else {
-    sections.push({
+  sections.push(buildFindingsSection(input.findings));
+
+  // ── Target coverage ────────────────────────────────────────────────
+  sections.push(buildCoverageSection(input.coverage));
+
+  // ── Evidence ───────────────────────────────────────────────────────
+  const evidence = buildEvidenceSection(input);
+  if (evidence) sections.push(evidence);
+
+  // ── Recommended follow-up ──────────────────────────────────────────
+  sections.push({
+    kind: 'bulletList',
+    heading: 'Recommended follow-up',
+    items: buildFollowUpItems(input.findings),
+  });
+
+  return {
+    kind: 'review_card',
+    form: input.conclusionAction ? 'success' : 'terminal',
+    sections,
+    conclusion: buildConclusion(input),
+  };
+}
+
+function buildMetadataSection(input: ReviewReportCardInput): PresentationSection {
+  const metadata: KeyValueItem[] = [
+    { label: 'Status', value: input.phaseLabel },
+    { label: 'Overall', value: input.overallStatus },
+  ];
+  if (input.reviewSubject) {
+    metadata.push({
+      label: 'Reviewed subject',
+      value: presentReviewSubject(input.reviewSubject),
+    });
+  }
+  return { kind: 'keyValue', items: metadata };
+}
+
+function buildFindingsSection(findings: ReviewReportCardInput['findings']): PresentationSection {
+  if (findings.length === 0) {
+    return {
       kind: 'bulletList',
       heading: 'Findings',
       items: ['No issues found.'],
-    });
+    };
   }
 
-  // ── Target coverage ────────────────────────────────────────────────
-  sections.push({
+  const grouped = new Map<
+    number,
+    { label: string; severity: FindingGroup['severity']; items: FindingItem[] }
+  >();
+  for (const reportFinding of findings) {
+    const f = projectReviewReportFinding(reportFinding);
+    const g = severityGroup(f.severity);
+    let bucket = grouped.get(g.order);
+    if (!bucket) {
+      bucket = { label: g.label, severity: g.severity, items: [] };
+      grouped.set(g.order, bucket);
+    }
+    bucket.items.push({
+      category: categoryLabel(f.category),
+      message: f.message,
+      ...projectFindingRelation(f.relation),
+    });
+  }
+  const groups: FindingGroup[] = [...grouped.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([, bucket]) => ({
+      severity: bucket.severity,
+      label: bucket.label,
+      items: bucket.items,
+    }));
+  return { kind: 'findings', heading: 'Findings', detail: 'expanded', groups };
+}
+
+function buildCoverageSection(coverage: ReviewReportCardInput['coverage']): PresentationSection {
+  return {
     kind: 'keyValue',
     heading: 'Target coverage',
     items: [
@@ -245,9 +261,21 @@ export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewC
             : coverage.missingVerification.join('; '),
       },
     ],
-  });
+  };
+}
 
-  // ── Evidence ───────────────────────────────────────────────────────
+function buildEvidenceSection(input: ReviewReportCardInput): PresentationSection | null {
+  const {
+    obligationId,
+    invocationSource,
+    invocationMode,
+    hostVisible,
+    reviewerSessionId,
+    reviewOutputMode,
+    structuredOutputUsed,
+    reviewAssuranceLevel,
+  } = input;
+
   const hasEvidence =
     obligationId ||
     invocationSource ||
@@ -256,31 +284,36 @@ export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewC
     reviewerSessionId ||
     reviewOutputMode ||
     reviewAssuranceLevel;
-  if (hasEvidence) {
-    const evidence: KeyValueItem[] = [];
-    if (obligationId) evidence.push({ label: 'Obligation', value: `\`${obligationId}\`` });
-    if (invocationSource) evidence.push({ label: 'Invocation source', value: invocationSource });
-    if (invocationMode) evidence.push({ label: 'Invocation mode', value: invocationMode });
-    if (typeof hostVisible === 'boolean') {
-      evidence.push({ label: 'Host visible', value: hostVisible ? 'yes' : 'no' });
-    }
-    if (reviewerSessionId) {
-      evidence.push({ label: 'Reviewer session', value: `\`${reviewerSessionId}\`` });
-    }
-    if (reviewOutputMode) evidence.push({ label: 'Review output mode', value: reviewOutputMode });
-    if (typeof structuredOutputUsed === 'boolean') {
-      evidence.push({
-        label: 'Structured output used',
-        value: structuredOutputUsed ? 'yes' : 'no',
-      });
-    }
-    if (reviewAssuranceLevel) {
-      evidence.push({ label: 'Review assurance', value: reviewAssuranceLevel });
-    }
-    sections.push({ kind: 'keyValue', heading: 'Evidence', items: evidence });
+  if (!hasEvidence) return null;
+
+  const evidence: KeyValueItem[] = [];
+  if (obligationId) evidence.push({ label: 'Obligation', value: `\`${obligationId}\`` });
+  if (invocationSource) evidence.push({ label: 'Invocation source', value: invocationSource });
+  if (invocationMode) evidence.push({ label: 'Invocation mode', value: invocationMode });
+  if (typeof hostVisible === 'boolean') {
+    evidence.push({ label: 'Host visible', value: hostVisible ? 'yes' : 'no' });
+  }
+  if (reviewerSessionId) {
+    evidence.push({ label: 'Reviewer session', value: `\`${reviewerSessionId}\`` });
+  }
+  if (reviewOutputMode) evidence.push({ label: 'Review output mode', value: reviewOutputMode });
+  if (typeof structuredOutputUsed === 'boolean') {
+    evidence.push({
+      label: 'Structured output used',
+      value: structuredOutputUsed ? 'yes' : 'no',
+    });
+  }
+  if (reviewAssuranceLevel) {
+    evidence.push({ label: 'Review assurance', value: reviewAssuranceLevel });
+  }
+  return { kind: 'keyValue', heading: 'Evidence', items: evidence };
+}
+
+function buildFollowUpItems(findings: ReviewReportCardInput['findings']): string[] {
+  if (findings.length === 0) {
+    return ['No follow-up required from this review. Re-run `/review` after changes if needed.'];
   }
 
-  // ── Recommended follow-up ──────────────────────────────────────────
   const followUp: string[] = [];
   const hasCriticalOrMajor = findings.some(
     (finding) =>
@@ -288,29 +321,18 @@ export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewC
       (finding.source === 'material_finding' &&
         (finding.finding.severity === 'critical' || finding.finding.severity === 'major')),
   );
-  if (findings.length === 0) {
-    followUp.push(
-      'No follow-up required from this review. Re-run `/review` after changes if needed.',
-    );
-  } else {
-    if (hasCriticalOrMajor) {
-      followUp.push('Address critical and major findings before merging.');
-    }
-    followUp.push('Add missing verification where listed.');
-    followUp.push('Re-run `/review` after changes if needed.');
+  if (hasCriticalOrMajor) {
+    followUp.push('Address critical and major findings before merging.');
   }
-  sections.push({ kind: 'bulletList', heading: 'Recommended follow-up', items: followUp });
+  followUp.push('Add missing verification where listed.');
+  followUp.push('Re-run `/review` after changes if needed.');
+  return followUp;
+}
 
-  const document: ReviewCardDocument = {
-    kind: 'review_card',
-    form: input.conclusionAction ? 'success' : 'terminal',
-    sections,
-    conclusion: input.conclusionAction
-      ? { kind: 'next_action', action: input.conclusionAction }
-      : { kind: 'terminal', message: directiveLabel(input.directive.code) },
-  };
-
-  return document;
+function buildConclusion(input: ReviewReportCardInput): ReviewCardDocument['conclusion'] {
+  return input.conclusionAction
+    ? { kind: 'next_action', action: input.conclusionAction }
+    : { kind: 'terminal', message: directiveLabel(input.directive.code) };
 }
 
 /** Project only the frozen, host-validated subject metadata into Markdown-safe text. */

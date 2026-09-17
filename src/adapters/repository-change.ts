@@ -130,13 +130,23 @@ function readGitPath(input: string, start: number): { path: string; next: number
   };
 }
 
-function parseChange(
-  section: string,
-  oldPath: string,
-  newPath: string,
-): CanonicalRepositoryChange | null {
-  if (!isRepositoryPath(oldPath) || !isRepositoryPath(newPath)) return null;
-  const preamble = section.split('\n').slice(1, firstPatchBodyLine(section));
+interface LifecycleHeaders {
+  readonly renameFrom: string[];
+  readonly renameTo: string[];
+  readonly copyFrom: string[];
+  readonly copyTo: string[];
+  readonly newFileModes: string[];
+  readonly deletedFileModes: string[];
+  readonly oldModes: string[];
+  readonly newModes: string[];
+  readonly isAdd: boolean;
+  readonly isDelete: boolean;
+  readonly isMode: boolean;
+  readonly isRename: boolean;
+  readonly isCopy: boolean;
+}
+
+function parseLifecycleHeaders(preamble: readonly string[]): LifecycleHeaders {
   const values = (marker: string): string[] =>
     preamble.filter((line) => line.startsWith(marker)).map((line) => line.slice(marker.length));
   const renameFrom = values('rename from ');
@@ -147,48 +157,120 @@ function parseChange(
   const deletedFileModes = values('deleted file mode ');
   const oldModes = values('old mode ');
   const newModes = values('new mode ');
-  const isAdd = newFileModes.length > 0;
-  const isDelete = deletedFileModes.length > 0;
-  const isMode = oldModes.length > 0 || newModes.length > 0;
-  const isRename = renameFrom.length > 0 || renameTo.length > 0;
-  const isCopy = copyFrom.length > 0 || copyTo.length > 0;
-  const isBinary =
-    section.split('\n').some((line) => line === 'GIT binary patch') ||
-    section
-      .split('\n')
-      .some((line) => line === `Binary files a/${oldPath} and b/${newPath} differ`);
+  return {
+    renameFrom,
+    renameTo,
+    copyFrom,
+    copyTo,
+    newFileModes,
+    deletedFileModes,
+    oldModes,
+    newModes,
+    isAdd: newFileModes.length > 0,
+    isDelete: deletedFileModes.length > 0,
+    isMode: oldModes.length > 0 || newModes.length > 0,
+    isRename: renameFrom.length > 0 || renameTo.length > 0,
+    isCopy: copyFrom.length > 0 || copyTo.length > 0,
+  };
+}
 
-  // Lifecycle headers are mutually exclusive. Binary representation and mode
-  // metadata are orthogonal attributes of an otherwise valid lifecycle.
-  if (
-    [isAdd, isDelete, isRename, isCopy].filter(Boolean).length > 1 ||
-    ((isAdd || isDelete) && isMode) ||
-    (isAdd && newFileModes.length !== 1) ||
-    (isDelete && deletedFileModes.length !== 1) ||
-    (isRename &&
-      (renameFrom.length !== 1 ||
-        renameTo.length !== 1 ||
-        renameFrom[0] !== oldPath ||
-        renameTo[0] !== newPath)) ||
-    (isCopy &&
-      (copyFrom.length !== 1 ||
-        copyTo.length !== 1 ||
-        copyFrom[0] !== oldPath ||
-        copyTo[0] !== newPath)) ||
-    (isMode && (oldModes.length !== 1 || newModes.length !== 1))
-  ) {
-    return null;
+function hasSingleLifecycle(headers: LifecycleHeaders): boolean {
+  const lifecycleCount = [headers.isAdd, headers.isDelete, headers.isRename, headers.isCopy].filter(
+    Boolean,
+  ).length;
+  if (lifecycleCount > 1) return false;
+  // Mode metadata is orthogonal to a modify, but not to an add or delete.
+  return !((headers.isAdd || headers.isDelete) && headers.isMode);
+}
+
+function hasConsistentRename(headers: LifecycleHeaders, oldPath: string, newPath: string): boolean {
+  if (!headers.isRename) return true;
+  return (
+    headers.renameFrom.length === 1 &&
+    headers.renameTo.length === 1 &&
+    headers.renameFrom[0] === oldPath &&
+    headers.renameTo[0] === newPath
+  );
+}
+
+function hasConsistentCopy(headers: LifecycleHeaders, oldPath: string, newPath: string): boolean {
+  if (!headers.isCopy) return true;
+  return (
+    headers.copyFrom.length === 1 &&
+    headers.copyTo.length === 1 &&
+    headers.copyFrom[0] === oldPath &&
+    headers.copyTo[0] === newPath
+  );
+}
+
+function hasConsistentModeHeaders(headers: LifecycleHeaders): boolean {
+  if (headers.isAdd && headers.newFileModes.length !== 1) return false;
+  if (headers.isDelete && headers.deletedFileModes.length !== 1) return false;
+  if (headers.isMode && (headers.oldModes.length !== 1 || headers.newModes.length !== 1)) {
+    return false;
   }
-  const reviewerMaterial = section;
-  const representation: RepositoryChangeRepresentation = isBinary ? 'binary' : 'text';
-  if (isAdd) return { kind: 'add', newPath, representation, reviewerMaterial };
-  if (isDelete) return { kind: 'delete', oldPath, representation, reviewerMaterial };
-  const modeChange = isMode ? { oldMode: oldModes[0]!, newMode: newModes[0]! } : undefined;
-  if (isRename)
+  return true;
+}
+
+/**
+ * Lifecycle headers are mutually exclusive. Binary representation and mode
+ * metadata are orthogonal attributes of an otherwise valid lifecycle.
+ */
+function hasConsistentLifecycle(
+  headers: LifecycleHeaders,
+  oldPath: string,
+  newPath: string,
+): boolean {
+  return (
+    hasSingleLifecycle(headers) &&
+    hasConsistentRename(headers, oldPath, newPath) &&
+    hasConsistentCopy(headers, oldPath, newPath) &&
+    hasConsistentModeHeaders(headers)
+  );
+}
+
+function isBinarySection(lines: readonly string[], oldPath: string, newPath: string): boolean {
+  return lines.some(
+    (line) =>
+      line === 'GIT binary patch' || line === `Binary files a/${oldPath} and b/${newPath} differ`,
+  );
+}
+
+function buildChange(
+  headers: LifecycleHeaders,
+  oldPath: string,
+  newPath: string,
+  representation: RepositoryChangeRepresentation,
+  reviewerMaterial: string,
+): CanonicalRepositoryChange {
+  const modeChange = headers.isMode
+    ? { oldMode: headers.oldModes[0]!, newMode: headers.newModes[0]! }
+    : undefined;
+  if (headers.isAdd) return { kind: 'add', newPath, representation, reviewerMaterial };
+  if (headers.isDelete) return { kind: 'delete', oldPath, representation, reviewerMaterial };
+  if (headers.isRename) {
     return { kind: 'rename', oldPath, newPath, representation, modeChange, reviewerMaterial };
-  if (isCopy)
+  }
+  if (headers.isCopy) {
     return { kind: 'copy', oldPath, newPath, representation, modeChange, reviewerMaterial };
+  }
   return { kind: 'modify', oldPath, newPath, representation, modeChange, reviewerMaterial };
+}
+
+function parseChange(
+  section: string,
+  oldPath: string,
+  newPath: string,
+): CanonicalRepositoryChange | null {
+  if (!isRepositoryPath(oldPath) || !isRepositoryPath(newPath)) return null;
+  const lines = section.split('\n');
+  const preamble = lines.slice(1, firstPatchBodyLine(section));
+  const headers = parseLifecycleHeaders(preamble);
+  if (!hasConsistentLifecycle(headers, oldPath, newPath)) return null;
+  const representation: RepositoryChangeRepresentation = isBinarySection(lines, oldPath, newPath)
+    ? 'binary'
+    : 'text';
+  return buildChange(headers, oldPath, newPath, representation, section);
 }
 
 function firstPatchBodyLine(section: string): number {

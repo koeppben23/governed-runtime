@@ -206,15 +206,20 @@ export function sanitizeNullArgs(args: Record<string, unknown>): Record<string, 
  *   rejection (after the deadline already won the race) is always observed and
  *   cannot surface as an `unhandledRejection`.
  */
+interface ExecutionDeadlineOptions {
+  readonly toolDef: ToolDefinition;
+  readonly cleanArgs: Record<string, unknown>;
+  readonly toolContext: ToolContext;
+  readonly slot: McpExecutionSlot;
+  readonly timeoutMs: number;
+  readonly mcpName: string;
+  readonly sessionId: string | undefined;
+}
+
 async function runExecutionWithDeadline(
-  toolDef: ToolDefinition,
-  cleanArgs: Record<string, unknown>,
-  toolContext: ToolContext,
-  slot: McpExecutionSlot,
-  timeoutMs: number,
-  mcpName: string,
-  sessionId: string | undefined,
+  options: ExecutionDeadlineOptions,
 ): Promise<CallToolResult> {
+  const { toolDef, cleanArgs, toolContext, slot, timeoutMs, mcpName, sessionId } = options;
   // Single handled chain: normalizes success and failure, and owns slot release
   // plus timer cleanup. The executor result is mapped to an MCP result; failures
   // are mapped to a handled MCP error here so the chain never rejects. This
@@ -315,15 +320,15 @@ export function registerAllTools(
                 const slot = limiter.tryAcquire();
                 if (!slot)
                   return toMcpDenial('MCP_RATE_LIMITED', 'MCP tool execution limit reached');
-                return await runExecutionWithDeadline(
+                return await runExecutionWithDeadline({
                   toolDef,
                   cleanArgs,
                   toolContext,
                   slot,
-                  limiter.limits.timeoutMs,
+                  timeoutMs: limiter.limits.timeoutMs,
                   mcpName,
                   sessionId,
-                );
+                });
               } catch (err: unknown) {
                 return toHandledToolError(err, mcpName, sessionId);
               }

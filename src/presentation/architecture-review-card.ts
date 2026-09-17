@@ -267,59 +267,62 @@ function toFindingItems(
   }));
 }
 
-function appendFindingsSections(sections: PresentationSection[], inputs: FindingInputs): void {
+function hasAnyFindings(inputs: FindingInputs): boolean {
   const { blockingIssues, majorRisks, missingVerification, scopeCreep, unknowns } = inputs;
-
-  const hasFindings =
+  return (
     (blockingIssues?.length ?? 0) > 0 ||
     (majorRisks?.length ?? 0) > 0 ||
     (missingVerification?.length ?? 0) > 0 ||
     (scopeCreep?.length ?? 0) > 0 ||
-    (unknowns?.length ?? 0) > 0;
+    (unknowns?.length ?? 0) > 0
+  );
+}
 
-  if (!hasFindings) return;
-
-  // Severity-mapped findings: blocking issues (critical) + major risks (major).
+/** Severity-mapped findings: blocking issues (critical) + major risks (major). */
+function toSeverityGroups(inputs: FindingInputs): FindingGroup[] {
   const groups: FindingGroup[] = [];
-  if (blockingIssues && blockingIssues.length > 0) {
+  if (inputs.blockingIssues && inputs.blockingIssues.length > 0) {
     groups.push({
       severity: 'critical',
       label: 'Blocking Issues',
-      items: toFindingItems(blockingIssues),
+      items: toFindingItems(inputs.blockingIssues),
     });
   }
-  if (majorRisks && majorRisks.length > 0) {
+  if (inputs.majorRisks && inputs.majorRisks.length > 0) {
     groups.push({
       severity: 'major',
       label: 'Major Risks',
-      items: toFindingItems(majorRisks),
+      items: toFindingItems(inputs.majorRisks),
     });
   }
+  return groups;
+}
+
+function appendBulletList(
+  sections: PresentationSection[],
+  heading: string,
+  items: string[] | undefined,
+): void {
+  if (items && items.length > 0) {
+    sections.push({
+      kind: 'bulletList',
+      heading: `${heading} (${items.length})`,
+      items,
+    });
+  }
+}
+
+function appendFindingsSections(sections: PresentationSection[], inputs: FindingInputs): void {
+  if (!hasAnyFindings(inputs)) return;
+
+  const groups = toSeverityGroups(inputs);
   if (groups.length > 0) {
     sections.push({ kind: 'findings', heading: 'Reviewer Findings', detail: 'compact', groups });
   }
 
   // Non-severity categories that do not fit the FindingGroup.severity union
   // are rendered as bullet lists (missing verification, scope creep, unknowns).
-  if (missingVerification && missingVerification.length > 0) {
-    sections.push({
-      kind: 'bulletList',
-      heading: `Missing Verification (${missingVerification.length})`,
-      items: missingVerification,
-    });
-  }
-  if (scopeCreep && scopeCreep.length > 0) {
-    sections.push({
-      kind: 'bulletList',
-      heading: `Scope Creep (${scopeCreep.length})`,
-      items: scopeCreep,
-    });
-  }
-  if (unknowns && unknowns.length > 0) {
-    sections.push({
-      kind: 'bulletList',
-      heading: `Unknowns (${unknowns.length})`,
-      items: unknowns,
-    });
-  }
+  appendBulletList(sections, 'Missing Verification', inputs.missingVerification);
+  appendBulletList(sections, 'Scope Creep', inputs.scopeCreep);
+  appendBulletList(sections, 'Unknowns', inputs.unknowns);
 }

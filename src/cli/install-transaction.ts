@@ -457,7 +457,6 @@ export function isRollbackPossible(tx: DependencyTransaction): boolean {
   return tx.phase < TransactionPhase.DeletingOriginal;
 }
 
-// eslint-disable-next-line complexity
 export async function rollbackDependencyTransaction(tx: DependencyTransaction): Promise<void> {
   try {
     const fresh = await loadJournal(tx.journalPath);

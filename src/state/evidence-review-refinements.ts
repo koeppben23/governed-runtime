@@ -400,14 +400,11 @@ export function refineAssuranceDiscoveryCoherence(
   }
 }
 
-/**
- * Canonical linkage coherence. The native Task + structured follow-up is the
- * only sanctioned review invocation generation.
- */
-export function refineAssuranceInvocationLinkageCoherence(
+/** The native Task + structured follow-up is the only sanctioned review invocation generation. */
+function hasCanonicalInvocationShape(
   assurance: AssuranceRefinementShape,
   context: z.RefinementCtx,
-): void {
+): boolean {
   for (const invocation of assurance.invocations) {
     if (
       invocation.invocationMode !== 'native_task_structured_followup' ||
@@ -424,10 +421,16 @@ export function refineAssuranceInvocationLinkageCoherence(
         message:
           'Review invocation evidence requires one visible, navigable native Task with structured host-captured output.',
       });
-      return;
+      return false;
     }
   }
+  return true;
+}
 
+function hasBoundAttemptLinkage(
+  assurance: AssuranceRefinementShape,
+  context: z.RefinementCtx,
+): boolean {
   const attemptsByAttemptId = new Map(
     assurance.attempts.map((attempt) => [attempt.attemptId, attempt]),
   );
@@ -441,7 +444,7 @@ export function refineAssuranceInvocationLinkageCoherence(
         path: ['invocations'],
         message: `invocation ${invocation.invocationId} references unknown attempt ${invocation.attemptId}`,
       });
-      return;
+      return false;
     }
     if (
       attempt.obligationId !== invocation.obligationId ||
@@ -452,7 +455,7 @@ export function refineAssuranceInvocationLinkageCoherence(
         path: ['invocations'],
         message: `invocation ${invocation.invocationId} attempt ${attempt.attemptId} belongs to a different obligation`,
       });
-      return;
+      return false;
     }
     if (attempt.status !== 'bound' && attempt.status !== 'rejected') {
       context.addIssue({
@@ -460,7 +463,7 @@ export function refineAssuranceInvocationLinkageCoherence(
         path: ['invocations'],
         message: `invocation ${invocation.invocationId} attempt ${attempt.attemptId} has no bound lifecycle`,
       });
-      return;
+      return false;
     }
     if (attempt.childSessionId !== invocation.childSessionId) {
       context.addIssue({
@@ -468,7 +471,7 @@ export function refineAssuranceInvocationLinkageCoherence(
         path: ['invocations'],
         message: `invocation ${invocation.invocationId} child session does not match the bound attempt`,
       });
-      return;
+      return false;
     }
     if (!attempt.completedAt) {
       context.addIssue({
@@ -476,10 +479,16 @@ export function refineAssuranceInvocationLinkageCoherence(
         path: ['invocations'],
         message: `invocation ${invocation.invocationId} bound attempt is missing completedAt`,
       });
-      return;
+      return false;
     }
   }
+  return true;
+}
 
+function hasObligationBackReference(
+  assurance: AssuranceRefinementShape,
+  context: z.RefinementCtx,
+): boolean {
   const invocationsByInvocationId = new Map(
     assurance.invocations.map((invocation) => [invocation.invocationId, invocation]),
   );
@@ -492,7 +501,7 @@ export function refineAssuranceInvocationLinkageCoherence(
           path: ['obligations'],
           message: `obligation ${obligation.obligationId} references unknown invocation ${obligation.invocationId}`,
         });
-        return;
+        return false;
       }
       if (
         linked.obligationId !== obligation.obligationId ||
@@ -503,7 +512,7 @@ export function refineAssuranceInvocationLinkageCoherence(
           path: ['invocations'],
           message: `invocation ${linked.invocationId} is the canonical linkage of obligation ${obligation.obligationId} but back-references obligation ${linked.obligationId} (type ${linked.obligationType})`,
         });
-        return;
+        return false;
       }
     }
     if (
@@ -515,7 +524,7 @@ export function refineAssuranceInvocationLinkageCoherence(
         path: ['obligations'],
         message: `obligation ${obligation.obligationId} is ${obligation.status} without invocation lineage and fulfilledAt`,
       });
-      return;
+      return false;
     }
     if (obligation.status === 'consumed' && !obligation.consumedAt) {
       context.addIssue({
@@ -523,10 +532,16 @@ export function refineAssuranceInvocationLinkageCoherence(
         path: ['obligations'],
         message: `consumed obligation ${obligation.obligationId} is missing consumedAt`,
       });
-      return;
+      return false;
     }
   }
+  return true;
+}
 
+function hasConsumedByInvariant(
+  assurance: AssuranceRefinementShape,
+  context: z.RefinementCtx,
+): boolean {
   for (const invocation of assurance.invocations) {
     if (
       invocation.consumedByObligationId != null &&
@@ -537,9 +552,24 @@ export function refineAssuranceInvocationLinkageCoherence(
         path: ['invocations'],
         message: `invocation ${invocation.invocationId} consumedByObligationId must equal its own obligationId`,
       });
-      return;
+      return false;
     }
   }
+  return true;
+}
+
+/**
+ * Canonical linkage coherence. The native Task + structured follow-up is the
+ * only sanctioned review invocation generation.
+ */
+export function refineAssuranceInvocationLinkageCoherence(
+  assurance: AssuranceRefinementShape,
+  context: z.RefinementCtx,
+): void {
+  if (!hasCanonicalInvocationShape(assurance, context)) return;
+  if (!hasBoundAttemptLinkage(assurance, context)) return;
+  if (!hasObligationBackReference(assurance, context)) return;
+  if (!hasConsumedByInvariant(assurance, context)) return;
 }
 
 type InvocationRefinementShape = AssuranceRefinementShape['invocations'][number];

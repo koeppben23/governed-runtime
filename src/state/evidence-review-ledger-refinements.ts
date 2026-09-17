@@ -94,18 +94,11 @@ export function refineAssuranceDispatchCoherence(
   }
 }
 
-/**
- * Attempt predecessor lineage. Non-initial origins (`dispatch_rearm`) are
- * authority-bearing: the referenced predecessor must exist, belong to the same
- * obligation/subject, be a STRICTLY earlier attempt, and the trigger reason
- * must be coherent with the predecessor's durable release record. Attempt
- * ordinals are unique per obligation.
- */
-export function refineAssuranceAttemptLineageCoherence(
+/** Attempt ordinals are unique per obligation and the initial attempt is the lowest ordinal. */
+function hasCoherentOrdinals(
   assurance: AssuranceRefinementShape,
   context: z.RefinementCtx,
-): void {
-  const attemptsById = new Map(assurance.attempts.map((attempt) => [attempt.attemptId, attempt]));
+): boolean {
   const ordinals = new Set<string>();
   const minOrdinalByObligation = new Map<string, number>();
   const initialByObligation = new Map<string, AttemptRefinementShape>();
@@ -117,7 +110,7 @@ export function refineAssuranceAttemptLineageCoherence(
         path: ['attempts'],
         message: `duplicate attempt ordinal ${attempt.ordinal} for obligation ${attempt.obligationId}`,
       });
-      return;
+      return false;
     }
     ordinals.add(key);
     const min = minOrdinalByObligation.get(attempt.obligationId);
@@ -132,7 +125,7 @@ export function refineAssuranceAttemptLineageCoherence(
           path: ['attempts'],
           message: `obligation ${attempt.obligationId} has more than one initial attempt`,
         });
-        return;
+        return false;
       }
       initialByObligation.set(attempt.obligationId, attempt);
     }
@@ -144,9 +137,16 @@ export function refineAssuranceAttemptLineageCoherence(
         path: ['attempts'],
         message: `initial attempt ${initial.attemptId} is not the lowest-ordinal attempt for obligation ${obligationId}`,
       });
-      return;
+      return false;
     }
   }
+  return true;
+}
+
+function hasCoherentLifecycleFields(
+  assurance: AssuranceRefinementShape,
+  context: z.RefinementCtx,
+): boolean {
   for (const attempt of assurance.attempts) {
     if (attempt.status === 'created') {
       if (attempt.completedAt || attempt.rejectionReason) {
@@ -155,7 +155,7 @@ export function refineAssuranceAttemptLineageCoherence(
           path: ['attempts'],
           message: `created attempt ${attempt.attemptId} must not carry completion or rejection fields`,
         });
-        return;
+        return false;
       }
       continue;
     }
@@ -165,7 +165,7 @@ export function refineAssuranceAttemptLineageCoherence(
         path: ['attempts'],
         message: `${attempt.status} attempt ${attempt.attemptId} is missing completedAt`,
       });
-      return;
+      return false;
     }
     if (attempt.status !== 'rejected' && attempt.rejectionReason) {
       context.addIssue({
@@ -173,9 +173,23 @@ export function refineAssuranceAttemptLineageCoherence(
         path: ['attempts'],
         message: `attempt ${attempt.attemptId} carries rejection fields without a rejected status`,
       });
-      return;
+      return false;
     }
   }
+  return true;
+}
+
+/**
+ * Non-initial origins (`dispatch_rearm`) are authority-bearing: the referenced
+ * predecessor must exist, belong to the same obligation/subject, be a STRICTLY
+ * earlier attempt, and the trigger reason must be coherent with the
+ * predecessor's durable release record.
+ */
+function hasCoherentPredecessorLineage(
+  assurance: AssuranceRefinementShape,
+  context: z.RefinementCtx,
+): boolean {
+  const attemptsById = new Map(assurance.attempts.map((attempt) => [attempt.attemptId, attempt]));
   for (const attempt of assurance.attempts) {
     const origin = attempt.origin;
     if (origin.kind === 'initial') continue;
@@ -186,7 +200,7 @@ export function refineAssuranceAttemptLineageCoherence(
         path: ['attempts'],
         message: `attempt ${attempt.attemptId} has a non-initial origin without a predecessor`,
       });
-      return;
+      return false;
     }
     const predecessor = attemptsById.get(predecessorId);
     if (!predecessor) {
@@ -195,7 +209,7 @@ export function refineAssuranceAttemptLineageCoherence(
         path: ['attempts'],
         message: `attempt ${attempt.attemptId} references unknown predecessor ${predecessorId}`,
       });
-      return;
+      return false;
     }
     if (
       predecessor.obligationId !== attempt.obligationId ||
@@ -207,7 +221,7 @@ export function refineAssuranceAttemptLineageCoherence(
         path: ['attempts'],
         message: `attempt ${attempt.attemptId} predecessor ${predecessorId} belongs to a different obligation`,
       });
-      return;
+      return false;
     }
     if (predecessor.ordinal >= attempt.ordinal || predecessor.createdAt > attempt.createdAt) {
       context.addIssue({
@@ -215,7 +229,7 @@ export function refineAssuranceAttemptLineageCoherence(
         path: ['attempts'],
         message: `attempt ${attempt.attemptId} predecessor ${predecessorId} is not an earlier attempt`,
       });
-      return;
+      return false;
     }
     const expectedTriggers = triggerReasonsForPredecessor(
       origin.kind,
@@ -232,9 +246,26 @@ export function refineAssuranceAttemptLineageCoherence(
         path: ['attempts'],
         message: `attempt ${attempt.attemptId} trigger reason does not match its predecessor state`,
       });
-      return;
+      return false;
     }
   }
+  return true;
+}
+
+/**
+ * Attempt predecessor lineage. Non-initial origins (`dispatch_rearm`) are
+ * authority-bearing: the referenced predecessor must exist, belong to the same
+ * obligation/subject, be a STRICTLY earlier attempt, and the trigger reason
+ * must be coherent with the predecessor's durable release record. Attempt
+ * ordinals are unique per obligation.
+ */
+export function refineAssuranceAttemptLineageCoherence(
+  assurance: AssuranceRefinementShape,
+  context: z.RefinementCtx,
+): void {
+  if (!hasCoherentOrdinals(assurance, context)) return;
+  if (!hasCoherentLifecycleFields(assurance, context)) return;
+  if (!hasCoherentPredecessorLineage(assurance, context)) return;
 }
 
 function triggerReasonsForPredecessor(

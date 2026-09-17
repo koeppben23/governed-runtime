@@ -37,18 +37,19 @@ export function buildJUnitLocalId(className: string, methodName: string): string
   return `${className}#${methodName}`;
 }
 
-export function parseJUnitXml(
-  xmlContent: string,
-  _fileName: string,
-  context: ParseContext,
-): ParserResult {
-  const assertions: StructuredAssertionEvidence[] = [];
-  let suiteInfrastructureError = false;
-  const providerId: ProviderId = context.providerId;
+interface JUnitTestCaseRef {
+  readonly classname: string;
+  readonly name: string;
+  readonly offset: number;
+  readonly endOffset: number;
+}
 
+function readSuiteErrors(xmlContent: string): number {
   const suiteErrorsMatch = /<testsuite\b[^>]*errors="(\d+)"/.exec(xmlContent);
-  const suiteErrors = suiteErrorsMatch ? Number(suiteErrorsMatch[1]) : 0;
+  return suiteErrorsMatch ? Number(suiteErrorsMatch[1]) : 0;
+}
 
+function assertJUnitDocumentShape(xmlContent: string): void {
   const hasTestsuiteTag = /<testsuite\b/i.test(xmlContent);
   const hasTestcaseTag = /<testcase\b/i.test(xmlContent);
   if (!hasTestsuiteTag && !hasTestcaseTag) {
@@ -56,17 +57,14 @@ export function parseJUnitXml(
       'junit_xml: not a valid JUnit XML report — no <testsuite> or <testcase> tags found',
     );
   }
+}
 
+function collectJUnitTestCases(xmlContent: string): JUnitTestCaseRef[] {
   const testCaseOpenRegex = /<testcase\b[^>]*>/g;
   const attrClassname = /\bclassname="([^"]*)"/;
   const attrName = /\bname="([^"]*)"/;
 
-  const testCases: {
-    classname: string;
-    name: string;
-    offset: number;
-    endOffset: number;
-  }[] = [];
+  const testCases: JUnitTestCaseRef[] = [];
   let tcm;
   while ((tcm = testCaseOpenRegex.exec(xmlContent)) !== null) {
     const tag = tcm[0];
@@ -92,7 +90,91 @@ export function parseJUnitXml(
       });
     }
   }
+  return testCases;
+}
 
+function buildJUnitAssertion(
+  region: string,
+  testCase: JUnitTestCaseRef,
+  providerId: ProviderId,
+): StructuredAssertionEvidence {
+  const localId = buildJUnitLocalId(testCase.classname, testCase.name);
+  const assertion: AssertionIdentity = { providerId, localId };
+
+  const hasFailure = /<failure\b/.test(region);
+  const hasError = /<error\b/.test(region);
+  const hasSkipped = /<skipped\b/.test(region);
+
+  let status: 'passed' | 'failed' | 'errored' | 'skipped';
+  let failure: StructuredAssertionEvidence['failure'];
+
+  if (hasSkipped) {
+    status = 'skipped';
+  } else if (hasError) {
+    status = 'errored';
+    const errorMatch = /<error\b[^>]*type="([^"]*)"[^>]*message="([^"]*)"[^>]*>/.exec(region);
+    failure = {
+      type: errorMatch?.[1],
+      message: errorMatch?.[2],
+      detailDigest: sha256(region),
+    };
+  } else if (hasFailure) {
+    status = 'failed';
+    const failureMatch = /<failure\b[^>]*type="([^"]*)"[^>]*message="([^"]*)"[^>]*>/.exec(region);
+    failure = {
+      type: failureMatch?.[1],
+      message: failureMatch?.[2],
+      detailDigest: sha256(region),
+    };
+  } else {
+    status = 'passed';
+  }
+
+  return {
+    assertion,
+    providerId,
+    status,
+    suiteName: testCase.classname.split('.').slice(0, -1).join('.') || undefined,
+    testName: testCase.name,
+    sourceFile: undefined,
+    durationMs: undefined,
+    failure,
+  };
+}
+
+function countByStatus(
+  assertions: readonly StructuredAssertionEvidence[],
+  status: StructuredAssertionEvidence['status'],
+): number {
+  return assertions.filter((assertion) => assertion.status === status).length;
+}
+
+function buildJUnitSummary(
+  assertions: readonly StructuredAssertionEvidence[],
+  suiteErrors: number,
+): ParserResult['summary'] {
+  const failedCount = countByStatus(assertions, 'failed');
+  const erroredCount = countByStatus(assertions, 'errored');
+  return {
+    assertionCount: assertions.length,
+    passedCount: countByStatus(assertions, 'passed'),
+    failedCount,
+    erroredCount,
+    skippedCount: countByStatus(assertions, 'skipped'),
+    suiteInfrastructureError: suiteErrors > 0 && failedCount + erroredCount === 0,
+  };
+}
+
+export function parseJUnitXml(
+  xmlContent: string,
+  _fileName: string,
+  context: ParseContext,
+): ParserResult {
+  const providerId: ProviderId = context.providerId;
+  const suiteErrors = readSuiteErrors(xmlContent);
+  assertJUnitDocumentShape(xmlContent);
+
+  const testCases = collectJUnitTestCases(xmlContent);
   if (testCases.length === 0 && suiteErrors > 0) {
     return {
       assertions: [],
@@ -107,68 +189,12 @@ export function parseJUnitXml(
     };
   }
 
-  for (const tc of testCases) {
-    const region = xmlContent.slice(tc.offset, tc.endOffset);
-    const localId = buildJUnitLocalId(tc.classname, tc.name);
-    const assertion: AssertionIdentity = { providerId, localId };
-
-    const hasFailure = /<failure\b/.test(region);
-    const hasError = /<error\b/.test(region);
-    const hasSkipped = /<skipped\b/.test(region);
-
-    let status: 'passed' | 'failed' | 'errored' | 'skipped';
-    let failure: StructuredAssertionEvidence['failure'];
-
-    if (hasSkipped) {
-      status = 'skipped';
-    } else if (hasError) {
-      status = 'errored';
-      const errorMatch = /<error\b[^>]*type="([^"]*)"[^>]*message="([^"]*)"[^>]*>/.exec(region);
-      failure = {
-        type: errorMatch?.[1],
-        message: errorMatch?.[2],
-        detailDigest: sha256(region),
-      };
-    } else if (hasFailure) {
-      status = 'failed';
-      const failureMatch = /<failure\b[^>]*type="([^"]*)"[^>]*message="([^"]*)"[^>]*>/.exec(region);
-      failure = {
-        type: failureMatch?.[1],
-        message: failureMatch?.[2],
-        detailDigest: sha256(region),
-      };
-    } else {
-      status = 'passed';
-    }
-
-    assertions.push({
-      assertion,
+  const assertions = testCases.map((testCase) =>
+    buildJUnitAssertion(
+      xmlContent.slice(testCase.offset, testCase.endOffset),
+      testCase,
       providerId,
-      status,
-      suiteName: tc.classname.split('.').slice(0, -1).join('.') || undefined,
-      testName: tc.name,
-      sourceFile: undefined,
-      durationMs: undefined,
-      failure,
-    });
-  }
-
-  const failedCount = assertions.filter((a) => a.status === 'failed').length;
-  const erroredCount = assertions.filter((a) => a.status === 'errored').length;
-
-  if (suiteErrors > 0 && failedCount + erroredCount === 0) {
-    suiteInfrastructureError = true;
-  }
-
-  return {
-    assertions,
-    summary: {
-      assertionCount: assertions.length,
-      passedCount: assertions.filter((a) => a.status === 'passed').length,
-      failedCount,
-      erroredCount,
-      skippedCount: assertions.filter((a) => a.status === 'skipped').length,
-      suiteInfrastructureError,
-    },
-  };
+    ),
+  );
+  return { assertions, summary: buildJUnitSummary(assertions, suiteErrors) };
 }

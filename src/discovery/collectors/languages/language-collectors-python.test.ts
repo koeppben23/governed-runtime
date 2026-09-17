@@ -23,10 +23,7 @@ describe('languages/python', () => {
       await extractFromPythonRootFiles(
         mockReadFile({ 'requirements.txt': 'pytest>=7.0\n' }),
         ['requirements.txt'],
-        [],
-        testFrameworks,
-        [],
-        [],
+        { languages: [], testFrameworks, qualityTools: [], buildTools: [] },
       );
       expect(testFrameworks.find((t) => t.id === 'pytest')).toBeDefined();
     });
@@ -36,10 +33,7 @@ describe('languages/python', () => {
       await extractFromPythonRootFiles(
         mockReadFile({ '.python-version': '3.12.2\n' }),
         ['.python-version'],
-        languages,
-        [],
-        [],
-        [],
+        { languages, testFrameworks: [], qualityTools: [], buildTools: [] },
       );
       expect(languages[0]!.version).toBe('3.12.2');
     });
@@ -51,10 +45,7 @@ describe('languages/python', () => {
       await extractFromPythonRootFiles(
         mockReadFile({ '.python-version': 'python-3.11.9\n' }),
         ['.python-version'],
-        languages,
-        [],
-        [],
-        [],
+        { languages, testFrameworks: [], qualityTools: [], buildTools: [] },
       );
       expect(languages[0]!.version).toBe('3.11.9');
     });
@@ -64,10 +55,7 @@ describe('languages/python', () => {
       await extractFromPythonRootFiles(
         mockReadFile({ '.python-version': '3.10.8  \n' }),
         ['.python-version'],
-        languages,
-        [],
-        [],
-        [],
+        { languages, testFrameworks: [], qualityTools: [], buildTools: [] },
       );
       expect(languages[0]!.version).toBe('3.10.8');
     });
@@ -78,10 +66,7 @@ describe('languages/python', () => {
       await extractFromPythonRootFiles(
         mockReadFile({ '.python-version': 'system\n' }),
         ['.python-version'],
-        languages,
-        [],
-        [],
-        [],
+        { languages, testFrameworks: [], qualityTools: [], buildTools: [] },
       );
       expect(languages[0]!.version).toBeUndefined();
     });
@@ -91,10 +76,7 @@ describe('languages/python', () => {
       await extractFromPythonRootFiles(
         mockReadFile({ 'requirements.txt': 'black>=23.0' }),
         ['requirements.txt'],
-        [],
-        [],
-        qualityTools,
-        [],
+        { languages: [], testFrameworks: [], qualityTools, buildTools: [] },
       );
       expect(qualityTools.find((t) => t.id === 'black')).toBeDefined();
     });
@@ -106,10 +88,7 @@ describe('languages/python', () => {
           'pyproject.toml': '[tool.ruff]\nline-length = 100\n',
         }),
         ['pyproject.toml'],
-        [],
-        [],
-        qualityTools,
-        [],
+        { languages: [], testFrameworks: [], qualityTools, buildTools: [] },
       );
       expect(qualityTools.find((t) => t.id === 'ruff')).toBeDefined();
     });
@@ -121,24 +100,19 @@ describe('languages/python', () => {
           'pyproject.toml': '[project]\nrequires-python = ">=3.9"\n',
         }),
         ['pyproject.toml'],
-        languages,
-        [],
-        [],
-        [],
+        { languages, testFrameworks: [], qualityTools: [], buildTools: [] },
       );
       expect(languages[0]!.version).toBe('3.9');
     });
 
     it('skips non-root files for detection', async () => {
       const buildTools: DetectedItem[] = [];
-      await extractFromPythonRootFiles(
-        mockReadFile({}),
-        ['subdir/requirements.txt'],
-        [],
-        [],
-        [],
+      await extractFromPythonRootFiles(mockReadFile({}), ['subdir/requirements.txt'], {
+        languages: [],
+        testFrameworks: [],
+        qualityTools: [],
         buildTools,
-      );
+      });
       expect(buildTools).toHaveLength(0);
     });
   });
@@ -152,10 +126,7 @@ describe('languages/python', () => {
           'pyproject.toml': '[tool.poetry]\nname = "test"\n',
         }),
         ['pyproject.toml'],
-        [],
-        [],
-        [],
-        buildTools,
+        { languages: [], testFrameworks: [], qualityTools: [], buildTools },
       );
       const poetry = buildTools.find((t) => t.id === 'poetry');
       expect(poetry).toBeDefined();
@@ -169,10 +140,7 @@ describe('languages/python', () => {
           'pyproject.toml': '[project]\nname = "test"\n',
         }),
         ['pyproject.toml'],
-        [],
-        [],
-        [],
-        buildTools,
+        { languages: [], testFrameworks: [], qualityTools: [], buildTools },
       );
       const poetry = buildTools.find((t) => t.id === 'poetry');
       expect(poetry).toBeUndefined();
@@ -180,55 +148,47 @@ describe('languages/python', () => {
 
     it('does nothing when pyproject.toml content is null', async () => {
       const buildTools: DetectedItem[] = [];
-      await extractFromPythonRootFiles(
-        mockReadFile({}),
-        ['pyproject.toml'],
-        [],
-        [],
-        [],
+      await extractFromPythonRootFiles(mockReadFile({}), ['pyproject.toml'], {
+        languages: [],
+        testFrameworks: [],
+        qualityTools: [],
         buildTools,
-      );
+      });
       expect(buildTools).toHaveLength(0);
     });
 
     it('does nothing when requirements.txt content is null', async () => {
       const testFrameworks: DetectedItem[] = [];
-      await extractFromPythonRootFiles(
-        mockReadFile({}),
-        ['requirements.txt'],
-        [],
+      await extractFromPythonRootFiles(mockReadFile({}), ['requirements.txt'], {
+        languages: [],
         testFrameworks,
-        [],
-        [],
-      );
+        qualityTools: [],
+        buildTools: [],
+      });
       expect(testFrameworks).toHaveLength(0);
     });
 
     it('does nothing when pyproject.toml content is null', async () => {
       // Covers line 43: content null check
       const buildTools: DetectedItem[] = [];
-      await extractFromPythonRootFiles(
-        mockReadFile({}),
-        ['pyproject.toml'],
-        [],
-        [],
-        [],
+      await extractFromPythonRootFiles(mockReadFile({}), ['pyproject.toml'], {
+        languages: [],
+        testFrameworks: [],
+        qualityTools: [],
         buildTools,
-      );
+      });
       expect(buildTools).toHaveLength(0);
     });
 
     it('does nothing when requirements.txt content is null', async () => {
       // Covers line 67: content null check
       const testFrameworks: DetectedItem[] = [];
-      await extractFromPythonRootFiles(
-        mockReadFile({}),
-        ['requirements.txt'],
-        [],
+      await extractFromPythonRootFiles(mockReadFile({}), ['requirements.txt'], {
+        languages: [],
         testFrameworks,
-        [],
-        [],
-      );
+        qualityTools: [],
+        buildTools: [],
+      });
       expect(testFrameworks).toHaveLength(0);
     });
   });

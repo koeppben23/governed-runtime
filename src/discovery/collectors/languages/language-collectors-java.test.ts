@@ -245,12 +245,14 @@ describe('languages/java', () => {
       const runtimes = [makeItem('node')];
       await extractFromPackageJson(
         mockReadFile({ 'package.json': JSON.stringify({ engines: { node: 'latest' } }) }),
-        [],
-        [],
-        runtimes,
-        [],
-        [],
-        [],
+        {
+          languages: [],
+          frameworks: [],
+          runtimes,
+          testFrameworks: [],
+          qualityTools: [],
+          databases: [],
+        },
       );
       expect(runtimes[0]!.version).toBeUndefined();
     });
@@ -263,12 +265,7 @@ describe('languages/java', () => {
         mockReadFile({
           'package.json': JSON.stringify({ devDependencies: { typescript: '^5.3' } }),
         }),
-        languages,
-        frameworks,
-        [],
-        [],
-        [],
-        databases,
+        { languages, frameworks, runtimes: [], testFrameworks: [], qualityTools: [], databases },
       );
       expect(languages).toHaveLength(0);
     });

@@ -108,42 +108,50 @@ export function refineBuildToolFromLockfiles(
     }
   }
 }
-export async function extractFromPackageJson(
-  readFile: ReadFileFn,
-  languages: DetectedItem[],
-  frameworks: DetectedItem[],
-  runtimes: DetectedItem[],
-  testFrameworks: DetectedItem[],
-  qualityTools: DetectedItem[],
-  databases: DetectedItem[],
-): Promise<void> {
-  const content = await safeRead(readFile, 'package.json');
-  if (!content) return;
+export interface PackageJsonExtractionTargets {
+  readonly languages: DetectedItem[];
+  readonly frameworks: DetectedItem[];
+  readonly runtimes: DetectedItem[];
+  readonly testFrameworks: DetectedItem[];
+  readonly qualityTools: DetectedItem[];
+  readonly databases: DetectedItem[];
+}
 
-  let pkg: Record<string, unknown>;
-  try {
-    pkg = JSON.parse(content) as Record<string, unknown>;
-  } catch {
-    return;
+type EcosystemRule = (typeof JS_ECOSYSTEM_DEPS)[number];
+
+function targetArrayFor(
+  rule: EcosystemRule,
+  targets: PackageJsonExtractionTargets,
+): DetectedItem[] {
+  switch (rule.category) {
+    case 'framework':
+      return targets.frameworks;
+    case 'testFramework':
+      return targets.testFrameworks;
+    case 'qualityTool':
+      return targets.qualityTools;
   }
+}
 
+function applyNodeEngineVersion(pkg: Record<string, unknown>, runtimes: DetectedItem[]): void {
   // engines.node → node runtime version (never to language items)
   const engines = pkg.engines as Record<string, string> | undefined;
-  if (engines?.node) {
-    const ver = captureGroup(engines.node.match(/(\d+(?:\.\d+)*)/));
-    if (ver) {
-      enrichRuntimeVersion(runtimes, 'node', ver, 'package.json:engines.node');
-    }
+  if (!engines?.node) return;
+
+  const ver = captureGroup(engines.node.match(/(\d+(?:\.\d+)*)/));
+  if (ver) {
+    enrichRuntimeVersion(runtimes, 'node', ver, 'package.json:engines.node');
   }
+}
 
-  // Combined deps + devDeps for JS ecosystem scanning
-  const deps = pkg.dependencies as Record<string, string> | undefined;
-  const devDeps = pkg.devDependencies as Record<string, string> | undefined;
-
-  // ── JS/TS ecosystem scanning ──────────────────────────────────────────
-  // Scan both deps and devDeps against JS_ECOSYSTEM_DEPS.
-  // For each matched package, resolve the target array from category,
-  // then enrich or create the item with its version.
+function applyEcosystemDeps(
+  deps: Record<string, string> | undefined,
+  devDeps: Record<string, string> | undefined,
+  targets: PackageJsonExtractionTargets,
+): void {
+  // Scan both deps and devDeps against JS_ECOSYSTEM_DEPS. For each matched
+  // package, resolve the target array from category, then enrich or create
+  // the item with its version.
   const seenIds = new Set<string>();
   for (const rule of JS_ECOSYSTEM_DEPS) {
     if (seenIds.has(rule.id)) continue; // First matching package per id wins
@@ -155,34 +163,33 @@ export async function extractFromPackageJson(
     const ver = captureGroup(range.match(/(\d+(?:\.\d+)*)/));
     const evidenceKey = `package.json:${deps?.[rule.pkg] ? 'dependencies' : 'devDependencies'}.${rule.pkg}`;
 
-    let targetArray: DetectedItem[];
-    switch (rule.category) {
-      case 'framework':
-        targetArray = frameworks;
-        break;
-      case 'testFramework':
-        targetArray = testFrameworks;
-        break;
-      case 'qualityTool':
-        targetArray = qualityTools;
-        break;
-    }
-
-    enrichOrCreateItem(targetArray, rule.id, evidenceKey, ver);
+    enrichOrCreateItem(targetArrayFor(rule, targets), rule.id, evidenceKey, ver);
   }
+}
 
+function applyTypescriptVersion(
+  deps: Record<string, string> | undefined,
+  devDeps: Record<string, string> | undefined,
+  languages: DetectedItem[],
+): void {
   // devDependencies.typescript → typescript version
   const tsRange = devDeps?.typescript ?? deps?.typescript;
-  if (tsRange) {
-    const tsItem = findItem(languages, 'typescript');
-    if (tsItem && !tsItem.version) {
-      const ver = captureGroup(tsRange.match(/(\d+(?:\.\d+)*)/));
-      if (ver) {
-        setVersion(tsItem, ver, 'package.json:devDependencies.typescript');
-      }
+  if (!tsRange) return;
+
+  const tsItem = findItem(languages, 'typescript');
+  if (tsItem && !tsItem.version) {
+    const ver = captureGroup(tsRange.match(/(\d+(?:\.\d+)*)/));
+    if (ver) {
+      setVersion(tsItem, ver, 'package.json:devDependencies.typescript');
     }
   }
+}
 
+function applyDatabaseDeps(
+  deps: Record<string, string> | undefined,
+  devDeps: Record<string, string> | undefined,
+  databases: DetectedItem[],
+): void {
   // Database engine detection from dependencies/devDependencies (version intentionally omitted).
   for (const rule of JS_DATABASE_DEPS) {
     const inDeps = deps?.[rule.pkg] !== undefined;
@@ -192,6 +199,30 @@ export async function extractFromPackageJson(
     const sourceKey = inDeps ? 'dependencies' : 'devDependencies';
     enrichDatabaseItem(databases, rule.id, `package.json:${sourceKey}.${rule.pkg}`);
   }
+}
+
+export async function extractFromPackageJson(
+  readFile: ReadFileFn,
+  targets: PackageJsonExtractionTargets,
+): Promise<void> {
+  const content = await safeRead(readFile, 'package.json');
+  if (!content) return;
+
+  let pkg: Record<string, unknown>;
+  try {
+    pkg = JSON.parse(content) as Record<string, unknown>;
+  } catch {
+    return;
+  }
+
+  // Combined deps + devDeps for JS ecosystem scanning
+  const deps = pkg.dependencies as Record<string, string> | undefined;
+  const devDeps = pkg.devDependencies as Record<string, string> | undefined;
+
+  applyNodeEngineVersion(pkg, targets.runtimes);
+  applyEcosystemDeps(deps, devDeps, targets);
+  applyTypescriptVersion(deps, devDeps, targets.languages);
+  applyDatabaseDeps(deps, devDeps, targets.databases);
 }
 export async function extractFromTsConfig(
   readFile: ReadFileFn,

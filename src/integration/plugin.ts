@@ -52,7 +52,6 @@ export function isUsableWorktree(worktree: string | undefined): boolean {
   }
 }
 
-// eslint-disable-next-line max-lines-per-function -- plugin runtime composition wires the workspace, logger, config, and every hook dependency together in one factory.
 export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree }) => {
   const candidateWorktree = worktree || directory;
   const auditWorktree = isUsableWorktree(candidateWorktree) ? candidateWorktree : undefined;

@@ -494,15 +494,14 @@ async function extractVersions(ctx: {
   // Fully sequential: deterministic first-write-wins priority.
   // .nvmrc / .node-version > package.json engines.node
   await extractFromNodeVersionFiles(readFile, runtimes);
-  await extractFromPackageJson(
-    readFile,
+  await extractFromPackageJson(readFile, {
     languages,
     frameworks,
     runtimes,
     testFrameworks,
     qualityTools,
     databases,
-  );
+  });
   await extractFromTsConfig(readFile, languages);
   // Maven before Gradle: shared write targets (languages.java, frameworks.spring-boot)
   await extractFromPomXml(readFile, languages, frameworks);
@@ -510,14 +509,12 @@ async function extractVersions(ctx: {
   await extractFromGradleBuild(readFile, languages, frameworks);
   await extractArtifactsFromGradle(readFile, testFrameworks, tools, qualityTools, databases);
   await extractDatabasesFromDockerCompose(readFile, allFiles, databases);
-  await extractFromPythonRootFiles(
-    readFile,
-    allFiles,
+  await extractFromPythonRootFiles(readFile, allFiles, {
     languages,
     testFrameworks,
     qualityTools,
     buildTools,
-  );
+  });
   await extractFromRustRootFiles(readFile, allFiles, languages, qualityTools, buildTools);
   await extractFromGoMod(readFile, languages, allFiles);
 }

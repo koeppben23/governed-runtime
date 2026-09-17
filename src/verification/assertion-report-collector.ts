@@ -91,14 +91,14 @@ export async function collectAssertionReports(
         cwd,
       );
     case 'snapshot_diff':
-      return collectSnapshotDiff(
-        reportCtx.preExecutionSnapshot,
-        reportCtx.spec.standardPatterns,
-        spec.format,
-        spec.providerId,
-        prepared.attemptId,
+      return collectSnapshotDiff({
+        preSnapshot: reportCtx.preExecutionSnapshot,
+        patterns: reportCtx.spec.standardPatterns,
+        format: spec.format,
+        providerId: spec.providerId,
+        attemptId: prepared.attemptId,
         cwd,
-      );
+      });
     case 'stdout':
       return collectStdout(execution.stdout, spec.format, spec.providerId, prepared.attemptId);
   }
@@ -171,14 +171,17 @@ async function collectRunSpecific(
 
 // ─── Snapshot diff collection ────────────────────────────────────────────────
 
-async function collectSnapshotDiff(
-  preSnapshot: readonly ReportFileSnapshot[],
-  patterns: readonly string[],
-  format: ReportFormatId,
-  providerId: ProviderId,
-  attemptId: string,
-  cwd: string,
-): Promise<ReportCollectionResult> {
+interface SnapshotDiffOptions {
+  readonly preSnapshot: readonly ReportFileSnapshot[];
+  readonly patterns: readonly string[];
+  readonly format: ReportFormatId;
+  readonly providerId: ProviderId;
+  readonly attemptId: string;
+  readonly cwd: string;
+}
+
+async function collectSnapshotDiff(options: SnapshotDiffOptions): Promise<ReportCollectionResult> {
+  const { preSnapshot, patterns, format, providerId, attemptId, cwd } = options;
   const postSnapshot = await takeSnapshot(cwd, [...patterns]);
   const changedPaths = diffSnapshots(preSnapshot, postSnapshot).sort();
 

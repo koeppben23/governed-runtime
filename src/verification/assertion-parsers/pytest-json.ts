@@ -52,6 +52,57 @@ export function buildPytestLocalId(nodeId: string): string {
   return nodeId;
 }
 
+function buildPytestFailure(
+  test: PytestTest,
+  status: StructuredAssertionEvidence['status'],
+): StructuredAssertionEvidence['failure'] {
+  if (status === 'failed' && test.call?.longrepr) {
+    const longrepr = test.call.longrepr;
+    return {
+      message: longrepr.split('\n')[0] || undefined,
+      detailDigest: sha256(longrepr),
+    };
+  }
+  if (status === 'errored') {
+    const setupErr = test.setup?.outcome === 'error' ? test.setup : undefined;
+    const teardownErr = test.teardown?.outcome === 'error' ? test.teardown : undefined;
+    const detail = setupErr ?? teardownErr;
+    if (detail && test.call?.longrepr) {
+      return {
+        message: test.call.longrepr.split('\n')[0] || undefined,
+        detailDigest: sha256(test.call.longrepr),
+      };
+    }
+  }
+  return undefined;
+}
+
+function buildPytestAssertion(
+  test: PytestTest,
+  providerId: ProviderId,
+): StructuredAssertionEvidence | null {
+  const nodeId = test.nodeid;
+  if (!nodeId) return null;
+
+  const outcome = test.outcome ?? 'skipped';
+  // Determine the primary status: check call phase first, then overall
+  const callOutcome = test.call?.outcome ?? outcome;
+  const status = mapStatus(callOutcome);
+  const localId = buildPytestLocalId(nodeId);
+  const assertion: AssertionIdentity = { providerId, localId };
+
+  return {
+    assertion,
+    providerId,
+    status,
+    suiteName: undefined,
+    testName: nodeId.split('::').pop() ?? nodeId,
+    durationMs:
+      typeof test.call?.duration === 'number' ? Math.round(test.call.duration * 1000) : undefined,
+    failure: buildPytestFailure(test, status),
+  };
+}
+
 export function parsePytestJson(jsonText: string, context: ParseContext): ParserResult {
   const providerId: ProviderId = context.providerId;
 
@@ -67,51 +118,9 @@ export function parsePytestJson(jsonText: string, context: ParseContext): Parser
     return emptyResult();
   }
 
-  const assertions: StructuredAssertionEvidence[] = [];
-
-  for (const test of tests) {
-    const nodeId = test.nodeid;
-    if (!nodeId) continue;
-
-    const outcome = test.outcome ?? 'skipped';
-    // Determine the primary status: check call phase first, then overall
-    const callOutcome = test.call?.outcome ?? outcome;
-    const status = mapStatus(callOutcome);
-    const localId = buildPytestLocalId(nodeId);
-    const assertion: AssertionIdentity = { providerId, localId };
-
-    let failure: StructuredAssertionEvidence['failure'];
-    if (status === 'failed' && test.call?.longrepr) {
-      const longrepr = test.call.longrepr;
-      failure = {
-        message: longrepr.split('\n')[0] || undefined,
-        detailDigest: sha256(longrepr),
-      };
-    } else if (status === 'errored') {
-      const setupErr = test.setup?.outcome === 'error' ? test.setup : undefined;
-      const teardownErr = test.teardown?.outcome === 'error' ? test.teardown : undefined;
-      const detail = setupErr ?? teardownErr;
-      if (detail && test.call?.longrepr) {
-        failure = {
-          message: test.call.longrepr.split('\n')[0] || undefined,
-          detailDigest: sha256(test.call.longrepr),
-        };
-      }
-    }
-
-    const testName = nodeId.split('::').pop() ?? nodeId;
-
-    assertions.push({
-      assertion,
-      providerId,
-      status,
-      suiteName: undefined,
-      testName,
-      durationMs:
-        typeof test.call?.duration === 'number' ? Math.round(test.call.duration * 1000) : undefined,
-      failure,
-    });
-  }
+  const assertions = tests
+    .map((test) => buildPytestAssertion(test, providerId))
+    .filter((assertion): assertion is StructuredAssertionEvidence => assertion !== null);
 
   return {
     assertions,

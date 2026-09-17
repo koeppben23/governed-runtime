@@ -126,7 +126,6 @@ export async function validateResolvedReviewUrlTarget(
 
 /** Resolve and validate the one concrete network peer used by the HTTPS request. */
 // The explicit branches preserve distinct fail-closed diagnostics for each boundary.
-// eslint-disable-next-line complexity
 export async function resolveReviewTarget(
   url: string,
   dnsLookup: ReviewDnsLookup = lookupReviewHostname,
@@ -230,7 +229,6 @@ function validateResolvedAddress(
 
 /** Fetch content through the validated target, with no connection-time DNS lookup. */
 // The response boundary deliberately distinguishes transport, status, charset, and byte-limit failures.
-// eslint-disable-next-line complexity
 export async function fetchUrlContent(
   url: string,
   dnsLookup?: ReviewDnsLookup,

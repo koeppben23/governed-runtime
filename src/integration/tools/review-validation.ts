@@ -97,7 +97,6 @@ export interface ReviewFindingsValidationContext {
  *
  * @returns formatBlocked string if validation fails, null if valid.
  */
-// eslint-disable-next-line complexity -- ordered fail-closed validation boundary
 export function validateReviewFindings(
   findings: ReviewFindings,
   ctx: ReviewFindingsValidationContext,

@@ -52,7 +52,6 @@ export function blockedPlanReviewInProgress(state: SessionState): string | null 
   return null;
 }
 
-// eslint-disable-next-line complexity -- the plan continuation route is one sequential fail-closed chain (pending re-emit, interrupted-dispatch re-arm, missing-attempt close).
 export async function routePlanInitialSubmission(
   scope: PlanExecutionScope,
 ): Promise<string | null> {

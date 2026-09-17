@@ -83,7 +83,6 @@ function hasValidationAttemptReference(challenge: Challenge): boolean {
   );
 }
 
-// eslint-disable-next-line complexity -- explicit fail-closed challenge checks
 function validateChallenge(
   input: ChallengeConsistencyInput,
   challenge: Challenge,

@@ -254,7 +254,6 @@ function unavailableAfterAttemptResponse(reason: string): SystemWorkResumeOutcom
  * attempt lifecycle for both the initial in-flow run and lifecycle recovery:
  * execute checks → inspect phase → either complete or durably re-arm.
  */
-// eslint-disable-next-line complexity, max-lines-per-function -- owns the complete durable attempt lifecycle in one authority.
 async function runAutomaticValidationAttempt(
   context: WorkspaceToolContext,
   deps: SystemWorkRetryDeps,

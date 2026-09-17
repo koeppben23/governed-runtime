@@ -73,18 +73,22 @@ describe('languages/node', () => {
 
 describe('languages/js-ecosystem', () => {
   describe('extractFromPackageJson', () => {
+    const emptyTargets = {
+      languages: [] as DetectedItem[],
+      frameworks: [] as DetectedItem[],
+      runtimes: [] as DetectedItem[],
+      testFrameworks: [] as DetectedItem[],
+      qualityTools: [] as DetectedItem[],
+      databases: [] as DetectedItem[],
+    };
+
     it('detects typescript from devDependencies', async () => {
       const languages: DetectedItem[] = [makeItem('typescript')];
       await extractFromPackageJson(
         mockReadFile({
           'package.json': JSON.stringify({ devDependencies: { typescript: '^5.3' } }),
         }),
-        languages,
-        [],
-        [],
-        [],
-        [],
-        [],
+        { ...emptyTargets, languages },
       );
       expect(languages[0]!.version).toBe('5.3');
     });
@@ -98,12 +102,7 @@ describe('languages/js-ecosystem', () => {
         mockReadFile({
           'package.json': JSON.stringify({ devDependencies: { typescript: '^5.3' } }),
         }),
-        languages,
-        [],
-        [],
-        [],
-        [],
-        [],
+        { ...emptyTargets, languages },
       );
       expect(languages[0]!.version).toBe('5.4');
     });
@@ -115,12 +114,7 @@ describe('languages/js-ecosystem', () => {
         mockReadFile({
           'package.json': JSON.stringify({ devDependencies: { pg: '^8.11.0' } }),
         }),
-        [],
-        [],
-        [],
-        [],
-        [],
-        databases,
+        { ...emptyTargets, databases },
       );
       const pg = databases.find((d) => d.id === 'postgresql');
       expect(pg).toBeDefined();
@@ -172,6 +166,15 @@ describe('languages/js-ecosystem', () => {
   });
 
   describe('extractFromPackageJson edge cases', () => {
+    const emptyTargets = {
+      languages: [] as DetectedItem[],
+      frameworks: [] as DetectedItem[],
+      runtimes: [] as DetectedItem[],
+      testFrameworks: [] as DetectedItem[],
+      qualityTools: [] as DetectedItem[],
+      databases: [] as DetectedItem[],
+    };
+
     it('detects framework from dependencies with version', async () => {
       // Covers JS_ECOSYSTEM_DEPS framework detection path in deps
       const frameworks: DetectedItem[] = [];
@@ -179,12 +182,7 @@ describe('languages/js-ecosystem', () => {
         mockReadFile({
           'package.json': JSON.stringify({ dependencies: { react: '^18.3.1' } }),
         }),
-        [],
-        frameworks,
-        [],
-        [],
-        [],
-        [],
+        { ...emptyTargets, frameworks },
       );
       expect(frameworks.find((f) => f.id === 'react')).toBeDefined();
     });
@@ -196,12 +194,7 @@ describe('languages/js-ecosystem', () => {
         mockReadFile({
           'package.json': JSON.stringify({ dependencies: { mysql2: '^3.9.0' } }),
         }),
-        [],
-        [],
-        [],
-        [],
-        [],
-        databases,
+        { ...emptyTargets, databases },
       );
       const mysql = databases.find((d) => d.id === 'mysql');
       expect(mysql).toBeDefined();
@@ -215,12 +208,7 @@ describe('languages/js-ecosystem', () => {
         mockReadFile({
           'package.json': JSON.stringify({ engines: { node: '>=20.0.0' } }),
         }),
-        [],
-        [],
-        runtimes,
-        [],
-        [],
-        [],
+        { ...emptyTargets, runtimes },
       );
       expect(runtimes[0]!.version).toBe('20.0.0');
     });
@@ -231,12 +219,7 @@ describe('languages/js-ecosystem', () => {
         mockReadFile({
           'package.json': JSON.stringify({ dependencies: { vue: '^3.4.0' } }),
         }),
-        [],
-        frameworks,
-        [],
-        [],
-        [],
-        [],
+        { ...emptyTargets, frameworks },
       );
       expect(frameworks.find((f) => f.id === 'vue')).toBeDefined();
     });
