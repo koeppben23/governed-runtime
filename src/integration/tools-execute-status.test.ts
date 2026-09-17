@@ -36,6 +36,7 @@ import {
 } from '../adapters/persistence.js';
 import { writeStateWithArtifacts } from './tools/helpers.js';
 import { REVIEW_REPORT_SCHEMA_ID } from '../state/evidence-identifiers.js';
+import { MANUAL_CLAIM_SCOPE, mintProofGraphClaimId } from '../state/proofgraph-approval.js';
 import { makePlanRevision, TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
 import { completedDispatchForInvocation } from '../state/evidence-test-constants.js';
 import {
@@ -1456,15 +1457,13 @@ describe('declare_contract', () => {
   it('blocks a derived manual claim id collision without mutating state', async () => {
     const sessDir = await seedImplValidation();
     const statement = 'A colliding manual claim.';
-    const hash = crypto
-      .createHash('sha1')
-      .update(Buffer.from('6ba7b8109dad11d180b400c04fd430c8', 'hex'))
-      .update(statement, 'utf8')
-      .digest();
-    hash[6] = (hash[6]! & 0x0f) | 0x50;
-    hash[8] = (hash[8]! & 0x3f) | 0x80;
-    const hex = hash.subarray(0, 16).toString('hex');
-    const claimId = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+    // The collision is only detectable when the persisted id was minted by the
+    // same identity authority the tool derives its candidate id from.
+    const claimId = mintProofGraphClaimId({
+      flow: 'manual',
+      authoritySectionId: MANUAL_CLAIM_SCOPE,
+      statement,
+    });
     const state = await readState(sessDir);
     await writeStateWithArtifacts(sessDir, {
       ...state!,

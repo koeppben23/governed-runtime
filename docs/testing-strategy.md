@@ -259,6 +259,7 @@ Candidate authorities awaiting admission (basis profile unless noted):
 - `src/adapters/git.ts` — 57.06 % after one focused behavior-test pass (base profile).
 - `src/adapters/frozen-repository.ts` — 70.37 % after one focused acquisition-boundary pass (base profile), including a production fix that keeps OVERSIZED_BLOB out of ACQUISITION_FAILED.
 - `src/state/schema.ts` — 77.78 % under the schemas profile (peer-review lifecycle residual).
+- `src/state/proofgraph-approval.ts` — targeted diagnostic 41.00 % total / 58.57 % covered (base config: 41 killed / 29 survived / 30 no-coverage); the residual is dominated by uncovered certificate-verification branches and schema-method mutants, so the authority stays backlog until its covering suites close that gap.
 - `src/redaction/export-redaction.ts` — 63.86 % (equivalence-limited).
 - `src/mcp-server/schema-converter.ts` — 100.00 % on one valid mutant; mutant density is insufficient for authority admission (thin evidence).
 

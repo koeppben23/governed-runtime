@@ -22,18 +22,43 @@ import * as crypto from 'node:crypto';
 /** RFC 4122 DNS namespace, used to derive stable UUIDv5 claim identities. */
 const CLAIM_NAMESPACE = Buffer.from('6ba7b8109dad11d180b400c04fd430c8', 'hex');
 
-function normalizeClaimStatement(statement: string): string {
+/**
+ * Identity domain of a ProofGraph claim.
+ *
+ * - `plan` / `architecture`: claims declared against an approved authority and
+ *   bound by that authority's approval certificate.
+ * - `manual`: evidence-bound claims declared directly at the implementation
+ *   write boundary, which carry no approval certificate and remain advisory.
+ *
+ * The domain is PART of the claim identity: the same statement in different
+ * domains is a different claim with a distinct identity. Domain scopes must
+ * never be collapsed into statement equality.
+ */
+export type ProofGraphClaimDomain = 'plan' | 'architecture' | 'manual';
+
+/**
+ * Reserved authority-section scope for `manual` claims. A manual declaration
+ * has no governing authority section, so the identity authority fixes its
+ * scope here; callers never invent one.
+ */
+export const MANUAL_CLAIM_SCOPE = 'manual-contract';
+
+/**
+ * Canonical statement key of a claim identity. Two statements that differ only
+ * in surrounding/interior whitespace or casing are the SAME claim statement.
+ */
+export function normalizeClaimStatement(statement: string): string {
   return statement.trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
 /**
  * Derive a deterministic UUIDv5 for a claim so that identical declarations
- * in the same authority section produce the same claimId across idempotent
- * retries, while the same statement in a different authority section or flow
- * produces a distinct identity.
+ * in the same identity domain and authority section produce the same claimId
+ * across idempotent retries, while the same statement in a different authority
+ * section or domain produces a distinct identity.
  */
 export function mintProofGraphClaimId(input: {
-  flow: 'plan' | 'architecture';
+  flow: ProofGraphClaimDomain;
   statement: string;
   authoritySectionId: string;
 }): string {

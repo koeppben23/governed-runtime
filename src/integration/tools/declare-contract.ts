@@ -18,11 +18,14 @@
  * @version v1
  */
 
-import * as crypto from 'node:crypto';
 import { z } from 'zod';
 
 import type { Phase, SessionState } from '../../state/schema.js';
-import { CounterexampleRequirement } from '../../state/proofgraph-approval.js';
+import {
+  CounterexampleRequirement,
+  MANUAL_CLAIM_SCOPE,
+  mintProofGraphClaimId,
+} from '../../state/proofgraph-approval.js';
 import type { CounterexampleRequirement as CounterexampleRequirementType } from '../../state/proofgraph-approval.js';
 import type { DeclaredClaim } from '../../state/proofgraph.js';
 import type { ProofProviderKind } from '../../state/proofgraph-primitives.js';
@@ -62,16 +65,20 @@ const DECLARE_CONTRACT_PHASES: ReadonlySet<Phase> = new Set<Phase>([
   'IMPL_REVIEW',
 ]);
 
-/** RFC 4122 DNS namespace, used to derive a stable UUIDv5 per claim statement. */
-const CLAIM_NAMESPACE = Buffer.from('6ba7b8109dad11d180b400c04fd430c8', 'hex');
-
-/** Deterministic UUIDv5 for a claim statement (stable claimId across evaluations). */
-function claimIdFor(statement: string): string {
-  const hash = crypto.createHash('sha1').update(CLAIM_NAMESPACE).update(statement, 'utf8').digest();
-  hash[6] = (hash[6]! & 0x0f) | 0x50; // version 5
-  hash[8] = (hash[8]! & 0x3f) | 0x80; // RFC 4122 variant
-  const hex = hash.subarray(0, 16).toString('hex');
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+/**
+ * Mint the canonical identity of a manual (`/declare-contract`) claim.
+ *
+ * Manual claims have no governing authority section, so their identity uses
+ * the identity authority's reserved manual scope. Deriving the id any other
+ * way would put manual claims outside the canonical identity space and make
+ * collision checks against persisted contracts meaningless.
+ */
+function manualClaimId(statement: string): string {
+  return mintProofGraphClaimId({
+    flow: 'manual',
+    authoritySectionId: MANUAL_CLAIM_SCOPE,
+    statement,
+  });
 }
 
 /** A digest-bound reference to an executed validation attempt. */
@@ -241,7 +248,7 @@ function buildDeclaredClaims(
     const evidenceRefs: DeclaredClaim['evidenceRefs'][number][] = [evidenceRef, ...optional.refs];
     const positive: ProofProviderKind[] = ['executed_test', ...optional.positive];
     claims.push({
-      claimId: claimIdFor(rc.statement),
+      claimId: manualClaimId(rc.statement),
       statement: rc.statement,
       // No auto-`fact`: classification follows the resolved governing authority.
       signalClass: isFact ? 'fact' : 'hypothesis',
@@ -294,8 +301,12 @@ function validateDeclaredClaimContract(
 
 /**
  * Reject a manual declaration that would replace an existing claim identity.
- * Manual ids are derived from statements, so check them before resolving any
- * evidence providers or mutation reports.
+ *
+ * Identity is the canonical (domain, authority section, normalized statement)
+ * tuple. A manual claim can therefore only collide with another manual claim:
+ * the same statement declared by the plan or architecture domain is a distinct
+ * claim by contract, never a collision. Checked before any evidence provider
+ * or mutation report is resolved.
  */
 function validateMergedClaimIds(
   rawClaims: readonly RawClaim[],
@@ -304,7 +315,7 @@ function validateMergedClaimIds(
   const existingIds = new Set((state.proofContract?.claims ?? []).map((claim) => claim.claimId));
   const requestedIds = new Set<string>();
   for (const claim of rawClaims) {
-    const derivedClaimId = claimIdFor(claim.statement);
+    const derivedClaimId = manualClaimId(claim.statement);
     if (existingIds.has(derivedClaimId) || requestedIds.has(derivedClaimId)) {
       return formatBlocked('PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE', {
         claimRef: claim.statement,
