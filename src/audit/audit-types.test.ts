@@ -9,6 +9,12 @@ import {
   createLifecycleEvent,
   completionLifecycleEventId,
   createDecisionEvent,
+  buildTransitionBody,
+  buildStateWriteBody,
+  buildEnforcementDeniedBody,
+  buildToolCallBody,
+  buildErrorBody,
+  buildLifecycleBody,
   summarizeArgs,
   type ChainedAuditEvent,
 } from './types.js';
@@ -714,5 +720,88 @@ describe('audit types', () => {
       ]);
       expect(result.valid).toBe(true);
     });
+  });
+});
+
+describe('host session provenance on event bodies', () => {
+  const buildBodies = {
+    transition: (hostSessionId: string | undefined) =>
+      buildTransitionBody(
+        SESSION_ID,
+        hostSessionId,
+        'PLAN',
+        { event: 'PLAN_READY' } as never,
+        TS1,
+        GENESIS_HASH,
+      ),
+    stateWrite: (hostSessionId: string | undefined) =>
+      buildStateWriteBody(
+        SESSION_ID,
+        hostSessionId,
+        'PLAN',
+        {
+          operationId: 'op-1',
+          preStateDigest: 'a',
+          mutationDigest: 'b',
+          postStateDigest: 'c',
+        } as never,
+        TS1,
+        GENESIS_HASH,
+      ),
+    enforcementDenied: (hostSessionId: string | undefined) =>
+      buildEnforcementDeniedBody(
+        SESSION_ID,
+        hostSessionId,
+        'PLAN',
+        {
+          tool: 'bash',
+          reasonCode: 'RISK_CLASSIFICATION_REQUIRED',
+          hostCallId: 'host-call-1',
+          traceId: 'trace-1',
+          policyMode: 'team',
+          enforcementLevel: 'synchronous',
+        } as never,
+        TS1,
+        GENESIS_HASH,
+      ),
+    toolCall: (hostSessionId: string | undefined) =>
+      buildToolCallBody({
+        flowguardSessionId: SESSION_ID,
+        hostSessionId,
+        phase: 'PLAN',
+        detail: { tool: 'bash', argsSummary: {}, success: true } as never,
+        occurredAt: TS1,
+        actor: 'agent',
+        prevHash: GENESIS_HASH,
+      }),
+    error: (hostSessionId: string | undefined) =>
+      buildErrorBody(
+        SESSION_ID,
+        hostSessionId,
+        { code: 'TEST_ERROR', message: 'm', recoveryHint: 'r', errorPhase: 'PLAN' } as never,
+        TS1,
+        GENESIS_HASH,
+      ),
+    lifecycle: (hostSessionId: string | undefined) =>
+      buildLifecycleBody({
+        flowguardSessionId: SESSION_ID,
+        hostSessionId,
+        detail: { action: 'session_created', finalPhase: 'PLAN' } as never,
+        occurredAt: TS1,
+        actor: 'machine',
+        prevHash: GENESIS_HASH,
+      } as never),
+  } as const;
+
+  it('carries hostSessionId on every event body when the host provides one', () => {
+    for (const [name, build] of Object.entries(buildBodies)) {
+      expect(build('host-session-1').hostSessionId, name).toBe('host-session-1');
+    }
+  });
+
+  it('omits hostSessionId from every event body when the host provides none', () => {
+    for (const [name, build] of Object.entries(buildBodies)) {
+      expect('hostSessionId' in build(undefined), name).toBe(false);
+    }
   });
 });
