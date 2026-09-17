@@ -774,6 +774,14 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     authority: 'In-process mutation episode tracking',
     source: [SOURCE.trustBoundaries],
     coveringSuites: ['src/integration/plugin-mutation-episodes.test.ts'],
+    admission: {
+      verifiedAt: '2026-09-17',
+      commitSha: '65b6b0126b5fb5fc77cd31701ac3e37f48356ccf',
+      scoreAtAdmission: 85.85,
+      killed: 91,
+      survived: 15,
+      config: 'stryker.conf.json',
+    },
   },
   {
     classification: 'required',
@@ -783,6 +791,14 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     authority: 'Review provenance projection',
     source: [SOURCE.trustBoundaries],
     coveringSuites: ['src/integration/review/reviewed-digest.test.ts'],
+    admission: {
+      verifiedAt: '2026-09-17',
+      commitSha: '65b6b0126b5fb5fc77cd31701ac3e37f48356ccf',
+      scoreAtAdmission: 93.33,
+      killed: 84,
+      survived: 6,
+      config: 'stryker.conf.json',
+    },
   },
   {
     classification: 'required',
