@@ -123,6 +123,7 @@ describe('post-tool-use hook', () => {
       hookSource: 'command_hook',
     });
     expect(typeof (event['detail'] as Record<string, unknown>)['platform']).toBe('string');
+    expect(stderr).toContain('post-tool-use platform:');
     expect(stderr).toContain('audit persisted: Bash (sess-1)');
   });
 
@@ -142,8 +143,26 @@ describe('post-tool-use hook', () => {
     const truncated = event.detail.input['command'] as string;
     expect(truncated.startsWith('x'.repeat(500))).toBe(true);
     expect(truncated).toContain('[truncated, 700 chars]');
+    expect(truncated).not.toBe('x'.repeat(700));
+    expect(truncated.length).toBeLessThan('x'.repeat(700).length);
     expect(event.detail.input['short']).toBe('ok');
     expect(event.detail.input['count']).toBe(3);
+  });
+
+  it('keeps values of exactly the maximum length unchanged', async () => {
+    await runHook({
+      payload: {
+        tool_name: 'Bash',
+        tool_input: { command: 'y'.repeat(500) },
+        session_id: 'sess-1',
+        cwd: '/tmp/project',
+      },
+    });
+
+    const event = mocks.appendAuditEvent.mock.calls[0]![1] as {
+      detail: { input: Record<string, unknown> };
+    };
+    expect(event.detail.input['command']).toBe('y'.repeat(500));
   });
 
   it('installs and restores the stdout guard around the hook logic', async () => {
@@ -189,6 +208,15 @@ describe('post-tool-use hook', () => {
     expect(process.exitCode ?? 0).toBe(0);
   });
 
+  it('reports a fatal resolver failure and still exits non-blocking', async () => {
+    mocks.resolveSession.mockRejectedValueOnce(new Error('resolver exploded'));
+
+    const stderr = await runHook();
+
+    expect(stderr).toContain('Fatal error: resolver exploded');
+    expect(process.exitCode ?? 0).toBe(0);
+  });
+
   it('emits the pending obligation escalation message when present', async () => {
     mocks.assessObligationEscalation.mockReturnValue({
       message: 'ESCALATION: 2 obligations pending',
@@ -198,5 +226,18 @@ describe('post-tool-use hook', () => {
 
     expect(stderr).toContain('ESCALATION: 2 obligations pending');
     expect(mocks.assessObligationEscalation).toHaveBeenCalledWith(expect.anything(), true);
+  });
+
+  it('classifies a read-only tool as non-mutating for escalation', async () => {
+    await runHook({
+      payload: {
+        tool_name: 'Read',
+        tool_input: { file_path: '/tmp/x' },
+        session_id: 'sess-1',
+        cwd: '/tmp/project',
+      },
+    });
+
+    expect(mocks.assessObligationEscalation).toHaveBeenCalledWith(expect.anything(), false);
   });
 });

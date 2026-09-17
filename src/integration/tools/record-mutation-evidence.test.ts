@@ -6,12 +6,13 @@
  *              blocked results.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { record_mutation_evidence } from './record-mutation-evidence.js';
+import { MutationAttempt } from '../../state/evidence-mutation.js';
 import { resolveWorkspacePaths, writeStateWithArtifacts } from './helpers.js';
 import { readState } from '../../adapters/persistence.js';
 import { makeProgressedState, makeState } from '../../fixtures.js';
@@ -136,6 +137,7 @@ describe('record_mutation_evidence', () => {
     );
 
     expect(result.code).toBe('PROOFGRAPH_MUTATION_PHASE_INELIGIBLE');
+    expect(result.message).toContain('READY');
     expect((await readState(sessDir))!.mutationAttempts).toHaveLength(0);
   });
 
@@ -175,6 +177,8 @@ describe('record_mutation_evidence', () => {
     );
 
     expect(result.code).toBe('PROOFGRAPH_MUTATION_REPORT_INVALID');
+    expect(result.message).toContain(DEFAULT_REPORT_PATH);
+    expect(result.message).toContain('invalid JSON in mutation report');
     expect((await readState(sessDir))!.mutationAttempts).toHaveLength(0);
   });
 
@@ -196,6 +200,38 @@ describe('record_mutation_evidence', () => {
       first.attempt!.attemptId,
       second.attempt!.attemptId,
     ]);
+  });
+
+  it('fails closed when the produced attempt violates the schema', async () => {
+    const { context, sessDir } = await seedSession(makeProgressedState('IMPL_VALIDATION'));
+    await writeReport();
+    const parseSpy = vi.spyOn(MutationAttempt, 'parse').mockImplementationOnce(() => {
+      throw new Error('schema fail');
+    });
+    try {
+      const result = parseToolResult<RecordedResult>(
+        await record_mutation_evidence.execute(runArgs(), context as never),
+      );
+
+      expect(result.error).toBe(true);
+      expect(result.message).toContain('MutationAttempt failed schema validation');
+      expect((await readState(sessDir))!.mutationAttempts).toHaveLength(0);
+    } finally {
+      parseSpy.mockRestore();
+    }
+  });
+
+  it('exposes a strict argument contract with the default report path', () => {
+    const args = record_mutation_evidence.args as Record<
+      string,
+      { safeParse: (value: unknown) => { success: boolean }; parse: (value: unknown) => unknown }
+    >;
+
+    expect(args['command']!.safeParse('').success).toBe(false);
+    expect(args['command']!.safeParse('npm run mutation').success).toBe(true);
+    expect(args['startedAt']!.safeParse('not-a-date').success).toBe(false);
+    expect(args['exitCode']!.safeParse('0').success).toBe(false);
+    expect(args['reportPath']!.parse(undefined)).toBe(DEFAULT_REPORT_PATH);
   });
 
   it('rejects an empty command through the argument contract', async () => {
