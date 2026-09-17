@@ -504,10 +504,12 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       // A CONCURRENT instance cannot acquire the live lease at all — even a
       // different process identity proves nothing about the authorizing epoch.
       resetRuntimeInstanceIdForTest();
-      const concurrentInstance = parseToolResult<{ code?: string }>(
+      const concurrentInstance = parseToolResult<{ code?: string; message?: string }>(
         await reconcile_mutation_episode.execute({ hostCallId: crashedCallID }, ctx as never),
       );
       expect(concurrentInstance.code).toBe('MUTATION_EPISODE_LEASE_UNAVAILABLE');
+      expect(concurrentInstance.message).toBeDefined();
+      expect(concurrentInstance.message).not.toContain('{');
       const afterConcurrentBlock = await readState(sessDir);
       expect(afterConcurrentBlock!.mutationEpisodeResolutions).toHaveLength(0);
 
