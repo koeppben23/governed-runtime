@@ -774,6 +774,14 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     authority: 'Canonical MutationAttempt evidence producer',
     source: [SOURCE.trustBoundaries],
     coveringSuites: ['src/integration/tools/record-mutation-evidence.test.ts'],
+    admission: {
+      verifiedAt: '2026-09-17',
+      commitSha: 'cc713cb029ad1028793e6a7cdd67381efd33b88f',
+      scoreAtAdmission: 81.25,
+      killed: 13,
+      survived: 3,
+      config: 'stryker.conf.json',
+    },
   },
   {
     classification: 'required',
@@ -783,6 +791,14 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     authority: 'MCP tool registry authority',
     source: [SOURCE.trustBoundaries],
     coveringSuites: ['src/mcp-server/server-registry.test.ts', 'src/mcp-server/mcp-server.test.ts'],
+    admission: {
+      verifiedAt: '2026-09-17',
+      commitSha: 'cc713cb029ad1028793e6a7cdd67381efd33b88f',
+      scoreAtAdmission: 84.62,
+      killed: 11,
+      survived: 2,
+      config: 'stryker.conf.json',
+    },
   },
   {
     classification: 'required',
@@ -792,6 +808,14 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     authority: 'Unknown-outcome mutation episode resolution',
     source: [SOURCE.trustBoundaries],
     coveringSuites: ['src/integration/mutation-episode-e2e.test.ts'],
+    admission: {
+      verifiedAt: '2026-09-17',
+      commitSha: 'cc713cb029ad1028793e6a7cdd67381efd33b88f',
+      scoreAtAdmission: 93.33,
+      killed: 28,
+      survived: 2,
+      config: 'stryker.conf.json',
+    },
   },
   {
     classification: 'required',
@@ -801,6 +825,14 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     authority: 'PostToolUse audit hook (informational)',
     source: [SOURCE.trustBoundaries],
     coveringSuites: ['src/hooks/post-tool-use.test.ts'],
+    admission: {
+      verifiedAt: '2026-09-17',
+      commitSha: 'cc713cb029ad1028793e6a7cdd67381efd33b88f',
+      scoreAtAdmission: 100,
+      killed: 27,
+      survived: 0,
+      config: 'stryker.conf.json',
+    },
   },
   {
     classification: 'required',
@@ -810,6 +842,14 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     authority: 'Findings hash normalization',
     source: [SOURCE.trustBoundaries],
     coveringSuites: ['src/integration/review/findings-hash.test.ts'],
+    admission: {
+      verifiedAt: '2026-09-17',
+      commitSha: 'cc713cb029ad1028793e6a7cdd67381efd33b88f',
+      scoreAtAdmission: 100,
+      killed: 20,
+      survived: 0,
+      config: 'stryker.conf.json',
+    },
   },
   // ── Base profile: core authorities admitted in the base full run ─────────
   required(

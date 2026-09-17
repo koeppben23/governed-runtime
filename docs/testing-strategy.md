@@ -67,7 +67,7 @@ local composite-action dependencies: external GitHub Actions must use full
 40-character lowercase commit SHAs, local actions under `./` are allowed, local
 and Docker actions are allowed only when pinned by `sha256` digest.
 
-The `mutation` job runs StrykerJS mutation testing against 87 security-critical
+The `mutation` job runs StrykerJS mutation testing against 92 security-critical
 files spanning adapters (persistence-lock, host-adapter, persistence, IP validation),
 archive creation,
 publication, inventory validation, and digesting,
@@ -196,31 +196,31 @@ protects a security-relevant literal: `stryker.identity-jwks.conf.json` enables
 
 ### Scope
 
-87 files are mutated in the base profile, covering the fail-closed governance
+92 files are mutated in the base profile, covering the fail-closed governance
 core (see `stryker.conf.json` for the canonical list; the authority inventory
 above is the classification authority):
 
-| Area                                                                                                                                        | Files  | Representative score            |
-| ------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------------------------------- |
-| Adapters (`persistence-lock`, `host-adapter`, `persistence`, `persistence-audit`, `ip-validation`, implementation base freeze/entry)        | 7      | see `reports/mutation/`         |
-| Archive (`content-digest`, archive creation, publication, tar/manifest inspection, chain and helper verification)                           | 8      | see `reports/mutation/`         |
-| Audit (`integrity`, `completeness`, `ntp-check`, `types`, timestamp and RFC3161 verification)                                               | 7      | see `reports/mutation/`         |
-| Audit ProofGraph (`evaluate`, `gate`, evidence binders, `enforcement-projection`)                                                           | 6      | see `reports/mutation/`         |
-| Integration ProofGraph (`claim-contract`, `materialize-contract`)                                                                           | 2      | see `reports/mutation/`         |
-| Config (`policy`, `policy-snapshot`, `reasons`, `profile`)                                                                                  | 4      | see `reports/mutation/`         |
-| MCP (`execution-limiter`, `session-resolver`, `tool-adapter`)                                                                               | 3      | see `reports/mutation/`         |
-| Hooks (`http-server`, `pre-tool-use`, `shared/obligation-tracker`, `shared/phase-gate`)                                                     | 4      | see `reports/mutation/`         |
-| Identity (`token-verifier`, `key-resolver`)                                                                                                 | 2      | see `reports/mutation/`         |
-| Integration (plugin hooks, audit outbox, review-validation tools, `plugin-workspace`, `plugin`, `runtime-lease`)                            | 18     | see `reports/mutation/`         |
-| Integration Review (`enforcement`, `findings-consistency`, `challenge-consistency`, `challenge-binding`, agent resolution, dispatch signal) | 6      | see `reports/mutation/`         |
-| State (`evidence-mutation-episode`)                                                                                                         | 1      | see `reports/mutation/`         |
-| Verification/Discovery (`execution-subject`, `verification-planner`)                                                                        | 2      | see `reports/mutation/`         |
-| Templates (`codex-plugin`, `claude-code-plugin`)                                                                                            | 2      | see `reports/mutation/`         |
-| Shared (`canonical-json`)                                                                                                                   | 1      | see `reports/mutation/`         |
-| Logging (`error-serialize`)                                                                                                                 | 1      | see `reports/mutation/`         |
-| Machine (`commands`, `evaluate`, `guards`, `workflow-directive`, `validation-evidence`)                                                     | 5      | see `reports/mutation/`         |
-| Rails (`architecture`, `hydrate`, `review`, `review-url`, `review-decision`, `ticket`, plan and review evidence)                            | 8      | see `reports/mutation/`         |
-| **Total**                                                                                                                                   | **87** | uploaded as `reports/mutation/` |
+| Area                                                                                                                                                       | Files  | Representative score            |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------------------------------- |
+| Adapters (`persistence-lock`, `host-adapter`, `persistence`, `persistence-audit`, `ip-validation`, implementation base freeze/entry)                       | 7      | see `reports/mutation/`         |
+| Archive (`content-digest`, archive creation, publication, tar/manifest inspection, chain and helper verification)                                          | 8      | see `reports/mutation/`         |
+| Audit (`integrity`, `completeness`, `ntp-check`, `types`, timestamp and RFC3161 verification)                                                              | 7      | see `reports/mutation/`         |
+| Audit ProofGraph (`evaluate`, `gate`, evidence binders, `enforcement-projection`)                                                                          | 6      | see `reports/mutation/`         |
+| Integration ProofGraph (`claim-contract`, `materialize-contract`)                                                                                          | 2      | see `reports/mutation/`         |
+| Config (`policy`, `policy-snapshot`, `reasons`, `profile`)                                                                                                 | 4      | see `reports/mutation/`         |
+| MCP (`execution-limiter`, `session-resolver`, `tool-adapter`, `server`)                                                                                    | 4      | see `reports/mutation/`         |
+| Hooks (`http-server`, `pre-tool-use`, `post-tool-use`, `shared/obligation-tracker`, `shared/phase-gate`)                                                   | 5      | see `reports/mutation/`         |
+| Identity (`token-verifier`, `key-resolver`)                                                                                                                | 2      | see `reports/mutation/`         |
+| Integration (plugin hooks, audit outbox, review-validation tools, mutation evidence tools, `plugin-workspace`, `plugin`, `runtime-lease`)                  | 20     | see `reports/mutation/`         |
+| Integration Review (`enforcement`, `findings-consistency`, `challenge-consistency`, `challenge-binding`, agent resolution, dispatch signal, findings hash) | 7      | see `reports/mutation/`         |
+| State (`evidence-mutation-episode`)                                                                                                                        | 1      | see `reports/mutation/`         |
+| Verification/Discovery (`execution-subject`, `verification-planner`)                                                                                       | 2      | see `reports/mutation/`         |
+| Templates (`codex-plugin`, `claude-code-plugin`)                                                                                                           | 2      | see `reports/mutation/`         |
+| Shared (`canonical-json`)                                                                                                                                  | 1      | see `reports/mutation/`         |
+| Logging (`error-serialize`)                                                                                                                                | 1      | see `reports/mutation/`         |
+| Machine (`commands`, `evaluate`, `guards`, `workflow-directive`, `validation-evidence`)                                                                    | 5      | see `reports/mutation/`         |
+| Rails (`architecture`, `hydrate`, `review`, `review-url`, `review-decision`, `ticket`, plan and review evidence)                                           | 8      | see `reports/mutation/`         |
+| **Total**                                                                                                                                                  | **92** | uploaded as `reports/mutation/` |
 
 Per-file mutation scores are produced fresh in CI; consult the latest
 `reports/mutation/` artifact for current numbers.
@@ -262,14 +262,9 @@ Candidate authorities awaiting admission (basis profile unless noted):
 - `src/state/schema.ts`
 - `src/shared/hashing.ts`
 - `src/redaction/export-redaction.ts`
-- `src/integration/review/reviewed-digest.ts`
-- `src/integration/review/findings-hash.ts`
-- `src/integration/tools/record-mutation-evidence.ts`
-- `src/integration/tools/reconcile-mutation-episode.ts`
-- `src/integration/plugin-mutation-episodes.ts`
-- `src/mcp-server/server.ts`
+- `src/integration/review/reviewed-digest.ts` (PR F review/runtime hardening)
+- `src/integration/plugin-mutation-episodes.ts` (PR F review/runtime hardening)
 - `src/mcp-server/schema-converter.ts`
-- `src/hooks/post-tool-use.ts`
 
 Evidence-layer candidates with a recorded diagnostic result (a targeted run is
 diagnostic only; these targets must close their test gaps first):
@@ -290,7 +285,7 @@ Deep authority expansion bundle:
 - `src/audit/proofgraph/mutation-report.ts`
 - `src/audit/proofgraph/mutation-binder.ts`
 
-Mandates profile: `src/rendering/mandates-renderer.ts`.
+Mandates profile: `src/rendering/mandates-renderer.ts` — focused contract pass reached 72.40 % (below the per-target gate); dedicated mandates hardening pass required before admission.
 
 Deferred surfaces (whole roots behind the admission gate):
 `src/config/**`, `src/state/**`, `src/shared/**`, `src/audit/**`,
