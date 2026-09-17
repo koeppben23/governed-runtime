@@ -26,7 +26,11 @@ vi.mock('./shared/session-resolver.js', () => ({
 
 vi.mock('../adapters/persistence-audit.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../adapters/persistence-audit.js')>();
-  return { ...actual, appendAuditEvent: (...args: unknown[]) => mocks.appendAuditEvent(...args) };
+  return {
+    ...actual,
+    appendAuditEvent: (sessionDir: string, event: unknown) =>
+      mocks.appendAuditEvent(sessionDir, event),
+  };
 });
 
 vi.mock('./shared/stdout-guard.js', () => ({
