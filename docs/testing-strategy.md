@@ -74,8 +74,8 @@ publication, inventory validation, and digesting,
 audit (integrity + completeness + NTP + types), config (policy + policy snapshot + reasons + profile), hooks (HTTP hook server + command pre-tool-use + shared obligation-tracker +
 phase-gate), identity (token-verifier + key-resolver), integration
 (installed-commands, tool-classification, discovery-risk-paths, pre-implementation challenge, architecture submit, review-validation-mode,
-plugin-audit, plugin-audit-reconcile, plugin-beforehooks, plugin-afterhooks, plugin-helpers, audit-outbox, plugin-audit-lifecycle-reason, review enforcement, review orchestrator,
-orchestrator detection/output, dispatch signal, and agent resolution), logging (error-serialize),
+plugin-audit, plugin-audit-reconcile, plugin-beforehooks, plugin-afterhooks, plugin-helpers, audit-outbox, plugin-audit-lifecycle-reason, review enforcement,
+dispatch signal, and agent resolution), logging (error-serialize),
 templates (codex-plugin, claude-code-plugin, mandates),
 shared canonical JSON, machine (commands, evaluate, guards, workflow-directive, validation-evidence), and
 rails (architecture, hydrate, review, URL review transport, review-decision, review-evidence-resolution,
