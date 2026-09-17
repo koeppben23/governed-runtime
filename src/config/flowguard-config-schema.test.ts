@@ -901,6 +901,18 @@ describe('Performance', () => {
 describe('FlowGuardConfigSchema boundaries', () => {
   const parse = (input: unknown) => FlowGuardConfigSchema.safeParse(input);
 
+  it('applies the nested object defaults when logging is omitted entirely', () => {
+    const result = parse({ schemaVersion: 'v1' });
+
+    expect(result.success).toBe(true);
+    expect(result.data!.logging.rateLimit.enabled).toBe(false);
+    expect(result.data!.logging.enableDynamicLevel).toBe(false);
+    expect(result.data!.logging.otlp.enabled).toBe(false);
+    expect(result.data!.logging.otlp.allowInsecure).toBe(false);
+    expect(result.data!.logging.rateLimit.summaryIntervalMs).toBe(60_000);
+    expect(result.data!.logging.mode).toBe('file');
+  });
+
   it('bounds logging.retentionDays to 1..90 with a 7-day default', () => {
     expect(parse({ schemaVersion: 'v1' }).data!.logging.retentionDays).toBe(7);
     expect(parse({ schemaVersion: 'v1', logging: { retentionDays: 1 } }).success).toBe(true);

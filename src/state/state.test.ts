@@ -33,6 +33,12 @@ import {
   ImplementationRiskAssessment,
   RiskGate,
 } from '../state/schema.js';
+import {
+  artifactReviewSubjectScope,
+  createReviewObligation,
+  ensureReviewAssurance,
+  freezeReviewMaterial,
+} from '../integration/review/assurance.js';
 import { makeState, FIXED_TIME, FIXED_UUID, FIXED_SESSION_UUID } from '../fixtures.js';
 import { makePlanRevision } from './evidence-test-constants.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
@@ -1005,9 +1011,11 @@ describe('schema field-boundary contracts', () => {
 
   it('rejects a state whose flowguardSessionId diverges from id', () => {
     const state = makeState('READY');
+    const divergentUuid = '00000000-0000-4000-8000-0000000000ff';
+    expect(divergentUuid).not.toBe(state.id);
     const result = SessionState.safeParse({
       ...state,
-      flowguardSessionId: `${state.flowguardSessionId}-other`,
+      flowguardSessionId: divergentUuid,
     });
 
     expect(result.success).toBe(false);
@@ -1016,5 +1024,88 @@ describe('schema field-boundary contracts', () => {
         true,
       );
     }
+  });
+});
+
+describe('schema invariant contracts', () => {
+  const NOW = '2026-09-17T10:00:00.000Z';
+  const DIGEST = 'b'.repeat(64);
+  const OPERATION_ID = '00000000-0000-4000-8000-0000000000aa';
+
+  function semanticOperation(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      operationId: OPERATION_ID,
+      preStateDigest: DIGEST,
+      mutationDigest: DIGEST,
+      postStateDigest: DIGEST,
+      auditEventDigest: DIGEST,
+      status: 'state_committed',
+      kind: 'semantic',
+      semantic: { phase: 'PLAN', event: 'plan_recorded', occurredAt: NOW, detail: {} },
+      ...overrides,
+    };
+  }
+
+  it('rejects a risk gate with an unknown status', () => {
+    expect(RiskGate.safeParse({ status: 'bogus' }).success).toBe(false);
+    expect(RiskGate.safeParse({ status: 'clear' }).success).toBe(true);
+  });
+
+  it('requires non-empty semantic actors when the field is present', () => {
+    const withActor = (actor: string) =>
+      SessionState.safeParse({
+        ...makeState('READY'),
+        pendingAuditOperations: [
+          semanticOperation({
+            semantic: { phase: 'PLAN', event: 'e', occurredAt: NOW, actor, detail: {} },
+          }),
+        ],
+      });
+
+    expect(withActor('agent-1').success).toBe(true);
+    expect(withActor('').success).toBe(false);
+  });
+
+  it('rejects duplicate pending audit operation ids', () => {
+    const result = SessionState.safeParse({
+      ...makeState('READY'),
+      pendingAuditOperations: [semanticOperation(), semanticOperation()],
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) => issue.path[0] === 'pendingAuditOperations')).toBe(
+        true,
+      );
+    }
+  });
+
+  it('accepts a state whose review assurance carries only non-review obligations', () => {
+    const planObligation = createReviewObligation({
+      policySnapshot: {
+        challengePolicy: {
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        },
+        maxReviewerAttempts: 1,
+      },
+      obligationType: 'plan',
+      reviewCycle: 1,
+      iteration: 0,
+      planVersion: 1,
+      now: NOW,
+      subjectDigest: 'plan-digest',
+      reviewMaterial: freezeReviewMaterial('frozen review material', 'plan-digest'),
+      reviewSubjectScope: artifactReviewSubjectScope('plan', '## body', 'plan-digest'),
+      repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+    });
+    const state = makeState('PEER_REVIEW');
+    const result = SessionState.safeParse({
+      ...state,
+      reviewAssurance: { ...ensureReviewAssurance(undefined), obligations: [planObligation] },
+      peerReviewEvidence: [],
+    });
+
+    expect(result.success).toBe(true);
   });
 });
