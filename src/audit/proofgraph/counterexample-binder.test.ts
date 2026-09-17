@@ -447,7 +447,7 @@ describe('counterexample assertion outcome classification', () => {
 
   it('skips validation_attempt references without an attempt id', () => {
     const state = stateWith([assertionAttempt('passed')], 'IMPL_REVIEW', {
-      counterexampleRefs: [{ kind: 'validation_attempt' as const }],
+      counterexampleRefs: [{ kind: 'validation_attempt' as const }] as never,
     });
 
     expect(bindCounterexamples(state, NOW).counterexamples).toEqual([]);
