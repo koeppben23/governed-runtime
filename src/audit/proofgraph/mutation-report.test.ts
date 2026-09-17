@@ -232,3 +232,52 @@ describe('computeArtifactDigest', () => {
     expect(computeArtifactDigest(raw)).toBe(computeArtifactDigest(raw));
   });
 });
+
+describe('summarizeMutationProfile ordering and coverage boundary', () => {
+  it('sorts survivors by location and then mutant id', () => {
+    const summary = summarizeMutationProfile(
+      report({
+        'src/b.ts': [mutant('a2', 'Survived'), mutant('a1', 'NoCoverage')],
+        'src/a.ts': [mutant('z9', 'Survived'), mutant('z1', 'Survived')],
+      }),
+      {
+        profileId: 'ordering',
+        locations: ['src/b.ts', 'src/a.ts'],
+        command: 'npm run mutation',
+      },
+    );
+
+    expect(summary.survivors.map((entry) => `${entry.location}:${entry.mutantId}`)).toEqual([
+      'src/a.ts:z1',
+      'src/a.ts:z9',
+      'src/b.ts:a1',
+      'src/b.ts:a2',
+    ]);
+  });
+
+  it('reports a profile without matching files as not covered', () => {
+    const summary = summarizeMutationProfile(report({}), {
+      profileId: 'absent-surface',
+      locations: ['src/missing.ts'],
+      command: 'npm run mutation',
+    });
+
+    expect(summary.covered).toBe(false);
+    expect(summary.survivorCount).toBe(0);
+    expect(summary.killedCount).toBe(0);
+  });
+
+  it('reports not covered when matched files contain no evaluable mutants', () => {
+    const summary = summarizeMutationProfile(
+      report({ 'src/only-excluded.ts': [mutant('0', 'CompileError')] }),
+      {
+        profileId: 'excluded-only',
+        locations: ['src/only-excluded.ts'],
+        command: 'npm run mutation',
+      },
+    );
+
+    expect(summary.covered).toBe(false);
+    expect(summary.excludedCount).toBe(1);
+  });
+});
