@@ -32,6 +32,38 @@ export default tseslint.config(
     },
   },
   {
+    // Default-wide type-aware correctness: every TypeScript file under src/,
+    // including tests. Do NOT narrow this to a directory allowlist — the scope
+    // is pinned by src/architecture/__tests__/type-aware-lint-scope.test.ts.
+    files: ['src/**/*.ts'],
+    languageOptions: {
+      parserOptions: {
+        // Type-aware coverage for production and test files alike. The two
+        // projects partition src/: tsconfig.json owns production sources and
+        // excludes tests, tsconfig.test.json owns the test files (the project
+        // service alone discovers only tsconfig.json, and its default-project
+        // escape hatch is capped at a handful of files).
+        project: ['./tsconfig.json', './tsconfig.test.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    rules: {
+      '@typescript-eslint/await-thenable': 'error',
+      '@typescript-eslint/no-floating-promises': 'error',
+      '@typescript-eslint/no-unnecessary-type-assertion': 'error',
+      '@typescript-eslint/no-misused-promises': [
+        'error',
+        {
+          checksVoidReturn: false,
+        },
+      ],
+      '@typescript-eslint/switch-exhaustiveness-check': 'error',
+    },
+  },
+  {
+    // Complexity metrics keep their historical scope until the dedicated
+    // metrics tranche (PR 2b) turns them default-wide. They are maintainability
+    // signals, not correctness rules, and do not use type information.
     files: [
       'src/audit/**/*.ts',
       'src/config/**/*.ts',
@@ -43,34 +75,10 @@ export default tseslint.config(
       'src/cli/**/*.ts',
     ],
     ignores: ['src/**/*.test.ts', 'src/**/__tests__/**/*.ts'],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-    },
     rules: {
-      '@typescript-eslint/no-unused-vars': [
-        'error',
-        {
-          argsIgnorePattern: '^_',
-          caughtErrorsIgnorePattern: '^_',
-          varsIgnorePattern: '^_',
-        },
-      ],
       'max-params': ['warn', { max: 5 }],
       complexity: ['warn', { max: 12 }],
       'max-lines-per-function': ['warn', { max: 80, skipBlankLines: true, skipComments: true }],
-      '@typescript-eslint/await-thenable': 'error',
-      '@typescript-eslint/no-floating-promises': 'error',
-      '@typescript-eslint/no-unnecessary-type-assertion': 'error',
-      '@typescript-eslint/no-misused-promises': [
-        'error',
-        {
-          checksVoidReturn: false,
-        },
-      ],
-      '@typescript-eslint/switch-exhaustiveness-check': 'error',
     },
   },
 );
