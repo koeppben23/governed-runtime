@@ -24,7 +24,7 @@ import {
   planVerificationCandidates,
   stripToCandidates,
 } from '../../../src/discovery/verification-planner.js';
-import type { PlannedVerificationCandidate } from '../../../src/discovery/verification-candidate-planned.js';
+import type { IdentifiedPlannedVerificationCandidate } from '../../../src/discovery/verification-candidate-planned.js';
 import { prepareVerificationExecution } from '../../../src/verification/verification-execution.js';
 import { executeCheck } from '../../../src/verification/executor.js';
 import { completeAssertionExtraction } from '../../../src/verification/assertion-extractor.js';
@@ -112,7 +112,7 @@ const FIXTURES: RuntimeFixture[] = [
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
 function findAssertionCandidate(
-  candidates: PlannedVerificationCandidate[],
+  candidates: IdentifiedPlannedVerificationCandidate[],
 ): VerificationCandidate | undefined {
   for (const p of candidates) {
     const c = p.candidate;

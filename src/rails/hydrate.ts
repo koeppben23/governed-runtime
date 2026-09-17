@@ -83,7 +83,6 @@ export interface HydrateSessionInput {
   readonly discoverySummary?: DiscoverySummary;
   readonly detectedStack?: DetectedStack | null;
   readonly verificationCandidates?: VerificationCandidates;
-  readonly executionSubjectInputsByKind?: Record<string, ExecutionSubjectInput[]>;
   readonly executionSubjectInputsByCandidateId?: Record<string, ExecutionSubjectInput[]>;
   readonly claimedTaskClass?: TaskClass;
   /**
@@ -348,7 +347,6 @@ function buildNewHydrateState(
     discoverySummary: s.discoverySummary ?? null,
     detectedStack: s.detectedStack ?? null,
     verificationCandidates: s.verificationCandidates ?? [],
-    executionSubjectInputsByKind: s.executionSubjectInputsByKind ?? {},
     executionSubjectInputsByCandidateId: s.executionSubjectInputsByCandidateId ?? {},
     ...(implementationBaseline ? { implementationBaseline } : {}),
     transition: null,

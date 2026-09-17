@@ -440,6 +440,7 @@ describe('FlowGuard tool-level E2E', () => {
           verificationCandidates: [
             {
               assertionCapability: 'unsupported' as const,
+              candidateId: 'vc_typecheck_e2e',
               kind: 'typecheck',
               command: 'npx tsc --noEmit',
               source: 'test',
@@ -447,8 +448,8 @@ describe('FlowGuard tool-level E2E', () => {
               reason: 'E2E test candidate',
             },
           ],
-          executionSubjectInputsByKind: {
-            typecheck: [{ kind: 'implementation' as const }],
+          executionSubjectInputsByCandidateId: {
+            vc_typecheck_e2e: [{ kind: 'implementation' as const }],
           },
         }),
       );
@@ -471,6 +472,7 @@ describe('FlowGuard tool-level E2E', () => {
           verificationCandidates: [
             {
               assertionCapability: 'unsupported' as const,
+              candidateId: 'vc_typecheck_e2e',
               kind: 'typecheck',
               command: 'npx tsc --noEmit',
               source: 'test',
@@ -478,8 +480,8 @@ describe('FlowGuard tool-level E2E', () => {
               reason: 'E2E test candidate',
             },
           ],
-          executionSubjectInputsByKind: {
-            typecheck: [{ kind: 'implementation' as const }],
+          executionSubjectInputsByCandidateId: {
+            vc_typecheck_e2e: [{ kind: 'implementation' as const }],
           },
         }),
       );
@@ -518,6 +520,7 @@ describe('FlowGuard tool-level E2E', () => {
           verificationCandidates: [
             {
               assertionCapability: 'unsupported' as const,
+              candidateId: 'vc_typecheck_e2e',
               kind: 'typecheck',
               command: 'npx tsc --noEmit',
               source: 'test',
@@ -525,8 +528,8 @@ describe('FlowGuard tool-level E2E', () => {
               reason: 'E2E test candidate',
             },
           ],
-          executionSubjectInputsByKind: {
-            typecheck: [{ kind: 'implementation' as const }],
+          executionSubjectInputsByCandidateId: {
+            vc_typecheck_e2e: [{ kind: 'implementation' as const }],
           },
         }),
       );

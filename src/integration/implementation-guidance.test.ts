@@ -19,6 +19,7 @@ describe('buildImplementationGuidance', () => {
       verificationCandidates: [
         {
           assertionCapability: 'unsupported' as const,
+          candidateId: 'vc_test_login',
           kind: 'test',
           command: 'npm test -- login',
           source: 'package.json:scripts.test',

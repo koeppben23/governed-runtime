@@ -38,6 +38,7 @@ function stateWithClaims() {
     verificationCandidates: [
       {
         assertionCapability: 'unsupported' as const,
+        candidateId: 'vc_test_mvn',
         kind: 'test' as const,
         command: './mvnw verify',
         source: 'repo:mvnw',
@@ -46,6 +47,7 @@ function stateWithClaims() {
       },
       {
         assertionCapability: 'structured' as const,
+        candidateId: 'vc_security_mvn',
         kind: 'security' as const,
         command: './mvnw test',
         source: 'repo:mvnw',
@@ -672,6 +674,7 @@ describe('materializeApprovedPlanContractResult — mutation coverage', () => {
         verificationCandidates: [
           {
             assertionCapability: 'unsupported' as const,
+            candidateId: 'vc_security_unstructured',
             kind: 'security' as const,
             command: './mvnw security',
             source: 'repo:mvnw',

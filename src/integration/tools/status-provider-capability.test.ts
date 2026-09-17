@@ -46,6 +46,7 @@ describe('flowguard_status providerCapabilities', () => {
       verificationCandidates: [
         {
           assertionCapability: 'structured' as const,
+          candidateId: 'vc_vitest_status',
           kind: 'test',
           command: 'npx vitest run',
           source: 'detectedStack:testFramework:vitest',

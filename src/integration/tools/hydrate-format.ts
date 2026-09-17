@@ -141,7 +141,6 @@ export function buildHydrateInput(params: BuildHydrateInputParams): HydrateInput
       discoverySummary: discovery.discoverySummary,
       detectedStack: discovery.detectedStack,
       verificationCandidates: discovery.verificationCandidates,
-      executionSubjectInputsByKind: discovery.executionSubjectInputsByKind,
       executionSubjectInputsByCandidateId: discovery.executionSubjectInputsByCandidateId,
       ...(params.baselineDirtyFiles ? { baselineDirtyFiles: params.baselineDirtyFiles } : {}),
       ...(params.baselineControlPlaneMarker

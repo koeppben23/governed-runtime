@@ -599,21 +599,12 @@ export const SessionState = z
     verificationCandidates: VerificationCandidatesSchema.optional(),
 
     /**
-     * Execution-subject inputs keyed by verification kind.
+     * Candidate-specific execution-subject inputs keyed by `candidateId`.
      *
-     * Produced by the planner alongside verificationCandidates. Each entry declares
-     * which surfaces (implementation files, config files) must be attested before
-     * and after the check runs.
-     */
-    executionSubjectInputsByKind: z
-      .record(z.string(), z.array(ExecutionSubjectInputSchema))
-      .optional(),
-
-    /**
-     * Candidate-specific execution-subject inputs. Takes precedence over the
-     * kind map when a candidateId is available. A candidate with an identity
-     * must fail closed when its exact entry is absent; the kind map is only for
-     * legacy candidates without a candidateId.
+     * Produced by the planner alongside `verificationCandidates`. Each entry
+     * declares which surfaces (implementation files, config files) must be
+     * attested before and after the check runs. A candidate must fail closed
+     * when its exact entry is absent; there is no kind-level fallback.
      */
     executionSubjectInputsByCandidateId: z
       .record(z.string(), z.array(ExecutionSubjectInputSchema))

@@ -1414,7 +1414,7 @@ describe('ProofGraph demo fixtures', () => {
         source: 'package.json:scripts.test',
         assertionReport: { providerId: 'junit', format: 'junit_xml' },
       });
-      expect(state?.executionSubjectInputsByKind?.test).toEqual(
+      expect(state?.executionSubjectInputsByCandidateId?.[testCand!.candidateId]).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ kind: 'implementation' }),
           expect.objectContaining({ kind: 'file', path: 'package.json' }),

@@ -308,6 +308,7 @@ describe('plan', () => {
         verificationCandidates: [
           {
             assertionCapability: 'structured',
+            candidateId: 'vc_test_junit',
             kind: 'test',
             command: 'npm test',
             source: 'package.json:scripts.test',

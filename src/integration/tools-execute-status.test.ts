@@ -482,6 +482,7 @@ describe('status', () => {
         verificationCandidates: [
           {
             assertionCapability: 'unsupported' as const,
+            candidateId: 'vc_test_pnpm',
             kind: 'test',
             command: 'pnpm test',
             source: 'package.json:scripts.test',
@@ -552,6 +553,7 @@ describe('status', () => {
         verificationCandidates: [
           {
             assertionCapability: 'unsupported' as const,
+            candidateId: 'vc_build_mvn',
             kind: 'build',
             command: './mvnw verify',
             source: 'repo:mvnw',
@@ -1189,6 +1191,7 @@ describe('status', () => {
 function makeStructuredSecurityCandidate() {
   return {
     assertionCapability: 'structured' as const,
+    candidateId: 'vc_security_structured',
     kind: 'security' as const,
     command: 'npm run security',
     source: 'test',
@@ -1305,6 +1308,7 @@ describe('declare_contract', () => {
       verificationCandidates: [
         {
           assertionCapability: 'unsupported' as const,
+          candidateId: 'vc_test_impl',
           kind: checkId as 'test',
           command: 'npm test',
           source: 'test',
@@ -1601,6 +1605,7 @@ describe('declare_contract', () => {
         verificationCandidates: [
           {
             assertionCapability: 'unsupported' as const,
+            candidateId: 'vc_test_impl',
             kind: 'test' as const,
             command: 'npm test',
             source: 'test',
@@ -1609,6 +1614,7 @@ describe('declare_contract', () => {
           },
           {
             assertionCapability: 'structured' as const,
+            candidateId: 'vc_security_impl',
             kind: 'security' as const,
             command: 'npm run security',
             source: 'test',
@@ -1862,6 +1868,7 @@ describe('declare_contract', () => {
       verificationCandidates: [
         {
           assertionCapability: 'unsupported' as const,
+          candidateId: 'vc_test_cx',
           kind: 'test' as const,
           command: 'npm test',
           source: 'test',

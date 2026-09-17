@@ -30,6 +30,7 @@ function makeStructuredCandidate(
 ): VerificationCandidate {
   return {
     assertionCapability: 'structured' as const,
+    candidateId: `vc_${providerId}_${format}`,
     kind: 'test',
     command: 'run',
     source: `test:${providerId}`,
@@ -139,6 +140,7 @@ describe('resolveProviderCapabilities', () => {
     const candidates: VerificationCandidate[] = [
       {
         assertionCapability: 'unsupported' as const,
+        candidateId: 'vc_test_unsupported',
         kind: 'test',
         command: 'npm test',
         source: 'package.json',

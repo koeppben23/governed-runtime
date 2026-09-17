@@ -507,6 +507,7 @@ describe('implementation review without repository observation authority', () =>
         verificationCandidates: [
           {
             assertionCapability: 'unsupported' as const,
+            candidateId: 'vc_typecheck_e2e',
             kind: 'typecheck',
             command: 'npx tsc --noEmit',
             source: 'test',
@@ -514,7 +515,9 @@ describe('implementation review without repository observation authority', () =>
             reason: 'E2E test candidate',
           },
         ],
-        executionSubjectInputsByKind: { typecheck: [{ kind: 'implementation' as const }] },
+        executionSubjectInputsByCandidateId: {
+          vc_typecheck_e2e: [{ kind: 'implementation' as const }],
+        },
       }),
     );
 
@@ -638,6 +641,7 @@ describe('implementation review without repository observation authority', () =>
         verificationCandidates: [
           {
             assertionCapability: 'unsupported' as const,
+            candidateId: 'vc_typecheck_e2e',
             kind: 'typecheck',
             command: 'npx tsc --noEmit',
             source: 'test',
@@ -645,7 +649,9 @@ describe('implementation review without repository observation authority', () =>
             reason: 'E2E test candidate',
           },
         ],
-        executionSubjectInputsByKind: { typecheck: [{ kind: 'implementation' as const }] },
+        executionSubjectInputsByCandidateId: {
+          vc_typecheck_e2e: [{ kind: 'implementation' as const }],
+        },
       }),
     );
     const rc1 = await run_check.execute({ kind: 'typecheck' }, se2.tc);
@@ -784,6 +790,7 @@ describe('implementation review without repository observation authority', () =>
         verificationCandidates: [
           {
             assertionCapability: 'unsupported' as const,
+            candidateId: 'vc_typecheck_e2e',
             kind: 'typecheck',
             command: 'npx tsc --noEmit',
             source: 'test',
@@ -791,7 +798,9 @@ describe('implementation review without repository observation authority', () =>
             reason: 'E2E test candidate',
           },
         ],
-        executionSubjectInputsByKind: { typecheck: [{ kind: 'implementation' as const }] },
+        executionSubjectInputsByCandidateId: {
+          vc_typecheck_e2e: [{ kind: 'implementation' as const }],
+        },
       }),
     );
     const rc1 = await run_check.execute({ kind: 'typecheck' }, se2.tc);

@@ -280,6 +280,7 @@ describe('HAPPY', () => {
         candidate.kind === 'typecheck'
           ? {
               assertionCapability: 'structured' as const,
+              candidateId: candidate.candidateId,
               kind: candidate.kind,
               command: candidate.command,
               source: candidate.source,
@@ -377,7 +378,7 @@ describe('HAPPY', () => {
       ],
       executionSubjectInputsByCandidateId: {
         ...(state!.executionSubjectInputsByCandidateId ?? {}),
-        [candidateId]: state!.executionSubjectInputsByKind!.typecheck ?? [],
+        [candidateId]: state!.executionSubjectInputsByCandidateId![primary.candidateId] ?? [],
       },
     });
 
@@ -841,6 +842,7 @@ describe('BAD', () => {
         ...(state!.verificationCandidates ?? []),
         {
           assertionCapability: 'unsupported' as const,
+          candidateId: 'vc_security_manual',
           kind: 'security' as const,
           command: 'npm audit',
           source: 'manual',
@@ -1315,6 +1317,7 @@ describe('CONCURRENCY', () => {
         ...(s!.verificationCandidates ?? []),
         {
           assertionCapability: 'unsupported' as const,
+          candidateId: 'vc_lint_parallel',
           kind: 'lint',
           command: 'npm run lint',
           source: 'discovery' as const,
@@ -1323,6 +1326,7 @@ describe('CONCURRENCY', () => {
         },
         {
           assertionCapability: 'unsupported' as const,
+          candidateId: 'vc_test_parallel',
           kind: 'test',
           command: 'npm test',
           source: 'discovery' as const,
@@ -1331,6 +1335,7 @@ describe('CONCURRENCY', () => {
         },
         {
           assertionCapability: 'unsupported' as const,
+          candidateId: 'vc_build_parallel',
           kind: 'build',
           command: 'npm run build',
           source: 'discovery' as const,
@@ -1338,11 +1343,11 @@ describe('CONCURRENCY', () => {
           reason: 'test',
         },
       ],
-      executionSubjectInputsByKind: {
-        ...(s!.executionSubjectInputsByKind ?? {}),
-        lint: [{ kind: 'implementation' as const }],
-        test: [{ kind: 'implementation' as const }],
-        build: [{ kind: 'implementation' as const }],
+      executionSubjectInputsByCandidateId: {
+        ...(s!.executionSubjectInputsByCandidateId ?? {}),
+        vc_lint_parallel: [{ kind: 'implementation' as const }],
+        vc_test_parallel: [{ kind: 'implementation' as const }],
+        vc_build_parallel: [{ kind: 'implementation' as const }],
       },
     });
 

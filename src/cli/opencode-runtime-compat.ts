@@ -102,8 +102,6 @@ export type OpenCodeHostContractStatus =
 export interface OpenCodeHostContractClassification {
   readonly status: OpenCodeHostContractStatus;
   readonly testedVersion: string;
-  /** Compatibility projection for existing doctor output; value is exact, not a semver range. */
-  readonly testedRange: string;
   readonly matched?: OpenCodeHostContractDenyEntry;
   readonly reason: string;
 }
@@ -139,7 +137,6 @@ function versionInBoundedRange(version: string, range: string): boolean {
 function baseClassification() {
   return {
     testedVersion: TESTED_OPENCODE_HOST_VERSION,
-    testedRange: TESTED_OPENCODE_HOST_VERSION,
   } as const;
 }
 

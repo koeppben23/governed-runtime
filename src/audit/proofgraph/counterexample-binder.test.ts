@@ -171,6 +171,7 @@ describe('bindCounterexamples', () => {
       verificationCandidates: [
         {
           assertionCapability: 'structured' as const,
+          candidateId: 'vc_security_replacement',
           kind: 'security' as const,
           command: 'pytest --junitxml=reports.xml',
           source: 'provider:pytest',

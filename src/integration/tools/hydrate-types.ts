@@ -39,7 +39,6 @@ export interface DiscoveryHydration {
   readonly discoverySummary?: ReturnType<typeof extractDiscoverySummary>;
   readonly detectedStack?: DetectedStack | null;
   readonly verificationCandidates?: VerificationCandidate[];
-  readonly executionSubjectInputsByKind?: Record<string, ExecutionSubjectInput[]>;
   readonly executionSubjectInputsByCandidateId?: Record<string, ExecutionSubjectInput[]>;
   readonly profileResolution?: ProfileResolution;
 }

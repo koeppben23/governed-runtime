@@ -126,7 +126,6 @@ describe('opencode-runtime-compat', () => {
       const result = classifyOpenCodeHostContract(TESTED_OPENCODE_HOST_VERSION);
       expect(result.status).toBe('verified');
       expect(result.testedVersion).toBe(TESTED_OPENCODE_HOST_VERSION);
-      expect(result.testedRange).toBe(TESTED_OPENCODE_HOST_VERSION);
     });
 
     it('BAD: a newer patch in the same minor line is compatible-unverified', () => {

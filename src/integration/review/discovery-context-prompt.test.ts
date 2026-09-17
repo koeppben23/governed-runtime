@@ -66,6 +66,7 @@ const BASE_CONTEXT: DiscoveryReviewContext = {
   verificationCandidates: [
     {
       assertionCapability: 'unsupported' as const,
+      candidateId: 'vc_test_npm',
       kind: 'test',
       command: 'npm test',
       source: 'package.json:scripts.test',
@@ -80,6 +81,7 @@ const BASE_CONTEXT: DiscoveryReviewContext = {
       verificationCandidates: [
         {
           assertionCapability: 'unsupported' as const,
+          candidateId: 'vc_test_npm',
           kind: 'test',
           command: 'npm test',
           source: 'package.json:scripts.test',
@@ -156,6 +158,7 @@ describe('buildDiscoveryContextSection', () => {
     const section = buildDiscoveryContextSection({
       verificationCandidates: Array.from({ length: 10 }, (_, index) => ({
         assertionCapability: 'unsupported' as const,
+        candidateId: `vc_bounded_${index}`,
         kind: 'test' as const,
         command: `npm test -- ${index}`,
         source: `package.json:${index}`,

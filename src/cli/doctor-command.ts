@@ -292,7 +292,7 @@ async function checkOpencodeInstructionSourceActivation(
       status: 'warn',
       detail:
         `runtime ${runtimeDesc}; host contract ${hostContract.status} ` +
-        `(tested ${hostContract.testedRange}); instruction-source activation is NOT_VERIFIED. ` +
+        `(tested ${hostContract.testedVersion}); instruction-source activation is NOT_VERIFIED. ` +
         'FlowGuard cannot prove that OpenCode loaded the configured source. ' +
         'See docs/platform-limitations.md.',
       check: ACTIVATION_CHECK,

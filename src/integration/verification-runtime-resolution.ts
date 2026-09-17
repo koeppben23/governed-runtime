@@ -13,7 +13,7 @@ import type { VerificationCandidate } from '../state/discovery-schemas.js';
 import type { RuntimeRequirement } from '../providers/registry.js';
 import { RUNTIME_REQUIREMENTS_BY_PROVIDER, ASSERTION_PROFILES } from '../providers/registry.js';
 import type { ProbeRunner, ProbeRole } from '../verification/toolchain-probe.js';
-import type { PlannedVerificationCandidate } from '../discovery/verification-candidate-planned.js';
+import type { IdentifiedPlannedVerificationCandidate } from '../discovery/verification-candidate-planned.js';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -36,16 +36,18 @@ export interface ResolvedVerificationCandidate {
 }
 
 /**
- * Wraps VerificationCandidate[] into PlannedVerificationCandidate[] for compatibility.
+ * Wraps persisted VerificationCandidate[] into the planned-candidate shape
+ * consumed by runtime resolution. Persisted candidates always carry their
+ * planner identity, so no anonymous candidate form is produced here.
  */
 export function wrapForResolution(
   candidates: readonly VerificationCandidate[],
-): PlannedVerificationCandidate[] {
+): IdentifiedPlannedVerificationCandidate[] {
   return candidates.map((c) => ({ candidate: c, executionSubjectInputs: [] }));
 }
 
 export async function resolveRuntimeReadiness(
-  candidates: readonly PlannedVerificationCandidate[],
+  candidates: readonly IdentifiedPlannedVerificationCandidate[],
   runner: ProbeRunner,
   cwd: string,
 ): Promise<readonly ResolvedVerificationCandidate[]> {

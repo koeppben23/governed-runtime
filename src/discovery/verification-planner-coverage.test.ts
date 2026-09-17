@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   comparePlannedCandidates,
-  extractExecutionSubjectInputs,
   extractExecutionSubjectInputsByCandidateId,
   planVerificationCandidates,
   stripToCandidates,
@@ -290,15 +289,15 @@ describe('verification planner — mutation coverage', () => {
   });
 
   describe('candidate extraction helpers', () => {
-    const planned = (candidateId: string | undefined, subjectInputs: unknown[]) => ({
+    const planned = (candidateId: string, subjectInputs: unknown[]) => ({
       candidate: {
         assertionCapability: 'unsupported' as const,
+        candidateId,
         kind: 'test' as const,
         command: 'npm test',
         source: 'package.json',
         confidence: 'high' as const,
         reason: 'test',
-        ...(candidateId ? { candidateId } : {}),
       },
       executionProfileId: 'vitest-fallback',
       scopeSemanticCommand: 'npm test',
@@ -311,20 +310,23 @@ describe('verification planner — mutation coverage', () => {
       expect(stripped[0]!.candidateId).toBe('vc_1');
     });
 
-    it('extractExecutionSubjectInputs omits entries without subject inputs', () => {
-      const map = extractExecutionSubjectInputs([
-        planned(undefined, []),
-        planned(undefined, [{ kind: 'implementation' }]),
+    it('extractExecutionSubjectInputsByCandidateId omits entries without subject inputs', () => {
+      const map = extractExecutionSubjectInputsByCandidateId([
+        planned('vc_without_inputs', []),
+        planned('vc_with_inputs', [{ kind: 'implementation' }]),
       ] as never);
-      expect(Object.keys(map)).toEqual(['test']);
+      expect(Object.keys(map)).toEqual(['vc_with_inputs']);
     });
 
-    it('extractExecutionSubjectInputsByCandidateId omits entries without a candidateId', () => {
+    it('extractExecutionSubjectInputsByCandidateId keys entries by candidateId', () => {
       const map = extractExecutionSubjectInputsByCandidateId([
-        planned(undefined, [{ kind: 'implementation' }]),
-        planned('vc_1', [{ kind: 'file', path: 'package.json' }]),
+        planned('vc_1', [{ kind: 'implementation' }]),
+        planned('vc_2', [{ kind: 'file', path: 'package.json' }]),
       ] as never);
-      expect(map).toEqual({ vc_1: [{ kind: 'file', path: 'package.json' }] });
+      expect(map).toEqual({
+        vc_1: [{ kind: 'implementation' }],
+        vc_2: [{ kind: 'file', path: 'package.json' }],
+      });
     });
   });
 });

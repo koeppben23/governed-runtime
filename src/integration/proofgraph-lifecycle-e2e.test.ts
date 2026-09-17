@@ -139,6 +139,7 @@ const ACTIVE_CHECKS = ['build', 'security'];
 const STRUCTURED_CANDIDATES = [
   {
     assertionCapability: 'unsupported' as const,
+    candidateId: 'vc_build_mvn',
     kind: 'build' as const,
     command: './mvnw verify',
     source: 'repo:mvnw',
@@ -147,6 +148,7 @@ const STRUCTURED_CANDIDATES = [
   },
   {
     assertionCapability: 'structured' as const,
+    candidateId: 'vc_security_mvn',
     kind: 'security' as const,
     command: './mvnw test',
     source: 'repo:mvnw',
@@ -205,6 +207,7 @@ const AGGREGATE_CANDIDATES = [
   STRUCTURED_CANDIDATES[0]!,
   {
     assertionCapability: 'structured' as const,
+    candidateId: 'vc_security_pytest_aggregate',
     kind: 'security' as const,
     command: 'pytest --junitxml=reports.xml',
     source: 'provider:pytest',
