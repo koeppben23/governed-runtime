@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   readStdin: vi.fn(),
   resolveSession: vi.fn(),
-  appendAuditEvent: vi.fn(async () => undefined),
+  appendAuditEvent: vi.fn(async (_sessionDir: string, _event: unknown) => undefined),
   installHookStdoutGuard: vi.fn(() => ({ restore: vi.fn() })),
   assessObligationEscalation: vi.fn(() => ({ message: undefined as string | undefined })),
 }));
