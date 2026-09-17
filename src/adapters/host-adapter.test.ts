@@ -224,3 +224,89 @@ describe('HAI Type Contract', () => {
     expect(levels).toHaveLength(3);
   });
 });
+
+describe('reviewTransportSatisfies contract', () => {
+  const TRANSPORT_FLAGS = [
+    'structuredOutput',
+    'parentVisible',
+    'transcriptNavigable',
+    'isolatedAgentIdentity',
+    'permissionIsolation',
+  ] as const;
+
+  type TransportFlag = (typeof TRANSPORT_FLAGS)[number];
+
+  function transport(
+    overrides: Partial<Record<TransportFlag, boolean>> = {},
+  ): Parameters<typeof reviewTransportSatisfies>[0] {
+    return {
+      kind: 'native_task_structured_followup',
+      structuredOutput: true,
+      parentVisible: true,
+      transcriptNavigable: true,
+      isolatedAgentIdentity: true,
+      permissionIsolation: true,
+      assurance: 'structured_high',
+      ...overrides,
+    };
+  }
+
+  function requirements(
+    overrides: Partial<Record<TransportFlag, boolean>> = {},
+  ): Parameters<typeof reviewTransportSatisfies>[1] {
+    return {
+      structuredOutput: false,
+      parentVisible: false,
+      transcriptNavigable: false,
+      isolatedAgentIdentity: false,
+      permissionIsolation: false,
+      ...overrides,
+    };
+  }
+
+  it('HAPPY: the fully required product contract is satisfied by a complete transport', () => {
+    expect(reviewTransportSatisfies(transport(), REQUIRED_INDEPENDENT_REVIEW_TRANSPORT)).toBe(true);
+  });
+
+  it('BAD: rejects any transport missing one required flag', () => {
+    for (const flag of TRANSPORT_FLAGS) {
+      expect(
+        reviewTransportSatisfies(
+          transport({ [flag]: false }),
+          REQUIRED_INDEPENDENT_REVIEW_TRANSPORT,
+        ),
+        flag,
+      ).toBe(false);
+    }
+  });
+
+  it('HAPPY: an unrequired flag does not constrain the transport', () => {
+    const allMissing = transport({
+      structuredOutput: false,
+      parentVisible: false,
+      transcriptNavigable: false,
+      isolatedAgentIdentity: false,
+      permissionIsolation: false,
+    });
+
+    expect(reviewTransportSatisfies(allMissing, requirements())).toBe(true);
+  });
+
+  it('HAPPY: only the required subset is evaluated', () => {
+    for (const requiredFlag of TRANSPORT_FLAGS) {
+      const required = requirements({ [requiredFlag]: true });
+      expect(reviewTransportSatisfies(transport(), required), requiredFlag).toBe(true);
+      expect(
+        reviewTransportSatisfies(transport({ [requiredFlag]: false }), required),
+        requiredFlag,
+      ).toBe(false);
+    }
+  });
+
+  it('BAD: a satisfied subset never upgrades a missing required flag', () => {
+    const required = requirements({ permissionIsolation: true });
+    const almostComplete = transport({ permissionIsolation: false });
+
+    expect(reviewTransportSatisfies(almostComplete, required)).toBe(false);
+  });
+});

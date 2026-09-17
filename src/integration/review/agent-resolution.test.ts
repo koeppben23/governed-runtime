@@ -113,3 +113,43 @@ describe('reviewer agent resolution', () => {
     );
   });
 });
+
+describe('reviewer agent resolution error provenance', () => {
+  beforeEach(() => {
+    _resetAgentResolutionCache();
+  });
+
+  it('preserves the underlying cause when the registry probe throws', async () => {
+    const cause = new Error('transport down');
+    const client: OrchestratorClient = {
+      app: { agents: vi.fn().mockRejectedValue(cause) },
+      session: { prompt: vi.fn() },
+    };
+
+    const error = await resolveReviewerAgent(client).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ReviewerAgentUnavailableError);
+    expect((error as Error).cause).toBe(cause);
+  });
+
+  it('does not fabricate a cause on registry error results', async () => {
+    const client = makeClient({ agentsError: { message: 'unauthorized' } });
+
+    const error = await resolveReviewerAgent(client).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ReviewerAgentUnavailableError);
+    expect((error as Error).cause).toBeUndefined();
+  });
+
+  it('echoes the registry error message when one is present', async () => {
+    const client = makeClient({ agentsError: { message: 'unauthorized' } });
+
+    await expect(resolveReviewerAgent(client)).rejects.toThrow(/unauthorized/);
+  });
+
+  it('falls back to the raw registry error when it carries no message', async () => {
+    const client = makeClient({ agentsError: 'denied' });
+
+    await expect(resolveReviewerAgent(client)).rejects.toThrow(/denied/);
+  });
+});

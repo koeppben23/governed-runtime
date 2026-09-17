@@ -324,3 +324,119 @@ describe('isPrivateIPv6', () => {
     expect(isPrivateIPv6('2a00:1450::1')).toBe(false);
   });
 });
+
+// ─── Boundary matrices ────────────────────────────────────────────────────────
+
+describe('private-range boundary matrix', () => {
+  const PRIVATE_BOUNDARIES = [
+    '127.0.0.1',
+    '10.0.0.0',
+    '10.255.255.255',
+    '172.16.0.0',
+    '172.31.255.255',
+    '192.168.0.0',
+    '192.168.255.255',
+    '169.254.1.1',
+    '0.0.0.0',
+    '100.64.0.0',
+    '100.127.255.255',
+    '192.0.2.1',
+    '198.51.100.1',
+    '203.0.113.1',
+    '198.18.0.1',
+    '224.0.0.1',
+    '240.0.0.1',
+    '255.255.255.255',
+  ] as const;
+
+  const PUBLIC_ADDRESSES = [
+    '172.32.0.0',
+    '100.128.0.0',
+    '8.8.8.8',
+    '1.1.1.1',
+    '192.169.0.1',
+  ] as const;
+
+  it('blocks every configured reserved boundary', () => {
+    for (const address of PRIVATE_BOUNDARIES) {
+      const parsed = parseIPv4(address);
+      expect(parsed, address).not.toBeNull();
+      expect(isPrivateIPv4(parsed!), address).toBe(true);
+    }
+  });
+
+  it('allows addresses immediately outside reserved ranges', () => {
+    for (const address of PUBLIC_ADDRESSES) {
+      const parsed = parseIPv4(address);
+      expect(parsed, address).not.toBeNull();
+      expect(isPrivateIPv4(parsed!), address).toBe(false);
+    }
+  });
+
+  it('parses unsigned 32-bit boundary values exactly', () => {
+    expect(parseIPv4('255.255.255.255')).toBe(0xffffffff >>> 0);
+    expect(parseIPv4('01.02.03.04')).toBe(0x01020304);
+    expect(parseIPv4('256.1.1.1')).toBeNull();
+    expect(parseIPv4('1.2.3.256')).toBeNull();
+    expect(parseIPv4('1.2.3.999')).toBeNull();
+  });
+});
+
+describe('IPv6 format and privacy matrix', () => {
+  it('accepts compressed, full, and embedded-dotted forms', () => {
+    for (const address of [
+      '::',
+      '::1',
+      '1:2:3:4:5:6:7:8',
+      '1:2:3:4:5:6::7',
+      '::1:2:3:4:5:6:7',
+      '2001:db8::',
+      '2001:db8::192.0.2.1',
+      '::ffff:192.0.2.128',
+    ]) {
+      expect(isIPv6Address(address), address).toBe(true);
+    }
+  });
+
+  it('rejects malformed, over-long, and colonless forms', () => {
+    for (const address of [
+      '',
+      ':',
+      'abcd',
+      '1:2:3:4:5:6:7',
+      '1:2:3:4:5:6:7:8:9',
+      '::1:2:3:4:5:6:7:8',
+      '1:2:3:4:5:6::7:8',
+      'a:::',
+      '1:2:3:4:5:6:7:8::',
+    ]) {
+      expect(isIPv6Address(address), address).toBe(false);
+    }
+  });
+
+  it('classifies private and mapped IPv6 addresses', () => {
+    for (const address of [
+      '::',
+      '::1',
+      'fc00::1',
+      'fd12::1',
+      'fe80::1',
+      'fea0::1',
+      'ff02::1',
+      '::ffff:10.0.0.1',
+      '::ffff:0a00:0001',
+      '::10.0.0.1',
+    ]) {
+      expect(isPrivateIPv6(address), address).toBe(true);
+    }
+
+    for (const address of ['::ffff:8.8.8.8', 'fec0::1', '2001:db8::1']) {
+      expect(isPrivateIPv6(address), address).toBe(false);
+    }
+  });
+
+  it('keeps IPv4 and IPv6 validators disjoint', () => {
+    expect(isIPv4Address('::1')).toBe(false);
+    expect(isIPv6Address('192.168.0.1')).toBe(false);
+  });
+});

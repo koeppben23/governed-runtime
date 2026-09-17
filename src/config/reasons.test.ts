@@ -509,4 +509,33 @@ describe('cli/templates/verification-output-contract', () => {
       expect(reviewTemplate).toMatch(/flag this as a defect/i);
     });
   });
+
+  // ─── Catalog registration ──────────────────────────────────
+  describe('catalog registration', () => {
+    it('registers one representative code from every built-in category', () => {
+      const probes = [
+        'CONFIG_MISSING',
+        'NO_ARCHITECTURE',
+        'HELP_ARGUMENTS_INVALID',
+        'MCP_TOOL_TIMEOUT',
+        'PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE',
+        'MUTATION_EPISODE_RESOLVED',
+      ] as const;
+
+      for (const code of probes) {
+        expect(defaultReasonRegistry.get(code), code).toBeDefined();
+      }
+    });
+
+    it('freezes the default registry after built-in registration', () => {
+      expect(() =>
+        defaultReasonRegistry.register({
+          code: 'TEST_ONLY_UNREGISTERED_AFTER_LOAD',
+          category: 'state',
+          messageTemplate: 'must not be accepted after freeze',
+          recoverySteps: [],
+        }),
+      ).toThrow(/frozen/i);
+    });
+  });
 });
