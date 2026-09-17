@@ -162,3 +162,99 @@ describe('pre-tool-use review obligation enforcement', () => {
     expect(stdout).toBe('');
   });
 });
+
+describe('pre-tool-use hook diagnostics', () => {
+  async function runWithLog(
+    payload: Record<string, unknown>,
+  ): Promise<{ stdout: string; stderr: string }> {
+    let stdout = '';
+    let stderr = '';
+    vi.spyOn(process.stdout, 'write').mockImplementation(((chunk, encodingOrCallback, callback) => {
+      stdout += Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
+      const done = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
+      if (done) done(null);
+      return true;
+    }) as typeof process.stdout.write);
+    vi.spyOn(process.stderr, 'write').mockImplementation(((chunk) => {
+      stderr += Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
+      return true;
+    }) as typeof process.stderr.write);
+    mockReadStdin.mockResolvedValue(payload);
+
+    await import('./pre-tool-use.js');
+    await vi.waitFor(() => expect(stdout.trim() + stderr.trim()).not.toBe(''));
+    return { stdout, stderr };
+  }
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    process.env['FLOWGUARD_HOOK_TOKEN'] = TEST_HOOK_TOKEN;
+    process.exitCode = undefined;
+  });
+
+  afterEach(() => {
+    process.stdout.write = originalStdoutWrite;
+    process.stderr.write = originalStderrWrite;
+    vi.restoreAllMocks();
+    delete process.env['FLOWGUARD_HOOK_TOKEN'];
+    process.exitCode = undefined;
+  });
+
+  it('logs the platform and the non-mutating ALLOW fast path', async () => {
+    mockResolveSession.mockResolvedValue({ ok: false, code: 'SESSION_NOT_FOUND', reason: 'x' });
+
+    const { stderr } = await runWithLog({
+      tool_name: 'Read',
+      tool_input: { file_path: '/tmp/x' },
+      session_id: 'sess_test',
+      cwd: '/tmp/project',
+    });
+
+    expect(stderr).toContain('[FlowGuard Hook] platform:');
+    expect(stderr).toContain('ALLOW: Read (non-mutating)');
+  });
+
+  it('logs the fail-closed validation denial for a malformed payload', async () => {
+    const { stderr } = await runWithLog({
+      tool_input: { command: 'x' },
+      session_id: 'sess_test',
+      cwd: '/tmp/project',
+    });
+
+    expect(stderr).toContain('DENY (fail-closed validation)');
+  });
+
+  it('logs the subagent denial for an unauthorized task tool', async () => {
+    const { stderr } = await runWithLog({
+      tool_name: 'task',
+      tool_input: { subagent_type: 'general', prompt: 'x' },
+      session_id: 'sess_test',
+      cwd: '/tmp/project',
+    });
+
+    expect(stderr).toContain('DENY (subagent)');
+  });
+
+  it('logs the review-obligation denial with the boundary reason', async () => {
+    mockResolveSession.mockResolvedValue({
+      ok: true,
+      sessionDir: '/sessions/sess_test',
+      state: {
+        phase: 'IMPLEMENTATION',
+        reviewAssurance: {
+          obligations: [{ obligationId: 'a-obligation', status: 'pending', consumedAt: null }],
+        },
+      },
+    });
+
+    const { stderr } = await runWithLog({
+      tool_name: 'Bash',
+      tool_input: { command: 'npm test' },
+      session_id: 'sess_test',
+      cwd: '/tmp/project',
+    });
+
+    expect(stderr).toContain('DENY (review obligation)');
+  });
+});

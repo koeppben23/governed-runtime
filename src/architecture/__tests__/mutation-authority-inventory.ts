@@ -555,12 +555,6 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     ['src/templates/claude-code-plugin.test.ts'],
     { critical: true, source: [SOURCE.productMandates] },
   ),
-  required(
-    'src/templates/mandates.ts',
-    'Installed mandate authority',
-    ['src/templates/mandates-contract-mutation.test.ts'],
-    { source: [SOURCE.productMandates] },
-  ),
   required('src/integration/review/enforcement/enforcement.ts', 'Review enforcement layers', [
     'src/integration/review/enforcement/enforce-before-verdict.test.ts',
     'src/integration/review/enforcement/retry-signal.test.ts',

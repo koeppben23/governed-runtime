@@ -207,7 +207,9 @@ describe('integration/tools/architecture (wrapper)', () => {
     });
     const { architecture } = await import('./architecture.js');
     const res = await architecture.execute({ title: 'x', adrText: 'y' }, {} as never);
-    expect(JSON.parse(String(res)).code).toBe('MISSING_ADR_SECTIONS');
+    const parsed = JSON.parse(String(res));
+    expect(parsed.code).toBe('MISSING_ADR_SECTIONS');
+    expect(parsed.error).toBe(true);
   });
 
   it('writes state and returns payload on Mode A success', async () => {

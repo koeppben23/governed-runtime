@@ -282,3 +282,21 @@ describe('config/profile built-in registration contract', () => {
     expect(registry.detect({ repoSignals: noSignals })?.id).toBe('tie-first');
   });
 });
+
+describe('config/profile signal evaluation with non-matching inputs', () => {
+  it('scores zero when package files do not match any Java build file', () => {
+    const signals: RepoSignals = { files: [], packageFiles: ['README.md'], configFiles: [] };
+    expect(javaProfile.detect!({ repoSignals: signals })).toBe(0);
+  });
+
+  it('detects Java from build.gradle specifically', () => {
+    const signals: RepoSignals = { files: [], packageFiles: ['build.gradle'], configFiles: [] };
+    expect(javaProfile.detect!({ repoSignals: signals })).toBe(0.8);
+  });
+
+  it('scores zero when config files do not match Angular or TypeScript signals', () => {
+    const signals: RepoSignals = { files: [], packageFiles: [], configFiles: ['README.md'] };
+    expect(angularProfile.detect!({ repoSignals: signals })).toBe(0);
+    expect(typescriptProfile.detect!({ repoSignals: signals })).toBe(0);
+  });
+});

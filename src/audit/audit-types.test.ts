@@ -15,6 +15,7 @@ import {
   buildToolCallBody,
   buildErrorBody,
   buildLifecycleBody,
+  finalizeWithTimestampEvidence,
   summarizeArgs,
   type ChainedAuditEvent,
 } from './types.js';
@@ -803,5 +804,23 @@ describe('host session provenance on event bodies', () => {
     for (const [name, build] of Object.entries(buildBodies)) {
       expect('hostSessionId' in build(undefined), name).toBe(false);
     }
+  });
+});
+
+describe('finalizeWithTimestampEvidence defaults', () => {
+  it('defaults the TSA digest algorithm to sha256 when evidence omits one', () => {
+    const body = buildTransitionBody(
+      SESSION_ID,
+      undefined,
+      'PLAN',
+      { event: 'PLAN_READY' } as never,
+      TS1,
+      GENESIS_HASH,
+    );
+    const event = finalizeWithTimestampEvidence(body, GENESIS_HASH, {
+      tsa: { algorithmOid: '1.2.3' },
+    } as never);
+
+    expect(event.timestampEvidence?.tsa?.digestAlgorithm).toBe('sha256');
   });
 });

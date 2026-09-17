@@ -357,46 +357,46 @@ describe('bindCounterexamples', () => {
   });
 });
 
-describe('counterexample assertion outcome classification', () => {
-  function assertionAttempt(
-    status: 'passed' | 'failed' | 'errored' | 'skipped',
-    scope = 'implementation',
-  ) {
-    return {
-      attemptId: ATT,
-      scope: scope as 'implementation',
-      implementationDigest: IMPL_DIGEST,
-      executionObservation: TEST_EXECUTION_OBSERVATION,
-      result: {
-        ...validationResult(status === 'passed'),
-        assertionExtraction: {
-          status: 'extracted' as const,
-          attemptId: ATT,
-          providerId: 'junit' as const,
-          format: 'junit_xml' as const,
-          bindingCapability: 'assertion' as const,
-          reportDigests: [SHA],
-          assertions: [
-            {
-              assertion: { providerId: 'junit', localId: 'com.example.Test#method' },
-              providerId: 'junit',
-              status,
-              testName: 'com.example.Test#method',
-            },
-          ],
-          summary: {
-            assertionCount: 1,
-            passedCount: status === 'passed' ? 1 : 0,
-            failedCount: status === 'failed' ? 1 : 0,
-            erroredCount: status === 'errored' ? 1 : 0,
-            skippedCount: status === 'skipped' ? 1 : 0,
-            suiteInfrastructureError: false,
+function assertionAttempt(
+  status: 'passed' | 'failed' | 'errored' | 'skipped',
+  scope = 'implementation',
+) {
+  return {
+    attemptId: ATT,
+    scope: scope as 'implementation',
+    implementationDigest: IMPL_DIGEST,
+    executionObservation: TEST_EXECUTION_OBSERVATION,
+    result: {
+      ...validationResult(status === 'passed'),
+      assertionExtraction: {
+        status: 'extracted' as const,
+        attemptId: ATT,
+        providerId: 'junit' as const,
+        format: 'junit_xml' as const,
+        bindingCapability: 'assertion' as const,
+        reportDigests: [SHA],
+        assertions: [
+          {
+            assertion: { providerId: 'junit', localId: 'com.example.Test#method' },
+            providerId: 'junit',
+            status,
+            testName: 'com.example.Test#method',
           },
+        ],
+        summary: {
+          assertionCount: 1,
+          passedCount: status === 'passed' ? 1 : 0,
+          failedCount: status === 'failed' ? 1 : 0,
+          erroredCount: status === 'errored' ? 1 : 0,
+          skippedCount: status === 'skipped' ? 1 : 0,
+          suiteInfrastructureError: false,
         },
       },
-    };
-  }
+    },
+  };
+}
 
+describe('counterexample assertion outcome classification', () => {
   it('classifies a failed assertion as contradicted', () => {
     const state = stateWith([assertionAttempt('failed')]);
     expect(bindCounterexamples(state, NOW).counterexamples[0]?.outcome).toBe('contradicted');
@@ -451,5 +451,51 @@ describe('counterexample assertion outcome classification', () => {
     });
 
     expect(bindCounterexamples(state, NOW).counterexamples).toEqual([]);
+  });
+});
+
+describe('counterexample assertion binding edge cases', () => {
+  it('skips a non-validation_attempt reference even when an attempt id is present', () => {
+    const state = stateWith([assertionAttempt('passed')], 'IMPL_REVIEW', {
+      counterexampleRefs: [{ kind: 'content', digest: 'x', attemptId: ATT }] as never,
+    });
+
+    expect(bindCounterexamples(state, NOW).counterexamples).toEqual([]);
+  });
+
+  it('supports an aggregate requirement whose candidate matches the result candidate', () => {
+    const state = stateWith(
+      [
+        {
+          attemptId: ATT,
+          scope: 'implementation',
+          implementationDigest: IMPL_DIGEST,
+          executionObservation: TEST_EXECUTION_OBSERVATION,
+          result: { ...aggregateValidationResult('full_check'), candidateId: 'candidate-1' },
+        },
+      ],
+      'IMPL_REVIEW',
+      {
+        counterexampleRequirement: {
+          ...AGGREGATE_COUNTEREXAMPLE_REQ,
+          candidateId: 'candidate-1',
+        },
+      },
+    );
+
+    expect(bindCounterexamples(state, NOW).counterexamples[0]?.outcome).toBe('supported');
+  });
+
+  it('keeps the first diagnostic when several references fail differently', () => {
+    const mismatched = assertionAttempt('passed');
+    mismatched.result.assertionExtraction.assertions[0]!.assertion.localId = 'other#method';
+    const state = stateWith([mismatched], 'IMPL_REVIEW', {
+      counterexampleRefs: [
+        { kind: 'validation_attempt' as const, attemptId: ATT },
+        { kind: 'validation_attempt' as const, attemptId: 'missing-attempt' },
+      ] as never,
+    });
+
+    expect(bindCounterexamples(state, NOW).diagnostics.get(CLAIM)).toBe('assertion_mismatch');
   });
 });

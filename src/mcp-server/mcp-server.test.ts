@@ -16,7 +16,7 @@
  * @see https://github.com/koeppben23/governed-runtime/issues/243
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -36,6 +36,7 @@ import {
   type ToolDefinition,
 } from '../integration/tools/helpers.js';
 import { getAdapterLogger, getLogTraceFields } from '../logging/adapter-logger.js';
+import { mcpLogger } from './mcp-logger.js';
 import { z } from 'zod';
 
 const execFileAsync = promisify(execFile);
@@ -949,6 +950,87 @@ describe('Tool Registry', () => {
           `Tool '${name}' arg '${argName}' should be a Zod schema`,
         ).toBeDefined();
       }
+    }
+  });
+});
+
+describe('MCP tool adapter logging contract', () => {
+  function harness(tool: ToolDefinition) {
+    let handler:
+      ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown) | null = null;
+    const fakeServer = {
+      registerTool: (_name: string, _config: unknown, registered: typeof handler) => {
+        handler = registered;
+      },
+    } as unknown as McpServer;
+
+    registerAllTools(fakeServer, { test: tool }, () => ({
+      sessionId: 'mcp-log-session',
+      directory: '/tmp/project',
+      worktree: '/tmp/project',
+    }));
+    if (handler === null) throw new Error('handler not registered');
+    return () => handler!({}, {});
+  }
+
+  it('logs tool_invoked with tool identity and session id', async () => {
+    const info = vi.spyOn(mcpLogger, 'info');
+    try {
+      const invoke = harness({
+        description: 'test tool',
+        args: {},
+        async execute() {
+          return 'ok';
+        },
+      });
+      await invoke();
+
+      const call = info.mock.calls.find((entry) => entry[1] === 'tool_invoked');
+      expect(call).toBeDefined();
+      expect(call?.[2]).toMatchObject({ tool: 'flowguard_test', sessionId: 'mcp-log-session' });
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  it('logs tool_denied with the boundary code for a fail-closed session error', async () => {
+    const warn = vi.spyOn(mcpLogger, 'warn');
+    try {
+      const invoke = harness({
+        description: 'test tool',
+        args: {},
+        async execute() {
+          throw new McpSessionResolutionError('missing session');
+        },
+      });
+      await invoke();
+
+      const call = warn.mock.calls.find((entry) => entry[1] === 'tool_denied');
+      expect(call).toBeDefined();
+      expect(call?.[2]).toMatchObject({ tool: 'flowguard_test', code: 'SESSION_UNRESOLVABLE' });
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('does not emit the session-resolution diagnostic for ordinary failures', async () => {
+    const write = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    try {
+      const invoke = harness({
+        description: 'test tool',
+        args: {},
+        async execute() {
+          throw new Error('ordinary failure');
+        },
+      });
+      await invoke();
+
+      const wrote = write.mock.calls.some((entry) =>
+        String(entry[0]).includes('mcp-session-resolver'),
+      );
+      expect(wrote).toBe(false);
+    } finally {
+      write.mockRestore();
     }
   });
 });
