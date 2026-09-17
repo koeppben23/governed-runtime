@@ -45,6 +45,9 @@ export default defineConfig({
       'src/shared/canonical-json.test.ts',
       'src/logging/error-serialize.test.ts',
 
+      'src/integration/mutation-episode-e2e.test.ts',
+      'src/integration/review/reviewed-digest.test.ts',
+      'src/integration/review/findings-hash.test.ts',
       'src/hooks/**/*.test.ts',
       'src/mcp-server/**/*.test.ts',
       'src/templates/**/*.test.ts',
@@ -63,6 +66,7 @@ export default defineConfig({
       'src/integration/tools/helpers.test.ts',
       'src/integration/tools/audit-outbox.test.ts',
       'src/integration/tools/write-state-with-artifacts.test.ts',
+      'src/integration/tools/record-mutation-evidence.test.ts',
       'src/integration/plugin-compaction.test.ts',
       'src/integration/plugin-enforcement-tracking.test.ts',
       'src/integration/plugin-events.test.ts',

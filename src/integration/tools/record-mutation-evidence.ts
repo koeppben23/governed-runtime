@@ -158,7 +158,8 @@ export const record_mutation_evidence: ToolDefinition = {
 
         if (built.kind === 'error') {
           return formatBlocked('PROOFGRAPH_MUTATION_REPORT_INVALID', {
-            reason: built.message,
+            reportPath: params.reportPath,
+            message: built.message,
             recovery: 'ensure the report is a valid mutation-testing-elements JSON output',
           });
         }

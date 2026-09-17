@@ -504,20 +504,23 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       // A CONCURRENT instance cannot acquire the live lease at all — even a
       // different process identity proves nothing about the authorizing epoch.
       resetRuntimeInstanceIdForTest();
-      const concurrentInstance = parseToolResult<{ code?: string }>(
+      const concurrentInstance = parseToolResult<{ code?: string; message?: string }>(
         await reconcile_mutation_episode.execute({ hostCallId: crashedCallID }, ctx as never),
       );
       expect(concurrentInstance.code).toBe('MUTATION_EPISODE_LEASE_UNAVAILABLE');
+      expect(concurrentInstance.message).toBeDefined();
+      expect(concurrentInstance.message).not.toContain('{');
       const afterConcurrentBlock = await readState(sessDir);
       expect(afterConcurrentBlock!.mutationEpisodeResolutions).toHaveLength(0);
 
       // Restart with fencing: the holder DIES, and the new instance acquires a
       // LATER lease generation — the provable end of the authorizing epoch.
       await killLeaseHolder(sessDir);
-      const resolvedResult = parseToolResult<{ code?: string }>(
+      const resolvedResult = parseToolResult<{ code?: string; error?: boolean }>(
         await reconcile_mutation_episode.execute({ hostCallId: crashedCallID }, ctx as never),
       );
       expect(resolvedResult.code).toBe('MUTATION_EPISODE_RESOLVED');
+      expect(resolvedResult.error).toBe(false);
 
       const resolved = await readState(sessDir);
       expect(resolved!.mutationEpisodeResolutions).toHaveLength(1);
@@ -706,6 +709,134 @@ describe('mutation episode end-to-end (real plugin runtime)', () => {
       );
       expect(completion.error).not.toBe(true);
       expect((await readState(sessDir))!.phase).toBe('COMPLETE');
+    } finally {
+      await ws.cleanup();
+    }
+  });
+});
+
+describe('reconcile mutation episode fail-closed branches', () => {
+  it('blocks unknown, already observed and already resolved episodes', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const sessionID = crypto.randomUUID();
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+      await fs.mkdir(sessDir, { recursive: true });
+      const base = makeProgressedState('IMPLEMENTATION');
+      await writeStateWithArtifacts(sessDir, {
+        ...base,
+        mutationEpisodes: [
+          {
+            episodeId: crypto.randomUUID(),
+            hostCallId: 'observed-success',
+            toolName: 'edit',
+            runtimeInstanceId: crypto.randomUUID(),
+            leaseGeneration: 1,
+            authorizedAt: '2026-01-01T00:00:00.000Z',
+            status: 'completed',
+            completedAt: '2026-01-01T00:01:00.000Z',
+            outcome: 'success',
+            implementationDigest: null,
+            evidenceStatus: 'ineligible',
+          },
+          {
+            episodeId: crypto.randomUUID(),
+            hostCallId: 'completed-unknown',
+            toolName: 'bash',
+            runtimeInstanceId: crypto.randomUUID(),
+            leaseGeneration: 1,
+            authorizedAt: '2026-01-01T00:00:00.000Z',
+            status: 'completed',
+            completedAt: '2026-01-01T00:01:00.000Z',
+            outcome: 'unknown',
+            implementationDigest: null,
+            evidenceStatus: 'ineligible',
+          },
+          {
+            episodeId: crypto.randomUUID(),
+            hostCallId: 'unresolved-dispatch',
+            toolName: 'bash',
+            runtimeInstanceId: crypto.randomUUID(),
+            leaseGeneration: 1,
+            authorizedAt: '2026-01-01T00:00:00.000Z',
+            status: 'dispatch_authorized',
+            completedAt: null,
+            outcome: null,
+            implementationDigest: null,
+            evidenceStatus: 'ineligible',
+          },
+          {
+            episodeId: crypto.randomUUID(),
+            hostCallId: 'resolved-before',
+            toolName: 'apply_patch',
+            runtimeInstanceId: crypto.randomUUID(),
+            leaseGeneration: 1,
+            authorizedAt: '2026-01-01T00:00:00.000Z',
+            status: 'dispatch_authorized',
+            completedAt: null,
+            outcome: null,
+            implementationDigest: null,
+            evidenceStatus: 'ineligible',
+          },
+        ],
+        mutationEpisodeResolutions: [
+          {
+            resolutionId: crypto.randomUUID(),
+            hostCallId: 'resolved-before',
+            status: 'reconciled_after_unknown_outcome',
+            basis: 'worktree_recapture',
+            resolvedAt: '2026-01-15T00:00:00.000Z',
+            resolvingRuntimeInstanceId: crypto.randomUUID(),
+            resolvingLeaseGeneration: 2,
+          },
+        ],
+      });
+      const ctx = createToolContext({ sessionID, worktree: ws.tmpDir, directory: ws.tmpDir });
+
+      const unknown = parseToolResult<{ code: string; message: string }>(
+        await reconcile_mutation_episode.execute({ hostCallId: 'missing-call' }, ctx as never),
+      );
+      expect(unknown.code).toBe('MUTATION_EPISODE_NOT_FOUND');
+      expect(unknown.message).toContain('missing-call');
+
+      const observed = parseToolResult<{ code: string; message: string }>(
+        await reconcile_mutation_episode.execute({ hostCallId: 'observed-success' }, ctx as never),
+      );
+      expect(observed.code).toBe('MUTATION_EPISODE_ALREADY_COMPLETED');
+      expect(observed.message).toContain('success');
+
+      const resolved = parseToolResult<{ code: string; message: string }>(
+        await reconcile_mutation_episode.execute({ hostCallId: 'resolved-before' }, ctx as never),
+      );
+      expect(resolved.code).toBe('MUTATION_EPISODE_ALREADY_RESOLVED');
+      expect(resolved.message).toContain('resolved-before');
+
+      // A completed episode with an UNKNOWN outcome is just as unobservable as
+      // a dispatch whose After-hook never ran: it must proceed past the
+      // completion gate into the fencing check, never report ALREADY_COMPLETED.
+      const completedUnknown = parseToolResult<{ code: string; message: string }>(
+        await reconcile_mutation_episode.execute({ hostCallId: 'completed-unknown' }, ctx as never),
+      );
+      expect(completedUnknown.code).not.toBe('MUTATION_EPISODE_ALREADY_COMPLETED');
+      expect(completedUnknown.code).toBe('MUTATION_EPISODE_RUNTIME_EPOCH_ACTIVE');
+      expect(completedUnknown.message).not.toContain('{');
+
+      // An unresolved dispatch without a resolution record must not be treated
+      // as already resolved; the fencing check blocks it instead.
+      const unresolved = parseToolResult<{ code: string; message: string }>(
+        await reconcile_mutation_episode.execute(
+          { hostCallId: 'unresolved-dispatch' },
+          ctx as never,
+        ),
+      );
+      expect(unresolved.code).not.toBe('MUTATION_EPISODE_ALREADY_RESOLVED');
+      expect(unresolved.code).toBe('MUTATION_EPISODE_RUNTIME_EPOCH_ACTIVE');
+      expect(unresolved.message).not.toContain('{');
+
+      const schema = reconcile_mutation_episode.args['hostCallId']!;
+      expect(schema.safeParse('').success).toBe(false);
+      expect(schema.safeParse('host-call-1').success).toBe(true);
     } finally {
       await ws.cleanup();
     }

@@ -8,7 +8,11 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     setupFiles: ['./vitest.setup.ts'],
-    include: ['src/templates/**/*.test.ts', 'src/cli/templates-hash.test.ts'],
+    include: [
+      'src/templates/**/*.test.ts',
+      'src/cli/templates-hash.test.ts',
+      'src/rendering/mandates-renderer.test.ts',
+    ],
     globals: false,
     restoreMocks: true,
     testTimeout: 60_000,
