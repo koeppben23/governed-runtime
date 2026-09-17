@@ -889,48 +889,48 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
   deferred(
     'src/adapters/git.ts',
     'Git subprocess boundary',
-    'Full-run verdict 34.97% (57 killed / 106 survived); test gaps must close before admission. Tracked as PR E (existing authority hardening).',
+    'Full-run verdict 34.97% (57 killed / 106 survived); test gaps must close before admission. Tracked in the existing-authority hardening tranche (measured baseline above).',
     { source: [SOURCE.trustBoundaries] },
   ),
   deferred(
     'src/adapters/frozen-repository.ts',
     'Immutable frozen-repository acquisition boundary',
-    'Full-run verdict 58.65% (78 killed / 55 survived); test gaps must close before admission. Tracked as PR E (existing authority hardening).',
+    'Full-run verdict 58.65% (78 killed / 55 survived); test gaps must close before admission. Tracked in the existing-authority hardening tranche (measured baseline above).',
     { source: [SOURCE.trustBoundaries] },
   ),
   deferred(
     'src/audit/canonical-digest.ts',
     'TSA message imprint digest authority',
-    'Full-run verdict 75.00% (3 killed / 1 survived); the mutant set is too small to carry an admission. Tracked as PR E (existing authority hardening).',
+    'Full-run verdict 75.00% (3 killed / 1 survived); the mutant set is too small to carry an admission. Tracked in the existing-authority hardening tranche (measured baseline above).',
   ),
   deferred(
     'src/config/flowguard-config.ts',
     'Runtime config schema authority',
-    'Full-run verdict 20.00% (9 killed / 36 survived); default/parse branches lack assertions. Tracked as PR E (existing authority hardening).',
+    'Full-run verdict 20.00% (9 killed / 36 survived); default/parse branches lack assertions. Tracked in the existing-authority hardening tranche (measured baseline above).',
     { source: [SOURCE.config] },
   ),
   deferred(
     'src/state/schema.ts',
     'Session state schema validated on every write',
-    'Full-run verdict 33.33% (9 killed / 18 survived); invariant branches lack negative-path tests. Tracked as PR E (existing authority hardening).',
+    'Full-run verdict 33.33% (9 killed / 18 survived); invariant branches lack negative-path tests. Tracked in the existing-authority hardening tranche (measured baseline above).',
     { source: [SOURCE.rootAgents] },
   ),
   deferred(
     'src/shared/hashing.ts',
     'Hash primitives for digests',
-    'Full-run verdict 38.46% (5 killed / 8 survived); boundary inputs are untested. Tracked as PR E (existing authority hardening).',
+    'Full-run verdict 38.46% (5 killed / 8 survived); boundary inputs are untested. Tracked in the existing-authority hardening tranche (measured baseline above).',
     { source: [SOURCE.rootAgents] },
   ),
   deferred(
     'src/redaction/export-redaction.ts',
     'Export-time redaction boundary',
-    'Full-run verdict 51.81% (43 killed / 40 survived); masking modes need contract tests. Tracked as PR E (existing authority hardening).',
+    'Full-run verdict 51.81% (43 killed / 40 survived); masking modes need contract tests. Tracked in the existing-authority hardening tranche (measured baseline above).',
     { source: [SOURCE.trustBoundaries] },
   ),
   deferred(
     'src/integration/review/reviewed-digest.ts',
     'Review provenance projection',
-    'Full-run verdict 46.67% (42 killed / 48 survived); provenance branches lack assertions. Tracked as PR F (review/runtime authority hardening).',
+    'Full-run verdict 46.67% (42 killed / 48 survived); provenance branches lack assertions. Tracked in the review/runtime authority hardening tranche.',
     { source: [SOURCE.trustBoundaries] },
   ),
   deferred(
@@ -941,7 +941,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
   deferred(
     'src/integration/plugin-mutation-episodes.ts',
     'In-process mutation episode tracking',
-    'Deferred to the PR F review/runtime authority hardening tranche; admission requires a profile full run with per-target evidence.',
+    'Deferred to the review/runtime authority hardening tranche; admission requires a profile full run with per-target evidence.',
     {
       source: [SOURCE.trustBoundaries],
     },

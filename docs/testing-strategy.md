@@ -262,8 +262,8 @@ Candidate authorities awaiting admission (basis profile unless noted):
 - `src/state/schema.ts`
 - `src/shared/hashing.ts`
 - `src/redaction/export-redaction.ts`
-- `src/integration/review/reviewed-digest.ts` (PR F review/runtime hardening)
-- `src/integration/plugin-mutation-episodes.ts` (PR F review/runtime hardening)
+- `src/integration/review/reviewed-digest.ts` (review/runtime authority hardening tranche)
+- `src/integration/plugin-mutation-episodes.ts` (review/runtime authority hardening tranche)
 - `src/mcp-server/schema-converter.ts`
 
 Evidence-layer candidates with a recorded diagnostic result (a targeted run is
