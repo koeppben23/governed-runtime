@@ -82,6 +82,7 @@
     "src/integration/plugin-beforehooks.ts",
     "src/integration/plugin-afterhooks.ts",
     "src/integration/plugin-helpers.ts",
+    "src/integration/plugin-mutation-episodes.ts",
     "src/integration/plugin-workspace.ts",
     "src/integration/plugin.ts",
     "src/integration/runtime-lease.ts",
@@ -97,6 +98,7 @@
     "src/integration/review/enforcement/challenge-consistency.ts",
     "src/integration/review/dispatch-signal.ts",
     "src/integration/review/findings-hash.ts",
+    "src/integration/review/reviewed-digest.ts",
     "src/integration/review/agent-resolution.ts",
 
     "src/shared/canonical-json.ts",
