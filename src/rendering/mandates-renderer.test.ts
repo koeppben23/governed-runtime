@@ -7,7 +7,11 @@
 
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { FLOWGUARD_MANDATES_KERNEL } from '../templates/mandates.js';
+import {
+  FLOWGUARD_MANDATES_FULL_BODY,
+  FLOWGUARD_MANDATES_KERNEL,
+  MANDATES_SECTION_DEFINITIONS,
+} from '../templates/mandates.js';
 import {
   buildMandatesContent,
   extractManagedDigest,
@@ -16,7 +20,27 @@ import {
   extractManagedBody,
   renderPhaseAwareMandates,
   renderCommandGovernanceRules,
+  renderCompactionMandatesSummary,
+  resolveMandatesVerbosity,
 } from './mandates-renderer.js';
+
+function sectionContent(section: (typeof MANDATES_SECTION_DEFINITIONS)[number]): string {
+  return section.content;
+}
+
+function expectedSections(
+  phase: string,
+  predicate: (section: (typeof MANDATES_SECTION_DEFINITIONS)[number]) => boolean,
+): string {
+  return MANDATES_SECTION_DEFINITIONS.filter(
+    (section) =>
+      (section.phases === 'all' || (section.phases as readonly string[]).includes(phase)) &&
+      predicate(section),
+  )
+    .sort((left, right) => left.priority - right.priority)
+    .map(sectionContent)
+    .join('\n\n');
+}
 
 const VALID_DIGEST = createHash('sha256').update(FLOWGUARD_MANDATES_KERNEL, 'utf-8').digest('hex');
 const VALID_VERSION = '1.2.0-tp.1';
@@ -127,5 +151,84 @@ describe('renderCommandGovernanceRules', () => {
     const result = renderCommandGovernanceRules();
     expect(result).toContain('## Governance rules');
     expect(result.trim().length).toBeGreaterThan(0);
+  });
+});
+
+describe('phase-aware mandate projection', () => {
+  it('projects exactly the sections of the render phase in priority order', () => {
+    const rendered = renderPhaseAwareMandates({}, 'IMPLEMENTATION');
+    const expected = expectedSections('IMPLEMENTATION', () => true);
+
+    expect(rendered).toBe(expected);
+    expect(rendered).not.toBe(FLOWGUARD_MANDATES_FULL_BODY);
+  });
+
+  it('maps canonical phases onto their render phase', () => {
+    const rendered = renderPhaseAwareMandates({}, 'PLAN_REVIEW');
+    const expected = expectedSections('REVIEW', () => true);
+
+    expect(rendered).toBe(expected);
+  });
+
+  it('applies the concise verbosity filter for concrete phases', () => {
+    const rendered = renderPhaseAwareMandates({ mandatesVerbosity: 'concise' }, 'REVIEW');
+    const expected = expectedSections(
+      'REVIEW',
+      (section) => section.safetyCritical === true || section.concise === true,
+    );
+
+    expect(rendered).toBe(expected);
+  });
+
+  it('applies the early-phase filter for investigation phases', () => {
+    const rendered = renderPhaseAwareMandates({}, 'INVESTIGATION');
+    const expected = expectedSections(
+      'INVESTIGATION',
+      (section) => section.safetyCritical === true || section.earlyPhase === true,
+    );
+
+    expect(rendered).toBe(expected);
+  });
+
+  it('falls back to the full body for progressive:false, unknown and ALL_PHASES inputs', () => {
+    expect(renderPhaseAwareMandates({ progressive: false }, 'IMPLEMENTATION')).toBe(
+      FLOWGUARD_MANDATES_FULL_BODY,
+    );
+    expect(renderPhaseAwareMandates({}, 'NOT_A_PHASE')).toBe(FLOWGUARD_MANDATES_FULL_BODY);
+    expect(renderPhaseAwareMandates({}, undefined)).toBe(FLOWGUARD_MANDATES_FULL_BODY);
+    expect(renderPhaseAwareMandates({}, 'ALL_PHASES')).toBe(FLOWGUARD_MANDATES_FULL_BODY);
+  });
+});
+
+describe('mandates verbosity resolution', () => {
+  it('resolves each declared verbosity value', () => {
+    expect(resolveMandatesVerbosity('concise')).toBe('concise');
+    expect(resolveMandatesVerbosity('explicit')).toBe('explicit');
+    expect(resolveMandatesVerbosity(undefined)).toBe('explicit');
+    expect(resolveMandatesVerbosity('unknown-value')).toBe('explicit');
+  });
+
+  it('grants the diagnostic summary only to recovery usage', () => {
+    expect(resolveMandatesVerbosity('diagnosticSummary', 'recovery')).toBe('diagnosticSummary');
+    expect(resolveMandatesVerbosity('diagnosticSummary', 'productive')).toBe('explicit');
+  });
+});
+
+describe('compaction summary projection', () => {
+  it('returns the kernel for fallback and ALL_PHASES phases', () => {
+    expect(renderCompactionMandatesSummary(undefined)).toBe(FLOWGUARD_MANDATES_KERNEL);
+    expect(renderCompactionMandatesSummary('ALL_PHASES')).toBe(FLOWGUARD_MANDATES_KERNEL);
+    expect(renderCompactionMandatesSummary('NOT_A_PHASE')).toBe(FLOWGUARD_MANDATES_KERNEL);
+  });
+
+  it('projects only safety-critical sections for a concrete phase', () => {
+    const summary = renderCompactionMandatesSummary('IMPLEMENTATION');
+    const expected = expectedSections(
+      'IMPLEMENTATION',
+      (section) => section.safetyCritical === true,
+    );
+
+    expect(summary).toBe(expected);
+    expect(summary).not.toBe(FLOWGUARD_MANDATES_FULL_BODY);
   });
 });
