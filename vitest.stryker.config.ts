@@ -66,6 +66,7 @@ export default defineConfig({
       'src/integration/tools/helpers.test.ts',
       'src/integration/tools/audit-outbox.test.ts',
       'src/integration/tools/write-state-with-artifacts.test.ts',
+      'src/integration/tools/record-mutation-evidence.test.ts',
       'src/integration/plugin-compaction.test.ts',
       'src/integration/plugin-enforcement-tracking.test.ts',
       'src/integration/plugin-events.test.ts',
