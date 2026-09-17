@@ -322,31 +322,18 @@ async function collectFiles(dir: string, pattern: RegExp): Promise<string[]> {
   return files;
 }
 
+/**
+ * The importer's governed top-level module, derived from the single
+ * classification authority. It is the FIRST path segment under `src/` — never
+ * a nested directory that merely shares a governed module's name, which would
+ * otherwise let a nested path escape its module's rules (for example
+ * `providers/state/foo.ts` is `providers`, not `state`).
+ */
 function getLayerFromPath(filePath: string): string | null {
-  if (filePath.includes('/state/')) return 'state';
-  if (filePath.includes('/machine/')) return 'machine';
-  if (filePath.includes('/rails/')) return 'rails';
-  if (filePath.includes('/adapters/')) return 'adapters';
-  if (filePath.includes('/integration/')) return 'integration';
-  if (filePath.includes('/config/')) return 'config';
-  if (filePath.includes('/audit/')) return 'audit';
-  if (filePath.includes('/discovery/')) return 'discovery';
-  if (filePath.includes('/archive/')) return 'archive';
-  if (filePath.includes('/logging/')) return 'logging';
-  if (filePath.includes('/cli/')) return 'cli';
-  if (filePath.includes('/presentation/')) return 'presentation';
-  if (filePath.includes('/diagnostics/')) return 'diagnostics';
-  if (filePath.includes('/mcp-server/')) return 'mcp-server';
-  if (filePath.includes('/hooks/')) return 'hooks';
-  if (filePath.includes('/identity/')) return 'identity';
-  if (filePath.includes('/telemetry/')) return 'telemetry';
-  if (filePath.includes('/shared/')) return 'shared';
-  if (filePath.includes('/providers/')) return 'providers';
-  if (filePath.includes('/verification/')) return 'verification';
-  if (filePath.includes('/redaction/')) return 'redaction';
-  if (filePath.includes('/rendering/')) return 'rendering';
-  if (filePath.includes('/templates/')) return 'templates';
-  return null;
+  const relativePath = normalizeSep(path.relative(SRC_DIR, filePath));
+  const topLevel = relativePath.split('/')[0];
+  if (topLevel === undefined || topLevel.length === 0) return null;
+  return MODULE_CLASSIFICATION_BY_NAME.get(topLevel)?.kind === 'governed' ? topLevel : null;
 }
 
 function detectViolations(analyses: Map<string, FileAnalysis>): ImportViolation[] {
@@ -1870,6 +1857,18 @@ describe('Module classification (default-deny)', () => {
       const synthetic = normalizeSep(path.join(SRC_DIR, name, 'probe.ts'));
       expect(getLayerFromPath(synthetic), `${name} must map to its own layer`).toBe(name);
     }
+  });
+
+  it('classifies by the top-level module, not nested names shadowing another module', () => {
+    expect(
+      getLayerFromPath(normalizeSep(path.join(SRC_DIR, 'providers', 'state', 'probe.ts'))),
+    ).toBe('providers');
+    expect(
+      getLayerFromPath(normalizeSep(path.join(SRC_DIR, 'integration', 'shared', 'probe.ts'))),
+    ).toBe('integration');
+    // Root-level entries are not layers.
+    expect(getLayerFromPath(normalizeSep(path.join(SRC_DIR, 'index.ts')))).toBeNull();
+    expect(getLayerFromPath(normalizeSep(path.join(SRC_DIR, 'shared.ts')))).toBeNull();
   });
 
   function violationForImport(

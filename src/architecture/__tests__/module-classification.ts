@@ -13,7 +13,9 @@
  *   governed by the module's rule branch and, for the modules added by the
  *   default-deny tranche, by `CROSS_MODULE_ALLOWLIST`.
  * - `entry`: package entry points / public barrels. They compose broadly by
- *   design and carry no cross-module restriction.
+ *   design (no outbound restriction), but they are outbound-only: governed
+ *   modules must not import them, because their re-exports would bypass the
+ *   layer rules.
  * - `test-support`: fixtures and test policy helpers. Only test scaffolding
  *   (`*.test.ts`, `__tests__/**`, `*-test-helpers.ts`) may import them from
  *   production-class files.
@@ -21,7 +23,7 @@
  * @version v1
  */
 
-export type ModuleKind = 'governed' | 'entry' | 'test-support';
+type ModuleKind = 'governed' | 'entry' | 'test-support';
 
 export interface ModuleClassification {
   readonly name: string;
@@ -122,7 +124,7 @@ export const MODULE_CLASSIFICATION_BY_NAME: ReadonlyMap<string, ModuleClassifica
 );
 
 /** Conventional test/fixture directory names — explicit markers, not `__` substrings. */
-export const TEST_DIRECTORY_NAMES: ReadonlySet<string> = new Set(['__tests__', '__fixtures__']);
+const TEST_DIRECTORY_NAMES: ReadonlySet<string> = new Set(['__tests__', '__fixtures__']);
 
 /**
  * Semantic test classification for source inventories. A path is test code
