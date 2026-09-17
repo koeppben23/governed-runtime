@@ -72,6 +72,7 @@ export default defineConfig({
       'src/integration/plugin-enforcement-tracking.test.ts',
       'src/integration/plugin-events.test.ts',
       'src/integration/plugin-helpers.test.ts',
+      'src/integration/plugin-mutation-episodes.test.ts',
       'src/integration/plugin-host-task-diagnostics-helpers.test.ts',
       'src/integration/plugin-logging.test.ts',
       'src/integration/plugin-policy.test.ts',
