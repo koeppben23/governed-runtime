@@ -747,13 +747,33 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'src/adapters/implementation-base-authority.ts',
     'Pre-mutation implementation base freeze',
     ['src/adapters/implementation-base-authority.test.ts'],
-    { source: [SOURCE.trustBoundaries] },
+    {
+      source: [SOURCE.trustBoundaries],
+      admission: {
+        verifiedAt: '2026-09-17',
+        commitSha: '8eaefc75d001e3c91ff3a4adae461c38f6b36cb5',
+        scoreAtAdmission: 100,
+        killed: 8,
+        survived: 0,
+        config: 'stryker.conf.json',
+      },
+    },
   ),
   required(
     'src/adapters/implementation-entry-guard.ts',
     'Pure persistence-side implementation entry guard',
     ['src/adapters/implementation-base-authority.test.ts'],
-    { source: [SOURCE.trustBoundaries] },
+    {
+      source: [SOURCE.trustBoundaries],
+      admission: {
+        verifiedAt: '2026-09-17',
+        commitSha: '8eaefc75d001e3c91ff3a4adae461c38f6b36cb5',
+        scoreAtAdmission: 100,
+        killed: 10,
+        survived: 0,
+        config: 'stryker.conf.json',
+      },
+    },
   ),
 
   // ── Base profile: measured admission verdicts (base full run 2026-09-17) ──
