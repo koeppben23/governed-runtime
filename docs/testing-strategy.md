@@ -216,7 +216,7 @@ above is the classification authority):
 | State (`evidence-mutation-episode`)                                                                                                                                            | 1       | see `reports/mutation/`         |
 | Verification/Discovery (`execution-subject`, `verification-planner`)                                                                                                           | 2       | see `reports/mutation/`         |
 | Templates (`codex-plugin`, `claude-code-plugin`)                                                                                                                               | 2       | see `reports/mutation/`         |
-| Shared (`canonical-json`, `hashing`)                                                                                                                                           | 1       | see `reports/mutation/`         |
+| Shared (`canonical-json`, `hashing`)                                                                                                                                           | 2       | see `reports/mutation/`         |
 | Logging (`error-serialize`)                                                                                                                                                    | 1       | see `reports/mutation/`         |
 | Machine (`commands`, `evaluate`, `guards`, `workflow-directive`, `validation-evidence`)                                                                                        | 5       | see `reports/mutation/`         |
 | Rails (`architecture`, `hydrate`, `review`, `review-url`, `review-decision`, `ticket`, plan and review evidence)                                                               | 8       | see `reports/mutation/`         |
@@ -260,7 +260,7 @@ Candidate authorities awaiting admission (basis profile unless noted):
 - `src/adapters/frozen-repository.ts` — 70.37 % after one focused acquisition-boundary pass (base profile), including a production fix that keeps OVERSIZED_BLOB out of ACQUISITION_FAILED.
 - `src/state/schema.ts` — 77.78 % under the schemas profile (peer-review lifecycle residual).
 - `src/redaction/export-redaction.ts` — 63.86 % (equivalence-limited).
-- `src/mcp-server/schema-converter.ts` — awaiting adjudication.
+- `src/mcp-server/schema-converter.ts` — 100.00 % on one valid mutant; mutant density is insufficient for authority admission (thin evidence).
 
 Evidence-layer candidates with a recorded diagnostic result (a targeted run is
 diagnostic only; these targets must close their test gaps first):
