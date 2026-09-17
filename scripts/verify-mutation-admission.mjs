@@ -16,6 +16,8 @@
  * - the report's file set matches the profile's mutate selectors exactly,
  * - every selector has at least one valid mutant; range selectors are scored
  *   only over mutants whose `location` lies inside the declared line range,
+ *   and every mutant of a range-selector file lies inside exactly one
+ *   configured range (a wider report cannot masquerade as range evidence),
  * - the aggregate and all required selectors meet the break threshold,
  * - when a manifest is supplied, profile, config digest, report digest and
  *   commit bind to the current run.
@@ -444,6 +446,29 @@ for (const selector of mutateSelectors) {
     survived: metrics.undetected,
     config: PROFILE_CONFIG[options.profile],
   });
+}
+
+const rangeTargets = new Map();
+for (const selector of mutateSelectors) {
+  const parsed = parseSelector(selector);
+  if (parsed.range !== undefined) {
+    const ranges = rangeTargets.get(parsed.target) ?? [];
+    ranges.push(parsed.range);
+    rangeTargets.set(parsed.target, ranges);
+  }
+}
+for (const [target, ranges] of rangeTargets) {
+  const file = reportFiles.get(target);
+  if (file === undefined) continue;
+  const outsideRange = file.mutants.filter(
+    (mutant) => !ranges.some((range) => isInsideRange(mutant, range)),
+  );
+  if (outsideRange.length > 0) {
+    violations.push({
+      selector: `${target} (range profile)`,
+      problem: `${outsideRange.length} mutant(s) outside every configured range; report was not produced by this profile`,
+    });
+  }
 }
 
 const extraFiles = [...reportFiles.keys()].filter((key) => !seenTargets.has(key));

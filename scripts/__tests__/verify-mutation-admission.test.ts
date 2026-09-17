@@ -89,8 +89,12 @@ function baseReport(): Report {
 
 const KILLED_SET = ['Killed', 'Killed', 'Killed', 'Timeout'];
 
-function jwksReport(mutantsByRange: { readonly [range: string]: readonly Mutant[] }): Report {
-  const outside = mutants(['Survived', 'Survived', 'Survived'], 100);
+function jwksReport(
+  mutantsByRange: { readonly [range: string]: readonly Mutant[] },
+  options: { readonly outsideRange?: boolean } = {},
+): Report {
+  const outside =
+    options.outsideRange === true ? mutants(['Survived', 'Survived', 'Survived'], 100) : [];
   const all = [...outside, ...Object.values(mutantsByRange).flat()];
   return {
     schemaVersion: '1.0',
@@ -325,6 +329,23 @@ describe('verify-mutation-admission', () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('src/identity/key-resolver.ts:338-350');
     expect(result.stderr).toContain('25.00% < 80% (required per-target)');
+  });
+
+  it('rejects a range report containing mutants outside every configured range', () => {
+    const report = jwksReport(
+      {
+        '270-277': mutants(KILLED_SET, 272),
+        '328-334': mutants(KILLED_SET, 330),
+        '338-350': mutants(KILLED_SET, 340),
+      },
+      { outsideRange: true },
+    );
+    const reportPath = writeReport(report);
+
+    const result = runVerifier(['--profile', 'identity-jwks', '--report', reportPath]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('mutant(s) outside every configured range');
   });
 
   it('rejects a range without any valid mutant inside the declared range', () => {

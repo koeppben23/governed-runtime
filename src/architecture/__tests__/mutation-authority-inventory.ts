@@ -39,9 +39,14 @@
  * the guard; files that carry an exact entry are masked out, and the remaining
  * effective set must be non-empty and disjoint from every mutate list.
  *
- * Admission policy: a targeted run is diagnostic only. Admission requires a
- * profile full run in which the aggregate score and every mutated target score
- * meet the profile break threshold.
+ * Admission policy: a targeted run is diagnostic only. Admission evidence is
+ * the profile full run. The profile-wide aggregate must meet the break
+ * threshold; targets named via `--require-selectors` (new admissions) must
+ * additionally meet the per-target break threshold. Legacy targets below the
+ * per-target threshold are reported as a diagnostic note and remain tracked
+ * for test hardening; range selectors are scored only over mutants inside the
+ * declared range, and every mutant of a range-profile file must map to a
+ * configured range.
  */
 
 export type MutationProfile = 'base' | 'human-projection' | 'identity-jwks' | 'mandates';
