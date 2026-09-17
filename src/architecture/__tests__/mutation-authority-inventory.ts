@@ -810,7 +810,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     mutateSelector: 'src/config/policy-central.ts',
     target: 'src/config/policy-central.ts',
     authority: 'Central policy bundle resolution',
-    source: [SOURCE.trustBoundaries],
+    source: [SOURCE.config],
     coveringSuites: ['src/config/policy-central.test.ts', 'src/config/policy-presets.test.ts'],
     admission: {
       verifiedAt: '2026-09-17',
@@ -827,7 +827,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     mutateSelector: 'src/config/policy-resolver.ts',
     target: 'src/config/policy-resolver.ts',
     authority: 'Policy resolution authority',
-    source: [SOURCE.trustBoundaries],
+    source: [SOURCE.config],
     coveringSuites: ['src/config/policy-degradation-regression.test.ts'],
     admission: {
       verifiedAt: '2026-09-17',
