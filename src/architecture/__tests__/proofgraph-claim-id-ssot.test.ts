@@ -28,6 +28,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve, relative, sep } from 'node:path';
+import { isTestSourcePath } from './module-classification.js';
 
 const SRC = resolve(join(import.meta.dirname, '..', '..'));
 
@@ -55,8 +56,12 @@ function collectSourceFiles(): string[] {
     const dir = stack.pop()!;
     const entries = readdirSafe(dir);
     for (const entry of entries) {
+      if (entry === 'node_modules') continue;
       const full = join(dir, entry);
-      if (entry.includes('__') || entry.includes('node_modules')) continue;
+      const relativeFromSrc = relative(SRC, full).split(sep).join('/');
+      // Semantic test classification only — a directory whose name merely
+      // contains `__` is scanned like any other production surface.
+      if (isTestSourcePath(relativeFromSrc)) continue;
       if (isDir(full)) {
         stack.push(full);
       } else if (entry.endsWith('.ts')) {

@@ -115,3 +115,27 @@ export const CROSS_MODULE_ALLOWLIST: Readonly<Record<string, ReadonlySet<string>
   rendering: new Set(['state', 'templates']),
   templates: new Set(['shared', 'rendering']),
 };
+
+/** Name → classification lookup for path and importer-kind decisions. */
+export const MODULE_CLASSIFICATION_BY_NAME: ReadonlyMap<string, ModuleClassification> = new Map(
+  MODULE_CLASSIFICATION.map((entry) => [entry.name, entry]),
+);
+
+/** Conventional test/fixture directory names — explicit markers, not `__` substrings. */
+export const TEST_DIRECTORY_NAMES: ReadonlySet<string> = new Set(['__tests__', '__fixtures__']);
+
+/**
+ * Semantic test classification for source inventories. A path is test code
+ * when it lives under a conventional test/fixture directory, is a `.test.ts`
+ * / `.spec.ts` file, or sits in a classified test-support tree. Directory
+ * names containing `__` for any other reason are NOT test code: name-based
+ * escape hatches would hide production files from the governance inventory.
+ */
+export function isTestSourcePath(relativeFromSrc: string): boolean {
+  const segments = relativeFromSrc.split('/');
+  if (segments.some((segment) => TEST_DIRECTORY_NAMES.has(segment))) return true;
+  const fileName = segments[segments.length - 1] ?? '';
+  if (fileName.endsWith('.test.ts') || fileName.endsWith('.spec.ts')) return true;
+  const top = segments[0];
+  return top !== undefined && MODULE_CLASSIFICATION_BY_NAME.get(top)?.kind === 'test-support';
+}

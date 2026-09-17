@@ -48,7 +48,12 @@ import { existsSync, readdirSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { benchmarkAsync, PERF_BUDGETS } from '../../test-policy.js';
-import { CROSS_MODULE_ALLOWLIST, MODULE_CLASSIFICATION } from './module-classification.js';
+import {
+  CROSS_MODULE_ALLOWLIST,
+  isTestSourcePath,
+  MODULE_CLASSIFICATION,
+  MODULE_CLASSIFICATION_BY_NAME,
+} from './module-classification.js';
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../../');
 const SRC_DIR = path.join(PROJECT_ROOT, 'src');
@@ -208,6 +213,9 @@ const GOVERNED_MODULES: ReadonlySet<string> = new Set(
 const TEST_SUPPORT_ENTRIES: ReadonlySet<string> = new Set(
   MODULE_CLASSIFICATION.filter((entry) => entry.kind === 'test-support').map((entry) => entry.name),
 );
+const ENTRY_ENTRIES: ReadonlySet<string> = new Set(
+  MODULE_CLASSIFICATION.filter((entry) => entry.kind === 'entry').map((entry) => entry.name),
+);
 
 /**
  * Resolve a relative import specifier to its classified top-level entry: the
@@ -298,10 +306,15 @@ async function collectFiles(dir: string, pattern: RegExp): Promise<string[]> {
 
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory() && !entry.name.includes('__') && !entry.name.includes('node_modules')) {
-      const subFiles = await collectFiles(fullPath, pattern);
-      files.push(...subFiles);
-    } else if (entry.isFile() && pattern.test(entry.name) && !entry.name.includes('.test.')) {
+    if (entry.name === 'node_modules') continue;
+    const relativeFromSrc = normalizeSep(path.relative(SRC_DIR, fullPath));
+    if (entry.isDirectory()) {
+      // Semantic test classification only — a directory whose name merely
+      // contains `__` is analyzed like any other production surface.
+      if (isTestSourcePath(relativeFromSrc)) continue;
+      files.push(...(await collectFiles(fullPath, pattern)));
+    } else if (entry.isFile() && pattern.test(entry.name)) {
+      if (isTestSourcePath(relativeFromSrc)) continue;
       files.push(fullPath);
     }
   }
@@ -344,6 +357,9 @@ function detectViolations(analyses: Map<string, FileAnalysis>): ImportViolation[
   // importers. Unclassified targets are violations, never silent non-matches.
   for (const [, analysis] of analyses) {
     if (analysis.filePath.includes('.test.')) continue;
+    const importerKind = MODULE_CLASSIFICATION_BY_NAME.get(
+      analysis.relativePath.split('/')[0]!,
+    )?.kind;
     for (const imp of analysis.imports) {
       if (!imp.isRelative) continue;
       const label = `imports '${imp.module}'`;
@@ -371,6 +387,17 @@ function detectViolations(analyses: Map<string, FileAnalysis>): ImportViolation[
           file: analysis.relativePath,
           rule: 'test-support-import',
           message: `${label} — production code must not import test-support entry '${imp.targetModule}'`,
+        });
+        continue;
+      }
+      // Entry points are outbound-only: they compose governed modules broadly,
+      // but a governed module importing an entry point would bypass every
+      // layer rule through the barrel's re-exports.
+      if (ENTRY_ENTRIES.has(imp.targetModule) && importerKind === 'governed') {
+        allViolations.push({
+          file: analysis.relativePath,
+          rule: 'entry-import',
+          message: `${label} — governed modules must not import entry point '${imp.targetModule}'; entry points are outbound-only`,
         });
       }
     }
@@ -1815,8 +1842,8 @@ describe('Module classification (default-deny)', () => {
     const entries = readdirSync(SRC_DIR, { withFileTypes: true })
       .filter(
         (entry) =>
-          (entry.isDirectory() && !entry.name.includes('__')) ||
-          (entry.isFile() && entry.name.endsWith('.ts') && !entry.name.includes('.test.')),
+          entry.isDirectory() ||
+          (entry.isFile() && entry.name.endsWith('.ts') && !isTestSourcePath(entry.name)),
       )
       .map((entry) => entry.name)
       .sort();
@@ -1829,13 +1856,11 @@ describe('Module classification (default-deny)', () => {
     expect(entries).toContain('index.ts');
   });
 
-  it('allow-lists reference classified, governed modules only', () => {
+  it('allow-lists reference governed modules only', () => {
     for (const [name, allowlist] of Object.entries(CROSS_MODULE_ALLOWLIST)) {
       expect(GOVERNED_MODULES.has(name), `${name} must be governed`).toBe(true);
       for (const target of allowlist) {
-        expect(CLASSIFIED_ENTRIES.has(target), `${name} -> ${target} must be classified`).toBe(
-          true,
-        );
+        expect(GOVERNED_MODULES.has(target), `${name} -> ${target} must be governed`).toBe(true);
       }
     }
   });
@@ -1847,8 +1872,10 @@ describe('Module classification (default-deny)', () => {
     }
   });
 
-  function violationForImport(imp: ImportInfo): ImportViolation[] {
-    const relativePath = 'state/deliberate-violation.ts';
+  function violationForImport(
+    imp: ImportInfo,
+    relativePath = 'state/deliberate-violation.ts',
+  ): ImportViolation[] {
     const fakeAnalysis: FileAnalysis = {
       filePath: normalizeSep(path.join(SRC_DIR, relativePath)),
       relativePath,
@@ -1910,6 +1937,46 @@ describe('Module classification (default-deny)', () => {
       targetResolved: true,
     });
     expect(violations).toEqual([]);
+  });
+
+  it('flags a governed module importing an entry point (barrel bypass)', () => {
+    const violations = violationForImport({
+      module: '../index.js',
+      raw: "import { evaluate } from '../index.js';",
+      isNodeBuiltin: false,
+      isRelative: true,
+      isFFModule: false,
+      targetModule: 'index.ts',
+      targetResolved: true,
+    });
+    expect(violations).toHaveLength(1);
+    expect(violations[0]!.rule).toBe('entry-import');
+  });
+
+  it('does not flag an entry point composing governed modules', () => {
+    const violations = violationForImport(
+      {
+        module: './state/schema.js',
+        raw: "export * from './state/schema.js';",
+        isNodeBuiltin: false,
+        isRelative: true,
+        isFFModule: true,
+        targetModule: 'state',
+        targetResolved: true,
+      },
+      'index.ts',
+    );
+    expect(violations).toEqual([]);
+  });
+
+  it('classifies test code semantically, not by `__` directory names', () => {
+    expect(isTestSourcePath('state/probe.ts')).toBe(false);
+    expect(isTestSourcePath('state/__internal__/escape.ts')).toBe(false);
+    expect(isTestSourcePath('state/__tests__/probe.ts')).toBe(true);
+    expect(isTestSourcePath('audit/__fixtures__/rfc3161.ts')).toBe(true);
+    expect(isTestSourcePath('architecture/mutation-authority-inventory.ts')).toBe(true);
+    expect(isTestSourcePath('state/probe.test.ts')).toBe(true);
+    expect(isTestSourcePath('state/probe.spec.ts')).toBe(true);
   });
 });
 
