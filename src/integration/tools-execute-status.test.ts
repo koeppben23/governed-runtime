@@ -36,7 +36,7 @@ import {
 } from '../adapters/persistence.js';
 import { writeStateWithArtifacts } from './tools/helpers.js';
 import { REVIEW_REPORT_SCHEMA_ID } from '../state/evidence-identifiers.js';
-import { makePlanRevision } from '../state/evidence-test-constants.js';
+import { makePlanRevision, TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
 import { completedDispatchForInvocation } from '../state/evidence-test-constants.js';
 import {
   artifactReviewSubjectScope,
@@ -1268,6 +1268,7 @@ describe('declare_contract', () => {
           attemptId: crypto.randomUUID(),
           scope: 'implementation',
           implementationDigest: digest,
+          executionObservation: TEST_EXECUTION_OBSERVATION,
           result: {
             checkId,
             passed: overrides.passed ?? true,
@@ -1286,6 +1287,7 @@ describe('declare_contract', () => {
           attemptId: crypto.randomUUID(),
           scope: 'implementation',
           implementationDigest: digest,
+          executionObservation: TEST_EXECUTION_OBSERVATION,
           result: {
             checkId: 'security',
             passed: true,
@@ -1584,6 +1586,7 @@ describe('declare_contract', () => {
         attemptId: crypto.randomUUID(),
         scope: 'implementation' as const,
         implementationDigest: digest,
+        executionObservation: TEST_EXECUTION_OBSERVATION,
         result: {
           checkId,
           passed,
@@ -1846,6 +1849,7 @@ describe('declare_contract', () => {
         attemptId: crypto.randomUUID(),
         scope: 'implementation' as const,
         implementationDigest: digest,
+        executionObservation: TEST_EXECUTION_OBSERVATION,
         result: {
           checkId,
           passed,

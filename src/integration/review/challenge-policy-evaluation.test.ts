@@ -28,7 +28,10 @@ import {
   freezeReviewMaterial,
   hashFindings,
 } from './assurance.js';
-import { completedDispatchForInvocation } from '../../state/evidence-test-constants.js';
+import {
+  completedDispatchForInvocation,
+  TEST_EXECUTION_OBSERVATION,
+} from '../../state/evidence-test-constants.js';
 
 type Fixture = {
   readonly name: string;
@@ -333,6 +336,7 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
           attemptId,
           scope: 'implementation',
           implementationDigest: 'impl-digest',
+          executionObservation: TEST_EXECUTION_OBSERVATION,
           result: {
             checkId: 'test',
             passed: true,

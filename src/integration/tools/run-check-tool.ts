@@ -43,7 +43,6 @@ import type { SessionState } from '../../state/schema.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import { evaluate } from '../../machine/evaluate.js';
 import {
-  type AssertionCapability,
   type FullCheckScopeAttestation,
   type VerificationCandidate,
   VerificationCandidateKindSchema,
@@ -54,11 +53,10 @@ import { executeCheck } from '../../verification/executor.js';
 import { deriveRepairGuidance } from '../../verification/repair-guidance.js';
 import type {
   AssertionExtractionResult,
-  ValidationAttempt,
-  ValidationResult,
+  ValidationExecutionObservation,
   ValidationOutcome,
+  ValidationResult,
 } from '../../state/evidence-validation.js';
-import { isTechnicalValidationBlock } from '../../state/evidence-validation.js';
 import {
   prepareVerificationExecution,
   type PreparedVerificationExecution,
@@ -88,7 +86,18 @@ import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { hashText } from '../../shared/hashing.js';
 import { validateRunCheckRequest } from './run-check-request.js';
 import { resolveExecutionSubjectInputs } from './execution-subject-input-resolution.js';
-import { formatRunCheckStatus, formatValidationDetail } from './run-check-presentation.js';
+import { formatRunCheckStatus } from './run-check-presentation.js';
+import {
+  buildNextValidationState,
+  buildValidationAttempt,
+  buildValidationResult,
+  classifyValidationOutcome,
+  freezeValidationSubject,
+  mergeValidationResult,
+  validationSubjectBlock,
+  type CheckEvidence,
+  type ValidationSubject,
+} from './run-check-result.js';
 const RUN_CHECK_RETRY_DELAYS_MS = [100, 200, 400] as const;
 const RUN_CHECK_RETRIES = RUN_CHECK_RETRY_DELAYS_MS.length;
 
@@ -406,6 +415,13 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
       const subjectBlock = validationSubjectBlock(freshState, subject);
       if (subjectBlock) return subjectBlock;
 
+      // Host-observed continuity binding, persisted with the attempt: the state
+      // observed before the command ran and the state re-read under this lock.
+      const executionObservation: ValidationExecutionObservation = {
+        executionObservedStateDigest,
+        preCommitStateDigest: hashText(canonicalJsonStringify(freshState)),
+      };
+
       const validationResult = buildValidationResult({
         checkId: reGuard.checkId,
         candidateId: reGuard.candidate.candidateId,
@@ -417,7 +433,12 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
         classificationReasonOverride,
       });
       const allResults = mergeValidationResult(freshState, validationResult);
-      const validationAttempt = buildValidationAttempt(subject, validationResult, attemptId);
+      const validationAttempt = buildValidationAttempt(
+        subject,
+        validationResult,
+        attemptId,
+        executionObservation,
+      );
       const nextState = buildNextValidationState(freshState, allResults, validationAttempt);
       const advanced = autoAdvance(nextState, (s) => evaluate(s, railCtx.policy), railCtx);
       if (advanced.kind === 'overflow') return formatAutoAdvanceOverflow(advanced);
@@ -461,7 +482,7 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
         validationResult,
         derivedRepairGuidance,
         originalState: freshState,
-        executionObservedStateDigest,
+        executionObservation,
         advanced,
         finalState: persisted,
         authority: authorityResult?.authority ?? null,
@@ -492,167 +513,6 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
       },
     },
   );
-}
-
-// ─── Result Construction ──────────────────────────────────────────────────────
-
-type CheckEvidence = Awaited<ReturnType<typeof executeCheck>>;
-
-function buildValidationResult(params: {
-  checkId: string;
-  candidateId?: string;
-  evidence: CheckEvidence;
-  outcome: ValidationOutcome;
-  derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance>;
-  extraction?: AssertionExtractionResult;
-  fullCheckScopeAttestation?: FullCheckScopeAttestation;
-  classificationReasonOverride?: string;
-}): ValidationResult {
-  const {
-    checkId,
-    candidateId,
-    evidence,
-    outcome,
-    derivedRepairGuidance,
-    extraction,
-    fullCheckScopeAttestation,
-    classificationReasonOverride,
-  } = params;
-  const passed = outcome === 'supported';
-  return {
-    checkId,
-    candidateId,
-    passed,
-    detail: formatValidationDetail(evidence, extraction),
-    executedAt: evidence.startedAt,
-    kind: evidence.kind,
-    command: evidence.command,
-    exitCode: evidence.exitCode,
-    executionMs: evidence.executionMs,
-    outputDigest: evidence.outputDigest,
-    timedOut: evidence.timedOut,
-    outcome,
-    classificationReason:
-      classificationReasonOverride ??
-      (passed ? undefined : `exitCode=${evidence.exitCode}, timedOut=${evidence.timedOut}`),
-    derivedRepairGuidance,
-    assertionExtraction: extraction,
-    fullCheckScopeAttestation,
-  };
-}
-
-function classifyValidationOutcome(
-  execution: CheckEvidence,
-  extraction: AssertionExtractionResult | undefined,
-  capability: AssertionCapability,
-): ValidationOutcome {
-  if (execution.timedOut) return 'blocked';
-
-  if (capability === 'structured' && extraction) {
-    switch (extraction.status) {
-      case 'blocked':
-        return 'blocked';
-      case 'inconclusive':
-        return 'inconclusive';
-      case 'not_configured':
-        return 'blocked';
-      case 'extracted':
-        if (extraction.summary.suiteInfrastructureError) return 'blocked';
-        return execution.passed ? 'supported' : 'inconclusive';
-    }
-  }
-
-  if (execution.passed) return 'supported';
-  const output = `${execution.stdout}\n${execution.stderr}`.trim();
-  return output.length === 0 ? 'blocked' : 'inconclusive';
-}
-
-function mergeValidationResult(
-  state: SessionState,
-  validationResult: ValidationResult,
-): ValidationResult[] {
-  // Post-implementation checks (IMPL_VALIDATION) accumulate in implValidation; the
-  // pre-implementation baseline run (VALIDATION) accumulates in validation.
-  const slot = state.phase === 'IMPL_VALIDATION' ? state.implValidation : state.validation;
-  return [...slot.filter((v) => v.checkId !== validationResult.checkId), validationResult];
-}
-
-type ValidationSubject =
-  | { readonly scope: 'baseline'; readonly planDigest: string }
-  | { readonly scope: 'implementation'; readonly implementationDigest: string };
-
-function freezeValidationSubject(state: SessionState): ValidationSubject {
-  if (state.phase === 'VALIDATION') {
-    return {
-      scope: 'baseline',
-      planDigest: state.plan!.current.digest,
-    };
-  }
-  return {
-    scope: 'implementation',
-    implementationDigest: state.implementation!.digest,
-  };
-}
-
-function validationSubjectMatches(state: SessionState, subject: ValidationSubject): boolean {
-  return subject.scope === 'baseline'
-    ? state.phase === 'VALIDATION' && state.plan?.current.digest === subject.planDigest
-    : state.phase === 'IMPL_VALIDATION' &&
-        state.implementation?.digest === subject.implementationDigest;
-}
-
-function validationSubjectBlock(state: SessionState, subject: ValidationSubject): string | null {
-  return validationSubjectMatches(state, subject)
-    ? null
-    : formatBlocked('VALIDATION_SUBJECT_CHANGED');
-}
-
-function buildValidationAttempt(
-  subject: ValidationSubject,
-  result: ValidationResult,
-  attemptId: string,
-): ValidationAttempt {
-  return { attemptId, ...subject, result };
-}
-
-function buildNextValidationState(
-  state: SessionState,
-  validation: ValidationResult[],
-  validationAttempt: ValidationAttempt,
-): SessionState {
-  // Canonical disposition authority: only a proven artifact failure may clear
-  // approval/implementation authority. A technical block (blocked outcome,
-  // execution error, inconclusive extraction) keeps the phase and the
-  // authority for a retry.
-  const hasTechnicalBlock = validation.some(isTechnicalValidationBlock);
-
-  if (state.phase === 'IMPL_VALIDATION') {
-    // Post-implementation validation writes to implValidation. A genuine failure
-    // routes IMPL_VALIDATION → IMPLEMENTATION (the delivered CODE is wrong, not the
-    // plan); clear implementation so the agent must re-run /implement and the machine
-    // does not immediately re-fire IMPL_COMPLETE into an advance loop. A technical
-    // block stays in IMPL_VALIDATION for a retry.
-    const genuinelyFailed = validation.some((result) => !result.passed) && !hasTechnicalBlock;
-    return {
-      ...state,
-      implValidation: validation,
-      validationAttempts: [...state.validationAttempts, validationAttempt],
-      error: null,
-      ...(genuinelyFailed ? { implementation: null } : {}),
-    };
-  }
-
-  // F5: preserve plan evidence when the non-pass is a technical block. The
-  // machine stays in VALIDATION (CHECK_ERRORED) for a retry rather than routing
-  // to PLAN, so the approved plan must survive.
-  const clearPlanEvidence = validation.some((result) => !result.passed) && !hasTechnicalBlock;
-  return {
-    ...state,
-    validation,
-    validationAttempts: [...state.validationAttempts, validationAttempt],
-    error: null,
-    ...(clearPlanEvidence ? { selfReview: null, reviewDecision: null } : {}),
-  };
 }
 
 // ─── Response Formatting ──────────────────────────────────────────────────────
@@ -686,7 +546,7 @@ function formatRunCheckResponse(input: {
   validationResult: ValidationResult;
   derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance> | undefined;
   originalState: SessionState;
-  executionObservedStateDigest: string;
+  executionObservation: ValidationExecutionObservation;
   advanced: Exclude<ReturnType<typeof autoAdvance>, { kind: 'overflow' }>;
   finalState: SessionState;
   authority: ReviewDispatchAuthority | null;
@@ -696,7 +556,7 @@ function formatRunCheckResponse(input: {
     evidence,
     derivedRepairGuidance,
     originalState,
-    executionObservedStateDigest,
+    executionObservation,
     advanced,
     finalState,
   } = input;
@@ -722,11 +582,12 @@ function formatRunCheckResponse(input: {
           outputDigest: evidence.outputDigest,
           timedOut: evidence.timedOut,
         },
-        executionObservedStateDigest,
-        preCommitStateDigest: hashText(canonicalJsonStringify(originalState)),
+        executionObservedStateDigest: executionObservation.executionObservedStateDigest,
+        preCommitStateDigest: executionObservation.preCommitStateDigest,
         committedStateDigest: hashText(canonicalJsonStringify(finalState)),
         stateChangedDuringExecution:
-          executionObservedStateDigest !== hashText(canonicalJsonStringify(originalState)),
+          executionObservation.executionObservedStateDigest !==
+          executionObservation.preCommitStateDigest,
         derivedRepairGuidance,
         remainingChecks,
         ...(input.authority ? reviewObligationResponseFields(input.authority) : {}),

@@ -6,6 +6,7 @@ import { describe, it, expect } from 'vitest';
 import { summarizeProofGraph } from './summary.js';
 import { makeState } from '../../fixtures.js';
 import type { SessionState } from '../../state/schema.js';
+import { TEST_EXECUTION_OBSERVATION } from '../../state/evidence-test-constants.js';
 
 const NOW = '2026-01-01T00:00:00.000Z';
 const CLAIM = '00000000-0000-4000-8000-000000000001';
@@ -70,6 +71,7 @@ describe('summarizeProofGraph', () => {
           attemptId: ATT,
           scope: 'implementation',
           implementationDigest: IMPL_DIGEST,
+          executionObservation: TEST_EXECUTION_OBSERVATION,
           result: attemptResult(true),
         },
       ]),
@@ -93,6 +95,7 @@ describe('summarizeProofGraph', () => {
           attemptId: ATT,
           scope: 'implementation',
           implementationDigest: 'old-digest',
+          executionObservation: TEST_EXECUTION_OBSERVATION,
           result: attemptResult(true),
         },
       ]),
@@ -113,6 +116,7 @@ describe('summarizeProofGraph reviewer projection', () => {
       attemptId,
       scope: 'implementation' as const,
       implementationDigest: digest,
+      executionObservation: TEST_EXECUTION_OBSERVATION,
       result: { ...attemptResult(passed), checkId },
     };
   }
@@ -214,6 +218,7 @@ describe('summarizeProofGraph reviewer projection', () => {
           attemptId: ATT,
           scope: 'implementation',
           implementationDigest: IMPL_DIGEST,
+          executionObservation: TEST_EXECUTION_OBSERVATION,
           result: attemptResult(true),
         },
       ]),
@@ -230,6 +235,7 @@ describe('summarizeProofGraph reviewer projection', () => {
           attemptId: ATT,
           scope: 'implementation',
           implementationDigest: 'old-digest',
+          executionObservation: TEST_EXECUTION_OBSERVATION,
           result: attemptResult(true),
         },
       ]),

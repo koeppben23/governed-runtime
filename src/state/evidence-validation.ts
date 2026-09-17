@@ -269,6 +269,30 @@ export const ValidationResult = z
 export type ValidationResult = z.infer<typeof ValidationResult>;
 
 /**
+ * Host-observed session-state continuity of one runtime-executed validation
+ * attempt.
+ *
+ * Both values are cryptographic observations, never agent input: the digest
+ * observed when the execution surface was frozen (before the command ran) and
+ * the digest of the state re-read under the session write lock immediately
+ * before this attempt was persisted. `stateChangedDuringExecution` is derived
+ * from the pair at projection time — it is deliberately not persisted as a
+ * second authority.
+ *
+ * `committedStateDigest` is intentionally not part of this record: the attempt
+ * is itself part of the committed state, so persisting it here would create a
+ * recursive self-binding.
+ */
+export const ValidationExecutionObservation = z
+  .object({
+    executionObservedStateDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    preCommitStateDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  })
+  .strict()
+  .readonly();
+export type ValidationExecutionObservation = z.infer<typeof ValidationExecutionObservation>;
+
+/**
  * Immutable record of one runtime-executed validation attempt.
  *
  * The scope binds baseline validation to the approved plan and post-implementation
@@ -280,6 +304,7 @@ export const ValidationAttempt = z.discriminatedUnion('scope', [
       attemptId: z.string().uuid(),
       scope: z.literal('baseline'),
       planDigest: z.string().min(1),
+      executionObservation: ValidationExecutionObservation,
       result: ValidationResult,
     })
     .strict()
@@ -289,6 +314,7 @@ export const ValidationAttempt = z.discriminatedUnion('scope', [
       attemptId: z.string().uuid(),
       scope: z.literal('implementation'),
       implementationDigest: z.string().min(1),
+      executionObservation: ValidationExecutionObservation,
       result: ValidationResult,
     })
     .strict()

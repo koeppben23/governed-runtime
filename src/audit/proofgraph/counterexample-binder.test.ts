@@ -11,6 +11,7 @@ import { bindCounterexamples } from './counterexample-binder.js';
 import { makeState } from '../../fixtures.js';
 import { ProofCounterexample, type CounterexampleRequirement } from '../../state/proofgraph.js';
 import type { SessionState } from '../../state/schema.js';
+import { TEST_EXECUTION_OBSERVATION } from '../../state/evidence-test-constants.js';
 
 const NOW = '2026-01-01T00:00:00.000Z';
 const CLAIM = '00000000-0000-4000-8000-000000000001';
@@ -109,6 +110,7 @@ describe('bindCounterexamples', () => {
         attemptId: ATT,
         scope: 'implementation',
         implementationDigest: IMPL_DIGEST,
+        executionObservation: TEST_EXECUTION_OBSERVATION,
         result: validationResult(false),
       },
     ]);
@@ -122,6 +124,7 @@ describe('bindCounterexamples', () => {
         attemptId: ATT,
         scope: 'implementation',
         implementationDigest: IMPL_DIGEST,
+        executionObservation: TEST_EXECUTION_OBSERVATION,
         result: { ...validationResult(false), outcome: 'inconclusive' as const },
       },
     ]);
@@ -135,6 +138,7 @@ describe('bindCounterexamples', () => {
         attemptId: ATT,
         scope: 'implementation',
         implementationDigest: IMPL_DIGEST,
+        executionObservation: TEST_EXECUTION_OBSERVATION,
         result: { ...validationResult(false), outcome: 'blocked' as const, timedOut: true },
       },
     ]);
@@ -148,6 +152,7 @@ describe('bindCounterexamples', () => {
         attemptId: ATT,
         scope: 'implementation',
         implementationDigest: IMPL_DIGEST,
+        executionObservation: TEST_EXECUTION_OBSERVATION,
         result: validationResult(true),
       },
     ]);
@@ -162,6 +167,7 @@ describe('bindCounterexamples', () => {
             attemptId: ATT,
             scope: 'implementation' as const,
             implementationDigest: IMPL_DIGEST,
+            executionObservation: TEST_EXECUTION_OBSERVATION,
             result: aggregateValidationResult(),
           },
         ],
@@ -199,6 +205,7 @@ describe('bindCounterexamples', () => {
           attemptId: ATT,
           scope: 'implementation',
           implementationDigest: IMPL_DIGEST,
+          executionObservation: TEST_EXECUTION_OBSERVATION,
           result: aggregateValidationResult('full_check'),
         },
       ],
@@ -235,7 +242,15 @@ describe('bindCounterexamples', () => {
     for (const { result, diagnostic } of cases) {
       const binding = bindCounterexamples(
         stateWith(
-          [{ attemptId: ATT, scope: 'implementation', implementationDigest: IMPL_DIGEST, result }],
+          [
+            {
+              attemptId: ATT,
+              scope: 'implementation',
+              implementationDigest: IMPL_DIGEST,
+              executionObservation: TEST_EXECUTION_OBSERVATION,
+              result,
+            },
+          ],
           'IMPL_REVIEW',
           { counterexampleRequirement: AGGREGATE_COUNTEREXAMPLE_REQ },
         ),
@@ -254,6 +269,7 @@ describe('bindCounterexamples', () => {
             attemptId: ATT,
             scope: 'implementation',
             implementationDigest: IMPL_DIGEST,
+            executionObservation: TEST_EXECUTION_OBSERVATION,
             result: {
               ...aggregateValidationResult('full_check'),
               candidateId: 'security-secondary',
@@ -282,6 +298,7 @@ describe('bindCounterexamples', () => {
           attemptId: ATT,
           scope: 'implementation',
           implementationDigest: IMPL_DIGEST,
+          executionObservation: TEST_EXECUTION_OBSERVATION,
           result: { ...validationResult(true), outcome: 'supported' as const },
         },
       ],
@@ -321,6 +338,7 @@ describe('bindCounterexamples', () => {
         attemptId: ATT,
         scope: 'implementation',
         implementationDigest: IMPL_DIGEST,
+        executionObservation: TEST_EXECUTION_OBSERVATION,
         result: validationResult(true),
       },
     ]);

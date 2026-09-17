@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Reviewer execution-continuity provenance (state schema v6).** Every
+  runtime-executed validation attempt now persists the host-observed execution
+  continuity (`executionObservedStateDigest`, `preCommitStateDigest`), and the
+  reviewer projection derives `stateChangedDuringExecution` from that pair
+  instead of persisting a second boolean authority. The frozen implementation
+  review material carries the attempt identity plus the continuity observation
+  to the reviewer, so an executed PASS can be re-bound to the concrete attempt
+  and the session state it was observed under; a changed continuity is surfaced
+  as a continuity caveat, never as a silent re-verdict. `committedStateDigest`
+  deliberately stays response-only (the attempt is part of the committed state).
+  State `schemaVersion` advances to `v6`; pre-v6 state is rejected with
+  `SESSION_STATE_INCOMPATIBLE` at the `readState` contract preflight (no
+  migration).
+
 - **RFC 3161 TSA trust enforcement and timestamp evidence hardening (TSA1–TSA4,
   AR2, AC2, AC9, AC11 — closes #643).** External timestamps can only increase
   archive assurance when every part of the chain is independently validated:

@@ -160,6 +160,11 @@ export function stateVerificationEvidence(
         outputDigest: attempt.result.outputDigest,
         detail: attempt.result.detail,
         executedAt: attempt.result.executedAt,
+        executionObservedStateDigest: attempt.executionObservation.executionObservedStateDigest,
+        preCommitStateDigest: attempt.executionObservation.preCommitStateDigest,
+        stateChangedDuringExecution:
+          attempt.executionObservation.executionObservedStateDigest !==
+          attempt.executionObservation.preCommitStateDigest,
         ...(claimAssertionEvidence ? { claimAssertionEvidence } : {}),
       };
     });

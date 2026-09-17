@@ -25,6 +25,7 @@ import {
 import { makeState, VALIDATION_PASSED } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
 import type { ReviewReport } from '../state/evidence-review.js';
+import { TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
 
 let tmpDirs: string[] = [];
 
@@ -84,6 +85,10 @@ describe('readState failure modes', () => {
     [
       'unknown audit chain format',
       (state: Record<string, unknown>) => (state.auditChainFormat = 'audit-chain.v999'),
+    ],
+    [
+      'previous session state schema version',
+      (state: Record<string, unknown>) => (state.schemaVersion = 'v5'),
     ],
   ])('rejects a current schema state with %s before schema parsing', async (_caseName, mutate) => {
     const dir = await tmpDir();
@@ -188,6 +193,59 @@ describe('readState legacy migrations', () => {
       validation: [legacyEntry],
     };
     await fs.writeFile(path.join(dir, 'session-state.json'), JSON.stringify(json), 'utf8');
+
+    await expect(readState(dir)).rejects.toMatchObject({
+      code: 'SCHEMA_VALIDATION_FAILED',
+    });
+  });
+
+  it('rejects a v6 state whose validation attempt lacks the execution observation', async () => {
+    const dir = await tmpDir();
+    await fs.mkdir(dir, { recursive: true });
+    const attempt = {
+      attemptId: '00000000-0000-4000-8000-0000000000aa',
+      scope: 'implementation' as const,
+      implementationDigest: 'impl-digest',
+      executionObservation: TEST_EXECUTION_OBSERVATION,
+      result: VALIDATION_PASSED[0]!,
+    };
+    const { executionObservation: _omitted, ...withoutObservation } = attempt;
+    const state = makeState('IMPL_VALIDATION', {
+      validationAttempts: [withoutObservation as never],
+    });
+    await fs.writeFile(
+      path.join(dir, 'session-state.json'),
+      JSON.stringify(state as unknown as Record<string, unknown>),
+      'utf8',
+    );
+
+    await expect(readState(dir)).rejects.toMatchObject({
+      code: 'SCHEMA_VALIDATION_FAILED',
+    });
+  });
+
+  it('rejects a v6 state whose execution observation is malformed', async () => {
+    const dir = await tmpDir();
+    await fs.mkdir(dir, { recursive: true });
+    const state = makeState('IMPL_VALIDATION', {
+      validationAttempts: [
+        {
+          attemptId: '00000000-0000-4000-8000-0000000000aa',
+          scope: 'implementation',
+          implementationDigest: 'impl-digest',
+          executionObservation: {
+            executionObservedStateDigest: 'not-hex',
+            preCommitStateDigest: 'c'.repeat(64),
+          },
+          result: VALIDATION_PASSED[0]!,
+        } as never,
+      ],
+    });
+    await fs.writeFile(
+      path.join(dir, 'session-state.json'),
+      JSON.stringify(state as unknown as Record<string, unknown>),
+      'utf8',
+    );
 
     await expect(readState(dir)).rejects.toMatchObject({
       code: 'SCHEMA_VALIDATION_FAILED',

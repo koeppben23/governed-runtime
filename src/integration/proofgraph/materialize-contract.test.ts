@@ -9,7 +9,10 @@ import {
 } from '../../audit/proofgraph/mutation-report.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { hashText } from '../../shared/hashing.js';
-import { makePlanRevision } from '../../state/evidence-test-constants.js';
+import {
+  makePlanRevision,
+  TEST_EXECUTION_OBSERVATION,
+} from '../../state/evidence-test-constants.js';
 import { evaluateProofGraph } from '../../audit/proofgraph/evaluate.js';
 import { deriveProofGraph } from '../../audit/proofgraph/derive.js';
 import {
@@ -149,6 +152,7 @@ function stateWithClaims() {
         attemptId: ATTEMPT_ID,
         scope: 'implementation',
         implementationDigest: IMPL_DIGEST,
+        executionObservation: TEST_EXECUTION_OBSERVATION,
         result: {
           checkId: 'test',
           passed: true,
@@ -375,6 +379,7 @@ describe('materializeApprovedPlanContract', () => {
             attemptId: '11111111-1111-4111-8111-111111111111',
             scope: 'implementation' as const,
             implementationDigest: IMPL_DIGEST,
+            executionObservation: TEST_EXECUTION_OBSERVATION,
             result: {
               checkId: 'test',
               passed: true,
@@ -393,6 +398,7 @@ describe('materializeApprovedPlanContract', () => {
             attemptId: '22222222-2222-4222-8222-222222222222',
             scope: 'implementation' as const,
             implementationDigest: IMPL_DIGEST,
+            executionObservation: TEST_EXECUTION_OBSERVATION,
             result: {
               checkId: 'security',
               passed: true,
@@ -452,6 +458,7 @@ describe('materializeApprovedPlanContractResult — mutation coverage', () => {
       attemptId: AGG_ID,
       scope: 'implementation' as const,
       implementationDigest: IMPL_DIGEST,
+      executionObservation: TEST_EXECUTION_OBSERVATION,
       result: {
         checkId: 'security',
         passed: true,
@@ -703,6 +710,7 @@ describe('materializeApprovedPlanContractResult — mutation coverage', () => {
             attemptId: '77777777-7777-4777-8777-777777777777',
             scope: 'baseline' as const,
             planDigest: 'baseline-plan-digest',
+            executionObservation: TEST_EXECUTION_OBSERVATION,
             result: {
               checkId: 'test',
               passed: true,
@@ -721,6 +729,7 @@ describe('materializeApprovedPlanContractResult — mutation coverage', () => {
             attemptId: '88888888-8888-4888-8888-888888888888',
             scope: 'implementation' as const,
             implementationDigest: 'other-implementation',
+            executionObservation: TEST_EXECUTION_OBSERVATION,
             result: {
               checkId: 'test',
               passed: true,
