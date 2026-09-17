@@ -15,7 +15,11 @@ import {
   type ReviewExecutors,
   type ReviewReferenceInput,
 } from './review.js';
-import type { ReviewReport, ReviewReportFinding, ValidationResult } from '../state/evidence.js';
+import type {
+  ReviewReportDraft,
+  ReviewReportFinding,
+  ValidationResult,
+} from '../state/evidence.js';
 import type { RailBlocked } from './types.js';
 import type { SessionState } from '../state/schema.js';
 import {
@@ -41,11 +45,11 @@ type RenderedReviewFinding = {
   readonly message: string;
 };
 
-type RenderedReviewReport = Omit<ReviewReport, 'findings'> & {
+type RenderedReviewReport = Omit<ReviewReportDraft, 'findings'> & {
   readonly findings: RenderedReviewFinding[];
 };
 
-function renderReviewReport(report: ReviewReport): RenderedReviewReport {
+function renderReviewReport(report: ReviewReportDraft): RenderedReviewReport {
   return {
     ...report,
     findings: report.findings.map((finding) =>
@@ -66,7 +70,7 @@ function renderReviewReport(report: ReviewReport): RenderedReviewReport {
   };
 }
 
-function isBlockedReview(result: ReviewReport | RailBlocked): result is RailBlocked {
+function isBlockedReview(result: ReviewReportDraft | RailBlocked): result is RailBlocked {
   return 'kind' in result && result.kind === 'blocked';
 }
 
@@ -123,12 +127,11 @@ describe('review rail', () => {
       expect(report.validationSummary[0]!.passed).toBe(true);
     });
 
-    it('includes evidence completeness matrix', async () => {
+    it('excludes local session completeness and integration-owned coverage from the rail draft', async () => {
       const state = makeProgressedState('COMPLETE');
       const report = await executeReview(state, NOW);
-      expect(report.completeness).toBeDefined();
-      expect(report.completeness.overallComplete).toBe(true);
-      expect(report.completeness.slots).toHaveLength(9);
+      expect(report).not.toHaveProperty('completeness');
+      expect(report).not.toHaveProperty('peerReviewCoverage');
     });
 
     it('is available at any phase (always allowed)', async () => {
@@ -224,7 +227,6 @@ describe('review rail', () => {
           verdict: 'approve',
           rationale: 'LGTM',
           decidedAt: FIXED_TIME,
-          decidedBy: 'alice',
           decisionIdentity: {
             actorId: 'alice',
             actorEmail: null,
@@ -464,7 +466,12 @@ describe('review rail', () => {
           verdict: 'approve',
           rationale: 'LGTM',
           decidedAt: FIXED_TIME,
-          decidedBy: 'alice', // same person
+          decisionIdentity: {
+            actorId: 'alice',
+            actorEmail: null,
+            actorSource: 'unknown',
+            actorAssurance: 'best_effort',
+          },
         },
       });
       const report = await executeReview(state, NOW);
@@ -530,7 +537,7 @@ describe('review rail', () => {
       const result = executeReviewFlow(state, ctx);
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
-        expect(result.state.phase).toBe('REVIEW_COMPLETE');
+        expect(result.state.phase).toBe('PEER_REVIEW_COMPLETE');
         expect(result.transitions.length).toBeGreaterThanOrEqual(1);
       }
     });
@@ -561,8 +568,8 @@ describe('review rail', () => {
   describe('P8b: startReviewFlow', () => {
     const ctx = createTestContext();
 
-    it('transitions READY → REVIEW, NOT to REVIEW_COMPLETE', () => {
-      // P8b: startReviewFlow only applies the READY→REVIEW transition.
+    it('transitions READY → PEER_REVIEW, NOT to PEER_REVIEW_COMPLETE', () => {
+      // P8b: startReviewFlow only applies the READY→PEER_REVIEW transition.
       // The reviewDone guard requires reviewReportPath, which is not yet set.
       // This proves that if writeReport throws before the caller sets
       // reviewReportPath and calls autoAdvance, no REVIEW_COMPLETE is persisted.
@@ -570,7 +577,7 @@ describe('review rail', () => {
       const result = startReviewFlow(state, ctx);
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
-        expect(result.state.phase).toBe('REVIEW');
+        expect(result.state.phase).toBe('PEER_REVIEW');
         expect(result.state.reviewReportPath).toBeFalsy();
       }
     });
@@ -626,7 +633,12 @@ describe('review rail', () => {
           verdict: 'approve',
           rationale: 'ok',
           decidedAt: FIXED_TIME,
-          decidedBy: 'bob', // different person, but not satisfied because not required
+          decisionIdentity: {
+            actorId: 'bob',
+            actorEmail: null,
+            actorSource: 'unknown',
+            actorAssurance: 'best_effort',
+          },
         },
       });
       const report = await executeReview(state, NOW);
@@ -672,7 +684,10 @@ describe('review rail', () => {
         initiatedBy: 'initiator-1',
         reviewDecision: {
           ...state.reviewDecision!,
-          decidedBy: 'reviewer-2', // different person
+          decisionIdentity: {
+            ...state.reviewDecision!.decisionIdentity,
+            actorId: 'reviewer-2', // different person
+          },
         },
       };
       const report = await executeReview(stateWithFourEyes, NOW);
@@ -681,7 +696,7 @@ describe('review rail', () => {
       expect(fourEyesFindings).toHaveLength(0);
     });
 
-    it('four-eyes required + NOT satisfied (decidedBy=null) → warning', async () => {
+    it('four-eyes required + NOT satisfied (no review decision) → warning', async () => {
       // regulated + no review decision yet
       const state = makeProgressedState('IMPLEMENTATION');
       const stateWithFourEyes = {
@@ -710,7 +725,6 @@ describe('review rail', () => {
         },
         reviewDecision: {
           ...state.reviewDecision!,
-          decidedBy: 'same-person', // same as initiator
           decisionIdentity: {
             actorId: 'same-person',
             actorEmail: null,

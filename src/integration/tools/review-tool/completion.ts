@@ -11,36 +11,29 @@ import { hashTextShort } from '../../../shared/hashing.js';
 
 import type { SessionState } from '../../../state/schema.js';
 import type {
+  FrozenReviewSubject,
+  PeerReviewCoverage,
   ReviewFindings,
   ReviewObligation,
   ReviewReportFinding,
 } from '../../../state/evidence.js';
+import type { ReviewInvocationEvidence } from '../../../state/evidence-review-invocation.js';
 import type { ReviewExecutors } from '../../../rails/review.js';
 import { ReviewReport } from '../../../state/evidence.js';
-import { evaluateCompleteness } from '../../../audit/completeness.js';
+import { resolveAuthoritativePeerReviewTask } from '../../../state/peer-review.js';
 import { autoAdvance, createPolicyEvalFn } from '../../../rails/types.js';
 import type { AutoAdvanceOverflow } from '../../../rails/types.js';
-import {
-  PHASE_LABELS,
-  buildProductNextAction,
-  buildReviewReportCard,
-} from '../../../presentation/index.js';
+import { PHASE_LABELS, buildReviewReportCard } from '../../../presentation/index.js';
 import type { PresentationRenderOptions } from '../../../presentation/glyph-profile.js';
 import { materializeReviewCardArtifact } from '../../../adapters/workspace/index.js';
 import { readConfig } from '../../../adapters/persistence-config.js';
 import { writeReport, reportPath } from '../../../adapters/persistence.js';
-import { writeStateWithArtifacts, appendNextAction } from '../helpers.js';
+import { writeStateWithArtifacts, enrichWithWorkflowDirective } from '../helpers.js';
 import { ensureReviewAssurance } from '../../review/assurance.js';
-import { resolveNextAction } from '../../../machine/next-action.js';
+import { resolveWorkflowDirective } from '../../../machine/workflow-directive.js';
 import { projectStatusActionFromCommand } from '../../status-conclusion.js';
 import { projectCompletionProofStatus } from '../../proofgraph/proof-summary-projectors.js';
-import { NATIVE_ATTESTATION_REJECTION_FIELD } from '../../../shared/flowguard-identifiers.js';
-import type {
-  NativeAttestationRejection,
-  ReviewToolArgs,
-  StartedReviewResult,
-  ReviewReportResult,
-} from './types.js';
+import type { StartedReviewResult, ReviewReportResult } from './types.js';
 
 const reviewSeverityMap: Record<string, 'info' | 'warning' | 'error'> = {
   critical: 'error',
@@ -62,9 +55,7 @@ const CHALLENGE_OUTCOME_SEVERITY: Record<string, 'info' | 'warning' | 'error'> =
 function challengeFindings(
   reviewFindings: Pick<ReviewFindings, 'challenges'>,
 ): ReviewReportFinding[] {
-  const challenges = reviewFindings.challenges;
-  if (!Array.isArray(challenges)) return [];
-  return challenges.flatMap((entry) => challengeFinding(entry));
+  return reviewFindings.challenges.flatMap((entry) => challengeFinding(entry));
 }
 
 function challengeFinding(entry: unknown): ReviewReportFinding[] {
@@ -127,15 +118,11 @@ export function mapReviewFindingsToReport(reviewFindings: ReviewFindings): Revie
   ];
 }
 
-export function buildReviewExecutors(
-  args: ReviewToolArgs,
-  effectiveReviewFindings?: ReviewFindings,
-): ReviewExecutors {
+export function buildReviewExecutors(effectiveReviewFindings?: ReviewFindings): ReviewExecutors {
   return {
     analyze: async () => {
-      const findings = effectiveReviewFindings ?? args.reviewFindings;
-      if (!findings) return [];
-      return mapReviewFindingsToReport(findings);
+      if (!effectiveReviewFindings) return [];
+      return mapReviewFindingsToReport(effectiveReviewFindings);
     },
   };
 }
@@ -161,12 +148,13 @@ export async function persistReviewCompletion(
   result: StartedReviewResult,
   report: ReviewReportResult,
   ctx: Parameters<typeof createPolicyEvalFn>[0],
+  validatedReviewObligation: ReviewObligation | null,
 ): Promise<
   | { kind: 'overflow'; overflow: AutoAdvanceOverflow }
   | {
       kind: 'ok';
       finalState: SessionState;
-      report: ReviewReportResult;
+      report: ReviewReport;
       allTransitions: StartedReviewResult['transitions'];
     }
 > {
@@ -179,7 +167,11 @@ export async function persistReviewCompletion(
   const finalReport = ReviewReport.parse({
     ...report,
     phase: finalState.phase,
-    completeness: evaluateCompleteness(finalState),
+    peerReviewCoverage: buildPeerReviewCoverage({
+      report,
+      state: finalState,
+      obligation: validatedReviewObligation,
+    }),
   });
   await writeReport(sessDir, finalReport);
   await writeStateWithArtifacts(sessDir, finalState);
@@ -192,42 +184,92 @@ export async function persistReviewCompletion(
 }
 
 function findBoundReviewInvocation(
-  result: StartedReviewResult,
+  state: SessionState,
   obligation: ReviewObligation | null,
-): ReturnType<typeof ensureReviewAssurance>['invocations'][number] | undefined {
+): ReviewInvocationEvidence | undefined {
   if (!obligation) return undefined;
-  return ensureReviewAssurance(result.state.reviewAssurance).invocations.find(
+  return ensureReviewAssurance(state.reviewAssurance).invocations.find(
     (inv) => inv.obligationId === obligation.obligationId,
   );
 }
 
-function reviewCardCompleteness(report: ReviewReportResult): {
-  overallComplete: boolean;
-  fourEyes: boolean;
-  summary: string;
-  total: number;
+function coverageTargetResolved(report: ReviewReportResult): boolean {
+  if (report.reviewKind === 'content_review') return true;
+  return report.planDigest !== null || report.implDigest !== null;
+}
+
+function coverageTargetFields(subject: FrozenReviewSubject | undefined): {
+  targetFrozen: boolean;
+  repositoryIdentityVerified: boolean | null;
+  baseSha: string | null;
+  headSha: string | null;
+  changedPathCount: number;
 } {
+  if (subject?.kind !== 'repository_change') {
+    return {
+      targetFrozen: subject !== undefined,
+      repositoryIdentityVerified: null,
+      baseSha: null,
+      headSha: null,
+      changedPathCount: 0,
+    };
+  }
   return {
-    overallComplete: report.completeness.overallComplete,
-    fourEyes: report.completeness.fourEyes?.satisfied ?? false,
-    total: report.completeness.summary.total,
-    summary:
-      `${report.completeness.summary.complete}/${report.completeness.summary.total} complete, ` +
-      `${report.completeness.summary.missing} missing`,
+    targetFrozen: true,
+    repositoryIdentityVerified: true,
+    baseSha: subject.baseSha,
+    headSha: subject.headSha,
+    changedPathCount: subject.changedPaths.length,
+  };
+}
+
+function coverageObjectives(
+  state: SessionState,
+  obligation: ReviewObligation | null,
+): {
+  objectivesCovered: number;
+  objectivesTotal: number;
+  reviewAssurance: PeerReviewCoverage['reviewAssurance'];
+} {
+  const authoritative = obligation
+    ? resolveAuthoritativePeerReviewTask(state.peerReviewEvidence, obligation.obligationId)
+    : null;
+  const objectivesTotal = authoritative?.kind === 'ok' ? authoritative.task.objectives.length : 0;
+  const boundInvocation = findBoundReviewInvocation(state, obligation);
+  return {
+    objectivesCovered: boundInvocation ? objectivesTotal : 0,
+    objectivesTotal,
+    reviewAssurance: boundInvocation?.reviewAssuranceLevel ?? null,
+  };
+}
+
+export function buildPeerReviewCoverage(input: {
+  readonly report: ReviewReportResult;
+  readonly state: SessionState;
+  readonly obligation: ReviewObligation | null;
+}): PeerReviewCoverage {
+  const { report, state, obligation } = input;
+  const subject = report.reviewKind === 'content_review' ? report.reviewSubject : undefined;
+  const findings: readonly ReviewReportFinding[] = report.findings;
+  return {
+    targetResolved: coverageTargetResolved(report),
+    ...coverageTargetFields(subject),
+    ...coverageObjectives(state, obligation),
+    missingVerification: findings
+      .filter((finding) => finding.source === 'missing_verification')
+      .map((finding) => finding.message),
   };
 }
 
 function reviewCardInvocationFields(
   boundInvocation: ReturnType<typeof ensureReviewAssurance>['invocations'][number] | undefined,
-  args: ReviewToolArgs,
 ): {
-  invocationSource?: string;
-  invocationMode?: string;
+  invocationSource?: ReviewInvocationEvidence['source'];
+  invocationMode?: ReviewInvocationEvidence['invocationMode'];
   hostVisible?: boolean;
-  reviewOutputMode?: string;
-  structuredOutputUsed?: boolean;
-  reviewAssuranceLevel?: string;
-  extractionMethod?: string;
+  reviewOutputMode?: ReviewInvocationEvidence['reviewOutputMode'];
+  structuredOutputUsed?: ReviewInvocationEvidence['structuredOutputUsed'];
+  reviewAssuranceLevel?: ReviewInvocationEvidence['reviewAssuranceLevel'];
   reviewerSessionId?: string;
 } {
   return {
@@ -237,62 +279,45 @@ function reviewCardInvocationFields(
     reviewOutputMode: boundInvocation?.reviewOutputMode,
     structuredOutputUsed: boundInvocation?.structuredOutputUsed,
     reviewAssuranceLevel: boundInvocation?.reviewAssuranceLevel,
-    extractionMethod: boundInvocation?.extractionMethod,
-    reviewerSessionId: reviewerSessionId(boundInvocation, args),
+    reviewerSessionId: boundInvocation?.childSessionId,
   };
 }
 
-function reviewerSessionId(
-  boundInvocation: ReturnType<typeof ensureReviewAssurance>['invocations'][number] | undefined,
-  args: ReviewToolArgs,
-): string | undefined {
-  return (
-    boundInvocation?.childSessionId ??
-    ((args.reviewFindings?.reviewedBy as Record<string, unknown> | undefined)?.sessionId as
-      string | undefined)
-  );
-}
-
-function buildStandaloneReviewCard(
+function buildPeerReviewCard(
   input: {
-    args: ReviewToolArgs;
     result: StartedReviewResult;
     finalState: SessionState;
-    report: ReviewReportResult;
+    report: ReviewReport;
     validatedReviewObligation: ReviewObligation | null;
   },
   options?: PresentationRenderOptions,
 ): string {
-  const { args, result, finalState, report, validatedReviewObligation } = input;
-  const boundInvocation = findBoundReviewInvocation(result, validatedReviewObligation);
-  const nextAction = resolveNextAction(finalState.phase, finalState);
-  const productNextAction = buildProductNextAction(nextAction, finalState.phase);
-  const primaryCommand = productNextAction.commands[0];
-  if (!primaryCommand) {
-    throw new Error(
-      'review completion: productNextAction has no commands; cannot build conclusion action.',
-    );
-  }
-  const conclusionAction = projectStatusActionFromCommand(primaryCommand, 'recommended');
+  const { result, finalState, report, validatedReviewObligation } = input;
+  const boundInvocation = findBoundReviewInvocation(result.state, validatedReviewObligation);
+  const directive = resolveWorkflowDirective(finalState);
+  const primaryCommand = directive.commands[0];
+  const conclusionAction = primaryCommand
+    ? projectStatusActionFromCommand(primaryCommand, 'recommended')
+    : undefined;
   return buildReviewReportCard(
     {
       phase: finalState.phase,
       phaseLabel: PHASE_LABELS[finalState.phase],
       overallStatus: report.overallStatus,
       findings: report.findings ?? [],
-      completeness: reviewCardCompleteness(report),
+      coverage: report.peerReviewCoverage,
       reviewSubject: report.reviewKind === 'content_review' ? report.reviewSubject : undefined,
       obligationId: validatedReviewObligation?.obligationId,
       proofSummary: projectCompletionProofStatus(finalState),
-      productNextAction,
-      conclusionAction,
-      ...reviewCardInvocationFields(boundInvocation, args),
+      directive,
+      ...(conclusionAction ? { conclusionAction } : {}),
+      ...reviewCardInvocationFields(boundInvocation),
     },
     options,
   );
 }
 
-async function materializeStandaloneReviewCard(input: {
+async function materializePeerReviewCard(input: {
   sessDir: string;
   result: StartedReviewResult;
   reviewCard: string;
@@ -313,12 +338,11 @@ async function materializeStandaloneReviewCard(input: {
 function formatReviewCompletionResponse(input: {
   result: StartedReviewResult;
   finalState: SessionState;
-  report: ReviewReportResult;
+  report: ReviewReport;
   allTransitions: StartedReviewResult['transitions'];
   reviewCard: string;
   presentationMarkdown: string;
   artifactWarning?: { code: string; message: string };
-  nativeAttestationRejection?: NativeAttestationRejection;
 }): string {
   const {
     result,
@@ -328,78 +352,61 @@ function formatReviewCompletionResponse(input: {
     reviewCard,
     presentationMarkdown,
     artifactWarning,
-    nativeAttestationRejection,
   } = input;
-  return appendNextAction(
-    JSON.stringify({
-      reviewCard,
-      presentation: { markdown: presentationMarkdown },
-      phase: finalState.phase,
-      ...(artifactWarning && { artifactWarning }),
-      ...(nativeAttestationRejection && {
-        [NATIVE_ATTESTATION_REJECTION_FIELD]: nativeAttestationRejection,
-      }),
-      status: 'Review flow complete. Report generated.',
-      overallStatus: report.overallStatus,
-      policyMode: result.state.policySnapshot?.mode ?? 'unknown',
-      completeness: {
-        overallComplete: report.completeness.overallComplete,
-        fourEyes: report.completeness.fourEyes,
-        summary: report.completeness.summary,
-        slots: report.completeness.slots.map((s) => ({
-          slot: s.slot,
-          label: s.label,
-          status: s.status,
-          detail: s.detail,
-        })),
+  return JSON.stringify(
+    enrichWithWorkflowDirective(
+      {
+        reviewCard,
+        presentation: { markdown: presentationMarkdown },
+        phase: finalState.phase,
+        ...(artifactWarning && { artifactWarning }),
+        status: 'Review flow complete. Report generated.',
+        overallStatus: report.overallStatus,
+        policyMode: result.state.policySnapshot?.mode ?? 'unknown',
+        peerReviewCoverage: report.peerReviewCoverage,
+        findingsCount: report.findings.length,
+        findings: report.findings,
+        validationSummary: report.validationSummary,
+        ...(report.reviewKind === 'content_review' && { reviewSubject: report.reviewSubject }),
+        _audit: { transitions: allTransitions },
       },
-      findingsCount: report.findings.length,
-      findings: report.findings,
-      validationSummary: report.validationSummary,
-      ...(report.reviewKind === 'content_review' && { reviewSubject: report.reviewSubject }),
-      _audit: { transitions: allTransitions },
-    }),
-    finalState,
+      finalState,
+    ),
   );
 }
 
 export async function buildReviewCompletionResponse(input: {
   sessDir: string;
-  args: ReviewToolArgs;
   result: StartedReviewResult;
   finalState: SessionState;
-  report: ReviewReportResult;
+  report: ReviewReport;
   allTransitions: StartedReviewResult['transitions'];
   worktree: string;
   validatedReviewObligation: ReviewObligation | null;
-  nativeAttestationRejection?: NativeAttestationRejection;
 }): Promise<string> {
   const {
     sessDir,
-    args,
     result,
     finalState,
     report,
     allTransitions,
     worktree,
     validatedReviewObligation,
-    nativeAttestationRejection,
   } = input;
-  const reviewCard = buildStandaloneReviewCard({
-    args,
+  const reviewCard = buildPeerReviewCard({
     result,
     finalState,
     report,
     validatedReviewObligation,
   });
-  const artifactWarning = await materializeStandaloneReviewCard({
+  const artifactWarning = await materializePeerReviewCard({
     sessDir,
     result,
     reviewCard,
     validatedReviewObligation,
   });
-  const presentationMarkdown = buildStandaloneReviewCard(
-    { args, result, finalState, report, validatedReviewObligation },
+  const presentationMarkdown = buildPeerReviewCard(
+    { result, finalState, report, validatedReviewObligation },
     { glyphProfile: (await readConfig(worktree)).presentation.opencode.glyphProfile },
   );
   return formatReviewCompletionResponse({
@@ -410,6 +417,5 @@ export async function buildReviewCompletionResponse(input: {
     reviewCard,
     presentationMarkdown,
     artifactWarning,
-    nativeAttestationRejection,
   });
 }

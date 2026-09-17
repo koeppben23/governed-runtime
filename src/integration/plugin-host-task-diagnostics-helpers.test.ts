@@ -19,6 +19,8 @@ import {
   SESSION_ID,
   CHILD_SESSION_ID,
 } from './plugin-host-task-diagnostics-helpers.js';
+import { reviewDispatchRequired } from './review/dispatch-signal.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -31,15 +33,16 @@ describe('modeAResponse', () => {
       expect(parsed.phase).toBe('PLAN');
       expect(parsed.selfReviewIteration).toBe(2);
       expect(parsed.reviewMode).toBe('subagent');
-      expect(parsed.next).toContain('iteration=2');
-      expect(parsed.next).toContain('planVersion=3');
-      expect(parsed.next).toContain('flowguard-reviewer');
+      expect(parsed.reviewDispatch).toEqual(reviewDispatchRequired());
+      expect(parsed.reviewObligation.iteration).toBe(2);
+      expect(parsed.reviewObligation.planVersion).toBe(3);
+      expect(parsed.requiredReviewAttestation.reviewedBy).toBe(REVIEWER_SUBAGENT_TYPE);
     });
 
     it('defaults to iteration=0 and planVersion=1', () => {
       const parsed = JSON.parse(modeAResponse());
       expect(parsed.selfReviewIteration).toBe(0);
-      expect(parsed.next).toContain('planVersion=1');
+      expect(parsed.reviewObligation.planVersion).toBe(1);
     });
   });
 });

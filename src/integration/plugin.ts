@@ -6,7 +6,7 @@
  * Risk classification enforcement extracted to plugin-risk.ts (FG-REL-042).
  * After-hook processing extracted to plugin-afterhooks.ts.
  *
- * @version v10
+ * @version v11
  */
 
 import { existsSync, statSync } from 'node:fs';
@@ -31,7 +31,13 @@ import type { RiskEnforcementDeps } from './plugin-risk.js';
 import { type ActiveCommandScope, type FlowGuardPluginRuntime } from './plugin-shared.js';
 import { createOpenCodeHostAdapter, HostCapabilityMismatchError } from './opencode-host-adapter.js';
 import { createWorkspace } from './plugin-workspace.js';
-import type { OrchestratorClient } from './review/orchestrator.js';
+import type { OrchestratorClient } from './review/types.js';
+import {
+  isNativeReviewerTaskAfter,
+  isNativeReviewerTaskBefore,
+  nativeReviewTaskAfter,
+  nativeReviewTaskBefore,
+} from './native-task-review.js';
 import { initHumanProjectionTelemetrySink } from '../telemetry/human-projection/sink.js';
 
 export function isUsableWorktree(worktree: string | undefined): boolean {
@@ -120,7 +126,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     throw err;
   }
 
-  const orchestratorDeps = createOrchestratorDeps(ws, log, typedClient, adapter);
+  const orchestratorDeps = createOrchestratorDeps(ws, log, typedClient);
   const toolTraceIds = new Map<string, string>();
   const activeCommandScopes = new Map<string, ActiveCommandScope>();
   const checkReworkContinuations = new Set<string>();
@@ -156,11 +162,6 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     logError,
   });
 
-  // Use OpenCode's plugin teardown hook (Hooks.dispose) to shut down the host
-  // adapter and flush + release log sinks (OTLP shutdown + SIGUSR1 detach).
-  // OpenCode awaits dispose, giving the OTLP batch exporter a real completion
-  // point — unlike global process-exit listeners, this is per-instance and is
-  // not leaked across plugin inits.
   hooks.dispose = async () => {
     try {
       await adapter.shutdown();
@@ -179,7 +180,6 @@ function createOrchestratorDeps(
   ws: PluginWorkspaceRuntime,
   log: PluginLogger,
   client: OrchestratorClient,
-  adapter: OrchestratorDeps['adapter'],
 ): OrchestratorDeps {
   return {
     resolveFingerprint: ws.resolveFingerprint,
@@ -189,7 +189,6 @@ function createOrchestratorDeps(
     getEnforcementState: ws.getEnforcementState,
     log,
     client,
-    adapter,
   };
 }
 
@@ -222,8 +221,27 @@ function createFlowGuardPluginHooks(runtime: FlowGuardPluginRuntime): Awaited<Re
   return {
     'command.execute.before': (input: unknown, output: unknown) =>
       commandBefore(runtime, input, output),
-    'tool.execute.before': (input: unknown, output: unknown) => toolBefore(runtime, input, output),
-    'tool.execute.after': (input: unknown, output: unknown) => toolAfter(runtime, input, output),
+    'tool.execute.before': async (input: unknown, output: unknown) => {
+      // The governed reviewer Task is its own host-transport boundary. It must
+      // not traverse the generic host-tool path because that path has no child
+      // identity/dispatch semantics; nativeReviewTaskBefore performs the exact
+      // durable authorization and canonical prompt injection instead.
+      if (isNativeReviewerTaskBefore(output)) {
+        await nativeReviewTaskBefore(runtime, input, output);
+        return;
+      }
+      await toolBefore(runtime, input, output);
+    },
+    'tool.execute.after': async (input: unknown, output: unknown) => {
+      // Native Task text is transcript-only. Its dedicated after boundary
+      // performs same-child structured capture and evidence binding before the
+      // result reaches the parent agent.
+      if (isNativeReviewerTaskAfter(input)) {
+        await nativeReviewTaskAfter(runtime, input, output);
+        return;
+      }
+      await toolAfter(runtime, input, output);
+    },
     event: ({ event }) => handlePluginEvent(runtime, event),
     'experimental.session.compacting': (input, output) => handleCompaction(runtime, input, output),
   };

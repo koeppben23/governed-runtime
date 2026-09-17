@@ -173,6 +173,23 @@ The following sections are the review contract. Changes touching a boundary must
 | Required operational logs                 | `error` for append failure and `warn`/`error` for verification failures with fields such as `sessionId`, `reasonCode`, `eventId`, `expectedChainHash`, and `actualChainHash` when available. Operational logs are diagnostic only.                                                                                                                                                                                                                                                                                                                               |
 | Known gaps / residual risk / NOT_VERIFIED | Hash chains are tamper-evident, not tamper-preventing. A local attacker with rewrite access can attempt full trail rewrite; external timestamp assurance is required for stronger regulated evidence. TSA tokens are verified against the enforced RFC 3161 signer contract (exactly one critical, exclusive id-kp-timeStamping EKU; signed ESSCertID/ESSCertIDv2 signer binding; independent SHA-256/384/512 allowlists; validated RSASSA-PSS parameters; unknown critical extensions reject; constant-time imprints — `src/audit/rfc-3161-pkijs-verifier.ts`). |
 
+Canonical audit authority map — there is exactly one surface per authority, and
+no parallel audit writer or tolerance layer:
+
+| Authority                  | Module                                                                                                                                   |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Event schema and format    | [`src/state/evidence-audit.ts`](../src/state/evidence-audit.ts), [`src/audit/types.ts`](../src/audit/types.ts) (`audit-chain.v3`)        |
+| Canonical digest           | [`src/audit/canonical-digest.ts`](../src/audit/canonical-digest.ts)                                                                      |
+| Chain verification         | [`src/audit/integrity.ts`](../src/audit/integrity.ts)                                                                                    |
+| Trail append and read      | [`src/adapters/persistence-audit.ts`](../src/adapters/persistence-audit.ts) (`appendAuditEvent`, `readAuditTrail`; v3-only, fail-closed) |
+| Outbox reconciliation gate | [`src/integration/plugin-audit-reconcile.ts`](../src/integration/plugin-audit-reconcile.ts)                                              |
+| Producer / outbox binding  | [`src/integration/tools/audit-outbox.ts`](../src/integration/tools/audit-outbox.ts)                                                      |
+
+Read helpers (`src/audit/query.ts`, `src/audit/summary.ts`, `src/audit/completeness.ts`)
+are pure projections over the canonical event array — they perform no I/O and
+never tolerate or reinterpret malformed records. The architecture guard
+`src/architecture/__tests__/audit-authority-guard.test.ts` pins this map.
+
 ### Archive Manifest And Content Digest Boundary
 
 | Field                                     | Contract                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
@@ -198,19 +215,6 @@ The following sections are the review contract. Changes touching a boundary must
 | Required audit events                     | Review tool calls, obligation creation/fulfillment/blocking where represented in state, decision receipts for human gates, and errors for blocked review submissions.                                                                                                                        |
 | Required operational logs                 | `warn`/`error` for strict orchestration failure, findings rejection, or native attestation rejection with fields such as `obligationId`, `invocationId`, `reasonCode`, `reviewMode`, and `reviewHostPlatform`. Operational logs are diagnostic only.                                         |
 | Known gaps / residual risk / NOT_VERIFIED | Host transport can corroborate review activity but does not approve. Completion authority remains validated, obligation-bound ReviewFindings. Claims about human reviewer intent beyond submitted evidence are `NOT_VERIFIED`.                                                               |
-
-### Native Reviewer Capture Boundary
-
-| Field                                     | Contract                                                                                                                                                                                                                   |
-| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Signed / integrity-covered                | Accepted findings may be bound to an invocation and obligation. Native capture lines themselves are not hash-chain evidence.                                                                                               |
-| Mutable / diagnostic                      | `reviewer-captures.jsonl` is append-only plaintext corroboration and may be agent-writable depending on host path. It is not approval authority.                                                                           |
-| Writer / authority                        | Native capture acceptance is checked through review validation and assurance authorities, especially [`src/integration/tools/review-validation.ts`](../src/integration/tools/review-validation.ts).                        |
-| Attacker model                            | Agent writes or edits capture files, provides malformed lines, mismatches session IDs, or attempts to upgrade native transport to approval authority.                                                                      |
-| Fail-closed expectation                   | Malformed, skipped, missing, unbound, read-failed, session-mismatched, or plugin-handshake-missing native captures must not satisfy strict host-task-required review paths.                                                |
-| Required audit events                     | Review invocation/evidence state changes and blocked review submissions where the runtime records them. Capture file existence alone is never an audit event.                                                              |
-| Required operational logs                 | `warn` for native attestation not upgraded and `error` for capture read/write failure with fields such as `reasonCode`, `sessionId`, `childSessionId`, and `capturePath` where safe. Operational logs are diagnostic only. |
-| Known gaps / residual risk / NOT_VERIFIED | Native capture is diagnostic/corroborating evidence only. It does not protect against a malicious host runtime or local file writer.                                                                                       |
 
 ### Actor Identity And IdP Boundary
 
@@ -251,7 +255,7 @@ FlowGuard is filesystem-first and offline-capable by default. Network-dependent 
 | Writer / authority                        | URL validation/fetch boundary lives in review input handling and network adapter code; review acceptance remains under review validation/assurance authorities.                           |
 | Attacker model                            | SSRF attempt, private/reserved target, DNS failure, DNS rebinding, malicious remote content, or redirect abuse.                                                                           |
 | Fail-closed expectation                   | Non-HTTPS, localhost/private/reserved DNS targets, empty/malformed DNS answers, mixed public/private answers, and redirects must be blocked before fetch.                                 |
-| Required audit events                     | Standalone review tool call and resulting review report/evidence events where produced.                                                                                                   |
+| Required audit events                     | Peer review tool call and resulting review report/evidence events where produced.                                                                                                         |
 | Required operational logs                 | `warn`/`error` for URL rejection/fetch failure with fields such as `reasonCode`, `host`, and sanitized `url`; do not log fetched secrets. Operational logs are diagnostic only.           |
 | Known gaps / residual risk / NOT_VERIFIED | The HTTPS connection is pinned to one validated A/AAAA answer while retaining the original hostname for SNI and certificate validation. External egress controls remain defense in depth. |
 

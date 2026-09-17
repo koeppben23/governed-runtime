@@ -1,4 +1,4 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 
 const EXTERNAL_REFERENCE_TABLE: Array<{
   scenario: string;
@@ -67,11 +67,11 @@ ${externalRefMarkdown}
 - Use exactly what the user provided or what was extracted — never invent ticket text.
 - Preserve original URLs/references — never lose the source.
 - If no arguments provided: ask the user for their task description before proceeding.
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 ## Done-when
 
 - Ticket text recorded via flowguard_ticket.
 - External references captured with full audit provenance.
 - If \`presentation.markdown\` is present, render it verbatim and do not append a separate \`Next action:\` line.
-- Otherwise, render \`productNextAction.text\` as the single fallback conclusion.
+- Otherwise, render the canonical \`directive\` as the single fallback conclusion.
 `;

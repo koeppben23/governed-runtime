@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { DecisionIdentitySchema } from './evidence-identity.js';
 
 export const ImplementationRework = z.object({
   rejectedDigest: z.string().min(1),
@@ -7,11 +6,3 @@ export const ImplementationRework = z.object({
   // persisted explicitly, never defaulted from an absent value to `false`.
   exhausted: z.boolean(),
 });
-
-export const ImplementationReviewExtension = z
-  .object({
-    additionalIterations: z.number().int().positive().finite(),
-    authorizedAt: z.string().datetime(),
-    authorizedBy: DecisionIdentitySchema,
-  })
-  .readonly();

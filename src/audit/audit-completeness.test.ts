@@ -2,9 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { evaluateCompleteness } from './completeness.js';
 import { makeState, makeProgressedState, FIXED_TIME, FIXED_SESSION_UUID } from '../fixtures.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
+import { ReviewDecision } from '../state/evidence-review.js';
 import type { ValidationResult } from '../state/evidence.js';
 import type { SessionState } from '../state/schema.js';
-import { computeRecordDigest } from '../state/evidence-plan.js';
+import { makePlanRevision } from '../state/evidence-test-constants.js';
 
 function validationResult(checkId: string, passed: boolean, detail: string): ValidationResult {
   return {
@@ -146,7 +147,6 @@ describe('audit completeness', () => {
           verdict: 'approve',
           rationale: 'LGTM',
           decidedAt: FIXED_TIME,
-          decidedBy: 'alice',
           decisionIdentity: {
             actorId: 'alice',
             actorEmail: null,
@@ -174,7 +174,12 @@ describe('audit completeness', () => {
           verdict: 'approve',
           rationale: 'LGTM',
           decidedAt: FIXED_TIME,
-          decidedBy: 'bob',
+          decisionIdentity: {
+            actorId: 'bob',
+            actorEmail: null,
+            actorSource: 'claim',
+            actorAssurance: 'claim_validated',
+          },
         },
       });
       const report = evaluateCompleteness(state);
@@ -183,7 +188,18 @@ describe('audit completeness', () => {
       expect(report.fourEyes.detail).toContain('satisfied');
     });
 
-    it('four-eyes violated when structured identities match despite different legacy strings', () => {
+    it('rejects a decision that carries only the obsolete decidedBy string', () => {
+      expect(
+        ReviewDecision.safeParse({
+          verdict: 'approve',
+          rationale: 'LGTM',
+          decidedAt: FIXED_TIME,
+          decidedBy: 'legacy-reviewer',
+        }).success,
+      ).toBe(false);
+    });
+
+    it('four-eyes violated when structured identities match despite actor-id case differences', () => {
       const state = makeState('COMPLETE', {
         ...makeProgressedState('COMPLETE'),
         policySnapshot: {
@@ -201,7 +217,6 @@ describe('audit completeness', () => {
           verdict: 'approve',
           rationale: 'LGTM',
           decidedAt: FIXED_TIME,
-          decidedBy: 'legacy-reviewer',
           decisionIdentity: {
             actorId: 'ALICE',
             actorEmail: null,
@@ -233,7 +248,6 @@ describe('audit completeness', () => {
           verdict: 'approve',
           rationale: 'LGTM',
           decidedAt: FIXED_TIME,
-          decidedBy: 'bob',
           decisionIdentity: {
             actorId: 'bob',
             actorEmail: null,
@@ -248,7 +262,7 @@ describe('audit completeness', () => {
       expect(report.fourEyes.detail).toContain('not comparable');
     });
 
-    it('four-eyes uses legacy actor strings when structured identities are absent', () => {
+    it('four-eyes falls back to the initiator string when no structured initiator identity exists', () => {
       const state = makeState('COMPLETE', {
         ...makeProgressedState('COMPLETE'),
         policySnapshot: {
@@ -261,7 +275,12 @@ describe('audit completeness', () => {
           verdict: 'approve',
           rationale: 'LGTM',
           decidedAt: FIXED_TIME,
-          decidedBy: 'bob',
+          decisionIdentity: {
+            actorId: 'bob',
+            actorEmail: null,
+            actorSource: 'claim',
+            actorAssurance: 'claim_validated',
+          },
         },
       });
       const report = evaluateCompleteness(state);
@@ -363,10 +382,10 @@ describe('audit completeness', () => {
     });
 
     it('review flow has no evidence slots (standalone artifact)', () => {
-      const state = makeState('REVIEW');
+      const state = makeState('PEER_REVIEW');
       const report = evaluateCompleteness(state);
       expect(report.slots).toHaveLength(0);
-      // REVIEW is still in progress; zero slots must not vacuously imply completion.
+      // PEER_REVIEW is still in progress; zero slots must not vacuously imply completion.
       expect(report.overallComplete).toBe(false);
       expect(report.summary.total).toBe(0);
       expect(
@@ -519,6 +538,7 @@ describe('audit completeness', () => {
         architecture: makeProgressedState('ARCH_COMPLETE').architecture,
         selfReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: 'abc',
@@ -790,36 +810,19 @@ describe('audit completeness', () => {
     });
 
     it('getSlotDetail plan: digest.slice(0, 12) truncates', () => {
-      const longDigest = 'abcdef0123456789abcdef01234567890123456789';
+      const current = makePlanRevision({ body: 'plan', createdAt: FIXED_TIME });
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
         plan: {
-          current: {
-            body: 'plan',
-            digest: longDigest,
-            sections: [],
-            createdAt: FIXED_TIME,
-            recordDigest: computeRecordDigest({
-              contentDigest: longDigest,
-              planVersion: 1,
-              supersedesRecordDigest: null,
-              originatingReviewObligationId: null,
-              revisionReason: null,
-            }),
-            planVersion: 1,
-            supersedesRecordDigest: null,
-            originatingReviewObligationId: null,
-            revisionReason: null,
-            lineageStatus: 'verified' as const,
-          },
+          current,
           history: [],
           reviewCompletion: 'pending',
         },
       });
       const report = evaluateCompleteness(state);
       const slot = report.slots.find((s) => s.slot === 'plan');
-      expect(slot?.detail).toContain('abcdef012345...');
-      expect(slot?.detail).not.toContain(longDigest);
+      expect(slot?.detail).toContain(`${current.digest.slice(0, 12)}...`);
+      expect(slot?.detail).not.toContain(current.digest);
     });
 
     it('getSlotDetail implementation: digest.slice(0, 12) truncates', () => {

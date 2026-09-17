@@ -10,10 +10,10 @@
  * @version v1
  */
 
-import type { SessionState } from '../state/schema.js';
+import type { Phase, SessionState } from '../state/schema.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 import type { ReviewReport } from '../state/evidence.js';
-import { resolveNextAction } from '../machine/next-action.js';
+import { resolveWorkflowDirective } from '../machine/workflow-directive.js';
 import { projectCompletionProofStatus } from './proofgraph/proof-summary-projectors.js';
 import { isTerminalPhase } from '../machine/topology.js';
 import {
@@ -52,10 +52,12 @@ function hasUnverifiedEvidence(evidence: EvidenceDetailProjection): boolean {
  * Precedence (highest first):
  * 1. BLOCKED             — readiness projection reports blocked (waiting).
  * 2. NOT_VERIFIED        — a required evidence slot is missing or failed.
- * 3. IN_PROGRESS         — non-terminal phase; lifecycle not yet complete.
- * 4. CHANGES_REQUIRED    — completed standalone review report has issues.
- * 5. READY_WITH_WARNINGS — terminal, evidence ok, but warnings present.
- * 6. READY               — otherwise.
+ * 3. READY/READY_WITH_WARNINGS — EXPORT_READY: evidence is complete and the
+ *    canonical directive requires `/export`; completion is ready, not pending.
+ * 4. IN_PROGRESS         — other non-terminal phase; lifecycle not yet complete.
+ * 5. CHANGES_REQUIRED    — completed peer review report has issues.
+ * 6. READY_WITH_WARNINGS — terminal, evidence ok, but warnings present.
+ * 7. READY               — otherwise.
  *
  * BLOCKED intentionally wins over NOT_VERIFIED so a blocked session is not
  * mislabelled merely because evidence is also incomplete.
@@ -67,7 +69,13 @@ export function deriveFinishOverallStatus(
 ): FinishOverallStatus {
   if (readiness.blocked) return 'BLOCKED';
   if (hasUnverifiedEvidence(evidence)) return 'NOT_VERIFIED';
-  // Non-terminal phases are in progress regardless of warnings or review status.
+  // EXPORT_READY is the explicit completion gate: the canonical directive
+  // requires `/export`, so the session is ready for completion, not "in
+  // progress". Reporting IN_PROGRESS here would contradict the directive.
+  if (readiness.phase === 'EXPORT_READY') {
+    return readiness.warnings.length > 0 ? 'READY_WITH_WARNINGS' : 'READY';
+  }
+  // Other non-terminal phases are in progress regardless of warnings or review status.
   if (!isTerminalPhase(readiness.phase)) return 'IN_PROGRESS';
   if (reviewReport?.overallStatus === 'issues') return 'CHANGES_REQUIRED';
   if (readiness.warnings.length > 0) return 'READY_WITH_WARNINGS';
@@ -160,13 +168,38 @@ const FINISH_ACTION_TABLE: Record<
 };
 
 /**
- * Build non-normative action guidance from the overall status alone.
+ * Build the non-normative action guidance.
  *
- * No per-action eligibility logic exists — the label is a trivial, documented
- * lookup keyed by overallStatus. These labels are presentation-only and must
- * not be consumed for enforcement.
+ * At EXPORT_READY the canonical directive requires `/export`
+ * (`allowedIntents: ['EXPORT']`), so the guidance must not present
+ * "create PR" as an equal alternative to the required completion commit.
+ * Everywhere else the label is a trivial, documented lookup keyed by
+ * overallStatus. These labels are presentation-only and must not be consumed
+ * for enforcement.
  */
-function buildFinishActionGuidance(overallStatus: FinishOverallStatus): FinishActionGuidance[] {
+function buildFinishActionGuidance(
+  overallStatus: FinishOverallStatus,
+  phase: Phase,
+): FinishActionGuidance[] {
+  if (phase === 'EXPORT_READY') {
+    return [
+      {
+        action: 'create PR',
+        status: 'not_recommended',
+        reason: 'Complete the required /export before landing the change.',
+      },
+      {
+        action: 'export evidence',
+        status: 'recommended',
+        reason: 'Required: /export materializes the completion package and completes the workflow.',
+      },
+      {
+        action: 'keep branch',
+        status: 'not_recommended',
+        reason: 'The session is ready for its required export.',
+      },
+    ];
+  }
   const entry = FINISH_ACTION_TABLE[overallStatus];
   return FINISH_CANDIDATE_ACTIONS.map((action) => ({
     action,
@@ -181,7 +214,7 @@ function buildFinishActionGuidance(overallStatus: FinishOverallStatus): FinishAc
  *
  * This function performs NO independent evidence, phase, obligation, or gate
  * evaluation — it only composes buildReadinessProjection,
- * buildEvidenceDetailProjection, resolveNextAction, and the single
+ * buildEvidenceDetailProjection, resolveWorkflowDirective, and the single
  * presentation classifier deriveFinishOverallStatus.
  */
 export function buildFinishCard(
@@ -192,7 +225,7 @@ export function buildFinishCard(
   const readiness = buildReadinessProjection(state, policy);
   const evidence = buildEvidenceDetailProjection(state);
   const blocker = buildBlockedProjection(state, policy);
-  const next = resolveNextAction(state.phase, state);
+  const directive = resolveWorkflowDirective(state);
   const overallStatus = deriveFinishOverallStatus(readiness, evidence, reviewReport);
 
   return {
@@ -200,13 +233,10 @@ export function buildFinishCard(
     overallStatus,
     readiness,
     evidence,
-    nextAction: {
-      primaryCommand: next.commands[0] ?? null,
-      summary: next.text,
-    },
+    directive,
     blocker,
     warnings: readiness.warnings,
-    actionGuidance: buildFinishActionGuidance(overallStatus),
+    actionGuidance: buildFinishActionGuidance(overallStatus, state.phase),
     exitOptions: [...FINISH_EXIT_OPTIONS],
     guarantees: {
       readOnly: true,

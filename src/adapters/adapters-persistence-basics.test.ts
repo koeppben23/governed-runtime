@@ -124,20 +124,17 @@ function makeValidReport(): ReviewReport {
     validationSummary: [],
     findings: [],
     overallStatus: 'clean',
-    completeness: {
-      sessionId: FIXED_SESSION_UUID,
-      phase: 'COMPLETE',
-      policyMode: 'solo',
-      overallComplete: true,
-      slots: [],
-      fourEyes: {
-        required: false,
-        satisfied: true,
-        initiatedBy: 'test',
-        decidedBy: null,
-        detail: 'Four-eyes not required by policy',
-      },
-      summary: { total: 0, complete: 0, missing: 0, notYetRequired: 0, failed: 0 },
+    peerReviewCoverage: {
+      targetResolved: false,
+      targetFrozen: false,
+      repositoryIdentityVerified: null,
+      baseSha: null,
+      headSha: null,
+      changedPathCount: 0,
+      objectivesCovered: 0,
+      objectivesTotal: 0,
+      reviewAssurance: null,
+      missingVerification: [],
     },
   };
 }
@@ -173,6 +170,23 @@ describe('persistence', () => {
       expect(loaded!.plan!.current.digest).toBe(state.plan!.current.digest);
     });
 
+    it('writeState + readState round-trip preserves export completion evidence', async () => {
+      const evidence = {
+        id: FIXED_UUID,
+        packageDigest: 'a'.repeat(64),
+        purpose: 'auditor' as const,
+        integrityCapability: 'verifiable' as const,
+        createdAt: FIXED_TIME,
+      };
+      await writeState(tmpDir, {
+        ...makeProgressedState('COMPLETE'),
+        exportCompletionEvidence: evidence,
+      });
+      const loaded = await readState(tmpDir);
+      expect(loaded!.phase).toBe('COMPLETE');
+      expect(loaded!.exportCompletionEvidence).toEqual(evidence);
+    });
+
     it('readState rejects current-epoch states missing authority fields (no read-time defaulting)', async () => {
       for (const mode of ['regulated', 'team-ci'] as const) {
         const state = makeProgressedState('TICKET');
@@ -194,6 +208,19 @@ describe('persistence', () => {
           code: 'SCHEMA_VALIDATION_FAILED',
         });
       }
+    });
+
+    it('readState rejects current-epoch states missing exportCompletionEvidence (no read-time defaulting)', async () => {
+      const state = makeProgressedState('TICKET') as unknown as Record<string, unknown>;
+      const incomplete = { ...state };
+      delete incomplete.exportCompletionEvidence;
+
+      await fs.mkdir(tmpDir, { recursive: true });
+      await fs.writeFile(statePath(tmpDir), JSON.stringify(incomplete), 'utf-8');
+
+      await expect(readState(tmpDir)).rejects.toMatchObject({
+        code: 'SCHEMA_VALIDATION_FAILED',
+      });
     });
 
     it('readState rejects current-epoch states missing mutation/audit authority arrays', async () => {
@@ -292,9 +319,20 @@ describe('persistence', () => {
         phaseLabel: 'Complete',
         overallStatus: 'issues',
         findings: loaded.findings,
-        completeness: { overallComplete: true, fourEyes: false, total: 0, summary: '0/0 complete' },
+        coverage: {
+          targetResolved: true,
+          targetFrozen: true,
+          repositoryIdentityVerified: true,
+          baseSha: 'a'.repeat(40),
+          headSha: 'b'.repeat(40),
+          changedPathCount: 1,
+          objectivesCovered: 3,
+          objectivesTotal: 3,
+          reviewAssurance: 'structured_high',
+          missingVerification: [],
+        },
         proofSummary,
-        productNextAction: { text: 'Export.', commands: ['/export'] },
+        directive: { kind: 'user_action', code: 'EXPORT_REQUIRED', commands: ['/export'] },
         conclusionAction: {
           invocation: '/export',
           description: 'Export.',
@@ -313,9 +351,8 @@ describe('persistence', () => {
       });
       await appendAuditEvent(tmpDir, event1);
       await appendAuditEvent(tmpDir, event2);
-      const { events, skipped } = await readAuditTrail(tmpDir);
+      const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(2);
-      expect(skipped).toBe(0);
       expect(events[0]!.event).toBe('transition:PLAN_READY');
       expect(events[1]!.event).toBe('transition:TICKET_SET');
     });
@@ -325,8 +362,7 @@ describe('persistence', () => {
         hostSessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
       });
       await appendAuditEvent(tmpDir, event);
-      const { events, skipped } = await readAuditTrail(tmpDir);
-      expect(skipped).toBe(0);
+      const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(1);
       expect(events[0]!.hostSessionId).toBe('ses_260740c65ffe77OjxRP7z40yH8');
     });
@@ -362,9 +398,8 @@ describe('persistence', () => {
     });
 
     it('readAuditTrail returns empty for nonexistent file', async () => {
-      const { events, skipped } = await readAuditTrail(tmpDir);
+      const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(0);
-      expect(skipped).toBe(0);
     });
 
     it('writeState rejects invalid state (Zod validation)', async () => {
@@ -589,17 +624,15 @@ describe('persistence', () => {
         tmpDir,
         makeValidAuditEvent({ id: '22222222-2222-4222-8222-222222222222' }),
       );
-      const { events, skipped } = await readAuditTrail(tmpDir);
+      const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(2);
-      expect(skipped).toBe(0);
     });
 
     it('readAuditTrail handles empty file', async () => {
       await fs.mkdir(tmpDir, { recursive: true });
       await fs.writeFile(auditPath(tmpDir), '', 'utf-8');
-      const { events, skipped } = await readAuditTrail(tmpDir);
+      const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(0);
-      expect(skipped).toBe(0);
     });
 
     it('writeState overwrites previous state atomically', async () => {
@@ -655,7 +688,7 @@ describe('persistence', () => {
         const id = `${String(i).padStart(8, '0')}-0000-4000-8000-000000000000`;
         await appendAuditEvent(tmpDir, makeValidAuditEvent({ id }));
       }
-      const { events } = await readAuditTrail(tmpDir);
+      const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(10);
     });
 
@@ -721,9 +754,8 @@ describe('persistence', () => {
       // Insert an empty line after every line (not just the first): the
       // reader must tolerate blank lines between all valid v3 records.
       await fs.writeFile(auditPath(tmpDir), raw.replace(/\n/g, '\n\n'), 'utf-8');
-      const { events, skipped } = await readAuditTrail(tmpDir);
+      const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(2);
-      expect(skipped).toBe(0);
     });
 
     it('handles lines with leading and trailing whitespace', async () => {
@@ -735,17 +767,15 @@ describe('persistence', () => {
         .map((line) => `  ${line}  `)
         .join('\n');
       await fs.writeFile(auditPath(tmpDir), padded, 'utf-8');
-      const { events, skipped } = await readAuditTrail(tmpDir);
+      const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(1);
       expect(events[0]!.event).toBe('whitespace-test');
-      expect(skipped).toBe(0);
     });
 
     it('handles file with only blank lines', async () => {
       await fs.writeFile(auditPath(tmpDir), '\n\n\n', 'utf-8');
-      const { events, skipped } = await readAuditTrail(tmpDir);
+      const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(0);
-      expect(skipped).toBe(0);
     });
 
     it('fails closed on valid JSON that is not an audit-chain.v3 record (array)', async () => {
@@ -786,9 +816,8 @@ describe('persistence', () => {
       const raw = await fs.readFile(auditPath(tmpDir), 'utf-8');
       const bom = '\uFEFF';
       await fs.writeFile(auditPath(tmpDir), bom + raw, 'utf-8');
-      const { events, skipped } = await readAuditTrail(tmpDir);
+      const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(1);
-      expect(skipped).toBe(0);
     });
 
     it('fails closed on mixed content with malformed and non-v3 lines', async () => {
@@ -819,9 +848,8 @@ describe('persistence', () => {
           }),
         );
       }
-      const { events, skipped } = await readAuditTrail(tmpDir);
+      const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(500);
-      expect(skipped).toBe(0);
     });
   });
 });

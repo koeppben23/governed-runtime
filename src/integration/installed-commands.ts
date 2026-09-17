@@ -3,22 +3,21 @@
  * @description Canonical metadata for installed FlowGuard slash-command interfaces.
  *
  * This is an interface catalogue, not a workflow authority. Machine lifecycle
- * admissibility remains in machine/commands.ts; aliases remain in
- * command-aliases.ts. Command templates consume this catalogue when assembled so
- * an installed template cannot silently drift from its public interface.
+ * admissibility remains in machine/commands.ts. Command templates consume this
+ * catalogue when assembled so an installed template cannot silently drift from
+ * its public interface.
  *
  * Multiple interface identities may share a single template file.
  */
 
 import { Command } from '../machine/commands.js';
-import { COMMAND_ALIASES } from './command-aliases.js';
 import {
   TOOL_FLOWGUARD_ABORT,
   TOOL_FLOWGUARD_ARCHITECTURE,
   TOOL_FLOWGUARD_ARCHIVE,
+  TOOL_FLOWGUARD_EXPORT,
   TOOL_FLOWGUARD_CONTINUE,
   TOOL_FLOWGUARD_DECISION,
-  TOOL_FLOWGUARD_EXTEND_IMPLEMENTATION_REVIEW,
   TOOL_FLOWGUARD_HELP,
   TOOL_FLOWGUARD_HYDRATE,
   TOOL_FLOWGUARD_IMPLEMENT,
@@ -41,7 +40,6 @@ export type InstalledCommandId =
   | 'workflow.plan'
   | 'workflow.continue'
   | 'workflow.implement'
-  | 'workflow.extend-implementation-review'
   | 'workflow.resolve-implementation-challenge'
   | 'workflow.validate'
   | 'workflow.review-decision'
@@ -52,10 +50,11 @@ export type InstalledCommandId =
   | 'alias.start'
   | 'alias.task'
   | 'variant.approve'
+  | 'variant.override-approve'
   | 'variant.request-changes'
   | 'variant.reject'
   | 'alias.check'
-  | 'alias.export'
+  | 'workflow.export'
   | 'alias.why'
   | 'operational.finish'
   | 'operational.reconcile-mutation-episode'
@@ -67,9 +66,9 @@ type ToolName =
   | typeof TOOL_FLOWGUARD_ABORT
   | typeof TOOL_FLOWGUARD_ARCHITECTURE
   | typeof TOOL_FLOWGUARD_ARCHIVE
+  | typeof TOOL_FLOWGUARD_EXPORT
   | typeof TOOL_FLOWGUARD_CONTINUE
   | typeof TOOL_FLOWGUARD_DECISION
-  | typeof TOOL_FLOWGUARD_EXTEND_IMPLEMENTATION_REVIEW
   | typeof TOOL_FLOWGUARD_HELP
   | typeof TOOL_FLOWGUARD_HYDRATE
   | typeof TOOL_FLOWGUARD_IMPLEMENT
@@ -98,10 +97,6 @@ export interface InstalledCommandDefinition {
   readonly description: string;
   /** Host-neutral semantic action identity (PR 6). */
   readonly intent?: import('../presentation/action-intent.js').ActionIntent;
-}
-
-function aliasKind(alias: keyof typeof COMMAND_ALIASES): InstalledCommandDefinition['kind'] {
-  return COMMAND_ALIASES[alias]!.kind;
 }
 
 /** Every installed template has at least one stable public-interface identity. */
@@ -154,9 +149,10 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     invocation: '/continue',
     kind: 'workflow',
     target: { toolName: TOOL_FLOWGUARD_CONTINUE, workflowCommand: Command.CONTINUE },
-    visibility: 'primary',
+    visibility: 'compatibility',
     presentationGroup: 'work',
-    description: 'Route to the next workflow step.',
+    description:
+      'Compatibility routing surface: advances the workflow on explicit request. Not workflow guidance.',
   },
   {
     id: 'workflow.implement',
@@ -167,19 +163,6 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     visibility: 'primary',
     presentationGroup: 'work',
     description: 'Record implementation evidence for the approved plan.',
-  },
-  {
-    id: 'workflow.extend-implementation-review',
-    templateFile: 'extend-implementation-review.md',
-    invocation: '/extend-implementation-review',
-    kind: 'workflow',
-    target: {
-      toolName: TOOL_FLOWGUARD_EXTEND_IMPLEMENTATION_REVIEW,
-      workflowCommand: Command.EXTEND_IMPLEMENTATION_REVIEW,
-    },
-    visibility: 'compatibility',
-    presentationGroup: 'recovery',
-    description: 'Authorize a finite extension to an exhausted implementation review budget.',
   },
   {
     id: 'workflow.resolve-implementation-challenge',
@@ -223,7 +206,7 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     target: { toolName: TOOL_FLOWGUARD_REVIEW, workflowCommand: Command.REVIEW },
     visibility: 'primary',
     presentationGroup: 'review',
-    description: 'Start a standalone compliance review.',
+    description: 'Start a peer review.',
     intent: 'rerun_review',
   },
   {
@@ -262,7 +245,7 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     id: 'alias.start',
     templateFile: 'start.md',
     invocation: '/start',
-    kind: aliasKind('start'),
+    kind: 'preferred_name',
     target: { toolName: TOOL_FLOWGUARD_HYDRATE, workflowCommand: Command.HYDRATE },
     visibility: 'primary',
     presentationGroup: 'start',
@@ -273,7 +256,7 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     id: 'alias.task',
     templateFile: 'task.md',
     invocation: '/task',
-    kind: aliasKind('task'),
+    kind: 'preferred_name',
     target: { toolName: TOOL_FLOWGUARD_TICKET, workflowCommand: Command.TICKET },
     visibility: 'primary',
     presentationGroup: 'start',
@@ -283,10 +266,10 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     id: 'variant.approve',
     templateFile: 'approve.md',
     invocation: '/approve',
-    kind: aliasKind('approve'),
+    kind: 'action_variant',
     target: {
       toolName: TOOL_FLOWGUARD_DECISION,
-      fixedArgs: COMMAND_ALIASES.approve!.defaultArgs,
+      fixedArgs: { verdict: 'approve' },
       workflowCommand: Command.REVIEW_DECISION,
     },
     visibility: 'primary',
@@ -295,13 +278,28 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     intent: 'approve',
   },
   {
+    id: 'variant.override-approve',
+    templateFile: 'override-approve.md',
+    invocation: '/override-approve',
+    kind: 'action_variant',
+    target: {
+      toolName: TOOL_FLOWGUARD_DECISION,
+      fixedArgs: { verdict: 'approve_with_governance_override' },
+      workflowCommand: Command.OVERRIDE_APPROVE,
+    },
+    visibility: 'primary',
+    presentationGroup: 'review',
+    description: 'Accept an exhausted review gate with a recorded governance override.',
+    intent: 'approve',
+  },
+  {
     id: 'variant.request-changes',
     templateFile: 'request-changes.md',
     invocation: '/request-changes',
-    kind: aliasKind('request-changes'),
+    kind: 'action_variant',
     target: {
       toolName: TOOL_FLOWGUARD_DECISION,
-      fixedArgs: COMMAND_ALIASES['request-changes']!.defaultArgs,
+      fixedArgs: { verdict: 'changes_requested' },
       workflowCommand: Command.REVIEW_DECISION,
     },
     visibility: 'primary',
@@ -313,10 +311,10 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     id: 'variant.reject',
     templateFile: 'reject.md',
     invocation: '/reject',
-    kind: aliasKind('reject'),
+    kind: 'action_variant',
     target: {
       toolName: TOOL_FLOWGUARD_DECISION,
-      fixedArgs: COMMAND_ALIASES.reject!.defaultArgs,
+      fixedArgs: { verdict: 'reject' },
       workflowCommand: Command.REVIEW_DECISION,
     },
     visibility: 'primary',
@@ -328,31 +326,31 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     id: 'alias.check',
     templateFile: 'check.md',
     invocation: '/check',
-    kind: aliasKind('check'),
+    kind: 'preferred_name',
     target: { toolName: TOOL_FLOWGUARD_RUN_CHECK, workflowCommand: Command.VALIDATE },
-    visibility: 'primary',
+    visibility: 'compatibility',
     presentationGroup: 'verify',
-    description: 'Run required verification checks.',
+    description:
+      'Compatibility surface: records verification results when explicitly requested. Validation runs automatically. Not workflow guidance.',
     intent: 'run_validation',
   },
   {
-    id: 'alias.export',
+    id: 'workflow.export',
     templateFile: 'export.md',
     invocation: '/export',
-    kind: aliasKind('export'),
-    target: { toolName: TOOL_FLOWGUARD_ARCHIVE },
+    kind: 'workflow',
+    target: { toolName: TOOL_FLOWGUARD_EXPORT, workflowCommand: Command.EXPORT },
     visibility: 'primary',
     presentationGroup: 'export',
-    description:
-      'Export audit package as tar.gz (redactionMode: none|basic|pseudonymous, default basic; includeRaw: true|false, default false).',
+    description: 'Materialize the required verifiable audit package and complete development.',
     intent: 'export_result',
   },
   {
     id: 'alias.why',
     templateFile: 'why.md',
     invocation: '/why',
-    kind: aliasKind('why'),
-    target: { toolName: TOOL_FLOWGUARD_STATUS, fixedArgs: COMMAND_ALIASES.why!.defaultArgs },
+    kind: 'convenience',
+    target: { toolName: TOOL_FLOWGUARD_STATUS, fixedArgs: { whyBlocked: true } },
     visibility: 'primary',
     presentationGroup: 'information',
     description: 'Explain the current runtime blocker.',
@@ -427,7 +425,7 @@ export function preferredInvocationForTool(toolName: ToolName): string | undefin
 
 /**
  * Visible alternative invocations for the same semantic target.
- * Derived from the canonical alias authority, never hard-coded.
+ * Derived from the installed-command catalogue, never hard-coded.
  */
 export function visibleAliasesForDefinition(
   definition: InstalledCommandDefinition,

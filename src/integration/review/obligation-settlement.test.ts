@@ -2,9 +2,9 @@
  * @module obligation-settlement.test
  * @description Settlement contract: after an attempt rejection, a pending
  *              review obligation must have exactly one legal continuation
- *              (bindable attempt, authorized output repair, or bound evidence);
- *              otherwise it is deterministically blocked instead of staying
- *              pending.
+ *              (bindable attempt or bound evidence); otherwise it is
+ *              deterministically blocked instead of staying pending. There is
+ *              no repairable model-output rejection.
  *
  * @test-policy HAPPY, BAD
  */
@@ -28,6 +28,7 @@ const LATER = '2026-01-01T00:01:00.000Z';
 function planObligation(): ReviewObligation {
   return createReviewObligation({
     obligationType: 'plan',
+    reviewCycle: 1,
     repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
     iteration: 0,
     planVersion: 1,
@@ -41,7 +42,7 @@ function planObligation(): ReviewObligation {
         version: 'challenge-policy.v1',
         counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
       },
-      maxReviewerOutputRepairAttempts: 1,
+      maxReviewerAttempts: 1,
     },
   });
 }
@@ -67,7 +68,6 @@ function attemptFor(
     obligationId: obligation.obligationId,
     obligationType: obligation.obligationType,
     subjectDigest: obligation.subjectDigest,
-    reviewMaterial: obligation.reviewMaterial,
     ordinal,
     origin: { kind: 'initial' },
     repositoryDiscovery: { kind: 'not_applicable' },
@@ -109,16 +109,18 @@ describe('settleReviewObligationAfterAttempt', () => {
     expect(findObligation(settled, obligation.obligationId)?.status).toBe('pending');
   });
 
-  it('keeps a pending obligation with a canonically repairable rejection (fresh output may repair)', () => {
+  it('blocks the obligation after a rejection — no repair reissue exists', () => {
     const obligation = planObligation();
     const rejected = attemptFor(obligation, 1, 'rejected', 'schema_invalid');
     const state = stateWith(obligation, [rejected]);
 
     const settled = settleReviewObligationAfterAttempt(state, obligation.obligationId);
-    expect(findObligation(settled, obligation.obligationId)?.status).toBe('pending');
+    const settledObligation = findObligation(settled, obligation.obligationId);
+    expect(settledObligation?.status).toBe('blocked');
+    expect(settledObligation?.blockedCode).toBe('REVIEW_ATTEMPT_UNAVAILABLE');
   });
 
-  it('blocks the obligation on a non-repairable scope rejection', () => {
+  it('blocks the obligation after a governance rejection', () => {
     const obligation = planObligation();
     const rejected = attemptFor(obligation, 1, 'rejected', 'scope_invalid');
     const state = stateWith(obligation, [rejected]);
@@ -126,7 +128,7 @@ describe('settleReviewObligationAfterAttempt', () => {
     const settled = settleReviewObligationAfterAttempt(state, obligation.obligationId);
     const settledObligation = findObligation(settled, obligation.obligationId);
     expect(settledObligation?.status).toBe('blocked');
-    expect(settledObligation?.blockedCode).toBe('REVIEW_REPAIR_UNAVAILABLE');
+    expect(settledObligation?.blockedCode).toBe('REVIEW_ATTEMPT_UNAVAILABLE');
   });
 
   it('blocks the obligation when the rejection carries no structured reason', () => {
@@ -135,7 +137,9 @@ describe('settleReviewObligationAfterAttempt', () => {
     const state = stateWith(obligation, [rejected]);
 
     const settled = settleReviewObligationAfterAttempt(state, obligation.obligationId);
-    expect(findObligation(settled, obligation.obligationId)?.status).toBe('blocked');
+    const settledObligation = findObligation(settled, obligation.obligationId);
+    expect(settledObligation?.status).toBe('blocked');
+    expect(settledObligation?.blockedCode).toBe('REVIEW_ATTEMPT_UNAVAILABLE');
   });
 
   it('leaves fulfilled obligations untouched', () => {

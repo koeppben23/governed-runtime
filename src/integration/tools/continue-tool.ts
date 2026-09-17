@@ -11,22 +11,13 @@
  * @version v1
  */
 
-import {
-  withMutableSessionTransaction,
-  withMutableSession,
-  withReadOnlySession,
-  formatBlocked,
-  appendNextAction,
-  writeStateWithArtifacts,
-} from './helpers.js';
+import { withReadOnlySession, formatBlocked, enrichWithWorkflowDirective } from './helpers.js';
 import { formatError } from './error-format.js';
 import { USER_GATES, TERMINAL } from '../../machine/topology.js';
-import { resolveNextAction } from '../../machine/next-action.js';
-import { buildProductNextAction } from '../../presentation/next-action-copy.js';
-import type { MutableSession, ToolDefinition } from './helpers.js';
+import { resolveWorkflowDirective } from '../../machine/workflow-directive.js';
+import { resolveReviewContinuation } from '../../state/review-continuation.js';
+import type { ToolDefinition } from './helpers.js';
 import type { SessionState } from '../../state/schema.js';
-import { bindExternalReviewEvidence } from '../review/transport-evidence.js';
-import { REVIEW_IDENTITY_REJECTION_FIELD } from '../../shared/flowguard-identifiers.js';
 
 const PHASE_GUIDANCE: Record<string, { status: string | ((state: SessionState) => string) }> = {
   TICKET: {
@@ -47,8 +38,8 @@ const PHASE_GUIDANCE: Record<string, { status: string | ((state: SessionState) =
   ARCHITECTURE: {
     status: 'Architecture review is pending.',
   },
-  REVIEW: {
-    status: 'Standalone review phase active.',
+  PEER_REVIEW: {
+    status: 'Peer review phase active.',
   },
   COMPLETE: {
     status: 'Workflow complete.',
@@ -61,20 +52,52 @@ const PHASE_GUIDANCE: Record<string, { status: string | ((state: SessionState) =
  * instead of claiming a pending review the runtime itself refuses to run.
  */
 function implReviewContinueStatus(state: SessionState): string {
-  const obligations = state.reviewAssurance?.obligations ?? [];
-  const implObligations = obligations.filter((o) => o.obligationType === 'implement');
-  const last = implObligations.at(-1);
-  if (last?.status !== 'blocked') return 'Implementation review is pending.';
-  if (implObligations.filter((o) => o.status === 'blocked').length >= 3) {
-    return (
-      'Implementation review orchestration failed permanently after repeated blocked ' +
-      'review obligations. Abort the session or start over with a new ticket.'
-    );
+  const continuation = resolveReviewContinuation(state.reviewAssurance, 'implement');
+  switch (continuation.kind) {
+    case 'awaiting_task':
+      return (
+        'Implementation review is pending. Dispatch the visible native flowguard-reviewer ' +
+        'Task per the response reviewInvocation.'
+      );
+    case 'interrupted_dispatch':
+      return (
+        'The authorized reviewer Task release was interrupted. Call ' +
+        'flowguard_review_implementation with reviewRecovery: "retry_transport" to re-arm the ' +
+        'same review obligation with a fresh attempt.'
+      );
+    case 'awaiting_verdict':
+      return (
+        'Reviewer evidence is bound. Submit the reviewer verdict with ' +
+        'flowguard_review_implementation (reviewVerdict).'
+      );
+    case 'blocked': {
+      const blockedCount = (state.reviewAssurance?.obligations ?? []).filter(
+        (o) => o.obligationType === 'implement' && o.status === 'blocked',
+      ).length;
+      if (blockedCount >= 3) {
+        return (
+          'Implementation review orchestration failed permanently after repeated blocked ' +
+          'review obligations. Abort the session or start over with a new ticket.'
+        );
+      }
+      return (
+        `Implementation review obligation is blocked (${continuation.obligation.blockedCode ?? 'unknown'}). ` +
+        'No synthetic reviewer dispatch is constructed; restore the review authority or abort the session.'
+      );
+    }
+    case 'integrity_blocked':
+      return (
+        `Implementation review material integrity failed (${continuation.code}). ` +
+        'No synthetic reviewer dispatch is constructed; restore the review authority or abort the session.'
+      );
+    case 'missing_attempt':
+      return (
+        'Implementation review has no bindable reviewer attempt. No synthetic reviewer dispatch ' +
+        'is constructed; restore the review authority or abort the session.'
+      );
+    case 'none':
+      return 'Implementation review is pending.';
   }
-  return (
-    `Implementation review obligation is blocked (${last.blockedCode ?? 'unknown'}). ` +
-    'Re-run /implement to re-record the implementation and mint a fresh review obligation.'
-  );
 }
 
 export const continue_cmd: ToolDefinition = {
@@ -86,9 +109,7 @@ export const continue_cmd: ToolDefinition = {
   args: {},
   async execute(_args, context) {
     try {
-      const mutableSession = await tryBindTransportEvidence(context);
-      if (typeof mutableSession === 'string') return mutableSession;
-      const { state } = mutableSession ?? (await withReadOnlySession(context)) ?? {};
+      const { state } = (await withReadOnlySession(context)) ?? {};
       if (!state) return formatBlocked('NO_SESSION');
       const { phase } = state;
 
@@ -119,23 +140,17 @@ export const continue_cmd: ToolDefinition = {
 
 function formatUserGateGuidance(state: SessionState): string {
   // Derive the gate decision commands from the canonical product projection
-  // instead of a local hardcoded list. buildProductNextAction resolves the
+  // instead of a local hardcoded list. resolveWorkflowDirective resolves the
   // user-gate phases (PLAN_REVIEW / EVIDENCE_REVIEW / ARCH_REVIEW) to their
   // decision commands from the machine authority, so /continue no longer keeps
   // a parallel copy of ['/approve', '/request-changes', '/reject'].
-  const nextAction = resolveNextAction(state.phase, state);
-  const productNext = buildProductNextAction(
-    nextAction,
-    state.phase,
-    state.error?.code === 'ABORTED',
-    state.archiveStatus ?? null,
-  );
+  const directive = resolveWorkflowDirective(state);
   return formatContinueResponse(
     {
       phase: state.phase,
       status: `User gate active at ${state.phase}. A human decision is required.`,
       decisionRequired: true,
-      decisionCommands: productNext.commands,
+      decisionCommands: directive.commands,
       _continue: { action: 'manual_decision' },
     },
     state,
@@ -168,69 +183,5 @@ function formatDeterministicGuidance(state: SessionState, guidance: { status: st
   );
 }
 function formatContinueResponse(value: Record<string, unknown>, state: SessionState): string {
-  const response = JSON.parse(appendNextAction(JSON.stringify(value), state)) as Record<
-    string,
-    unknown
-  >;
-  const productNext = response.productNextAction as { text?: unknown } | undefined;
-  const commands = (productNext as { commands?: unknown } | undefined)?.commands;
-  if (Array.isArray(commands) && commands.every((command) => typeof command === 'string')) {
-    response.next = commands.join(', ');
-  }
-  return JSON.stringify(response);
-}
-
-async function tryBindTransportEvidence(context: {
-  sessionID: string;
-  worktree: string;
-  directory: string;
-}): Promise<MutableSession | string> {
-  const probe = await withMutableSession(context);
-  const probeResult = await bindExternalReviewEvidence(
-    probe.sessDir,
-    probe.state,
-    context.sessionID,
-    probe.ctx.now(),
-  );
-  if (probeResult.status === 'none' || probeResult.status === 'already_bound') return probe;
-  if (probeResult.status === 'invalid') {
-    return formatTransportEvidenceBlock(probeResult);
-  }
-
-  return withMutableSessionTransaction(context, async (session) => {
-    const result = await bindExternalReviewEvidence(
-      session.sessDir,
-      session.state,
-      context.sessionID,
-      session.ctx.now(),
-    );
-    if (result.status === 'none' || result.status === 'already_bound') return session;
-    if (result.status === 'invalid') {
-      return formatTransportEvidenceBlock(result);
-    }
-    await writeStateWithArtifacts(session.sessDir, result.state);
-    return { ...session, state: result.state };
-  });
-}
-
-function formatTransportEvidenceBlock(
-  result: Extract<Awaited<ReturnType<typeof bindExternalReviewEvidence>>, { status: 'invalid' }>,
-): string {
-  const vars = {
-    reason: result.reason,
-    ...(result.vars ?? {}),
-    ...(result.obligationId ? { obligationId: result.obligationId } : {}),
-  };
-  return formatBlocked(
-    result.code,
-    vars,
-    result.rejectionReason
-      ? {
-          [REVIEW_IDENTITY_REJECTION_FIELD]: {
-            reason: result.rejectionReason,
-            ...(result.obligationId ? { obligationId: result.obligationId } : {}),
-          },
-        }
-      : undefined,
-  );
+  return JSON.stringify(enrichWithWorkflowDirective(value, state));
 }

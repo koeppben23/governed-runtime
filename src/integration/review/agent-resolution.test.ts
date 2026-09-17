@@ -5,9 +5,24 @@ import {
   ReviewerAgentUnavailableError,
   resolveReviewerAgent,
 } from './agent-resolution.js';
-import { invokeReviewer, type OrchestratorClient } from './orchestrator.js';
-import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
-import { makeClient, NO_SLEEP, PROMPT } from './orchestrator-test-helpers.js';
+import type { OrchestratorClient } from './types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
+
+function makeClient(opts: {
+  agents?: Array<Record<string, unknown>>;
+  agentsThrows?: boolean;
+  agentsError?: unknown;
+}): OrchestratorClient {
+  return {
+    app: {
+      agents: vi.fn(async () => {
+        if (opts.agentsThrows) throw new Error('registry unavailable');
+        return { data: opts.agents, error: opts.agentsError };
+      }),
+    },
+    session: { prompt: vi.fn() },
+  };
+}
 
 describe('reviewer agent resolution', () => {
   beforeEach(() => {
@@ -35,7 +50,6 @@ describe('reviewer agent resolution', () => {
       name: 'ReviewerAgentUnavailableError',
       code: 'REVIEWER_AGENT_UNAVAILABLE',
     });
-    expect(client.session.create).not.toHaveBeenCalled();
     expect(client.session.prompt).not.toHaveBeenCalled();
   });
 
@@ -54,7 +68,7 @@ describe('reviewer agent resolution', () => {
   it('fails closed when the registry does not return a verifiable array', async () => {
     const client: OrchestratorClient = {
       app: { agents: vi.fn().mockResolvedValue({ data: undefined }) },
-      session: { create: vi.fn(), prompt: vi.fn() },
+      session: { prompt: vi.fn() },
     };
     await expect(resolveReviewerAgent(client)).rejects.toThrow(/not_verified/i);
   });
@@ -92,43 +106,10 @@ describe('reviewer agent resolution', () => {
     expect(available.app.agents).toHaveBeenCalledTimes(1);
   });
 
-  it('returns a structured capability blocker from invokeReviewer when isolation is unavailable', async () => {
-    const client = makeClient({ agents: [] });
-    const diagnostics: Array<Record<string, unknown>> = [];
-
-    const result = await invokeReviewer(client, PROMPT, 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
-      maxRetries: 0,
-      _sleepFn: NO_SLEEP,
-      _onAttemptFailed: (info) => diagnostics.push(info),
-    });
-
-    expect(result).toMatchObject({
-      blocked: true,
-      code: 'REVIEWER_INVOCATION_EXHAUSTED',
-      reviewInvocation: {
-        status: 'blocked_capability_mismatch',
-        reviewerSubagentType: 'flowguard-reviewer',
-        invocationMode: 'sdk_session',
-      },
-    });
-    expect(result && result.blocked ? result.reason : '').toMatch(/isolated reviewer capability/i);
-    expect(diagnostics).toEqual(
-      expect.arrayContaining([expect.objectContaining({ step: 'agent_probe', attempt: 0 })]),
-    );
-    expect(client.session.create).not.toHaveBeenCalled();
-    expect(client.session.prompt).not.toHaveBeenCalled();
-  });
-
   it('never substitutes general even when general is explicitly registered', async () => {
     const client = makeClient({ agents: [{ id: 'general', name: 'general' }] });
-    const result = await invokeReviewer(client, PROMPT, 'parent-1', {
-      reviewInvocationPolicy: 'sdk_allowed',
-      maxRetries: 0,
-      _sleepFn: NO_SLEEP,
-    });
-
-    expect(result).toMatchObject({ blocked: true, code: 'REVIEWER_INVOCATION_EXHAUSTED' });
-    expect(client.session.prompt).not.toHaveBeenCalled();
+    await expect(resolveReviewerAgent(client)).rejects.toBeInstanceOf(
+      ReviewerAgentUnavailableError,
+    );
   });
 });

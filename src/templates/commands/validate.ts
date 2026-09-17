@@ -1,4 +1,4 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 
 export const VALIDATE_COMMAND = `---
 description: FlowGuard — Run verification checks on the approved plan.
@@ -41,11 +41,11 @@ FlowGuard executes the discovered checks; it does not judge their quality. When 
 - Do NOT attempt to run verification commands yourself (via bash, etc.) — use flowguard_run_check exclusively.
 - Each \`flowguard_run_check\` call executes exactly one verification kind.
 - If a check fails, review the output to understand what went wrong before reporting.
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 ## Done-when
 
 - All active checks have been executed via flowguard_run_check.
 - Phase advanced to IMPLEMENTATION (all passed) or returned to PLAN (any failed).
 - If \`presentation.markdown\` is present, render it verbatim and do not append a separate \`Next action:\` line.
-- Otherwise, render \`productNextAction.text\` as the single fallback conclusion.
+- Otherwise, render the canonical \`directive\` as the single fallback conclusion.
 `;

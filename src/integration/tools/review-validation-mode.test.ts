@@ -6,23 +6,23 @@ import { classifyToolCallMode, toolCallFlags, type ToolFamily } from './review-v
  * @description The single canonical multi-mode validator (#499). These tests pin
  * the discriminated-mode classification and the per-family invalid codes, and
  * include a symmetry matrix so the three tool families cannot drift apart again.
+ *
+ * Host-observed structured-only contract: reviewers never submit findings
+ * through tool arguments, so the classifier only sees text/verdict/unavailable.
  */
-
-const findings = { overallVerdict: 'accept' as const };
 
 describe('toolCallFlags', () => {
   it('is null-tolerant for absent optional fields', () => {
     const f = toolCallFlags({
       text: undefined,
       reviewVerdict: undefined,
-      reviewFindings: null as unknown,
       reviewerUnavailable: undefined,
     });
     expect(f).toEqual({
       hasText: false,
       hasVerdict: false,
-      hasFindings: false,
       hasReviewerUnavailable: false,
+      hasReviewRecovery: false,
     });
   });
 
@@ -31,12 +31,10 @@ describe('toolCallFlags', () => {
     expect(toolCallFlags({ text: '## Plan' }).hasText).toBe(true);
   });
 
-  it('treats empty verdict strings and primitive findings as absent', () => {
+  it('treats empty verdict strings as absent', () => {
     const invalidVerdict: Record<string, unknown> = { reviewVerdict: '' };
     expect(toolCallFlags(invalidVerdict).hasVerdict).toBe(false);
     expect(toolCallFlags({ reviewVerdict: 'accept' }).hasVerdict).toBe(true);
-    expect(toolCallFlags({ reviewFindings: 'not-object' }).hasFindings).toBe(false);
-    expect(toolCallFlags({ reviewFindings: findings }).hasFindings).toBe(true);
   });
 });
 
@@ -93,38 +91,6 @@ describe('classifyToolCallMode — invalid shapes, canonical per-family codes', 
     expect(classifyToolCallMode('implement', { reviewVerdict: 'accept' }).kind).toBe('approval');
   });
 
-  it('plan: text + findings + no verdict => PLAN_SUBMISSION_MIXED_INPUTS', () => {
-    expect(classifyToolCallMode('plan', { text: '## P', reviewFindings: findings })).toMatchObject({
-      kind: 'invalid',
-      code: 'PLAN_SUBMISSION_MIXED_INPUTS',
-    });
-  });
-
-  it('architecture: findings + no verdict => ADR_FINDINGS_WITHOUT_VERDICT (gap closed)', () => {
-    expect(
-      classifyToolCallMode('architecture', { text: '## ADR', reviewFindings: findings }),
-    ).toMatchObject({ kind: 'invalid', code: 'ADR_FINDINGS_WITHOUT_VERDICT' });
-    expect(classifyToolCallMode('architecture', { reviewFindings: findings })).toMatchObject({
-      kind: 'invalid',
-      code: 'ADR_FINDINGS_WITHOUT_VERDICT',
-    });
-  });
-
-  it('implement: findings + no verdict => INVALID_IMPLEMENT_TOOL_SEQUENCE', () => {
-    expect(classifyToolCallMode('implement', { reviewFindings: findings })).toMatchObject({
-      kind: 'invalid',
-      code: 'INVALID_IMPLEMENT_TOOL_SEQUENCE',
-    });
-  });
-
-  it('plan: bare findings + no verdict (no text) is deferred to the state layer (not a pure-shape fault)', () => {
-    // plan distinguishes PLAN_SUBMISSION_REQUIRED vs PLAN_FINDINGS_WITHOUT_VERDICT
-    // based on state, so the pure-shape classifier must NOT reject it.
-    expect(classifyToolCallMode('plan', { reviewFindings: findings }).kind).toBe(
-      'initial_submission',
-    );
-  });
-
   it('plan: reviewerUnavailable mixed into a text submission => INVALID_PLAN_TOOL_SEQUENCE', () => {
     expect(classifyToolCallMode('plan', { text: '## P', reviewerUnavailable: true })).toMatchObject(
       { kind: 'invalid', code: 'INVALID_PLAN_TOOL_SEQUENCE' },
@@ -148,11 +114,5 @@ describe('classifyToolCallMode — invalid shapes, canonical per-family codes', 
     expect(classifyToolCallMode('implement', { reviewerUnavailable: true })).toMatchObject({
       kind: 'transport_failure_retry',
     });
-  });
-
-  it('implement: reviewerUnavailable with findings but no verdict remains invalid', () => {
-    expect(
-      classifyToolCallMode('implement', { reviewerUnavailable: true, reviewFindings: findings }),
-    ).toMatchObject({ kind: 'invalid', code: 'INVALID_IMPLEMENT_TOOL_SEQUENCE' });
   });
 });

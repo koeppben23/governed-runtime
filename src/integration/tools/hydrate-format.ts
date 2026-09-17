@@ -11,7 +11,7 @@ import { executeHydrate } from '../../rails/hydrate.js';
 import type { ToolResult } from './helpers.js';
 import {
   persistAndFormat,
-  appendNextAction,
+  enrichWithWorkflowDirective,
   formatRailResult,
   writeStateWithArtifactsAndAuditOperations,
 } from './helpers.js';
@@ -82,9 +82,7 @@ export function buildNewPolicyInput(
     policyDigest: policyResolution.centralEvidence?.digest,
     policyVersion: policyResolution.centralEvidence?.version,
     policyPathHint: policyResolution.centralEvidence?.pathHint,
-    maxSelfReviewIterations: config.policy.maxSelfReviewIterations,
-    maxImplReviewIterations: config.policy.maxImplReviewIterations,
-    requireVerifiedActorsForApproval: config.policy.requireVerifiedActorsForApproval,
+    reviewBudget: config.policy.reviewBudget,
     identityProvider: config.policy.identityProvider,
     identityProviderMode: config.policy.identityProviderMode,
     minimumActorAssuranceForApproval: config.policy.minimumActorAssuranceForApproval,
@@ -143,7 +141,6 @@ export function buildHydrateInput(params: BuildHydrateInputParams): HydrateInput
       discoverySummary: discovery.discoverySummary,
       detectedStack: discovery.detectedStack,
       verificationCandidates: discovery.verificationCandidates,
-      executionSubjectInputsByKind: discovery.executionSubjectInputsByKind,
       executionSubjectInputsByCandidateId: discovery.executionSubjectInputsByCandidateId,
       ...(params.baselineDirtyFiles ? { baselineDirtyFiles: params.baselineDirtyFiles } : {}),
       ...(params.baselineControlPlaneMarker
@@ -299,7 +296,7 @@ export async function formatNewSessionResponse(
     gateNotice: gateNoticeText,
     presentation: buildHydratePresentationCard(cardParams),
   };
-  return appendNextAction(JSON.stringify(response), state);
+  return JSON.stringify(enrichWithWorkflowDirective(response, state));
 }
 
 export function formatPolicyResolution(

@@ -2,7 +2,6 @@ import { z } from 'zod';
 import type { ToolDefinition, ToolContext } from './helpers.js';
 import { formatError } from './error-format.js';
 import { withMutableSession, withMutableSessionTransaction } from './helpers.js';
-import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 import { changedFiles } from '../../adapters/git.js';
 import {
   type ImplementArgs,
@@ -12,11 +11,12 @@ import {
 import {
   handleImplRecord,
   validateImplRecordPrerequisites,
-  validateInitialReviewFindings,
   validateGitPrerequisite,
   validateControlPlaneBinding,
 } from './implement-record.js';
 import { handleImplReview } from './implement-review.js';
+import { responseReportsError, runActiveChecksAutomatically } from './auto-validation.js';
+import { LoopVerdict } from '../../state/evidence.js';
 
 /**
  * Record-mode execution: persist implementation evidence (auto-detected via git).
@@ -30,8 +30,6 @@ async function executeImplementRecord(context: ToolContext): Promise<string> {
   if (sequenceBlocked) return sequenceBlocked;
   const prereqBlocked = validateImplRecordPrerequisites(probeRuntime);
   if (prereqBlocked) return prereqBlocked;
-  const findingsBlocked = validateInitialReviewFindings(probeRuntime);
-  if (findingsBlocked) return findingsBlocked;
 
   // Git prerequisite (#575): fail closed with a clear block before running any
   // worktree git inspection, so a non-Git development flow is caught here rather
@@ -47,7 +45,7 @@ async function executeImplementRecord(context: ToolContext): Promise<string> {
 
   // Git/worktree inspection can be slow and must not hold the session write lock.
   const files = await changedFiles(probe.worktree);
-  return withMutableSessionTransaction(
+  const recordResponse = await withMutableSessionTransaction(
     context,
     async ({ worktree, sessDir, state, policy, ctx }) => {
       const runtime = buildImplementRuntime({
@@ -63,11 +61,21 @@ async function executeImplementRecord(context: ToolContext): Promise<string> {
       if (freshSequenceBlocked) return freshSequenceBlocked;
       const freshPrereqBlocked = validateImplRecordPrerequisites(runtime);
       if (freshPrereqBlocked) return freshPrereqBlocked;
-      const freshFindingsBlocked = validateInitialReviewFindings(runtime);
-      if (freshFindingsBlocked) return freshFindingsBlocked;
       return handleImplRecord(runtime, files);
     },
   );
+
+  // Automatic post-implementation validation: when the recorded evidence lands
+  // in IMPL_VALIDATION, run the active checks in-flow. Executed AFTER the
+  // transaction releases the session write lock — the run-check path executes
+  // subprocesses outside the lock and must acquire it only to persist evidence.
+  // A blocked record (e.g. COMMAND_NOT_ALLOWED while already in IMPL_VALIDATION)
+  // did not enter the phase and must not trigger the runner. The record
+  // response is superseded only when checks actually ran.
+  const autoValidationResponse = responseReportsError(recordResponse)
+    ? null
+    : await runActiveChecksAutomatically(context);
+  return autoValidationResponse ?? recordResponse;
 }
 
 /**
@@ -127,34 +135,34 @@ export const review_implementation: ToolDefinition = {
     "/review-decision). 'changes_requested' = the implementation needs revision; make changes " +
     "then re-record with flowguard_implement. 'unable_to_review' consumes the bound reviewer evidence, " +
     'fails closed, and prepares a fresh independent review attempt.\n' +
+    'The host captures the reviewer findings; FlowGuard resolves them from that evidence automatically. ' +
+    'Submit the verdict only — never reviewer findings.\n' +
     'Review loop runs up to maxIterations (from policy). ' +
-    'Optionally accepts reviewFindings from the independent review agent. Under host_task_preferred only, ' +
-    'reviewerUnavailable without a verdict or findings reports an actual OpenCode Task transport failure and ' +
-    'requests the configured SDK transport; it never approves or persists review evidence.',
+    'reviewerUnavailable without a verdict reports an actual reviewer transport failure; it never approves or persists review evidence.',
   args: {
-    reviewVerdict: z
-      .enum(['accept', 'changes_requested', 'unable_to_review'])
-      .optional()
-      .describe(
-        "The INDEPENDENT REVIEWER's verdict on the implementation — NOT user approval. " +
-          'Required unless reporting an actual host Task transport failure with reviewerUnavailable: true. ' +
-          "'accept' = the reviewer accepts the implementation; the loop converges and " +
-          'advances to the EVIDENCE_REVIEW user gate (the user still approves via /review-decision). ' +
-          "'changes_requested' = the implementation needs revision. 'unable_to_review' must match " +
-          'bound reviewer evidence and fails closed before a fresh review attempt is prepared.',
-      ),
-    reviewFindings: ReviewFindingsSchema.optional().describe(
-      "The reviewer's structured findings. SDK mode only — pass the reviewer output verbatim. " +
-        'In host-task mode do NOT submit reviewFindings: the plugin resolves them from captured ' +
-        'evidence, and hand-edited or mismatched findings are rejected.',
+    reviewVerdict: LoopVerdict.optional().describe(
+      "The INDEPENDENT REVIEWER's verdict on the implementation — NOT user approval. " +
+        'Required unless reporting an actual host Task transport failure with reviewerUnavailable: true. ' +
+        "'accept' = the reviewer accepts the implementation; the loop converges and " +
+        'advances to the EVIDENCE_REVIEW user gate (the user still approves via /review-decision). ' +
+        "'changes_requested' = the implementation needs revision. 'unable_to_review' must match " +
+        'bound reviewer evidence and fails closed before a fresh review attempt is prepared.',
     ),
     reviewerUnavailable: z
       .boolean()
       .optional()
       .describe(
         'Set to true ONLY after a real reviewer-subagent spawn failure (Task tool fails, agent ' +
-          'unavailable). With host_task_preferred, use it alone at IMPL_REVIEW to request the configured ' +
-          'SDK transport. With host_task_required it fails closed. It never enables self-review or approval.',
+          'unavailable). It never enables self-review or approval.',
+      ),
+    reviewRecovery: z
+      .literal('retry_transport')
+      .optional()
+      .describe(
+        'Typed transport-recovery intent. ONLY when the authorized native reviewer Task release ' +
+          'was technically interrupted or yielded no bindable evidence: re-emits the pending ' +
+          'review dispatch for the current attempt, or re-arms a fresh attempt on the SAME frozen ' +
+          'implementation subject after a released dispatch. Never a verdict and never approval.',
       ),
   },
   async execute(args, context) {

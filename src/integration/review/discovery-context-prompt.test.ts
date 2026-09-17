@@ -24,8 +24,6 @@ import {
   type DiscoveryReviewContext,
 } from './discovery-context-prompt.js';
 import type { ImplementationGuidanceItem } from '../implementation-guidance.js';
-import { buildReviewDiscoveryContextForPipeline } from './shared-helpers.js';
-import type { PipelineContext } from './pipeline-types.js';
 
 const BASE_CONTEXT: DiscoveryReviewContext = {
   health: {
@@ -64,13 +62,11 @@ const BASE_CONTEXT: DiscoveryReviewContext = {
       { kind: 'language', id: 'typescript', version: '6.0.3', evidence: 'package.json' },
       { kind: 'testFramework', id: 'vitest', evidence: 'package.json:scripts.test' },
     ],
-    versions: [
-      { id: 'typescript', version: '6.0.3', target: 'language', evidence: 'package.json' },
-    ],
   },
   verificationCandidates: [
     {
       assertionCapability: 'unsupported' as const,
+      candidateId: 'vc_test_npm',
       kind: 'test',
       command: 'npm test',
       source: 'package.json:scripts.test',
@@ -85,6 +81,7 @@ const BASE_CONTEXT: DiscoveryReviewContext = {
       verificationCandidates: [
         {
           assertionCapability: 'unsupported' as const,
+          candidateId: 'vc_test_npm',
           kind: 'test',
           command: 'npm test',
           source: 'package.json:scripts.test',
@@ -161,6 +158,7 @@ describe('buildDiscoveryContextSection', () => {
     const section = buildDiscoveryContextSection({
       verificationCandidates: Array.from({ length: 10 }, (_, index) => ({
         assertionCapability: 'unsupported' as const,
+        candidateId: `vc_bounded_${index}`,
         kind: 'test' as const,
         command: `npm test -- ${index}`,
         source: `package.json:${index}`,
@@ -178,35 +176,6 @@ describe('buildDiscoveryContextSection', () => {
 });
 
 describe('review prompt Discovery context loading', () => {
-  it('still produces explicit unavailable Discovery Context when context loading fails', async () => {
-    const state = makeState('PLAN', { ticket: TICKET, plan: PLAN_RECORD });
-    const ctx = {
-      sessionState: state,
-      deps: {
-        resolveFingerprint: vi.fn().mockRejectedValue(new Error('fingerprint unavailable')),
-        log: { warn: vi.fn(), info: vi.fn() },
-        adapter: { getWorktree: () => '/tmp/repo' },
-      },
-    } as unknown as PipelineContext;
-
-    const discoveryContext = await buildReviewDiscoveryContextForPipeline(ctx);
-    const prompt = buildPlanReviewPrompt({
-      planText: PLAN_RECORD.current.body,
-      ticketText: TICKET.text,
-      iteration: 0,
-      planVersion: 1,
-      obligationId: '11111111-1111-4111-8111-111111111111',
-      criteriaVersion: 'p37-v1',
-      mandateDigest: 'test-digest',
-      discoveryContext,
-    });
-
-    expect(prompt).toContain('## Discovery Context');
-    expect(prompt).toContain('status: unavailable');
-    expect(prompt).toContain('NOT_VERIFIED');
-    expect(prompt).toContain('workspace fingerprint could not be resolved');
-  });
-
   it('injects Discovery Context into implementation prompts when provided', () => {
     const implPrompt = buildImplReviewPrompt({
       changedFiles: ['src/auth.ts'],

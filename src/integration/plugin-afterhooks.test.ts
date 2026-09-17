@@ -38,7 +38,7 @@ describe('session.error audit envelope', () => {
       message: 'host stalled',
     });
 
-    const { events } = await readAuditTrail(sessDir);
+    const events = await readAuditTrail(sessDir);
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
       phase: 'IMPLEMENTATION',

@@ -47,7 +47,7 @@ export interface ReviewedArtifactIdentity {
 /**
  * Provenance-oriented invocation lookup: same strict binding as the active
  * settlement resolver (invocationId/obligationId, childSessionId,
- * findingsHash, host_subagent_task + hostVisible in the fallback path), but
+ * findingsHash in the bound invocation), but
  * consumption is accepted when bound to EXACTLY the producer obligation.
  * Consumption by any other obligation is never provenance.
  */
@@ -78,8 +78,7 @@ function findInvocationForFindingsProvenance(
     base.invocations.find(
       (invocation) =>
         invocation.obligationId === obligation.obligationId &&
-        invocation.invocationMode === 'host_subagent_task' &&
-        invocation.hostVisible === true &&
+        invocation.invocationMode === 'native_task_structured_followup' &&
         invocation.childSessionId === findings.reviewedBy.sessionId &&
         invocation.findingsHash === findingsHash &&
         consumable(invocation),

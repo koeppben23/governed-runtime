@@ -1,4 +1,4 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 
 export const RECONCILE_MUTATION_EPISODE_COMMAND = `---
 description: FlowGuard — Resolve a host mutation episode whose outcome can never be observed.
@@ -32,7 +32,7 @@ Resolve an interrupted host mutation dispatch so the session can recover fail-cl
 - Never reuse the resolved \`hostCallId\` for a new host mutation dispatch.
 - Do not claim prior evidence remains valid after a resolution.
 
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 ## Done-when
 
 - The tool confirms the resolution was recorded for the specified hostCallId.

@@ -15,11 +15,7 @@ import {
   InputOriginSchema,
   ExternalReferenceSchema,
 } from './evidence-primitives.js';
-import {
-  OpenCodeSessionId,
-  coerceAssurance,
-  assuranceSchema,
-} from './evidence-assurance-internal.js';
+import { OpenCodeSessionId, assuranceSchema } from './evidence-assurance-internal.js';
 import { FIXED_TIME } from './evidence-test-constants.js';
 
 describe('evidence-primitives', () => {
@@ -98,9 +94,9 @@ describe('evidence-primitives', () => {
       expect(OpenCodeSessionId.parse('abc123')).toBe('abc123');
     });
 
-    it('assuranceSchema coerceAssurance transforms verified->claim_validated', () => {
+    it('assuranceSchema rejects removed assurance values', () => {
       const schema = assuranceSchema();
-      expect(schema.parse('verified')).toBe('claim_validated');
+      expect(() => schema.parse('verified')).toThrow();
     });
 
     it('assuranceSchema passes through modern values', () => {
@@ -108,12 +104,6 @@ describe('evidence-primitives', () => {
       expect(schema.parse('best_effort')).toBe('best_effort');
       expect(schema.parse('claim_validated')).toBe('claim_validated');
       expect(schema.parse('idp_verified')).toBe('idp_verified');
-    });
-
-    it('coerceAssurance falls back to best_effort for unknown values', () => {
-      expect(coerceAssurance('unknown')).toBe('best_effort');
-      expect(coerceAssurance(null)).toBe('best_effort');
-      expect(coerceAssurance(42)).toBe('best_effort');
     });
   });
 
@@ -163,12 +153,6 @@ describe('evidence-primitives', () => {
   });
 
   describe('EDGE', () => {
-    it('coerceAssurance preserves modern values exactly', () => {
-      expect(coerceAssurance('best_effort')).toBe('best_effort');
-      expect(coerceAssurance('claim_validated')).toBe('claim_validated');
-      expect(coerceAssurance('idp_verified')).toBe('idp_verified');
-    });
-
     it('OpenCodeSessionId rejects empty string', () => {
       expect(() => OpenCodeSessionId.parse('')).toThrow();
     });

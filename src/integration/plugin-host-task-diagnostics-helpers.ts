@@ -3,15 +3,13 @@
  * @description Shared test factories and constants for plugin-host-task-diagnostics test suites.
  */
 
-import {
-  createSessionState,
-  onFlowGuardToolAfter,
-  onTaskToolAfter,
-} from './review/enforcement/enforcement.js';
-import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
+import { createSessionState, onFlowGuardToolAfter } from './review/enforcement/enforcement.js';
+import { reviewDispatchRequired } from './review/dispatch-signal.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import {
   artifactReviewSubjectScope,
   createReviewObligation,
+  freezeReviewMaterial,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './review/assurance.js';
@@ -20,19 +18,18 @@ import type { ReviewAttempt, ReviewObligation } from '../state/evidence.js';
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 export const NOW = '2026-05-10T12:00:00.000Z';
-export const LATER = '2026-05-10T12:01:00.000Z';
 export const SESSION_ID = 'ses_parent_001';
 export const CHILD_SESSION_ID = 'ses_child_001';
-export const MODE_A_OBLIGATION_ID = '44444444-4444-4444-8444-444444444444';
+const MODE_A_OBLIGATION_ID = '44444444-4444-4444-8444-444444444444';
 
 // ─── Factory Functions ───────────────────────────────────────────────────────
 
 /**
- * Build a Mode A response with INDEPENDENT_REVIEW_REQUIRED containing iteration
- * and planVersion. `obligationId` defaults to a realistic fixture obligation
- * identity so the pending review satisfies the host attestation-constants
- * invariant; pass `null` to deliberately model a signal without obligation/
- * host attestation.
+ * Build a Mode A response carrying the structured review-dispatch signal with
+ * iteration and planVersion. `obligationId` defaults to a realistic fixture
+ * obligation identity so the pending review satisfies the host
+ * attestation-constants invariant; pass `null` to deliberately model a signal
+ * without obligation/host attestation.
  */
 export function modeAResponse(
   iteration = 0,
@@ -44,10 +41,20 @@ export function modeAResponse(
     status: `Plan submitted (v${planVersion}).`,
     selfReviewIteration: iteration,
     reviewMode: 'subagent',
+    reviewDispatch: reviewDispatchRequired(),
     ...(obligationId
       ? {
           reviewAttemptId: `att-${obligationId}`,
-          reviewObligationId: obligationId,
+          reviewObligation: {
+            obligationId,
+            obligationType: 'plan',
+            iteration,
+            planVersion,
+            criteriaVersion: REVIEW_CRITERIA_VERSION,
+            mandateDigest: REVIEW_MANDATE_DIGEST,
+            requiredChallengeCount: 0,
+            requiredChallengeKind: 'design_challenge',
+          },
           requiredReviewAttestation: {
             reviewedBy: REVIEWER_SUBAGENT_TYPE,
             mandateDigest: REVIEW_MANDATE_DIGEST,
@@ -58,15 +65,10 @@ export function modeAResponse(
           },
         }
       : {}),
-    next:
-      `${REVIEW_REQUIRED_PREFIX}: Call the flowguard-reviewer subagent via Task tool. ` +
-      `Use subagent_type "flowguard-reviewer" with a prompt that includes: ` +
-      `(1) the full plan text, (2) the ticket text, (3) iteration=${iteration}, ` +
-      `(4) planVersion=${planVersion}.`,
   });
 }
 
-/** Build a substantive prompt for the subagent (meets MIN_SUBAGENT_PROMPT_LENGTH). */
+/** Build a substantive prompt for the subagent. */
 export function validPrompt(iteration = 0, planVersion = 1): string {
   return (
     `Review this plan critically. The plan proposes implementing a new feature ` +
@@ -104,6 +106,7 @@ export function taskResultWithAttestation(
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     attestation: {
       toolObligationId: obligationId,
     },
@@ -115,9 +118,11 @@ export function pendingObligation(overrides: Partial<ReviewObligation> = {}): Re
   const base = createReviewObligation({
     obligationType: 'plan',
     iteration: 0,
+    reviewCycle: 1,
     planVersion: 1,
     now: NOW,
     subjectDigest: 'diagnostics-test-subject',
+    reviewMaterial: freezeReviewMaterial('# Diagnostics\nBody', 'diagnostics-test-subject'),
     reviewSubjectScope: artifactReviewSubjectScope(
       'plan',
       '# Diagnostics\nBody',
@@ -129,7 +134,7 @@ export function pendingObligation(overrides: Partial<ReviewObligation> = {}): Re
         version: 'challenge-policy.v1',
         counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
       },
-      maxReviewerOutputRepairAttempts: 1,
+      maxReviewerAttempts: 1,
     },
     repositoryAuthority: {
       kind: 'context',
@@ -152,7 +157,7 @@ export function pendingObligation(overrides: Partial<ReviewObligation> = {}): Re
  * successful bind must provide it exactly as `createObligationAndAttempt` plus
  * the Task-start child-session binding would have produced it.
  */
-export function attemptFor(
+function attemptFor(
   obligation: ReviewObligation,
   childSessionId: string = CHILD_SESSION_ID,
   overrides: Partial<ReviewAttempt> = {},
@@ -167,14 +172,14 @@ export function attemptFor(
     status: 'created',
     origin: { kind: 'initial' },
     repositoryDiscovery: { kind: 'not_applicable' },
+    observations: [],
     createdAt: NOW,
     ...overrides,
   };
 }
 
 /**
- * Set up a full enforcement cycle: Mode A → Task call → enforcement state ready.
- * Returns the obligation, the enforcement state, and the recorded attempts.
+ * Set up a structured-review requirement and its corresponding attempt fixture.
  */
 export function setupFullCycle(
   opts: {
@@ -192,7 +197,7 @@ export function setupFullCycle(
   } = opts;
 
   const state = createSessionState();
-  // Step 1: Mode A — FlowGuard tool signals INDEPENDENT_REVIEW_REQUIRED
+  // Step 1: Mode A — FlowGuard tool carries the review-dispatch signal
   onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(iteration, planVersion), NOW);
 
   const obligation = pendingObligation({
@@ -200,24 +205,6 @@ export function setupFullCycle(
     iteration,
     planVersion,
   });
-
-  const taskResult = taskResultWithAttestation(obligation.obligationId, {
-    childSessionId,
-    iteration,
-    planVersion,
-  });
-
-  // Step 2: Task call — onTaskToolAfter records subagent call
-  onTaskToolAfter(
-    state,
-    {
-      subagent_type: REVIEWER_SUBAGENT_TYPE,
-      prompt: validPrompt(iteration, planVersion),
-    },
-    taskResult,
-    LATER,
-    { metadata: { sessionID: childSessionId } },
-  );
 
   return { state, obligation, attempts: [attemptFor(obligation, childSessionId)] };
 }

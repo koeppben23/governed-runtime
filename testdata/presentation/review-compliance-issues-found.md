@@ -1,6 +1,6 @@
 # FlowGuard Review Report
 
-**Status:** Review complete
+**Status:** Peer review complete
 **Overall:** issues
 
 ## Verification
@@ -28,16 +28,22 @@ Diagnostic: `flowguard_status({ proofGraph: true })`
   - BASE · src/subject.ts:8
   - HEAD · test/evidence.test.ts:4
 
-## Completeness
+## Target coverage
 
-**Overall:** Incomplete
-**Four-eyes principle:** Not satisfied / Not recorded
-**Summary:** 1/3 complete, 2 missing
+**Target resolved:** yes
+**Target frozen:** yes
+**Repository identity:** verified
+**Base SHA:** aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+**Head SHA:** bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+**Changed paths:** 1
+**Objectives covered:** 2/3
+**Review assurance:** structured_high
+**Missing verification:** Run the missing regression test
 
 ## Evidence
 
 **Obligation:** `oblig-002`
-**Invocation source:** agent-submitted-attested
+**Invocation source:** host-orchestrated
 
 ## Recommended follow-up
 

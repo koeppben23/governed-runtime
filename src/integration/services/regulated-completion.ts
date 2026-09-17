@@ -2,7 +2,11 @@
  * @module integration/services/regulated-completion
  * @description P26 regulated archive lifecycle: audit emit → archive → verify.
  *
- * Scope: EVIDENCE_REVIEW + APPROVE → COMPLETE in regulated mode.
+ * Scope: the regulated export/completion path. Approval stops at EXPORT_READY;
+ * the canonical export rail materializes and verifies the completion package and
+ * persists EXPORT_READY + EXPORT_MATERIALIZED → COMPLETE. This chain then binds
+ * the completion evidence (approval decision, session_completed, regulated
+ * archive) to that terminal state.
  * Fail-closed: any failure in the chain produces regulatedArchiveStatus: 'failed'.
  * No partial success can leak — the entire chain is atomic from the caller's perspective.
  *
@@ -10,6 +14,8 @@
  */
 
 import type { SessionState } from '../../state/schema.js';
+import { DecisionIdentity } from '../../state/evidence-identity.js';
+import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { archiveRegulatedEvidence } from '../../adapters/workspace/archive.js';
 import { verifyRegulatedArchive } from '../../adapters/workspace/archive-verify-chain.js';
 import { readState, PersistenceError } from '../../adapters/persistence.js';
@@ -49,7 +55,7 @@ export function createSessionCompletionAuditDeps(input: {
       policy: state.policySnapshot,
       state: await readState(sessDir),
     }),
-    initChain: async () => getLastChainHash((await readAuditTrail(sessDir)).events),
+    initChain: async () => getLastChainHash(await readAuditTrail(sessDir)),
     invalidateChainState: () => undefined,
     appendAndTrack: async (event) => {
       const {
@@ -68,7 +74,7 @@ export function createSessionCompletionAuditDeps(input: {
       event.chainHash = appended.chainHash;
     },
     nextDecisionSequence: async () =>
-      (await readAuditTrail(sessDir)).events.reduce((max, event) => {
+      (await readAuditTrail(sessDir)).reduce((max, event) => {
         const sequence =
           event.detail.kind === 'decision' && typeof event.detail.decisionSequence === 'number'
             ? event.detail.decisionSequence
@@ -99,11 +105,46 @@ export function isRegulatedTicketCompletion(state: SessionState): boolean {
   return (
     state.phase === 'COMPLETE' &&
     state.transition?.to === 'COMPLETE' &&
+    state.transition?.from === 'EXPORT_READY' &&
+    state.transition?.event === 'EXPORT_MATERIALIZED' &&
     state.policySnapshot.mode === 'regulated' &&
-    !state.error &&
-    state.transition?.from === 'EVIDENCE_REVIEW' &&
-    state.transition?.event === 'APPROVE'
+    !state.error
   );
+}
+
+/**
+ * The approval transition that authorized the export. The terminal state only
+ * retains the export transition, so the approval authority is recovered from
+ * the durable transition outbox (reconciled or not — operations are retained
+ * as correlation evidence).
+ */
+function findApprovalTransition(
+  state: SessionState,
+): NonNullable<SessionState['transition']> | null {
+  for (const operation of state.pendingAuditOperations) {
+    if (
+      operation.kind === 'transition' &&
+      operation.transition.from === 'EVIDENCE_REVIEW' &&
+      operation.transition.to === 'EXPORT_READY' &&
+      operation.transition.event === 'APPROVE'
+    ) {
+      return {
+        from: operation.transition.from,
+        to: operation.transition.to,
+        event: operation.transition.event,
+        at: operation.transition.at,
+      };
+    }
+  }
+  const transition = state.transition;
+  if (
+    transition?.from === 'EVIDENCE_REVIEW' &&
+    transition.to === 'EXPORT_READY' &&
+    transition.event === 'APPROVE'
+  ) {
+    return transition;
+  }
+  return null;
 }
 
 /**
@@ -112,9 +153,8 @@ export function isRegulatedTicketCompletion(state: SessionState): boolean {
  *
  * Pre-conditions (caller must verify before calling):
  * - Rail result kind === 'ok'
- * - Pre-decision phase was EVIDENCE_REVIEW
- * - Verdict was 'approve'
  * - result.state.phase === 'COMPLETE'
+ * - result.state.transition was EXPORT_READY + EXPORT_MATERIALIZED
  * - result.state.policySnapshot.mode === 'regulated'
  * - !result.state.error
  *
@@ -179,7 +219,7 @@ export async function executeRegulatedCompletion(
     // contention so the caller can retry.
     if (err instanceof RegulatedCompletionLockContentionError) {
       const fresh = await readState(sessDir);
-      if (fresh?.archiveStatus === 'verified') {
+      if (fresh?.regulatedArchiveStatus === 'verified') {
         return fresh;
       }
       throw err;
@@ -192,7 +232,6 @@ export async function executeRegulatedCompletion(
     finalState = {
       ...current,
       regulatedArchiveStatus: 'failed' as const,
-      archiveStatus: 'failed' as const,
     };
     try {
       finalState = await writeStateWithArtifactsAndAuditOperations(sessDir, finalState);
@@ -274,23 +313,24 @@ async function archiveAndVerify(
     // durable exactly-once authority: return it without touching the
     // published artifacts.
     const fresh = await readState(sessDir);
-    if (fresh?.archiveStatus === 'verified') {
+    if (fresh?.regulatedArchiveStatus === 'verified') {
       return fresh;
     }
     let current = fresh ?? state;
-    if (current.archiveStatus !== 'created' && current.archiveStatus !== 'verified') {
+    if (
+      current.regulatedArchiveStatus !== 'created' &&
+      current.regulatedArchiveStatus !== 'verified'
+    ) {
       await archiveRegulatedEvidence(fingerprint, sessionID);
       current = await writeStateWithArtifactsAndAuditOperations(sessDir, {
         ...current,
         regulatedArchiveStatus: 'created' as const,
-        archiveStatus: 'created' as const,
       });
     }
     const verification = await verifyRegulatedArchive(fingerprint, sessionID);
     const finalState = await writeStateWithArtifactsAndAuditOperations(sessDir, {
       ...current,
       regulatedArchiveStatus: verification.passed ? ('verified' as const) : ('failed' as const),
-      archiveStatus: verification.passed ? ('verified' as const) : ('failed' as const),
     });
     return reconcileCompletionAuditOperations(sessDir, sessionID, finalState, auditDeps);
   });
@@ -303,16 +343,30 @@ export async function resumeRegulatedCompletion(
   auditDeps: AuditDeps,
 ): Promise<SessionState | null> {
   const state = await readState(sessDir);
-  if (!state || !isRegulatedTicketCompletion(state) || state.archiveStatus === 'verified') {
+  if (
+    !state ||
+    !isRegulatedTicketCompletion(state) ||
+    state.regulatedArchiveStatus === 'verified'
+  ) {
     return null;
   }
   return executeRegulatedCompletion(sessDir, fingerprint, sessionID, state, auditDeps);
 }
 
-function isTerminalDecisionDetail(detail: Record<string, unknown>, state: SessionState): boolean {
-  const transition = state.transition;
+function isSameDecisionIdentity(detail: Record<string, unknown>, state: SessionState): boolean {
   const decision = state.reviewDecision;
-  if (!transition || !decision || transition.from !== 'EVIDENCE_REVIEW') return false;
+  if (!decision) return false;
+  const parsed = DecisionIdentity.safeParse(detail.decisionIdentity);
+  return (
+    parsed.success &&
+    canonicalJsonStringify(parsed.data) === canonicalJsonStringify(decision.decisionIdentity)
+  );
+}
+
+function isTerminalDecisionDetail(detail: Record<string, unknown>, state: SessionState): boolean {
+  const transition = findApprovalTransition(state);
+  const decision = state.reviewDecision;
+  if (!transition || !decision) return false;
   return (
     detail.kind === 'decision' &&
     detail.fromPhase === transition.from &&
@@ -320,13 +374,13 @@ function isTerminalDecisionDetail(detail: Record<string, unknown>, state: Sessio
     detail.transitionEvent === transition.event &&
     detail.verdict === decision.verdict &&
     detail.rationale === decision.rationale &&
-    detail.decidedBy === decision.decidedBy &&
+    isSameDecisionIdentity(detail, state) &&
     detail.decidedAt === decision.decidedAt
   );
 }
 
 async function hasTerminalDecisionEvidence(sessDir: string, state: SessionState): Promise<boolean> {
-  return (await readAuditTrail(sessDir)).events.some((event) =>
+  return (await readAuditTrail(sessDir)).some((event) =>
     isTerminalDecisionDetail(event.detail, state),
   );
 }
@@ -377,7 +431,7 @@ async function hasTerminalLifecycleEvidence(
   sessDir: string,
   state: SessionState,
 ): Promise<boolean> {
-  return (await readAuditTrail(sessDir)).events.some(
+  return (await readAuditTrail(sessDir)).some(
     (event) =>
       event.event === 'lifecycle:session_completed' &&
       isTerminalLifecycleDetail(event.detail, state),
@@ -413,7 +467,6 @@ async function commitCompletionLifecycle(
       {
         ...authority,
         regulatedArchiveStatus: 'pending' as const,
-        archiveStatus: 'pending' as const,
       },
       undefined,
       [lifecycleIntent()],
@@ -428,12 +481,12 @@ async function decisionIntent(
   auditDeps: AuditDeps,
   sessionID: string,
 ): Promise<SemanticAuditIntent> {
-  const transition = state.transition;
+  const transition = findApprovalTransition(state);
   const decision = state.reviewDecision;
-  if (!transition || !decision || transition.from !== 'EVIDENCE_REVIEW') {
+  if (!transition || !decision) {
     throw new PersistenceError(
       'SCHEMA_VALIDATION_FAILED',
-      'Regulated completion requires terminal transition and decision authority',
+      'Regulated completion requires terminal approval transition and decision authority',
     );
   }
   const decisionSequence = await auditDeps.nextDecisionSequence(sessDir, sessionID);
@@ -449,15 +502,14 @@ async function decisionIntent(
       decisionSequence,
       verdict: decision.verdict,
       rationale: decision.rationale,
-      decidedBy: decision.decidedBy,
+      decisionIdentity: decision.decisionIdentity,
       decidedAt: decision.decidedAt,
       fromPhase: transition.from,
       toPhase: transition.to,
       transitionEvent: transition.event,
       policyMode: state.policySnapshot.mode,
-      decisionIdentity: decision.decisionIdentity,
     },
-    actor: decision.decisionIdentity?.actorId ?? decision.decidedBy,
+    actor: decision.decisionIdentity.actorId,
     ...(state.actorInfo ? { actorInfo: state.actorInfo } : {}),
   };
 }

@@ -22,8 +22,8 @@ import * as crypto from 'node:crypto';
 import { z } from 'zod';
 
 import type { Phase, SessionState } from '../../state/schema.js';
-import { V2CounterexampleRequirement } from '../../state/proofgraph-approval.js';
-import type { V2CounterexampleRequirement as V2CounterexampleRequirementType } from '../../state/proofgraph-approval.js';
+import { CounterexampleRequirement } from '../../state/proofgraph-approval.js';
+import type { CounterexampleRequirement as CounterexampleRequirementType } from '../../state/proofgraph-approval.js';
 import type { DeclaredClaim } from '../../state/proofgraph.js';
 import type { ProofProviderKind } from '../../state/proofgraph-primitives.js';
 import type { ClaimAuthorityRef } from '../../state/proofgraph-refs.js';
@@ -49,7 +49,7 @@ import { refreshProofGraph } from '../proofgraph/refresh.js';
 import type { ToolDefinition } from './helpers.js';
 import { formatError } from './error-format.js';
 import {
-  appendNextAction,
+  enrichWithWorkflowDirective,
   formatBlocked,
   getWorktree,
   withMutableSessionTransaction,
@@ -138,7 +138,7 @@ type RawClaim = {
   authority?: AuthoritySource;
   structuralSurface?: string;
   mutationProfile?: string;
-  counterexampleRequirement?: V2CounterexampleRequirementType;
+  counterexampleRequirement?: CounterexampleRequirementType;
 };
 
 /**
@@ -246,7 +246,7 @@ function buildDeclaredClaims(
       // No auto-`fact`: classification follows the resolved governing authority.
       signalClass: isFact ? 'fact' : 'hypothesis',
       critical,
-      proofEligibility: 'eligible' as const,
+      claimScope: rc.claimScope,
       provenance,
       evidenceRefs,
       counterexampleRefs,
@@ -369,7 +369,7 @@ export const declare_contract: ToolDefinition = {
             .describe(
               'specific_behavior requires assertion evidence; suite requires aggregate_check evidence.',
             ),
-          counterexampleRequirement: V2CounterexampleRequirement.optional().describe(
+          counterexampleRequirement: CounterexampleRequirement.optional().describe(
             'Counterexample requirement: assertion with identity, or aggregate_check for suite coverage.',
           ),
         }),
@@ -424,20 +424,22 @@ export const declare_contract: ToolDefinition = {
         // Preserve certificate-bound claims exactly as materialized. Manual claims
         // have no approval binding and therefore remain advisory at the final gate.
         const proofContract = {
-          version: 'contract.v1' as const,
+          version: 'contract.v2' as const,
           claims: [...(state.proofContract?.claims ?? []), ...built.claims],
         };
         const stateWithContract = { ...state, proofContract };
         const proofGraph = await refreshProofGraph(stateWithContract, ctx.now());
         const nextState = { ...state, proofContract, proofGraph };
         await writeStateWithArtifacts(sessDir, nextState);
-        return appendNextAction(
-          JSON.stringify({
-            phase: nextState.phase,
-            status: 'ProofGraph claims added; projection recorded.',
-            proofGraph,
-          }),
-          nextState,
+        return JSON.stringify(
+          enrichWithWorkflowDirective(
+            {
+              phase: nextState.phase,
+              status: 'ProofGraph claims added; projection recorded.',
+              proofGraph,
+            },
+            nextState,
+          ),
         );
       });
     } catch (error) {

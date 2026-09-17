@@ -1,4 +1,4 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 import {
   SHARED_REVIEW_LOOP,
   DISCOVERY_REVIEW_CAPTURE,
@@ -78,7 +78,7 @@ ${DISCOVERY_REVIEW_CAPTURE}
     \`verificationCandidates\`.
     - If both \`activeChecks\`/\`remainingChecks\` and \`verificationCandidates\` are empty:
       report no active checks and stop without calling \`flowguard_run_check\`. The MACHINE
-      itself decides a vacuous transition — read the canonical \`nextAction\` and the actual
+      itself decides a vacuous transition — read the canonical \`directive\` and the actual
       phase from the tool response; never claim the IMPL_REVIEW gate is unreachable and never
       invent a transition path.
     - If \`activeChecks\`/\`remainingChecks\` is non-empty: for each kind, call
@@ -103,8 +103,8 @@ ${DISCOVERY_REVIEW_CAPTURE}
 
 ### Phase 5: Implementation Review Loop
 
-7. Read the \`next\` field from the tool response and follow its instructions exactly:
-   - If prior failing implementation challenges are open, before invoking the reviewer Task you MUST
+7. Follow the review-dispatch contract from the tool response (\`reviewDispatch\`, \`reviewInvocation\`, \`agentInstruction\`, \`directive\`) exactly:
+   - If prior failing implementation challenges are open, before the independent reviewer runs you MUST
      record each one with \`flowguard_resolve_implementation_challenge({ challengeId, validationAttemptIds })\`.
      Use only post-implementation validation attempt IDs for the current digest. This is advisory
      \`NOT_VERIFIED\` evidence and never changes reviewer acceptance or the user gate.
@@ -129,7 +129,7 @@ ${SHARED_REVIEW_LOOP({
   unableRecoveryB:
     'record substantially-new implementation evidence (new flowguard_implement({}) call after additional code changes, which starts a fresh review obligation)',
 })}
-   - The changes_requested branch is an INTERNAL continuation, not a terminal result: FlowGuard returns no presentation card while the review loop is still active. Never render an intermediate outcome as final, and never stop for user input between iterations. Only the loop's terminal responses — converged acceptance (EVIDENCE_REVIEW), exhausted budget (user extension decision), or a BLOCKED code — end the loop and carry a presentation card to display verbatim.
+   - The changes_requested branch is an INTERNAL continuation, not a terminal result: FlowGuard returns no presentation card while the review loop is still active. Never render an intermediate outcome as final, and never stop for user input between iterations. Only the loop's terminal responses — converged acceptance (EVIDENCE_REVIEW), exhausted budget (EVIDENCE_REVIEW override gate: \`/override-approve\`, \`/request-changes\`, or \`/reject\`), or a BLOCKED code — end the loop and carry a presentation card to display verbatim.
 
 ## Rules
 
@@ -175,7 +175,7 @@ Revision path (when review returns changes_requested):
 5. \`flowguard_run_check({ kind: "<kind>" })\` for each active check → passes, advances to IMPL_REVIEW
 6. (review loop) \`flowguard_review_implementation({ reviewVerdict: "accept" })\` → EVIDENCE_REVIEW (user gate)
 
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 ## Presentation
 
 - If \`presentation.markdown\` is present, display its markdown verbatim — never summarize, truncate, or omit it; do not append a second conclusion.

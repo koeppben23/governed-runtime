@@ -25,6 +25,7 @@ import {
   implement,
   review_implementation,
   status,
+  export as exportTool,
 } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
 import type { SessionState } from '../state/schema.js';
@@ -170,27 +171,27 @@ async function completeRegulatedSession(): Promise<{
   });
   await callOk(decision, { verdict: 'approve', rationale: 'plan approved' });
 
-  // Run all active verification checks for the current phase (VALIDATION baseline
-  // or IMPL_VALIDATION post-implementation). Discovery detects TypeScript →
-  // activeChecks=['typecheck'] → pass via run_check.
-  const runActiveChecks = async (): Promise<void> => {
-    const ids = await getSessionPaths();
-    const st = await readState(ids.sessDir);
-    if (st && st.activeChecks.length > 0) {
-      for (const kind of st.activeChecks) {
-        await callOk(run_check, { kind });
-      }
-    }
-  };
-  await runActiveChecks(); // VALIDATION → IMPLEMENTATION
+  // Approval enters VALIDATION and the runtime runs the active checks
+  // automatically (discovery detects TypeScript → activeChecks=['typecheck']),
+  // advancing to IMPLEMENTATION.
+  expect(await currentPhase()).toBe('IMPLEMENTATION');
+  const postValidation = await readState((await getSessionPaths()).sessDir);
+  expect(postValidation!.validation.length).toBeGreaterThan(0);
 
   await callOk(implement, {});
-  await runActiveChecks(); // IMPL_VALIDATION → IMPL_REVIEW (re-run checks on the fixed code)
+  // Entering IMPL_VALIDATION runs the checks automatically against the recorded
+  // revision before advancing to IMPL_REVIEW.
+  expect(await currentPhase()).toBe('IMPL_REVIEW');
+  const postImplValidation = await readState((await getSessionPaths()).sessDir);
+  expect(postImplValidation!.implValidation.length).toBeGreaterThan(0);
+
   for (let i = 0; i < 8 && (await currentPhase()) !== 'EVIDENCE_REVIEW'; i++) {
     await callOk(review_implementation, { reviewVerdict: 'accept' });
   }
 
   await callOk(decision, { verdict: 'approve', rationale: 'evidence approved' });
+  expect(await currentPhase()).toBe('EXPORT_READY');
+  await callOk(exportTool, {});
   expect(await currentPhase()).toBe('COMPLETE');
 
   return getSessionPaths();

@@ -26,7 +26,6 @@ import {
   TOOL_FLOWGUARD_TICKET,
   TOOL_FLOWGUARD_PLAN,
   TOOL_FLOWGUARD_DECISION,
-  TOOL_FLOWGUARD_EXTEND_IMPLEMENTATION_REVIEW,
   TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
   TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE,
@@ -35,6 +34,7 @@ import {
   TOOL_FLOWGUARD_CONTINUE,
   TOOL_FLOWGUARD_ABORT,
   TOOL_FLOWGUARD_ARCHIVE,
+  TOOL_FLOWGUARD_EXPORT,
   TOOL_FLOWGUARD_ARCHITECTURE,
   TOOL_FLOWGUARD_HELP,
   TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE,
@@ -46,8 +46,14 @@ function sha256(value: string): string {
 
 describe('TEMPLATE_HASH_STABILITY', () => {
   it('TOOL_WRAPPER matches compiled output hash', () => {
+    // Refreshed for the workflow-directive hard cut: `/export` is a canonical
+    // workflow command backed by the dedicated flowguard_export tool, so the
+    // OpenCode wrapper must re-export the `export` binding for the installed
+    // command surface to resolve.
+    // Refreshed for the governance-override hard cut: the removed
+    // `/extend-implementation-review` surface no longer exports its tool.
     expect(sha256(TOOL_WRAPPER)).toBe(
-      '2832703d740a9a77afeb0f81fa145ae48d9a8e4e55d6edaf31dc176d18dc5e29',
+      'd226008372fe59034590eead8ceae63d797c9c2bbd6402d632adeeb2a203514a',
     );
   });
 
@@ -121,7 +127,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
   });
 
   it('COMMANDS matches compiled output hash', () => {
-    // Refreshed for #262: GOVERNANCE_RULES is now a projection from the
+    // Refreshed for #262: governance rules are rendered from the
     // mandates Governance rules section, affecting all command templates.
     // Refreshed for #401: /review template now requires Discovery context
     // (health/drift) and NOT_VERIFIED correlation for PR/content review.
@@ -162,19 +168,6 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // (and reviewFindings) on the first content-aware flowguard_review call — the
     // verdict is submitted only after the reviewer runs, so a verdict-bearing
     // first call no longer wedges the host-task bind.
-    // Refreshed for discovery-capture + payload-contract hardening: the shared
-    // Discovery capture (plan/implement/architecture) and /review step 1 now
-    // require an UNFOCUSED flowguard_status (focused projections omit
-    // discoveryHealth/discoveryDrift/detectedStack), so repo-dependent claims are
-    // no longer spuriously NOT_VERIFIED. The shared host_task_required verdict
-    // branch now states reviewFindings submitted alongside the verdict are ignored
-    // and the verdict is validated against captured evidence; /plan + /review
-    // first-call lines forbid a prefilled verdict imperatively.
-    // Refreshed for host-task verdict-only parity: the shared verdict branch,
-    // /review step 5, /plan payload contract, and /architecture review step now
-    // forbid reviewFindings "not even an empty placeholder object" in
-    // host_task_required mode — matching the runtime, which resolves findings from
-    // captured evidence and validates the verdict against it.
     // Refreshed for reviewer-criteria enrichment: /plan gained tracer-bullet /
     // deep-module step guidance plus a "Planning discipline" section, and
     // /validate gained an advisory "Test quality" section. These change the
@@ -280,13 +273,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // COMMANDS hash.
     // Refreshed for presentation fallback consistency: task, ticket, check,
     // validate, abort, archive, and export now render presentation.markdown
-    // verbatim or render productNextAction.text as one fallback, never both.
+    // verbatim or render the canonical directive as one fallback, never both.
     // Refreshed for outcome-/contract-first implementation guidance: /implement
     // no longer treats local implementation mechanics as approved-plan authority.
     // Refreshed for explicit plan contract authority: /plan now materializes the
     // Contracts and Authority Decisions sections that /implement treats as binding.
-    // Refreshed for host-task output repair: schema/extraction failures require
-    // a fresh FlowGuard-authorized repair prompt before the reviewer Task is retried.
     // Refreshed for host-owned claim identity and evidence-fit guidance: /plan
     // and /architecture no longer instruct agents to mint claimId; /plan also
     // constrains claim statements to the observable evidence they declare.
@@ -294,9 +285,39 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // now starts with `---` at byte 0 (gray-matter requires the fence at the start
     // of the file) and every description is FlowGuard-branded with a `FlowGuard — `
     // prefix. Changes all command bodies and therefore the COMMANDS hash.
+    // Refreshed for the structured-review hard cut: command templates no longer
+    // reference reviewerTaskPrompt or Task-tool reviewer dispatch; the verdict is
+    // submitted against host-observed structured child-session evidence.
+    // Refreshed for the structured-only residue sweep: /plan, /implement, and
+    // /review plus the shared review loop now describe verdict-only submission
+    // against host-observed structured reviewer invocation evidence, with no
+    // reviewFindings or attestation-as-transport wording.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
+    // Refreshed for the workflow-directive hard cut: `/export` became a
+    // canonical workflow command (export.md + flowguard_export), EVIDENCE_REVIEW
+    // approve now advances to EXPORT_READY, REJECTED/ABORTED are terminal
+    // positions, and the revised command templates render the canonical
+    // workflow directive instead of the removed next-action projection.
+    // Refreshed for the governance-override hard cut: `/override-approve` is a
+    // canonical command, `/extend-implementation-review` is removed, and the
+    // decision templates describe the override gate.
+    // Refreshed for the structured review-dispatch hard cut: command templates
+    // read `reviewDispatch`/`reviewInvocation`/`agentInstruction`/`directive`
+    // instead of the removed textual `next` field.
+    // Refreshed for the peer-review domain hard cut: the /review and /archive
+    // command templates now use the renamed PEER_REVIEW / PEER_REVIEW_COMPLETE
+    // phases and peer-review flow wording. No template behavior changed.
+    // Refreshed for the mandatory override rationale: /override-approve now
+    // refuses an empty/whitespace rationale and reports it instead of calling
+    // flowguard_decision.
+    // Refreshed for the native visible reviewer transport hard cut: review
+    // commands describe the host Task dispatch instead of the removed invisible
+    // SDK reviewer session.
+    // Refreshed for peer review native-task parity: /review now follows its
+    // canonical reviewDispatch/reviewInvocation loop and completes with the
+    // bound reviewObligationId rather than a non-existent reviewVerdict field.
     expect(sha256(commandsJson)).toBe(
-      'e7e81eaaf4820dfcecff1bbb7ffd9eb7250dba6eb49c1d04b4ab9f7eff54880e',
+      'f3af49e7e6045b93a99c2d91fa80802cc043751ce4a598de86dce4e3ba27f623',
     );
   });
 
@@ -310,11 +331,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
       'commands.md',
       'continue.md',
       'export.md',
-      'extend-implementation-review.md',
       'finish.md',
       'help.md',
       'hydrate.md',
       'implement.md',
+      'override-approve.md',
       'plan.md',
       'reconcile-mutation-episode.md',
       'reject.md',
@@ -339,7 +360,6 @@ describe('TEMPLATE_HASH_STABILITY', () => {
       TOOL_FLOWGUARD_TICKET,
       TOOL_FLOWGUARD_PLAN,
       TOOL_FLOWGUARD_DECISION,
-      TOOL_FLOWGUARD_EXTEND_IMPLEMENTATION_REVIEW,
       TOOL_FLOWGUARD_IMPLEMENT,
       TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
       TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE,
@@ -348,6 +368,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
       TOOL_FLOWGUARD_CONTINUE,
       TOOL_FLOWGUARD_ABORT,
       TOOL_FLOWGUARD_ARCHIVE,
+      TOOL_FLOWGUARD_EXPORT,
       TOOL_FLOWGUARD_ARCHITECTURE,
       TOOL_FLOWGUARD_HELP,
       TOOL_FLOWGUARD_OBSERVE_REPOSITORY,

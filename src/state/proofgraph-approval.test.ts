@@ -17,7 +17,7 @@ import {
 } from './proofgraph-approval.js';
 import { SessionState } from './schema.js';
 import { makeState } from '../fixtures.js';
-import { computeRecordDigest } from './evidence-plan.js';
+import { makePlanRevision } from './evidence-test-constants.js';
 import { hashText } from '../shared/hashing.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 
@@ -123,24 +123,7 @@ describe('ProofGraph approval schemas', () => {
       SessionState.parse(
         makeState('PLAN_REVIEW', {
           plan: {
-            current: {
-              body: 'Plan',
-              digest: 'plan-digest',
-              sections: [],
-              createdAt: NOW,
-              recordDigest: computeRecordDigest({
-                contentDigest: 'plan-digest',
-                planVersion: 1,
-                supersedesRecordDigest: null,
-                originatingReviewObligationId: null,
-                revisionReason: null,
-              }),
-              planVersion: 1,
-              supersedesRecordDigest: null,
-              originatingReviewObligationId: null,
-              revisionReason: null,
-              lineageStatus: 'verified' as const,
-            },
+            current: makePlanRevision({ body: 'Plan', createdAt: NOW }),
             history: [],
             reviewCompletion: 'pending',
             approvalCertificate: {
@@ -160,31 +143,23 @@ describe('ProofGraph approval schemas', () => {
   });
 
   it('persists plan declarations and certificates', () => {
+    const current = makePlanRevision({ body: 'Plan', createdAt: NOW });
     const state = SessionState.parse(
       makeState('PLAN_REVIEW', {
         plan: {
-          current: {
-            body: 'Plan',
-            digest: 'plan-digest',
-            sections: [],
-            createdAt: NOW,
-            recordDigest: computeRecordDigest({
-              contentDigest: 'plan-digest',
-              planVersion: 1,
-              supersedesRecordDigest: null,
-              originatingReviewObligationId: null,
-              revisionReason: null,
-            }),
-            planVersion: 1,
-            supersedesRecordDigest: null,
-            originatingReviewObligationId: null,
-            revisionReason: null,
-            lineageStatus: 'verified' as const,
-          },
+          current,
           history: [],
           reviewCompletion: 'pending',
           claimDeclarations: { flow: 'plan', version: 'v2', claims: [PLAN_CLAIM] },
-          approvalCertificate: CERTIFICATE,
+          approvalCertificate: {
+            ...CERTIFICATE,
+            authorityDigest: current.digest,
+            planRecordDigest: current.recordDigest,
+            reviewBinding: {
+              ...CERTIFICATE.reviewBinding,
+              reviewedSubjectDigest: current.digest,
+            },
+          },
         },
       }),
     );
@@ -230,18 +205,19 @@ describe('ProofGraph approval schemas', () => {
       ).toThrow();
     });
 
-    it('parses a review_exhausted_override binding with an explicit digest difference', () => {
-      const certificate = ArchitectureApprovalCertificate.parse({
-        ...base,
-        reviewBinding: {
-          kind: 'review_exhausted_override',
-          lastReviewObligationId: '22222222-2222-4222-8222-222222222222',
-          lastReviewEvidenceDigest: 'e'.repeat(64),
-          reviewedSubjectDigest: 'digest-of-prior-adr-revision',
-          approvedSubjectDigest: base.authorityDigest,
-        },
-      });
-      expect(certificate.reviewBinding.kind).toBe('review_exhausted_override');
+    it('rejects a review_exhausted_override binding with an explicit digest difference', () => {
+      expect(() =>
+        ArchitectureApprovalCertificate.parse({
+          ...base,
+          reviewBinding: {
+            kind: 'review_exhausted_override',
+            lastReviewObligationId: '22222222-2222-4222-8222-222222222222',
+            lastReviewEvidenceDigest: 'e'.repeat(64),
+            reviewedSubjectDigest: 'digest-of-prior-adr-revision',
+            approvedSubjectDigest: base.authorityDigest,
+          },
+        }),
+      ).toThrow();
     });
 
     it('parses a review_exhausted_override whose reviewed and approved digests coincide (no kind normalization)', () => {

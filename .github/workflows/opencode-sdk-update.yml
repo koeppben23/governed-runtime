@@ -123,6 +123,8 @@ jobs:
           FORCE_COLOR: 0
           OPENCODE_DISABLE_AUTOUPDATE: '1'
           RUN_OPENCODE_ACP_TESTS: '1'
+          # Prove the frozen structured reviewer wire contract against the new host.
+          FLOWGUARD_OPENCODE_HOST_E2E: '1'
       - name: OpenCode host/Desktop runtime e2e
         if: steps.resolve.outputs.needs_update == 'true'
         run: npm run test:independent-review-e2e
@@ -167,7 +169,7 @@ jobs:
             '- npm run test:integration' \
             '- npm run lint' \
             '- npm run build' \
-            '- npm run test:smoke with RUN_OPENCODE_ACP_TESTS=1' \
+            '- npm run test:smoke with RUN_OPENCODE_ACP_TESTS=1 and FLOWGUARD_OPENCODE_HOST_E2E=1 (real child-session reviewer wire contract)' \
             '- npm run test:independent-review-e2e' \
             '' \
             "Workflow run: $RUN_LINK")

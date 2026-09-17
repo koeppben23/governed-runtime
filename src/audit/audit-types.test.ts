@@ -11,8 +11,8 @@ import {
   createDecisionEvent,
   summarizeArgs,
   type ChainedAuditEvent,
-  type ActorInfo,
 } from './types.js';
+import type { ActorInfo } from '../state/evidence.js';
 import { verifyChain } from './integrity.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 import { SESSION_ID, TS1, TS2, TS3, stampChainSequence } from './audit-test-helpers.js';
@@ -127,7 +127,12 @@ describe('audit types', () => {
           decisionSequence: 1,
           verdict: 'approve',
           rationale: 'LGTM',
-          decidedBy: 'reviewer-1',
+          decisionIdentity: {
+            actorId: 'reviewer-1',
+            actorEmail: null,
+            actorSource: 'env',
+            actorAssurance: 'best_effort',
+          },
           decidedAt: TS1,
           fromPhase: 'PLAN_REVIEW',
           toPhase: 'VALIDATION',
@@ -200,7 +205,12 @@ describe('audit types', () => {
           decisionSequence: 1,
           verdict: 'approve',
           rationale: 'ok',
-          decidedBy: 'reviewer',
+          decisionIdentity: {
+            actorId: 'reviewer',
+            actorEmail: null,
+            actorSource: 'env',
+            actorAssurance: 'best_effort',
+          },
           decidedAt: TS1,
           fromPhase: 'PLAN_REVIEW',
           toPhase: 'VALIDATION',
@@ -503,7 +513,12 @@ describe('audit types', () => {
           decisionSequence: 1,
           verdict: 'approve',
           rationale: 'ok',
-          decidedBy: 'r',
+          decisionIdentity: {
+            actorId: 'r',
+            actorEmail: null,
+            actorSource: 'env',
+            actorAssurance: 'best_effort',
+          },
           decidedAt: TS1,
           fromPhase: 'PLAN_REVIEW',
           toPhase: 'VALIDATION',

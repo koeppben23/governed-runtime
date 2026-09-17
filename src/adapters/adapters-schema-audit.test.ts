@@ -123,20 +123,17 @@ function makeValidReport(): ReviewReport {
     validationSummary: [],
     findings: [],
     overallStatus: 'clean',
-    completeness: {
-      sessionId: FIXED_SESSION_UUID,
-      phase: 'COMPLETE',
-      policyMode: 'solo',
-      overallComplete: true,
-      slots: [],
-      fourEyes: {
-        required: false,
-        satisfied: true,
-        initiatedBy: 'test',
-        decidedBy: null,
-        detail: 'Four-eyes not required by policy',
-      },
-      summary: { total: 0, complete: 0, missing: 0, notYetRequired: 0, failed: 0 },
+    peerReviewCoverage: {
+      targetResolved: false,
+      targetFrozen: false,
+      repositoryIdentityVerified: null,
+      baseSha: null,
+      headSha: null,
+      changedPathCount: 0,
+      objectivesCovered: 0,
+      objectivesTotal: 0,
+      reviewAssurance: null,
+      missingVerification: [],
     },
   };
 }
@@ -404,9 +401,8 @@ describe('persistence', () => {
       await expect(appendAuditEvent(tmpDir, makeValidAuditEvent({ id: 'bad' }))).rejects.toThrow(
         PersistenceError,
       );
-      const { events, skipped } = await readAuditTrail(tmpDir);
+      const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(0);
-      expect(skipped).toBe(0);
     });
 
     // ── CORNER ──────────────────────────────────────────────
@@ -417,7 +413,7 @@ describe('persistence', () => {
 
       await appendAuditEvent(tmpDir, makeValidAuditEvent());
 
-      const { events } = await readAuditTrail(tmpDir);
+      const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(1);
       expect(existsSync(lockPath)).toBe(false);
     });
@@ -434,7 +430,7 @@ describe('persistence', () => {
         await expect(
           appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() })),
         ).rejects.toMatchObject({ code: 'WRITE_FAILED' });
-        const { events } = await readAuditTrail(tmpDir);
+        const events = await readAuditTrail(tmpDir);
         expect(events).toHaveLength(1);
       } finally {
         restoreRename();
@@ -468,8 +464,7 @@ describe('persistence', () => {
       try {
         await appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() }));
         expect(rename).toHaveBeenCalledTimes(3);
-        const { events, skipped } = await readAuditTrail(tmpDir);
-        expect(skipped).toBe(0);
+        const events = await readAuditTrail(tmpDir);
         expect(events).toHaveLength(2);
         expect(verifyChain(events).valid).toBe(true);
       } finally {
@@ -482,8 +477,7 @@ describe('persistence', () => {
     it('computes chainHash and prevHash under the append lock', async () => {
       const event = makeValidAuditEvent();
       await appendAuditEvent(tmpDir, event);
-      const { events, skipped } = await readAuditTrail(tmpDir);
-      expect(skipped).toBe(0);
+      const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(1);
       expect(events[0]!.prevHash).toBe('genesis');
       expect(events[0]!.chainHash).not.toBe(CHAIN_HASH_64);
@@ -497,8 +491,7 @@ describe('persistence', () => {
 
       await Promise.all(inputs.map((event) => appendAuditEvent(tmpDir, event)));
 
-      const { events, skipped } = await readAuditTrail(tmpDir);
-      expect(skipped).toBe(0);
+      const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(inputs.length);
       expect(new Set(events.map((event) => event.id)).size).toBe(inputs.length);
       expect(verifyChain(events).valid).toBe(true);
@@ -538,8 +531,7 @@ describe('persistence', () => {
 
       await Promise.all(inputs.map((event) => appendAuditEvent(tmpDir, event)));
 
-      const { events, skipped } = await readAuditTrail(tmpDir);
-      expect(skipped).toBe(0);
+      const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(inputs.length);
       expect(verifyChain(events).valid).toBe(true);
       const tsResult = verifyChain(events, { strictTimestamps: true });
@@ -589,7 +581,7 @@ describe('persistence', () => {
         },
       };
       await appendAuditEvent(tmpDir, withTsa as unknown as AuditEvent);
-      const { events } = await readAuditTrail(tmpDir);
+      const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(1);
       const result = verifyChain(events, { strictTimestamps: true });
       expect(result.valid).toBe(false);
@@ -619,8 +611,7 @@ describe('persistence', () => {
         },
       });
       await appendAuditEvent(tmpDir, event);
-      const { events, skipped } = await readAuditTrail(tmpDir);
-      expect(skipped).toBe(0);
+      const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(1);
       expect(events[0]!.actorInfo?.id).toBe('actor-1');
       expect(events[0]!.actorInfo?.source).toBe('env');
@@ -629,8 +620,7 @@ describe('persistence', () => {
     it('accepts event without optional actorInfo', async () => {
       const event = makeValidAuditEvent();
       await appendAuditEvent(tmpDir, event);
-      const { events, skipped } = await readAuditTrail(tmpDir);
-      expect(skipped).toBe(0);
+      const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(1);
       expect(events[0]!.actorInfo).toBeUndefined();
     });
@@ -639,7 +629,7 @@ describe('persistence', () => {
       const nestedDir = path.join(tmpDir, 'deep', 'nested', 'session');
       const event = makeValidAuditEvent();
       await appendAuditEvent(nestedDir, event);
-      const { events } = await readAuditTrail(nestedDir);
+      const events = await readAuditTrail(nestedDir);
       expect(events).toHaveLength(1);
     });
 
@@ -653,8 +643,7 @@ describe('persistence', () => {
           }),
         );
       }
-      const { events, skipped } = await readAuditTrail(tmpDir);
-      expect(skipped).toBe(0);
+      const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(5);
       expect(events[0]!.event).toBe('step_0');
       expect(events[4]!.event).toBe('step_4');
@@ -677,8 +666,7 @@ describe('persistence', () => {
       const second = await appendAuditEvent(tmpDir, body);
 
       expect(second).toEqual(first);
-      const { events, skipped } = await readAuditTrail(tmpDir);
-      expect(skipped).toBe(0);
+      const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(1);
       expect(events[0]!.auditSequence).toBe(1);
     });
@@ -702,7 +690,7 @@ describe('persistence', () => {
       const second = await appendAuditEvent(tmpDir, forged);
 
       expect(second).toEqual(first);
-      const { events } = await readAuditTrail(tmpDir);
+      const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(1);
       expect(events[0]!.auditSequence).toBe(1);
     });
@@ -720,7 +708,7 @@ describe('persistence', () => {
 
       expect(caught).toBeInstanceOf(PersistenceError);
       expect((caught as PersistenceError).code).toBe('SCHEMA_VALIDATION_FAILED');
-      const { events } = await readAuditTrail(tmpDir);
+      const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(1);
       expect(events[0]!.event).toBe('transition:PLAN_READY');
     });
@@ -734,7 +722,7 @@ describe('persistence', () => {
       );
       await appendAuditEvent(tmpDir, body);
 
-      const { events } = await readAuditTrail(tmpDir);
+      const events = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(2);
       expect(verifyChain(events).valid).toBe(true);
     });

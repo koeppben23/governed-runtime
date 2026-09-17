@@ -12,7 +12,11 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { artifactReviewSubjectScope, createReviewObligation } from './assurance.js';
+import {
+  artifactReviewSubjectScope,
+  createReviewObligation,
+  freezeReviewMaterial,
+} from './assurance.js';
 import { assertRepositoryFreezeCoherence } from './freeze-coherence.js';
 
 const NOW = '2026-08-15T10:00:00.000Z';
@@ -26,9 +30,11 @@ function planInput(overrides: Record<string, unknown> = {}) {
   return {
     obligationType: 'plan' as const,
     iteration: 0,
+    reviewCycle: 1,
     planVersion: 1,
     now: NOW,
     subjectDigest: 'plan-digest',
+    reviewMaterial: freezeReviewMaterial('frozen review material', 'plan-digest'),
     reviewSubjectScope: artifactReviewSubjectScope('plan', '## Approach\nBody', 'plan-digest'),
     repositoryEvidenceFreeze: {
       kind: 'unavailable' as const,

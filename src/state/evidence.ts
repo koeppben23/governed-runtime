@@ -1,11 +1,11 @@
 /**
  * @module evidence
- * @description Evidence barrel — stable compatibility facade.
+ * @description Canonical public aggregation facade for evidence contracts.
  *              All implementation lives in focused evidence-* modules.
- *              Keep this file as the entry point for existing imports from 'state/evidence.js'.
+ *              This file is the public entry point for `state/evidence.js` imports.
  *
  *              evidence-assurance-internal.ts MUST NOT appear in these re-exports —
- *              OpenCodeSessionId, coerceAssurance, and assuranceSchema are internal helpers
+ *              OpenCodeSessionId and assuranceSchema are internal helpers
  *              and were never part of the public evidence.ts API surface.
  *
  * @version v2 (split into focused modules, no behavior change, no API expansion)
@@ -62,6 +62,10 @@ export * from './evidence-review.js';
 export type * from './evidence-review.js';
 export * from './evidence-review-input.js';
 export type * from './evidence-review-input.js';
+
+// ─── Peer review (coverage projection over canonical peer-review evidence) ────
+
+export { PeerReviewCoverage } from './peer-review.js';
 
 // ─── Identity ──────────────────────────────────────────────────────────────────
 

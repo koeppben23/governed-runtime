@@ -47,11 +47,6 @@ export type CounterexampleRequirementProjection =
       readonly kind: 'aggregate_check';
       readonly checkId: string;
       readonly candidateId?: string;
-    }
-  | {
-      readonly kind: 'legacy_assertion';
-      readonly checkId: string;
-      readonly assertion: AssertionIdentityProjection;
     };
 
 export interface FreshnessProjection {
@@ -122,7 +117,7 @@ function projectCounterexampleRequirement(
   const cr = claim.counterexampleRequirement;
   if (!cr) return undefined;
 
-  if ('kind' in cr && cr.kind === 'aggregate_check') {
+  if (cr.kind === 'aggregate_check') {
     return {
       kind: 'aggregate_check',
       checkId: cr.checkId,
@@ -130,11 +125,9 @@ function projectCounterexampleRequirement(
     };
   }
 
-  if ('assertion' in cr && cr.assertion) {
-    const kind: 'assertion' | 'legacy_assertion' =
-      'kind' in cr && cr.kind === 'assertion' ? 'assertion' : 'legacy_assertion';
+  if (cr.kind === 'assertion') {
     return {
-      kind,
+      kind: 'assertion',
       checkId: cr.checkId,
       assertion: projectAssertionIdentity(cr.assertion),
     };

@@ -45,6 +45,7 @@ vi.mock('../adapters/actor', async (importOriginal) => {
       id: 'test-operator',
       email: 'test@flowguard.dev',
       source: 'env',
+      assurance: 'best_effort',
     }),
   };
 });
@@ -273,8 +274,7 @@ describe('P31 Config as Runtime Authority', () => {
         ...baseConfig,
         policy: {
           ...baseConfig.policy,
-          maxSelfReviewIterations: 5,
-          maxImplReviewIterations: 7,
+          reviewBudget: { plan: 5, architecture: 3, implementation: 7 },
         },
       });
 
@@ -287,45 +287,8 @@ describe('P31 Config as Runtime Authority', () => {
 
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
-      expect(state!.policySnapshot.maxSelfReviewIterations).toBe(5);
-      expect(state!.policySnapshot.maxImplReviewIterations).toBe(7);
-    } finally {
-      await rmWithRetry(tmpDir);
-    }
-  });
-
-  it('new session persists config requireVerifiedActorsForApproval in policySnapshot', async () => {
-    const tmpDir = await fs.mkdtemp('/tmp/p33-verified-');
-    try {
-      const {
-        computeFingerprint,
-        workspaceDir,
-        sessionDir: resolveSessionDir,
-      } = await import('../adapters/workspace/index.js');
-      const { writeRepoConfig, readConfig } = await import('../adapters/persistence-config.js');
-      const { readState } = await import('../adapters/persistence.js');
-      const fp = await computeFingerprint(tmpDir);
-      const wsDir = workspaceDir(fp.fingerprint);
-
-      const baseConfig = await readConfig(tmpDir);
-      await writeRepoConfig(tmpDir, {
-        ...baseConfig,
-        policy: {
-          ...baseConfig.policy,
-          requireVerifiedActorsForApproval: true,
-        },
-      });
-
-      const localCtx = createToolContext({
-        worktree: tmpDir,
-        directory: tmpDir,
-        sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
-      });
-      await hydrate.execute({ profileId: 'baseline' }, localCtx);
-
-      const sessDir = resolveSessionDir(fp.fingerprint, localCtx.sessionID);
-      const state = await readState(sessDir);
-      expect(state!.policySnapshot.requireVerifiedActorsForApproval).toBe(true);
+      expect(state!.policySnapshot.reviewBudget.plan).toBe(5);
+      expect(state!.policySnapshot.reviewBudget.implementation).toBe(7);
     } finally {
       await rmWithRetry(tmpDir);
     }
@@ -448,27 +411,27 @@ it('existing session keeps snapshot values despite changed config', async () => 
     const config1 = await readConfig(tmpDir);
     await writeRepoConfig(tmpDir, {
       ...config1,
-      policy: { ...config1.policy, maxSelfReviewIterations: 2 },
+      policy: { ...config1.policy, reviewBudget: { plan: 2, architecture: 3, implementation: 3 } },
     });
     await hydrate.execute({}, ctxExisting);
 
     const sessDir = resolveSessionDir(fp.fingerprint, ctxExisting.sessionID);
     const before = await readState(sessDir);
     expect(before).not.toBeNull();
-    expect(before!.policySnapshot.maxSelfReviewIterations).toBe(2);
+    expect(before!.policySnapshot.reviewBudget.plan).toBe(2);
 
     // Change config and re-hydrate same session
     const config2 = await readConfig(tmpDir);
     await writeRepoConfig(tmpDir, {
       ...config2,
-      policy: { ...config2.policy, maxSelfReviewIterations: 5 },
+      policy: { ...config2.policy, reviewBudget: { plan: 5, architecture: 3, implementation: 3 } },
     });
     await hydrate.execute({}, ctxExisting);
 
     const after = await readState(sessDir);
     expect(after).not.toBeNull();
-    expect(after!.policySnapshot.maxSelfReviewIterations).toBe(2);
-    expect(after!.policySnapshot.maxSelfReviewIterations).not.toBe(5);
+    expect(after!.policySnapshot.reviewBudget.plan).toBe(2);
+    expect(after!.policySnapshot.reviewBudget.plan).not.toBe(5);
   } finally {
     await rmWithRetry(tmpDir);
   }

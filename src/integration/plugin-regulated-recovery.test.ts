@@ -76,20 +76,57 @@ function reviewState(phase: 'EVIDENCE_REVIEW' | 'COMPLETE') {
     implementation: IMPL_EVIDENCE,
     implReview: IMPL_REVIEW_CONVERGED,
     policySnapshot: REGULATED_POLICY_SNAPSHOT,
-    // Only the terminal COMPLETE state carries the completion transition —
-    // the persisted EVIDENCE_REVIEW checkpoint predates it, exactly as in the
-    // real rail entry path.
+    // Only the terminal COMPLETE state carries the export completion transition.
+    // The durable approval transition it chained from is seeded through the
+    // real outbox path (see seedCompleteCheckpoint).
     ...(phase === 'COMPLETE'
       ? {
           transition: {
-            from: 'EVIDENCE_REVIEW',
-            to: 'COMPLETE',
-            event: 'APPROVE',
+            from: 'EXPORT_READY' as const,
+            to: 'COMPLETE' as const,
+            event: 'EXPORT_MATERIALIZED' as const,
             at: AT,
           },
         }
       : {}),
   });
+}
+
+function approvalTransition() {
+  return {
+    from: 'EVIDENCE_REVIEW' as const,
+    to: 'EXPORT_READY' as const,
+    event: 'APPROVE' as const,
+    at: AT,
+  };
+}
+
+/**
+ * Seed the crash checkpoint through the real state/outbox path: the approval
+ * transition, the export completion transition, and the terminal decision are
+ * committed as durable operations with real state-binding digests.
+ */
+async function seedCompleteCheckpoint(sessDir: string): Promise<void> {
+  const exportReady = makeState('EXPORT_READY', {
+    ticket: TICKET,
+    plan: PLAN_RECORD,
+    selfReview: SELF_REVIEW_CONVERGED,
+    reviewDecision: REVIEW_APPROVE,
+    validation: VALIDATION_PASSED,
+    implementation: IMPL_EVIDENCE,
+    implReview: IMPL_REVIEW_CONVERGED,
+    policySnapshot: REGULATED_POLICY_SNAPSHOT,
+    transition: approvalTransition(),
+  });
+  await writeStateWithArtifactsAndAuditOperations(sessDir, exportReady);
+  const persisted = await readState(sessDir);
+  const complete = {
+    ...reviewState('COMPLETE'),
+    pendingAuditOperations: persisted!.pendingAuditOperations,
+  };
+  await writeStateWithArtifactsAndAuditOperations(sessDir, complete, undefined, [
+    terminalDecisionIntent(),
+  ]);
 }
 
 function terminalDecisionIntent() {
@@ -104,10 +141,10 @@ function terminalDecisionIntent() {
       gatePhase: 'EVIDENCE_REVIEW',
       verdict: REVIEW_APPROVE.verdict,
       rationale: REVIEW_APPROVE.rationale,
-      decidedBy: REVIEW_APPROVE.decidedBy,
+      decisionIdentity: REVIEW_APPROVE.decisionIdentity,
       decidedAt: REVIEW_APPROVE.decidedAt,
       fromPhase: 'EVIDENCE_REVIEW',
-      toPhase: 'COMPLETE',
+      toPhase: 'EXPORT_READY',
       transitionEvent: 'APPROVE',
       policyMode: 'regulated',
     },
@@ -145,7 +182,7 @@ function recoveryRuntime(sessDir: string, fingerprint: string, state: SessionSta
 }
 
 async function auditEvents(sessDir: string) {
-  return (await readAuditTrail(sessDir)).events;
+  return await readAuditTrail(sessDir);
 }
 
 describe('recoverRegulatedCompletion', () => {
@@ -153,9 +190,7 @@ describe('recoverRegulatedCompletion', () => {
     // Crash window: the terminal transition + decision semantic operation are
     // committed to the durable outbox, but reconciliation never ran.
     const { fingerprint, sessDir } = await seedSession(reviewState('EVIDENCE_REVIEW'));
-    await writeStateWithArtifactsAndAuditOperations(sessDir, reviewState('COMPLETE'), undefined, [
-      terminalDecisionIntent(),
-    ]);
+    await seedCompleteCheckpoint(sessDir);
 
     await recoverRegulatedCompletion(
       recoveryRuntime(sessDir, fingerprint, (await readState(sessDir))!),
@@ -163,7 +198,6 @@ describe('recoverRegulatedCompletion', () => {
     );
 
     const finalState = await readState(sessDir);
-    expect(finalState?.archiveStatus).toBe('verified');
     expect(finalState?.regulatedArchiveStatus).toBe('verified');
     const events = await auditEvents(sessDir);
     expect(events.filter((event) => event.detail.kind === 'decision')).toHaveLength(1);
@@ -172,7 +206,17 @@ describe('recoverRegulatedCompletion', () => {
         (event) =>
           event.detail.kind === 'transition' &&
           event.detail.from === 'EVIDENCE_REVIEW' &&
-          event.detail.to === 'COMPLETE',
+          event.detail.to === 'EXPORT_READY' &&
+          event.detail.event === 'APPROVE',
+      ),
+    ).toHaveLength(1);
+    expect(
+      events.filter(
+        (event) =>
+          event.detail.kind === 'transition' &&
+          event.detail.from === 'EXPORT_READY' &&
+          event.detail.to === 'COMPLETE' &&
+          event.detail.event === 'EXPORT_MATERIALIZED',
       ),
     ).toHaveLength(1);
     expect(events.filter((event) => event.event === 'lifecycle:session_completed')).toHaveLength(1);
@@ -181,9 +225,7 @@ describe('recoverRegulatedCompletion', () => {
 
   it('retries after a lifecycle outbox crash without duplicating terminal evidence', async () => {
     const { fingerprint, sessDir } = await seedSession(reviewState('EVIDENCE_REVIEW'));
-    await writeStateWithArtifactsAndAuditOperations(sessDir, reviewState('COMPLETE'), undefined, [
-      terminalDecisionIntent(),
-    ]);
+    await seedCompleteCheckpoint(sessDir);
     const deps = createSessionCompletionAuditDeps({
       sessDir,
       sessionID: SESSION_ID,
@@ -194,7 +236,7 @@ describe('recoverRegulatedCompletion', () => {
     const pending = await readState(sessDir);
     await writeStateWithArtifactsAndAuditOperations(
       sessDir,
-      { ...pending!, archiveStatus: 'pending', regulatedArchiveStatus: 'pending' },
+      { ...pending!, regulatedArchiveStatus: 'pending' },
       undefined,
       [terminalLifecycleIntent()],
     );
@@ -205,7 +247,7 @@ describe('recoverRegulatedCompletion', () => {
     );
 
     const finalState = await readState(sessDir);
-    expect(finalState?.archiveStatus).toBe('verified');
+    expect(finalState?.regulatedArchiveStatus).toBe('verified');
     const events = await auditEvents(sessDir);
     expect(events.filter((event) => event.detail.kind === 'decision')).toHaveLength(1);
     expect(events.filter((event) => event.event === 'lifecycle:session_completed')).toHaveLength(1);
@@ -216,7 +258,6 @@ describe('recoverRegulatedCompletion', () => {
     const { fingerprint, sessDir } = await seedSession(reviewState('COMPLETE'));
     const verified = {
       ...(await readState(sessDir))!,
-      archiveStatus: 'verified' as const,
       regulatedArchiveStatus: 'verified' as const,
     };
     await writeState(sessDir, verified);
@@ -235,7 +276,7 @@ describe('recoverRegulatedCompletion', () => {
     expect(archiveRegulatedEvidence).not.toHaveBeenCalled();
   });
 
-  it.each(['ARCH_COMPLETE', 'REVIEW_COMPLETE'] as const)(
+  it.each(['ARCH_COMPLETE', 'PEER_REVIEW_COMPLETE'] as const)(
     'leaves a regulated %s session byte-semantically unchanged',
     async (phase) => {
       const { fingerprint, sessDir } = await seedSession(
@@ -260,9 +301,7 @@ describe('recoverRegulatedCompletion', () => {
 
   it('concurrent recovery commits exactly one terminal decision and lifecycle', async () => {
     const { fingerprint, sessDir } = await seedSession(reviewState('EVIDENCE_REVIEW'));
-    await writeStateWithArtifactsAndAuditOperations(sessDir, reviewState('COMPLETE'), undefined, [
-      terminalDecisionIntent(),
-    ]);
+    await seedCompleteCheckpoint(sessDir);
     const seedState = await readState(sessDir);
 
     await Promise.all([
@@ -275,14 +314,12 @@ describe('recoverRegulatedCompletion', () => {
     expect(events.filter((event) => event.event === 'lifecycle:session_completed')).toHaveLength(1);
     expect(archiveRegulatedEvidence).toHaveBeenCalledTimes(1);
     expect(verifyRegulatedArchive).toHaveBeenCalledTimes(1);
-    expect((await readState(sessDir))?.archiveStatus).toBe('verified');
+    expect((await readState(sessDir))?.regulatedArchiveStatus).toBe('verified');
   });
 
   it('a late concurrent recovery never re-publishes archive bytes that were already verified', async () => {
     const { fingerprint, sessDir } = await seedSession(reviewState('EVIDENCE_REVIEW'));
-    await writeStateWithArtifactsAndAuditOperations(sessDir, reviewState('COMPLETE'), undefined, [
-      terminalDecisionIntent(),
-    ]);
+    await seedCompleteCheckpoint(sessDir);
     const state = await readState(sessDir);
 
     // Barrier-controlled interleaving: recovery A blocks inside the archive
@@ -308,7 +345,7 @@ describe('recoverRegulatedCompletion', () => {
     expect(archiveRegulatedEvidence).toHaveBeenCalledTimes(1);
     expect(verifyRegulatedArchive).toHaveBeenCalledTimes(1);
     const finalState = await readState(sessDir);
-    expect(finalState?.archiveStatus).toBe('verified');
+    expect(finalState?.regulatedArchiveStatus).toBe('verified');
     expect(finalState?.pendingAuditOperations.every((op) => op.status === 'reconciled')).toBe(true);
   });
 });

@@ -8,9 +8,6 @@
  */
 
 import { z } from 'zod';
-import { FINGERPRINT_PATTERN } from './evidence-identifiers.js';
-
-export { FINGERPRINT_PATTERN };
 
 // ─── Closed Enums ─────────────────────────────────────────────────────────────
 
@@ -29,8 +26,19 @@ export { FINGERPRINT_PATTERN };
 export const CheckId = z.string().min(1);
 export type CheckId = z.infer<typeof CheckId>;
 
-/** User review verdict at a User Gate (approve, request changes, or reject). */
-export const ReviewVerdict = z.enum(['approve', 'changes_requested', 'reject']);
+/**
+ * User review verdict at a User Gate (approve, request changes, or reject).
+ *
+ * `approve_with_governance_override` is legal only at a governance override
+ * gate (an exhausted review loop); plain `approve` is legal only at a normal
+ * gate. The rail enforces the agreement against the canonical directive.
+ */
+export const ReviewVerdict = z.enum([
+  'approve',
+  'approve_with_governance_override',
+  'changes_requested',
+  'reject',
+]);
 export type ReviewVerdict = z.infer<typeof ReviewVerdict>;
 
 /** Revision delta between iterations (digest comparison result). */
@@ -140,14 +148,9 @@ export type ExternalReference = z.infer<typeof ExternalReferenceSchema>;
 
 /**
  * How the reviewer was invoked.
- * - `host_subagent_task`: host-visible Task tool (OpenCode, synchronous, strongest).
- * - `sdk_session_prompt`: in-process SDK reviewer session.
- * - `manual_attested`: agent-submitted attested findings (out-of-process hosts, weakest sanctioned).
- * - `native_subagent_attested`: agent-submitted findings corroborated by a FlowGuard-captured
- *   host hook (SubagentStop / PostToolUse fired inside the `flowguard-reviewer` subagent).
- *   Strictly stronger than `manual_attested` (independent host witness of the reviewer subagent),
- *   but NOT equivalent to `host_subagent_task` (FlowGuard is not the deterministic spawner; the
- *   correlation is best-effort, not a synchronous handshake).
+ *
+ * `native_task_structured_followup` is the only sanctioned transport: OpenCode
+ * exposes the reviewer as a native Task child and FlowGuard captures structured
+ * findings from a schema-constrained follow-up in that same child session.
  */
-export type ReviewInvocationMode =
-  'host_subagent_task' | 'sdk_session_prompt' | 'manual_attested' | 'native_subagent_attested';
+export type ReviewInvocationMode = 'native_task_structured_followup';

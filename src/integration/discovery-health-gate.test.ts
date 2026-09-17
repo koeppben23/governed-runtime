@@ -31,20 +31,51 @@ const REQUIRED_BLOCK: DiscoveryHealthPolicy = {
   onDrift: 'block',
 };
 
+const COMPLETE_DIAGNOSTICS = [
+  { name: 'repo-metadata', status: 'complete', durationMs: 0, timedOut: false },
+  { name: 'stack-detection', status: 'complete', durationMs: 0, timedOut: false },
+  { name: 'topology', status: 'complete', durationMs: 0, timedOut: false },
+  { name: 'surface-detection', status: 'complete', durationMs: 0, timedOut: false },
+  { name: 'code-surface-analysis', status: 'complete', durationMs: 0, timedOut: false },
+  { name: 'domain-signals', status: 'complete', durationMs: 0, timedOut: false },
+] as const;
+
+const EMPTY_CODE_SURFACES = {
+  status: 'ok' as const,
+  endpoints: [],
+  authBoundaries: [],
+  dataAccess: [],
+  integrations: [],
+  budget: {
+    scannedFiles: 0,
+    scannedBytes: 0,
+    maxFiles: 200,
+    maxBytesPerFile: 65536,
+    maxTotalBytes: 2097152,
+    timedOut: false,
+  },
+};
+
 function healthy(): DiscoveryHealthProjection {
   const result = {
-    schemaVersion: 'v1',
+    schemaVersion: 'discovery.v2',
     collectedAt: NOW,
-    diagnostics: [{ name: 'git', status: 'complete' }],
+    diagnostics: COMPLETE_DIAGNOSTICS,
+    codeSurfaces: EMPTY_CODE_SURFACES,
   } as unknown as DiscoveryResult;
   return extractDiscoveryHealth(result);
 }
 
 function degraded(): DiscoveryHealthProjection {
   const result = {
-    schemaVersion: 'v1',
+    schemaVersion: 'discovery.v2',
     collectedAt: NOW,
-    diagnostics: [{ name: 'git', status: 'failed' }],
+    diagnostics: COMPLETE_DIAGNOSTICS.map((diagnostic) =>
+      diagnostic.name === 'stack-detection'
+        ? { ...diagnostic, status: 'failed' as const }
+        : diagnostic,
+    ),
+    codeSurfaces: EMPTY_CODE_SURFACES,
   } as unknown as DiscoveryResult;
   return extractDiscoveryHealth(result);
 }

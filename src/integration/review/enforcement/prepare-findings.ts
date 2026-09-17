@@ -32,33 +32,8 @@
 
 import { ReviewActorInfo, ReviewFindings } from '../../../state/evidence-review.js';
 import { ReviewerFindingsInput } from '../../../state/evidence-review-input.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../../tool-names.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import { normalizeChallenges } from './normalize.js';
-import type { PendingReview } from './types.js';
-import { validateReviewFindingsConsistency } from './findings-consistency.js';
-
-// ─── Attestation Resolution ───────────────────────────────────────────────────
-
-/**
- * Reviewer-supplied attestation, reduced to what validation depends on.
- *
- * `toolObligationId` is the only field that makes an attestation valid for
- * host stamping: host-owned constants are authoritative regardless of what the
- * reviewer echoed, but they are only stamped onto an attestation the reviewer
- * actually bound to an obligation.
- */
-export function resolveAttestationInfo(attestation: Record<string, unknown> | undefined): {
-  attestedObligationId: string | null;
-  hasValidAttestation: boolean;
-} {
-  const attestedObligationId =
-    typeof attestation?.toolObligationId === 'string' ? attestation.toolObligationId : null;
-  const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  return {
-    attestedObligationId,
-    hasValidAttestation: !!attestedObligationId && uuidRe.test(attestedObligationId),
-  };
-}
 
 // ─── Host Provenance (F8) ─────────────────────────────────────────────────────
 
@@ -144,15 +119,6 @@ export type PrepareReviewerFindingsResult =
       readonly ok: false;
       readonly code: 'schema_invalid';
       readonly issues: readonly string[];
-      /**
-       * Machine-readable issue keys (path, code, message) for the canonical
-       * repair fingerprint. Display text stays in `issues`.
-       */
-      readonly issueKeys: readonly {
-        readonly path: string;
-        readonly code: string;
-        readonly message: string;
-      }[];
     }
   | {
       readonly ok: false;
@@ -198,11 +164,6 @@ export function prepareReviewerFindingsForValidation(input: {
       issues: reviewerInput.error.issues.map(
         (issue) => `${schemaIssuePath(issue)}: ${issue.message}`,
       ),
-      issueKeys: reviewerInput.error.issues.map((issue) => ({
-        path: schemaIssuePath(issue),
-        code: issue.code,
-        message: issue.message,
-      })),
     };
   }
 
@@ -250,113 +211,7 @@ export function prepareReviewerFindingsForValidation(input: {
       ok: false,
       code: 'schema_invalid',
       issues: parsed.error.issues.map((issue) => `${schemaIssuePath(issue)}: ${issue.message}`),
-      // Machine-readable issue keys for the canonical repair fingerprint.
-      // The human-readable `issues` above remain the display form; these keys
-      // are sorted and hashed into ReviewAttempt.schemaErrorFingerprint so the
-      // output-repair gate can detect a repair that reproduced the identical
-      // error set.
-      issueKeys: parsed.error.issues.map((issue) => ({
-        path: schemaIssuePath(issue),
-        code: issue.code,
-        message: issue.message,
-      })),
     };
   }
   return { ok: true, findings: hostAttestationFindings };
-}
-
-// ─── Transient Capture Usability ──────────────────────────────────────────────
-
-interface CaptureValidationContext {
-  readonly raw: Record<string, unknown>;
-  readonly obligationId: string;
-  readonly hostConstants: PrepareFindingsHostConstants;
-  readonly childSessionId: string;
-  readonly reviewedAt: string;
-}
-
-/**
- * The shared precondition guard for the transient capture queries. Returns the
- * validation inputs when a capture exists AND the pending review carries the
- * structural host context (obligation identity + host attestation constants),
- * and null otherwise — structural defects are handled as an explicit
- * non-repairable blocker (enforcementFailure), never as a reviewer retry.
- */
-function captureValidationContext(pending: PendingReview): CaptureValidationContext | null {
-  if (pendingIsStructurallyFailed(pending)) return null;
-  if (pending.subagentRecord?.terminationReason === 'step_exhausted') return null;
-  const raw = pending.capturedFindings?.rawFindings;
-  if (!raw) return null;
-  const obligationId = pending.obligationId;
-  const hostConstants = pending.hostAttestationConstants ?? null;
-  if (obligationId == null || hostConstants == null) return null;
-  const subagentRecord = pending.subagentRecord;
-  const childSessionId = subagentRecord?.sessionId;
-  if (!subagentRecord || !childSessionId) return null;
-  return {
-    raw,
-    obligationId,
-    hostConstants,
-    childSessionId,
-    reviewedAt: subagentRecord.completedAt,
-  };
-}
-
-function pendingIsStructurallyFailed(pending: PendingReview): boolean {
-  return (pending.enforcementFailure ?? null) !== null;
-}
-
-/**
- * Reviewer-actionable schema issues of the current capture, computed through
- * the same host-normalization authority the bind gate uses. Returns null when
- * the capture is absent, structurally unassessable, or valid.
- */
-export function extractCaptureSchemaErrors(pending: PendingReview): readonly string[] | null {
-  const context = captureValidationContext(pending);
-  if (!context) return null;
-  const result = prepareReviewerFindingsForValidation({
-    rawFindings: context.raw,
-    obligationId: context.obligationId,
-    hostConstants: context.hostConstants,
-    hostProvenance: {
-      childSessionId: context.childSessionId,
-      reviewedAt: context.reviewedAt,
-    },
-  });
-  if (result.ok) return null;
-  return result.issues;
-}
-
-/**
- * Pure query: whether a pending review's capture could bind at all.
- *
- * Returns false for:
- * - a structural host-context defect (enforcementFailure) — never repairable
- *   by a reviewer, see enforcement.ts;
- * - a terminated subagent (step_exhausted);
- * - an absent capture;
- * - a capture that fails host normalization + the canonical schema gate;
- * - an internally incoherent capture (accept with blocking issues).
- *
- * This function NEVER mutates the pending review.
- */
-export function isPendingCaptureUsable(pending: PendingReview): boolean {
-  const context = captureValidationContext(pending);
-  if (!context) return false;
-  const prepared = prepareReviewerFindingsForValidation({
-    rawFindings: context.raw,
-    obligationId: context.obligationId,
-    hostConstants: context.hostConstants,
-    hostProvenance: {
-      childSessionId: context.childSessionId,
-      reviewedAt: context.reviewedAt,
-    },
-  });
-  if (!prepared.ok) return false;
-  return validateReviewFindingsConsistency({
-    overallVerdict: prepared.findings.overallVerdict as string,
-    blockingIssueCount: Array.isArray(prepared.findings.blockingIssues)
-      ? prepared.findings.blockingIssues.length
-      : 0,
-  }).ok;
 }

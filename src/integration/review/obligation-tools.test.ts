@@ -20,6 +20,7 @@ describe('review-obligation-tools', () => {
       expect(obligationTypeForTool(TOOL_FLOWGUARD_PLAN)).toBe('plan');
       expect(obligationTypeForTool(TOOL_FLOWGUARD_IMPLEMENT)).toBe('implement');
       expect(obligationTypeForTool(TOOL_FLOWGUARD_ARCHITECTURE)).toBe('architecture');
+      expect(obligationTypeForTool(TOOL_FLOWGUARD_REVIEW)).toBe('review');
     });
 
     it('maps post-implementation check review signals to the implementation owner', () => {
@@ -29,8 +30,6 @@ describe('review-obligation-tools', () => {
 
   describe('BAD', () => {
     it('does not map non-reviewable tools', () => {
-      expect(isReviewableTool(TOOL_FLOWGUARD_REVIEW)).toBe(false);
-      expect(obligationTypeForTool(TOOL_FLOWGUARD_REVIEW)).toBeUndefined();
       expect(obligationTypeForTool('flowguard_unknown')).toBeUndefined();
     });
   });
@@ -38,11 +37,7 @@ describe('review-obligation-tools', () => {
   describe('CORNER', () => {
     it('reviewable tool list covers ReviewObligationType exactly once', () => {
       const obligationTypes = REVIEWABLE_TOOLS.map((tool) => obligationTypeForTool(tool)).sort();
-      // 'review' obligation type is created by standalone /review (not a
-      // reviewable tool), so it is intentionally absent from REVIEWABLE_TOOLS.
-      const reviewableTypes = [...ReviewObligationType.options]
-        .filter((type) => type !== 'review')
-        .sort();
+      const reviewableTypes = [...ReviewObligationType.options].sort();
       expect(obligationTypes).toEqual(reviewableTypes);
     });
   });

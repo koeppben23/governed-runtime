@@ -2,7 +2,6 @@ import { describe, expect, it, beforeEach } from 'vitest';
 
 import {
   clearUserDecisionIntents,
-  consumeImplementationReviewExtensionIntent,
   consumeUserDecisionIntent,
   parseUserDecisionCommand,
   peekUserDecisionIntent,
@@ -18,13 +17,17 @@ describe('UserDecisionIntent', () => {
       command: '/approve',
       expectedVerdict: 'approve',
     });
-    expect(parseUserDecisionCommand({ command: 'request-changes', arguments: '' })).toEqual({
+    expect(parseUserDecisionCommand({ command: '/request-changes', arguments: '' })).toEqual({
       command: '/request-changes',
       expectedVerdict: 'changes_requested',
     });
     expect(parseUserDecisionCommand({ command: '/reject', arguments: '' })).toEqual({
       command: '/reject',
       expectedVerdict: 'reject',
+    });
+    expect(parseUserDecisionCommand({ command: '/override-approve', arguments: '' })).toEqual({
+      command: '/override-approve',
+      expectedVerdict: 'approve_with_governance_override',
     });
     expect(
       parseUserDecisionCommand({ command: '/review-decision', arguments: 'approve looks good' }),
@@ -45,73 +48,43 @@ describe('UserDecisionIntent', () => {
     ).toBeNull();
   });
 
-  it('binds an implementation review extension to the explicit user command iteration count', () => {
+  it('binds an override-approve command to the governance-override verdict', () => {
     expect(
       recordUserDecisionIntentFromCommand({
         sessionId: 's1',
-        command: '/extend-implementation-review',
-        arguments: '2',
+        command: '/override-approve',
+        arguments: '',
         nowMs: 1_000,
       }),
-    ).toMatchObject({ command: '/extend-implementation-review', additionalIterations: 2 });
+    ).toMatchObject({
+      command: '/override-approve',
+      expectedVerdict: 'approve_with_governance_override',
+    });
     expect(
-      consumeImplementationReviewExtensionIntent({
+      consumeUserDecisionIntent({
         sessionId: 's1',
-        additionalIterations: 1,
+        verdict: 'approve_with_governance_override',
         nowMs: 2_000,
-      }),
-    ).toEqual({ ok: false, reason: 'verdict_mismatch' });
-    expect(
-      recordUserDecisionIntentFromCommand({
-        sessionId: 's1',
-        command: '/extend-implementation-review',
-        arguments: '2',
-        nowMs: 3_000,
-      }),
-    ).not.toBeNull();
-    expect(
-      consumeImplementationReviewExtensionIntent({
-        sessionId: 's1',
-        additionalIterations: 2,
-        nowMs: 4_000,
       }),
     ).toMatchObject({ ok: true });
   });
 
-  it('P0: extension intent never authorizes a decision verdict and survives the decision gate', () => {
-    expect(
-      recordUserDecisionIntentFromCommand({
-        sessionId: 's1',
-        command: '/extend-implementation-review',
-        arguments: '2',
-        nowMs: 1_000,
-      }),
-    ).toMatchObject({ command: '/extend-implementation-review', additionalIterations: 2 });
-
-    // The decision consumers must fail closed, NOT delete the extension intent.
-    expect(peekUserDecisionIntent({ sessionId: 's1', verdict: 'reject', nowMs: 2_000 })).toEqual({
-      ok: false,
-      reason: 'missing',
+  it('never accepts a plain approval verdict for an override-approve intent', () => {
+    recordUserDecisionIntentFromCommand({
+      sessionId: 's1',
+      command: '/override-approve',
+      arguments: '',
+      nowMs: 1_000,
     });
-    expect(consumeUserDecisionIntent({ sessionId: 's1', verdict: 'reject', nowMs: 3_000 })).toEqual(
-      {
-        ok: false,
-        reason: 'missing',
-      },
-    );
 
-    // The extension intent is still intact for its own consumer.
-    expect(
-      consumeImplementationReviewExtensionIntent({
-        sessionId: 's1',
-        additionalIterations: 2,
-        nowMs: 4_000,
-      }),
-    ).toMatchObject({ ok: true });
-    expect(peekUserDecisionIntent({ sessionId: 's1', verdict: 'reject', nowMs: 5_000 })).toEqual({
+    // A plain approval at an override gate fails closed and burns the intent.
+    expect(peekUserDecisionIntent({ sessionId: 's1', verdict: 'approve', nowMs: 2_000 })).toEqual({
       ok: false,
-      reason: 'missing',
+      reason: 'verdict_mismatch',
     });
+    expect(
+      consumeUserDecisionIntent({ sessionId: 's1', verdict: 'approve', nowMs: 3_000 }),
+    ).toEqual({ ok: false, reason: 'missing' });
   });
 
   it('consumes a matching intent exactly once', () => {

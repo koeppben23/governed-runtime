@@ -16,6 +16,7 @@ import { readState } from '../adapters/persistence.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
 import { archiveSession } from '../adapters/workspace/index.js';
 import { serializeError } from '../logging/error-serialize.js';
+import { DecisionIdentity } from '../state/evidence-identity.js';
 import type {
   PendingAuditOperation,
   SessionState,
@@ -169,7 +170,7 @@ async function emitDecisionReceipt(params: DecisionReceiptParams): Promise<strin
   const firstTransition = transition;
   const inferredVerdict = inferDecisionVerdict(firstTransition.event);
   if (inferredVerdict === null) return prevHash;
-  const existingDecision = (await readAuditTrail(ctx.sessDir)).events.some(
+  const existingDecision = (await readAuditTrail(ctx.sessDir)).some(
     (event) =>
       event.detail.kind === 'decision' &&
       event.detail.fromPhase === firstTransition.from &&
@@ -180,13 +181,15 @@ async function emitDecisionReceipt(params: DecisionReceiptParams): Promise<strin
   // Regulated completion commits its terminal decision as a state-owned
   // semantic operation before archival. The after-hook must not project it a
   // second time.
-  if (policyMode === 'regulated' && state?.archiveStatus && existingDecision) return prevHash;
+  if (policyMode === 'regulated' && state?.regulatedArchiveStatus && existingDecision)
+    return prevHash;
 
   const sequence = await deps.nextDecisionSequence(ctx.sessDir, sessionId);
   const decisionId = `DEC-${String(sequence).padStart(3, '0')}`;
   const receipt = resolveDecisionReceiptFields(ctx, input, state, firstTransition.at);
+  const decisionIdentity = receipt.decisionIdentity;
 
-  if (!receipt.decidedBy?.trim()) {
+  if (!decisionIdentity?.actorId.trim()) {
     return emitDecisionReceiptActorMissing(params, firstTransition, prevHash);
   }
   return emitDecisionReceiptEvent(params, {
@@ -195,7 +198,11 @@ async function emitDecisionReceipt(params: DecisionReceiptParams): Promise<strin
     decisionId,
     sequence,
     verdict: inferredVerdict,
-    receipt,
+    receipt: {
+      rationale: receipt.rationale,
+      decisionIdentity,
+      decidedAt: receipt.decidedAt,
+    },
     policyMode,
   });
 }
@@ -212,16 +219,24 @@ function resolveDecisionReceiptFields(
   input: unknown,
   state: SessionState | null,
   fallbackDecidedAt: string,
-): { rationale: string; decidedBy?: string; decidedAt: string } {
+): { rationale: string; decisionIdentity?: DecisionIdentity; decidedAt: string } {
   const parsedDecision = parsedReviewDecision(ctx);
   return {
     rationale: resolveDecisionRationale(parsedDecision, input, state),
-    decidedBy: stringField(parsedDecision, 'decidedBy') ?? state?.reviewDecision?.decidedBy,
+    decisionIdentity:
+      decisionIdentityField(parsedDecision) ?? state?.reviewDecision?.decisionIdentity,
     decidedAt:
       stringField(parsedDecision, 'decidedAt') ??
       state?.reviewDecision?.decidedAt ??
       fallbackDecidedAt,
   };
+}
+
+function decisionIdentityField(
+  record: Record<string, unknown> | null,
+): DecisionIdentity | undefined {
+  const parsed = DecisionIdentity.safeParse(record?.decisionIdentity);
+  return parsed.success ? parsed.data : undefined;
 }
 
 function parsedReviewDecision(ctx: AuditContext): Record<string, unknown> | null {
@@ -260,7 +275,7 @@ async function emitDecisionReceiptActorMissing(
   prevHash: string,
 ): Promise<string> {
   const { deps, ctx, toolName, sessionId, state, recordTimestampFailure } = params;
-  deps.log.warn('audit', 'skipping decision receipt: missing decidedBy', {
+  deps.log.warn('audit', 'skipping decision receipt: missing decision identity', {
     tool: toolName,
     sessionId,
   });
@@ -271,8 +286,8 @@ async function emitDecisionReceiptActorMissing(
     identity.hostSessionId,
     {
       code: 'DECISION_RECEIPT_ACTOR_MISSING',
-      message: 'Decision receipt skipped because decidedBy is missing',
-      recoveryHint: 'Ensure /review-decision output includes reviewDecision.decidedBy',
+      message: 'Decision receipt skipped because the decision identity is missing',
+      recoveryHint: 'Ensure /review-decision output includes reviewDecision.decisionIdentity',
       errorPhase: firstTransition.from,
     },
     ctx.now,
@@ -292,7 +307,7 @@ async function emitDecisionReceiptEvent(
     decisionId: string;
     sequence: number;
     verdict: 'approve' | 'changes_requested' | 'reject';
-    receipt: { rationale: string; decidedBy?: string; decidedAt: string };
+    receipt: { rationale: string; decisionIdentity: DecisionIdentity; decidedAt: string };
     policyMode: string;
   },
 ): Promise<string> {
@@ -308,7 +323,7 @@ async function emitDecisionReceiptEvent(
       decisionSequence: input.sequence,
       verdict: input.verdict,
       rationale: input.receipt.rationale,
-      decidedBy: input.receipt.decidedBy!,
+      decisionIdentity: input.receipt.decisionIdentity,
       decidedAt: input.receipt.decidedAt,
       fromPhase: input.firstTransition.from,
       toPhase: input.firstTransition.to,
@@ -367,7 +382,7 @@ async function maybeCompleteAndArchive(
   if (state?.transition?.to !== 'COMPLETE' || LIFECYCLE_TOOLS[toolName]) return prevHash;
 
   const freshState = deps.cachedFingerprint ? await readState(ctx.sessDir) : null;
-  const toolLayerHandled = !!freshState?.archiveStatus;
+  const toolLayerHandled = !!freshState?.regulatedArchiveStatus;
 
   if (!toolLayerHandled) {
     prevHash = await emitSessionCompletedLifecycle(
@@ -380,7 +395,7 @@ async function maybeCompleteAndArchive(
   } else {
     // Stryker disable next-line ObjectLiteral — diagnostic-only payload.
     deps.log.debug('audit', 'session_completed handled by tool layer', {
-      archiveStatus: freshState.archiveStatus,
+      regulatedArchiveStatus: freshState.regulatedArchiveStatus,
     });
   }
 
@@ -464,7 +479,7 @@ function scheduleSoloArchive(
   if (toolLayerHandled) {
     // Stryker disable next-line ObjectLiteral — diagnostic-only payload.
     deps.log.debug('audit', 'archive handled by tool layer', {
-      archiveStatus: freshState?.archiveStatus,
+      regulatedArchiveStatus: freshState?.regulatedArchiveStatus,
     });
     return;
   }

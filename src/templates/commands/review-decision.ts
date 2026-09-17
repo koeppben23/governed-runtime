@@ -1,4 +1,4 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 
 export const REVIEW_DECISION_COMMAND = `---
 description: FlowGuard — Submit a human review decision (approve, changes_requested, reject) at a User Gate.
@@ -27,7 +27,7 @@ Decision: $ARGUMENTS
 4. Report the outcome:
    - **approve**: Confirm advancement, show new phase.
    - **changes_requested**: Explain workflow returns to revision phase.
-   - **reject**: Explain workflow returns to start (PLAN_REVIEW/EVIDENCE_REVIEW → TICKET; ARCH_REVIEW → READY).
+    - **reject**: Explain the workflow transitions to the terminal REJECTED phase.
 
 ## Rules
 
@@ -36,7 +36,7 @@ Decision: $ARGUMENTS
 - If ambiguous input ("maybe", "not sure"): ask the user to clarify.
 - Do not approve without the user's explicit verdict — never infer approval from context.
 - This command must originate from the user's slash-command invocation. A model-only tool call to \`flowguard_decision\` is blocked in team/regulated human-gated policies.
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 ## Done-when
 
 - Verdict recorded via flowguard_decision.

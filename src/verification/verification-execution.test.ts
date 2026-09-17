@@ -8,6 +8,7 @@ import type { VerificationCandidate } from '../state/discovery-schemas.js';
 function makeCandidate(overrides?: Partial<VerificationCandidate>): VerificationCandidate {
   return {
     assertionCapability: 'unsupported' as const,
+    candidateId: 'vc_test_default',
     kind: 'test',
     command: 'npm test',
     source: 'package.json',

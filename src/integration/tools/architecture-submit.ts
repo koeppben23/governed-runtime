@@ -7,7 +7,7 @@
 
 import type { ArchitectureArgs, ArchitectureSession } from './architecture-shared.js';
 import { buildArchitectureReviewInstruction } from './architecture-shared.js';
-import { formatBlocked, appendNextAction, writeStateWithArtifacts } from './helpers.js';
+import { formatBlocked, enrichWithWorkflowDirective, writeStateWithArtifacts } from './helpers.js';
 import type { SessionState } from '../../state/schema.js';
 import { executeArchitecture } from '../../rails/architecture.js';
 import { normalizeArchitectureClaims } from '../../state/proofgraph-approval.js';
@@ -16,9 +16,12 @@ import {
   artifactReviewSubjectScope,
   createReviewObligation,
   freezeReviewMaterial,
-  reviewObligationResponseFields,
   resolveFrozenReviewProfile,
 } from '../review/assurance.js';
+import {
+  resolveReviewDispatchAuthority,
+  reviewObligationResponseFields,
+} from '../review/dispatch-authority.js';
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
 import {
   freezeContextAuthorityAtHead,
@@ -57,7 +60,6 @@ async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Prom
   const classification = await resolvePreImplementationChallengeClassification(
     ctx.state,
     ctx.worktree,
-    ctx.subagentEnabled,
     ctx.targetPaths,
   );
   const resolvedTargetPaths =
@@ -69,7 +71,7 @@ async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Prom
   const minted = await mintArchSubmissionObligation(ctx, resolvedTargetPaths, metadata);
   // Repository-governed attempts are minted WITH their host-owned Discovery
   // snapshot (persistence coherence). A structural projection failure blocks
-  // before any state mutation, mirroring the standalone review path.
+  // before any state mutation, mirroring the peer review path.
   const repositoryGoverned = minted ? hasFrozenRepositoryAuthority(minted) : false;
   const discovery = await resolveAttemptDiscoveryOrBlock({
     state: ctx.state,
@@ -123,6 +125,7 @@ async function mintArchSubmissionObligation(
   return createReviewObligation({
     obligationType: 'architecture',
     iteration: 0,
+    reviewCycle: ctx.state.reviewCycles.architecture,
     planVersion: ctx.archPlanVersion,
     now: ctx.now,
     subjectDigest: digest,
@@ -179,7 +182,7 @@ export async function handleAdrSubmission(
     });
   }
 
-  const subagentEnabled = policy.selfReview?.subagentEnabled ?? false;
+  const subagentEnabled = true;
   const archPlanVersion = 1;
   const now = ctx.now();
   const classification = await classifyAndCreateArchObligation({
@@ -193,18 +196,24 @@ export async function handleAdrSubmission(
     policySnapshot: result.state.policySnapshot,
   });
   if (classification.kind === 'blocked') return classification.message;
-  const {
-    state: augmentedState,
-    obligation: nextObligation,
-    attemptId: subAttemptId,
-  } = classification;
+  const { state: augmentedState, obligation: nextObligation } = classification;
 
   const persisted = await writeStateWithArtifacts(sessDir, augmentedState);
 
+  if (!nextObligation) {
+    return formatBlocked('REVIEW_ATTEMPT_UNAVAILABLE', {
+      reason: 'the ADR submission minted no review obligation authority',
+    });
+  }
+  const authority = resolveReviewDispatchAuthority(
+    persisted.reviewAssurance,
+    nextObligation.obligationId,
+  );
+  if (authority.kind === 'blocked') {
+    return formatBlocked(authority.code, { reason: authority.reason });
+  }
   const instruction = buildArchitectureReviewInstruction({
-    policy: session.policy,
-    subagentEnabled,
-    obligation: nextObligation,
+    authority: authority.authority,
     iteration: 0,
     planVersion: archPlanVersion,
     subjectLabel: 'full ADR text, ADR title, and ticket text',
@@ -216,14 +225,14 @@ export async function handleAdrSubmission(
     adrId: augmentedState.architecture!.id,
     adrDigest: augmentedState.architecture!.digest,
     selfReviewIteration: 0,
-    maxSelfReviewIterations: policy.maxSelfReviewIterations,
+    maxArchitectureReviewIterations: policy.reviewBudget.architecture,
     reviewMode: subagentEnabled ? 'subagent' : 'self',
-    ...reviewObligationResponseFields(nextObligation, subAttemptId),
-    ...repositoryEvidenceUnavailableField(nextObligation?.repositoryEvidenceFreeze),
-    next: instruction.next,
-    ...(instruction.reviewInvocation ? { reviewInvocation: instruction.reviewInvocation } : {}),
+    ...reviewObligationResponseFields(authority.authority),
+    ...repositoryEvidenceUnavailableField(authority.authority.obligation.repositoryEvidenceFreeze),
+    reviewDispatch: instruction.reviewDispatch,
+    reviewInvocation: instruction,
     _audit: { transitions: result.transitions },
   };
 
-  return appendNextAction(JSON.stringify(modeAResponse), augmentedState);
+  return JSON.stringify(enrichWithWorkflowDirective(modeAResponse, augmentedState));
 }

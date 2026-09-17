@@ -7,12 +7,9 @@
  * new criteria (no duplicate review authority); it only names the profile and
  * marks it mandatory.
  *
- * Enforcement safety (verified against promptContainsValue in
- * enforcement/extraction.ts): this string MUST NOT contain the tokens
- * "iteration" or "version" followed within 30 non-digit characters by a number,
- * and it is always appended AFTER the attestation/context block so it can never
- * displace the real iteration=/planVersion= tokens the enforcement matcher
- * requires. It is intentionally digit-free.
+ * It is always appended AFTER the attestation/context block and is
+ * intentionally digit-free so it can never interfere with the canonical
+ * `iteration=`/`planVersion=` context tokens.
  */
 export const CORE_REVIEW_PROFILE_MARKER =
   'Review coverage profile: core (mandatory baseline; not optional). ' +

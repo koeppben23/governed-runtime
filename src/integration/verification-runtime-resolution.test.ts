@@ -26,6 +26,7 @@ class FakeProbeRunner implements ProbeRunner {
 function sc(overrides: Partial<VerificationCandidate> = {}): VerificationCandidate {
   return {
     assertionCapability: 'structured',
+    candidateId: 'vc_test_default',
     kind: 'test',
     command: 'npm run test --',
     source: 'package.json:scripts.test',
@@ -46,6 +47,7 @@ function sc(overrides: Partial<VerificationCandidate> = {}): VerificationCandida
 function unsupported(): VerificationCandidate {
   return {
     assertionCapability: 'unsupported',
+    candidateId: 'vc_lint_default',
     kind: 'lint',
     command: 'eslint .',
     source: 'detectedStack:qualityTool:eslint',

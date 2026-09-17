@@ -1,6 +1,6 @@
 /**
  * @module proofgraph-contract.test
- * @description ProofContract (contract.v1) schema and SessionState persistence (#762).
+ * @description ProofContract (contract.v2) schema and SessionState persistence (#762).
  */
 import { describe, it, expect } from 'vitest';
 import { ProofContract, PROOFGRAPH_CONTRACT_VERSION } from './proofgraph-contract.js';
@@ -26,33 +26,42 @@ function declaredClaim() {
   };
 }
 
-describe('ProofContract (contract.v1) — #762', () => {
+describe('ProofContract (contract.v2) — #762', () => {
   it('parses a valid contract', () => {
     const contract = { version: PROOFGRAPH_CONTRACT_VERSION, claims: [declaredClaim()] };
     expect(ProofContract.parse(contract)).toEqual(contract);
   });
 
   it('accepts an empty claim set', () => {
-    expect(ProofContract.parse({ version: 'contract.v1', claims: [] }).claims).toEqual([]);
+    expect(ProofContract.parse({ version: 'contract.v2', claims: [] }).claims).toEqual([]);
   });
 
   it('rejects a wrong version literal', () => {
-    expect(() => ProofContract.parse({ version: 'contract.v2', claims: [] })).toThrow();
+    expect(() => ProofContract.parse({ version: 'contract.v1', claims: [] })).toThrow();
   });
 
   it('rejects a claim with an invalid provenance reference', () => {
     const bad = {
-      version: 'contract.v1',
+      version: 'contract.v2',
       claims: [{ ...declaredClaim(), provenance: { kind: 'bogus' } }],
     };
     expect(() => ProofContract.parse(bad)).toThrow();
+  });
+
+  it('rejects removed claim fields instead of stripping them', () => {
+    expect(() =>
+      ProofContract.parse({
+        version: 'contract.v2',
+        claims: [{ ...declaredClaim(), proofEligibility: 'eligible' }],
+      }),
+    ).toThrow();
   });
 
   describe('SessionState.proofContract persistence', () => {
     it('accepts a contract on state and is optional/backward-compatible', () => {
       const withContract = SessionState.parse(
         makeState('IMPLEMENTATION', {
-          proofContract: { version: 'contract.v1', claims: [declaredClaim()] },
+          proofContract: { version: 'contract.v2', claims: [declaredClaim()] },
         }),
       );
       expect(withContract.proofContract?.claims).toHaveLength(1);
@@ -62,7 +71,7 @@ describe('ProofContract (contract.v1) — #762', () => {
     it('fails closed on a malformed contract', () => {
       const input = {
         ...makeState('READY'),
-        proofContract: { version: 'contract.v1', claims: [{ claimId: 'not-a-uuid' }] },
+        proofContract: { version: 'contract.v2', claims: [{ claimId: 'not-a-uuid' }] },
       } as unknown;
       expect(() => SessionState.parse(input)).toThrow();
     });

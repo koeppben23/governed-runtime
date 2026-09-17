@@ -116,7 +116,7 @@ export const reconcile_mutation_episode: ToolDefinition = {
           hostCallId: args.hostCallId,
           status: 'reconciled_after_unknown_outcome',
           basis: 'worktree_recapture',
-          next:
+          agentInstruction:
             'Prior implementation evidence is unreliable. Re-apply the implementation work, ' +
             'record it with /implement, re-run the checks with /check, and submit a fresh review.',
         });

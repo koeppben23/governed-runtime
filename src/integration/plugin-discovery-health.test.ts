@@ -203,12 +203,31 @@ describe('enforceDiscoveryHealthBefore', () => {
 describe('enforceDiscoveryHealthAfterBash', () => {
   const sessionId = 's1';
 
-  it('returns early when sessDir is null', async () => {
+  it('fails closed when sessDir is null', async () => {
     const deps = mockDeps({ getSessionDir: () => null });
     const output: { output?: unknown } = {};
     await enforceDiscoveryHealthAfterBash(deps, sessionId, output);
     expect(mockReadState).not.toHaveBeenCalled();
-    expect(output.output).toBeUndefined();
+    expect(mockStrictBlockedOutput).toHaveBeenCalledWith(
+      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+      expect.objectContaining({
+        reason: expect.stringContaining('no resolvable FlowGuard session'),
+      }),
+    );
+    expect(output.output).toBeDefined();
+  });
+
+  it('fails closed when persisted state is missing', async () => {
+    mockReadState.mockResolvedValue(null);
+    const output: { output?: unknown } = {};
+    await enforceDiscoveryHealthAfterBash(mockDeps(), sessionId, output);
+    expect(mockStrictBlockedOutput).toHaveBeenCalledWith(
+      'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+      expect.objectContaining({
+        reason: expect.stringContaining('no persisted session state'),
+      }),
+    );
+    expect(output.output).toBeDefined();
   });
 
   it('writes a blocked output (does not throw) when the decision blocks', async () => {

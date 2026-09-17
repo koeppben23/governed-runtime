@@ -1,9 +1,9 @@
 /**
  * @module integration/tools/review-tool/index
- * @description FlowGuard review tool — standalone review flow (READY → REVIEW → REVIEW_COMPLETE).
+ * @description FlowGuard review tool — peer review flow (READY → PEER_REVIEW → PEER_REVIEW_COMPLETE).
  *
  * Orchestrates the review lifecycle: preparation, execution, completion.
- * Delegates to obligation.ts, invocation.ts, and completion.ts for domain logic.
+ * Delegates to obligation.ts and completion.ts for domain logic.
  *
  * @version v1
  */
@@ -20,14 +20,7 @@ import {
   type PreparedReviewContent,
   type ReviewReferenceInput,
 } from '../../../rails/review.js';
-import {
-  InputOriginSchema,
-  ExternalReferenceSchema,
-  ReviewFindings,
-  type ReviewObligation,
-} from '../../../state/evidence.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
-import { formatReviewRequiredSignal } from '../../review/enforcement/types.js';
+import { InputOriginSchema, ExternalReferenceSchema } from '../../../state/evidence.js';
 import type { ReviewExecutionContext, ReviewPreparation } from './types.js';
 import type { StartedReviewResult } from './types.js';
 import type { SessionState } from '../../../state/schema.js';
@@ -36,13 +29,11 @@ import type { ReviewToolArgs } from './types.js';
 import {
   ensureMissingAnalysisObligation,
   hasImplicitContentSignal,
-  validateHostTaskContinuationInput,
-  resolveSubmittedReviewObligation,
   validateSubmittedReviewFindings,
   consumeValidatedReviewObligation,
 } from './obligation.js';
-import { resolveHostTaskFindings } from '../review-validation.js';
-import { recordSubmittedReviewInvocation } from './invocation.js';
+import { resolveStructuredFindings } from '../review-validation-structured-evidence.js';
+import { formatStructuredResolutionFailure } from '../review-validation.js';
 import {
   buildReviewExecutors,
   formatBlockedReviewReport,
@@ -50,24 +41,15 @@ import {
   buildReviewCompletionResponse,
 } from './completion.js';
 import { prepareReviewContent } from '../../../rails/review.js';
-import { findReviewObligationById, updateAttemptStatus } from '../../review/assurance.js';
+import { findReviewObligationById } from '../../review/assurance.js';
 import { writeStateWithArtifacts } from '../helpers.js';
 import {
   appendCompletedReviewEvidence,
   appendPreparedReviewEvidence,
-  prepareStandaloneReviewEvidence,
+  preparePeerReviewEvidence,
   resolveReviewTaskIdentity,
 } from './preparation.js';
-import {
-  ensureStartedReviewState,
-  reissueReviewAttempt,
-  populateRefInput,
-  buildHostTaskAttestation,
-} from './continuation.js';
-import {
-  resolveFrozenContinuationContent,
-  assertFrozenSubjectUnchanged,
-} from './frozen-continuation.js';
+import { ensureStartedReviewState, populateRefInput } from './continuation.js';
 
 // ─── Review preparation orchestrator ─────────────────────────────────────────
 
@@ -81,32 +63,38 @@ function withCwd(
   return { ...refInput, cwd };
 }
 
-export { isHostTaskVerdictContinuation } from './continuation-authority.js';
-import {
-  resolveObligationBranchSource,
-  missingHostTaskVerdictBlock,
-  resolveHostTaskContinuationAuthority,
-} from './continuation-authority.js';
+import { resolveObligationBranchSource } from './continuation-authority.js';
 
 /**
  * Resolve the reviewed content for this invocation.
  *
- * A host-task verdict continuation reuses the persisted frozen subject and
- * material instead of re-deriving them; any remaining derivation is checked
- * against the frozen subject digest. Returns the blocked payload as a string.
+ * Returns the blocked payload as a string.
  */
 async function resolveReviewContentForExecution(
   state: SessionState,
   exec: ReviewExecutionContext,
   refInput: ReviewReferenceInput | undefined,
 ): Promise<PreparedReviewContent | null | string> {
-  const frozen = resolveFrozenContinuationContent(state, exec);
-  if (frozen.kind === 'blocked') return frozen.message;
-  if (frozen.kind === 'reuse') return frozen.content;
-
+  if (exec.args.reviewObligationId && !refInput) {
+    const obligation = findReviewObligationById(
+      state.reviewAssurance,
+      exec.args.reviewObligationId,
+    );
+    if (
+      obligation?.obligationType === 'review' &&
+      obligation.reviewMaterial &&
+      obligation.reviewSubject
+    ) {
+      return {
+        content: obligation.reviewMaterial.content,
+        reviewedContentDigest: obligation.reviewMaterial.materialDigest,
+        reviewSubject: obligation.reviewSubject,
+      };
+    }
+  }
   const derived = await prepareReviewContent(refInput, undefined);
   if (derived && 'kind' in derived) return formatBlockedReviewReport(derived);
-  return assertFrozenSubjectUnchanged(state, exec, derived) ?? derived;
+  return derived;
 }
 
 async function prepareReviewExecution(
@@ -115,18 +103,10 @@ async function prepareReviewExecution(
   result: StartedReviewResult,
   exec: ReviewExecutionContext,
 ): Promise<ReviewPreparation | string> {
-  const missingVerdictBlock = missingHostTaskVerdictBlock(state, exec);
-  if (missingVerdictBlock) return missingVerdictBlock;
   const resolvedSource = resolveObligationBranchSource(state, exec);
   let refInput = withCwd(populateRefInput(exec.args, state, resolvedSource), exec.context.worktree);
-  if (exec.args.branch && !resolvedSource) {
-    const hostVerdict = await prepareHostTaskVerdictReview(sessDir, state, result, exec);
-    if (hostVerdict) return withMaterializedHostVerdict(hostVerdict, null);
-  }
   const materializedContent = await resolveReviewContentForExecution(state, exec, refInput);
   if (typeof materializedContent === 'string') return materializedContent;
-  const hostVerdict = await prepareHostTaskVerdictReview(sessDir, state, result, exec);
-  if (hostVerdict) return withMaterializedHostVerdict(hostVerdict, materializedContent);
 
   const missingResult = await ensureMissingAnalysisObligation(sessDir, state, exec.args, exec.now, {
     worktree: exec.context.worktree,
@@ -141,18 +121,12 @@ async function prepareReviewExecution(
       ...(missingResult.attemptId && { reviewAttemptId: missingResult.attemptId }),
     };
   }
-  if (exec.args.reviewFindings === undefined)
-    return prepareMissingFindingsSubmission(result, refInput, missingResult, materializedContent);
-  return finishFindingsSubmission(sessDir, state, result, exec, { refInput, materializedContent });
-}
-
-function withMaterializedHostVerdict(
-  hostVerdict: ReviewPreparation | string,
-  materializedContent: PreparedReviewContent | null,
-): ReviewPreparation | string {
-  return typeof hostVerdict === 'string'
-    ? hostVerdict
-    : { ...hostVerdict, materializedContent, reviewSubject: materializedContent?.reviewSubject };
+  // Findings are only ever resolved from host-captured structured evidence:
+  // bound evidence resolves the submission; otherwise the caller is told that
+  // the reviewer evidence is missing.
+  const structured = prepareStructuredEvidenceSubmission(state, result, exec, materializedContent);
+  if (structured) return structured;
+  return prepareMissingFindingsSubmission(result, refInput, missingResult, materializedContent);
 }
 
 function prepareMissingFindingsSubmission(
@@ -173,205 +147,39 @@ function prepareMissingFindingsSubmission(
   };
 }
 
-async function finishFindingsSubmission(
-  sessDir: string,
+function prepareStructuredEvidenceSubmission(
   state: SessionState,
   result: StartedReviewResult,
   exec: ReviewExecutionContext,
-  content: {
-    refInput: ReviewReferenceInput | undefined;
-    materializedContent: PreparedReviewContent | null;
-  },
-): Promise<ReviewPreparation | string> {
-  const resolved = await resolveSubmittedReviewObligation(
-    sessDir,
-    state,
-    exec.args,
-    exec.now,
-    exec.context.worktree,
-  );
-  if (resolved.blocked || !resolved.obligation) {
-    return resolved.blocked ?? formatBlocked('REVIEW_OBLIGATION_NOT_FOUND', {});
-  }
-  const validationBlock = validateSubmittedReviewFindings(state, exec.args, resolved.obligation);
-  if (validationBlock) return validationBlock;
-  const recorded = await recordSubmittedReviewInvocation(
-    result,
-    resolved.obligation,
-    exec,
-    sessDir,
-  );
-  if (recorded.blocked) return recorded.blocked;
-  const refInput = content.refInput
-    ? { ...content.refInput, skipExternalContentLoad: true }
-    : undefined;
-  return {
-    result: recorded.result,
-    refInput,
-    validatedReviewObligation: resolved.obligation,
-    materializedContent: content.materializedContent,
-    reviewSubject: content.materializedContent?.reviewSubject,
-    ...(recorded.nativeAttestationRejection
-      ? { nativeAttestationRejection: recorded.nativeAttestationRejection }
-      : {}),
-  };
-}
-
-type HostTaskObligationResolution =
-  { kind: 'found'; obligation: ReviewObligation } | { kind: 'missing' };
-
-function resolveHostTaskObligation(
-  state: SessionState,
-  reviewObligationId: string,
-): HostTaskObligationResolution {
-  const obligation = findReviewObligationById(state.reviewAssurance, reviewObligationId);
-  if (
-    obligation &&
-    obligation.obligationType === 'review' &&
-    obligation.status !== 'consumed' &&
-    obligation.status !== 'blocked'
-  ) {
-    return { kind: 'found', obligation };
-  }
-  return { kind: 'missing' };
-}
-
-type AttemptRejectionResult =
-  | { ok: true }
-  | {
-      ok: false;
-      code:
-        'REVIEW_ASSURANCE_UNAVAILABLE' | 'REVIEW_ATTEMPT_ID_MISSING' | 'REVIEW_ATTEMPT_NOT_FOUND';
-      details: Record<string, string>;
-    };
-
-async function rejectIncoherentAttempt(
-  sessDir: string,
-  state: SessionState,
-  attemptId: string,
-  now: string,
-): Promise<AttemptRejectionResult> {
-  const assurance = state.reviewAssurance;
-  if (!assurance) {
-    return { ok: false, code: 'REVIEW_ASSURANCE_UNAVAILABLE', details: {} };
-  }
-  if (!attemptId) {
-    return { ok: false, code: 'REVIEW_ATTEMPT_ID_MISSING', details: {} };
-  }
-  const attempt = assurance.attempts?.find((item) => item.attemptId === attemptId);
-  if (!attempt) {
-    return { ok: false, code: 'REVIEW_ATTEMPT_NOT_FOUND', details: { attemptId } };
-  }
-  // Verdict-time incoherence (SUBAGENT_VERDICT_FINDINGS_INCOHERENT and all
-  // SUBAGENT_CHALLENGE_* codes) is a semantic consistency failure — persisted
-  // as `consistency_invalid`, which never authorizes an output repair.
-  const rejectedState: SessionState = {
-    ...state,
-    reviewAssurance: updateAttemptStatus(assurance, attempt.attemptId, 'rejected', now, {
-      rejectionReason: 'consistency_invalid',
-    }),
-  };
-  await writeStateWithArtifacts(sessDir, rejectedState);
-  return { ok: true };
-}
-
-// eslint-disable-next-line complexity, max-lines-per-function -- explicit fail-closed host-task verdict resolution
-async function prepareHostTaskVerdictReview(
-  sessDir: string,
-  state: SessionState,
-  result: StartedReviewResult,
-  exec: ReviewExecutionContext,
-): Promise<ReviewPreparation | string | null> {
-  // A verdict without an ID is an allowed first call. It must create (or reissue
-  // instructions for) an obligation rather than guessing a continuation identity.
-  const authority = resolveHostTaskContinuationAuthority(state, exec);
-  if (authority.kind !== 'explicit') return null;
-
-  const resolution = resolveHostTaskObligation(state, authority.reviewObligationId);
-  if (resolution.kind === 'missing') {
+  materializedContent: PreparedReviewContent | null,
+): ReviewPreparation | string | null {
+  if (!exec.args.reviewObligationId) return null;
+  const obligation = findReviewObligationById(state.reviewAssurance, exec.args.reviewObligationId);
+  if (!obligation || obligation.obligationType !== 'review') {
     return formatBlocked('REVIEW_OBLIGATION_NOT_FOUND', {
-      obligationId: authority.reviewObligationId,
-      reason: 'The host-task review obligation is missing, consumed, or blocked.',
+      obligationId: exec.args.reviewObligationId,
     });
   }
-
-  const obligation = resolution.obligation;
-  const inputBlock = validateHostTaskContinuationInput(obligation, exec.args);
-  if (inputBlock) return inputBlock;
-  const resolved = resolveHostTaskFindings(state.reviewAssurance, obligation);
-
-  if (resolved.kind === 'incoherent') {
-    const rejection = await rejectIncoherentAttempt(sessDir, state, resolved.attemptId, exec.now);
-    if (!rejection.ok) {
-      return formatBlocked(rejection.code, rejection.details);
-    }
-    return formatBlocked(
-      resolved.code,
-      Object.fromEntries(
-        Object.entries(resolved.details).map(([key, value]) => [key, String(value)]),
-      ),
-    );
+  const resolution = resolveStructuredFindings(
+    state.reviewAssurance,
+    obligation,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    exec.context.sessionID,
+  );
+  // No bound findings means the pending obligation must project its canonical
+  // native dispatch authority, not a second evidence-missing transport.
+  if (
+    resolution.kind === 'not_found' ||
+    (resolution.kind === 'invalid' && resolution.code === 'SUBAGENT_EVIDENCE_MISSING')
+  ) {
+    return null;
   }
-
-  if (resolved.kind === 'attempt_lineage_unavailable') {
-    return formatBlocked('REVIEW_ATTEMPT_LINEAGE_UNAVAILABLE', {
-      invocationId: resolved.invocationId,
-      obligationId: resolved.obligationId,
-    });
-  }
-
-  if (resolved.kind !== 'resolved') {
-    // Reissue an attempt so the next reviewer Task has a registered attempt
-    // identity before the host issues retry guidance. Reissue is authorized
-    // by the output-repair gate; a denied gate blocks the obligation.
-    const reissue = await reissueReviewAttempt(sessDir, state, obligation, exec.now);
-    if (reissue.kind === 'blocked') {
-      return formatBlocked(
-        reissue.code,
-        {
-          obligationId: obligation.obligationId,
-          reason: reissue.reason,
-        },
-        {
-          policy: exec.policy,
-          policyMode: exec.policy,
-          bindOutcome: resolved.kind,
-        },
-      );
-    }
-    return formatBlocked(
-      'HOST_SUBAGENT_TASK_REQUIRED',
-      { reviewerSubagentType: REVIEWER_SUBAGENT_TYPE },
-      {
-        reason:
-          resolved.kind === 'rejected'
-            ? 'host-task reviewer evidence exists but is not acceptable for the active review obligation'
-            : 'host-task reviewer evidence is required before submitting reviewVerdict',
-        policy: exec.policy,
-        policyMode: exec.policy,
-        bindOutcome: resolved.kind,
-        reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
-        reviewObligationId: obligation.obligationId,
-        reviewAttemptId: reissue.attempt.attemptId,
-        next: formatReviewRequiredSignal(obligation.iteration, obligation.planVersion),
-        requiredReviewAttestation: buildHostTaskAttestation(obligation),
-      },
-    );
-  }
-
-  if (resolved.findings.overallVerdict === 'unable_to_review') {
-    return formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', {
-      obligationId: resolved.invocation.obligationId,
-    });
-  }
-
-  if (authority.reviewVerdict !== resolved.findings.overallVerdict) {
-    return formatBlocked('SUBAGENT_FINDINGS_VERDICT_MISMATCH', {
-      provided: authority.reviewVerdict,
-      expected: resolved.findings.overallVerdict,
-    });
-  }
-
+  if (resolution.kind !== 'resolved') return formatStructuredResolutionFailure(resolution);
+  const validation = validateSubmittedReviewFindings(state, resolution.findings, obligation);
+  if (validation) return validation;
   const refInput = populateRefInput(exec.args, state, undefined);
   return {
     result,
@@ -379,12 +187,14 @@ async function prepareHostTaskVerdictReview(
       ? {
           ...refInput,
           skipExternalContentLoad: true,
-          ...(exec.context.worktree ? { cwd: exec.context.worktree } : {}),
+          ...(exec.context.worktree && { cwd: exec.context.worktree }),
         }
       : undefined,
     validatedReviewObligation: obligation,
-    effectiveReviewFindings: resolved.findings,
-    evidenceInvocationId: resolved.invocationId,
+    effectiveReviewFindings: resolution.findings,
+    evidenceInvocationId: resolution.invocationId,
+    materializedContent,
+    reviewSubject: materializedContent?.reviewSubject,
   };
 }
 
@@ -413,35 +223,34 @@ async function prepareReviewWithoutExternalCalls(
       args,
       context,
       now,
-      policy: state.policySnapshot?.reviewInvocationPolicy ?? 'host_task_required',
     });
     if (typeof prepared === 'string') return prepared;
-    // Only a durable obligation may materialize the REVIEW intermediate state.
+    // Only a durable obligation may materialize the PEER_REVIEW intermediate state.
     if (prepared.blockMessage && !prepared.persistedAssurance) return prepared.blockMessage;
     const obligationIdentity = prepared.pendingObligation ?? prepared.validatedReviewObligation;
     const taskEvidence = obligationIdentity
-      ? prepareStandaloneReviewEvidence(
+      ? preparePeerReviewEvidence(
           args,
           now,
           prepared.refInput,
-          resolveReviewTaskIdentity(state.standaloneReviewEvidence, obligationIdentity.obligationId)
+          resolveReviewTaskIdentity(state.peerReviewEvidence, obligationIdentity.obligationId)
             .reviewTaskId,
           obligationIdentity.obligationId,
         )
       : null;
     const stateWithTaskEvidence: SessionState = {
-      // Persist the REVIEW transition materialized by startReviewFlow so the
+      // Persist the PEER_REVIEW transition materialized by startReviewFlow so the
       // canonical session state reflects the active review obligation. The
-      // completion path continues an existing REVIEW rather than re-starting
+      // completion path continues an existing PEER_REVIEW rather than re-starting
       // the user-level /review command (which would require READY).
       ...result.state,
       // Obligation preparation already persisted the obligation AND its attempt.
       // Re-deriving from `state` (read before that write) dropped the attempt, so
       // the host could never bind reviewer evidence for a standalone /review.
       ...(prepared.persistedAssurance && { reviewAssurance: prepared.persistedAssurance }),
-      standaloneReviewEvidence: taskEvidence
-        ? appendPreparedReviewEvidence(state.standaloneReviewEvidence, taskEvidence)
-        : state.standaloneReviewEvidence,
+      peerReviewEvidence: taskEvidence
+        ? appendPreparedReviewEvidence(state.peerReviewEvidence, taskEvidence)
+        : state.peerReviewEvidence,
     };
     // The prepared entry is durable before a reviewer can be instructed.
     await writeStateWithArtifacts(sessDir, stateWithTaskEvidence);
@@ -464,7 +273,6 @@ async function persistCompletedReview(
       args,
       context,
       now,
-      policy: state.policySnapshot?.reviewInvocationPolicy ?? 'host_task_required',
     });
     if (typeof prepared === 'string') return prepared;
 
@@ -475,7 +283,6 @@ async function persistCompletedReview(
     let result = consumeValidatedReviewObligation(
       prepared.result,
       prepared.validatedReviewObligation,
-      args,
       now,
       {
         acceptedInvocationId: prepared.evidenceInvocationId,
@@ -484,11 +291,11 @@ async function persistCompletedReview(
     );
     const obligationIdentity = prepared.pendingObligation ?? prepared.validatedReviewObligation;
     const taskEvidence = obligationIdentity
-      ? prepareStandaloneReviewEvidence(
+      ? preparePeerReviewEvidence(
           args,
           now,
           prepared.refInput,
-          resolveReviewTaskIdentity(state.standaloneReviewEvidence, obligationIdentity.obligationId)
+          resolveReviewTaskIdentity(state.peerReviewEvidence, obligationIdentity.obligationId)
             .reviewTaskId,
           obligationIdentity.obligationId,
         )
@@ -497,27 +304,31 @@ async function persistCompletedReview(
       ...result,
       state: {
         ...result.state,
-        standaloneReviewEvidence: taskEvidence
+        peerReviewEvidence: taskEvidence
           ? appendCompletedReviewEvidence({
-              evidence: state.standaloneReviewEvidence,
+              evidence: state.peerReviewEvidence,
               prepared: taskEvidence,
               completedAt: now,
-              findings: prepared.effectiveReviewFindings ?? args.reviewFindings,
+              findings: prepared.effectiveReviewFindings,
             })
-          : state.standaloneReviewEvidence,
+          : state.peerReviewEvidence,
       },
     };
-    const completion = await persistReviewCompletion(sessDir, result, reviewResult, ctx);
+    const completion = await persistReviewCompletion(
+      sessDir,
+      result,
+      reviewResult,
+      ctx,
+      prepared.validatedReviewObligation,
+    );
     if (completion.kind === 'overflow') {
       return formatAutoAdvanceOverflow(completion.overflow);
     }
     return buildReviewCompletionResponse({
       sessDir,
-      args,
       result,
       report: completion.report,
       validatedReviewObligation: prepared.validatedReviewObligation,
-      nativeAttestationRejection: prepared.nativeAttestationRejection,
       finalState: completion.finalState,
       allTransitions: completion.allTransitions,
       worktree: context.worktree,
@@ -574,9 +385,10 @@ async function loadAndBindReviewContent(
 
 export const review: ToolDefinition = {
   description:
-    'Start the standalone review flow. Transitions READY → REVIEW → REVIEW_COMPLETE. ' +
-    'Generates a compliance review report with evidence completeness matrix ' +
-    'and four-eyes principle status, written to the session directory. ' +
+    'Start the peer review flow. Transitions READY → PEER_REVIEW → PEER_REVIEW_COMPLETE. ' +
+    'Generates a peer review report with explicit target coverage (resolved/frozen target, ' +
+    'base/head revisions, changed paths, objectives, review assurance) and findings, ' +
+    'written to the session directory. ' +
     'Only allowed in READY phase.',
   args: {
     inputOrigin: InputOriginSchema.optional().describe(
@@ -613,21 +425,8 @@ export const review: ToolDefinition = {
       .uuid()
       .optional()
       .describe(
-        'Exact obligation ID from requiredReviewAttestation.toolObligationId. Required when submitting a host-task review verdict.',
+        'Exact obligation ID from requiredReviewAttestation.toolObligationId. Required when consuming captured structured findings.',
       ),
-    reviewVerdict: z
-      .enum(['accept', 'changes_requested'])
-      .optional()
-      .describe(
-        `Reviewer verdict returned by ${REVIEWER_SUBAGENT_TYPE}. In host-task mode, ` +
-          'submit this after host-visible reviewer evidence has been bound; do not copy reviewFindings.',
-      ),
-    reviewFindings: ReviewFindings.optional().describe(
-      `Complete findings from ${REVIEWER_SUBAGENT_TYPE} subagent analysis. ` +
-        'Required for SDK/manual content-aware review submissions; ignored in host-task verdict mode. ' +
-        'Must include reviewMode="subagent", reviewedBy, and valid attestation with ' +
-        'mandateDigest and criteriaVersion.',
-    ),
     targetPaths: z
       .array(z.string())
       .optional()
@@ -660,7 +459,7 @@ export const review: ToolDefinition = {
       const reviewResult = await executeReview(
         content.reviewState,
         prepared.now,
-        buildReviewExecutors(args, prepared.effectiveReviewFindings),
+        buildReviewExecutors(prepared.effectiveReviewFindings),
         prepared.refInput,
         content.loadedContent === undefined
           ? undefined

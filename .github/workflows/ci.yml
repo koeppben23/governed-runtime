@@ -45,8 +45,8 @@ jobs:
       - name: Hint when trust-boundary changes miss KNOWN_ISSUES.md
         run: node scripts/check-known-issues-note.mjs "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}"
 
-  unused-exports-note:
-    name: unused-exports-note
+  unused-exports:
+    name: unused-exports
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     timeout-minutes: 10
@@ -61,7 +61,7 @@ jobs:
           cache-dependency-path: package-lock.json
       - name: Install dependencies
         run: npm ci
-      - name: Hint on new unused exports against the committed baseline
+      - name: Check new unused exports against the committed baseline
         run: node scripts/check-unused-exports.mjs
 
   test:
@@ -618,6 +618,11 @@ jobs:
         run: |
           OPENCODE_VERSION=$(node -p "require('./.sdk-baselines/opencode/host-version.json').version")
           npm install -g --prefer-offline --no-audit --no-fund "opencode-ai@$OPENCODE_VERSION"
+          # npm may link global bins into a prefix that is not on PATH yet.
+          GLOBAL_BIN="$(npm prefix -g)/bin"
+          if [ -d "$GLOBAL_BIN" ]; then
+            echo "$GLOBAL_BIN" >> "$GITHUB_PATH"
+          fi
 
       - name: Verify OpenCode CLI availability
         run: |
@@ -634,6 +639,9 @@ jobs:
         env:
           FORCE_COLOR: 0
           OPENCODE_DISABLE_AUTOUPDATE: '1'
+          # The pinned host is installed above; prove the frozen structured
+          # reviewer wire contract (child session + json_schema + info.structured).
+          FLOWGUARD_OPENCODE_HOST_E2E: '1'
           RUN_OPENCODE_ACP_TESTS: '1'
 
   independent-review-e2e:
@@ -686,6 +694,11 @@ jobs:
         run: |
           OPENCODE_VERSION=$(node -p "require('./.sdk-baselines/opencode/host-version.json').version")
           npm install -g --prefer-offline --no-audit --no-fund "opencode-ai@$OPENCODE_VERSION"
+          # npm may link global bins into a prefix that is not on PATH yet.
+          GLOBAL_BIN="$(npm prefix -g)/bin"
+          if [ -d "$GLOBAL_BIN" ]; then
+            echo "$GLOBAL_BIN" >> "$GITHUB_PATH"
+          fi
 
       - name: Verify OpenCode CLI availability
         run: |

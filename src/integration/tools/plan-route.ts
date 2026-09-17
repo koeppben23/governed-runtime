@@ -1,7 +1,7 @@
 /**
  * @module integration/tools/plan-route
  * @description Plan initial-submission routing for an existing plan review
- *              obligation: output-repair reissue and attempt re-emission.
+ *              obligation: interrupted-dispatch re-arm and attempt re-emission.
  *
  * `/plan` re-invocation is the authorized trigger for review lifecycle
  * transitions of the latest plan obligation. A blocked plan obligation is NOT
@@ -13,14 +13,18 @@
 
 import { readState } from '../../adapters/persistence.js';
 import type { SessionState } from '../../state/schema.js';
-import { ensureReviewAssurance, reviewObligationResponseFields } from '../review/assurance.js';
+import { ensureReviewAssurance } from '../review/assurance.js';
+import {
+  resolveReviewDispatchAuthority,
+  reviewObligationResponseFields,
+} from '../review/dispatch-authority.js';
+import type { ReviewDispatchAuthority } from '../review/dispatch-authority.js';
 import { resolveReviewContinuation } from '../review/review-continuation.js';
 import { blockObligation } from '../review/obligation-state.js';
-import { reissueReviewAttempt } from './review-tool/continuation.js';
 import { buildInterruptedDispatchRearm } from '../durable-dispatch.js';
 import type { PlanExecutionScope } from './plan-types.js';
 import { buildPlanReviewInstruction } from './plan-response.js';
-import { appendNextAction, formatBlocked, writeStateWithArtifacts } from './helpers.js';
+import { enrichWithWorkflowDirective, formatBlocked, writeStateWithArtifacts } from './helpers.js';
 
 /**
  * Gate an initial plan submission against the plan review loop: a pending plan
@@ -48,7 +52,7 @@ export function blockedPlanReviewInProgress(state: SessionState): string | null 
   return null;
 }
 
-// eslint-disable-next-line complexity -- the plan continuation route is one sequential fail-closed chain (pending re-emit, interrupted-dispatch re-arm, output repair, missing-attempt close).
+// eslint-disable-next-line complexity -- the plan continuation route is one sequential fail-closed chain (pending re-emit, interrupted-dispatch re-arm, missing-attempt close).
 export async function routePlanInitialSubmission(
   scope: PlanExecutionScope,
 ): Promise<string | null> {
@@ -63,7 +67,14 @@ export async function routePlanInitialSubmission(
       // with a different digest must never be silently ignored — fail closed.
       const changed = changedSubjectWhilePending(scope, continuation.obligation);
       if (changed) return changed;
-      return planInstructionResponse(scope, continuation.obligation, continuation.attemptId);
+      const authority = resolveReviewDispatchAuthority(
+        state.reviewAssurance,
+        continuation.obligation.obligationId,
+      );
+      if (authority.kind === 'blocked') {
+        return formatBlocked(authority.code, { reason: authority.reason });
+      }
+      return planInstructionResponse(scope, authority.authority);
     }
     case 'interrupted_dispatch': {
       // A bindable attempt carries an unresolved durable dispatch. `/plan` is
@@ -75,8 +86,6 @@ export async function routePlanInitialSubmission(
       if (changed) return changed;
       return routePlanInterruptedDispatch(scope, continuation.obligation, continuation.attemptId);
     }
-    case 'output_repair':
-      return routePlanOutputRepair(scope, continuation.obligation);
     case 'integrity_blocked':
       return formatBlocked(continuation.code, {
         obligationId: continuation.obligation.obligationId,
@@ -139,29 +148,11 @@ async function routePlanInterruptedDispatch(
     reviewAssurance: rearmed.assurance,
   });
   const fresh = (await readState(scope.sessDir)) ?? scope.state;
-  return planInstructionResponse({ ...scope, state: fresh }, obligation, rearmed.attempt.attemptId);
-}
-
-async function routePlanOutputRepair(
-  scope: PlanExecutionScope,
-  obligation: NonNullable<PlanExecutionScope['state']['reviewAssurance']>['obligations'][number],
-): Promise<string> {
-  const changed = changedSubjectWhilePending(scope, obligation);
-  if (changed) return changed;
-  const reissue = await reissueReviewAttempt(
-    scope.sessDir,
-    scope.state,
-    obligation,
-    scope.ctx.now(),
-  );
-  if (reissue.kind === 'blocked') {
-    return formatBlocked(reissue.code, {
-      obligationId: obligation.obligationId,
-      reason: reissue.reason,
-    });
+  const authority = resolveReviewDispatchAuthority(fresh.reviewAssurance, obligation.obligationId);
+  if (authority.kind === 'blocked') {
+    return formatBlocked(authority.code, { reason: authority.reason });
   }
-  const fresh = (await readState(scope.sessDir)) ?? scope.state;
-  return planInstructionResponse({ ...scope, state: fresh }, obligation, reissue.attempt.attemptId);
+  return planInstructionResponse({ ...scope, state: fresh }, authority.authority);
 }
 
 function changedSubjectWhilePending(
@@ -181,14 +172,13 @@ function changedSubjectWhilePending(
 
 function planInstructionResponse(
   scope: PlanExecutionScope,
-  obligation: NonNullable<PlanExecutionScope['state']['reviewAssurance']>['obligations'][number],
-  attemptId: string | null,
+  authority: ReviewDispatchAuthority,
 ): string {
   const instruction = buildPlanReviewInstruction({
     scope,
-    obligation,
-    iteration: obligation.iteration,
-    planVersion: obligation.planVersion,
+    authority,
+    iteration: authority.obligation.iteration,
+    planVersion: authority.obligation.planVersion,
     subjectLabel: 'full plan text and ticket text',
     state: scope.state,
   });
@@ -197,11 +187,11 @@ function planInstructionResponse(
     status: 'Plan review is pending; reusing the existing review obligation.',
     planDigest: scope.state.plan!.current.digest,
     selfReviewIteration: scope.state.selfReview!.iteration,
-    reviewMode: scope.reviewPolicy.subagentEnabled ? 'subagent' : 'self',
-    ...reviewObligationResponseFields(obligation, attemptId),
-    next: instruction.next,
-    ...(instruction.reviewInvocation ? { reviewInvocation: instruction.reviewInvocation } : {}),
+    reviewMode: 'subagent',
+    ...reviewObligationResponseFields(authority),
+    reviewDispatch: instruction.reviewDispatch,
+    reviewInvocation: instruction,
     _audit: { transitions: [] },
   };
-  return appendNextAction(JSON.stringify(response), scope.state);
+  return JSON.stringify(enrichWithWorkflowDirective(response, scope.state));
 }

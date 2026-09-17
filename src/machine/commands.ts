@@ -8,7 +8,7 @@
  * - Command → Rail → State mutation → evaluate() → Event → Transition.
  * - /continue is the routing command (deterministic, guard-determined event).
  * - READY is the entry phase where users select a flow (/ticket, /architecture, /review).
- * - Terminal phases (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE) block all commands.
+ * - Terminal phases (COMPLETE, ARCH_COMPLETE, PEER_REVIEW_COMPLETE) block all commands.
  *
  * @version v3
  */
@@ -25,12 +25,13 @@ export const Command = {
   PLAN: 'plan',
   CONTINUE: 'continue',
   IMPLEMENT: 'implement',
-  EXTEND_IMPLEMENTATION_REVIEW: 'extend-implementation-review',
   RESOLVE_IMPLEMENTATION_CHALLENGE: 'resolve-implementation-challenge',
   REVIEW_DECISION: 'review-decision',
+  OVERRIDE_APPROVE: 'override-approve',
   VALIDATE: 'validate',
   REVIEW: 'review',
   ARCHITECTURE: 'architecture',
+  EXPORT: 'export',
   ABORT: 'abort',
 } as const;
 export type Command = (typeof Command)[keyof typeof Command];
@@ -47,12 +48,13 @@ const COMMAND_POLICY: ReadonlyMap<Command, AllowedIn> = new Map<Command, Allowed
   [Command.PLAN, new Set<Phase>(['TICKET', 'PLAN'])],
   [Command.CONTINUE, '*'],
   [Command.IMPLEMENT, new Set<Phase>(['IMPLEMENTATION'])],
-  [Command.EXTEND_IMPLEMENTATION_REVIEW, new Set<Phase>(['IMPLEMENTATION'])],
   [Command.RESOLVE_IMPLEMENTATION_CHALLENGE, new Set<Phase>(['IMPL_REVIEW'])],
   [Command.REVIEW_DECISION, new Set<Phase>(['PLAN_REVIEW', 'EVIDENCE_REVIEW', 'ARCH_REVIEW'])],
+  [Command.OVERRIDE_APPROVE, new Set<Phase>(['PLAN_REVIEW', 'EVIDENCE_REVIEW', 'ARCH_REVIEW'])],
   [Command.VALIDATE, new Set<Phase>(['VALIDATION', 'IMPL_VALIDATION'])],
   [Command.REVIEW, new Set<Phase>(['READY'])],
   [Command.ARCHITECTURE, new Set<Phase>(['READY', 'ARCHITECTURE'])],
+  [Command.EXPORT, new Set<Phase>(['EXPORT_READY'])],
   [Command.ABORT, '*'],
 ]);
 

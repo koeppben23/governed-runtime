@@ -22,11 +22,17 @@ Diagnostic: `flowguard_status({ proofGraph: true })`
   - BASE · src/subject.ts:8
   - HEAD · test/evidence.test.ts:4
 
-## Completeness
+## Target coverage
 
-**Overall:** Incomplete
-**Four-eyes principle:** Not satisfied / Not recorded
-**Summary:** 4/6 complete, 2 missing
+**Target resolved:** yes
+**Target frozen:** yes
+**Repository identity:** verified
+**Base SHA:** aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+**Head SHA:** bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+**Changed paths:** 1
+**Objectives covered:** 2/3
+**Review assurance:** structured_high
+**Missing verification:** Add regression coverage
 
 ## Recommended follow-up
 

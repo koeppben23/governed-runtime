@@ -109,7 +109,7 @@ async function completionDeps(state: SessionState): Promise<{ deps: AuditDeps; s
   };
 }
 
-function completionCount(events: Awaited<ReturnType<typeof readAuditTrail>>['events']): number {
+function completionCount(events: Awaited<ReturnType<typeof readAuditTrail>>): number {
   return events.filter((event) => event.event === 'lifecycle:session_completed').length;
 }
 
@@ -126,7 +126,7 @@ describe('plugin audit completion idempotency', () => {
       await runAudit(deps, tool, {}, { phase: 'COMPLETE', error: false }, SESSION_ID);
     }
 
-    const { events } = await readAuditTrail(sessDir);
+    const events = await readAuditTrail(sessDir);
     expect(completionCount(events)).toBe(1);
     expect(events.find((event) => event.event === 'lifecycle:session_completed')?.occurredAt).toBe(
       COMPLETED_AT,
@@ -140,7 +140,7 @@ describe('plugin audit completion idempotency', () => {
       runAudit(deps, 'flowguard_status', {}, { phase: 'COMPLETE', error: false }, SESSION_ID),
     ]);
 
-    expect(completionCount((await readAuditTrail(sessDir)).events)).toBe(1);
+    expect(completionCount(await readAuditTrail(sessDir))).toBe(1);
   });
 
   it.each(['missing', 'ambiguous'] as const)(
@@ -174,7 +174,7 @@ describe('plugin audit completion idempotency', () => {
         block: true,
         code: 'AUDIT_TERMINAL_TRANSITION_AUTHORITY_UNAVAILABLE',
       });
-      expect(completionCount((await readAuditTrail(sessDir)).events)).toBe(0);
+      expect(completionCount(await readAuditTrail(sessDir))).toBe(0);
     },
   );
 
@@ -216,6 +216,6 @@ describe('plugin audit completion idempotency', () => {
       block: true,
       code: 'AUDIT_TERMINAL_TRANSITION_AUTHORITY_UNAVAILABLE',
     });
-    expect(completionCount((await readAuditTrail(sessDir)).events)).toBe(0);
+    expect(completionCount(await readAuditTrail(sessDir))).toBe(0);
   });
 });

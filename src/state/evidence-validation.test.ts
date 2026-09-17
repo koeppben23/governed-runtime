@@ -8,7 +8,12 @@
  * @test-policy HAPPY, BAD, CORNER
  */
 import { describe, it, expect } from 'vitest';
-import { ValidationAttempt, ValidationResult, isExecutionError } from './evidence-validation.js';
+import {
+  ValidationAttempt,
+  ValidationResult,
+  classifyValidationDisposition,
+  isExecutionError,
+} from './evidence-validation.js';
 import { FIXED_TIME } from './evidence-test-constants.js';
 
 const VALID_DIGEST = 'a'.repeat(64);
@@ -274,6 +279,86 @@ describe('evidence-validation', () => {
     });
     it('false for an ordinary failure (exit 1)', () => {
       expect(isExecutionError({ timedOut: false, exitCode: 1 })).toBe(false);
+    });
+  });
+
+  describe('classifyValidationDisposition', () => {
+    it('supported only for a passed supported result', () => {
+      expect(
+        classifyValidationDisposition({
+          passed: true,
+          outcome: 'supported',
+          timedOut: false,
+          exitCode: 0,
+        }),
+      ).toBe('supported');
+    });
+
+    it('artifact_failure for a genuine non-passing result (exit 1, inconclusive)', () => {
+      expect(
+        classifyValidationDisposition({
+          passed: false,
+          outcome: 'inconclusive',
+          timedOut: false,
+          exitCode: 1,
+        }),
+      ).toBe('artifact_failure');
+    });
+
+    it('technical_block for a blocked outcome even when the process succeeded (subject drift)', () => {
+      expect(
+        classifyValidationDisposition({
+          passed: false,
+          outcome: 'blocked',
+          timedOut: false,
+          exitCode: 0,
+        }),
+      ).toBe('technical_block');
+    });
+
+    it('artifact_failure for a trustworthy extraction of a non-passing artifact', () => {
+      expect(
+        classifyValidationDisposition({
+          passed: false,
+          outcome: 'inconclusive',
+          timedOut: false,
+          exitCode: 1,
+          assertionExtraction: { status: 'extracted' },
+        }),
+      ).toBe('artifact_failure');
+    });
+
+    it('technical_block when the assertion extraction itself is inconclusive', () => {
+      // A missing/unparseable/ambiguous report is lack of trustworthy evidence,
+      // not proof that the artifact failed.
+      expect(
+        classifyValidationDisposition({
+          passed: false,
+          outcome: 'inconclusive',
+          timedOut: false,
+          exitCode: 1,
+          assertionExtraction: { status: 'inconclusive' },
+        }),
+      ).toBe('technical_block');
+    });
+
+    it('technical_block for timeouts and command-not-found', () => {
+      expect(
+        classifyValidationDisposition({
+          passed: false,
+          outcome: 'blocked',
+          timedOut: true,
+          exitCode: 124,
+        }),
+      ).toBe('technical_block');
+      expect(
+        classifyValidationDisposition({
+          passed: false,
+          outcome: 'inconclusive',
+          timedOut: false,
+          exitCode: 127,
+        }),
+      ).toBe('technical_block');
     });
   });
 });

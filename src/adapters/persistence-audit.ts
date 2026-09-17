@@ -128,21 +128,14 @@ async function appendAuditLineAtomically(
     } catch (err) {
       if (!isEnoent(err)) throw err;
     }
-    const existingTrail = parseAuditTrail(existing);
-
-    if (existingTrail.skipped > 0) {
-      throw new AuditFormatError(
-        `Refusing to append: existing audit trail contains ${existingTrail.skipped} record(s) ` +
-          'that violate the canonical audit-chain.v3 envelope. Non-v3 assurance artifacts are unsupported.',
-      );
-    }
+    const existingEvents = parseAuditTrail(existing);
 
     // Exactly-once under the audit write lock: an event id is a commit
     // identity. A crash between append and acknowledgement may re-deliver the
     // SAME event — return the persisted record instead of appending a
     // duplicate. The same id with different content is a chain violation and
     // fails closed.
-    const sameId = existingTrail.events.find((candidate) => candidate.id === event.id);
+    const sameId = existingEvents.find((candidate) => candidate.id === event.id);
     if (sameId) {
       if (
         computeCanonicalEventDigest(normalizeCurrentAuditBody(sameId)) ===
@@ -162,9 +155,9 @@ async function appendAuditLineAtomically(
     // it can never leak into a computed digest.
     const bodyWithPosition: Omit<ChainedAuditEvent, 'chainHash'> = {
       ...normalizeCurrentAuditBody(event),
-      auditSequence: existingTrail.events.length + 1,
+      auditSequence: existingEvents.length + 1,
       recordedAt: new Date().toISOString(),
-      prevHash: getLastChainHash(existingTrail.events),
+      prevHash: getLastChainHash(existingEvents),
     } as unknown as Omit<ChainedAuditEvent, 'chainHash'>;
     const semanticEventDigest = computeCanonicalEventDigest(bodyWithPosition);
     const finalized: Omit<ChainedAuditEvent, 'chainHash'> = {
@@ -195,9 +188,8 @@ async function appendAuditLineAtomically(
   });
 }
 
-function parseAuditTrail(raw: string): { events: AuditEvent[]; skipped: number } {
+function parseAuditTrail(raw: string): AuditEvent[] {
   const events: AuditEvent[] = [];
-  const skipped = 0;
 
   for (const line of raw.split('\n')) {
     const trimmed = line.trim();
@@ -225,7 +217,7 @@ function parseAuditTrail(raw: string): { events: AuditEvent[]; skipped: number }
     events.push(result.data);
   }
 
-  return { events, skipped };
+  return events;
 }
 
 async function withAuditWriteLock<T>(sessionDir: string, fn: () => Promise<T>): Promise<T> {
@@ -250,22 +242,20 @@ async function acquireAuditWriteLock(sessionDir: string): Promise<() => Promise<
 /**
  * Read all audit events from the JSONL trail.
  *
- * Returns empty array if no audit file exists.
+ * Returns an empty array if no audit file exists.
  * Fails closed with AUDIT_ENVELOPE_INVALID on any record that does not
  * satisfy the canonical audit-chain.v3 schema — malformed or non-v3 records
  * are never reinterpreted, migrated, or skipped.
  *
  * @param sessionDir - Absolute path to the session directory.
- * @returns Object with events array and skipped count (always 0 — rejects instead).
+ * @returns Every canonical audit event in trail order.
  */
-export async function readAuditTrail(
-  sessionDir: string,
-): Promise<{ events: AuditEvent[]; skipped: number }> {
+export async function readAuditTrail(sessionDir: string): Promise<AuditEvent[]> {
   let raw: string;
   try {
     raw = await fs.readFile(auditPath(sessionDir), 'utf-8');
   } catch (err: unknown) {
-    if (isEnoent(err)) return { events: [], skipped: 0 };
+    if (isEnoent(err)) return [];
     getAdapterLogger().error('persistence-audit', 'Failed to read audit trail', {
       filePath: auditPath(sessionDir),
       error: err instanceof Error ? err.message : String(err),

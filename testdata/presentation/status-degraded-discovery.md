@@ -19,4 +19,6 @@ Approval evidence: Not recorded
 **Recovery:** Run /hydrate to refresh discovery data.
 **Not verified:** Repository drift, Code-surface completeness, Discovery drift, Code-surface completeness
 
-→ `/check` — Run required verification checks.
+## Independent review pending
+
+Plan validation in progress.

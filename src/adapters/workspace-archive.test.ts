@@ -238,7 +238,12 @@ describe('Archive Layout v2', () => {
         gatePhase: 'PLAN_REVIEW',
         verdict: 'approve',
         rationale: 'Approved for archive projection test.',
-        decidedBy: 'reviewer-1',
+        decisionIdentity: {
+          actorId: 'reviewer-1',
+          actorEmail: null,
+          actorSource: 'env',
+          actorAssurance: 'best_effort',
+        },
         decidedAt: '2026-01-01T00:00:00.000Z',
         fromPhase: 'PLAN_REVIEW',
         toPhase: 'VALIDATION',
@@ -262,7 +267,12 @@ describe('Archive Layout v2', () => {
         decisionId: 'DEC-ARCHIVE-001',
         gatePhase: 'PLAN_REVIEW',
         verdict: 'approve',
-        decidedBy: 'reviewer-1',
+        decisionIdentity: {
+          actorId: 'reviewer-1',
+          actorEmail: null,
+          actorSource: 'env',
+          actorAssurance: 'best_effort',
+        },
         transitionEvent: 'APPROVE',
       }),
     ]);
@@ -566,7 +576,7 @@ describe('Archive Layout v2', () => {
     const options = { redactionMode: 'none' as const, includeRaw: true };
     const archivePath = await archiveSession(initialized.fingerprint, sessionId, options);
     await archiveSession(initialized.fingerprint, sessionId, options);
-    let bindings = (await readAuditTrail(initialized.sessionDir)).events.filter(
+    let bindings = (await readAuditTrail(initialized.sessionDir)).filter(
       (event) => event.event === 'archive:artifacts_bound',
     );
     expect(bindings).toHaveLength(1);
@@ -583,12 +593,12 @@ describe('Archive Layout v2', () => {
       'utf8',
     );
     await archiveSession(initialized.fingerprint, sessionId, options);
-    bindings = (await readAuditTrail(initialized.sessionDir)).events.filter(
+    bindings = (await readAuditTrail(initialized.sessionDir)).filter(
       (event) => event.event === 'archive:artifacts_bound',
     );
     expect(bindings).toHaveLength(2);
     expect(bindings[1]?.detail).toMatchObject({ artifactCount: 2 });
-    const publications = (await readAuditTrail(initialized.sessionDir)).events.filter(
+    const publications = (await readAuditTrail(initialized.sessionDir)).filter(
       (event) => event.event === 'archive:publication_bound',
     );
     expect(publications).toHaveLength(3);
@@ -619,7 +629,7 @@ describe('Archive Layout v2', () => {
 
     await archiveSession(initialized.fingerprint, sessionId, options);
 
-    const bindings = (await readAuditTrail(initialized.sessionDir)).events.filter(
+    const bindings = (await readAuditTrail(initialized.sessionDir)).filter(
       (event) => event.event === 'archive:artifacts_bound',
     );
     expect(bindings).toHaveLength(2);
@@ -852,7 +862,7 @@ describe('Archive Layout v2', () => {
     const { fingerprint, sessionId, sessionDir } = await createArchive();
     await appendCompletionAuditEvent(sessionDir, sessionId);
     await appendCompletionAuditEvent(sessionDir, sessionId);
-    const events = (await readAuditTrail(sessionDir)).events;
+    const events = await readAuditTrail(sessionDir);
     const resealed = resealAuditTrailWithClockAnomaly(events);
     await fs.writeFile(
       path.join(sessionDir, 'audit.jsonl'),

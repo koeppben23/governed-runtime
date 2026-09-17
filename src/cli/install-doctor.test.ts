@@ -20,7 +20,7 @@ import { checkPluginActivation } from './doctor-plugin.js';
 import { checkLastSessionHandshake } from './doctor-handshake.js';
 import { COMMANDS, MANDATES_FILENAME, mandatesInstructionEntry } from './templates.js';
 import { measureAsync } from '../test-policy.js';
-import { SHIPPED_EXECUTABLE_CHECK } from './install-helpers.js';
+import { SHIPPED_EXECUTABLE_CHECK } from './install-types.js';
 import { checkShippedExecutables } from './doctor-executables.js';
 import { checkBuildInfo } from './doctor-build-info.js';
 import {
@@ -170,7 +170,7 @@ describe('cli/doctor', () => {
         1 +
         1 +
         1 + // opencode-instruction-source-activation (instruction-source gate)
-        11 +
+        12 + // platform-trust rows for opencode (7 fixed + 5 receipt-preservation)
         executableChecks +
         buildInfoChecks;
       expect(checks.length).toBe(expectedChecks);

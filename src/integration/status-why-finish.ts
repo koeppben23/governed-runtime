@@ -12,12 +12,11 @@
 import type { SessionState } from '../state/schema.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 import { evaluate } from '../machine/evaluate.js';
-import { resolveNextAction } from '../machine/next-action.js';
+import { resolveWorkflowDirective, type WorkflowDirective } from '../machine/workflow-directive.js';
 import { PHASE_LABELS } from '../presentation/phase-labels.js';
-import { buildProductNextAction } from '../presentation/next-action-copy.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
 import { projectStatusActionFromCommand } from './status-conclusion.js';
-import type { PresentationAction } from '../presentation/index.js';
+import { directiveLabel, type PresentationAction } from '../presentation/index.js';
 import type { BlockedProjection, FinishCard } from './status.js';
 import { projectProofStatusForState } from './proofgraph/proof-summary-projectors.js';
 
@@ -81,13 +80,7 @@ export function buildWhyPresentationProjection(
   blocker: BlockedProjection,
 ): WhyPresentationProjection {
   const evalResult = evaluate(state, { requireHumanGates: policy.requireHumanGates });
-  const next = resolveNextAction(state.phase, state);
-  const productNext = buildProductNextAction(
-    next,
-    state.phase,
-    state.error?.code === 'ABORTED',
-    state.archiveStatus ?? null,
-  );
+  const directive = resolveWorkflowDirective(state);
   const completeness = evaluateCompleteness(state);
 
   const evidenceSlots = completeness.slots
@@ -105,24 +98,22 @@ export function buildWhyPresentationProjection(
     blocker,
     evidenceSlots,
     proofSummary: projectProofStatusForState(state),
-    conclusion: buildWhyConclusion(evalResult, productNext),
+    conclusion: buildWhyConclusion(evalResult, directive),
   };
 }
 
 function buildWhyConclusion(
   evalResult: ReturnType<typeof evaluate>,
-  productNext: ReturnType<typeof buildProductNextAction>,
+  directive: WorkflowDirective,
 ): WhyConclusionProjection {
-  if (productNext.presentationForm === 'review_pending') {
-    return { kind: 'review_pending', message: productNext.text };
+  if (directive.kind === 'system_work') {
+    return { kind: 'review_pending', message: directiveLabel(directive.code) };
   }
-  const command = productNext.commands[0];
+  const command = directive.commands[0];
 
   switch (evalResult.kind) {
     case 'waiting': {
-      const actions = productNext.commands.map((c) =>
-        projectStatusActionFromCommand(c, 'available'),
-      );
+      const actions = directive.commands.map((c) => projectStatusActionFromCommand(c, 'available'));
       if (actions.length === 0) {
         throw Object.assign(
           new Error(
@@ -137,7 +128,7 @@ function buildWhyConclusion(
     case 'pending':
     case 'transition': {
       if (!command) {
-        return { kind: 'terminal', message: productNext.text };
+        return { kind: 'terminal', message: directiveLabel(directive.code) };
       }
       return {
         kind: 'next_action',
@@ -146,15 +137,9 @@ function buildWhyConclusion(
     }
 
     case 'terminal': {
-      // Machine-terminal phases (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE)
-      // always have product commands (/export, /status). The /why surface
-      // has no presentation-terminal conclusion.
-      const nextCmd = productNext.commands[0];
+      const nextCmd = directive.commands[0];
       if (!nextCmd) {
-        throw Object.assign(
-          new Error('WhyProjection: terminal evalResult has no product commands'),
-          { code: 'WHY_TERMINAL_PROJECTION_EMPTY' },
-        );
+        return { kind: 'terminal', message: directiveLabel(directive.code) };
       }
       return {
         kind: 'next_action',
@@ -177,15 +162,8 @@ export function buildFinishPresentationProjection(
 }
 
 function buildFinishConclusion(state: SessionState): FinishConclusionProjection {
-  const next = resolveNextAction(state.phase, state);
-  const productNext = buildProductNextAction(
-    next,
-    state.phase,
-    state.error?.code === 'ABORTED',
-    state.archiveStatus ?? null,
-  );
-
-  const command = productNext.commands[0];
+  const directive = resolveWorkflowDirective(state);
+  const command = directive.commands[0];
 
   if (command !== undefined) {
     return {
@@ -194,11 +172,5 @@ function buildFinishConclusion(state: SessionState): FinishConclusionProjection 
     };
   }
 
-  if (productNext.text.trim().length === 0) {
-    throw Object.assign(new Error('Finish presentation requires non-empty terminal text'), {
-      code: 'FINISH_TERMINAL_PROJECTION_EMPTY',
-    });
-  }
-
-  return { kind: 'terminal', message: productNext.text };
+  return { kind: 'terminal', message: directiveLabel(directive.code) };
 }

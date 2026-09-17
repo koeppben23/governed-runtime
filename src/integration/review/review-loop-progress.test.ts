@@ -43,6 +43,7 @@ describe('getReviewLoopProgress', () => {
       const state = reviewState('PLAN_REVIEW', {
         selfReview: {
           iteration: 2,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: 'prev',
           currDigest: 'curr',
@@ -59,11 +60,14 @@ describe('getReviewLoopProgress', () => {
               invocationId: 'inv-1',
               obligationId: 'obl-1',
               obligationType: 'plan',
+              attemptId: '00000000-0000-4000-8000-0000000000b1',
               parentSessionId: 'parent',
               childSessionId: 'child',
               agentType: 'flowguard-reviewer',
-              invocationMode: 'sdk_session_prompt',
-              hostVisible: false,
+              invocationMode: 'native_task_structured_followup',
+              hostVisible: true,
+              transcriptNavigable: true,
+              source: 'host-orchestrated',
               promptHash: 'h1',
               findingsHash: 'h2',
               mandateDigest: 'md',
@@ -102,6 +106,7 @@ describe('getReviewLoopProgress', () => {
       const state = reviewState('ARCH_REVIEW', {
         selfReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 5,
           prevDigest: 'p',
           currDigest: 'c',
@@ -121,6 +126,7 @@ describe('getReviewLoopProgress', () => {
       const state = reviewState('IMPL_REVIEW', {
         implReview: {
           iteration: 0,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: 'd',
@@ -139,6 +145,7 @@ describe('getReviewLoopProgress', () => {
             missingVerification: [],
             scopeCreep: [],
             unknowns: [],
+            challenges: [],
             reviewedBy: { sessionId: 'child' },
             reviewedAt: '2026-01-01T00:00:00.000Z',
           },
@@ -157,6 +164,7 @@ describe('getReviewLoopProgress', () => {
       const state = reviewState('IMPL_REVIEW', {
         implReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: 'd',
@@ -175,6 +183,7 @@ describe('getReviewLoopProgress', () => {
             missingVerification: [],
             scopeCreep: [],
             unknowns: [],
+            challenges: [],
             reviewedBy: { sessionId: 'c' },
             reviewedAt: '2026-01-01T00:00:00.000Z',
           },
@@ -189,6 +198,7 @@ describe('getReviewLoopProgress', () => {
       const state = reviewState('PLAN', {
         selfReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: 'p',
           currDigest: 'c',
@@ -203,6 +213,7 @@ describe('getReviewLoopProgress', () => {
       const state = reviewState('ARCHITECTURE', {
         selfReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: 'p',
           currDigest: 'c',
@@ -241,6 +252,7 @@ describe('getReviewLoopProgress', () => {
       const state = reviewState('PLAN_REVIEW', {
         selfReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: 'p',
           currDigest: 'c',
@@ -256,11 +268,14 @@ describe('getReviewLoopProgress', () => {
               invocationId: 'inv-1',
               obligationId: 'obl-1',
               obligationType: 'plan',
+              attemptId: '00000000-0000-4000-8000-0000000000b1',
               parentSessionId: 'parent',
               childSessionId: 'child',
               agentType: 'flowguard-reviewer',
-              invocationMode: 'sdk_session_prompt',
-              hostVisible: false,
+              invocationMode: 'native_task_structured_followup',
+              hostVisible: true,
+              transcriptNavigable: true,
+              source: 'host-orchestrated',
               promptHash: 'h1',
               findingsHash: 'h2',
               mandateDigest: 'md',
@@ -288,6 +303,7 @@ describe('getReviewLoopProgress', () => {
       const state = reviewState('PLAN_REVIEW', {
         selfReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: 'p',
           currDigest: 'c',
@@ -304,11 +320,14 @@ describe('getReviewLoopProgress', () => {
               invocationId: 'inv-1',
               obligationId: 'obl-1',
               obligationType: 'plan',
+              attemptId: '00000000-0000-4000-8000-0000000000b1',
               parentSessionId: 'parent',
               childSessionId: 'child',
               agentType: 'flowguard-reviewer',
-              invocationMode: 'sdk_session_prompt',
-              hostVisible: false,
+              invocationMode: 'native_task_structured_followup',
+              hostVisible: true,
+              transcriptNavigable: true,
+              source: 'host-orchestrated',
               promptHash: 'h1',
               findingsHash: 'h2',
               mandateDigest: 'md',
@@ -334,6 +353,7 @@ describe('getReviewLoopProgress', () => {
       const state = reviewState('PLAN_REVIEW', {
         selfReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: 'p',
           currDigest: 'c',
@@ -348,6 +368,7 @@ describe('getReviewLoopProgress', () => {
       const state = reviewState('PLAN_REVIEW', {
         selfReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: 'p',
           currDigest: 'c',
@@ -369,6 +390,7 @@ describe('getReviewLoopProgress', () => {
       const state = makeState('PLAN_REVIEW', {
         selfReview: {
           iteration: 2,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: 'p',
           currDigest: 'c',
@@ -419,6 +441,7 @@ describe('getReviewLoopProgress', () => {
       const state = makeState('IMPL_REVIEW', {
         implReview: {
           iteration: 0,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: 'd',
@@ -431,8 +454,7 @@ describe('getReviewLoopProgress', () => {
       const projection = buildStatusProjection(state, {
         mode: 'solo',
         requireHumanGates: false,
-        maxSelfReviewIterations: 3,
-        maxImplReviewIterations: 3,
+        reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
         allowSelfApproval: true,
         audit: { emitToolCalls: false, emitTransitions: false, enableChainHash: false },
         actorClassification: {},
@@ -452,8 +474,7 @@ describe('getReviewLoopProgress', () => {
       const projection = buildStatusProjection(state, {
         mode: 'solo',
         requireHumanGates: false,
-        maxSelfReviewIterations: 3,
-        maxImplReviewIterations: 3,
+        reviewBudget: { plan: 3, architecture: 3, implementation: 3 },
         allowSelfApproval: true,
         audit: { emitToolCalls: false, emitTransitions: false, enableChainHash: false },
         actorClassification: {},

@@ -20,7 +20,6 @@ function makeDecisionInput(actual: ActualTier) {
   return {
     verdict: 'approve' as const,
     rationale: 'matrix enforcement',
-    decidedBy: 'reviewer-1',
     decisionIdentity: {
       actorId: 'reviewer-1',
       actorEmail: 'reviewer@example.com',
@@ -108,7 +107,6 @@ describe('actor assurance matrix', () => {
               ...getPolicyPreset('regulated'),
               allowSelfApproval: false,
               minimumActorAssuranceForApproval: required,
-              requireVerifiedActorsForApproval: false,
             },
           });
 

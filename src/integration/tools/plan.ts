@@ -2,41 +2,38 @@
  * @module integration/tools/plan
  * @description FlowGuard plan tool — submit plan or record independent review verdict.
  *
- * Agent-Orchestrated Independent Review Persistence Boundary
+ * Host-Observed Independent Review Persistence Boundary
  *
  * Architecture: FlowGuard does NOT call subagents. The OpenCode primary agent
  * orchestrates independent review by calling the flowguard-reviewer subagent
- * via the Task tool. FlowGuard accepts, validates, and persists the resulting
- * ReviewFindings.
+ * via the Task tool. The HOST captures the reviewer's structured findings into
+ * the review assurance evidence; the agent never resubmits findings.
  *
- * Flow (subagentEnabled=true):
+ * Flow:
  * 1. Primary agent drafts plan, submits to FlowGuard
  * 2. FlowGuard returns next-action instructing subagent invocation
  * 3. Primary agent calls flowguard-reviewer subagent via Task tool
- * 4. Subagent returns structured ReviewFindings
- * 5. Primary agent submits review verdict + reviewFindings to FlowGuard
- * 6. FlowGuard validates (mode gating, version binding, iteration binding,
- *    mandatory findings) and persists both (append-only, separate)
+ * 4. Host captures the reviewer's structured findings into invocation evidence
+ * 5. Primary agent submits the review verdict ONLY (reviewVerdict)
+ * 6. FlowGuard resolves the host-captured findings, validates the binding, and
+ *    persists them (append-only, separate)
  *
  * Tool responsibilities:
- * - Input validation: reviewFindings vs policy, planVersion binding
- * - Persistence: plan.history (author), plan.reviewFindings (reviewer)
+ * - Input validation: verdict vs host-captured evidence binding
+ * - Persistence: plan.history (author), plan.reviewFindings (host-captured)
  * - Response: summary of review findings, iteration tracking
  * - Next-action: independent reviewer instructions
  *
- * Policy config (selfReview):
- * - subagentEnabled: enforces subagent review mode
- * - fallbackToSelf: deprecated compatibility field; self-review fallback is prohibited
- *
  * Validation rules:
  * - reviewMode=self → BLOCKED
- * - reviewVerdict=approve + missing reviewFindings → BLOCKED
- * - reviewFindings.planVersion mismatch → BLOCKED
+ * - reviewVerdict without bound structured evidence → SUBAGENT_EVIDENCE_MISSING
+ * - captured findings binding mismatch → BLOCKED
  *
- * @version v7
+ * @version v8
  */
 
 import { z } from 'zod';
+import { randomUUID } from 'node:crypto';
 import {
   freezeContextAuthorityAtHead,
   frozenAuthorityOrUndefined,
@@ -44,13 +41,13 @@ import {
 import { resolveAttemptDiscoveryOrBlock } from '../review/discovery-attempt-context.js';
 
 import type { ToolDefinition } from './helpers.js';
+import { projectMarkdownHeadings } from '../../shared/markdown-sections.js';
 import { formatError } from './error-format.js';
 import {
   withMutableSessionTransaction,
   formatBlocked,
   formatAutoAdvanceOverflow,
-  extractSections,
-  appendNextAction,
+  enrichWithWorkflowDirective,
   writeStateWithArtifacts,
 } from './helpers.js';
 import type { SessionState } from '../../state/schema.js';
@@ -64,25 +61,22 @@ import type {
   ReviewFindings,
 } from '../../state/evidence.js';
 import { computeRecordDigest, resolvePlanReviewCompletion } from '../../state/evidence-plan.js';
-import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 import { PlanClaimDeclarationInput as PlanClaimDeclarationSchema } from '../../state/proofgraph-approval.js';
 import { normalizePlanClaims } from '../../state/proofgraph-approval.js';
-import {
-  validateReviewFindings,
-  requireReviewFindings,
-  resolveHostTaskEffectiveFindings,
-} from './review-validation.js';
+import { resolveStructuredEffectiveFindings } from './review-validation.js';
 import { collectPreviouslyUsedChallengeIds } from '../review/challenge-history.js';
 import {
   appendReviewObligation,
   consumeReviewObligation,
   createObligationAndAttempt,
   ensureReviewAssurance,
-  findAcceptedInvocationForFindings,
   findLatestObligation,
 } from '../review/assurance.js';
-import { resolveRuntimeReviewPlatform } from '../review/orchestration-mode.js';
-import { buildHostTaskChallengeContract } from '../review/host-task-policy.js';
+import {
+  resolveReviewDispatchAuthority,
+  type ReviewDispatchAuthority,
+} from '../review/dispatch-authority.js';
+import { buildReviewChallengeContract } from '../review/challenge-contract.js';
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
 // presentation imports moved to plan-response.ts
 
@@ -122,6 +116,7 @@ import type {
 // ---- internal helpers ----
 
 import { classifyPlanCall, planInputFlags, planReviewPolicy } from './plan-types.js';
+import { responseReportsError, runActiveChecksAutomatically } from './auto-validation.js';
 import { routePlanInitialSubmission, blockedPlanReviewInProgress } from './plan-route.js';
 import { classifyPlanClaimSubmission } from './plan-claim-submission.js';
 import {
@@ -137,10 +132,7 @@ function validatePlanCallShape(scope: PlanExecutionScope): string | null {
   }
   if (!state.ticket) return formatBlocked('TICKET_REQUIRED', { action: 'creating a plan' });
 
-  const mixedInputBlocked = validatePlanInputShape(scope.args, input, state);
-  if (mixedInputBlocked) return mixedInputBlocked;
-
-  return validateInitialPlanFindings(scope);
+  return validatePlanInputShape(scope.args, input, state);
 }
 
 function normalizeInitialPlanSubmissionArgs(args: PlanArgs, state: SessionState): PlanArgs {
@@ -166,26 +158,7 @@ function validateSubmissionInputShape(args: PlanArgs, input: PlanInputFlags): st
 function validateReviewInputShape(input: PlanInputFlags, state: SessionState): string | null {
   if (input.hasVerdict && !state.plan) return formatBlocked('PLAN_SUBMISSION_REQUIRED');
   if (input.hasVerdict && !state.selfReview) return formatBlocked('PLAN_REVIEW_LOOP_REQUIRED');
-  if (input.hasFindings && !input.hasVerdict && !state.plan) {
-    return formatBlocked('PLAN_SUBMISSION_REQUIRED');
-  }
-  if (input.hasFindings && !input.hasVerdict) return formatBlocked('PLAN_FINDINGS_WITHOUT_VERDICT');
   return null;
-}
-
-function validateInitialPlanFindings(scope: PlanExecutionScope): string | null {
-  if (!scope.input.isInitialSubmission || !scope.args.reviewFindings) return null;
-  return validateReviewFindings(scope.args.reviewFindings, {
-    subagentEnabled: scope.reviewPolicy.subagentEnabled,
-    fallbackToSelf: scope.reviewPolicy.fallbackToSelf,
-    expectedPlanVersion: (scope.state.plan?.history.length ?? 0) + 1,
-    expectedIteration: 0,
-    strictEnforcement: false,
-    reviewInvocationPolicy: scope.policy.reviewInvocationPolicy,
-    reviewParentSessionId: scope.context.sessionID,
-    reviewHostPlatform: resolveRuntimeReviewPlatform(),
-    previouslyUsedChallengeIds: collectPreviouslyUsedChallengeIds(scope.state),
-  });
 }
 
 function buildPlanEvidence(
@@ -203,18 +176,21 @@ function buildPlanEvidence(
   const supersedesRecordDigest = lineage?.supersedesRecordDigest ?? null;
   const originatingReviewObligationId = lineage?.originatingReviewObligationId ?? null;
   const revisionReason = lineage?.revisionReason ?? null;
+  const revisionId = randomUUID();
 
   return {
     body: planBody,
     digest: contentDigest,
-    sections: extractSections(planBody),
+    sections: projectMarkdownHeadings(planBody),
     createdAt: scope.ctx.now(),
+    revisionId,
     recordDigest: computeRecordDigest({
       contentDigest,
       planVersion,
       supersedesRecordDigest,
       originatingReviewObligationId,
       revisionReason,
+      revisionId,
     }),
     planVersion,
     supersedesRecordDigest,
@@ -237,7 +213,6 @@ async function createPlanReviewAttempt(
     }
   | { kind: 'blocked'; message: string }
 > {
-  if (!scope.reviewPolicy.subagentEnabled) return { kind: 'ok', attemptResult: null };
   const freeze = await freezeContextAuthorityAtHead(scope.worktree);
   const authority = frozenAuthorityOrUndefined(freeze);
   // Repository-governed attempts are minted WITH their host-owned Discovery
@@ -298,7 +273,6 @@ function buildPlanSubmissionState(
   scope: PlanExecutionScope,
   planEvidence: PlanEvidence,
   planVersion: number,
-  reviewFindings: ReviewFindings | null,
   attempt: Extract<Awaited<ReturnType<typeof createPlanReviewAttempt>>, { kind: 'ok' }>,
 ): SessionState {
   const history = scope.state.plan ? [scope.state.plan.current, ...scope.state.plan.history] : [];
@@ -309,9 +283,9 @@ function buildPlanSubmissionState(
     plan: {
       current: planEvidence,
       history,
-      reviewFindings: reviewFindings
-        ? [...(scope.state.plan?.reviewFindings ?? []), reviewFindings]
-        : scope.state.plan?.reviewFindings,
+      // Host-captured review findings are append-only and are only ever
+      // written by handlePlanReview from the resolved structured evidence.
+      reviewFindings: scope.state.plan?.reviewFindings,
       claimDeclarations: submittedPlanClaimDeclarations(scope),
       claimSubmissionDiagnostics: currentClaimSubmissionDiagnostics(scope),
       claimSubmissionHistory: appendClaimSubmissionHistory(scope, planVersion),
@@ -326,7 +300,8 @@ function buildPlanSubmissionState(
     validation: [],
     selfReview: {
       iteration: 0,
-      maxIterations: scope.maxSelfReviewIterations,
+      reviewCycle: scope.state.reviewCycles.plan,
+      maxIterations: scope.maxPlanReviewIterations,
       prevDigest: null,
       currDigest: planEvidence.digest,
       revisionDelta: 'major',
@@ -355,32 +330,24 @@ function resolveEffectivePlanFindings(scope: PlanExecutionScope) {
   const expectedIteration = pendingObligation?.iteration ?? scope.state.selfReview!.iteration;
   const expectedPlanVersion =
     pendingObligation?.planVersion ?? scope.state.plan!.history.length + 1;
-  const resolved = resolveHostTaskEffectiveFindings({
+  const resolved = resolveStructuredEffectiveFindings({
     pendingObligation: pendingObligation ?? null,
     expected: {
       obligationType: 'plan',
       iteration: expectedIteration,
       planVersion: expectedPlanVersion,
     },
-    policy: {
-      reviewInvocationPolicy: scope.policy.reviewInvocationPolicy,
-      strictEnforcement: scope.reviewPolicy.strictEnforcement,
-      subagentEnabled: scope.reviewPolicy.subagentEnabled,
-      fallbackToSelf: scope.reviewPolicy.fallbackToSelf,
-    },
     input: {
-      reviewFindings: scope.args.reviewFindings,
       reviewerUnavailable: scope.args.reviewerUnavailable,
       verdict: scope.args.reviewVerdict,
     },
     state: {
       assurance: scope.state.reviewAssurance,
       sessionId: scope.context.sessionID,
-      reviewHostPlatform: resolveRuntimeReviewPlatform(),
       // Bind design-challenge evidence to the plan's canonical allowed refs
       // (finding B3): without this, a plan review challenge could cite a
       // fabricated ADR section / digest and pass.
-      allowedChallengeEvidenceRefs: buildHostTaskChallengeContract(
+      allowedChallengeEvidenceRefs: buildReviewChallengeContract(
         scope.state,
         pendingObligation ?? null,
       )?.evidenceRefs,
@@ -392,19 +359,15 @@ function resolveEffectivePlanFindings(scope: PlanExecutionScope) {
 
 function blockedInvalidPlanFindings(
   args: PlanArgs,
-  effectiveFindings: ReviewFindings | null,
+  effectiveFindings: ReviewFindings,
   obligationId: string | undefined,
 ): string | null {
-  if (!effectiveFindings) {
-    const blocked = requireReviewFindings(false);
-    if (blocked) return blocked;
-  }
-  if (effectiveFindings?.overallVerdict === 'unable_to_review') {
+  if (effectiveFindings.overallVerdict === 'unable_to_review') {
     return formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', {
       obligationId: obligationId ?? 'unknown',
     });
   }
-  if (effectiveFindings && effectiveFindings.overallVerdict !== args.reviewVerdict) {
+  if (effectiveFindings.overallVerdict !== args.reviewVerdict) {
     return formatBlocked('SUBAGENT_FINDINGS_VERDICT_MISMATCH', {
       submittedVerdict: args.reviewVerdict as string,
       findingsVerdict: effectiveFindings.overallVerdict,
@@ -450,13 +413,12 @@ function applyPlanRevision(
 function buildReviewedPlanState(
   scope: PlanExecutionScope,
   revision: PlanRevisionResult,
-  effectiveFindings: ReviewFindings | null,
+  effectiveFindings: ReviewFindings,
   consumedAssurance: ReturnType<typeof consumeReviewObligation>,
 ): SessionState {
+  // Only host-captured effective findings are ever appended.
   const existingReviewFindings = scope.state.plan?.reviewFindings;
-  const newReviewFindings = effectiveFindings
-    ? [...(existingReviewFindings ?? []), effectiveFindings]
-    : existingReviewFindings;
+  const newReviewFindings = [...(existingReviewFindings ?? []), effectiveFindings];
   const nextIteration = scope.state.selfReview!.iteration + 1;
 
   return {
@@ -470,14 +432,15 @@ function buildReviewedPlanState(
       claimSubmissionHistory: appendClaimSubmissionHistory(scope, revision.currentPlan.planVersion),
       reviewCompletion: resolvePlanReviewCompletion(
         nextIteration,
-        scope.maxSelfReviewIterations,
+        scope.maxPlanReviewIterations,
         revision.revisionDelta,
         revision.verdict,
       ),
     },
     selfReview: {
       iteration: nextIteration,
-      maxIterations: scope.maxSelfReviewIterations,
+      reviewCycle: scope.state.reviewCycles.plan,
+      maxIterations: scope.maxPlanReviewIterations,
       prevDigest: revision.prevDigest,
       currDigest: revision.currentPlan.digest,
       revisionDelta: revision.revisionDelta,
@@ -495,27 +458,49 @@ function consumePlanObligation(
   assuranceBase: ReturnType<typeof ensureReviewAssurance>,
   expectedIteration: number,
   expectedPlanVersion: number,
-  evidenceInvocationId: string | null,
+  evidenceInvocationId: string,
 ) {
-  const strictObligation = scope.reviewPolicy.strictEnforcement
-    ? findLatestObligation(
-        assuranceBase.obligations,
-        'plan',
-        expectedIteration,
-        expectedPlanVersion,
-      )
-    : null;
+  const strictObligation = findLatestObligation(
+    assuranceBase.obligations,
+    'plan',
+    expectedIteration,
+    expectedPlanVersion,
+  );
   return consumeReviewObligation(
     assuranceBase,
     strictObligation,
     scope.ctx.now(),
-    evidenceInvocationId ??
-      findAcceptedInvocationForFindings(assuranceBase, strictObligation, scope.args.reviewFindings)
-        ?.invocationId,
+    evidenceInvocationId,
   );
 }
 
 // ---- tool handlers ----
+
+function resolvePlanDispatchAuthority(
+  finalState: SessionState,
+  planVersion: number,
+):
+  | { readonly kind: 'ok'; readonly authority: ReviewDispatchAuthority }
+  | {
+      readonly kind: 'blocked';
+      readonly code: 'REVIEW_ATTEMPT_UNAVAILABLE';
+      readonly reason: string;
+    } {
+  const obligation = findLatestObligation(
+    finalState.reviewAssurance?.obligations ?? [],
+    'plan',
+    0,
+    planVersion,
+  );
+  if (!obligation) {
+    return {
+      kind: 'blocked',
+      code: 'REVIEW_ATTEMPT_UNAVAILABLE',
+      reason: 'the plan submission produced no review obligation authority',
+    };
+  }
+  return resolveReviewDispatchAuthority(finalState.reviewAssurance, obligation.obligationId);
+}
 
 async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> {
   const planBody = scope.args.planText?.trim();
@@ -530,11 +515,9 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
     originatingReviewObligationId: originatingPlanReviewObligationId(scope),
     revisionReason: scope.state.plan ? 'Revision after changes requested' : null,
   });
-  const reviewFindings = scope.args.reviewFindings ?? null;
   const classification = await resolvePreImplementationChallengeClassification(
     scope.state,
     scope.worktree,
-    scope.reviewPolicy.subagentEnabled,
     scope.args.targetPaths,
   );
   const attempt = await createPlanReviewAttempt(
@@ -544,13 +527,7 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
     classification.kind === 'available' ? classification.changedFiles : [],
   );
   if (attempt.kind === 'blocked') return attempt.message;
-  const nextState = buildPlanSubmissionState(
-    scope,
-    planEvidence,
-    planVersion,
-    reviewFindings,
-    attempt,
-  );
+  const nextState = buildPlanSubmissionState(scope, planEvidence, planVersion, attempt);
   const evalFn = (s: SessionState) => evaluate(s, scope.policy);
   const advanced = autoAdvance(nextState, evalFn, scope.ctx);
   // #428: fail closed on overflow BEFORE persisting — no partially-advanced write.
@@ -560,15 +537,19 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
   const { state: finalState, transitions } = advanced;
 
   await writeStateWithArtifacts(scope.sessDir, finalState);
+  const authority = resolvePlanDispatchAuthority(finalState, planVersion);
+  if (authority.kind === 'blocked') {
+    return formatBlocked(authority.code, { reason: authority.reason });
+  }
   const response = buildSubmissionResponse({
     scope,
     finalState,
     planEvidence,
     planVersion,
-    reviewFindings,
     transitions,
+    authority: authority.authority,
   });
-  return appendNextAction(JSON.stringify(response), finalState);
+  return JSON.stringify(enrichWithWorkflowDirective(response, finalState));
 }
 
 /**
@@ -590,8 +571,8 @@ async function handlePlanReview(scope: PlanExecutionScope): Promise<string> {
   if (!scope.state.plan) return formatBlocked('NO_PLAN');
 
   const lookup = resolveEffectivePlanFindings(scope);
-  if (lookup.resolved.blocked) return lookup.resolved.blocked;
-  const effectiveFindings = lookup.resolved.effectiveFindings ?? null;
+  if (lookup.resolved.kind === 'blocked') return lookup.resolved.blocked;
+  const effectiveFindings = lookup.resolved.effectiveFindings;
   const blocked = blockedInvalidPlanFindings(
     scope.args,
     effectiveFindings,
@@ -606,7 +587,7 @@ async function handlePlanReview(scope: PlanExecutionScope): Promise<string> {
     lookup.assuranceBase,
     lookup.expectedIteration,
     lookup.expectedPlanVersion,
-    lookup.resolved.evidenceInvocationId ?? null,
+    lookup.resolved.evidenceInvocationId,
   );
   return persistReview(
     scope,
@@ -623,9 +604,9 @@ export const plan: ToolDefinition = {
   description:
     'Submit a plan OR record an independent reviewer verdict. Two modes:\n' +
     'Mode A (submit plan): provide planText. Records the plan and starts the independent review loop.\n' +
-    "Mode B (reviewer verdict): provide reviewVerdict ('accept' or 'changes_requested'). " +
-    'In host-task mode the plugin resolves the reviewer findings automatically — do not submit reviewFindings. ' +
-    "In SDK mode pass the reviewer's exact reviewFindings. If 'changes_requested', provide revised planText and claims.\n" +
+    "Mode B (reviewer verdict): provide reviewVerdict only ('accept' or 'changes_requested'). " +
+    'The host captures the reviewer findings; FlowGuard resolves them from that evidence automatically. ' +
+    "Never submit reviewer findings. If 'changes_requested', provide revised planText and claims.\n" +
     'The independent review loop runs up to maxIterations (from policy). ' +
     'On convergence it advances to the PLAN_REVIEW user gate; it does NOT approve the plan. ' +
     'Only the user approves via flowguard_decision (/review-decision).',
@@ -653,11 +634,6 @@ export const plan: ToolDefinition = {
           'PLAN_REVIEW user gate (the user still approves via /review-decision). ' +
           "'changes_requested' = the plan needs revision; provide updated planText.",
       ),
-    reviewFindings: ReviewFindingsSchema.optional().describe(
-      "The reviewer's structured findings. SDK mode only — pass the reviewer output verbatim. " +
-        'In host-task mode do NOT submit reviewFindings: the plugin resolves them from captured ' +
-        'evidence, and hand-edited or mismatched findings are rejected.',
-    ),
     reviewerUnavailable: z
       .boolean()
       .optional()
@@ -676,7 +652,7 @@ export const plan: ToolDefinition = {
   },
   async execute(args, context) {
     try {
-      return await withMutableSessionTransaction(context, async (mutableSession) => {
+      const response = await withMutableSessionTransaction(context, async (mutableSession) => {
         const typedArgs = normalizeInitialPlanSubmissionArgs(
           args as PlanArgs,
           mutableSession.state,
@@ -687,7 +663,7 @@ export const plan: ToolDefinition = {
           context,
           input: planInputFlags(typedArgs),
           reviewPolicy: planReviewPolicy(mutableSession),
-          maxSelfReviewIterations: mutableSession.policy.maxSelfReviewIterations,
+          maxPlanReviewIterations: mutableSession.policy.reviewBudget.plan,
         };
         // Call-shape validation runs FIRST: mixed inputs are rejected before
         // any lifecycle routing can re-emit a review instruction.
@@ -727,6 +703,19 @@ export const plan: ToolDefinition = {
           ? handlePlanSubmission(scope)
           : handlePlanReview(scope);
       });
+
+      // Automatic validation: when a solo-mode (or CI auto-gated) plan
+      // convergence auto-approves PLAN_REVIEW into VALIDATION, run the active
+      // checks in-flow. Executed AFTER the transaction releases the session
+      // write lock — the run-check path executes subprocesses outside the lock
+      // and must acquire it only to persist evidence. A blocked plan call (e.g.
+      // COMMAND_NOT_ALLOWED at an existing VALIDATION) did not enter the phase
+      // and must not trigger the runner. The plan response is superseded only
+      // when checks actually ran.
+      const autoValidationResponse = responseReportsError(response)
+        ? null
+        : await runActiveChecksAutomatically(context);
+      return autoValidationResponse ?? response;
     } catch (err) {
       return formatError(err);
     }

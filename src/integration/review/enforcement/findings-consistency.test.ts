@@ -42,7 +42,9 @@ describe('review/enforcement/findings-consistency', () => {
       planVersion: 1,
       criteriaVersion: 'p41-v1',
       mandateDigest: 'mandate-digest',
-      maxReviewerOutputRepairAttempts: 1,
+      maxReviewerAttempts: 1,
+      reviewProfile: 'core',
+      profileSource: 'policy_default',
       requiredChallengeCount: 0,
       requiredChallengeKind: 'design_challenge' as const,
       challengePolicyVersion: 'challenge-policy.v1' as const,
@@ -65,6 +67,7 @@ describe('review/enforcement/findings-consistency', () => {
       const obligation: ReviewObligation = {
         ...baseObligation,
         obligationType: 'plan',
+        reviewCycle: 1,
         reviewSubjectScope: {
           kind: 'artifact',
           artifact: {
@@ -81,6 +84,7 @@ describe('review/enforcement/findings-consistency', () => {
       const obligation: ReviewObligation = {
         ...baseObligation,
         obligationType: 'plan',
+        reviewCycle: 1,
         reviewSubjectScope: {
           kind: 'repository_change',
           paths: ['src/foo.ts'],
@@ -94,6 +98,7 @@ describe('review/enforcement/findings-consistency', () => {
       const obligation: ReviewObligation = {
         ...baseObligation,
         obligationType: 'architecture',
+        reviewCycle: 1,
         reviewSubjectScope: {
           kind: 'artifact',
           artifact: {
@@ -110,6 +115,7 @@ describe('review/enforcement/findings-consistency', () => {
       const obligation: ReviewObligation = {
         ...baseObligation,
         obligationType: 'implement',
+        reviewCycle: 1,
         reviewSubjectScope: {
           kind: 'artifact',
           artifact: {

@@ -18,9 +18,14 @@ export const PLAN_RECORD_DOMAIN = 'flowguard.plan-record.v1';
  * Compute the cryptographic record digest for a plan version.
  *
  * Binds the content identity, version, predecessor, originating obligation,
- * and revision reason into a single domain-separated hash. The digest proves
- * that this record is the legitimate successor of its `supersedesRecordDigest`
- * predecessor — change ANY of the lineage metadata and the digest changes.
+ * revision reason, and the minted revision identity into a single
+ * domain-separated hash. The digest proves that this record is the legitimate
+ * successor of its `supersedesRecordDigest` predecessor — change ANY of the
+ * lineage metadata (including `revisionId`) and the digest changes.
+ *
+ * `revisionId` makes the record digest a unique revision-instance identity:
+ * two independent lineages with identical content, version, and timestamp
+ * still carry distinct record digests.
  *
  * The content itself is represented by the existing `digest` (content hash);
  * the record digest inherits that via inclusion.
@@ -31,6 +36,7 @@ export function computeRecordDigest(input: {
   supersedesRecordDigest: string | null;
   originatingReviewObligationId: string | null;
   revisionReason: string | null;
+  revisionId: string;
 }): string {
   return hashText(
     PLAN_RECORD_DOMAIN +
@@ -41,6 +47,7 @@ export function computeRecordDigest(input: {
         supersedesRecordDigest: input.supersedesRecordDigest,
         originatingReviewObligationId: input.originatingReviewObligationId,
         revisionReason: input.revisionReason,
+        revisionId: input.revisionId,
       }),
   );
 }
@@ -55,12 +62,18 @@ export const PlanEvidence = z.object({
   digest: z.string().min(1),
   sections: z.array(z.string()),
   createdAt: z.string().datetime(),
+  /**
+   * Minted identity of this exact revision instance. Part of the record
+   * digest, so it distinguishes independent lineages whose content, version,
+   * and timestamp are identical.
+   */
+  revisionId: z.string().uuid(),
 
   // ── Lineage ─────────────────────────────────────────────────────────
   // Hard Assurance Epoch: every current-epoch plan version carries the full
   // lineage computed by computeRecordDigest(). There is NO legacy hydration,
   // sentinel default, or inferred status — incomplete lineage fails parsing.
-  /** Cryptographic record digest: domain-separated hash of (contentDigest, planVersion, supersedesRecordDigest, originatingReviewObligationId, revisionReason). */
+  /** Cryptographic record digest: domain-separated hash of (contentDigest, planVersion, supersedesRecordDigest, originatingReviewObligationId, revisionReason, revisionId). */
   recordDigest: z.string().min(1),
   /** Immutable version number within this plan's lineage (1-based). */
   planVersion: z.number().int().positive(),
@@ -78,6 +91,16 @@ export const PlanEvidence = z.object({
 });
 export type PlanEvidence = z.infer<typeof PlanEvidence>;
 
+/** Point a lineage issue at the offending revision (current vs. history slot). */
+function planRevisionIssuePath(
+  record: { readonly current: PlanEvidence; readonly history: readonly PlanEvidence[] },
+  revision: PlanEvidence,
+): Array<string | number> {
+  if (revision === record.current) return ['current'];
+  const index = record.history.indexOf(revision);
+  return index >= 0 ? ['history', index] : [];
+}
+
 /**
  * Plan record with version history.
  * Compliance requirement for regulated environments (banks, DATEV):
@@ -88,6 +111,13 @@ export type PlanEvidence = z.infer<typeof PlanEvidence>;
  * - reviewFindings: independent review findings per iteration (parallel, NOT mixed)
  *
  * Architecture invariant: plan.history = author artifacts, plan.reviewFindings = reviewer artifacts
+ *
+ * Lineage authority: the record is the SINGLE authority for plan revision
+ * identity. Every revision must satisfy `digest === hashText(body)` and
+ * `recordDigest === computeRecordDigest(...)`, and `[...history, current]` must
+ * form the exact contiguous chain v1..vN with `current` as the head. Derived
+ * surfaces (evidence artifacts) consume this identity and MUST NOT re-derive
+ * or re-validate the chain.
  */
 export const PlanRecord = z
   .object({
@@ -156,16 +186,84 @@ export const PlanRecord = z
      */
     reviewCompletion: ReviewCompletion,
   })
-  .readonly();
+  .readonly()
+  .superRefine((record, context) => {
+    // Revision identity is recomputed, never trusted: content digest, record
+    // digest (including revisionId), chain position, and predecessor linkage.
+    const chain = [...record.history, record.current].sort(
+      (left, right) => left.planVersion - right.planVersion,
+    );
+    for (let index = 0; index < chain.length; index += 1) {
+      const revision = chain[index]!;
+      const path = planRevisionIssuePath(record, revision);
+      if (revision.digest !== hashText(revision.body)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path,
+          message: `plan revision v${revision.planVersion} digest does not match hashText(body)`,
+        });
+        return;
+      }
+      const expectedRecordDigest = computeRecordDigest({
+        contentDigest: revision.digest,
+        planVersion: revision.planVersion,
+        supersedesRecordDigest: revision.supersedesRecordDigest,
+        originatingReviewObligationId: revision.originatingReviewObligationId,
+        revisionReason: revision.revisionReason,
+        revisionId: revision.revisionId,
+      });
+      if (revision.recordDigest !== expectedRecordDigest) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path,
+          message: `plan revision v${revision.planVersion} recordDigest does not match computeRecordDigest(...)`,
+        });
+        return;
+      }
+      if (revision.planVersion !== index + 1) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path,
+          message: `plan lineage is not contiguous: expected planVersion ${index + 1}, got ${revision.planVersion}`,
+        });
+        return;
+      }
+      const predecessorRecordDigest = index === 0 ? null : chain[index - 1]!.recordDigest;
+      if (revision.supersedesRecordDigest !== predecessorRecordDigest) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path,
+          message:
+            `plan lineage chain is broken at v${revision.planVersion}: ` +
+            `supersedesRecordDigest must be ${predecessorRecordDigest ?? 'null'}`,
+        });
+        return;
+      }
+    }
+    if (record.current.planVersion !== chain.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['current'],
+        message: `plan current revision is not the lineage head: v${record.current.planVersion} of ${chain.length}`,
+      });
+    }
+  });
 export type PlanRecord = z.infer<typeof PlanRecord>;
 
 /**
  * State of the PLAN phase self-review loop.
  * Convergence: iteration >= maxIterations OR (revisionDelta === "none" AND verdict === "accept").
  * This is the "digest-stop" mechanism.
+ *
+ * `reviewCycle` is the human-cycle identity of this loop projection: the active
+ * `SessionState.reviewCycles.plan` at creation. `iteration` restarts at 1 when
+ * a human requests changes at PLAN_REVIEW; `reviewCycle` makes the two
+ * iteration-1 passes distinguishable in persisted evidence and audit.
  */
 export const SelfReviewLoop = z.object({
   iteration: z.number().int().nonnegative(),
+  /** Human review cycle this projection belongs to (positive, from state.reviewCycles). */
+  reviewCycle: z.number().int().positive(),
   maxIterations: z.number().int().positive(),
   prevDigest: z.string().nullable(),
   currDigest: z.string().min(1),

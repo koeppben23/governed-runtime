@@ -3,19 +3,12 @@
  * Import target only — never executed as a test suite.
  */
 
-import type { DetectedStack } from './types.js';
+import type { DetectedStack } from '../state/discovery-schemas.js';
 
 export function makeDetectedStack(items: DetectedStack['items']): DetectedStack {
   return {
     summary: items.map((item) => item.id).join(', '),
     items,
-    versions: items
-      .filter((item) => item.version)
-      .map((item) => ({
-        id: item.id,
-        version: item.version!,
-        target: item.kind,
-      })),
   };
 }
 

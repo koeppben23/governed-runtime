@@ -7,7 +7,7 @@ import { lstat, readFile, readdir, rename, rmdir, unlink, writeFile } from 'node
 import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
-import type { FileOp, InstallScope } from './install-helpers.js';
+import type { FileOp, InstallScope } from './install-types.js';
 import {
   claudeCodePluginInstallHint,
   resolveClaudeCodePluginRoot,

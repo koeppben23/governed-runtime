@@ -58,7 +58,6 @@ function chainVerification(overrides: Partial<ChainVerification> = {}): ChainVer
     valid: false,
     totalEvents: 3,
     verifiedCount: 3,
-    skippedCount: 0,
     firstBreak: null,
     results: [],
     reason: null,
@@ -81,7 +80,7 @@ describe('addTimestampFindings', () => {
       {
         code: 'audit_chain_invalid',
         severity: 'error',
-        message: 'Audit chain verification failed (CHAIN_BREAK): 3 total, 3 verified, 0 skipped',
+        message: 'Audit chain verification failed (CHAIN_BREAK): 3 total, 3 verified',
         file: 'audit.jsonl',
       },
     ]);

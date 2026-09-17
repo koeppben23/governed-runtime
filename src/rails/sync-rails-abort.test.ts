@@ -8,7 +8,7 @@ const ctx = createTestContext();
 describe('abort rail', () => {
   // ─── HAPPY ─────────────────────────────────────────────────
   describe('HAPPY', () => {
-    it('aborts from any phase to COMPLETE with ABORTED error', () => {
+    it('aborts from any non-terminal phase to ABORTED with an ABORTED error', () => {
       const phases = [
         'TICKET',
         'PLAN',
@@ -23,7 +23,7 @@ describe('abort rail', () => {
         const result = executeAbort(state, { reason: 'cancelled', actor: 'user' }, ctx);
         expect(result.kind).toBe('ok');
         if (result.kind === 'ok') {
-          expect(result.state.phase).toBe('COMPLETE');
+          expect(result.state.phase).toBe('ABORTED');
           expect(result.state.error?.code).toBe('ABORTED');
         }
       }
@@ -58,14 +58,14 @@ describe('abort rail', () => {
 
   // ─── EDGE ──────────────────────────────────────────────────
   describe('EDGE', () => {
-    it('records ABORT transition bypassing topology', () => {
+    it('records the explicit ABORT topology transition', () => {
       const result = executeAbort(makeState('PLAN'), { reason: 'stop', actor: 'ci' }, ctx);
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
         expect(result.transitions.length).toBe(1);
         expect(result.transitions[0]!.event).toBe('ABORT');
         expect(result.transitions[0]!.from).toBe('PLAN');
-        expect(result.transitions[0]!.to).toBe('COMPLETE');
+        expect(result.transitions[0]!.to).toBe('ABORTED');
       }
     });
 

@@ -28,7 +28,7 @@ export async function verifyExternalPublicationBinding(
     });
     return;
   }
-  if (externalAudit.skipped > 0 || !verifyChain(externalAudit.events).valid) {
+  if (!verifyChain(externalAudit).valid) {
     findings.push({
       code: 'archive_publication_binding_invalid',
       severity: 'error',
@@ -48,7 +48,7 @@ export async function verifyExternalPublicationBinding(
       path.basename(archive.archivePath),
       manifest.contentDigest,
     );
-    if (findPublicationBinding(externalAudit.events, expected)) return;
+    if (findPublicationBinding(externalAudit, expected)) return;
   } catch (error) {
     findings.push({
       code: 'archive_publication_binding_invalid',

@@ -212,9 +212,7 @@ describe('reconcilePendingAuditOperations', () => {
           throw new Error('expected semantic operation');
         expect(semantic.status).toBe('reconciled');
         expect(
-          (await readAuditTrail(sessDir)).events.filter(
-            (event) => event.id === semantic.operationId,
-          ),
+          (await readAuditTrail(sessDir)).filter((event) => event.id === semantic.operationId),
         ).toHaveLength(1);
 
         // Crash point 2: append succeeded but the acknowledgement was lost.
@@ -229,9 +227,7 @@ describe('reconcilePendingAuditOperations', () => {
         await reconcilePendingAuditOperations(deps, SESSION_ID, 'flowguard_plan');
 
         expect(
-          (await readAuditTrail(sessDir)).events.filter(
-            (event) => event.id === semantic.operationId,
-          ),
+          (await readAuditTrail(sessDir)).filter((event) => event.id === semantic.operationId),
         ).toHaveLength(1);
         expect(appended.filter((id) => id === semantic.operationId)).toHaveLength(1);
         expect(

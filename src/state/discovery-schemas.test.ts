@@ -56,7 +56,6 @@ describe('DetectedStackSchema', () => {
   const valid = {
     summary: 'TypeScript project with Jest',
     items: [{ kind: 'language', id: 'TypeScript' }],
-    versions: [],
   };
 
   it('parses a valid stack with summary and items', () => {
@@ -79,6 +78,7 @@ describe('VerificationCandidatesSchema', () => {
   it('accepts a valid candidate list', () => {
     const result = VerificationCandidatesSchema.parse([
       {
+        candidateId: 'vc_build_ci',
         assertionCapability: 'unsupported' as const,
         kind: 'build',
         command: 'npm run build',
@@ -93,18 +93,49 @@ describe('VerificationCandidatesSchema', () => {
 });
 
 describe('VerificationCandidateSchema', () => {
-  it('strips unknown extra fields (Zod default strip mode)', () => {
-    const result = VerificationCandidateSchema.parse({
-      assertionCapability: 'unsupported' as const,
-      kind: 'build',
-      command: 'npm run build',
-      source: '.github',
-      confidence: 'high',
-      reason: 'CI',
-      extraField: 'should be removed',
+  const base = {
+    assertionCapability: 'unsupported' as const,
+    kind: 'build',
+    command: 'npm run build',
+    source: '.github',
+    confidence: 'high',
+    reason: 'CI',
+  };
+
+  it('requires the planner-minted candidateId', () => {
+    expect(VerificationCandidateSchema.safeParse(base).success).toBe(false);
+    expect(VerificationCandidateSchema.safeParse({ ...base, candidateId: 'vc_x' }).success).toBe(
+      true,
+    );
+  });
+
+  it('rejects unknown extra fields instead of stripping them', () => {
+    const result = VerificationCandidateSchema.safeParse({
+      ...base,
+      candidateId: 'vc_x',
+      extraField: 'must reject',
     });
-    expect(result).not.toHaveProperty('extraField');
-    expect(result.kind).toBe('build');
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects unknown fields inside the nested assertion report', () => {
+    const structured = {
+      candidateId: 'vc_y',
+      assertionCapability: 'structured' as const,
+      kind: 'test',
+      command: 'npm test',
+      source: 'package.json',
+      confidence: 'medium',
+      reason: 'test',
+      assertionReport: {
+        collection: 'stdout' as const,
+        transport: 'stdout' as const,
+        format: 'junit_xml',
+        providerId: 'junit',
+        injected: 'must reject',
+      },
+    };
+    expect(VerificationCandidateSchema.safeParse(structured).success).toBe(false);
   });
 });
 

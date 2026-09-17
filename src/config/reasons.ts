@@ -21,7 +21,7 @@
  * - precondition:  Required evidence or state is missing
  * - input:         User input validation failed
  * - identity:      Four-eyes or authorization check failed
- * - adapter:       External system (git, filesystem) error
+ * - adapter:       External system (git, filesystem, host transport) error
  * - state:         Session state error
  *
  * Dependency: leaf module — no imports from other FlowGuard modules.
@@ -56,14 +56,7 @@ export class ReasonRegistryError extends Error {
     this.code = code;
   }
 }
-// ─── Types ────────────────────────────────────────────────────────────────────
 
-// ─── Interpolation ────────────────────────────────────────────────────────────
-
-/**
- * Replace {variable} placeholders in a template string.
- * Unknown variables are left as-is (visible in output for debugging) and reported.
- */
 function interpolate(
   code: string,
   template: string,
@@ -85,21 +78,12 @@ function interpolate(
   });
 }
 
-// ─── Registry ─────────────────────────────────────────────────────────────────
-
-/**
- * Blocked reason registry.
- *
- * Central catalog of all known blocked/error codes.
- * Pre-seeded with built-in codes and frozen after initialization.
- */
 export class BlockedReasonRegistry {
   private readonly reasons = new Map<string, BlockedReason>();
   private frozen = false;
 
   constructor(private readonly warn?: ReasonWarningSink) {}
 
-  /** Register a blocked reason. Duplicate codes and frozen registries fail fast. */
   register(reason: BlockedReason): void {
     if (this.frozen) {
       throw new ReasonRegistryError(
@@ -116,28 +100,18 @@ export class BlockedReasonRegistry {
     this.reasons.set(reason.code, reason);
   }
 
-  /** Register multiple reasons at once. */
   registerAll(reasons: readonly BlockedReason[]): void {
     for (const r of reasons) this.register(r);
   }
 
-  /** Look up a reason by code. Returns undefined if not registered. */
   get(code: string): BlockedReason | undefined {
     return this.reasons.get(code);
   }
 
-  /** Prevent further registration after the registry has been initialized. */
   freeze(): void {
     this.frozen = true;
   }
 
-  /**
-   * Format a blocked reason with variable interpolation.
-   *
-   * Returns a structured result ready for RailBlocked construction.
-   * Unknown codes are marked explicitly so they cannot be confused with
-   * catalog-backed governance messages.
-   */
   format(code: string, vars?: Record<string, string>): FormattedBlock {
     const reason = this.reasons.get(code);
     if (!reason) {
@@ -160,20 +134,19 @@ export class BlockedReasonRegistry {
     };
   }
 
-  /** All registered codes. */
   codes(): string[] {
     return Array.from(this.reasons.keys());
   }
 
-  /** Number of registered reasons. */
   get size(): number {
     return this.reasons.size;
   }
 }
 
-/** The default registry, pre-seeded with all built-in codes.
- *  P10c: Reason codes split by category into 3 files.
- *  Registration order: precondition, validation, infra.
+/**
+ * Default registry, pre-seeded with all built-in codes.
+ * Review-transport failures are a distinct infrastructure concern rather than
+ * reviewer verdicts; their catalog stays separate from domain review reasons.
  */
 export const defaultReasonRegistry = new BlockedReasonRegistry();
 defaultReasonRegistry.registerAll(PRECONDITION_REASONS);
@@ -184,20 +157,6 @@ defaultReasonRegistry.registerAll(PROOFGRAPH_REASONS);
 defaultReasonRegistry.registerAll(MUTATION_REASONS);
 defaultReasonRegistry.freeze();
 
-// ─── Convenience Helper ───────────────────────────────────────────────────────
-
-/**
- * Create a RailBlocked result from a registered reason code.
- *
- * Usage in rails:
- *   return blocked("COMMAND_NOT_ALLOWED", { command: "/plan", phase: state.phase });
- *
- * Replaces inline blocked returns:
- *   return { kind: "blocked", code: "COMMAND_NOT_ALLOWED", reason: `...` };
- *
- * The returned object is structurally compatible with RailBlocked.
- * Recovery steps and quickFix are included for LLM and user guidance.
- */
 export function blocked(
   code: string,
   vars?: Record<string, string>,

@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { SessionState } from '../../state/schema.js';
 import { hashText } from '../../shared/hashing.js';
 import type { EvalResult } from '../../machine/evaluate.js';
-import { resolveNextAction } from '../../machine/next-action.js';
+import { resolveWorkflowDirective } from '../../machine/workflow-directive.js';
 import { TERMINAL } from '../../machine/topology.js';
 // Rail helpers
 import type { RailResult, RailContext, AutoAdvanceOverflow } from '../../rails/types.js';
@@ -29,7 +29,7 @@ import type { FlowGuardPolicy } from '../../config/policy.js';
 import { defaultReasonRegistry } from '../../config/reasons.js';
 import { buildBlockedPresentation } from './blocked-presentation.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
-import { PHASE_LABELS, buildProductNextAction } from '../../presentation/index.js';
+import { PHASE_LABELS } from '../../presentation/index.js';
 import { renderMarkdown, lookupReasonCopy } from '../../presentation/index.js';
 import {
   buildEvidenceApprovalCompletionDocument,
@@ -76,6 +76,13 @@ export interface ToolContext {
 }
 
 /**
+ * The workspace/session subset that session resolution and rail execution
+ * need. Host hooks (which have no message/agent context) can resume canonical
+ * system work with this narrower context.
+ */
+export type WorkspaceToolContext = Pick<ToolContext, 'sessionID' | 'worktree' | 'directory'>;
+
+/**
  * Result type for FlowGuard tools.
  *
  * Matches the OpenCode SDK `ToolResult` union:
@@ -99,20 +106,6 @@ export type ToolDefinition = {
 
 // ─── Formatting Helpers ───────────────────────────────────────────────────────
 
-/** Format an EvalResult into a human-readable next-action string. */
-export function formatEval(ev: EvalResult): string {
-  switch (ev.kind) {
-    case 'transition':
-      return `Auto-advanced to ${ev.target} via ${ev.event}.`;
-    case 'waiting':
-      return ev.reason;
-    case 'terminal':
-      return 'Workflow complete. Session is terminal.';
-    case 'pending':
-      return `Phase ${ev.phase} needs more work.`;
-  }
-}
-
 /** Migrated reason-copy headline field, present only for authored codes. */
 function headlineFields(code: string): { headline?: string } {
   const copy = lookupReasonCopy(code);
@@ -125,7 +118,8 @@ function headlineFields(code: string): { headline?: string } {
  * Builds a conclusion-only compact-card PresentationDocument (no sections) and
  * renders it through the shared renderer, so the mutating-tool next action is
  * displayed identically to /status, /why, and /finish. Additive only — this is
- * the user-facing display; the machine-readable `next` field is unchanged.
+ * the user-facing display; the structured `directive` and `_audit.transitions`
+ * remain the machine-readable routing fields.
  */
 export function buildNextActionPresentation(
   state: SessionState,
@@ -187,17 +181,10 @@ export function formatRailResult(
       ...(result.overflow ? { autoAdvanceOverflow: result.overflow } : {}),
     });
   }
-  const nextAction = resolveNextAction(result.state.phase, result.state);
+  const directive = resolveWorkflowDirective(result.state);
   const aborted = result.state.error?.code === 'ABORTED';
-  const productNext = buildProductNextAction(
-    nextAction,
-    result.state.phase,
-    aborted,
-    result.state.archiveStatus ?? null,
-    result.state,
-  );
   const reviewDecision = result.state.reviewDecision;
-  const { archiveStatus } = result.state;
+  const archiveStatus = result.state.regulatedArchiveStatus;
   const reviewLoop = getReviewLoopProgress(result.state);
   const presentation = options.evidenceApprovalCompletion
     ? buildEvidenceApprovalCompletionPresentation(result.state)
@@ -206,14 +193,10 @@ export function formatRailResult(
     phase: result.state.phase,
     phaseLabel: PHASE_LABELS[result.state.phase],
     status: 'ok',
-    next: formatEval(result.evalResult),
-    nextAction,
-    productNextAction: productNext,
+    directive,
     // Render the user-facing next action through the shared renderer so mutating
-    // tools display it identically to /status, /why, and /finish. Additive: the
-    // machine-readable `next`/`nextAction`/`productNextAction` fields above are
-    // unchanged. The rendered conclusion is the display authority; the command
-    // template must not print a duplicate `Next action:` line when it is present.
+    // tools display it identically to /status, /why, and /finish. The
+    // machine-readable `directive` field above is the routing authority.
     presentation,
     // Governance integrity: mark an aborted terminal session explicitly so it is
     // never presented as an indistinguishable clean completion. Distinct from the
@@ -225,7 +208,7 @@ export function formatRailResult(
           reviewDecision: {
             verdict: reviewDecision.verdict,
             rationale: reviewDecision.rationale,
-            decidedBy: reviewDecision.decidedBy,
+            decisionIdentity: reviewDecision.decisionIdentity,
             decidedAt: reviewDecision.decidedAt,
           },
         }
@@ -604,77 +587,36 @@ function isPersistedAbort(result: Extract<RailResult, { kind: 'ok' }>): boolean 
 }
 
 /**
- * Append NextAction routing metadata to a custom JSON response string.
- *
- * Use this when a tool builds custom JSON (not via formatRailResult)
- * but still needs the machine-readable NextAction routing fields.
- *
- * Delegates to {@link enrichWithNextAction} for the actual logic —
- * this function is a thin JSON-parse/serialize wrapper for backwards
- * compatibility.
- *
- * Contract: the appended `nextAction`/`productNextAction` fields are
- * machine-readable ROUTING METADATA, not a pre-rendered footer. On surfaces
- * that carry `presentation.markdown`, the user-facing next action is owned by
- * the rendered PresentationConclusion (see src/presentation/markdown.ts); the
- * agent must not additionally print these JSON fields as a duplicate
- * `Next action:` line. On surfaces without `presentation.markdown`, the command
- * template projects a single `Next action:` line from `productNextAction`.
- *
- * @param jsonStr - The JSON string to augment (will be parsed, extended, re-serialized).
- * @param state - Current session state for NextAction resolution.
- * @returns JSON string with nextAction routing fields.
- */
-export function appendNextAction(jsonStr: string, state: SessionState): string {
-  return JSON.stringify(enrichWithNextAction(JSON.parse(jsonStr), state));
-}
-
-/**
  * Machine-readable NextAction routing fields appended by
- * {@link enrichWithNextAction}. These are NOT a rendered footer — user-facing
+ * {@link enrichWithWorkflowDirective}. These are NOT a rendered footer — user-facing
  * next-action text is owned by the presentation conclusion where a rendered
  * document exists.
  */
-export interface NextActionFields {
-  nextAction: ReturnType<typeof resolveNextAction>;
+export interface WorkflowDirectiveFields {
+  directive: ReturnType<typeof resolveWorkflowDirective>;
   phaseLabel: string;
-  productNextAction: ReturnType<typeof buildProductNextAction>;
 }
 
 /**
- * Enrich an arbitrary value object with NextAction fields.
+ * Enrich an arbitrary value object with a workflow directive.
  *
- * This is the canonical implementation — {@link appendNextAction}
- * delegates to it for the JSON-based path. Callers that already work
- * with objects (instead of pre-serialized JSON strings) should use this
- * function directly to avoid unnecessary parse/serialize rounds.
+ * Callers serialize the enriched object only at their response boundary.
  *
  * @param value - The object to enrich.
- * @param state - Current session state for NextAction resolution.
- * @returns The value augmented with nextAction, phaseLabel, and productNextAction.
+ * @param state - Current session state for workflow-directive resolution.
+ * @returns The value augmented with directive and phaseLabel.
  */
-export function enrichWithNextAction<T extends Record<string, unknown>>(
+export function enrichWithWorkflowDirective<T extends Record<string, unknown>>(
   value: T,
   state: SessionState,
-): T & NextActionFields {
-  const nextAction = resolveNextAction(state.phase, state);
-  const productNext = buildProductNextAction(
-    nextAction,
-    state.phase,
-    state.error?.code === 'ABORTED',
-    state.archiveStatus ?? null,
-    state,
-  );
+): T & WorkflowDirectiveFields {
+  const directive = resolveWorkflowDirective(state);
   return {
     ...value,
-    nextAction,
+    directive,
     phaseLabel: PHASE_LABELS[state.phase],
-    productNextAction: productNext,
   };
 }
-
-// Compatibility export for existing tool consumers. The shared index is authoritative.
-export { projectMarkdownHeadings as extractSections } from '../../shared/markdown-sections.js';
 
 // ─── Session Bootstrap Wrappers ────────────────────────────────────────────────
 

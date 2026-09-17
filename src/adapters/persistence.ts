@@ -322,6 +322,19 @@ export async function readState(sessionDir: string): Promise<SessionState | null
     );
   }
 
+  if (
+    'archiveStatus' in contract ||
+    (contract.policySnapshot !== null &&
+      typeof contract.policySnapshot === 'object' &&
+      ('selfReview' in contract.policySnapshot ||
+        'requireVerifiedActorsForApproval' in contract.policySnapshot))
+  ) {
+    throw new PersistenceError(
+      'SCHEMA_VALIDATION_FAILED',
+      'State file contains a field removed by the current session-state contract.',
+    );
+  }
+
   // No read migration, partial parsing, defaulting, or authority carry-forward.
 
   const result = SessionState.safeParse(json);

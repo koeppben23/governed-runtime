@@ -35,7 +35,7 @@ import { createPolicySnapshot } from '../config/policy-snapshot.js';
 import { makeState } from '../fixtures.js';
 import { isCommandAllowed, Command } from '../machine/commands.js';
 import { USER_GATES, TERMINAL } from '../machine/topology.js';
-import { computeRecordDigest } from '../state/evidence-plan.js';
+import { makePlanRevision } from '../state/evidence-test-constants.js';
 import type { PlanRecord } from '../state/evidence-plan.js';
 import type {
   PlanApprovalCertificate,
@@ -43,6 +43,8 @@ import type {
 } from '../state/proofgraph-approval.js';
 import { hashText } from '../shared/hashing.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { directiveLabel } from '../presentation/index.js';
+import type { WorkflowDirectiveCode } from '../machine/workflow-directive.js';
 
 // ─── Test Fixtures ────────────────────────────────────────────────────────────
 
@@ -59,8 +61,8 @@ const ALL_PHASES = [
   'ARCHITECTURE',
   'ARCH_REVIEW',
   'ARCH_COMPLETE',
-  'REVIEW',
-  'REVIEW_COMPLETE',
+  'PEER_REVIEW',
+  'PEER_REVIEW_COMPLETE',
 ] as const;
 const TICKET_FLOW_PHASES = [
   'READY',
@@ -74,7 +76,7 @@ const TICKET_FLOW_PHASES = [
   'COMPLETE',
 ] as const;
 const ARCH_FLOW_PHASES = ['READY', 'ARCHITECTURE', 'ARCH_REVIEW', 'ARCH_COMPLETE'] as const;
-const REVIEW_FLOW_PHASES = ['READY', 'REVIEW', 'REVIEW_COMPLETE'] as const;
+const REVIEW_FLOW_PHASES = ['READY', 'PEER_REVIEW', 'PEER_REVIEW_COMPLETE'] as const;
 
 function makeMinimalState(phase: SessionState['phase'] = 'READY'): SessionState {
   return {
@@ -100,7 +102,7 @@ function makeMinimalState(phase: SessionState['phase'] = 'READY'): SessionState 
     implReview: null,
     reviewDecision: null,
     architecture: null,
-    archiveStatus: null,
+    regulatedArchiveStatus: null,
     actorInfo: undefined,
     error: null,
   };
@@ -173,15 +175,15 @@ describe('proofGraph — persisted coverage summary', () => {
   });
 
   it('separates advisory hypotheses from contract coverage so both stay readable', () => {
-    // A standalone review contributes hypotheses without declaring a contract.
+    // A peer review contributes hypotheses without declaring a contract.
     // Reporting NOT_DECLARED next to a non-zero claimCount is only coherent when
     // the two populations are counted separately (#762).
-    const state = makeMinimalState('REVIEW_COMPLETE');
+    const state = makeMinimalState('PEER_REVIEW_COMPLETE');
     const projection = buildStatusProjection(
       {
         ...state,
         proofGraph: {
-          version: 'proofgraph.v1',
+          version: 'proofgraph.v2',
           evaluatedAt: '2026-01-01T00:00:00.000Z',
           claims: [
             {
@@ -209,12 +211,14 @@ describe('proofGraph — persisted coverage summary', () => {
   });
 });
 
-describe('productNextAction — aborted terminal session (governance integrity)', () => {
+describe('directive — aborted terminal session (governance integrity)', () => {
   const policy = getPolicyPreset('solo');
 
-  it('redirects an aborted COMPLETE session to read-only /status', () => {
+  it('an ABORTED session is terminal and never routed to an export command', () => {
     const state: SessionState = {
-      ...makeMinimalState('COMPLETE'),
+      ...makeMinimalState('ABORTED'),
+      // ABORTED retains its diagnostic error marker for audit provenance; the
+      // terminal position must remain authoritative over it.
       error: {
         code: 'ABORTED',
         message: 'Operator aborted',
@@ -224,16 +228,39 @@ describe('productNextAction — aborted terminal session (governance integrity)'
     };
     const projection = buildStatusProjection(state, policy);
     // An aborted session must not be routed to /export as a verifiable audit package.
-    expect(projection.productNextAction.primaryCommand).toBe('/status');
-    expect(String(projection.productNextAction.summary).toLowerCase()).toContain('aborted');
-    expect(projection.productNextAction.summary).not.toContain('/export');
-    expect(projection.productNextAction.summary).not.toContain('/finish');
-    expect(projection.productNextAction.summary).not.toContain('/review');
+    expect(projection.directive).toEqual({
+      kind: 'terminal',
+      code: 'WORKFLOW_ABORTED',
+      allowedIntents: [],
+      commands: [],
+    });
+    expect(projection.conclusion).toEqual({
+      kind: 'terminal',
+      message: directiveLabel('WORKFLOW_ABORTED'),
+    });
+    expect(projection.directive.commands).not.toContain('/export');
   });
 
-  it('a clean COMPLETE session is unaffected (still offers /export)', () => {
-    const projection = buildStatusProjection(makeMinimalState('COMPLETE'), policy);
-    expect(projection.productNextAction.summary).toContain('/export');
+  it('a clean completion path offers /export at EXPORT_READY, never at COMPLETE', () => {
+    const exportReady = buildStatusProjection(makeMinimalState('EXPORT_READY'), policy);
+    expect(exportReady.directive).toEqual({
+      kind: 'user_action',
+      code: 'EXPORT_REQUIRED',
+      allowedIntents: ['EXPORT'],
+      commands: ['/export'],
+    });
+    expect(exportReady.conclusion).toMatchObject({
+      kind: 'next_action',
+      action: { invocation: '/export' },
+    });
+
+    const complete = buildStatusProjection(makeMinimalState('COMPLETE'), policy);
+    expect(complete.directive).toEqual({
+      kind: 'terminal',
+      code: 'WORKFLOW_COMPLETE',
+      allowedIntents: [],
+      commands: [],
+    });
   });
 });
 
@@ -321,13 +348,30 @@ describe('buildStatusProjection — BAD', () => {
 describe('buildStatusProjection — CORNER', () => {
   const policy = getPolicyPreset('solo');
 
+  const TERMINAL_DIRECTIVE_CODES: Record<string, WorkflowDirectiveCode> = {
+    COMPLETE: 'WORKFLOW_COMPLETE',
+    ARCH_COMPLETE: 'ARCHITECTURE_COMPLETE',
+    PEER_REVIEW_COMPLETE: 'PEER_REVIEW_COMPLETE',
+    REJECTED: 'WORKFLOW_REJECTED',
+    ABORTED: 'WORKFLOW_ABORTED',
+  };
+
   for (const phase of TERMINAL) {
-    it(`terminal phase ${phase}: no blocker`, () => {
+    it(`terminal phase ${phase}: no blocker and a terminal directive`, () => {
       const state = makeMinimalState(phase);
       const projection = buildStatusProjection(state, policy);
 
       expect(projection.blocker).toBeNull();
-      expect(projection.nextAction.summary).toBeTruthy();
+      expect(projection.directive).toEqual({
+        kind: 'terminal',
+        code: TERMINAL_DIRECTIVE_CODES[phase],
+        allowedIntents: [],
+        commands: [],
+      });
+      expect(projection.conclusion).toEqual({
+        kind: 'terminal',
+        message: directiveLabel(TERMINAL_DIRECTIVE_CODES[phase]!),
+      });
     });
   }
 
@@ -348,6 +392,7 @@ describe('buildBlockedProjection — ProofGraph gate', () => {
   const team = getPolicyPreset('team');
   const CLAIM_ID = '00000000-0000-4000-8000-000000000001';
   const CERT_ID = '00000000-0000-4000-8000-0000000000ce';
+  const PLAN_CURRENT = makePlanRevision({ body: 'x' });
 
   function declarations(): PlanClaimDeclarations {
     return {
@@ -370,37 +415,26 @@ describe('buildBlockedProjection — ProofGraph gate', () => {
     const decls = declarations();
     return {
       flow: 'plan',
-      authorityDigest: 'plan-digest',
+      authorityDigest: PLAN_CURRENT.digest,
       claimDeclarationsDigest: hashText(canonicalJsonStringify(decls)),
       decisionAttestationDigest: 'd',
       approvedAt: '2026-01-01T00:00:00.000Z',
       approvedBy: 'reviewer',
       certificateId: CERT_ID,
-      planVersion: 1,
-      planRecordDigest: 'record-digest',
+      planVersion: PLAN_CURRENT.planVersion,
+      planRecordDigest: PLAN_CURRENT.recordDigest,
       reviewBinding: {
         kind: 'current_review',
         reviewObligationId: '00000000-0000-4000-8000-0000000000cd',
         reviewEvidenceDigest: 'e'.repeat(64),
-        reviewedSubjectDigest: 'plan-digest',
+        reviewedSubjectDigest: PLAN_CURRENT.digest,
       },
     };
   }
 
   function approvedPlan(): PlanRecord {
     return {
-      current: {
-        body: 'x',
-        digest: 'plan-digest',
-        sections: [],
-        createdAt: '2026-01-01T00:00:00.000Z',
-        recordDigest: 'record-digest',
-        planVersion: 1,
-        supersedesRecordDigest: null,
-        originatingReviewObligationId: null,
-        revisionReason: null,
-        lineageStatus: 'verified',
-      },
+      current: PLAN_CURRENT,
       history: [],
       reviewCompletion: 'pending',
       claimDeclarations: declarations(),
@@ -426,7 +460,7 @@ describe('buildBlockedProjection — ProofGraph gate', () => {
       policySnapshot: createPolicySnapshot(team, '2026-01-01T00:00:00.000Z', hashText),
       plan: approvedPlan(),
       proofGraph: {
-        version: 'proofgraph.v1',
+        version: 'proofgraph.v2',
         evaluatedAt: '2026-01-01T00:00:00.000Z',
         claims: [
           {
@@ -464,8 +498,8 @@ describe('buildBlockedProjection — ProofGraph gate', () => {
 describe('buildStatusProjection — EDGE evidence', () => {
   const policy = getPolicyPreset('solo');
 
-  it('should count all zero when no slots required (REVIEW flow)', () => {
-    const state = makeMinimalState('REVIEW_COMPLETE');
+  it('should count all zero when no slots required (PEER_REVIEW flow)', () => {
+    const state = makeMinimalState('PEER_REVIEW_COMPLETE');
     const projection = buildStatusProjection(state, policy);
 
     expect(projection.evidenceSummary.present).toBe(0);
@@ -508,24 +542,7 @@ describe('buildStatusProjection — EDGE evidence', () => {
         createdAt: new Date().toISOString(),
       },
       plan: {
-        current: {
-          body: '## Plan\n...',
-          digest: 'plan123',
-          sections: [],
-          createdAt: new Date().toISOString(),
-          recordDigest: computeRecordDigest({
-            contentDigest: 'plan123',
-            planVersion: 1,
-            supersedesRecordDigest: null,
-            originatingReviewObligationId: null,
-            revisionReason: null,
-          }),
-          planVersion: 1,
-          supersedesRecordDigest: null,
-          originatingReviewObligationId: null,
-          revisionReason: null,
-          lineageStatus: 'verified' as const,
-        },
+        current: makePlanRevision({ body: '## Plan\n...' }),
         history: [],
         reviewCompletion: 'pending',
       },
@@ -552,8 +569,8 @@ describe('buildEvidenceDetailProjection — HAPPY', () => {
     expect(typeof detail.fourEyes.detail).toBe('string');
   });
 
-  it('should have no slots for REVIEW flow', () => {
-    const state = makeMinimalState('REVIEW');
+  it('should have no slots for PEER_REVIEW flow', () => {
+    const state = makeMinimalState('PEER_REVIEW');
     const detail = buildEvidenceDetailProjection(state);
 
     expect(detail.slots).toHaveLength(0);
@@ -658,29 +675,13 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
         createdAt: new Date().toISOString(),
       },
       plan: {
-        current: {
-          body: '## Plan',
-          digest: 'plan_digest',
-          sections: [],
-          createdAt: new Date().toISOString(),
-          recordDigest: computeRecordDigest({
-            contentDigest: 'plan_digest',
-            planVersion: 1,
-            supersedesRecordDigest: null,
-            originatingReviewObligationId: null,
-            revisionReason: null,
-          }),
-          planVersion: 1,
-          supersedesRecordDigest: null,
-          originatingReviewObligationId: null,
-          revisionReason: null,
-          lineageStatus: 'verified' as const,
-        },
+        current: makePlanRevision({ body: '## Plan' }),
         history: [],
         reviewCompletion: 'pending',
       },
       selfReview: {
         iteration: 1,
+        reviewCycle: 1,
         maxIterations: 2,
         prevDigest: null,
         currDigest: 'self-review-digest',
@@ -726,6 +727,7 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
       },
       implReview: {
         iteration: 1,
+        reviewCycle: 1,
         maxIterations: 2,
         prevDigest: null,
         currDigest: 'impl-review-digest',
@@ -736,7 +738,12 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
       reviewDecision: {
         verdict: 'approve',
         rationale: 'All good',
-        decidedBy: 'reviewer@corp.com',
+        decisionIdentity: {
+          actorId: 'reviewer@corp.com',
+          actorEmail: 'reviewer@corp.com',
+          actorSource: 'unknown',
+          actorAssurance: 'best_effort',
+        },
         decidedAt: new Date().toISOString(),
       },
       error: null,
@@ -757,29 +764,13 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
         createdAt: new Date().toISOString(),
       },
       plan: {
-        current: {
-          body: '## Plan',
-          digest: 'plan_digest',
-          sections: [],
-          createdAt: new Date().toISOString(),
-          recordDigest: computeRecordDigest({
-            contentDigest: 'plan_digest',
-            planVersion: 1,
-            supersedesRecordDigest: null,
-            originatingReviewObligationId: null,
-            revisionReason: null,
-          }),
-          planVersion: 1,
-          supersedesRecordDigest: null,
-          originatingReviewObligationId: null,
-          revisionReason: null,
-          lineageStatus: 'verified' as const,
-        },
+        current: makePlanRevision({ body: '## Plan' }),
         history: [],
         reviewCompletion: 'pending',
       },
       selfReview: {
         iteration: 1,
+        reviewCycle: 1,
         maxIterations: 2,
         prevDigest: null,
         currDigest: 'self-review-digest',

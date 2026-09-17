@@ -18,7 +18,7 @@ const { resolveChallengeClassificationEvidence } =
   await import('./review-obligation-classification.js');
 
 function stateWithChallengePolicy() {
-  const base = makeState('REVIEW');
+  const base = makeState('PEER_REVIEW');
   return {
     ...base,
     policySnapshot: { ...base.policySnapshot!, challengePolicy: CHALLENGE_POLICY_V1 },
@@ -32,7 +32,7 @@ describe('resolveChallengeClassificationEvidence', () => {
   });
 
   it('returns not_required when the session carries no policy snapshot', async () => {
-    const state = makeState('REVIEW');
+    const state = makeState('PEER_REVIEW');
     const result = await resolveChallengeClassificationEvidence(
       { ...state, policySnapshot: undefined as unknown as SessionState['policySnapshot'] },
       '/repo',

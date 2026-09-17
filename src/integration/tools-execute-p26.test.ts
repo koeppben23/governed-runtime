@@ -40,6 +40,7 @@ import {
   review,
   abort_session,
   archive,
+  export as exportTool,
 } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
@@ -106,6 +107,7 @@ const wsOriginals = vi.hoisted(() => ({
 }));
 const regulatedArchiveMock = vi.hoisted(() => ({
   archiveRegulatedEvidence: vi.fn(),
+  archiveCompletionExport: vi.fn(),
 }));
 const regulatedVerificationMock = vi.hoisted(() => ({
   verifyRegulatedArchive: vi.fn().mockResolvedValue({
@@ -200,6 +202,21 @@ beforeEach(async () => {
     (fingerprint, sessionId) =>
       wsMock.archiveSession(fingerprint, sessionId, { redactionMode: 'none', includeRaw: true }),
   );
+  vi.mocked(regulatedArchive.archiveCompletionExport).mockImplementation(
+    (
+      await vi.importActual<typeof import('../adapters/workspace/archive.js')>(
+        '../adapters/workspace/archive.js',
+      )
+    ).archiveCompletionExport,
+  );
+  // The P26 suite exercises the regulated completion chain; the generic
+  // export-package verification runs for real in the archive integrity suites.
+  vi.mocked(wsMock.verifyArchive).mockResolvedValue({
+    passed: true,
+    findings: [],
+    manifest: null,
+    verifiedAt: '2026-01-01T00:00:00.000Z',
+  });
   vi.mocked(regulatedVerification.verifyRegulatedArchive).mockResolvedValue({
     passed: true,
     findings: [],
@@ -216,13 +233,14 @@ afterEach(async () => {
   // values leak into subsequent tests (e.g. archive manifest test).
   vi.mocked(wsMock.archiveSession).mockReset().mockImplementation(wsOriginals.archiveSession);
   vi.mocked(regulatedArchive.archiveRegulatedEvidence).mockReset();
+  vi.mocked(regulatedArchive.archiveCompletionExport).mockReset();
   vi.mocked(regulatedVerification.verifyRegulatedArchive).mockReset().mockResolvedValue({
     passed: true,
     findings: [],
     manifest: null,
     verifiedAt: '2026-01-01T00:00:00.000Z',
   });
-  vi.mocked(wsMock.verifyArchive).mockReset().mockImplementation(wsOriginals.verifyArchive);
+  vi.mocked(wsMock.verifyArchive).mockReset();
   // Reset actor mock to default deterministic value (P27/P34)
   vi.mocked(actorMock.resolveActor)
     .mockReset()
@@ -376,7 +394,12 @@ describe('P26: regulated archive completion', () => {
         verifiedAt: new Date().toISOString(),
       });
 
-      const raw = await executeDecision({ verdict: 'approve', rationale: 'Ship it' });
+      const approval = parseToolResult(
+        await executeDecision({ verdict: 'approve', rationale: 'Ship it' }),
+      );
+      expect(approval.phase).toBe('EXPORT_READY');
+
+      const raw = await exportTool.execute({}, ctx);
       const result = parseToolResult(raw);
       expect(result.phase).toBe('COMPLETE');
       // Response must surface archiveStatus — agent/user must see clean completion
@@ -384,7 +407,9 @@ describe('P26: regulated archive completion', () => {
 
       const finalState = await readState(sessDir);
       expect(finalState).not.toBeNull();
-      expect(finalState!.archiveStatus).toBe('verified');
+      expect(finalState!.phase).toBe('COMPLETE');
+      expect(finalState!.regulatedArchiveStatus).toBe('verified');
+      expect(finalState!.exportCompletionEvidence).not.toBeNull();
     });
   });
 
@@ -393,7 +418,12 @@ describe('P26: regulated archive completion', () => {
       const sessDir = await reachRegulatedEvidenceReview();
       vi.mocked(wsMock.archiveSession).mockRejectedValueOnce(new Error('tar command failed'));
 
-      const raw = await executeDecision({ verdict: 'approve', rationale: 'Ship it' });
+      const approval = parseToolResult(
+        await executeDecision({ verdict: 'approve', rationale: 'Ship it' }),
+      );
+      expect(approval.phase).toBe('EXPORT_READY');
+
+      const raw = await exportTool.execute({}, ctx);
       const result = parseToolResult(raw);
       expect(result.phase).toBe('COMPLETE');
       // Response must surface failure — agent/user must NOT see clean completion
@@ -401,7 +431,8 @@ describe('P26: regulated archive completion', () => {
 
       const finalState = await readState(sessDir);
       expect(finalState).not.toBeNull();
-      expect(finalState!.archiveStatus).toBe('failed');
+      expect(finalState!.phase).toBe('COMPLETE');
+      expect(finalState!.regulatedArchiveStatus).toBe('failed');
     });
 
     it('regulated + archive ok + verify fails → archiveStatus: failed', async () => {
@@ -420,7 +451,12 @@ describe('P26: regulated archive completion', () => {
         verifiedAt: new Date().toISOString(),
       });
 
-      const raw = await executeDecision({ verdict: 'approve', rationale: 'Ship it' });
+      const approval = parseToolResult(
+        await executeDecision({ verdict: 'approve', rationale: 'Ship it' }),
+      );
+      expect(approval.phase).toBe('EXPORT_READY');
+
+      const raw = await exportTool.execute({}, ctx);
       const result = parseToolResult(raw);
       expect(result.phase).toBe('COMPLETE');
       // Response must surface failure — agent/user must NOT see clean completion
@@ -428,12 +464,12 @@ describe('P26: regulated archive completion', () => {
 
       const finalState = await readState(sessDir);
       expect(finalState).not.toBeNull();
-      expect(finalState!.archiveStatus).toBe('failed');
+      expect(finalState!.regulatedArchiveStatus).toBe('failed');
     });
   });
 
   describe('CORNER', () => {
-    it('team + clean completion → no archiveStatus (backward-compatible)', async () => {
+    it('team + clean completion → no archiveStatus projection', async () => {
       // Use team workflow directly (no regulated patch)
       await hydrateSession({ policyMode: 'team' });
       await ticket.execute({ text: 'Team task', source: 'user' }, ctx);
@@ -470,19 +506,30 @@ describe('P26: regulated archive completion', () => {
         if (s.phase === 'EVIDENCE_REVIEW') break;
         await executeWithStrictReview(review_implementation, { reviewVerdict: 'accept' });
       }
-      const raw = await executeDecision({ verdict: 'approve', rationale: 'Ship it' });
+      const approval = parseToolResult(
+        await executeDecision({ verdict: 'approve', rationale: 'Ship it' }),
+      );
+      expect(approval.phase).toBe('EXPORT_READY');
+
+      const raw = await exportTool.execute({}, ctx);
       const result = parseToolResult(raw);
       expect(result.phase).toBe('COMPLETE');
       // Non-regulated: response must NOT include archiveStatus
       expect(result.archiveStatus).toBeUndefined();
 
-      // Read state — archiveStatus should NOT be set
+      // Read state — regulated archive lifecycle is explicitly unset
       const { computeFingerprint, sessionDir: resolveSessionDir } = wsMock;
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const finalState = await readState(sessDir);
       expect(finalState).not.toBeNull();
-      expect(finalState!.archiveStatus).toBeUndefined();
+      expect(finalState!.phase).toBe('COMPLETE');
+      expect(finalState!.regulatedArchiveStatus).toBeNull();
+      // The canonical completion export is persisted as a verifiable auditor package.
+      expect(finalState!.exportCompletionEvidence).not.toBeNull();
+      expect(finalState!.lastExportPackagePurpose).toBe('auditor');
+      expect(finalState!.lastExportIntegrityCapability).toBe('verifiable');
+      expect(finalState!.lastExportVerificationStatus).toBe('passed');
     });
 
     it('solo + completion → no archiveStatus', async () => {
@@ -513,16 +560,20 @@ describe('P26: regulated archive completion', () => {
       }
       await executeWithStrictReview(review_implementation, { reviewVerdict: 'accept' });
 
-      // Verify we're at COMPLETE (solo auto-approves EVIDENCE_REVIEW)
+      // Solo auto-approves EVIDENCE_REVIEW → EXPORT_READY; completion requires export.
       const s = parseToolResult(await status.execute({}, ctx));
-      expect(s.phase).toBe('COMPLETE');
+      expect(s.phase).toBe('EXPORT_READY');
+      const exportResult = parseToolResult(await exportTool.execute({}, ctx));
+      expect(exportResult.phase).toBe('COMPLETE');
+      expect(exportResult.archiveStatus).toBeUndefined();
 
       const { computeFingerprint, sessionDir: resolveSessionDir } = wsMock;
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const finalState = await readState(sessDir);
       expect(finalState).not.toBeNull();
-      expect(finalState!.archiveStatus).toBeUndefined();
+      expect(finalState!.phase).toBe('COMPLETE');
+      expect(finalState!.regulatedArchiveStatus).toBeNull();
     });
 
     it('abort at regulated session → no archiveStatus (emergency escape)', async () => {
@@ -544,17 +595,18 @@ describe('P26: regulated archive completion', () => {
         },
       });
 
-      // Abort → COMPLETE with error
+      // Abort → the explicit terminal ABORTED position with an error marker
       const raw = await abort_session.execute({ reason: 'Emergency' }, ctx);
       const result = parseToolResult(raw);
-      expect(result.phase).toBe('COMPLETE');
+      expect(result.phase).toBe('ABORTED');
 
       const finalState = await readState(sessDir);
       expect(finalState).not.toBeNull();
       expect(finalState!.error).not.toBeNull();
       expect(finalState!.error!.code).toBe('ABORTED');
-      // No archive attempt for aborted sessions
-      expect(finalState!.archiveStatus).toBeUndefined();
+      // No archive attempt for aborted sessions; persisted authority remains explicitly unset
+      expect(finalState!.regulatedArchiveStatus).toBeNull();
+      expect(finalState!.exportCompletionEvidence).toBeNull();
     });
   });
 
@@ -566,7 +618,12 @@ describe('P26: regulated archive completion', () => {
         new Error('Verification I/O error'),
       );
 
-      const raw = await executeDecision({ verdict: 'approve', rationale: 'Ship it' });
+      const approval = parseToolResult(
+        await executeDecision({ verdict: 'approve', rationale: 'Ship it' }),
+      );
+      expect(approval.phase).toBe('EXPORT_READY');
+
+      const raw = await exportTool.execute({}, ctx);
       const result = parseToolResult(raw);
       expect(result.phase).toBe('COMPLETE');
       // Response must surface failure — fail-closed on verify exception
@@ -574,7 +631,7 @@ describe('P26: regulated archive completion', () => {
 
       const finalState = await readState(sessDir);
       expect(finalState).not.toBeNull();
-      expect(finalState!.archiveStatus).toBe('failed');
+      expect(finalState!.regulatedArchiveStatus).toBe('failed');
     });
 
     it('regulated COMPLETE + archiveStatus !== verified is not clean completion', async () => {
@@ -582,14 +639,20 @@ describe('P26: regulated archive completion', () => {
       const sessDir = await reachRegulatedEvidenceReview();
       vi.mocked(wsMock.archiveSession).mockRejectedValueOnce(new Error('tar failed'));
 
-      await executeDecision({ verdict: 'approve', rationale: 'Ship it' });
+      const approval = parseToolResult(
+        await executeDecision({ verdict: 'approve', rationale: 'Ship it' }),
+      );
+      expect(approval.phase).toBe('EXPORT_READY');
+      const exportResult = parseToolResult(await exportTool.execute({}, ctx));
+      expect(exportResult.phase).toBe('COMPLETE');
+      expect(exportResult.archiveStatus).toBe('failed');
 
       const finalState = await readState(sessDir);
       expect(finalState).not.toBeNull();
       expect(finalState!.phase).toBe('COMPLETE');
       expect(finalState!.policySnapshot.mode).toBe('regulated');
       expect(finalState!.error).toBeNull();
-      expect(finalState!.archiveStatus).not.toBe('verified');
+      expect(finalState!.regulatedArchiveStatus).toBe('failed');
       // This combination means: regulated session completed but archive failed.
       // Doctor/status tools should surface this as degraded completion.
     });
@@ -629,7 +692,11 @@ describe('P26: regulated archive completion', () => {
         verifiedAt: new Date().toISOString(),
       });
 
-      const raw = await executeDecision({ verdict: 'approve', rationale: 'Ship it' });
+      const approval = parseToolResult(
+        await executeDecision({ verdict: 'approve', rationale: 'Ship it' }),
+      );
+      expect(approval.phase).toBe('EXPORT_READY');
+      const raw = await exportTool.execute({}, ctx);
       const result = parseToolResult(raw);
       expect(result.phase).toBe('COMPLETE');
 
@@ -647,7 +714,7 @@ describe('P26: regulated archive completion', () => {
       // P26 Review 3: the tool-layer emits session_completed to the audit trail.
       // Verifies: (a) the event exists on disk, (b) there is exactly one (no duplication).
       // The plugin is not running in tool-execute tests, so this proves the tool-layer
-      // writes the event and sets archiveStatus (which the plugin uses to skip its own).
+      // writes the event and sets regulatedArchiveStatus (which the plugin uses to skip its own).
       const sessDir = await reachRegulatedEvidenceReview();
       vi.mocked(wsMock.archiveSession).mockResolvedValueOnce('/fake/archive.tar.gz');
       vi.mocked(regulatedVerification.verifyRegulatedArchive).mockResolvedValueOnce({
@@ -657,22 +724,26 @@ describe('P26: regulated archive completion', () => {
         verifiedAt: new Date().toISOString(),
       });
 
-      const raw = await executeDecision({ verdict: 'approve', rationale: 'Ship it' });
+      const approval = parseToolResult(
+        await executeDecision({ verdict: 'approve', rationale: 'Ship it' }),
+      );
+      expect(approval.phase).toBe('EXPORT_READY');
+      const raw = await exportTool.execute({}, ctx);
       const result = parseToolResult(raw);
       expect(result.phase).toBe('COMPLETE');
       expect(result.archiveStatus).toBe('verified');
 
       // Read the actual audit trail from disk
-      const { events } = await readAuditTrail(sessDir);
+      const events = await readAuditTrail(sessDir);
       const completionEvents = events.filter((e) => e.event === 'lifecycle:session_completed');
       // Exactly one session_completed — tool-layer wrote it, no duplication
       expect(completionEvents).toHaveLength(1);
       expect(completionEvents[0]!.actor).toBe('machine');
       expect(completionEvents[0]!.hostSessionId).toBe(ctx.sessionID);
 
-      // archiveStatus on persisted state enables plugin to skip its own emission
+      // regulatedArchiveStatus on persisted state enables plugin to skip its own emission
       const finalState = await readState(sessDir);
-      expect(finalState!.archiveStatus).toBe('verified');
+      expect(finalState!.regulatedArchiveStatus).toBe('verified');
     });
 
     it('regulated + session_completed append fails → archiveStatus: failed', async () => {
@@ -680,20 +751,30 @@ describe('P26: regulated archive completion', () => {
       // If appendAuditEvent throws, the entire chain fails — no "verified archive
       // without session_completed" can exist.
       const sessDir = await reachRegulatedEvidenceReview();
+      const originalAppend = persistenceAudit.appendAuditEvent;
       const appendSpy = vi
         .spyOn(persistenceAudit, 'appendAuditEvent')
-        .mockRejectedValueOnce(new Error('Audit write I/O failure'));
+        .mockImplementation(async (dir, event) => {
+          if (event.detail?.action === 'session_completed') {
+            throw new Error('Audit write I/O failure');
+          }
+          return originalAppend(dir, event);
+        });
       // archiveSession/verifyArchive are NOT mocked here — they must not be
       // reached when audit emission fails (fail-closed short-circuit).
 
-      const raw = await executeDecision({ verdict: 'approve', rationale: 'Ship it' });
+      const approval = parseToolResult(
+        await executeDecision({ verdict: 'approve', rationale: 'Ship it' }),
+      );
+      expect(approval.phase).toBe('EXPORT_READY');
+      const raw = await exportTool.execute({}, ctx);
       const result = parseToolResult(raw);
       expect(result.phase).toBe('COMPLETE');
       // Must be failed — audit append failure blocks verified archive
       expect(result.archiveStatus).toBe('failed');
 
       const finalState = await readState(sessDir);
-      expect(finalState!.archiveStatus).toBe('failed');
+      expect(finalState!.regulatedArchiveStatus).toBe('failed');
 
       appendSpy.mockRestore();
     });
@@ -702,12 +783,23 @@ describe('P26: regulated archive completion', () => {
       // P26 Review 5: proves archiveSession is never reached when audit emission
       // fails. The single try/catch ensures audit → archive → verify is atomic.
       await reachRegulatedEvidenceReview();
+      const originalAppend = persistenceAudit.appendAuditEvent;
       const appendSpy = vi
         .spyOn(persistenceAudit, 'appendAuditEvent')
-        .mockRejectedValueOnce(new Error('Disk full'));
+        .mockImplementation(async (dir, event) => {
+          if (event.detail?.action === 'session_completed') {
+            throw new Error('Disk full');
+          }
+          return originalAppend(dir, event);
+        });
       const archiveSpy = vi.mocked(wsMock.archiveSession);
 
-      await executeDecision({ verdict: 'approve', rationale: 'Ship it' });
+      const approval = parseToolResult(
+        await executeDecision({ verdict: 'approve', rationale: 'Ship it' }),
+      );
+      expect(approval.phase).toBe('EXPORT_READY');
+      const exportResult = parseToolResult(await exportTool.execute({}, ctx));
+      expect(exportResult.archiveStatus).toBe('failed');
 
       // archiveSession must NOT have been called — audit failure short-circuits
       expect(archiveSpy).not.toHaveBeenCalled();

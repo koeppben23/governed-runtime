@@ -3,7 +3,8 @@
  * @description Unit tests for the regulated completion verifier binding.
  *
  * Coverage: HAPPY, BAD, CORNER
- * - HAPPY: exact EVIDENCE_REVIEW APPROVE COMPLETE with a bound decision passes
+ * - HAPPY: exact EVIDENCE_REVIEW APPROVE → EXPORT_READY, then EXPORT_MATERIALIZED
+ *   → COMPLETE with a bound decision passes
  * - BAD: decision receipt mismatches reviewDecision fields or decisionIdentity
  * - CORNER: non-exact terminal transitions and non-regulated states are rejected/skipped
  *
@@ -39,16 +40,29 @@ function chainedEvent(detail: Record<string, unknown>): ChainedAuditEvent {
   } as ChainedAuditEvent;
 }
 
-function transitionEvent(): ChainedAuditEvent {
+function approvalTransitionEvent(): ChainedAuditEvent {
   return {
     ...chainedEvent({
       kind: 'transition',
       from: 'EVIDENCE_REVIEW',
-      to: 'COMPLETE',
+      to: 'EXPORT_READY',
       event: 'APPROVE',
       at: AT,
     }),
     event: 'APPROVE',
+  };
+}
+
+function exportTransitionEvent(): ChainedAuditEvent {
+  return {
+    ...chainedEvent({
+      kind: 'transition',
+      from: 'EXPORT_READY',
+      to: 'COMPLETE',
+      event: 'EXPORT_MATERIALIZED',
+      at: AT,
+    }),
+    event: 'EXPORT_MATERIALIZED',
   };
 }
 
@@ -61,10 +75,15 @@ function decisionEvent(overrides: Record<string, unknown> = {}): ChainedAuditEve
       gatePhase: 'EVIDENCE_REVIEW',
       verdict: 'approve',
       rationale: 'LGTM',
-      decidedBy: 'reviewer-1',
+      decisionIdentity: {
+        actorId: 'reviewer-1',
+        actorEmail: 'reviewer@test.com',
+        actorSource: 'env',
+        actorAssurance: 'best_effort',
+      },
       decidedAt: AT,
       fromPhase: 'EVIDENCE_REVIEW',
-      toPhase: 'COMPLETE',
+      toPhase: 'EXPORT_READY',
       transitionEvent: 'APPROVE',
       policyMode: 'regulated',
       ...overrides,
@@ -90,12 +109,24 @@ function regulatedCompleteState(
     reviewDecision,
     regulatedArchiveStatus: 'verified',
     transition: {
-      from: 'EVIDENCE_REVIEW',
+      from: 'EXPORT_READY',
       to: 'COMPLETE',
-      event: 'APPROVE',
+      event: 'EXPORT_MATERIALIZED',
       at: AT,
     },
   });
+}
+
+/** The canonical completion evidence order: approval, decision, export, lifecycle. */
+function boundCompletionEvents(
+  decisionOverrides: Record<string, unknown> = {},
+): ChainedAuditEvent[] {
+  return [
+    approvalTransitionEvent(),
+    decisionEvent(decisionOverrides),
+    exportTransitionEvent(),
+    lifecycleEvent(),
+  ];
 }
 
 function run(
@@ -109,17 +140,13 @@ function run(
 
 describe('verifyRegulatedCompletionCompleteness', () => {
   it('accepts an exact bound completion chain', () => {
-    const { codes } = run(regulatedCompleteState(), [
-      transitionEvent(),
-      decisionEvent(),
-      lifecycleEvent(),
-    ]);
+    const { codes } = run(regulatedCompleteState(), boundCompletionEvents());
     expect(codes).toEqual([]);
   });
 
   it('skips non-regulated sessions', () => {
     const state = makeState('COMPLETE', { reviewDecision: REVIEW_APPROVE });
-    const { codes } = run(state, [transitionEvent(), decisionEvent(), lifecycleEvent()]);
+    const { codes } = run(state, boundCompletionEvents());
     expect(codes).toEqual([]);
   });
 
@@ -129,24 +156,24 @@ describe('verifyRegulatedCompletionCompleteness', () => {
       reviewDecision: REVIEW_APPROVE,
       regulatedArchiveStatus: 'pending',
       transition: {
-        from: 'EVIDENCE_REVIEW',
+        from: 'EXPORT_READY',
         to: 'COMPLETE',
-        event: 'APPROVE',
+        event: 'EXPORT_MATERIALIZED',
         at: AT,
       },
     });
-    const { codes } = run(state, [transitionEvent(), decisionEvent(), lifecycleEvent()]);
+    const { codes } = run(state, boundCompletionEvents());
     expect(codes).toContain('regulated_terminal_transition_missing');
   });
 
-  it('rejects a terminal transition that is not EVIDENCE_REVIEW APPROVE to COMPLETE', () => {
+  it('rejects a terminal transition that is not EXPORT_READY EXPORT_MATERIALIZED to COMPLETE', () => {
     const state = makeState('COMPLETE', {
       policySnapshot: REGULATED_POLICY_SNAPSHOT,
       reviewDecision: REVIEW_APPROVE,
       regulatedArchiveStatus: 'verified',
       transition: { from: 'IMPL_REVIEW', to: 'COMPLETE', event: 'APPROVE', at: AT },
     });
-    const { codes } = run(state, [transitionEvent(), decisionEvent(), lifecycleEvent()]);
+    const { codes } = run(state, boundCompletionEvents());
     expect(codes).toContain('regulated_terminal_transition_missing');
   });
 
@@ -155,25 +182,36 @@ describe('verifyRegulatedCompletionCompleteness', () => {
       ...REVIEW_APPROVE,
       verdict: 'changes_requested' as const,
     });
-    const { codes } = run(state, [transitionEvent(), decisionEvent(), lifecycleEvent()]);
+    const { codes } = run(state, boundCompletionEvents());
     expect(codes).toContain('regulated_terminal_decision_invalid');
   });
 
   it.each([
-    { override: { verdict: 'reject' }, label: 'verdict' },
-    { override: { rationale: 'other' }, label: 'rationale' },
-    { override: { decidedBy: 'other-reviewer' }, label: 'decidedBy' },
-    { override: { decidedAt: '2025-12-31T23:59:59.000Z' }, label: 'decidedAt' },
-  ])('binds the decision receipt $label to reviewDecision', ({ override }) => {
-    const { findings } = run(regulatedCompleteState(), [
-      transitionEvent(),
-      decisionEvent(override),
-      lifecycleEvent(),
-    ]);
+    { override: { verdict: 'reject' }, label: 'verdict', expectedMessage: 'reviewDecision' },
+    { override: { rationale: 'other' }, label: 'rationale', expectedMessage: 'reviewDecision' },
+    {
+      override: {
+        decisionIdentity: {
+          actorId: 'other-reviewer',
+          actorEmail: 'other@test.com',
+          actorSource: 'env',
+          actorAssurance: 'best_effort',
+        },
+      },
+      label: 'decisionIdentity',
+      expectedMessage: 'decisionIdentity',
+    },
+    {
+      override: { decidedAt: '2025-12-31T23:59:59.000Z' },
+      label: 'decidedAt',
+      expectedMessage: 'reviewDecision',
+    },
+  ])('binds the decision receipt $label to reviewDecision', ({ override, expectedMessage }) => {
+    const { findings } = run(regulatedCompleteState(), boundCompletionEvents(override));
     expect(findings).toContainEqual(
       expect.objectContaining({
         code: 'regulated_terminal_decision_invalid',
-        message: expect.stringContaining('reviewDecision'),
+        message: expect.stringContaining(expectedMessage),
       }),
     );
   });
@@ -188,11 +226,10 @@ describe('verifyRegulatedCompletionCompleteness', () => {
         actorAssurance: 'best_effort' as const,
       },
     });
-    const { findings } = run(state, [
-      transitionEvent(),
-      decisionEvent({ decisionIdentity: { actorId: 'other-reviewer' } }),
-      lifecycleEvent(),
-    ]);
+    const { findings } = run(
+      state,
+      boundCompletionEvents({ decisionIdentity: { actorId: 'other-reviewer' } }),
+    );
     expect(findings).toContainEqual(
       expect.objectContaining({
         code: 'regulated_terminal_decision_invalid',
@@ -211,7 +248,7 @@ describe('verifyRegulatedCompletionCompleteness', () => {
         actorAssurance: 'best_effort' as const,
       },
     });
-    const events = [transitionEvent(), decisionEvent(), lifecycleEvent()];
+    const events = boundCompletionEvents();
     events[1] = { ...events[1]!, actor: 'machine' };
     const { findings } = run(state, events);
     expect(findings).toContainEqual(
@@ -233,9 +270,9 @@ describe('verifyRegulatedCompletionCompleteness', () => {
         actorAssurance: 'claim_validated' as const,
       },
     });
-    const { findings } = run(state, [
-      transitionEvent(),
-      decisionEvent({
+    const { findings } = run(
+      state,
+      boundCompletionEvents({
         decisionIdentity: {
           actorId: 'reviewer-1',
           actorEmail: 'reviewer-2@regulated.dev',
@@ -243,8 +280,7 @@ describe('verifyRegulatedCompletionCompleteness', () => {
           actorAssurance: 'claim_validated',
         },
       }),
-      lifecycleEvent(),
-    ]);
+    );
     expect(findings).toContainEqual(
       expect.objectContaining({
         code: 'regulated_terminal_decision_invalid',
@@ -255,27 +291,48 @@ describe('verifyRegulatedCompletionCompleteness', () => {
 
   it('flags out-of-order completion evidence', () => {
     const { codes } = run(regulatedCompleteState(), [
-      transitionEvent(),
+      approvalTransitionEvent(),
       lifecycleEvent(),
       decisionEvent(),
+      exportTransitionEvent(),
     ]);
     expect(codes).toContain('regulated_completion_order_invalid');
   });
 
   it('flags duplicate terminal decisions', () => {
     const { codes } = run(regulatedCompleteState(), [
-      transitionEvent(),
+      approvalTransitionEvent(),
       decisionEvent(),
       decisionEvent({ decisionId: 'DEC-002' }),
+      exportTransitionEvent(),
       lifecycleEvent(),
     ]);
     expect(codes).toContain('regulated_terminal_decision_invalid');
   });
 
+  it('flags a missing approval transition', () => {
+    const { codes } = run(regulatedCompleteState(), [
+      decisionEvent(),
+      exportTransitionEvent(),
+      lifecycleEvent(),
+    ]);
+    expect(codes).toContain('regulated_terminal_transition_missing');
+  });
+
+  it('flags a missing export transition', () => {
+    const { codes } = run(regulatedCompleteState(), [
+      approvalTransitionEvent(),
+      decisionEvent(),
+      lifecycleEvent(),
+    ]);
+    expect(codes).toContain('regulated_terminal_transition_missing');
+  });
+
   it('binds the lifecycle finalPhase exactly to the completion transition target', () => {
-    const events = [transitionEvent(), decisionEvent(), lifecycleEvent()];
-    events[2] = {
-      ...events[2]!,
+    const events = boundCompletionEvents();
+    const lifecycle = events[3]!;
+    events[3] = {
+      ...lifecycle,
       detail: { kind: 'lifecycle', action: 'session_completed', finalPhase: 'ARCH_COMPLETE' },
     };
     const { codes } = run(regulatedCompleteState(), events);

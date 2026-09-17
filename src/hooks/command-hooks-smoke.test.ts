@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { initWorkspace } from '../adapters/workspace/index.js';
 import { writeState } from '../adapters/persistence.js';
-import { readReviewerCaptures } from '../adapters/persistence-reviewer-capture.js';
+import { readAuditTrail } from '../adapters/persistence-audit.js';
 import { makeState, FROZEN_IMPLEMENTATION_BASE } from '../fixtures.js';
 
 const HOOK_TIMEOUT_MS = 3000;
@@ -88,7 +88,7 @@ describe('command hook binaries', () => {
       await expect(readdir(join(root, 'config', 'workspaces'))).resolves.not.toHaveLength(0);
     });
 
-    it('runs post-tool-use and persists a reviewer capture', async () => {
+    it('runs post-tool-use and persists the tool-call audit event', async () => {
       const initialized = await initWorkspace(worktree, SESSION_ID);
       await writeState(
         initialized.sessionDir,
@@ -109,21 +109,18 @@ describe('command hook binaries', () => {
 
       expect(result.code).toBe(0);
       expect(result.stdout).toBe('');
-      await expect(readReviewerCaptures(initialized.sessionDir)).resolves.toEqual({
-        captures: [
-          expect.objectContaining({
-            source: 'post_tool_use_hook',
-            agentId: 'reviewer-1',
-            obligationId: '11111111-1111-4111-8111-111111111111',
-          }),
-        ],
-        skipped: 0,
-      });
+      const trail = await readAuditTrail(initialized.sessionDir);
+      expect(trail).toContainEqual(
+        expect.objectContaining({
+          event: 'tool_call',
+          detail: expect.objectContaining({ tool: 'flowguard_review' }),
+        }),
+      );
     });
   });
 
   describe('BAD', () => {
-    it.each(['session-start', 'post-tool-use', 'stop', 'subagent-stop'])(
+    it.each(['session-start', 'post-tool-use', 'stop'])(
       'keeps informational hook %s non-blocking for malformed stdin',
       async (name) => {
         const result = await runHook(name, '{invalid json');
@@ -141,35 +138,6 @@ describe('command hook binaries', () => {
       expect(result.code).toBe(0);
       expect(JSON.parse(result.stdout)).toMatchObject({
         hookSpecificOutput: { permissionDecision: 'deny' },
-      });
-    });
-  });
-
-  describe('EDGE', () => {
-    it('runs subagent-stop and persists a capture only through the real session transport', async () => {
-      const initialized = await initWorkspace(worktree, SESSION_ID);
-      await writeState(
-        initialized.sessionDir,
-        makeState('IMPLEMENTATION', { implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE }),
-      );
-
-      const result = await runHook(
-        'subagent-stop',
-        JSON.stringify({
-          session_id: SESSION_ID,
-          cwd: worktree,
-          agent_id: 'reviewer-1',
-          agent_type: 'flowguard-reviewer',
-        }),
-      );
-
-      expect(result.code).toBe(0);
-      expect(result.stdout).toBe('');
-      await expect(readReviewerCaptures(initialized.sessionDir)).resolves.toEqual({
-        captures: [
-          expect.objectContaining({ source: 'subagent_stop_hook', agentId: 'reviewer-1' }),
-        ],
-        skipped: 0,
       });
     });
   });

@@ -5,13 +5,9 @@
  * @version v1
  */
 
-import type {
-  PlanEvidence,
-  LoopVerdict,
-  RevisionDelta,
-  ReviewFindings,
-} from '../../state/evidence.js';
+import type { PlanEvidence, LoopVerdict, RevisionDelta } from '../../state/evidence.js';
 import type { PlanClaimDeclarationInput } from '../../state/proofgraph-approval.js';
+import type { EvalResult } from '../../machine/evaluate.js';
 import type { MutableSession, ToolContext } from './helpers.js';
 import { classifyToolCallMode, toolCallFlags } from './review-validation-mode.js';
 
@@ -19,7 +15,6 @@ export type PlanArgs = {
   planText?: string;
   claims?: PlanClaimDeclarationInput[];
   reviewVerdict?: 'accept' | 'changes_requested';
-  reviewFindings?: ReviewFindings;
   reviewerUnavailable?: boolean;
   targetPaths?: string[];
 };
@@ -29,7 +24,6 @@ export type MutablePlanSession = MutableSession;
 export type PlanInputFlags = {
   hasPlanText: boolean;
   hasVerdict: boolean;
-  hasFindings: boolean;
   hasReviewerUnavailable: boolean;
   isInitialSubmission: boolean;
 };
@@ -40,19 +34,11 @@ export type PlanCallMode =
   | { kind: 'revision' }
   | {
       kind: 'invalid';
-      code:
-        | 'INVALID_PLAN_TOOL_SEQUENCE'
-        | 'PLAN_APPROVE_WITH_TEXT'
-        | 'PLAN_SUBMISSION_MIXED_INPUTS'
-        | 'PLAN_FINDINGS_WITHOUT_VERDICT';
+      code: 'INVALID_PLAN_TOOL_SEQUENCE' | 'PLAN_APPROVE_WITH_TEXT';
       params?: Record<string, string>;
     };
 
-export type PlanReviewPolicy = {
-  subagentEnabled: boolean;
-  fallbackToSelf: boolean;
-  strictEnforcement: boolean;
-};
+export type PlanReviewPolicy = Record<never, never>;
 
 export type PlanClaimSubmissionDiagnostics = {
   submittedClaimDeclarationsDigest: string;
@@ -73,7 +59,7 @@ export type PlanExecutionScope = MutablePlanSession & {
   context: ToolContext;
   input: PlanInputFlags;
   reviewPolicy: PlanReviewPolicy;
-  maxSelfReviewIterations: number;
+  maxPlanReviewIterations: number;
   claimSubmissionDiagnostics?: PlanClaimSubmissionDiagnostics;
 };
 
@@ -90,14 +76,15 @@ export type PlanSubmissionResponseInput = {
   finalState: import('../../state/schema.js').SessionState;
   planEvidence: PlanEvidence;
   planVersion: number;
-  reviewFindings: ReviewFindings | null;
   transitions: unknown;
+  /** Exact current plan review obligation/attempt authority for the dispatch. */
+  authority: import('../review/dispatch-authority.js').ReviewDispatchAuthority;
 };
 
 export type ConvergedPlanReviewInput = {
   scope: PlanExecutionScope;
   finalState: import('../../state/schema.js').SessionState;
-  ev: Parameters<typeof import('./helpers.js').formatEval>[0];
+  ev: EvalResult;
   transitions: unknown;
   revision: PlanRevisionResult;
   iteration: number;
@@ -113,13 +100,11 @@ export function planInputFlags(args: PlanArgs): PlanInputFlags {
   const f = toolCallFlags({
     text: args.planText,
     reviewVerdict: args.reviewVerdict,
-    reviewFindings: args.reviewFindings,
     reviewerUnavailable: args.reviewerUnavailable,
   });
   return {
     hasPlanText: f.hasText,
     hasVerdict: f.hasVerdict,
-    hasFindings: f.hasFindings,
     hasReviewerUnavailable: f.hasReviewerUnavailable,
     isInitialSubmission: !f.hasVerdict,
   };
@@ -130,7 +115,6 @@ export function classifyPlanCall(args: PlanArgs, input = planInputFlags(args)): 
   const mode = classifyToolCallMode('plan', {
     text: args.planText,
     reviewVerdict: args.reviewVerdict,
-    reviewFindings: args.reviewFindings,
     reviewerUnavailable: args.reviewerUnavailable,
   });
   if (mode.kind === 'invalid') {
@@ -146,9 +130,6 @@ export function classifyPlanCall(args: PlanArgs, input = planInputFlags(args)): 
 }
 
 export function planReviewPolicy(scope: MutablePlanSession): PlanReviewPolicy {
-  return {
-    subagentEnabled: scope.policy.selfReview?.subagentEnabled ?? false,
-    fallbackToSelf: scope.policy.selfReview?.fallbackToSelf ?? false,
-    strictEnforcement: scope.policy.selfReview?.strictEnforcement ?? false,
-  };
+  void scope;
+  return {};
 }

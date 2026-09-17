@@ -1,4 +1,4 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 
 export const TASK_COMMAND = `---
 description: FlowGuard — Capture a governed task description with optional external references.
@@ -28,11 +28,11 @@ Task description: $ARGUMENTS
 
 - Use exactly what the user provided — never fabricate task content.
 - Only call flowguard_ticket when phase allows it (READY or TICKET).
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 ## Done-when
 
 - Task recorded via flowguard_ticket.
 - Phase and next action reported.
 - If \`presentation.markdown\` is present, render it verbatim and do not append a separate \`Next action:\` line.
-- Otherwise, render \`productNextAction.text\` as the single fallback conclusion.
+- Otherwise, render the canonical \`directive\` as the single fallback conclusion.
 `;

@@ -2,7 +2,7 @@
  * @module integration/tools
  * @description Barrel export for FlowGuard tool definitions.
  *
- * Re-exports 14 tools from focused modules:
+ * Re-exports 20 tools from focused modules:
  * - helpers.ts        — shared interfaces, formatters, workspace/state/policy helpers
  * - hydrate.ts        — session bootstrap with discovery and profile resolution
  * - plan.ts           — plan submission and independent review loop
@@ -41,7 +41,7 @@ import { declare_contract as rawDeclareContract } from './declare-contract.js';
 import { record_mutation_evidence as rawRecordMutationEvidence } from './record-mutation-evidence.js';
 import { reconcile_mutation_episode as rawReconcileMutationEpisode } from './reconcile-mutation-episode.js';
 import { observe_repository as rawObserveRepository } from './observe-repository.js';
-import { extend_implementation_review as rawExtendImplementationReview } from './extend-implementation-review.js';
+import { export_session as rawExportSession } from './export-tool.js';
 import type { ToolDefinition, ToolResult } from './helpers.js';
 import { readConfig } from '../../adapters/persistence-config.js';
 import type { GlyphProfile } from '../../presentation/glyph-profile.js';
@@ -224,6 +224,8 @@ export const ticket = withGovernanceFooter(rawTicket);
 export const review = withGovernanceFooter(rawReview, { intent: 'rerun_review' });
 export const abort_session = withGovernanceFooter(rawAbortSession);
 export const archive = withGovernanceFooter(rawArchive, { intent: 'export_result' });
+const exportTool = withGovernanceFooter(rawExportSession, { intent: 'export_result' });
+export { exportTool as export };
 export const help = withGovernanceFooter(rawHelp);
 
 // ── Complex tools ────────────────────────────────────────────────────────────
@@ -231,7 +233,6 @@ export const hydrate = withGovernanceFooter(rawHydrate, { intent: 'refresh_repos
 export const plan = withGovernanceFooter(rawPlan);
 export const implement = withGovernanceFooter(rawImplement);
 export const review_implementation = withGovernanceFooter(rawReviewImplementation);
-export const extend_implementation_review = withGovernanceFooter(rawExtendImplementationReview);
 export const resolve_implementation_challenge = withGovernanceFooter(
   rawResolveImplementationChallenge,
 );

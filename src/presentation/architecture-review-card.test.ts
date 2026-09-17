@@ -8,6 +8,7 @@ import {
   type ArchitectureReviewCardInput,
 } from './architecture-review-card.js';
 import type { CompactProofPresentation } from './proof-model.js';
+import type { WorkflowDirective } from '../machine/workflow-directive.js';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
@@ -16,14 +17,31 @@ async function readGolden(name: string): Promise<string> {
   return (await readFile(p, 'utf-8')).trimEnd();
 }
 
+const archDecisionDirective: WorkflowDirective = {
+  kind: 'human_gate',
+  code: 'ARCHITECTURE_DECISION_REQUIRED',
+  allowedIntents: ['APPROVE', 'REQUEST_CHANGES', 'REJECT'],
+  commands: ['/approve', '/request-changes', '/reject'],
+};
+
+const archCompleteDirective: WorkflowDirective = {
+  kind: 'terminal',
+  code: 'ARCHITECTURE_COMPLETE',
+  allowedIntents: [],
+  commands: [],
+};
+
+const archApproveOrRequestDirective: WorkflowDirective = {
+  ...archDecisionDirective,
+  allowedIntents: ['APPROVE', 'REQUEST_CHANGES'],
+  commands: ['/approve', '/request-changes'],
+};
+
 const baseInput = {
   phase: 'ARCH_REVIEW' as const,
   phaseLabel: 'Ready for architecture review',
   iteration: 2,
-  productNextAction: {
-    text: 'Review gate active. Run /approve to accept.',
-    commands: ['/approve', '/request-changes', '/reject'] as readonly string[],
-  },
+  directive: archDecisionDirective,
   isApproved: false,
   proofSummary: {
     kind: 'declaration',
@@ -188,6 +206,7 @@ describe('buildArchitectureReviewCard', () => {
 
   it('shows next actions at ARCH_REVIEW', () => {
     const card = buildArchitectureReviewCard(baseInput);
+    expect(card).toContain('Architecture decision required.');
     expect(card).toContain('/approve');
     expect(card).toContain('/request-changes');
     expect(card).toContain('/reject');
@@ -199,12 +218,10 @@ describe('buildArchitectureReviewCard', () => {
       phase: 'ARCH_COMPLETE',
       phaseLabel: 'Architecture complete',
       isApproved: true,
-      productNextAction: {
-        text: 'ADR approved. No further action required.',
-        commands: [],
-      },
+      directive: archCompleteDirective,
     });
     expect(card).toContain('**Status:** Architecture complete');
+    expect(card).toContain('Architecture flow complete.');
     expect(card).not.toContain('/approve');
     expect(card).not.toContain('/request-changes');
   });
@@ -229,6 +246,7 @@ describe('buildArchitectureReviewCard', () => {
       phase: 'ARCH_COMPLETE',
       phaseLabel: 'Architecture complete',
       isApproved: true,
+      directive: archCompleteDirective,
       reviewCompletion: 'review_exhausted',
     });
     expect(card).not.toContain('Reviewer did NOT approve');
@@ -248,7 +266,7 @@ describe('architecture review golden fixtures', () => {
       iteration: 2,
       overallVerdict: 'accept',
       isApproved: true,
-      productNextAction: { text: 'Architecture approved.', commands: [] },
+      directive: archCompleteDirective,
     });
     expect(card).toBe(await readGolden('review-architecture-accepted.md'));
   });
@@ -264,10 +282,7 @@ describe('architecture review golden fixtures', () => {
       overallVerdict: 'changes_requested',
       isApproved: false,
       reviewCompletion: 'review_exhausted',
-      productNextAction: {
-        text: 'Review the ADR and decide.',
-        commands: ['/approve', '/request-changes', '/reject'],
-      },
+      directive: archDecisionDirective,
     });
     expect(card).toBe(await readGolden('review-architecture-changes-requested.md'));
   });
@@ -284,10 +299,7 @@ describe('architecture review golden fixtures', () => {
       iteration: 1,
       overallVerdict: 'accept',
       isApproved: false,
-      productNextAction: {
-        text: 'Review the ADR.',
-        commands: ['/approve', '/request-changes'],
-      },
+      directive: archApproveOrRequestDirective,
       proofSummary: {
         kind: 'declaration',
         flow: 'architecture',
@@ -314,10 +326,7 @@ describe('architecture review golden fixtures', () => {
       iteration: 1,
       overallVerdict: 'accept',
       isApproved: false,
-      productNextAction: {
-        text: 'Review the ADR.',
-        commands: ['/approve', '/request-changes'],
-      },
+      directive: archApproveOrRequestDirective,
     });
     expect(card).not.toContain('## Proof obligations');
   });

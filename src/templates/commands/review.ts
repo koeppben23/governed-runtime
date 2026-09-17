@@ -1,8 +1,7 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
+import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 
 export const REVIEW_COMMAND = `---
-description: FlowGuard — Start the standalone compliance review flow (READY -> REVIEW -> REVIEW_COMPLETE).
+description: FlowGuard — Start the peer review flow (READY -> PEER_REVIEW -> PEER_REVIEW_COMPLETE).
 agent: build
 ---
 
@@ -10,7 +9,7 @@ You are managing a FlowGuard-controlled development workflow.
 
 ## Goal
 
-Start the compliance review flow for the current FlowGuard session.
+Start the peer review flow for the current FlowGuard session.
 
 ## Steps
 
@@ -24,8 +23,8 @@ Start the compliance review flow for the current FlowGuard session.
       \`health\`, \`drift\`, \`detectedStack\`, repo-native \`verificationCandidates\`,
       and risk surfaces. This is REQUIRED review evidence for repo-dependent claims.
     - Discovery context is advisory falsification evidence, NOT review verdict
-      authority: ReviewFindings, obligation binding, mandate digest, and attestation
-      remain the review authority.
+      authority: the host-observed structured reviewer invocation evidence,
+      obligation binding, and mandate digest remain the review authority.
     - If Discovery is unavailable, degraded, drifted, timed out, or not checked, mark
       every Discovery-dependent claim \`NOT_VERIFIED\`; do not invent repository truth.
 
@@ -43,74 +42,34 @@ Start the compliance review flow for the current FlowGuard session.
 3. **Create the review obligation** (content-aware only):
     If content was provided, the FIRST \`flowguard_review\` call MUST carry ONLY the matching
     content field (\`text\`, \`prNumber\`, \`branch\`, or \`url\`), optional \`inputOrigin\`,
-    and optional \`references\`. NEVER include \`reviewVerdict\` or \`reviewFindings\` in this
-    first call — a prefilled verdict is a fabrication-of-convergence attempt and is rejected
-    (\`CONTENT_ANALYSIS_REQUIRED\`). The verdict is submitted only AFTER the reviewer runs (step 5).
-    This call creates the ReviewObligation and returns either plugin-provided findings or
-    host-task instructions.
+    and optional \`references\`. Do not include reviewer findings in this first call: FlowGuard
+     requires a visible native Task review before the peer review can complete.
 
-4. **Subagent Review** (content-aware only):
-    If the blocked response contains \`pluginReviewFindings\`, use those findings
-    directly — the FlowGuard orchestration plugin has already invoked the
-    \`${REVIEWER_SUBAGENT_TYPE}\` subagent for you and injected the results.
-    If the response contains \`HOST_SUBAGENT_TASK_REQUIRED\`, \`CONTENT_ANALYSIS_REQUIRED\`, or host-task instructions with \`requiredReviewAttestation\`
-    and NO \`pluginReviewFindings\`, manually call the \`${REVIEWER_SUBAGENT_TYPE}\` subagent
-    via Task tool:
-    - Use \`subagent_type: "${REVIEWER_SUBAGENT_TYPE}"\`
-    - The response MUST include a \`reviewerTaskPrompt\` field. Call Task only with
-      \`subagent_type: "${REVIEWER_SUBAGENT_TYPE}"\`; FlowGuard injects the canonical prompt
-      at the host boundary. Do not add a Task \`prompt\` or append review instructions.
-      The injected prompt carries the frozen material, attempt-bound Discovery snapshot,
-      required review context (iteration/planVersion), and attestation.
-      Do NOT free-compose a prompt: a repository review without a canonical
-      \`reviewerTaskPrompt\` is blocked with \`REVIEWER_CONTEXT_UNAVAILABLE\` — report that
-      code with its recovery steps and stop instead of assembling a substitute prompt.
-    - Instruct the subagent to: check the supplied Discovery health and drift status BEFORE
-      making any repo-dependent quality claim; correlate the reviewed PR/diff files against
-      the supplied Discovery snapshot; mark any claim \`NOT_VERIFIED\` when the content
-      cannot be correlated to that snapshot (e.g. the diff references files absent from the
-      snapshot, or Discovery is drifted relative to the reviewed branch).
-    - The canonical prompt already requires a complete \`ReviewerFindingsInput\` object. Do not
-      restate output instructions or construct attestation fields outside that prompt.
-    - In host-task mode, FlowGuard captures Task evidence; do not parse or resubmit it.
-    Strict governance is not satisfied by copied JSON or attestation fields alone.
-    Those fields are diagnostic/context only until FlowGuard persists matching
-    \`ReviewInvocationEvidence\` for the obligation.
-    Both paths converge at step 5.
+4. **Independent Review** (content-aware only): When \`reviewDispatch.required\` is true and
+   \`reviewDispatch.completed\` is not true:
+   - Require \`reviewInvocation.action === "call_task"\`,
+     \`reviewInvocation.transport === "native_task_structured_followup"\`, and
+     \`reviewInvocation.task.subagentType === "flowguard-reviewer"\`. If any differ, stop;
+     do not invent another transport.
+   - Call the host-native \`task\` tool with \`subagent_type: "flowguard-reviewer"\`,
+     \`description: "FlowGuard independent review"\`, and \`prompt: "FlowGuard independent
+     review"\`. The prompt is transport filler only; FlowGuard replaces it at the before-hook
+     with the exact frozen canonical reviewer prompt. Never paste, reconstruct, or modify the
+     reviewer material yourself.
+   - Wait for the Task call to return normally. Do not run a second reviewer and do not parse its
+     free-form text as findings. FlowGuard captures and binds same-child structured findings.
+   - Require \`reviewExecution.visible === true\`, \`reviewExecution.transcriptNavigable === true\`,
+     and \`reviewExecution.structuredOutput === true\`. Otherwise stop on the returned blocker.
 
-    - If the subagent returns \`overallVerdict: "unable_to_review"\` (for example because the
-      content was unparseable), do NOT submit \`reviewFindings\`. Report the reason to the user.
-      The tool will handle this as \`SUBAGENT_UNABLE_TO_REVIEW\` and exit the flow.
-      Only submit \`reviewFindings\` when the subagent returns \`accept\` or \`changes_requested\`.
-
-    - **Retry after schema_invalid or extraction_invalid**: If the Task call returns either bindOutcome, do NOT re-run the Task with the same prompt. Instead:
-      1. Look at the \`schemaErrors\` field when present. \`extraction_invalid\` means no complete reviewer findings payload could be extracted.
-      2. Call \`flowguard_review\` again with the original content fields and \`reviewObligationId\` from \`requiredReviewAttestation.toolObligationId\`. This produces a fresh \`reviewerTaskPrompt\`; validation errors are embedded when available.
-       3. Invoke a new Task with only \`subagent_type: "${REVIEWER_SUBAGENT_TYPE}"\`; FlowGuard injects the new canonical prompt.
-      4. If the Task is blocked with \`REVIEWER_OUTPUT_RETRY_EXHAUSTED\`, the retry budget is exhausted — report to the operator and stop; do NOT fabricate findings, guess a verdict, or call any other authority path.
-
-5. Complete content-aware \`flowguard_review\` according to the review invocation mode:
-    - If the response says host-task evidence was verified or policy requires host-visible
-      Task evidence: after the \`${REVIEWER_SUBAGENT_TYPE}\` Task returns, call
-       \`flowguard_review\` with the same content fields plus \`reviewObligationId\` from
-       \`requiredReviewAttestation.toolObligationId\` and \`reviewVerdict\`
-      (\`"accept"\` or \`"changes_requested"\`) matching the reviewer's \`overallVerdict\`.
-      Do NOT submit, copy, or alter \`reviewFindings\` (not even an empty placeholder object); FlowGuard resolves the captured
-      ReviewInvocationEvidence automatically.
-      \`HOST_SUBAGENT_TASK_REQUIRED\` is an expected intermediate state in this mode, not
-      a terminal failure and not a reason to tell the user to restart the flow.
-    - If the response contains \`pluginReviewFindings\` or the active mode accepts SDK/manual
-      findings, call \`flowguard_review\` with the same content fields plus
-      \`reviewFindings\` set to the complete ReviewFindings object as-is — no mapping, no array.
-     - If host-task mode reports \`duplicate_evidence\`, do not rerun the reviewer. Use the
-        already-bound reviewer verdict and call \`flowguard_review\` with \`reviewObligationId\`
-        from \`requiredReviewAttestation.toolObligationId\` plus \`reviewVerdict\`.
-     - If the Task cannot spawn the reviewer, report the transport failure and stop. Do not retry
-       the same standalone-review obligation, submit copied findings, or fabricate a verdict.
+5. Complete content-aware \`flowguard_review\`: when \`reviewDispatch.completed\` is true,
+   call \`flowguard_review({ reviewObligationId })\` with the exact obligation ID from the
+   dispatch. Do not submit, copy, or alter \`reviewFindings\`. If FlowGuard reports
+   \`SUBAGENT_UNABLE_TO_REVIEW\`, a capture failure, or an orchestration failure, report its
+   recovery and stop; do not fabricate findings or guess a verdict.
 
 6. If no external content is supplied, call \`flowguard_review\` with optional \`inputOrigin\` and \`references\` only.
 
-7. The tool transitions READY -> REVIEW -> REVIEW_COMPLETE and generates a compliance report.
+7. The tool transitions READY -> PEER_REVIEW -> PEER_REVIEW_COMPLETE and generates a peer review report.
 
 8. Present the report per the Presentation section below.
 
@@ -147,15 +106,15 @@ If repo-dependent claims are made without checking Discovery health/drift, flag 
 - Present the report clearly and concisely.
 - If \`flowguard_review\` returns BLOCKED with code \`STRICT_REVIEW_ORCHESTRATION_FAILED\`: The plugin review pipeline encountered a transient failure. Re-run the /review command to retry. This is NOT a permanent failure — the orchestration retries automatically on each fresh invocation.
 - If \`flowguard_review\` returns BLOCKED with code \`ORCHESTRATION_PERMANENTLY_FAILED\`: Report this to the user with the recovery steps and stop.
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 ## Done-when
 
-- Compliance report generated and presented.
+- Peer review report generated and presented.
 - If \`presentation.markdown\` is present, it is displayed verbatim; otherwise the legacy \`reviewCard\` is displayed verbatim.
 - External references captured with audit provenance.
 - Discovery health and drift checked before repo-dependent quality claims.
 - Discovery-dependent claims marked NOT_VERIFIED when content could not be correlated to local Discovery.
 - Verification review checked for repo-native candidates vs generic mismatches.
-- Phase has reached REVIEW_COMPLETE.
+- Phase has reached PEER_REVIEW_COMPLETE.
 - The canonical presentation conclusion is the only visible closure.
 `;

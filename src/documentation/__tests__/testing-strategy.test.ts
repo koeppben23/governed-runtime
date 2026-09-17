@@ -35,8 +35,6 @@ const INTEGRITY_MUTATION_TARGETS = [
 ];
 
 const CRITICAL_MUTATION_TARGETS = [
-  'src/integration/review/orchestrator-detection.ts',
-  'src/integration/review/orchestrator-output.ts',
   'src/integration/review/agent-resolution.ts',
   'src/integration/tools/review-validation-mode.ts',
   'src/shared/canonical-json.ts',

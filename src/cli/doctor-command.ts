@@ -23,19 +23,20 @@ import {
   mandatesInstructionEntry,
 } from './templates.js';
 import {
-  type CliArgs,
-  type DoctorCheck,
-  type InstallScope,
-  PACKAGE_VERSION,
   computeMandatesDigest,
-  hasNonFlowGuardInstructions,
-  parseJsonc,
   resolveOpencodeConfigPath,
   resolveTarget,
   safeRead,
   sha256,
-  vendorDependency,
 } from './install-helpers.js';
+import {
+  hasNonFlowGuardInstructions,
+  PACKAGE_VERSION,
+  type CliArgs,
+  type DoctorCheck,
+  type InstallScope,
+} from './install-types.js';
+import { parseJsonc, vendorDependency } from './install-json.js';
 import { resolveClaudeCodePluginRoot } from './claude-code-plugin-install.js';
 import { resolveCodexPluginRoot } from './codex-plugin-install.js';
 import { buildPlatformTrustReport } from './platform-trust-report.js';
@@ -291,7 +292,7 @@ async function checkOpencodeInstructionSourceActivation(
       status: 'warn',
       detail:
         `runtime ${runtimeDesc}; host contract ${hostContract.status} ` +
-        `(tested ${hostContract.testedRange}); instruction-source activation is NOT_VERIFIED. ` +
+        `(tested ${hostContract.testedVersion}); instruction-source activation is NOT_VERIFIED. ` +
         'FlowGuard cannot prove that OpenCode loaded the configured source. ' +
         'See docs/platform-limitations.md.',
       check: ACTIVATION_CHECK,
@@ -451,8 +452,7 @@ function detectCustomConfig(config: {
 }): boolean {
   return (
     config.logging.level !== 'info' ||
-    config.policy.maxSelfReviewIterations !== undefined ||
-    config.policy.maxImplReviewIterations !== undefined ||
+    config.policy.reviewBudget !== undefined ||
     config.profile.defaultId !== undefined ||
     config.profile.activeChecks !== undefined
   );

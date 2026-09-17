@@ -1,4 +1,4 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 
 export const FINISH_COMMAND = `---
 description: FlowGuard — Show the read-only Finish Card before export / PR / archive.
@@ -29,7 +29,7 @@ approval, merge, or archive-finalization command.
 - Never approve, never consume obligations, never trigger /export, PR, merge, or
   archive. Offer next actions only; the user decides.
 - Never render an exit option (e.g. abandon) as forbidden.
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 ## Done-when
 
 - Finish Card retrieved via \`flowguard_status\` with \`{ finish: true }\`.

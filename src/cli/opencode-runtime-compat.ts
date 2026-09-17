@@ -85,9 +85,7 @@ export function classifyOpenCodeRuntime(
 // ─── Host contract compatibility ─────────────────────────────────────────────
 
 /** Exact OpenCode host version exercised by CI and represented by the baseline. */
-export const TESTED_OPENCODE_HOST_VERSION = '1.18.29';
-/** @deprecated Compatibility alias; this is an exact version, not a range. */
-export const TESTED_OPENCODE_HOST_RANGE = TESTED_OPENCODE_HOST_VERSION;
+export const TESTED_OPENCODE_HOST_VERSION = '1.18.30';
 
 export interface OpenCodeHostContractDenyEntry {
   readonly versionRange: string;
@@ -104,8 +102,6 @@ export type OpenCodeHostContractStatus =
 export interface OpenCodeHostContractClassification {
   readonly status: OpenCodeHostContractStatus;
   readonly testedVersion: string;
-  /** Compatibility projection for existing doctor output; value is exact, not a semver range. */
-  readonly testedRange: string;
   readonly matched?: OpenCodeHostContractDenyEntry;
   readonly reason: string;
 }
@@ -141,7 +137,6 @@ function versionInBoundedRange(version: string, range: string): boolean {
 function baseClassification() {
   return {
     testedVersion: TESTED_OPENCODE_HOST_VERSION,
-    testedRange: TESTED_OPENCODE_HOST_VERSION,
   } as const;
 }
 

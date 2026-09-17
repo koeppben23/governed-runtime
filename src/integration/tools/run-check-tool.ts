@@ -25,14 +25,13 @@
 
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import type { ToolContext, ToolDefinition, ToolResult } from './helpers.js';
+import type { ToolDefinition, ToolResult, WorkspaceToolContext } from './helpers.js';
 import { formatError } from './error-format.js';
 import {
   withReadOnlySession,
   formatBlocked,
-  formatEval,
   formatAutoAdvanceOverflow,
-  appendNextAction,
+  enrichWithWorkflowDirective,
   getWorktree,
   writeStateWithArtifactsAndAuditOperationsAlreadyLocked,
   requireStateForMutation,
@@ -59,8 +58,7 @@ import type {
   ValidationResult,
   ValidationOutcome,
 } from '../../state/evidence-validation.js';
-import { isExecutionError } from '../../state/evidence-validation.js';
-import type { ReviewObligation } from '../../state/evidence.js';
+import { isTechnicalValidationBlock } from '../../state/evidence-validation.js';
 import {
   prepareVerificationExecution,
   type PreparedVerificationExecution,
@@ -69,16 +67,14 @@ import { completeAssertionExtraction } from '../../verification/assertion-extrac
 import { withSessionWriteLockRetry, PersistenceError } from '../../adapters/lock-retry.js';
 import { REASON_LOCK_TIMEOUT_EXHAUSTED } from '../../shared/flowguard-identifiers.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
-import { reviewObligationResponseFields } from '../review/assurance.js';
 import {
-  resolveRuntimeReviewPlatform,
-  resolveReviewOrchestrationMode,
-} from '../review/orchestration-mode.js';
-import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
-import { resolveAttemptObservationCapability } from '../review/assurance.js';
-import { buildReviewerProofContext } from '../review/proof-context.js';
+  resolveReviewDispatchAuthority,
+  reviewObligationResponseFields,
+} from '../review/dispatch-authority.js';
+import type { ReviewDispatchAuthority } from '../review/dispatch-authority.js';
 import {
   activateReviewObligationAndPersist,
+  buildImplementationReviewInstruction,
   materializeImplReviewContract,
   nextImplementationReviewIteration,
 } from './implement-shared.js';
@@ -167,7 +163,7 @@ type PhaseAResult =
 async function validateAndAttest(
   kind: VerificationCandidateKind,
   candidateId: string | undefined,
-  context: ToolContext,
+  context: WorkspaceToolContext,
 ): Promise<PhaseAResult> {
   const { sessDir, state } = await withReadOnlySession(context);
   if (!state) {
@@ -217,10 +213,17 @@ async function validateAndAttest(
   };
 }
 
-async function executeRunCheckPhased(
+/**
+ * Execute one verification check through the full production path: candidate
+ * resolution, execution-subject attestation, evidence persistence, and
+ * phase-aware auto-advance. Exported so the automatic validation runner
+ * (`auto-validation.ts`) can execute checks without the `/run_check` tool
+ * surface and without recursion through the tool definition.
+ */
+export async function executeRunCheckPhased(
   kind: VerificationCandidateKind,
   candidateId: string | undefined,
-  context: ToolContext,
+  context: WorkspaceToolContext,
 ): Promise<ToolResult> {
   // ── Phase A: Validate + attest (read-only, no lock) ──
   const phaseA = await validateAndAttest(kind, candidateId, context);
@@ -426,7 +429,6 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
       const activation = await activateReviewObligationAndPersist({
         state: stateWithMaterializedContract,
         preAdvanceState: nextState,
-        subagentEnabled: freshPolicy.selfReview?.subagentEnabled ?? false,
         iteration: nextImplementationReviewIteration(advanced.state),
         planVersion: (advanced.state.plan?.history.length ?? 0) + 1,
         now: railCtx.now(),
@@ -442,6 +444,8 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
         activated.state,
         advanced.transitions,
       );
+      const authorityResult = checkDispatchAuthority(activated, persisted);
+      if (typeof authorityResult === 'string') return authorityResult;
       logger.info('tool', 'check_persisted', {
         sessionId,
         checkId: kind,
@@ -460,7 +464,7 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
         executionObservedStateDigest,
         advanced,
         finalState: persisted,
-        nextObligation: activated.obligation,
+        authority: authorityResult?.authority ?? null,
         policy: freshPolicy,
       });
     },
@@ -616,15 +620,19 @@ function buildNextValidationState(
   validation: ValidationResult[],
   validationAttempt: ValidationAttempt,
 ): SessionState {
-  const hasExecutionError = validation.some(isExecutionError);
+  // Canonical disposition authority: only a proven artifact failure may clear
+  // approval/implementation authority. A technical block (blocked outcome,
+  // execution error, inconclusive extraction) keeps the phase and the
+  // authority for a retry.
+  const hasTechnicalBlock = validation.some(isTechnicalValidationBlock);
 
   if (state.phase === 'IMPL_VALIDATION') {
     // Post-implementation validation writes to implValidation. A genuine failure
     // routes IMPL_VALIDATION → IMPLEMENTATION (the delivered CODE is wrong, not the
     // plan); clear implementation so the agent must re-run /implement and the machine
-    // does not immediately re-fire IMPL_COMPLETE into an advance loop. Execution
-    // errors (timeout/not-found) stay in IMPL_VALIDATION for a retry.
-    const genuinelyFailed = validation.some((result) => !result.passed) && !hasExecutionError;
+    // does not immediately re-fire IMPL_COMPLETE into an advance loop. A technical
+    // block stays in IMPL_VALIDATION for a retry.
+    const genuinelyFailed = validation.some((result) => !result.passed) && !hasTechnicalBlock;
     return {
       ...state,
       implValidation: validation,
@@ -634,10 +642,10 @@ function buildNextValidationState(
     };
   }
 
-  // F5: preserve plan evidence when the non-pass is an execution error (timeout /
-  // command-not-found). The machine stays in VALIDATION (CHECK_ERRORED) for a retry
-  // rather than routing to PLAN, so the approved plan must survive.
-  const clearPlanEvidence = validation.some((result) => !result.passed) && !hasExecutionError;
+  // F5: preserve plan evidence when the non-pass is a technical block. The
+  // machine stays in VALIDATION (CHECK_ERRORED) for a retry rather than routing
+  // to PLAN, so the approved plan must survive.
+  const clearPlanEvidence = validation.some((result) => !result.passed) && !hasTechnicalBlock;
   return {
     ...state,
     validation,
@@ -649,6 +657,28 @@ function buildNextValidationState(
 
 // ─── Response Formatting ──────────────────────────────────────────────────────
 
+function buildRunCheckReviewInstruction(authority: ReviewDispatchAuthority | null) {
+  return authority ? buildImplementationReviewInstruction(authority) : null;
+}
+
+function checkDispatchAuthority(
+  activated: Extract<
+    Awaited<ReturnType<typeof activateReviewObligationAndPersist>>,
+    { activated: unknown }
+  >['activated'],
+  persisted: SessionState,
+) {
+  if (!activated.obligation) return null;
+  const authority = resolveReviewDispatchAuthority(
+    persisted.reviewAssurance,
+    activated.obligation.obligationId,
+  );
+  if (authority.kind === 'blocked') {
+    return formatBlocked(authority.code, { reason: authority.reason });
+  }
+  return authority;
+}
+
 function formatRunCheckResponse(input: {
   kind: string;
   candidateId?: string;
@@ -659,7 +689,7 @@ function formatRunCheckResponse(input: {
   executionObservedStateDigest: string;
   advanced: Exclude<ReturnType<typeof autoAdvance>, { kind: 'overflow' }>;
   finalState: SessionState;
-  nextObligation: ReviewObligation | null;
+  authority: ReviewDispatchAuthority | null;
   policy: FlowGuardPolicy;
 }): ToolResult {
   const {
@@ -670,62 +700,41 @@ function formatRunCheckResponse(input: {
     advanced,
     finalState,
   } = input;
-  const { evalResult: ev, transitions } = advanced;
+  const { transitions } = advanced;
   const finalValidation =
     originalState.phase === 'IMPL_VALIDATION' ? finalState.implValidation : finalState.validation;
   const remainingChecks = finalState.activeChecks.filter(
     (checkId) => !finalValidation.some((result) => result.checkId === checkId && result.passed),
   );
-  const platform = resolveRuntimeReviewPlatform();
-  const mode = resolveReviewOrchestrationMode({
-    platform,
-    reviewInvocationPolicy: input.policy.reviewInvocationPolicy,
-    nativeReviewerAvailable: platform !== 'unknown',
-    manualAttestedAllowed: input.policy.reviewInvocationPolicy !== 'host_task_required',
-  });
-  const reviewInstruction = input.nextObligation
-    ? buildPendingReviewInstruction({
-        mode,
-        platform,
-        reviewKind: 'implementation',
-        obligation: input.nextObligation,
-        iteration: input.nextObligation.iteration,
-        planVersion: input.nextObligation.planVersion,
-        subjectLabel: 'implementation summary, changed files, approved plan text, and ticket text',
-        proofContext: buildReviewerProofContext(finalState),
-        observationCapability:
-          resolveAttemptObservationCapability(
-            finalState.reviewAssurance,
-            input.nextObligation.obligationId,
-          ) ?? undefined,
-      })
-    : null;
-  return appendNextAction(
-    JSON.stringify({
-      phase: finalState.phase,
-      status: formatRunCheckStatus(input.kind, input.validationResult, evidence),
-      evidence: {
-        kind: evidence.kind,
-        ...(input.candidateId ? { candidateId: input.candidateId } : {}),
-        command: evidence.command,
-        exitCode: evidence.exitCode,
-        passed: evidence.passed,
-        executionMs: evidence.executionMs,
-        outputDigest: evidence.outputDigest,
-        timedOut: evidence.timedOut,
+  const reviewInstruction = buildRunCheckReviewInstruction(input.authority);
+  return JSON.stringify(
+    enrichWithWorkflowDirective(
+      {
+        phase: finalState.phase,
+        status: formatRunCheckStatus(input.kind, input.validationResult, evidence),
+        evidence: {
+          kind: evidence.kind,
+          ...(input.candidateId ? { candidateId: input.candidateId } : {}),
+          command: evidence.command,
+          exitCode: evidence.exitCode,
+          passed: evidence.passed,
+          executionMs: evidence.executionMs,
+          outputDigest: evidence.outputDigest,
+          timedOut: evidence.timedOut,
+        },
+        executionObservedStateDigest,
+        preCommitStateDigest: hashText(canonicalJsonStringify(originalState)),
+        committedStateDigest: hashText(canonicalJsonStringify(finalState)),
+        stateChangedDuringExecution:
+          executionObservedStateDigest !== hashText(canonicalJsonStringify(originalState)),
+        derivedRepairGuidance,
+        remainingChecks,
+        ...(input.authority ? reviewObligationResponseFields(input.authority) : {}),
+        ...(reviewInstruction ? { reviewDispatch: reviewInstruction.reviewDispatch } : {}),
+        ...(reviewInstruction ? { reviewInvocation: reviewInstruction } : {}),
+        _audit: { transitions },
       },
-      executionObservedStateDigest,
-      preCommitStateDigest: hashText(canonicalJsonStringify(originalState)),
-      committedStateDigest: hashText(canonicalJsonStringify(finalState)),
-      stateChangedDuringExecution:
-        executionObservedStateDigest !== hashText(canonicalJsonStringify(originalState)),
-      derivedRepairGuidance,
-      remainingChecks,
-      ...reviewObligationResponseFields(input.nextObligation),
-      next: reviewInstruction?.next ?? formatEval(ev),
-      ...(reviewInstruction ? { reviewInvocation: reviewInstruction.reviewInvocation } : {}),
-      _audit: { transitions },
-    }),
-    finalState,
+      finalState,
+    ),
   );
 }

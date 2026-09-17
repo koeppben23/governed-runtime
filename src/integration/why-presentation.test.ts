@@ -59,7 +59,7 @@ function ticketState(): SessionState {
 function completeVerifiedState(): SessionState {
   return {
     ...makeProgressedState('COMPLETE'),
-    archiveStatus: 'verified',
+    regulatedArchiveStatus: 'verified',
     policySnapshot: sp('solo'),
     actorInfo: undefined,
   };
@@ -115,8 +115,8 @@ describe('golden fixtures for /why', () => {
     const output = renderMarkdown(buildWhyDocument(pres));
     const golden = await readGolden('why-complete-verified.md');
     expect(output).toBe(golden.trimEnd());
-    // COMPLETE + verified archive → machine-terminal with product next_action
-    expect(pres.conclusion.kind).toBe('next_action');
+    // COMPLETE is canonical terminal: the workflow-complete label, no command.
+    expect(pres.conclusion).toEqual({ kind: 'terminal', message: 'Workflow complete.' });
   });
 });
 
@@ -272,7 +272,13 @@ describe('buildWhyDocument', () => {
     const c = doc.conclusion;
     if (!c) throw new Error('no conclusion');
     expect(c.kind).toBe('decision_required');
-    if (c.kind === 'decision_required') expect(c.actions.length).toBeGreaterThan(1);
+    if (c.kind === 'decision_required') {
+      expect(c.actions.map((action) => action.invocation)).toEqual([
+        '/approve',
+        '/request-changes',
+        '/reject',
+      ]);
+    }
   });
 
   it('produces next_action for active state', () => {

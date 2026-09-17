@@ -39,14 +39,16 @@ import {
   type TaskClass,
 } from '../state/schema.js';
 import type { BindingInfo } from '../state/evidence.js';
-import { FINGERPRINT_PATTERN } from '../state/evidence.js';
-import type { ActorInfo } from '../audit/types.js';
+import { FINGERPRINT_PATTERN } from '../shared/repository-fingerprint.js';
+import type { ActorInfo } from '../state/evidence.js';
 import type { DecisionIdentity } from '../state/evidence.js';
-import type { DiscoverySummary } from '../discovery/types.js';
-import type { DetectedStack } from '../discovery/types.js';
-import type { VerificationCandidates } from '../discovery/types.js';
-import type { ExecutionSubjectInput } from '../state/discovery-schemas.js';
-import type { IdpConfig, IdentityProviderMode } from '../identity/types.js';
+import type {
+  DetectedStack,
+  DiscoverySummary,
+  ExecutionSubjectInput,
+  VerificationCandidates,
+} from '../state/discovery-schemas.js';
+import type { IdpConfig, IdentityProviderMode } from '../shared/policy-idp-config.js';
 import { evaluate } from '../machine/evaluate.js';
 import type { RailResult, RailBlocked, RailContext } from './types.js';
 import { blocked } from '../config/reasons.js';
@@ -63,6 +65,7 @@ import {
 import type { EffectiveGateBehavior, PolicyDegradedReason, PolicyMode } from '../config/policy.js';
 import type { PolicySource, PolicyResolutionReason, CentralMinimumMode } from '../config/policy.js';
 import type { HydratePolicyResolution } from '../config/policy.js';
+import type { ReviewBudget } from '../config/policy-types.js';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
@@ -80,7 +83,6 @@ export interface HydrateSessionInput {
   readonly discoverySummary?: DiscoverySummary;
   readonly detectedStack?: DetectedStack | null;
   readonly verificationCandidates?: VerificationCandidates;
-  readonly executionSubjectInputsByKind?: Record<string, ExecutionSubjectInput[]>;
   readonly executionSubjectInputsByCandidateId?: Record<string, ExecutionSubjectInput[]>;
   readonly claimedTaskClass?: TaskClass;
   /**
@@ -115,9 +117,7 @@ export interface HydratePolicyInput {
   readonly policyDigest?: string;
   readonly policyVersion?: string;
   readonly policyPathHint?: string;
-  readonly maxSelfReviewIterations?: number;
-  readonly maxImplReviewIterations?: number;
-  readonly requireVerifiedActorsForApproval?: boolean;
+  readonly reviewBudget?: Partial<ReviewBudget>;
   readonly identityProvider?: IdpConfig;
   readonly identityProviderMode?: IdentityProviderMode;
   readonly minimumActorAssuranceForApproval?: 'best_effort' | 'claim_validated' | 'idp_verified';
@@ -172,14 +172,8 @@ export function applyHydrateOverrides(
 ): FlowGuardPolicy {
   return {
     ...base,
-    ...(p.maxSelfReviewIterations !== undefined
-      ? { maxSelfReviewIterations: p.maxSelfReviewIterations }
-      : {}),
-    ...(p.maxImplReviewIterations !== undefined
-      ? { maxImplReviewIterations: p.maxImplReviewIterations }
-      : {}),
-    ...(p.requireVerifiedActorsForApproval !== undefined
-      ? { requireVerifiedActorsForApproval: p.requireVerifiedActorsForApproval }
+    ...(p.reviewBudget !== undefined
+      ? { reviewBudget: { ...base.reviewBudget, ...p.reviewBudget } }
       : {}),
     ...(p.identityProvider !== undefined ? { identityProvider: p.identityProvider } : {}),
     ...(p.identityProviderMode !== undefined
@@ -322,7 +316,6 @@ function buildNewHydrateState(
     // dispatch acquires the fencing lease.
     runtimeLease: null,
     implementationRework: null,
-    implementationReviewExtensions: [],
     ...(s.claimedTaskClass ? { claimedTaskClass: s.claimedTaskClass } : {}),
     binding,
     ticket: null,
@@ -339,9 +332,10 @@ function buildNewHydrateState(
     implementation: null,
     reducedCeremony: null,
     implReview: null,
+    reviewCycles: { plan: 1, architecture: 1, implementation: 1 },
     reviewDecision: null,
     reviewReportPath: null,
-    standaloneReviewEvidence: [],
+    peerReviewEvidence: [],
     nextAdrNumber: 1,
     activeProfile,
     activeChecks,
@@ -353,13 +347,15 @@ function buildNewHydrateState(
     discoverySummary: s.discoverySummary ?? null,
     detectedStack: s.detectedStack ?? null,
     verificationCandidates: s.verificationCandidates ?? [],
-    executionSubjectInputsByKind: s.executionSubjectInputsByKind ?? {},
     executionSubjectInputsByCandidateId: s.executionSubjectInputsByCandidateId ?? {},
     ...(implementationBaseline ? { implementationBaseline } : {}),
     transition: null,
     pendingAuditOperations: [],
     error: null,
     createdAt: now,
+    regulatedArchiveStatus: null,
+    exportCompletionEvidence: null,
+    pendingSystemWork: null,
   };
 
   const result = evaluate(newState, ctx.policy);

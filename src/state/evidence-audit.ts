@@ -55,7 +55,10 @@ export const AuditEvent = z
      * - hook_gated: hook can block but model may have theoretical workaround paths
      * - advisory: best-effort, no hard block mechanism
      *
-     * Optional for backward compatibility: pre-HAI events omit this field.
+     * Optional: event classes that are not bound to a host enforcement
+     * decision (semantic and outbox-reconciled events) omit it. Absence is
+     * not a legacy or migration signal — non-v3 trails are rejected at the
+     * parse boundary.
      * @since v1.3.0 (HAI #242)
      */
     enforcementLevel: z.enum(['synchronous', 'hook_gated', 'advisory']).optional(),

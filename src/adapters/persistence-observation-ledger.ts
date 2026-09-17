@@ -5,8 +5,7 @@
  *
  * Written by the sanctioned observation tool while the reviewer child session
  * runs. Namespaced by the capability digest so a capture can never bleed into
- * another attempt's ledger. Reads tolerate corrupt lines and skip them,
- * mirroring the reviewer-capture read contract.
+ * another attempt's ledger. Reads tolerate corrupt lines and skip them.
  *
  * Transport facts only — the ledger is NEVER governance authority. The parent
  * replay validates every entry (capability match, frozen re-acquisition,

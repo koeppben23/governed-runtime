@@ -21,7 +21,7 @@ Approval evidence: Not recorded
 
 ## Decision required
 
-Review the ADR and decide.
+Architecture decision required.
 - `/approve` — approve the ADR if it is complete and acceptable
 - `/request-changes` — send the ADR back for revision
 - `/reject` — discard this ADR

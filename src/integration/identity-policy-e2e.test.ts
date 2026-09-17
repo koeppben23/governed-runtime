@@ -46,8 +46,40 @@ vi.mock('../adapters/git', async (importOriginal) => {
     remoteOriginUrl: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl),
     changedFiles: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.changedFiles),
     listRepoSignals: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.repoSignals),
+    // Approval now enters VALIDATION and runs the active checks automatically;
+    // the IMPLEMENTATION transition freezes the pre-mutation base from HEAD.
+    headCommitFull: vi.fn().mockResolvedValue('d'.repeat(40)),
   };
 });
+
+vi.mock('../adapters/frozen-repository.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/frozen-repository.js')>();
+  return {
+    ...original,
+    freezeRepositoryIdentity: vi.fn(() => ({
+      kind: 'local' as const,
+      rootCommitDigest: 'sha256:' + 'b'.repeat(64),
+    })),
+    freezeWorktreeCandidate: vi.fn().mockResolvedValue('c'.repeat(40)),
+  };
+});
+
+// Mock the verification executor: the automatic validation run must not spawn
+// real subprocesses in the temp worktree.
+vi.mock('../verification/executor', () => ({
+  executeCheck: vi.fn().mockImplementation(async (input: { kind: string; command: string }) => ({
+    kind: input.kind,
+    command: input.command,
+    exitCode: 0,
+    passed: true,
+    executionMs: 100,
+    outputDigest: 'a'.repeat(64),
+    stdout: 'OK',
+    stderr: '',
+    timedOut: false,
+    startedAt: new Date().toISOString(),
+  })),
+}));
 
 // ─── Workspace Mock ──────────────────────────────────────────────────────────
 
@@ -84,6 +116,7 @@ vi.mock('../adapters/actor', async (importOriginal) => {
       id: 'test-operator',
       email: 'test@flowguard.dev',
       source: 'env',
+      assurance: 'best_effort',
     }),
   };
 });
@@ -227,7 +260,7 @@ describe('identity-policy-e2e', () => {
       expect(ps.actorClassification).toBeDefined();
       expect(ps.audit).toBeDefined();
       expect(ps.requireHumanGates).toBe(false);
-      expect(ps.maxSelfReviewIterations).toBeGreaterThan(0);
+      expect(ps.reviewBudget.plan).toBeGreaterThan(0);
     });
   });
 
@@ -515,17 +548,20 @@ describe('identity-policy-e2e', () => {
       const raw = await executeDecision({ verdict: 'approve', rationale: 'Approve plan' });
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('VALIDATION');
+      // Approval enters VALIDATION and the automatic checks advance to
+      // IMPLEMENTATION when they pass.
+      expect(result.phase).toBe('IMPLEMENTATION');
 
       // State must have advanced
       const state = await readState(sessDir);
       expect(state).not.toBeNull();
-      expect(state!.phase).toBe('VALIDATION');
+      expect(state!.phase).toBe('IMPLEMENTATION');
 
       // Decision evidence persisted in state
       expect(state!.reviewDecision).toBeDefined();
       expect(state!.reviewDecision!.verdict).toBe('approve');
-      expect(state!.reviewDecision!.decidedBy).toBe('verified-operator');
+      expect(state!.reviewDecision!.decisionIdentity.actorId).toBe('verified-operator');
+      expect(state!.reviewDecision!.decisionIdentity.actorAssurance).toBe('idp_verified');
     });
 
     // ── Test 5: enforcement uses policySnapshot, not reconstructed defaults ──

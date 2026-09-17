@@ -8,7 +8,7 @@ import { resolveProviderCapabilities } from './provider-capability-resolution.js
 import type { VerificationCandidate } from '../state/discovery-schemas.js';
 import type { ProviderId, ReportFormatId } from '../state/assertion-identity.js';
 import { makeDetectedStack } from '../discovery/verification-planner-test-helpers.js';
-import type { DetectedStack } from '../discovery/types.js';
+import type { DetectedStack } from '../state/discovery-schemas.js';
 import type { ResolvedVerificationCandidate } from './verification-runtime-resolution.js';
 
 function makeLooseStack(
@@ -30,6 +30,7 @@ function makeStructuredCandidate(
 ): VerificationCandidate {
   return {
     assertionCapability: 'structured' as const,
+    candidateId: `vc_${providerId}_${format}`,
     kind: 'test',
     command: 'run',
     source: `test:${providerId}`,
@@ -139,6 +140,7 @@ describe('resolveProviderCapabilities', () => {
     const candidates: VerificationCandidate[] = [
       {
         assertionCapability: 'unsupported' as const,
+        candidateId: 'vc_test_unsupported',
         kind: 'test',
         command: 'npm test',
         source: 'package.json',

@@ -10,8 +10,6 @@ const outputFile = path.join(tmpDir, 'vitest-independent-review.json');
 
 const testFiles = [
   'src/integration/plugin.test.ts',
-  'src/integration/independent-review-e2e.test.ts',
-  'src/integration/tools-execute-session.test.ts',
   'src/integration/tools-execute-planning.test.ts',
   'src/integration/tools-execute-ticket.test.ts',
   'src/integration/tools-execute-review.test.ts',
@@ -22,20 +20,16 @@ const testFiles = [
   'src/integration/tools-execute-abort-session.test.ts',
   'src/integration/tools-execute-archive.test.ts',
   'src/integration/tools/review-validation-findings.test.ts',
-  'src/integration/tools/review-validation-anti-forgery.test.ts',
-  'src/integration/tools/review-validation-host-task.test.ts',
 ];
 
 const mustPassTestTitles = [
-  'fulfills strict obligation and mutates output when attestation is valid',
+  'leaves the review-required output pending and authorizes the native Task before release',
+  'records bound same-child evidence and fulfills the obligation',
   'accepts when strict evidence and attestation match',
   'blocks when strict attestation is missing',
   'blocks when strict obligation is blocked',
+  'blocks when submitted findings session differs from invocation child session',
   'Mode B changes_requested keeps selfReviewIteration aligned with next iteration metadata',
-  // Host-task verdict runtime path through the real plugin hooks (gap closer):
-  'captures + binds reviewer evidence through the real Task after-hook',
-  'REGRESSION: verdict with a mismatched submitted-findings session is NOT blocked',
-  'REGRESSION: host stamps canonical attestation after reviewer input binds',
 ];
 
 const testTitleFilter = mustPassTestTitles
@@ -119,9 +113,18 @@ function runRequired(command, args, options = {}) {
 function resolveOpenCodeCommand() {
   const direct = spawnSync('opencode', ['--version'], { stdio: 'pipe', encoding: 'utf-8' });
   if (direct.status === 0) return { command: 'opencode', argsPrefix: [] };
+  // Fallback stays on the exact validated host baseline instead of resolving
+  // an unvetted latest release.
+  const baseline = JSON.parse(
+    readFileSync(
+      path.join(workspaceRoot, '.sdk-baselines', 'opencode', 'host-version.json'),
+      'utf-8',
+    ),
+  );
+  const spec = `opencode-ai@${baseline.version}`;
   const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-  runRequired(npx, ['-y', 'opencode-ai', '--version']);
-  return { command: npx, argsPrefix: ['-y', 'opencode-ai'] };
+  runRequired(npx, ['-y', spec, '--version']);
+  return { command: npx, argsPrefix: ['-y', spec] };
 }
 
 function waitForOpenCodeServer(proc, timeoutMs) {

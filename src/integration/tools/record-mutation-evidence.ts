@@ -48,7 +48,7 @@ import { buildMutationAttempt, loadReportRaw } from '../proofgraph/mutation-prov
 import type { ToolDefinition } from './helpers.js';
 import { formatError } from './error-format.js';
 import {
-  appendNextAction,
+  enrichWithWorkflowDirective,
   formatBlocked,
   getWorktree,
   withMutableSessionTransaction,
@@ -176,13 +176,15 @@ export const record_mutation_evidence: ToolDefinition = {
           mutationAttempts: [...existing, attempt],
         };
         await writeStateWithArtifacts(sessDir, nextState);
-        return appendNextAction(
-          JSON.stringify({
-            phase: nextState.phase,
-            status: `Mutation evidence recorded for attempt ${attempt.attemptId}`,
-            attempt,
-          }),
-          nextState,
+        return JSON.stringify(
+          enrichWithWorkflowDirective(
+            {
+              phase: nextState.phase,
+              status: `Mutation evidence recorded for attempt ${attempt.attemptId}`,
+              attempt,
+            },
+            nextState,
+          ),
         );
       });
     } catch (error) {

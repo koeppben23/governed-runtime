@@ -39,9 +39,3 @@ export function classifyRepositoryPath(value: string): RepositoryPathClassificat
     ? { kind: 'valid', normalizedPath: resolved.join('/') }
     : { kind: 'invalid' };
 }
-
-/** Normalize a valid repository-relative path, preserving the legacy API. */
-export function normalizeRepositoryPath(value: string): string | undefined {
-  const classification = classifyRepositoryPath(value);
-  return classification.kind === 'valid' ? classification.normalizedPath : undefined;
-}

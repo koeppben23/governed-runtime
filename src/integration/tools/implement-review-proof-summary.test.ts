@@ -29,7 +29,7 @@ function proofGraphState() {
   return makeState('IMPL_REVIEW', {
     implementation: IMPL_EVIDENCE,
     proofGraph: {
-      version: 'proofgraph.v1' as const,
+      version: 'proofgraph.v2' as const,
       claims: [
         {
           claimId: '99999999-9999-9999-9999-999999999999',
@@ -61,7 +61,7 @@ function negativeProofGraphState() {
   return makeState('IMPL_REVIEW', {
     implementation: IMPL_EVIDENCE,
     proofGraph: {
-      version: 'proofgraph.v1' as const,
+      version: 'proofgraph.v2' as const,
       claims: [
         {
           claimId: '99999999-9999-9999-9999-999999999999',
@@ -165,7 +165,7 @@ describe('presentation.markdown rendering contract', () => {
     const markdown = buildImplReviewChangesRequestedMarkdown(
       'Implementation review iteration 1/3. Changes requested.',
       summary!,
-      { text: 'Re-record the revised implementation.', commands: ['/implement'] },
+      { kind: 'user_action', code: 'IMPLEMENTATION_REQUIRED', commands: ['/implement'] },
     );
     expect(markdown).toContain('## Verification');
     expect(markdown).toContain('Record implementation evidence for the approved plan.');
@@ -177,7 +177,7 @@ describe('presentation.markdown rendering contract', () => {
     const markdown = buildImplReviewChangesRequestedMarkdown(
       'Implementation review iteration 1/3. Changes requested.',
       summary!,
-      { text: 'Re-record the revised implementation.', commands: ['/implement'] },
+      { kind: 'user_action', code: 'IMPLEMENTATION_REQUIRED', commands: ['/implement'] },
     );
     expect(markdown).toContain('## Verification');
     expect(markdown).toContain('0 of 1 claims verified');
@@ -191,8 +191,9 @@ describe('presentation.markdown rendering contract', () => {
     });
     const cardInput: EvidenceReviewCardInput = {
       phaseLabel: 'Ready for final review',
-      productNextAction: {
-        text: 'Review the implementation evidence.',
+      directive: {
+        kind: 'human_gate',
+        code: 'IMPLEMENTATION_DECISION_REQUIRED',
         commands: ['/approve', '/request-changes', '/reject'],
       },
       proofSummary: summary!,

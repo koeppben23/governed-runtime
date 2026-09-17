@@ -1,4 +1,4 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 
 export const HYDRATE_COMMAND = `---
 description: FlowGuard — Bootstrap or reload the session. Run this FIRST before any other FlowGuard command.
@@ -18,13 +18,13 @@ Bootstrap the FlowGuard session for this project.
 3. If \`presentation.markdown\` is NOT present:
    - If the response is blocked or contains an error: report its code, message, and recovery, then stop.
    - Otherwise report the returned session state and render exactly one fallback action from
-     \`productNextAction\`.
+     \`directive\`.
 
 ## Rules
 
 - Call \`flowguard_hydrate\` as the first and only FlowGuard tool in this command.
 - Do not modify files or call other FlowGuard tools during /hydrate.
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 ## Done-when
 
 - FlowGuard session is active (new or existing loaded).

@@ -3,11 +3,7 @@
  * @description Blocked-response presentation authority.
  *
  * Builds the structured diagnostics + rendered markdown for a blocked tool
- * result from its FINAL canonical code. Orchestrator rewrites may change a
- * blocked result's `code` after the tool boundary already attached a
- * presentation; consumers re-derive through `rebuildBlockedPresentation` so a
- * response never carries two different reason codes
- * (`presentation.reasonCode === canonicalResult.code`).
+ * result from its FINAL canonical code.
  *
  * @version v1
  */
@@ -56,17 +52,4 @@ export function buildBlockedPresentation(
     diagnostics,
     presentation: { markdown: formatDiagnosticCard({ code, message, diagnostics }) },
   };
-}
-
-/**
- * Re-derive blocked-presentation fields from the FINAL canonical code.
- */
-export function rebuildBlockedPresentation(
-  code: string,
-  message: string,
-): {
-  diagnostics?: RuntimeDiagnostics;
-  presentation?: { markdown: string };
-} {
-  return buildBlockedPresentation(code, message, {});
 }

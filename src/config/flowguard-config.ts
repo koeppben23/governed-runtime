@@ -139,18 +139,19 @@ export const FlowGuardConfigSchema = z.object({
     .object({
       /** Default policy mode when /hydrate is called without an explicit mode. */
       defaultMode: PolicyModeSchema.optional(),
-      /** Override max self-review iterations (PLAN phase). */
-      maxSelfReviewIterations: z.number().int().min(1).max(10).optional(),
-      /** Override max impl-review iterations (IMPL_REVIEW phase). */
-      maxImplReviewIterations: z.number().int().min(1).max(10).optional(),
+      /** Field-wise review-loop budget overrides. */
+      reviewBudget: z
+        .object({
+          plan: z.number().int().min(1).max(10).optional(),
+          architecture: z.number().int().min(1).max(10).optional(),
+          implementation: z.number().int().min(1).max(10).optional(),
+        })
+        .optional(),
       /** Override retries after accept findings contain blocking issues (F12). */
       maxIncoherentReviewerCaptureRetries: z.number().int().min(0).max(5).optional(),
-      /** Override obligation-level reviewer output-repair attempts (new attempt
-       * after a canonically repairable non-bindable reviewer output). */
-      maxReviewerOutputRepairAttempts: z.number().int().min(0).max(5).optional(),
-      /** P33/P34: Require verified actor identity for regulated approvals.
-       * Superseded by minimumActorAssuranceForApproval when set. */
-      requireVerifiedActorsForApproval: z.boolean().optional(),
+      /** Override obligation-level reviewer-attempt budget (output repairs and
+       * task re-arms). */
+      maxReviewerAttempts: z.number().int().min(0).max(5).optional(),
       /** P34: Minimum assurance level required for approval.
        * 'best_effort' | 'claim_validated' | 'idp_verified' */
       minimumActorAssuranceForApproval: z
@@ -190,6 +191,7 @@ export const FlowGuardConfigSchema = z.object({
         })
         .optional(),
     })
+    .strict()
     .default({}),
 
   /** Profile configuration. */

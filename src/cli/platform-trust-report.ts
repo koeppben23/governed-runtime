@@ -7,7 +7,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { EnforcementLevel, HostCapabilities } from '../adapters/host-adapter.js';
 import type { HostId } from '../shared/hosts.js';
-import type { DoctorCheck, InstallScope } from './install-helpers.js';
+import type { DoctorCheck, InstallScope } from './install-types.js';
 import { codexInstallStatus, resolveCodexMarketplacePath } from './codex-plugin-install.js';
 
 interface HostTrustProjection {
@@ -29,7 +29,17 @@ const HOST_TRUST: Record<HostId, HostTrustProjection> = {
       argMutation: true,
       outputReplacement: true,
       contextInjection: true,
-      reviewerSpawn: true,
+      reviewTransports: [
+        {
+          kind: 'native_task_structured_followup',
+          structuredOutput: true,
+          parentVisible: true,
+          transcriptNavigable: true,
+          isolatedAgentIdentity: true,
+          permissionIsolation: true,
+          assurance: 'structured_high',
+        },
+      ],
       compactionInjection: true,
     },
     runtimeVerification:
@@ -38,11 +48,13 @@ const HOST_TRUST: Record<HostId, HostTrustProjection> = {
       'configured when local plugin artifacts and import check pass; restart still required',
     hookSemantics: 'in-process plugin can synchronously block through FlowGuard runtime decisions',
     approvalPrimitive: 'FlowGuard /review-decision with validated obligation-bound ReviewFindings',
-    reviewerTransport: 'OpenCode subagent is transport/isolation only, not approval authority',
+    reviewerTransport:
+      'native_task_structured_followup uses one native Task child for visible review execution and schema-constrained findings capture; the same child identity binds both phases',
     receiptPreservation: [
       'sessionId: preserved by FlowGuard state/audit',
       'reviewDecisionId: preserved by FlowGuard decision receipt',
       'obligationId: preserved by FlowGuard review assurance state',
+      'reviewerChildSessionId: preserved by native Task metadata and ReviewInvocationEvidence',
       'nativeHostApprovalId: not preserved by host transport',
     ],
   },
@@ -53,7 +65,10 @@ const HOST_TRUST: Record<HostId, HostTrustProjection> = {
       argMutation: false,
       outputReplacement: false,
       contextInjection: true,
-      reviewerSpawn: true,
+      // No transport is advertised until a concrete Claude adapter proves the
+      // complete structured/visibility contract. Do not compose assumptions
+      // from generic agent and hook capabilities.
+      reviewTransports: [],
       compactionInjection: true,
     },
     runtimeVerification:
@@ -63,7 +78,8 @@ const HOST_TRUST: Record<HostId, HostTrustProjection> = {
     hookSemantics:
       'PreToolUse can deny selected tool calls; PostToolUse contextualizes but does not rollback',
     approvalPrimitive: 'FlowGuard /review-decision with validated obligation-bound ReviewFindings',
-    reviewerTransport: 'Claude Code agent is transport/isolation only, not approval authority',
+    reviewerTransport:
+      'NOT_VERIFIED: no Claude review transport is advertised until one concrete transport proves the complete contract',
     receiptPreservation: [
       'sessionId: preserved when FlowGuard MCP runtime receives host session context',
       'reviewDecisionId: preserved by FlowGuard decision receipt',
@@ -78,7 +94,9 @@ const HOST_TRUST: Record<HostId, HostTrustProjection> = {
       argMutation: true,
       outputReplacement: true,
       contextInjection: true,
-      reviewerSpawn: true,
+      // Same fail-closed rule as Claude: generic subagent support is not a
+      // review-transport capability until the exact authority contract is proven.
+      reviewTransports: [],
       compactionInjection: false,
     },
     runtimeVerification:
@@ -88,7 +106,8 @@ const HOST_TRUST: Record<HostId, HostTrustProjection> = {
       '[features].plugin_hooks = true plus /hooks trust review required; PreToolUse is a Bash/apply_patch guardrail, not a complete security boundary',
     approvalPrimitive:
       'FlowGuard flowguard_decision with validated obligation-bound ReviewFindings',
-    reviewerTransport: 'Codex subagent is transport/isolation only, not approval authority',
+    reviewerTransport:
+      'NOT_VERIFIED: no Codex review transport is advertised until one concrete transport proves the complete contract',
     receiptPreservation: [
       'sessionId: preserved when FlowGuard MCP runtime receives host session context',
       'reviewDecisionId: preserved by FlowGuard decision receipt',

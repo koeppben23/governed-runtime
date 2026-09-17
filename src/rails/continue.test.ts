@@ -18,7 +18,7 @@ import {
   ARCHITECTURE_DECISION,
   POLICY_SNAPSHOT,
 } from '../fixtures.js';
-import { computeRecordDigest } from '../state/evidence-plan.js';
+import { makePlanRevision } from '../state/evidence-test-constants.js';
 import type { RailContext } from './types.js';
 import type { PlanRecord } from '../state/evidence.js';
 import { TEAM_POLICY } from '../config/policy.js';
@@ -42,7 +42,10 @@ vi.mock('../adapters/frozen-repository.js', async (importOriginal) => {
 const ctx: RailContext = {
   now: () => FIXED_TIME,
   digest: (s: string) => `sha256:${s.length}`,
-  policy: { ...TEAM_POLICY, maxSelfReviewIterations: 3, maxImplReviewIterations: 3 },
+  policy: {
+    ...TEAM_POLICY,
+    reviewBudget: { ...TEAM_POLICY.reviewBudget, plan: 3, implementation: 3 },
+  },
 };
 
 function makeExecutors(overrides?: Partial<ContinueExecutors>): ContinueExecutors {
@@ -69,24 +72,7 @@ function makeExecutors(overrides?: Partial<ContinueExecutors>): ContinueExecutor
 
 function planWith(body: string): PlanRecord {
   return {
-    current: {
-      body,
-      digest: 'd',
-      sections: [],
-      createdAt: FIXED_TIME,
-      recordDigest: computeRecordDigest({
-        contentDigest: 'd',
-        planVersion: 1,
-        supersedesRecordDigest: null,
-        originatingReviewObligationId: null,
-        revisionReason: null,
-      }),
-      planVersion: 1,
-      supersedesRecordDigest: null,
-      originatingReviewObligationId: null,
-      revisionReason: null,
-      lineageStatus: 'verified' as const,
-    },
+    current: makePlanRevision({ body, createdAt: FIXED_TIME }),
     history: [],
     reviewCompletion: 'pending',
   };
@@ -113,7 +99,6 @@ describe('continue rail', () => {
         activeChecks: ['test_quality', 'rollback_safety'],
         reviewDecision: {
           verdict: 'approve',
-          decidedBy: 'r',
           decidedAt: FIXED_TIME,
           rationale: 'approved',
           decisionIdentity: {
@@ -125,6 +110,7 @@ describe('continue rail', () => {
         },
         selfReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: 'd',
@@ -214,7 +200,6 @@ describe('continue rail', () => {
         },
         reviewDecision: {
           verdict: 'approve',
-          decidedBy: 'r',
           decidedAt: FIXED_TIME,
           rationale: 'approved',
           decisionIdentity: {
@@ -226,6 +211,7 @@ describe('continue rail', () => {
         },
         selfReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: 'd',
@@ -249,6 +235,7 @@ describe('continue rail', () => {
         plan: PLAN_RECORD,
         selfReview: {
           iteration: 3,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: 'd2',
           currDigest: 'd3',
@@ -272,6 +259,7 @@ describe('continue rail', () => {
         architecture: ARCHITECTURE_DECISION,
         selfReview: {
           iteration: 0,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: ARCHITECTURE_DECISION.digest,
@@ -293,7 +281,7 @@ describe('continue rail', () => {
     });
 
     it('REVIEW_COMPLETE terminal phase blocks continue', async () => {
-      const state = makeState('REVIEW_COMPLETE');
+      const state = makeState('PEER_REVIEW_COMPLETE');
       const result = await executeContinue(state, ctx, makeExecutors());
       expect(result.kind).toBe('blocked');
       if (result.kind === 'blocked') {

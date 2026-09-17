@@ -1,4 +1,4 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 
 export const CONTINUE_COMMAND = `---
 description: FlowGuard — Route to the canonical next action for the current phase.
@@ -14,7 +14,7 @@ Determine the canonical next workflow action without executing it.
 
 1. Call \`flowguard_continue\` to get deterministic guidance for the current phase.
    - If the tool returns \`_continue: { action: "deterministic" }\`, present the canonical
-     \`productNextAction\` recommendation. Do not execute another workflow command unless explicitly requested by the user.
+     \`directive\` recommendation. Do not execute another workflow command unless explicitly requested by the user.
    - If the tool returns \`_continue: { action: "manual_decision" }\`, present the decision-required
      context and canonical \`decisionCommands\` to the user.
    - If the tool returns \`_continue: { action: "terminal" }\`, report workflow complete.
@@ -27,7 +27,7 @@ Determine the canonical next workflow action without executing it.
 - At User Gates (PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW): present information and ask the user for their verdict — never decide for them.
 - /continue is a routing command — it determines what to do, not blindly executes destructive actions.
 - Do not auto-approve or auto-reject at User Gates — human verdicts are mandatory.
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 ## Done-when
 
 - Current phase is identified and its canonical action is reported.

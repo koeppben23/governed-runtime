@@ -10,6 +10,7 @@ function makeObligation(overrides: Partial<ReviewObligation> = {}): ReviewObliga
   return {
     obligationId: FIXED_UUID,
     obligationType: 'plan',
+    reviewCycle: 1,
     requiredChallengeCount: 0,
     requiredChallengeKind: 'design_challenge',
     challengePolicyVersion: 'challenge-policy.v1',
@@ -18,7 +19,7 @@ function makeObligation(overrides: Partial<ReviewObligation> = {}): ReviewObliga
     planVersion: 1,
     criteriaVersion: 'v1',
     mandateDigest: 'abc123',
-    maxReviewerOutputRepairAttempts: 1,
+    maxReviewerAttempts: 1,
     createdAt: FIXED_DATETIME,
     pluginHandshakeAt: null,
     status: 'pending',
@@ -32,6 +33,13 @@ function makeObligation(overrides: Partial<ReviewObligation> = {}): ReviewObliga
       revisions: ['base', 'head'],
     },
     ...overrides,
+    reviewProfile: overrides.reviewProfile ?? 'core',
+    profileSource: overrides.profileSource ?? 'policy_default',
+    reviewMaterial: overrides.reviewMaterial ?? {
+      content: 'frozen review material',
+      materialDigest: 'a'.repeat(64),
+      subjectDigest: overrides.subjectDigest ?? 'test-subject-digest',
+    },
   };
 }
 

@@ -1,7 +1,7 @@
 /**
  * @module integration/review/attempt-lifecycle
- * @description Review ATTEMPT lifecycle: creation, reissue, resolution, and
- *              status transitions of the invocation envelopes a reviewer Task
+ * @description Review ATTEMPT lifecycle: creation, recovery, resolution, and
+ *              status transitions of the invocation envelopes a reviewer task
  *              binds to, plus the assurance-state container primitives.
  *
  * Extracted from assurance.ts along the attempt-lifecycle boundary. This module
@@ -18,7 +18,6 @@ import type {
   ReviewAttemptDiscoveryContext,
   ReviewAttemptOrigin,
   ReviewAttemptRejectionReason,
-  ReviewMaterial,
   ReviewObligation,
   ReviewObligationType,
 } from '../../state/evidence.js';
@@ -29,7 +28,6 @@ export {
   emptyReviewAssurance,
   ensureReviewAssurance,
   findBindableAttempt,
-  latestReviewMaterial,
 } from '../../state/review-continuation.js';
 
 /**
@@ -56,7 +54,6 @@ export function createReviewAttempt(input: {
   obligationId: string;
   obligationType: ReviewObligationType;
   subjectDigest: string;
-  reviewMaterial?: ReviewMaterial;
   ordinal: number;
   childSessionId?: string;
   /**
@@ -70,9 +67,8 @@ export function createReviewAttempt(input: {
   observationCapability: string | null;
   /**
    * Authority-bearing origin. Every attempt must name how it came into
-   * existence: `initial` at obligation creation, `output_repair` after an
-   * authorized output-repair reissue, or `task_rearm` after a task-lifecycle
-   * re-arm. There is no origin-less attempt.
+   * existence: `initial` at obligation creation, or `dispatch_rearm` after an
+   * authorized dispatch-recovery re-arm. There is no origin-less attempt.
    */
   origin: ReviewAttemptOrigin;
   /**
@@ -88,7 +84,6 @@ export function createReviewAttempt(input: {
     obligationId: input.obligationId,
     obligationType: input.obligationType,
     subjectDigest: input.subjectDigest,
-    ...(input.reviewMaterial === undefined ? {} : { reviewMaterial: input.reviewMaterial }),
     ordinal: input.ordinal,
     childSessionId: input.childSessionId,
     status: 'created',
@@ -97,12 +92,13 @@ export function createReviewAttempt(input: {
     ...(input.observationCapability === null
       ? {}
       : { observationCapability: input.observationCapability }),
+    observations: [],
     createdAt: input.now,
   };
 }
 
 /**
- * Create a new attempt for an EXISTING obligation (retry / re-invocation).
+ * Create a new attempt for an EXISTING obligation after dispatch recovery.
  *
  * Unlike createObligationAndAttempt (which creates a new obligation), this
  * attaches a new attempt to an already-persisted obligation. Previous
@@ -110,8 +106,8 @@ export function createReviewAttempt(input: {
  * from the previous reviewer invocation is hard-rejected.
  *
  * `childSessionId` is supplied only when the reviewer child session is already
- * known (late correlation of an in-flight Task). A reissue that precedes the
- * reviewer Task MUST omit it: `findBindableAttempt` only accepts attempts that
+ * known (late correlation of an in-flight task). A dispatch recovery attempt
+ * MUST omit it: `findBindableAttempt` only accepts attempts that
  * carry no child session yet, so a pre-correlated attempt would be created
  * unbindable and the host could never hand the reviewer a prompt again.
  *
@@ -124,13 +120,13 @@ export function createAttemptForExistingObligation(
   now: string,
   /**
    * Mint authority, supplied by the caller ONLY after the matching transition
-   * authority was satisfied (`authorizeOutputRepairReissue` or
-   * `authorizeTaskLifecycleRearm`) and the attempt-bound Discovery context was
-   * resolved BEFORE this mint. An architecture test whitelists the productive
-   * call sites so this parameter cannot become a public backdoor.
+   * authority was satisfied (`authorizeDispatchRearm`) and the attempt-bound
+   * Discovery context was resolved BEFORE this mint. An architecture test
+   * whitelists the productive call sites so this parameter cannot become a
+   * public backdoor.
    */
   transition: {
-    readonly origin: ReviewAttemptOrigin;
+    readonly origin: Extract<ReviewAttemptOrigin, { readonly kind: 'dispatch_rearm' }>;
     readonly repositoryDiscovery: ReviewAttemptDiscoveryContext;
   },
 ): { assurance: ReviewAssuranceState; attempt: ReviewAttempt } {
@@ -141,7 +137,6 @@ export function createAttemptForExistingObligation(
     obligationId: obligation.obligationId,
     obligationType: obligation.obligationType,
     subjectDigest: obligation.subjectDigest,
-    reviewMaterial: obligation.reviewMaterial,
     ordinal,
     ...(childSessionId === undefined ? {} : { childSessionId }),
     origin: transition.origin,
@@ -183,8 +178,7 @@ export function resolveAttempt(
 
 /**
  * Attempt statuses that may AUTHORIZE repository evidence. Only a `bound`
- * attempt holds authoritative evidence; `captured` would need an explicit
- * justification and dedicated tests before joining this set. Rejected, stale,
+ * attempt holds authoritative evidence. Rejected, stale,
  * expired, and created attempts are audit-only and can never strengthen
  * later findings.
  */
@@ -233,12 +227,6 @@ export function updateAttemptStatus(
     childSessionId?: string;
     /** Structured rejection reason, persisted only for `rejected` status. */
     rejectionReason?: ReviewAttemptRejectionReason;
-    /**
-     * Canonical schema-error-set fingerprint, persisted only for `rejected`
-     * status. Repair diagnostics — feeds the stall detection of the
-     * output-repair gate, never authority.
-     */
-    schemaErrorFingerprint?: string;
   },
 ): ReviewAssuranceState {
   const base = ensureReviewAssurance(assurance);
@@ -258,14 +246,16 @@ export function updateAttemptStatus(
             ...(status === 'rejected' && extra?.rejectionReason
               ? { rejectionReason: extra.rejectionReason }
               : {}),
-            ...(status === 'rejected' && extra?.schemaErrorFingerprint
-              ? { schemaErrorFingerprint: extra.schemaErrorFingerprint }
-              : {}),
           },
     ),
   };
 }
 
+/**
+ * Supersede the still-BINDABLE attempt of an obligation when dispatch recovery
+ * mints its successor. Only `created` attempts are bindable (see
+ * `findBindableAttempt`); terminal statuses remain verbatim.
+ */
 export function staleObligationAttempts(
   assurance: ReviewAssuranceState,
   obligationId: string,
@@ -277,7 +267,7 @@ export function staleObligationAttempts(
   return {
     ...base,
     attempts: base.attempts.map((a) =>
-      a.obligationId === obligationId && a.attemptId !== exceptAttemptId && a.status !== 'bound'
+      a.obligationId === obligationId && a.attemptId !== exceptAttemptId && a.status === 'created'
         ? { ...a, status: 'stale' as const, completedAt: now }
         : a,
     ),

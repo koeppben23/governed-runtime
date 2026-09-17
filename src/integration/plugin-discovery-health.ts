@@ -164,7 +164,16 @@ export async function enforceDiscoveryHealthAfterBash(
   output: { output?: unknown },
 ): Promise<void> {
   const sessDir = deps.getSessionDir(sessionId);
-  if (!sessDir || !existsSync(sessDir)) return;
+  if (!sessDir || !existsSync(sessDir)) {
+    // A bash call is governed by the Before-hook boundary, which requires a
+    // resolvable FlowGuard session. Lost context after release is an invariant
+    // violation, so it fails closed instead of silently skipping the gate.
+    output.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
+      reason:
+        'Post-bash discovery-health enforcement has no resolvable FlowGuard session context for a governed mutation.',
+    });
+    return;
+  }
 
   let state: SessionState | null;
   try {
@@ -175,7 +184,14 @@ export async function enforceDiscoveryHealthAfterBash(
     });
     return;
   }
-  if (!state || !enforcementRequired(state)) return;
+  if (!state) {
+    output.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
+      reason:
+        'Post-bash discovery-health enforcement found no persisted session state for an authorized mutation.',
+    });
+    return;
+  }
+  if (!enforcementRequired(state)) return;
 
   const health = await seamHealthProjection(deps);
   const decision = isDiscoveryHealthAllowed({

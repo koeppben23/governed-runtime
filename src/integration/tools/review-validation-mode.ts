@@ -6,7 +6,7 @@
  *
  * Each of those tools exposes several semantic operations (submit / revise /
  * approve / record) through one broad argument object that shares
- * `reviewVerdict`, `reviewFindings`, and `reviewerUnavailable`, plus an optional
+ * `reviewVerdict` and `reviewerUnavailable`, plus an optional
  * text payload (`planText` / `adrText`). Before this module existed, the
  * argument-shape classification was duplicated three times with subtly
  * divergent coverage — the "duplicate authority with drift" hazard tracked in
@@ -39,18 +39,18 @@ export interface ToolCallArgsView {
    * classifier only distinguishes `changes_requested` from everything else.
    */
   readonly reviewVerdict?: 'accept' | 'changes_requested' | 'unable_to_review';
-  /** reviewFindings object, when present. */
-  readonly reviewFindings?: unknown;
   /** reviewerUnavailable flag. */
   readonly reviewerUnavailable?: boolean;
+  /** Explicit typed transport-recovery intent (implementation review). */
+  readonly reviewRecovery?: 'retry_transport';
 }
 
 /** Pure boolean flags derived from the arguments (the once-canonical idiom). */
 export interface ToolCallFlags {
   readonly hasText: boolean;
   readonly hasVerdict: boolean;
-  readonly hasFindings: boolean;
   readonly hasReviewerUnavailable: boolean;
+  readonly hasReviewRecovery: boolean;
 }
 
 /** Discriminated operation mode for a multi-mode tool call. */
@@ -59,26 +59,18 @@ export type ToolCallMode =
   | { readonly kind: 'revision' }
   | { readonly kind: 'approval' }
   | { readonly kind: 'transport_failure_retry' }
+  | { readonly kind: 'transport_recovery' }
   | { readonly kind: 'invalid'; readonly code: string; readonly params?: Record<string, string> };
 
 /**
  * Per-family invalid reason codes. Existing codes are preserved verbatim so the
- * registered precondition-code set (asserted by the CLI contract test) is
- * unchanged; the two ADR codes are newly wired here (architecture previously
- * had gaps and an orphaned `INVALID_ARCHITECTURE_TOOL_SEQUENCE`).
+ * registered precondition-code set is unchanged; the two ADR codes are newly
+ * wired here (architecture previously had gaps and an orphaned
+ * `INVALID_ARCHITECTURE_TOOL_SEQUENCE`).
  */
 interface FamilyCodes {
   /** text + verdict=accept. `undefined` for families with no text payload (implement). */
   readonly approveWithText?: string;
-  /** text + findings + no verdict (mixed submission). Falls back to findingsWithoutVerdict when absent. */
-  readonly mixedTextFindings?: string;
-  /**
-   * findings present without a verdict (and without text, when mixedTextFindings
-   * is set). `undefined` when the family handles bare findings-without-verdict in
-   * a state-dependent layer instead (plan: the same shape may be
-   * PLAN_SUBMISSION_REQUIRED before a plan exists, so it is NOT a pure-shape fault).
-   */
-  readonly findingsWithoutVerdict?: string;
   /** reviewerUnavailable mixed into a submission (no verdict). */
   readonly unavailableWithSubmission: string;
   /**
@@ -87,32 +79,27 @@ interface FamilyCodes {
    * which have no legitimate preemptive-unavailable submission shape here).
    */
   readonly unavailableRequiresText: boolean;
+  /** reviewRecovery mixed with any other input. `undefined` disables the rule. */
+  readonly recoveryWithOtherInput?: string;
 }
 
 const FAMILY_CODES: Record<ToolFamily, FamilyCodes> = {
   plan: {
     approveWithText: 'PLAN_APPROVE_WITH_TEXT',
-    mixedTextFindings: 'PLAN_SUBMISSION_MIXED_INPUTS',
-    // Bare findings-without-verdict is state-dependent for plan (handled by
-    // validateReviewInputShape: PLAN_SUBMISSION_REQUIRED vs PLAN_FINDINGS_WITHOUT_VERDICT).
-    findingsWithoutVerdict: undefined,
     unavailableWithSubmission: 'INVALID_PLAN_TOOL_SEQUENCE',
     unavailableRequiresText: true,
   },
   architecture: {
     approveWithText: 'ADR_APPROVE_WITH_TEXT',
-    // Architecture has no separate text+findings code; any findings-without-verdict
-    // routes to ADR_FINDINGS_WITHOUT_VERDICT (gap closed).
-    findingsWithoutVerdict: 'ADR_FINDINGS_WITHOUT_VERDICT',
     unavailableWithSubmission: 'INVALID_ARCHITECTURE_TOOL_SEQUENCE',
     unavailableRequiresText: false,
   },
   implement: {
     // implement has no text payload, so approve-with-text is structurally N/A.
     approveWithText: undefined,
-    findingsWithoutVerdict: 'INVALID_IMPLEMENT_TOOL_SEQUENCE',
     unavailableWithSubmission: 'INVALID_IMPLEMENT_TOOL_SEQUENCE',
     unavailableRequiresText: false,
+    recoveryWithOtherInput: 'INVALID_IMPLEMENT_TOOL_SEQUENCE',
   },
 };
 
@@ -126,8 +113,8 @@ export function toolCallFlags(args: ToolCallArgsView): ToolCallFlags {
   return {
     hasText: typeof args.text === 'string' && args.text.trim().length > 0,
     hasVerdict: typeof args.reviewVerdict === 'string' && args.reviewVerdict.length > 0,
-    hasFindings: args.reviewFindings != null && typeof args.reviewFindings === 'object',
     hasReviewerUnavailable: args.reviewerUnavailable === true,
+    hasReviewRecovery: args.reviewRecovery === 'retry_transport',
   };
 }
 
@@ -160,12 +147,15 @@ function detectInvalidShape(
       code: codes.approveWithText,
       params: verdictParams,
     },
-    // text + findings + no verdict: mixed submission inputs.
-    { when: flags.hasText && flags.hasFindings && noVerdict, code: codes.mixedTextFindings },
     // reviewerUnavailable mixed into a submission (gated on text for plan).
     { when: unavailableInSubmission, code: codes.unavailableWithSubmission },
-    // findings without a verdict (deferred to the state layer when undefined).
-    { when: flags.hasFindings && noVerdict, code: codes.findingsWithoutVerdict },
+    // reviewRecovery is a standalone intent; any other input makes it invalid.
+    {
+      when:
+        flags.hasReviewRecovery &&
+        (flags.hasVerdict || flags.hasText || flags.hasReviewerUnavailable),
+      code: codes.recoveryWithOtherInput,
+    },
   ];
 
   const matched = rules.find((rule) => rule.when && rule.code);
@@ -180,30 +170,40 @@ function detectInvalidShape(
  * code names so no registered reason code is dropped):
  * - text + verdict=accept            -> invalid (approveWithText) — text is for
  *   submission/revision only. (Skipped for implement: no text payload.)
- * - text + findings + no verdict     -> invalid (mixedTextFindings, when the
- *   family defines it; else findingsWithoutVerdict).
  * - reviewerUnavailable + submission -> invalid (unavailableWithSubmission),
- *   gated on text presence for the plan family (historical rule).
- * - findings + no verdict            -> invalid (findingsWithoutVerdict), unless
- *   the family defers it to a state-dependent layer (plan).
+ *   gated on text presence for the plan family.
  * - otherwise: initial_submission (no verdict) | revision (changes_requested) |
  *   approval (accept).
  *
  * The valid `text + verdict=changes_requested` (revision) shape is never
  * rejected — that is the revised-plan / revised-ADR path.
  */
+function classifyImplementTransportIntent(
+  family: ToolFamily,
+  flags: ToolCallFlags,
+): ToolCallMode | null {
+  if (family !== 'implement') return null;
+  const standalone = !flags.hasVerdict && !flags.hasText;
+  // The implementation verdict tool is the only admissible entrypoint once the
+  // workflow reaches IMPL_REVIEW. A bare reviewerUnavailable signal requests a
+  // transport retry; it is never a verdict submission.
+  if (flags.hasReviewerUnavailable && standalone && !flags.hasReviewRecovery) {
+    return { kind: 'transport_failure_retry' };
+  }
+  // An explicit typed recovery intent re-arms or re-emits the pending review
+  // dispatch; it is never mixed with a verdict or a transport-failure report.
+  if (flags.hasReviewRecovery && standalone && !flags.hasReviewerUnavailable) {
+    return { kind: 'transport_recovery' };
+  }
+  return null;
+}
+
 export function classifyToolCallMode(family: ToolFamily, args: ToolCallArgsView): ToolCallMode {
   const flags = toolCallFlags(args);
   const receivedVerdict = args.reviewVerdict;
 
-  // The implementation verdict tool is the only admissible entrypoint once the
-  // workflow reaches IMPL_REVIEW. A bare reviewerUnavailable signal requests a
-  // policy-gated transport retry; it is never a verdict or findings submission.
-  if (family === 'implement' && flags.hasReviewerUnavailable) {
-    if (!flags.hasVerdict && !flags.hasFindings && !flags.hasText) {
-      return { kind: 'transport_failure_retry' };
-    }
-  }
+  const transportIntent = classifyImplementTransportIntent(family, flags);
+  if (transportIntent) return transportIntent;
 
   const invalid = detectInvalidShape(FAMILY_CODES[family], flags, receivedVerdict);
   if (invalid) return invalid;

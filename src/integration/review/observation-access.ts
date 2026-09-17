@@ -37,8 +37,7 @@ export function resolveObservationRevisions(
   return revisions;
 }
 
-export type RepositoryObservationAccessUnavailableReason =
-  'no_frozen_authority' | 'attempt_capability_unavailable';
+export type RepositoryObservationAccessUnavailableReason = 'no_frozen_authority';
 
 export type RepositoryObservationAccess =
   | {
@@ -57,26 +56,20 @@ export type RepositoryObservationAccess =
  *
  * Defense-in-depth: even when the attempt carries a capability string, access
  * stays unavailable unless the OBLIGATION backs at least one frozen revision.
- * The unavailable reason distinguishes the two failure classes: the
- * obligation backs no frozen revision (`no_frozen_authority`) versus the
- * obligation is authoritative but the attempt carries no capability
- * (`attempt_capability_unavailable`, e.g. a legacy attempt predating the
- * capability generation).
+ * Current-generation states enforce the stronger invariant at the schema
+ * boundary (repository-governed attempts REQUIRE a capability), so a missing
+ * capability here can only be an invalid state and fails closed.
  */
 export function resolveRepositoryObservationAccess(
   obligation: ReviewObligation,
   attempt: ReviewAttempt,
 ): RepositoryObservationAccess {
   const revisions = resolveObservationRevisions(obligation);
-  const capability = attempt.observationCapability ?? null;
-  if (revisions.length > 0 && capability !== null) {
+  const capability = attempt.observationCapability;
+  if (revisions.length > 0 && capability) {
     return { available: true, capability, revisions };
   }
-  return {
-    available: false,
-    revisions,
-    reason: revisions.length === 0 ? 'no_frozen_authority' : 'attempt_capability_unavailable',
-  };
+  return { available: false, revisions, reason: 'no_frozen_authority' };
 }
 
 /**

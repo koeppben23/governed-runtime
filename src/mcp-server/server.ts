@@ -10,8 +10,8 @@
  * - Delegates to same rail executors as the OpenCode plugin
  *
  * The server exposes FlowGuard governance tools via the MCP protocol.
- * 16 of 17 Integration Tools are registered here (see docs/mcp-tool-surface.md
- * for the one asymmetric exclusion).
+ * 18 of 20 Integration Tools are registered here (see docs/mcp-tool-surface.md
+ * for the two intentional exclusions).
  *
  * @see https://github.com/koeppben23/governed-runtime/issues/243
  */
@@ -34,7 +34,6 @@ import { hydrate } from '../integration/tools/index.js';
 import { plan } from '../integration/tools/index.js';
 import { implement } from '../integration/tools/index.js';
 import { review_implementation } from '../integration/tools/index.js';
-import { extend_implementation_review } from '../integration/tools/index.js';
 import { architecture } from '../integration/tools/index.js';
 import { decision } from '../integration/tools/index.js';
 import { run_check } from '../integration/tools/index.js';
@@ -42,8 +41,9 @@ import { ticket } from '../integration/tools/index.js';
 import { review } from '../integration/tools/index.js';
 import { abort_session } from '../integration/tools/index.js';
 import { archive } from '../integration/tools/index.js';
-// 'continue' is a reserved word - imported via namespace
+// 'continue' and 'export' are reserved words - imported via aliases
 import { continue as continue_cmd } from '../integration/tools/index.js';
+import { export as export_session } from '../integration/tools/index.js';
 import { help } from '../integration/tools/index.js';
 import {
   declare_contract,
@@ -59,7 +59,6 @@ export const FLOWGUARD_TOOLS: FlowGuardToolRegistry = {
   plan,
   implement,
   review_implementation,
-  extend_implementation_review,
   architecture,
   decision,
   run_check,
@@ -67,6 +66,7 @@ export const FLOWGUARD_TOOLS: FlowGuardToolRegistry = {
   review,
   abort_session,
   archive,
+  export: export_session,
   continue: continue_cmd,
   help,
   declare_contract,

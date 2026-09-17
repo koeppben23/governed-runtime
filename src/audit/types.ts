@@ -28,10 +28,8 @@ import type { Phase, Event } from '../state/schema.js';
 import type { ReviewVerdict, TimestampEvidence } from '../state/evidence.js';
 import { canonicalJsonStringify, computeCanonicalEventDigest } from './canonical-digest.js';
 
-// P2b: Canonical ActorInfo and ActorVerificationMeta live in state/evidence.ts (Zod SSOT).
-// Re-exported here for backward compatibility — all existing consumers continue to work.
-import type { ActorInfo, ActorVerificationMeta } from '../state/evidence.js';
-export type { ActorInfo, ActorVerificationMeta };
+import type { ActorInfo } from '../state/evidence.js';
+import type { DecisionIdentity } from '../state/evidence-identity.js';
 
 // ─── Event Kind ───────────────────────────────────────────────────────────────
 
@@ -151,7 +149,7 @@ export interface DecisionDetail {
   gatePhase: Phase;
   verdict: ReviewVerdict;
   rationale: string;
-  decidedBy: string;
+  decisionIdentity: DecisionIdentity;
   decidedAt: string;
   fromPhase: Phase;
   toPhase: Phase;
@@ -170,11 +168,6 @@ export type TypedDetail =
   | DecisionDetail;
 
 // ─── Actor Identity ──────────────────────────────────────────────────────────
-// P2b: ActorInfo and ActorVerificationMeta are canonically defined in
-// state/evidence.ts (Zod schema SSOT). Imported and re-exported above.
-// All factory functions, ChainedAuditEvent, and external consumers use
-// the same canonical type — no drift possible.
-
 // ─── Audit Event with Chain Hash ─────────────────────────────────────────────
 
 /**
@@ -216,7 +209,8 @@ export interface ChainedAuditEvent {
   readonly timestampEvidence?: TimestampEvidence;
   /**
    * Enforcement level active when this event was recorded.
-   * Optional for backward compatibility: pre-HAI events omit this field.
+   * Optional: event classes not bound to a host enforcement decision omit it;
+   * absence is not a legacy or migration signal (non-v3 trails are rejected).
    * @since v1.3.0 (HAI #242)
    */
   readonly enforcementLevel?: 'synchronous' | 'hook_gated' | 'advisory';

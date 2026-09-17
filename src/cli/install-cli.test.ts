@@ -8,15 +8,9 @@ import { describe, it, expect, vi } from 'vitest';
 import * as path from 'node:path';
 import { mkdirSync } from 'node:fs';
 import { formatResult, formatDoctor, main } from './install.js';
-import type { CliResult, DoctorCheck } from './install.js';
-import {
-  VERSION,
-  repoArgs,
-  createMockTarball,
-  setupCliTestEnvironment,
-} from './install-test-helpers.test.js';
+import type { CliResult, DoctorCheck } from './install-types.js';
+import { createMockTarball, setupCliTestEnvironment } from './install-test-helpers.test.js';
 
-// ─── Mock: child_process ──────────────────────────────────────────────────────
 vi.mock('node:child_process', async (importOriginal) => {
   const original = await importOriginal<typeof import('node:child_process')>();
   const mockImpl = (
@@ -46,8 +40,6 @@ vi.mock('node:child_process', async (importOriginal) => {
 });
 
 setupCliTestEnvironment();
-
-// ─── formatResult / formatDoctor ──────────────────────────────────────────────
 
 describe('cli/formatResult', () => {
   describe('HAPPY', () => {
@@ -98,8 +90,7 @@ describe('cli/formatResult', () => {
         warnings: [],
         notices: [],
       };
-      const output = formatResult(result);
-      expect(typeof output).toBe('string');
+      expect(typeof formatResult(result)).toBe('string');
     });
 
     it('formats warnings when present', () => {
@@ -124,8 +115,7 @@ describe('cli/formatResult', () => {
         { file: 'b.ts', status: 'missing' },
         { file: 'c.ts', status: 'ok' },
       ];
-      const output = formatDoctor(checks, 'opencode');
-      expect(output).toContain('2/3 actionable checks passed');
+      expect(formatDoctor(checks, 'opencode')).toContain('2/3 actionable checks passed');
     });
 
     it('formatDoctor shows status labels for all statuses', () => {
@@ -174,16 +164,11 @@ describe('cli/formatResult', () => {
         notices: [],
       };
       const start = performance.now();
-      for (let i = 0; i < 100; i++) {
-        formatResult(result);
-      }
-      const elapsed = performance.now() - start;
-      expect(elapsed).toBeLessThan(50);
+      for (let i = 0; i < 100; i++) formatResult(result);
+      expect(performance.now() - start).toBeLessThan(50);
     });
   });
 });
-
-// ─── main ─────────────────────────────────────────────────────────────────────
 
 describe('cli/main', () => {
   describe('HAPPY', () => {
@@ -192,56 +177,42 @@ describe('cli/main', () => {
       const code = await main(['install', '--install-scope', 'repo', '--core-tarball', tarball]);
       expect(code).toBe(0);
     });
-
-    // NOTE: "doctor after install returns 0" is build-dependent (#423: doctor
-    // validates the running package's shipped dist/ executables) and therefore
-    // lives in the smoke project — see doctor-cli-smoke.test.ts. The unit project
-    // is no-build-required (vitest.config.ts) and must not assert a built dist.
   });
 
   describe('BAD', () => {
     it('returns 2 for invalid args', async () => {
-      const code = await main([]);
-      expect(code).toBe(2);
+      await expect(main([])).resolves.toBe(2);
     });
 
     it('returns 2 for unknown command', async () => {
-      const code = await main(['deploy']);
-      expect(code).toBe(2);
+      await expect(main(['deploy'])).resolves.toBe(2);
     });
 
     it('returns 1 when install is called without --core-tarball', async () => {
-      const code = await main(['install', '--install-scope', 'repo']);
-      expect(code).toBe(1);
+      await expect(main(['install', '--install-scope', 'repo'])).resolves.toBe(1);
     });
+
+    it.each([['--mode', 'team'], ['--global'], ['--project']])(
+      'returns 2 for removed install option %s',
+      async (...args) => {
+        await expect(main(['install', ...args])).resolves.toBe(2);
+      },
+    );
   });
 
   describe('CORNER', () => {
     it('returns 1 for doctor on empty directory (repo scope)', async () => {
-      const code = await main(['doctor', '--install-scope', 'repo']);
-      expect(code).toBe(1);
-    });
-
-    it('deprecated --project still works via main() but requires --core-tarball', async () => {
-      const tarball = await createMockTarball();
-      const code = await main(['install', '--project', '--core-tarball', tarball]);
-      expect(code).toBe(0);
+      await expect(main(['doctor', '--install-scope', 'repo'])).resolves.toBe(1);
     });
   });
 
   describe('EDGE', () => {
     it('uninstall returns 0 even if nothing was installed (repo scope)', async () => {
-      const code = await main(['uninstall', '--install-scope', 'repo']);
-      expect(code).toBe(0);
+      await expect(main(['uninstall', '--install-scope', 'repo'])).resolves.toBe(0);
     });
 
-    // NOTE: "doctor returns 0 when only warn checks present" is build-dependent
-    // (#423) and lives in the smoke project — see doctor-cli-smoke.test.ts.
-
     it('doctor returns 1 when real errors exist', async () => {
-      // Empty dir, no install → missing artifacts → exit 1
-      const code = await main(['doctor', '--install-scope', 'repo']);
-      expect(code).toBe(1);
+      await expect(main(['doctor', '--install-scope', 'repo'])).resolves.toBe(1);
     });
   });
 
@@ -250,8 +221,7 @@ describe('cli/main', () => {
       const tarball = await createMockTarball();
       const start = performance.now();
       await main(['install', '--install-scope', 'repo', '--core-tarball', tarball]);
-      const elapsed = performance.now() - start;
-      expect(elapsed).toBeLessThan(1000);
+      expect(performance.now() - start).toBeLessThan(1000);
     });
   });
 });

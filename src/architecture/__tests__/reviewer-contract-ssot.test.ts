@@ -25,7 +25,12 @@ const CANONICAL_SEVERITIES = ['critical', 'major', 'minor'];
 const CANONICAL_REVISIONS = ['base', 'head'];
 
 /** Canonical subject anchor kinds from ReviewSubjectAnchor */
-const CANONICAL_ANCHOR_KINDS = ['repository_location', 'artifact_section', 'content'];
+const CANONICAL_ANCHOR_KINDS = [
+  'repository_location',
+  'artifact_section',
+  'content',
+  'implementation',
+];
 
 describe('reviewer contract SSOT guard', () => {
   it('no file declares "current" or "modified" as revision values', () => {
@@ -96,7 +101,7 @@ describe('reviewer contract SSOT guard', () => {
     expect(violations).toEqual([]);
   });
 
-  it('finding-relation-grammar.ts documents all three canonical anchor kinds', () => {
+  it('finding-relation-grammar.ts documents all four canonical anchor kinds', () => {
     const content = readFileSync(
       join(SRC_ROOT, 'integration/review/finding-relation-grammar.ts'),
       'utf8',
@@ -143,6 +148,9 @@ describe('reviewer contract SSOT guard', () => {
     expect(content).toContain('OVERALL_VERDICT_VALUES');
     expect(content).toContain('ANCHOR_KINDS');
     expect(content).toContain('CHALLENGE_KINDS');
+    expect(content).toContain('ARTIFACT_KIND_VALUES');
+    expect(content).toContain('CHALLENGE_OUTCOMES');
+    expect(content).toContain('CHALLENGE_RESOLUTION_VERDICT_VALUES');
   });
 
   it('finding-relation-grammar.ts imports all canonical values from reviewer-contract.ts', () => {

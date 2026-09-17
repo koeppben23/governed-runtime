@@ -197,6 +197,14 @@ export function applyTransition(
     phase: to,
     transition: { from, to, event, at },
     error: null,
+    // System work is durable: entering a validation phase records the pending
+    // operation in the SAME atomic state write as the transition, and leaving
+    // it clears the marker. A crash between the human decision and the check
+    // execution is therefore recoverable instead of a dead state.
+    pendingSystemWork:
+      to === 'VALIDATION' || to === 'IMPL_VALIDATION'
+        ? { kind: 'validation', requestedAt: at, attempt: 0, retryAfter: null }
+        : null,
     // Entering IMPL_REVIEW is possible only from IMPL_VALIDATION with a FULLY
     // passing fresh validation of the current record. That is the exact point
     // where the repair loop converges, so the rework marker closes here: after
@@ -482,14 +490,22 @@ export async function runSingleIteration<T extends { readonly digest: string }>(
 // ─── Loop State Builders ──────────────────────────────────────────────────────
 
 /**
- * Build a self-review loop state object from a SelfReviewLoop result.
+ * Build a self-review loop state object from a convergence result.
+ *
+ * `reviewCycle` is the owning loop's active human review-cycle counter
+ * (`state.reviewCycles.<loop>`) at creation; it is part of the persisted loop
+ * identity and is never derived from the convergence result.
  *
  * Eliminates the duplicated 6-field object literal pattern that appears
  * identically at 4 call sites in continue.ts and plan.ts.
  */
-export function buildSelfReviewState(loop: SelfReviewLoop) {
+export function buildSelfReviewState(
+  loop: Omit<SelfReviewLoop, 'reviewCycle'>,
+  reviewCycle: number,
+) {
   return {
     iteration: loop.iteration,
+    reviewCycle,
     maxIterations: loop.maxIterations,
     prevDigest: loop.prevDigest,
     currDigest: loop.currDigest,
@@ -499,13 +515,18 @@ export function buildSelfReviewState(loop: SelfReviewLoop) {
 }
 
 /**
- * Build an implementation review loop state object from a SelfReviewLoop result.
+ * Build an implementation review loop state object from a convergence result.
  *
- * Extends buildSelfReviewState with the mandatory executedAt timestamp.
+ * Extends buildSelfReviewState with the mandatory executedAt timestamp. The
+ * human review-cycle counter comes from `state.reviewCycles.implementation`.
  */
-export function buildImplReviewState(loop: SelfReviewLoop, executedAt: string) {
+export function buildImplReviewState(
+  loop: Omit<SelfReviewLoop, 'reviewCycle'>,
+  executedAt: string,
+  reviewCycle: number,
+) {
   return {
-    ...buildSelfReviewState(loop),
+    ...buildSelfReviewState(loop, reviewCycle),
     executedAt,
   };
 }

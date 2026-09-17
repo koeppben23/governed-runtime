@@ -1,273 +1,555 @@
 /**
- * @file review-findings-schema-drift.test.ts
+ * @file findings-schema-drift.test.ts
  * @description Build-time guard against drift between the runtime JSON-Schema
- * passed to the OpenCode SDK structured-output API and the Zod ReviewFindings
- * schema that validates findings throughout the rest of the codebase.
+ * passed to the OpenCode SDK structured-output API and the canonical
+ * `ReviewerFindingsInput` Zod schema (src/state/evidence-review-input.ts) that
+ * accepts the reviewer's model output before host provenance is stamped.
  *
  * Why this matters:
  * - REVIEW_FINDINGS_JSON_SCHEMA is sent to the model via SDK's
  *   `format: { type: 'json_schema', schema }` parameter. The model is
  *   constrained to produce output matching this schema.
- * - The Zod ReviewFindings schema is the runtime contract for everything
- *   that consumes findings (plugin-orchestrator, review-validation, tools).
- * - If these two drift, the SDK can produce findings the rest of the
- *   pipeline rejects (or vice versa) — silent data-shape failures.
+ * - `ReviewerFindingsInput` is the runtime boundary that accepts that output.
+ * - If the two drift, the SDK can produce findings the pipeline rejects (or
+ *   vice versa) — silent data-shape failures.
  *
- * This test enforces:
- * 1. JSON-Schema enum values are a subset of, or equal to, Zod enum values
- *    (drift in the strict direction is allowed; superset would let invalid
- *    values through).
- * 2. Every JSON-Schema required field corresponds to a Zod field.
- * 3. Documented intentional drift (e.g. attestation: required in JSON-Schema
- *    but optional in Zod) is asserted explicitly so any change forces a
- *    review.
+ * The structural parity walker below pairs every canonical Zod node with its
+ * JSON-Schema node and asserts the FULL contract: required/optional property
+ * sets, strictness, enum sets, union variants, integer bounds, string
+ * length/pattern/UUID constraints, and array minimums. Adding or changing a
+ * property in either schema MUST update the other or this suite fails with the
+ * exact contract path.
  *
- * Adding/removing properties to either schema MUST update this test.
- *
- * @version v1
+ * @version v2
  */
 
 import { describe, it, expect } from 'vitest';
-import { z } from 'zod';
 import { REVIEW_FINDINGS_JSON_SCHEMA } from './findings-schema.js';
 import { ReviewFindings, ReviewerFindingsInput } from '../../state/evidence.js';
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── JSON schema view ────────────────────────────────────────────────────────
 
-interface JsonSchemaObject {
-  type: string;
-  properties?: Record<string, JsonSchemaProperty>;
-  required?: string[];
-  additionalProperties?: boolean;
-  items?: JsonSchemaProperty;
-  enum?: string[];
-  const?: string;
-}
-type JsonSchemaProperty = JsonSchemaObject & {
-  minimum?: number;
-  maximum?: number;
-  oneOf?: JsonSchemaProperty[];
-};
-
-function jsonSchemaProperties(): Record<string, JsonSchemaProperty> {
-  const schema = REVIEW_FINDINGS_JSON_SCHEMA as unknown as JsonSchemaObject;
-  return schema.properties ?? {};
+interface JsonSchemaNode {
+  readonly type?: string;
+  readonly properties?: Readonly<Record<string, JsonSchemaNode>>;
+  readonly required?: readonly string[];
+  readonly additionalProperties?: boolean;
+  readonly items?: JsonSchemaNode;
+  readonly oneOf?: readonly JsonSchemaNode[];
+  readonly enum?: readonly string[];
+  readonly const?: string;
+  readonly pattern?: string;
+  readonly minLength?: number;
+  readonly maxLength?: number;
+  readonly minimum?: number;
+  readonly maximum?: number;
+  readonly minItems?: number;
 }
 
-function jsonSchemaRequired(): string[] {
-  const schema = REVIEW_FINDINGS_JSON_SCHEMA as unknown as JsonSchemaObject;
-  return schema.required ?? [];
-}
-
-function zodTopLevelKeys(): string[] {
-  const inner = (
-    ReviewerFindingsInput as unknown as { _def: { innerType?: z.ZodObject<z.ZodRawShape> } }
-  )._def.innerType;
-  if (!inner) {
-    throw new Error('Could not unwrap ReviewerFindingsInput — schema structure changed');
-  }
-  return Object.keys(inner.shape);
-}
-
-function collectSubjectAnchorKinds(): string[] {
-  const props = jsonSchemaProperties();
-  const blocking = props.blockingIssues as unknown as JsonSchemaProperty;
-  const findingItems = blocking?.items as JsonSchemaProperty | undefined;
-  const relation = findingItems?.properties?.relation as JsonSchemaProperty | undefined;
-  const subjectAnchors = relation?.properties?.subjectAnchors as JsonSchemaProperty | undefined;
-  const anchorItems = subjectAnchors?.items as JsonSchemaProperty | undefined;
-  const oneOf = anchorItems?.oneOf as JsonSchemaProperty[] | undefined;
-  if (!oneOf) return [];
-  return oneOf
-    .map((variant: JsonSchemaProperty) => variant?.properties?.kind?.const)
-    .filter((v: string | undefined): v is string => typeof v === 'string');
-}
-
-// ─── Tests ───────────────────────────────────────────────────────────────────
+const JSON_SCHEMA_ROOT = REVIEW_FINDINGS_JSON_SCHEMA as unknown as JsonSchemaNode;
 
 /**
- * The SDK schema represents ReviewerFindingsInput, not canonical persisted
- * ReviewFindings. Host provenance is added only after this strict boundary.
+ * Canonical RFC 4122 UUID pattern. Must stay in sync with
+ * `z.string().uuid()` in the canonical state schemas.
  */
+const UUID_PATTERN =
+  '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$';
 
-describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ ReviewerFindingsInput drift guard', () => {
-  it('GOOD: every JSON-Schema property is also a Zod property', () => {
-    const jsonProps = Object.keys(jsonSchemaProperties());
-    const zodProps = zodTopLevelKeys();
-    const missing = jsonProps.filter((p) => !zodProps.includes(p));
-    expect(missing).toEqual([]);
+/**
+ * Optional identity fields the host mints AFTER the reviewer input boundary.
+ * The SDK schema deliberately omits them; the canonical contract must declare
+ * them optional so the reviewer is never asked to author host identity.
+ */
+const HOST_MINTED_OPTIONAL_FIELDS = new Set(['findingId']);
+
+// ─── Zod introspection ───────────────────────────────────────────────────────
+
+type ZodLike = {
+  _zod?: { def?: Record<string, unknown> };
+  def?: Record<string, unknown>;
+} & object;
+
+function zodDef(schema: unknown): Record<string, unknown> {
+  const candidate = schema as ZodLike;
+  return candidate?._zod?.def ?? candidate?.def ?? {};
+}
+
+/** Strip readonly/optional/pipe wrappers down to the structural schema. */
+function unwrapZod(schema: unknown): unknown {
+  let current: unknown = schema;
+  for (;;) {
+    const def = zodDef(current);
+    if (def.type === 'readonly' || def.type === 'optional') {
+      current = def.innerType;
+      continue;
+    }
+    if (def.type === 'pipe') {
+      current = def.in;
+      continue;
+    }
+    return current;
+  }
+}
+
+/** Structural category of a canonical node, aligned with JSON-Schema types. */
+function zodKind(schema: unknown): string {
+  const type = zodDef(unwrapZod(schema)).type;
+  return type === 'number' ? 'integer' : String(type);
+}
+
+function zodShape(schema: unknown): Record<string, unknown> {
+  const shape = zodDef(unwrapZod(schema)).shape;
+  return shape && typeof shape === 'object' ? (shape as Record<string, unknown>) : {};
+}
+
+function isOptional(schema: unknown): boolean {
+  return zodDef(schema).type === 'optional';
+}
+
+function isZodStrictObject(schema: unknown): boolean {
+  const def = zodDef(unwrapZod(schema));
+  return zodDef(def.catchall).type === 'never';
+}
+
+function zodChecks(schema: unknown): Record<string, unknown>[] {
+  const checks = zodDef(unwrapZod(schema)).checks;
+  return Array.isArray(checks) ? (checks as Record<string, unknown>[]) : [];
+}
+
+function zodEnumValues(schema: unknown): string[] {
+  const entries = zodDef(unwrapZod(schema)).entries;
+  if (!entries || typeof entries !== 'object') return [];
+  return Object.values(entries as Record<string, unknown>).map((value) => String(value));
+}
+
+function zodLiteralValues(schema: unknown): string[] {
+  const values = zodDef(unwrapZod(schema)).values;
+  if (Array.isArray(values)) return values.map((value) => String(value));
+  if (values instanceof Set) return [...values].map((value) => String(value));
+  return [];
+}
+
+function zodUnionOptions(schema: unknown): unknown[] {
+  const options = zodDef(unwrapZod(schema)).options;
+  return Array.isArray(options) ? options : [];
+}
+
+function discriminatorKey(schema: unknown): string | null {
+  const def = zodDef(unwrapZod(schema));
+  if (def.type !== 'object') return null;
+  const shape = zodShape(schema);
+  const kindSchema = shape.kind;
+  if (kindSchema === undefined) return null;
+  const values = zodLiteralValues(kindSchema);
+  return values.length === 1 ? values[0]! : null;
+}
+
+interface NumericBounds {
+  minimum?: number;
+  maximum?: number;
+}
+
+function zodNumericBounds(schema: unknown): NumericBounds {
+  const bounds: NumericBounds = {};
+  for (const check of zodChecks(schema)) {
+    const def = zodDef(check);
+    if (def.check === 'greater_than' && typeof def.value === 'number') {
+      // Exclusive bounds are converted to the integer minimum they admit.
+      const candidate = def.inclusive === false ? def.value + 1 : def.value;
+      bounds.minimum =
+        bounds.minimum === undefined ? candidate : Math.max(bounds.minimum, candidate);
+    }
+    if (def.check === 'less_than' && typeof def.value === 'number') {
+      const candidate = def.inclusive === false ? def.value - 1 : def.value;
+      bounds.maximum =
+        bounds.maximum === undefined ? candidate : Math.min(bounds.maximum, candidate);
+    }
+  }
+  return bounds;
+}
+
+interface StringContract {
+  minLength?: number;
+  maxLength?: number;
+  format?: string;
+  pattern?: string;
+}
+
+function zodStringContract(schema: unknown): StringContract {
+  const contract: StringContract = {};
+  for (const check of zodChecks(schema)) {
+    const def = zodDef(check);
+    if (def.check === 'min_length' && typeof def.minimum === 'number') {
+      contract.minLength = def.minimum;
+    }
+    if (def.check === 'max_length' && typeof def.maximum === 'number') {
+      contract.maxLength = def.maximum;
+    }
+    if (def.check === 'string_format') {
+      if (typeof def.format === 'string') contract.format = def.format;
+      if (def.pattern instanceof RegExp) contract.pattern = def.pattern.source;
+    }
+  }
+  return contract;
+}
+
+function zodArrayMinItems(schema: unknown): number | undefined {
+  for (const check of zodChecks(schema)) {
+    const def = zodDef(check);
+    if (def.check === 'min_length' && typeof def.minimum === 'number') return def.minimum;
+  }
+  return undefined;
+}
+
+function isJsonObject(node: JsonSchemaNode): boolean {
+  return node.type === 'object' || node.properties !== undefined;
+}
+
+/** Unwrap the single-variant `oneOf` used as a named reuse wrapper. */
+function unwrapSingletonOneOf(node: JsonSchemaNode): JsonSchemaNode {
+  if (node.oneOf && node.oneOf.length === 1 && node.type === undefined) return node.oneOf[0]!;
+  return node;
+}
+
+// ─── Structural parity walker ────────────────────────────────────────────────
+
+interface ContractPair {
+  readonly path: string;
+  readonly zod: unknown;
+  readonly json: JsonSchemaNode;
+}
+
+function walkContractPairs(
+  rootZod: unknown,
+  rootJson: JsonSchemaNode,
+  visit: (pair: ContractPair) => void,
+  violations: string[],
+): void {
+  const recurse = (zodSchema: unknown, jsonNode: JsonSchemaNode, path: string): void => {
+    const node = unwrapSingletonOneOf(jsonNode);
+    const zod = unwrapZod(zodSchema);
+
+    visit({ path, zod, json: node });
+    const kind = zodKind(zod);
+
+    if (kind === 'object') {
+      const shape = zodShape(zod);
+      for (const key of Object.keys(shape)) {
+        const child = node.properties?.[key];
+        if (!child) continue; // property-set drift is reported by its own check
+        recurse(shape[key], child, `${path}.${key}`);
+      }
+      return;
+    }
+
+    if (kind === 'array') {
+      const element = zodDef(zod).element;
+      if (!node.items) {
+        violations.push(`${path}: SDK array schema is missing items`);
+        return;
+      }
+      recurse(element, node.items, `${path}[]`);
+      return;
+    }
+
+    if (kind === 'union') {
+      const options = zodUnionOptions(zod);
+      const jsonVariants = [...(node.oneOf ?? [])];
+      if (jsonVariants.length === 0) {
+        violations.push(`${path}: SDK schema is missing oneOf for the canonical union`);
+        return;
+      }
+      const jsonByKind = new Map<string, JsonSchemaNode>();
+      for (const variant of jsonVariants) {
+        const kindValue = variant.properties?.kind?.const;
+        if (kindValue === undefined) {
+          violations.push(`${path}: SDK union variant has no discriminator "kind" const`);
+          continue;
+        }
+        jsonByKind.set(kindValue, variant);
+      }
+      for (const option of options) {
+        const key = discriminatorKey(option);
+        if (key === null) {
+          violations.push(`${path}: canonical union variant has no "kind" discriminator`);
+          continue;
+        }
+        const jsonVariant = jsonByKind.get(key);
+        if (!jsonVariant) {
+          violations.push(`${path}: SDK schema is missing the canonical "${key}" variant`);
+          continue;
+        }
+        jsonByKind.delete(key);
+        recurse(option, jsonVariant, `${path}<${key}>`);
+      }
+      for (const extra of jsonByKind.keys()) {
+        violations.push(`${path}: SDK schema has the non-canonical "${extra}" variant`);
+      }
+      return;
+    }
+
+    if (kind !== 'enum' && kind !== 'literal' && kind !== 'string' && kind !== 'integer') {
+      violations.push(`${path}: unsupported canonical node type "${kind}"`);
+    }
+  };
+
+  recurse(rootZod, rootJson, 'root');
+}
+
+/** Run the walker with one focused visitor and return the collected failures. */
+function parityViolations(visit: (pair: ContractPair) => void): string[] {
+  const violations: string[] = [];
+  walkContractPairs(ReviewerFindingsInput, JSON_SCHEMA_ROOT, visit, violations);
+  return violations;
+}
+
+// ─── Structural parity: full contract, not spot checks ───────────────────────
+
+describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ ReviewerFindingsInput structural parity', () => {
+  it('required and optional property sets match at every object boundary', () => {
+    const violations = parityViolations(({ path, zod, json }) => {
+      if (zodKind(zod) !== 'object') return;
+      const shape = zodShape(zod);
+      const zodKeys = Object.keys(shape);
+      const jsonProperties = json.properties ?? {};
+      const jsonKeys = Object.keys(jsonProperties);
+
+      for (const key of jsonKeys) {
+        if (!(key in shape)) {
+          violations.push(`${path}: SDK property "${key}" is not in the canonical contract`);
+        }
+      }
+      for (const key of zodKeys) {
+        if (key in jsonProperties) continue;
+        if (!HOST_MINTED_OPTIONAL_FIELDS.has(key)) {
+          violations.push(`${path}: canonical property "${key}" is missing from the SDK schema`);
+        } else if (!isOptional(shape[key])) {
+          violations.push(
+            `${path}: omitted host-minted field "${key}" must be optional in the canonical contract`,
+          );
+        }
+      }
+
+      const zodRequired = zodKeys.filter((key) => !isOptional(shape[key])).sort();
+      const jsonRequired = [...(json.required ?? [])].sort();
+      if (zodRequired.join('|') !== jsonRequired.join('|')) {
+        violations.push(
+          `${path}: required set drift: SDK [${jsonRequired.join(', ')}] vs canonical [${zodRequired.join(', ')}]`,
+        );
+      }
+    });
+    expect(violations).toEqual([]);
   });
 
-  it('GOOD: every ReviewerFindingsInput property is a JSON-Schema property', () => {
-    const jsonProps = Object.keys(jsonSchemaProperties());
-    const zodProps = zodTopLevelKeys();
-    const missing = zodProps.filter((p) => !jsonProps.includes(p));
-    expect(missing).toEqual([]);
+  it('every object boundary rejects unknown properties on both sides', () => {
+    const violations = parityViolations(({ path, zod, json }) => {
+      if (!isJsonObject(json)) return;
+      if (json.additionalProperties !== false) {
+        violations.push(`${path}: SDK object must set additionalProperties: false`);
+      }
+      if (zodKind(zod) !== 'object') {
+        violations.push(`${path}: canonical node is not an object`);
+        return;
+      }
+      if (!isZodStrictObject(zod)) {
+        violations.push(`${path}: canonical object must be strict`);
+      }
+    });
+    expect(violations).toEqual([]);
   });
 
+  it('every enum set matches the canonical contract (const is a documented narrowing)', () => {
+    const violations = parityViolations(({ path, zod, json }) => {
+      const kind = zodKind(zod);
+      if (kind === 'enum') {
+        const canonical = zodEnumValues(zod);
+        if (json.const !== undefined) {
+          if (!canonical.includes(json.const)) {
+            violations.push(`${path}: SDK const "${json.const}" is not a canonical enum value`);
+          }
+          return;
+        }
+        const sdk = [...(json.enum ?? [])];
+        if (sdk.length === 0) {
+          violations.push(`${path}: SDK enum is missing`);
+          return;
+        }
+        if ([...sdk].sort().join('|') !== [...canonical].sort().join('|')) {
+          violations.push(
+            `${path}: enum drift: SDK [${sdk.join(', ')}] vs canonical [${canonical.join(', ')}]`,
+          );
+        }
+        return;
+      }
+      if (kind === 'literal') {
+        const canonical = zodLiteralValues(zod);
+        if (json.const === undefined || !canonical.includes(json.const)) {
+          violations.push(
+            `${path}: SDK const "${json.const ?? '<missing>'}" is not the canonical literal "${canonical.join('|')}"`,
+          );
+        }
+      }
+    });
+    expect(violations).toEqual([]);
+  });
+
+  it('union/oneOf variants cover every canonical discriminator variant', () => {
+    const unionPaths: string[] = [];
+    const violations = parityViolations(({ path, zod }) => {
+      if (zodKind(zod) === 'union') unionPaths.push(path);
+    });
+    expect(violations).toEqual([]);
+    expect(unionPaths).toEqual(
+      expect.arrayContaining([
+        'root.blockingIssues[].relation.subjectAnchors[]',
+        'root.challenges[]',
+        'root.challenges[]<implementation_challenge>.evidenceRefs[]',
+      ]),
+    );
+  });
+
+  it('integer minimums and maximums match the canonical constraints', () => {
+    const integerPaths: string[] = [];
+    const violations = parityViolations(({ path, zod, json }) => {
+      if (zodKind(zod) !== 'integer') return;
+      integerPaths.push(path);
+      if (json.type !== 'integer') {
+        violations.push(`${path}: SDK type must be integer, got "${json.type ?? '<missing>'}"`);
+        return;
+      }
+      const bounds = zodNumericBounds(zod);
+      if ((bounds.minimum ?? null) !== (json.minimum ?? null)) {
+        violations.push(
+          `${path}: minimum drift: SDK ${json.minimum ?? '<unbounded>'} vs canonical ${bounds.minimum ?? '<unbounded>'}`,
+        );
+      }
+      if ((bounds.maximum ?? null) !== (json.maximum ?? null)) {
+        violations.push(
+          `${path}: maximum drift: SDK ${json.maximum ?? '<unbounded>'} vs canonical ${bounds.maximum ?? '<unbounded>'}`,
+        );
+      }
+    });
+    expect(violations).toEqual([]);
+    expect(integerPaths).toEqual(
+      expect.arrayContaining([
+        'root.iteration',
+        'root.planVersion',
+        'root.blockingIssues[].relation.subjectAnchors[]<artifact_section>.sectionPath[].headingDepth',
+        'root.blockingIssues[].relation.subjectAnchors[]<content>.range.startLine',
+      ]),
+    );
+  });
+
+  it('string length, pattern, and UUID constraints match the canonical contract', () => {
+    const violations = parityViolations(({ path, zod, json }) => {
+      if (zodKind(zod) !== 'string') return;
+      if (json.type !== 'string') {
+        violations.push(`${path}: SDK type must be string, got "${json.type ?? '<missing>'}"`);
+        return;
+      }
+      const contract = zodStringContract(zod);
+      if (contract.minLength !== undefined && (json.minLength ?? 0) < contract.minLength) {
+        violations.push(
+          `${path}: SDK minLength ${json.minLength ?? 0} is weaker than canonical minimum ${contract.minLength}`,
+        );
+      }
+      if (
+        contract.maxLength !== undefined &&
+        (json.maxLength === undefined || json.maxLength > contract.maxLength)
+      ) {
+        violations.push(
+          `${path}: SDK maxLength ${json.maxLength ?? '<missing>'} exceeds canonical maximum ${contract.maxLength}`,
+        );
+      }
+      if (contract.format === 'uuid') {
+        if (json.pattern !== UUID_PATTERN) {
+          violations.push(
+            `${path}: SDK must carry the canonical RFC 4122 UUID pattern for z.string().uuid()`,
+          );
+        }
+      } else if (contract.pattern !== undefined && json.pattern !== contract.pattern) {
+        violations.push(
+          `${path}: SDK pattern "${json.pattern ?? '<missing>'}" must equal canonical pattern "${contract.pattern}"`,
+        );
+      }
+    });
+    expect(violations).toEqual([]);
+  });
+
+  it('array item schemas and minimum lengths match the canonical contract', () => {
+    const violations = parityViolations(({ path, zod, json }) => {
+      if (zodKind(zod) !== 'array') return;
+      if (json.type !== 'array') {
+        violations.push(`${path}: SDK type must be array, got "${json.type ?? '<missing>'}"`);
+        return;
+      }
+      const canonicalMin = zodArrayMinItems(zod);
+      if ((canonicalMin ?? null) !== (json.minItems ?? null)) {
+        violations.push(
+          `${path}: minItems drift: SDK ${json.minItems ?? '<unbounded>'} vs canonical ${canonicalMin ?? '<unbounded>'}`,
+        );
+      }
+    });
+    expect(violations).toEqual([]);
+  });
+});
+
+// ─── Documented contract boundaries ──────────────────────────────────────────
+
+function minimalSdkPayload() {
+  return {
+    iteration: 1,
+    planVersion: 1,
+    reviewMode: 'subagent' as const,
+    overallVerdict: 'accept' as const,
+    blockingIssues: [],
+    majorRisks: [],
+    missingVerification: [],
+    scopeCreep: [],
+    unknowns: [],
+    challenges: [],
+    attestation: {
+      toolObligationId: '00000000-0000-4000-8000-000000000000',
+    },
+  };
+}
+
+describe('documented contract boundaries', () => {
   it('CONTRACT: host-owned provenance is absent from the reviewer input schema', () => {
-    const jsonProps = Object.keys(jsonSchemaProperties());
+    const jsonProps = Object.keys(JSON_SCHEMA_ROOT.properties ?? {});
     expect(jsonProps).not.toHaveProperty('reviewedBy');
     expect(jsonProps).not.toHaveProperty('reviewedAt');
   });
 
-  it('CONTRACT: every nested object boundary rejects unknown keys', () => {
-    const props = jsonSchemaProperties();
-    const finding = props.blockingIssues!.items!;
-    const relation = finding.properties!.relation!;
-    const anchorItems = relation.properties!.subjectAnchors!.items!;
-    const location = (relation.properties!.evidenceLocations!.items!.oneOf ?? [])[0]!;
-    const challenge = props.challenges!.items!.oneOf![0]!;
-    const evidenceRef = challenge.properties!.evidenceRefs!.items!;
-
-    expect(finding.additionalProperties).toBe(false);
-    expect(relation.additionalProperties).toBe(false);
-    expect(location.additionalProperties).toBe(false);
-    expect(anchorItems.oneOf?.every((item) => item.additionalProperties === false)).toBe(true);
-    expect(challenge.additionalProperties).toBe(false);
-    expect(evidenceRef.additionalProperties).toBe(false);
-    expect(props.attestation!.additionalProperties).toBe(false);
-  });
-
-  it('GOOD: overallVerdict enum matches LoopVerdict (accept | changes_requested | unable_to_review)', () => {
-    const props = jsonSchemaProperties();
-    const verdict = props.overallVerdict as JsonSchemaProperty;
-    expect(verdict.enum).toEqual(['accept', 'changes_requested', 'unable_to_review']);
-  });
-
-  it('GOOD: reviewMode is locked to const "subagent"', () => {
-    const props = jsonSchemaProperties();
-    const mode = props.reviewMode as JsonSchemaProperty;
-    expect(mode.const).toBe('subagent');
-  });
-
-  it('GOOD: blockingIssues and majorRisks share the Finding shape (same enums)', () => {
-    const props = jsonSchemaProperties();
-    const blocking = props.blockingIssues as JsonSchemaProperty;
-    const major = props.majorRisks as JsonSchemaProperty;
-    expect(blocking.items?.properties?.severity?.enum?.sort()).toEqual([
-      'critical',
-      'major',
-      'minor',
-    ]);
-    expect(major.items?.properties?.severity?.enum?.sort()).toEqual(['critical', 'major', 'minor']);
-    expect(blocking.items?.properties?.category?.enum?.sort()).toEqual([
-      'completeness',
-      'correctness',
-      'feasibility',
-      'quality',
-      'risk',
-    ]);
-    expect(major.items?.properties?.category?.enum?.sort()).toEqual([
-      'completeness',
-      'correctness',
-      'feasibility',
-      'quality',
-      'risk',
-    ]);
-  });
-
-  it('GOOD: subject anchor oneOf includes all three canonical discriminator variants', () => {
-    // The canonical ReviewSubjectAnchor has three variants:
-    // repository_location, artifact_section, content.
-    // The JSON schema must present all three so the model is not forced to
-    // guess an unsupported variant.
-    const anchorKinds = collectSubjectAnchorKinds();
-    expect(anchorKinds.sort()).toEqual(
-      ['artifact_section', 'content', 'implementation', 'repository_location'].sort(),
-    );
-  });
-
-  it('GOOD: evidenceLocations path type is string, revision enum is base|head', () => {
-    // The JSON schema must not accept revision values like "current" or
-    // "modified" that the Zod schema rejects.
-    const items = jsonSchemaProperties().blockingIssues as unknown as JsonSchemaProperty;
-    const findingItems = items?.items as JsonSchemaProperty | undefined;
-    const relation = findingItems?.properties?.relation as JsonSchemaProperty | undefined;
-    const evLoc = relation?.properties?.evidenceLocations as JsonSchemaProperty | undefined;
-    const evItems = evLoc?.items as JsonSchemaProperty | undefined;
-    // REPOSITORY_LOCATION_JSON_SCHEMA wraps in oneOf
-    const evOneOf = evItems?.oneOf as JsonSchemaProperty[] | undefined;
-    const locationSchema = evOneOf?.[0] ?? evItems;
-    const revision = locationSchema?.properties?.revision as JsonSchemaProperty | undefined;
-    expect(revision?.enum?.sort()).toEqual(['base', 'head']);
-  });
-
   it('CONTRACT: findings require structured relations and reject legacy locations', () => {
-    const props = jsonSchemaProperties();
     for (const key of ['blockingIssues', 'majorRisks'] as const) {
-      const finding = props[key]!.items!;
+      const finding = JSON_SCHEMA_ROOT.properties![key]!.items!;
       expect(finding.properties?.relation).toBeDefined();
       expect(finding.required).toContain('relation');
       expect(finding.properties?.location).toBeUndefined();
     }
   });
 
-  it('GOOD: attestation.toolObligationId enforces UUID pattern (matches z.string().uuid())', () => {
-    // Drift guard: Zod ReviewAttestation.toolObligationId is z.string().uuid().
-    // Pre-fix the JSON-Schema only required `type: string`, so the SDK could
-    // produce non-UUID strings that the Zod parser would reject downstream.
-    // The JSON-Schema now declares an explicit RFC 4122 pattern.
-    const props = jsonSchemaProperties();
-    const attestation = props.attestation as JsonSchemaProperty;
-    const obligationId = attestation.properties?.toolObligationId as JsonSchemaProperty & {
-      pattern?: string;
-    };
-    expect(obligationId.pattern).toBeDefined();
-    expect(obligationId.pattern).toMatch(/\[0-9a-fA-F\]\{8\}/);
-
-    // Sanity: pattern accepts a valid UUID and rejects a freeform string.
-    const re = new RegExp(obligationId.pattern!);
-    expect(re.test('00000000-0000-4000-8000-000000000000')).toBe(true);
-    expect(re.test('obl_test')).toBe(false);
-  });
-
-  it('GOOD: attestation block requires only reviewer-owned obligation binding', () => {
-    // Host-owned attestation fields are stamped after the reviewer input
-    // validates; structured output may carry only the obligation binding.
-    const props = jsonSchemaProperties();
-    const attestation = props.attestation as JsonSchemaProperty;
+  it('CONTRACT: attestation requires only the reviewer-owned obligation binding', () => {
+    const attestation = JSON_SCHEMA_ROOT.properties!.attestation!;
     expect(attestation.required).toEqual(['toolObligationId']);
   });
 
-  it('CONTRACT: attestation is required at the top level of JSON-Schema', () => {
-    // Documented intentional drift: Zod ReviewFindings has attestation.optional()
-    // because the self-review path stores findings without attestation (the
-    // attestation block is meaningful only for subagent-produced findings).
-    // The JSON-Schema is sent ONLY to the subagent, so attestation is always
-    // expected and is therefore required at the top level. validateStrictAttestation()
-    // re-checks this at runtime as a defense-in-depth guard.
-    const required = jsonSchemaRequired();
-    expect(required).toContain('attestation');
+  it('CONTRACT: attestation is required at the top level of the SDK schema and the review input', () => {
+    expect(JSON_SCHEMA_ROOT.required).toContain('attestation');
+    const { attestation: _omitted, ...withoutAttestation } = minimalSdkPayload();
+    expect(ReviewerFindingsInput.safeParse(withoutAttestation).success).toBe(false);
   });
 
-  it('CONTRACT: challenges are available to the SDK but remain optional for legacy findings', () => {
-    const props = jsonSchemaProperties();
-    expect(props.challenges).toBeDefined();
-    expect(jsonSchemaRequired()).not.toContain('challenges');
-  });
-
-  it('GOOD: challenge oneOf includes all three canonical discriminator variants', () => {
-    // The canonical ReviewChallenge has design_challenge, implementation_challenge,
-    // content_challenge. The JSON schema must present all three.
-    const props = jsonSchemaProperties();
-    const challenges = props.challenges as JsonSchemaProperty;
-    const oneOf = challenges?.items?.oneOf as JsonSchemaProperty[] | undefined;
-    expect(oneOf).toBeDefined();
-    expect(oneOf!.length).toBeGreaterThanOrEqual(3);
-    const kinds = oneOf!
-      .map((v) => v.properties?.kind?.const)
-      .filter((k): k is string => typeof k === 'string');
-    expect(kinds.sort()).toEqual(
-      ['content_challenge', 'design_challenge', 'implementation_challenge'].sort(),
-    );
+  it('CONTRACT: challenges are required at the top level of the SDK schema and the review input', () => {
+    expect(JSON_SCHEMA_ROOT.properties!.challenges).toBeDefined();
+    expect(JSON_SCHEMA_ROOT.required).toContain('challenges');
+    const { challenges: _omitted, ...withoutChallenges } = minimalSdkPayload();
+    expect(ReviewerFindingsInput.safeParse(withoutChallenges).success).toBe(false);
   });
 
   it('CONTRACT: SDK challenges use reviewer input identity, not host-minted identity', () => {
-    const props = jsonSchemaProperties();
-    const challenges = props.challenges as JsonSchemaProperty;
-    const variants = challenges.items!.oneOf!;
-
+    const variants = JSON_SCHEMA_ROOT.properties!.challenges!.items!.oneOf!;
     for (const variant of variants) {
       expect(variant.properties).toHaveProperty('clientReference');
       expect(variant.properties).not.toHaveProperty('challengeId');
@@ -276,71 +558,23 @@ describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ ReviewerFindingsInput drift guard', ()
     }
   });
 
-  it('GOOD: challenge outcome enums match canonical per-type values', () => {
-    // design_challenge and content_challenge: supported, contradicted, not_verified
-    // implementation_challenge: pass, fail, not_verified
-    const props = jsonSchemaProperties();
-    const challenges = props.challenges as JsonSchemaProperty;
-    const oneOf = challenges?.items?.oneOf as JsonSchemaProperty[] | undefined;
-    expect(oneOf).toBeDefined();
-
-    for (const variant of oneOf!) {
-      const kind = variant.properties?.kind?.const as string | undefined;
-      const outcome = variant.properties?.outcome?.enum as string[] | undefined;
-      if (kind === 'implementation_challenge') {
-        expect(outcome?.sort()).toEqual(['fail', 'not_verified', 'pass']);
-      } else if (kind === 'design_challenge' || kind === 'content_challenge') {
-        expect(outcome?.sort()).toEqual(['contradicted', 'not_verified', 'supported']);
-      }
-    }
+  it('CONTRACT: reviewMode is locked to const "subagent" for the reviewer transport', () => {
+    expect(JSON_SCHEMA_ROOT.properties!.reviewMode!.const).toBe('subagent');
   });
 
-  it('GOOD: round-trip — a minimal valid SDK output passes both JSON-Schema and Zod', () => {
-    // Construct a payload that satisfies the JSON-Schema, then run it through
-    // the Zod parser. This catches drift where one schema accepts shapes the
-    // other rejects.
-    const payload = {
-      iteration: 1,
-      planVersion: 1,
-      reviewMode: 'subagent' as const,
-      overallVerdict: 'accept' as const,
-      blockingIssues: [],
-      majorRisks: [],
-      missingVerification: [],
-      scopeCreep: [],
-      unknowns: [],
-      attestation: {
-        toolObligationId: '00000000-0000-4000-8000-000000000000',
-      },
-    };
-    const result = ReviewerFindingsInput.safeParse(payload);
-    expect(result.success).toBe(true);
+  it('GOOD: round-trip — a minimal valid SDK output passes both surfaces', () => {
+    const payload = minimalSdkPayload();
+    expect(ReviewerFindingsInput.safeParse(payload).success).toBe(true);
   });
 
   it('GOOD: host-stamped canonical findings pass ReviewFindings after input validation', () => {
-    // Regression guard: pre-fix, JSON-Schema enum lacked 'verified' but Zod
-    // accepted it. SDK structured-output would reject; Zod would accept.
-    const payload = {
-      iteration: 1,
-      planVersion: 1,
-      reviewMode: 'subagent' as const,
-      overallVerdict: 'accept' as const,
-      blockingIssues: [],
-      majorRisks: [],
-      missingVerification: [],
-      scopeCreep: [],
-      unknowns: [],
-      attestation: {
-        toolObligationId: '00000000-0000-4000-8000-000000000000',
-      },
-    };
-    const result = ReviewerFindingsInput.safeParse(payload);
-    expect(result.success).toBe(true);
+    const payload = minimalSdkPayload();
+    expect(ReviewerFindingsInput.safeParse(payload).success).toBe(true);
 
     expect(
       ReviewFindings.safeParse({
         ...payload,
-        reviewedBy: { sessionId: 'sess_abc123', actorAssurance: 'verified' },
+        reviewedBy: { sessionId: 'sess_abc123', actorAssurance: 'idp_verified' },
         reviewedAt: new Date().toISOString(),
         attestation: {
           toolObligationId: payload.attestation.toolObligationId,
@@ -354,32 +588,14 @@ describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ ReviewerFindingsInput drift guard', ()
     ).toBe(true);
   });
 
-  it('GOOD: round-trip with overallVerdict=unable_to_review — passes both schemas (P1.3 third-verdict)', () => {
-    // Regression guard for P1.3: ensure the new third LoopVerdict value
-    // round-trips through both the JSON-Schema (SDK structured output) and
-    // the Zod ReviewFindings parser. Drift here would mean the reviewer
-    // subagent could emit unable_to_review but the runtime would reject it
-    // (or vice versa), defeating the BLOCKED-routing in slice 4.
+  it('GOOD: round-trip with overallVerdict=unable_to_review passes both surfaces', () => {
     const payload = {
-      iteration: 1,
-      planVersion: 1,
-      reviewMode: 'subagent' as const,
+      ...minimalSdkPayload(),
       overallVerdict: 'unable_to_review' as const,
-      blockingIssues: [],
-      majorRisks: [],
       missingVerification: ['plan text malformed at line 42'],
-      scopeCreep: [],
       unknowns: ['cannot parse the proposed schema diff'],
-      attestation: {
-        toolObligationId: '00000000-0000-4000-8000-000000000000',
-      },
     };
-    const result = ReviewerFindingsInput.safeParse(payload);
-    expect(result.success).toBe(true);
-
-    // Also assert the JSON-Schema enum admits the value.
-    const props = jsonSchemaProperties();
-    const verdict = props.overallVerdict as JsonSchemaProperty;
-    expect(verdict.enum).toContain('unable_to_review');
+    expect(ReviewerFindingsInput.safeParse(payload).success).toBe(true);
+    expect(JSON_SCHEMA_ROOT.properties!.overallVerdict!.enum).toContain('unable_to_review');
   });
 });

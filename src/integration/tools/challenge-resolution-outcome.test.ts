@@ -72,6 +72,7 @@ function reviewFindings(overrides: Record<string, unknown>) {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: 'reviewer-0' },
     reviewedAt: '2026-07-26T00:00:00.000Z',
     ...overrides,

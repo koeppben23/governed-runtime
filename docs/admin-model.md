@@ -86,7 +86,7 @@ FlowGuard supports two roles within a session:
 - CLI commands for session control
 - `/hydrate`, `/ticket`, `/plan`, etc.
 - `/archive` for session export
-- `/review` for compliance reporting
+- `/review` for peer review reporting
 
 ### Installation Management
 

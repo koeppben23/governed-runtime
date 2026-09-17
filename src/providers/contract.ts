@@ -10,7 +10,11 @@
  */
 
 import type { ProviderId, ReportFormatId } from '../state/assertion-identity.js';
-import type { VerificationCandidateKind, AssertionReportSpec } from '../state/discovery-schemas.js';
+import type {
+  VerificationCandidateKind,
+  UnidentifiedVerificationCandidate,
+  AssertionReportSpec,
+} from '../state/discovery-schemas.js';
 import type { VerificationCandidate } from '../state/discovery-schemas.js';
 import type { ExecutionSubjectInput } from '../state/discovery-schemas.js';
 
@@ -93,8 +97,8 @@ export interface ExecutionProfile {
    */
   readonly assertionReport: AssertionReportSpec;
 
-  /** Discovery-gated candidate with repo evidence, or null when not applicable. */
-  createCandidate(ctx: PlannerContext): VerificationCandidate | null;
+  /** Discovery-gated identity-free candidate with repo evidence, or null when not applicable. */
+  createCandidate(ctx: PlannerContext): UnidentifiedVerificationCandidate | null;
 
   /** Explicitly attest only commands known to execute this profile's full check scope. */
   attestFullCheckScope?(command: string): boolean;

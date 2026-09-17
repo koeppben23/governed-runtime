@@ -4,8 +4,8 @@
  *
  * Builds the Review Report Card as a typed PresentationDocument rendered
  * through the shared Markdown renderer (renderMarkdown). Presents standalone
- * /review findings with the completeness matrix and audit evidence. Called
- * when /review completes (phase REVIEW_COMPLETE).
+ * /review findings with explicit target coverage and audit evidence. Called
+ * when /review completes (phase PEER_REVIEW_COMPLETE).
  *
  * This is a pure function — no state dependency, no side effects.
  * All fields are derived from the ReviewReport and State already available
@@ -15,8 +15,9 @@
  */
 
 import type { Phase } from '../state/schema.js';
-import type { ReviewReportFinding } from '../state/evidence.js';
+import type { PeerReviewCoverage, ReviewReportFinding } from '../state/evidence.js';
 import type { FrozenReviewSubject } from '../state/evidence.js';
+import type { ReviewInvocationEvidence } from '../state/evidence-review-invocation.js';
 import type {
   ReviewCardDocument,
   PresentationSection,
@@ -25,6 +26,8 @@ import type {
   FindingItem,
 } from './model.js';
 import { projectFindingRelation } from './finding-relation.js';
+import { directiveLabel } from './directive-copy.js';
+import type { DirectiveProjection } from './review-decision.js';
 import { renderMarkdown } from './markdown.js';
 import type { PresentationRenderOptions } from './glyph-profile.js';
 import type { CompactProofPresentation } from './proof-model.js';
@@ -33,44 +36,47 @@ import { buildProofGraphSection } from './proof-summary.js';
 // ─── Card Input ──────────────────────────────────────────────────────────────
 
 export interface ReviewReportCardInput {
-  /** Current workflow phase (expected: REVIEW_COMPLETE). */
+  /** Current workflow phase (expected: PEER_REVIEW_COMPLETE). */
   phase: Phase;
   /** Human-readable phase label (from PHASE_LABELS). */
   phaseLabel: string;
-  /** Derived from report.completeness.overallComplete. */
+  /** Derived from report.overallStatus. */
   overallStatus: 'clean' | 'warnings' | 'issues';
   /** Review findings from the report. */
   findings: ReviewReportFinding[];
-  /** Completeness summary. */
-  completeness: {
-    overallComplete: boolean;
-    fourEyes: boolean;
-    summary: string;
-    /** Total slots evaluated. 0 means completeness was not assessed for any slots. */
-    total: number;
-  };
+  /** Explicit target coverage persisted with the peer review report. */
+  coverage: PeerReviewCoverage;
   /** Host-validated immutable identity of the reviewed content. */
   reviewSubject?: FrozenReviewSubject;
   /** Obligation UUID — present when content-aware review was performed. */
   obligationId?: string;
-  /** Evidence source: host-orchestrated or agent-submitted-attested. */
-  invocationSource?: string;
-  /** How the reviewer was invoked: host_subagent_task, sdk_session_prompt, manual_attested, or native_subagent_attested. */
-  invocationMode?: string;
+  /** Bound invocation evidence source (always host-orchestrated). */
+  invocationSource?: ReviewInvocationEvidence['source'];
+  /**
+   * How the reviewer was invoked. The only sanctioned transport is a
+   * host-observed SDK session prompt.
+   */
+  invocationMode?: ReviewInvocationEvidence['invocationMode'];
   /** Whether this invocation produced a host-visible child session in the OpenCode GUI. */
   hostVisible?: boolean;
   /** Subagent session ID from invocation evidence. */
   reviewerSessionId?: string;
-  reviewOutputMode?: string;
-  structuredOutputUsed?: boolean;
-  reviewAssuranceLevel?: string;
-  extractionMethod?: string;
+  /** Findings provenance (always host-observed structured model output). */
+  reviewOutputMode?: ReviewInvocationEvidence['reviewOutputMode'];
+  /** Host-observed structured model output was used. */
+  structuredOutputUsed?: ReviewInvocationEvidence['structuredOutputUsed'];
+  /** Output assurance tier for host-observed structured output. */
+  reviewAssuranceLevel?: ReviewInvocationEvidence['reviewAssuranceLevel'];
   /** Mandatory state-derived ProofGraph summary. */
   proofSummary: CompactProofPresentation;
-  /** Canonical next action resolved from the completed state. */
-  productNextAction: { text: string; commands: readonly string[] };
-  /** Pre-computed canonical conclusion action (with intent from installed metadata). */
-  conclusionAction: import('./model.js').PresentationAction;
+  /** Canonical workflow directive projection (code + commands verbatim). */
+  directive: DirectiveProjection;
+  /**
+   * Pre-computed canonical conclusion action (with intent from installed
+   * metadata). Absent when the directive carries no command, e.g. after a
+   * terminal peer review; the card then renders the terminal conclusion.
+   */
+  conclusionAction?: import('./model.js').PresentationAction;
 }
 
 // ─── Severity / Category Projection ─────────────────────────────────────────────
@@ -122,7 +128,7 @@ function categoryLabel(category: string): string {
  * 1. Title (H1)
  * 2. Metadata (status, overall, reviewed subject)
  * 3. Findings grouped by severity (critical > major > issues > warnings > notes)
- * 4. Completeness (4-eyes status + summary)
+ * 4. Target coverage (target, revisions, objectives, assurance)
  * 5. Evidence (obligationId, invocation source, reviewer — when present)
  * 6. Recommended follow-up (orientation, no governance commands)
  *
@@ -136,13 +142,13 @@ export function buildReviewReportCard(
   return renderMarkdown(buildReviewReportDocument(input), options);
 }
 
-/** Build the typed standalone-review document before Markdown rendering. */
+/** Build the typed peer-review document before Markdown rendering. */
 export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewCardDocument {
   const {
     phaseLabel,
     overallStatus,
     findings,
-    completeness,
+    coverage,
     reviewSubject,
     obligationId,
     invocationSource,
@@ -152,7 +158,6 @@ export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewC
     reviewOutputMode,
     structuredOutputUsed,
     reviewAssuranceLevel,
-    extractionMethod,
     proofSummary,
   } = input;
 
@@ -208,25 +213,37 @@ export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewC
     });
   }
 
-  // ── Completeness ───────────────────────────────────────────────────
+  // ── Target coverage ────────────────────────────────────────────────
   sections.push({
     kind: 'keyValue',
-    heading: 'Completeness',
+    heading: 'Target coverage',
     items: [
+      { label: 'Target resolved', value: coverage.targetResolved ? 'yes' : 'no' },
+      { label: 'Target frozen', value: coverage.targetFrozen ? 'yes' : 'no' },
       {
-        label: 'Overall',
+        label: 'Repository identity',
         value:
-          completeness.total === 0
-            ? 'Not assessed'
-            : completeness.overallComplete
-              ? 'Complete'
-              : 'Incomplete',
+          coverage.repositoryIdentityVerified === null
+            ? 'not applicable'
+            : coverage.repositoryIdentityVerified
+              ? 'verified'
+              : 'missing',
       },
+      { label: 'Base SHA', value: coverage.baseSha ?? 'not recorded' },
+      { label: 'Head SHA', value: coverage.headSha ?? 'not recorded' },
+      { label: 'Changed paths', value: String(coverage.changedPathCount) },
       {
-        label: 'Four-eyes principle',
-        value: completeness.fourEyes ? 'Satisfied' : 'Not satisfied / Not recorded',
+        label: 'Objectives covered',
+        value: `${coverage.objectivesCovered}/${coverage.objectivesTotal}`,
       },
-      { label: 'Summary', value: completeness.summary },
+      { label: 'Review assurance', value: coverage.reviewAssurance ?? 'not recorded' },
+      {
+        label: 'Missing verification',
+        value:
+          coverage.missingVerification.length === 0
+            ? 'none'
+            : coverage.missingVerification.join('; '),
+      },
     ],
   });
 
@@ -260,7 +277,6 @@ export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewC
     if (reviewAssuranceLevel) {
       evidence.push({ label: 'Review assurance', value: reviewAssuranceLevel });
     }
-    if (extractionMethod) evidence.push({ label: 'Extraction method', value: extractionMethod });
     sections.push({ kind: 'keyValue', heading: 'Evidence', items: evidence });
   }
 
@@ -287,12 +303,11 @@ export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewC
 
   const document: ReviewCardDocument = {
     kind: 'review_card',
-    form: 'success',
+    form: input.conclusionAction ? 'success' : 'terminal',
     sections,
-    conclusion: {
-      kind: 'next_action',
-      action: input.conclusionAction,
-    },
+    conclusion: input.conclusionAction
+      ? { kind: 'next_action', action: input.conclusionAction }
+      : { kind: 'terminal', message: directiveLabel(input.directive.code) },
   };
 
   return document;

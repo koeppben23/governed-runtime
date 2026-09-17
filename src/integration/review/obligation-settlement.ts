@@ -6,14 +6,15 @@
  * A pending review obligation MUST always have exactly one legal continuation:
  *
  *   - a bindable/executable attempt, OR
- *   - an authorized canonical output repair, OR
  *   - valid evidence awaiting verdict submission (obligation `fulfilled`).
  *
  * When a rejected attempt removes the last legal continuation, the obligation
  * is deterministically blocked instead of staying `pending`. A `pending`
  * obligation with no continuation is an illegal persisted state: it wedges the
- * workflow (no reviewer Task can be dispatched, no repair can be authorized,
- * no verdict can be submitted).
+ * workflow (no reviewer Task can be dispatched, no reissue exists, no verdict
+ * can be submitted). There is deliberately no repairable model-output
+ * rejection: a rejected attempt never authorizes a fresh attempt on the same
+ * obligation.
  *
  * Flow-neutral: `/review`, `/plan`, `/architecture`, and `/implement` all
  * settle through this authority. Workflow-specific recovery of a `blocked`
@@ -22,14 +23,14 @@
  * Frozen-authority integrity failures are NEVER settled here: a broken frozen
  * subject/material binding must not be papered over by blocking the obligation
  * (zero obligation-status mutation, matching the `integrity_blocked` contract
- * of the reissue authority).
+ * of the continuation authority).
  *
- * @version v1
+ * @version v2
  */
 
 import type { SessionState } from '../../state/schema.js';
 import { ensureReviewAssurance, findBindableAttempt } from './assurance.js';
-import { authorizeOutputRepairReissue } from './reissue-authority.js';
+import { verifyFrozenMaterialForObligation } from './frozen-reviewer-context.js';
 import { blockObligation } from './obligation-state.js';
 
 /**
@@ -51,19 +52,13 @@ export function settleReviewObligationAfterAttempt(
   // still be dispatched against it.
   if (findBindableAttempt(assurance, obligationId)) return state;
 
-  const authorization = authorizeOutputRepairReissue(assurance, obligation);
-  if (authorization.kind === 'authorized' || authorization.kind === 'bindable_exists') {
-    // A legal output repair exists (or an attempt is already open).
-    return state;
-  }
-  if (authorization.kind === 'integrity_blocked') {
-    // Broken frozen subject/material binding: refuse with ZERO obligation
-    // status mutation. The rejection persistence itself remains the only
-    // recorded fact.
-    return state;
-  }
+  // Broken frozen subject/material binding: refuse with ZERO obligation
+  // status mutation. The rejection persistence itself remains the only
+  // recorded fact.
+  const material = verifyFrozenMaterialForObligation(obligation, obligation.reviewMaterial);
+  if (material.kind === 'blocked') return state;
 
   // No legal continuation remains: terminate the obligation instead of
   // leaving an impossible `pending` state behind.
-  return blockObligation(state, obligationId, authorization.code);
+  return blockObligation(state, obligationId, 'REVIEW_ATTEMPT_UNAVAILABLE');
 }

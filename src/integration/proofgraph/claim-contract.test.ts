@@ -30,6 +30,7 @@ const BASE = {
   verificationCandidates: [
     {
       assertionCapability: 'unsupported' as const,
+      candidateId: 'vc_build_mvn',
       kind: 'build' as const,
       command: './mvnw verify',
       source: 'repo:mvnw',
@@ -38,6 +39,7 @@ const BASE = {
     },
     {
       assertionCapability: 'structured' as const,
+      candidateId: 'vc_security_mvn',
       kind: 'security' as const,
       command: './mvnw test',
       source: 'repo:mvnw',
@@ -232,6 +234,7 @@ describe('validateProofClaimContract — critical contract', () => {
         BASE.verificationCandidates[0]!,
         {
           assertionCapability: 'structured' as const,
+          candidateId: 'vc_security_pytest_aggregate',
           kind: 'security' as const,
           command: './mvnw test',
           source: 'repo:mvnw',
@@ -306,6 +309,7 @@ describe('validateProofClaimContract — critical contract', () => {
         BASE.verificationCandidates[0]!,
         {
           assertionCapability: 'structured' as const,
+          candidateId: 'vc_security_pytest_filtered',
           kind: 'security' as const,
           command: 'pytest tests/test_api.py',
           source: 'repo:pytest',
@@ -496,6 +500,7 @@ describe('validateProofClaimContract — suite claim satisfiability', () => {
         securityFullCheckCandidate,
         {
           assertionCapability: 'structured' as const,
+          candidateId: 'vc_security_pytest_partial',
           kind: 'security' as const,
           command: 'pytest tests/test_filter.py',
           source: 'repo:pytest',
@@ -731,6 +736,7 @@ describe('buildHeuristicRiskWarning', () => {
 describe('validateProofClaimContract — counterexample satisfiability edges', () => {
   const structuredSecurity = {
     assertionCapability: 'structured' as const,
+    candidateId: 'vc_security_structured',
     kind: 'security' as const,
     command: './mvnw test',
     source: 'repo:mvnw',

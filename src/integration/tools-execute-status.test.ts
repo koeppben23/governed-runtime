@@ -35,9 +35,9 @@ import {
   reportPath,
 } from '../adapters/persistence.js';
 import { writeStateWithArtifacts } from './tools/helpers.js';
-import { evaluateCompleteness } from '../audit/completeness.js';
-import { REVIEW_REPORT_SCHEMA_ID } from '../shared/flowguard-identifiers.js';
-import { computeRecordDigest } from '../state/evidence-plan.js';
+import { REVIEW_REPORT_SCHEMA_ID } from '../state/evidence-identifiers.js';
+import { makePlanRevision } from '../state/evidence-test-constants.js';
+import { completedDispatchForInvocation } from '../state/evidence-test-constants.js';
 import {
   artifactReviewSubjectScope,
   buildInvocationEvidence,
@@ -47,6 +47,7 @@ import {
   REVIEW_MANDATE_DIGEST,
 } from './review/assurance.js';
 import { hashFindings } from './review/findings-hash.js';
+import { hostTaskDispatchPlan } from './tools/review-validation-test-helpers.js';
 import type { ReviewFindings } from '../state/evidence.js';
 // ─── Zod v4 Metadata Regression (P1 review gate) ──────────────────────────────
 describe('tool-schemas-zod-v4', () => {
@@ -124,6 +125,7 @@ vi.mock('../adapters/actor', async (importOriginal) => {
       id: 'test-operator',
       email: 'test@flowguard.dev',
       source: 'env',
+      assurance: 'best_effort',
     }),
   };
 });
@@ -239,7 +241,8 @@ describe('status', () => {
       expect(result.policyMode).toBe('solo');
       expect(result.hasTicket).toBe(false);
       expect(result.evalKind).toBeTruthy();
-      expect(result.next).toBeTruthy();
+      expect(result.directive).toBeTruthy();
+      expect(result.next).toBeUndefined();
     });
 
     it('returns the advisory ProofGraph projection when proofGraph:true', async () => {
@@ -251,7 +254,7 @@ describe('status', () => {
       expect(pg.criticalClaimCount).toBe(0);
       expect(pg.criticalUnprovenCount).toBe(0);
       const projection = pg.projection as Record<string, unknown>;
-      expect(projection.version).toBe('proofgraph.v1');
+      expect(projection.version).toBe('proofgraph.v2');
       expect(projection.claims).toEqual([]);
       expect(result.persistedProofGraph).toEqual({
         coverage: 'NOT_DECLARED',
@@ -285,15 +288,11 @@ describe('status', () => {
       const aborted = parseToolResult(
         await abort_session.execute({ reason: 'Operator stopped the session' }, ctx),
       );
-      expect(aborted.phase).toBe('COMPLETE');
+      expect(aborted.phase).toBe('ABORTED');
 
       const result = parseToolResult(await status.execute({}, ctx));
-      expect(result.phase).toBe('COMPLETE');
-      const productNext = result.productNextAction as Record<string, unknown>;
-      expect(productNext.commands).toEqual(['/status']);
-      expect(productNext.text).toContain('/status');
-      expect(productNext.text).not.toContain('/finish');
-      expect(productNext.text).not.toContain('/export');
+      expect(result.phase).toBe('ABORTED');
+      expect(result.directive).toMatchObject({ kind: 'terminal', code: 'WORKFLOW_ABORTED' });
 
       // /status is read-only and therefore remains executable even though
       // terminal phases correctly reject every FlowGuard machine command.
@@ -333,7 +332,7 @@ describe('status', () => {
       const noSession = parseToolResult(await status.execute({}, ctx));
       expect(noSession.phase).toBeNull();
       expect(noSession.status).toContain('No FlowGuard session');
-      expect(noSession.next).toBe('Run /start to bootstrap a session.');
+      expect(noSession.agentInstruction).toBe('Run /start to bootstrap a session.');
       expect(noSession.flowguardFooter).toMatchObject({
         authority: 'diagnostic-only',
         phase: 'unknown',
@@ -342,8 +341,8 @@ describe('status', () => {
       await hydrateSession();
       const hydrated = parseToolResult(await status.execute({}, ctx));
       expect(hydrated.phase).toBe('READY');
-      expect(hydrated.next).toBeTruthy();
-      expect(hydrated.nextAction).toBeTruthy();
+      expect(hydrated.next).toBeUndefined();
+      expect(hydrated.directive).toBeTruthy();
       expect((hydrated.flowguardFooter as Record<string, unknown>).next).toBeUndefined();
     });
 
@@ -374,8 +373,7 @@ describe('status', () => {
       const ds = result.detectedStack as Record<string, unknown>;
       expect(Array.isArray(ds.items)).toBe(true);
       expect((ds.items as unknown[]).length).toBeGreaterThan(0);
-      expect(Array.isArray(ds.versions)).toBe(true);
-      expect((ds.versions as unknown[]).length).toBe(0);
+      expect(ds).not.toHaveProperty('versions');
     });
 
     it('returns full detectedStack object with summary and versions', async () => {
@@ -394,10 +392,6 @@ describe('status', () => {
             { kind: 'language', id: 'java', version: '21', evidence: 'pom.xml:<java.version>' },
             { kind: 'framework', id: 'spring-boot', version: '3.4.1' },
           ],
-          versions: [
-            { id: 'java', version: '21', target: 'language', evidence: 'pom.xml:<java.version>' },
-            { id: 'spring-boot', version: '3.4.1', target: 'framework' },
-          ],
         },
       });
       const result = parseToolResult(await status.execute({}, ctx));
@@ -407,7 +401,6 @@ describe('status', () => {
       const ds = result.detectedStack as Record<string, unknown>;
       expect(ds.summary).toBe('java=21, spring-boot=3.4.1');
       expect(Array.isArray(ds.items)).toBe(true);
-      expect(Array.isArray(ds.versions)).toBe(true);
 
       const items = ds.items as Array<Record<string, unknown>>;
       expect(items).toHaveLength(2);
@@ -422,21 +415,6 @@ describe('status', () => {
         id: 'spring-boot',
         version: '3.4.1',
       });
-
-      const versions = ds.versions as Array<Record<string, unknown>>;
-      expect(versions).toHaveLength(2);
-      expect(versions[0]).toMatchObject({
-        id: 'java',
-        version: '21',
-        target: 'language',
-        evidence: 'pom.xml:<java.version>',
-      });
-      expect(versions[1]).toMatchObject({
-        id: 'spring-boot',
-        version: '3.4.1',
-        target: 'framework',
-      });
-      expect(versions[1]?.evidence).toBeUndefined();
     });
 
     it('returns verificationCandidates array (empty by default)', async () => {
@@ -504,6 +482,7 @@ describe('status', () => {
         verificationCandidates: [
           {
             assertionCapability: 'unsupported' as const,
+            candidateId: 'vc_test_pnpm',
             kind: 'test',
             command: 'pnpm test',
             source: 'package.json:scripts.test',
@@ -574,6 +553,7 @@ describe('status', () => {
         verificationCandidates: [
           {
             assertionCapability: 'unsupported' as const,
+            candidateId: 'vc_build_mvn',
             kind: 'build',
             command: './mvnw verify',
             source: 'repo:mvnw',
@@ -607,7 +587,7 @@ describe('status', () => {
       expect(result.phase).toBeNull();
       expect(result.finish).toBeUndefined();
       expect(result.status).toContain('No FlowGuard session');
-      expect(result.next).toBe('Run /start to bootstrap a session.');
+      expect(result.agentInstruction).toBe('Run /start to bootstrap a session.');
     });
 
     it('returns a Finish Card projection for an existing session', async () => {
@@ -626,7 +606,7 @@ describe('status', () => {
       expect(finish.readiness).toBeDefined();
       expect(finish.evidence).toBeDefined();
       expect(finish.blocker).toBeDefined();
-      expect(finish.nextAction).toBeDefined();
+      expect(finish.directive).toBeDefined();
       // Non-normative action framing + exit options.
       expect(Array.isArray(finish.actionGuidance)).toBe(true);
       expect(finish.exitOptions).toContain('abandon');
@@ -645,7 +625,7 @@ describe('status', () => {
       expect(Array.isArray(result.activeChecks)).toBe(true);
     });
 
-    it('reports CHANGES_REQUIRED for a completed standalone review with issues', async () => {
+    it('reports CHANGES_REQUIRED for a completed peer review with issues', async () => {
       await hydrateSession();
       const { computeFingerprint, sessionDir: resolveSessionDir } =
         await import('../adapters/workspace/index.js');
@@ -655,7 +635,7 @@ describe('status', () => {
       if (!current) throw new Error('expected hydrated state');
       const reviewState = {
         ...current,
-        phase: 'REVIEW_COMPLETE' as const,
+        phase: 'PEER_REVIEW_COMPLETE' as const,
         reviewReportPath: reportPath(sessDir),
       };
       await writeState(sessDir, reviewState);
@@ -664,7 +644,7 @@ describe('status', () => {
         schemaVersion: REVIEW_REPORT_SCHEMA_ID,
         sessionId: reviewState.id,
         generatedAt: '2026-01-01T00:00:00.000Z',
-        phase: 'REVIEW_COMPLETE',
+        phase: 'PEER_REVIEW_COMPLETE',
         planDigest: null,
         implDigest: null,
         validationSummary: [],
@@ -677,7 +657,18 @@ describe('status', () => {
           },
         ],
         overallStatus: 'issues',
-        completeness: evaluateCompleteness(reviewState),
+        peerReviewCoverage: {
+          targetResolved: false,
+          targetFrozen: false,
+          repositoryIdentityVerified: null,
+          baseSha: null,
+          headSha: null,
+          changedPathCount: 0,
+          objectivesCovered: 0,
+          objectivesTotal: 0,
+          reviewAssurance: null,
+          missingVerification: [],
+        },
       });
 
       const result = parseToolResult(await status.execute({ finish: true }, ctx));
@@ -718,9 +709,10 @@ describe('status', () => {
             version: 'challenge-policy.v1',
             counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
           },
-          maxReviewerOutputRepairAttempts: 1,
+          maxReviewerAttempts: 1,
         },
         obligationType: 'architecture',
+        reviewCycle: 1,
         iteration: 0,
         planVersion: 1,
         now: '2026-01-01T00:00:00.000Z',
@@ -746,6 +738,7 @@ describe('status', () => {
         missingVerification: [],
         scopeCreep: [],
         unknowns: [],
+        challenges: [],
         reviewedBy: { sessionId: 'ses-child' },
         reviewedAt: '2026-01-01T00:00:00.000Z',
         attestation: {
@@ -765,12 +758,11 @@ describe('status', () => {
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           parentSessionId: ctx.sessionID,
           childSessionId: 'ses-child',
-          invocationMode: 'host_subagent_task',
-          hostVisible: true,
-          promptHash: 'sha256-prompt',
+          promptHash: 'a'.repeat(64),
           findingsHash: hashFindings(findings),
           invokedAt: '2026-01-01T00:00:00.000Z',
-          source: 'host-orchestrated',
+          capturedRawFindings: findings,
+          attemptId: '00000000-0000-4000-8000-000000000123',
         }),
         consumedByObligationId: obligation.obligationId,
       };
@@ -789,6 +781,7 @@ describe('status', () => {
         },
         selfReview: {
           iteration: 1,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: 'adr-digest-reviewed',
           currDigest: 'adr-digest-current',
@@ -797,10 +790,33 @@ describe('status', () => {
         },
         reviewAssurance: {
           assuranceSchemaVersion: 'review-assurance.v6' as const,
-          obligations: [{ ...obligation, status: 'consumed' as const }],
+          obligations: [
+            {
+              ...obligation,
+              status: 'consumed' as const,
+              invocationId: invocation.invocationId,
+              fulfilledAt: '2026-01-01T00:00:00.000Z',
+              consumedAt: '2026-01-01T00:00:00.000Z',
+            },
+          ],
           invocations: [invocation],
-          attempts: [],
-          dispatches: [],
+          attempts: [
+            {
+              attemptId: '00000000-0000-4000-8000-000000000123',
+              obligationId: obligation.obligationId,
+              obligationType: 'architecture' as const,
+              subjectDigest: obligation.subjectDigest,
+              ordinal: 1,
+              childSessionId: 'ses-child',
+              status: 'bound' as const,
+              origin: { kind: 'initial' as const },
+              repositoryDiscovery: { kind: 'not_applicable' as const },
+              observations: [] as const,
+              createdAt: '2026-01-01T00:00:00.000Z',
+              completedAt: '2026-01-01T00:00:00.000Z',
+            },
+          ],
+          dispatches: [completedDispatchForInvocation(invocation)],
         },
       };
       await writeState(sessDir, state);
@@ -1175,6 +1191,7 @@ describe('status', () => {
 function makeStructuredSecurityCandidate() {
   return {
     assertionCapability: 'structured' as const,
+    candidateId: 'vc_security_structured',
     kind: 'security' as const,
     command: 'npm run security',
     source: 'test',
@@ -1291,6 +1308,7 @@ describe('declare_contract', () => {
       verificationCandidates: [
         {
           assertionCapability: 'unsupported' as const,
+          candidateId: 'vc_test_impl',
           kind: checkId as 'test',
           command: 'npm test',
           source: 'test',
@@ -1364,6 +1382,7 @@ describe('declare_contract', () => {
         { kind: 'validation_attempt' as const, attemptId: state!.validationAttempts[1]!.attemptId },
       ],
       counterexampleRequirement: {
+        kind: 'assertion' as const,
         checkId: 'security',
         assertion: { providerId: 'junit', localId: 'com.example.SecurityTest#verify' },
       },
@@ -1376,28 +1395,11 @@ describe('declare_contract', () => {
     await writeStateWithArtifacts(sessDir, {
       ...state!,
       plan: {
-        current: {
-          body: 'manual authority plan',
-          digest: 'plan-digest',
-          sections: [],
-          createdAt: NOW,
-          recordDigest: computeRecordDigest({
-            contentDigest: 'plan-digest',
-            planVersion: 1,
-            supersedesRecordDigest: null,
-            originatingReviewObligationId: null,
-            revisionReason: null,
-          }),
-          planVersion: 1,
-          supersedesRecordDigest: null,
-          originatingReviewObligationId: null,
-          revisionReason: null,
-          lineageStatus: 'verified' as const,
-        },
+        current: makePlanRevision({ body: 'manual authority plan', createdAt: NOW }),
         history: [],
         reviewCompletion: 'pending',
       },
-      proofContract: { version: 'contract.v1', claims: [existingClaim] },
+      proofContract: { version: 'contract.v2', claims: [existingClaim] },
       proofContractCoverage: coverage,
     });
 
@@ -1465,7 +1467,7 @@ describe('declare_contract', () => {
     await writeStateWithArtifacts(sessDir, {
       ...state!,
       proofContract: {
-        version: 'contract.v1',
+        version: 'contract.v2',
         claims: [
           {
             claimId,
@@ -1603,6 +1605,7 @@ describe('declare_contract', () => {
         verificationCandidates: [
           {
             assertionCapability: 'unsupported' as const,
+            candidateId: 'vc_test_impl',
             kind: 'test' as const,
             command: 'npm test',
             source: 'test',
@@ -1611,6 +1614,7 @@ describe('declare_contract', () => {
           },
           {
             assertionCapability: 'structured' as const,
+            candidateId: 'vc_security_impl',
             kind: 'security' as const,
             command: 'npm run security',
             source: 'test',
@@ -1864,6 +1868,7 @@ describe('declare_contract', () => {
       verificationCandidates: [
         {
           assertionCapability: 'unsupported' as const,
+          candidateId: 'vc_test_cx',
           kind: 'test' as const,
           command: 'npm test',
           source: 'test',

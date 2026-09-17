@@ -24,7 +24,7 @@
  * | validation              | IMPLEMENTATION         | all checks passed         |
  * | implementation          | IMPL_REVIEW            | state.impl !== null       |
  * | implReview              | EVIDENCE_REVIEW        | state.implReview !== null |
- * | evidenceReviewDecision  | COMPLETE               | COMPLETE + no error       |
+ * | evidenceReviewDecision  | EXPORT_READY           | EXPORT_READY/COMPLETE + no error |
  *
  * Architecture flow:
  * | Slot                    | Required from phase    | How to verify             |
@@ -35,7 +35,7 @@
  *
  * Review flow:
  * No evidence slots required — the review report is a standalone artifact.
- * Completeness is nevertheless false until the flow reaches REVIEW_COMPLETE.
+ * Completeness is nevertheless false until the flow reaches PEER_REVIEW_COMPLETE.
  *
  * @version v2
  */
@@ -46,6 +46,7 @@ import type { ActorIdentityComparison } from '../identity/actor-info.js';
 import { isTerminalPhase } from '../machine/topology.js';
 import { evaluateValidationEvidence } from '../machine/validation-evidence.js';
 import type { SessionState, Phase } from '../state/schema.js';
+import { DecisionIdentity } from '../state/evidence-identity.js';
 
 export const EvidenceSlotStatusSchema = z.object({
   slot: z.string(),
@@ -61,7 +62,7 @@ export const FourEyesStatusSchema = z.object({
   required: z.boolean(),
   satisfied: z.boolean(),
   initiatedBy: z.string(),
-  decidedBy: z.string().nullable(),
+  decisionIdentity: DecisionIdentity.nullable(),
   detail: z.string(),
 });
 
@@ -97,7 +98,7 @@ export interface FourEyesStatus {
   readonly required: boolean;
   readonly satisfied: boolean;
   readonly initiatedBy: string;
-  readonly decidedBy: string | null;
+  readonly decisionIdentity: DecisionIdentity | null;
   readonly detail: string;
 }
 
@@ -129,12 +130,15 @@ const PHASE_ORDER: Readonly<Record<Phase, number>> = {
   IMPL_VALIDATION: 5,
   IMPL_REVIEW: 6,
   EVIDENCE_REVIEW: 7,
-  COMPLETE: 8,
+  EXPORT_READY: 8,
+  COMPLETE: 9,
   ARCHITECTURE: -1,
   ARCH_REVIEW: -1,
   ARCH_COMPLETE: -1,
-  REVIEW: -1,
-  REVIEW_COMPLETE: -1,
+  PEER_REVIEW: -1,
+  PEER_REVIEW_COMPLETE: -1,
+  REJECTED: -1,
+  ABORTED: -1,
 };
 
 const SLOT_REQUIRED_FROM: Readonly<Record<string, number>> = {
@@ -205,7 +209,12 @@ const SLOT_PRESENT_CHECKS: Record<string, (state: SessionState, phaseOrd: number
   implementation: (s) => s.implementation !== null,
   implValidation: (s) => checksComplete(s, s.implValidation),
   implReview: (s) => s.implReview !== null,
-  evidenceReviewDecision: (s) => s.phase === 'COMPLETE' && s.error === null,
+  // The final human approval is recorded when the gate transitions to
+  // EXPORT_READY; completion (`/export`) adds the export evidence, not the
+  // decision. The slot is required from EXPORT_READY (SLOT_REQUIRED_FROM), so
+  // its presence must be recognized from EXPORT_READY too.
+  evidenceReviewDecision: (s) =>
+    (s.phase === 'COMPLETE' || s.phase === 'EXPORT_READY') && s.error === null,
   archReviewDecision: (s) => s.phase === 'ARCH_COMPLETE' && s.error === null,
 };
 
@@ -271,7 +280,7 @@ const SLOT_DETAIL_FNS: Record<
       ? `iteration ${s.implReview.iteration}/${s.implReview.maxIterations}, verdict: ${s.implReview.verdict}`
       : undefined,
   evidenceReviewDecision: (s) =>
-    s.phase === 'COMPLETE' && s.error === null
+    (s.phase === 'COMPLETE' || s.phase === 'EXPORT_READY') && s.error === null
       ? 'Approved (verified by topology invariant)'
       : s.error
         ? `Session has error: ${s.error.code}`
@@ -293,7 +302,10 @@ const ARCHITECTURE_FLOW_PHASES: ReadonlySet<Phase> = new Set<Phase>([
   'ARCH_REVIEW',
   'ARCH_COMPLETE',
 ]);
-const REVIEW_FLOW_PHASES: ReadonlySet<Phase> = new Set<Phase>(['REVIEW', 'REVIEW_COMPLETE']);
+const REVIEW_FLOW_PHASES: ReadonlySet<Phase> = new Set<Phase>([
+  'PEER_REVIEW',
+  'PEER_REVIEW_COMPLETE',
+]);
 const ARCH_PHASE_ORDER: Readonly<Record<string, number>> = {
   ARCHITECTURE: 0,
   ARCH_REVIEW: 1,
@@ -341,25 +353,23 @@ function buildSlotEntry(
 
 function compareReviewActors(
   state: SessionState,
-  decidedBy: string | null,
+  reviewerIdentity: DecisionIdentity | null,
 ): ActorIdentityComparison {
-  if (decidedBy === null) return 'uncomparable';
+  if (reviewerIdentity === null) return 'uncomparable';
   const initiatorIdentity = state.initiatedByIdentity ?? { actorId: state.initiatedBy };
-  const reviewerIdentity =
-    state.reviewDecision?.decisionIdentity ?? (decidedBy !== null ? { actorId: decidedBy } : null);
   return compareActorIdentity(initiatorIdentity, reviewerIdentity);
 }
 
 function getFourEyesDetail(
   state: SessionState,
-  decidedBy: string | null,
+  reviewerIdentity: DecisionIdentity | null,
   actorComparison: ActorIdentityComparison,
   fourEyesRequired: boolean,
 ): string {
   if (!fourEyesRequired) return 'Four-eyes not required by policy';
-  if (decidedBy === null) return 'Four-eyes pending: no review decision recorded yet';
+  if (reviewerIdentity === null) return 'Four-eyes pending: no review decision recorded yet';
   if (actorComparison === 'different')
-    return `Four-eyes satisfied: initiator=${state.initiatedBy}, reviewer=${decidedBy}`;
+    return `Four-eyes satisfied: initiator=${state.initiatedBy}, reviewer=${reviewerIdentity.actorId}`;
   if (actorComparison === 'uncomparable')
     return 'Four-eyes pending: initiator and reviewer identities are not comparable';
   return `Four-eyes VIOLATED: initiator and reviewer are the same person (${state.initiatedBy})`;
@@ -367,14 +377,14 @@ function getFourEyesDetail(
 
 function evaluateFourEyes(state: SessionState): FourEyesStatus {
   const fourEyesRequired = state.policySnapshot?.allowSelfApproval === false;
-  const decidedBy = state.reviewDecision?.decidedBy ?? null;
-  const actorComparison = compareReviewActors(state, decidedBy);
+  const decisionIdentity = state.reviewDecision?.decisionIdentity ?? null;
+  const actorComparison = compareReviewActors(state, decisionIdentity);
   return {
     required: fourEyesRequired,
     satisfied: !fourEyesRequired || actorComparison === 'different',
     initiatedBy: state.initiatedBy,
-    decidedBy,
-    detail: getFourEyesDetail(state, decidedBy, actorComparison, fourEyesRequired),
+    decisionIdentity,
+    detail: getFourEyesDetail(state, decisionIdentity, actorComparison, fourEyesRequired),
   };
 }
 

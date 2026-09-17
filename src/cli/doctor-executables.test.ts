@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { checkShippedExecutables } from './doctor-executables.js';
-import { SHIPPED_EXECUTABLE_CHECK } from './install-helpers.js';
+import { SHIPPED_EXECUTABLE_CHECK } from './install-types.js';
 
 const SHEBANG = '#!/usr/bin/env node';
 

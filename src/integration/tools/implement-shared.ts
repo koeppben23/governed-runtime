@@ -16,6 +16,7 @@ import type { RailContext } from '../../rails/types.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import type {
   LoopVerdict,
+  ReviewAttempt,
   ReviewAttemptDiscoveryContext,
   ReviewFindings,
   ReviewObligation,
@@ -24,9 +25,16 @@ import type { resolveCeremonyProfile } from '../phase-tool-gate.js';
 import {
   appendObligationWithAttempt,
   createReviewObligation,
+  findBindableAttempt,
   resolveFrozenReviewProfile,
   freezeReviewMaterial,
 } from '../review/assurance.js';
+import type { ReviewDispatchAuthority } from '../review/dispatch-authority.js';
+import { buildChildSessionReviewInstruction } from '../review/child-session-instruction.js';
+import {
+  resolveReviewOrchestrationMode,
+  resolveRuntimeReviewPlatform,
+} from '../review/orchestration-mode.js';
 import { classifyToolCallMode } from './review-validation-mode.js';
 import { freezeCandidatePairAuthority } from '../../rails/repository-authority.js';
 import { buildFrozenReviewMaterialContent } from '../review/reviewer-context.js';
@@ -47,20 +55,6 @@ export function nextImplementationReviewIteration(state: SessionState): number {
   return latest + 1;
 }
 
-/** The policy budget plus every durable user-authorized extension. */
-export function effectiveImplementationReviewIterations(
-  state: SessionState,
-  policyIterations: number,
-): number {
-  return (
-    policyIterations +
-    state.implementationReviewExtensions.reduce(
-      (total, extension) => total + extension.additionalIterations,
-      0,
-    )
-  );
-}
-
 /**
  * Create the implementation-review obligation only after post-implementation
  * validation has reached IMPL_REVIEW. Both /implement (vacuous checks) and
@@ -77,9 +71,29 @@ export function effectiveImplementationReviewIterations(
 export type ImplementationReviewActivationResult = {
   state: SessionState;
   obligation: ReviewObligation | null;
-  attemptId: string | null;
+  attempt: ReviewAttempt | null;
   blocked?: { readonly code: string; readonly reason: string };
 };
+
+/**
+ * Build the native implementation-review dispatch instruction for an exact
+ * dispatch authority. The instruction cannot exist without the authority.
+ */
+export function buildImplementationReviewInstruction(authority: ReviewDispatchAuthority) {
+  const platform = resolveRuntimeReviewPlatform();
+  const mode = resolveReviewOrchestrationMode({
+    platform,
+    nativeReviewerAvailable: platform !== 'unknown',
+  });
+  return buildChildSessionReviewInstruction({
+    mode,
+    platform,
+    authority,
+    iteration: authority.obligation.iteration,
+    planVersion: authority.obligation.planVersion,
+    observationCapability: authority.attempt.observationCapability ?? undefined,
+  });
+}
 
 /**
  * Resolve the attempt-bound Discovery context a repository-governed mint must
@@ -121,6 +135,7 @@ function buildImplementationReviewObligation(
   return createReviewObligation({
     obligationType: 'implement',
     iteration: input.iteration,
+    reviewCycle: state.reviewCycles.implementation,
     planVersion: input.planVersion,
     now: input.now,
     subjectDigest: digest,
@@ -148,15 +163,14 @@ function buildImplementationReviewObligation(
 export async function activateImplementationReviewObligation(
   state: SessionState,
   input: {
-    subagentEnabled: boolean;
     iteration: number;
     planVersion: number;
     now: string;
     worktree: string;
   },
 ): Promise<ImplementationReviewActivationResult> {
-  if (state.phase !== 'IMPL_REVIEW' || state.reducedCeremony !== null || !input.subagentEnabled) {
-    return { state, obligation: null, attemptId: null };
+  if (state.phase !== 'IMPL_REVIEW' || state.reducedCeremony !== null) {
+    return { state, obligation: null, attempt: null };
   }
 
   // Frozen repository authority: pre-mutation base (frozen at IMPLEMENTATION
@@ -181,7 +195,7 @@ export async function activateImplementationReviewObligation(
     return {
       state,
       obligation: null,
-      attemptId: null,
+      attempt: null,
       blocked: { code: 'REVIEWER_CONTEXT_UNAVAILABLE', reason: discovery.reason },
     };
   }
@@ -192,13 +206,25 @@ export async function activateImplementationReviewObligation(
     input.now,
     discovery.context,
   );
+  const attempt = findBindableAttempt(withAttempt.assurance, obligation.obligationId);
+  if (!attempt) {
+    return {
+      state,
+      obligation: null,
+      attempt: null,
+      blocked: {
+        code: 'REVIEW_ATTEMPT_UNAVAILABLE',
+        reason: 'the implementation review obligation was minted without a bindable attempt',
+      },
+    };
+  }
   return {
     state: {
       ...state,
       reviewAssurance: withAttempt.assurance,
     },
     obligation,
-    attemptId: withAttempt.attemptId,
+    attempt,
   };
 }
 
@@ -233,7 +259,6 @@ export async function materializeImplReviewContract(
 export async function activateReviewObligationAndPersist(input: {
   state: SessionState;
   preAdvanceState: SessionState;
-  subagentEnabled: boolean;
   iteration: number;
   planVersion: number;
   now: string;
@@ -243,7 +268,6 @@ export async function activateReviewObligationAndPersist(input: {
   persistPreAdvance?: boolean;
 }): Promise<{ activated: ImplementationReviewActivationResult } | { response: string }> {
   const activated = await activateImplementationReviewObligation(input.state, {
-    subagentEnabled: input.subagentEnabled,
     iteration: input.iteration,
     planVersion: input.planVersion,
     now: input.now,
@@ -265,8 +289,9 @@ export async function activateReviewObligationAndPersist(input: {
 
 export type ImplementArgs = {
   reviewVerdict?: LoopVerdict;
-  reviewFindings?: ReviewFindings;
   reviewerUnavailable?: boolean;
+  /** Explicit transport-recovery intent: re-arm/re-emit the pending review dispatch. */
+  reviewRecovery?: 'retry_transport';
 };
 
 export type ImplementRuntime = {
@@ -277,10 +302,7 @@ export type ImplementRuntime = {
   state: SessionState;
   policy: FlowGuardPolicy;
   ctx: RailContext;
-  maxImplReviewIterations: number;
-  subagentEnabled: boolean;
-  fallbackToSelf: boolean;
-  strictEnforcement: boolean;
+  maxImplementationReviewIterations: number;
 };
 
 export type ImplementationCeremony = ReturnType<typeof resolveCeremonyProfile>;
@@ -296,10 +318,7 @@ export function buildImplementRuntime(input: {
 }): ImplementRuntime {
   return {
     ...input,
-    maxImplReviewIterations: input.policy.maxImplReviewIterations,
-    subagentEnabled: input.policy.selfReview?.subagentEnabled ?? false,
-    fallbackToSelf: input.policy.selfReview?.fallbackToSelf ?? false,
-    strictEnforcement: input.policy.selfReview?.strictEnforcement ?? false,
+    maxImplementationReviewIterations: input.policy.reviewBudget.implementation,
   };
 }
 
@@ -307,8 +326,8 @@ export function validateImplementSequence(args: ImplementArgs, state: SessionSta
   // 1. Canonical argument-shape validation.
   const mode = classifyToolCallMode('implement', {
     reviewVerdict: args.reviewVerdict,
-    reviewFindings: args.reviewFindings,
     reviewerUnavailable: args.reviewerUnavailable,
+    reviewRecovery: args.reviewRecovery,
   });
   if (mode.kind === 'invalid') return formatBlocked(mode.code, mode.params);
 
@@ -322,7 +341,7 @@ export function validateImplementSequence(args: ImplementArgs, state: SessionSta
   if (hasVerdict && state.phase !== 'IMPL_REVIEW') {
     return formatBlocked('IMPLEMENT_REVIEW_LOOP_REQUIRED', { phase: state.phase });
   }
-  if (mode.kind === 'transport_failure_retry') {
+  if (mode.kind === 'transport_failure_retry' || mode.kind === 'transport_recovery') {
     if (!state.implementation) return formatBlocked('IMPLEMENTATION_EVIDENCE_REQUIRED');
     if (state.phase !== 'IMPL_REVIEW') {
       return formatBlocked('IMPLEMENT_REVIEW_LOOP_REQUIRED', { phase: state.phase });

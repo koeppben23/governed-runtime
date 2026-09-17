@@ -7,9 +7,9 @@
  * They live in the state layer because they are part of SessionState — the
  * innermost layer must not depend on outer layers (discovery, integration, adapters).
  *
- * The discovery layer imports and re-exports these schemas for backward
- * compatibility. The full DiscoveryResult (with all collector outputs) remains
- * in discovery/types.ts — only the session-embedded subset lives here.
+ * The discovery layer imports and re-exports these schemas as its public
+ * discovery surface. The full DiscoveryResult (with all collector outputs)
+ * remains in discovery/types.ts — only the session-embedded subset lives here.
  *
  * @version v1
  */
@@ -21,8 +21,14 @@ import { ReportFormatId, ProviderId } from './assertion-identity.js';
 
 /** An input surface whose integrity must be attested at execution time. */
 export const ExecutionSubjectInputSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('implementation') }).readonly(),
-  z.object({ kind: z.literal('file'), path: z.string().min(1) }).readonly(),
+  z
+    .object({ kind: z.literal('implementation') })
+    .strict()
+    .readonly(),
+  z
+    .object({ kind: z.literal('file'), path: z.string().min(1) })
+    .strict()
+    .readonly(),
 ]);
 export type ExecutionSubjectInput = z.infer<typeof ExecutionSubjectInputSchema>;
 
@@ -57,7 +63,7 @@ export const VerificationCandidateKindSchema = z.enum([
 export type VerificationCandidateKind = z.infer<typeof VerificationCandidateKindSchema>;
 
 /** Confidence level for a planned verification candidate. */
-export const VerificationCandidateConfidenceSchema = z.enum(['high', 'medium', 'low']);
+const VerificationCandidateConfidenceSchema = z.enum(['high', 'medium', 'low']);
 export type VerificationCandidateConfidence = z.infer<typeof VerificationCandidateConfidenceSchema>;
 
 /** Explicit profile attestation that the command executes the complete check scope. */
@@ -67,39 +73,45 @@ export type FullCheckScopeAttestation = z.infer<typeof FullCheckScopeAttestation
 // ─── Assertion Report Specification ──────────────────────────────────────────
 
 export const AssertionReportSpec = z.discriminatedUnion('collection', [
-  z.object({
-    collection: z.literal('run_specific'),
-    transport: z.literal('file'),
-    format: ReportFormatId,
-    providerId: ProviderId,
-    outputArgumentTemplate: z
-      .string()
-      .min(1)
-      .refine(
-        (v) => v.includes('{attemptId}'),
-        'run-specific outputArgumentTemplate must contain {attemptId}',
-      ),
-    resultPatternTemplate: z
-      .string()
-      .min(1)
-      .refine(
-        (v) => v.includes('{attemptId}'),
-        'run-specific resultPatternTemplate must contain {attemptId}',
-      ),
-  }),
-  z.object({
-    collection: z.literal('snapshot_diff'),
-    transport: z.literal('file'),
-    format: ReportFormatId,
-    providerId: ProviderId,
-    standardPatterns: z.array(z.string().min(1)).min(1),
-  }),
-  z.object({
-    collection: z.literal('stdout'),
-    transport: z.literal('stdout'),
-    format: ReportFormatId,
-    providerId: ProviderId,
-  }),
+  z
+    .object({
+      collection: z.literal('run_specific'),
+      transport: z.literal('file'),
+      format: ReportFormatId,
+      providerId: ProviderId,
+      outputArgumentTemplate: z
+        .string()
+        .min(1)
+        .refine(
+          (v) => v.includes('{attemptId}'),
+          'run-specific outputArgumentTemplate must contain {attemptId}',
+        ),
+      resultPatternTemplate: z
+        .string()
+        .min(1)
+        .refine(
+          (v) => v.includes('{attemptId}'),
+          'run-specific resultPatternTemplate must contain {attemptId}',
+        ),
+    })
+    .strict(),
+  z
+    .object({
+      collection: z.literal('snapshot_diff'),
+      transport: z.literal('file'),
+      format: ReportFormatId,
+      providerId: ProviderId,
+      standardPatterns: z.array(z.string().min(1)).min(1),
+    })
+    .strict(),
+  z
+    .object({
+      collection: z.literal('stdout'),
+      transport: z.literal('stdout'),
+      format: ReportFormatId,
+      providerId: ProviderId,
+    })
+    .strict(),
 ]);
 export type AssertionReportSpec = z.infer<typeof AssertionReportSpec>;
 
@@ -113,20 +125,19 @@ export type AssertionReportSpec = z.infer<typeof AssertionReportSpec>;
  *  - unsupported: no structured assertion evidence available
  *  - structured: assertionReport defines how to extract assertion evidence
  */
-export const VerificationCandidateSchema = z.discriminatedUnion('assertionCapability', [
-  z.object({
-    /** Stable planner identity for exact execution and evidence binding. */
-    candidateId: z.string().min(1).optional(),
+const UnsupportedVerificationCandidate = z
+  .object({
     assertionCapability: z.literal('unsupported'),
     kind: VerificationCandidateKindSchema,
     command: z.string().min(1),
     source: z.string().min(1),
     confidence: VerificationCandidateConfidenceSchema,
     reason: z.string().min(1),
-  }),
-  z.object({
-    /** Stable planner identity for exact execution and evidence binding. */
-    candidateId: z.string().min(1).optional(),
+  })
+  .strict();
+
+const StructuredVerificationCandidate = z
+  .object({
     assertionCapability: z.literal('structured'),
     kind: VerificationCandidateKindSchema,
     command: z.string().min(1),
@@ -136,7 +147,30 @@ export const VerificationCandidateSchema = z.discriminatedUnion('assertionCapabi
     assertionReport: AssertionReportSpec,
     /** Required in addition to aggregate parsing capability for suite claims. */
     fullCheckScopeAttestation: FullCheckScopeAttestationSchema.optional(),
-  }),
+  })
+  .strict();
+
+/**
+ * Planner-internal candidate before identity minting.
+ *
+ * Never persisted: every persisted candidate carries a planner-minted
+ * `candidateId`, and the persisted schema requires it.
+ */
+export const UnidentifiedVerificationCandidateSchema = z.discriminatedUnion('assertionCapability', [
+  UnsupportedVerificationCandidate,
+  StructuredVerificationCandidate,
+]);
+export type UnidentifiedVerificationCandidate = z.infer<
+  typeof UnidentifiedVerificationCandidateSchema
+>;
+
+/** Stable planner identity for exact execution and evidence binding. */
+const VerificationCandidateId = z.string().min(1);
+
+/** Persisted verification candidate: identity is mandatory, unknown keys reject. */
+export const VerificationCandidateSchema = z.discriminatedUnion('assertionCapability', [
+  UnsupportedVerificationCandidate.extend({ candidateId: VerificationCandidateId }),
+  StructuredVerificationCandidate.extend({ candidateId: VerificationCandidateId }),
 ]);
 export type VerificationCandidate = z.infer<typeof VerificationCandidateSchema>;
 export type AssertionCapability = VerificationCandidate['assertionCapability'];
@@ -166,26 +200,6 @@ export const DetectedStackTargetSchema = z.enum([
 export type DetectedStackTarget = z.infer<typeof DetectedStackTargetSchema>;
 
 /**
- * A single version-bearing item extracted from DiscoveryResult.stack.
- *
- * Derived evidence — NOT SSOT. The authoritative version data lives in
- * the DiscoveryResult returned by the discovery orchestrator. This is a
- * compact projection for quick consumption by LLM instructions via
- * flowguard_status.
- */
-export const DetectedStackVersionSchema = z.object({
-  /** Stack item identifier (e.g., "java", "spring-boot", "node"). */
-  id: z.string().min(1),
-  /** Detected version string (e.g., "21", "3.4.1", "20.11.0"). */
-  version: z.string().min(1),
-  /** Category of this item. */
-  target: DetectedStackTargetSchema,
-  /** Optional provenance string (e.g., "pom.xml:<java.version>"). */
-  evidence: z.string().optional(),
-});
-export type DetectedStackVersion = z.infer<typeof DetectedStackVersionSchema>;
-
-/**
  * A single detected stack item — version optional.
  *
  * Surfaces ALL items recognized by stack detection, regardless of whether
@@ -194,7 +208,7 @@ export type DetectedStackVersion = z.infer<typeof DetectedStackVersionSchema>;
  *
  * Derived evidence — NOT SSOT.
  */
-export const DetectedStackItemSchema = z.object({
+const DetectedStackItemSchema = z.object({
   /** Category of this item (determines sort order). */
   kind: DetectedStackTargetSchema,
   /** Stack item identifier (e.g., "java", "vitest", "maven"). */
@@ -211,7 +225,7 @@ export type DetectedStackItem = z.infer<typeof DetectedStackItemSchema>;
  *
  * Derived evidence — NOT SSOT.
  */
-export const DetectedStackTargetEntrySchema = z.object({
+const DetectedStackTargetEntrySchema = z.object({
   /** Always 'compilerTarget' for now; extensible for future target kinds. */
   kind: z.literal('compilerTarget'),
   /** Identifier (e.g., "typescript", "java"). */
@@ -235,34 +249,33 @@ export type DetectedStackTargetEntry = z.infer<typeof DetectedStackTargetEntrySc
  * testFramework → qualityTool → database), then by id. Versioned: `id=version`, unversioned: `id`.
  *
  * `items` contains ALL detected items (version optional).
- * `versions` contains only versioned items (backward compatible).
  * `targets` contains compiler/runtime targets when detected.
  */
-export const DetectedStackSchema = z.object({
-  /** Pre-formatted summary string for quick injection into status. */
-  summary: z.string(),
-  /** ALL detected items — version optional. */
-  items: z.array(DetectedStackItemSchema),
-  /** Versioned items only (backward compatible). */
-  versions: z.array(DetectedStackVersionSchema),
-  /** Compiler/runtime targets (e.g., ES2022 from tsconfig). */
-  targets: z.array(DetectedStackTargetEntrySchema).optional(),
-  /** Module-scoped stack items for monorepos (optional). */
-  scopes: z
-    .array(
-      z.object({
-        /** Relative path to the module root (e.g., "apps/web"). */
-        path: z.string().min(1),
-        /** Pre-formatted summary string for this scope. */
-        summary: z.string().optional(),
-        /** All detected items in this scope. */
-        items: z.array(DetectedStackItemSchema),
-        /** Versioned items in this scope. */
-        versions: z.array(DetectedStackVersionSchema).default([]),
-      }),
-    )
-    .optional(),
-});
+export const DetectedStackSchema = z
+  .object({
+    /** Pre-formatted summary string for quick injection into status. */
+    summary: z.string(),
+    /** ALL detected items — version optional. */
+    items: z.array(DetectedStackItemSchema),
+    /** Compiler/runtime targets (e.g., ES2022 from tsconfig). */
+    targets: z.array(DetectedStackTargetEntrySchema).optional(),
+    /** Module-scoped stack items for monorepos (optional). */
+    scopes: z
+      .array(
+        z
+          .object({
+            /** Relative path to the module root (e.g., "apps/web"). */
+            path: z.string().min(1),
+            /** Pre-formatted summary string for this scope. */
+            summary: z.string().optional(),
+            /** All detected items in this scope. */
+            items: z.array(DetectedStackItemSchema),
+          })
+          .strict(),
+      )
+      .optional(),
+  })
+  .strict();
 export type DetectedStack = z.infer<typeof DetectedStackSchema>;
 
 // ─── Discovery Summary ───────────────────────────────────────────────────────

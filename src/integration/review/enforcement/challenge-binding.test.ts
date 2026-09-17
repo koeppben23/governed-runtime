@@ -37,7 +37,7 @@ describe('host-authoritative challenge evidence references', () => {
       'child-1',
       [planAdrSection],
     );
-    expect(result).not.toHaveProperty('bindOutcome');
+    expect(result).not.toHaveProperty('kind');
     if ('findings' in result) {
       const challenges = result.findings.challenges as Array<Record<string, unknown>>;
       expect(challenges[0]?.evidenceRefs).toEqual([planAdrSection]);
@@ -59,7 +59,7 @@ describe('host-authoritative challenge evidence references', () => {
       'child-1',
       [planAdrSection],
     );
-    expect(result).toMatchObject({ bindOutcome: 'challenge_evidence_unknown' });
+    expect(result).toMatchObject({ kind: 'rejected', code: 'challenge_evidence_unknown' });
   });
 
   it('resolves implementation refs by implementationDigest', () => {
@@ -77,7 +77,7 @@ describe('host-authoritative challenge evidence references', () => {
       'child-1',
       [implementation],
     );
-    expect(result).not.toHaveProperty('bindOutcome');
+    expect(result).not.toHaveProperty('kind');
     if ('findings' in result) {
       const challenges = result.findings.challenges as Array<Record<string, unknown>>;
       expect(challenges[0]?.evidenceRefs).toEqual([implementation]);
@@ -99,7 +99,7 @@ describe('host-authoritative challenge evidence references', () => {
       'child-1',
       [content],
     );
-    expect(result).not.toHaveProperty('bindOutcome');
+    expect(result).not.toHaveProperty('kind');
     if ('findings' in result) {
       const challenges = result.findings.challenges as Array<Record<string, unknown>>;
       expect(challenges[0]?.evidenceRefs).toEqual([content]);
@@ -121,7 +121,7 @@ describe('host-authoritative challenge evidence references', () => {
       'child-1',
       [content],
     );
-    expect(result).toMatchObject({ bindOutcome: 'challenge_evidence_unknown' });
+    expect(result).toMatchObject({ kind: 'rejected', code: 'challenge_evidence_unknown' });
   });
 
   it('accepts implementation_challenge with missing outcome (no pass check needed)', () => {
@@ -139,7 +139,7 @@ describe('host-authoritative challenge evidence references', () => {
       'child-1',
       [implementation],
     );
-    expect(result).not.toHaveProperty('bindOutcome');
+    expect(result).not.toHaveProperty('kind');
   });
 
   it('passes through challenges unchanged when no allowedEvidenceRefs are supplied', () => {
@@ -163,7 +163,7 @@ describe('host-authoritative challenge evidence references', () => {
       'child-1',
       undefined,
     );
-    expect(result).not.toHaveProperty('bindOutcome');
+    expect(result).not.toHaveProperty('kind');
     if ('findings' in result) {
       const challenges = result.findings.challenges as Array<Record<string, unknown>>;
       expect(challenges[0]?.evidenceRefs).toEqual([reviewerRef]);
@@ -185,7 +185,7 @@ describe('host-authoritative challenge evidence references', () => {
       'child-1',
       [implementation],
     );
-    expect(result).toMatchObject({ bindOutcome: 'challenge_evidence_unknown' });
+    expect(result).toMatchObject({ kind: 'rejected', code: 'challenge_evidence_unknown' });
   });
 
   it('ignores plan_adr_section sectionPath headingText in identity comparison', () => {
@@ -214,7 +214,7 @@ describe('host-authoritative challenge evidence references', () => {
       'child-1',
       [planAdrSection],
     );
-    expect(result).not.toHaveProperty('bindOutcome');
+    expect(result).not.toHaveProperty('kind');
     if ('findings' in result) {
       const challenges = result.findings.challenges as Array<Record<string, unknown>>;
       expect(challenges[0]?.evidenceRefs).toEqual([planAdrSection]);
@@ -241,6 +241,6 @@ describe('host-authoritative challenge evidence references', () => {
       'child-1',
       [planAdrSection],
     );
-    expect(result).toMatchObject({ bindOutcome: 'challenge_evidence_unknown' });
+    expect(result).toMatchObject({ kind: 'rejected', code: 'challenge_evidence_unknown' });
   });
 });

@@ -23,7 +23,6 @@ import { PROFILE_RESOLUTION_SCHEMA_VERSION } from '../../discovery/types.js';
 import {
   planVerificationCandidates,
   stripToCandidates,
-  extractExecutionSubjectInputs,
   extractExecutionSubjectInputsByCandidateId,
 } from '../../discovery/verification-planner.js';
 import {
@@ -300,14 +299,12 @@ export async function computeDiscoveryHydration(
     readFile: readRepoFile,
   });
   const verificationCandidates = stripToCandidates(planned);
-  const executionSubjectInputsByKind = extractExecutionSubjectInputs(planned);
   const executionSubjectInputsByCandidateId = extractExecutionSubjectInputsByCandidateId(planned);
   return {
     discoveryDigest,
     discoverySummary,
     detectedStack,
     verificationCandidates,
-    executionSubjectInputsByKind,
     executionSubjectInputsByCandidateId,
   };
 }

@@ -17,22 +17,13 @@ export function resolveExecutionSubjectInputs(
   state: SessionState,
   candidate: VerificationCandidate,
 ): ExecutionSubjectResolution {
-  if (candidate.candidateId) {
-    const inputs = state.executionSubjectInputsByCandidateId?.[candidate.candidateId];
-    return inputs && inputs.length > 0
-      ? { kind: 'resolved', inputs }
-      : {
-          kind: 'unavailable',
-          detail:
-            `no candidate-specific execution subject inputs for '${candidate.candidateId}' — ` +
-            're-run flowguard_hydrate to restore the exact candidate binding',
-        };
-  }
-  const inputs = state.executionSubjectInputsByKind?.[candidate.kind];
+  const inputs = state.executionSubjectInputsByCandidateId?.[candidate.candidateId];
   return inputs && inputs.length > 0
     ? { kind: 'resolved', inputs }
     : {
         kind: 'unavailable',
-        detail: `no execution subject inputs for kind '${candidate.kind}' — attestation metadata missing`,
+        detail:
+          `no candidate-specific execution subject inputs for '${candidate.candidateId}' — ` +
+          're-run flowguard_hydrate to restore the exact candidate binding',
       };
 }

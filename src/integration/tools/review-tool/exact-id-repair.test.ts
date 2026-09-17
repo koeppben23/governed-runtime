@@ -1,18 +1,15 @@
 /**
  * @module integration/tools/review-tool/exact-id-repair.test
  * @description Regression: an explicit reviewObligationId DOMINATES content
- *              fingerprint matching in the repair path.
+ *              fingerprint matching.
  *
  * The canonical /review retry instruction is a review call carrying the
- * original content plus reviewObligationId and deliberately NO reviewVerdict.
+ * original content plus reviewObligationId and deliberately no findings.
  * The agent may legitimately omit inputOrigin/references metadata, which
  * changes the content fingerprint. Before this fix, that drift created a
- * SECOND obligation for the same review, resetting the per-obligation repair
- * budget and splitting the reviewer lineage. Now: exact ID or fail-closed.
- *
- * Also covers the output-repair stall gate: a targeted repair that reproduces
- * the identical schema error set terminates with REVIEWER_OUTPUT_REPAIR_STALLED
- * instead of burning the retry budget on a third identical LLM run.
+ * SECOND obligation for the same review, splitting the reviewer lineage. Now:
+ * exact ID or fail-closed. There is deliberately no repair reissue: an
+ * explicit ID reuses the existing bindable attempt or fails closed.
  *
  * @test-policy HAPPY, BAD, EDGE
  */
@@ -31,10 +28,7 @@ import {
 import { review } from '../index.js';
 import { hydrate } from '../index.js';
 import { readState, writeState } from '../../../adapters/persistence.js';
-import { writeStateWithArtifacts } from '../helpers.js';
-import { resolvePolicyFromState } from '../helpers.js';
-import { findReviewObligationById, ensureReviewAssurance } from '../../review/assurance.js';
-import type { SessionState } from '../../../state/schema.js';
+import { appendReviewDispatch } from '../../../state/review-dispatch.js';
 
 vi.mock('../../../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../../adapters/git.js')>();
@@ -68,7 +62,9 @@ vi.mock('../../../adapters/actor', async (importOriginal) => {
     resolveActor: vi.fn().mockResolvedValue({
       id: 'test-operator',
       email: 'test@flowguard.dev',
+      displayName: null,
       source: 'env',
+      assurance: 'best_effort',
     }),
   };
 });
@@ -113,38 +109,8 @@ function requiredString(value: unknown, key: string): string {
   return field;
 }
 
-/** Mark the latest attempt of an obligation as rejected with a schema fingerprint. */
-async function rejectLatestAttempt(
-  sessDir: string,
-  obligationId: string,
-  schemaErrorFingerprint: string,
-): Promise<void> {
-  const state = await readState(sessDir);
-  const attempts = ensureReviewAssurance(state?.reviewAssurance).attempts;
-  const latest = attempts
-    .filter((a) => a.obligationId === obligationId)
-    .reduce((best, a) => (a.ordinal > best.ordinal ? a : best));
-  await writeStateWithArtifacts(sessDir, {
-    ...state!,
-    reviewAssurance: {
-      ...ensureReviewAssurance(state!.reviewAssurance),
-      attempts: attempts.map((a) =>
-        a.attemptId !== latest.attemptId
-          ? a
-          : {
-              ...a,
-              status: 'rejected' as const,
-              completedAt: '2026-01-01T00:00:00.000Z',
-              rejectionReason: 'schema_invalid' as const,
-              schemaErrorFingerprint,
-            },
-      ),
-    },
-  });
-}
-
 describe('exact obligation identity dominates fingerprint matching', () => {
-  it('HAPPY: repair call with explicit ID reissues on the SAME obligation (demo sequence)', async () => {
+  it('HAPPY: a repeat call with an explicit ID reuses the same obligation and attempt', async () => {
     await hydrateTeam();
     const contentArgs = {
       branch: 'feature/add-due-date',
@@ -162,34 +128,28 @@ describe('exact obligation identity dominates fingerprint matching', () => {
     );
     expect(firstAttempt?.ordinal).toBe(1);
 
-    await rejectLatestAttempt(sessDir, obligationId, 'f'.repeat(64));
-
     // The documented retry shape: original content field + reviewObligationId,
-    // WITHOUT the inputOrigin/references metadata of the first call.
-    const repair = parseToolResult(
+    // WITHOUT the inputOrigin/references metadata of the first call. It must
+    // reuse the exact obligation and its bindable attempt — never mint a
+    // second obligation or a repair attempt.
+    const repeat = parseToolResult(
       await review.execute(
         { branch: 'feature/add-due-date', reviewObligationId: obligationId },
         ctx,
       ),
     );
-    expect(repair.code).toBe('CONTENT_ANALYSIS_REQUIRED');
-    expect(requiredString(repair.requiredReviewAttestation, 'toolObligationId')).toBe(obligationId);
+    expect(repeat.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+    expect(repeat.reviewDispatch).toEqual({ required: true });
 
-    const afterRepair = await readState(sessDir);
-    expect(afterRepair!.reviewAssurance!.obligations).toHaveLength(1);
-    expect(afterRepair!.reviewAssurance!.obligations[0]!.obligationId).toBe(obligationId);
-    const attempts = afterRepair!.reviewAssurance!.attempts.filter(
+    const afterRepeat = await readState(sessDir);
+    expect(afterRepeat!.reviewAssurance!.obligations).toHaveLength(1);
+    expect(afterRepeat!.reviewAssurance!.obligations[0]!.obligationId).toBe(obligationId);
+    const attempts = afterRepeat!.reviewAssurance!.attempts.filter(
       (a) => a.obligationId === obligationId,
     );
-    expect(attempts.map((a) => a.ordinal).sort()).toEqual([1, 2]);
-    const repairAttempt = attempts.find((a) => a.ordinal === 2);
-    expect(repairAttempt?.status).toBe('created');
-    expect(repairAttempt?.origin.kind).toBe('output_repair');
-    if (repairAttempt?.origin.kind === 'output_repair') {
-      expect(repairAttempt.origin.predecessorAttemptId).toBe(firstAttempt!.attemptId);
-      expect(repairAttempt.origin.triggerReason).toBe('schema_invalid');
-    }
-    expect(repairAttempt?.attemptId).not.toBe(firstAttempt!.attemptId);
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0]!.attemptId).toBe(firstAttempt!.attemptId);
+    expect(attempts[0]!.status).toBe('created');
   });
 
   it('BAD: unknown explicit ID fails closed — no fingerprint fallback, no creation', async () => {
@@ -222,157 +182,45 @@ describe('exact obligation identity dominates fingerprint matching', () => {
     );
   });
 
-  it('HAPPY: verdict continuation with explicit ID is untouched (input mismatch still guarded)', async () => {
+  it('RECOVERY: re-arms an outcome-unknown peer dispatch on the same frozen obligation', async () => {
     await hydrateTeam();
-    const first = parseToolResult(
-      await review.execute({ branch: 'feature/auth', inputOrigin: 'branch' }, ctx),
-    );
+    const contentArgs = { branch: 'feature/add-due-date', inputOrigin: 'branch' as const };
+    const first = parseToolResult(await review.execute(contentArgs, ctx));
     const obligationId = requiredString(first.requiredReviewAttestation, 'toolObligationId');
-    const result = parseToolResult(
-      await review.execute(
-        {
-          branch: 'different-branch',
-          inputOrigin: 'branch',
-          reviewObligationId: obligationId,
-          reviewVerdict: 'accept',
-        },
-        ctx,
-      ),
-    );
-    expect(result.code).toBe('REVIEW_OBLIGATION_INPUT_MISMATCH');
-  });
-});
-
-/** Raise the frozen output-repair budget (test manipulation of frozen state). */
-async function raiseRepairBudget(
-  sessDir: string,
-  obligationId: string,
-  budget: number,
-): Promise<void> {
-  const state = await readState(sessDir);
-  await writeStateWithArtifacts(sessDir, {
-    ...state!,
-    reviewAssurance: {
-      ...ensureReviewAssurance(state!.reviewAssurance),
-      obligations: ensureReviewAssurance(state!.reviewAssurance).obligations.map((o) =>
-        o.obligationId !== obligationId ? o : { ...o, maxReviewerOutputRepairAttempts: budget },
-      ),
-    },
-  });
-}
-
-describe('output-repair stall detection', () => {
-  async function startRepairedObligation(): Promise<{
-    sessDir: string;
-    obligationId: string;
-    firstAttemptId: string;
-  }> {
-    await hydrateTeam();
-    const first = parseToolResult(
-      await review.execute(
-        {
-          branch: 'feature/stall',
-          inputOrigin: 'branch',
-          references: [{ ref: 'feature/stall', type: 'branch' as const, source: 'local' }],
-        },
-        ctx,
-      ),
-    );
-    const obligationId = requiredString(first.requiredReviewAttestation, 'toolObligationId');
+    const firstAttemptId = first.reviewAttemptId as string;
     const sessDir = await currentSessionDir();
-    const firstAttempt = (await readState(sessDir))!.reviewAssurance!.attempts.find(
-      (a) => a.obligationId === obligationId,
-    )!;
-    await rejectLatestAttempt(sessDir, obligationId, 'f'.repeat(64));
-    const repair = parseToolResult(
-      await review.execute({ branch: 'feature/stall', reviewObligationId: obligationId }, ctx),
-    );
-    expect(repair.code).toBe('CONTENT_ANALYSIS_REQUIRED');
-    return { sessDir, obligationId, firstAttemptId: firstAttempt.attemptId };
-  }
-
-  it('BAD: repair reproducing the identical schema error set stalls terminally', async () => {
-    const { sessDir, obligationId } = await startRepairedObligation();
-    await rejectLatestAttempt(sessDir, obligationId, 'f'.repeat(64));
-
-    const stalled = parseToolResult(
-      await review.execute({ branch: 'feature/stall', reviewObligationId: obligationId }, ctx),
-    );
-    expect(stalled.code).toBe('REVIEWER_OUTPUT_REPAIR_STALLED');
-
     const state = await readState(sessDir);
-    const obligation = findReviewObligationById(state!.reviewAssurance, obligationId);
-    expect(obligation?.status).toBe('blocked');
-    expect(obligation?.blockedCode).toBe('REVIEWER_OUTPUT_REPAIR_STALLED');
-    // No third attempt was minted.
-    const attempts = state!.reviewAssurance!.attempts.filter(
+    expect(state?.reviewAssurance).toBeDefined();
+    if (!state?.reviewAssurance) return;
+    await writeState(sessDir, {
+      ...state,
+      reviewAssurance: appendReviewDispatch(state.reviewAssurance, {
+        dispatchId: '00000000-0000-4000-8000-0000000000c1',
+        attemptId: firstAttemptId,
+        obligationId,
+        hostCallId: 'peer-review-task-call',
+        canonicalPromptDigest: 'd'.repeat(64),
+        dispatchAuthorizedAt: '2026-01-01T00:00:00.000Z',
+        dispatchStatus: 'outcome_unknown',
+      }),
+    });
+
+    const recovered = parseToolResult(
+      await review.execute({ ...contentArgs, reviewObligationId: obligationId }, ctx),
+    );
+    expect(recovered.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+    expect(recovered.reviewDispatch).toEqual({ required: true });
+    expect(recovered.reviewAttemptId).not.toBe(firstAttemptId);
+
+    const after = await readState(sessDir);
+    const attempts = after!.reviewAssurance!.attempts.filter(
       (a) => a.obligationId === obligationId,
     );
     expect(attempts).toHaveLength(2);
-  });
-
-  it('HAPPY: a DIFFERENT schema error set is not a stall — the frozen budget applies', async () => {
-    const { sessDir, obligationId } = await startRepairedObligation();
-    await rejectLatestAttempt(sessDir, obligationId, 'a'.repeat(64));
-
-    // Budget is 1 (team default): the stall gate must NOT fire, but the
-    // frozen budget semantics do.
-    const exhausted = parseToolResult(
-      await review.execute({ branch: 'feature/stall', reviewObligationId: obligationId }, ctx),
-    );
-    expect(exhausted.code).toBe('REVIEWER_OUTPUT_RETRY_EXHAUSTED');
-    expect(exhausted.code).not.toBe('REVIEWER_OUTPUT_REPAIR_STALLED');
-  });
-
-  it('HAPPY: a different error set mints a third attempt when the frozen budget allows', async () => {
-    const { sessDir, obligationId } = await startRepairedObligation();
-    await raiseRepairBudget(sessDir, obligationId, 2);
-    await rejectLatestAttempt(sessDir, obligationId, 'a'.repeat(64));
-
-    const repaired = parseToolResult(
-      await review.execute({ branch: 'feature/stall', reviewObligationId: obligationId }, ctx),
-    );
-    expect(repaired.code).toBe('CONTENT_ANALYSIS_REQUIRED');
-    expect(requiredString(repaired.requiredReviewAttestation, 'toolObligationId')).toBe(
-      obligationId,
-    );
-    const attempts = (await readState(sessDir))!.reviewAssurance!.attempts.filter(
-      (a) => a.obligationId === obligationId,
-    );
-    expect(attempts.map((a) => a.ordinal).sort()).toEqual([1, 2, 3]);
-  });
-
-  it('EDGE: missing fingerprint fails safe — budget path continues to apply', async () => {
-    const { sessDir, obligationId } = await startRepairedObligation();
-    await raiseRepairBudget(sessDir, obligationId, 2);
-    const state = await readState(sessDir);
-    const attempts = ensureReviewAssurance(state?.reviewAssurance).attempts;
-    const latest = attempts
-      .filter((a) => a.obligationId === obligationId)
-      .reduce((best, a) => (a.ordinal > best.ordinal ? a : best));
-    await writeState(sessDir, {
-      ...state!,
-      reviewAssurance: {
-        ...ensureReviewAssurance(state!.reviewAssurance),
-        attempts: attempts.map((a) =>
-          a.attemptId !== latest.attemptId
-            ? a
-            : {
-                ...a,
-                status: 'rejected' as const,
-                completedAt: '2026-01-01T00:00:00.000Z',
-                rejectionReason: 'schema_invalid' as const,
-                schemaErrorFingerprint: undefined,
-              },
-        ),
-      },
-    } as SessionState);
-
-    const result = parseToolResult(
-      await review.execute({ branch: 'feature/stall', reviewObligationId: obligationId }, ctx),
-    );
-    expect(result.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+    expect(attempts.find((a) => a.attemptId === firstAttemptId)?.status).toBe('stale');
+    expect(attempts.find((a) => a.attemptId === recovered.reviewAttemptId)?.origin).toMatchObject({
+      kind: 'dispatch_rearm',
+      predecessorAttemptId: firstAttemptId,
+    });
   });
 });
-
-void resolvePolicyFromState;

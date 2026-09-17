@@ -37,8 +37,7 @@ FlowGuard uses [Semantic Versioning](https://semver.org/):
 
 The following are considered breaking governance semantics changes (major version bump):
 
-- **Mandatory independent subagent review**: Self-review evidence is no longer accepted for governed plan/implementation loops. FlowGuard now requires mandatory independent subagent review by default, and weaker legacy snapshots are normalized to strict mode. (v1.2.0 → v2.0.0 candidate)
-- **Policy snapshot normalization**: Weaker `selfReview` config values (`subagentEnabled: false`, `fallbackToSelf: true`, `strictEnforcement: false`) are normalized to mandatory strict at load time.
+- **Mandatory independent subagent review**: Self-review evidence is no longer accepted for governed plan/implementation loops. FlowGuard requires independent reviewer evidence in every policy mode; removed review-policy fields and old snapshots are rejected.
 
 ### Version Lifecycle
 

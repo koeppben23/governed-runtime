@@ -6,17 +6,17 @@
  * Three standalone flows from READY:
  *
  * Ticket flow:
- *   READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_VALIDATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE
+ *   READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_VALIDATION → IMPL_REVIEW → EVIDENCE_REVIEW → EXPORT_READY → COMPLETE
  *   Reduced ceremony: IMPLEMENTATION → EVIDENCE_REVIEW only via explicit REDUCED_CEREMONY transition.
  *
  * Architecture flow:
  *   READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE
  *
  * Review flow:
- *   READY → REVIEW → REVIEW_COMPLETE
+ *   READY → PEER_REVIEW → PEER_REVIEW_COMPLETE
  *
  * Rules:
- * - Terminal phases (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE) have empty maps.
+ * - Terminal phases (COMPLETE, ARCH_COMPLETE, PEER_REVIEW_COMPLETE, REJECTED, ABORTED) have empty maps.
  * - READY is command-driven (no guards, no auto-advance).
  * - ERROR loops back to the same phase in all non-gate, non-terminal, non-READY phases.
  * - User-gate phases (PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW) have NO error event.
@@ -47,7 +47,8 @@ export const TRANSITIONS: ReadonlyMap<Phase, ReadonlyMap<Event, Phase>> = new Ma
     new Map<Event, Phase>([
       ['TICKET_SELECTED', 'TICKET'],
       ['ARCHITECTURE_SELECTED', 'ARCHITECTURE'],
-      ['REVIEW_SELECTED', 'REVIEW'],
+      ['PEER_REVIEW_SELECTED', 'PEER_REVIEW'],
+      ['ABORT', 'ABORTED'],
     ]),
   ],
 
@@ -62,6 +63,7 @@ export const TRANSITIONS: ReadonlyMap<Phase, ReadonlyMap<Event, Phase>> = new Ma
     new Map<Event, Phase>([
       ['PLAN_READY', 'PLAN'],
       ['ERROR', 'TICKET'],
+      ['ABORT', 'ABORTED'],
     ]),
   ],
 
@@ -73,17 +75,19 @@ export const TRANSITIONS: ReadonlyMap<Phase, ReadonlyMap<Event, Phase>> = new Ma
       ['SELF_REVIEW_MET', 'PLAN_REVIEW'],
       ['SELF_REVIEW_PENDING', 'PLAN'],
       ['ERROR', 'PLAN'],
+      ['ABORT', 'ABORTED'],
     ]),
   ],
 
   // ── PLAN_REVIEW (User Gate) ─────────────────────────────────
-  // Human decides: approve → VALIDATION, changes → PLAN, reject → TICKET.
+  // Human decides: approve → VALIDATION, changes → PLAN, reject → REJECTED.
   [
     'PLAN_REVIEW',
     new Map<Event, Phase>([
       ['APPROVE', 'VALIDATION'],
       ['CHANGES_REQUESTED', 'PLAN'],
-      ['REJECT', 'TICKET'],
+      ['REJECT', 'REJECTED'],
+      ['ABORT', 'ABORTED'],
     ]),
   ],
 
@@ -100,6 +104,7 @@ export const TRANSITIONS: ReadonlyMap<Phase, ReadonlyMap<Event, Phase>> = new Ma
       ['CHECK_FAILED', 'PLAN'],
       ['CHECK_ERRORED', 'VALIDATION'],
       ['ERROR', 'VALIDATION'],
+      ['ABORT', 'ABORTED'],
     ]),
   ],
 
@@ -113,6 +118,7 @@ export const TRANSITIONS: ReadonlyMap<Phase, ReadonlyMap<Event, Phase>> = new Ma
       ['REDUCED_CEREMONY', 'EVIDENCE_REVIEW'],
       ['IMPL_COMPLETE', 'IMPL_VALIDATION'],
       ['ERROR', 'IMPLEMENTATION'],
+      ['ABORT', 'ABORTED'],
     ]),
   ],
 
@@ -129,6 +135,7 @@ export const TRANSITIONS: ReadonlyMap<Phase, ReadonlyMap<Event, Phase>> = new Ma
       ['CHECK_FAILED', 'IMPLEMENTATION'],
       ['CHECK_ERRORED', 'IMPL_VALIDATION'],
       ['ERROR', 'IMPL_VALIDATION'],
+      ['ABORT', 'ABORTED'],
     ]),
   ],
 
@@ -139,25 +146,43 @@ export const TRANSITIONS: ReadonlyMap<Phase, ReadonlyMap<Event, Phase>> = new Ma
     'IMPL_REVIEW',
     new Map<Event, Phase>([
       ['REVIEW_MET', 'EVIDENCE_REVIEW'],
+      // Exhausted review loops end at the human gate, where only the explicit
+      // governance override can still approve the unchanged reviewed revision.
+      ['REVIEW_EXHAUSTED', 'EVIDENCE_REVIEW'],
       ['REVIEW_PENDING', 'IMPL_REVIEW'],
       ['CHANGES_REQUESTED', 'IMPLEMENTATION'],
       ['ERROR', 'IMPL_REVIEW'],
+      ['ABORT', 'ABORTED'],
     ]),
   ],
 
   // ── EVIDENCE_REVIEW (User Gate) ─────────────────────────────
-  // Human decides: approve → COMPLETE, changes → IMPLEMENTATION, reject → TICKET.
+  // Human decides: approve → EXPORT_READY, changes → IMPLEMENTATION, reject → REJECTED.
   [
     'EVIDENCE_REVIEW',
     new Map<Event, Phase>([
-      ['APPROVE', 'COMPLETE'],
+      ['APPROVE', 'EXPORT_READY'],
       ['CHANGES_REQUESTED', 'IMPLEMENTATION'],
-      ['REJECT', 'TICKET'],
+      ['REJECT', 'REJECTED'],
+      ['ABORT', 'ABORTED'],
+    ]),
+  ],
+
+  // ── EXPORT_READY ─────────────────────────────────────────────
+  // Completion is possible only after the export rail has materialized and
+  // persisted exact, verifiable export evidence.
+  [
+    'EXPORT_READY',
+    new Map<Event, Phase>([
+      ['EXPORT_MATERIALIZED', 'COMPLETE'],
+      ['ABORT', 'ABORTED'],
     ]),
   ],
 
   // ── COMPLETE (Terminal) ─────────────────────────────────────
   ['COMPLETE', new Map<Event, Phase>()],
+  ['REJECTED', new Map<Event, Phase>()],
+  ['ABORTED', new Map<Event, Phase>()],
 
   // ═══════════════════════════════════════════════════════════════
   // ARCHITECTURE FLOW
@@ -171,17 +196,19 @@ export const TRANSITIONS: ReadonlyMap<Phase, ReadonlyMap<Event, Phase>> = new Ma
       ['SELF_REVIEW_MET', 'ARCH_REVIEW'],
       ['SELF_REVIEW_PENDING', 'ARCHITECTURE'],
       ['ERROR', 'ARCHITECTURE'],
+      ['ABORT', 'ABORTED'],
     ]),
   ],
 
   // ── ARCH_REVIEW (User Gate) ─────────────────────────────────
-  // Human decides: approve → ARCH_COMPLETE, changes → ARCHITECTURE, reject → READY.
+  // Human decides: approve → ARCH_COMPLETE, changes → ARCHITECTURE, reject → REJECTED.
   [
     'ARCH_REVIEW',
     new Map<Event, Phase>([
       ['APPROVE', 'ARCH_COMPLETE'],
       ['CHANGES_REQUESTED', 'ARCHITECTURE'],
-      ['REJECT', 'READY'],
+      ['REJECT', 'REJECTED'],
+      ['ABORT', 'ABORTED'],
     ]),
   ],
 
@@ -189,21 +216,22 @@ export const TRANSITIONS: ReadonlyMap<Phase, ReadonlyMap<Event, Phase>> = new Ma
   ['ARCH_COMPLETE', new Map<Event, Phase>()],
 
   // ═══════════════════════════════════════════════════════════════
-  // REVIEW FLOW
+  // PEER_REVIEW FLOW
   // ═══════════════════════════════════════════════════════════════
 
-  // ── REVIEW ──────────────────────────────────────────────────
-  // Generates compliance report, then auto-advances to terminal.
+  // ── PEER_REVIEW ──────────────────────────────────────────────────
+  // Generates peer review report, then auto-advances to terminal.
   [
-    'REVIEW',
+    'PEER_REVIEW',
     new Map<Event, Phase>([
-      ['REVIEW_DONE', 'REVIEW_COMPLETE'],
-      ['ERROR', 'REVIEW'],
+      ['PEER_REVIEW_DONE', 'PEER_REVIEW_COMPLETE'],
+      ['ERROR', 'PEER_REVIEW'],
+      ['ABORT', 'ABORTED'],
     ]),
   ],
 
   // ── REVIEW_COMPLETE (Terminal) ──────────────────────────────
-  ['REVIEW_COMPLETE', new Map<Event, Phase>()],
+  ['PEER_REVIEW_COMPLETE', new Map<Event, Phase>()],
 ]);
 
 // ─── Phase Classifications ────────────────────────────────────────────────────
@@ -224,7 +252,9 @@ export const USER_GATES: ReadonlySet<Phase> = new Set<Phase>(USER_GATE_PHASES);
 export const TERMINAL: ReadonlySet<Phase> = new Set<Phase>([
   'COMPLETE',
   'ARCH_COMPLETE',
-  'REVIEW_COMPLETE',
+  'PEER_REVIEW_COMPLETE',
+  'REJECTED',
+  'ABORTED',
 ]);
 
 /**

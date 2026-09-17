@@ -256,15 +256,9 @@ async function assertNoLegacyTransitionGap(
   state: SessionState | null,
 ): Promise<void> {
   if (!state?.transition) return;
-  const trail = await readAuditTrail(sessDir);
-  if (trail.skipped > 0) {
-    throw new PersistenceError(
-      'READ_FAILED',
-      'Cannot verify transition audit evidence: audit trail contains malformed records',
-    );
-  }
+  const events = await readAuditTrail(sessDir);
   const transition = state.transition;
-  const evidenceExists = trail.events.some(
+  const evidenceExists = events.some(
     (event) =>
       event.detail.kind === 'transition' &&
       event.detail.from === transition.from &&
@@ -280,14 +274,8 @@ async function findOperationAudit(
   state: SessionState,
   operation: PendingAuditOperation,
 ): Promise<boolean> {
-  const trail = await readAuditTrail(sessDir);
-  if (trail.skipped > 0) {
-    throw new PersistenceError(
-      'READ_FAILED',
-      `Cannot reconcile audit operation ${operation.operationId}: audit trail contains malformed records`,
-    );
-  }
-  const event = trail.events.find(
+  const events = await readAuditTrail(sessDir);
+  const event = events.find(
     (candidate) =>
       candidate.id === operation.operationId &&
       candidate.detail.operationId === operation.operationId,

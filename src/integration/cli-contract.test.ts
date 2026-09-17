@@ -57,7 +57,7 @@ type StatusResult = {
   status: { phase?: string; policyMode?: string };
   appliedPolicy: { effectiveMode?: string; effectiveGateBehavior?: string };
   completeness: { overallComplete?: boolean; fourEyes?: unknown; summary?: unknown };
-  nextAction?: unknown;
+  directive?: unknown;
 };
 
 vi.mock('../adapters/git', async (importOriginal) => {
@@ -247,7 +247,7 @@ describe('HAPPY: status JSON shape is stable', () => {
     expect(typeof result.status).toBe('object');
     expect(result.status.phase).toBe('READY');
     expect(result.status.policyMode).toBe('solo');
-    expect(result.nextAction).toBeDefined();
+    expect(result.directive).toBeDefined();
   });
 
   it('status at TICKET has required fields', async () => {
@@ -258,7 +258,7 @@ describe('HAPPY: status JSON shape is stable', () => {
     expect(result.phase).toBe('TICKET');
     expect(result.status).toBeDefined();
     expect(result.status.phase).toBe('TICKET');
-    expect(result.nextAction).toBeDefined();
+    expect(result.directive).toBeDefined();
   });
 
   it('status at PLAN_REVIEW has policy info in appliedPolicy', async () => {
@@ -278,20 +278,12 @@ describe('HAPPY: status JSON shape is stable', () => {
     await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
     await callOk(ticket, { text: 'Complete test', source: 'user' });
     await callOk(plan, { planText: '## Plan\nTest', targetPaths: ['docs/test.md'] });
+    // Approval enters VALIDATION and the runtime runs the active checks
+    // automatically (discovery detects TypeScript → activeChecks=['typecheck']).
     await callOk(plan, { reviewVerdict: 'accept' });
-    // Pass validation: discovery detects TypeScript → activeChecks=['typecheck']
-    const runActiveChecks = async (): Promise<void> => {
-      const sd = await getSessDir();
-      const st = await readState(sd);
-      if (st && st.activeChecks.length > 0) {
-        for (const kind of st.activeChecks) {
-          await callOk(run_check, { kind });
-        }
-      }
-    };
-    await runActiveChecks();
+    // /implement records evidence; IMPL_VALIDATION runs the checks automatically
+    // against the recorded revision before advancing to IMPL_REVIEW.
     await callOk(implement, {});
-    await runActiveChecks(); // IMPL_VALIDATION → IMPL_REVIEW
 
     const result = parseToolResult<StatusResult>(await status.execute({}, ctx));
     expect(result.phase).toBe('IMPL_REVIEW');
@@ -338,17 +330,12 @@ describe('HAPPY: blocked/error output has stable structure', () => {
     await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
     await callOk(ticket, { text: 'Test', source: 'user' });
     await callOk(plan, { planText: '## Plan\nTest', targetPaths: ['docs/test.md'] });
+    // Approval runs the automatic validation and advances to IMPLEMENTATION;
+    // the decision tool is inadmissible there and must surface the structured
+    // COMMAND_NOT_ALLOWED shape.
     await callOk(plan, { reviewVerdict: 'accept' });
-    // Pass validation via run_check (discovery detects TypeScript → activeChecks=['typecheck'])
-    const sd = await getSessDir();
-    const st = await readState(sd);
-    if (st && st.activeChecks.length > 0) {
-      for (const kind of st.activeChecks) {
-        await callOk(run_check, { kind });
-      }
-    }
     const result = parseToolResult(
-      await decision.execute({ verdict: 'approve', rationale: 'At VALIDATION' }, ctx),
+      await decision.execute({ verdict: 'approve', rationale: 'At IMPLEMENTATION' }, ctx),
     );
 
     expect(result.error).toBe(true);
@@ -370,16 +357,13 @@ describe('HAPPY: reason codes are stable', () => {
     'REVIEW_FINDINGS_HASH_MISMATCH',
     'REVIEW_FINDINGS_SESSION_MISMATCH',
     'INVALID_PLAN_TOOL_SEQUENCE',
-    'PLAN_SUBMISSION_MIXED_INPUTS',
     'PLAN_APPROVE_WITH_TEXT',
     'PLAN_REVIEW_IN_PROGRESS',
-    'PLAN_FINDINGS_WITHOUT_VERDICT',
     'PLAN_SUBMISSION_REQUIRED',
     'PLAN_REVIEW_LOOP_REQUIRED',
     'INVALID_ARCHITECTURE_TOOL_SEQUENCE',
     'ADR_SUBMISSION_MIXED_INPUTS',
     'ADR_APPROVE_WITH_TEXT',
-    'ADR_FINDINGS_WITHOUT_VERDICT',
     'ADR_REVIEW_IN_PROGRESS',
     'ARCHITECTURE_REVIEW_LOOP_REQUIRED',
     'INVALID_IMPLEMENT_TOOL_SEQUENCE',
@@ -401,16 +385,13 @@ describe('HAPPY: reason codes are stable', () => {
       'REVIEW_FINDINGS_HASH_MISMATCH',
       'REVIEW_FINDINGS_SESSION_MISMATCH',
       'INVALID_PLAN_TOOL_SEQUENCE',
-      'PLAN_SUBMISSION_MIXED_INPUTS',
       'PLAN_APPROVE_WITH_TEXT',
       'PLAN_REVIEW_IN_PROGRESS',
-      'PLAN_FINDINGS_WITHOUT_VERDICT',
       'PLAN_SUBMISSION_REQUIRED',
       'PLAN_REVIEW_LOOP_REQUIRED',
       'INVALID_ARCHITECTURE_TOOL_SEQUENCE',
       'ADR_SUBMISSION_MIXED_INPUTS',
       'ADR_APPROVE_WITH_TEXT',
-      'ADR_FINDINGS_WITHOUT_VERDICT',
       'ADR_REVIEW_IN_PROGRESS',
       'ARCHITECTURE_REVIEW_LOOP_REQUIRED',
       'INVALID_IMPLEMENT_TOOL_SEQUENCE',

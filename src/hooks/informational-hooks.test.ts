@@ -5,14 +5,12 @@ const mockEnsureWorkspace = vi.hoisted(() => vi.fn());
 const mockSessionDir = vi.hoisted(() => vi.fn());
 const mockAppendAuditEvent = vi.hoisted(() => vi.fn());
 const mockResolveSession = vi.hoisted(() => vi.fn());
-const mockWriteReviewerCapture = vi.hoisted(() => vi.fn());
 const mockWriteLog = vi.hoisted(() => vi.fn());
 
 vi.mock('./shared/stdin-reader.js', () => ({
   readStdin: (...args: unknown[]) => mockReadStdin(...args),
   validateSessionPayload: (payload: Record<string, unknown>) => payload,
   validateToolHookPayload: (payload: Record<string, unknown>) => payload,
-  validateSubagentStopPayload: (payload: Record<string, unknown>) => payload,
 }));
 
 vi.mock('./shared/stdout-writer.js', () => ({
@@ -36,12 +34,6 @@ vi.mock('../adapters/persistence-audit.js', () => ({
 
 vi.mock('./shared/session-resolver.js', () => ({
   resolveSession: (...args: unknown[]) => mockResolveSession(...args),
-}));
-
-vi.mock('./shared/reviewer-capture-writer.js', () => ({
-  isReviewTool: (toolName: string) => toolName === 'flowguard_review',
-  extractObligationId: () => 'obligation-1',
-  writeReviewerCapture: (...args: unknown[]) => mockWriteReviewerCapture(...args),
 }));
 
 vi.mock('./shared/phase-gate.js', () => ({ isMutatingHostTool: () => false }));
@@ -79,7 +71,6 @@ describe('informational command hooks', () => {
       sessionDir: '/workspace/.flowguard/sessions/session-1',
       state: { phase: 'IMPLEMENTATION', reviewAssurance: { obligations: [] } },
     });
-    mockWriteReviewerCapture.mockResolvedValue(null);
     process.exitCode = undefined;
   });
 
@@ -103,9 +94,9 @@ describe('informational command hooks', () => {
       expect(process.exitCode).not.toBe(1);
     });
 
-    it('persists a tool audit event and reviewer capture', async () => {
+    it('persists a tool audit event', async () => {
       mockReadStdin.mockResolvedValue(TOOL_PAYLOAD);
-      await importHook('./post-tool-use.js', () => mockWriteReviewerCapture.mock.calls.length > 0);
+      await importHook('./post-tool-use.js', () => mockAppendAuditEvent.mock.calls.length > 0);
 
       expect(mockAppendAuditEvent).toHaveBeenCalledWith(
         expect.any(String),
@@ -113,11 +104,6 @@ describe('informational command hooks', () => {
           event: 'tool_call',
           detail: expect.objectContaining({ tool: 'flowguard_review' }),
         }),
-      );
-      expect(mockWriteReviewerCapture).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({ source: 'post_tool_use_hook', obligationId: 'obligation-1' }),
-        expect.any(Function),
       );
     });
 
@@ -132,17 +118,6 @@ describe('informational command hooks', () => {
         }),
       );
     });
-
-    it('writes a subagent-stop reviewer capture', async () => {
-      mockReadStdin.mockResolvedValue(TOOL_PAYLOAD);
-      await importHook('./subagent-stop.js', () => mockWriteReviewerCapture.mock.calls.length > 0);
-
-      expect(mockWriteReviewerCapture).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({ source: 'subagent_stop_hook', agentId: 'reviewer-1' }),
-        expect.any(Function),
-      );
-    });
   });
 
   describe('BAD', () => {
@@ -150,22 +125,12 @@ describe('informational command hooks', () => {
       ['./session-start.js', () => mockEnsureWorkspace],
       ['./post-tool-use.js', () => mockResolveSession],
       ['./stop.js', () => mockResolveSession],
-      ['./subagent-stop.js', () => mockResolveSession],
     ])('logs stdin failures without throwing for %s', async (path, dependency) => {
       mockReadStdin.mockRejectedValue(new Error('invalid stdin'));
       await importHook(path, () => mockWriteLog.mock.calls.length > 0);
 
       expect(dependency()).not.toHaveBeenCalled();
       expect(process.exitCode).not.toBe(1);
-    });
-  });
-
-  describe('CORNER', () => {
-    it('does not write a reviewer capture when post-tool-use has no agent id', async () => {
-      mockReadStdin.mockResolvedValue({ ...TOOL_PAYLOAD, agent_id: undefined });
-      await importHook('./post-tool-use.js', () => mockAppendAuditEvent.mock.calls.length > 0);
-
-      expect(mockWriteReviewerCapture).not.toHaveBeenCalled();
     });
   });
 

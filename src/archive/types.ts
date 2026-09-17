@@ -19,7 +19,7 @@
  */
 
 import { z } from 'zod';
-import { FINGERPRINT_PATTERN } from '../shared/flowguard-identifiers.js';
+import { FINGERPRINT_PATTERN } from '../shared/repository-fingerprint.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -84,7 +84,6 @@ export type ManifestPolicyMode = z.infer<typeof ManifestPolicyModeSchema>;
  * - state_missing: session-state.json not found in archive
  * - state_invalid: session-state.json exists but cannot be parsed or validated
  * - policy_state_unresolved: trusted policy state cannot determine verification strictness
- * - audit_records_skipped: audit records could not be parsed during verification
  * - archive_inventory_inconclusive: archive payload inventory could not be read completely
  * - archive_publication_unbound: published archive has no exact external audit binding
  * - archive_publication_binding_invalid: external binding audit trail is unreadable or invalid
@@ -113,7 +112,6 @@ export const ArchiveFindingCodeSchema = z.enum([
   'state_missing',
   'state_invalid',
   'policy_state_unresolved',
-  'audit_records_skipped',
   'archive_inventory_inconclusive',
   'archive_publication_unbound',
   'archive_publication_binding_invalid',
@@ -176,7 +174,7 @@ export const ArchiveManifestSchema = z.object({
   // provides opaque ids like "ses_...", not UUIDs, so the manifest must accept
   // any non-empty id — NOT z.string().uuid(), which rejected every real
   // OpenCode session and made verifyArchive emit manifest_parse_error ->
-  // archiveStatus:"failed" on otherwise-valid archives. Path-traversal safety
+  // regulatedArchiveStatus:"failed" on otherwise-valid archives. Path-traversal safety
   // is enforced by validateSessionId at write time, not by this schema.
   sessionId: z.string().min(1),
   fingerprint: z.string().regex(FINGERPRINT_PATTERN),

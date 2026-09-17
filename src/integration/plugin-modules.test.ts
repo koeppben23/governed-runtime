@@ -18,13 +18,12 @@ import {
   getToolArgs,
 } from './plugin-helpers.js';
 import { updateObligation, blockObligation } from './review/obligation-state.js';
-import { trackFlowGuardEnforcement, trackTaskEnforcement } from './plugin-enforcement-tracking.js';
+import { trackFlowGuardEnforcement } from './plugin-enforcement-tracking.js';
 import * as reviewEnforcement from './review/enforcement/enforcement.js';
 import type { SessionEnforcementState } from './review/enforcement/types.js';
 
 vi.mock('./review/enforcement/enforcement.js', () => ({
   onFlowGuardToolAfter: vi.fn(),
-  onTaskToolAfter: vi.fn(),
   resolveSessionEnforcementState: vi.fn(),
 }));
 import type { SessionState } from '../state/schema.js';
@@ -123,6 +122,7 @@ describe('plugin-review-state', () => {
     return {
       obligationId: id,
       obligationType: 'plan',
+      reviewCycle: 1,
       requiredChallengeCount: 0,
       requiredChallengeKind: 'design_challenge',
       challengePolicyVersion: 'challenge-policy.v1',
@@ -131,7 +131,7 @@ describe('plugin-review-state', () => {
       planVersion: 1,
       criteriaVersion: '2.0.0',
       mandateDigest: 'abc123',
-      maxReviewerOutputRepairAttempts: 1,
+      maxReviewerAttempts: 1,
       createdAt: '2026-01-01T00:00:00Z',
       pluginHandshakeAt: null,
       status: 'pending',
@@ -145,6 +145,13 @@ describe('plugin-review-state', () => {
         revisions: ['base', 'head'],
       },
       ...overrides,
+      reviewProfile: overrides?.reviewProfile ?? 'core',
+      profileSource: overrides?.profileSource ?? 'policy_default',
+      reviewMaterial: overrides?.reviewMaterial ?? {
+        content: 'frozen review material',
+        materialDigest: 'a'.repeat(64),
+        subjectDigest: overrides?.subjectDigest ?? 'test-subject-digest',
+      },
     };
   }
 
@@ -188,17 +195,6 @@ describe('plugin-enforcement-tracking', () => {
       new Date().toISOString(),
     );
     expect(reviewEnforcement.onFlowGuardToolAfter).toHaveBeenCalled();
-  });
-
-  it('trackTaskEnforcement delegates to enforcement module', () => {
-    const eState = {} as SessionEnforcementState;
-    trackTaskEnforcement(
-      eState,
-      { args: { subagent_type: 'flowguard-reviewer' } },
-      { output: '{}' },
-      new Date().toISOString(),
-    );
-    expect(reviewEnforcement.onTaskToolAfter).toHaveBeenCalled();
   });
 });
 

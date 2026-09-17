@@ -1,4 +1,4 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 
 export const WHY_COMMAND = `---
 description: FlowGuard — Explain why the current workflow is blocked and how to unblock it.
@@ -21,7 +21,7 @@ Show the user what is blocking progress and how to resolve it.
 ## Rules
 
 - Use only the recovery guidance from the tool output — never guess how to resolve a block.
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 ## Done-when
 
 - Blocker reason and recovery action reported.

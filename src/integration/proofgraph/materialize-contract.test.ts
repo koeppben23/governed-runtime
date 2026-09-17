@@ -9,7 +9,7 @@ import {
 } from '../../audit/proofgraph/mutation-report.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { hashText } from '../../shared/hashing.js';
-import { computeRecordDigest } from '../../state/evidence-plan.js';
+import { makePlanRevision } from '../../state/evidence-test-constants.js';
 import { evaluateProofGraph } from '../../audit/proofgraph/evaluate.js';
 import { deriveProofGraph } from '../../audit/proofgraph/derive.js';
 import {
@@ -18,7 +18,8 @@ import {
 } from './materialize-contract.js';
 import type { PlanClaimDeclarations } from '../../state/proofgraph-approval.js';
 
-const PLAN_DIGEST = 'approved-plan';
+const PLAN_CURRENT = makePlanRevision({ body: 'approved plan' });
+const PLAN_DIGEST = PLAN_CURRENT.digest;
 const IMPL_DIGEST = 'current-implementation';
 const ATTEMPT_ID = '11111111-1111-4111-8111-111111111111';
 const CLAIM_ID = '22222222-2222-4222-8222-222222222222';
@@ -27,22 +28,17 @@ const NOW = '2026-01-01T00:00:00.000Z';
 /**
  * The plan's record digest. The approval certificate binds this exact value:
  * `hasCurrentPlanApprovalCertificate` rejects a certificate whose
- * `planRecordDigest` differs from the plan's, so the fixture must derive both
- * from the same computation rather than using a placeholder literal.
+ * `planRecordDigest` differs from the plan's, so the fixture derives both from
+ * the same canonical revision.
  */
-const PLAN_RECORD_DIGEST = computeRecordDigest({
-  contentDigest: PLAN_DIGEST,
-  planVersion: 1,
-  supersedesRecordDigest: null,
-  originatingReviewObligationId: null,
-  revisionReason: null,
-});
+const PLAN_RECORD_DIGEST = PLAN_CURRENT.recordDigest;
 
 function stateWithClaims() {
   const state = makeState('IMPL_REVIEW', {
     verificationCandidates: [
       {
         assertionCapability: 'unsupported' as const,
+        candidateId: 'vc_test_mvn',
         kind: 'test' as const,
         command: './mvnw verify',
         source: 'repo:mvnw',
@@ -51,6 +47,7 @@ function stateWithClaims() {
       },
       {
         assertionCapability: 'structured' as const,
+        candidateId: 'vc_security_mvn',
         kind: 'security' as const,
         command: './mvnw test',
         source: 'repo:mvnw',
@@ -66,18 +63,7 @@ function stateWithClaims() {
       },
     ],
     plan: {
-      current: {
-        body: 'approved plan',
-        digest: PLAN_DIGEST,
-        sections: [],
-        createdAt: NOW,
-        recordDigest: PLAN_RECORD_DIGEST,
-        planVersion: 1,
-        supersedesRecordDigest: null,
-        originatingReviewObligationId: null,
-        revisionReason: null,
-        lineageStatus: 'verified' as const,
-      },
+      current: PLAN_CURRENT,
       history: [],
       reviewCompletion: 'pending',
       claimDeclarations: {
@@ -145,7 +131,12 @@ function stateWithClaims() {
       verdict: 'approve',
       rationale: 'approved',
       decidedAt: NOW,
-      decidedBy: 'user',
+      decisionIdentity: {
+        actorId: 'user',
+        actorEmail: null,
+        actorSource: 'unknown',
+        actorAssurance: 'best_effort',
+      },
     },
     implementation: {
       changedFiles: ['src/example.ts'],
@@ -178,14 +169,14 @@ function stateWithClaims() {
 }
 
 describe('materializeApprovedPlanContract', () => {
-  it('materializes current v2 declarations as proof-eligible without legacy reinterpretation', async () => {
+  it('materializes current v2 declarations without legacy reinterpretation', async () => {
     const state = stateWithClaims();
     const materialized = await materializeApprovedPlanContractResult(state, process.cwd());
     expect(materialized.coverage).not.toContainEqual({
       claimId: CLAIM_ID,
       cause: 'legacy_claim_declaration_v1',
     });
-    expect(materialized.contract.claims[0]!.proofEligibility).toBe('eligible');
+    expect(materialized.contract.claims).toHaveLength(1);
   });
 
   it('materializes approved pre-evidence claims with current implementation attempts only', async () => {
@@ -348,8 +339,8 @@ describe('materializeApprovedPlanContract', () => {
       process.cwd(),
     );
 
-    expect(withoutCertificate).toEqual({ version: 'contract.v1', claims: [] });
-    expect(staleCertificate).toEqual({ version: 'contract.v1', claims: [] });
+    expect(withoutCertificate).toEqual({ version: 'contract.v2', claims: [] });
+    expect(staleCertificate).toEqual({ version: 'contract.v2', claims: [] });
   });
 
   it('fails closed when the certificate declaration digest is not canonical', async () => {
@@ -369,7 +360,7 @@ describe('materializeApprovedPlanContract', () => {
     );
 
     expect(result).toEqual({
-      contract: { version: 'contract.v1', claims: [] },
+      contract: { version: 'contract.v2', claims: [] },
       coverage: [{ cause: 'invalid_certificate' }],
     });
   });
@@ -501,7 +492,7 @@ describe('materializeApprovedPlanContractResult — mutation coverage', () => {
     };
   }
 
-  it('versioned declarations materialize with claimScope and eligible eligibility', async () => {
+  it('versioned declarations materialize with claimScope', async () => {
     const state = withV2Declarations(stateWithClaims(), [
       {
         claimId: V2_CLAIM_ID,
@@ -516,11 +507,7 @@ describe('materializeApprovedPlanContractResult — mutation coverage', () => {
     expect(result.coverage).toEqual([]);
     const claim = result.contract.claims[0]!;
     expect(claim.claimScope).toBe('specific_behavior');
-    expect(claim.proofEligibility).toBe('eligible');
-    expect(claim.requiredEvidence).toEqual({
-      positive: ['executed_test'],
-      adversarial: ['counterexample'],
-    });
+    expect(claim.evidenceRefs).toHaveLength(1);
   });
 
   it('requires schema_compare for config-defaults surfaces and structural_assertion otherwise', async () => {
@@ -687,6 +674,7 @@ describe('materializeApprovedPlanContractResult — mutation coverage', () => {
         verificationCandidates: [
           {
             assertionCapability: 'unsupported' as const,
+            candidateId: 'vc_security_unstructured',
             kind: 'security' as const,
             command: './mvnw security',
             source: 'repo:mvnw',

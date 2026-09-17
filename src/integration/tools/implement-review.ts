@@ -2,36 +2,32 @@
  * @module integration/tools/implement
  * @description FlowGuard implement tool — record implementation or review verdict.
  *
- * Agent-Orchestrated Independent Review for /implement
+ * Host-Observed Independent Review for /implement
  *
  * Architecture: FlowGuard does NOT call subagents. The OpenCode primary agent
  * orchestrates independent review by calling the flowguard-reviewer subagent
- * via the Task tool. FlowGuard accepts, validates, and persists the resulting
- * ReviewFindings.
+ * via the Task tool. The HOST captures the reviewer's structured findings into
+ * the review assurance evidence; the agent never resubmits findings.
  *
- * Flow (subagentEnabled=true):
+ * Flow:
  * 1. Primary agent performs implementation work
  * 2. Primary agent calls flowguard_implement (Mode A, records evidence)
  * 3. FlowGuard returns next-action instructing subagent invocation
  * 4. Primary agent calls flowguard-reviewer subagent via Task tool
- * 5. Subagent returns structured ReviewFindings
- * 6. Primary agent submits reviewVerdict + reviewFindings to FlowGuard (Mode B)
- * 7. FlowGuard validates and persists both (append-only, separate)
+ * 5. Host captures the reviewer's structured findings into invocation evidence
+ * 6. Primary agent submits the review verdict ONLY (Mode B)
+ * 7. FlowGuard resolves the host-captured findings, validates, and persists them
  *
  * Tool responsibilities:
- * - Input validation: reviewFindings vs policy, iteration binding
- * - Persistence: impl history (author), implReviewFindings (reviewer)
+ * - Input validation: verdict vs host-captured evidence binding
+ * - Persistence: impl history (author), implReviewFindings (host-captured)
  * - Response: summary of review findings
  * - Next-action: independent reviewer instructions
  *
- * Policy config (selfReview):
- * - subagentEnabled: enforces subagent review mode
- * - fallbackToSelf: deprecated compatibility field; self-review fallback is prohibited
- *
  * Validation rules:
  * - reviewMode=self → BLOCKED
- * - reviewVerdict=approve + missing reviewFindings → BLOCKED
- * - reviewFindings.iteration mismatch → BLOCKED
+ * - reviewVerdict without bound structured evidence → SUBAGENT_EVIDENCE_MISSING
+ * - captured findings iteration mismatch → BLOCKED
  *
  * Multi-call pattern driven by the LLM:
  *
@@ -42,8 +38,8 @@
  *   -> Returns "review needed" with policy-conditional next-action
  *
  * Step 3: LLM calls flowguard-reviewer subagent via Task tool
- * Step 4: LLM calls flowguard_review_implementation({ reviewVerdict: "accept", reviewFindings })
- *   -> Tool records review iteration, checks convergence
+ * Step 4: LLM calls flowguard_review_implementation({ reviewVerdict: "accept" })
+ *   -> Tool resolves the host-captured findings and records the review iteration
  *   -> On convergence: auto-advance to EVIDENCE_REVIEW
  *
  * OR Step 4: LLM calls flowguard_review_implementation({ reviewVerdict: "changes_requested" })
@@ -53,10 +49,9 @@
  */
 
 import {
-  formatEval,
   formatBlocked,
   formatAutoAdvanceOverflow,
-  appendNextAction,
+  enrichWithWorkflowDirective,
   writeStateWithArtifacts,
 } from './helpers.js';
 
@@ -64,7 +59,7 @@ import {
 import type { SessionState } from '../../state/schema.js';
 import { evaluate, evaluateWithEvent } from '../../machine/evaluate.js';
 import { implValidationPassed } from '../../machine/guards.js';
-import { resolveNextAction } from '../../machine/next-action.js';
+import { resolveWorkflowDirective } from '../../machine/workflow-directive.js';
 
 // Rail helpers
 import { applyTransition, autoAdvance } from '../../rails/types.js';
@@ -73,11 +68,7 @@ import { applyTransition, autoAdvance } from '../../rails/types.js';
 import { readConfig } from '../../adapters/persistence-config.js';
 
 // Presentation
-import {
-  buildEvidenceReviewCard,
-  PHASE_LABELS,
-  buildProductNextAction,
-} from '../../presentation/index.js';
+import { buildEvidenceReviewCard, PHASE_LABELS } from '../../presentation/index.js';
 import type { EvidenceReviewCardInput } from '../../presentation/evidence-review-card.js';
 
 // Evidence types
@@ -85,26 +76,23 @@ import type { LoopVerdict, ReviewFindings } from '../../state/evidence.js';
 
 // Review findings validation (shared with plan.ts)
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
-import { requireReviewFindings, resolveHostTaskEffectiveFindings } from './review-validation.js';
+import { resolveStructuredEffectiveFindings } from './review-validation.js';
 import { collectPreviouslyUsedChallengeIds } from '../review/challenge-history.js';
 import {
   consumeReviewObligation,
   ensureReviewAssurance,
-  findAcceptedInvocationForFindings,
   findLatestObligation,
-  reviewObligationResponseFields,
 } from '../review/assurance.js';
 import { buildLatestImplementationReviewSummary } from './review-summary.js';
-import { resolveRuntimeReviewPlatform } from '../review/orchestration-mode.js';
-import { buildHostTaskChallengeContract } from '../review/host-task-policy.js';
+import { buildReviewChallengeContract } from '../review/challenge-contract.js';
 import type { ImplementRuntime } from './implement-shared.js';
 import {
   activateImplementationReviewObligation,
-  effectiveImplementationReviewIterations,
   nextImplementationReviewIteration,
   normalizeHostFindings,
   unknownOutcomeRevalidationBlock,
 } from './implement-shared.js';
+import { handleTransportRecovery } from './implement-review-recovery.js';
 import { latestUnknownOutcomeResolvedAt } from '../../state/evidence-mutation-episode.js';
 import { handleUnableToReview } from './implement-unable-review.js';
 import type { CompactProofPresentation } from '../../presentation/proof-model.js';
@@ -191,25 +179,17 @@ function resolveImplementationFindings(
   planVersion: number,
 ) {
   const pendingObligation = findPendingImplObligation(input.state);
-  const challengeContract = buildHostTaskChallengeContract(input.state, pendingObligation);
-  const resolved = resolveHostTaskEffectiveFindings({
+  const challengeContract = buildReviewChallengeContract(input.state, pendingObligation);
+  const resolved = resolveStructuredEffectiveFindings({
     pendingObligation,
     expected: { obligationType: 'implement', iteration, planVersion },
-    policy: {
-      reviewInvocationPolicy: input.policy.reviewInvocationPolicy,
-      strictEnforcement: input.strictEnforcement,
-      subagentEnabled: input.subagentEnabled,
-      fallbackToSelf: input.fallbackToSelf,
-    },
     input: {
-      reviewFindings: input.args.reviewFindings,
       reviewerUnavailable: input.args.reviewerUnavailable,
       verdict: input.args.reviewVerdict,
     },
     state: {
       assurance: input.state.reviewAssurance,
       sessionId: input.context.sessionID,
-      reviewHostPlatform: resolveRuntimeReviewPlatform(),
       unresolvedImplementationChallengeIds: computeTargetedResolutionChallengeIds(input.state),
       unaddressedPriorFailIds: computeUnaddressedPriorFailIds(input.state),
       allowedChallengeEvidenceRefs: challengeContract?.evidenceRefs,
@@ -220,13 +200,10 @@ function resolveImplementationFindings(
 }
 
 function validateEffectiveFindings(
-  findings: ReviewFindings | undefined,
+  findings: ReviewFindings,
   submittedVerdict: LoopVerdict,
   obligationId: string,
 ): string | null {
-  if (!findings) {
-    return requireReviewFindings(false);
-  }
   if (findings.overallVerdict === 'unable_to_review') {
     return formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', { obligationId });
   }
@@ -243,8 +220,8 @@ function appendImplReviewState(input: {
   runtime: ImplementRuntime;
   iteration: number;
   planVersion: number;
-  effectiveFindings?: ReviewFindings;
-  evidenceInvocationId?: string;
+  effectiveFindings: ReviewFindings;
+  evidenceInvocationId: string;
   obligationToConsume?: ReturnType<typeof findPendingImplObligation>;
 }) {
   const {
@@ -257,33 +234,27 @@ function appendImplReviewState(input: {
   } = input;
   const implementation = runtime.state.implementation!;
   const assuranceBase = ensureReviewAssurance(runtime.state.reviewAssurance);
-  const strictObligation = runtime.strictEnforcement
-    ? findLatestObligation(assuranceBase.obligations, 'implement', iteration, planVersion)
-    : null;
+  const strictObligation = findLatestObligation(
+    assuranceBase.obligations,
+    'implement',
+    iteration,
+    planVersion,
+  );
   const consumedObligation = obligationToConsume ?? strictObligation;
   const consumedAssurance = consumeReviewObligation(
     assuranceBase,
     consumedObligation,
     runtime.ctx.now(),
-    evidenceInvocationId ??
-      findAcceptedInvocationForFindings(
-        assuranceBase,
-        consumedObligation,
-        runtime.args.reviewFindings,
-      )?.invocationId,
+    evidenceInvocationId,
   );
   const existingFindings = runtime.state.implReviewFindings ?? [];
-  const newReviewFindings = effectiveFindings
-    ? [...existingFindings, normalizeHostFindings(effectiveFindings)]
-    : existingFindings;
+  const newReviewFindings = [...existingFindings, normalizeHostFindings(effectiveFindings)];
   const reviewedState: SessionState = {
     ...runtime.state,
     implReview: {
       iteration,
-      maxIterations: effectiveImplementationReviewIterations(
-        runtime.state,
-        runtime.maxImplReviewIterations,
-      ),
+      reviewCycle: runtime.state.reviewCycles.implementation,
+      maxIterations: runtime.maxImplementationReviewIterations,
       prevDigest: implementation.digest,
       currDigest: implementation.digest,
       revisionDelta: 'none',
@@ -315,40 +286,55 @@ async function handleChangesRequestedReview(input: {
   reviewFindings: ReviewFindings[];
   proofSummary: CompactProofPresentation;
 }): Promise<string> {
-  const target = evaluateWithEvent(input.runtime.state.phase, 'CHANGES_REQUESTED');
+  const maxIterations = input.runtime.maxImplementationReviewIterations;
+  const exhausted = input.iteration >= maxIterations;
+  // An exhausted loop no longer clears the implementation. It advances to the
+  // final human gate, which becomes a governance override gate: the human may
+  // still accept the unchanged reviewed revision explicitly, request changes,
+  // or reject. Below the budget, changes_requested remains an internal repair
+  // continuation back to IMPLEMENTATION.
+  const event = exhausted ? 'REVIEW_EXHAUSTED' : 'CHANGES_REQUESTED';
+  const target = evaluateWithEvent(input.runtime.state.phase, event);
   if (target === undefined) {
     return formatBlocked('INVALID_TRANSITION', {
-      event: 'CHANGES_REQUESTED',
+      event,
       phase: input.runtime.state.phase,
     });
   }
 
   const at = input.runtime.ctx.now();
-  const maxIterations = effectiveImplementationReviewIterations(
-    input.runtime.state,
-    input.runtime.maxImplReviewIterations,
-  );
-  const exhausted = input.iteration >= maxIterations;
-  const finalState = applyTransition(
-    {
-      ...input.reviewedState,
-      implementation: null,
-      implementationRework: {
-        rejectedDigest: input.runtime.state.implementation!.digest,
-        exhausted,
-      },
-      implValidation: [],
-      implReview: null,
-      reducedCeremony: null,
-    },
-    input.runtime.state.phase,
-    target,
-    'CHANGES_REQUESTED',
-    at,
-  );
-  const transitions = [
-    { from: input.runtime.state.phase, to: finalState.phase, event: 'CHANGES_REQUESTED', at },
-  ];
+  const finalState = exhausted
+    ? applyTransition(
+        {
+          ...input.reviewedState,
+          implementationRework: {
+            rejectedDigest: input.runtime.state.implementation!.digest,
+            exhausted: true,
+          },
+        },
+        input.runtime.state.phase,
+        target,
+        event,
+        at,
+      )
+    : applyTransition(
+        {
+          ...input.reviewedState,
+          implementation: null,
+          implementationRework: {
+            rejectedDigest: input.runtime.state.implementation!.digest,
+            exhausted: false,
+          },
+          implValidation: [],
+          implReview: null,
+          reducedCeremony: null,
+        },
+        input.runtime.state.phase,
+        target,
+        event,
+        at,
+      );
+  const transitions = [{ from: input.runtime.state.phase, to: finalState.phase, event, at }];
   await writeStateWithArtifacts(input.runtime.sessDir, finalState);
 
   const response: Record<string, unknown> = {
@@ -357,10 +343,13 @@ async function handleChangesRequestedReview(input: {
     status: exhausted
       ? `Implementation review iteration ${input.iteration}/${maxIterations} exhausted with Changes requested.`
       : `Implementation review iteration ${input.iteration}/${maxIterations}. Changes requested.`,
-    next: exhausted
-      ? 'A user must explicitly authorize more review iterations with /extend-implementation-review <positive integer> before implementation evidence can be re-recorded.'
-      : 'Make the requested code changes using read/write/bash tools, then call flowguard_implement (without reviewVerdict) to re-record the implementation. ' +
-        `After re-recording, call the ${REVIEWER_SUBAGENT_TYPE} subagent again for independent review.`,
+    ...(exhausted
+      ? {}
+      : {
+          agentInstruction:
+            'Make the requested code changes using read/write/bash tools, then call flowguard_implement (without reviewVerdict) to re-record the implementation. ' +
+            `After re-recording, call the ${REVIEWER_SUBAGENT_TYPE} subagent again for independent review.`,
+        }),
     _audit: { transitions },
   };
   addLatestImplementationReview(response, input.reviewFindings);
@@ -370,18 +359,18 @@ async function handleChangesRequestedReview(input: {
   // re-record -> validation -> challenge resolution -> fresh independent
   // review), so the response carries compact status/next guidance and NO
   // presentation card. Only when the budget is exhausted does the loop end in
-  // a user decision; that terminal state renders the full card with the
-  // /extend-implementation-review action.
+  // a user decision at the governance override gate; that state renders the
+  // full card with the /override-approve action.
   if (exhausted) {
     response.presentation = {
       markdown: buildImplReviewChangesRequestedMarkdown(
         `Implementation review iteration ${input.iteration}/${maxIterations} exhausted with Changes requested.`,
         input.proofSummary,
-        buildProductNextAction(resolveNextAction(finalState.phase, finalState), finalState.phase),
+        resolveWorkflowDirective(finalState),
       ),
     };
   }
-  return appendNextAction(JSON.stringify(response), finalState);
+  return JSON.stringify(enrichWithWorkflowDirective(response, finalState));
 }
 
 async function handleApprovedReview(input: {
@@ -405,13 +394,12 @@ async function handleApprovedReview(input: {
   if (advanced.kind === 'overflow') {
     return formatAutoAdvanceOverflow(advanced);
   }
-  const { state: finalState, evalResult: ev, transitions } = advanced;
+  const { state: finalState, transitions } = advanced;
   await writeStateWithArtifacts(input.runtime.sessDir, finalState);
 
   const response: Record<string, unknown> = {
     phase: finalState.phase,
     implReviewIteration: input.iteration,
-    next: input.runtime.args.reviewVerdict === 'accept' ? formatEval(ev) : undefined,
     _audit: { transitions },
   };
   addLatestImplementationReview(response, input.reviewFindings);
@@ -420,13 +408,12 @@ async function handleApprovedReview(input: {
   const statusLine =
     input.runtime.args.reviewVerdict === 'accept'
       ? `Implementation review converged at iteration ${input.iteration}. Reviewer accepted.`
-      : `Implementation review reached max iterations (${input.iteration}/${input.runtime.maxImplReviewIterations}). Force-converged.`;
-  const nextAction = resolveNextAction(finalState.phase, finalState);
-  const productNext = buildProductNextAction(nextAction, finalState.phase);
+      : `Implementation review reached max iterations (${input.iteration}/${input.runtime.maxImplementationReviewIterations}). Force-converged.`;
+  const directive = resolveWorkflowDirective(finalState);
   const latestFindings = input.reviewFindings.at(-1);
   const cardInput: EvidenceReviewCardInput = {
     phaseLabel: PHASE_LABELS[finalState.phase],
-    productNextAction: productNext,
+    directive,
     proofSummary: input.proofSummary,
     statusLine,
     forcedConvergence: input.runtime.args.reviewVerdict !== 'accept',
@@ -443,56 +430,19 @@ async function handleApprovedReview(input: {
   if (input.runtime.args.reviewVerdict === 'accept') {
     response.status = `Implementation review converged at iteration ${input.iteration}. Reviewer accepted.`;
   } else {
-    response.status = `Implementation review reached max iterations (${input.iteration}/${input.runtime.maxImplReviewIterations}). Force-converged.`;
+    response.status = `Implementation review reached max iterations (${input.iteration}/${input.runtime.maxImplementationReviewIterations}). Force-converged.`;
   }
-  return appendNextAction(JSON.stringify(response), finalState);
-}
-
-function handlePreferredTaskTransportFailure(
-  input: ImplementRuntime,
-  pendingObligation: ReturnType<typeof findPendingImplObligation>,
-): string {
-  if (!pendingObligation)
-    return formatBlocked('REVIEW_FINDINGS_REQUIRED', { action: 'implementation review' });
-  return appendNextAction(
-    JSON.stringify({
-      phase: input.state.phase,
-      status:
-        'OpenCode Task reviewer transport failure reported. Attempting the configured SDK review transport.',
-      next: 'INDEPENDENT_REVIEW_REQUIRED: Host Task transport failure was reported for the pending implementation review.',
-      ...reviewObligationResponseFields(pendingObligation),
-      // The canonical REVIEW_REQUIRED signal must carry the host attestation
-      // constants for the obligation it names; enforcement treats a signal
-      // without them as a structural host-context defect before any reviewer
-      // dispatch (mirrors pending-instruction.ts requiredReviewAttestation).
-      reviewInvocation: {
-        requiredReviewAttestation: {
-          reviewedBy: REVIEWER_SUBAGENT_TYPE,
-          mandateDigest: pendingObligation.mandateDigest,
-          criteriaVersion: pendingObligation.criteriaVersion,
-          toolObligationId: pendingObligation.obligationId,
-          iteration: pendingObligation.iteration,
-          planVersion: pendingObligation.planVersion,
-        },
-      },
-      reviewTransportFailure: { transport: 'host_task', reported: true },
-    }),
-    input.state,
-  );
+  return JSON.stringify(enrichWithWorkflowDirective(response, finalState));
 }
 
 function handleTaskTransportFailureRetry(input: ImplementRuntime): string | null {
   if (input.args.reviewerUnavailable !== true) return null;
-  if (input.args.reviewVerdict !== undefined || input.args.reviewFindings !== undefined)
-    return null;
-  if (input.policy.reviewInvocationPolicy !== 'host_task_preferred') {
-    return formatBlocked('REVIEWER_UNAVAILABLE_STRICT', {
-      reason: 'reviewer unavailable; independent ReviewFindings remain required',
-      recovery:
-        'Invoke a supported reviewer transport or provide policy-gated manual_attested ReviewFindings bound to the active obligation. flowguard_decision does not replace review evidence.',
-    });
-  }
-  return handlePreferredTaskTransportFailure(input, findPendingImplObligation(input.state));
+  if (input.args.reviewVerdict !== undefined) return null;
+  return formatBlocked('REVIEWER_UNAVAILABLE_STRICT', {
+    reason: 'reviewer unavailable; independent host-captured reviewer evidence remains required',
+    recovery:
+      'Invoke a supported structured reviewer transport; the host captures its findings. flowguard_decision does not replace review evidence.',
+  });
 }
 
 // eslint-disable-next-line max-lines-per-function, complexity -- ordered evidence resolution, consumption, and convergence branches must remain together.
@@ -508,16 +458,16 @@ async function handleSubmittedImplementationReview(input: {
     iteration,
     planVersion,
   );
-  if (resolved.blocked) return resolved.blocked;
+  if (resolved.kind === 'blocked') return resolved.blocked;
 
-  if (resolved.effectiveFindings?.overallVerdict === 'unable_to_review') {
+  if (resolved.effectiveFindings.overallVerdict === 'unable_to_review') {
     if (submittedVerdict !== 'unable_to_review') {
       return formatBlocked('SUBAGENT_FINDINGS_VERDICT_MISMATCH', {
         reviewVerdict: submittedVerdict,
         overallVerdict: resolved.effectiveFindings.overallVerdict,
       });
     }
-    if (!pendingObligation || !resolved.evidenceInvocationId) {
+    if (!pendingObligation) {
       return formatBlocked('SUBAGENT_REVIEW_NOT_INVOKED', {
         reason: 'unable_to_review requires bound host-task reviewer evidence',
       });
@@ -525,28 +475,25 @@ async function handleSubmittedImplementationReview(input: {
     // Prepare the successor before consuming evidence. A failed Discovery mint
     // must preserve the current bound verdict as the executable recovery path.
     const reissued = await activateImplementationReviewObligation(runtime.state, {
-      subagentEnabled: runtime.subagentEnabled,
       iteration: iteration + 1,
       planVersion,
       now: runtime.ctx.now(),
       worktree: runtime.worktree,
     });
-    if (reissued.blocked || !reissued.obligation || !reissued.attemptId) {
-      return appendNextAction(
-        formatBlocked('REVIEWER_CONTEXT_UNAVAILABLE', {
-          reason: reissued.blocked?.reason ?? 'a fresh reviewer obligation could not be activated',
-        }),
-        runtime.state,
+    if (reissued.blocked || !reissued.obligation || !reissued.attempt) {
+      return JSON.stringify(
+        enrichWithWorkflowDirective(
+          JSON.parse(
+            formatBlocked('REVIEWER_CONTEXT_UNAVAILABLE', {
+              reason:
+                reissued.blocked?.reason ?? 'a fresh reviewer obligation could not be activated',
+            }),
+          ),
+          runtime.state,
+        ),
       );
     }
-    const retryAttempt = reissued.state.reviewAssurance?.attempts.find(
-      (attempt) => attempt.attemptId === reissued.attemptId,
-    );
-    if (!retryAttempt) {
-      return formatBlocked('REVIEWER_CONTEXT_UNAVAILABLE', {
-        reason: 'a fresh reviewer attempt could not be activated',
-      });
-    }
+    const retryAttempt = reissued.attempt;
     const { reviewedState } = appendImplReviewState({
       runtime,
       iteration,
@@ -631,6 +578,9 @@ export async function handleImplReview(input: ImplementRuntime): Promise<string>
 
   const iteration = nextImplementationReviewIteration(input.state);
   const planVersion = (input.state.plan?.history.length ?? 0) + 1;
+  if (input.args.reviewRecovery === 'retry_transport') {
+    return handleTransportRecovery(input);
+  }
   const transportFailureRetry = handleTaskTransportFailureRetry(input);
   if (transportFailureRetry) return transportFailureRetry;
   const submittedVerdict = input.args.reviewVerdict;

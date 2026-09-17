@@ -21,19 +21,21 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 });
 
 import {
-  mergePackageJson,
-  mergeReviewerTaskPermission,
-  mergeOpencodeJson,
-  PACKAGE_VERSION,
   sha256,
-  vendorDependency,
   safeRead,
   safeUnlink,
   resolveOpencodeConfigPath,
-  parseJsonc,
-  createMalformedJsonBackup,
   rollbackArtifacts,
 } from './install-helpers.js';
+import { PACKAGE_VERSION } from './install-types.js';
+import {
+  createMalformedJsonBackup,
+  mergeOpencodeJson,
+  mergePackageJson,
+  mergeReviewerTaskPermission,
+  parseJsonc,
+  vendorDependency,
+} from './install-json.js';
 
 describe('install-helpers', () => {
   let tmpDir: string;

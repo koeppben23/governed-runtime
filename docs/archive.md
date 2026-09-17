@@ -20,7 +20,7 @@ Raw-evidence archives include:
 - `context/discovery-snapshot.json` — Repository discovery snapshot
 - `context/profile-resolution-snapshot.json` — Profile resolution snapshot
 - `artifacts/ticket/`, `artifacts/plan/`, and `artifacts/reviews/` — Evidence artifacts
-- `reports/review-report.json` — Standalone review report when present
+- `reports/review-report.json` — Peer review report when present
 - `implementation/implementation-diff.<digest>.patch` — Implementation patch when present
 
 Redacted sharing archives instead contain redacted state, audit, receipt, and
@@ -172,10 +172,10 @@ completion. Status/doctor tools should surface this as degraded.
 `lastExportPackagePurpose` (`sharing` or `auditor`),
 `lastExportIntegrityCapability` (`verifiable` or `not_verifiable`), and
 `lastExportVerificationStatus` (`not_run`, `passed`, or `failed`). They never
-change `regulatedArchiveStatus`. `archiveStatus` remains a deprecated
-compatibility mirror for the regulated lifecycle only. Solo sessions may use the
-audit plugin's fire-and-forget archive path. Team sessions never archive on
-completion: `/export` is the explicit archive action.
+change `regulatedArchiveStatus`. External status and decision responses project
+this value as `archiveStatus`; it is not persisted separately. Solo sessions may
+use the audit plugin's fire-and-forget archive path. Team sessions never archive
+on completion: `/export` is the explicit archive action.
 
 **Aborted sessions** (`error.code === 'ABORTED'`) do not trigger the regulated
 archive lifecycle. Abort is an emergency escape with no archive guarantee.

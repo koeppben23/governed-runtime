@@ -165,23 +165,22 @@ describe('hydrate rail unit tests', () => {
   // ─── applyHydrateOverrides ────────────────────────────────────────────
 
   describe('applyHydrateOverrides', () => {
-    it('applies maxSelfReviewIterations override when provided', () => {
-      const result = hydrateNew(minimalInput({ policy: { maxSelfReviewIterations: 5 } }));
+    it('applies review budget overrides when provided', () => {
+      const result = hydrateNew(minimalInput({ policy: { reviewBudget: { plan: 5 } } }));
       const state = expectOk(result);
-      expect(state.policySnapshot.maxSelfReviewIterations).toBe(5);
+      expect(state.policySnapshot.reviewBudget.plan).toBe(5);
     });
 
-    it('preserves base maxSelfReviewIterations when override is undefined', () => {
+    it('preserves the base plan budget when override is undefined', () => {
       const result = hydrateNew(minimalInput({ policy: {} }));
       const state = expectOk(result);
-      // solo default is 2
-      expect(state.policySnapshot.maxSelfReviewIterations).toBe(2);
+      expect(state.policySnapshot.reviewBudget.plan).toBe(baseCtx.policy!.reviewBudget.plan);
     });
 
-    it('applies maxImplReviewIterations override when provided', () => {
-      const result = hydrateNew(minimalInput({ policy: { maxImplReviewIterations: 7 } }));
+    it('applies implementation review budget override when provided', () => {
+      const result = hydrateNew(minimalInput({ policy: { reviewBudget: { implementation: 7 } } }));
       const state = expectOk(result);
-      expect(state.policySnapshot.maxImplReviewIterations).toBe(7);
+      expect(state.policySnapshot.reviewBudget.implementation).toBe(7);
     });
 
     it('applies risk-classification policy overrides when provided', () => {
@@ -201,25 +200,12 @@ describe('hydrate rail unit tests', () => {
       expect(state.claimedTaskClass).toBe('STANDARD');
     });
 
-    it('preserves base maxImplReviewIterations when override is undefined', () => {
+    it('preserves the base implementation budget when override is undefined', () => {
       const result = hydrateNew(minimalInput({ policy: {} }));
       const state = expectOk(result);
-      expect(state.policySnapshot.maxImplReviewIterations).toBe(1);
-    });
-
-    it('applies requireVerifiedActorsForApproval override', () => {
-      const result = hydrateNew(
-        minimalInput({ policy: { requireVerifiedActorsForApproval: true } }),
+      expect(state.policySnapshot.reviewBudget.implementation).toBe(
+        baseCtx.policy!.reviewBudget.implementation,
       );
-      const state = expectOk(result);
-      expect(state.policySnapshot.requireVerifiedActorsForApproval).toBe(true);
-    });
-
-    it('preserves base requireVerifiedActorsForApproval when undefined', () => {
-      const result = hydrateNew(minimalInput({ policy: {} }));
-      const state = expectOk(result);
-      // solo default is false
-      expect(state.policySnapshot.requireVerifiedActorsForApproval).toBe(false);
     });
 
     it('applies identityProviderMode override', () => {

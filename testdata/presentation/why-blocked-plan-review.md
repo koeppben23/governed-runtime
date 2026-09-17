@@ -6,7 +6,6 @@
 ## Blocked
 
 ⚠ **Blocked:** — Awaiting plan review decision (approve / changes_requested / reject)
-**Recovery:** Review the plan and decide: /review-decision
 
 ## Verification
 

@@ -71,6 +71,7 @@ describe('runtime readiness via status projection', () => {
     const candidates: VerificationCandidate[] = [
       {
         assertionCapability: 'structured',
+        candidateId: 'vc_vitest_ready',
         kind: 'test',
         command: 'npm run test --',
         source: 'package.json:scripts.test',
@@ -107,6 +108,7 @@ describe('runtime readiness via status projection', () => {
     const candidates: VerificationCandidate[] = [
       {
         assertionCapability: 'structured',
+        candidateId: 'vc_vitest_missing',
         kind: 'test',
         command: 'npx vitest run',
         source: 'detectedStack:testFramework:vitest',
@@ -142,6 +144,7 @@ describe('runtime readiness via status projection', () => {
     const candidates: VerificationCandidate[] = [
       {
         assertionCapability: 'structured',
+        candidateId: 'vc_pytest_reporter_missing',
         kind: 'test',
         command: 'python -m pytest',
         source: 'package.json:scripts.test',
@@ -176,6 +179,7 @@ describe('runtime readiness via status projection', () => {
     const candidates: VerificationCandidate[] = [
       {
         assertionCapability: 'structured',
+        candidateId: 'vc_junit_maven_wrapper',
         kind: 'build',
         command: './mvnw verify',
         source: 'repo:mvnw',
@@ -215,6 +219,7 @@ describe('runtime readiness via status projection', () => {
     const candidates: VerificationCandidate[] = [
       {
         assertionCapability: 'structured',
+        candidateId: 'vc_junit_gradle_wrapper',
         kind: 'test',
         command: './gradlew check',
         source: 'repo:gradlew',

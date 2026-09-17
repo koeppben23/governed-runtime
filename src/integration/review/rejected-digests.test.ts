@@ -17,6 +17,7 @@ function implementObligation(id: string, digest: string): ReviewObligation {
   return {
     obligationId: id,
     obligationType: 'implement',
+    reviewCycle: 1,
     requiredChallengeCount: 0,
     requiredChallengeKind: 'implementation_challenge',
     challengePolicyVersion: 'challenge-policy.v1',
@@ -32,9 +33,16 @@ function implementObligation(id: string, digest: string): ReviewObligation {
     fulfilledAt: FIXED_TIME,
     consumedAt: FIXED_TIME,
     subjectDigest: digest,
+    reviewMaterial: {
+      content: 'frozen review material',
+      materialDigest: 'a'.repeat(64),
+      subjectDigest: digest,
+    },
     reviewSubjectScope: { kind: 'implementation', implementationDigest: digest },
     repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
-    maxReviewerOutputRepairAttempts: 0,
+    maxReviewerAttempts: 0,
+    reviewProfile: 'core',
+    profileSource: 'policy_default',
   };
 }
 
@@ -42,6 +50,7 @@ function planObligation(id: string, digest: string): ReviewObligation {
   return {
     obligationId: id,
     obligationType: 'plan',
+    reviewCycle: 1,
     requiredChallengeCount: 0,
     requiredChallengeKind: 'design_challenge',
     challengePolicyVersion: 'challenge-policy.v1',
@@ -57,12 +66,19 @@ function planObligation(id: string, digest: string): ReviewObligation {
     fulfilledAt: FIXED_TIME,
     consumedAt: FIXED_TIME,
     subjectDigest: digest,
+    reviewMaterial: {
+      content: 'frozen review material',
+      materialDigest: 'a'.repeat(64),
+      subjectDigest: digest,
+    },
     reviewSubjectScope: {
       kind: 'artifact',
       artifact: { kind: 'plan', digest, sectionPaths: [] },
     },
     repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
-    maxReviewerOutputRepairAttempts: 0,
+    maxReviewerAttempts: 0,
+    reviewProfile: 'core',
+    profileSource: 'policy_default',
   };
 }
 
@@ -77,6 +93,7 @@ function finding(obligationId: string, verdict: 'accept' | 'changes_requested'):
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
+    challenges: [],
     reviewedBy: { sessionId: 'ses_r' },
     reviewedAt: FIXED_TIME,
     attestation: {

@@ -18,7 +18,8 @@ import { PERF_ENABLED } from '../test-policy.js';
 import * as crypto from 'node:crypto';
 import { FlowGuardAuditPlugin, isUsableWorktree } from './plugin.js';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
-import { makeState } from '../fixtures.js';
+import { makeProgressedState, makeState } from '../fixtures.js';
+import type { SessionState } from '../state/schema.js';
 import type { PolicyMode } from '../config/policy.js';
 import * as barrel from './index.js';
 import * as fs from 'node:fs/promises';
@@ -40,10 +41,14 @@ import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './review/assurance.js';
-import { computeRecordDigest } from '../state/evidence-plan.js';
-import { NATIVE_ATTESTATION_REJECTION_FIELD } from '../shared/flowguard-identifiers.js';
+import { makePlanRevision } from '../state/evidence-test-constants.js';
 import { fileURLToPath } from 'node:url';
 import { clearUserDecisionIntents, consumeUserDecisionIntent } from './user-decision-intent.js';
+import { _resetAgentResolutionCache } from './review/agent-resolution.js';
+import {
+  resolveReviewDispatchAuthority,
+  reviewObligationResponseFields,
+} from './review/dispatch-authority.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -76,6 +81,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
   const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
   const obligationId = '11111111-1111-4111-8111-111111111111';
   const reviewMaterial = freezeReviewMaterial('## Plan\n1. Fix auth', 'test-subject-digest');
+  const planCurrent = makePlanRevision({ body: '## Plan\n1. Fix auth', createdAt: now });
 
   await fs.mkdir(sessDir, { recursive: true });
   await writeState(
@@ -88,43 +94,22 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
         createdAt: now,
       },
       plan: {
-        current: {
-          body: '## Plan\n1. Fix auth',
-          digest: 'plan-digest',
-          sections: ['Plan'],
-          createdAt: now,
-          recordDigest: computeRecordDigest({
-            contentDigest: 'plan-digest',
-            planVersion: 1,
-            supersedesRecordDigest: null,
-            originatingReviewObligationId: null,
-            revisionReason: null,
-          }),
-          planVersion: 1,
-          supersedesRecordDigest: null,
-          originatingReviewObligationId: null,
-          revisionReason: null,
-          lineageStatus: 'verified' as const,
-        },
+        current: planCurrent,
         history: [],
         reviewCompletion: 'pending',
         reviewFindings: [],
       },
       selfReview: {
         iteration: 0,
+        reviewCycle: 1,
         maxIterations: 3,
         prevDigest: null,
-        currDigest: 'plan-digest',
+        currDigest: planCurrent.digest,
         revisionDelta: 'major',
         verdict: 'changes_requested',
       },
       policySnapshot: {
         ...makeState('PLAN').policySnapshot,
-        selfReview: {
-          subagentEnabled: true,
-          fallbackToSelf: false,
-          strictEnforcement: true,
-        },
       },
       reviewAssurance: {
         assuranceSchemaVersion: 'review-assurance.v6' as const,
@@ -132,6 +117,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
           {
             obligationId,
             obligationType: 'plan',
+            reviewCycle: 1,
             requiredChallengeCount: 0,
             requiredChallengeKind: 'design_challenge',
             challengePolicyVersion: 'challenge-policy.v1',
@@ -141,7 +127,9 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
             planVersion: 1,
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
-            maxReviewerOutputRepairAttempts: 1,
+            maxReviewerAttempts: 1,
+            reviewProfile: 'core',
+            profileSource: 'policy_default',
             createdAt: now,
             pluginHandshakeAt: null,
             status: 'pending',
@@ -150,9 +138,12 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
             fulfilledAt: null,
             consumedAt: null,
             reviewSubjectScope: {
-              kind: 'repository_change',
-              paths: ['src/foo.ts'],
-              revisions: ['base', 'head'],
+              kind: 'artifact',
+              artifact: {
+                kind: 'plan',
+                digest: 'test-subject-digest',
+                sectionPaths: [[{ headingDepth: 2, siblingIndex: 1, headingText: 'Plan' }]],
+              },
             },
             reviewMaterial,
           },
@@ -164,11 +155,11 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
             obligationId,
             obligationType: 'plan' as const,
             subjectDigest: 'test-subject-digest',
-            reviewMaterial,
             ordinal: 0,
             status: 'created' as const,
             origin: { kind: 'initial' } as const,
             repositoryDiscovery: { kind: 'not_applicable' } as const,
+            observations: [],
             createdAt: now,
           },
         ],
@@ -180,6 +171,81 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
   return { sessDir, obligationId };
 }
 
+async function seedStrictImplementationSession(worktree: string, sessionID: string) {
+  const now = new Date().toISOString();
+  const fp = await computeFingerprint(worktree);
+  const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+  const obligationId = '22222222-1111-4111-8111-111111111111';
+  const attemptId = '22222222-2222-4111-8111-111111111111';
+  const reviewMaterial = freezeReviewMaterial('## Implementation\n1. Fix auth', 'impl-digest-1');
+  const planCurrent = makePlanRevision({ body: '## Plan\n1. Fix auth', createdAt: now });
+
+  const base = makeProgressedState('IMPL_REVIEW');
+  const state = {
+    ...base,
+    plan: {
+      current: planCurrent,
+      history: [],
+      reviewCompletion: 'reviewer_accepted' as const,
+      reviewFindings: [],
+    },
+    reviewAssurance: {
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
+      obligations: [
+        {
+          obligationId,
+          obligationType: 'implement',
+          reviewCycle: 1,
+          requiredChallengeCount: 0,
+          requiredChallengeKind: 'implementation_challenge',
+          challengePolicyVersion: 'challenge-policy.v1',
+          subjectDigest: 'impl-digest-1',
+          iteration: 0,
+          planVersion: 1,
+          criteriaVersion: REVIEW_CRITERIA_VERSION,
+          mandateDigest: REVIEW_MANDATE_DIGEST,
+          maxReviewerAttempts: 1,
+          reviewProfile: 'core',
+          profileSource: 'policy_default',
+          createdAt: now,
+          pluginHandshakeAt: null,
+          status: 'pending',
+          invocationId: null,
+          blockedCode: null,
+          fulfilledAt: null,
+          consumedAt: null,
+          reviewSubjectScope: {
+            kind: 'implementation',
+            implementationDigest: 'impl-digest-1',
+          },
+          reviewMaterial,
+        },
+      ],
+      invocations: [],
+      attempts: [
+        {
+          attemptId,
+          obligationId,
+          obligationType: 'implement' as const,
+          subjectDigest: 'impl-digest-1',
+          ordinal: 0,
+          status: 'created' as const,
+          origin: { kind: 'initial' } as const,
+          repositoryDiscovery: { kind: 'not_applicable' } as const,
+          observations: [],
+          createdAt: now,
+        },
+      ],
+      dispatches: [],
+    },
+  } as SessionState;
+
+  await fs.mkdir(sessDir, { recursive: true });
+  await writeState(sessDir, state);
+
+  return { sessDir, obligationId, attemptId, state };
+}
+
 function strictPlanReviewRequiredOutput(
   obligationId: string,
   overrides: Partial<Record<string, unknown>> = {},
@@ -188,10 +254,17 @@ function strictPlanReviewRequiredOutput(
     phase: 'PLAN',
     selfReviewIteration: 0,
     reviewMode: 'subagent',
-    reviewObligationId: obligationId,
-    reviewCriteriaVersion: REVIEW_CRITERIA_VERSION,
-    reviewMandateDigest: REVIEW_MANDATE_DIGEST,
-    next: 'INDEPENDENT_REVIEW_REQUIRED: iteration=0, planVersion=1',
+    reviewObligation: {
+      obligationId,
+      obligationType: 'plan',
+      iteration: 0,
+      planVersion: 1,
+      criteriaVersion: REVIEW_CRITERIA_VERSION,
+      mandateDigest: REVIEW_MANDATE_DIGEST,
+      requiredChallengeCount: 0,
+      requiredChallengeKind: 'design_challenge',
+    },
+    reviewDispatch: { required: true },
     ...overrides,
   });
 }
@@ -389,7 +462,7 @@ describe('integration/plugin', () => {
                 'argMutation',
                 'outputReplacement',
                 'contextInjection',
-                'reviewerSpawn',
+                'reviewTransports.native_task_structured_followup',
                 'compactionInjection',
               ],
             },
@@ -405,8 +478,11 @@ describe('integration/plugin', () => {
         FlowGuardAuditPlugin(
           createMockInput({
             client: {
+              // Native structured serialization still requires the host agent
+              // registry; without it the adapter cannot guarantee the reviewer
+              // child identity and must fail closed.
               session: { prompt: async () => ({}) },
-              app: { log: async () => {}, agents: async () => ({ data: [] }) },
+              app: { log: async () => {} },
             },
           }),
         ),
@@ -451,10 +527,10 @@ describe('integration/plugin', () => {
             createMockInput({
               worktree: ws.tmpDir,
               directory: ws.tmpDir,
-              // Missing session.create forces the fail-closed boot path after
-              // the logger (and its SIGUSR1 reloader) has been initialized.
+              // Missing host agent registry forces the fail-closed boot path
+              // after the logger (and its SIGUSR1 reloader) has been initialized.
               client: createBootableHostClient({
-                session: { create: undefined, prompt: async () => ({}) },
+                app: { agents: undefined },
               }),
             }),
           ),
@@ -542,153 +618,6 @@ describe('integration/plugin', () => {
             level: 'error',
             message: 'auto-advance overflow: topology may be non-terminating',
             extra: { sessionId: 's1', phase: 'PLAN_REVIEW', limit: 10 },
-          },
-        });
-      } finally {
-        await ws.cleanup();
-      }
-    });
-
-    it('emits a boundary warn log for host-task findings guard rejection (#424)', async () => {
-      const ws = await createTestWorkspace();
-      try {
-        await writeRepoConfig(ws.tmpDir, {
-          ...DEFAULT_CONFIG,
-          logging: { ...DEFAULT_CONFIG.logging, mode: 'both' },
-        });
-
-        const logSpy = vi.fn().mockResolvedValue(undefined);
-        const hooks = await FlowGuardAuditPlugin(
-          createMockInput({
-            worktree: ws.tmpDir,
-            directory: ws.tmpDir,
-            client: createBootableHostClient({ app: { log: logSpy } }),
-          }),
-        );
-        const handler = hooks['tool.execute.after']!;
-
-        const blockedOutput = JSON.stringify({
-          error: true,
-          code: 'SUBAGENT_EVIDENCE_REUSED',
-          hostTaskFindingsRejection: {
-            path: 'host_task',
-            reason: 'SUBAGENT_EVIDENCE_REUSED',
-            status: 'consumed',
-            obligationId: '11111111-1111-4111-8111-111111111111',
-          },
-        });
-        await handler(
-          { tool: 'flowguard_plan', sessionID: 's1', callID: 'c1', args: {} },
-          { title: 'plan', output: blockedOutput, metadata: {} },
-        );
-
-        expect(logSpy).toHaveBeenCalledWith({
-          body: {
-            service: 'review',
-            level: 'warn',
-            message: 'host-task findings rejected by shared guard',
-            extra: {
-              sessionId: 's1',
-              path: 'host_task',
-              reason: 'SUBAGENT_EVIDENCE_REUSED',
-              status: 'consumed',
-              obligationId: '11111111-1111-4111-8111-111111111111',
-            },
-          },
-        });
-      } finally {
-        await ws.cleanup();
-      }
-    });
-
-    it('emits a boundary warn log for /continue reviewer-author rejection (#425)', async () => {
-      const ws = await createTestWorkspace();
-      try {
-        await writeRepoConfig(ws.tmpDir, {
-          ...DEFAULT_CONFIG,
-          logging: { ...DEFAULT_CONFIG.logging, mode: 'both' },
-        });
-
-        const logSpy = vi.fn().mockResolvedValue(undefined);
-        const hooks = await FlowGuardAuditPlugin(
-          createMockInput({
-            worktree: ws.tmpDir,
-            directory: ws.tmpDir,
-            client: createBootableHostClient({ app: { log: logSpy } }),
-          }),
-        );
-        const handler = hooks['tool.execute.after']!;
-
-        const blockedOutput = JSON.stringify({
-          error: true,
-          code: 'FOUR_EYES_ACTOR_MATCH',
-          reviewIdentityRejection: {
-            reason: 'reviewer_is_author',
-            obligationId: '11111111-1111-4111-8111-111111111111',
-          },
-        });
-        await handler(
-          { tool: 'flowguard_continue', sessionID: 's1', callID: 'c1', args: {} },
-          { title: 'continue', output: blockedOutput, metadata: {} },
-        );
-
-        expect(logSpy).toHaveBeenCalledWith({
-          body: {
-            service: 'review',
-            level: 'warn',
-            message: 'self-review rejected',
-            extra: {
-              sessionId: 's1',
-              reason: 'reviewer_is_author',
-              obligationId: '11111111-1111-4111-8111-111111111111',
-            },
-          },
-        });
-      } finally {
-        await ws.cleanup();
-      }
-    });
-
-    it('emits a boundary warn log for native attestation non-upgrade (#427)', async () => {
-      const ws = await createTestWorkspace();
-      try {
-        await writeRepoConfig(ws.tmpDir, {
-          ...DEFAULT_CONFIG,
-          logging: { ...DEFAULT_CONFIG.logging, mode: 'both' },
-        });
-
-        const logSpy = vi.fn().mockResolvedValue(undefined);
-        const hooks = await FlowGuardAuditPlugin(
-          createMockInput({
-            worktree: ws.tmpDir,
-            directory: ws.tmpDir,
-            client: createBootableHostClient({ app: { log: logSpy } }),
-          }),
-        );
-        const handler = hooks['tool.execute.after']!;
-
-        const reviewOutput = JSON.stringify({
-          phase: 'REVIEW_COMPLETE',
-          [NATIVE_ATTESTATION_REJECTION_FIELD]: {
-            reason: 'capture_session_mismatch',
-            obligationId: '11111111-1111-4111-8111-111111111111',
-          },
-        });
-        await handler(
-          { tool: 'flowguard_review', sessionID: 's1', callID: 'c1', args: {} },
-          { title: 'review', output: reviewOutput, metadata: {} },
-        );
-
-        expect(logSpy).toHaveBeenCalledWith({
-          body: {
-            service: 'review',
-            level: 'warn',
-            message: 'native attestation not upgraded',
-            extra: {
-              sessionId: 's1',
-              reason: 'capture_session_mismatch',
-              obligationId: '11111111-1111-4111-8111-111111111111',
-            },
           },
         });
       } finally {
@@ -1067,151 +996,367 @@ describe('integration/plugin', () => {
     });
   });
 
-  describe('strict review orchestration', () => {
-    it('blocks with STRICT_REVIEW_ORCHESTRATION_FAILED when reviewer invocation fails', async () => {
+  describe('native visible review transport', () => {
+    const ATTEMPT_ID = '11111111-2222-4111-8111-111111111111';
+    const CHILD_SESSION_ID = 'child-session-native-1';
+    const CALL_ID = 'call-native-1';
+
+    function nativeFindings(
+      obligationId: string,
+      overrides: Record<string, unknown> = {},
+    ): Record<string, unknown> {
+      return {
+        iteration: 0,
+        planVersion: 1,
+        reviewMode: 'subagent',
+        overallVerdict: 'accept',
+        blockingIssues: [],
+        majorRisks: [],
+        missingVerification: [],
+        scopeCreep: [],
+        unknowns: [],
+        challenges: [],
+        attestation: { toolObligationId: obligationId },
+        ...overrides,
+      };
+    }
+
+    async function bootNativeReviewSession(buildStructured?: (obligationId: string) => unknown) {
       const ws = await createTestWorkspace();
+      const sessionID = crypto.randomUUID();
+      const { sessDir, obligationId } = await seedStrictPlanSession(ws.tmpDir, sessionID);
+      const structured = buildStructured?.(obligationId) ?? null;
+      const structuredPrompt = vi.fn(async () => ({ data: { info: { structured } } }));
+      const agents = vi.fn(async () => ({ data: [{ id: 'flowguard-reviewer' }] }));
+      const hooks = await FlowGuardAuditPlugin(
+        createMockInput({
+          worktree: ws.tmpDir,
+          directory: ws.tmpDir,
+          client: {
+            app: { log: async () => {}, agents },
+            session: { prompt: structuredPrompt },
+          },
+        }),
+      );
+      const output = {
+        title: 'plan',
+        output: strictPlanReviewRequiredOutput(obligationId, { reviewAttemptId: ATTEMPT_ID }),
+        metadata: {},
+      };
+      await hooks['tool.execute.after']!(
+        { tool: 'flowguard_plan', sessionID, callID: 'c1', args: {} },
+        output,
+      );
+      return { ws, sessionID, sessDir, obligationId, hooks, structuredPrompt, output };
+    }
+
+    async function dispatchReviewerTask(
+      hooks: Awaited<ReturnType<typeof FlowGuardAuditPlugin>>,
+      sessionID: string,
+      callID = CALL_ID,
+    ) {
+      const output: { args: Record<string, unknown> } = {
+        args: { subagent_type: 'flowguard-reviewer', prompt: 'agent-authored prompt' },
+      };
+      await hooks['tool.execute.before']!({ tool: 'task', sessionID, callID }, output);
+      return output;
+    }
+
+    async function completeReviewerTask(
+      hooks: Awaited<ReturnType<typeof FlowGuardAuditPlugin>>,
+      sessionID: string,
+      callID = CALL_ID,
+    ) {
+      const output: { title: string; output: string; metadata: Record<string, unknown> } = {
+        title: 'task',
+        output: 'Free-form reviewer transcript text is not findings authority.',
+        metadata: { sessionId: CHILD_SESSION_ID },
+      };
+      await hooks['tool.execute.after']!(
+        { tool: 'task', sessionID, callID, args: { subagent_type: 'flowguard-reviewer' } },
+        output,
+      );
+      return output;
+    }
+
+    beforeEach(() => {
+      _resetAgentResolutionCache();
+    });
+
+    it('leaves the review-required output pending and authorizes the native Task before release', async () => {
+      const { ws, sessionID, sessDir, obligationId, hooks, output } =
+        await bootNativeReviewSession();
       try {
-        const sessionID = crypto.randomUUID();
-        const { sessDir, obligationId } = await seedStrictPlanSession(ws.tmpDir, sessionID);
-        const hooks = await FlowGuardAuditPlugin(
-          createMockInput({
-            worktree: ws.tmpDir,
-            directory: ws.tmpDir,
-            client: {
-              app: {
-                log: async () => {},
-                agents: async () => ({ data: [{ id: 'flowguard-reviewer' }] }),
-              },
-              session: {
-                create: async () => ({ error: { message: 'boom' } }),
-                prompt: async () => ({ error: { message: 'unused' } }),
-              },
-            },
-          }),
-        );
+        // The reviewable tool response stays untouched: only the parent agent
+        // can invoke the visible native Task surface.
+        const pending = JSON.parse(String(output.output)) as Record<string, unknown>;
+        expect(pending.reviewDispatch).toEqual({ required: true });
+        let state = await readState(sessDir);
+        expect(state?.reviewAssurance?.obligations[0]?.status).toBe('pending');
+        expect(state?.reviewAssurance?.dispatches).toEqual([]);
 
-        const output = {
-          title: 'plan',
-          output: strictPlanReviewRequiredOutput(obligationId),
-          metadata: {},
-        };
-        await hooks['tool.execute.after']!(
-          { tool: 'flowguard_plan', sessionID, callID: 'c1', args: {} },
-          output,
-        );
+        const taskOutput = await dispatchReviewerTask(hooks, sessionID);
 
-        const blocked = JSON.parse(String(output.output)) as Record<string, unknown>;
-        expect(blocked.error).toBe(true);
-        expect(blocked.code).toBe('STRICT_REVIEW_ORCHESTRATION_FAILED');
+        // The canonical frozen prompt replaces whatever the agent authored.
+        expect(taskOutput.args.prompt).toContain('## Plan');
+        expect(taskOutput.args.description).toBe('FlowGuard independent review');
+        expect(taskOutput.args.background).toBe(false);
 
-        const state = await readState(sessDir);
-        expect(state?.reviewAssurance?.obligations[0]?.status).toBe('blocked');
+        state = await readState(sessDir);
+        const dispatch = state?.reviewAssurance?.dispatches[0];
+        expect(dispatch?.dispatchStatus).toBe('authorized');
+        expect(dispatch?.hostCallId).toBe(CALL_ID);
+        expect(dispatch?.obligationId).toBe(obligationId);
+        expect(dispatch?.attemptId).toBe(ATTEMPT_ID);
       } finally {
         await ws.cleanup();
       }
     });
 
-    it('blocks malformed reviewer input when attestation is missing in strict mode', async () => {
-      const ws = await createTestWorkspace();
+    it('refuses to release the same reviewer attempt twice', async () => {
+      const { ws, sessionID, hooks } = await bootNativeReviewSession();
       try {
-        const sessionID = crypto.randomUUID();
-        const { sessDir, obligationId } = await seedStrictPlanSession(ws.tmpDir, sessionID);
-        const findings = {
-          iteration: 0,
-          planVersion: 1,
-          reviewMode: 'subagent',
-          overallVerdict: 'accept',
-          blockingIssues: [],
-          majorRisks: [],
-          missingVerification: [],
-          scopeCreep: [],
-          unknowns: [],
-        };
-
-        const hooks = await FlowGuardAuditPlugin(
-          createMockInput({
-            worktree: ws.tmpDir,
-            directory: ws.tmpDir,
-            client: {
-              app: {
-                log: async () => {},
-                agents: async () => ({ data: [{ id: 'flowguard-reviewer' }] }),
-              },
-              session: {
-                create: async () => ({ data: { id: 'child-session-1' } }),
-                prompt: async () => ({
-                  data: { info: { structured_output: findings } },
-                }),
-              },
-            },
-          }),
-        );
-
-        const output = {
-          title: 'plan',
-          output: strictPlanReviewRequiredOutput(obligationId),
-          metadata: {},
-        };
-        await hooks['tool.execute.after']!(
-          { tool: 'flowguard_plan', sessionID, callID: 'c1', args: {} },
-          output,
-        );
-
-        const blocked = JSON.parse(String(output.output)) as Record<string, unknown>;
-        expect(blocked.error).toBe(true);
-        expect(blocked.code).toBe('STRICT_REVIEW_ORCHESTRATION_FAILED');
-
-        const state = await readState(sessDir);
-        expect(state?.reviewAssurance?.obligations[0]?.blockedCode).toBe(
-          'STRICT_REVIEW_ORCHESTRATION_FAILED',
+        await dispatchReviewerTask(hooks, sessionID);
+        await expect(dispatchReviewerTask(hooks, sessionID, 'call-native-2')).rejects.toThrow(
+          'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
         );
       } finally {
         await ws.cleanup();
       }
     });
 
-    it('blocks with STRICT_REVIEW_ORCHESTRATION_FAILED when strict reviewer reports self mode', async () => {
+    it('blocks a completed Task without authoritative child metadata and abandons the dispatch', async () => {
+      const { ws, sessionID, sessDir, hooks } = await bootNativeReviewSession();
+      try {
+        await dispatchReviewerTask(hooks, sessionID);
+        const output: { title: string; output: string; metadata: Record<string, unknown> } = {
+          title: 'task',
+          output: 'child identity was not surfaced',
+          metadata: {},
+        };
+        await hooks['tool.execute.after']!(
+          {
+            tool: 'task',
+            sessionID,
+            callID: CALL_ID,
+            args: { subagent_type: 'flowguard-reviewer' },
+          },
+          output,
+        );
+
+        const blocked = JSON.parse(String(output.output)) as Record<string, unknown>;
+        expect(blocked.error).toBe(true);
+        expect(blocked.code).toBe('REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE');
+
+        const state = await readState(sessDir);
+        expect(state?.reviewAssurance?.dispatches[0]?.dispatchStatus).toBe('outcome_unknown');
+        expect(state?.reviewAssurance?.invocations).toEqual([]);
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('fails closed when no pending review authorizes the native Task', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+        await seedStrictPlanSession(ws.tmpDir, sessionID);
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        await expect(dispatchReviewerTask(hooks, sessionID)).rejects.toThrow(
+          'SUBAGENT_REVIEW_NOT_INVOKED',
+        );
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('authorizes the native reviewer Task for an implementation review dispatch', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+        const { sessDir, obligationId, attemptId, state } = await seedStrictImplementationSession(
+          ws.tmpDir,
+          sessionID,
+        );
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+
+        // Build the dispatch response exactly as the canonical producer does.
+        const authority = resolveReviewDispatchAuthority(state.reviewAssurance, obligationId);
+        expect(authority.kind).toBe('ok');
+        if (authority.kind !== 'ok') return;
+        const output = {
+          title: 'implement',
+          output: JSON.stringify({
+            phase: 'IMPL_REVIEW',
+            reviewMode: 'subagent',
+            ...reviewObligationResponseFields(authority.authority),
+            reviewDispatch: { required: true },
+          }),
+          metadata: {},
+        };
+        await hooks['tool.execute.after']!(
+          { tool: 'flowguard_implement', sessionID, callID: 'c1', args: {} },
+          output,
+        );
+        const accepted = JSON.parse(String(output.output)) as Record<string, unknown>;
+        expect(accepted.error).toBeUndefined();
+        expect(accepted.reviewAttemptId).toBe(attemptId);
+
+        const taskOutput = await dispatchReviewerTask(hooks, sessionID);
+        expect(typeof taskOutput.args.prompt).toBe('string');
+        expect(String(taskOutput.args.prompt).length).toBeGreaterThan(0);
+        expect(taskOutput.args.description).toBe('FlowGuard independent review');
+
+        const persisted = await readState(sessDir);
+        const dispatch = persisted?.reviewAssurance?.dispatches[0];
+        expect(dispatch?.dispatchStatus).toBe('authorized');
+        expect(dispatch?.hostCallId).toBe(CALL_ID);
+        expect(dispatch?.obligationId).toBe(obligationId);
+        expect(dispatch?.attemptId).toBe(attemptId);
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('accepts retry_transport recovery from the implementation verdict tool', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+        const { obligationId, attemptId, state } = await seedStrictImplementationSession(
+          ws.tmpDir,
+          sessionID,
+        );
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const authority = resolveReviewDispatchAuthority(state.reviewAssurance, obligationId);
+        expect(authority.kind).toBe('ok');
+        if (authority.kind !== 'ok') return;
+        const output = {
+          title: 'implementation review recovery',
+          output: JSON.stringify({
+            phase: 'IMPL_REVIEW',
+            reviewMode: 'subagent',
+            ...reviewObligationResponseFields(authority.authority),
+            reviewDispatch: { required: true },
+          }),
+          metadata: {},
+        };
+
+        await hooks['tool.execute.after']!(
+          {
+            tool: 'flowguard_review_implementation',
+            sessionID,
+            callID: 'retry-transport-call',
+            args: { reviewRecovery: 'retry_transport' },
+          },
+          output,
+        );
+
+        const accepted = JSON.parse(String(output.output)) as Record<string, unknown>;
+        expect(accepted.error).toBeUndefined();
+        expect(accepted.reviewAttemptId).toBe(attemptId);
+        await expect(dispatchReviewerTask(hooks, sessionID)).resolves.toBeDefined();
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('authorizes the native reviewer Task for a content-analysis peer review authority', async () => {
       const ws = await createTestWorkspace();
       try {
         const sessionID = crypto.randomUUID();
         const { sessDir, obligationId } = await seedStrictPlanSession(ws.tmpDir, sessionID);
-        const findings = {
-          iteration: 0,
-          planVersion: 1,
-          reviewMode: 'self',
-          overallVerdict: 'accept',
-          blockingIssues: [],
-          majorRisks: [],
-          missingVerification: [],
-          scopeCreep: [],
-          unknowns: [],
-          attestation: {
-            toolObligationId: obligationId,
+        const state = await readState(sessDir);
+        expect(state).not.toBeNull();
+        if (!state?.reviewAssurance) return;
+        const reviewState = {
+          ...state,
+          reviewAssurance: {
+            ...state.reviewAssurance,
+            obligations: state.reviewAssurance.obligations.map((obligation) => {
+              const { repositoryEvidenceFreeze: _repositoryEvidenceFreeze, ...peerObligation } =
+                obligation;
+              const subjectDigest = 'b'.repeat(64);
+              return {
+                ...peerObligation,
+                obligationType: 'review' as const,
+                reviewCycle: null,
+                requiredChallengeKind: 'content_challenge' as const,
+                subjectDigest,
+                reviewMaterial: { ...obligation.reviewMaterial, subjectDigest },
+                reviewSubject: {
+                  kind: 'content' as const,
+                  source: { kind: 'inline' as const, mediaType: 'text' as const },
+                  materialDigest: obligation.reviewMaterial.materialDigest,
+                  subjectDigest,
+                  lineCount: 1,
+                },
+                reviewSubjectScope: {
+                  kind: 'content' as const,
+                  subjectDigest,
+                  lineCount: 1,
+                },
+              };
+            }),
+            attempts: state.reviewAssurance.attempts.map((attempt) => ({
+              ...attempt,
+              obligationType: 'review' as const,
+              subjectDigest: 'b'.repeat(64),
+            })),
           },
         };
-
+        await writeState(sessDir, reviewState);
         const hooks = await FlowGuardAuditPlugin(
-          createMockInput({
-            worktree: ws.tmpDir,
-            directory: ws.tmpDir,
-            client: {
-              app: {
-                log: async () => {},
-                agents: async () => ({ data: [{ id: 'flowguard-reviewer' }] }),
-              },
-              session: {
-                create: async () => ({ data: { id: 'child-session-1' } }),
-                prompt: async () => ({
-                  data: { info: { structured_output: findings } },
-                }),
-              },
-            },
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const authority = resolveReviewDispatchAuthority(reviewState.reviewAssurance, obligationId);
+        expect(authority.kind).toBe('ok');
+        if (authority.kind !== 'ok') return;
+        const output = {
+          title: 'peer review',
+          output: JSON.stringify({
+            error: true,
+            code: 'CONTENT_ANALYSIS_REQUIRED',
+            ...reviewObligationResponseFields(authority.authority),
+            reviewDispatch: { required: true },
+            reviewInvocation: { obligationId },
+            requiredReviewAttestation: { toolObligationId: obligationId },
           }),
+          metadata: {},
+        };
+
+        await hooks['tool.execute.after']!(
+          { tool: 'flowguard_review', sessionID, callID: 'peer-review-call', args: {} },
+          output,
         );
 
+        const accepted = JSON.parse(String(output.output)) as Record<string, unknown>;
+        expect(accepted.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+        expect(accepted.reviewAttemptId).toBe(authority.authority.attempt.attemptId);
+        await expect(dispatchReviewerTask(hooks, sessionID)).resolves.toBeDefined();
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('blocks a review-required response without the exact attempt authority', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+        const { sessDir, obligationId } = await seedStrictPlanSession(ws.tmpDir, sessionID);
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
         const output = {
           title: 'plan',
-          output: strictPlanReviewRequiredOutput(obligationId),
+          output: strictPlanReviewRequiredOutput(obligationId, {
+            reviewAttemptId: undefined,
+          }),
           metadata: {},
         };
         await hooks['tool.execute.after']!(
@@ -1221,66 +1366,110 @@ describe('integration/plugin', () => {
 
         const blocked = JSON.parse(String(output.output)) as Record<string, unknown>;
         expect(blocked.error).toBe(true);
-        expect(blocked.code).toBe('SUBAGENT_MANDATE_MISMATCH');
+        expect(blocked.code).toBe('REVIEW_ATTEMPT_UNAVAILABLE');
 
+        // No pending review binding was registered for the nonconforming response.
         const state = await readState(sessDir);
-        expect(state?.reviewAssurance?.obligations[0]?.blockedCode).toBe(
-          'SUBAGENT_MANDATE_MISMATCH',
+        expect(state?.reviewAssurance?.obligations[0]?.status).toBe('pending');
+        await expect(dispatchReviewerTask(hooks, sessionID)).rejects.toThrow(
+          'SUBAGENT_REVIEW_NOT_INVOKED',
         );
       } finally {
         await ws.cleanup();
       }
     });
 
-    it('does not record evidence or fulfill when strict attestation iteration is wrong', async () => {
+    it('blocks a review-required response whose attempt does not match the persisted continuation', async () => {
       const ws = await createTestWorkspace();
       try {
         const sessionID = crypto.randomUUID();
-        const { sessDir, obligationId } = await seedStrictPlanSession(ws.tmpDir, sessionID);
-        const findings = {
-          iteration: 1,
-          planVersion: 1,
-          reviewMode: 'subagent',
-          overallVerdict: 'accept',
-          blockingIssues: [],
-          majorRisks: [],
-          missingVerification: [],
-          scopeCreep: [],
-          unknowns: [],
-          attestation: { toolObligationId: obligationId },
-        };
+        const { obligationId } = await seedStrictPlanSession(ws.tmpDir, sessionID);
         const hooks = await FlowGuardAuditPlugin(
-          createMockInput({
-            worktree: ws.tmpDir,
-            directory: ws.tmpDir,
-            client: {
-              app: {
-                log: async () => {},
-                agents: async () => ({ data: [{ id: 'flowguard-reviewer' }] }),
-              },
-              session: {
-                create: async () => ({ data: { id: 'child-session-1' } }),
-                prompt: async () => ({ data: { info: { structured_output: findings } } }),
-              },
-            },
-          }),
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
         );
         const output = {
           title: 'plan',
-          output: strictPlanReviewRequiredOutput(obligationId),
+          output: strictPlanReviewRequiredOutput(obligationId, {
+            reviewAttemptId: '11111111-2222-4111-8111-000000000000',
+          }),
           metadata: {},
         };
-
         await hooks['tool.execute.after']!(
           { tool: 'flowguard_plan', sessionID, callID: 'c1', args: {} },
           output,
         );
 
         const blocked = JSON.parse(String(output.output)) as Record<string, unknown>;
+        expect(blocked.error).toBe(true);
+        expect(blocked.code).toBe('REVIEW_ATTEMPT_UNAVAILABLE');
+        expect(JSON.stringify(blocked)).toContain('does not match the persisted pending attempt');
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('blocks malformed structured reviewer output without recording evidence', async () => {
+      const { ws, sessionID, sessDir, obligationId, hooks } = await bootNativeReviewSession(
+        (obligationId) => {
+          const malformed = nativeFindings(obligationId);
+          delete malformed.attestation;
+          return malformed;
+        },
+      );
+      try {
+        await dispatchReviewerTask(hooks, sessionID);
+        const taskOutput = await completeReviewerTask(hooks, sessionID);
+
+        const blocked = JSON.parse(String(taskOutput.output)) as Record<string, unknown>;
+        expect(blocked.error).toBe(true);
+        // The host-validated structured payload violates the canonical reviewer
+        // DTO before any obligation evidence is evaluated.
+        expect(blocked.code).toBe('HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION');
+
+        const state = await readState(sessDir);
+        expect(state?.reviewAssurance?.obligations[0]?.status).toBe('pending');
+        expect(state?.reviewAssurance?.invocations).toEqual([]);
+        expect(state?.reviewAssurance?.dispatches[0]?.dispatchStatus).toBe('outcome_unknown');
+        void obligationId;
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('blocks a self-mode reviewer declaration and marks the dispatch outcome unknown', async () => {
+      const { ws, sessionID, sessDir, obligationId, hooks } = await bootNativeReviewSession(
+        (obligationId) => nativeFindings(obligationId, { reviewMode: 'self' }),
+      );
+      try {
+        await dispatchReviewerTask(hooks, sessionID);
+        const taskOutput = await completeReviewerTask(hooks, sessionID);
+
+        const blocked = JSON.parse(String(taskOutput.output)) as Record<string, unknown>;
+        expect(blocked.error).toBe(true);
         expect(blocked.code).toBe('SUBAGENT_MANDATE_MISMATCH');
+
+        const state = await readState(sessDir);
+        expect(state?.reviewAssurance?.dispatches[0]?.dispatchStatus).toBe('outcome_unknown');
+        expect(state?.reviewAssurance?.invocations).toEqual([]);
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('does not record evidence or fulfill when attestation iteration is wrong', async () => {
+      const { ws, sessionID, sessDir, obligationId, hooks } = await bootNativeReviewSession(
+        (obligationId) => nativeFindings(obligationId, { iteration: 1 }),
+      );
+      try {
+        await dispatchReviewerTask(hooks, sessionID);
+        const taskOutput = await completeReviewerTask(hooks, sessionID);
+
+        const blocked = JSON.parse(String(taskOutput.output)) as Record<string, unknown>;
+        expect(blocked.code).toBe('SUBAGENT_MANDATE_MISMATCH');
+
         const state = await readState(sessDir);
         const obligation = state?.reviewAssurance?.obligations[0];
-        expect(obligation?.status).toBe('blocked');
+        expect(obligation?.status).toBe('pending');
         expect(obligation?.invocationId).toBeNull();
         expect(obligation?.fulfilledAt).toBeNull();
         expect(state?.reviewAssurance?.invocations).toEqual([]);
@@ -1289,95 +1478,37 @@ describe('integration/plugin', () => {
       }
     });
 
-    it('fulfills strict obligation and mutates output when attestation is valid', async () => {
-      const ws = await createTestWorkspace();
+    it('records bound same-child evidence and fulfills the obligation', async () => {
+      const { ws, sessionID, sessDir, obligationId, hooks, structuredPrompt } =
+        await bootNativeReviewSession((obligationId) => nativeFindings(obligationId));
       try {
-        const sessionID = crypto.randomUUID();
-        const { sessDir, obligationId } = await seedStrictPlanSession(ws.tmpDir, sessionID);
-        const findings = {
-          iteration: 0,
-          planVersion: 1,
-          reviewMode: 'subagent',
-          overallVerdict: 'accept',
-          blockingIssues: [],
-          majorRisks: [],
-          missingVerification: [],
-          scopeCreep: [],
-          unknowns: [],
-          attestation: {
-            toolObligationId: obligationId,
-          },
-        };
+        await dispatchReviewerTask(hooks, sessionID);
+        const taskOutput = await completeReviewerTask(hooks, sessionID);
 
-        const hooks = await FlowGuardAuditPlugin(
-          createMockInput({
-            worktree: ws.tmpDir,
-            directory: ws.tmpDir,
-            client: {
-              app: {
-                log: async () => {},
-                agents: async () => ({ data: [{ id: 'flowguard-reviewer' }] }),
-              },
-              session: {
-                create: async () => ({ data: { id: 'child-session-1' } }),
-                prompt: async () => ({
-                  data: { info: { structured_output: findings } },
-                }),
-              },
-            },
+        // Serialization happens in the exact visible child session.
+        expect(structuredPrompt).toHaveBeenCalledWith(
+          expect.objectContaining({
+            path: { id: CHILD_SESSION_ID },
+            body: expect.objectContaining({
+              format: expect.objectContaining({ type: 'json_schema' }),
+            }),
           }),
         );
 
-        const output = {
-          title: 'plan',
-          output: strictPlanReviewRequiredOutput(obligationId),
-          metadata: {},
-        };
-        await hooks['tool.execute.after']!(
-          { tool: 'flowguard_plan', sessionID, callID: 'c1', args: {} },
-          output,
-        );
-
-        const mutated = JSON.parse(String(output.output)) as Record<string, unknown>;
-        expect((mutated.next as string).startsWith('INDEPENDENT_REVIEW_COMPLETED')).toBe(true);
-        expect(mutated._pluginReviewSessionId).toBe('child-session-1');
+        const completed = JSON.parse(String(taskOutput.output)) as Record<string, unknown>;
+        expect(completed.reviewDispatch).toEqual({
+          required: true,
+          completed: true,
+          verdict: 'accept',
+        });
+        expect(taskOutput.metadata.flowguardReviewExecution).toBeDefined();
 
         const state = await readState(sessDir);
         expect(state?.reviewAssurance?.obligations[0]?.status).toBe('fulfilled');
-        expect((state?.reviewAssurance?.invocations.length ?? 0) > 0).toBe(true);
-      } finally {
-        await ws.cleanup();
-      }
-    });
-
-    it('blocks with PLUGIN_ENFORCEMENT_UNAVAILABLE when strict context extraction fails', async () => {
-      const ws = await createTestWorkspace();
-      try {
-        const sessionID = crypto.randomUUID();
-        const { obligationId } = await seedStrictPlanSession(ws.tmpDir, sessionID);
-        const hooks = await FlowGuardAuditPlugin(
-          createMockInput({
-            worktree: ws.tmpDir,
-            directory: ws.tmpDir,
-          }),
-        );
-
-        const output = {
-          title: 'plan',
-          output: strictPlanReviewRequiredOutput(obligationId, {
-            selfReviewIteration: 1,
-            next: 'INDEPENDENT_REVIEW_REQUIRED: iteration=0, planVersion=1',
-          }),
-          metadata: {},
-        };
-        await hooks['tool.execute.after']!(
-          { tool: 'flowguard_plan', sessionID, callID: 'c1', args: {} },
-          output,
-        );
-
-        const blocked = JSON.parse(String(output.output)) as Record<string, unknown>;
-        expect(blocked.error).toBe(true);
-        expect(blocked.code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+        const invocation = state?.reviewAssurance?.invocations[0];
+        expect(invocation?.invocationMode).toBe('native_task_structured_followup');
+        expect(invocation?.childSessionId).toBe(CHILD_SESSION_ID);
+        void obligationId;
       } finally {
         await ws.cleanup();
       }
@@ -1427,7 +1558,7 @@ describe('integration/plugin', () => {
 
         const output = {
           title: 'plan',
-          output: JSON.stringify({ phase: 'PLAN', next: 'continue' }),
+          output: JSON.stringify({ phase: 'PLAN' }),
           metadata: {},
         };
         await hooks['tool.execute.after']!(
@@ -1471,38 +1602,6 @@ describe('integration/plugin', () => {
       }
     });
 
-    // ── C2 regression: before hook reads args from output, not input ──
-    it('C2 BAD — reviewer Task without host execution provenance is blocked', async () => {
-      const ws = await createTestWorkspace();
-      try {
-        const sessionID = crypto.randomUUID();
-
-        // Seed a strict policy session so the before-hook enforcement engages
-        await seedStrictPlanSession(ws.tmpDir, sessionID);
-
-        const hooks = await FlowGuardAuditPlugin(
-          createMockInput({
-            worktree: ws.tmpDir,
-            directory: ws.tmpDir,
-          }),
-        );
-
-        const beforeHook = hooks['tool.execute.before'];
-        expect(typeof beforeHook).toBe('function');
-
-        // Per OpenCode docs: input has tool identity, output has mutable args.
-        // If the code incorrectly reads input.args, it would miss the subagent_type
-        // because input does NOT carry args per the documented contract.
-        const input = { tool: 'task', sessionID, callID: 'c1' };
-        const output = { args: { subagent_type: 'flowguard-reviewer', prompt: 'test' } };
-        await expect(beforeHook!(input, output)).rejects.toThrow(
-          'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
-        );
-      } finally {
-        await ws.cleanup();
-      }
-    });
-
     it('C2 BAD — before hook does not crash when output.args is empty', async () => {
       const ws = await createTestWorkspace();
       try {
@@ -1539,40 +1638,7 @@ describe('integration/plugin', () => {
       }
     });
 
-    it('C2 CORNER — input.args cannot supply reviewer execution provenance', async () => {
-      const ws = await createTestWorkspace();
-      try {
-        const sessionID = crypto.randomUUID();
-        await seedStrictPlanSession(ws.tmpDir, sessionID);
-
-        const hooks = await FlowGuardAuditPlugin(
-          createMockInput({
-            worktree: ws.tmpDir,
-            directory: ws.tmpDir,
-          }),
-        );
-
-        const beforeHook = hooks['tool.execute.before'];
-        // Place args on input (wrong location per docs) — should be ignored
-        // Place DIFFERENT args on output (correct location) — should be used
-        const input = {
-          tool: 'task',
-          sessionID,
-          callID: 'c1',
-          args: { subagent_type: 'WRONG_TYPE' },
-        };
-        const output = { args: { subagent_type: 'flowguard-reviewer', prompt: 'test' } };
-        // The hook should read output.args (flowguard-reviewer), not input.args (WRONG_TYPE)
-        // If it reads input.args, it would miss the enforcement logic for flowguard-reviewer
-        await expect(beforeHook!(input, output)).rejects.toThrow(
-          'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
-        );
-      } finally {
-        await ws.cleanup();
-      }
-    });
-
-    it('tool.execute.after handles task tool events via enforcement tracking', async () => {
+    it('fails closed on a native reviewer Task after-hook without governed lineage', async () => {
       const ws = await createTestWorkspace();
       try {
         const sessionID = crypto.randomUUID();
@@ -1583,7 +1649,7 @@ describe('integration/plugin', () => {
           }),
         );
 
-        // Task tool events should be tracked by task enforcement
+        const output = { title: 'task', output: '{}', metadata: {} };
         await expect(
           hooks['tool.execute.after']!(
             {
@@ -1592,13 +1658,45 @@ describe('integration/plugin', () => {
               callID: 'c1',
               args: { subagent_type: 'flowguard-reviewer' },
             },
-            {
-              title: 'task',
-              output: '{}',
-              metadata: {},
-            },
+            output,
           ),
         ).resolves.toBeUndefined();
+
+        const parsed = JSON.parse(output.output) as { error?: boolean; code?: string };
+        expect(parsed.error).toBe(true);
+        expect([
+          'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+          'REVIEW_TASK_EXECUTION_PROVENANCE_UNAVAILABLE',
+        ]).toContain(parsed.code);
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('fails closed on a native reviewer Task after-hook without a host callID', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({
+            worktree: ws.tmpDir,
+            directory: ws.tmpDir,
+          }),
+        );
+
+        const output = { title: 'task', output: '{}', metadata: {} };
+        await hooks['tool.execute.after']!(
+          {
+            tool: 'task',
+            sessionID: crypto.randomUUID(),
+            callID: '',
+            args: { subagent_type: 'flowguard-reviewer' },
+          },
+          output,
+        );
+
+        const parsed = JSON.parse(output.output) as { error?: boolean; code?: string };
+        expect(parsed.error).toBe(true);
+        expect(parsed.code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
       } finally {
         await ws.cleanup();
       }

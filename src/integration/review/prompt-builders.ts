@@ -3,15 +3,13 @@
  * @description Prompt construction for reviewer subagent invocation.
  *
  * Structured review prompts carry semantic contracts and trusted/frozen context.
- * Serialization shape is supplied natively by the host when supported; the
- * text-compat fallback appends the complete schema and an explicit shape example.
+ * Serialization shape is supplied exclusively by the host structured-output contract.
  *
  * @version v2
  */
 
 import type { ProofGraphProjection } from '../../state/proofgraph.js';
 import type { FrozenReviewSubject, ReviewSubjectScope } from '../../state/evidence.js';
-import { REVIEW_CHALLENGE_OUTCOMES } from '../../state/evidence.js';
 import {
   renderReviewerCriteria,
   type ReviewerPromptType,
@@ -31,11 +29,14 @@ import {
 } from './prompt-sections.js';
 import type { FrozenReviewerContext } from './frozen-reviewer-context.js';
 import type { RepositoryDiscoverySnapshot } from '../../state/evidence.js';
-import { REVIEW_FINDINGS_JSON_SCHEMA } from './findings-schema.js';
+import {
+  renderReviewChallengeContract,
+  type ReviewerChallengePromptContract,
+} from './challenge-contract.js';
 
 // ─── Canonical Review Context Serializer ─────────────────────────────────────
 
-export { renderReviewContext, CORE_REVIEW_PROFILE_MARKER } from './prompt-sections.js';
+export { renderReviewContext } from './prompt-sections.js';
 export { renderVerificationEvidence } from './impl-review-prompt.js';
 export {
   buildImplReviewPrompt,
@@ -43,48 +44,6 @@ export {
   type ReviewVerificationEvidenceItem,
 } from './impl-review-prompt.js';
 import { renderReviewContext } from './prompt-sections.js';
-
-function textCompatExample(): Record<string, unknown> {
-  return {
-    iteration: '<exact iteration from Trusted Runtime Context>',
-    planVersion: '<exact planVersion when supplied>',
-    reviewMode: 'subagent',
-    overallVerdict: '<select after falsification>',
-    blockingIssues: [],
-    majorRisks: [],
-    missingVerification: [],
-    scopeCreep: [],
-    unknowns: [],
-    attestation: { toolObligationId: '<exact obligation id from Trusted Runtime Context>' },
-  };
-}
-
-/**
- * Serialization fallback for transports without native schema enforcement.
- * The structured task prompt remains the semantic authority; this fallback adds
- * only the serialization contract that native constrained decoding would have
- * enforced for us.
- */
-export function buildTextCompatReviewerPrompt(structuredPrompt: string): string {
-  return [
-    structuredPrompt,
-    '',
-    '## Text Compatibility Serialization Contract',
-    '',
-    'Native structured output is unavailable for this invocation. Return exactly one valid JSON object and no prose or markdown fences.',
-    'The JSON MUST validate against this canonical ReviewFindingsInput schema:',
-    '',
-    JSON.stringify(REVIEW_FINDINGS_JSON_SCHEMA, null, 2),
-    '',
-    'Use only schema-defined top-level fields. In particular, challenges belong in the top-level challenges array; never invent wrapper objects such as nonBlockingIssues or designChallenges.',
-    'The canonical schema is authoritative for field names, enums, required fields, optionality, and nesting.',
-    '',
-    'Shape example only (replace every placeholder/binding with the exact values from the Trusted Runtime Context; do not copy placeholder text):',
-    JSON.stringify(textCompatExample(), null, 2),
-    '',
-    'The schema, not the example, is authoritative for fields, enums, optionality, and nested structure.',
-  ].join('\n');
-}
 
 /** Serialize the integrity-verified review subject identically for every transport. */
 export function renderFrozenReviewSubjectEnvelope(context: FrozenReviewerContext): string[] {
@@ -143,60 +102,6 @@ export function deriveReviewSubjectScope(subject: FrozenReviewSubject): ReviewSu
   return subject.kind === 'repository_change'
     ? { kind: 'repository_change', paths: [...subject.changedPaths], revisions: ['base', 'head'] }
     : { kind: 'content', subjectDigest: subject.subjectDigest, lineCount: subject.lineCount };
-}
-
-export interface ReviewerChallengePromptContract {
-  readonly requiredChallengeCount: number;
-  readonly requiredChallengeKind?:
-    'design_challenge' | 'implementation_challenge' | 'content_challenge';
-  readonly evidenceRefs?: readonly Record<string, unknown>[];
-}
-
-function challengeOutcomeVocabulary(
-  kind: ReviewerChallengePromptContract['requiredChallengeKind'],
-): string | null {
-  if (kind === undefined) return null;
-  const allowed = REVIEW_CHALLENGE_OUTCOMES[kind];
-  return `- Allowed ${kind} outcome values (exact strings, no others): ${allowed
-    .map((value) => `"${value}"`)
-    .join(' | ')}.`;
-}
-
-function renderChallengeContract(
-  contract: ReviewerChallengePromptContract | undefined,
-  obligationId: string,
-): string[] {
-  if (!contract) {
-    return ['- Omit the optional challenges field; no Challenge contract was supplied.'];
-  }
-  if (contract.requiredChallengeCount === 0) {
-    return [
-      '- Challenge contract: requiredChallengeCount=0. Omit the optional challenges field entirely.',
-    ];
-  }
-  const evidenceRefs = contract.evidenceRefs ?? [];
-  const challenge = {
-    clientReference: 'c1',
-    obligationId,
-    scenario: '<falsification scenario>',
-    claim: '<reviewed claim>',
-    locations: ['<concrete file or artifact location>'],
-    kind: contract.requiredChallengeKind,
-    evidenceRefs,
-  };
-  const outcomeVocabulary = challengeOutcomeVocabulary(contract.requiredChallengeKind);
-  return [
-    `- Challenge contract: return exactly ${contract.requiredChallengeCount} ${contract.requiredChallengeKind} challenge(s).`,
-    '- When provided, clientReference MUST be fresh and unique (e.g. "c1", "c2"); use the exact obligationId below.',
-    '- Copy evidenceRefs exactly from the contract below. Do not invent or alter a digest, sectionPath, or attemptId.',
-    '- Omit challengeResolutionVerdicts unless the Task prompt explicitly supplies prior challenge IDs to resolve.',
-    '- Required field: outcome. Select it yourself only after completing the falsification attempt; there is no default outcome.',
-    ...(outcomeVocabulary ? [outcomeVocabulary] : []),
-    `- Required challenge object shape: ${JSON.stringify(challenge)}`,
-    ...(evidenceRefs.length === 0
-      ? ['- No usable evidence reference was supplied; return unable_to_review.']
-      : []),
-  ];
 }
 
 function renderReviewerRules(isRepositoryReview: boolean): string[] {
@@ -316,7 +221,7 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
     renderReviewerCriteria(resolveReviewerPromptType(input)),
     ...renderReviewerRules(isRepositoryReview),
     ...renderFindingsSemanticRule(input),
-    ...renderChallengeContract(input.challengeContract, input.obligationId),
+    ...renderReviewChallengeContract(input.challengeContract, input.obligationId),
     renderFindingRelationGrammar(),
     '',
     '## Trusted Runtime Context',
@@ -365,6 +270,7 @@ export interface PlanReviewPromptOpts {
   readonly profileRules?: string;
   readonly discoveryContext: DiscoveryReviewContext;
   readonly proofGraph?: ProofGraphProjection;
+  readonly challengeContract?: ReviewerChallengePromptContract;
 }
 
 export interface ArchitectureReviewPromptOpts {
@@ -382,23 +288,7 @@ export interface ArchitectureReviewPromptOpts {
   readonly proofGraph?: ProofGraphProjection;
   readonly observationCapability?: string;
   readonly observationRevisions?: readonly ('base' | 'head')[];
-}
-
-export function selectReviewerProfileRules(
-  activeProfile:
-    | {
-        name: string;
-        phaseRuleContent?: Record<string, string>;
-      }
-    | null
-    | undefined,
-  phase: 'PLAN_REVIEW' | 'IMPL_REVIEW' | 'ARCH_REVIEW' | 'REVIEW',
-): { profileName?: string; profileRules?: string } {
-  if (!activeProfile) return {};
-  return {
-    profileName: activeProfile.name,
-    profileRules: activeProfile.phaseRuleContent?.[phase],
-  };
+  readonly challengeContract?: ReviewerChallengePromptContract;
 }
 
 export function buildPlanReviewPrompt(opts: PlanReviewPromptOpts): string {
@@ -414,6 +304,7 @@ export function buildPlanReviewPrompt(opts: PlanReviewPromptOpts): string {
     proofGraph,
     mandateDigest,
     criteriaVersion,
+    challengeContract,
   } = opts;
   const stackSection = buildStackProfileSection(profileName, profileRules);
   const discoverySection = buildDiscoveryContextSection(discoveryContext);
@@ -428,6 +319,7 @@ export function buildPlanReviewPrompt(opts: PlanReviewPromptOpts): string {
     `obligationId=${obligationId}`,
     `mandateDigest=${mandateDigest}`,
     `criteriaVersion=${criteriaVersion}`,
+    ...renderReviewChallengeContract(challengeContract, obligationId),
     ...(stackSection ? [stackSection] : []),
     ...(discoverySection ? [discoverySection] : []),
     ...renderPersistedProofGraphContext(proofGraph),
@@ -458,6 +350,7 @@ export function buildArchitectureReviewPrompt(opts: ArchitectureReviewPromptOpts
     observationRevisions,
     mandateDigest,
     criteriaVersion,
+    challengeContract,
   } = opts;
   const stackSection = buildStackProfileSection(profileName, profileRules);
   const discoverySection = buildDiscoveryContextSection(discoveryContext);
@@ -472,6 +365,7 @@ export function buildArchitectureReviewPrompt(opts: ArchitectureReviewPromptOpts
     `obligationId=${obligationId}`,
     `mandateDigest=${mandateDigest}`,
     `criteriaVersion=${criteriaVersion}`,
+    ...renderReviewChallengeContract(challengeContract, obligationId),
     ...(stackSection ? [stackSection] : []),
     ...(discoverySection ? [discoverySection] : []),
     ...renderPersistedProofGraphContext(proofGraph),
@@ -500,6 +394,7 @@ export function buildReviewContentPrompt(opts: {
   repositoryDiscoverySnapshot?: RepositoryDiscoverySnapshot | null;
   proofGraph?: ProofGraphProjection;
   frozenReviewerContext?: FrozenReviewerContext;
+  challengeContract?: ReviewerChallengePromptContract;
 }): string {
   const stackSection = buildStackProfileSection(opts.profileName, opts.profileRules);
   const discoverySection = resolveReviewerDiscoverySection(
@@ -519,6 +414,7 @@ export function buildReviewContentPrompt(opts: {
     `obligationId=${opts.obligationId}`,
     `mandateDigest=${opts.mandateDigest}`,
     `criteriaVersion=${opts.criteriaVersion}`,
+    ...renderReviewChallengeContract(opts.challengeContract, opts.obligationId),
   ];
   if (stackSection) lines.push(stackSection);
   if (discoverySection) lines.push(discoverySection);

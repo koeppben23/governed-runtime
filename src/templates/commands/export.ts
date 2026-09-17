@@ -1,26 +1,24 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 
 export const EXPORT_COMMAND = `---
-description: FlowGuard — Export a redacted audit-sharing package for the completed session.
+description: FlowGuard — Materialize the required verifiable export and complete development.
 ---
 
 You are managing a FlowGuard-controlled development workflow.
 
 ## Goal
 
-Create an audit-sharing package for the current session.
+Materialize the required verifiable audit package for the approved development session.
 
 ## Steps
 
 1. Call \`flowguard_status\` to verify a session exists.
-2. Call \`flowguard_archive\` with no arguments (creates the default redacted sharing package).
-3. Report the archive status, location, redaction mode, and verification result. A \`not_verifiable\` result is expected for a redacted archive and is not an integrity failure.
-4. Canonical verification requires raw evidence (\`redactionMode="none"\`, \`includeRaw=true\`) and repository authorization. If raw export is disabled, report that canonical verification cannot be produced; do not recommend retrying the same export.
-${GOVERNANCE_RULES}
+2. Call \`flowguard_export\` with no arguments. It materializes a raw, verifiable package and transitions only after completion evidence is persisted.
+3. Report the completion result and package digest. If the tool is blocked or fails, stop: the session remains \`EXPORT_READY\` and must not be described as complete.
+${renderCommandGovernanceRules()}
 ## Done-when
 
-- Audit package created via flowguard_archive.
-- Verification result and location reported.
+- Audit package created via flowguard_export and the workflow reaches COMPLETE.
 - If \`presentation.markdown\` is present, render it verbatim and do not append a separate \`Next action:\` line.
-- Otherwise, render \`productNextAction.text\` as the single fallback conclusion.
+- Otherwise, render the canonical \`directive\` as the single fallback conclusion.
 `;

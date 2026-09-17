@@ -3,7 +3,7 @@
  * @description Runtime and hydrate-time policy resolution authority.
  */
 
-import type { IdpConfig, IdentityProviderMode } from '../identity/types.js';
+import type { IdpConfig, IdentityProviderMode } from '../shared/policy-idp-config.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import type {
   EffectiveGateBehavior,
@@ -14,6 +14,7 @@ import type {
   PolicyDegradedReason,
   PolicyMode,
   PolicySource,
+  ReviewBudget,
   ValidationEvidencePolicy,
 } from './policy-types.js';
 import { PolicyConfigurationError } from './policy-errors.js';
@@ -39,12 +40,10 @@ export interface HydratePolicyOptions {
   centralPolicyPath?: string;
   digestFn: (text: string) => string;
   readFileFn?: (path: string) => Promise<string>;
-  configMaxSelfReviewIterations?: number;
-  configMaxImplReviewIterations?: number;
+  configReviewBudget?: Partial<ReviewBudget>;
   configMaxIncoherentReviewerCaptureRetries?: number;
   configMaxReviewerOutputRepairAttempts?: number;
   configMinimumActorAssuranceForApproval?: 'best_effort' | 'claim_validated' | 'idp_verified';
-  configRequireVerifiedActorsForApproval?: boolean;
   configIdentityProvider?: IdpConfig;
   configIdentityProviderMode?: IdentityProviderMode;
   configEnforceRiskClassification?: boolean;
@@ -64,7 +63,6 @@ interface RequestedPolicyContext {
 function resolveMinAssurance(
   base: FlowGuardPolicy,
   configMin?: string,
-  requireVerified?: boolean,
 ): 'best_effort' | 'claim_validated' | 'idp_verified' {
   if (
     configMin === 'best_effort' ||
@@ -72,7 +70,6 @@ function resolveMinAssurance(
     configMin === 'idp_verified'
   )
     return configMin;
-  if (requireVerified === true) return 'claim_validated';
   return base.minimumActorAssuranceForApproval;
 }
 
@@ -97,16 +94,22 @@ function resolveValidationEvidence(
   };
 }
 
+function resolveReviewBudget(base: ReviewBudget, override?: Partial<ReviewBudget>): ReviewBudget {
+  return {
+    plan: override?.plan ?? base.plan,
+    architecture: override?.architecture ?? base.architecture,
+    implementation: override?.implementation ?? base.implementation,
+  };
+}
+
 /** Apply user-level config overrides (iteration limits, assurance, IdP) to a base policy. */
 function applyConfigOverrides(
   basePolicy: FlowGuardPolicy,
   opts: {
-    configMaxSelfReviewIterations?: number;
-    configMaxImplReviewIterations?: number;
+    configReviewBudget?: Partial<ReviewBudget>;
     configMaxIncoherentReviewerCaptureRetries?: number;
     configMaxReviewerOutputRepairAttempts?: number;
     configMinimumActorAssuranceForApproval?: 'best_effort' | 'claim_validated' | 'idp_verified';
-    configRequireVerifiedActorsForApproval?: boolean;
     configIdentityProvider?: IdpConfig;
     configIdentityProviderMode?: IdentityProviderMode;
     configEnforceRiskClassification?: boolean;
@@ -118,22 +121,16 @@ function applyConfigOverrides(
 ): FlowGuardPolicy {
   return {
     ...basePolicy,
-    maxSelfReviewIterations:
-      opts.configMaxSelfReviewIterations ?? basePolicy.maxSelfReviewIterations,
-    maxImplReviewIterations:
-      opts.configMaxImplReviewIterations ?? basePolicy.maxImplReviewIterations,
+    reviewBudget: resolveReviewBudget(basePolicy.reviewBudget, opts.configReviewBudget),
     maxIncoherentReviewerCaptureRetries:
       opts.configMaxIncoherentReviewerCaptureRetries ??
       basePolicy.maxIncoherentReviewerCaptureRetries,
-    maxReviewerOutputRepairAttempts:
-      opts.configMaxReviewerOutputRepairAttempts ?? basePolicy.maxReviewerOutputRepairAttempts,
+    maxReviewerAttempts:
+      opts.configMaxReviewerOutputRepairAttempts ?? basePolicy.maxReviewerAttempts,
     minimumActorAssuranceForApproval: resolveMinAssurance(
       basePolicy,
       opts.configMinimumActorAssuranceForApproval,
-      opts.configRequireVerifiedActorsForApproval,
     ),
-    requireVerifiedActorsForApproval:
-      opts.configRequireVerifiedActorsForApproval ?? basePolicy.requireVerifiedActorsForApproval,
     identityProvider: opts.configIdentityProvider ?? basePolicy.identityProvider,
     identityProviderMode: opts.configIdentityProviderMode ?? basePolicy.identityProviderMode,
     enforceRiskClassification:

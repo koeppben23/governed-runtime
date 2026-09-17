@@ -13,8 +13,13 @@
  * @version v3
  */
 
-import type { DetectedStack, VerificationCandidate, VerificationCandidateKind } from './types.js';
-import type { ExecutionSubjectInput } from '../state/discovery-schemas.js';
+import type {
+  DetectedStack,
+  ExecutionSubjectInput,
+  UnidentifiedVerificationCandidate,
+  VerificationCandidate,
+  VerificationCandidateKind,
+} from '../state/discovery-schemas.js';
 import {
   ASSERTION_PROFILES,
   PROFILE_BY_ID,
@@ -26,7 +31,10 @@ import {
 import { buildScriptInvocation, type PackageManager } from './package-script-command.js';
 import { analyzeVerificationScript } from './verification-script-analysis.js';
 import type { ProviderId } from '../state/assertion-identity.js';
-import type { PlannedVerificationCandidate } from './verification-candidate-planned.js';
+import type {
+  IdentifiedPlannedVerificationCandidate,
+  PlannedVerificationCandidate,
+} from './verification-candidate-planned.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { hashText } from '../shared/hashing.js';
 
@@ -73,7 +81,7 @@ export function comparePlannedCandidates(
  */
 export async function planVerificationCandidates(
   input: VerificationPlannerInput,
-): Promise<PlannedVerificationCandidate[]> {
+): Promise<IdentifiedPlannedVerificationCandidate[]> {
   const byKind = new Map<string, PlannedVerificationCandidate>();
   const blockedKinds = new Set<VerificationCandidateKind>();
   const rootFiles = new Set(input.allFiles.filter((f) => !f.includes('/') && !f.includes('\\')));
@@ -98,13 +106,26 @@ export async function planVerificationCandidates(
   addNonAssertionFallbacks(byKind, blockedKinds, ctx, detectedStackIds, packageManager);
 
   const ordered = [...byKind.values()].sort(comparePlannedCandidates);
-  return ordered.map((planned) => ({
+  return ordered.map(identifyPlannedCandidate);
+}
+
+/**
+ * Mint the deterministic planner identity for one candidate. The identity is
+ * the hash of the identity-free candidate, so every plan produces stable ids
+ * across runs.
+ */
+function identifyPlannedCandidate(
+  planned: PlannedVerificationCandidate,
+): IdentifiedPlannedVerificationCandidate {
+  const candidateId = `vc_${hashText(canonicalJsonStringify(planned.candidate))}`;
+  const candidate = planned.candidate;
+  return {
     ...planned,
-    candidate: {
-      ...planned.candidate,
-      candidateId: `vc_${hashText(canonicalJsonStringify(planned.candidate))}`,
-    },
-  }));
+    candidate:
+      candidate.assertionCapability === 'structured'
+        ? { ...candidate, candidateId }
+        : { ...candidate, candidateId },
+  };
 }
 
 /**
@@ -112,34 +133,18 @@ export async function planVerificationCandidates(
  * provider-neutral VerificationCandidate[] for state persistence.
  */
 export function stripToCandidates(
-  planned: readonly PlannedVerificationCandidate[],
+  planned: readonly IdentifiedPlannedVerificationCandidate[],
 ): VerificationCandidate[] {
   return planned.map((p) => p.candidate);
 }
 
-/**
- * Extract execution subject inputs from planned candidates, keyed by kind,
- * for persistence alongside the provider-neutral VerificationCandidate list.
- */
-export function extractExecutionSubjectInputs(
-  planned: readonly PlannedVerificationCandidate[],
+/** Extract candidate-specific execution subject inputs for exact candidate execution. */
+export function extractExecutionSubjectInputsByCandidateId(
+  planned: readonly IdentifiedPlannedVerificationCandidate[],
 ): Record<string, ExecutionSubjectInput[]> {
   const map: Record<string, ExecutionSubjectInput[]> = {};
   for (const p of planned) {
     if (p.executionSubjectInputs.length > 0) {
-      map[p.candidate.kind] = [...p.executionSubjectInputs];
-    }
-  }
-  return map;
-}
-
-/** Extract candidate-specific execution subject inputs for exact candidate execution. */
-export function extractExecutionSubjectInputsByCandidateId(
-  planned: readonly PlannedVerificationCandidate[],
-): Record<string, ExecutionSubjectInput[]> {
-  const map: Record<string, ExecutionSubjectInput[]> = {};
-  for (const p of planned) {
-    if (p.candidate.candidateId && p.executionSubjectInputs.length > 0) {
       map[p.candidate.candidateId] = [...p.executionSubjectInputs];
     }
   }
@@ -154,7 +159,7 @@ async function applyProfiles(
     readonly profileId?: string;
     readonly kind: VerificationCandidateKind;
     readonly alternate?: boolean;
-    createCandidate(ctx: PlannerContext): VerificationCandidate | null;
+    createCandidate(ctx: PlannerContext): UnidentifiedVerificationCandidate | null;
     attestFullCheckScope?(command: string): boolean;
     resolveExecutionSubjectInputs?(
       ctx: PlannerContext,
@@ -356,9 +361,9 @@ function normalizeSubjectResolution(
 
 function attestFullCheckScope(
   profile: { attestFullCheckScope?(command: string): boolean },
-  candidate: VerificationCandidate,
+  candidate: UnidentifiedVerificationCandidate,
   scopeSemanticCommand: string,
-): VerificationCandidate {
+): UnidentifiedVerificationCandidate {
   if (
     candidate.assertionCapability === 'structured' &&
     profile.attestFullCheckScope?.(scopeSemanticCommand) === true

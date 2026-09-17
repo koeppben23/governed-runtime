@@ -21,30 +21,21 @@ import {
   createReviewAttempt,
   createReviewObligation,
   ensureReviewAssurance,
+  freezeReviewMaterial,
+  hashFindings,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './assurance.js';
 import { mintObservationCapability } from './attempt-lifecycle.js';
-import { buildHostTaskEvidence } from './evidence-binding.js';
+import { completedDispatchForInvocation } from '../../state/evidence-test-constants.js';
 import { validateReviewFindings } from '../tools/review-validation.js';
-import {
-  createSessionState,
-  onFlowGuardToolAfter,
-  onTaskToolAfter,
-} from './enforcement/enforcement.js';
-import {
-  modeAResponse,
-  validPrompt,
-  NOW,
-  LATER,
-  SESSION_ID,
-  CHILD_SESSION_ID,
-} from '../plugin-host-task-diagnostics-helpers.js';
+import { NOW, SESSION_ID, CHILD_SESSION_ID } from '../plugin-host-task-diagnostics-helpers.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import type {
   RepositoryObservation,
   ReviewAssuranceState,
   ReviewAttempt,
+  ReviewInvocationEvidence,
   ReviewObligation,
 } from '../../state/evidence.js';
 import type { ReviewFindings } from '../../state/evidence.js';
@@ -66,13 +57,15 @@ function candidateObligation(
         version: 'challenge-policy.v1',
         counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
       },
-      maxReviewerOutputRepairAttempts: 1,
+      maxReviewerAttempts: 1,
     },
     obligationType,
     iteration: 0,
+    reviewCycle: 1,
     planVersion: 1,
     now: NOW_ISO,
     subjectDigest: 'impl-digest',
+    reviewMaterial: freezeReviewMaterial('frozen review material', 'impl-digest'),
     ...(obligationType === 'plan'
       ? {
           reviewSubjectScope: artifactReviewSubjectScope('plan', '# Plan\nBody', 'impl-digest'),
@@ -180,17 +173,12 @@ function bind(
   });
 }
 
-const assuranceWith = (
-  obligation: ReviewObligation,
-  attempt: ReviewAttempt | null,
-): ReviewAssuranceState => fixtureAssuranceWith({ obligation, attempts: attempt ? [attempt] : [] });
-
 describe('pure binder — adversarial matrix', () => {
   it('HAPPY: matching frozen head observation binds', () => {
     const obligation = candidateObligation();
-    const attempt = attemptFor(obligation, CHILD_SESSION_ID);
-    const observation = makeObservation(obligation, attempt);
-    attempt.observations = [observation];
+    const baseAttempt = attemptFor(obligation, CHILD_SESSION_ID);
+    const observation = makeObservation(obligation, baseAttempt);
+    const attempt: ReviewAttempt = { ...baseAttempt, observations: [observation] };
     const result = bind(obligation, attempt, CHILD_SESSION_ID, [
       { path: 'src/foo.ts', revision: 'head' },
     ]);
@@ -209,8 +197,11 @@ describe('pure binder — adversarial matrix', () => {
 
   it('BAD: base citation with only a head observation is rejected', () => {
     const obligation = candidateObligation();
-    const attempt = attemptFor(obligation, CHILD_SESSION_ID);
-    attempt.observations = [makeObservation(obligation, attempt, { revision: 'head' })];
+    const baseAttempt = attemptFor(obligation, CHILD_SESSION_ID);
+    const attempt: ReviewAttempt = {
+      ...baseAttempt,
+      observations: [makeObservation(obligation, baseAttempt, { revision: 'head' })],
+    };
     const result = bind(obligation, attempt, CHILD_SESSION_ID, [
       { path: 'src/foo.ts', revision: 'base' },
     ]);
@@ -219,10 +210,13 @@ describe('pure binder — adversarial matrix', () => {
 
   it('BAD: attempt A observes, attempt B cites without observing — rejected', () => {
     const obligation = candidateObligation();
-    const attemptA = attemptFor(obligation, 'session-A');
-    attemptA.observations = [
-      makeObservation(obligation, attemptA, { observedBySessionId: 'session-A' }),
-    ];
+    const baseAttemptA = attemptFor(obligation, 'session-A');
+    const attemptA: ReviewAttempt = {
+      ...baseAttemptA,
+      observations: [
+        makeObservation(obligation, baseAttemptA, { observedBySessionId: 'session-A' }),
+      ],
+    };
     const attemptB = attemptFor(obligation, 'session-B');
     const result = bind(obligation, attemptB, 'session-B', [
       { path: 'src/foo.ts', revision: 'head' },
@@ -232,16 +226,19 @@ describe('pure binder — adversarial matrix', () => {
 
   it('HAPPY: fork base/head are separated by repository identity', () => {
     const obligation = candidateObligation();
-    const attempt = attemptFor(obligation, CHILD_SESSION_ID);
-    attempt.observations = [
-      makeObservation(obligation, attempt, { revision: 'head', repositoryIdentity: FORK }),
-      makeObservation(obligation, attempt, {
-        revision: 'base',
-        repositoryIdentity: UPSTREAM,
-        resolvedObjectSha: BASE_SHA,
-        observationId: '22222222-2222-4222-8222-222222222222',
-      }),
-    ];
+    const baseAttempt = attemptFor(obligation, CHILD_SESSION_ID);
+    const attempt: ReviewAttempt = {
+      ...baseAttempt,
+      observations: [
+        makeObservation(obligation, baseAttempt, { revision: 'head', repositoryIdentity: FORK }),
+        makeObservation(obligation, baseAttempt, {
+          revision: 'base',
+          repositoryIdentity: UPSTREAM,
+          resolvedObjectSha: BASE_SHA,
+          observationId: '22222222-2222-4222-8222-222222222222',
+        }),
+      ],
+    };
     expect(
       bind(obligation, attempt, CHILD_SESSION_ID, [{ path: 'src/foo.ts', revision: 'head' }]),
     ).toEqual({ ok: true });
@@ -252,10 +249,13 @@ describe('pure binder — adversarial matrix', () => {
 
   it('BAD: same SHA in the WRONG repository is not authority (fork collapse)', () => {
     const obligation = candidateObligation();
-    const attempt = attemptFor(obligation, CHILD_SESSION_ID);
-    attempt.observations = [
-      makeObservation(obligation, attempt, { revision: 'base', repositoryIdentity: FORK }),
-    ];
+    const baseAttempt = attemptFor(obligation, CHILD_SESSION_ID);
+    const attempt: ReviewAttempt = {
+      ...baseAttempt,
+      observations: [
+        makeObservation(obligation, baseAttempt, { revision: 'base', repositoryIdentity: FORK }),
+      ],
+    };
     const result = bind(obligation, attempt, CHILD_SESSION_ID, [
       { path: 'src/foo.ts', revision: 'base' },
     ]);
@@ -264,8 +264,11 @@ describe('pure binder — adversarial matrix', () => {
 
   it('BAD: object kind mismatch is not a match (commit vs tree)', () => {
     const obligation = candidateObligation();
-    const attempt = attemptFor(obligation, CHILD_SESSION_ID);
-    attempt.observations = [makeObservation(obligation, attempt, { resolvedObjectKind: 'tree' })];
+    const baseAttempt = attemptFor(obligation, CHILD_SESSION_ID);
+    const attempt: ReviewAttempt = {
+      ...baseAttempt,
+      observations: [makeObservation(obligation, baseAttempt, { resolvedObjectKind: 'tree' })],
+    };
     const result = bind(obligation, attempt, CHILD_SESSION_ID, [
       { path: 'src/foo.ts', revision: 'head' },
     ]);
@@ -274,13 +277,16 @@ describe('pure binder — adversarial matrix', () => {
 
   it('HAPPY: binary observation binds without line citations', () => {
     const obligation = candidateObligation();
-    const attempt = attemptFor(obligation, CHILD_SESSION_ID);
+    const baseAttempt = attemptFor(obligation, CHILD_SESSION_ID);
     const binary = {
-      ...makeObservation(obligation, attempt),
+      ...makeObservation(obligation, baseAttempt),
       representation: 'binary' as const,
       lineCount: undefined,
     };
-    attempt.observations = [binary] as RepositoryObservation[];
+    const attempt: ReviewAttempt = {
+      ...baseAttempt,
+      observations: [binary] as RepositoryObservation[],
+    };
     const result = bind(obligation, attempt, CHILD_SESSION_ID, [
       { path: 'src/foo.ts', revision: 'head' },
     ]);
@@ -289,13 +295,16 @@ describe('pure binder — adversarial matrix', () => {
 
   it('BAD: binary + line citation fails closed', () => {
     const obligation = candidateObligation();
-    const attempt = attemptFor(obligation, CHILD_SESSION_ID);
+    const baseAttempt = attemptFor(obligation, CHILD_SESSION_ID);
     const binary = {
-      ...makeObservation(obligation, attempt),
+      ...makeObservation(obligation, baseAttempt),
       representation: 'binary' as const,
       lineCount: undefined,
     };
-    attempt.observations = [binary] as RepositoryObservation[];
+    const attempt: ReviewAttempt = {
+      ...baseAttempt,
+      observations: [binary] as RepositoryObservation[],
+    };
     const result = bind(obligation, attempt, CHILD_SESSION_ID, [
       { path: 'src/foo.ts', revision: 'head', line: 4 },
     ]);
@@ -304,8 +313,11 @@ describe('pure binder — adversarial matrix', () => {
 
   it('BAD: line beyond observed content is rejected; within is accepted', () => {
     const obligation = candidateObligation();
-    const attempt = attemptFor(obligation, CHILD_SESSION_ID);
-    attempt.observations = [makeObservation(obligation, attempt, { lineCount: 12 })];
+    const baseAttempt = attemptFor(obligation, CHILD_SESSION_ID);
+    const attempt: ReviewAttempt = {
+      ...baseAttempt,
+      observations: [makeObservation(obligation, baseAttempt, { lineCount: 12 })],
+    };
     expect(
       bind(obligation, attempt, CHILD_SESSION_ID, [
         { path: 'src/foo.ts', revision: 'head', line: 13 },
@@ -327,10 +339,13 @@ describe('pure binder — adversarial matrix', () => {
 
   it('BAD: parent-side capture (session mismatch) can never bind', () => {
     const obligation = candidateObligation();
-    const attempt = attemptFor(obligation, CHILD_SESSION_ID);
-    attempt.observations = [
-      makeObservation(obligation, attempt, { observedBySessionId: 'parent-session' }),
-    ];
+    const baseAttempt = attemptFor(obligation, CHILD_SESSION_ID);
+    const attempt: ReviewAttempt = {
+      ...baseAttempt,
+      observations: [
+        makeObservation(obligation, baseAttempt, { observedBySessionId: 'parent-session' }),
+      ],
+    };
     const result = bind(obligation, attempt, CHILD_SESSION_ID, [
       { path: 'src/foo.ts', revision: 'head' },
     ]);
@@ -339,8 +354,11 @@ describe('pure binder — adversarial matrix', () => {
 
   it('BAD: reviewer observes X, finding cites Y — rejected', () => {
     const obligation = candidateObligation();
-    const attempt = attemptFor(obligation, CHILD_SESSION_ID);
-    attempt.observations = [makeObservation(obligation, attempt, { path: 'src/foo.ts' })];
+    const baseAttempt = attemptFor(obligation, CHILD_SESSION_ID);
+    const attempt: ReviewAttempt = {
+      ...baseAttempt,
+      observations: [makeObservation(obligation, baseAttempt, { path: 'src/foo.ts' })],
+    };
     const result = bind(obligation, attempt, CHILD_SESSION_ID, [
       { path: 'src/bar.ts', revision: 'head' },
     ]);
@@ -360,83 +378,6 @@ describe('pure binder — adversarial matrix', () => {
     const obligation = candidateObligation();
     const result = bind(obligation, null, CHILD_SESSION_ID, []);
     expect(result).toEqual({ ok: true });
-  });
-});
-
-describe('host-task bind path', () => {
-  function taskResultWithEvidence(obligationId: string, locations: unknown[]): string {
-    return JSON.stringify({
-      iteration: 0,
-      planVersion: 1,
-      reviewMode: 'subagent',
-      overallVerdict: 'changes_requested',
-      blockingIssues: [
-        {
-          severity: 'major',
-          category: 'correctness',
-          message: 'flawed',
-          relation: {
-            // Plan reviews are artifact-scoped: the subject anchor targets the
-            // plan artifact; repository evidenceLocations bind against the
-            // attempt's authoritative observations.
-            subjectAnchors: [
-              {
-                kind: 'artifact_section',
-                artifactKind: 'plan',
-                artifactDigest: 'impl-digest',
-                sectionPath: [{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }],
-              },
-            ],
-            evidenceLocations: locations,
-          },
-        },
-      ],
-      majorRisks: [],
-      missingVerification: [],
-      scopeCreep: [],
-      unknowns: [],
-      attestation: {
-        toolObligationId: obligationId,
-      },
-    });
-  }
-
-  function hostTaskCycle(
-    obligation: ReviewObligation,
-    attempt: ReviewAttempt,
-    locations: unknown[],
-  ) {
-    const state = createSessionState();
-    onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(0, 1), NOW);
-    onTaskToolAfter(
-      state,
-      { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt(0, 1) },
-      taskResultWithEvidence(obligation.obligationId, locations),
-      LATER,
-      { metadata: { sessionID: CHILD_SESSION_ID } },
-    );
-    return buildHostTaskEvidence(state, SESSION_ID, LATER, {
-      obligations: [obligation],
-      invocations: [],
-      attempts: [attempt],
-    });
-  }
-
-  it('HAPPY: evidenceLocations bind against the attempt observations', () => {
-    const obligation = candidateObligation('commit', 'plan');
-    const attempt = attemptFor(obligation, CHILD_SESSION_ID);
-    attempt.observations = [makeObservation(obligation, attempt)];
-    const result = hostTaskCycle(obligation, attempt, [{ path: 'src/foo.ts', revision: 'head' }]);
-    expect(result.bindOutcome).toBe('bound');
-    expect(result.evidence?.capturedVerdict).toBe('changes_requested');
-  });
-
-  it('BAD: evidenceLocations without observations -> repository_evidence_unbound (no repair)', () => {
-    const obligation = candidateObligation('commit', 'plan');
-    const attempt = attemptFor(obligation, CHILD_SESSION_ID);
-    const result = hostTaskCycle(obligation, attempt, [{ path: 'src/foo.ts', revision: 'head' }]);
-    expect(result.bindOutcome).toBe('repository_evidence_unbound');
-    expect(result.evidence).toBeNull();
   });
 });
 
@@ -468,86 +409,164 @@ describe('direct/submitted validator path', () => {
       missingVerification: [],
       scopeCreep: [],
       unknowns: [],
+      challenges: [],
       reviewedBy: { sessionId: CHILD_SESSION_ID },
       reviewedAt: NOW,
+      attestation: {
+        mandateDigest: REVIEW_MANDATE_DIGEST,
+        criteriaVersion: REVIEW_CRITERIA_VERSION,
+        toolObligationId: obligationId,
+        iteration: 0,
+        planVersion: 1,
+        reviewedBy: 'flowguard-reviewer',
+      },
     } as ReviewFindings;
+  }
+
+  function directAssurance(
+    obligation: ReviewObligation,
+    attempts: readonly ReviewAttempt[],
+    findings: ReviewFindings,
+  ): ReviewAssuranceState {
+    const invocationId = '33333333-3333-4333-8333-333333333333';
+    const attemptId = attempts[attempts.length - 1]!.attemptId;
+    const boundObligation = {
+      ...obligation,
+      status: 'fulfilled' as const,
+      invocationId,
+      pluginHandshakeAt: NOW_ISO,
+      fulfilledAt: NOW_ISO,
+    };
+    const invocation: ReviewInvocationEvidence = {
+      invocationId,
+      obligationId: obligation.obligationId,
+      obligationType: obligation.obligationType,
+      attemptId,
+      parentSessionId: SESSION_ID,
+      childSessionId: CHILD_SESSION_ID,
+      agentType: REVIEWER_SUBAGENT_TYPE,
+      invocationMode: 'native_task_structured_followup',
+      reviewOutputMode: 'structured_output',
+      structuredOutputUsed: true,
+      reviewAssuranceLevel: 'structured_high',
+      hostVisible: true,
+      transcriptNavigable: true,
+      source: 'host-orchestrated',
+      promptHash: 'a'.repeat(64),
+      mandateDigest: REVIEW_MANDATE_DIGEST,
+      criteriaVersion: REVIEW_CRITERIA_VERSION,
+      findingsHash: hashFindings(findings),
+      invokedAt: NOW_ISO,
+      fulfilledAt: NOW_ISO,
+      consumedByObligationId: null,
+      capturedRawFindings: findings,
+    };
+    return fixtureAssuranceWith({
+      obligation: boundObligation,
+      attempts,
+      invocations: [invocation],
+      dispatches: [completedDispatchForInvocation(invocation)],
+    });
   }
 
   function directCtx(assurance: ReviewAssuranceState, obligation: ReviewObligation) {
     return {
-      subagentEnabled: true,
-      fallbackToSelf: false,
       expectedPlanVersion: 1,
       expectedIteration: 0,
-      strictEnforcement: false,
       assurance,
       obligationType: 'implement' as const,
       expectedObligationId: obligation.obligationId,
     };
   }
 
-  it('HAPPY: submitted findings with matching attempt observations pass', () => {
-    const obligation = candidateObligation();
-    const attempt = attemptFor(obligation, CHILD_SESSION_ID);
-    attempt.status = 'bound';
-    attempt.observations = [makeObservation(obligation, attempt)];
-    const result = validateReviewFindings(
-      directFindings(obligation.obligationId, [{ path: 'src/foo.ts', revision: 'head' }]),
-      directCtx(assuranceWith(obligation, attempt), obligation),
-    );
-    expect(result).toBeNull();
-  });
-
   it('BAD: rejected attempt observations are audit-only — direct findings cannot cite them', () => {
     const obligation = candidateObligation();
-    const attempt = attemptFor(obligation, CHILD_SESSION_ID);
-    attempt.status = 'rejected';
-    attempt.rejectionReason = 'schema_invalid';
-    attempt.observations = [makeObservation(obligation, attempt)];
+    const baseAttempt = attemptFor(obligation, CHILD_SESSION_ID);
+    const attempt: ReviewAttempt = {
+      ...baseAttempt,
+      status: 'rejected',
+      rejectionReason: 'schema_invalid',
+      observations: [makeObservation(obligation, baseAttempt)],
+    };
+    const findings = directFindings(obligation.obligationId, [
+      { path: 'src/foo.ts', revision: 'head' },
+    ]);
     const result = validateReviewFindings(
-      directFindings(obligation.obligationId, [{ path: 'src/foo.ts', revision: 'head' }]),
-      directCtx(assuranceWith(obligation, attempt), obligation),
+      findings,
+      directCtx(directAssurance(obligation, [attempt], findings), obligation),
     );
     expect(result).not.toBeNull();
     expect(JSON.parse(result!).code).toBe('REVIEW_EVIDENCE_NOT_OBSERVED');
   });
 
-  it('EDGE: reused child session resolves the BOUND attempt, never an older rejected one', () => {
+  it('HAPPY: bound attempt observations authorize direct findings', () => {
     const obligation = candidateObligation();
-    const rejected = attemptFor(obligation, CHILD_SESSION_ID);
-    rejected.status = 'rejected';
-    rejected.rejectionReason = 'schema_invalid';
-    rejected.observations = [makeObservation(obligation, rejected, { path: 'src/foo.ts' })];
-    const bound = attemptFor(obligation, CHILD_SESSION_ID);
-    bound.ordinal = 2;
-    bound.status = 'bound';
-    bound.observations = [makeObservation(obligation, bound, { path: 'src/bar.ts' })];
-    const assurance = {
-      ...assuranceWith(obligation, null),
-      attempts: [rejected, bound],
+    const baseAttempt = attemptFor(obligation, CHILD_SESSION_ID);
+    const attempt: ReviewAttempt = {
+      ...baseAttempt,
+      status: 'bound',
+      observations: [makeObservation(obligation, baseAttempt)],
     };
-    // Citation of the OLD rejected attempt's observation must fail...
-    const staleCitation = validateReviewFindings(
-      directFindings(obligation.obligationId, [{ path: 'src/foo.ts', revision: 'head' }]),
-      directCtx(assurance, obligation),
-    );
-    expect(staleCitation).not.toBeNull();
-    expect(JSON.parse(staleCitation!).code).toBe('REVIEW_EVIDENCE_NOT_OBSERVED');
-    // ...while the BOUND attempt's observation authorizes.
-    const freshCitation = validateReviewFindings(
-      directFindings(obligation.obligationId, [{ path: 'src/bar.ts', revision: 'head' }]),
-      directCtx(assurance, obligation),
-    );
-    expect(freshCitation).toBeNull();
+    const findings = directFindings(obligation.obligationId, [
+      { path: 'src/foo.ts', revision: 'head' },
+    ]);
+
+    expect(
+      validateReviewFindings(
+        findings,
+        directCtx(directAssurance(obligation, [attempt], findings), obligation),
+      ),
+    ).toBeNull();
+  });
+
+  it('EDGE: only the current bound attempt authorizes a reused child session', () => {
+    const obligation = candidateObligation();
+    const baseRejected = attemptFor(obligation, CHILD_SESSION_ID);
+    const rejected: ReviewAttempt = {
+      ...baseRejected,
+      status: 'rejected',
+      rejectionReason: 'schema_invalid',
+      observations: [makeObservation(obligation, baseRejected, { path: 'src/old.ts' })],
+    };
+    const baseBound = attemptFor(obligation, CHILD_SESSION_ID);
+    const bound: ReviewAttempt = {
+      ...baseBound,
+      ordinal: 2,
+      status: 'bound',
+      observations: [makeObservation(obligation, baseBound, { path: 'src/current.ts' })],
+    };
+
+    const staleFindings = directFindings(obligation.obligationId, [
+      { path: 'src/old.ts', revision: 'head' },
+    ]);
+    expect(
+      validateReviewFindings(
+        staleFindings,
+        directCtx(directAssurance(obligation, [rejected, bound], staleFindings), obligation),
+      ),
+    ).toContain('REVIEW_EVIDENCE_NOT_OBSERVED');
+
+    const freshFindings = directFindings(obligation.obligationId, [
+      { path: 'src/current.ts', revision: 'head' },
+    ]);
+    expect(
+      validateReviewFindings(
+        freshFindings,
+        directCtx(directAssurance(obligation, [rejected, bound], freshFindings), obligation),
+      ),
+    ).toBeNull();
   });
 
   it('BAD: submitted evidenceLocations without observations -> REVIEW_EVIDENCE_NOT_OBSERVED', () => {
     const obligation = candidateObligation();
-    const attempt = attemptFor(obligation, CHILD_SESSION_ID);
-    attempt.status = 'bound';
+    const baseAttempt = attemptFor(obligation, CHILD_SESSION_ID);
+    const attempt: ReviewAttempt = { ...baseAttempt, status: 'bound' };
+    const findings = directFindings(obligation.obligationId, [
+      { path: 'src/foo.ts', revision: 'head' },
+    ]);
     const result = validateReviewFindings(
-      directFindings(obligation.obligationId, [{ path: 'src/foo.ts', revision: 'head' }]),
-      directCtx(assuranceWith(obligation, attempt), obligation),
+      findings,
+      directCtx(directAssurance(obligation, [attempt], findings), obligation),
     );
     expect(result).not.toBeNull();
     expect(JSON.parse(result!).code).toBe('REVIEW_EVIDENCE_NOT_OBSERVED');

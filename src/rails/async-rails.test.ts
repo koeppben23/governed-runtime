@@ -130,7 +130,7 @@ describe('plan rail', () => {
       }
     });
 
-    it('maxIterations from policy limits loop (solo = 1)', async () => {
+    it('uses the plan review budget from policy', async () => {
       let count = 0;
       const neverApprove = {
         generate: async () => '## Plan',
@@ -144,7 +144,7 @@ describe('plan rail', () => {
       const result = await executePlan(state, {}, soloCtx, neverApprove);
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
-        expect(result.state.selfReview!.iteration).toBe(2);
+        expect(result.state.selfReview!.iteration).toBe(SOLO_POLICY.reviewBudget.plan);
       }
     });
   });
@@ -296,14 +296,16 @@ describe('implement rail', () => {
 
   // ─── HAPPY ─────────────────────────────────────────────────
   describe('HAPPY', () => {
-    it('executes impl and advances through IMPL_REVIEW to EVIDENCE_REVIEW', async () => {
+    it('executes impl and stops in IMPL_VALIDATION for fresh post-impl checks', async () => {
       const state = makeProgressedState('IMPLEMENTATION');
       const result = await executeImplement(state, ctx, implExecutors);
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
         expect(result.state.implementation).not.toBeNull();
-        expect(result.state.implReview).not.toBeNull();
-        expect(result.state.phase).toBe('EVIDENCE_REVIEW');
+        expect(result.state.phase).toBe('IMPL_VALIDATION');
+        // Independent review is activated by runtime-owned revalidation, not
+        // by this rail call.
+        expect(result.state.implReview).toBeNull();
       }
     });
   });
@@ -339,7 +341,7 @@ describe('implement rail', () => {
 
   // ─── CORNER ────────────────────────────────────────────────
   describe('CORNER', () => {
-    it('impl review loop respects maxIterations from policy', async () => {
+    it('implementation review loop respects the policy budget', async () => {
       let count = 0;
       const neverApprove = {
         execute: async () => ({ changedFiles: ['a.ts'], domainFiles: [] }),
@@ -349,16 +351,20 @@ describe('implement rail', () => {
         },
       };
       const soloCtx = { ...ctx, policy: SOLO_POLICY };
-      const state = makeProgressedState('IMPLEMENTATION');
+      // Only the explicit vacuous zero-check policy reaches IMPL_REVIEW
+      // directly; active-check flows defer review to runtime-owned revalidation.
+      const state = { ...makeProgressedState('IMPLEMENTATION'), activeChecks: [] };
       await executeImplement(state, soloCtx, neverApprove);
-      expect(count).toBe(1); // SOLO = maxImplReviewIterations: 1
+      expect(count).toBe(SOLO_POLICY.reviewBudget.implementation);
     });
   });
 
   // ─── EDGE ──────────────────────────────────────────────────
   describe('EDGE', () => {
     it('records multiple transitions (IMPLEMENTATION→IMPL_REVIEW→EVIDENCE_REVIEW)', async () => {
-      const state = makeProgressedState('IMPLEMENTATION');
+      // Vacuous zero-check policy: the bundled review path still advances
+      // through IMPL_REVIEW in one rail call.
+      const state = { ...makeProgressedState('IMPLEMENTATION'), activeChecks: [] };
       const result = await executeImplement(state, ctx, implExecutors);
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
@@ -499,7 +505,7 @@ describe('continue rail', () => {
     });
 
     it('at REVIEW_COMPLETE → blocked (terminal)', async () => {
-      const state = makeProgressedState('REVIEW_COMPLETE');
+      const state = makeProgressedState('PEER_REVIEW_COMPLETE');
       const result = await executeContinue(state, ctx, continueExecutors);
       expect(result.kind).toBe('blocked');
       if (result.kind === 'blocked') {
@@ -528,6 +534,7 @@ describe('continue rail', () => {
         architecture: ARCHITECTURE_DECISION,
         selfReview: {
           iteration: 0,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: ARCHITECTURE_DECISION.digest,
@@ -558,6 +565,7 @@ describe('continue rail', () => {
         architecture: ARCHITECTURE_DECISION,
         selfReview: {
           iteration: 0,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: ARCHITECTURE_DECISION.digest,
@@ -593,6 +601,7 @@ describe('continue rail', () => {
         architecture: ARCHITECTURE_DECISION,
         selfReview: {
           iteration: 0,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: ARCHITECTURE_DECISION.digest,
@@ -610,12 +619,12 @@ describe('continue rail', () => {
     });
 
     it('at REVIEW → auto-advances to REVIEW_COMPLETE', async () => {
-      const state = makeState('REVIEW', { reviewReportPath: '/tmp/report.json' });
+      const state = makeState('PEER_REVIEW', { reviewReportPath: '/tmp/report.json' });
       const result = await executeContinue(state, ctx, continueExecutors);
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
-        // reviewDone guard fires when phase === "REVIEW" and reviewReportPath is set
-        expect(result.state.phase).toBe('REVIEW_COMPLETE');
+        // reviewDone guard fires when phase === "PEER_REVIEW" and reviewReportPath is set
+        expect(result.state.phase).toBe('PEER_REVIEW_COMPLETE');
       }
     });
 
@@ -686,6 +695,7 @@ describe('continue rail', () => {
         architecture: ARCHITECTURE_DECISION,
         selfReview: {
           iteration: 0,
+          reviewCycle: 1,
           maxIterations: 3,
           prevDigest: null,
           currDigest: ARCHITECTURE_DECISION.digest,

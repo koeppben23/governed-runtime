@@ -120,7 +120,7 @@ Responsibilities, contact channels, and expectations.
 | `/validate`        | VALIDATION                                | Run checks                     |
 | `/implement`       | IMPLEMENTATION                            | Execute plan                   |
 | `/architecture`    | READY, ARCHITECTURE                       | Create/revise ADR              |
-| `/review`          | READY                                     | Start compliance review flow   |
+| `/review`          | READY                                     | Start peer review flow         |
 | `/continue`        | Any                                       | Auto-advance                   |
 | `/abort`           | Any                                       | Terminate                      |
 | `/archive`         | COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE  | Archive session                |

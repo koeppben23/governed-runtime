@@ -38,11 +38,35 @@ import { makeState } from '../../fixtures.js';
 
 const NOW = '2026-01-01T00:00:00.000Z';
 
+const COMPLETE_DIAGNOSTICS = [
+  { name: 'repo-metadata', status: 'complete', durationMs: 0, timedOut: false },
+  { name: 'stack-detection', status: 'complete', durationMs: 0, timedOut: false },
+  { name: 'topology', status: 'complete', durationMs: 0, timedOut: false },
+  { name: 'surface-detection', status: 'complete', durationMs: 0, timedOut: false },
+  { name: 'code-surface-analysis', status: 'complete', durationMs: 0, timedOut: false },
+  { name: 'domain-signals', status: 'complete', durationMs: 0, timedOut: false },
+] as const;
+
 function healthyProjection() {
   const result = {
-    schemaVersion: 'v1',
+    schemaVersion: 'discovery.v2',
     collectedAt: NOW,
-    diagnostics: [{ name: 'git', status: 'complete' }],
+    diagnostics: COMPLETE_DIAGNOSTICS,
+    codeSurfaces: {
+      status: 'ok' as const,
+      endpoints: [],
+      authBoundaries: [],
+      dataAccess: [],
+      integrations: [],
+      budget: {
+        scannedFiles: 0,
+        scannedBytes: 0,
+        maxFiles: 200,
+        maxBytesPerFile: 65536,
+        maxTotalBytes: 2097152,
+        timedOut: false,
+      },
+    },
   } as unknown as DiscoveryResult;
   return extractDiscoveryHealth(result);
 }

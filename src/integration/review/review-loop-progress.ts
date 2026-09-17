@@ -10,7 +10,7 @@
 
 import { isConverged } from '../../machine/guards.js';
 import type { SessionState } from '../../state/schema.js';
-import type { LoopVerdict } from '../../state/evidence.js';
+import { LoopVerdict } from '../../state/evidence.js';
 
 export const REVIEW_LOOP_PHASES = new Set<SessionState['phase']>([
   'PLAN_REVIEW',
@@ -18,7 +18,7 @@ export const REVIEW_LOOP_PHASES = new Set<SessionState['phase']>([
   'ARCH_REVIEW',
 ]);
 
-const LOOP_VERDICTS = new Set<LoopVerdict>(['accept', 'changes_requested', 'unable_to_review']);
+const LOOP_VERDICTS = new Set<LoopVerdict>(LoopVerdict.options);
 
 function isLoopVerdict(value: unknown): value is LoopVerdict {
   return typeof value === 'string' && LOOP_VERDICTS.has(value as LoopVerdict);

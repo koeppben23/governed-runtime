@@ -307,7 +307,6 @@ describe('machine/validation-evidence', () => {
           detectedStack: {
             summary: 'java=21',
             items: [{ kind: 'language', id: 'java', version: '21' }],
-            versions: [],
           },
         }),
       );
@@ -370,7 +369,7 @@ describe('machine/validation-evidence', () => {
           makeValidationState({
             enforcement: 'off',
             discoverySummary: null,
-            detectedStack: { summary: '', items: [], versions: [] },
+            detectedStack: { summary: '', items: [] },
           }),
         ),
       ).toBe(false);

@@ -105,22 +105,6 @@ describe('projectClaimResolutionFacts', () => {
     expect((facts.counterexampleRequirement as any).candidateId).toBeUndefined();
   });
 
-  it('normalizes legacy v1 counterexample requirement as legacy_assertion', () => {
-    const c = claim({
-      counterexampleRequirement: {
-        checkId: 'old-test',
-        assertion: { providerId: 'junit', localId: 'test#thing' },
-      },
-    } as any);
-
-    const facts = projectClaimResolutionFacts(c);
-    expect(facts.counterexampleRequirement).toEqual({
-      kind: 'legacy_assertion',
-      checkId: 'old-test',
-      assertion: { providerId: 'junit', localId: 'test#thing' },
-    });
-  });
-
   it('handles absent claimScope', () => {
     const facts = projectClaimResolutionFacts(claim({ claimScope: undefined }));
     expect(facts.claimScope).toBeUndefined();

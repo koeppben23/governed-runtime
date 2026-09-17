@@ -22,10 +22,10 @@ import type {
   CollectorInput,
   CollectorOutput,
   TopologyInfo,
-  TopologyKind,
   ModuleInfo,
   EntryPointInfo,
 } from '../types.js';
+import type { TopologyKind } from '../../state/discovery-schemas.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 

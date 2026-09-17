@@ -80,6 +80,8 @@ export type {
   LoopVerdict,
   RevisionDelta,
   PolicySnapshot,
+  ActorInfo,
+  ActorVerificationMeta,
 } from './state/evidence.js';
 
 export {
@@ -97,8 +99,8 @@ export { Command, isCommandAllowed } from './machine/commands.js';
 export { evaluate } from './machine/evaluate.js';
 /** @public */
 export type { EvalResult } from './machine/evaluate.js';
-export { resolveNextAction, ACTION_CODES } from './machine/next-action.js';
-export type { NextAction } from './machine/next-action.js';
+export { resolveWorkflowDirective } from './machine/workflow-directive.js';
+export type { WorkflowDirective, WorkflowIntent } from './machine/workflow-directive.js';
 
 // ─── Rail Result Types ───────────────────────────────────────────────────────
 
@@ -166,7 +168,6 @@ export { type FlowGuardLogger, createLogger, createNoopLogger } from './logging/
 // ─── Audit ───────────────────────────────────────────────────────────────────
 
 export {
-  type ActorInfo,
   type AuditEventKind,
   type TransitionDetail,
   type StateWriteDetail,

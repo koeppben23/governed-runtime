@@ -31,3 +31,17 @@ export class TsaError extends Error {
     this.code = code;
   }
 }
+
+// ─── Audit Query Errors ──────────────────────────────────────────────────────
+
+export type AuditQueryErrorCode = 'AUDIT_DECISION_RECEIPT_INVALID';
+
+export class AuditQueryError extends Error {
+  readonly code: AuditQueryErrorCode;
+
+  constructor(code: AuditQueryErrorCode, message: string) {
+    super(message);
+    this.name = 'AuditQueryError';
+    this.code = code;
+  }
+}

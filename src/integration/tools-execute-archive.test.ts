@@ -117,6 +117,7 @@ vi.mock('../adapters/actor', async (importOriginal) => {
       id: 'test-operator',
       email: 'test@flowguard.dev',
       source: 'env',
+      assurance: 'best_effort',
     }),
   };
 });
@@ -321,7 +322,7 @@ describe('archive', () => {
         await writeState(sessDir, {
           ...state!,
           phase: 'COMPLETE',
-          archiveStatus: 'verified',
+          regulatedArchiveStatus: 'verified',
           policySnapshot: {
             ...state!.policySnapshot,
             mode: 'regulated',
@@ -336,10 +337,8 @@ describe('archive', () => {
           integrityCapability: 'not_verifiable',
           verificationStatus: 'not_run',
         });
-        expect((result.productNextAction as { text: string }).text).toContain(
-          'redacted sharing archive',
-        );
-        expect(persisted?.archiveStatus).toBe('verified');
+        expect(result.directive).toBeDefined();
+        expect(persisted?.regulatedArchiveStatus).toBe('verified');
         expect(persisted).toMatchObject({
           lastExportPackagePurpose: 'sharing',
           lastExportIntegrityCapability: 'not_verifiable',
@@ -427,7 +426,7 @@ describe('archive', () => {
           includeRaw: true,
         });
 
-        const { events } = await readAuditTrail(sessDir);
+        const events = await readAuditTrail(sessDir);
         const bindingEvents = events.filter((e) => e.event === ARTIFACT_BINDING_EVENT);
         expect(bindingEvents.length).toBe(1);
 
@@ -563,7 +562,7 @@ describe('archive', () => {
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
-      await writeState(sessDir, { ...state!, phase: 'REVIEW_COMPLETE' });
+      await writeState(sessDir, { ...state!, phase: 'PEER_REVIEW_COMPLETE' });
       const raw = await archive.execute({}, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();

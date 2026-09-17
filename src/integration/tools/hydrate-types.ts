@@ -4,8 +4,9 @@ import type { FlowGuardConfig, HydratePolicyResolution } from '../../config/inde
 import type { CentralPolicyEvidence, FlowGuardPolicy } from '../../config/policy.js';
 import type { RepoSignals } from '../../config/profile.js';
 import type { extractDiscoverySummary } from '../../discovery/orchestrator.js';
-import type { DetectedStack, DiscoveryResult, ProfileResolution } from '../../discovery/types.js';
+import type { DiscoveryResult, ProfileResolution } from '../../discovery/types.js';
 import type {
+  DetectedStack,
   VerificationCandidate,
   ExecutionSubjectInput,
 } from '../../state/discovery-schemas.js';
@@ -38,7 +39,6 @@ export interface DiscoveryHydration {
   readonly discoverySummary?: ReturnType<typeof extractDiscoverySummary>;
   readonly detectedStack?: DetectedStack | null;
   readonly verificationCandidates?: VerificationCandidate[];
-  readonly executionSubjectInputsByKind?: Record<string, ExecutionSubjectInput[]>;
   readonly executionSubjectInputsByCandidateId?: Record<string, ExecutionSubjectInput[]>;
   readonly profileResolution?: ProfileResolution;
 }

@@ -390,9 +390,27 @@ export async function enforceRiskClassificationAfterBash(
   output: { output?: unknown },
 ): Promise<void> {
   const sessDir = deps.getSessionDir(sessionId);
-  if (!sessDir || !existsSync(sessDir)) return;
-  const state = await readRiskStateForBash(sessDir, output);
-  if (!state || state.policySnapshot.enforceRiskClassification !== true) return;
+  if (!sessDir || !existsSync(sessDir)) {
+    // A bash call is governed by the Before-hook boundary, which requires a
+    // resolvable FlowGuard session. Lost context after release is an invariant
+    // violation, so it fails closed instead of silently skipping the gate.
+    output.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
+      reason:
+        'Post-bash risk classification has no resolvable FlowGuard session context for a governed mutation.',
+    });
+    return;
+  }
+  const stateResult = await readRiskStateForBash(sessDir, output);
+  if (stateResult.kind === 'unavailable') return;
+  if (stateResult.kind === 'missing') {
+    output.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
+      reason:
+        'Post-bash risk classification found no persisted session state for an authorized mutation.',
+    });
+    return;
+  }
+  const state = stateResult.state;
+  if (state.policySnapshot.enforceRiskClassification !== true) return;
   const files = await readRiskChangedFilesForBash(deps, sessDir, state, output);
   if (!files) return;
   const decision = isRiskClassificationAllowed({
@@ -404,17 +422,23 @@ export async function enforceRiskClassificationAfterBash(
   await blockRiskDecisionAfterBash(sessDir, state, decision, sessionId, output);
 }
 
+type RiskStateResolution =
+  | { readonly kind: 'state'; readonly state: SessionState }
+  | { readonly kind: 'missing' }
+  | { readonly kind: 'unavailable' };
+
 async function readRiskStateForBash(
   sessDir: string,
   output: { output?: unknown },
-): Promise<SessionState | null> {
+): Promise<RiskStateResolution> {
   try {
-    return await readState(sessDir);
+    const state = await readState(sessDir);
+    return state ? { kind: 'state', state } : { kind: 'missing' };
   } catch (err) {
     output.output = strictBlockedOutput('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE', {
       reason: err instanceof Error ? err.message : String(err),
     });
-    return null;
+    return { kind: 'unavailable' };
   }
 }
 

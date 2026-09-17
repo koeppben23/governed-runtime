@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "governance/host-adapter-interface",
   "title": "HostAdapter Interface Contract",
-  "description": "Pinned shape of the HostAdapter interface (HAI). The single contract between FlowGuard governance and any host platform. Changes here indicate breaking adapter contract drift.",
+  "description": "Pinned shape of the HostAdapter interface (HAI). Review capabilities are transport-bound and must not be composed across different transports.",
   "type": "object",
   "required": [
     "platform",
@@ -16,23 +16,18 @@
     "deliverBlockDecision",
     "deliverArgMutation",
     "mutateToolResult",
-    "spawnReviewer",
     "isReviewerSupported",
     "log"
   ],
   "properties": {
     "platform": {
       "type": "string",
-      "enum": ["opencode", "claude-code", "codex"],
-      "description": "Platform identifier for audit and diagnostics."
+      "enum": ["opencode", "claude-code", "codex"]
     },
-    "capabilities": {
-      "$ref": "#/$defs/HostCapabilities"
-    },
+    "capabilities": { "$ref": "#/$defs/HostCapabilities" },
     "enforcementLevel": {
       "type": "string",
-      "enum": ["synchronous", "hook_gated", "advisory"],
-      "description": "Derived enforcement level based on host capabilities."
+      "enum": ["synchronous", "hook_gated", "advisory"]
     },
     "getWorkingDirectory": { "type": "string", "const": "() => string" },
     "getWorktree": { "type": "string", "const": "() => string" },
@@ -45,17 +40,9 @@
     "deliverBlockDecision": { "type": "string", "const": "(event, decision) => void" },
     "deliverArgMutation": { "type": "string", "const": "(event, args) => void" },
     "mutateToolResult": { "type": "string", "const": "(event, mutation) => void" },
-    "spawnReviewer": {
-      "type": "string",
-      "const": "(config) => Promise<HostReviewerResult | null>"
-    },
     "isReviewerSupported": { "type": "string", "const": "() => boolean" },
     "log": { "type": "string", "const": "(level, message, data?) => void" },
-    "injectCompactionContext": {
-      "type": "string",
-      "const": "(context) => void",
-      "description": "Optional."
-    }
+    "injectCompactionContext": { "type": "string", "const": "(context) => void" }
   },
   "$defs": {
     "HostCapabilities": {
@@ -65,7 +52,7 @@
         "argMutation",
         "outputReplacement",
         "contextInjection",
-        "reviewerSpawn",
+        "reviewTransports",
         "compactionInjection"
       ],
       "properties": {
@@ -73,8 +60,39 @@
         "argMutation": { "type": "boolean" },
         "outputReplacement": { "type": "boolean" },
         "contextInjection": { "type": "boolean" },
-        "reviewerSpawn": { "type": "boolean" },
+        "reviewTransports": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/HostReviewTransportCapability" }
+        },
         "compactionInjection": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "HostReviewTransportCapability": {
+      "type": "object",
+      "required": [
+        "kind",
+        "structuredOutput",
+        "parentVisible",
+        "transcriptNavigable",
+        "isolatedAgentIdentity",
+        "permissionIsolation",
+        "assurance"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["native_task_structured_followup"]
+        },
+        "structuredOutput": { "type": "boolean", "const": true },
+        "parentVisible": { "type": "boolean", "const": true },
+        "transcriptNavigable": { "type": "boolean", "const": true },
+        "isolatedAgentIdentity": { "type": "boolean", "const": true },
+        "permissionIsolation": { "type": "boolean", "const": true },
+        "assurance": {
+          "type": "string",
+          "const": "structured_high"
+        }
       },
       "additionalProperties": false
     }

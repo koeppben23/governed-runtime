@@ -33,6 +33,7 @@ import {
 } from './helpers.js';
 import { readState, statePath, atomicWrite } from '../../adapters/persistence.js';
 import { makeState, makeProgressedState } from '../../fixtures.js';
+import { CURRENT_SESSION_STATE_SCHEMA_VERSION } from '../../state/schema.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
@@ -92,7 +93,7 @@ describe('writeStateWithArtifacts — artifacts-first ordering', () => {
       expect(read!.phase).toBe('TICKET');
       expect(read!.id).toBe(state.id);
       expect(read!.proofGraph).toMatchObject({
-        version: 'proofgraph.v1',
+        version: 'proofgraph.v2',
         claims: [],
         evaluatedAt: state.transition?.at ?? state.createdAt,
       });
@@ -120,7 +121,7 @@ describe('writeStateWithArtifacts — artifacts-first ordering', () => {
       expect(content.endsWith('\n')).toBe(true);
       const parsed = JSON.parse(content);
       expect(parsed.phase).toBe('READY');
-      expect(parsed.schemaVersion).toBe('v3');
+      expect(parsed.schemaVersion).toBe(CURRENT_SESSION_STATE_SCHEMA_VERSION);
     });
   });
 

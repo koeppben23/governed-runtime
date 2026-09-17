@@ -42,11 +42,11 @@ describe('flowguard_status providerCapabilities', () => {
       detectedStack: {
         summary: '',
         items: [{ kind: 'testFramework', id: 'vitest', evidence: 'vitest.config.ts' }],
-        versions: [],
       },
       verificationCandidates: [
         {
           assertionCapability: 'structured' as const,
+          candidateId: 'vc_vitest_status',
           kind: 'test',
           command: 'npx vitest run',
           source: 'detectedStack:testFramework:vitest',

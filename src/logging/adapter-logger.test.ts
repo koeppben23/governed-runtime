@@ -5,20 +5,18 @@
  * @test-policy HAPPY, BAD, CORNER, EDGE, SMOKE
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   setAdapterLogger,
   getAdapterLogger,
   resetAdapterLogger,
   runWithAdapterLogger,
   runWithAdapterLoggerAsync,
-  runWithTraceContext,
-  runWithTraceContextAsync,
-  getTraceContext,
   getLogTraceFields,
   toAdapterLogger,
   type AdapterLogger,
 } from './adapter-logger.js';
+import { runWithLogContext, runWithLogContextAsync } from './log-context.js';
 import { createLogger, type FlowGuardLogger } from './logger.js';
 
 describe('AdapterLogger — ALS-scoped DI', () => {
@@ -120,7 +118,6 @@ describe('AdapterLogger — ALS-scoped DI', () => {
       runWithAdapterLogger(base, () => {
         getAdapterLogger().warnOnce?.('git', 'branch unknown');
       });
-      // New scope — cache reset
       runWithAdapterLogger(base, () => {
         getAdapterLogger().warnOnce?.('git', 'branch unknown');
       });
@@ -188,7 +185,6 @@ describe('AdapterLogger — ALS-scoped DI', () => {
     it('toAdapterLogger wraps FlowGuardLogger', () => {
       const calls: string[] = [];
       const logger: FlowGuardLogger = createLogger('debug');
-      // Spy on the info/warn/error methods
       vi.spyOn(logger, 'info').mockImplementation((_s, m) => calls.push(`i:${m}`));
       vi.spyOn(logger, 'warn').mockImplementation((_s, m) => calls.push(`w:${m}`));
       vi.spyOn(logger, 'error').mockImplementation((_s, m) => calls.push(`e:${m}`));
@@ -201,57 +197,27 @@ describe('AdapterLogger — ALS-scoped DI', () => {
     });
   });
 
-  describe('trace context', () => {
-    it('returns undefined outside a trace scope', () => {
-      expect(getTraceContext()).toBeUndefined();
+  describe('diagnostic log context', () => {
+    it('returns no fields outside the canonical log context', () => {
       expect(getLogTraceFields()).toEqual({});
     });
 
-    it('propagates trace fields through sync scopes', () => {
-      runWithTraceContext('trace-sync', () => {
-        expect(getTraceContext()).toMatchObject({ traceId: 'trace-sync' });
-        expect(getLogTraceFields()).toMatchObject({ traceId: 'trace-sync' });
-        expect(typeof getLogTraceFields().durationMs).toBe('number');
-        expect(getLogTraceFields().durationMs).toBeGreaterThanOrEqual(0);
-      });
-      expect(getTraceContext()).toBeUndefined();
-    });
-
-    it('propagates trace fields through async scopes', async () => {
-      await runWithTraceContextAsync('trace-async', async () => {
-        await Promise.resolve();
-        expect(getTraceContext()).toMatchObject({ traceId: 'trace-async' });
-        const fields = getLogTraceFields();
-        expect(fields.traceId).toBe('trace-async');
-        expect(typeof fields.durationMs).toBe('number');
-        expect(fields.durationMs).toBeGreaterThanOrEqual(0);
-      });
-      expect(getTraceContext()).toBeUndefined();
-    });
-
-    it('isolates parallel trace scopes', async () => {
-      const seen: string[] = [];
-      await Promise.all([
-        runWithTraceContextAsync('trace-a', async () => {
-          await Promise.resolve();
-          seen.push(getTraceContext()?.traceId ?? 'missing-a');
-        }),
-        runWithTraceContextAsync('trace-b', async () => {
-          await Promise.resolve();
-          seen.push(getTraceContext()?.traceId ?? 'missing-b');
-        }),
-      ]);
-      expect(seen.sort()).toEqual(['trace-a', 'trace-b']);
-    });
-
-    it('restores outer trace scope after nested scope exits', () => {
-      runWithTraceContext('outer-trace', () => {
-        expect(getTraceContext()?.traceId).toBe('outer-trace');
-        runWithTraceContext('inner-trace', () => {
-          expect(getTraceContext()?.traceId).toBe('inner-trace');
+    it('projects trace and session fields from the canonical sync log context', () => {
+      runWithLogContext({ traceId: 'trace-sync', sessionId: 'session-sync' }, () => {
+        expect(getLogTraceFields()).toEqual({
+          traceId: 'trace-sync',
+          sessionId: 'session-sync',
         });
-        expect(getTraceContext()?.traceId).toBe('outer-trace');
       });
+      expect(getLogTraceFields()).toEqual({});
+    });
+
+    it('projects trace fields through the canonical async log context', async () => {
+      await runWithLogContextAsync({ traceId: 'trace-async' }, async () => {
+        await Promise.resolve();
+        expect(getLogTraceFields()).toEqual({ traceId: 'trace-async' });
+      });
+      expect(getLogTraceFields()).toEqual({});
     });
   });
 

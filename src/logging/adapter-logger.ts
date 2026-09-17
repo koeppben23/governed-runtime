@@ -17,7 +17,9 @@
  * The logger also supports `warnOnce` — deduplicates repeated warnings within a scope.
  * Each `runWithAdapterLogger` / `setAdapterLogger` initializes a fresh cache.
  *
- * @version v5
+ * Diagnostic trace/session correlation is owned exclusively by log-context.ts.
+ *
+ * @version v6
  */
 
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -34,13 +36,6 @@ export interface AdapterLogger {
 }
 
 const _store = new AsyncLocalStorage<AdapterLogger>();
-
-export interface TraceContext {
-  readonly traceId: string;
-  readonly startedAtMs: number;
-}
-
-const _traceStore = new AsyncLocalStorage<TraceContext>();
 
 const _noop: AdapterLogger = {
   info: () => {},
@@ -92,74 +87,26 @@ export async function runWithAdapterLoggerAsync<T>(
   return _store.run(_wrapWithWarnOnce(log, new Map()), () => fn());
 }
 
-/**
- * Execute a synchronous function with legacy trace metadata scoped to the current async context.
- *
- * @deprecated Use `runWithLogContext` from log-context.ts. The log-context store
- *             is the long-term authority for traceId/sessionId correlation.
- */
-export function runWithTraceContext<T>(traceId: string, fn: () => T): T {
-  return _traceStore.run({ traceId, startedAtMs: Date.now() }, fn);
-}
-
-/**
- * Execute an async function with legacy trace metadata scoped to the current async context.
- *
- * @deprecated Use `runWithLogContextAsync` from log-context.ts. The log-context
- *             store is the long-term authority for traceId/sessionId correlation.
- */
-export async function runWithTraceContextAsync<T>(
-  traceId: string,
-  fn: () => Promise<T>,
-): Promise<T> {
-  return _traceStore.run({ traceId, startedAtMs: Date.now() }, () => fn());
-}
-
-/**
- * Return the current legacy trace context, if the caller is inside a trace scope.
- *
- * @deprecated Use `getLogContext` from log-context.ts for new code.
- */
-export function getTraceContext(): TraceContext | undefined {
-  return _traceStore.getStore();
-}
-
-/**
- * Fields safe to spread into structured diagnostic log extras.
- *
- * @deprecated traceId and sessionId are now auto-injected by createLogger()
- *             from the log-context. This helper remains available for
- *             compatibility — it reads from log-context first, then falls
- *             back to the legacy trace store.
- */
-export function getLogTraceFields(): { traceId?: string; sessionId?: string; durationMs?: number } {
+/** Fields safe to spread into structured diagnostic log extras. */
+export function getLogTraceFields(): { traceId?: string; sessionId?: string } {
   const ctx = getLogContext();
-  if (ctx) {
-    return ctx.sessionId === undefined
-      ? { traceId: ctx.traceId }
-      : { traceId: ctx.traceId, sessionId: ctx.sessionId };
-  }
-  const trace = getTraceContext();
-  if (!trace) return {};
-  return {
-    traceId: trace.traceId,
-    durationMs: Math.max(0, Date.now() - trace.startedAtMs),
-  };
+  if (!ctx) return {};
+  return ctx.sessionId === undefined
+    ? { traceId: ctx.traceId }
+    : { traceId: ctx.traceId, sessionId: ctx.sessionId };
 }
 
-// ─── Legacy API (test/CLI only — not for plugin use) ──────────────────────────
+// ─── CLI/test process-scoped API ─────────────────────────────────────────────
 
 /**
- * @deprecated Use `runWithAdapterLogger` for plugin code.
- * Acceptable for CLI init and test scaffolding.
+ * Install an adapter logger in the current process context.
+ * CLI code uses this for process-lifetime logging; plugin code uses scoped injection.
  */
 export function setAdapterLogger(logger: AdapterLogger): void {
   _store.enterWith(_wrapWithWarnOnce(logger, new Map()));
 }
 
-/**
- * Reset to noop. Use in test cleanup (afterEach).
- */
+/** Reset the current process context to the noop logger. */
 export function resetAdapterLogger(): void {
   _store.enterWith(_noop);
 }

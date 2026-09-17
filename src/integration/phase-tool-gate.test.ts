@@ -17,7 +17,7 @@ import {
   HOST_MUTATION_PHASE,
 } from './phase-tool-gate.js';
 import type { Phase } from '../state/schema.js';
-import { makeState } from '../fixtures.js';
+import { makeState, PLAN_REVIEW_ASSURANCE } from '../fixtures.js';
 
 function validationResult(checkId: string) {
   return {
@@ -315,8 +315,8 @@ describe('phase-tool-gate', () => {
         'ARCHITECTURE',
         'ARCH_REVIEW',
         'ARCH_COMPLETE',
-        'REVIEW',
-        'REVIEW_COMPLETE',
+        'PEER_REVIEW',
+        'PEER_REVIEW_COMPLETE',
       ];
 
       for (const tool of mutatingTools) {
@@ -614,24 +614,34 @@ describe('phase-tool-gate', () => {
       expect(result.reason).toBe('CLAIMED_CLASS_NOT_TRIVIAL');
     });
 
-    it('BAD — host-task-required review policy keeps full ceremony', () => {
+    it('BAD — an outstanding review obligation keeps full ceremony', () => {
       const base = makeState('IMPLEMENTATION', {
         claimedTaskClass: 'TRIVIAL',
-        validation: [validationResult('test_quality'), validationResult('rollback_safety')],
+        validation: [validationResult('test'), validationResult('lint')],
       });
+      const outstandingObligation = {
+        ...PLAN_REVIEW_ASSURANCE.obligations[0]!,
+        status: 'pending' as const,
+        invocationId: null,
+        fulfilledAt: null,
+        consumedAt: null,
+      };
       const state = {
         ...base,
         policySnapshot: {
           ...base.policySnapshot,
           allowReducedCeremony: true,
-          reviewInvocationPolicy: 'host_task_required' as const,
+        },
+        reviewAssurance: {
+          ...PLAN_REVIEW_ASSURANCE,
+          obligations: [outstandingObligation],
         },
       };
 
       const result = resolveCeremonyProfile({ state, changedFiles: ['docs/usage-notes.md'] });
 
       expect(result.profile).toBe('full');
-      expect(result.reason).toBe('POLICY_REVIEW_REQUIRED');
+      expect(result.reason).toBe('REVIEW_OBLIGATION_REQUIRED');
     });
 
     it('BAD — default policy keeps full ceremony even for TRIVIAL evidence', () => {

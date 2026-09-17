@@ -38,7 +38,7 @@ vi.mock('../artifacts/madr-writer.js', () => ({
 vi.mock('./regulated-completion.js', () => ({
   executeRegulatedCompletion: vi.fn().mockImplementation(async (_s, _f, _id, state) => ({
     ...state,
-    archiveStatus: 'verified',
+    regulatedArchiveStatus: 'verified',
   })),
 }));
 
@@ -124,8 +124,8 @@ describe('finalizeDecision', () => {
     });
   });
 
-  describe('HAPPY: regulated completion on EVIDENCE_REVIEW + approve', () => {
-    it('triggers regulated completion for regulated mode', async () => {
+  describe('HAPPY: final approval defers completion to export', () => {
+    it('does not trigger regulated completion before export materialization', async () => {
       const state = makeCompleteState({ regulated: true });
       const result = makeOkResult(state);
 
@@ -140,17 +140,10 @@ describe('finalizeDecision', () => {
         }),
       );
 
-      expect(executeRegulatedCompletion).toHaveBeenCalledOnce();
-      expect(executeRegulatedCompletion).toHaveBeenCalledWith(
-        '/sess',
-        'fp',
-        'sid',
-        state,
-        expect.anything(),
-      );
+      expect(executeRegulatedCompletion).not.toHaveBeenCalled();
       expect(finalResult.kind).toBe('ok');
       if (finalResult.kind === 'ok') {
-        expect(finalResult.state.archiveStatus).toBe('verified');
+        expect(finalResult.state).toBe(state);
       }
     });
   });

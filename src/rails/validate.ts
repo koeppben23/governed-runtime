@@ -21,7 +21,7 @@
 
 import type { SessionState } from '../state/schema.js';
 import type { ValidationResult } from '../state/evidence-validation.js';
-import { isExecutionError } from '../state/evidence-validation.js';
+import { isTechnicalValidationBlock } from '../state/evidence-validation.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import type { RailResult, RailContext } from './types.js';
 import { autoAdvance, createPolicyEvalFn } from './types.js';
@@ -113,8 +113,11 @@ function buildValidationResultState(
   results: ValidationResult[],
 ): SessionState {
   const allPassed = results.every((r) => r.passed);
-  const hasExecutionError = results.some(isExecutionError);
-  const genuinelyFailed = !allPassed && !hasExecutionError;
+  const hasTechnicalBlock = results.some(isTechnicalValidationBlock);
+  // Only a proven artifact failure may clear approval authority. A technical
+  // block (subject drift, infrastructure error, inconclusive extraction, or an
+  // execution error) keeps the phase and all evidence for a retry.
+  const genuinelyFailed = !allPassed && !hasTechnicalBlock;
   const postImplementation = state.phase === 'IMPL_VALIDATION';
 
   return {

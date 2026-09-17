@@ -72,17 +72,20 @@ export interface PlanInput {
 /** Plan evidence for a first submission (version 1, no predecessor). */
 function initialPlanEvidence(planBody: string, ctx: RailContext): PlanEvidence {
   const contentDigest = ctx.digest(planBody);
+  const revisionId = crypto.randomUUID();
   return {
     body: planBody,
     digest: contentDigest,
     sections: projectMarkdownHeadings(planBody),
     createdAt: ctx.now(),
+    revisionId,
     recordDigest: computeRecordDigest({
       contentDigest,
       planVersion: 1,
       supersedesRecordDigest: null,
       originatingReviewObligationId: null,
       revisionReason: null,
+      revisionId,
     }),
     planVersion: 1,
     supersedesRecordDigest: null,
@@ -92,26 +95,29 @@ function initialPlanEvidence(planBody: string, ctx: RailContext): PlanEvidence {
   };
 }
 
-/** Plan evidence for a self-review revision, chained to its predecessor. */
+/** Plan evidence for a revision chained to its predecessor (same lineage). */
 function revisedPlanEvidence(
   predecessor: PlanEvidence,
   revisedBody: string,
   ctx: RailContext,
+  revisionReason = 'Review requested changes',
 ): PlanEvidence {
   const contentDigest = ctx.digest(revisedBody);
   const planVersion = (predecessor.planVersion ?? 1) + 1;
-  const revisionReason = 'Review requested changes';
+  const revisionId = crypto.randomUUID();
   return {
     body: revisedBody,
     digest: contentDigest,
     sections: projectMarkdownHeadings(revisedBody),
     createdAt: ctx.now(),
+    revisionId,
     recordDigest: computeRecordDigest({
       contentDigest,
       planVersion,
       supersedesRecordDigest: predecessor.recordDigest,
       originatingReviewObligationId: null,
       revisionReason,
+      revisionId,
     }),
     planVersion,
     supersedesRecordDigest: predecessor.recordDigest,
@@ -147,15 +153,19 @@ export async function executePlan(
     return blocked('EMPTY_PLAN');
   }
 
-  // 4. Create initial plan evidence
-  const currentPlan = initialPlanEvidence(planBody, ctx);
+  // 4. First plan creates the lineage root; a re-plan is a REVISION of the
+  // same lineage, never a fresh v1 mixed with the previous lineage's history
+  // (the PlanRecord authority requires one contiguous, chained lineage).
+  const currentPlan = state.plan
+    ? revisedPlanEvidence(state.plan.current, planBody, ctx, 'Replan')
+    : initialPlanEvidence(planBody, ctx);
 
   // 5. Preserve version history
   const history = state.plan ? [state.plan.current, ...state.plan.history] : [];
 
   // 6. Self-review loop (digest-stop)
   // maxIterations from policy (SOLO=1, TEAM/REGULATED=3)
-  const maxIterations = ctx.policy?.maxSelfReviewIterations ?? DEFAULT_MAX_REVIEW_ITERATIONS;
+  const maxIterations = ctx.policy?.reviewBudget.plan ?? DEFAULT_MAX_REVIEW_ITERATIONS;
 
   const loop = await runConvergenceLoop(currentPlan, maxIterations, async (plan, iter) => {
     const review = await executors.selfReview(plan, iter);
@@ -194,7 +204,7 @@ export async function executePlan(
         loop.verdict,
       ),
     },
-    selfReview: buildSelfReviewState(loop),
+    selfReview: buildSelfReviewState(loop, state.reviewCycles.plan),
     error: null,
   };
 

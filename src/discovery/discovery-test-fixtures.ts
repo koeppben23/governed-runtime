@@ -2,9 +2,7 @@
  * @module discovery/discovery-test-fixtures
  * @description DiscoveryResult fixtures for tests outside the discovery package.
  *
- * This file is allowlisted by discovery-guard because DiscoveryResult still
- * carries deprecated validationHints for digest/schema stability. Tests outside
- * discovery must import this helper instead of constructing that legacy field.
+ * Tests outside discovery use this helper to construct canonical v2 artifacts.
  */
 
 import { DISCOVERY_SCHEMA_VERSION, type DiscoveryResult } from './types.js';
@@ -13,13 +11,6 @@ export function makeDiscoveryResult(overrides: Partial<DiscoveryResult> = {}): D
   return {
     schemaVersion: DISCOVERY_SCHEMA_VERSION,
     collectedAt: '2026-01-01T00:00:00.000Z',
-    collectors: {
-      'repo-metadata': 'complete',
-      'stack-detection': 'complete',
-      topology: 'complete',
-      'surface-detection': 'complete',
-      'domain-signals': 'complete',
-    },
     diagnostics: [
       { name: 'repo-metadata', status: 'complete', durationMs: 1, timedOut: false },
       { name: 'stack-detection', status: 'complete', durationMs: 1, timedOut: false },
@@ -92,7 +83,6 @@ export function makeDiscoveryResult(overrides: Partial<DiscoveryResult> = {}): D
       },
     },
     domainSignals: { keywords: [], glossarySources: [] },
-    validationHints: { commands: [], lintTools: [] },
     ...overrides,
   };
 }

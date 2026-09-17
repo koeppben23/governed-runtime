@@ -1,12 +1,11 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { getPolicyPreset, TEAM_POLICY } from '../../config/policy.js';
 import * as crypto from 'node:crypto';
-import { makeProgressedState, makeState, TICKET } from '../../fixtures.js';
+import { makeProgressedState, makeState, PLAN_EVIDENCE, TICKET } from '../../fixtures.js';
 import { buildHelpResult, finishToReadiness } from './help-projection.js';
 import { buildFinishCard } from '../status-finish.js';
 import { resolveCurrentReviewReport } from '../review/report-coherence.js';
 import type { ReviewReport } from '../../state/evidence.js';
-import { evaluateCompleteness } from '../../audit/completeness.js';
 import { help } from '../tools/help-tool.js';
 import {
   createToolContext,
@@ -41,23 +40,40 @@ function makeReviewReport(
     validationSummary: [],
     findings: [],
     overallStatus,
-    completeness: evaluateCompleteness(state),
+    peerReviewCoverage: {
+      targetResolved: false,
+      targetFrozen: false,
+      repositoryIdentityVerified: null,
+      baseSha: null,
+      headSha: null,
+      changedPathCount: 0,
+      objectivesCovered: 0,
+      objectivesTotal: 0,
+      reviewAssurance: null,
+      missingVerification: [],
+    },
     ...overrides,
   };
 }
 
 describe('buildHelpResult', () => {
-  it('recommends /export after a clean terminal completion', () => {
-    const result = buildHelpResult(makeProgressedState('COMPLETE'), TEAM_POLICY, {
+  it('directs /export at EXPORT_READY and is terminal at COMPLETE', () => {
+    const exportReady = buildHelpResult(makeProgressedState('EXPORT_READY'), TEAM_POLICY, {
       view: 'commands',
       scope: 'all',
     });
-    expect(result.nextAction?.invocation).toBe('/export');
+    expect(exportReady.directive?.invocation).toBe('/export');
+
+    const complete = buildHelpResult(makeProgressedState('COMPLETE'), TEAM_POLICY, {
+      view: 'commands',
+      scope: 'all',
+    });
+    expect(complete.directive).toBeNull();
   });
 
   it('all commands marked recommended have available preflight', () => {
     for (const state of [
-      makeProgressedState('COMPLETE'),
+      makeProgressedState('EXPORT_READY'),
       makeProgressedState('PLAN_REVIEW'),
       makeProgressedState('IMPLEMENTATION'),
       makeProgressedState('ARCH_REVIEW'),
@@ -104,7 +120,7 @@ describe('buildHelpResult', () => {
 
   it('blocks export for aborted sessions', () => {
     const result = buildHelpResult(
-      makeState('COMPLETE', {
+      makeState('ABORTED', {
         error: {
           code: 'ABORTED',
           message: 'Stopped',
@@ -117,11 +133,12 @@ describe('buildHelpResult', () => {
     );
     const ef = result.commands.find((command) => command.invocation === '/export')?.preflight;
     expect(ef?.status).toBe('blocked');
+    expect(result.directive).toBeNull();
   });
 
   it('no-session help recommends /start, not /hydrate', () => {
     const result = buildHelpResult(null, null, { view: 'context' });
-    expect(result.nextAction?.invocation).toBe('/start');
+    expect(result.directive?.invocation).toBe('/start');
     expect(result.commands.map((command) => command.invocation)).toEqual(['/start', '/status']);
   });
 
@@ -139,7 +156,7 @@ describe('buildHelpResult', () => {
       view: 'context',
     });
     expect(result.commands.filter((command) => command.visibility === 'recommended')).toHaveLength(
-      result.nextAction ? 1 : 0,
+      result.directive ? 1 : 0,
     );
     expect(
       result.commands.filter((command) => command.visibility === 'blocked_recoverable').length,
@@ -147,7 +164,7 @@ describe('buildHelpResult', () => {
   });
 
   it('CHANGES_REQUIRED review report yields ready_with_warnings and issues quality', () => {
-    const state = makeProgressedState('REVIEW_COMPLETE');
+    const state = makeProgressedState('PEER_REVIEW_COMPLETE');
     const reviewReport = makeReviewReport(state, 'issues');
 
     const resolution = resolveCurrentReviewReport(state, reviewReport);
@@ -156,15 +173,21 @@ describe('buildHelpResult', () => {
     const finish = buildFinishCard(state, TEAM_POLICY, reviewReport);
     expect(finish.overallStatus).toBe('CHANGES_REQUIRED');
 
-    const result = buildHelpResult(state, TEAM_POLICY, { view: 'context', reviewReport });
-    expect(result.lifecycle).toBe('Review complete');
+    const result = buildHelpResult(state, TEAM_POLICY, {
+      view: 'commands',
+      scope: 'all',
+      reviewReport,
+    });
+    expect(result.lifecycle).toBe('Peer review complete');
     expect(result.readiness).toBe('ready_with_warnings');
     expect(result.recommendationQuality.quality).toBe('issues');
     expect(result.recommendationQuality.advisoryStatus).toBe('changes_required');
     expect(result.reviewReportStatus).toBe('current');
-    expect(result.nextAction?.invocation).toBe('/export');
+    // Peer review completion is terminal: no user directive, and /export
+    // is only admissible at EXPORT_READY.
+    expect(result.directive).toBeNull();
     const exportCmd = result.commands.find((command) => command.invocation === '/export');
-    expect(exportCmd?.preflight.status).toBe('available');
+    expect(exportCmd?.preflight.status).toBe('blocked');
   });
 
   it('recommendationQuality derives from review report, not finish status', () => {
@@ -221,12 +244,12 @@ describe('buildHelpResult', () => {
     expect(result.reviewReportStatus).toBe('incoherent');
   });
 
-  it('/help <command> never claims the requested command as nextAction', () => {
+  it('/help <command> never claims the requested command as directive', () => {
     const result = buildHelpResult(makeProgressedState('COMPLETE'), TEAM_POLICY, {
       view: 'command',
       requestedInvocation: '/export',
     });
-    expect(result.nextAction).toBeNull();
+    expect(result.directive).toBeNull();
     expect(result.commands).toHaveLength(1);
   });
 
@@ -247,7 +270,7 @@ describe('buildHelpResult', () => {
       view: 'context',
     });
     expect(result.readiness).toBe('none');
-    expect(result.nextAction?.invocation).toBe('/task');
+    expect(result.directive?.invocation).toBe('/task');
   });
 
   it('non-terminal phases with complete evidence report readiness=none via IN_PROGRESS', () => {
@@ -256,7 +279,16 @@ describe('buildHelpResult', () => {
         view: 'context',
       });
       expect(result.readiness, `${phase} must be none`).toBe('none');
-      expect(result.nextAction).not.toBeNull();
+      expect(
+        result.nextActionSummary,
+        `${phase} must expose a canonical directive code`,
+      ).toBeTruthy();
+      if (phase === 'IMPLEMENTATION') {
+        expect(result.directive?.invocation).toBe('/implement');
+      } else {
+        // PLAN is canonical system work: no user command is directed.
+        expect(result.directive).toBeNull();
+      }
     }
   });
 
@@ -317,7 +349,7 @@ describe('HelpResult artifacts', () => {
       view: 'context',
     });
     expect(result.artifacts.currentPlan.status).toBe('available');
-    expect(result.artifacts.currentPlan.digest).toBe('digest-of-plan');
+    expect(result.artifacts.currentPlan.digest).toBe(PLAN_EVIDENCE.digest);
     expect(result.artifacts.currentPlanVersion).toBe(1); // history: [] → 0 + 1
   });
 

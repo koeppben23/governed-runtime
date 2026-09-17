@@ -1,4 +1,4 @@
-import { GOVERNANCE_RULES } from './shared-rules.js';
+import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 
 export const STATUS_COMMAND = `---
 description: FlowGuard — Show the current status surface.
@@ -26,7 +26,7 @@ Arguments: $ARGUMENTS
 - /status is read-only — never modify files or workflow state.
 - Report only what \`flowguard_status\` returns — never invent governance semantics.
 - If flags are unknown: report valid flags and stop.
-${GOVERNANCE_RULES}
+${renderCommandGovernanceRules()}
 ## Done-when
 
 - Status retrieved via \`flowguard_status\`.
@@ -36,5 +36,5 @@ ${GOVERNANCE_RULES}
   \`## Decision required\` block) is the next-action guidance — do NOT append a
   separate \`Next action:\` line.
 - Only on the fallback projection (no \`presentation.markdown\`): derive one action from
-  \`productNextAction\`; do not invent a local action.
+  \`directive\`; do not invent a local action.
 `;

@@ -217,8 +217,24 @@ async function driveToValidation(): Promise<void> {
   await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
   await callOk(ticket, { text: 'Test task', source: 'user' });
   await callOk(plan, { planText: '## Plan\nTest plan', targetPaths: ['docs/test.md'] });
+  // Solo plan convergence auto-approves into VALIDATION and the runtime now
+  // runs the active checks automatically, advancing to IMPLEMENTATION. These
+  // tests exercise the explicit run_check surface, so reset the projection to
+  // the pending VALIDATION wait state. The implementation-entry freeze is
+  // cleared too so a later run_check re-drives the ALL_PASSED transition under
+  // test (including the freeze-failure path).
   await callOk(plan, { reviewVerdict: 'accept' });
-  // Now should be in VALIDATION phase
+  const sd = await getSessDir();
+  const state = await readState(sd);
+  const patched = {
+    ...state!,
+    phase: 'VALIDATION' as const,
+    validation: [],
+    validationAttempts: [],
+    implementation: null,
+  };
+  delete (patched as { implementationBaseAuthority?: unknown }).implementationBaseAuthority;
+  await writeState(sd, patched);
 }
 
 // ─── HAPPY ───────────────────────────────────────────────────────────────────
@@ -264,6 +280,7 @@ describe('HAPPY', () => {
         candidate.kind === 'typecheck'
           ? {
               assertionCapability: 'structured' as const,
+              candidateId: candidate.candidateId,
               kind: candidate.kind,
               command: candidate.command,
               source: candidate.source,
@@ -361,7 +378,7 @@ describe('HAPPY', () => {
       ],
       executionSubjectInputsByCandidateId: {
         ...(state!.executionSubjectInputsByCandidateId ?? {}),
-        [candidateId]: state!.executionSubjectInputsByKind!.typecheck ?? [],
+        [candidateId]: state!.executionSubjectInputsByCandidateId![primary.candidateId] ?? [],
       },
     });
 
@@ -486,7 +503,13 @@ describe('HAPPY', () => {
       await run_check.execute({ kind: 'typecheck', candidateId }, ctx),
     );
 
-    expect(result).toMatchObject({ phase: 'PLAN' });
+    // Subject drift during execution is a TECHNICAL block, not a proven plan
+    // failure: the phase stays in validation, the approval authority survives,
+    // and the blocked evidence is persisted for a retry instead of routing to PLAN.
+    expect(result).toMatchObject({ phase: 'VALIDATION' });
+    const blockedState = await readState(sd);
+    expect(blockedState!.plan).not.toBeNull();
+    expect(blockedState!.selfReview).not.toBeNull();
     expect(executeCheck).toHaveBeenCalledWith(
       expect.objectContaining({ command: 'npm run test --' }),
     );
@@ -554,7 +577,13 @@ describe('HAPPY', () => {
       await run_check.execute({ kind: 'typecheck', candidateId }, ctx),
     );
 
-    expect(result).toMatchObject({ phase: 'PLAN' });
+    // Subject drift during execution is a TECHNICAL block, not a proven plan
+    // failure: the phase stays in validation, the approval authority survives,
+    // and the blocked evidence is persisted for a retry instead of routing to PLAN.
+    expect(result).toMatchObject({ phase: 'VALIDATION' });
+    const blockedState = await readState(sd);
+    expect(blockedState!.plan).not.toBeNull();
+    expect(blockedState!.selfReview).not.toBeNull();
     expect(executeCheck).toHaveBeenCalledWith(
       expect.objectContaining({ command: 'npm run test --' }),
     );
@@ -614,7 +643,13 @@ describe('HAPPY', () => {
       await run_check.execute({ kind: 'typecheck', candidateId }, ctx),
     );
 
-    expect(result).toMatchObject({ phase: 'PLAN' });
+    // Subject drift during execution is a TECHNICAL block, not a proven plan
+    // failure: the phase stays in validation, the approval authority survives,
+    // and the blocked evidence is persisted for a retry instead of routing to PLAN.
+    expect(result).toMatchObject({ phase: 'VALIDATION' });
+    const blockedState = await readState(sd);
+    expect(blockedState!.plan).not.toBeNull();
+    expect(blockedState!.selfReview).not.toBeNull();
     const persisted = await readState(sd);
     expect(persisted!.validation[0]).toMatchObject({
       passed: false,
@@ -623,6 +658,79 @@ describe('HAPPY', () => {
         'VERIFICATION_SUBJECT_CHANGED: app/pom.xml changed',
       ),
     });
+  });
+
+  it('post-implementation subject drift keeps IMPL_VALIDATION and the implementation evidence', async () => {
+    await driveToValidation();
+    const sessDir = await getSessDir();
+    const state = await readState(sessDir);
+    const implDigest = await writeImplFileAndDigest(ws.tmpDir, 'src/example.ts', 'test');
+    const primary = state!.verificationCandidates!.find(
+      (candidate) => candidate.kind === 'typecheck',
+    )!;
+    const candidateId = 'gradle-wrapper-script-impl';
+    const wrapperProperties = join(ws.tmpDir, 'gradle', 'wrapper', 'gradle-wrapper.properties');
+    mkdirSync(dirname(wrapperProperties), { recursive: true });
+    writeFileSync(
+      wrapperProperties,
+      'distributionUrl=https://services.gradle.org/initial.zip\n',
+      'utf-8',
+    );
+    await writeState(sessDir, {
+      ...state!,
+      phase: 'IMPL_VALIDATION',
+      implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+      implementation: {
+        changedFiles: ['src/example.ts'],
+        domainFiles: ['src/example.ts'],
+        digest: implDigest,
+        executedAt: '2026-01-01T00:00:00.000Z',
+      },
+      verificationCandidates: [
+        {
+          ...primary,
+          candidateId,
+          command: 'npm run test --',
+          source: 'package.json:scripts.test',
+        },
+      ],
+      executionSubjectInputsByCandidateId: {
+        ...(state!.executionSubjectInputsByCandidateId ?? {}),
+        [candidateId]: [{ kind: 'file', path: 'gradle/wrapper/gradle-wrapper.properties' }],
+      },
+    });
+    vi.mocked(executeCheck).mockImplementationOnce(async (input) => {
+      writeFileSync(
+        wrapperProperties,
+        'distributionUrl=https://services.gradle.org/changed.zip\n',
+        'utf-8',
+      );
+      return {
+        kind: input.kind,
+        command: input.command,
+        exitCode: 0,
+        passed: true,
+        executionMs: 150,
+        outputDigest: 'a'.repeat(64),
+        stdout: 'All clear',
+        stderr: '',
+        timedOut: false,
+        startedAt: '2026-01-01T00:00:00.000Z',
+      };
+    });
+
+    const result = parseToolResult(
+      await run_check.execute({ kind: 'typecheck', candidateId }, ctx),
+    );
+
+    // A post-implementation technical block must NOT clear the implementation
+    // evidence: no rework is required when the run could not produce a
+    // trustworthy verdict.
+    expect(result).toMatchObject({ phase: 'IMPL_VALIDATION' });
+    const persisted = await readState(sessDir);
+    expect(persisted!.implementation).not.toBeNull();
+    expect(persisted!.implementation!.digest).toBe(implDigest);
+    expect(persisted!.implValidation[0]).toMatchObject({ passed: false, outcome: 'blocked' });
   });
 
   it('persists complete-suite aggregate evidence from a repo-native pytest alternate', async () => {
@@ -734,6 +842,7 @@ describe('BAD', () => {
         ...(state!.verificationCandidates ?? []),
         {
           assertionCapability: 'unsupported' as const,
+          candidateId: 'vc_security_manual',
           kind: 'security' as const,
           command: 'npm audit',
           source: 'manual',
@@ -984,6 +1093,9 @@ describe('CORNER', () => {
 
   it('fails closed when the phase-specific digest prerequisite is unavailable', async () => {
     await driveToValidation();
+    // The automatic plan-convergence run consumed the executor mock; clear it
+    // so this test measures only the blocked run_check calls below.
+    vi.mocked(executeCheck).mockClear();
     const sessDir = await getSessDir();
     const state = await readState(sessDir);
     await writeState(sessDir, { ...state!, plan: null });
@@ -1205,6 +1317,7 @@ describe('CONCURRENCY', () => {
         ...(s!.verificationCandidates ?? []),
         {
           assertionCapability: 'unsupported' as const,
+          candidateId: 'vc_lint_parallel',
           kind: 'lint',
           command: 'npm run lint',
           source: 'discovery' as const,
@@ -1213,6 +1326,7 @@ describe('CONCURRENCY', () => {
         },
         {
           assertionCapability: 'unsupported' as const,
+          candidateId: 'vc_test_parallel',
           kind: 'test',
           command: 'npm test',
           source: 'discovery' as const,
@@ -1221,6 +1335,7 @@ describe('CONCURRENCY', () => {
         },
         {
           assertionCapability: 'unsupported' as const,
+          candidateId: 'vc_build_parallel',
           kind: 'build',
           command: 'npm run build',
           source: 'discovery' as const,
@@ -1228,11 +1343,11 @@ describe('CONCURRENCY', () => {
           reason: 'test',
         },
       ],
-      executionSubjectInputsByKind: {
-        ...(s!.executionSubjectInputsByKind ?? {}),
-        lint: [{ kind: 'implementation' as const }],
-        test: [{ kind: 'implementation' as const }],
-        build: [{ kind: 'implementation' as const }],
+      executionSubjectInputsByCandidateId: {
+        ...(s!.executionSubjectInputsByCandidateId ?? {}),
+        vc_lint_parallel: [{ kind: 'implementation' as const }],
+        vc_test_parallel: [{ kind: 'implementation' as const }],
+        vc_build_parallel: [{ kind: 'implementation' as const }],
       },
     });
 

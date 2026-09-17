@@ -61,7 +61,6 @@ import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers
 import { TEAM_POLICY } from '../config/policy.js';
 import {
   clearUserDecisionIntents,
-  consumeImplementationReviewExtensionIntent,
   peekUserDecisionIntent,
   recordUserDecisionIntent,
   recordUserDecisionIntentFromCommand,
@@ -77,8 +76,40 @@ vi.mock('../adapters/git', async (importOriginal) => {
     remoteOriginUrl: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl),
     changedFiles: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.changedFiles),
     listRepoSignals: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.repoSignals),
+    // Approval now enters VALIDATION and runs the active checks automatically;
+    // the IMPLEMENTATION transition freezes the pre-mutation base from HEAD.
+    headCommitFull: vi.fn().mockResolvedValue('d'.repeat(40)),
   };
 });
+
+vi.mock('../adapters/frozen-repository.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/frozen-repository.js')>();
+  return {
+    ...original,
+    freezeRepositoryIdentity: vi.fn(() => ({
+      kind: 'local' as const,
+      rootCommitDigest: 'sha256:' + 'b'.repeat(64),
+    })),
+    freezeWorktreeCandidate: vi.fn().mockResolvedValue('c'.repeat(40)),
+  };
+});
+
+// Mock the verification executor: the automatic validation run must never spawn
+// real subprocesses in the temp worktree.
+vi.mock('../verification/executor', () => ({
+  executeCheck: vi.fn().mockImplementation(async (input: { kind: string; command: string }) => ({
+    kind: input.kind,
+    command: input.command,
+    exitCode: 0,
+    passed: true,
+    executionMs: 100,
+    outputDigest: 'a'.repeat(64),
+    stdout: 'OK',
+    stderr: '',
+    timedOut: false,
+    startedAt: new Date().toISOString(),
+  })),
+}));
 
 // ─── Workspace Mock (P26) ────────────────────────────────────────────────────
 // Partial mock: archiveSession and verifyArchive are vi.fn() wrappers that
@@ -125,6 +156,7 @@ vi.mock('../adapters/actor', async (importOriginal) => {
       id: 'test-operator',
       email: 'test@flowguard.dev',
       source: 'env',
+      assurance: 'best_effort',
     }),
   };
 });
@@ -249,93 +281,27 @@ async function fulfillPlanReview(
   });
 }
 
-describe('P34a: Agent-Orchestrated Review', () => {
-  const validReviewFindingsSubagent = {
-    iteration: 0,
-    planVersion: 1,
-    reviewMode: 'subagent' as const,
-    overallVerdict: 'accept' as const,
-    blockingIssues: [],
-    majorRisks: [],
-    missingVerification: [],
-    scopeCreep: [],
-    unknowns: [],
-    reviewedBy: { sessionId: 'ses_test' },
-    reviewedAt: new Date().toISOString(),
-  };
-
-  const validReviewFindingsSelf = {
-    iteration: 0,
-    planVersion: 1,
-    reviewMode: 'self' as unknown as 'subagent',
-    overallVerdict: 'accept' as const,
-    blockingIssues: [],
-    majorRisks: [],
-    missingVerification: [],
-    scopeCreep: [],
-    unknowns: [],
-    reviewedBy: { sessionId: 'ses_self' },
-    reviewedAt: new Date().toISOString(),
-  };
-
+describe('P34a: Host-Captured Review', () => {
   it('reviewMode=subagent accepted by mandatory default', async () => {
-    await hydrateSession({ policyMode: 'solo' });
+    // Team mode stops at PLAN_REVIEW: the converged review response is observed
+    // directly (solo auto-approval would supersede it with the automatic
+    // validation response).
+    await hydrateSession({ policyMode: 'team' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
-    const reviewFindings = await fulfillPlanReview(0, 'accept');
-    const raw = await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
+    await fulfillPlanReview(0, 'accept');
+    const raw = await plan.execute({ reviewVerdict: 'accept' }, ctx);
     const result = parseToolResult(raw);
     expect(result.error).toBeUndefined();
     expect(result.selfReviewIteration).toBe(1);
   });
 
-  it('reviewMode=self blocked by mandatory default in Mode B', async () => {
+  it('persists host-captured findings in state.plan.reviewFindings', async () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
-    const raw = await plan.execute(
-      { reviewVerdict: 'accept', reviewFindings: validReviewFindingsSelf },
-      ctx,
-    );
-    const result = parseToolResult(raw);
-    expect(result.error).toBe(true);
-    expect(result.code).toBe('REVIEW_MODE_SELF_NOT_ALLOWED');
-  });
-
-  it('planVersion mismatch blocked in Mode B', async () => {
-    await hydrateSession({ policyMode: 'solo' });
-    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
-    await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
-    const wrongVersion = { ...validReviewFindingsSubagent, planVersion: 99 };
-    const raw = await plan.execute(
-      { reviewVerdict: 'changes_requested', reviewFindings: wrongVersion },
-      ctx,
-    );
-    const result = parseToolResult(raw);
-    expect(result.error).toBe(true);
-    expect(result.code).toBe('REVIEW_PLAN_VERSION_MISMATCH');
-  });
-
-  it('iteration mismatch blocked in Mode B', async () => {
-    await hydrateSession({ policyMode: 'solo' });
-    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
-    await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
-    const wrongIteration = { ...validReviewFindingsSubagent, iteration: 99 };
-    const raw = await plan.execute(
-      { reviewVerdict: 'changes_requested', reviewFindings: wrongIteration },
-      ctx,
-    );
-    const result = parseToolResult(raw);
-    expect(result.error).toBe(true);
-    expect(result.code).toBe('REVIEW_ITERATION_MISMATCH');
-  });
-
-  it('persists reviewFindings in state.plan.reviewFindings', async () => {
-    await hydrateSession({ policyMode: 'solo' });
-    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
-    await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
-    const reviewFindings = await fulfillPlanReview(0, 'accept');
-    await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
+    await fulfillPlanReview(0, 'accept');
+    await plan.execute({ reviewVerdict: 'accept' }, ctx);
 
     const { computeFingerprint, sessionDir: resolveSessionDir } =
       await import('../adapters/workspace/index.js');
@@ -354,8 +320,8 @@ describe('P34a: Agent-Orchestrated Review', () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
-    const reviewFindings = await fulfillPlanReview(0, 'accept');
-    await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
+    await fulfillPlanReview(0, 'accept');
+    await plan.execute({ reviewVerdict: 'accept' }, ctx);
 
     const { computeFingerprint, sessionDir: resolveSessionDir } =
       await import('../adapters/workspace/index.js');
@@ -367,27 +333,29 @@ describe('P34a: Agent-Orchestrated Review', () => {
     if (!state?.plan) throw new TypeError('Expected persisted plan state');
     expect(state.plan.current).toBeDefined();
     expect(state.plan.current.body).toContain('## Plan');
-    expect(state.plan.reviewFindings?.[0]?.reviewedBy.sessionId).toBe('ses_plan_reviewer');
+    expect(state.plan.reviewFindings?.[0]?.reviewedBy.sessionId).toMatch(/^ses_plan_reviewer/);
     expect(state.plan.history).toHaveLength(0);
   });
 
-  it('accepts valid reviewFindings with planVersion=1 in Mode B', async () => {
-    await hydrateSession({ policyMode: 'solo' });
+  it('accepts a verdict-only call against bound captured evidence', async () => {
+    // Team mode stops at PLAN_REVIEW so the converged response is observable.
+    await hydrateSession({ policyMode: 'team' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
-    const reviewFindings = await fulfillPlanReview(0, 'accept');
-    const raw = await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
+    await fulfillPlanReview(0, 'accept');
+    const raw = await plan.execute({ reviewVerdict: 'accept' }, ctx);
     const result = parseToolResult(raw);
     expect(result.error).toBeUndefined();
     expect(result.selfReviewIteration).toBe(1);
   });
 
   it('converged Mode B response appears after reviewFindings submission', async () => {
-    await hydrateSession({ policyMode: 'solo' });
+    // Team mode stops at PLAN_REVIEW so the converged response is observable.
+    await hydrateSession({ policyMode: 'team' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
-    const reviewFindings = await fulfillPlanReview(0, 'accept');
-    const raw = await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
+    await fulfillPlanReview(0, 'accept');
+    const raw = await plan.execute({ reviewVerdict: 'accept' }, ctx);
     const result = parseToolResult(raw);
 
     expect(result.error).toBeUndefined();
@@ -397,50 +365,9 @@ describe('P34a: Agent-Orchestrated Review', () => {
 });
 
 describe('P34a: Policy-Driven Branches', () => {
-  const validReviewFindingsSubagent = {
-    iteration: 0,
-    planVersion: 1,
-    reviewMode: 'subagent' as const,
-    overallVerdict: 'accept' as const,
-    blockingIssues: [],
-    majorRisks: [],
-    missingVerification: [],
-    scopeCreep: [],
-    unknowns: [],
-    reviewedBy: { sessionId: 'ses_subagent' },
-    reviewedAt: new Date().toISOString(),
-  };
-
-  const validReviewFindingsSubagentModeB = {
-    iteration: 1,
-    planVersion: 1,
-    reviewMode: 'subagent' as const,
-    overallVerdict: 'accept' as const,
-    blockingIssues: [],
-    majorRisks: [],
-    missingVerification: [],
-    scopeCreep: [],
-    unknowns: [],
-    reviewedBy: { sessionId: 'ses_subagent' },
-    reviewedAt: new Date().toISOString(),
-  };
-
-  const validReviewFindingsSelf = {
-    iteration: 0,
-    planVersion: 1,
-    reviewMode: 'self' as unknown as 'subagent',
-    overallVerdict: 'accept' as const,
-    blockingIssues: [],
-    majorRisks: [],
-    missingVerification: [],
-    scopeCreep: [],
-    unknowns: [],
-    reviewedBy: { sessionId: 'ses_self' },
-    reviewedAt: new Date().toISOString(),
-  };
-
   it('subagentEnabled=true + reviewMode=subagent → accepted', async () => {
-    await hydrateSession({ policyMode: 'solo' });
+    // Team mode stops at PLAN_REVIEW so the converged response is observable.
+    await hydrateSession({ policyMode: 'team' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
 
     const { computeFingerprint, sessionDir: resolveSessionDir } =
@@ -453,19 +380,18 @@ describe('P34a: Policy-Driven Branches', () => {
       ...state!,
       policySnapshot: {
         ...state!.policySnapshot,
-        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       },
     });
 
     await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
-    const reviewFindings = await fulfillPlanReview(0, 'accept');
-    const raw = await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
+    await fulfillPlanReview(0, 'accept');
+    const raw = await plan.execute({ reviewVerdict: 'accept' }, ctx);
     const result = parseToolResult(raw);
     expect(result.error).toBeUndefined();
     expect(result.selfReviewIteration).toBe(1);
   });
 
-  it('subagentEnabled=true + fallbackToSelf=true + reviewMode=self → BLOCKED', async () => {
+  it('approve + subagentEnabled=true + missing captured findings → BLOCKED', async () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
 
@@ -479,63 +405,6 @@ describe('P34a: Policy-Driven Branches', () => {
       ...state!,
       policySnapshot: {
         ...state!.policySnapshot,
-        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
-      },
-    });
-
-    await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
-    const raw = await plan.execute(
-      { reviewVerdict: 'accept', reviewFindings: validReviewFindingsSelf },
-      ctx,
-    );
-    const result = parseToolResult(raw);
-    expect(result.error).toBe(true);
-    expect(result.code).toBe('REVIEW_MODE_SELF_NOT_ALLOWED');
-  });
-
-  it('subagentEnabled=true + fallbackToSelf=false + reviewMode=self → BLOCKED', async () => {
-    await hydrateSession({ policyMode: 'solo' });
-    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
-
-    const { computeFingerprint, sessionDir: resolveSessionDir } =
-      await import('../adapters/workspace/index.js');
-    const fp = await computeFingerprint(ws.tmpDir);
-    const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
-
-    const state = await readState(sessDir);
-    await writeState(sessDir, {
-      ...state!,
-      policySnapshot: {
-        ...state!.policySnapshot,
-        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
-      },
-    });
-
-    await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
-    const raw = await plan.execute(
-      { reviewVerdict: 'accept', reviewFindings: validReviewFindingsSelf },
-      ctx,
-    );
-    const result = parseToolResult(raw);
-    expect(result.error).toBe(true);
-    expect(result.code).toBe('REVIEW_MODE_SELF_NOT_ALLOWED');
-  });
-
-  it('approve + subagentEnabled=true + missing reviewFindings → BLOCKED', async () => {
-    await hydrateSession({ policyMode: 'solo' });
-    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
-
-    const { computeFingerprint, sessionDir: resolveSessionDir } =
-      await import('../adapters/workspace/index.js');
-    const fp = await computeFingerprint(ws.tmpDir);
-    const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
-
-    const state = await readState(sessDir);
-    await writeState(sessDir, {
-      ...state!,
-      policySnapshot: {
-        ...state!.policySnapshot,
-        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       },
     });
 
@@ -543,10 +412,10 @@ describe('P34a: Policy-Driven Branches', () => {
     const raw = await plan.execute({ reviewVerdict: 'accept' }, ctx);
     const result = parseToolResult(raw);
     expect(result.error).toBe(true);
-    expect(result.code).toBe('REVIEW_FINDINGS_REQUIRED');
+    expect(result.code).toBe('SUBAGENT_EVIDENCE_MISSING');
   });
 
-  it('approve + subagentEnabled=true + valid reviewFindings → accepted', async () => {
+  it('approve + subagentEnabled=true + bound captured findings → accepted', async () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
 
@@ -555,21 +424,17 @@ describe('P34a: Policy-Driven Branches', () => {
     const fp = await computeFingerprint(ws.tmpDir);
     const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
 
-    let state = await readState(sessDir);
+    const state = await readState(sessDir);
     await writeState(sessDir, {
       ...state!,
       policySnapshot: {
         ...state!.policySnapshot,
-        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
       },
     });
 
-    state = await readState(sessDir);
-    expect(state?.policySnapshot.selfReview?.subagentEnabled).toBe(true);
-
     await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
-    const reviewFindings = await fulfillPlanReview(0, 'accept');
-    const raw = await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
+    await fulfillPlanReview(0, 'accept');
+    const raw = await plan.execute({ reviewVerdict: 'accept' }, ctx);
     const result = parseToolResult(raw);
     expect(result.error).toBeUndefined();
   });
@@ -585,23 +450,29 @@ describe('decision', () => {
     await hydrateSession({ policyMode: 'team' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
-    // In team mode, submit mandate-bound reviewer findings until convergence.
+    // In team mode, submit reviewer verdicts against bound captured evidence
+    // until convergence.
     for (let i = 0; i < 5; i++) {
       const s = parseToolResult(await status.execute({}, ctx));
       if (s.phase === 'PLAN_REVIEW') break;
-      const reviewFindings = await fulfillPlanReview(i, 'accept');
-      await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
+      await fulfillPlanReview(i, 'accept');
+      await plan.execute({ reviewVerdict: 'accept' }, ctx);
     }
   }
 
   describe('HAPPY', () => {
-    it('approve at PLAN_REVIEW advances to VALIDATION', async () => {
+    it('approve at PLAN_REVIEW advances through automatic validation to IMPLEMENTATION', async () => {
       await reachPlanReview();
       recordUserDecision('approve');
       const raw = await decision.execute({ verdict: 'approve', rationale: 'Looks good' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('VALIDATION');
+      // Approval enters VALIDATION and the runtime runs the active checks
+      // automatically before IMPLEMENTATION.
+      expect(result.phase).toBe('IMPLEMENTATION');
+      const state = await readState(await currentSessionDir());
+      expect(state?.validation.length).toBeGreaterThan(0);
+      expect(state?.validation.every((entry) => entry.passed)).toBe(true);
     });
   });
 
@@ -673,31 +544,28 @@ describe('decision', () => {
       expect(result.code).toBe('HUMAN_DECISION_REQUIRED');
     });
 
-    it('P0: /extend-implementation-review intent never authorizes a decision verdict', async () => {
+    it('routes /override-approve intent to the governance-override gate (not a plain approval)', async () => {
       await reachPlanReview();
-      // Simulate OpenCode command.execute.before recording the extension command.
+      // Simulate OpenCode command.execute.before recording the override command.
       recordUserDecisionIntentFromCommand({
         sessionId: ctx.sessionID,
-        command: '/extend-implementation-review',
-        arguments: '1',
+        command: '/override-approve',
+        arguments: '',
       });
-      const blocked = parseToolResult(
-        await decision.execute({ verdict: 'reject', rationale: 'Not authorized' }, ctx),
+      const result = parseToolResult(
+        await decision.execute(
+          { verdict: 'approve_with_governance_override', rationale: 'Unnecessary override' },
+          ctx,
+        ),
       );
-      expect(blocked.error).toBe(true);
-      expect(blocked.code).toBe('HUMAN_DECISION_REQUIRED');
+      // The intent authorized the call (not HUMAN_DECISION_REQUIRED); the gate
+      // itself rejects the override because the plan review did not exhaust.
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('GOVERNANCE_OVERRIDE_NOT_REQUIRED');
 
-      // No state transition: the extension intent cannot gate a reject.
+      // No state transition: the plan gate is untouched.
       const state = await readState(await currentSessionDir());
       expect(state?.phase).toBe('PLAN_REVIEW');
-
-      // The extension intent is still intact for the extension tool.
-      expect(
-        consumeImplementationReviewExtensionIntent({
-          sessionId: ctx.sessionID,
-          additionalIterations: 1,
-        }),
-      ).toMatchObject({ ok: true });
     });
 
     it('consumes user-command intent once', async () => {
@@ -717,13 +585,24 @@ describe('decision', () => {
       expect(second.code).toBe('HUMAN_DECISION_REQUIRED');
     });
 
-    it('reject at PLAN_REVIEW returns to TICKET', async () => {
+    it('reject at PLAN_REVIEW enters the terminal REJECTED phase', async () => {
       await reachPlanReview();
       recordUserDecision('reject');
       const raw = await decision.execute({ verdict: 'reject', rationale: 'Need rethink' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('TICKET');
+      expect(result.phase).toBe('REJECTED');
+      expect(result.directive).toMatchObject({
+        kind: 'terminal',
+        code: 'WORKFLOW_REJECTED',
+        commands: [],
+      });
+
+      // Rejection preserves the reviewed evidence and the recorded decision.
+      const state = await readState(await currentSessionDir());
+      expect(state?.plan).not.toBeNull();
+      expect(state?.selfReview).not.toBeNull();
+      expect(state?.reviewDecision?.verdict).toBe('reject');
     });
 
     it('changes_requested at PLAN_REVIEW returns to PLAN', async () => {
@@ -753,29 +632,9 @@ describe('decision', () => {
       );
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('VALIDATION');
-    });
-
-    it('config verified-actor requirement blocks approve for best_effort reviewer', async () => {
-      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
-      const { writeRepoConfig, readConfig } = await import('../adapters/persistence-config.js');
-      const fp = await computeFingerprint(ws.tmpDir);
-      const wsDir = workspaceDir(fp.fingerprint);
-      const baseConfig = await readConfig();
-      await writeRepoConfig(ws.tmpDir, {
-        ...baseConfig,
-        policy: {
-          ...baseConfig.policy,
-          requireVerifiedActorsForApproval: true,
-        },
-      });
-
-      await reachPlanReview();
-      recordUserDecision('approve');
-      const raw = await decision.execute({ verdict: 'approve', rationale: 'Looks good' }, ctx);
-      const result = parseToolResult(raw);
-      expect(result.error).toBe(true);
-      expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
+      // The decision response is superseded by the automatic validation
+      // response: approval crossed VALIDATION into IMPLEMENTATION.
+      expect(result.phase).toBe('IMPLEMENTATION');
     });
   });
 
@@ -803,7 +662,7 @@ describe('decision', () => {
       const secondRaw = await decision.execute({ verdict: 'approve', rationale: 'Proceed' }, ctx);
       const second = parseToolResult(secondRaw);
       expect(second.error).toBeUndefined();
-      expect(second.phase).toBe('VALIDATION');
+      expect(second.phase).toBe('IMPLEMENTATION');
     });
 
     it('does not burn the intent when a decision fails before persistence (artifacts missing)', async () => {
@@ -838,7 +697,7 @@ describe('decision', () => {
         await decision.execute({ verdict: 'approve', rationale: 'Looks good' }, ctx),
       );
       expect(first.error).toBeUndefined();
-      expect(first.phase).toBe('VALIDATION');
+      expect(first.phase).toBe('IMPLEMENTATION');
 
       // Force the gate back to PLAN_REVIEW and replay: the consumed intent is gone.
       const state = await readState(await currentSessionDir());
@@ -879,12 +738,15 @@ describe('decision', () => {
       const raw = await decision.execute({ verdict: 'approve' } as { verdict: ReviewVerdict }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('VALIDATION');
-      expect(result.reviewDecision).toMatchObject({ rationale: '' });
+      // The automatic validation response supersedes the decision output; the
+      // normalized rationale is asserted from persisted state.
+      expect(result.phase).toBe('IMPLEMENTATION');
+      const state = await readState(await currentSessionDir());
+      expect(state?.reviewDecision).toMatchObject({ rationale: '' });
     });
   });
 });
 
 // =============================================================================
-// Tool 10: review (standalone review flow with subagent pattern)
+// Tool 10: review (peer review flow with subagent pattern)
 // =============================================================================
