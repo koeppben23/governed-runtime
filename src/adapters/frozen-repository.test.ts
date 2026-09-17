@@ -11,7 +11,9 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MAX_REPOSITORY_OBSERVATION_BYTES } from '../state/evidence.js';
 import {
+  type FrozenRepositoryContent,
   FrozenRepositoryError,
   acquireFrozenRepositoryContent,
   freezeWorktreeCandidate,
@@ -20,12 +22,57 @@ import {
   resolveFrozenBlobEntry,
 } from './frozen-repository.js';
 
-const GH_RESPONSES = vi.hoisted(() => [] as Array<string | Buffer>);
+interface GhFailure {
+  readonly fail: { readonly code?: string; readonly message?: string };
+}
+
+const GH_RESPONSES = vi.hoisted(() => [] as Array<string | Buffer | GhFailure>);
+const FAIL_WRITE_TREE = vi.hoisted(() => ({ enabled: false }));
+const LS_TREE_OVERRIDE = vi.hoisted(() => ({ value: null as string | null }));
 
 vi.mock('node:child_process', async (importOriginal) => {
   const original = await importOriginal<typeof import('node:child_process')>();
   return {
     ...original,
+    execFile: (() => {
+      const promisifyCustom = Symbol.for('nodejs.util.promisify.custom');
+      const mock = vi.fn(
+        (
+          command: string,
+          args: readonly string[],
+          options: Parameters<typeof original.execFile>[2],
+          callback: (error: Error | null, stdout: string, stderr: string) => void,
+        ) =>
+          (original.execFile as unknown as (...a: unknown[]) => unknown)(
+            command,
+            args,
+            options,
+            callback,
+          ),
+      );
+      // promisify(execFile) resolves via a custom symbol; without it the
+      // promisified call would resolve to a bare stdout string.
+      (mock as unknown as Record<symbol, unknown>)[promisifyCustom] = (
+        command: string,
+        args: readonly string[],
+        options: Parameters<typeof original.execFile>[2],
+      ) =>
+        FAIL_WRITE_TREE.enabled &&
+        command === 'git' &&
+        Array.isArray(args) &&
+        args.includes('write-tree')
+          ? Promise.resolve({ stdout: 'not-an-object-sha', stderr: '' })
+          : new Promise((resolve, reject) => {
+              (original.execFile as unknown as (...a: unknown[]) => unknown)(
+                command,
+                args,
+                options,
+                (error: Error | null, stdout: string, stderr: string) =>
+                  error ? reject(error) : resolve({ stdout, stderr }),
+              );
+            });
+      return mock;
+    })(),
     execFileSync: vi.fn(
       (
         command: string,
@@ -33,7 +80,21 @@ vi.mock('node:child_process', async (importOriginal) => {
         options?: Parameters<typeof original.execFileSync>[2],
       ) => {
         if (command === 'gh') {
-          return GH_RESPONSES.shift() ?? '';
+          const next = GH_RESPONSES.shift();
+          if (next && typeof next === 'object' && !Buffer.isBuffer(next) && 'fail' in next) {
+            const error = new Error(next.fail.message ?? 'gh failed') as NodeJS.ErrnoException;
+            if (next.fail.code) error.code = next.fail.code;
+            throw error;
+          }
+          return (next as string | Buffer | undefined) ?? '';
+        }
+        if (command === 'git' && Array.isArray(args)) {
+          if (FAIL_WRITE_TREE.enabled && args.includes('write-tree')) {
+            return 'not-an-object-sha';
+          }
+          if (LS_TREE_OVERRIDE.value !== null && args.includes('ls-tree')) {
+            return LS_TREE_OVERRIDE.value;
+          }
         }
         return (original.execFileSync as (...a: unknown[]) => string)(
           command,
@@ -300,6 +361,179 @@ describe('remote acquisition: exact Git object semantics', () => {
     );
     try {
       acquireRemote('src/foo.ts');
+      throw new Error('expected FrozenRepositoryError');
+    } catch (err) {
+      expect((err as FrozenRepositoryError).code).toBe('PATH_NOT_IN_TREE');
+    }
+  });
+});
+
+describe('freeze and acquisition failure classification', () => {
+  beforeEach(() => {
+    FAIL_WRITE_TREE.enabled = false;
+    LS_TREE_OVERRIDE.value = null;
+    GH_RESPONSES.length = 0;
+  });
+
+  it('classifies an invalid write-tree result as FREEZE_FAILED', async () => {
+    FAIL_WRITE_TREE.enabled = true;
+    await expect(freezeWorktreeCandidate(repo, baseSha)).rejects.toMatchObject({
+      code: 'FREEZE_FAILED',
+    });
+  });
+
+  it('rejects unparseable ls-tree records', () => {
+    LS_TREE_OVERRIDE.value = 'garbage-without-tab';
+    try {
+      resolveFrozenBlobEntry(repo, baseSha, 'base.txt');
+      throw new Error('expected FrozenRepositoryError');
+    } catch (err) {
+      expect((err as FrozenRepositoryError).code).toBe('ACQUISITION_FAILED');
+    }
+  });
+
+  it('rejects an oversized local blob', () => {
+    const bigPath = path.join(repo, 'oversized.bin');
+    fs.writeFileSync(bigPath, Buffer.alloc(MAX_REPOSITORY_OBSERVATION_BYTES + 1));
+    try {
+      const blobSha = execFileSync('git', ['hash-object', '-w', 'oversized.bin'], {
+        cwd: repo,
+        encoding: 'utf-8',
+      }).trim();
+      try {
+        readFrozenBlob(repo, blobSha);
+        throw new Error('expected FrozenRepositoryError');
+      } catch (err) {
+        expect((err as FrozenRepositoryError).code).toBe('OVERSIZED_BLOB');
+      }
+    } finally {
+      fs.rmSync(bigPath, { force: true });
+    }
+  });
+
+  it('classifies a local git failure without a typed GitError as ACQUISITION_FAILED', () => {
+    try {
+      readFrozenBlob(repo, 'f'.repeat(40));
+      throw new Error('expected FrozenRepositoryError');
+    } catch (err) {
+      expect((err as FrozenRepositoryError).code).toBe('ACQUISITION_FAILED');
+    }
+  });
+});
+
+describe('remote acquisition failure classification', () => {
+  const REMOTE_IDENTITY = {
+    host: 'github.enterprise.example',
+    owner: 'acme',
+    name: 'repo',
+  } as const;
+  const COMMIT_SHA = 'a'.repeat(40);
+
+  function acquireRemote(pathValue: string): FrozenRepositoryContent {
+    return acquireFrozenRepositoryContent(
+      '/nonexistent-worktree',
+      { kind: 'commit', repositoryIdentity: REMOTE_IDENTITY, objectSha: COMMIT_SHA },
+      pathValue,
+    );
+  }
+
+  beforeEach(() => {
+    GH_RESPONSES.length = 0;
+  });
+
+  it('classifies a gh maxBuffer overflow as OVERSIZED_BLOB', () => {
+    GH_RESPONSES.push({
+      fail: { code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER', message: 'maxBuffer exceeded' },
+    });
+    try {
+      acquireRemote('src/foo.ts');
+      throw new Error('expected FrozenRepositoryError');
+    } catch (err) {
+      expect((err as FrozenRepositoryError).code).toBe('OVERSIZED_BLOB');
+    }
+  });
+
+  it('classifies other gh failures as ACQUISITION_FAILED', () => {
+    GH_RESPONSES.push({ fail: { message: 'gh: not found' } });
+    try {
+      acquireRemote('src/foo.ts');
+      throw new Error('expected FrozenRepositoryError');
+    } catch (err) {
+      expect((err as FrozenRepositoryError).code).toBe('ACQUISITION_FAILED');
+    }
+  });
+
+  it('classifies malformed tree JSON as ACQUISITION_FAILED', () => {
+    GH_RESPONSES.push('not-json');
+    try {
+      acquireRemote('src/foo.ts');
+      throw new Error('expected FrozenRepositoryError');
+    } catch (err) {
+      expect((err as FrozenRepositoryError).code).toBe('ACQUISITION_FAILED');
+    }
+  });
+
+  it('rejects an invalid blob sha from the remote tree', () => {
+    GH_RESPONSES.push(
+      JSON.stringify({
+        tree: [{ path: 'foo.ts', mode: '100644', type: 'blob', sha: 'not-a-sha' }],
+      }),
+    );
+    try {
+      acquireRemote('foo.ts');
+      throw new Error('expected FrozenRepositoryError');
+    } catch (err) {
+      expect((err as FrozenRepositoryError).code).toBe('ACQUISITION_FAILED');
+    }
+  });
+
+  it('rejects an oversized remote blob', () => {
+    GH_RESPONSES.push(
+      JSON.stringify({
+        tree: [{ path: 'foo.ts', mode: '100644', type: 'blob', sha: 'c'.repeat(40) }],
+      }),
+      Buffer.alloc(MAX_REPOSITORY_OBSERVATION_BYTES + 1),
+    );
+    try {
+      acquireRemote('foo.ts');
+      throw new Error('expected FrozenRepositoryError');
+    } catch (err) {
+      expect((err as FrozenRepositoryError).code).toBe('OVERSIZED_BLOB');
+    }
+  });
+
+  it('rejects a missing intermediate tree segment', () => {
+    GH_RESPONSES.push(
+      JSON.stringify({
+        tree: [{ path: 'other', mode: '040000', type: 'tree', sha: 'b'.repeat(40) }],
+      }),
+    );
+    try {
+      acquireRemote('src/foo.ts');
+      throw new Error('expected FrozenRepositoryError');
+    } catch (err) {
+      expect((err as FrozenRepositoryError).code).toBe('PATH_NOT_IN_TREE');
+    }
+  });
+
+  it('rejects a truncated intermediate tree', () => {
+    GH_RESPONSES.push(
+      JSON.stringify({
+        tree: [{ path: 'src', mode: '040000', type: 'tree', sha: 'b'.repeat(40) }],
+      }),
+      JSON.stringify({ tree: [], truncated: true }),
+    );
+    try {
+      acquireRemote('src/foo.ts');
+      throw new Error('expected FrozenRepositoryError');
+    } catch (err) {
+      expect((err as FrozenRepositoryError).code).toBe('OBJECT_UNAVAILABLE');
+    }
+  });
+
+  it('rejects an empty repository path before any provider call', () => {
+    try {
+      acquireRemote('');
       throw new Error('expected FrozenRepositoryError');
     } catch (err) {
       expect((err as FrozenRepositoryError).code).toBe('PATH_NOT_IN_TREE');
