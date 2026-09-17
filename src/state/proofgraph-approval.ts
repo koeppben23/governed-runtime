@@ -23,20 +23,6 @@ import * as crypto from 'node:crypto';
 const CLAIM_NAMESPACE = Buffer.from('6ba7b8109dad11d180b400c04fd430c8', 'hex');
 
 /**
- * Identity domain of a ProofGraph claim.
- *
- * - `plan` / `architecture`: claims declared against an approved authority and
- *   bound by that authority's approval certificate.
- * - `manual`: evidence-bound claims declared directly at the implementation
- *   write boundary, which carry no approval certificate and remain advisory.
- *
- * The domain is PART of the claim identity: the same statement in different
- * domains is a different claim with a distinct identity. Domain scopes must
- * never be collapsed into statement equality.
- */
-export type ProofGraphClaimDomain = 'plan' | 'architecture' | 'manual';
-
-/**
  * Reserved authority-section scope for `manual` claims. It is internal to the
  * identity authority: a manual declaration has no governing authority section,
  * so callers cannot name one for it (see `ProofGraphClaimIdentityInput`).
@@ -60,6 +46,21 @@ export type ProofGraphClaimIdentityInput =
       readonly domain: 'manual';
       readonly statement: string;
     };
+
+/**
+ * Identity domain of a ProofGraph claim — derived from the identity input so
+ * the domain vocabulary has exactly one structural definition.
+ *
+ * - `plan` / `architecture`: claims declared against an approved authority and
+ *   bound by that authority's approval certificate.
+ * - `manual`: evidence-bound claims declared directly at the implementation
+ *   write boundary, which carry no approval certificate and remain advisory.
+ *
+ * The domain is PART of the claim identity: the same statement in different
+ * domains is a different claim with a distinct identity. Domain scopes must
+ * never be collapsed into statement equality.
+ */
+export type ProofGraphClaimDomain = ProofGraphClaimIdentityInput['domain'];
 
 /**
  * Canonical statement key of a claim identity. Two statements that differ only
