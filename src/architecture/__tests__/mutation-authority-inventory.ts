@@ -742,81 +742,75 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
   ),
 
   // ── Base profile: candidate authorities pending admission ─────────────────
-  deferred('src/machine/topology.ts', 'Formal state transition table', DEFERRED_REASON, {
-    source: [SOURCE.machine],
-  }),
-  deferred('src/config/flowguard-config.ts', 'Runtime config schema authority', DEFERRED_REASON, {
-    source: [SOURCE.config],
-  }),
-  deferred(
-    'src/audit/canonical-digest.ts',
-    'TSA message imprint digest authority',
-    DEFERRED_REASON,
+  // ── Base profile: core authorities admitted in the base full run ─────────
+  required(
+    'src/adapters/implementation-base-authority.ts',
+    'Pre-mutation implementation base freeze',
+    ['src/adapters/implementation-base-authority.test.ts'],
+    { source: [SOURCE.trustBoundaries] },
   ),
-  deferred('src/audit/constant-time.ts', 'Constant-time byte comparison', DEFERRED_REASON),
-  deferred('src/adapters/git.ts', 'Git subprocess boundary', DEFERRED_REASON, {
-    source: [SOURCE.trustBoundaries],
-  }),
+  required(
+    'src/adapters/implementation-entry-guard.ts',
+    'Pure persistence-side implementation entry guard',
+    ['src/adapters/implementation-base-authority.test.ts'],
+    { source: [SOURCE.trustBoundaries] },
+  ),
+
+  // ── Base profile: measured admission verdicts (base full run 2026-09-17) ──
+  deferred(
+    'src/adapters/git.ts',
+    'Git subprocess boundary',
+    'Full-run verdict 34.97% (57 killed / 106 survived); test gaps must close before admission.',
+    { source: [SOURCE.trustBoundaries] },
+  ),
   deferred(
     'src/adapters/frozen-repository.ts',
     'Immutable frozen-repository acquisition boundary',
-    DEFERRED_REASON,
-    {
-      source: [SOURCE.trustBoundaries],
-    },
+    'Full-run verdict 58.65% (78 killed / 55 survived); test gaps must close before admission.',
+    { source: [SOURCE.trustBoundaries] },
   ),
   deferred(
-    'src/adapters/implementation-base-authority.ts',
-    'Pre-mutation implementation base freeze',
-    DEFERRED_REASON,
-    {
-      source: [SOURCE.trustBoundaries],
-    },
+    'src/audit/canonical-digest.ts',
+    'TSA message imprint digest authority',
+    'Full-run verdict 75.00% (3 killed / 1 survived); the mutant set is too small to carry an admission.',
   ),
   deferred(
-    'src/adapters/implementation-entry-guard.ts',
-    'Pure persistence-side implementation entry guard',
-    DEFERRED_REASON,
-    {
-      source: [SOURCE.trustBoundaries],
-    },
+    'src/config/flowguard-config.ts',
+    'Runtime config schema authority',
+    'Full-run verdict 20.00% (9 killed / 36 survived); default/parse branches lack assertions.',
+    { source: [SOURCE.config] },
   ),
-  deferred('src/state/runtime-lease.ts', 'Persisted runtime lease fencing shape', DEFERRED_REASON, {
-    source: [SOURCE.trustBoundaries],
-  }),
   deferred(
     'src/state/schema.ts',
     'Session state schema validated on every write',
-    DEFERRED_REASON,
-    {
-      source: [SOURCE.rootAgents],
-    },
+    'Full-run verdict 33.33% (9 killed / 18 survived); invariant branches lack negative-path tests.',
+    { source: [SOURCE.rootAgents] },
   ),
-  deferred('src/state/policy-mode.ts', 'Canonical policy mode enum', DEFERRED_REASON, {
-    source: [SOURCE.rootAgents],
-  }),
-  deferred('src/shared/hashing.ts', 'Hash primitives for digests', DEFERRED_REASON, {
-    source: [SOURCE.rootAgents],
-  }),
-  deferred('src/redaction/export-redaction.ts', 'Export-time redaction boundary', DEFERRED_REASON, {
-    source: [SOURCE.trustBoundaries],
-  }),
+  deferred(
+    'src/shared/hashing.ts',
+    'Hash primitives for digests',
+    'Full-run verdict 38.46% (5 killed / 8 survived); boundary inputs are untested.',
+    { source: [SOURCE.rootAgents] },
+  ),
+  deferred(
+    'src/redaction/export-redaction.ts',
+    'Export-time redaction boundary',
+    'Full-run verdict 51.81% (43 killed / 40 survived); masking modes need contract tests.',
+    { source: [SOURCE.trustBoundaries] },
+  ),
   deferred(
     'src/integration/review/reviewed-digest.ts',
     'Review provenance projection',
-    DEFERRED_REASON,
-    {
-      source: [SOURCE.trustBoundaries],
-    },
+    'Full-run verdict 46.67% (42 killed / 48 survived); provenance branches lack assertions.',
+    { source: [SOURCE.trustBoundaries] },
   ),
   deferred(
     'src/integration/review/findings-hash.ts',
     'Findings hash normalization',
-    DEFERRED_REASON,
-    {
-      source: [SOURCE.trustBoundaries],
-    },
+    'Full-run verdict 65.00% (13 killed / 7 survived); ordering and pass-through branches remain.',
+    { source: [SOURCE.trustBoundaries] },
   ),
+  deferred('src/audit/constant-time.ts', 'Constant-time byte comparison', DEFERRED_REASON),
   deferred(
     'src/integration/tools/record-mutation-evidence.ts',
     'Canonical MutationAttempt evidence producer',
@@ -995,6 +989,24 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
   }),
 
   // ── Explicitly not mutation-suitable ──────────────────────────────────────
+  deferred(
+    'src/machine/topology.ts',
+    'Formal state transition table',
+    'No valid mutants in the base full run: the transition table is module-init data ignored under ignoreStatic.',
+    { classification: 'not-mutation-suitable', source: [SOURCE.machine] },
+  ),
+  deferred(
+    'src/state/policy-mode.ts',
+    'Canonical policy mode enum',
+    'No valid mutants in the base full run: const tuple/enum only.',
+    { classification: 'not-mutation-suitable', source: [SOURCE.rootAgents] },
+  ),
+  deferred(
+    'src/state/runtime-lease.ts',
+    'Persisted runtime lease fencing shape',
+    'No valid mutants in the base full run: pure Zod schema declarations.',
+    { classification: 'not-mutation-suitable', source: [SOURCE.trustBoundaries] },
+  ),
   deferred(
     'src/config/reasons-types.ts',
     'Reason catalog type contracts',
