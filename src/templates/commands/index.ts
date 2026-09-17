@@ -38,7 +38,6 @@ import { WHY_COMMAND } from './why.js';
 import { FINISH_COMMAND } from './finish.js';
 import { HELP_COMMAND } from './help.js';
 import { COMMANDS_COMMAND } from './commands.js';
-import { INSTALLED_TEMPLATE_FILES } from '../../integration/installed-commands.js';
 
 const COMMAND_BODIES: Record<string, string> = {
   'hydrate.md': HYDRATE_COMMAND,
@@ -70,16 +69,11 @@ const COMMAND_BODIES: Record<string, string> = {
 };
 
 /**
- * Installer-compatible projection of the canonical installed-command catalogue.
- * Only unique template files are assembled; multiple interfaces may share one file.
- * Missing template bodies fail closed during module initialization.
+ * Installer-compatible projection of the command template bodies.
+ *
+ * The template-file set is owned by this layer: the catalogue in
+ * `integration/installed-commands.ts` must reference exactly these files, and
+ * `integration/installed-commands.test.ts` enforces that bidirectionally. The
+ * templates layer never imports the catalogue.
  */
-export const COMMANDS: Record<string, string> = Object.fromEntries(
-  INSTALLED_TEMPLATE_FILES.map((templateFile) => {
-    const body = COMMAND_BODIES[templateFile];
-    if (body === undefined) {
-      throw new Error(`Installed command template missing: ${templateFile}`);
-    }
-    return [templateFile, body];
-  }),
-);
+export const COMMANDS: Record<string, string> = { ...COMMAND_BODIES };
