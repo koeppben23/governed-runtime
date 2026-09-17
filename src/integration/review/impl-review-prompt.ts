@@ -70,6 +70,12 @@ export interface ReviewVerificationEvidenceItem {
   readonly outputDigest: string;
   readonly detail: string;
   readonly executedAt: string;
+  /** Session-state digest observed when the execution surface was frozen. */
+  readonly executionObservedStateDigest: string;
+  /** State digest re-read under the session write lock before persistence. */
+  readonly preCommitStateDigest: string;
+  /** Derived projection of the two observed digests; never persisted itself. */
+  readonly stateChangedDuringExecution: boolean;
   readonly claimAssertionEvidence?: ReviewClaimAssertionEvidenceSet;
 }
 

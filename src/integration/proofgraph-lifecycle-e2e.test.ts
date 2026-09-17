@@ -62,6 +62,7 @@ import type { SessionState } from '../state/schema.js';
 import {
   completedDispatchForInvocation,
   makePlanRevision,
+  TEST_EXECUTION_OBSERVATION,
 } from '../state/evidence-test-constants.js';
 import type { ReviewAssuranceState } from '../state/evidence-review.js';
 import type {
@@ -319,6 +320,7 @@ function attempt(
     attemptId,
     scope: 'implementation',
     implementationDigest: IMPL_EVIDENCE.digest,
+    executionObservation: TEST_EXECUTION_OBSERVATION,
     result: {
       checkId,
       passed,

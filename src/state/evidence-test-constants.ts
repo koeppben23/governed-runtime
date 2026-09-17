@@ -6,11 +6,21 @@
 import type { ReviewDispatchRecord, ReviewInvocationEvidence } from './evidence-review.js';
 import type { PlanEvidence, SelfReviewLoop } from './evidence-plan.js';
 import type { ImplReviewResult } from './evidence-impl.js';
+import type { ValidationExecutionObservation } from './evidence-validation.js';
 import { computeRecordDigest } from './evidence-plan.js';
 import { hashText } from '../shared/hashing.js';
 
 export const FIXED_TIME = '2026-01-01T00:00:00.000Z';
 export const FIXED_UUID = '00000000-0000-4000-8000-000000000001';
+
+/**
+ * Canonical execution-observation fixture for validation attempts: one
+ * unchanged session-state continuity (observed digest === pre-commit digest).
+ */
+export const TEST_EXECUTION_OBSERVATION: ValidationExecutionObservation = Object.freeze({
+  executionObservedStateDigest: hashText('test-execution-observed-state'),
+  preCommitStateDigest: hashText('test-execution-observed-state'),
+});
 
 const PLAN_DIGEST = hashText('## Plan\n1. Fix auth\n2. Add tests');
 

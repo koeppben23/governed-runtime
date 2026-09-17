@@ -11,6 +11,7 @@ import {
 import { makeState } from '../../fixtures.js';
 import { ProofProviderResult } from '../../state/proofgraph.js';
 import type { SessionState } from '../../state/schema.js';
+import { TEST_EXECUTION_OBSERVATION } from '../../state/evidence-test-constants.js';
 
 const NOW = '2026-01-01T00:00:00.000Z';
 const CLAIM = '00000000-0000-4000-8000-000000000001';
@@ -69,6 +70,7 @@ describe('bindExecutedTestEvidence', () => {
         attemptId: ATT,
         scope: 'implementation',
         implementationDigest: IMPL_DIGEST,
+        executionObservation: TEST_EXECUTION_OBSERVATION,
         result: validationResult(true),
       },
     ]);
@@ -94,6 +96,7 @@ describe('bindExecutedTestEvidence', () => {
         attemptId: ATT,
         scope: 'implementation',
         implementationDigest: IMPL_DIGEST,
+        executionObservation: TEST_EXECUTION_OBSERVATION,
         result: validationResult(false),
       },
     ]);
@@ -106,6 +109,7 @@ describe('bindExecutedTestEvidence', () => {
         attemptId: ATT,
         scope: 'implementation',
         implementationDigest: IMPL_DIGEST,
+        executionObservation: TEST_EXECUTION_OBSERVATION,
         result: validationResult(false, { exitCode: 127 }),
       },
     ]);
@@ -123,7 +127,13 @@ describe('bindExecutedTestEvidence', () => {
 
   it('emits unavailable when the attempt is baseline-scoped, not implementation', () => {
     const state = stateWith([
-      { attemptId: ATT, scope: 'baseline', planDigest: 'plan', result: validationResult(true) },
+      {
+        attemptId: ATT,
+        scope: 'baseline',
+        planDigest: 'plan',
+        executionObservation: TEST_EXECUTION_OBSERVATION,
+        result: validationResult(true),
+      },
     ]);
     expect(bindExecutedTestEvidence(state, NOW)[0]!.status).toBe('unavailable');
   });
@@ -140,6 +150,7 @@ describe('bindExecutedTestEvidence', () => {
           attemptId: ATT,
           scope: 'implementation',
           implementationDigest: IMPL_DIGEST,
+          executionObservation: TEST_EXECUTION_OBSERVATION,
           result: validationResult(true),
         },
       ],
@@ -159,6 +170,7 @@ describe('bindExecutedTestEvidence', () => {
           attemptId: ATT,
           scope: 'implementation',
           implementationDigest: IMPL_DIGEST,
+          executionObservation: TEST_EXECUTION_OBSERVATION,
           result: validationResult(true, { fullCheckScopeAttestation: 'full_check' }),
         },
       ],
@@ -182,6 +194,7 @@ describe('bindExecutedTestEvidence', () => {
         attemptId: ATT,
         scope: 'implementation',
         implementationDigest: IMPL_DIGEST,
+        executionObservation: TEST_EXECUTION_OBSERVATION,
         result: validationResult(true),
       },
     ]);

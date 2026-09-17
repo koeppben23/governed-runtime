@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ReviewChallenge } from '../../state/evidence-review.js';
+import { IMPL_EVIDENCE, VALIDATION_PASSED, makeState } from '../../fixtures.js';
 import {
   buildArchitectureReviewPrompt,
   buildImplReviewPrompt,
@@ -9,6 +10,7 @@ import {
   renderReviewerTaskPrompt,
 } from './prompt-builders.js';
 import { renderPersistedProofGraphContext } from './proof-context.js';
+import { buildFrozenReviewMaterialContent } from './reviewer-context.js';
 import type { FrozenReviewerContext } from './frozen-reviewer-context.js';
 
 const BASE_INPUT = {
@@ -267,5 +269,97 @@ describe('repository observation and reviewer-provenance rules', () => {
     const prompt = renderReviewerTaskPrompt({ ...BASE_INPUT });
     expect(prompt).toContain('Do NOT output reviewedBy or reviewedAt.');
     expect(prompt).toContain('ReviewerFindingsInput');
+  });
+});
+
+describe('native implementation review execution-continuity semantics', () => {
+  const OBSERVED_DIGEST = 'b'.repeat(64);
+  const PRE_COMMIT_DIGEST = 'c'.repeat(64);
+  const MATERIAL_ANCHOR = 'Append the persisted review material below this line:';
+  const CONTINUITY_RULE = 'treat session-state continuity as NOT_VERIFIED';
+
+  /**
+   * Compose the canonical native reviewer prompt exactly like the production
+   * transport: the frozen review material is the sole evidence carrier, and the
+   * trusted context only carries host-owned interpretation rules.
+   */
+  function nativeComposition(stateChangedDuringExecution: boolean) {
+    const state = makeState('IMPL_REVIEW', {
+      implementation: IMPL_EVIDENCE,
+      validationAttempts: [
+        {
+          attemptId: '22222222-2222-4222-8222-222222222222',
+          scope: 'implementation',
+          implementationDigest: IMPL_EVIDENCE.digest,
+          executionObservation: {
+            executionObservedStateDigest: OBSERVED_DIGEST,
+            preCommitStateDigest: stateChangedDuringExecution ? PRE_COMMIT_DIGEST : OBSERVED_DIGEST,
+          },
+          result: VALIDATION_PASSED[0]!,
+        },
+      ] as never,
+    });
+    const content = buildFrozenReviewMaterialContent({
+      obligationType: 'implement',
+      state,
+      artifact: 'the diff under review',
+    });
+    const frozenReviewerContext: FrozenReviewerContext = {
+      reviewMaterial: {
+        content,
+        materialDigest: 'd'.repeat(64),
+        subjectDigest: IMPL_EVIDENCE.digest,
+      },
+    };
+    const prompt = renderReviewerTaskPrompt({
+      ...BASE_INPUT,
+      reviewType: 'implementation',
+      frozenReviewerContext,
+      proofContext: [],
+    });
+    const anchorIndex = prompt.indexOf(MATERIAL_ANCHOR);
+    expect(anchorIndex).toBeGreaterThan(-1);
+    return {
+      trusted: prompt.slice(0, anchorIndex),
+      frozen: prompt.slice(anchorIndex),
+    };
+  }
+
+  it('carries the host-owned continuity rule in the trusted context, without duplicating evidence', () => {
+    const { trusted, frozen } = nativeComposition(true);
+
+    expect(trusted).toContain(CONTINUITY_RULE);
+    expect(trusted).toContain('NOT_VERIFIED: session-state continuity changed during execution.');
+    expect(trusted).toContain(
+      'Do not change the executed check verdict solely because of this continuity signal.',
+    );
+
+    // Evidence (digests and the derived projection) stays exclusively in the
+    // frozen material; the trusted context must not carry a second copy.
+    expect(frozen).toContain(OBSERVED_DIGEST);
+    expect(frozen).toContain(PRE_COMMIT_DIGEST);
+    expect(trusted).not.toContain(OBSERVED_DIGEST);
+    expect(trusted).not.toContain(PRE_COMMIT_DIGEST);
+  });
+
+  it('keeps an executed PASS classified as PASS under a changed continuity', () => {
+    const { frozen, trusted } = nativeComposition(true);
+
+    expect(frozen).toContain('"passed":true');
+    expect(frozen).toContain('"stateChangedDuringExecution":true');
+    expect(trusted).not.toContain('"passed":false');
+    expect(trusted).not.toContain('reclassify');
+  });
+
+  it('keeps the rule static when continuity is unchanged', () => {
+    const { trusted, frozen } = nativeComposition(false);
+
+    expect(trusted).toContain(CONTINUITY_RULE);
+    expect(frozen).toContain('"stateChangedDuringExecution":false');
+  });
+
+  it('does not inject the implementation continuity rule into non-implementation reviews', () => {
+    const prompt = renderReviewerTaskPrompt({ ...BASE_INPUT, reviewType: 'content' });
+    expect(prompt).not.toContain(CONTINUITY_RULE);
   });
 });

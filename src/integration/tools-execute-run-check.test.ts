@@ -336,6 +336,27 @@ describe('run_check', () => {
         outputDigest: 'a'.repeat(64),
       });
     });
+
+    it('persists the host-observed execution continuity with the attempt', async () => {
+      const result = await reachValidation();
+      const state = await readState(await currentSessionDir());
+      const attempt = state!.validationAttempts[0];
+      expect(attempt).toBeDefined();
+      if (!attempt) throw new TypeError('Expected a validation attempt');
+
+      // The persisted observation is the same canonical pair the tool response
+      // reports: one host-observed digest before execution, one under the lock.
+      expect(attempt.executionObservation.executionObservedStateDigest).toBe(
+        result.executionObservedStateDigest,
+      );
+      expect(attempt.executionObservation.preCommitStateDigest).toBe(result.preCommitStateDigest);
+      expect(attempt.executionObservation.executionObservedStateDigest).toMatch(/^[a-f0-9]{64}$/);
+      expect(attempt.executionObservation.preCommitStateDigest).toMatch(/^[a-f0-9]{64}$/);
+      expect(result.stateChangedDuringExecution).toBe(
+        attempt.executionObservation.executionObservedStateDigest !==
+          attempt.executionObservation.preCommitStateDigest,
+      );
+    });
   });
 
   describe('BAD', () => {

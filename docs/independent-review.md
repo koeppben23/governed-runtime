@@ -137,13 +137,46 @@ The LLM then sees the completed `reviewDispatch` response and submits the verdic
 
 ### Evidence-Grounded Implementation Review
 
-The implementation reviewer prompt carries a `## Verification Evidence (executed)`
-section built from FlowGuard-executed validation attempts, so the reviewer can
-falsify verification claims against runtime ground truth instead of inferring
-them from the diff. This evidence is executor-produced (`flowguard_run_check` via
-`src/verification/executor.ts`), never agent-reported: each row exposes the
-verification `kind`, `command`, `exitCode`, pass/fail/timeout status,
-`executionMs`, and the tamper-evident `outputDigest`.
+The frozen implementation review material
+(`buildFrozenReviewMaterialContent` in
+`src/integration/review/reviewer-context.ts`) carries a
+`Verification Evidence (host-executed)` section built from FlowGuard-executed
+validation attempts, so the reviewer can falsify verification claims against
+runtime ground truth instead of inferring them from the diff. The frozen
+material is the single canonical carrier for the native reviewer transport; no
+separate runtime re-read is injected into the prompt. This evidence is
+executor-produced (`flowguard_run_check` via `src/verification/executor.ts`),
+never agent-reported: each entry exposes the executed attempt identity
+(`attemptId`, `executedAt`), the verification `kind`, `command`, `exitCode`,
+pass/fail/timeout status, `executionMs`, the tamper-evident `outputDigest`, and
+the execution-continuity observation described below.
+
+Execution-continuity binding:
+
+- Each `implementation`-scope validation attempt persists the host-observed
+  `executionObservedStateDigest` (session state observed before the command ran)
+  and `preCommitStateDigest` (state re-read under the session write lock
+  immediately before the attempt was persisted).
+- `stateChangedDuringExecution` is a deterministic projection of that digest
+  pair (`executionObservedStateDigest !== preCommitStateDigest`). It is never
+  persisted as a second authority.
+- `committedStateDigest` deliberately stays out of the attempt record: the
+  attempt is itself part of the committed state, so persisting it would create a
+  recursive self-binding.
+- A changed continuity is a **continuity caveat, not a verdict on the check**.
+  The canonical reviewer prompt carries a host-owned rule: when frozen
+  host-executed verification evidence records
+  `stateChangedDuringExecution: true`, the reviewer treats session-state
+  continuity as
+  `NOT_VERIFIED: session-state continuity changed during execution.` and never
+  changes the executed check verdict solely because of that signal.
+- The continuity caveat is deliberately silent about subject re-attestation.
+  Under the lock the request and the validation subject are re-validated and
+  the execution subject is re-attested before persistence, so an executed PASS
+  is bound to an unchanged subject; a subject-changed execution is persisted as
+  BLOCKED, never as PASS. Because the evidence section can also contain earlier
+  non-passing attempts, the caveat must not be read as a universal
+  subject-binding guarantee.
 
 Fail-closed binding rules:
 
@@ -153,17 +186,18 @@ Fail-closed binding rules:
   attempts, and foreign-digest attempts are excluded, so the reviewer never
   verifies claims against outdated ground truth
   (`stateVerificationEvidence` in `src/integration/review/shared-helpers.ts`).
-- **No silent omission.** When no bound evidence exists, the section renders an
-  explicit `NOT_VERIFIED: no executed verification evidence is bound to the
-current implementation digest.` line rather than being dropped — "no bound
-  evidence" is itself a review signal.
+- **No silent omission.** When no bound evidence exists, the SDK prompt builder
+  renders an explicit `NOT_VERIFIED: no executed verification evidence is bound
+to the current implementation digest.` line rather than being dropped — "no
+  bound evidence" is itself a review signal.
 - **Read-only reviewer preserved.** FlowGuard executes the checks; the reviewer
   model does not. The reviewer stays strictly read-only (`bash: deny`), and the
   reviewer criteria (`REVIEWER_CRITERIA`) are unchanged — the behavior lives in
   the prompt builder, not in a new review authority.
-- **Enforcement-safe.** The section is emitted after the attestation/context
-  block and uses neutral field labels (`durationMs`, `digest`) so it can never
-  introduce `iteration`/`version`-adjacent digits into the reviewer prompt.
+- **Enforcement-safe.** The evidence section is emitted after the
+  attestation/context block and uses neutral field labels (`durationMs`,
+  `digest`) so it can never introduce `iteration`/`version`-adjacent digits into
+  the reviewer prompt.
 
 This surfaces executed evidence to the reviewer; it does not yet _require_ that
 the checks were executed before review (a `NOT_VERIFIED` section is still a valid

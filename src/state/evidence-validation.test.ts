@@ -10,11 +10,12 @@
 import { describe, it, expect } from 'vitest';
 import {
   ValidationAttempt,
+  ValidationExecutionObservation,
   ValidationResult,
   classifyValidationDisposition,
   isExecutionError,
 } from './evidence-validation.js';
-import { FIXED_TIME } from './evidence-test-constants.js';
+import { FIXED_TIME, TEST_EXECUTION_OBSERVATION } from './evidence-test-constants.js';
 
 const VALID_DIGEST = 'a'.repeat(64);
 
@@ -104,6 +105,7 @@ describe('evidence-validation', () => {
         attemptId: '00000000-0000-4000-8000-000000000001',
         scope: 'baseline',
         planDigest: 'plan-digest',
+        executionObservation: TEST_EXECUTION_OBSERVATION,
         result: {
           checkId: 'test',
           passed: true,
@@ -121,6 +123,15 @@ describe('evidence-validation', () => {
       expect(result.scope).toBe('baseline');
       if (result.scope !== 'baseline') throw new Error('Expected baseline validation attempt');
       expect(result.planDigest).toBe('plan-digest');
+      expect(result.executionObservation).toEqual(TEST_EXECUTION_OBSERVATION);
+    });
+
+    it('ValidationExecutionObservation accepts two distinct 64-hex state digests', () => {
+      const observation = {
+        executionObservedStateDigest: 'b'.repeat(64),
+        preCommitStateDigest: 'c'.repeat(64),
+      };
+      expect(ValidationExecutionObservation.parse(observation)).toEqual(observation);
     });
   });
 
@@ -216,6 +227,7 @@ describe('evidence-validation', () => {
           attemptId: '00000000-0000-4000-8000-000000000001',
           scope: 'implementation',
           planDigest: 'plan-digest',
+          executionObservation: TEST_EXECUTION_OBSERVATION,
           result: {
             checkId: 'test',
             passed: true,
@@ -229,6 +241,47 @@ describe('evidence-validation', () => {
             timedOut: false,
             outcome: 'supported' as const,
           },
+        }),
+      ).toThrow();
+    });
+
+    it('rejects a validation attempt without the execution observation', () => {
+      expect(() =>
+        ValidationAttempt.parse({
+          attemptId: '00000000-0000-4000-8000-000000000001',
+          scope: 'baseline',
+          planDigest: 'plan-digest',
+          result: {
+            checkId: 'test',
+            passed: true,
+            detail: 'All tests pass',
+            executedAt: FIXED_TIME,
+            kind: 'test',
+            command: 'npm test',
+            exitCode: 0,
+            executionMs: 1500,
+            outputDigest: VALID_DIGEST,
+            timedOut: false,
+            outcome: 'supported' as const,
+          },
+        }),
+      ).toThrow();
+    });
+
+    it('rejects an execution observation with a malformed state digest', () => {
+      expect(() =>
+        ValidationExecutionObservation.parse({
+          executionObservedStateDigest: 'not-hex',
+          preCommitStateDigest: 'c'.repeat(64),
+        }),
+      ).toThrow();
+    });
+
+    it('rejects an execution observation with unknown fields', () => {
+      expect(() =>
+        ValidationExecutionObservation.parse({
+          ...TEST_EXECUTION_OBSERVATION,
+          stateChangedDuringExecution: false,
         }),
       ).toThrow();
     });

@@ -6,6 +6,7 @@ import {
   type ReviewVerificationEvidenceItem,
 } from './prompt-builders.js';
 import type { DiscoveryReviewContext } from './discovery-context-prompt.js';
+import { TEST_EXECUTION_OBSERVATION } from '../../state/evidence-test-constants.js';
 
 // Slice 1 (evidence-grounded review): the implementation reviewer prompt must
 // carry FlowGuard-executed verification evidence bound to the current
@@ -24,6 +25,8 @@ const PASS_ITEM: ReviewVerificationEvidenceItem = {
   outputDigest: 'a'.repeat(64),
   detail: '42 passed',
   executedAt: '2026-01-01T00:00:00.000Z',
+  ...TEST_EXECUTION_OBSERVATION,
+  stateChangedDuringExecution: false,
 };
 
 const FAIL_ITEM: ReviewVerificationEvidenceItem = {
@@ -37,6 +40,8 @@ const FAIL_ITEM: ReviewVerificationEvidenceItem = {
   outputDigest: 'b'.repeat(64),
   detail: '1 error',
   executedAt: '2026-01-01T00:00:01.000Z',
+  ...TEST_EXECUTION_OBSERVATION,
+  stateChangedDuringExecution: false,
 };
 
 const TIMEOUT_ITEM: ReviewVerificationEvidenceItem = {
