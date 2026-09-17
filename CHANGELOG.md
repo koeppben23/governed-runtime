@@ -426,6 +426,23 @@ true })` returns the evaluated projection. Key invariants:
 
 ### Changed
 
+- **BREAKING (hard epoch): ProofGraph manual claim identity comes from the
+  single identity authority.** `/declare-contract` carried a second UUIDv5
+  minting implementation seeded only by the raw statement, with its own copy of
+  the claim namespace and no canonical statement normalization. Two
+  semantically identical manual declarations could therefore receive different
+  ids, and the merged-collision check ran outside the canonical identity space.
+  Manual claims now mint through `mintProofGraphClaimId` in the `manual`
+  identity domain; the authority fixes the reserved manual scope internally
+  (`manual` identity inputs carry no authority section) and normalizes the
+  statement seed. The duplicate mint in `integration/tools/declare-contract.ts`
+  is removed and an architecture guard forbids a second claim-id authority and
+  any consumer naming the reserved scope. Domains stay distinct by contract:
+  the same statement in the plan or architecture domain is a different claim,
+  never a collision. Manual claim ids created by earlier prereleases are not
+  migrated (no compatibility path); a re-declaration of such a claim is no
+  longer detected as an existing identity.
+
 - **BREAKING: prerelease session-state compatibility is explicitly bounded (UP1).**
   A stable `schemaVersion` does not guarantee forward compatibility when a
   release requires a stronger persisted evidence contract. In particular,

@@ -22,26 +22,66 @@ import * as crypto from 'node:crypto';
 /** RFC 4122 DNS namespace, used to derive stable UUIDv5 claim identities. */
 const CLAIM_NAMESPACE = Buffer.from('6ba7b8109dad11d180b400c04fd430c8', 'hex');
 
-function normalizeClaimStatement(statement: string): string {
+/**
+ * Reserved authority-section scope for `manual` claims. It is internal to the
+ * identity authority: a manual declaration has no governing authority section,
+ * so callers cannot name one for it (see `ProofGraphClaimIdentityInput`).
+ */
+const MANUAL_CLAIM_SCOPE = 'manual-contract';
+
+/**
+ * Identity input of a ProofGraph claim.
+ *
+ * Only the authority domains carry an authority section. The `manual` domain
+ * deliberately has none — the authority fixes the reserved manual scope
+ * internally, so no caller can mint a manual claim under a foreign scope.
+ */
+export type ProofGraphClaimIdentityInput =
+  | {
+      readonly domain: 'plan' | 'architecture';
+      readonly statement: string;
+      readonly authoritySectionId: string;
+    }
+  | {
+      readonly domain: 'manual';
+      readonly statement: string;
+    };
+
+/**
+ * Identity domain of a ProofGraph claim — derived from the identity input so
+ * the domain vocabulary has exactly one structural definition.
+ *
+ * - `plan` / `architecture`: claims declared against an approved authority and
+ *   bound by that authority's approval certificate.
+ * - `manual`: evidence-bound claims declared directly at the implementation
+ *   write boundary, which carry no approval certificate and remain advisory.
+ *
+ * The domain is PART of the claim identity: the same statement in different
+ * domains is a different claim with a distinct identity. Domain scopes must
+ * never be collapsed into statement equality.
+ */
+export type ProofGraphClaimDomain = ProofGraphClaimIdentityInput['domain'];
+
+/**
+ * Canonical statement key of a claim identity. Two statements that differ only
+ * in surrounding/interior whitespace or casing are the SAME claim statement.
+ */
+export function normalizeClaimStatement(statement: string): string {
   return statement.trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
 /**
  * Derive a deterministic UUIDv5 for a claim so that identical declarations
- * in the same authority section produce the same claimId across idempotent
- * retries, while the same statement in a different authority section or flow
- * produces a distinct identity.
+ * in the same identity domain and authority section produce the same claimId
+ * across idempotent retries, while the same statement in a different authority
+ * section or domain produces a distinct identity.
  */
-export function mintProofGraphClaimId(input: {
-  flow: 'plan' | 'architecture';
-  statement: string;
-  authoritySectionId: string;
-}): string {
-  const seed = [
-    input.flow,
-    input.authoritySectionId,
-    normalizeClaimStatement(input.statement),
-  ].join('\u001f');
+export function mintProofGraphClaimId(input: ProofGraphClaimIdentityInput): string {
+  const authoritySectionId =
+    input.domain === 'manual' ? MANUAL_CLAIM_SCOPE : input.authoritySectionId;
+  const seed = [input.domain, authoritySectionId, normalizeClaimStatement(input.statement)].join(
+    '\u001f',
+  );
   const hash = crypto.createHash('sha1').update(CLAIM_NAMESPACE).update(seed, 'utf8').digest();
   hash[6] = (hash[6]! & 0x0f) | 0x50; // version 5
   hash[8] = (hash[8]! & 0x3f) | 0x80; // RFC 4122 variant
@@ -86,7 +126,7 @@ export function normalizeArchitectureClaims(
   return claims?.map((claim) => ({
     ...claim,
     claimId: mintProofGraphClaimId({
-      flow: 'architecture',
+      domain: 'architecture',
       statement: claim.statement,
       authoritySectionId: claim.authoritySectionId,
     }),
@@ -103,7 +143,7 @@ export function normalizePlanClaims(
   return claims?.map((claim) => ({
     ...claim,
     claimId: mintProofGraphClaimId({
-      flow: 'plan',
+      domain: 'plan',
       statement: claim.statement,
       authoritySectionId: claim.authoritySectionId,
     }),

@@ -1036,6 +1036,12 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
 
   // ── Base profile: measured admission verdicts (base full run 2026-09-17) ──
   deferred(
+    'src/state/proofgraph-approval.ts',
+    'ProofGraph claim identity, declarations, and approval certificates',
+    'Targeted diagnostic 2026-09-17 on the claim-id SSOT branch (base config, mutate=src/state/proofgraph-approval.ts): 41.00% total / 58.57% covered (41 killed / 29 survived / 30 no-coverage / 74 TypeScript-checker errors). No-coverage sits in architecture-certificate verification and the certificate-invalid path of authorizedCriticalPlanClaimIds; survivors are dominated by schema-method and conditional mutants. Below the admission gate: stays backlog with the measured verdict recorded.',
+    { profile: 'base', source: [SOURCE.trustBoundaries] },
+  ),
+  deferred(
     'src/adapters/git.ts',
     'Git subprocess boundary',
     'Measured 37.42% baseline and 57.06% after one focused behavior-test pass (91 killed / 60 survived / 10 uncovered, base profile 2026-09-17); below the admission gate, so it stays backlog with the measured post-pass verdict recorded in this tranche.',

@@ -25,6 +25,7 @@
 
 import type { TaskClass } from '../../state/schema.js';
 import type { CounterexampleRequirement } from '../../state/proofgraph-approval.js';
+import { normalizeClaimStatement } from '../../state/proofgraph-approval.js';
 import type { VerificationCandidate } from '../../state/discovery-schemas.js';
 import {
   ASSERTION_FORMATS_BY_PROVIDER,
@@ -39,8 +40,10 @@ export type ClaimContractSource = 'plan' | 'declare_contract';
 /**
  * Normalized declaration under validation.
  *
- * `/declare-contract` derives its claim id from the statement, so `claimId` is
- * optional here and identity collisions are reported against the statement.
+ * `/declare-contract` mints its claim id through the canonical identity
+ * authority (`mintProofGraphClaimId` in `state/proofgraph-approval.ts`), so
+ * `claimId` is optional here and identity collisions are reported against the
+ * statement.
  */
 export interface NormalizedClaimDeclaration {
   readonly claimId?: string;
@@ -148,11 +151,26 @@ function invalid(
   };
 }
 
+/**
+ * Within-batch duplicate key. Plan declarations are identified by their minted
+ * claimId; manual declarations are identified by the canonical normalized
+ * statement key — the same key the identity authority seeds a manual claim id
+ * with, so batch and merge collision rules cannot drift apart.
+ */
+function duplicateIdentityKey(
+  source: ClaimContractSource,
+  claim: NormalizedClaimDeclaration,
+): string {
+  return source === 'plan' && claim.claimId
+    ? claim.claimId
+    : normalizeClaimStatement(claim.statement);
+}
+
 /** Rule 2: identity must be unique, or two declarations collapse into one claim. */
 function checkUniqueIdentity(input: ClaimContractInput): ClaimContractResult | null {
   const seen = new Set<string>();
   for (const claim of input.claims) {
-    const identity = claimRef(input.source, claim);
+    const identity = duplicateIdentityKey(input.source, claim);
     if (seen.has(identity)) {
       return invalid(
         input.source,
@@ -160,7 +178,7 @@ function checkUniqueIdentity(input: ClaimContractInput): ClaimContractResult | n
         'claimId',
         input.source === 'plan'
           ? 'duplicate claimId; every declaration needs its own identity'
-          : 'duplicate statement; the claim id is derived from it, so two identical statements collapse into one claim',
+          : 'duplicate statement; the claim id is derived from its normalized form, so two statements differing only in whitespace or casing collapse into one claim',
       );
     }
     seen.add(identity);

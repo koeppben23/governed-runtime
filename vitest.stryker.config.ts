@@ -91,6 +91,11 @@ export default defineConfig({
       'src/integration/review/enforcement/challenge-binding.test.ts',
       'src/state/state.test.ts',
       'src/state/evidence-mutation-episode.test.ts',
+      // Covering suite of the proofgraph-approval identity authority. The
+      // authority is mutation-admission backlog with a measured diagnostic
+      // (see MUTATION_AUTHORITY_INVENTORY); the suite stays selected so that
+      // verdict remains reproducible.
+      'src/state/proofgraph-approval.test.ts',
     ],
     exclude: [
       'src/security/actions-pinning.test.ts',
