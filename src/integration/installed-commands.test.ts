@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   INSTALLED_COMMANDS,
   INSTALLED_TEMPLATE_FILES,
+  preferredInvocationForTool,
   visibleAliasesForDefinition,
 } from './installed-commands.js';
 import { COMMANDS } from '../templates/commands/index.js';
@@ -168,5 +169,46 @@ describe('installed command catalogue', () => {
       flowguard_ticket: ['/task'],
       flowguard_run_check: [],
     });
+  });
+});
+
+describe('preferred invocation and visible aliases contract', () => {
+  it('prefers the primary invocation per tool and ignores non-primary definitions', () => {
+    const tools = new Set(INSTALLED_COMMANDS.map((definition) => definition.target.toolName));
+
+    for (const tool of tools) {
+      const primary = INSTALLED_COMMANDS.find(
+        (definition) => definition.target.toolName === tool && definition.visibility === 'primary',
+      );
+      expect(preferredInvocationForTool(tool), tool).toBe(primary?.invocation);
+    }
+  });
+
+  it('derives archive aliases from the catalogue and excludes compatibility definitions', () => {
+    const archiveDefinitions = INSTALLED_COMMANDS.filter(
+      (definition) => definition.target.toolName === TOOL_FLOWGUARD_ARCHIVE,
+    );
+    expect(archiveDefinitions.length).toBeGreaterThan(0);
+
+    for (const definition of archiveDefinitions) {
+      const expected = INSTALLED_COMMANDS.filter(
+        (candidate) =>
+          candidate.target.toolName === TOOL_FLOWGUARD_ARCHIVE &&
+          candidate.invocation !== definition.invocation &&
+          candidate.visibility !== 'compatibility',
+      ).map((candidate) => candidate.invocation);
+      expect(visibleAliasesForDefinition(definition), definition.invocation).toEqual(expected);
+    }
+  });
+
+  it('never surfaces visible aliases for non-archive tools', () => {
+    const nonArchive = INSTALLED_COMMANDS.filter(
+      (definition) => definition.target.toolName !== TOOL_FLOWGUARD_ARCHIVE,
+    );
+    expect(nonArchive.length).toBeGreaterThan(0);
+
+    for (const definition of nonArchive) {
+      expect(visibleAliasesForDefinition(definition), definition.invocation).toEqual([]);
+    }
   });
 });

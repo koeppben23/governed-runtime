@@ -81,7 +81,6 @@
     "src/integration/tools/audit-outbox.ts",
     "src/templates/codex-plugin.ts",
     "src/templates/claude-code-plugin.ts",
-    "src/templates/mandates.ts",
     "src/integration/review/enforcement/enforcement.ts",
     "src/integration/review/enforcement/findings-consistency.ts",
     "src/integration/review/enforcement/challenge-consistency.ts",

@@ -253,3 +253,98 @@ describe('bindAssertionEvidence', () => {
     }
   });
 });
+
+describe('bindAssertionEvidence diagnostics contract', () => {
+  it('rejects a requirement without an assertion identity and explains why', () => {
+    const result = bindAssertionEvidence({
+      requirement: { kind: 'aggregate_check', checkId: 'test' } as CounterexampleRequirement,
+      checkId: 'test',
+      extraction: extractedResult('pytest', 'pytest_json', [
+        { localId: 'tests/test_user.py::test_create', status: 'passed' },
+      ]),
+    });
+
+    expect(result.status).toBe('rejected');
+    if (result.status === 'rejected') {
+      expect(result.reasonCode).toBe('evidence_missing');
+      expect(result.detail).toContain('does not bind a specific assertion');
+    }
+  });
+
+  it('names the required assertion and reports an empty candidate list', () => {
+    const result = bindAssertionEvidence({
+      requirement: requirement('pytest', 'tests/test_user.py::test_create'),
+      checkId: 'test',
+      extraction: extractedResult('pytest', 'pytest_json', []),
+    });
+
+    expect(result.status).toBe('rejected');
+    if (result.status === 'rejected') {
+      expect(result.reasonCode).toBe('assertion_mismatch');
+      expect(result.detail).toContain('tests/test_user.py::test_create');
+      expect(result.detail).toContain('found: none');
+    }
+  });
+
+  it('lists the candidate assertion identities on mismatch', () => {
+    const result = bindAssertionEvidence({
+      requirement: requirement('pytest', 'tests/test_user.py::test_create'),
+      checkId: 'test',
+      extraction: extractedResult('pytest', 'pytest_json', [
+        { localId: 'tests/test_user.py::test_delete', status: 'passed' },
+        { localId: 'tests/test_user.py::test_update', status: 'passed' },
+      ]),
+    });
+
+    expect(result.status).toBe('rejected');
+    if (result.status === 'rejected') {
+      expect(result.detail).toContain('tests/test_user.py::test_delete');
+      expect(result.detail).toContain('tests/test_user.py::test_update');
+    }
+  });
+
+  it('explains a provider mismatch on the extraction', () => {
+    const result = bindAssertionEvidence({
+      requirement: requirement('pytest', 'test_create'),
+      checkId: 'test',
+      extraction: extractedResult('vitest', 'vitest_json', [
+        { localId: 'test_create', status: 'passed' },
+      ]),
+    });
+
+    expect(result.status).toBe('rejected');
+    if (result.status === 'rejected') {
+      expect(result.detail).toContain("required 'pytest'");
+      expect(result.detail).toContain("got 'vitest'");
+    }
+  });
+
+  it('explains a provider mismatch on the matched assertion', () => {
+    const result = bindAssertionEvidence({
+      requirement: requirement('pytest', 'test_foo'),
+      checkId: 'test',
+      extraction: extractedResult('pytest', 'pytest_json', [
+        { localId: 'test_foo', status: 'passed', providerId: 'jest' },
+      ]),
+    });
+
+    expect(result.status).toBe('rejected');
+    if (result.status === 'rejected') {
+      expect(result.reasonCode).toBe('provider_mismatch');
+      expect(result.detail).toContain("assertion belongs to 'jest'");
+    }
+  });
+
+  it('explains a missing structured assertion capability', () => {
+    const result = bindAssertionEvidence({
+      requirement: requirement('pytest', 'test_foo'),
+      checkId: 'test',
+      extraction: { status: 'not_configured' },
+    });
+
+    expect(result.status).toBe('rejected');
+    if (result.status === 'rejected') {
+      expect(result.detail).toBe('no structured assertion capability configured');
+    }
+  });
+});

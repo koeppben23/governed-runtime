@@ -67,17 +67,17 @@ local composite-action dependencies: external GitHub Actions must use full
 40-character lowercase commit SHAs, local actions under `./` are allowed, local
 and Docker actions are allowed only when pinned by `sha256` digest.
 
-The `mutation` job runs StrykerJS mutation testing against 86 security-critical
+The `mutation` job runs StrykerJS mutation testing against 85 security-critical
 files spanning adapters (persistence-lock, host-adapter, persistence, IP validation),
 archive creation,
 publication, inventory validation, and digesting,
 audit (integrity + completeness + NTP + types), config (policy + policy snapshot + reasons + profile), hooks (HTTP hook server + command pre-tool-use + shared obligation-tracker +
 phase-gate), identity (token-verifier + key-resolver), integration
 (installed-commands, tool-classification, discovery-risk-paths, pre-implementation challenge, architecture submit, review-validation-mode,
-plugin-audit, plugin-audit-reconcile, plugin-beforehooks, plugin-afterhooks, plugin-helpers, audit-outbox, plugin-audit-lifecycle-reason, review enforcement, review orchestrator,
-orchestrator detection/output, dispatch signal, and agent resolution), logging (error-serialize),
+plugin-audit, plugin-audit-reconcile, plugin-beforehooks, plugin-afterhooks, plugin-helpers, audit-outbox, plugin-audit-lifecycle-reason, review enforcement,
+dispatch signal, and agent resolution), logging (error-serialize),
 templates (codex-plugin, claude-code-plugin, mandates),
-shared canonical JSON, machine (commands, evaluate, guards, next-action, validation-evidence), and
+shared canonical JSON, machine (commands, evaluate, guards, workflow-directive, validation-evidence), and
 rails (architecture, hydrate, review, URL review transport, review-decision, review-evidence-resolution,
 ticket). It uploads a
 mutation report artifact (`reports/mutation/`) and enforces the `break: 80`
@@ -89,7 +89,7 @@ workflow runs. It is intentionally not a pull-request required check; see
 
 | Directory            | What It Tests                                                 |
 | -------------------- | ------------------------------------------------------------- |
-| `src/machine/`       | State transitions, guards, evaluate, next-action, invariants  |
+| `src/machine/`       | State transitions, guards, evaluate, workflow directives      |
 | `src/rails/`         | Rail executors (hydrate, plan, review, implement, etc.)       |
 | `src/state/`         | Schema validation, evidence structures                        |
 | `src/config/`        | Policy resolution, profiles, policy snapshots                 |
@@ -163,10 +163,29 @@ detect semantic errors, not just that code is executed (coverage alone cannot pr
 The canonical Stryker gate applies an aggregate `break: 80` threshold across all
 mutated modules (`stryker.conf.json`). There are no per-area lower thresholds.
 
-For integrity-critical modules, FlowGuard additionally requires an individual
-targeted score of at least 80 before a module is admitted to the canonical
-mutate scope. This admission rule is verified through a targeted `--mutate` run;
-it is not a separate Stryker configuration or a lower per-area threshold.
+Admission policy (applied per profile): Targeted runs are diagnostic only.
+Admission evidence is the profile full run. In that run the aggregate score
+must meet the break threshold. Newly admitted targets — named explicitly via
+`--require-selectors` — must additionally meet the per-target break threshold;
+range selectors are scored only over mutants whose `location` lies inside the
+declared range. Legacy targets below the per-target threshold are reported as
+a note and remain tracked for test hardening. `scripts/verify-mutation-admission.mjs`
+validates the report against the mutation-testing-elements structure, requires
+the report's file set to match the profile's selectors exactly, and fails
+closed on missing targets, invalid mutant shapes, unknown statuses, or
+aggregate/required-selector scores below the threshold. `--write-manifest` persists
+the profile, config digest, report digest, commit SHA and run timestamp;
+`--manifest` re-verifies those bindings against the profile config, the report
+bytes and HEAD, and `--emit-admission` refuses to emit without a verified
+manifest. Admission records are historical and immutable; later runs never
+rewrite them.
+
+The machine-readable scope authority is
+`src/architecture/__tests__/mutation-authority-inventory.ts`. It classifies
+every authority under the declared roots as `required`, `admission-backlog`, or
+`not-mutation-suitable`, and the architecture guard enforces
+`required ⊆ mutate`, reverse closure per profile, and coverage of every
+production file under an authority root.
 
 `StringLiteral`, `ArrayDeclaration`, and `Regex` mutators are excluded globally
 because they produce low-signal literal churn in governance template and schema
@@ -176,8 +195,9 @@ protects a security-relevant literal: `stryker.identity-jwks.conf.json` enables
 
 ### Scope
 
-89 files are mutated, covering the fail-closed governance core
-(see `stryker.conf.json` for the canonical list):
+85 files are mutated in the base profile, covering the fail-closed governance
+core (see `stryker.conf.json` for the canonical list; the authority inventory
+above is the classification authority):
 
 | Area                                                                                                                                        | Files  | Representative score            |
 | ------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------------------------------- |
@@ -194,12 +214,12 @@ protects a security-relevant literal: `stryker.identity-jwks.conf.json` enables
 | Integration Review (`enforcement`, `findings-consistency`, `challenge-consistency`, `challenge-binding`, agent resolution, dispatch signal) | 6      | see `reports/mutation/`         |
 | State (`evidence-mutation-episode`)                                                                                                         | 1      | see `reports/mutation/`         |
 | Verification/Discovery (`execution-subject`, `verification-planner`)                                                                        | 2      | see `reports/mutation/`         |
-| Templates (`codex-plugin`, `claude-code-plugin`, `mandates`)                                                                                | 3      | see `reports/mutation/`         |
+| Templates (`codex-plugin`, `claude-code-plugin`)                                                                                            | 2      | see `reports/mutation/`         |
 | Shared (`canonical-json`)                                                                                                                   | 1      | see `reports/mutation/`         |
 | Logging (`error-serialize`)                                                                                                                 | 1      | see `reports/mutation/`         |
-| Machine (`commands`, `evaluate`, `guards`, `next-action`, `validation-evidence`)                                                            | 5      | see `reports/mutation/`         |
+| Machine (`commands`, `evaluate`, `guards`, `workflow-directive`, `validation-evidence`)                                                     | 5      | see `reports/mutation/`         |
 | Rails (`architecture`, `hydrate`, `review`, `review-url`, `review-decision`, `ticket`, plan and review evidence)                            | 8      | see `reports/mutation/`         |
-| **Total**                                                                                                                                   | **86** | uploaded as `reports/mutation/` |
+| **Total**                                                                                                                                   | **85** | uploaded as `reports/mutation/` |
 
 Per-file mutation scores are produced fresh in CI; consult the latest
 `reports/mutation/` artifact for current numbers.
@@ -222,10 +242,95 @@ Survivor analysis remains part of normal security-critical test maintenance.
 - **CompileError**: Mutant was rejected by the TypeScript checker. The count varies per mutation run; see the HTML report under `reports/mutation/` for the current run's numbers. CompileError results are expected in TypeScript-heavy governance code because literal unions, strict object shapes, and typed return contracts reject many invalid mutations before tests run.
 - **Timeout**: Mutant caused infinite loop or excessive runtime — also detected.
 
+### Admission Backlog
+
+Every authority that is not yet in a mutate profile is listed here explicitly
+(the machine-readable authority is
+`src/architecture/__tests__/mutation-authority-inventory.ts`). A target leaves
+this backlog only through a profile full run that proves the per-target and
+aggregate thresholds; a score below the threshold never converts a target into
+`not-mutation-suitable` by itself.
+
+Candidate authorities awaiting admission (basis profile unless noted):
+
+- `src/machine/topology.ts`
+- `src/config/flowguard-config.ts`
+- `src/audit/canonical-digest.ts`
+- `src/audit/constant-time.ts`
+- `src/adapters/git.ts`
+- `src/adapters/frozen-repository.ts`
+- `src/adapters/implementation-base-authority.ts`
+- `src/adapters/implementation-entry-guard.ts`
+- `src/state/runtime-lease.ts`
+- `src/state/schema.ts`
+- `src/state/policy-mode.ts`
+- `src/shared/hashing.ts`
+- `src/redaction/export-redaction.ts`
+- `src/integration/review/reviewed-digest.ts`
+- `src/integration/review/findings-hash.ts`
+- `src/integration/tools/record-mutation-evidence.ts`
+- `src/integration/tools/reconcile-mutation-episode.ts`
+- `src/integration/plugin-mutation-episodes.ts`
+- `src/mcp-server/server.ts`
+- `src/mcp-server/schema-converter.ts`
+- `src/hooks/post-tool-use.ts`
+
+Evidence-layer candidates with a recorded diagnostic result (a targeted run is
+diagnostic only; these targets must close their test gaps first):
+
+- `src/state/evidence-validation.ts` (18.68%)
+- `src/integration/review/shared-helpers.ts` (68.66%)
+- `src/integration/tools/run-check-result.ts` (0.00%)
+
+Reason-catalog authorities (base-regime diagnostic required before admission):
+
+- `src/config/reasons-architecture.ts`
+- `src/config/reasons-envelope.ts`
+- `src/config/reasons-infra.ts`
+- `src/config/reasons-mutation.ts`
+- `src/config/reasons-precondition.ts`
+- `src/config/reasons-proofgraph.ts`
+- `src/config/reasons-validation.ts`
+- `src/config/reasons-validation-observation.ts`
+- `src/config/reasons-validation-review.ts`
+- `src/config/reasons-validation-structured.ts`
+
+Deep authority expansion bundle:
+
+- `src/adapters/persistence-core.ts`
+- `src/adapters/persistence-config.ts`
+- `src/config/policy-resolver.ts`
+- `src/config/policy-central.ts`
+- `src/config/policy-ci.ts`
+- `src/config/policy-types.ts`
+- `src/config/profile-types.ts`
+- `src/audit/proofgraph/mutation-report.ts`
+- `src/audit/proofgraph/mutation-binder.ts`
+
+Mandates profile: `src/rendering/mandates-renderer.ts`.
+
+Deferred surfaces (whole roots behind the admission gate):
+`src/config/**`, `src/state/**`, `src/shared/**`, `src/audit/**`,
+`src/adapters/**`, `src/identity/**`, `src/verification/**`, `src/discovery/**`,
+`src/logging/**`, `src/hooks/**`, `src/mcp-server/**`, `src/templates/**`,
+`src/presentation/**`, `src/integration/**`.
+
+Explicitly not mutation-suitable:
+
+- `src/config/reasons-types.ts` — type-only module.
+- `src/shared/policy-digest.ts` — pure re-export.
+- `src/machine/command-help.ts` — static help text projection.
+
 ### Running Locally
 
 ```bash
-npm run mutation    # Runs scripts/stryker-patch.js pre-flight + stryker run
+npm run mutation    # Runs scripts/stryker-patch.js pre-flight + base profile
+node scripts/verify-mutation-admission.mjs --profile base \
+  --write-manifest reports/mutation/admission-manifest-base.json
+
+# Re-verify the persisted admission evidence (profile/config/report/commit)
+node scripts/verify-mutation-admission.mjs --profile base \
+  --manifest reports/mutation/admission-manifest-base.json
 ```
 
 The pre-flight script applies version-guarded workarounds for
@@ -241,4 +346,24 @@ configuration:
 
 ```bash
 node scripts/stryker-patch.js && npx stryker run stryker.identity-jwks.conf.json
+node scripts/verify-mutation-admission.mjs --profile identity-jwks \
+  --write-manifest reports/mutation/admission-manifest-identity-jwks.json
+```
+
+The mandates profile runs on pull requests that change mandate surfaces:
+
+```bash
+node scripts/stryker-patch.js && npx stryker run stryker.mandates.conf.json
+node scripts/verify-mutation-admission.mjs --profile mandates \
+  --write-manifest reports/mutation/admission-manifest-mandates.json
+```
+
+The human-projection profile is reusable locally but has no dedicated CI
+workflow yet; adding one requires a full-profile run that proves every target
+meets the per-target threshold first:
+
+```bash
+node scripts/stryker-patch.js && npx stryker run stryker.human-projection.conf.json
+node scripts/verify-mutation-admission.mjs --profile human-projection \
+  --write-manifest reports/mutation/admission-manifest-human-projection.json
 ```

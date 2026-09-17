@@ -5,10 +5,12 @@ import { defineConfig } from 'vitest/config';
  * Exercises the projection authority (reason-copy, reason-projection,
  * human-projection, markdown renderer) plus the surfaces that consume it.
  *
- * This is a reusable targeted mutation profile: run it locally with
+ * This is a reusable targeted mutation profile. Run it locally with
  * `node scripts/stryker-patch.js && npx stryker run stryker.human-projection.conf.json`
- * and it runs in CI as a PR check via
- * `.github/workflows/mutation-human-projection.yml`.
+ * followed by `node scripts/verify-mutation-admission.mjs --profile human-projection`.
+ * It has no dedicated CI workflow yet; `.github/workflows/mutation.yml` covers
+ * the base profile only. Adding a PR workflow requires a full-profile run that
+ * proves every target meets the per-target threshold first.
  */
 export default defineConfig({
   test: {
@@ -21,7 +23,6 @@ export default defineConfig({
       'src/integration/tools/helpers.test.ts',
       'src/integration/plugin-helpers.test.ts',
       'src/integration/proofgraph/proof-summary-projectors.test.ts',
-      'src/integration/proofgraph/claim-resolution-projector.test.ts',
       'src/architecture/__tests__/claim-resolution-ssot.test.ts',
     ],
     globals: false,

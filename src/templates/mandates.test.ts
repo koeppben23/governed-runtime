@@ -13,6 +13,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   FLOWGUARD_MANDATES_FULL_BODY,
+  FLOWGUARD_MANDATES_KERNEL,
+  MANDATES_SECTION_DEFINITIONS,
+  MANDATES_TRAILER,
   REVIEWER_AGENT,
   CLAUDE_REVIEWER_AGENT,
   CODEX_REVIEWER_SUBAGENT,
@@ -60,5 +63,33 @@ describe('mandates — contract anchors', () => {
   it('keeps the installed mandate body canonical', () => {
     expect(MANDATES_FILENAME).toBe('flowguard-mandates.md');
     expect(FLOWGUARD_MANDATES_FULL_BODY).toContain('[End of v5 Agent Rules]');
+  });
+});
+
+describe('mandate document projection contract', () => {
+  it('renders every registered section content in order and terminates with the trailer', () => {
+    const expected = MANDATES_SECTION_DEFINITIONS.map((section) => section.content).join('\n\n');
+
+    expect(FLOWGUARD_MANDATES_FULL_BODY).toContain(expected);
+    expect(FLOWGUARD_MANDATES_FULL_BODY.endsWith(`${MANDATES_TRAILER}\n`)).toBe(true);
+  });
+
+  it('renders only kernel sections into the persistent kernel', () => {
+    const kernelSections = MANDATES_SECTION_DEFINITIONS.filter(
+      (section) => 'kernel' in section && section.kernel === true,
+    );
+    const nonKernelSections = MANDATES_SECTION_DEFINITIONS.filter(
+      (section) => !('kernel' in section) || section.kernel !== true,
+    );
+
+    expect(kernelSections.length).toBeGreaterThan(0);
+    expect(nonKernelSections.length).toBeGreaterThan(0);
+    expect(FLOWGUARD_MANDATES_KERNEL).toContain(
+      kernelSections.map((section) => section.content).join('\n\n'),
+    );
+    for (const section of nonKernelSections) {
+      expect(FLOWGUARD_MANDATES_KERNEL, section.id).not.toContain(section.content);
+    }
+    expect(FLOWGUARD_MANDATES_KERNEL).not.toBe(FLOWGUARD_MANDATES_FULL_BODY);
   });
 });

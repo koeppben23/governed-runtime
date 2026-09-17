@@ -250,3 +250,53 @@ describe('config/profile/version-neutrality', () => {
     });
   });
 });
+
+describe('config/profile built-in registration contract', () => {
+  const noSignals: RepoSignals = { files: [], packageFiles: [], configFiles: [] };
+
+  it('registers every built-in profile in the default registry', () => {
+    expect([...defaultProfileRegistry.ids()].sort()).toEqual(
+      ['backend-java', 'baseline', 'frontend-angular', 'typescript'].sort(),
+    );
+  });
+
+  it('scores zero when a profile signal is absent', () => {
+    expect(javaProfile.detect!({ repoSignals: noSignals })).toBe(0);
+    expect(angularProfile.detect!({ repoSignals: noSignals })).toBe(0);
+    expect(typescriptProfile.detect!({ repoSignals: noSignals })).toBe(0);
+  });
+
+  it('keeps the earlier registration when confidence scores tie', () => {
+    const registry = new ProfileRegistry();
+    registry.register({
+      ...baselineProfile,
+      id: 'tie-first',
+      detect: () => 0.5,
+    });
+    registry.register({
+      ...baselineProfile,
+      id: 'tie-second',
+      detect: () => 0.5,
+    });
+
+    expect(registry.detect({ repoSignals: noSignals })?.id).toBe('tie-first');
+  });
+});
+
+describe('config/profile signal evaluation with non-matching inputs', () => {
+  it('scores zero when package files do not match any Java build file', () => {
+    const signals: RepoSignals = { files: [], packageFiles: ['README.md'], configFiles: [] };
+    expect(javaProfile.detect!({ repoSignals: signals })).toBe(0);
+  });
+
+  it('detects Java from build.gradle specifically', () => {
+    const signals: RepoSignals = { files: [], packageFiles: ['build.gradle'], configFiles: [] };
+    expect(javaProfile.detect!({ repoSignals: signals })).toBe(0.8);
+  });
+
+  it('scores zero when config files do not match Angular or TypeScript signals', () => {
+    const signals: RepoSignals = { files: [], packageFiles: [], configFiles: ['README.md'] };
+    expect(angularProfile.detect!({ repoSignals: signals })).toBe(0);
+    expect(typescriptProfile.detect!({ repoSignals: signals })).toBe(0);
+  });
+});

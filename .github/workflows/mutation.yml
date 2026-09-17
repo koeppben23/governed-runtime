@@ -49,6 +49,12 @@ jobs:
       - name: Run mutation tests
         run: npm run mutation
 
+      - name: Verify mutation admission
+        run: >-
+          node scripts/verify-mutation-admission.mjs --profile base
+          --report reports/mutation/mutation.json
+          --write-manifest reports/mutation/admission-manifest-base.json
+
       - name: Upload mutation report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact v7.0.1
