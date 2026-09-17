@@ -68,11 +68,13 @@ function missingCorrectnessRules(config: EffectiveConfig): string[] {
   return REQUIRED_RULES.filter((rule) => severityOf(config.rules?.[rule]) < 2);
 }
 
-/** The only metric exclusion class: test suites (allowed to be broader). */
+/**
+ * The only metric exclusion class: test suites (allowed to be broader).
+ * Mirrors the metric `ignores` patterns in `eslint.config.mjs` exactly — a
+ * divergence between this classifier and the config is a guard bug.
+ */
 function isTestFileClass(fileRel: string): boolean {
-  return (
-    fileRel.endsWith('.test.ts') || fileRel.endsWith('.spec.ts') || fileRel.includes('/__tests__/')
-  );
+  return fileRel.endsWith('.test.ts') || fileRel.includes('/__tests__/');
 }
 
 function ruleOptions(entry: unknown): Record<string, unknown> | undefined {
@@ -254,8 +256,10 @@ describe('lint scope (default-wide correctness and metrics)', () => {
 
     it('classifies test suites as the only metric exclusion class', () => {
       expect(isTestFileClass('src/a/b.test.ts')).toBe(true);
-      expect(isTestFileClass('src/a/b.spec.ts')).toBe(true);
       expect(isTestFileClass('src/a/__tests__/b.ts')).toBe(true);
+      // `.spec.ts` is NOT a test class here: the repo convention and the
+      // metric config treat it as production code.
+      expect(isTestFileClass('src/a/b.spec.ts')).toBe(false);
       expect(isTestFileClass('src/a/b.ts')).toBe(false);
     });
   });
