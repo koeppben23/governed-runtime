@@ -43,6 +43,8 @@ export default defineConfig({
       'src/integration/review/impl-review-prompt.test.ts',
       'src/integration/review/verification-evidence-projection.test.ts',
 
+      'src/shared/hashing.test.ts',
+      'src/redaction/export-redaction.test.ts',
       'src/shared/canonical-json.test.ts',
       'src/logging/error-serialize.test.ts',
 
@@ -87,6 +89,7 @@ export default defineConfig({
       // those files would be mutated without any test able to kill a mutant.
       'src/integration/runtime-lease.test.ts',
       'src/integration/review/enforcement/challenge-binding.test.ts',
+      'src/state/state.test.ts',
       'src/state/evidence-mutation-episode.test.ts',
     ],
     exclude: [

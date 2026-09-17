@@ -67,7 +67,7 @@ local composite-action dependencies: external GitHub Actions must use full
 40-character lowercase commit SHAs, local actions under `./` are allowed, local
 and Docker actions are allowed only when pinned by `sha256` digest.
 
-The `mutation` job runs StrykerJS mutation testing against 100 security-critical
+The `mutation` job runs StrykerJS mutation testing against 101 security-critical
 files spanning adapters (persistence-lock, host-adapter, persistence, IP validation),
 archive creation,
 publication, inventory validation, and digesting,
@@ -77,7 +77,7 @@ phase-gate), identity (token-verifier + key-resolver), integration
 plugin-audit, plugin-audit-reconcile, plugin-beforehooks, plugin-afterhooks, plugin-helpers, audit-outbox, plugin-audit-lifecycle-reason, review enforcement,
 dispatch signal, and agent resolution), logging (error-serialize),
 templates (codex-plugin, claude-code-plugin, mandates),
-shared canonical JSON, machine (commands, evaluate, guards, workflow-directive, validation-evidence), and
+shared canonical JSON and hashing, machine (commands, evaluate, guards, workflow-directive, validation-evidence), and
 rails (architecture, hydrate, review, URL review transport, review-decision, review-evidence-resolution,
 ticket). It uploads a
 mutation report artifact (`reports/mutation/`) and enforces the `break: 80`
@@ -196,7 +196,7 @@ protects a security-relevant literal: `stryker.identity-jwks.conf.json` enables
 
 ### Scope
 
-100 files are mutated in the base profile, covering the fail-closed governance
+101 files are mutated in the base profile, covering the fail-closed governance
 core (see `stryker.conf.json` for the canonical list; the authority inventory
 above is the classification authority):
 
@@ -216,11 +216,11 @@ above is the classification authority):
 | State (`evidence-mutation-episode`)                                                                                                                                            | 1       | see `reports/mutation/`         |
 | Verification/Discovery (`execution-subject`, `verification-planner`)                                                                                                           | 2       | see `reports/mutation/`         |
 | Templates (`codex-plugin`, `claude-code-plugin`)                                                                                                                               | 2       | see `reports/mutation/`         |
-| Shared (`canonical-json`)                                                                                                                                                      | 1       | see `reports/mutation/`         |
+| Shared (`canonical-json`, `hashing`)                                                                                                                                           | 2       | see `reports/mutation/`         |
 | Logging (`error-serialize`)                                                                                                                                                    | 1       | see `reports/mutation/`         |
 | Machine (`commands`, `evaluate`, `guards`, `workflow-directive`, `validation-evidence`)                                                                                        | 5       | see `reports/mutation/`         |
 | Rails (`architecture`, `hydrate`, `review`, `review-url`, `review-decision`, `ticket`, plan and review evidence)                                                               | 8       | see `reports/mutation/`         |
-| **Total**                                                                                                                                                                      | **100** | uploaded as `reports/mutation/` |
+| **Total**                                                                                                                                                                      | **101** | uploaded as `reports/mutation/` |
 
 Per-file mutation scores are produced fresh in CI; consult the latest
 `reports/mutation/` artifact for current numbers.
@@ -254,15 +254,13 @@ aggregate thresholds; a score below the threshold never converts a target into
 
 Candidate authorities awaiting admission (basis profile unless noted):
 
-- `src/config/flowguard-config.ts`
-- `src/audit/canonical-digest.ts`
-- `src/audit/constant-time.ts`
-- `src/adapters/git.ts`
-- `src/adapters/frozen-repository.ts`
-- `src/state/schema.ts`
-- `src/shared/hashing.ts`
-- `src/redaction/export-redaction.ts`
-- `src/mcp-server/schema-converter.ts`
+- `src/audit/canonical-digest.ts` — 75.00 % (equivalence-limited, thin evidence).
+- `src/audit/constant-time.ts` — 66.67 % with all six survivors semantically equivalent.
+- `src/adapters/git.ts` — 57.06 % after one focused behavior-test pass (base profile).
+- `src/adapters/frozen-repository.ts` — 70.37 % after one focused acquisition-boundary pass (base profile), including a production fix that keeps OVERSIZED_BLOB out of ACQUISITION_FAILED.
+- `src/state/schema.ts` — 77.78 % under the schemas profile (peer-review lifecycle residual).
+- `src/redaction/export-redaction.ts` — 63.86 % (equivalence-limited).
+- `src/mcp-server/schema-converter.ts` — 100.00 % on one valid mutant; mutant density is insufficient for authority admission (thin evidence).
 
 Evidence-layer candidates with a recorded diagnostic result (a targeted run is
 diagnostic only; these targets must close their test gaps first):
@@ -277,6 +275,8 @@ Deep authority expansion bundle:
 - `src/config/policy-types.ts` — 20 % on five valid mutants; evidence too weak.
 
 Mandates profile: `src/rendering/mandates-renderer.ts` — focused contract pass reached 72.40 % (below the per-target gate); dedicated mandates hardening pass required before admission.
+
+Schemas profile (`stryker.schemas.conf.json`): `src/config/flowguard-config.ts` — admitted 2026-09-17 at 91.11 % on its profile full run; `src/state/schema.ts` reached 77.78 % and remains in the schemas-profile backlog.
 
 Deferred surfaces (whole roots behind the admission gate):
 `src/config/**`, `src/state/**`, `src/shared/**`, `src/audit/**`,

@@ -430,6 +430,7 @@ function readRemoteBlob(identity: RepositoryIdentity, blobSha: string): Buffer {
     }
     return bytes;
   } catch (err) {
+    if (err instanceof FrozenRepositoryError) throw err;
     throw classifyExecFailure('remote blob acquisition', err);
   }
 }

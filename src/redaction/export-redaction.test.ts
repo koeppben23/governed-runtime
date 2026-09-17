@@ -3,6 +3,7 @@ import {
   redactDecisionReceipts,
   redactReviewReport,
   redactSessionState,
+  redactAuditEvent,
   redactAuditDetail,
   stableMask,
 } from './export-redaction.js';
@@ -903,5 +904,125 @@ describe('redaction/export-redaction', () => {
       const elapsed = performance.now() - start;
       expect(elapsed).toBeLessThan(5);
     });
+  });
+});
+
+describe('raw string masking and traversal guards', () => {
+  it('masks per mode with deterministic pseudonymous tokens', () => {
+    expect(stableMask('secret', 'none')).toBe('secret');
+    expect(stableMask('secret', 'basic')).toBe('[REDACTED]');
+
+    const first = stableMask('secret', 'pseudonymous');
+    expect(first).toMatch(/^\[REDACTED:[0-9a-f]{12}\]$/);
+    expect(stableMask('secret', 'pseudonymous')).toBe(first);
+    expect(stableMask('other', 'pseudonymous')).not.toBe(first);
+  });
+
+  it('preserves allow-listed keys while masking paths, sensitive and unknown keys', () => {
+    const redacted = redactSessionState(
+      {
+        decisionId: 'decision-1',
+        phase: 'PLAN',
+        worktree: '/repo',
+        workspace: '/ws',
+        sessionDir: '/sessions/s1',
+        somePath: '/p',
+        sourceDirectory: '/d',
+        dir: '/d2',
+        task_dir_name: '/d3',
+        initiatedBy: 'user@example.com',
+        custom: 'secret',
+        actorInfo: { id: 'actor-1', email: 'a@b.c', displayName: 'Actor' },
+        initiatedByIdentity: { id: 'identity-1', email: 'i@b.c', displayName: 'Initiator' },
+      },
+      'basic',
+    );
+
+    expect(redacted['decisionId']).toBe('decision-1');
+    expect(redacted['phase']).toBe('PLAN');
+    for (const key of [
+      'worktree',
+      'workspace',
+      'sessionDir',
+      'somePath',
+      'sourceDirectory',
+      'dir',
+      'task_dir_name',
+      'initiatedBy',
+      'custom',
+    ]) {
+      expect(redacted[key], key).toBe('[REDACTED]');
+    }
+    expect(redacted['actorInfo']).toMatchObject({
+      id: '[REDACTED]',
+      email: '[REDACTED]',
+      displayName: '[REDACTED]',
+    });
+    expect(redacted['initiatedByIdentity']).toMatchObject({
+      id: '[REDACTED]',
+      email: '[REDACTED]',
+      displayName: '[REDACTED]',
+    });
+  });
+
+  it('tolerates absent or non-object identity fields', () => {
+    expect(() => redactSessionState({} as never, 'basic')).not.toThrow();
+    expect(() =>
+      redactSessionState({ actorInfo: 'not-an-object', initiatedByIdentity: 42 }, 'basic'),
+    ).not.toThrow();
+  });
+
+  it('rejects nesting beyond the redaction depth limit for objects and arrays', () => {
+    const deepObject = (depth: number) => {
+      let node: Record<string, unknown> = { leaf: 'x' };
+      for (let index = 0; index < depth; index++) node = { nested: node };
+      return node;
+    };
+    const deepArray = (depth: number) => {
+      let node: unknown = 'x';
+      for (let index = 0; index < depth; index++) node = [node];
+      return { root: node };
+    };
+
+    expect(redactSessionState(deepObject(60), 'basic')).toBeDefined();
+    expect(() => redactSessionState(deepObject(70), 'basic')).toThrow(/maximum nesting depth/);
+    expect(() => redactSessionState(deepArray(70) as never, 'basic')).toThrow(
+      /maximum nesting depth/,
+    );
+  });
+
+  it('rejects circular references', () => {
+    const circular: Record<string, unknown> = { name: 'x' };
+    circular['self'] = circular;
+
+    expect(() => redactSessionState(circular, 'basic')).toThrow(/circular reference/);
+  });
+
+  it('redacts audit events without mutating the source', () => {
+    const event = {
+      actorInfo: { id: 'actor-1', email: 'a@b.c', displayName: 'Actor' },
+      detail: { errorMessage: 'failed at /home/user', tool: 'bash', custom: 'secret' },
+    };
+    const redacted = redactAuditEvent(event, 'basic');
+
+    expect(redacted['actorInfo']).toMatchObject({
+      id: '[REDACTED]',
+      email: '[REDACTED]',
+      displayName: '[REDACTED]',
+    });
+    expect((redacted['detail'] as Record<string, unknown>)['tool']).toBe('bash');
+    expect((redacted['detail'] as Record<string, unknown>)['custom']).toBe('[REDACTED]');
+    const errorMessage = (redacted['detail'] as Record<string, unknown>)['errorMessage'] as string;
+    expect(errorMessage).toContain('[path:user]');
+    expect(errorMessage).not.toContain('/home/user');
+    expect(event.actorInfo.id).toBe('actor-1');
+  });
+
+  it('returns audit events and details by reference in none mode', () => {
+    const event = { actorInfo: { id: 'actor-1' }, detail: { custom: 'secret' } };
+    expect(redactAuditEvent(event, 'none')).toEqual(event);
+
+    const detail = { custom: 'secret' };
+    expect(redactAuditDetail(detail, 'none')).toBe(detail);
   });
 });
