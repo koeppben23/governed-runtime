@@ -5,19 +5,21 @@
  * The type-aware correctness rules (`await-thenable`, `no-floating-promises`,
  * `no-unnecessary-type-assertion`, `no-misused-promises`,
  * `switch-exhaustiveness-check`) apply to EVERY TypeScript file under `src/`,
- * including tests. This guard computes the effective ESLint configuration for a
- * representative file in every `src/` directory and fails if any file would
- * fall outside that scope — the drift mode that historically left directories
- * unchecked is not representable.
+ * including tests. This guard enumerates the complete file set — no directory
+ * sampling, no `__` exclusions — and computes the effective ESLint
+ * configuration for each file. A file that is ignored, misses one of the
+ * rules, or loses type-aware project resolution fails the guard, so a later
+ * override cannot carve out a hidden blind spot.
  *
- * The negative fixtures prove the assertion logic fires on a narrowed config.
+ * The negative fixtures prove the assertion logic fires on a narrowed or
+ * non-type-aware config.
  *
- * @version v1
+ * @version v2
  */
 
 import { describe, expect, it } from 'vitest';
 import { ESLint } from 'eslint';
-import { readdirSync, statSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 
 const ROOT = resolve(join(import.meta.dirname, '..', '..', '..'));
@@ -52,52 +54,34 @@ function missingCorrectnessRules(config: EffectiveConfig): string[] {
   return REQUIRED_RULES.filter((rule) => severityOf(config.rules?.[rule]) < 2);
 }
 
-/** Whether the config resolves files through a TypeScript project. */
+/**
+ * Whether the config resolves files through a TypeScript project.
+ *
+ * Deliberately strict: `projectService: false` and `project: []` are not
+ * type-aware coverage, and must not satisfy the contract.
+ */
 function hasTypeAwareParserOptions(config: EffectiveConfig): boolean {
   const parserOptions = config.languageOptions?.parserOptions;
   if (!parserOptions) return false;
-  return parserOptions.projectService !== undefined || Array.isArray(parserOptions.project);
+  return (
+    parserOptions.projectService === true ||
+    (Array.isArray(parserOptions.project) && parserOptions.project.length > 0)
+  );
 }
 
-// ─── File collection ─────────────────────────────────────────────────────────
-
-function isTestFile(name: string): boolean {
-  return name.endsWith('.test.ts') || name.endsWith('.spec.ts');
-}
-
-function collectDirectories(dir: string): string[] {
-  const dirs: string[] = [];
+/** Every `.ts` file under `dir`, recursively — the complete protected set. */
+function collectTypeScriptFiles(dir: string): string[] {
+  const files: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (!entry.isDirectory() || entry.name.includes('node_modules') || entry.name.includes('__')) {
-      continue;
-    }
+    if (entry.name.includes('node_modules')) continue;
     const full = join(dir, entry.name);
-    dirs.push(full, ...collectDirectories(full));
-  }
-  return dirs;
-}
-
-/** First `.ts` file in `dir` matching the predicate, or undefined. */
-function firstFile(dir: string, predicate: (name: string) => boolean): string | undefined {
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (!entry.isFile() || !entry.name.endsWith('.ts') || !predicate(entry.name)) continue;
-    return join(dir, entry.name);
-  }
-  return undefined;
-}
-
-/** Recursively find the first `.ts` file matching the predicate. */
-function findFirst(dir: string, predicate: (name: string) => boolean): string | undefined {
-  const direct = firstFile(dir, predicate);
-  if (direct) return direct;
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (!entry.isDirectory() || entry.name.includes('node_modules') || entry.name.includes('__')) {
-      continue;
+    if (entry.isDirectory()) {
+      files.push(...collectTypeScriptFiles(full));
+    } else if (entry.isFile() && entry.name.endsWith('.ts')) {
+      files.push(full);
     }
-    const found = findFirst(join(dir, entry.name), predicate);
-    if (found) return found;
   }
-  return undefined;
+  return files;
 }
 
 function rel(file: string): string {
@@ -108,13 +92,15 @@ function rel(file: string): string {
 
 describe('type-aware lint scope (default-wide correctness)', () => {
   const eslint = new ESLint({ cwd: ROOT });
-  const directories = [SRC, ...collectDirectories(SRC)];
+  const files = collectTypeScriptFiles(SRC);
 
-  it('enforces the correctness contract for every src directory (production files)', async () => {
+  it('enforces the correctness contract for every TypeScript file under src/', async () => {
     const problems: string[] = [];
-    for (const dir of directories) {
-      const file = findFirst(dir, (name) => !isTestFile(name) && !name.endsWith('.d.ts'));
-      if (!file) continue;
+    for (const file of files) {
+      if (await eslint.isPathIgnored(file)) {
+        problems.push(`${rel(file)}: ignored by ESLint`);
+        continue;
+      }
       const config = (await eslint.calculateConfigForFile(file)) as EffectiveConfig;
       const missing = missingCorrectnessRules(config);
       if (missing.length > 0) problems.push(`${rel(file)}: missing ${missing.join(', ')}`);
@@ -123,40 +109,14 @@ describe('type-aware lint scope (default-wide correctness)', () => {
     expect(problems).toEqual([]);
   });
 
-  it('enforces the correctness contract for test files in every src directory', async () => {
-    const problems: string[] = [];
-    for (const dir of directories) {
-      const file = findFirst(dir, isTestFile);
-      if (!file) continue;
-      const config = (await eslint.calculateConfigForFile(file)) as EffectiveConfig;
-      const missing = missingCorrectnessRules(config);
-      if (missing.length > 0) problems.push(`${rel(file)}: missing ${missing.join(', ')}`);
-      if (!hasTypeAwareParserOptions(config)) problems.push(`${rel(file)}: not type-aware`);
-    }
-    expect(problems).toEqual([]);
-  });
-
-  it('enforces the correctness contract for root-level src files', async () => {
-    const problems: string[] = [];
-    for (const entry of readdirSync(SRC, { withFileTypes: true })) {
-      if (!entry.isFile() || !entry.name.endsWith('.ts')) continue;
-      const file = join(SRC, entry.name);
-      const config = (await eslint.calculateConfigForFile(file)) as EffectiveConfig;
-      const missing = missingCorrectnessRules(config);
-      if (missing.length > 0) problems.push(`${rel(file)}: missing ${missing.join(', ')}`);
-      if (!hasTypeAwareParserOptions(config)) problems.push(`${rel(file)}: not type-aware`);
-    }
-    expect(problems).toEqual([]);
-  });
-
-  it('finds at least one production and one test file to pin (guard is not vacuous)', () => {
-    expect(
-      directories.some((dir) =>
-        firstFile(dir, (name) => !isTestFile(name) && !name.endsWith('.d.ts')),
-      ),
-    ).toBe(true);
-    expect(directories.some((dir) => firstFile(dir, isTestFile))).toBe(true);
-    expect(statSync(SRC).isDirectory()).toBe(true);
+  it('covers the file classes that a directory allowlist historically skipped (guard is not vacuous)', () => {
+    const rels = files.map(rel);
+    expect(rels.length).toBeGreaterThan(0);
+    // `__tests__` trees, suite-name variants, and root-level files are part of
+    // the protected set — the classes most likely to be silently excluded.
+    expect(rels.some((p) => p.includes('/__tests__/'))).toBe(true);
+    expect(rels.some((p) => p.endsWith('.fuzz.test.ts'))).toBe(true);
+    expect(rels.some((p) => p.endsWith('/index.ts'))).toBe(true);
   });
 
   describe('negative fixtures — prove the assertion logic fires', () => {
@@ -171,9 +131,17 @@ describe('type-aware lint scope (default-wide correctness)', () => {
       expect(missing).toContain('@typescript-eslint/no-unnecessary-type-assertion');
     });
 
-    it('detects a non-type-aware config', () => {
+    it('detects configs that are not actually type-aware', () => {
       expect(hasTypeAwareParserOptions(narrowed)).toBe(false);
       expect(hasTypeAwareParserOptions({ languageOptions: { parserOptions: {} } })).toBe(false);
+      expect(
+        hasTypeAwareParserOptions({
+          languageOptions: { parserOptions: { projectService: false } },
+        }),
+      ).toBe(false);
+      expect(
+        hasTypeAwareParserOptions({ languageOptions: { parserOptions: { project: [] } } }),
+      ).toBe(false);
     });
 
     it('accepts the full contract via project and via projectService', () => {
