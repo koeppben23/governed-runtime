@@ -76,10 +76,10 @@ describe('mandate document projection contract', () => {
 
   it('renders only kernel sections into the persistent kernel', () => {
     const kernelSections = MANDATES_SECTION_DEFINITIONS.filter(
-      (section) => section.kernel === true,
+      (section) => 'kernel' in section && section.kernel === true,
     );
     const nonKernelSections = MANDATES_SECTION_DEFINITIONS.filter(
-      (section) => section.kernel !== true,
+      (section) => !('kernel' in section) || section.kernel !== true,
     );
 
     expect(kernelSections.length).toBeGreaterThan(0);
