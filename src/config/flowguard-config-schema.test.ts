@@ -17,6 +17,7 @@
 import { describe, it, expect } from 'vitest';
 import { FlowGuardConfigSchema, DEFAULT_CONFIG, type FlowGuardConfig } from './flowguard-config.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
+import { HOST_IDS } from '../shared/hosts.js';
 
 describe('FlowGuardConfigSchema', () => {
   // ── HAPPY ──────────────────────────────────────────────────────────────
@@ -890,5 +891,174 @@ describe('Performance', () => {
     }, 1000);
     // Zod parse should be under 5ms p99
     expect(result.p99Ms).toBeLessThan(PERF_BUDGETS.stateSerializeMs);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// Boundary and partial-default contracts
+// ═══════════════════════════════════════════════════════════════════
+
+describe('FlowGuardConfigSchema boundaries', () => {
+  const parse = (input: unknown) => FlowGuardConfigSchema.safeParse(input);
+
+  it('bounds logging.retentionDays to 1..90 with a 7-day default', () => {
+    expect(parse({ schemaVersion: 'v1' }).data!.logging.retentionDays).toBe(7);
+    expect(parse({ schemaVersion: 'v1', logging: { retentionDays: 1 } }).success).toBe(true);
+    expect(parse({ schemaVersion: 'v1', logging: { retentionDays: 90 } }).success).toBe(true);
+    expect(parse({ schemaVersion: 'v1', logging: { retentionDays: 0 } }).success).toBe(false);
+    expect(parse({ schemaVersion: 'v1', logging: { retentionDays: 91 } }).success).toBe(false);
+  });
+
+  it('applies field-level rate-limit defaults for a partial object', () => {
+    const result = parse({ schemaVersion: 'v1', logging: { rateLimit: {} } });
+
+    expect(result.success).toBe(true);
+    expect(result.data!.logging.rateLimit.enabled).toBe(false);
+    expect(result.data!.logging.rateLimit.summaryIntervalMs).toBe(60000);
+    expect(result.data!.logging.rateLimit.exemptLevels).toContain('error');
+  });
+
+  it('always exempts error logs from rate limiting', () => {
+    const result = parse({
+      schemaVersion: 'v1',
+      logging: { rateLimit: { exemptLevels: ['warn'] } },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data!.logging.rateLimit.exemptLevels).toEqual(['warn', 'error']);
+  });
+
+  it('bounds logging.rateLimit.summaryIntervalMs to 10s..10min', () => {
+    expect(
+      parse({ schemaVersion: 'v1', logging: { rateLimit: { summaryIntervalMs: 10000 } } }).success,
+    ).toBe(true);
+    expect(
+      parse({ schemaVersion: 'v1', logging: { rateLimit: { summaryIntervalMs: 600000 } } }).success,
+    ).toBe(true);
+    expect(
+      parse({ schemaVersion: 'v1', logging: { rateLimit: { summaryIntervalMs: 9999 } } }).success,
+    ).toBe(false);
+    expect(
+      parse({ schemaVersion: 'v1', logging: { rateLimit: { summaryIntervalMs: 600001 } } }).success,
+    ).toBe(false);
+  });
+
+  it('defaults OTLP export to disabled and enforces the https rule', () => {
+    const partial = parse({ schemaVersion: 'v1', logging: { otlp: {} } });
+    expect(partial.success).toBe(true);
+    expect(partial.data!.logging.otlp.enabled).toBe(false);
+    expect(partial.data!.logging.otlp.allowInsecure).toBe(false);
+
+    expect(
+      parse({
+        schemaVersion: 'v1',
+        logging: { otlp: { endpoint: 'https://collector.example.com' } },
+      }).success,
+    ).toBe(true);
+    expect(
+      parse({
+        schemaVersion: 'v1',
+        logging: { otlp: { endpoint: 'http://collector.example.com' } },
+      }).success,
+    ).toBe(false);
+    expect(
+      parse({
+        schemaVersion: 'v1',
+        logging: { otlp: { endpoint: 'http://collector.example.com', allowInsecure: true } },
+      }).success,
+    ).toBe(true);
+  });
+
+  it('defaults human projection telemetry to disabled', () => {
+    expect(parse({ schemaVersion: 'v1' }).data!.humanProjectionTelemetry.enabled).toBe(false);
+    expect(
+      parse({ schemaVersion: 'v1', humanProjectionTelemetry: {} }).data!.humanProjectionTelemetry
+        .enabled,
+    ).toBe(false);
+    expect(
+      parse({ schemaVersion: 'v1', humanProjectionTelemetry: { enabled: true } }).data!
+        .humanProjectionTelemetry.enabled,
+    ).toBe(true);
+  });
+
+  it('keeps partial policy overrides and bounds the review budget', () => {
+    const budget = (value: number) =>
+      parse({
+        schemaVersion: 'v1',
+        policy: { reviewBudget: { plan: value } },
+      });
+
+    expect(budget(1).success).toBe(true);
+    expect(budget(10).success).toBe(true);
+    expect(budget(0).success).toBe(false);
+    expect(budget(11).success).toBe(false);
+
+    const kept = parse({
+      schemaVersion: 'v1',
+      policy: { reviewBudget: { plan: 5, architecture: 2, implementation: 3 } },
+    });
+    expect(kept.success).toBe(true);
+    expect(kept.data!.policy.reviewBudget).toEqual({ plan: 5, architecture: 2, implementation: 3 });
+  });
+
+  it('keeps partial discovery health, validation evidence, profile and host overrides', () => {
+    const result = parse({
+      schemaVersion: 'v1',
+      policy: {
+        discoveryHealth: { enforcement: 'required', onDrift: 'block' },
+        validationEvidence: { allowNoCommands: true },
+      },
+      profile: { defaultId: 'typescript', activeChecks: ['test'] },
+      host: { defaultHost: HOST_IDS[0] },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data!.policy.discoveryHealth).toEqual({
+      enforcement: 'required',
+      onDrift: 'block',
+    });
+    expect(result.data!.policy.validationEvidence).toEqual({ allowNoCommands: true });
+    expect(result.data!.profile).toEqual({ defaultId: 'typescript', activeChecks: ['test'] });
+    expect(result.data!.host).toEqual({ defaultHost: HOST_IDS[0] });
+  });
+
+  it('bounds the policy retry overrides to 0..5', () => {
+    for (const field of ['maxIncoherentReviewerCaptureRetries', 'maxReviewerAttempts'] as const) {
+      expect(parse({ schemaVersion: 'v1', policy: { [field]: 0 } }).success).toBe(true);
+      expect(parse({ schemaVersion: 'v1', policy: { [field]: 5 } }).success).toBe(true);
+      expect(parse({ schemaVersion: 'v1', policy: { [field]: -1 } }).success).toBe(false);
+      expect(parse({ schemaVersion: 'v1', policy: { [field]: 6 } }).success).toBe(false);
+    }
+  });
+
+  it('bounds archive retention and requires at least one redaction mode', () => {
+    const archive = (value: unknown) => parse({ schemaVersion: 'v1', archive: value });
+
+    expect(archive({ retentionDays: 1 }).success).toBe(true);
+    expect(archive({ retentionDays: 0 }).success).toBe(false);
+
+    expect(archive({ redaction: { allowedModes: ['basic'] } }).success).toBe(true);
+    expect(archive({ redaction: { allowedModes: [] } }).success).toBe(false);
+    expect(parse({ schemaVersion: 'v1' }).data!.archive.redaction.allowedModes).toEqual([
+      'none',
+      'basic',
+      'pseudonymous',
+    ]);
+  });
+
+  it('bounds archive redaction maxAuditEvents and defaults raw export to false', () => {
+    const redaction = (value: unknown) =>
+      parse({ schemaVersion: 'v1', archive: { redaction: value } });
+
+    expect(redaction({ maxAuditEvents: 1 }).success).toBe(true);
+    expect(redaction({ maxAuditEvents: 100_000 }).success).toBe(true);
+    expect(redaction({ maxAuditEvents: 0 }).success).toBe(false);
+    expect(redaction({ maxAuditEvents: 100_001 }).success).toBe(false);
+
+    const partial = redaction({});
+    expect(partial.success).toBe(true);
+    expect(partial.data!.archive.redaction.allowRawExport).toBe(false);
+    expect(partial.data!.archive.redaction.maxAuditEvents).toBe(10_000);
+    expect(parse({ schemaVersion: 'v1' }).data!.archive.redaction.allowRawExport).toBe(false);
   });
 });
