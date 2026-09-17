@@ -183,9 +183,10 @@ rewrite them.
 The machine-readable scope authority is
 `src/architecture/__tests__/mutation-authority-inventory.ts`. It classifies
 every authority under the declared roots as `required`, `admission-backlog`, or
-`not-mutation-suitable`, and the architecture guard enforces
-`required ⊆ mutate`, reverse closure per profile, and coverage of every
-production file under an authority root.
+`not-mutation-suitable`; the latter is always bound to the profile whose
+regime produced the evidence and never excludes a target from other profiles.
+The architecture guard enforces `required ⊆ mutate`, reverse closure per
+profile, and coverage of every production file under an authority root.
 
 `StringLiteral`, `ArrayDeclaration`, and `Regex` mutators are excluded globally
 because they produce low-signal literal churn in governance template and schema
@@ -277,19 +278,6 @@ diagnostic only; these targets must close their test gaps first):
 - `src/integration/review/shared-helpers.ts` (68.66%)
 - `src/integration/tools/run-check-result.ts` (0.00%)
 
-Reason-catalog authorities (base-regime diagnostic required before admission):
-
-- `src/config/reasons-architecture.ts`
-- `src/config/reasons-envelope.ts`
-- `src/config/reasons-infra.ts`
-- `src/config/reasons-mutation.ts`
-- `src/config/reasons-precondition.ts`
-- `src/config/reasons-proofgraph.ts`
-- `src/config/reasons-validation.ts`
-- `src/config/reasons-validation-observation.ts`
-- `src/config/reasons-validation-review.ts`
-- `src/config/reasons-validation-structured.ts`
-
 Deep authority expansion bundle:
 
 - `src/adapters/persistence-core.ts`
@@ -310,14 +298,31 @@ Deferred surfaces (whole roots behind the admission gate):
 `src/logging/**`, `src/hooks/**`, `src/mcp-server/**`, `src/templates/**`,
 `src/presentation/**`, `src/integration/**`.
 
-Explicitly not mutation-suitable:
+Explicitly not mutation-suitable **for the named profile** (the exclusion is
+scoped; a target may still be a valid mutation target in another profile):
 
-- `src/config/reasons-types.ts` — type-only module.
-- `src/shared/policy-digest.ts` — pure re-export.
-- `src/machine/command-help.ts` — static help text projection.
-- `src/machine/topology.ts` — module-init transition table (no valid mutants under ignoreStatic).
-- `src/state/policy-mode.ts` — const tuple/enum only.
-- `src/state/runtime-lease.ts` — pure Zod schema declarations.
+- `src/config/reasons-types.ts` — type-only module (base).
+- `src/shared/policy-digest.ts` — pure re-export (base).
+- `src/machine/command-help.ts` — static help text projection (base).
+- `src/machine/topology.ts` — module-init transition table, ignored under `ignoreStatic` (base).
+- `src/state/policy-mode.ts` — const tuple/enum only (base).
+- `src/state/runtime-lease.ts` — pure Zod schema declarations (base).
+- `src/config/reasons-architecture.ts` (base)
+- `src/config/reasons-envelope.ts` (base)
+- `src/config/reasons-infra.ts` (base)
+- `src/config/reasons-mutation.ts` (base)
+- `src/config/reasons-precondition.ts` (base)
+- `src/config/reasons-proofgraph.ts` (base)
+- `src/config/reasons-validation.ts` (base)
+- `src/config/reasons-validation-observation.ts` (base)
+- `src/config/reasons-validation-review.ts` (base)
+- `src/config/reasons-validation-structured.ts` (base)
+
+Reason-catalog diagnostic (2026-09-17, base regime): all 175 mutants across the
+ten catalog files are rejected by the TypeScript checker (CompileError, 0
+valid mutants), so the catalog carries no admission evidence under the base
+profile. The runtime registry logic in `src/config/reasons.ts` remains a
+required mutation target.
 
 ### Running Locally
 
