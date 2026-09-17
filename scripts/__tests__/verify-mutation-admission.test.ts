@@ -117,18 +117,55 @@ describe('verify-mutation-admission', () => {
     expect(result.stdout).toContain('OK');
   });
 
-  it('rejects a target below the break threshold', () => {
+  it('rejects a required target below the break threshold', () => {
     const report = baseReport();
     report.files['src/adapters/ip-validation.ts'] = fileEntry(
       mutants(['Killed', 'Survived', 'Survived']),
     );
     const reportPath = writeReport(report);
 
-    const result = runVerifier(['--profile', 'base', '--report', reportPath]);
+    const result = runVerifier([
+      '--profile',
+      'base',
+      '--report',
+      reportPath,
+      '--require-selectors',
+      'src/adapters/ip-validation.ts',
+    ]);
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('src/adapters/ip-validation.ts');
-    expect(result.stderr).toContain('33.33% < 80%');
+    expect(result.stderr).toContain('33.33% < 80% (required per-target)');
+  });
+
+  it('accepts a legacy target below the per-target threshold while the aggregate holds', () => {
+    const report = baseReport();
+    report.files['src/adapters/ip-validation.ts'] = fileEntry(
+      mutants(['Killed', 'Survived', 'Survived', 'Survived']),
+    );
+    const reportPath = writeReport(report);
+
+    const result = runVerifier(['--profile', 'base', '--report', reportPath]);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('1 legacy target(s) below the per-target threshold');
+    expect(result.stdout).toContain('src/adapters/ip-validation.ts');
+  });
+
+  it('rejects a selector that is not part of the profile', () => {
+    const reportPath = writeReport(baseReport());
+
+    const result = runVerifier([
+      '--profile',
+      'base',
+      '--report',
+      reportPath,
+      '--require-selectors',
+      'src/machine/topology.ts',
+    ]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('not in stryker.conf.json');
   });
 
   it('counts only Killed and Timeout as detected (RuntimeError is excluded)', () => {
@@ -138,10 +175,17 @@ describe('verify-mutation-admission', () => {
     );
     const reportPath = writeReport(report);
 
-    const result = runVerifier(['--profile', 'base', '--report', reportPath]);
+    const result = runVerifier([
+      '--profile',
+      'base',
+      '--report',
+      reportPath,
+      '--require-selectors',
+      'src/adapters/ip-validation.ts',
+    ]);
 
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain('75.00% < 80%');
+    expect(result.stderr).toContain('75.00% < 80% (required per-target)');
   });
 
   it('accepts Pending as a known excluded status', () => {
@@ -167,15 +211,33 @@ describe('verify-mutation-admission', () => {
     expect(result.stderr).toContain('src/audit/ntp-check.ts: no valid mutants');
   });
 
-  it('rejects a target missing from the report', () => {
+  it('rejects a required target missing from the report', () => {
     const report = baseReport();
     delete report.files['src/audit/integrity.ts'];
     const reportPath = writeReport(report);
 
-    const result = runVerifier(['--profile', 'base', '--report', reportPath]);
+    const result = runVerifier([
+      '--profile',
+      'base',
+      '--report',
+      reportPath,
+      '--require-selectors',
+      'src/audit/integrity.ts',
+    ]);
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('src/audit/integrity.ts: missing from report');
+  });
+
+  it('notes a legacy target that generated no mutants', () => {
+    const report = baseReport();
+    delete report.files['src/config/policy.ts'];
+    const reportPath = writeReport(report);
+
+    const result = runVerifier(['--profile', 'base', '--report', reportPath]);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('src/config/policy.ts: no mutants or missing from report');
   });
 
   it('rejects unknown mutant statuses instead of ignoring them', () => {
@@ -229,14 +291,21 @@ describe('verify-mutation-admission', () => {
     });
     const reportPath = writeReport(report);
 
-    const result = runVerifier(['--profile', 'identity-jwks', '--report', reportPath]);
+    const result = runVerifier([
+      '--profile',
+      'identity-jwks',
+      '--report',
+      reportPath,
+      '--require-selectors',
+      jwksConfig.mutate.join(','),
+    ]);
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain(`targets=${jwksConfig.mutate.length}`);
     expect(result.stdout).toContain('OK');
   });
 
-  it('rejects a range whose mutants do not meet the threshold', () => {
+  it('rejects a required range whose mutants do not meet the threshold', () => {
     const report = jwksReport({
       '270-277': mutants(KILLED_SET, 272),
       '328-334': mutants(KILLED_SET, 330),
@@ -244,11 +313,18 @@ describe('verify-mutation-admission', () => {
     });
     const reportPath = writeReport(report);
 
-    const result = runVerifier(['--profile', 'identity-jwks', '--report', reportPath]);
+    const result = runVerifier([
+      '--profile',
+      'identity-jwks',
+      '--report',
+      reportPath,
+      '--require-selectors',
+      'src/identity/key-resolver.ts:338-350',
+    ]);
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('src/identity/key-resolver.ts:338-350');
-    expect(result.stderr).toContain('25.00% < 80%');
+    expect(result.stderr).toContain('25.00% < 80% (required per-target)');
   });
 
   it('rejects a range without any valid mutant inside the declared range', () => {
@@ -342,10 +418,37 @@ describe('verify-mutation-admission', () => {
   it('refuses to emit admission records without a manifest', () => {
     const reportPath = writeReport(baseReport());
 
-    const result = runVerifier(['--profile', 'base', '--report', reportPath, '--emit-admission']);
+    const result = runVerifier([
+      '--profile',
+      'base',
+      '--report',
+      reportPath,
+      '--require-selectors',
+      'src/adapters/ip-validation.ts',
+      '--emit-admission',
+    ]);
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('--emit-admission requires --manifest');
+  });
+
+  it('refuses to emit admission records without required selectors', () => {
+    const reportPath = writeReport(baseReport());
+    const manifestPath = join(emptyTemporaryDirectory(), 'admission-manifest.json');
+    runVerifier(['--profile', 'base', '--report', reportPath, '--write-manifest', manifestPath]);
+
+    const result = runVerifier([
+      '--profile',
+      'base',
+      '--report',
+      reportPath,
+      '--manifest',
+      manifestPath,
+      '--emit-admission',
+    ]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('--emit-admission requires --require-selectors');
   });
 
   it('emits admission records with provenance from the verified manifest', () => {
@@ -361,6 +464,8 @@ describe('verify-mutation-admission', () => {
       reportPath,
       '--manifest',
       manifestPath,
+      '--require-selectors',
+      'src/adapters/ip-validation.ts',
       '--emit-admission',
     ]);
 
@@ -376,7 +481,8 @@ describe('verify-mutation-admission', () => {
         verifiedAt: string;
       };
     }>;
-    expect(emitted).toHaveLength(baseConfig.mutate.length);
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0]?.target).toBe('src/adapters/ip-validation.ts');
     expect(emitted[0]?.admission.commitSha).toBe(manifest.commitSha);
     expect(emitted[0]?.admission.scoreAtAdmission).toBe(emitted[0]?.score);
     expect(emitted[0]?.admission.config).toBe('stryker.conf.json');

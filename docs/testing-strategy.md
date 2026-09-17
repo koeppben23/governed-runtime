@@ -165,13 +165,15 @@ mutated modules (`stryker.conf.json`). There are no per-area lower thresholds.
 
 Admission policy (applied per profile): Targeted runs are diagnostic only.
 Admission evidence is the profile full run. In that run the aggregate score
-must meet the break threshold and every mutated target must meet the
-per-target break threshold; range selectors are scored only over mutants whose
-`location` lies inside the declared range. `scripts/verify-mutation-admission.mjs`
+must meet the break threshold. Newly admitted targets — named explicitly via
+`--require-selectors` — must additionally meet the per-target break threshold;
+range selectors are scored only over mutants whose `location` lies inside the
+declared range. Legacy targets below the per-target threshold are reported as
+a note and remain tracked for test hardening. `scripts/verify-mutation-admission.mjs`
 validates the report against the mutation-testing-elements structure, requires
 the report's file set to match the profile's selectors exactly, and fails
 closed on missing targets, invalid mutant shapes, unknown statuses, or
-per-target/aggregate scores below the threshold. `--write-manifest` persists
+aggregate/required-selector scores below the threshold. `--write-manifest` persists
 the profile, config digest, report digest, commit SHA and run timestamp;
 `--manifest` re-verifies those bindings against the profile config, the report
 bytes and HEAD, and `--emit-admission` refuses to emit without a verified

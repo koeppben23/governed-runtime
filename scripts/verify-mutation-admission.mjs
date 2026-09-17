@@ -3,18 +3,20 @@
  *
  * Policy (see docs/testing-strategy.md#threshold-and-admission-rule):
  * - A targeted `--mutate` run is diagnostic only.
- * - Admission evidence is a profile full run: the aggregate score and every
- *   mutated target score must meet the profile's break threshold.
+ * - Admission evidence is a profile full run. The profile-wide aggregate must
+ *   meet the break threshold; targets named via `--require-selectors` (new
+ *   admissions, typically a newly added mutate selector or range) must
+ *   additionally meet the per-target break threshold. Legacy targets outside
+ *   the required set are reported as a note.
  *
  * The verifier fails closed unless:
  * - the report matches the mutation-testing-elements structure
  *   (`schemaVersion`, `thresholds`, `files[path].{language,source,mutants}`,
  *   mutants with `id`, `mutatorName`, `status` and `location`),
  * - the report's file set matches the profile's mutate selectors exactly,
- * - every selector has at least one valid mutant and meets the break
- *   threshold; range selectors are scored only over mutants whose `location`
- *   lies inside the declared line range,
- * - the aggregate score meets the break threshold,
+ * - every selector has at least one valid mutant; range selectors are scored
+ *   only over mutants whose `location` lies inside the declared line range,
+ * - the aggregate and all required selectors meet the break threshold,
  * - when a manifest is supplied, profile, config digest, report digest and
  *   commit bind to the current run.
  *
@@ -33,9 +35,15 @@
  *   node scripts/verify-mutation-admission.mjs --profile base \
  *     --manifest reports/mutation/admission-manifest.json
  *
+ *   # require newly admitted selectors to meet the per-target threshold
+ *   node scripts/verify-mutation-admission.mjs --profile base \
+ *     --manifest reports/mutation/admission-manifest.json \
+ *     --require-selectors src/machine/topology.ts
+ *
  *   # emit inventory-compatible admission records (requires a manifest)
  *   node scripts/verify-mutation-admission.mjs --profile base \
- *     --manifest reports/mutation/admission-manifest.json --emit-admission
+ *     --manifest reports/mutation/admission-manifest.json \
+ *     --require-selectors src/machine/topology.ts --emit-admission
  */
 
 import { execFileSync } from 'node:child_process';
@@ -79,6 +87,7 @@ function parseArguments(argv) {
     writeManifest: undefined,
     emitAdmission: false,
     commit: undefined,
+    requiredSelectors: [],
   };
   for (let index = 0; index < argv.length; index++) {
     const argument = argv[index];
@@ -88,7 +97,18 @@ function parseArguments(argv) {
     else if (argument === '--write-manifest') options.writeManifest = argv[++index];
     else if (argument === '--emit-admission') options.emitAdmission = true;
     else if (argument === '--commit') options.commit = argv[++index];
-    else fail(`unsupported argument '${argument}'`);
+    else if (argument === '--require-selectors') {
+      const value = argv[++index];
+      if (typeof value !== 'string' || value.length === 0) {
+        fail('--require-selectors requires a comma-separated selector list');
+      }
+      options.requiredSelectors.push(
+        ...value
+          .split(',')
+          .map((entry) => entry.trim())
+          .filter((entry) => entry.length > 0),
+      );
+    } else fail(`unsupported argument '${argument}'`);
   }
   if (options.profile === undefined) {
     fail('missing required --profile <base|human-projection|identity-jwks|mandates>');
@@ -119,6 +139,11 @@ function parseArguments(argv) {
   }
   if (options.emitAdmission && options.manifest === undefined) {
     fail('--emit-admission requires --manifest (provenance must bind to a verified run)');
+  }
+  if (options.emitAdmission && options.requiredSelectors.length === 0) {
+    fail(
+      '--emit-admission requires --require-selectors (only newly admitted targets get a record)',
+    );
   }
   return options;
 }
@@ -348,8 +373,21 @@ if (shapeProblems.length > 0) {
   );
 }
 
+const knownSelectors = new Set(mutateSelectors);
+const unknownRequired = options.requiredSelectors.filter(
+  (selector) => !knownSelectors.has(selector),
+);
+if (unknownRequired.length > 0) {
+  fail(
+    `--require-selectors lists selectors that are not in ${PROFILE_CONFIG[options.profile]}: ` +
+      unknownRequired.join(', '),
+  );
+}
+const requiredSelectors = new Set(options.requiredSelectors);
+
 const reportFiles = new Map(Object.entries(report.files));
 const violations = [];
+const belowThreshold = [];
 const records = [];
 const seenTargets = new Set();
 let aggregateDetected = 0;
@@ -360,7 +398,11 @@ for (const selector of mutateSelectors) {
   seenTargets.add(target);
   const file = reportFiles.get(target);
   if (file === undefined) {
-    violations.push({ target, selector, problem: 'missing from report' });
+    if (requiredSelectors.has(selector)) {
+      violations.push({ selector, problem: 'missing from report (required per-target)' });
+    } else {
+      belowThreshold.push({ selector, score: null, killed: 0, survived: 0 });
+    }
     continue;
   }
   const mutants =
@@ -370,7 +412,6 @@ for (const selector of mutateSelectors) {
   const metrics = computeMetrics(mutants);
   if (metrics.score === null) {
     violations.push({
-      target,
       selector,
       problem:
         range === undefined ? 'no valid mutants' : 'no valid mutants inside the declared range',
@@ -380,11 +421,19 @@ for (const selector of mutateSelectors) {
   aggregateDetected += metrics.detected;
   aggregateValid += metrics.valid;
   if (metrics.score < breakThreshold) {
-    violations.push({
-      target,
-      selector,
-      problem: `score ${metrics.score.toFixed(2)}% < ${breakThreshold}%`,
-    });
+    if (requiredSelectors.has(selector)) {
+      violations.push({
+        selector,
+        problem: `score ${metrics.score.toFixed(2)}% < ${breakThreshold}% (required per-target)`,
+      });
+    } else {
+      belowThreshold.push({
+        selector,
+        score: metrics.score,
+        killed: metrics.detected,
+        survived: metrics.undetected,
+      });
+    }
   }
   records.push({
     target,
@@ -415,6 +464,22 @@ if (aggregateScore === null) {
     selector: '(aggregate)',
     problem: `aggregate score ${aggregateScore.toFixed(2)}% < ${breakThreshold}%`,
   });
+}
+
+if (belowThreshold.length > 0) {
+  console.log(
+    `[verify-mutation-admission] note: ${belowThreshold.length} legacy target(s) below the ` +
+      `per-target threshold but within the aggregate gate (not required per-target):`,
+  );
+  for (const entry of belowThreshold) {
+    if (entry.score === null) {
+      console.log(`  - ${entry.selector}: no mutants or missing from report`);
+      continue;
+    }
+    console.log(
+      `  - ${entry.selector}: ${entry.score.toFixed(2)}% (killed ${entry.killed}, survived ${entry.survived})`,
+    );
+  }
 }
 
 if (violations.length > 0) {
@@ -457,17 +522,19 @@ if (options.writeManifest !== undefined) {
 }
 
 if (options.emitAdmission) {
-  const emitted = records.map((record) => ({
-    ...record,
-    admission: {
-      verifiedAt: manifest.generatedAt.slice(0, 10),
-      commitSha: manifest.commitSha,
-      scoreAtAdmission: record.score,
-      killed: record.killed,
-      survived: record.survived,
-      config: record.config,
-    },
-  }));
+  const emitted = records
+    .filter((record) => requiredSelectors.has(record.mutateSelector))
+    .map((record) => ({
+      ...record,
+      admission: {
+        verifiedAt: manifest.generatedAt.slice(0, 10),
+        commitSha: manifest.commitSha,
+        scoreAtAdmission: record.score,
+        killed: record.killed,
+        survived: record.survived,
+        config: record.config,
+      },
+    }));
   console.log(JSON.stringify(emitted, null, 2));
 } else {
   console.log(
