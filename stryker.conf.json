@@ -16,6 +16,8 @@
     "src/adapters/implementation-entry-guard.ts",
     "src/adapters/host-adapter.ts",
     "src/adapters/persistence.ts",
+    "src/adapters/persistence-core.ts",
+    "src/adapters/persistence-config.ts",
     "src/adapters/persistence-audit.ts",
     "src/adapters/ip-validation.ts",
     "src/mcp-server/execution-limiter.ts",
@@ -42,6 +44,8 @@
 
     "src/audit/proofgraph/evaluate.ts",
     "src/audit/proofgraph/gate.ts",
+    "src/audit/proofgraph/mutation-report.ts",
+    "src/audit/proofgraph/mutation-binder.ts",
     "src/integration/proofgraph/claim-contract.ts",
     "src/integration/proofgraph/materialize-contract.ts",
     "src/audit/proofgraph/executed-test-binder.ts",
@@ -53,6 +57,8 @@
 
     "src/config/policy.ts",
     "src/config/policy-snapshot.ts",
+    "src/config/policy-resolver.ts",
+    "src/config/policy-central.ts",
     "src/config/reasons.ts",
     "src/config/profile.ts",
 

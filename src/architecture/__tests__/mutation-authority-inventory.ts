@@ -769,6 +769,68 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
   {
     classification: 'required',
     profile: 'base',
+    mutateSelector: 'src/audit/proofgraph/mutation-binder.ts',
+    target: 'src/audit/proofgraph/mutation-binder.ts',
+    authority: 'Mutation evidence binding',
+    source: [SOURCE.trustBoundaries],
+    coveringSuites: ['src/audit/proofgraph/mutation-binder.test.ts'],
+  },
+  {
+    classification: 'required',
+    profile: 'base',
+    mutateSelector: 'src/audit/proofgraph/mutation-report.ts',
+    target: 'src/audit/proofgraph/mutation-report.ts',
+    authority: 'Mutation report ingestion authority',
+    source: [SOURCE.trustBoundaries],
+    coveringSuites: [
+      'src/audit/proofgraph/mutation-report.test.ts',
+      'src/integration/proofgraph/materialize-contract.test.ts',
+      'src/integration/proofgraph/mutation-verification.test.ts',
+    ],
+  },
+  {
+    classification: 'required',
+    profile: 'base',
+    mutateSelector: 'src/config/policy-central.ts',
+    target: 'src/config/policy-central.ts',
+    authority: 'Central policy bundle resolution',
+    source: [SOURCE.trustBoundaries],
+    coveringSuites: ['src/config/policy-central.test.ts', 'src/config/policy-presets.test.ts'],
+  },
+  {
+    classification: 'required',
+    profile: 'base',
+    mutateSelector: 'src/config/policy-resolver.ts',
+    target: 'src/config/policy-resolver.ts',
+    authority: 'Policy resolution authority',
+    source: [SOURCE.trustBoundaries],
+    coveringSuites: ['src/config/policy-degradation-regression.test.ts'],
+  },
+  {
+    classification: 'required',
+    profile: 'base',
+    mutateSelector: 'src/adapters/persistence-config.ts',
+    target: 'src/adapters/persistence-config.ts',
+    authority: 'Config persistence boundary',
+    source: [SOURCE.trustBoundaries],
+    coveringSuites: ['src/config/flowguard-config-io.test.ts', 'src/integration/plugin.test.ts'],
+  },
+  {
+    classification: 'required',
+    profile: 'base',
+    mutateSelector: 'src/adapters/persistence-core.ts',
+    target: 'src/adapters/persistence-core.ts',
+    authority: 'Shared persistence primitives',
+    source: [SOURCE.trustBoundaries],
+    coveringSuites: [
+      'src/adapters/adapters-atomic-write.test.ts',
+      'src/adapters/adapters-persistence-basics.test.ts',
+      'src/adapters/persistence-more.test.ts',
+    ],
+  },
+  {
+    classification: 'required',
+    profile: 'base',
     mutateSelector: 'src/integration/tools/record-mutation-evidence.ts',
     target: 'src/integration/tools/record-mutation-evidence.ts',
     authority: 'Canonical MutationAttempt evidence producer',
@@ -1056,40 +1118,31 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
   ),
 
   // ── Deep authority expansion bundle ───────────────────────────────────────
-  deferred('src/adapters/persistence-core.ts', 'Shared persistence primitives', DEEP_REASON, {
-    source: [SOURCE.trustBoundaries],
-  }),
-  deferred('src/adapters/persistence-config.ts', 'Config persistence boundary', DEEP_REASON, {
-    source: [SOURCE.trustBoundaries],
-  }),
-  deferred('src/config/policy-resolver.ts', 'Policy resolution authority', DEEP_REASON, {
-    source: [SOURCE.config],
-  }),
-  deferred('src/config/policy-central.ts', 'Central policy bundle resolution', DEEP_REASON, {
-    source: [SOURCE.config],
-  }),
-  deferred('src/config/policy-ci.ts', 'CI policy resolution', DEEP_REASON, {
-    source: [SOURCE.config],
-  }),
-  deferred('src/config/policy-types.ts', 'Policy type authority', DEEP_REASON, {
-    source: [SOURCE.config],
-  }),
-  deferred('src/config/profile-types.ts', 'Profile type authority', DEEP_REASON, {
-    source: [SOURCE.config],
-  }),
   deferred(
-    'src/audit/proofgraph/mutation-report.ts',
-    'Mutation report ingestion authority',
-    DEEP_REASON,
+    'src/config/policy-ci.ts',
+    'CI policy resolution',
+    'Diagnostic run 2026-09-17 scored 100.00% (5 killed / 0 survived) on only five valid mutants and has no direct suite; mutant density is too low to carry an authority admission.',
     {
-      source: [SOURCE.trustBoundaries],
+      source: [SOURCE.config],
     },
   ),
-  deferred('src/audit/proofgraph/mutation-binder.ts', 'Mutation evidence binding', DEEP_REASON, {
-    source: [SOURCE.trustBoundaries],
-  }),
+  deferred(
+    'src/config/policy-types.ts',
+    'Policy type authority',
+    'Diagnostic run 2026-09-17 scored 20.00% (1 killed / 4 survived) on five valid mutants; the existing evidence is too weak for admission and needs dedicated policy contract tests.',
+    {
+      source: [SOURCE.config],
+    },
+  ),
 
   // ── Explicitly not mutation-suitable ──────────────────────────────────────
+  notSuitable(
+    'src/config/profile-types.ts',
+    'Profile type authority',
+    'Type-only module (PhaseInstructions interface); the base full run produced no valid mutants.',
+    'base',
+    { source: [SOURCE.config] },
+  ),
   notSuitable(
     'src/machine/topology.ts',
     'Formal state transition table',
