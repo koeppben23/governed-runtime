@@ -766,6 +766,51 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
   ),
 
   // ── Base profile: candidate authorities pending admission ─────────────────
+  {
+    classification: 'required',
+    profile: 'base',
+    mutateSelector: 'src/integration/tools/record-mutation-evidence.ts',
+    target: 'src/integration/tools/record-mutation-evidence.ts',
+    authority: 'Canonical MutationAttempt evidence producer',
+    source: [SOURCE.trustBoundaries],
+    coveringSuites: ['src/integration/tools/record-mutation-evidence.test.ts'],
+  },
+  {
+    classification: 'required',
+    profile: 'base',
+    mutateSelector: 'src/mcp-server/server.ts',
+    target: 'src/mcp-server/server.ts',
+    authority: 'MCP tool registry authority',
+    source: [SOURCE.trustBoundaries],
+    coveringSuites: ['src/mcp-server/server-registry.test.ts', 'src/mcp-server/mcp-server.test.ts'],
+  },
+  {
+    classification: 'required',
+    profile: 'base',
+    mutateSelector: 'src/integration/tools/reconcile-mutation-episode.ts',
+    target: 'src/integration/tools/reconcile-mutation-episode.ts',
+    authority: 'Unknown-outcome mutation episode resolution',
+    source: [SOURCE.trustBoundaries],
+    coveringSuites: ['src/integration/mutation-episode-e2e.test.ts'],
+  },
+  {
+    classification: 'required',
+    profile: 'base',
+    mutateSelector: 'src/hooks/post-tool-use.ts',
+    target: 'src/hooks/post-tool-use.ts',
+    authority: 'PostToolUse audit hook (informational)',
+    source: [SOURCE.trustBoundaries],
+    coveringSuites: ['src/hooks/post-tool-use.test.ts'],
+  },
+  {
+    classification: 'required',
+    profile: 'base',
+    mutateSelector: 'src/integration/review/findings-hash.ts',
+    target: 'src/integration/review/findings-hash.ts',
+    authority: 'Findings hash normalization',
+    source: [SOURCE.trustBoundaries],
+    coveringSuites: ['src/integration/review/findings-hash.test.ts'],
+  },
   // ── Base profile: core authorities admitted in the base full run ─────────
   required(
     'src/adapters/implementation-base-authority.ts',
@@ -845,13 +890,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
   deferred(
     'src/integration/review/reviewed-digest.ts',
     'Review provenance projection',
-    'Full-run verdict 46.67% (42 killed / 48 survived); provenance branches lack assertions.',
-    { source: [SOURCE.trustBoundaries] },
-  ),
-  deferred(
-    'src/integration/review/findings-hash.ts',
-    'Findings hash normalization',
-    'Full-run verdict 65.00% (13 killed / 7 survived); ordering and pass-through branches remain.',
+    'Full-run verdict 46.67% (42 killed / 48 survived); provenance branches lack assertions. Tracked as PR F (review/runtime authority hardening).',
     { source: [SOURCE.trustBoundaries] },
   ),
   deferred(
@@ -860,44 +899,17 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'Diagnostic run 2026-09-17 scored 66.67% with all six survivors semantically equivalent: the length XOR already short-circuits false on differing lengths, and out-of-bounds Uint8Array reads coerce to 0 through ToInt32. No further semantic tests can kill them; the module stays backlog until a mutation regime with finer operators exists.',
   ),
   deferred(
-    'src/integration/tools/record-mutation-evidence.ts',
-    'Canonical MutationAttempt evidence producer',
-    DEFERRED_REASON,
-    {
-      source: [SOURCE.trustBoundaries],
-    },
-  ),
-  deferred(
-    'src/integration/tools/reconcile-mutation-episode.ts',
-    'Unknown-outcome mutation episode resolution',
-    DEFERRED_REASON,
-    {
-      source: [SOURCE.trustBoundaries],
-    },
-  ),
-  deferred(
     'src/integration/plugin-mutation-episodes.ts',
     'In-process mutation episode tracking',
-    DEFERRED_REASON,
+    'Deferred to the PR F review/runtime authority hardening tranche; admission requires a profile full run with per-target evidence.',
     {
       source: [SOURCE.trustBoundaries],
     },
   ),
-  deferred('src/mcp-server/server.ts', 'MCP tool registry authority', DEFERRED_REASON, {
-    source: [SOURCE.trustBoundaries],
-  }),
   deferred(
     'src/mcp-server/schema-converter.ts',
     'Strict MCP input schema conversion',
     'Diagnostic run 2026-09-17 scored 100.00% (1 killed / 0 survived) on a single valid mutant; mutant density is insufficient to carry an authority admission. A broader or dedicated mutation regime is required before admission.',
-    {
-      source: [SOURCE.trustBoundaries],
-    },
-  ),
-  deferred(
-    'src/hooks/post-tool-use.ts',
-    'PostToolUse audit hook (informational)',
-    DEFERRED_REASON,
     {
       source: [SOURCE.trustBoundaries],
     },
@@ -973,10 +985,15 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'base',
     { source: [SOURCE.config] },
   ),
-  deferred('src/rendering/mandates-renderer.ts', 'Mandate rendering projection', DEEP_REASON, {
-    profile: 'mandates',
-    source: [SOURCE.productMandates],
-  }),
+  deferred(
+    'src/rendering/mandates-renderer.ts',
+    'Mandate rendering projection',
+    'Focused renderer contract pass 2026-09-17 reached 72.40% (160 killed / 54 survived / 7 uncovered); below the per-target gate, so it returns to the backlog and out of the runtime closure PR. A dedicated mandates hardening pass is required before admission.',
+    {
+      profile: 'mandates',
+      source: [SOURCE.productMandates],
+    },
+  ),
 
   // ── Evidence-layer candidates with diagnostic evidence ────────────────────
   deferred(

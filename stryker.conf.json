@@ -20,6 +20,7 @@
     "src/adapters/ip-validation.ts",
     "src/mcp-server/execution-limiter.ts",
     "src/mcp-server/session-resolver.ts",
+    "src/mcp-server/server.ts",
     "src/mcp-server/tool-adapter.ts",
 
     "src/archive/content-digest.ts",
@@ -81,12 +82,15 @@
     "src/state/evidence-mutation-episode.ts",
     "src/integration/review/enforcement/challenge-binding.ts",
     "src/integration/tools/audit-outbox.ts",
+    "src/integration/tools/reconcile-mutation-episode.ts",
+    "src/integration/tools/record-mutation-evidence.ts",
     "src/templates/codex-plugin.ts",
     "src/templates/claude-code-plugin.ts",
     "src/integration/review/enforcement/enforcement.ts",
     "src/integration/review/enforcement/findings-consistency.ts",
     "src/integration/review/enforcement/challenge-consistency.ts",
     "src/integration/review/dispatch-signal.ts",
+    "src/integration/review/findings-hash.ts",
     "src/integration/review/agent-resolution.ts",
 
     "src/shared/canonical-json.ts",
@@ -108,6 +112,7 @@
     "src/rails/review-url.ts",
     "src/rails/ticket.ts",
 
+    "src/hooks/post-tool-use.ts",
     "src/hooks/shared/obligation-tracker.ts",
     "src/hooks/shared/phase-gate.ts"
   ],
