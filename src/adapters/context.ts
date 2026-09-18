@@ -13,7 +13,7 @@
  *
  * Production implementation:
  * - now() returns new Date().toISOString() (UTC, millisecond precision)
- * - digest() returns crypto.createHash("sha256").update(text).digest("hex")
+ * - digest() delegates to the shared SHA-256 text primitive (shared/hashing.ts)
  *
  * @version v1
  */

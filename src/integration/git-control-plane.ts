@@ -32,14 +32,10 @@
  * @version v2
  */
 
-import { createHash } from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { resolveGitControlPlanePaths } from '../adapters/git.js';
-
-function sha256Text(text: string): string {
-  return createHash('sha256').update(text, 'utf8').digest('hex');
-}
+import { hashText } from '../shared/hashing.js';
 
 /** Node/libuv reports reading a directory as EISDIR on every platform. */
 function isEisDirError(err: unknown): boolean {
@@ -50,7 +46,7 @@ function isEisDirError(err: unknown): boolean {
 
 async function markerForFile(filePath: string, missingLabel: string): Promise<string> {
   try {
-    return sha256Text(await fs.readFile(filePath, 'utf8'));
+    return hashText(await fs.readFile(filePath, 'utf8'));
   } catch {
     return missingLabel;
   }
@@ -81,7 +77,7 @@ async function hooksMarker(hooksDir: string): Promise<string> {
         continue;
       }
       const mode = (stat.mode & 0o777).toString(8);
-      parts.push(`${name}:${mode}:${sha256Text(content)}`);
+      parts.push(`${name}:${mode}:${hashText(content)}`);
     } catch (err) {
       parts.push(isEisDirError(err) ? `${name}:dir` : `${name}:missing`);
     }
@@ -107,5 +103,5 @@ export async function computeGitControlPlaneMarker(worktree: string): Promise<st
     `HEAD:${await markerForFile(layout.headPath, 'missing')}`,
     `hooks:${await hooksMarker(layout.hooksPath)}`,
   ];
-  return sha256Text(parts.join('\n'));
+  return hashText(parts.join('\n'));
 }

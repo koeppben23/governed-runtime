@@ -11,8 +11,8 @@
  * @version v1
  */
 
-import { createHash } from 'node:crypto';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
+import { hashBuffer, hashText } from '../../shared/hashing.js';
 import type { ReviewRepositoryIdentity } from '../../state/evidence.js';
 
 /** Strict UTF-8 classification of raw blob bytes. */
@@ -27,7 +27,7 @@ export function classifyRepresentation(bytes: Buffer): 'utf8_text' | 'binary' {
 
 /** sha256 hex of a string (no prefix). */
 export function sha256Hex(text: string): string {
-  return createHash('sha256').update(text, 'utf-8').digest('hex');
+  return hashText(text);
 }
 
 /** Canonical digest of a delivered observation response: `sha256:<hex>`. */
@@ -72,7 +72,7 @@ export function repositoryIdentityDigest(identity: ReviewRepositoryIdentity): st
  * bytes — never decoded/re-encoded text.
  */
 export function contentDigestOf(bytes: Buffer): string {
-  return `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+  return `sha256:${hashBuffer(bytes)}`;
 }
 
 /**

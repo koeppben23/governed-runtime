@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { canonicalJsonStringify, computeCanonicalEventDigest } from './canonical-digest.js';
+import {
+  canonicalJsonStringify,
+  computeCanonicalEventDigest,
+  computeCanonicalEventDigests,
+} from './canonical-digest.js';
 import {
   computeChainHash,
   CURRENT_AUDIT_FORMAT_VERSION,
@@ -81,6 +85,15 @@ describe('canonicalEventDigest', () => {
     const event = buildEvent('TICKET', 'PLAN', 'PLAN_READY');
     const digest = computeCanonicalEventDigest(event);
     expect(/^[0-9a-f]{64}$/.test(digest)).toBe(true);
+  });
+
+  it('multi-algorithm digests are the raw SHA-2 digests of the canonical content', () => {
+    const event = buildEvent('TICKET', 'PLAN', 'PLAN_READY');
+    const digests = computeCanonicalEventDigests(event);
+
+    expect(digests.sha256).toEqual(Buffer.from(computeCanonicalEventDigest(event), 'hex'));
+    expect(digests.sha384).toHaveLength(48);
+    expect(digests.sha512).toHaveLength(64);
   });
 
   it('canonical JSON sorts nested object keys recursively', () => {

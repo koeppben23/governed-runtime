@@ -5,7 +5,7 @@ import type {
 import type { ProviderId } from '../../state/evidence-validation.js';
 import type { AssertionIdentity } from '../../state/assertion-identity.js';
 import type { ParseContext, ParserResult } from './types.js';
-import { createHash } from 'node:crypto';
+import { hashText } from '../../shared/hashing.js';
 
 interface GoTestEvent {
   Action?: string;
@@ -13,10 +13,6 @@ interface GoTestEvent {
   Package?: string;
   Output?: string;
   Elapsed?: number;
-}
-
-function sha256(content: string): string {
-  return createHash('sha256').update(content, 'utf-8').digest('hex');
 }
 
 function mapStatus(action: string): 'passed' | 'failed' | 'skipped' {
@@ -74,7 +70,7 @@ export function parseGoTestJson(eventsJson: string, context: ParseContext): Pars
         const firstLine = outputs.find((o) => o.trim())?.trim();
         failure = {
           message: firstLine ? firstLine.split('\n')[0] : undefined,
-          detailDigest: outputs.length > 0 ? sha256(outputs.join('')) : undefined,
+          detailDigest: outputs.length > 0 ? hashText(outputs.join('')) : undefined,
         };
       }
 

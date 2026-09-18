@@ -24,11 +24,7 @@ import type { StructuredAssertionEvidence } from '../../state/evidence-validatio
 import type { ProviderId } from '../../state/evidence-validation.js';
 import type { AssertionIdentity } from '../../state/assertion-identity.js';
 import type { ParseContext, ParserResult } from './types.js';
-import { createHash } from 'node:crypto';
-
-function sha256(content: string): string {
-  return createHash('sha256').update(content, 'utf-8').digest('hex');
-}
+import { hashText } from '../../shared/hashing.js';
 
 /**
  * Canonical localId for a JUnit test: classname followed by # and method name.
@@ -116,7 +112,7 @@ function buildJUnitAssertion(
     failure = {
       type: errorMatch?.[1],
       message: errorMatch?.[2],
-      detailDigest: sha256(region),
+      detailDigest: hashText(region),
     };
   } else if (hasFailure) {
     status = 'failed';
@@ -124,7 +120,7 @@ function buildJUnitAssertion(
     failure = {
       type: failureMatch?.[1],
       message: failureMatch?.[2],
-      detailDigest: sha256(region),
+      detailDigest: hashText(region),
     };
   } else {
     status = 'passed';

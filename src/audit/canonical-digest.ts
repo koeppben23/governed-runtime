@@ -28,13 +28,11 @@
  * @version v1
  */
 
-import { createHash } from 'node:crypto';
-import { hashText } from '../shared/hashing.js';
+import { hashDigestBytes, hashText, type Sha2Algorithm } from '../shared/hashing.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 
-// Re-exported so existing consumers (and the SSOT guard's audit allowlist) keep
-// importing the canonical serializer from here, while the single definition
-// lives in shared/canonical-json.ts.
+// Re-exported so existing consumers keep importing the canonical serializer
+// from here, while the single definition lives in shared/canonical-json.ts.
 export { canonicalJsonStringify };
 
 const EXCLUDED_FIELDS = new Set([
@@ -70,7 +68,7 @@ export function computeCanonicalEventDigest(event: Record<string, unknown>): str
 }
 
 /** Digest algorithms admissible for RFC 3161 message imprints (TSA2). */
-export type TsDigestAlgorithm = 'sha256' | 'sha384' | 'sha512';
+export type TsDigestAlgorithm = Sha2Algorithm;
 
 /**
  * The full admissible digest family of the canonical event content, for
@@ -84,8 +82,8 @@ export function computeCanonicalEventDigests(
 ): Record<TsDigestAlgorithm, Uint8Array> {
   const content = canonicalEventContent(event);
   return {
-    sha256: createHash('sha256').update(content, 'utf-8').digest(),
-    sha384: createHash('sha384').update(content, 'utf-8').digest(),
-    sha512: createHash('sha512').update(content, 'utf-8').digest(),
+    sha256: hashDigestBytes('sha256', content),
+    sha384: hashDigestBytes('sha384', content),
+    sha512: hashDigestBytes('sha512', content),
   };
 }

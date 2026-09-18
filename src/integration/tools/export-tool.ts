@@ -1,10 +1,10 @@
 /** Materialize the required development export and commit terminal evidence. */
 
-import { createHash, randomUUID } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { archiveCompletionExport } from '../../adapters/workspace/archive.js';
 import { verifyArchive } from '../../adapters/workspace/index.js';
 import { readState } from '../../adapters/persistence.js';
+import { hashFile } from '../../shared/hashing.js';
 import type { ExportCompletionEvidence } from '../../state/evidence-export.js';
 import type { SessionState } from '../../state/schema.js';
 import { executeExport } from '../../rails/export.js';
@@ -57,9 +57,7 @@ async function materializeExport(context: ToolContext): Promise<ExportOutcome> {
           }),
         };
       }
-      const packageDigest = createHash('sha256')
-        .update(await readFile(archivePath))
-        .digest('hex');
+      const packageDigest = await hashFile(archivePath);
       const evidence = {
         id: randomUUID(),
         packageDigest,

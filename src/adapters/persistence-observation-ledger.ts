@@ -17,14 +17,14 @@
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { createHash } from 'node:crypto';
+import { hashText } from '../shared/hashing.js';
 import { RepositoryObservationCapture } from '../state/evidence.js';
 import { durableAtomicWrite, ensureDir, PersistenceError, isEnoent } from './persistence.js';
 import { withSessionWriteLock } from './persistence-lock.js';
 
 /** Namespace key of an observation ledger: sha256 hex of the capability. */
 export function observationCapabilityDigest(capability: string): string {
-  return createHash('sha256').update(capability, 'utf-8').digest('hex');
+  return hashText(capability);
 }
 
 /** Ledger directory root for a workspace fingerprint. */

@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { hashText } from '../shared/hashing.js';
 import { Phase as PhaseSchema, type Phase } from '../state/schema.js';
 import {
   FLOWGUARD_MANDATES_FULL_BODY,
@@ -280,7 +280,7 @@ export function extractManagedVersion(content: string): string | null {
 export function isManagedArtifact(content: string): boolean {
   const envelope = parseManagedArtifactEnvelope(content);
   if (!envelope) return false;
-  const actualDigest = createHash('sha256').update(envelope.body, 'utf-8').digest('hex');
+  const actualDigest = hashText(envelope.body);
   return actualDigest === envelope.digest;
 }
 

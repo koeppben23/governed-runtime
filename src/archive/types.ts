@@ -29,8 +29,14 @@ import { FINGERPRINT_PATTERN } from '../shared/repository-fingerprint.js';
  * v2 (breaking, no legacy path): folds integrity-relevant metadata (policy mode,
  * audit head/count, identity) into the content digest and adds the audit
  * truncation anchor. v1 archives fail closed via schema validation.
+ *
+ * v3 (breaking, no legacy path): the content digest integrity header is
+ * serialized with the canonical JSON authority (sorted keys at every depth)
+ * instead of literal insertion order, and multi-part input is length-framed.
+ * This intentionally changes the digest bytes, so v2 archives fail closed via
+ * schema validation. There is no dual-formula compatibility path.
  */
-export const ARCHIVE_MANIFEST_SCHEMA_VERSION = 'archive-manifest.v2' as const;
+export const ARCHIVE_MANIFEST_SCHEMA_VERSION = 'archive-manifest.v3' as const;
 export const ARCHIVE_LAYOUT_VERSION = 2 as const;
 
 /**
@@ -158,8 +164,10 @@ export type ArchiveFinding = z.infer<typeof ArchiveFindingSchema>;
  * - includedFiles: sorted list of relative paths in the archive
  * - fileDigests: SHA-256 of each file's content, keyed by relative path
  * - contentDigest: SHA-256 over the sorted file digests AND an integrity header
- *   of security-relevant metadata (policy mode, audit head/count, identity).
- *   See {@link ./content-digest.ts} for the canonical formula.
+ *   of security-relevant metadata (policy mode, audit head/count, identity)
+ *   serialized by the canonical JSON authority and hashed through the shared
+ *   length-framed primitive. See {@link ./content-digest.ts} for the canonical
+ *   formula.
  *
  * Distinction:
  * - contentDigest = hash over file digests + integrity header (inside manifest)
