@@ -19,8 +19,9 @@
  *      with `from: 'READY'` plus `to`/`event` (shorthand properties included)
  *      is a flow-selection bypass. There is NO file-level exemption: the only
  *      admissible occurrence is inside `buildFlowSelectionTransition()` in
- *      `rails/types.ts`, and the guard additionally proves that this helper's
- *      target is bound to `resolveTransition('READY', event)`.
+ *      `rails/types.ts`, and the guard additionally proves that this helper
+ *      passes its own `event` parameter through both
+ *      `resolveTransition('READY', event)` and the returned `event` field.
  *   D3 `local-flow-phase-enumeration` — an array literal (also inside
  *      `new Set([...])`) whose phase set fully contains a canonical
  *      `FLOW_PHASES` progression re-creates the ordering authority; order is
@@ -154,23 +155,19 @@ function findPhaseRankTables(sourceFile: ts.SourceFile, rel: string): Violation[
   return out;
 }
 
-function isResolveTransitionReadyCall(node: ts.Node): boolean {
-  if (!ts.isCallExpression(node) || !ts.isIdentifier(node.expression)) return false;
-  if (node.expression.text !== 'resolveTransition') return false;
-  const first = node.arguments[0];
-  return first !== undefined && ts.isStringLiteralLike(first) && first.text === 'READY';
-}
-
-/** The AST range of the controlled helper, when this is its file. */
-function controlledHelperRange(sourceFile: ts.SourceFile, rel: string): NodeRange | undefined {
+/** The controlled helper declaration, when this is its file. */
+function controlledHelper(
+  sourceFile: ts.SourceFile,
+  rel: string,
+): ts.FunctionDeclaration | undefined {
   if (rel !== CONTROLLED_HELPER_FILE) return undefined;
-  let range: NodeRange | undefined;
+  let helper: ts.FunctionDeclaration | undefined;
   visit(sourceFile, (node) => {
     if (ts.isFunctionDeclaration(node) && node.name?.text === CONTROLLED_HELPER_NAME) {
-      range = { start: node.getStart(sourceFile), end: node.getEnd() };
+      helper = node;
     }
   });
-  return range;
+  return helper;
 }
 
 function isInsideRange(node: ts.Node, range: NodeRange): boolean {
@@ -178,24 +175,53 @@ function isInsideRange(node: ts.Node, range: NodeRange): boolean {
 }
 
 /**
- * Prove that the controlled helper binds its returned `to` to a
- * `resolveTransition('READY', ...)` result inside its own body.
+ * Prove the full relation inside the controlled helper:
+ *
+ *   caller `event` parameter
+ *        ├── resolveTransition('READY', event) ──→ derived binding ──→ returned `to`
+ *        └── returned `event`
+ *
+ * A resolver call with a different argument, or a returned `event` that is not
+ * the helper parameter, fails the proof.
  */
-function helperDerivesFromTopology(sourceFile: ts.SourceFile, range: NodeRange): boolean {
+function helperDerivesFromTopology(
+  sourceFile: ts.SourceFile,
+  helper: ts.FunctionDeclaration,
+): boolean {
+  const eventParameter = helper.parameters[0];
+  if (!eventParameter || !ts.isIdentifier(eventParameter.name)) return false;
+  const eventParameterName = eventParameter.name.text;
+
+  const range: NodeRange = { start: helper.getStart(sourceFile), end: helper.getEnd() };
   let derivedBinding: string | undefined;
   let readyTransitionObjects = 0;
   let returnedToIsDerived = false;
+  let returnedEventIsBound = false;
 
   visit(sourceFile, (node) => {
     if (!isInsideRange(node, range)) return;
 
+    // `const <binding> = resolveTransition('READY', event)` — both arguments
+    // must be the READY literal and the helper's own event parameter.
     if (
       ts.isVariableDeclaration(node) &&
       ts.isIdentifier(node.name) &&
       node.initializer !== undefined &&
-      isResolveTransitionReadyCall(node.initializer)
+      ts.isCallExpression(node.initializer) &&
+      ts.isIdentifier(node.initializer.expression) &&
+      node.initializer.expression.text === 'resolveTransition'
     ) {
-      derivedBinding = node.name.text;
+      const [readyArg, eventArg] = node.initializer.arguments;
+      if (
+        readyArg !== undefined &&
+        ts.isStringLiteralLike(readyArg) &&
+        readyArg.text === 'READY' &&
+        eventArg !== undefined &&
+        ts.isIdentifier(eventArg) &&
+        eventArg.text === eventParameterName
+      ) {
+        derivedBinding = node.name.text;
+      }
     }
 
     if (!ts.isObjectLiteralExpression(node)) return;
@@ -204,7 +230,8 @@ function helperDerivesFromTopology(sourceFile: ts.SourceFile, range: NodeRange):
     if (!from || from.kind !== 'assignment') return;
     if (!ts.isStringLiteralLike(from.initializer) || from.initializer.text !== 'READY') return;
     const to = entries.get('to');
-    if (!to || !entries.has('event')) return;
+    const event = entries.get('event');
+    if (!to || !event) return;
 
     readyTransitionObjects += 1;
     if (derivedBinding === undefined) return;
@@ -213,19 +240,37 @@ function helperDerivesFromTopology(sourceFile: ts.SourceFile, range: NodeRange):
       (to.kind === 'assignment' &&
         ts.isIdentifier(to.initializer) &&
         to.initializer.text === derivedBinding);
+    returnedEventIsBound =
+      event.kind === 'shorthand' ||
+      (event.kind === 'assignment' &&
+        ts.isIdentifier(event.initializer) &&
+        event.initializer.text === eventParameterName);
   });
 
-  return readyTransitionObjects === 1 && returnedToIsDerived;
+  return (
+    derivedBinding !== undefined &&
+    readyTransitionObjects === 1 &&
+    returnedToIsDerived &&
+    returnedEventIsBound
+  );
 }
 
 /** D2: locally materialized READY flow-selection transitions. */
 function findLocalReadyFlowTransitions(sourceFile: ts.SourceFile, rel: string): Violation[] {
   const out: Violation[] = [];
-  const helperRange = controlledHelperRange(sourceFile, rel);
+  const helper = controlledHelper(sourceFile, rel);
+  const helperRange: NodeRange | undefined = helper
+    ? { start: helper.getStart(sourceFile), end: helper.getEnd() }
+    : undefined;
 
-  if (helperRange !== undefined && !helperDerivesFromTopology(sourceFile, helperRange)) {
+  if (helper && !helperDerivesFromTopology(sourceFile, helper)) {
     out.push(
-      reportAt(sourceFile, helperRange.start, rel, 'controlled-helper-without-topology-derivation'),
+      reportAt(
+        sourceFile,
+        helperRange!.start,
+        rel,
+        'controlled-helper-without-topology-derivation',
+      ),
     );
   }
 
@@ -407,6 +452,35 @@ describe('topology authority SSOT (default-deny)', () => {
       const violations = findAll(unboundHelper, 'rails/types.ts');
       expect(
         violations.some((v) => v.rule === 'controlled-helper-without-topology-derivation'),
+      ).toBe(true);
+    });
+
+    it('D2 fires when the resolver ignores the helper event parameter', () => {
+      const literalResolver = [
+        'function buildFlowSelectionTransition(event, at) {',
+        "  const to = resolveTransition('READY', 'TICKET_SELECTED');",
+        "  return { from: 'READY', to, event, at };",
+        '}',
+      ].join('\n');
+      expect(
+        findAll(literalResolver, 'rails/types.ts').some(
+          (v) => v.rule === 'controlled-helper-without-topology-derivation',
+        ),
+      ).toBe(true);
+    });
+
+    it('D2 fires when the returned event is not the helper parameter', () => {
+      const detachedEvent = [
+        'function buildFlowSelectionTransition(event, at) {',
+        "  const to = resolveTransition('READY', event);",
+        "  const wrongEvent = 'TICKET_SELECTED';",
+        "  return { from: 'READY', to, event: wrongEvent, at };",
+        '}',
+      ].join('\n');
+      expect(
+        findAll(detachedEvent, 'rails/types.ts').some(
+          (v) => v.rule === 'controlled-helper-without-topology-derivation',
+        ),
       ).toBe(true);
     });
 
