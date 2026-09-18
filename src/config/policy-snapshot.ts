@@ -26,7 +26,6 @@ import { PolicyConfigurationError } from './policy-errors.js';
 import type {
   FlowGuardPolicy,
   AuditPolicy,
-  TimestampAssurancePolicy,
   PolicyMode,
   EffectiveGateBehavior,
   PolicyDegradedReason,
@@ -71,27 +70,35 @@ function validatePolicyDigest(hash: string): string {
   );
 }
 
-function buildResolutionFields(
+/**
+ * Frozen resolution provenance — never executable policy. `requestedMode` and
+ * `effectiveGateBehavior` are intentionally NOT part of this projection: they
+ * are owned exactly once by the snapshot literal below.
+ */
+type PolicyResolutionProvenance = Pick<
+  PolicySnapshot,
+  | 'source'
+  | 'degradedReason'
+  | 'resolutionReason'
+  | 'centralMinimumMode'
+  | 'policyDigest'
+  | 'policyVersion'
+  | 'policyPathHint'
+>;
+
+function buildResolutionProvenance(
   resolution: Parameters<typeof createPolicySnapshot>[3],
-  policy: FlowGuardPolicy,
-  fallbackGate: EffectiveGateBehavior,
-) {
-  if (!resolution) return { requestedMode: policy.mode };
-  const r = resolution;
+): PolicyResolutionProvenance {
   return {
-    requestedMode: r.requestedMode ?? policy.mode,
-    effectiveGateBehavior: r.effectiveGateBehavior ?? fallbackGate,
-    ...(r.source ? { source: r.source } : ({} as Record<string, unknown>)),
-    ...(r.degradedReason ? { degradedReason: r.degradedReason } : ({} as Record<string, unknown>)),
-    ...(r.resolutionReason
-      ? { resolutionReason: r.resolutionReason }
-      : ({} as Record<string, unknown>)),
-    ...(r.centralMinimumMode
-      ? { centralMinimumMode: r.centralMinimumMode }
-      : ({} as Record<string, unknown>)),
-    ...(r.policyDigest ? { policyDigest: r.policyDigest } : ({} as Record<string, unknown>)),
-    ...(r.policyVersion ? { policyVersion: r.policyVersion } : ({} as Record<string, unknown>)),
-    ...(r.policyPathHint ? { policyPathHint: r.policyPathHint } : ({} as Record<string, unknown>)),
+    ...(resolution?.source ? { source: resolution.source } : {}),
+    ...(resolution?.degradedReason ? { degradedReason: resolution.degradedReason } : {}),
+    ...(resolution?.resolutionReason ? { resolutionReason: resolution.resolutionReason } : {}),
+    ...(resolution?.centralMinimumMode
+      ? { centralMinimumMode: resolution.centralMinimumMode }
+      : {}),
+    ...(resolution?.policyDigest ? { policyDigest: resolution.policyDigest } : {}),
+    ...(resolution?.policyVersion ? { policyVersion: resolution.policyVersion } : {}),
+    ...(resolution?.policyPathHint ? { policyPathHint: resolution.policyPathHint } : {}),
   };
 }
 
@@ -122,7 +129,7 @@ export function createPolicySnapshot(
     hash,
     hashVersion: POLICY_DIGEST_VERSION,
     resolvedAt,
-    ...(buildResolutionFields(resolution, policy, fallbackGate) as Record<string, unknown>),
+    ...buildResolutionProvenance(resolution),
     requestedMode: resolution?.requestedMode ?? policy.mode,
     effectiveGateBehavior: resolution?.effectiveGateBehavior ?? fallbackGate,
     requireHumanGates: policy.requireHumanGates,
@@ -195,7 +202,7 @@ export function resolvePolicyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPo
       emitTransitions: snapshot.audit.emitTransitions,
       emitToolCalls: snapshot.audit.emitToolCalls,
       enableChainHash: snapshot.audit.enableChainHash,
-      timestampAssurance: snapshot.audit.timestampAssurance as TimestampAssurancePolicy,
+      timestampAssurance: snapshot.audit.timestampAssurance,
     } satisfies AuditPolicy,
     actorClassification: { ...snapshot.actorClassification },
     identityProvider: snapshot.identityProvider,

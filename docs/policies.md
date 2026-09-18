@@ -246,6 +246,8 @@ Config (identityProviderMode, minimumActorAssuranceForApproval)
 
 The enforcement always reads from the persisted **policy snapshot** — not from reconstructed policy mode defaults. This guarantees that the exact policy active at session creation governs all decisions.
 
+**Executable parity.** Every executable `FlowGuardPolicy` field is either frozen into `PolicySnapshot` and reconstructed by `resolvePolicyFromSnapshot()`, or documented optional provenance. This is enforced structurally: compile-time `keyof` coverage assertions (`src/architecture/__tests__/policy-snapshot-parity.test.ts`) plus a strict round-trip contract over all four canonical presets and a maximally-deviating legal policy (`src/config/policy-snapshot.test.ts`). An absent optional executable field (`identityProvider`) is itself a frozen semantic: the snapshot omits it and reconstruction returns `undefined`.
+
 ## Discovery Health Enforcement
 
 FlowGuard can gate mutating tools on the health of persisted Discovery evidence.

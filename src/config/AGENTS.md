@@ -35,6 +35,13 @@ npx vitest run --project unit src/config/reasons-completeness.test.ts
 - Policy resolution logic is split across `policy-resolver.ts`, `policy-central.ts`,
   `policy-ci.ts`, and `policy-snapshot.ts`.
 - Policy must not import from `src/state/`, `src/rails/`, or `src/integration/`.
+- `PolicySnapshot` parity: every executable `FlowGuardPolicy` field must be
+  frozen by `createPolicySnapshot()` and reconstructed by
+  `resolvePolicyFromSnapshot()`; optional executable fields follow the same rule
+  with absence as the frozen semantic. Enforced by compile-time `keyof`
+  coverage assertions (`architecture/__tests__/policy-snapshot-parity.test.ts`)
+  and the strict round-trip contract (`policy-snapshot.test.ts`). Do not hide a
+  parity mismatch with a cast — fix the authority.
 
 ## Profiles
 
