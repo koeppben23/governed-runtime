@@ -6,40 +6,42 @@
  * schema, and the ordinal order: `shared/actor-assurance.ts`. The tuple IS the
  * ordering (index-based), so vocabulary, schema, and ordinal cannot diverge.
  *
+ * Detection is STRUCTURAL: production files are parsed with the TypeScript
+ * compiler API and every syntactic construct that could enumerate all three
+ * tiers is inspected — object/array literals, `z.enum([...])`, unions, tuple
+ * types, switch cases, `new Map(...)`, `.set(...)` chains, and comparison
+ * cascades over one subject. Comments are trivia and are inert by construction,
+ * and there is no line-distance parameter that a larger construct could evade.
+ *
  * Invariants:
  *   A1 The tier vocabulary is defined exactly once. Named definitions
  *      (`ACTOR_ASSURANCE_TIERS`, `type ActorAssurance`) and array literals that
  *      contain all three tiers exist only in the authority. This also catches a
  *      second, differently-named tier tuple.
- *   A2 No production module defines the full three-tier union as a type union.
- *      The detector is content-wide (multiline-capable); order does not matter
- *      and a trailing `| null` does not hide it. Legitimate subsets (for
- *      example the two-tier approval minimum) are not flagged.
+ *   A2 No production module defines a full three-tier union type. Order does
+ *      not matter and a trailing `| null` does not hide it. Legitimate subsets
+ *      (for example the two-tier approval minimum) are not flagged.
  *   A3 No production module defines a literal `z.enum([...])` of the tiers.
  *      The identifier form `z.enum(ACTOR_ASSURANCE_TIERS)` is the only
  *      admissible spelling outside the authority and is not flagged.
- *   A4 No production module defines a parallel ordinal structure or otherwise
- *      re-enumerates all three tiers in one construct (`ASSURANCE_ORDINAL`, a
- *      local `assuranceOrdinal`, `Record<ActorAssurance, number>`, object/Map
- *      rank tables, switch cases, if/else cascades). Enumeration detection uses
- *      exact quoted tier literals and bare `tier:` keys within a bounded source
- *      window, so recovery messages that merely mention a tier name and
- *      single-tier assignments do not flag. The schema vocabulary and ordinal
- *      order are additionally asserted against the single tuple at runtime.
+ *   A4 No production module defines a parallel ordinal structure
+ *      (`ASSURANCE_ORDINAL`, a local `assuranceOrdinal`, or a
+ *      `Record<ActorAssurance, number>`) or otherwise enumerates all three
+ *      tiers in one construct (object/Map rank tables, switch cases, if/else
+ *      cascades, array tuples). The schema vocabulary and ordinal order are
+ *      additionally asserted against the single tuple at runtime.
  *   A5 The scan is default-wide over production source via
  *      `production-source.ts` (`isTestSourcePath`) with no directory allowlist.
- *   A6 Negative fixtures prove every detector, including multiline unions,
- *      permuted unions, `| null` suffixes, comment non-flagging, subset
- *      non-flagging, and the identifier-form enum.
+ *   A6 Negative fixtures prove every detector, including long switches, inline
+ *      comments, comment-prefixed code, distributed single-tier assignments,
+ *      subset unions/enums, and the identifier-form schema.
  *
- * Comments are inert: the detectors run on a comment-stripped code view so a
- * documented tier list cannot trip the union/literal detectors.
- *
- * @version v1
+ * @version v2
  */
 
 import { join } from 'node:path';
 
+import * as ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -59,7 +61,7 @@ const AUTHORITY = 'shared/actor-assurance.ts';
 /** Canonical tier names, in order. Used for detection only — never re-exported. */
 const TIERS = ['best_effort', 'claim_validated', 'idp_verified'] as const;
 
-const TIER_ALTERNATION = TIERS.join('|');
+const TIER_SET: ReadonlySet<string> = new Set(TIERS);
 
 interface Violation {
   readonly rel: string;
@@ -68,208 +70,281 @@ interface Violation {
   readonly rule: string;
 }
 
-type Detector = (view: string, rel: string) => Violation[];
-
-/**
- * Comment-stripped code view. Lines whose trimmed start is a comment marker
- * (`*`, `//`, `/*`) are blanked while line numbers stay aligned, so multiline
- * unions and enums in code are still detected across newlines.
- */
-function codeView(content: string): string {
-  return content
-    .split('\n')
-    .map((line) => {
-      const trimmed = line.trimStart();
-      return trimmed.startsWith('*') || trimmed.startsWith('//') || trimmed.startsWith('/*')
-        ? ''
-        : line;
-    })
-    .join('\n');
+function isTier(text: string): boolean {
+  return TIER_SET.has(text);
 }
 
-function lineAt(content: string, index: number): number {
-  return content.slice(0, index).split('\n').length;
+function stringLiteralsIn(node: ts.Node): string[] {
+  const out: string[] = [];
+  const walk = (current: ts.Node): void => {
+    if (ts.isStringLiteralLike(current)) {
+      out.push(current.text);
+      return;
+    }
+    current.forEachChild(walk);
+  };
+  walk(node);
+  return out;
 }
 
-function collectMatches(view: string, pattern: RegExp, rel: string, rule: string): Violation[] {
+function objectPropertyNames(node: ts.ObjectLiteralExpression): string[] {
+  const out: string[] = [];
+  for (const property of node.properties) {
+    const name = property.name;
+    if (!name) continue;
+    if (ts.isIdentifier(name) || ts.isStringLiteralLike(name) || ts.isNumericLiteral(name)) {
+      out.push(name.text);
+    }
+  }
+  return out;
+}
+
+function unionLiteralTypes(node: ts.UnionTypeNode): string[] {
+  const out: string[] = [];
+  for (const member of node.types) {
+    if (ts.isLiteralTypeNode(member) && ts.isStringLiteralLike(member.literal)) {
+      out.push(member.literal.text);
+    }
+  }
+  return out;
+}
+
+function tupleTypeLiterals(node: ts.TupleTypeNode): string[] {
+  const out: string[] = [];
+  for (const element of node.elements) {
+    if (ts.isLiteralTypeNode(element) && ts.isStringLiteralLike(element.literal)) {
+      out.push(element.literal.text);
+    }
+  }
+  return out;
+}
+
+function containsAllTiers(texts: readonly string[]): boolean {
+  const found = new Set(texts.filter(isTier));
+  return TIERS.every((tier) => found.has(tier));
+}
+
+function isZodEnumArgument(node: ts.Node): boolean {
+  const parent = node.parent;
+  return (
+    ts.isCallExpression(parent) &&
+    ts.isPropertyAccessExpression(parent.expression) &&
+    parent.expression.expression.getText(parent.getSourceFile()) === 'z' &&
+    parent.expression.name.text === 'enum'
+  );
+}
+
+function isInsideNewMap(node: ts.Node): boolean {
+  let current: ts.Node | undefined = node.parent;
+  while (current) {
+    if (
+      ts.isNewExpression(current) &&
+      current.expression.getText(current.getSourceFile()) === 'Map'
+    ) {
+      return true;
+    }
+    current = current.parent;
+  }
+  return false;
+}
+
+interface SubjectGroup {
+  readonly tiers: Set<string>;
+  readonly line: number;
+}
+
+function addToGroup(
+  groups: Map<string, SubjectGroup>,
+  subject: string,
+  tier: string,
+  line: number,
+): void {
+  const group = groups.get(subject) ?? { tiers: new Set<string>(), line };
+  group.tiers.add(tier);
+  groups.set(subject, group);
+}
+
+function groupViolations(
+  groups: Map<string, SubjectGroup>,
+  rel: string,
+  rule: string,
+  description: string,
+): Violation[] {
   const out: Violation[] = [];
-  for (const match of view.matchAll(pattern)) {
+  for (const [subject, group] of groups) {
+    if (!TIERS.every((tier) => group.tiers.has(tier))) continue;
     out.push({
       rel,
-      line: lineAt(view, match.index ?? 0),
-      snippet: match[0].replace(/\s+/g, ' ').trim(),
+      line: group.line,
+      snippet: `${description} '${subject}'`,
       rule,
     });
   }
   return out;
 }
 
-function tierNamesIn(text: string): Set<string> {
-  const found = new Set<string>();
-  for (const match of text.matchAll(new RegExp(`\\b(${TIER_ALTERNATION})\\b`, 'g'))) {
-    found.add(match[1]!);
-  }
-  return found;
-}
-
-function containsAllTiers(text: string): boolean {
-  const found = tierNamesIn(text);
-  return TIERS.every((tier) => found.has(tier));
-}
-
-/** A1: named vocabulary definitions outside the authority. */
-function findDuplicateVocabulary(view: string, rel: string): Violation[] {
-  return [
-    ...collectMatches(
-      view,
-      /\b(?:export\s+)?const\s+ACTOR_ASSURANCE_TIERS\b/g,
-      rel,
-      'duplicate-assurance-vocabulary',
-    ),
-    // A type alias DEFINITION requires `=`; an inline type import (`type X`)
-    // inside named braces is not a definition.
-    ...collectMatches(
-      view,
-      /\b(?:export\s+)?type\s+ActorAssurance\s*=/g,
-      rel,
-      'duplicate-assurance-vocabulary',
-    ),
-    ...collectMatches(
-      view,
-      /\b(?:export\s+)?interface\s+ActorAssurance\b/g,
-      rel,
-      'duplicate-assurance-vocabulary',
-    ),
-  ];
-}
-
-/** A1: array literals that re-declare the full tier set under any name. */
-function findDuplicateLiteralSets(view: string, rel: string): Violation[] {
+/** Structural detection over one parsed production file. */
+function findViolations(content: string, rel: string): Violation[] {
+  const sourceFile = ts.createSourceFile(
+    rel,
+    content,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
   const out: Violation[] = [];
-  for (const match of view.matchAll(/\[([^[\]]*)\]/g)) {
-    if (!containsAllTiers(match[1] ?? '')) continue;
+  const setGroups = new Map<string, SubjectGroup>();
+  const comparisonGroups = new Map<string, SubjectGroup>();
+
+  const report = (node: ts.Node, rule: string, detail: string): void => {
     out.push({
       rel,
-      line: lineAt(view, match.index ?? 0),
-      snippet: match[0].replace(/\s+/g, ' ').trim(),
-      rule: 'duplicate-assurance-literal-set',
+      line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1,
+      snippet: `${detail}: ${node.getText(sourceFile).replace(/\s+/g, ' ').slice(0, 120)}`.trim(),
+      rule,
     });
-  }
-  return out;
-}
+  };
 
-/** A2: full three-tier unions, multiline-capable, order-independent. */
-function findDuplicateUnions(view: string, rel: string): Violation[] {
-  const tierLiteral = `['"](?:${TIER_ALTERNATION})['"]`;
-  const pattern = new RegExp(`(?:${tierLiteral}\\s*\\|\\s*)+${tierLiteral}`, 'g');
-  const out: Violation[] = [];
-  for (const match of view.matchAll(pattern)) {
-    if (!containsAllTiers(match[0])) continue;
-    out.push({
-      rel,
-      line: lineAt(view, match.index ?? 0),
-      snippet: match[0].replace(/\s+/g, ' ').trim(),
-      rule: 'duplicate-assurance-union',
-    });
-  }
-  return out;
-}
-
-/** A3: literal z.enum([...]) tier lists, multiline-capable, order-independent. */
-function findDuplicateZodEnums(view: string, rel: string): Violation[] {
-  const out: Violation[] = [];
-  for (const match of view.matchAll(/z\.enum\s*\(\s*\[([^\]]*)\]/g)) {
-    const body = match[1] ?? '';
-    const found = new Set([...body.matchAll(/['"]([^'"]+)['"]/g)].map((entry) => entry[1]!));
-    if (!TIERS.every((tier) => found.has(tier))) continue;
-    out.push({
-      rel,
-      line: lineAt(view, match.index ?? 0),
-      snippet: match[0].replace(/\s+/g, ' ').trim(),
-      rule: 'duplicate-assurance-zod-enum',
-    });
-  }
-  return out;
-}
-
-/** A4: parallel ordinal structures outside the authority. */
-function findDuplicateOrdinals(view: string, rel: string): Violation[] {
-  return [
-    ...collectMatches(view, /\bASSURANCE_ORDINAL\b/g, rel, 'duplicate-assurance-ordinal'),
-    ...collectMatches(
-      view,
-      /\b(?:function|const)\s+assuranceOrdinal\b/g,
-      rel,
-      'duplicate-assurance-ordinal',
-    ),
-    ...collectMatches(
-      view,
-      /\bRecord<\s*ActorAssurance\s*,\s*number\s*>/g,
-      rel,
-      'duplicate-assurance-ordinal',
-    ),
-  ];
-}
-
-/**
- * A4: any construct outside the authority that enumerates all three tiers
- * within one bounded source window — object/Map rank tables, switch cases,
- * if/else cascades, or array tuples. Tokens are exact quoted tier literals or
- * bare `tier:` keys, so a recovery message that merely contains a tier word and
- * a distributed single-tier assignment are not counted.
- */
-const MAX_TIER_ENUMERATION_SPAN_LINES = 12;
-
-function exactTierTokens(view: string): Array<{ line: number; tier: string }> {
-  const tokens: Array<{ line: number; tier: string }> = [];
-  view.split('\n').forEach((text, index) => {
-    const literals = new RegExp(`(['"])(${TIER_ALTERNATION})\\1`, 'g');
-    for (const match of text.matchAll(literals)) {
-      tokens.push({ line: index + 1, tier: match[2]! });
+  const walk = (node: ts.Node): void => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === 'ACTOR_ASSURANCE_TIERS'
+    ) {
+      report(node, 'duplicate-assurance-vocabulary', 're-declared tier vocabulary');
     }
-    const bareKeys = new RegExp(`\\b(${TIER_ALTERNATION})\\s*:`, 'g');
-    for (const match of text.matchAll(bareKeys)) {
-      tokens.push({ line: index + 1, tier: match[1]! });
+    if (
+      (ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node)) &&
+      node.name.text === 'ActorAssurance'
+    ) {
+      report(node, 'duplicate-assurance-vocabulary', 're-declared tier type');
     }
-  });
-  return tokens.sort((left, right) => left.line - right.line);
-}
-
-function findTierEnumerations(view: string, rel: string): Violation[] {
-  const tokens = exactTierTokens(view);
-  for (let start = 0; start < tokens.length; start++) {
-    const first = tokens[start]!;
-    const seen = new Set<string>();
-    for (let end = start; end < tokens.length; end++) {
-      const token = tokens[end]!;
-      if (token.line - first.line >= MAX_TIER_ENUMERATION_SPAN_LINES) break;
-      seen.add(token.tier);
-      if (TIERS.every((tier) => seen.has(tier))) {
-        return [
-          {
-            rel,
-            line: first.line,
-            snippet: `enumerates ${TIERS.join(' + ')} within ${MAX_TIER_ENUMERATION_SPAN_LINES} source lines`,
-            rule: 'duplicate-assurance-tier-enumeration',
-          },
-        ];
+    if (
+      (ts.isVariableDeclaration(node) || ts.isFunctionDeclaration(node)) &&
+      node.name &&
+      ts.isIdentifier(node.name) &&
+      (node.name.text === 'ASSURANCE_ORDINAL' || node.name.text === 'assuranceOrdinal')
+    ) {
+      report(node, 'duplicate-assurance-ordinal', 'parallel ordinal definition');
+    }
+    if (
+      ts.isTypeReferenceNode(node) &&
+      node.getText(sourceFile).replace(/\s+/g, '') === 'Record<ActorAssurance,number>'
+    ) {
+      report(node, 'duplicate-assurance-ordinal', 'parallel ordinal type');
+    }
+    if (ts.isUnionTypeNode(node) && containsAllTiers(unionLiteralTypes(node))) {
+      report(node, 'duplicate-assurance-union', 'full tier union');
+    }
+    if (ts.isTupleTypeNode(node) && containsAllTiers(tupleTypeLiterals(node))) {
+      report(node, 'duplicate-assurance-literal-set', 'tier tuple type');
+    }
+    if (ts.isArrayLiteralExpression(node)) {
+      const literals = stringLiteralsIn(node);
+      if (containsAllTiers(literals) && !isInsideNewMap(node)) {
+        report(
+          node,
+          isZodEnumArgument(node)
+            ? 'duplicate-assurance-zod-enum'
+            : 'duplicate-assurance-literal-set',
+          isZodEnumArgument(node) ? 'literal z.enum tier list' : 'tier array literal',
+        );
       }
     }
-  }
-  return [];
-}
+    if (ts.isObjectLiteralExpression(node) && containsAllTiers(objectPropertyNames(node))) {
+      report(node, 'duplicate-assurance-tier-enumeration', 'tier key enumeration');
+    }
+    if (ts.isSwitchStatement(node)) {
+      const caseLiterals = node.caseBlock.clauses.flatMap((clause) =>
+        ts.isCaseClause(clause) && ts.isStringLiteralLike(clause.expression)
+          ? [clause.expression.text]
+          : [],
+      );
+      if (containsAllTiers(caseLiterals)) {
+        report(node, 'duplicate-assurance-tier-enumeration', 'tier switch enumeration');
+      }
+    }
+    if (
+      ts.isNewExpression(node) &&
+      node.expression.getText(sourceFile) === 'Map' &&
+      containsAllTiers(stringLiteralsIn(node))
+    ) {
+      report(node, 'duplicate-assurance-tier-enumeration', 'tier Map enumeration');
+    }
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.name.text === 'set'
+    ) {
+      const args = node.arguments;
+      const first = args[0];
+      if (first && ts.isStringLiteralLike(first) && isTier(first.text)) {
+        addToGroup(
+          setGroups,
+          node.expression.expression.getText(sourceFile),
+          first.text,
+          sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1,
+        );
+      }
+      if (containsAllTiers(stringLiteralsIn(node))) {
+        report(node, 'duplicate-assurance-tier-enumeration', 'tier set-chain enumeration');
+      }
+    }
+    if (
+      ts.isBinaryExpression(node) &&
+      (
+        [
+          ts.SyntaxKind.EqualsEqualsEqualsToken,
+          ts.SyntaxKind.ExclamationEqualsEqualsToken,
+          ts.SyntaxKind.EqualsEqualsToken,
+          ts.SyntaxKind.ExclamationEqualsToken,
+        ] as readonly ts.SyntaxKind[]
+      ).includes(node.operatorToken.kind)
+    ) {
+      const left = node.left;
+      const right = node.right;
+      const literal = ts.isStringLiteralLike(left)
+        ? left
+        : ts.isStringLiteralLike(right)
+          ? right
+          : undefined;
+      if (literal && isTier(literal.text)) {
+        const subject = literal === left ? right : left;
+        const subjectText = subject.getText(sourceFile);
+        if (subjectText !== literal.text) {
+          addToGroup(
+            comparisonGroups,
+            subjectText,
+            literal.text,
+            sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1,
+          );
+        }
+      }
+    }
 
-const DETECTORS: readonly Detector[] = [
-  findDuplicateVocabulary,
-  findDuplicateLiteralSets,
-  findDuplicateUnions,
-  findDuplicateZodEnums,
-  findDuplicateOrdinals,
-  findTierEnumerations,
-];
+    node.forEachChild(walk);
+  };
 
-function detect(content: string, rel: string, detector: Detector): Violation[] {
-  return detector(codeView(content), rel);
+  sourceFile.forEachChild(walk);
+
+  out.push(
+    ...groupViolations(
+      setGroups,
+      rel,
+      'duplicate-assurance-tier-enumeration',
+      'tier .set enumeration on',
+    ),
+  );
+  out.push(
+    ...groupViolations(
+      comparisonGroups,
+      rel,
+      'duplicate-assurance-tier-enumeration',
+      'tier comparison cascade on',
+    ),
+  );
+
+  return out;
 }
 
 /** Path-exempt scan: the authority may define the vocabulary; every other file may not. */
@@ -277,9 +352,7 @@ function scanFiles(files: readonly ProductionSourceFile[]): Violation[] {
   const out: Violation[] = [];
   for (const file of files) {
     if (file.rel === AUTHORITY) continue;
-    for (const detector of DETECTORS) {
-      out.push(...detect(file.content, file.rel, detector));
-    }
+    out.push(...findViolations(file.content, file.rel));
   }
   return out;
 }
@@ -327,32 +400,28 @@ describe('actor assurance SSOT (default-deny)', () => {
   });
 
   describe('negative fixtures — prove every detector', () => {
-    const rogue = (content: string): ProductionSourceFile[] => [
-      { rel: 'config/rogue.ts', content },
-    ];
-
     const findAll = (content: string, rel = 'config/rogue.ts'): Violation[] =>
-      DETECTORS.flatMap((detector) => detect(content, rel, detector));
+      findViolations(content, rel);
 
     it('fires on a multiline type union outside the authority', () => {
-      const fixture = rogue(
-        ['type Rogue =', "  | 'best_effort'", "  | 'claim_validated'", "  | 'idp_verified';"].join(
-          '\n',
-        ),
-      );
-      const violations = findAll(fixture[0]!.content);
-      expect(violations.map((violation) => violation.rule)).toContain('duplicate-assurance-union');
+      const fixture = [
+        'type Rogue =',
+        "  | 'best_effort'",
+        "  | 'claim_validated'",
+        "  | 'idp_verified';",
+      ].join('\n');
+      expect(findAll(fixture).some((v) => v.rule === 'duplicate-assurance-union')).toBe(true);
     });
 
     it('fires on a permuted union and on a union with a | null suffix', () => {
       expect(
         findAll("type A = 'idp_verified' | 'best_effort' | 'claim_validated';").some(
-          (violation) => violation.rule === 'duplicate-assurance-union',
+          (v) => v.rule === 'duplicate-assurance-union',
         ),
       ).toBe(true);
       expect(
-        findAll("minimum: 'best_effort' | 'claim_validated' | 'idp_verified' | null;").some(
-          (violation) => violation.rule === 'duplicate-assurance-union',
+        findAll("type A = 'best_effort' | 'claim_validated' | 'idp_verified' | null;").some(
+          (v) => v.rule === 'duplicate-assurance-union',
         ),
       ).toBe(true);
     });
@@ -365,16 +434,33 @@ describe('actor assurance SSOT (default-deny)', () => {
       ).toEqual([]);
     });
 
-    it('does NOT fire on a comment documenting the union', () => {
-      const fixture = rogue(
-        [
-          '/**',
-          " * 'best_effort' | 'claim_validated' | 'idp_verified'",
-          ' */',
-          'export const x = 1;',
-        ].join('\n'),
+    it('does NOT fire on comments — JSDoc or inline — that mention the tiers', () => {
+      const jsdoc = [
+        '/**',
+        " * 'best_effort' | 'claim_validated' | 'idp_verified'",
+        ' */',
+        'export const x = 1;',
+      ].join('\n');
+      expect(findAll(jsdoc)).toEqual([]);
+
+      const inline = "const x = 1; // 'best_effort' | 'claim_validated' | 'idp_verified'";
+      expect(findAll(inline)).toEqual([]);
+
+      const blockInline = "const x = 1; /* 'best_effort' | 'claim_validated' | 'idp_verified' */";
+      expect(findAll(blockInline)).toEqual([]);
+    });
+
+    it('still fires on code that is preceded by a block comment on the same line', () => {
+      const prefixed = [
+        '/* explanation */ const ranks = {',
+        '  best_effort: 0,',
+        '  claim_validated: 1,',
+        '  idp_verified: 2,',
+        '};',
+      ].join('\n');
+      expect(findAll(prefixed).some((v) => v.rule === 'duplicate-assurance-tier-enumeration')).toBe(
+        true,
       );
-      expect(findAll(fixture[0]!.content)).toEqual([]);
     });
 
     it('fires on a re-declared named vocabulary and on a re-declared type alias', () => {
@@ -384,11 +470,17 @@ describe('actor assurance SSOT (default-deny)', () => {
       expect(alias.some((v) => v.rule === 'duplicate-assurance-vocabulary')).toBe(true);
     });
 
-    it('fires on a differently-named full tier array literal', () => {
-      const violations = findAll(
-        "const tiers = ['best_effort', 'claim_validated', 'idp_verified'];",
-      );
-      expect(violations.some((v) => v.rule === 'duplicate-assurance-literal-set')).toBe(true);
+    it('fires on a differently-named full tier array literal and tuple type', () => {
+      expect(
+        findAll("const tiers = ['best_effort', 'claim_validated', 'idp_verified'];").some(
+          (v) => v.rule === 'duplicate-assurance-literal-set',
+        ),
+      ).toBe(true);
+      expect(
+        findAll("type Tiers = ['best_effort', 'claim_validated', 'idp_verified'];").some(
+          (v) => v.rule === 'duplicate-assurance-literal-set',
+        ),
+      ).toBe(true);
     });
 
     it('fires on literal z.enum tier lists (single-line, multiline, permuted)', () => {
@@ -458,7 +550,7 @@ describe('actor assurance SSOT (default-deny)', () => {
       );
     });
 
-    it('fires on a Map rank table', () => {
+    it('fires on Map rank tables, including sequential .set calls', () => {
       const map = [
         'const assuranceRank = new Map([',
         "  ['best_effort', 0],",
@@ -470,32 +562,60 @@ describe('actor assurance SSOT (default-deny)', () => {
         true,
       );
 
+      const chain = [
+        'const ranks = new Map();',
+        "ranks.set('best_effort', 0).set('claim_validated', 1).set('idp_verified', 2);",
+      ].join('\n');
+      expect(findAll(chain).some((v) => v.rule === 'duplicate-assurance-tier-enumeration')).toBe(
+        true,
+      );
+
       const sequential = [
-        'const assuranceRank = new Map();',
-        "assuranceRank.set('best_effort', 0);",
-        "assuranceRank.set('claim_validated', 1);",
-        "assuranceRank.set('idp_verified', 2);",
+        'const ranks = new Map();',
+        "ranks.set('best_effort', 0);",
+        "ranks.set('claim_validated', 1);",
+        "ranks.set('idp_verified', 2);",
       ].join('\n');
       expect(
         findAll(sequential).some((v) => v.rule === 'duplicate-assurance-tier-enumeration'),
       ).toBe(true);
     });
 
-    it('fires on a switch or if/else cascade over all three tiers', () => {
-      const switchFixture = [
+    it('fires on a switch over all three tiers regardless of case-body length', () => {
+      const longSwitch = [
         'switch (tier) {',
-        "  case 'best_effort':",
-        '    return 0;',
-        "  case 'claim_validated':",
-        '    return 1;',
-        "  case 'idp_verified':",
-        '    return 2;',
+        "  case 'best_effort': {",
+        '    const a = compute();',
+        '    log(a);',
+        '    audit(a);',
+        '    break;',
+        '  }',
+        '  // several lines of real logic between the cases',
+        '  const intermediate = prepare();',
+        '  consume(intermediate);',
+        "  case 'claim_validated': {",
+        '    const b = compute();',
+        '    log(b);',
+        '    audit(b);',
+        '    break;',
+        '  }',
+        '  // more real logic',
+        '  const other = prepare();',
+        '  consume(other);',
+        "  case 'idp_verified': {",
+        '    const c = compute();',
+        '    log(c);',
+        '    audit(c);',
+        '    break;',
+        '  }',
         '}',
       ].join('\n');
       expect(
-        findAll(switchFixture).some((v) => v.rule === 'duplicate-assurance-tier-enumeration'),
+        findAll(longSwitch).some((v) => v.rule === 'duplicate-assurance-tier-enumeration'),
       ).toBe(true);
+    });
 
+    it('fires on an if/else cascade over all three tiers', () => {
       const cascade = [
         "if (tier === 'best_effort') return 0;",
         "if (tier === 'claim_validated') return 1;",
