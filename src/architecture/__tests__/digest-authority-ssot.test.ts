@@ -11,9 +11,11 @@
  * Invariants:
  *   D1 `createHash` may be CALLED only in `shared/hashing.ts` or an explicitly
  *      sanctioned, reasoned exception. A sanctioned exception is NOT a
- *      file-level exemption: every `createHash(...)` call in the file is
- *      inspected, only the declared literal algorithm is admissible, and the
- *      exact call count is enforced. A dynamic algorithm argument never passes.
+ *      file-level exemption: the `createHash` identifier must appear exactly
+ *      `expectedCalls` times (so a function alias such as
+ *      `const factory = crypto.createHash` is caught), only the declared
+ *      literal algorithm is admissible, and every direct call is inspected.
+ *      A dynamic algorithm argument never passes.
  *   D2 A hash primitive must never consume a raw `JSON.stringify(...)`
  *      (structured digest inputs are canonicalized first). The detector targets
  *      direct hash-input nesting (including `.update(JSON.stringify(...))`);
@@ -161,34 +163,15 @@ function sanctionedFor(rel: string): SanctionedException | undefined {
   return SANCTIONED_CREATE_HASH.find((entry) => entry.rel === rel);
 }
 
-function findCreateHashViolations(files: readonly ProductionSourceFile[]): Violation[] {
-  const out: Violation[] = [];
-  for (const f of files) {
-    if (f.rel === HASHING_AUTHORITY) continue;
-    const sanctioned = sanctionedFor(f.rel);
-    if (sanctioned === undefined) {
-      // Identifier-level rule (D4): an import/reference alone is a violation.
-      out.push(...findMatches(f, createHashReference(), 'createHash-outside-authority'));
-      continue;
-    }
-    // Sanctioned files are NOT exempt wholesale: every call is inspected and
-    // only the declared literal algorithm passes. `createHash(algo)`,
-    // `createHash('md5')`, `createHash('sha256')` all remain violations.
-    for (const call of findCreateHashCalls(f)) {
-      if (isSanctionedCall(call, sanctioned)) continue;
-      out.push({
-        rel: f.rel,
-        line: call.line,
-        snippet: call.raw,
-        rule: 'sanctioned-createHash-wrong-algorithm',
-      });
-    }
-  }
-  return out;
-}
-
-/** The sanctioned call count is exact: one declared minting point, not a budget. */
-function findSanctionedCountViolations(files: readonly ProductionSourceFile[]): Violation[] {
+/**
+ * Sanctioned-file rules. The exception is reference-exact and call-exact, not
+ * a file-level exemption: the identifier must appear exactly `expectedCalls`
+ * times (so a function alias such as `const factory = crypto.createHash` is
+ * caught) and every direct call must use the declared literal algorithm
+ * (`createHash(algo)`, `createHash('md5')`, `createHash('sha256')` all remain
+ * violations).
+ */
+function findSanctionedViolations(files: readonly ProductionSourceFile[]): Violation[] {
   const out: Violation[] = [];
   for (const entry of SANCTIONED_CREATE_HASH) {
     const file = files.find((f) => f.rel === entry.rel);
@@ -201,15 +184,35 @@ function findSanctionedCountViolations(files: readonly ProductionSourceFile[]): 
       });
       continue;
     }
-    const calls = findCreateHashCalls(file);
-    if (calls.length !== entry.expectedCalls) {
+    const references = [...file.content.matchAll(createHashReference())];
+    if (references.length !== entry.expectedCalls) {
+      const offending = references[entry.expectedCalls] ?? references[0];
       out.push({
         rel: file.rel,
-        line: calls[0]?.line ?? 1,
-        snippet: `${calls.length} createHash call(s), expected ${entry.expectedCalls}`,
-        rule: 'sanctioned-createHash-count-mismatch',
+        line: offending === undefined ? 1 : lineAt(file.content, offending.index ?? 0),
+        snippet: `${references.length} createHash reference(s), expected ${entry.expectedCalls}`,
+        rule: 'sanctioned-createHash-reference-count',
       });
     }
+    for (const call of findCreateHashCalls(file)) {
+      if (isSanctionedCall(call, entry)) continue;
+      out.push({
+        rel: file.rel,
+        line: call.line,
+        snippet: call.raw,
+        rule: 'sanctioned-createHash-wrong-algorithm',
+      });
+    }
+  }
+  return out;
+}
+
+function findCreateHashViolations(files: readonly ProductionSourceFile[]): Violation[] {
+  const out: Violation[] = [];
+  for (const f of files) {
+    if (f.rel === HASHING_AUTHORITY || sanctionedFor(f.rel) !== undefined) continue;
+    // Identifier-level rule (D4): an import/reference alone is a violation.
+    out.push(...findMatches(f, createHashReference(), 'createHash-outside-authority'));
   }
   return out;
 }
@@ -224,7 +227,10 @@ const productionFiles = collectProductionSources(SRC_ROOT);
 
 describe('digest authority SSOT (default-deny)', () => {
   it('D1/D4: createHash is referenced only in the hashing authority or an exactly sanctioned call', () => {
-    const violations = findCreateHashViolations(productionFiles);
+    const violations = [
+      ...findCreateHashViolations(productionFiles),
+      ...findSanctionedViolations(productionFiles),
+    ];
     if (violations.length > 0) {
       console.error('Digest authority violations:', violations);
     }
@@ -239,16 +245,14 @@ describe('digest authority SSOT (default-deny)', () => {
     expect(violations).toEqual([]);
   });
 
-  it('D1: every sanctioned exception is real, count-exact, and algorithm-exact', () => {
+  it('D1: every sanctioned exception declaration is real and governed', () => {
     for (const entry of SANCTIONED_CREATE_HASH) {
       expect(existsSync(join(SRC_ROOT, entry.governingGuard)), entry.governingGuard).toBe(true);
       expect(entry.reason.trim().length).toBeGreaterThan(0);
+      const file = productionFiles.find((f) => f.rel === entry.rel);
+      expect(file, `${entry.rel} must exist`).toBeTruthy();
+      expect(findCreateHashCalls(file!).length).toBe(entry.expectedCalls);
     }
-    const violations = findSanctionedCountViolations(productionFiles);
-    if (violations.length > 0) {
-      console.error('Sanctioned exception violations:', violations);
-    }
-    expect(violations).toEqual([]);
   });
 
   it('D3: the canonical-JSON definition SSOT guard is present and owns serialization definitions', () => {
@@ -304,7 +308,7 @@ describe('digest authority SSOT (default-deny)', () => {
           content: "const h = crypto.createHash('sha1').update(seed).digest();",
         },
       ];
-      expect(findCreateHashViolations(fixture)).toEqual([]);
+      expect(findSanctionedViolations(fixture)).toEqual([]);
     });
 
     it('fires on a SHA-256 call inside the sanctioned file', () => {
@@ -314,7 +318,7 @@ describe('digest authority SSOT (default-deny)', () => {
           content: "const h = crypto.createHash('sha256').update(seed).digest();",
         },
       ];
-      const violations = findCreateHashViolations(fixture);
+      const violations = findSanctionedViolations(fixture);
       expect(violations).toHaveLength(1);
       expect(violations[0]!.rule).toBe('sanctioned-createHash-wrong-algorithm');
     });
@@ -326,7 +330,7 @@ describe('digest authority SSOT (default-deny)', () => {
           content: "const h = crypto.createHash('md5').update(seed).digest();",
         },
       ];
-      const violations = findCreateHashViolations(fixture);
+      const violations = findSanctionedViolations(fixture);
       expect(violations).toHaveLength(1);
       expect(violations[0]!.rule).toBe('sanctioned-createHash-wrong-algorithm');
     });
@@ -338,7 +342,7 @@ describe('digest authority SSOT (default-deny)', () => {
           content: 'const h = crypto.createHash(algorithm).update(seed).digest();',
         },
       ];
-      const violations = findCreateHashViolations(fixture);
+      const violations = findSanctionedViolations(fixture);
       expect(violations).toHaveLength(1);
       expect(violations[0]!.rule).toBe('sanctioned-createHash-wrong-algorithm');
     });
@@ -353,12 +357,16 @@ describe('digest authority SSOT (default-deny)', () => {
           ].join('\n'),
         },
       ];
-      const violations = findCreateHashViolations(fixture);
-      expect(violations).toHaveLength(1);
-      expect(violations[0]!.rule).toBe('sanctioned-createHash-wrong-algorithm');
+      const rules = findSanctionedViolations(fixture)
+        .map((violation) => violation.rule)
+        .sort();
+      expect(rules).toEqual([
+        'sanctioned-createHash-reference-count',
+        'sanctioned-createHash-wrong-algorithm',
+      ]);
     });
 
-    it('fires on a second sanctioned-looking call (count is exact)', () => {
+    it('fires on a second sanctioned-looking call (references are exact)', () => {
       const fixture: ProductionSourceFile[] = [
         {
           rel: 'state/proofgraph-approval.ts',
@@ -368,14 +376,29 @@ describe('digest authority SSOT (default-deny)', () => {
           ].join('\n'),
         },
       ];
-      expect(findCreateHashViolations(fixture)).toEqual([]);
-      const violations = findSanctionedCountViolations(fixture);
+      const violations = findSanctionedViolations(fixture);
       expect(violations).toHaveLength(1);
-      expect(violations[0]!.rule).toBe('sanctioned-createHash-count-mismatch');
+      expect(violations[0]!.rule).toBe('sanctioned-createHash-reference-count');
+    });
+
+    it('fires on a createHash function alias inside the sanctioned file', () => {
+      const fixture: ProductionSourceFile[] = [
+        {
+          rel: 'state/proofgraph-approval.ts',
+          content: [
+            "const allowed = crypto.createHash('sha1').update(seed).digest();",
+            'const hashFactory = crypto.createHash;',
+            "const rogue = hashFactory('sha256').update(value).digest();",
+          ].join('\n'),
+        },
+      ];
+      const violations = findSanctionedViolations(fixture);
+      expect(violations).toHaveLength(1);
+      expect(violations[0]!.rule).toBe('sanctioned-createHash-reference-count');
     });
 
     it('fires when the sanctioned file is missing entirely', () => {
-      const violations = findSanctionedCountViolations([]);
+      const violations = findSanctionedViolations([]);
       expect(violations).toHaveLength(1);
       expect(violations[0]!.rule).toBe('sanctioned-file-missing');
     });
