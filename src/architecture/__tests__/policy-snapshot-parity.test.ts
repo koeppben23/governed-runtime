@@ -75,6 +75,13 @@ type MissingChallengePolicyFields = Exclude<
 >;
 type _ChallengePolicyFieldsCovered = AssertNever<MissingChallengePolicyFields>;
 
+// The deepest structured duplication: the count matrix inside challengePolicy.
+type MissingChallengeCountFields = Exclude<
+  keyof ChallengePolicy['counts'],
+  keyof PolicySnapshot['challengePolicy']['counts']
+>;
+type _ChallengeCountFieldsCovered = AssertNever<MissingChallengeCountFields>;
+
 type MissingDiscoveryHealthFields = Exclude<
   keyof DiscoveryHealthPolicy,
   keyof PolicySnapshot['discoveryHealth']
@@ -95,11 +102,22 @@ type MissingAuditFieldsFixture = Exclude<keyof FlowGuardPolicy, keyof SnapshotMi
 // @ts-expect-error — proves a missing executable field violates parity.
 type _MissingAuditMustFail = AssertNever<MissingAuditFieldsFixture>;
 
+type SnapshotMissingChallengeCount = Omit<PolicySnapshot['challengePolicy']['counts'], 'STANDARD'>;
+type MissingChallengeCountFixture = Exclude<
+  keyof ChallengePolicy['counts'],
+  keyof SnapshotMissingChallengeCount
+>;
+
+// @ts-expect-error — proves a missing challenge count violates parity.
+type _MissingChallengeCountMustFail = AssertNever<MissingChallengeCountFixture>;
+
 describe('policy snapshot parity (structural)', () => {
-  it('P4: the canonical preset round-trips keys and values through the snapshot', () => {
+  it('P4: the canonical preset round-trips keys and values through the parsed snapshot', () => {
     const policy = getPolicyPreset('regulated');
-    const snapshot = createPolicySnapshot(policy, RESOLVED_AT, hashText);
-    expect(PolicySnapshotSchema.safeParse(snapshot).success).toBe(true);
+    // Reconstruct from the schema-parsed value, never the raw builder object.
+    const snapshot = PolicySnapshotSchema.parse(
+      createPolicySnapshot(policy, RESOLVED_AT, hashText),
+    );
 
     const reconstructed = resolvePolicyFromSnapshot(snapshot);
     const policyKeys = Object.keys(policy).sort();

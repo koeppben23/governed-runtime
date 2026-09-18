@@ -372,10 +372,12 @@ describe('executable policy snapshot parity', () => {
     REGULATED_POLICY,
   ];
 
-  it('HAPPY: every canonical preset round-trips strictly through the snapshot', () => {
+  it('HAPPY: every canonical preset round-trips strictly through the schema-parsed snapshot', () => {
     for (const policy of PRESETS) {
-      const snapshot = createPolicySnapshot(policy, NOW, sha256);
-      expect(PolicySnapshotSchema.safeParse(snapshot).success).toBe(true);
+      // Parse the writer output through the snapshot schema authority and
+      // reconstruct the PARSED value: a field the writer spreads in but the
+      // schema drops must not survive via the raw builder object.
+      const snapshot = PolicySnapshotSchema.parse(createPolicySnapshot(policy, NOW, sha256));
 
       const reconstructed = resolvePolicyFromSnapshot(snapshot);
       expect(reconstructed).toStrictEqual(policy);
@@ -383,10 +385,9 @@ describe('executable policy snapshot parity', () => {
     }
   });
 
-  it('HAPPY: a maximally-deviating legal policy round-trips strictly', () => {
+  it('HAPPY: a maximally-deviating legal policy round-trips strictly through the schema', () => {
     const policy = maxDeviationPolicy();
-    const snapshot = createPolicySnapshot(policy, NOW, sha256);
-    expect(PolicySnapshotSchema.safeParse(snapshot).success).toBe(true);
+    const snapshot = PolicySnapshotSchema.parse(createPolicySnapshot(policy, NOW, sha256));
 
     const reconstructed = resolvePolicyFromSnapshot(snapshot);
     expect(reconstructed).toStrictEqual(policy);
