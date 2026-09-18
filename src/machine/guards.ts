@@ -199,11 +199,12 @@ export const reviewDone: GuardFn = (s) => s.reviewReportPath !== null;
  * Evaluation algorithm:
  *   for (entry of GUARDS.get(phase))
  *     if (entry.guard(state)) → fire entry.event
- *   // no match → EvalResult.no_match (should never happen if guards are exhaustive)
+ *   // no match → a normal pending state (no guard fired)
  *
  * ERROR is always first — fail-closed by design.
- * The last guard in each list is the "true fallback" (always-true condition)
- * to ensure deterministic resolution.
+ * A fired guard whose event has no topology edge becomes `{ kind: 'pending' }`
+ * with a TOPOLOGY_GAP diagnostic. A guard list without a match is likewise a
+ * normal pending state — there is no implicit fallback guard.
  *
  * Phases NOT in this table:
  * - READY: command-driven (no guards)

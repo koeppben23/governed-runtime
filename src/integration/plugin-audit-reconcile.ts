@@ -351,10 +351,27 @@ export async function emitAuditBodyWithEvidence(input: {
   await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
 }
 
+/**
+ * A blocking audit outcome: the tool call must be denied.
+ *
+ * There is deliberately no success variant — success, non-applicability, and a
+ * tolerated audit failure in non-regulated mode are all represented as
+ * `undefined`, exactly as produced.
+ */
+export interface AuditBlockOutcome {
+  readonly auditOk: false;
+  readonly block: true;
+  readonly code: string;
+  readonly reason: string;
+}
+
+/** Audit outcome: a blocking failure, or undefined when no block is required. */
+export type AuditRunOutcome = AuditBlockOutcome | undefined;
+
 export async function finalizeStrictTimestampFailure(
   ctx: AuditContext,
   getFailure: StrictTimestampTracker['failure'],
-): Promise<{ auditOk: boolean; block?: boolean; code?: string; reason?: string } | undefined> {
+): Promise<AuditRunOutcome> {
   const failure = getFailure();
   if (!failure) return undefined;
   const currentState = await readState(ctx.sessDir);
@@ -383,7 +400,7 @@ export async function reconcilePendingAuditOperations(
   deps: AuditDeps,
   sessionId: string,
   toolName: string,
-): Promise<{ auditOk: boolean; block?: boolean; code?: string; reason?: string } | undefined> {
+): Promise<AuditRunOutcome> {
   try {
     const resolved = await resolveAuditContext(deps, 'flowguard_reconcile', {}, sessionId);
     if (!resolved) {

@@ -158,8 +158,9 @@ function detectInvalidShape(
     },
   ];
 
-  const matched = rules.find((rule) => rule.when && rule.code);
-  return matched ? { kind: 'invalid', code: matched.code!, params: matched.params } : null;
+  const matched = rules.find((rule) => rule.when && rule.code !== undefined);
+  if (matched === undefined || matched.code === undefined) return null;
+  return { kind: 'invalid', code: matched.code, params: matched.params };
 }
 
 /**

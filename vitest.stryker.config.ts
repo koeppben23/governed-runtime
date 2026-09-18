@@ -120,6 +120,7 @@ export default defineConfig({
       'src/architecture/__tests__/canonical-json-ssot.test.ts',
       'src/architecture/__tests__/digest-authority-ssot.test.ts',
       'src/architecture/__tests__/mode-validation-ssot.test.ts',
+      'src/architecture/__tests__/fail-closed-decision-contract.test.ts',
       'src/architecture/__tests__/policy-snapshot-parity.test.ts',
       'src/architecture/__tests__/topology-authority-ssot.test.ts',
       'src/archive/types.test.ts',

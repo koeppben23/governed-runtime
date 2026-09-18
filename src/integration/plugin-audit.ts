@@ -47,6 +47,7 @@ import {
   finalizeStrictTimestampFailure,
   resolveBootstrapStateExistence,
   type AuditDeps,
+  type AuditRunOutcome,
   type StrictTimestampTracker,
 } from './plugin-audit-reconcile.js';
 
@@ -623,7 +624,7 @@ export async function runAudit(
   input: unknown,
   output: unknown,
   sessionId: string,
-): Promise<{ auditOk: boolean; block?: boolean; code?: string; reason?: string } | undefined> {
+): Promise<AuditRunOutcome> {
   let policyResolved = false;
   let effectiveMode: string = deps.mode;
   try {

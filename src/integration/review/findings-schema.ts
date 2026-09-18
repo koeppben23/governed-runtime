@@ -34,6 +34,28 @@ import {
 const UUID_PATTERN =
   '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$';
 
+/** Typed failure for a canonical kind the JSON schema builder cannot render. */
+class ReviewFindingsSchemaConstructionError extends Error {
+  readonly code = 'REVIEW_FINDINGS_SCHEMA_EXHAUSTIVENESS';
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'ReviewFindingsSchemaConstructionError';
+  }
+}
+
+/**
+ * Exhaustiveness contract: reaching this with a concrete value means a
+ * canonical kind tuple gained a variant whose builder handling is missing —
+ * which is a compile error (`value` is no longer `never`), not just a runtime
+ * fallback.
+ */
+function assertNever(value: never, surface: string): never {
+  throw new ReviewFindingsSchemaConstructionError(
+    `Unexpected ${surface} variant: ${String(value)} — update findings-schema.ts`,
+  );
+}
+
 const REPOSITORY_LOCATION_JSON_SCHEMA = {
   oneOf: [
     {
@@ -51,83 +73,88 @@ const REPOSITORY_LOCATION_JSON_SCHEMA = {
 } as const;
 
 function buildAnchorVariant(kind: (typeof ANCHOR_KINDS)[number]): Record<string, unknown> {
-  if (kind === 'repository_location') {
-    return {
-      type: 'object',
-      properties: {
-        kind: { type: 'string', const: kind },
-        location: REPOSITORY_LOCATION_JSON_SCHEMA,
-      },
-      required: ['kind', 'location'],
-      additionalProperties: false,
-    };
-  }
-  if (kind === 'artifact_section') {
-    return {
-      type: 'object',
-      properties: {
-        kind: { type: 'string', const: kind },
-        artifactKind: { type: 'string', enum: [...ARTIFACT_KIND_VALUES] },
-        artifactDigest: { type: 'string', minLength: 1 },
-        sectionPath: {
-          type: 'array',
-          minItems: 1,
-          items: {
+  switch (kind) {
+    case 'repository_location':
+      return {
+        type: 'object',
+        properties: {
+          kind: { type: 'string', const: kind },
+          location: REPOSITORY_LOCATION_JSON_SCHEMA,
+        },
+        required: ['kind', 'location'],
+        additionalProperties: false,
+      };
+    case 'artifact_section':
+      return {
+        type: 'object',
+        properties: {
+          kind: { type: 'string', const: kind },
+          artifactKind: { type: 'string', enum: [...ARTIFACT_KIND_VALUES] },
+          artifactDigest: { type: 'string', minLength: 1 },
+          sectionPath: {
+            type: 'array',
+            minItems: 1,
+            items: {
+              type: 'object',
+              properties: {
+                headingDepth: { type: 'integer', minimum: 1, maximum: 6 },
+                siblingIndex: { type: 'integer', minimum: 1 },
+                headingText: { type: 'string' },
+              },
+              required: ['headingDepth', 'siblingIndex', 'headingText'],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ['kind', 'artifactKind', 'artifactDigest', 'sectionPath'],
+        additionalProperties: false,
+      };
+    case 'content':
+      return {
+        type: 'object',
+        properties: {
+          kind: { type: 'string', const: kind },
+          subjectDigest: { type: 'string', minLength: 1 },
+          range: {
             type: 'object',
             properties: {
-              headingDepth: { type: 'integer', minimum: 1, maximum: 6 },
-              siblingIndex: { type: 'integer', minimum: 1 },
-              headingText: { type: 'string' },
+              startLine: { type: 'integer', minimum: 1 },
+              endLine: { type: 'integer', minimum: 1 },
             },
-            required: ['headingDepth', 'siblingIndex', 'headingText'],
+            required: ['startLine'],
             additionalProperties: false,
           },
         },
-      },
-      required: ['kind', 'artifactKind', 'artifactDigest', 'sectionPath'],
-      additionalProperties: false,
-    };
-  }
-  if (kind === 'content') {
-    return {
-      type: 'object',
-      properties: {
-        kind: { type: 'string', const: kind },
-        subjectDigest: { type: 'string', minLength: 1 },
-        range: {
-          type: 'object',
-          properties: {
-            startLine: { type: 'integer', minimum: 1 },
-            endLine: { type: 'integer', minimum: 1 },
-          },
-          required: ['startLine'],
-          additionalProperties: false,
+        required: ['kind', 'subjectDigest'],
+        additionalProperties: false,
+      };
+    case 'implementation':
+      return {
+        type: 'object',
+        properties: {
+          kind: { type: 'string', const: kind },
+          implementationDigest: { type: 'string', minLength: 1 },
         },
-      },
-      required: ['kind', 'subjectDigest'],
-      additionalProperties: false,
-    };
+        required: ['kind', 'implementationDigest'],
+        additionalProperties: false,
+      };
+    default:
+      return assertNever(kind, 'anchor');
   }
-  if (kind === 'implementation') {
-    return {
-      type: 'object',
-      properties: {
-        kind: { type: 'string', const: kind },
-        implementationDigest: { type: 'string', minLength: 1 },
-      },
-      required: ['kind', 'implementationDigest'],
-      additionalProperties: false,
-    };
-  }
-  throw new Error(`Unknown anchor kind: ${kind} — update findings-schema.ts`);
 }
 
 function buildChallengeVariant(kind: (typeof CHALLENGE_KINDS)[number]): Record<string, unknown> {
   const base = challengeBase(kind);
-  if (kind === 'design_challenge') return buildDesignChallenge(base);
-  if (kind === 'implementation_challenge') return buildImplementationChallenge(base);
-  if (kind === 'content_challenge') return buildContentChallenge(base);
-  throw new Error(`Unknown challenge kind: ${kind} — update findings-schema.ts`);
+  switch (kind) {
+    case 'design_challenge':
+      return buildDesignChallenge(base);
+    case 'implementation_challenge':
+      return buildImplementationChallenge(base);
+    case 'content_challenge':
+      return buildContentChallenge(base);
+    default:
+      return assertNever(kind, 'challenge');
+  }
 }
 
 function challengeBase(kind: string) {

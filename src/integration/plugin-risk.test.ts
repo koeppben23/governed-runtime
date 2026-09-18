@@ -546,7 +546,7 @@ describe('persistRiskDecisionBlock', () => {
   const state = makeRiskState();
   const decision: RiskClassificationDecision = {
     allowed: false,
-    code: 'RISK_X',
+    code: 'RISK_CLASSIFICATION_MISMATCH',
     reason: 'blocked',
     decisionId: 'd-1',
     claimedTaskClass: 'STANDARD',

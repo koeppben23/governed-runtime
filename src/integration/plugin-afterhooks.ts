@@ -291,8 +291,8 @@ async function runFlowGuardAuditAfter(args: {
     const auditResult = await runAuditModule(runtime.auditDeps, toolName, input, output, sessionId);
     if (auditResult?.block) {
       // Stryker disable next-line ObjectLiteral
-      hookOutput.output = strictBlockedOutput(auditResult.code!, {
-        reason: auditResult.reason ?? 'audit persistence failed',
+      hookOutput.output = strictBlockedOutput(auditResult.code, {
+        reason: auditResult.reason,
       });
     }
   });

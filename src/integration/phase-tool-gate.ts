@@ -16,6 +16,7 @@
 
 import type { Phase, RiskTrigger, SessionState, TaskClass } from '../state/schema.js';
 import { randomUUID } from 'node:crypto';
+import type { GateDecision } from '../shared/gate-decision.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -68,14 +69,22 @@ export const HOST_MUTATION_PHASE: Phase = 'IMPLEMENTATION';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-/** Result of a phase-tool gate check. */
-export interface PhaseGateResult {
-  readonly allowed: boolean;
-  readonly code?: string;
-  readonly reason?: string;
-}
+/** Denial codes emitted by the host phase gate. */
+export type HostPhaseGateCode = 'HOST_TOOL_UNKNOWN_DENIED' | 'HOST_TOOL_PHASE_DENIED';
 
-export interface RiskClassificationDecision extends PhaseGateResult {
+/** Result of a phase-tool gate check: fail-closed, denial code always present. */
+export type PhaseGateResult = GateDecision<HostPhaseGateCode>;
+
+/** Denial codes emitted by risk classification. */
+export type RiskClassificationCode =
+  | 'RISK_GATE_BLOCKED'
+  | 'RISK_CLASSIFICATION_REQUIRED'
+  | 'RISK_DOWNGRADE_OVERRIDE_DENIED'
+  | 'RISK_CLASSIFICATION_MISMATCH'
+  | 'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE';
+
+/** Risk classification facts carried by both allow and deny outcomes. */
+export interface RiskClassificationFacts {
   readonly decisionId: string;
   readonly claimedTaskClass?: TaskClass;
   readonly minimumTaskClass: TaskClass;
@@ -83,6 +92,9 @@ export interface RiskClassificationDecision extends PhaseGateResult {
   readonly riskTriggers: readonly RiskTrigger[];
   readonly changedFiles: readonly string[];
 }
+
+export type RiskClassificationDecision = GateDecision<RiskClassificationCode> &
+  RiskClassificationFacts;
 
 export interface RiskClassificationInput {
   readonly state: SessionState;
