@@ -100,6 +100,20 @@ async function seedSession(dir: string, state: SessionState): Promise<void> {
   await writeState(dir, state);
 }
 
+interface EnforcementPayload {
+  readonly code: string;
+  readonly message: string;
+  readonly detail: Readonly<Record<string, string>>;
+}
+
+/** Parse the structured JSON payload a FlowGuardEnforcementError carries in its message. */
+function enforcementPayload(error: unknown): EnforcementPayload {
+  const raw = error instanceof Error ? error.message : String(error);
+  const start = raw.indexOf('{');
+  expect(start, `no JSON payload in: ${raw}`).toBeGreaterThanOrEqual(0);
+  return JSON.parse(raw.slice(start)) as EnforcementPayload;
+}
+
 describe('commandBefore', () => {
   it('warns and skips when the command has no sessionID', async () => {
     const runtime = makeRuntime();
@@ -272,21 +286,31 @@ describe('toolBefore — host tool fail-closed resolution', () => {
     }
   });
 
-  it('blocks a mutating host tool outside IMPLEMENTATION', async () => {
+  it('blocks a mutating host tool outside IMPLEMENTATION with the full denial payload', async () => {
     const ws = await createTestWorkspace();
     try {
       const sessDir = path.join(ws.tmpDir, 'sess-plan');
       await seedSession(sessDir, makeState('PLAN'));
       const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
-      await expect(
-        toolBefore(runtime, { tool: 'write', sessionID: SESSION_ID }, { args: {} }),
-      ).rejects.toThrow('HOST_TOOL_PHASE_DENIED');
+      let caught: unknown;
+      try {
+        await toolBefore(runtime, { tool: 'write', sessionID: SESSION_ID }, { args: {} });
+      } catch (err) {
+        caught = err;
+      }
+
+      const payload = enforcementPayload(caught);
+      expect(payload.code).toBe('HOST_TOOL_PHASE_DENIED');
+      expect(payload.detail.tool).toBe('write');
+      expect(payload.detail.phase).toBe('PLAN');
+      expect(payload.message).toContain("'write'");
+      expect(payload.message).toContain('IMPLEMENTATION');
     } finally {
       await ws.cleanup();
     }
   });
 
-  it('default-denies an unknown tool identity in a mutating phase', async () => {
+  it('default-denies an unknown tool identity with the full denial payload', async () => {
     const ws = await createTestWorkspace();
     try {
       const sessDir = path.join(ws.tmpDir, 'sess-impl');
@@ -295,9 +319,22 @@ describe('toolBefore — host tool fail-closed resolution', () => {
         makeState('IMPLEMENTATION', { implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE }),
       );
       const runtime = makeRuntime({ ws: { getSessionDir: vi.fn().mockReturnValue(sessDir) } });
-      await expect(
-        toolBefore(runtime, { tool: 'unknown_host_tool', sessionID: SESSION_ID }, { args: {} }),
-      ).rejects.toThrow('HOST_TOOL_UNKNOWN_DENIED');
+      let caught: unknown;
+      try {
+        await toolBefore(
+          runtime,
+          { tool: 'unknown_host_tool', sessionID: SESSION_ID },
+          { args: {} },
+        );
+      } catch (err) {
+        caught = err;
+      }
+
+      const payload = enforcementPayload(caught);
+      expect(payload.code).toBe('HOST_TOOL_UNKNOWN_DENIED');
+      expect(payload.detail.tool).toBe('unknown_host_tool');
+      expect(payload.detail.phase).toBe('IMPLEMENTATION');
+      expect(payload.message).not.toBe('');
     } finally {
       await ws.cleanup();
     }
@@ -994,6 +1031,47 @@ describe('toolBefore — verdict null-arg stripping', () => {
     }
     expect(args.rationale).toBeUndefined();
     expect(args.planVersion).toBe('1');
+  });
+
+  it('passes the enforcement denial code and reason through without fallback', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      const sessDir = path.join(ws.tmpDir, 'sess-verdict-pass-through');
+      await seedSession(sessDir, makeState('PLAN'));
+
+      const enforcement = createSessionState();
+      enforcement.pendingReviews.set('flowguard_plan', {
+        tool: 'flowguard_plan',
+        requestedAt: '2026-01-01T00:00:00.000Z',
+        attemptId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        obligationId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      });
+      const runtime = makeRuntime({
+        ws: {
+          getSessionDir: vi.fn().mockReturnValue(sessDir),
+          getEnforcementState: vi.fn(() => enforcement),
+        },
+      });
+
+      let caught: unknown;
+      try {
+        await toolBefore(
+          runtime,
+          { tool: 'flowguard_plan', sessionID: SESSION_ID, callID: 'c-verdict' },
+          { args: { reviewVerdict: 'approve' } },
+        );
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).toBeInstanceOf(Error);
+      const message = (caught as Error).message;
+      expect(message).toContain('SUBAGENT_REVIEW_NOT_INVOKED');
+      expect(message).toContain('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
+      expect(message).not.toContain('INTERNAL_ERROR');
+    } finally {
+      await ws.cleanup();
+    }
   });
 
   it('blocks a verdict submission without a pending decision', async () => {

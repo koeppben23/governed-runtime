@@ -342,6 +342,43 @@ describe('phase-tool-gate', () => {
     });
   });
 
+  describe('fail-closed decision contract', () => {
+    it('ALLOW results carry no denial metadata', () => {
+      for (const result of [
+        isHostToolAllowedInPhase('bash', 'IMPLEMENTATION'),
+        isHostToolAllowedInPhase('read', 'PLAN'),
+      ]) {
+        expect(result.allowed).toBe(true);
+        expect(result.code).toBeUndefined();
+        expect(result.reason).toBeUndefined();
+      }
+    });
+
+    it('DENY results always carry string code and reason (host gate)', () => {
+      for (const result of [
+        isHostToolAllowedInPhase('bash', 'PLAN'),
+        isHostToolAllowedInPhase('mystery_tool', 'PLAN'),
+      ]) {
+        expect(result.allowed).toBe(false);
+        expect(typeof result.code).toBe('string');
+        expect(typeof result.reason).toBe('string');
+      }
+    });
+
+    it('DENY results always carry string code and reason (risk gate)', () => {
+      const state = makeState('IMPLEMENTATION', { claimedTaskClass: 'TRIVIAL' });
+      const result = isRiskClassificationAllowed({
+        state,
+        changedFiles: ['src/state/schema.ts'],
+        now: '2026-01-01T00:00:00.000Z',
+      });
+
+      expect(result.allowed).toBe(false);
+      expect(typeof result.code).toBe('string');
+      expect(typeof result.reason).toBe('string');
+    });
+  });
+
   describe('risk classification gate', () => {
     it('BAD — TRIVIAL claim on src/state change is blocked', () => {
       const state = makeState('IMPLEMENTATION', { claimedTaskClass: 'TRIVIAL' });

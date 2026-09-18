@@ -240,6 +240,7 @@ describe('executeRegulatedCompletion', () => {
     trackPersistedState(persisted);
     vi.mocked(reconcilePendingAuditOperations).mockResolvedValue({
       auditOk: false,
+      block: true,
       code: 'AUDIT_PERSISTENCE_FAILED',
       reason: 'disk failure',
     });

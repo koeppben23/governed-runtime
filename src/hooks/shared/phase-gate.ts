@@ -21,7 +21,10 @@ export {
 } from '../../integration/phase-tool-gate.js';
 
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
-import type { PhaseGateResult } from '../../integration/phase-tool-gate.js';
+import type { GateDecision } from '../../shared/gate-decision.js';
+
+/** Subagent authorization decision: its own denial vocabulary, never host codes. */
+export type SubagentGateResult = GateDecision<'SUBAGENT_TYPE_UNAUTHORIZED'>;
 
 // ─── Subagent Authorization (Defense-in-Depth) ───────────────────────────────
 
@@ -40,7 +43,7 @@ import type { PhaseGateResult } from '../../integration/phase-tool-gate.js';
 export function isSubagentAuthorized(
   toolName: string,
   toolInput: Record<string, unknown>,
-): PhaseGateResult {
+): SubagentGateResult {
   // Only applies to the `task` tool.
   if (toolName !== 'task') {
     return { allowed: true };

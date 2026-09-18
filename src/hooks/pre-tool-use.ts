@@ -107,7 +107,7 @@ async function main(): Promise<void> {
     const subagentGate = isSubagentAuthorized(toolNameLower, validated.tool_input);
     if (!subagentGate.allowed) {
       writeLog(`DENY (subagent): ${tool_name} — ${subagentGate.code}: ${subagentGate.reason}`);
-      await deny(subagentGate.code!, subagentGate.reason!);
+      await deny(subagentGate.code, subagentGate.reason);
       return;
     }
 
@@ -141,7 +141,7 @@ async function main(): Promise<void> {
 
     if (!gateResult.allowed) {
       writeLog(`DENY: ${tool_name} blocked in phase ${state.phase} (${gateResult.code})`);
-      await deny(gateResult.code!, gateResult.reason!);
+      await deny(gateResult.code, gateResult.reason);
       return;
     }
 

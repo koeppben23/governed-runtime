@@ -460,7 +460,7 @@ function enforceHostToolPhase(
     phase: state.phase,
     code: gateResult.code,
   });
-  throw buildEnforcementError(gateResult.code!, gateResult.reason!, {
+  throw buildEnforcementError(gateResult.code, gateResult.reason, {
     sessionId,
     tool: toolName,
     phase: state.phase,
@@ -484,5 +484,5 @@ async function enforceVerdictCheck(
     sessionId,
     code: result.code,
   });
-  throw buildEnforcementError(result.code ?? 'INTERNAL_ERROR', result.reason ?? '');
+  throw buildEnforcementError(result.code, result.reason);
 }
