@@ -12,7 +12,11 @@ import type { SessionState } from '../state/schema.js';
 import { readState } from '../adapters/persistence.js';
 import { changedFiles } from '../adapters/git.js';
 import { strictBlockedOutput, buildEnforcementError } from './plugin-helpers.js';
-import { isRiskClassificationAllowed, type RiskClassificationDecision } from './phase-tool-gate.js';
+import {
+  isRiskClassificationAllowed,
+  type DeniedRiskClassificationDecision,
+  type RiskClassificationDecision,
+} from './phase-tool-gate.js';
 import { appendReviewAuditEvent } from './review/audit-events.js';
 import { writeStateWithAuditOperations } from './tools/audit-outbox.js';
 
@@ -183,7 +187,7 @@ export async function currentChangedFilesForRisk(
 export function evidenceUnavailableRiskDecision(
   state: SessionState,
   reason: string,
-): RiskClassificationDecision {
+): DeniedRiskClassificationDecision {
   return {
     allowed: false,
     code: 'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
@@ -200,7 +204,7 @@ export function evidenceUnavailableRiskDecision(
 export async function persistRiskDecisionBlock(
   sessDir: string,
   state: SessionState,
-  decision: RiskClassificationDecision,
+  decision: DeniedRiskClassificationDecision,
   code: string,
   message: string,
 ): Promise<void> {
@@ -263,12 +267,11 @@ function riskDecisionAuditDetail(
 }
 
 function throwRiskBlocked(
-  decision: RiskClassificationDecision,
+  decision: DeniedRiskClassificationDecision,
   state: SessionState,
   toolName: string,
 ): never {
-  const code = decision.code ?? 'RISK_CLASSIFICATION_MISMATCH';
-  const reason = decision.reason ?? 'Risk classification gate blocked this mutating tool.';
+  const { code, reason } = decision;
   throw buildEnforcementError(code, reason, {
     sessionId: state.binding.hostSessionId,
     tool: toolName,
@@ -282,11 +285,10 @@ function throwRiskBlocked(
 async function persistAndThrowRiskBlock(
   sessDir: string,
   state: SessionState,
-  decision: RiskClassificationDecision,
+  decision: DeniedRiskClassificationDecision,
   toolName: string,
 ): Promise<never> {
-  const code = decision.code ?? 'RISK_CLASSIFICATION_MISMATCH';
-  const reason = decision.reason ?? 'Risk classification gate blocked this mutating tool.';
+  const { code, reason } = decision;
   if (state.riskGate?.status !== 'blocked') {
     try {
       await persistRiskDecisionBlock(sessDir, state, decision, code, reason);
@@ -485,12 +487,11 @@ async function appendAllowedRiskDecisionForBash(
 async function blockRiskDecisionAfterBash(
   sessDir: string,
   state: SessionState,
-  decision: ReturnType<typeof isRiskClassificationAllowed>,
+  decision: DeniedRiskClassificationDecision,
   sessionId: string,
   output: { output?: unknown },
 ): Promise<void> {
-  const code = decision.code ?? 'RISK_CLASSIFICATION_MISMATCH';
-  const reason = decision.reason ?? 'Risk classification gate blocked after bash mutation.';
+  const { code, reason } = decision;
   try {
     if (state.riskGate?.status !== 'blocked')
       await persistRiskDecisionBlock(sessDir, state, decision, code, reason);

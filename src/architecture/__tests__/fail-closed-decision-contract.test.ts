@@ -25,6 +25,7 @@ import { join } from 'node:path';
 import * as ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
+import type { DeniedRiskClassificationDecision } from '../../integration/phase-tool-gate.js';
 import type { GateDecision } from '../../shared/gate-decision.js';
 import { collectProductionSources, type ProductionSourceFile } from './production-source.js';
 
@@ -51,6 +52,29 @@ const pollutedAllowValue = { allowed: true as const, code: 'DENIED', reason: 're
 
 // @ts-expect-error — an allowed decision cannot carry concrete denial metadata
 const _pollutedAllowMustFail: GateDecision<TestCode> = pollutedAllowValue;
+
+const _deniedRiskDecision: DeniedRiskClassificationDecision = {
+  allowed: false,
+  code: 'RISK_CLASSIFICATION_MISMATCH',
+  reason: 'blocked',
+  decisionId: 'risk-1',
+  minimumTaskClass: 'HIGH-RISK',
+  touchedSurfaces: [],
+  riskTriggers: [],
+  changedFiles: [],
+};
+
+const allowedRiskDecisionValue = {
+  allowed: true as const,
+  decisionId: 'risk-2',
+  minimumTaskClass: 'TRIVIAL' as const,
+  touchedSurfaces: [],
+  riskTriggers: [],
+  changedFiles: [],
+};
+
+// @ts-expect-error — an allowed risk decision is not a denied decision
+const _allowedRiskDecisionMustFail: DeniedRiskClassificationDecision = allowedRiskDecisionValue;
 
 interface Violation {
   readonly rel: string;

@@ -96,6 +96,12 @@ export interface RiskClassificationFacts {
 export type RiskClassificationDecision = GateDecision<RiskClassificationCode> &
   RiskClassificationFacts;
 
+/** A denied risk decision: `code` and `reason` are guaranteed by the compiler. */
+export type DeniedRiskClassificationDecision = Extract<
+  RiskClassificationDecision,
+  { allowed: false }
+>;
+
 export interface RiskClassificationInput {
   readonly state: SessionState;
   readonly changedFiles: readonly string[];
