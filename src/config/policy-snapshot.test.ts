@@ -18,14 +18,16 @@ import {
 } from './policy-snapshot.js';
 import {
   SOLO_POLICY,
+  TEAM_POLICY,
+  TEAM_CI_POLICY,
   REGULATED_POLICY,
   type PolicyResolution,
   type PolicyDegradedReason,
   type HydratePolicyResolution,
 } from './policy.js';
-import type { PolicySnapshot } from '../state/evidence.js';
+import { PolicySnapshotSchema, type PolicySnapshot } from '../state/evidence.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
-import { POLICY_DIGEST_VERSION } from '../shared/policy-digest.js';
+import { POLICY_DIGEST_PATTERN, POLICY_DIGEST_VERSION } from '../shared/policy-digest.js';
 import { PolicyConfigurationError } from './policy-errors.js';
 import type { FlowGuardPolicy } from './policy-types.js';
 
@@ -80,11 +82,22 @@ describe('createPolicySnapshot', () => {
   });
 
   it.each(['', 'abc', 'UNKNOWN_LEGACY', 'A'.repeat(64)])(
-    'rejects an invalid v2 policy digest %p',
+    'rejects an invalid policy digest %p with structured diagnostics',
     (invalidDigest) => {
-      expect(() => createPolicySnapshot(SOLO_POLICY, NOW, () => invalidDigest)).toThrow(
-        PolicyConfigurationError,
-      );
+      let thrown: unknown;
+      try {
+        createPolicySnapshot(SOLO_POLICY, NOW, () => invalidDigest);
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(PolicyConfigurationError);
+      const error = thrown as PolicyConfigurationError;
+      expect(error.code).toBe('INVALID_POLICY_DIGEST');
+      expect(error.details).toEqual({
+        received: invalidDigest,
+        pattern: POLICY_DIGEST_PATTERN.source,
+      });
     },
   );
 
@@ -289,5 +302,106 @@ describe('resolvePolicyFromSnapshot', () => {
         onDrift: 'allow',
       });
     });
+  });
+});
+
+// ─── Executable policy parity contract ────────────────────────────────────────
+
+/**
+ * Maximally-deviating LEGAL policy: every freely variable value differs from
+ * the regulated preset; fixed contract literals (`challengePolicy.version` and
+ * its counts) intentionally keep their canonical values. No casts.
+ */
+function maxDeviationPolicy(): FlowGuardPolicy {
+  const base = REGULATED_POLICY;
+  return {
+    mode: 'team-ci',
+    requireHumanGates: false,
+    reviewBudget: { plan: 2, architecture: 3, implementation: 4 },
+    maxIncoherentReviewerCaptureRetries: 5,
+    maxReviewerAttempts: 4,
+    allowSelfApproval: true,
+    reviewProfile: 'full',
+    challengePolicy: { ...base.challengePolicy },
+    audit: {
+      emitTransitions: false,
+      emitToolCalls: false,
+      enableChainHash: false,
+      timestampAssurance: {
+        enabled: true,
+        mode: 'tsa_critical',
+        strict: true,
+        criticalEvents: ['decision', 'lifecycle'],
+        tsaUrl: 'https://tsa.example.test',
+        trustAnchors: ['-----BEGIN CERTIFICATE-----parity-----END CERTIFICATE-----'],
+        ntpServers: ['ntp.example.test'],
+        ntpDriftThresholdMs: 1234,
+        tsaTimeoutMs: 4321,
+      },
+    },
+    actorClassification: { run_check: 'agent', review_decision: 'human' },
+    minimumActorAssuranceForApproval: 'idp_verified',
+    identityProvider: {
+      mode: 'static',
+      issuer: 'https://issuer.example.test',
+      audience: ['flowguard'],
+      claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+      signingKeys: [
+        {
+          kind: 'jwk',
+          kid: 'parity-kid',
+          alg: 'RS256',
+          jwk: { kty: 'RSA', n: 'cGFyaXR5', e: 'AQAB' },
+        },
+      ],
+    },
+    identityProviderMode: 'required',
+    enforceRiskClassification: true,
+    allowRiskDowngradeOverride: true,
+    allowReducedCeremony: true,
+    discoveryHealth: { enforcement: 'advisory', onDegraded: 'block', onDrift: 'warn' },
+    validationEvidence: { enforcement: 'advisory', allowNoCommands: true },
+  };
+}
+
+describe('executable policy snapshot parity', () => {
+  const PRESETS: readonly FlowGuardPolicy[] = [
+    SOLO_POLICY,
+    TEAM_POLICY,
+    TEAM_CI_POLICY,
+    REGULATED_POLICY,
+  ];
+
+  it('HAPPY: every canonical preset round-trips strictly through the schema-parsed snapshot', () => {
+    for (const policy of PRESETS) {
+      // Parse the writer output through the snapshot schema authority and
+      // reconstruct the PARSED value: a field the writer spreads in but the
+      // schema drops must not survive via the raw builder object.
+      const snapshot = PolicySnapshotSchema.parse(createPolicySnapshot(policy, NOW, sha256));
+
+      const reconstructed = resolvePolicyFromSnapshot(snapshot);
+      expect(reconstructed).toStrictEqual(policy);
+      expect(Object.keys(reconstructed).sort()).toEqual(Object.keys(policy).sort());
+    }
+  });
+
+  it('HAPPY: a maximally-deviating legal policy round-trips strictly through the schema', () => {
+    const policy = maxDeviationPolicy();
+    const snapshot = PolicySnapshotSchema.parse(createPolicySnapshot(policy, NOW, sha256));
+
+    const reconstructed = resolvePolicyFromSnapshot(snapshot);
+    expect(reconstructed).toStrictEqual(policy);
+    expect(Object.keys(reconstructed).sort()).toEqual(Object.keys(policy).sort());
+  });
+
+  it('CORNER: same-typed numeric fields survive without cross-field bleed', () => {
+    const policy = maxDeviationPolicy();
+    const snapshot = createPolicySnapshot(policy, NOW, sha256);
+
+    expect(snapshot.reviewBudget).toStrictEqual(policy.reviewBudget);
+    expect(snapshot.maxIncoherentReviewerCaptureRetries).toBe(5);
+    expect(snapshot.maxReviewerAttempts).toBe(4);
+    expect(snapshot.audit.timestampAssurance.ntpDriftThresholdMs).toBe(1234);
+    expect(snapshot.audit.timestampAssurance.tsaTimeoutMs).toBe(4321);
   });
 });
