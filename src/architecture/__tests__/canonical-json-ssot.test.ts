@@ -18,19 +18,18 @@
  * `digest-authority-ssot.test.ts`. The guards do not overlap: definitions here,
  * hash-input usage there.
  *
- * Mechanism mirrors `config/reasons-completeness.test.ts` and
- * `architecture/__tests__/dependency-rules.test.ts`: a pure detector over
- * production source, plus a proving negative fixture. Production scan excludes
- * test sources only (`.test.ts`, `__tests__/`, classified test-support trees)
- * so this guard cannot flag its own fixtures.
+ * Production source is collected through `production-source.ts`, the single
+ * operational form of the semantic test classification, so this guard and the
+ * digest authority guard share one definition of "production source".
  *
  * @version v2
  */
 
-import { readFileSync, readdirSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
+
+import { collectProductionSources, type ProductionSourceFile } from './production-source.js';
 
 const SRC_ROOT = join(process.cwd(), 'src');
 
@@ -47,11 +46,6 @@ const DEFINE_CANONICAL = /\b(?:function|const)\s+canonicalJsonStringify\b/;
  */
 const DEFINE_CANONICALIZE = /\b(?:function|const)\s+canonicalize\b/;
 
-interface SourceFile {
-  readonly rel: string;
-  readonly content: string;
-}
-
 interface Violation {
   readonly rel: string;
   readonly line: number;
@@ -59,23 +53,7 @@ interface Violation {
   readonly rule: string;
 }
 
-function collectProductionFiles(dir: string, acc: SourceFile[]): void {
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (entry.name === 'node_modules' || entry.name === '__tests__') continue;
-      collectProductionFiles(full, acc);
-      continue;
-    }
-    if (!entry.isFile() || !full.endsWith('.ts') || full.endsWith('.test.ts')) continue;
-    acc.push({
-      rel: relative(SRC_ROOT, full).split(sep).join('/'),
-      content: readFileSync(full, 'utf8'),
-    });
-  }
-}
-
-function findCanonicalizationViolations(files: readonly SourceFile[]): Violation[] {
+function findCanonicalizationViolations(files: readonly ProductionSourceFile[]): Violation[] {
   const out: Violation[] = [];
   for (const f of files) {
     f.content.split('\n').forEach((text, i) => {
@@ -104,8 +82,7 @@ function findCanonicalizationViolations(files: readonly SourceFile[]): Violation
 }
 
 describe('canonical JSON serialization SSOT (#434 C1 anti-drift)', () => {
-  const files: SourceFile[] = [];
-  collectProductionFiles(SRC_ROOT, files);
+  const files = collectProductionSources(SRC_ROOT);
 
   it('production code has exactly one canonical JSON serialization authority', () => {
     const violations = findCanonicalizationViolations(files);
@@ -117,7 +94,7 @@ describe('canonical JSON serialization SSOT (#434 C1 anti-drift)', () => {
 
   describe('negative fixture — proves the detector fires', () => {
     it('detects a duplicate canonicalJsonStringify definition outside the authority', () => {
-      const fixture: SourceFile[] = [
+      const fixture: ProductionSourceFile[] = [
         {
           rel: 'audit/rogue.ts',
           content: 'export function canonicalJsonStringify(v) { return ""; }',
@@ -129,7 +106,7 @@ describe('canonical JSON serialization SSOT (#434 C1 anti-drift)', () => {
     });
 
     it('detects a duplicate `canonicalize` recursive key-sorter outside the authority', () => {
-      const fixture: SourceFile[] = [
+      const fixture: ProductionSourceFile[] = [
         {
           rel: 'discovery/rogue.ts',
           content: 'function canonicalize(value) { return value; }',
@@ -143,7 +120,7 @@ describe('canonical JSON serialization SSOT (#434 C1 anti-drift)', () => {
     it('does NOT flag a differently-named canonicalizer (canonicalizeOriginUrl)', () => {
       // Suffix safety: `canonicalizeOriginUrl` in adapters/workspace/fingerprint.ts
       // is a URL canonicalizer, not a JSON key-sorter, and must never be flagged.
-      const fixture: SourceFile[] = [
+      const fixture: ProductionSourceFile[] = [
         {
           rel: 'adapters/workspace/fingerprint.ts',
           content:

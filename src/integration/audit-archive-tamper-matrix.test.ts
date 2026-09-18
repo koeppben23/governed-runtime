@@ -849,6 +849,34 @@ describe('audit/archive tamper matrix', () => {
   });
 
   it.skipIf(!tarOk)(
+    'legacy v2 manifest schema -> manifest_parse_error (hard epoch boundary)',
+    async () => {
+      // The v3 digest epoch is a hard cut: an older manifest schema must fail
+      // closed at the verifier with manifest_parse_error, never be re-read
+      // under the current formula.
+      const ids = await completeRegulatedSession();
+      await mutateArchive(ids, async (root) => {
+        const manifestPath = path.join(root, 'archive-manifest.json');
+        const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8')) as Record<
+          string,
+          unknown
+        >;
+        expect(manifest.schemaVersion).toBe('archive-manifest.v3');
+        manifest.schemaVersion = 'archive-manifest.v2';
+        await fs.writeFile(manifestPath, JSON.stringify(manifest), 'utf-8');
+      });
+
+      const verification = await verifyRegulatedArchive(ids.fingerprint, ctx.sessionID);
+      expect(verification.passed).toBe(false);
+      expect(
+        verification.findings.some(
+          (f) => f.code === 'manifest_parse_error' && f.severity === 'error',
+        ),
+      ).toBe(true);
+    },
+  );
+
+  it.skipIf(!tarOk)(
     'manifest policyMode flipped to weaken strict verification -> verify fail (#420)',
     async () => {
       const ids = await completeRegulatedSession();

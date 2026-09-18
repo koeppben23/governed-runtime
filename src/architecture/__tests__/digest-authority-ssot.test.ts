@@ -10,7 +10,10 @@
  *
  * Invariants:
  *   D1 `createHash` may be CALLED only in `shared/hashing.ts` or an explicitly
- *      sanctioned, reasoned exception.
+ *      sanctioned, reasoned exception. A sanctioned exception is NOT a
+ *      file-level exemption: every `createHash(...)` call in the file is
+ *      inspected, only the declared literal algorithm is admissible, and the
+ *      exact call count is enforced. A dynamic algorithm argument never passes.
  *   D2 A hash primitive must never consume a raw `JSON.stringify(...)`
  *      (structured digest inputs are canonicalized first). The detector targets
  *      direct hash-input nesting (including `.update(JSON.stringify(...))`);
@@ -23,21 +26,24 @@
  *      `createHash` identifier, so a new local primitive cannot be introduced
  *      without this guard failing (the identifier is the escape hatch, not just
  *      the call).
- *   D5 The scan is default-wide over production `.ts` files under `src/`.
+ *   D5 The scan is default-wide over production `.ts` files under `src/`,
+ *      collected through the single production-source scanner
+ *      (`production-source.ts`), which uses the semantic test classification
+ *      authority.
  *   D6 There is no directory allowlist: the only exclusions are test sources
  *      under the repository's semantic test classification.
- *   D7 Negative fixtures prove every detector, including the sanctioned
- *      exception path and the canonical-input non-flag.
+ *   D7 Negative fixtures prove every detector, including wrong-algorithm,
+ *      dynamic-algorithm, count-mismatch, and the canonical-input non-flag.
  *
- * @version v1
+ * @version v2
  */
 
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { isTestSourcePath } from './module-classification.js';
+import { collectProductionSources, type ProductionSourceFile } from './production-source.js';
 
 const SRC_ROOT = join(process.cwd(), 'src');
 
@@ -61,6 +67,8 @@ interface SanctionedException {
   readonly rel: string;
   /** Algorithm the exception is allowed to use; any other call is a violation. */
   readonly algorithm: 'sha1';
+  /** Exact number of `createHash` calls the exception may contain. */
+  readonly expectedCalls: number;
   readonly reason: string;
   /** Guard that owns the semantics of this exception. */
   readonly governingGuard: string;
@@ -68,23 +76,25 @@ interface SanctionedException {
 
 /**
  * The only production exceptions to the SHA-2 authority. Each entry must be
- * real (the file must contain its declared primitive) or the guard fails.
+ * real: the file must exist and contain exactly `expectedCalls` calls, every
+ * one of them with the declared literal algorithm.
  */
 const SANCTIONED_CREATE_HASH: readonly SanctionedException[] = [
   {
     rel: 'state/proofgraph-approval.ts',
     algorithm: 'sha1',
+    expectedCalls: 1,
     reason:
       'RFC 4122 UUIDv5 name-based ProofGraph claim-id derivation — SHA-1 is the RFC-defined primitive, not an integrity digest',
     governingGuard: 'architecture/__tests__/proofgraph-claim-id-ssot.test.ts',
   },
 ];
 
-const SHA256_FAMILY_CALL = /createHash\s*\(\s*['"](?:sha256|sha384|sha512)['"]\s*\)/;
-
-interface SourceFile {
-  readonly rel: string;
-  readonly content: string;
+interface CreateHashCall {
+  readonly raw: string;
+  /** First argument expression, trimmed (the algorithm position). */
+  readonly algorithmArgument: string;
+  readonly line: number;
 }
 
 interface Violation {
@@ -98,6 +108,10 @@ function createHashReference(): RegExp {
   return /\bcreateHash\b/g;
 }
 
+function createHashCall(): RegExp {
+  return /\bcreateHash\s*\(([^)]*)\)/g;
+}
+
 function rawJsonHashInput(): RegExp {
   return new RegExp(
     `(?:\\b(?:${HASH_PRIMITIVES.join('|')})\\b|\\.update)\\s*\\(\\s*JSON\\.stringify\\s*\\(`,
@@ -105,28 +119,11 @@ function rawJsonHashInput(): RegExp {
   );
 }
 
-/** Default-wide production scan (D5/D6): semantic test classification only. */
-function collectProductionFiles(dir: string, acc: SourceFile[] = []): SourceFile[] {
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name === 'node_modules') continue;
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      collectProductionFiles(full, acc);
-      continue;
-    }
-    if (!entry.isFile() || !entry.name.endsWith('.ts')) continue;
-    const rel = relative(SRC_ROOT, full).split(sep).join('/');
-    if (isTestSourcePath(rel)) continue;
-    acc.push({ rel, content: readFileSync(full, 'utf8') });
-  }
-  return acc;
-}
-
 function lineAt(content: string, index: number): number {
   return content.slice(0, index).split('\n').length;
 }
 
-function findMatches(f: SourceFile, pattern: RegExp, rule: string): Violation[] {
+function findMatches(f: ProductionSourceFile, pattern: RegExp, rule: string): Violation[] {
   const out: Violation[] = [];
   for (const match of f.content.matchAll(pattern)) {
     out.push({
@@ -139,30 +136,94 @@ function findMatches(f: SourceFile, pattern: RegExp, rule: string): Violation[] 
   return out;
 }
 
-function sanctionedFor(rel: string): SanctionedException | undefined {
-  return SANCTIONED_CREATE_HASH.find((entry) => entry.rel === rel);
-}
-
-function findCreateHashViolations(files: readonly SourceFile[]): Violation[] {
-  const out: Violation[] = [];
-  for (const f of files) {
-    if (f.rel === HASHING_AUTHORITY) continue;
-    if (sanctionedFor(f.rel) !== undefined) continue;
-    out.push(...findMatches(f, createHashReference(), 'createHash-outside-authority'));
+/** Every `createHash(...)` call with its first (algorithm) argument verbatim. */
+function findCreateHashCalls(f: ProductionSourceFile): CreateHashCall[] {
+  const out: CreateHashCall[] = [];
+  for (const match of f.content.matchAll(createHashCall())) {
+    const args = match[1] ?? '';
+    out.push({
+      raw: match[0].replace(/\s+/g, ' ').trim(),
+      algorithmArgument: (args.split(',')[0] ?? '').trim(),
+      line: lineAt(f.content, match.index ?? 0),
+    });
   }
   return out;
 }
 
-function findRawJsonHashViolations(files: readonly SourceFile[]): Violation[] {
+function isSanctionedCall(call: CreateHashCall, entry: SanctionedException): boolean {
+  return (
+    call.algorithmArgument === `'${entry.algorithm}'` ||
+    call.algorithmArgument === `"${entry.algorithm}"`
+  );
+}
+
+function sanctionedFor(rel: string): SanctionedException | undefined {
+  return SANCTIONED_CREATE_HASH.find((entry) => entry.rel === rel);
+}
+
+function findCreateHashViolations(files: readonly ProductionSourceFile[]): Violation[] {
+  const out: Violation[] = [];
+  for (const f of files) {
+    if (f.rel === HASHING_AUTHORITY) continue;
+    const sanctioned = sanctionedFor(f.rel);
+    if (sanctioned === undefined) {
+      // Identifier-level rule (D4): an import/reference alone is a violation.
+      out.push(...findMatches(f, createHashReference(), 'createHash-outside-authority'));
+      continue;
+    }
+    // Sanctioned files are NOT exempt wholesale: every call is inspected and
+    // only the declared literal algorithm passes. `createHash(algo)`,
+    // `createHash('md5')`, `createHash('sha256')` all remain violations.
+    for (const call of findCreateHashCalls(f)) {
+      if (isSanctionedCall(call, sanctioned)) continue;
+      out.push({
+        rel: f.rel,
+        line: call.line,
+        snippet: call.raw,
+        rule: 'sanctioned-createHash-wrong-algorithm',
+      });
+    }
+  }
+  return out;
+}
+
+/** The sanctioned call count is exact: one declared minting point, not a budget. */
+function findSanctionedCountViolations(files: readonly ProductionSourceFile[]): Violation[] {
+  const out: Violation[] = [];
+  for (const entry of SANCTIONED_CREATE_HASH) {
+    const file = files.find((f) => f.rel === entry.rel);
+    if (file === undefined) {
+      out.push({
+        rel: entry.rel,
+        line: 1,
+        snippet: 'sanctioned file is missing',
+        rule: 'sanctioned-file-missing',
+      });
+      continue;
+    }
+    const calls = findCreateHashCalls(file);
+    if (calls.length !== entry.expectedCalls) {
+      out.push({
+        rel: file.rel,
+        line: calls[0]?.line ?? 1,
+        snippet: `${calls.length} createHash call(s), expected ${entry.expectedCalls}`,
+        rule: 'sanctioned-createHash-count-mismatch',
+      });
+    }
+  }
+  return out;
+}
+
+function findRawJsonHashViolations(files: readonly ProductionSourceFile[]): Violation[] {
   return files.flatMap((f) =>
     findMatches(f, rawJsonHashInput(), 'hash-input-over-raw-json-stringify'),
   );
 }
 
-const productionFiles = collectProductionFiles(SRC_ROOT);
+const productionFiles = collectProductionSources(SRC_ROOT);
 
 describe('digest authority SSOT (default-deny)', () => {
-  it('D1/D4: createHash is referenced only in the hashing authority or a sanctioned exception', () => {
+  it('D1/D4: createHash is referenced only in the hashing authority or an exactly sanctioned call', () => {
     const violations = findCreateHashViolations(productionFiles);
     if (violations.length > 0) {
       console.error('Digest authority violations:', violations);
@@ -178,19 +239,16 @@ describe('digest authority SSOT (default-deny)', () => {
     expect(violations).toEqual([]);
   });
 
-  it('D1: every sanctioned exception is real and stays on its declared algorithm', () => {
+  it('D1: every sanctioned exception is real, count-exact, and algorithm-exact', () => {
     for (const entry of SANCTIONED_CREATE_HASH) {
-      const file = productionFiles.find((f) => f.rel === entry.rel);
-      expect(file, `${entry.rel} must exist`).toBeTruthy();
-      expect(file!.content, `${entry.rel} must contain createHash('${entry.algorithm}')`).toContain(
-        `createHash('${entry.algorithm}')`,
-      );
-      expect(file!.content, `${entry.rel} must not use a SHA-2 family primitive`).not.toMatch(
-        SHA256_FAMILY_CALL,
-      );
       expect(existsSync(join(SRC_ROOT, entry.governingGuard)), entry.governingGuard).toBe(true);
       expect(entry.reason.trim().length).toBeGreaterThan(0);
     }
+    const violations = findSanctionedCountViolations(productionFiles);
+    if (violations.length > 0) {
+      console.error('Sanctioned exception violations:', violations);
+    }
+    expect(violations).toEqual([]);
   });
 
   it('D3: the canonical-JSON definition SSOT guard is present and owns serialization definitions', () => {
@@ -211,7 +269,7 @@ describe('digest authority SSOT (default-deny)', () => {
 
   describe('negative fixtures — prove every detector', () => {
     it('fires on a new local createHash call', () => {
-      const fixture: SourceFile[] = [
+      const fixture: ProductionSourceFile[] = [
         {
           rel: 'archive/rogue.ts',
           content: "const h = createHash('sha256').update(value).digest('hex');",
@@ -223,14 +281,14 @@ describe('digest authority SSOT (default-deny)', () => {
     });
 
     it('fires on a createHash reference even without a call', () => {
-      const fixture: SourceFile[] = [
+      const fixture: ProductionSourceFile[] = [
         { rel: 'archive/rogue.ts', content: "import { createHash } from 'node:crypto';" },
       ];
       expect(findCreateHashViolations(fixture)).toHaveLength(1);
     });
 
     it('does NOT fire in the hashing authority', () => {
-      const fixture: SourceFile[] = [
+      const fixture: ProductionSourceFile[] = [
         {
           rel: HASHING_AUTHORITY,
           content: "const h = createHash('sha256').update(value).digest('hex');",
@@ -239,8 +297,8 @@ describe('digest authority SSOT (default-deny)', () => {
       expect(findCreateHashViolations(fixture)).toEqual([]);
     });
 
-    it('does NOT fire in the sanctioned UUIDv5 exception file', () => {
-      const fixture: SourceFile[] = [
+    it('does NOT fire on the sanctioned UUIDv5 SHA-1 call', () => {
+      const fixture: ProductionSourceFile[] = [
         {
           rel: 'state/proofgraph-approval.ts',
           content: "const h = crypto.createHash('sha1').update(seed).digest();",
@@ -249,8 +307,81 @@ describe('digest authority SSOT (default-deny)', () => {
       expect(findCreateHashViolations(fixture)).toEqual([]);
     });
 
+    it('fires on a SHA-256 call inside the sanctioned file', () => {
+      const fixture: ProductionSourceFile[] = [
+        {
+          rel: 'state/proofgraph-approval.ts',
+          content: "const h = crypto.createHash('sha256').update(seed).digest();",
+        },
+      ];
+      const violations = findCreateHashViolations(fixture);
+      expect(violations).toHaveLength(1);
+      expect(violations[0]!.rule).toBe('sanctioned-createHash-wrong-algorithm');
+    });
+
+    it('fires on an MD5 call inside the sanctioned file', () => {
+      const fixture: ProductionSourceFile[] = [
+        {
+          rel: 'state/proofgraph-approval.ts',
+          content: "const h = crypto.createHash('md5').update(seed).digest();",
+        },
+      ];
+      const violations = findCreateHashViolations(fixture);
+      expect(violations).toHaveLength(1);
+      expect(violations[0]!.rule).toBe('sanctioned-createHash-wrong-algorithm');
+    });
+
+    it('fires on a dynamic algorithm argument inside the sanctioned file', () => {
+      const fixture: ProductionSourceFile[] = [
+        {
+          rel: 'state/proofgraph-approval.ts',
+          content: 'const h = crypto.createHash(algorithm).update(seed).digest();',
+        },
+      ];
+      const violations = findCreateHashViolations(fixture);
+      expect(violations).toHaveLength(1);
+      expect(violations[0]!.rule).toBe('sanctioned-createHash-wrong-algorithm');
+    });
+
+    it('fires on a wrong-algorithm call next to the sanctioned SHA-1 call', () => {
+      const fixture: ProductionSourceFile[] = [
+        {
+          rel: 'state/proofgraph-approval.ts',
+          content: [
+            "const allowed = crypto.createHash('sha1').update(seed).digest();",
+            "const rogue = crypto.createHash('sha256').update(seed).digest();",
+          ].join('\n'),
+        },
+      ];
+      const violations = findCreateHashViolations(fixture);
+      expect(violations).toHaveLength(1);
+      expect(violations[0]!.rule).toBe('sanctioned-createHash-wrong-algorithm');
+    });
+
+    it('fires on a second sanctioned-looking call (count is exact)', () => {
+      const fixture: ProductionSourceFile[] = [
+        {
+          rel: 'state/proofgraph-approval.ts',
+          content: [
+            "const first = crypto.createHash('sha1').update(seed).digest();",
+            "const second = crypto.createHash('sha1').update(other).digest();",
+          ].join('\n'),
+        },
+      ];
+      expect(findCreateHashViolations(fixture)).toEqual([]);
+      const violations = findSanctionedCountViolations(fixture);
+      expect(violations).toHaveLength(1);
+      expect(violations[0]!.rule).toBe('sanctioned-createHash-count-mismatch');
+    });
+
+    it('fires when the sanctioned file is missing entirely', () => {
+      const violations = findSanctionedCountViolations([]);
+      expect(violations).toHaveLength(1);
+      expect(violations[0]!.rule).toBe('sanctioned-file-missing');
+    });
+
     it('fires on hashText(JSON.stringify(...))', () => {
-      const fixture: SourceFile[] = [
+      const fixture: ProductionSourceFile[] = [
         { rel: 'audit/rogue.ts', content: 'hashText(JSON.stringify(structuredValue));' },
       ];
       const violations = findRawJsonHashViolations(fixture);
@@ -259,7 +390,7 @@ describe('digest authority SSOT (default-deny)', () => {
     });
 
     it('fires on a multi-line hashBuffer(JSON.stringify(...))', () => {
-      const fixture: SourceFile[] = [
+      const fixture: ProductionSourceFile[] = [
         {
           rel: 'state/rogue.ts',
           content: 'hashBuffer(\n  JSON.stringify(value),\n);',
@@ -269,7 +400,7 @@ describe('digest authority SSOT (default-deny)', () => {
     });
 
     it('fires on .update(JSON.stringify(...))', () => {
-      const fixture: SourceFile[] = [
+      const fixture: ProductionSourceFile[] = [
         {
           rel: 'audit/rogue.ts',
           content: "createHash('sha256').update(JSON.stringify(event));",
@@ -279,14 +410,14 @@ describe('digest authority SSOT (default-deny)', () => {
     });
 
     it('does NOT fire on hashText(canonicalJsonStringify(...))', () => {
-      const fixture: SourceFile[] = [
+      const fixture: ProductionSourceFile[] = [
         { rel: 'audit/good.ts', content: 'hashText(canonicalJsonStringify(structuredValue));' },
       ];
       expect(findRawJsonHashViolations(fixture)).toEqual([]);
     });
 
     it('does NOT fire on ordinary JSON output that is not a hash input', () => {
-      const fixture: SourceFile[] = [
+      const fixture: ProductionSourceFile[] = [
         {
           rel: 'adapters/persistence-audit.ts',
           content: 'await writeFile(path, JSON.stringify(event) + "\\n");',
