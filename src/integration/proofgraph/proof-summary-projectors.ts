@@ -15,6 +15,7 @@ import { summarizePersistedProofGraph } from '../../audit/proofgraph/summary.js'
 import type { ProofGraphGateDecision } from '../../audit/proofgraph/gate.js';
 import { evaluateProofGraphGate } from '../../audit/proofgraph/gate.js';
 import { authorizedCriticalPlanClaimIds } from '../../state/proofgraph-approval.js';
+import { isFlowPhase } from '../../machine/topology.js';
 
 import type {
   CompactProofClaim,
@@ -31,7 +32,6 @@ import { projectHumanProofSummary } from '../../presentation/claim-human-project
 type ProofDecisionContext = 'current_gate' | 'prospective_approval' | 'completion';
 
 const PLAN_PROOF_PHASES = new Set(['PLAN', 'PLAN_REVIEW', 'VALIDATION']);
-const ARCHITECTURE_PROOF_PHASES = new Set(['ARCHITECTURE', 'ARCH_REVIEW', 'ARCH_COMPLETE']);
 
 // ─── Claim reason (derived from verification state) ─────────────────────────
 
@@ -415,7 +415,7 @@ function buildEvaluationResult(
 /** Single phase-aware ProofGraph projector for resolved governance state. */
 export function projectProofStatusForState(state: SessionState): CompactProofPresentation {
   if (PLAN_PROOF_PHASES.has(state.phase)) return projectPlanProofStatus(state);
-  if (ARCHITECTURE_PROOF_PHASES.has(state.phase)) return projectArchitectureProofStatus(state);
+  if (isFlowPhase('architecture', state.phase)) return projectArchitectureProofStatus(state);
   return projectImplementationProofStatus(state, { decisionContext: 'current_gate' });
 }
 

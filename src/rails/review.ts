@@ -30,7 +30,12 @@ import { REVIEW_REPORT_SCHEMA_ID } from '../state/evidence-identifiers.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
 import type { RailResult, RailContext, TransitionRecord, RailBlocked } from './types.js';
-import { autoAdvance, applyTransition, createPolicyEvalFn } from './types.js';
+import {
+  applyTransition,
+  autoAdvance,
+  buildFlowSelectionTransition,
+  createPolicyEvalFn,
+} from './types.js';
 import { blocked } from '../config/reasons.js';
 import { blockedFromOverflow } from './auto-advance-overflow.js';
 import {
@@ -513,21 +518,13 @@ export function startReviewFlow(state: SessionState, ctx: RailContext): RailResu
 
   const preTransitions: TransitionRecord[] = [];
   const at = ctx.now();
-  const tr: TransitionRecord = {
-    from: 'READY',
-    to: 'PEER_REVIEW',
-    event: 'PEER_REVIEW_SELECTED',
-    at,
-  };
+  const tr = buildFlowSelectionTransition('PEER_REVIEW_SELECTED', at);
+  if (!tr) {
+    return blocked('INVALID_TRANSITION', { event: 'PEER_REVIEW_SELECTED', phase: state.phase });
+  }
   preTransitions.push(tr);
 
-  const reviewState: SessionState = applyTransition(
-    state,
-    'READY',
-    'PEER_REVIEW',
-    'PEER_REVIEW_SELECTED',
-    at,
-  );
+  const reviewState: SessionState = applyTransition(state, tr.from, tr.to, tr.event, tr.at);
 
   return {
     kind: 'ok',

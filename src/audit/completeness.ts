@@ -22,7 +22,8 @@
  * | selfReview              | PLAN_REVIEW            | state.selfReview !== null |
  * | planReviewDecision      | VALIDATION             | topology guarantee        |
  * | validation              | IMPLEMENTATION         | all checks passed         |
- * | implementation          | IMPL_REVIEW            | state.impl !== null       |
+ * | implementation          | IMPL_VALIDATION        | state.impl !== null       |
+ * | implValidation          | IMPL_REVIEW            | post-fix checks passed    |
  * | implReview              | EVIDENCE_REVIEW        | state.implReview !== null |
  * | evidenceReviewDecision  | EXPORT_READY           | EXPORT_READY/COMPLETE + no error |
  *
@@ -43,7 +44,12 @@
 import { z } from 'zod';
 import { compareActorIdentity } from '../identity/actor-info.js';
 import type { ActorIdentityComparison } from '../identity/actor-info.js';
-import { isTerminalPhase } from '../machine/topology.js';
+import {
+  FLOW_PHASES,
+  isFlowPhase,
+  isFlowPhaseAtOrAfter,
+  isTerminalPhase,
+} from '../machine/topology.js';
 import { evaluateValidationEvidence } from '../machine/validation-evidence.js';
 import type { SessionState, Phase } from '../state/schema.js';
 import { DecisionIdentity } from '../state/evidence-identity.js';
@@ -120,39 +126,6 @@ export interface CompletenessReport {
   readonly summary: CompletenessSummary;
 }
 
-const PHASE_ORDER: Readonly<Record<Phase, number>> = {
-  READY: -1,
-  TICKET: 0,
-  PLAN: 1,
-  PLAN_REVIEW: 2,
-  VALIDATION: 3,
-  IMPLEMENTATION: 4,
-  IMPL_VALIDATION: 5,
-  IMPL_REVIEW: 6,
-  EVIDENCE_REVIEW: 7,
-  EXPORT_READY: 8,
-  COMPLETE: 9,
-  ARCHITECTURE: -1,
-  ARCH_REVIEW: -1,
-  ARCH_COMPLETE: -1,
-  PEER_REVIEW: -1,
-  PEER_REVIEW_COMPLETE: -1,
-  REJECTED: -1,
-  ABORTED: -1,
-};
-
-const SLOT_REQUIRED_FROM: Readonly<Record<string, number>> = {
-  ticket: 0,
-  plan: 1,
-  selfReview: 2,
-  planReviewDecision: 3,
-  validation: 4,
-  implementation: 5,
-  implValidation: 6,
-  implReview: 7,
-  evidenceReviewDecision: 8,
-};
-
 const ALL_SLOTS = [
   'ticket',
   'plan',
@@ -164,6 +137,26 @@ const ALL_SLOTS = [
   'implReview',
   'evidenceReviewDecision',
 ] as const;
+
+type TicketSlot = (typeof ALL_SLOTS)[number];
+type TicketFlowPhase = (typeof FLOW_PHASES.ticket)[number];
+
+/**
+ * Milestone at which each ticket slot becomes required. The phase ORDER itself
+ * is owned solely by `machine/topology.ts`; this map owns only the domain fact
+ * "which milestone makes this slot mandatory".
+ */
+const SLOT_REQUIRED_FROM = {
+  ticket: 'TICKET',
+  plan: 'PLAN',
+  selfReview: 'PLAN_REVIEW',
+  planReviewDecision: 'VALIDATION',
+  validation: 'IMPLEMENTATION',
+  implementation: 'IMPL_VALIDATION',
+  implValidation: 'IMPL_REVIEW',
+  implReview: 'EVIDENCE_REVIEW',
+  evidenceReviewDecision: 'EXPORT_READY',
+} satisfies Record<TicketSlot, TicketFlowPhase>;
 
 const SLOT_LABELS: Readonly<Record<string, string>> = {
   ticket: 'Ticket Evidence',
@@ -199,12 +192,12 @@ function checksComplete(
   return state.activeChecks.every((id) => results.some((v) => v.checkId === id && v.passed));
 }
 
-const SLOT_PRESENT_CHECKS: Record<string, (state: SessionState, phaseOrd: number) => boolean> = {
+const SLOT_PRESENT_CHECKS: Record<string, (state: SessionState, phase: Phase) => boolean> = {
   ticket: (s) => s.ticket !== null,
   architecture: (s) => s.architecture !== null,
   plan: (s) => s.plan !== null,
   selfReview: (s) => s.selfReview !== null,
-  planReviewDecision: (_s, phaseOrd) => phaseOrd >= PHASE_ORDER['VALIDATION'],
+  planReviewDecision: (_s, phase) => isFlowPhaseAtOrAfter('ticket', phase, 'VALIDATION'),
   validation: (s) => checksComplete(s, s.validation),
   implementation: (s) => s.implementation !== null,
   implValidation: (s) => checksComplete(s, s.implValidation),
@@ -219,9 +212,8 @@ const SLOT_PRESENT_CHECKS: Record<string, (state: SessionState, phaseOrd: number
 };
 
 function isSlotPresent(state: SessionState, slot: string): boolean {
-  const phaseOrd = PHASE_ORDER[state.phase];
   const fn = SLOT_PRESENT_CHECKS[slot];
-  return fn ? fn(state, phaseOrd) : false;
+  return fn ? fn(state, state.phase) : false;
 }
 
 function isSlotFailed(state: SessionState, slot: string): boolean {
@@ -232,10 +224,7 @@ function isSlotFailed(state: SessionState, slot: string): boolean {
   return false;
 }
 
-const SLOT_DETAIL_FNS: Record<
-  string,
-  (state: SessionState, phaseOrd: number) => string | undefined
-> = {
+const SLOT_DETAIL_FNS: Record<string, (state: SessionState, phase: Phase) => string | undefined> = {
   ticket: (s) =>
     s.ticket ? `source: ${s.ticket.source}, digest: ${s.ticket.digest.slice(0, 12)}...` : undefined,
   architecture: (s) =>
@@ -251,8 +240,10 @@ const SLOT_DETAIL_FNS: Record<
       ? `iteration ${s.selfReview.iteration}/${s.selfReview.maxIterations}, verdict: ${s.selfReview.verdict}` +
         (s.architecture ? `, completion: ${s.architecture.reviewCompletion}` : '')
       : undefined,
-  planReviewDecision: (_s, phaseOrd) =>
-    phaseOrd >= PHASE_ORDER['VALIDATION'] ? 'Approved (verified by topology invariant)' : undefined,
+  planReviewDecision: (_s, phase) =>
+    isFlowPhaseAtOrAfter('ticket', phase, 'VALIDATION')
+      ? 'Approved (verified by topology invariant)'
+      : undefined,
   validation: (s) => {
     if (s.validation.length === 0) return undefined;
     const passed = s.validation.filter((v) => v.passed).length;
@@ -292,31 +283,20 @@ const SLOT_DETAIL_FNS: Record<
 };
 
 function getSlotDetail(state: SessionState, slot: string): string | undefined {
-  const phaseOrd = PHASE_ORDER[state.phase];
   const fn = SLOT_DETAIL_FNS[slot];
-  return fn ? fn(state, phaseOrd) : undefined;
+  return fn ? fn(state, state.phase) : undefined;
 }
 
-const ARCHITECTURE_FLOW_PHASES: ReadonlySet<Phase> = new Set<Phase>([
-  'ARCHITECTURE',
-  'ARCH_REVIEW',
-  'ARCH_COMPLETE',
-]);
-const REVIEW_FLOW_PHASES: ReadonlySet<Phase> = new Set<Phase>([
-  'PEER_REVIEW',
-  'PEER_REVIEW_COMPLETE',
-]);
-const ARCH_PHASE_ORDER: Readonly<Record<string, number>> = {
-  ARCHITECTURE: 0,
-  ARCH_REVIEW: 1,
-  ARCH_COMPLETE: 2,
-};
 const ARCH_SLOTS = ['architecture', 'selfReview', 'archReviewDecision'] as const;
-const ARCH_SLOT_REQUIRED_FROM: Readonly<Record<string, number>> = {
-  architecture: 0,
-  selfReview: 1,
-  archReviewDecision: 2,
-};
+
+type ArchitectureSlot = (typeof ARCH_SLOTS)[number];
+type ArchitectureFlowPhase = (typeof FLOW_PHASES.architecture)[number];
+
+const ARCH_SLOT_REQUIRED_FROM = {
+  architecture: 'ARCHITECTURE',
+  selfReview: 'ARCH_REVIEW',
+  archReviewDecision: 'ARCH_COMPLETE',
+} satisfies Record<ArchitectureSlot, ArchitectureFlowPhase>;
 const ARCH_SLOT_LABELS: Readonly<Record<string, string>> = {
   architecture: 'Architecture Decision Record',
   selfReview: 'ADR Self-Review',
@@ -389,29 +369,27 @@ function evaluateFourEyes(state: SessionState): FourEyesStatus {
 }
 
 export function evaluateCompleteness(state: SessionState): CompletenessReport {
-  const isArchFlow = ARCHITECTURE_FLOW_PHASES.has(state.phase);
-  const isReviewFlow = REVIEW_FLOW_PHASES.has(state.phase);
+  const isArchFlow = isFlowPhase('architecture', state.phase);
+  const isReviewFlow = isFlowPhase('review', state.phase);
   let slots: EvidenceSlotStatus[];
 
   if (isArchFlow) {
-    const currentOrd = ARCH_PHASE_ORDER[state.phase] ?? -1;
     slots = ARCH_SLOTS.map((slot) =>
       buildSlotEntry(
         state,
         slot,
-        currentOrd >= (ARCH_SLOT_REQUIRED_FROM[slot] ?? 99),
+        isFlowPhaseAtOrAfter('architecture', state.phase, ARCH_SLOT_REQUIRED_FROM[slot]),
         ARCH_SLOT_LABELS[slot] ?? slot,
       ),
     );
   } else if (isReviewFlow) {
     slots = [];
   } else {
-    const currentPhaseOrd = PHASE_ORDER[state.phase];
     slots = ALL_SLOTS.map((slot) =>
       buildSlotEntry(
         state,
         slot,
-        currentPhaseOrd >= (SLOT_REQUIRED_FROM[slot] ?? 99),
+        isFlowPhaseAtOrAfter('ticket', state.phase, SLOT_REQUIRED_FROM[slot]),
         SLOT_LABELS[slot] ?? slot,
       ),
     );

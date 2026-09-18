@@ -2,6 +2,15 @@
 
 FlowGuard uses 18 explicit workflow phases across 3 independent flows. Every session starts at the **READY** phase after `/hydrate`, with 4 transitions from READY: the three flow selections plus emergency `/abort`.
 
+The single authority for the phase graph and progressions is
+`src/machine/topology.ts`: `TRANSITIONS`/`resolveTransition` define every edge
+and `FLOW_PHASES` defines the canonical **forward** progression of each flow
+(used for evidence milestones; `isFlowPhase()` answers flow membership). A
+progression is deliberately not the full transition set — self-loops,
+backedges, `REJECTED`, `ABORTED`, and the `REDUCED_CEREMONY` shortcut are
+additional edges. Flow selection from READY is resolved from the graph, never
+hardcoded.
+
 ## Flows
 
 ### Ticket Flow (Full Development Lifecycle)

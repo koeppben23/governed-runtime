@@ -71,7 +71,10 @@ export function executeTicket(
   let baseTransition = state.transition;
 
   if (state.phase === 'READY') {
-    const tr = buildFlowSelectionTransition('TICKET', 'TICKET_SELECTED', ctx.now());
+    const tr = buildFlowSelectionTransition('TICKET_SELECTED', ctx.now());
+    if (!tr) {
+      return blocked('INVALID_TRANSITION', { event: 'TICKET_SELECTED', phase: state.phase });
+    }
     basePhase = tr.to;
     preTransitions.push(tr);
     baseTransition = { from: tr.from, to: tr.to, event: tr.event, at: tr.at };
