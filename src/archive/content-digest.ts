@@ -3,20 +3,33 @@
  * @description Single canonical authority for the archive content digest.
  *
  * The content digest binds two surfaces into one SHA-256:
- * 1. The sorted file digests (archive payload integrity).
- * 2. An integrity header of security-relevant manifest metadata.
+ * 1. An integrity header of security-relevant manifest metadata.
+ * 2. The sorted file digests (archive payload integrity).
+ *
+ * The header is serialized with the canonical JSON authority
+ * (`shared/canonical-json.ts`, sorted keys at every depth) and combined with
+ * the sorted file digests through the length-framed multi-part primitive
+ * (`hashParts` in `shared/hashing.ts`). This module owns only the domain
+ * formula — which fields are bound and how they are framed — never a private
+ * serializer or SHA-256 primitive.
  *
  * Folding the metadata into the digest closes the gap where unsigned manifest
  * fields (policy mode, audit head/count, identity) could be mutated without
  * detection. Any change to a covered field invalidates the digest (fail-closed).
  *
+ * Formula epoch: `archive-manifest.v3`. The v2 header was serialized with a
+ * literal-insertion-order `JSON.stringify`, so routing it through the canonical
+ * serializer intentionally changes the digest bytes. v2 archives fail closed
+ * at schema validation; there is no dual-formula compatibility path.
+ *
  * Pure module: no I/O, no logging, no side effects. Both the archive builder
  * and verifier call this so there is no parallel/duplicate digest formula.
  *
- * @version v1
+ * @version v2
  */
 
-import * as crypto from 'node:crypto';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { hashParts } from '../shared/hashing.js';
 import { PersistenceError } from '../adapters/persistence-core.js';
 
 /**
@@ -51,8 +64,9 @@ export interface ArchiveContentDigestInput {
 /**
  * Compute the deterministic archive content digest.
  *
- * The integrity header is serialized with a fixed key order so the digest is
- * stable across runs and platforms.
+ * The integrity header is canonicalized (sorted keys at every depth) and the
+ * multi-part input is length-framed, so the digest is stable across runs,
+ * platforms, and property insertion order while remaining unambiguous.
  */
 export function computeArchiveContentDigest(input: ArchiveContentDigestInput): string {
   const sortedDigestValues = input.includedFiles
@@ -68,7 +82,7 @@ export function computeArchiveContentDigest(input: ArchiveContentDigestInput): s
     })
     .sort();
 
-  const integrityHeader = JSON.stringify({
+  const integrityHeader = canonicalJsonStringify({
     schemaVersion: input.schemaVersion,
     layoutVersion: input.layoutVersion,
     sessionId: input.sessionId,
@@ -79,13 +93,5 @@ export function computeArchiveContentDigest(input: ArchiveContentDigestInput): s
     auditEventCount: input.auditEventCount,
   });
 
-  // Multi-part streaming digest (header + separator + joined values). Kept as a
-  // direct createHash call: the shared hashing helpers cover single-shot string
-  // and buffer inputs, not this incremental multi-update form.
-  return crypto
-    .createHash('sha256')
-    .update(integrityHeader)
-    .update('\n')
-    .update(sortedDigestValues.join(''))
-    .digest('hex');
+  return hashParts([integrityHeader, ...sortedDigestValues]);
 }

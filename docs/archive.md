@@ -71,7 +71,7 @@ Each archive includes an `archive-manifest.json`:
 
 ```json
 {
-  "schemaVersion": "archive-manifest.v2",
+  "schemaVersion": "archive-manifest.v3",
   "layoutVersion": 2,
   "createdAt": "2026-04-15T10:00:00.000Z",
   "sessionId": "uuid",
@@ -94,13 +94,14 @@ Each archive includes an `archive-manifest.json`:
 
 ### Manifest schema versions
 
-`archive-manifest.v2` is a **breaking** schema with **no legacy compatibility
-path**. v1 archives are hard-rejected at verification: the `v1` schema version
-fails `ArchiveManifestSchema` validation and surfaces as `manifest_parse_error`
-(fail-closed). There is no in-place upgrade — a v1 archive must be re-sealed by
-re-running archive creation against its source session.
+`archive-manifest.v3` is a **breaking** schema with **no legacy compatibility
+path**. v1 and v2 archives are hard-rejected at verification: the older schema
+versions fail `ArchiveManifestSchema` validation and surface as
+`manifest_parse_error` (fail-closed). There is no in-place upgrade — an older
+archive must be re-sealed by re-running archive creation against its source
+session.
 
-The v2 changes are integrity-driven:
+The v2 changes were integrity-driven:
 
 - `auditChainHead` / `auditEventCount` — audit trail completeness anchor (see
   [Integrity Chain](#integrity-chain)).
@@ -108,6 +109,13 @@ The v2 changes are integrity-driven:
   `sessionId`, `fingerprint`, and `discoveryDigest` are now **folded into
   `contentDigest`**, so they can no longer be mutated without invalidating the
   digest.
+
+The v3 change closes the digest-authority gap: the integrity header of the
+`contentDigest` is now serialized with the canonical JSON authority (recursive
+key sorting) instead of literal insertion order, and the header plus sorted file
+digests are combined with the canonical length-framed multi-part hash. The
+covered field set is unchanged, but the digest bytes intentionally differ from
+v2; v2 archives fail closed instead of being silently re-interpreted.
 
 ## Verification
 
@@ -192,10 +200,12 @@ Archives include tamper-evident features:
 2. **Content digest:** SHA-256 binding both the sorted file digests **and** an
    integrity header of security-relevant manifest metadata (`schemaVersion`,
    `sessionId`, `fingerprint`, `policyMode`, `discoveryDigest`, `auditChainHead`,
-   `auditEventCount`). The single canonical formula lives in
-   `src/archive/content-digest.ts` and is shared by the builder and the verifier
-   (no parallel digest authority). Mutating any covered field invalidates the
-   digest and surfaces as `content_digest_mismatch`.
+   `auditEventCount`). The integrity header is serialized by the canonical JSON
+   authority (`src/shared/canonical-json.ts`) and hashed through the shared
+   length-framed hash primitive (`src/shared/hashing.ts`). The single domain
+   formula lives in `src/archive/content-digest.ts` and is shared by the builder
+   and the verifier (no parallel digest authority). Mutating any covered field
+   invalidates the digest and surfaces as `content_digest_mismatch`.
 3. **Archive checksum:** SHA-256 of the tar.gz file
 
 Modifying any archived file breaks the chain and is detectable.

@@ -36,7 +36,8 @@ no exceptions. Each principle below is either enforced by an automated guard
   `architecture/__tests__/file-size.test.ts`. Do not let files grow unbounded.
 - **No Duplicate Authority** — Every concept MUST have exactly one canonical
   implementation. No duplicated logic, no parallel pipelines with identical
-  algorithms. (Enforced: SSOT guards, e.g. `audit-canonicalization-ssot.test.ts`.)
+  algorithms. (Enforced: SSOT guards, e.g. `canonical-json-ssot.test.ts` and
+  `digest-authority-ssot.test.ts` for serialization and hash primitives.)
 - **Separation Of Content And Logic** — Template content and rendering/assembly
   logic MUST live in separate modules. Content files define what; renderer files
   define how.

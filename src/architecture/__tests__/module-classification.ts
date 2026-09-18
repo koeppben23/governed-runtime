@@ -114,7 +114,9 @@ export const CROSS_MODULE_ALLOWLIST: Readonly<Record<string, ReadonlySet<string>
   providers: new Set(['state', 'verification']),
   verification: new Set(['state', 'shared', 'providers', 'adapters']),
   redaction: new Set(['shared', 'logging']),
-  rendering: new Set(['state', 'templates']),
+  // rendering consumes the canonical hash authority for managed-artifact
+  // content digests (shared/ is the lowest-level governed primitive layer).
+  rendering: new Set(['state', 'templates', 'shared']),
   templates: new Set(['shared', 'rendering']),
 };
 

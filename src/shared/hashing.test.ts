@@ -1,6 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';
-import { hashText, hashTextShort, hashBuffer, hashFile, digestToId } from './hashing.js';
+import {
+  digestToId,
+  hashBuffer,
+  hashDigestBytes,
+  hashFile,
+  hashParts,
+  hashText,
+  hashTextShort,
+} from './hashing.js';
 
 /**
  * @module shared/hashing.test
@@ -86,6 +94,67 @@ describe('hashBuffer', () => {
     // A Buffer built from a utf-8 string must hash identically to hashText(str).
     const s = 'governance-evidence';
     expect(hashBuffer(Buffer.from(s, 'utf-8'))).toBe(hashText(s));
+  });
+});
+
+describe('hashParts', () => {
+  it('is deterministic and returns a full 64-char hex digest', () => {
+    expect(hashParts(['hello', 'world'])).toBe(hashParts(['hello', 'world']));
+    expect(hashParts(['hello', 'world'])).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('pins the length-prefix framing contract against an inline byte form', () => {
+    // Each part is framed as `<utf8ByteLength>:<bytes>`.
+    const inline = createHash('sha256').update('2:ab1:c').digest('hex');
+    expect(hashParts(['ab', 'c'])).toBe(inline);
+  });
+
+  it('makes the part boundary unambiguous', () => {
+    // The motivating ambiguity: naive concatenation would treat these as equal.
+    expect(hashParts(['ab', 'c'])).not.toBe(hashParts(['a', 'bc']));
+  });
+
+  it('is order- and count-sensitive', () => {
+    expect(hashParts(['a', 'b'])).not.toBe(hashParts(['b', 'a']));
+    expect(hashParts(['a'])).not.toBe(hashParts(['a', '']));
+  });
+
+  it('frames strings by UTF-8 byte length, not character count', () => {
+    const inline = createHash('sha256').update('2:ä').digest('hex');
+    expect(hashParts(['ä'])).toBe(inline);
+    expect(hashParts([Buffer.from('ä', 'utf-8')])).toBe(inline);
+  });
+
+  it('hashes an empty part list as the empty byte sequence', () => {
+    expect(hashParts([])).toBe(hashText(''));
+  });
+});
+
+describe('hashDigestBytes', () => {
+  it('returns raw SHA-256 bytes identical to the hex digest', () => {
+    for (const s of ['', 'governance', '{"k":1}', '日本語']) {
+      expect(hashDigestBytes('sha256', s)).toEqual(Buffer.from(hashText(s), 'hex'));
+    }
+  });
+
+  it('supports the full admissible SHA-2 family with the correct byte length', () => {
+    const content = 'rfc3161-message-imprint';
+    const expected: Array<['sha256' | 'sha384' | 'sha512', number]> = [
+      ['sha256', 32],
+      ['sha384', 48],
+      ['sha512', 64],
+    ];
+    for (const [algorithm, byteLength] of expected) {
+      const inline = createHash(algorithm).update(content, 'utf-8').digest();
+      const digest = hashDigestBytes(algorithm, content);
+      expect(digest).toEqual(inline);
+      expect(digest).toHaveLength(byteLength);
+    }
+  });
+
+  it('is binary-safe for Buffer content', () => {
+    const bytes = Buffer.from([0x00, 0xff, 0x10, 0x41]);
+    expect(hashDigestBytes('sha256', bytes)).toEqual(createHash('sha256').update(bytes).digest());
   });
 });
 

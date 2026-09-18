@@ -5,7 +5,7 @@ import type {
 import type { ProviderId } from '../../state/evidence-validation.js';
 import type { AssertionIdentity } from '../../state/assertion-identity.js';
 import type { ParseContext, ParserResult } from './types.js';
-import { createHash } from 'node:crypto';
+import { hashText } from '../../shared/hashing.js';
 
 interface VitestAssertionResult {
   ancestorTitles?: string[];
@@ -22,10 +22,6 @@ interface VitestTestResult {
 
 interface VitestJsonReport {
   testResults?: VitestTestResult[];
-}
-
-function sha256(content: string): string {
-  return createHash('sha256').update(content, 'utf-8').digest('hex');
 }
 
 function mapStatus(raw: string): 'passed' | 'failed' | 'skipped' {
@@ -86,7 +82,7 @@ export function parseVitestJson(jsonText: string, context: ParseContext): Parser
         const msg = ar.failureMessages?.[0];
         failure = {
           message: msg ? msg.split('\n')[0] : undefined,
-          detailDigest: msg ? sha256(msg) : undefined,
+          detailDigest: msg ? hashText(msg) : undefined,
         };
       }
 

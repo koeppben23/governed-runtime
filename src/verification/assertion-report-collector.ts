@@ -10,8 +10,8 @@
 
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { createHash } from 'node:crypto';
 import { sep } from 'node:path';
+import { hashText } from '../shared/hashing.js';
 
 import type { ExecutionEvidence } from './executor.js';
 import type {
@@ -155,7 +155,7 @@ async function collectRunSpecific(
       };
     }
 
-    reports.push({ path: relPath, content, digest: sha256(content) });
+    reports.push({ path: relPath, content, digest: hashText(content) });
   }
 
   return {
@@ -224,7 +224,7 @@ async function collectSnapshotDiff(options: SnapshotDiffOptions): Promise<Report
       };
     }
 
-    reports.push({ path: relPath, content, digest: sha256(content) });
+    reports.push({ path: relPath, content, digest: hashText(content) });
   }
 
   return {
@@ -253,7 +253,7 @@ async function collectStdout(
       format,
       providerId,
       content: stdout,
-      digest: sha256(stdout),
+      digest: hashText(stdout),
     },
   };
 }
@@ -309,8 +309,4 @@ function isWithinCwd(target: string, cwd: string): boolean {
   const resolvedTarget = resolve(target);
   const resolvedCwd = resolve(cwd);
   return resolvedTarget === resolvedCwd || resolvedTarget.startsWith(resolvedCwd + sep);
-}
-
-function sha256(content: Buffer | string): string {
-  return createHash('sha256').update(content).digest('hex');
 }

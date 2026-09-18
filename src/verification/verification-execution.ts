@@ -12,7 +12,7 @@
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve, sep as pathSep } from 'node:path';
-import { createHash } from 'node:crypto';
+import { hashBuffer } from '../shared/hashing.js';
 
 import type { VerificationCandidate } from '../state/discovery-schemas.js';
 import type { AssertionReportSpec } from '../state/discovery-schemas.js';
@@ -167,7 +167,7 @@ export async function takeSnapshot(cwd: string, patterns: string[]): Promise<Rep
       const content = await readFile(fullPath);
       if (content.length > MAX_FILE_BYTES) continue;
 
-      const digest = sha256(content);
+      const digest = hashBuffer(content);
       snapshot.push({ path: relPath, digest, size: content.length });
     }
   }
@@ -242,8 +242,4 @@ function isWithinCwd(target: string, cwd: string): boolean {
   const resolvedTarget = resolve(target);
   const resolvedCwd = resolve(cwd);
   return resolvedTarget === resolvedCwd || resolvedTarget.startsWith(resolvedCwd + pathSep);
-}
-
-function sha256(content: Buffer | string): string {
-  return createHash('sha256').update(content).digest('hex');
 }

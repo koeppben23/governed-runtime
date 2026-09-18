@@ -19,7 +19,7 @@ import type {
 import type { ProviderId } from '../../state/evidence-validation.js';
 import type { AssertionIdentity } from '../../state/assertion-identity.js';
 import type { ParseContext, ParserResult } from './types.js';
-import { createHash } from 'node:crypto';
+import { hashText } from '../../shared/hashing.js';
 
 interface PytestTest {
   nodeid: string;
@@ -34,10 +34,6 @@ interface PytestJsonReport {
   tests?: PytestTest[];
   collectors?: unknown[];
   created?: number;
-}
-
-function sha256(content: string): string {
-  return createHash('sha256').update(content, 'utf-8').digest('hex');
 }
 
 function mapStatus(raw: string): 'passed' | 'failed' | 'errored' | 'skipped' {
@@ -60,7 +56,7 @@ function buildPytestFailure(
     const longrepr = test.call.longrepr;
     return {
       message: longrepr.split('\n')[0] || undefined,
-      detailDigest: sha256(longrepr),
+      detailDigest: hashText(longrepr),
     };
   }
   if (status === 'errored') {
@@ -70,7 +66,7 @@ function buildPytestFailure(
     if (detail && test.call?.longrepr) {
       return {
         message: test.call.longrepr.split('\n')[0] || undefined,
-        detailDigest: sha256(test.call.longrepr),
+        detailDigest: hashText(test.call.longrepr),
       };
     }
   }

@@ -23,7 +23,7 @@
  */
 
 import * as crypto from 'node:crypto';
-import { hashText } from '../shared/hashing.js';
+import { hashDigestBytes, hashText } from '../shared/hashing.js';
 import type { Phase, Event } from '../state/schema.js';
 import type { ReviewVerdict, TimestampEvidence } from '../state/evidence.js';
 import { canonicalJsonStringify, computeCanonicalEventDigest } from './canonical-digest.js';
@@ -653,7 +653,10 @@ export function completionLifecycleEventId(
  */
 function uuidV8Sha256(name: string, namespace: string): string {
   const namespaceBytes = Buffer.from(namespace.replaceAll('-', ''), 'hex');
-  const digest = crypto.createHash('sha256').update(namespaceBytes).update(name, 'utf8').digest();
+  const digest = hashDigestBytes(
+    'sha256',
+    Buffer.concat([namespaceBytes, Buffer.from(name, 'utf8')]),
+  );
   const bytes = digest.subarray(0, 16);
   bytes[6] = (bytes[6]! & 0x0f) | 0x80;
   bytes[8] = (bytes[8]! & 0x3f) | 0x80;

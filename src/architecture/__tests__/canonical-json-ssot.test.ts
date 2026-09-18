@@ -1,21 +1,30 @@
 /**
- * @module architecture/audit-canonicalization-ssot.test
+ * @module architecture/canonical-json-ssot
  * @description Anti-drift guard (#434, finding C1): there is exactly ONE
- * canonical authority for serializing an audit event before it is hashed —
- * `canonicalJsonStringify` in `audit/canonical-digest.ts`. The original C1
+ * canonical authority for JSON serialization before hashing —
+ * `canonicalJsonStringify` in `shared/canonical-json.ts`. The original C1
  * defect was two divergent serializers (a broken inline one in `audit/types.ts`
  * and the correct canonical one), which silently produced different chain
  * hashes and voided tamper-evidence.
  *
- * This guard fails closed when a competing serializer is reintroduced:
+ * This guard owns the DEFINITION side of the serialization authority:
  *   1. `canonicalJsonStringify` may be DEFINED only in the canonical module.
- *   2. No file inside the `audit/` subsystem may hash a raw `JSON.stringify(...)`
- *      (the C1 broken shape) — event hashing must route through the authority.
+ *   2. A recursive key-sorting helper named exactly `canonicalize` may be
+ *      DEFINED only there (it catches differently-named-but-duplicate
+ *      serializers that a public-API check would miss).
+ *
+ * The USAGE side — a hash primitive must never consume a raw
+ * `JSON.stringify(...)` — is owned default-wide by
+ * `digest-authority-ssot.test.ts`. The guards do not overlap: definitions here,
+ * hash-input usage there.
  *
  * Mechanism mirrors `config/reasons-completeness.test.ts` and
  * `architecture/__tests__/dependency-rules.test.ts`: a pure detector over
  * production source, plus a proving negative fixture. Production scan excludes
- * `*.test.ts` and `__tests__/` so this guard cannot flag its own fixtures.
+ * test sources only (`.test.ts`, `__tests__/`, classified test-support trees)
+ * so this guard cannot flag its own fixtures.
+ *
+ * @version v2
  */
 
 import { readFileSync, readdirSync } from 'node:fs';
@@ -37,9 +46,6 @@ const DEFINE_CANONICAL = /\b(?:function|const)\s+canonicalJsonStringify\b/;
  * such as `canonicalizeOriginUrl` (URL canonicalizer, not a JSON key-sorter).
  */
 const DEFINE_CANONICALIZE = /\b(?:function|const)\s+canonicalize\b/;
-
-/** Hashing over a raw JSON.stringify — the C1 broken-serializer shape. */
-const HASH_OVER_RAW_JSON = /\.update\(\s*JSON\.stringify\(/;
 
 interface SourceFile {
   readonly rel: string;
@@ -92,26 +98,16 @@ function findCanonicalizationViolations(files: readonly SourceFile[]): Violation
           rule: 'duplicate-canonicalize-helper',
         });
       }
-      // Allowlist: only the canonical module may hash a serialized form directly.
-      // It is the single authority; `JSON.stringify` for on-disk storage (e.g.
-      // persistence-audit JSONL) lives outside `audit/` and is not a hash input.
-      if (
-        HASH_OVER_RAW_JSON.test(text) &&
-        f.rel.startsWith('audit/') &&
-        f.rel !== CANONICAL_MODULE
-      ) {
-        out.push({ rel: f.rel, line: i + 1, snippet: text.trim(), rule: 'raw-json-event-hash' });
-      }
     });
   }
   return out;
 }
 
-describe('audit canonicalization SSOT (#434 C1 anti-drift)', () => {
+describe('canonical JSON serialization SSOT (#434 C1 anti-drift)', () => {
   const files: SourceFile[] = [];
   collectProductionFiles(SRC_ROOT, files);
 
-  it('production code has exactly one audit event canonicalization authority', () => {
+  it('production code has exactly one canonical JSON serialization authority', () => {
     const violations = findCanonicalizationViolations(files);
     if (violations.length > 0) {
       console.error('Canonicalization SSOT violations:', violations);
@@ -130,18 +126,6 @@ describe('audit canonicalization SSOT (#434 C1 anti-drift)', () => {
       const violations = findCanonicalizationViolations(fixture);
       expect(violations).toHaveLength(1);
       expect(violations[0]!.rule).toBe('duplicate-canonical-serializer');
-    });
-
-    it('detects hashing over a raw JSON.stringify inside the audit subsystem', () => {
-      const fixture: SourceFile[] = [
-        {
-          rel: 'audit/rogue.ts',
-          content: 'const h = createHash("sha256").update(JSON.stringify(event));',
-        },
-      ];
-      const violations = findCanonicalizationViolations(fixture);
-      expect(violations).toHaveLength(1);
-      expect(violations[0]!.rule).toBe('raw-json-event-hash');
     });
 
     it('detects a duplicate `canonicalize` recursive key-sorter outside the authority', () => {

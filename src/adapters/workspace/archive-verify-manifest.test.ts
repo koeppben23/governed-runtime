@@ -26,7 +26,7 @@ async function createSession(files: Record<string, string>): Promise<string> {
 
 function manifest(files: Record<string, string>): ArchiveManifest {
   return {
-    schemaVersion: 'archive-manifest.v2',
+    schemaVersion: 'archive-manifest.v3',
     layoutVersion: 2,
     createdAt: '2026-01-01T00:00:00.000Z',
     sessionId: 'session',

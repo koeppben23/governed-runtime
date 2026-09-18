@@ -24,7 +24,7 @@ import { describe, expect, it } from 'vitest';
  * enforcement hook (`integration/review/enforcement/`) reads verdicts off raw
  * tool args for a different purpose and is intentionally out of scope.
  *
- * Mechanism mirrors `audit-canonicalization-ssot.test.ts`: a pure detector over
+ * Mechanism mirrors `canonical-json-ssot.test.ts`: a pure detector over
  * production source, plus a proving negative fixture. `*.test.ts` and
  * `__tests__/` are excluded so this guard cannot flag its own fixtures.
  */

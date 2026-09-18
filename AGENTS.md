@@ -135,7 +135,9 @@ blocker.
 Before implementing a change, identify the canonical authority. Change the authority, not a local duplicate.
 
 - State transitions: `src/machine/`
-- Canonical serialization and digests: `src/shared/canonical-json.ts`
+- Canonical serialization: `src/shared/canonical-json.ts`
+- Hash/digest primitives: `src/shared/hashing.ts`
+- Archive content digest formula: `src/archive/content-digest.ts`
 - Reason codes: `src/config/reasons.ts`
 - Installed mandates: `src/templates/mandates.ts`
 - Runtime config schema: `src/config/flowguard-config.ts`
