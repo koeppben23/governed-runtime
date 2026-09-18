@@ -6,7 +6,7 @@
  */
 
 import { z } from 'zod';
-import { assuranceSchema } from './evidence-assurance-internal.js';
+import { ActorAssuranceSchema } from '../shared/actor-assurance.js';
 
 /**
  * Structured identity for decision attribution (P30/P33/P34).
@@ -29,7 +29,7 @@ export const DecisionIdentity = z
     actorEmail: z.string().nullable(),
     actorDisplayName: z.string().nullable().optional(),
     actorSource: z.enum(['env', 'git', 'claim', 'oidc', 'unknown']),
-    actorAssurance: assuranceSchema(),
+    actorAssurance: ActorAssuranceSchema,
   })
   .readonly();
 export type DecisionIdentity = z.infer<typeof DecisionIdentity>;
@@ -79,7 +79,7 @@ export const ActorInfoSchema = z
     email: z.string().nullable(),
     displayName: z.string().nullable().optional(),
     source: z.enum(['env', 'git', 'claim', 'oidc', 'unknown']),
-    assurance: assuranceSchema(),
+    assurance: ActorAssuranceSchema,
     verificationMeta: ActorVerificationMetaSchema.optional(),
   })
   .readonly();

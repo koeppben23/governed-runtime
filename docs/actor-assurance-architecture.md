@@ -50,6 +50,14 @@ This document defines the canonical target model for actor assurance in FlowGuar
 
 ## 3) Assurance Tiers (Canonical)
 
+The tier vocabulary, the derived TypeScript union, the closed Zod schema, and
+the ordinal order are owned by the single authority
+[`src/shared/actor-assurance.ts`](../src/shared/actor-assurance.ts) — the tuple
+in that file IS the ordering. No other production module may define or
+re-declare the tier list, the `best_effort | claim_validated | idp_verified`
+union, a literal `z.enum([...])` of the tiers, or a parallel ordinal structure
+(enforced by `architecture/__tests__/actor-assurance-ssot.test.ts`).
+
 The following tiers are defined in ascending order of assurance strength:
 
 ### 3.1 `best_effort`

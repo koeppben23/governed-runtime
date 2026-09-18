@@ -138,6 +138,7 @@ Before implementing a change, identify the canonical authority. Change the autho
 - Canonical serialization: `src/shared/canonical-json.ts`
 - Hash/digest primitives: `src/shared/hashing.ts`
 - Archive content digest formula: `src/archive/content-digest.ts`
+- Actor assurance vocabulary/schema: `src/shared/actor-assurance.ts`
 - Reason codes: `src/config/reasons.ts`
 - Installed mandates: `src/templates/mandates.ts`
 - Runtime config schema: `src/config/flowguard-config.ts`

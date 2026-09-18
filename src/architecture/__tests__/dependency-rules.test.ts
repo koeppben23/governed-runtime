@@ -714,6 +714,7 @@ describe('Layer Dependency Rules', () => {
     ]);
     const allowedForState = new Set<string>();
     const allowedStateSharedImports = new Set([
+      '../shared/actor-assurance.js',
       '../shared/canonical-json.js',
       '../shared/hashing.js',
       '../shared/policy-idp-config.js',
