@@ -3,6 +3,7 @@
  * @description Runtime and hydrate-time policy resolution authority.
  */
 
+import { isActorAssurance, type ActorAssurance } from '../shared/actor-assurance.js';
 import type { IdpConfig, IdentityProviderMode } from '../shared/policy-idp-config.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import type {
@@ -43,7 +44,7 @@ export interface HydratePolicyOptions {
   configReviewBudget?: Partial<ReviewBudget>;
   configMaxIncoherentReviewerCaptureRetries?: number;
   configMaxReviewerOutputRepairAttempts?: number;
-  configMinimumActorAssuranceForApproval?: 'best_effort' | 'claim_validated' | 'idp_verified';
+  configMinimumActorAssuranceForApproval?: ActorAssurance;
   configIdentityProvider?: IdpConfig;
   configIdentityProviderMode?: IdentityProviderMode;
   configEnforceRiskClassification?: boolean;
@@ -60,17 +61,8 @@ interface RequestedPolicyContext {
   readonly policyWithOverrides: FlowGuardPolicy;
 }
 
-function resolveMinAssurance(
-  base: FlowGuardPolicy,
-  configMin?: string,
-): 'best_effort' | 'claim_validated' | 'idp_verified' {
-  if (
-    configMin === 'best_effort' ||
-    configMin === 'claim_validated' ||
-    configMin === 'idp_verified'
-  )
-    return configMin;
-  return base.minimumActorAssuranceForApproval;
+function resolveMinAssurance(base: FlowGuardPolicy, configMin?: string): ActorAssurance {
+  return isActorAssurance(configMin) ? configMin : base.minimumActorAssuranceForApproval;
 }
 
 function resolveDiscoveryHealth(
@@ -109,7 +101,7 @@ function applyConfigOverrides(
     configReviewBudget?: Partial<ReviewBudget>;
     configMaxIncoherentReviewerCaptureRetries?: number;
     configMaxReviewerOutputRepairAttempts?: number;
-    configMinimumActorAssuranceForApproval?: 'best_effort' | 'claim_validated' | 'idp_verified';
+    configMinimumActorAssuranceForApproval?: ActorAssurance;
     configIdentityProvider?: IdpConfig;
     configIdentityProviderMode?: IdentityProviderMode;
     configEnforceRiskClassification?: boolean;

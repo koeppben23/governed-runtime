@@ -39,6 +39,7 @@ import {
   type TaskClass,
 } from '../state/schema.js';
 import type { BindingInfo } from '../state/evidence.js';
+import type { ActorAssurance } from '../shared/actor-assurance.js';
 import { FINGERPRINT_PATTERN } from '../shared/repository-fingerprint.js';
 import type { ActorInfo } from '../state/evidence.js';
 import type { DecisionIdentity } from '../state/evidence.js';
@@ -120,7 +121,7 @@ export interface HydratePolicyInput {
   readonly reviewBudget?: Partial<ReviewBudget>;
   readonly identityProvider?: IdpConfig;
   readonly identityProviderMode?: IdentityProviderMode;
-  readonly minimumActorAssuranceForApproval?: 'best_effort' | 'claim_validated' | 'idp_verified';
+  readonly minimumActorAssuranceForApproval?: ActorAssurance;
   readonly enforceRiskClassification?: boolean;
   readonly allowRiskDowngradeOverride?: boolean;
   readonly allowReducedCeremony?: boolean;

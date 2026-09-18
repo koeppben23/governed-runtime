@@ -26,6 +26,7 @@
 import type { SessionState } from '../state/schema.js';
 import type { ReviewFindings } from '../state/evidence.js';
 import type { DecisionIdentity } from '../state/evidence-identity.js';
+import type { ActorAssurance } from '../shared/actor-assurance.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 import { evaluate } from '../machine/evaluate.js';
 import { allValidationsPassed, implValidationPassed } from '../machine/guards.js';
@@ -89,7 +90,7 @@ export interface StatusProjection {
   actor: {
     id: string;
     source: 'env' | 'git' | 'claim' | 'oidc' | 'unknown';
-    assurance: 'best_effort' | 'claim_validated' | 'idp_verified';
+    assurance: ActorAssurance;
   } | null;
   /** Regulated archive lifecycle compatibility status. */
   archiveStatus: string | null;
@@ -231,7 +232,7 @@ export interface ContextProjection {
   policyMode: string;
   regulated: {
     applicable: boolean;
-    minimumActorAssuranceForApproval: 'best_effort' | 'claim_validated' | 'idp_verified' | null;
+    minimumActorAssuranceForApproval: ActorAssurance | null;
     centralPolicyActive: boolean | null;
     fourEyesRelevant: boolean | null;
   };
@@ -246,7 +247,7 @@ export interface ReadinessProjection {
   evidenceComplete: boolean;
   fourEyesSatisfied: boolean;
   actorKnown: boolean;
-  minimumActorAssuranceForApproval: 'best_effort' | 'claim_validated' | 'idp_verified' | null;
+  minimumActorAssuranceForApproval: ActorAssurance | null;
   /** Warnings about configuration normalization or legacy values. */
   warnings: string[];
 }

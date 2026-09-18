@@ -116,6 +116,7 @@ export default defineConfig({
       // Suites with no transitively reachable mutated file: they cannot kill
       // any mutant and only add runtime to the full-suite run.
       'src/adapters/repository-change.test.ts',
+      'src/architecture/__tests__/actor-assurance-ssot.test.ts',
       'src/architecture/__tests__/canonical-json-ssot.test.ts',
       'src/architecture/__tests__/digest-authority-ssot.test.ts',
       'src/architecture/__tests__/mode-validation-ssot.test.ts',

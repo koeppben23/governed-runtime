@@ -21,6 +21,7 @@
  */
 
 import { z } from 'zod';
+import { ActorAssuranceSchema } from '../shared/actor-assurance.js';
 import { IdpConfigSchema, IdentityProviderModeSchema } from '../identity/index.js';
 import { PolicyModeSchema } from '../state/policy-mode.js';
 import { HOST_IDS } from '../shared/hosts.js';
@@ -152,11 +153,8 @@ export const FlowGuardConfigSchema = z.object({
       /** Override obligation-level reviewer-attempt budget (output repairs and
        * task re-arms). */
       maxReviewerAttempts: z.number().int().min(0).max(5).optional(),
-      /** P34: Minimum assurance level required for approval.
-       * 'best_effort' | 'claim_validated' | 'idp_verified' */
-      minimumActorAssuranceForApproval: z
-        .enum(['best_effort', 'claim_validated', 'idp_verified'])
-        .optional(),
+      /** P34: Minimum assurance level required for approval. */
+      minimumActorAssuranceForApproval: ActorAssuranceSchema.optional(),
       /** P35a/P35b1/P35b2: IdP configuration for static keys or JWKS (path/URI). */
       identityProvider: IdpConfigSchema.optional(),
       /** P35a: IdP verification mode ('optional' or 'required'). */

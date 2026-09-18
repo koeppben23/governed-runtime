@@ -12,7 +12,7 @@ import { hashText } from '../shared/hashing.js';
 import { REVIEW_REPORT_SCHEMA_ID } from './evidence-identifiers.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { RepositoryEvidenceFreeze } from './evidence-review-freeze.js';
-import { assuranceSchema } from './evidence-assurance-internal.js';
+import { ActorAssuranceSchema } from '../shared/actor-assurance.js';
 import {
   CheckId,
   ExternalReferenceSchema,
@@ -264,7 +264,7 @@ export const ReviewActorInfo = z
     sessionId: z.string(),
     actorId: z.string().optional(),
     actorSource: z.enum(['env', 'git', 'claim', 'unknown']).optional(),
-    actorAssurance: assuranceSchema().optional(),
+    actorAssurance: ActorAssuranceSchema.optional(),
   })
   .strict()
   .readonly();

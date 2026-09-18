@@ -15,7 +15,7 @@ import {
   InputOriginSchema,
   ExternalReferenceSchema,
 } from './evidence-primitives.js';
-import { OpenCodeSessionId, assuranceSchema } from './evidence-assurance-internal.js';
+import { OpenCodeSessionId } from './evidence-assurance-internal.js';
 import { FIXED_TIME } from './evidence-test-constants.js';
 
 describe('evidence-primitives', () => {
@@ -92,18 +92,6 @@ describe('evidence-primitives', () => {
         'ses_260740c65ffe77OjxRP7z40yH8',
       );
       expect(OpenCodeSessionId.parse('abc123')).toBe('abc123');
-    });
-
-    it('assuranceSchema rejects removed assurance values', () => {
-      const schema = assuranceSchema();
-      expect(() => schema.parse('verified')).toThrow();
-    });
-
-    it('assuranceSchema passes through modern values', () => {
-      const schema = assuranceSchema();
-      expect(schema.parse('best_effort')).toBe('best_effort');
-      expect(schema.parse('claim_validated')).toBe('claim_validated');
-      expect(schema.parse('idp_verified')).toBe('idp_verified');
     });
   });
 

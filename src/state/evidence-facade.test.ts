@@ -4,15 +4,16 @@
  * Proves that evidence.ts (the facade) exports exactly the original public API
  * and does NOT leak internal/private implementation details.
  *
- * OpenCodeSessionId, coerceAssurance, and assuranceSchema were private helpers
- * in the original evidence.ts (no `export` keyword) and MUST NOT appear in the
- * facade re-exports.
+ * OpenCodeSessionId and coerceAssurance were private helpers in the original
+ * evidence.ts (no `export` keyword) and MUST NOT appear in the facade
+ * re-exports. The actor-assurance schema lives in its own shared authority
+ * (`shared/actor-assurance.ts`) and is likewise not part of this facade.
  *
  * Extracted from evidence-split.test.ts.
  */
 import { describe, it, expect } from 'vitest';
 
-const INTERNAL_HELPERS = ['OpenCodeSessionId', 'coerceAssurance', 'assuranceSchema'] as const;
+const INTERNAL_HELPERS = ['OpenCodeSessionId', 'coerceAssurance'] as const;
 
 const PUBLIC_VALUE_EXPORTS = [
   'CheckId',
@@ -119,11 +120,6 @@ describe('evidence.ts facade export-set regression', () => {
     it('facade does NOT export coerceAssurance', async () => {
       const mod = await import('./evidence.js');
       expect('coerceAssurance' in mod).toBe(false);
-    });
-
-    it('facade does NOT export assuranceSchema', async () => {
-      const mod = await import('./evidence.js');
-      expect('assuranceSchema' in mod).toBe(false);
     });
   });
 

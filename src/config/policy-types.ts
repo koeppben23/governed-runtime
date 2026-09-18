@@ -7,6 +7,7 @@
  * @version v1
  */
 
+import type { ActorAssurance } from '../shared/actor-assurance.js';
 import type { IdpConfig, IdentityProviderMode } from '../shared/policy-idp-config.js';
 import type { PolicyMode, CentralMinimumMode } from '../state/policy-mode.js';
 
@@ -274,7 +275,7 @@ export interface FlowGuardPolicy {
    *
    * P34 design doc: docs/actor-assurance-architecture.md
    */
-  readonly minimumActorAssuranceForApproval: 'best_effort' | 'claim_validated' | 'idp_verified';
+  readonly minimumActorAssuranceForApproval: ActorAssurance;
 
   /**
    * P35a/P35b1/P35b2: IdP configuration for static keys or JWKS authority.
