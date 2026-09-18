@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   applyTransition,
   autoAdvance,
+  buildFlowSelectionTransition,
   runConvergenceLoop,
   runSingleIteration,
   createPolicyEvalFn,
@@ -11,6 +12,7 @@ import {
 import type {
   AutoAdvanceAdvanced,
   ConvergedResult,
+  FlowSelectionEvent,
   RailContext,
   ConvergenceResult,
   IterationResult,
@@ -296,6 +298,39 @@ describe('rails/types', () => {
       );
       expect(result.iteration).toBe(2);
       expect(count).toBe(2);
+    });
+  });
+
+  // ─── Flow selection (topology-derived) ─────────────────────
+  describe('buildFlowSelectionTransition', () => {
+    const AT = '2026-01-01T00:00:00.000Z';
+
+    it('HAPPY: resolves every *_SELECTED event to the topology target', () => {
+      expect(buildFlowSelectionTransition('TICKET_SELECTED', AT)).toEqual({
+        from: 'READY',
+        to: 'TICKET',
+        event: 'TICKET_SELECTED',
+        at: AT,
+      });
+      expect(buildFlowSelectionTransition('ARCHITECTURE_SELECTED', AT)).toEqual({
+        from: 'READY',
+        to: 'ARCHITECTURE',
+        event: 'ARCHITECTURE_SELECTED',
+        at: AT,
+      });
+      expect(buildFlowSelectionTransition('PEER_REVIEW_SELECTED', AT)).toEqual({
+        from: 'READY',
+        to: 'PEER_REVIEW',
+        event: 'PEER_REVIEW_SELECTED',
+        at: AT,
+      });
+    });
+
+    it('BAD: a selection event without a READY edge is fail-closed undefined', () => {
+      // The type admits any future *_SELECTED event. Without a topology edge
+      // the helper must not invent a target; callers block INVALID_TRANSITION.
+      const futureSelection = 'FUTURE_SELECTED' as unknown as FlowSelectionEvent;
+      expect(buildFlowSelectionTransition(futureSelection, AT)).toBeUndefined();
     });
   });
 

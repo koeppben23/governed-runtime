@@ -16,6 +16,7 @@ import type { SessionState, Phase, Event } from '../state/schema.js';
 import type { LoopVerdict, RevisionDelta, SelfReviewLoop } from '../state/evidence.js';
 import { evaluate } from '../machine/evaluate.js';
 import type { EvalResult } from '../machine/evaluate.js';
+import { resolveTransition } from '../machine/topology.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 
 // ─── Transition Record ────────────────────────────────────────────────────────
@@ -165,20 +166,27 @@ export function createPolicyEvalFn(ctx: RailContext): (state: SessionState) => E
   return (s: SessionState) => evaluate(s, ctx.policy);
 }
 
+/** Flow-selection events: the READY-routing subset of the Event vocabulary. */
+export type FlowSelectionEvent = Extract<Event, `${string}_SELECTED`>;
+
 /**
- * Build a READY → target flow-selection pre-transition.
+ * Resolve the READY flow-selection pre-transition for an event.
  *
- * Used by /ticket and /architecture to record the implicit
- * flow-selection step when issued from READY state.
+ * The target phase is derived from the topology authority
+ * (`resolveTransition('READY', event)`) — the caller never supplies it. Used by
+ * /ticket, /architecture, and /review to record the implicit flow-selection
+ * step when issued from READY state.
  *
- * @returns The TransitionRecord and the new baseTransition for state.
+ * @returns The TransitionRecord, or undefined when the topology defines no
+ *          READY edge for the event (callers MUST fail closed).
  */
 export function buildFlowSelectionTransition(
-  targetPhase: Phase,
-  event: Event,
+  event: FlowSelectionEvent,
   at: string,
-): TransitionRecord {
-  return { from: 'READY', to: targetPhase, event, at };
+): TransitionRecord | undefined {
+  const to = resolveTransition('READY', event);
+  if (to === undefined) return undefined;
+  return { from: 'READY', to, event, at };
 }
 
 /**

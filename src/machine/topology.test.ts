@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import {
+  FLOW_PHASES,
   TRANSITIONS,
   USER_GATE_PHASES,
   USER_GATES,
   TERMINAL,
+  isFlowPhase,
+  isFlowPhaseAtOrAfter,
   resolveTransition,
 } from '../machine/topology.js';
 import { Event, type Phase, type Event as EventType } from '../state/schema.js';
@@ -309,6 +312,103 @@ describe('topology', () => {
         const map = TRANSITIONS.get(phase);
         expect(map).toBeDefined();
         expect(map!.size).toBeGreaterThan(0);
+      }
+    });
+  });
+
+  // ─── FLOW_PHASES (canonical forward progression) ───────────
+  describe('FLOW_PHASES (canonical forward progression)', () => {
+    const FLOWS = ['ticket', 'architecture', 'review'] as const;
+
+    it('GOLDEN ORDER: pins the canonical forward progression of each flow', () => {
+      // Regression specification (test oracle), deliberately repeating values.
+      expect(FLOW_PHASES.ticket).toEqual([
+        'TICKET',
+        'PLAN',
+        'PLAN_REVIEW',
+        'VALIDATION',
+        'IMPLEMENTATION',
+        'IMPL_VALIDATION',
+        'IMPL_REVIEW',
+        'EVIDENCE_REVIEW',
+        'EXPORT_READY',
+        'COMPLETE',
+      ]);
+      expect(FLOW_PHASES.architecture).toEqual(['ARCHITECTURE', 'ARCH_REVIEW', 'ARCH_COMPLETE']);
+      expect(FLOW_PHASES.review).toEqual(['PEER_REVIEW', 'PEER_REVIEW_COMPLETE']);
+    });
+
+    it('ADJACENCY (one-directional): every adjacent pair has a TRANSITIONS edge', () => {
+      for (const flow of FLOWS) {
+        const phases = FLOW_PHASES[flow];
+        for (let index = 1; index < phases.length; index++) {
+          const from = phases[index - 1]!;
+          const to = phases[index]!;
+          const targets = new Set<Phase>(TRANSITIONS.get(from)?.values() ?? []);
+          expect(targets.has(to), `${flow}: ${from} -> ${to} must have a topology edge`).toBe(true);
+        }
+      }
+    });
+
+    it('COVERAGE: the union partitions every normal phase exactly once', () => {
+      const flowPhases = Object.values(FLOW_PHASES).flat();
+      const counts = new Map<string, number>();
+      for (const phase of flowPhases) {
+        counts.set(phase, (counts.get(phase) ?? 0) + 1);
+      }
+
+      const duplicated = [...counts].filter(([, count]) => count > 1).map(([phase]) => phase);
+      expect(duplicated).toEqual([]);
+
+      // Routing/shared-terminal exceptions are intentionally absent from every flow.
+      for (const exception of ['READY', 'REJECTED', 'ABORTED'] as Phase[]) {
+        expect(counts.has(exception), `${exception} must not be in a progression`).toBe(false);
+      }
+
+      const covered = new Set<string>(flowPhases);
+      const uncovered = [...TRANSITIONS.keys()].filter((phase) => !covered.has(phase)).sort();
+      expect(uncovered).toEqual(['ABORTED', 'READY', 'REJECTED']);
+    });
+
+    it('ENTRY: each flow is entered from READY by its *_SELECTED event', () => {
+      expect(resolveTransition('READY', 'TICKET_SELECTED')).toBe(FLOW_PHASES.ticket[0]);
+      expect(resolveTransition('READY', 'ARCHITECTURE_SELECTED')).toBe(FLOW_PHASES.architecture[0]);
+      expect(resolveTransition('READY', 'PEER_REVIEW_SELECTED')).toBe(FLOW_PHASES.review[0]);
+    });
+
+    it('isFlowPhaseAtOrAfter orders milestones inside a flow', () => {
+      expect(isFlowPhaseAtOrAfter('ticket', 'VALIDATION', 'VALIDATION')).toBe(true);
+      expect(isFlowPhaseAtOrAfter('ticket', 'IMPLEMENTATION', 'VALIDATION')).toBe(true);
+      expect(isFlowPhaseAtOrAfter('ticket', 'PLAN_REVIEW', 'VALIDATION')).toBe(false);
+
+      expect(isFlowPhaseAtOrAfter('architecture', 'ARCH_COMPLETE', 'ARCH_REVIEW')).toBe(true);
+      expect(isFlowPhaseAtOrAfter('architecture', 'ARCHITECTURE', 'ARCH_COMPLETE')).toBe(false);
+      expect(isFlowPhaseAtOrAfter('review', 'PEER_REVIEW', 'PEER_REVIEW_COMPLETE')).toBe(false);
+    });
+
+    it('isFlowPhaseAtOrAfter is fail-closed for phases outside the flow', () => {
+      // current outside the flow (routing, shared terminal, or another flow)
+      for (const current of ['READY', 'REJECTED', 'ABORTED', 'ARCH_REVIEW'] as Phase[]) {
+        expect(isFlowPhaseAtOrAfter('ticket', current, 'TICKET')).toBe(false);
+      }
+      // required outside the flow must never be satisfied by index arithmetic
+      for (const required of ['READY', 'REJECTED', 'ABORTED', 'VALIDATION'] as Phase[]) {
+        expect(isFlowPhaseAtOrAfter('architecture', 'ARCHITECTURE', required)).toBe(false);
+      }
+    });
+
+    it('isFlowPhase is the flow-membership authority', () => {
+      expect(isFlowPhase('ticket', 'VALIDATION')).toBe(true);
+      expect(isFlowPhase('architecture', 'ARCH_REVIEW')).toBe(true);
+      expect(isFlowPhase('review', 'PEER_REVIEW_COMPLETE')).toBe(true);
+
+      expect(isFlowPhase('ticket', 'ARCH_REVIEW')).toBe(false);
+      expect(isFlowPhase('architecture', 'VALIDATION')).toBe(false);
+      expect(isFlowPhase('review', 'PEER_REVIEW')).toBe(true);
+      for (const exception of ['READY', 'REJECTED', 'ABORTED'] as Phase[]) {
+        expect(isFlowPhase('ticket', exception)).toBe(false);
+        expect(isFlowPhase('architecture', exception)).toBe(false);
+        expect(isFlowPhase('review', exception)).toBe(false);
       }
     });
   });

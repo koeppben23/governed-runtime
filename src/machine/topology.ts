@@ -22,7 +22,13 @@
  * - User-gate phases (PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW) have NO error event.
  * - Every transition is explicitly listed. No wildcards, no inheritance.
  *
- * @version v2
+ * {@link FLOW_PHASES} additionally owns the canonical FORWARD phase progression
+ * of each flow (used for evidence milestones). It is a semantic projection of
+ * the graph, not a restatement of it: the graph intentionally contains
+ * self-loops, backedges, REJECTED/ABORTED, and the REDUCED_CEREMONY shortcut
+ * that are NOT part of any progression.
+ *
+ * @version v3
  */
 
 import type { Phase, Event } from '../state/schema.js';
@@ -269,6 +275,71 @@ export const TERMINAL: ReadonlySet<Phase> = new Set<Phase>([
  */
 export function isTerminalPhase(value: string): boolean {
   return (TERMINAL as ReadonlySet<string>).has(value);
+}
+
+// ─── Flow Progressions ────────────────────────────────────────────────────────
+
+/**
+ * Canonical forward progression per flow — NOT the complete set of admissible
+ * transitions.
+ *
+ * Consumers derive "is phase X reached-or-past milestone Y in this flow?" from
+ * these tuples. They must NOT define local phase-rank maps, local copies of a
+ * progression, or hardcoded READY flow-selection targets.
+ *
+ * The graph contains additional edges that are deliberately absent here:
+ * self-loops (SELF_REVIEW_PENDING, REVIEW_PENDING, CHECK_ERRORED, ERROR),
+ * backedges (CHANGES_REQUESTED/CHECK_FAILED), REJECTED, ABORTED, and the
+ * REDUCED_CEREMONY shortcut. `topology.test.ts` proves every adjacent pair of a
+ * progression is connected by at least one edge in {@link TRANSITIONS}; the
+ * reverse direction is intentionally NOT required.
+ */
+export const FLOW_PHASES = {
+  ticket: [
+    'TICKET',
+    'PLAN',
+    'PLAN_REVIEW',
+    'VALIDATION',
+    'IMPLEMENTATION',
+    'IMPL_VALIDATION',
+    'IMPL_REVIEW',
+    'EVIDENCE_REVIEW',
+    'EXPORT_READY',
+    'COMPLETE',
+  ],
+  architecture: ['ARCHITECTURE', 'ARCH_REVIEW', 'ARCH_COMPLETE'],
+  review: ['PEER_REVIEW', 'PEER_REVIEW_COMPLETE'],
+} as const satisfies Record<'ticket' | 'architecture' | 'review', readonly Phase[]>;
+
+/** Flow names covered by {@link FLOW_PHASES}. */
+export type FlowName = keyof typeof FLOW_PHASES;
+
+/**
+ * Whether a phase belongs to the named flow's canonical progression.
+ *
+ * Consumers that classify a session by flow (progress milestones, ProofGraph
+ * projection) MUST use this instead of local phase sets.
+ */
+export function isFlowPhase(flow: FlowName, phase: Phase): boolean {
+  const phases: readonly Phase[] = FLOW_PHASES[flow];
+  return phases.includes(phase);
+}
+
+/**
+ * Fail-closed ordinal comparison inside one canonical flow progression:
+ * is `current` at or after `required`?
+ *
+ * Both phases must belong to the named flow. A phase outside it — `READY`,
+ * `REJECTED`, `ABORTED`, or a phase of another flow — never counts as reached.
+ * This is the single authority for evidence-milestone ordering; consumers must
+ * not re-derive progressions or index arithmetic locally.
+ */
+export function isFlowPhaseAtOrAfter(flow: FlowName, current: Phase, required: Phase): boolean {
+  const phases: readonly Phase[] = FLOW_PHASES[flow];
+  const currentIndex = phases.indexOf(current);
+  const requiredIndex = phases.indexOf(required);
+  if (currentIndex < 0 || requiredIndex < 0) return false;
+  return currentIndex >= requiredIndex;
 }
 
 // ─── Transition Resolution ────────────────────────────────────────────────────

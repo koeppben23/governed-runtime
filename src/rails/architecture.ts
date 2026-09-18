@@ -83,7 +83,10 @@ export function executeArchitecture(
   let baseTransition = state.transition;
 
   if (state.phase === 'READY') {
-    const tr = buildFlowSelectionTransition('ARCHITECTURE', 'ARCHITECTURE_SELECTED', ctx.now());
+    const tr = buildFlowSelectionTransition('ARCHITECTURE_SELECTED', ctx.now());
+    if (!tr) {
+      return blocked('INVALID_TRANSITION', { event: 'ARCHITECTURE_SELECTED', phase: state.phase });
+    }
     basePhase = tr.to;
     preTransitions.push(tr);
     baseTransition = { from: tr.from, to: tr.to, event: tr.event, at: tr.at };

@@ -13,6 +13,17 @@ phase transitions, guard evaluation, and command routing.
 
 - All phase transitions are defined in `topology.ts`. The topology is explicit:
   every transition is listed; there are no wildcard or catch-all transitions.
+- `FLOW_PHASES` owns the canonical FORWARD progression per flow (used for
+  evidence milestones) and `isFlowPhase(flow, phase)` owns flow membership.
+  A progression is a semantic projection, NOT the full transition set:
+  self-loops, backedges, `REJECTED`, `ABORTED`, and the `REDUCED_CEREMONY`
+  shortcut are additional graph edges and must never be inferred from a
+  progression.
+- Flow selection from READY is derived from the graph
+  (`resolveTransition('READY', event)`, wrapped by
+  `rails/types.buildFlowSelectionTransition`). Consumers must not hardcode
+  READY target phases, define local phase-rank maps, or copy a canonical
+  progression (enforced by `architecture/__tests__/topology-authority-ssot.test.ts`).
 - When adding a new phase, define every inbound and outbound transition
   explicitly.
 - When removing a phase, verify no transition references the removed phase.

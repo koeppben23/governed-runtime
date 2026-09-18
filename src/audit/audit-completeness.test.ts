@@ -4,7 +4,7 @@ import { makeState, makeProgressedState, FIXED_TIME, FIXED_SESSION_UUID } from '
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 import { ReviewDecision } from '../state/evidence-review.js';
 import type { ValidationResult } from '../state/evidence.js';
-import type { SessionState } from '../state/schema.js';
+import type { SessionState, Phase } from '../state/schema.js';
 import { makePlanRevision } from '../state/evidence-test-constants.js';
 
 function validationResult(checkId: string, passed: boolean, detail: string): ValidationResult {
@@ -961,6 +961,65 @@ describe('audit completeness', () => {
       expect(valSlot.status).toBe('missing');
       const implValSlot = report.slots.find((s) => s.slot === 'implValidation')!;
       expect(implValSlot.status).toBe('missing');
+    });
+  });
+
+  // ─── Milestone boundaries (topology projection) ─────────────
+  describe('milestone boundaries (topology projection)', () => {
+    const TICKET_MILESTONES: ReadonlyArray<readonly [string, Phase, Phase]> = [
+      ['ticket', 'READY', 'TICKET'],
+      ['plan', 'TICKET', 'PLAN'],
+      ['selfReview', 'PLAN', 'PLAN_REVIEW'],
+      ['planReviewDecision', 'PLAN_REVIEW', 'VALIDATION'],
+      ['validation', 'VALIDATION', 'IMPLEMENTATION'],
+      ['implementation', 'IMPLEMENTATION', 'IMPL_VALIDATION'],
+      ['implValidation', 'IMPL_VALIDATION', 'IMPL_REVIEW'],
+      ['implReview', 'IMPL_REVIEW', 'EVIDENCE_REVIEW'],
+      ['evidenceReviewDecision', 'EVIDENCE_REVIEW', 'EXPORT_READY'],
+    ];
+
+    const ARCH_MILESTONES: ReadonlyArray<readonly [string, Phase, Phase]> = [
+      ['architecture', 'READY', 'ARCHITECTURE'],
+      ['selfReview', 'ARCHITECTURE', 'ARCH_REVIEW'],
+      ['archReviewDecision', 'ARCH_REVIEW', 'ARCH_COMPLETE'],
+    ];
+
+    function slotRequiredAt(phase: Phase, slot: string): boolean {
+      const report = evaluateCompleteness(makeState(phase));
+      // A slot absent from the report (other flow) is not required.
+      return report.slots.find((entry) => entry.slot === slot)?.required ?? false;
+    }
+
+    it.each(TICKET_MILESTONES)(
+      'ticket slot %s becomes required exactly at %s (not at %s)',
+      (slot, before, from) => {
+        expect(slotRequiredAt(before, slot)).toBe(false);
+        expect(slotRequiredAt(from, slot)).toBe(true);
+      },
+    );
+
+    it.each(ARCH_MILESTONES)(
+      'architecture slot %s becomes required exactly at %s (not at %s)',
+      (slot, before, from) => {
+        expect(slotRequiredAt(before, slot)).toBe(false);
+        expect(slotRequiredAt(from, slot)).toBe(true);
+      },
+    );
+
+    it('routing/shared-terminal phases never make a ticket slot required', () => {
+      for (const phase of ['READY', 'REJECTED', 'ABORTED'] as Phase[]) {
+        for (const slot of ['ticket', 'plan', 'planReviewDecision', 'evidenceReviewDecision']) {
+          expect(slotRequiredAt(phase, slot)).toBe(false);
+        }
+      }
+    });
+
+    it('other-flow phases never make a ticket slot required', () => {
+      for (const phase of ['ARCHITECTURE', 'ARCH_REVIEW', 'PEER_REVIEW'] as Phase[]) {
+        for (const slot of ['plan', 'validation', 'evidenceReviewDecision']) {
+          expect(slotRequiredAt(phase, slot)).toBe(false);
+        }
+      }
     });
   });
 
