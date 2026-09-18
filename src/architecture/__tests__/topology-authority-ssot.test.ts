@@ -12,13 +12,15 @@
  * source, `production-source.ts`), so comments and formatting cannot evade it:
  *
  *   D1 `local-phase-rank-table` — an object literal that maps >= 2 phase names
- *      to numeric values (any variable name) re-creates a rank authority.
- *   D2 `local-ready-flow-transition` — outside the controlled helper surface:
- *      every `applyTransition(..., 'READY', ...)` (literal OR variable target)
- *      and every transition-shaped object literal with `from: 'READY'` plus
- *      `to`/`event` is a flow-selection bypass. The only admissible object is
- *      `rails/types.ts`'s `buildFlowSelectionTransition`, which must derive the
- *      target from `resolveTransition('READY', event)` (asserted below).
+ *      to numeric values (signed literals included, so `-1` counts) re-creates
+ *      a rank authority.
+ *   D2 `local-ready-flow-transition` — every `applyTransition(..., 'READY', ...)`
+ *      (literal OR variable target) and every transition-shaped object literal
+ *      with `from: 'READY'` plus `to`/`event` (shorthand properties included)
+ *      is a flow-selection bypass. There is NO file-level exemption: the only
+ *      admissible occurrence is inside `buildFlowSelectionTransition()` in
+ *      `rails/types.ts`, and the guard additionally proves that this helper's
+ *      target is bound to `resolveTransition('READY', event)`.
  *   D3 `local-flow-phase-enumeration` — an array literal (also inside
  *      `new Set([...])`) whose phase set fully contains a canonical
  *      `FLOW_PHASES` progression re-creates the ordering authority; order is
@@ -26,7 +28,7 @@
  *      (Phase vocabulary) are exempt. Legitimate subsets such as a command's
  *      allowed phases or the user-gate classification are not flagged.
  *
- * @version v1
+ * @version v2
  */
 
 import { join } from 'node:path';
@@ -42,11 +44,12 @@ const SRC_ROOT = join(process.cwd(), 'src');
 /** D1 exemption: the topology is the rank authority (it currently defines none). */
 const D1_AUTHORITY = new Set<string>(['machine/topology.ts']);
 
-/** D2 exemption: the topology plus the single controlled derivation helper. */
-const D2_ALLOWED = new Set<string>(['machine/topology.ts', 'rails/types.ts']);
-
 /** D3 exemption: the progression authority and the Phase vocabulary authority. */
 const D3_AUTHORITY = new Set<string>(['machine/topology.ts', 'state/schema.ts']);
+
+/** The single controlled derivation helper; only its AST subtree may construct a READY transition. */
+const CONTROLLED_HELPER_FILE = 'rails/types.ts';
+const CONTROLLED_HELPER_NAME = 'buildFlowSelectionTransition';
 
 /** All phase names, derived from the graph — no third list. */
 const PHASE_NAMES: ReadonlySet<string> = new Set<string>([...TRANSITIONS.keys()]);
@@ -64,6 +67,11 @@ interface Violation {
 }
 
 type Detector = (sourceFile: ts.SourceFile, rel: string) => Violation[];
+
+interface NodeRange {
+  readonly start: number;
+  readonly end: number;
+}
 
 function parse(content: string, rel: string): ts.SourceFile {
   return ts.createSourceFile(rel, content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
@@ -83,11 +91,48 @@ function propertyName(node: ts.ObjectLiteralElementLike): string | undefined {
   return undefined;
 }
 
+/** Positive and negative numeric literals (`-1` is PrefixUnaryExpression in the AST). */
+function isNumericValue(node: ts.Expression): boolean {
+  if (ts.isNumericLiteral(node)) return true;
+  return (
+    ts.isPrefixUnaryExpression(node) &&
+    (node.operator === ts.SyntaxKind.MinusToken || node.operator === ts.SyntaxKind.PlusToken) &&
+    ts.isNumericLiteral(node.operand)
+  );
+}
+
+type ObjectPropertyEntry =
+  | { readonly kind: 'assignment'; readonly initializer: ts.Expression }
+  | { readonly kind: 'shorthand' };
+
+/** Property map including shorthand assignments (`{ from, to, event }`). */
+function objectPropertyEntries(node: ts.ObjectLiteralExpression): Map<string, ObjectPropertyEntry> {
+  const entries = new Map<string, ObjectPropertyEntry>();
+  for (const property of node.properties) {
+    if (ts.isPropertyAssignment(property)) {
+      const name = propertyName(property);
+      if (name) entries.set(name, { kind: 'assignment', initializer: property.initializer });
+    } else if (ts.isShorthandPropertyAssignment(property)) {
+      entries.set(property.name.text, { kind: 'shorthand' });
+    }
+  }
+  return entries;
+}
+
 function report(sourceFile: ts.SourceFile, node: ts.Node, rel: string, rule: string): Violation {
   return {
     rel,
     line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1,
     snippet: node.getText(sourceFile).replace(/\s+/g, ' ').slice(0, 140).trim(),
+    rule,
+  };
+}
+
+function reportAt(sourceFile: ts.SourceFile, offset: number, rel: string, rule: string): Violation {
+  return {
+    rel,
+    line: sourceFile.getLineAndCharacterOfPosition(offset).line + 1,
+    snippet: `${CONTROLLED_HELPER_NAME} must derive its target from resolveTransition('READY', event)`,
     rule,
   };
 }
@@ -102,17 +147,91 @@ function findPhaseRankTables(sourceFile: ts.SourceFile, rel: string): Violation[
       if (!ts.isPropertyAssignment(property)) continue;
       const name = propertyName(property);
       if (!name || !PHASE_NAMES.has(name)) continue;
-      if (ts.isNumericLiteral(property.initializer)) numericPhaseEntries += 1;
+      if (isNumericValue(property.initializer)) numericPhaseEntries += 1;
     }
     if (numericPhaseEntries >= 2) out.push(report(sourceFile, node, rel, 'local-phase-rank-table'));
   });
   return out;
 }
 
+function isResolveTransitionReadyCall(node: ts.Node): boolean {
+  if (!ts.isCallExpression(node) || !ts.isIdentifier(node.expression)) return false;
+  if (node.expression.text !== 'resolveTransition') return false;
+  const first = node.arguments[0];
+  return first !== undefined && ts.isStringLiteralLike(first) && first.text === 'READY';
+}
+
+/** The AST range of the controlled helper, when this is its file. */
+function controlledHelperRange(sourceFile: ts.SourceFile, rel: string): NodeRange | undefined {
+  if (rel !== CONTROLLED_HELPER_FILE) return undefined;
+  let range: NodeRange | undefined;
+  visit(sourceFile, (node) => {
+    if (ts.isFunctionDeclaration(node) && node.name?.text === CONTROLLED_HELPER_NAME) {
+      range = { start: node.getStart(sourceFile), end: node.getEnd() };
+    }
+  });
+  return range;
+}
+
+function isInsideRange(node: ts.Node, range: NodeRange): boolean {
+  return node.getStart() >= range.start && node.getEnd() <= range.end;
+}
+
+/**
+ * Prove that the controlled helper binds its returned `to` to a
+ * `resolveTransition('READY', ...)` result inside its own body.
+ */
+function helperDerivesFromTopology(sourceFile: ts.SourceFile, range: NodeRange): boolean {
+  let derivedBinding: string | undefined;
+  let readyTransitionObjects = 0;
+  let returnedToIsDerived = false;
+
+  visit(sourceFile, (node) => {
+    if (!isInsideRange(node, range)) return;
+
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer !== undefined &&
+      isResolveTransitionReadyCall(node.initializer)
+    ) {
+      derivedBinding = node.name.text;
+    }
+
+    if (!ts.isObjectLiteralExpression(node)) return;
+    const entries = objectPropertyEntries(node);
+    const from = entries.get('from');
+    if (!from || from.kind !== 'assignment') return;
+    if (!ts.isStringLiteralLike(from.initializer) || from.initializer.text !== 'READY') return;
+    const to = entries.get('to');
+    if (!to || !entries.has('event')) return;
+
+    readyTransitionObjects += 1;
+    if (derivedBinding === undefined) return;
+    returnedToIsDerived =
+      to.kind === 'shorthand' ||
+      (to.kind === 'assignment' &&
+        ts.isIdentifier(to.initializer) &&
+        to.initializer.text === derivedBinding);
+  });
+
+  return readyTransitionObjects === 1 && returnedToIsDerived;
+}
+
 /** D2: locally materialized READY flow-selection transitions. */
 function findLocalReadyFlowTransitions(sourceFile: ts.SourceFile, rel: string): Violation[] {
   const out: Violation[] = [];
+  const helperRange = controlledHelperRange(sourceFile, rel);
+
+  if (helperRange !== undefined && !helperDerivesFromTopology(sourceFile, helperRange)) {
+    out.push(
+      reportAt(sourceFile, helperRange.start, rel, 'controlled-helper-without-topology-derivation'),
+    );
+  }
+
   visit(sourceFile, (node) => {
+    if (helperRange !== undefined && isInsideRange(node, helperRange)) return;
+
     if (
       ts.isCallExpression(node) &&
       ts.isIdentifier(node.expression) &&
@@ -126,17 +245,14 @@ function findLocalReadyFlowTransitions(sourceFile: ts.SourceFile, rel: string): 
     }
 
     if (!ts.isObjectLiteralExpression(node)) return;
-    const initializers = new Map<string, ts.Expression>();
-    for (const property of node.properties) {
-      if (!ts.isPropertyAssignment(property)) continue;
-      const name = propertyName(property);
-      if (name) initializers.set(name, property.initializer);
-    }
-    const from = initializers.get('from');
-    if (!from || !ts.isStringLiteralLike(from) || from.text !== 'READY') return;
-    if (!initializers.has('to') || !initializers.has('event')) return;
+    const entries = objectPropertyEntries(node);
+    const from = entries.get('from');
+    if (!from || from.kind !== 'assignment') return;
+    if (!ts.isStringLiteralLike(from.initializer) || from.initializer.text !== 'READY') return;
+    if (!entries.has('to') || !entries.has('event')) return;
     out.push(report(sourceFile, node, rel, 'local-ready-flow-transition'));
   });
+
   return out;
 }
 
@@ -176,9 +292,7 @@ function scanFiles(files: readonly ProductionSourceFile[]): Violation[] {
     if (!D1_AUTHORITY.has(file.rel)) {
       out.push(...findPhaseRankTables(sourceFile, file.rel));
     }
-    if (!D2_ALLOWED.has(file.rel)) {
-      out.push(...findLocalReadyFlowTransitions(sourceFile, file.rel));
-    }
+    out.push(...findLocalReadyFlowTransitions(sourceFile, file.rel));
     if (!D3_AUTHORITY.has(file.rel)) {
       out.push(...findLocalFlowEnumerations(sourceFile, file.rel));
     }
@@ -197,26 +311,6 @@ describe('topology authority SSOT (default-deny)', () => {
     expect(violations).toEqual([]);
   });
 
-  it('D2 exemption is honest: the helper derives READY targets from resolveTransition', () => {
-    const helper = productionFiles.find((file) => file.rel === 'rails/types.ts');
-    expect(helper, 'rails/types.ts must exist').toBeTruthy();
-    const sourceFile = parse(helper!.content, helper!.rel);
-    let derivesFromTopology = false;
-    visit(sourceFile, (node) => {
-      if (
-        ts.isCallExpression(node) &&
-        ts.isIdentifier(node.expression) &&
-        node.expression.text === 'resolveTransition'
-      ) {
-        const first = node.arguments[0];
-        if (first && ts.isStringLiteralLike(first) && first.text === 'READY') {
-          derivesFromTopology = true;
-        }
-      }
-    });
-    expect(derivesFromTopology).toBe(true);
-  });
-
   it('scan is default-wide and excludes test sources', () => {
     const rels = productionFiles.map((file) => file.rel);
     expect(rels).toContain('machine/topology.ts');
@@ -229,14 +323,19 @@ describe('topology authority SSOT (default-deny)', () => {
     const findAll = (content: string, rel = 'rails/rogue.ts'): Violation[] =>
       DETECTORS.flatMap((detector) => detector(parse(content, rel), rel));
 
-    it('D1 fires on a numeric phase-rank object and not on string labels', () => {
+    it('D1 fires on signed numeric phase ranks and not on string labels', () => {
+      expect(
+        findAll('const rank = { PLAN: -2, PLAN_REVIEW: -1, VALIDATION: 0 };').some(
+          (v) => v.rule === 'local-phase-rank-table',
+        ),
+      ).toBe(true);
       expect(
         findAll('const rank = { PLAN: 1, PLAN_REVIEW: 2, VALIDATION: 3 };').some(
           (v) => v.rule === 'local-phase-rank-table',
         ),
       ).toBe(true);
       expect(findAll("const labels = { PLAN: 'plan', PLAN_REVIEW: 'review' };")).toEqual([]);
-      expect(findAll('const single = { COMPLETE: 1 };')).toEqual([]);
+      expect(findAll('const single = { PLAN: -1 };')).toEqual([]);
     });
 
     it('D2 fires on a READY transition literal and on a literal applyTransition', () => {
@@ -252,32 +351,63 @@ describe('topology authority SSOT (default-deny)', () => {
       ).toBe(true);
     });
 
-    it('D2 fires on the variable-target bypass (literal from, variable to)', () => {
-      const bypass = [
+    it('D2 fires on variable targets and shorthand properties (no opaque bypass)', () => {
+      const variableTarget = [
         "const target = 'PEER_REVIEW';",
         "applyTransition(state, 'READY', target, 'PEER_REVIEW_SELECTED', at);",
       ].join('\n');
-      expect(findAll(bypass).some((v) => v.rule === 'local-ready-flow-transition')).toBe(true);
-
-      const literalBypass = [
-        "const target = 'PEER_REVIEW';",
-        "const tr = { from: 'READY', to: target, event: 'PEER_REVIEW_SELECTED', at };",
-      ].join('\n');
-      expect(findAll(literalBypass).some((v) => v.rule === 'local-ready-flow-transition')).toBe(
+      expect(findAll(variableTarget).some((v) => v.rule === 'local-ready-flow-transition')).toBe(
         true,
       );
-    });
 
-    it('D2 does NOT fire on the controlled derivation or on non-READY applyTransition', () => {
-      const derived = [
-        "const to = resolveTransition('READY', event);",
+      const shorthand = [
+        "const to = 'PEER_REVIEW';",
+        "const event = 'PEER_REVIEW_SELECTED';",
         "const tr = { from: 'READY', to, event, at };",
       ].join('\n');
-      expect(findAll(derived)).toEqual([]);
+      expect(findAll(shorthand).some((v) => v.rule === 'local-ready-flow-transition')).toBe(true);
+    });
+
+    it('D2 does NOT fire on non-READY applyTransition calls', () => {
       expect(findAll('applyTransition(state, state.phase, target, event, at);')).toEqual([]);
       expect(
         findAll("applyTransition(state, 'IMPL_VALIDATION', 'IMPL_REVIEW', event, at);"),
       ).toEqual([]);
+    });
+
+    it('D2 allows only the derived helper subtree and only with the topology binding', () => {
+      const derivedHelper = [
+        'function buildFlowSelectionTransition(event, at) {',
+        "  const to = resolveTransition('READY', event);",
+        '  if (to === undefined) return undefined;',
+        "  return { from: 'READY', to, event, at };",
+        '}',
+      ].join('\n');
+      expect(findAll(derivedHelper, 'rails/types.ts')).toEqual([]);
+
+      // A rogue transition literal elsewhere in the same file still fires.
+      const rogueSibling = [
+        derivedHelper,
+        "const rogue = { from: 'READY', to: 'ARCHITECTURE', event: 'ARCHITECTURE_SELECTED' };",
+      ].join('\n');
+      expect(
+        findAll(rogueSibling, 'rails/types.ts').some(
+          (v) => v.rule === 'local-ready-flow-transition',
+        ),
+      ).toBe(true);
+    });
+
+    it('D2 fires when the controlled helper does not bind to the topology resolver', () => {
+      const unboundHelper = [
+        'function buildFlowSelectionTransition(event, at) {',
+        "  const to = 'PEER_REVIEW';",
+        "  return { from: 'READY', to, event, at };",
+        '}',
+      ].join('\n');
+      const violations = findAll(unboundHelper, 'rails/types.ts');
+      expect(
+        violations.some((v) => v.rule === 'controlled-helper-without-topology-derivation'),
+      ).toBe(true);
     });
 
     it('D3 fires on a local copy of a canonical progression (order and extras irrelevant)', () => {
@@ -321,14 +451,6 @@ describe('topology authority SSOT (default-deny)', () => {
       expect(
         scanFiles([{ rel: 'rails/rogue.ts', content: fullPhaseEnum }]).some(
           (v) => v.rule === 'local-flow-phase-enumeration',
-        ),
-      ).toBe(true);
-
-      const readyLiteral = "const tr = { from: 'READY', to: 'TICKET', event: 'TICKET_SELECTED' };";
-      expect(scanFiles([{ rel: 'machine/topology.ts', content: readyLiteral }])).toEqual([]);
-      expect(
-        scanFiles([{ rel: 'rails/rogue.ts', content: readyLiteral }]).some(
-          (v) => v.rule === 'local-ready-flow-transition',
         ),
       ).toBe(true);
     });
