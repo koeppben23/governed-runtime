@@ -18,9 +18,13 @@
  *   A3 No production module defines a literal `z.enum([...])` of the tiers.
  *      The identifier form `z.enum(ACTOR_ASSURANCE_TIERS)` is the only
  *      admissible spelling outside the authority and is not flagged.
- *   A4 No production module defines a parallel ordinal structure
- *      (`ASSURANCE_ORDINAL`, a local `assuranceOrdinal`, or a
- *      `Record<ActorAssurance, number>`); the schema vocabulary and ordinal
+ *   A4 No production module defines a parallel ordinal structure or otherwise
+ *      re-enumerates all three tiers in one construct (`ASSURANCE_ORDINAL`, a
+ *      local `assuranceOrdinal`, `Record<ActorAssurance, number>`, object/Map
+ *      rank tables, switch cases, if/else cascades). Enumeration detection uses
+ *      exact quoted tier literals and bare `tier:` keys within a bounded source
+ *      window, so recovery messages that merely mention a tier name and
+ *      single-tier assignments do not flag. The schema vocabulary and ordinal
  *      order are additionally asserted against the single tuple at runtime.
  *   A5 The scan is default-wide over production source via
  *      `production-source.ts` (`isTestSourcePath`) with no directory allowlist.
@@ -207,12 +211,61 @@ function findDuplicateOrdinals(view: string, rel: string): Violation[] {
   ];
 }
 
+/**
+ * A4: any construct outside the authority that enumerates all three tiers
+ * within one bounded source window — object/Map rank tables, switch cases,
+ * if/else cascades, or array tuples. Tokens are exact quoted tier literals or
+ * bare `tier:` keys, so a recovery message that merely contains a tier word and
+ * a distributed single-tier assignment are not counted.
+ */
+const MAX_TIER_ENUMERATION_SPAN_LINES = 12;
+
+function exactTierTokens(view: string): Array<{ line: number; tier: string }> {
+  const tokens: Array<{ line: number; tier: string }> = [];
+  view.split('\n').forEach((text, index) => {
+    const literals = new RegExp(`(['"])(${TIER_ALTERNATION})\\1`, 'g');
+    for (const match of text.matchAll(literals)) {
+      tokens.push({ line: index + 1, tier: match[2]! });
+    }
+    const bareKeys = new RegExp(`\\b(${TIER_ALTERNATION})\\s*:`, 'g');
+    for (const match of text.matchAll(bareKeys)) {
+      tokens.push({ line: index + 1, tier: match[1]! });
+    }
+  });
+  return tokens.sort((left, right) => left.line - right.line);
+}
+
+function findTierEnumerations(view: string, rel: string): Violation[] {
+  const tokens = exactTierTokens(view);
+  for (let start = 0; start < tokens.length; start++) {
+    const first = tokens[start]!;
+    const seen = new Set<string>();
+    for (let end = start; end < tokens.length; end++) {
+      const token = tokens[end]!;
+      if (token.line - first.line >= MAX_TIER_ENUMERATION_SPAN_LINES) break;
+      seen.add(token.tier);
+      if (TIERS.every((tier) => seen.has(tier))) {
+        return [
+          {
+            rel,
+            line: first.line,
+            snippet: `enumerates ${TIERS.join(' + ')} within ${MAX_TIER_ENUMERATION_SPAN_LINES} source lines`,
+            rule: 'duplicate-assurance-tier-enumeration',
+          },
+        ];
+      }
+    }
+  }
+  return [];
+}
+
 const DETECTORS: readonly Detector[] = [
   findDuplicateVocabulary,
   findDuplicateLiteralSets,
   findDuplicateUnions,
   findDuplicateZodEnums,
   findDuplicateOrdinals,
+  findTierEnumerations,
 ];
 
 function detect(content: string, rel: string, detector: Detector): Violation[] {
@@ -379,6 +432,94 @@ describe('actor assurance SSOT (default-deny)', () => {
           (v) => v.rule === 'duplicate-assurance-ordinal',
         ),
       ).toBe(true);
+    });
+
+    it('fires on an object rank table with bare or quoted tier keys', () => {
+      const bare = [
+        'const assuranceRank = {',
+        '  best_effort: 0,',
+        '  claim_validated: 1,',
+        '  idp_verified: 2,',
+        '} as const;',
+      ].join('\n');
+      expect(findAll(bare).some((v) => v.rule === 'duplicate-assurance-tier-enumeration')).toBe(
+        true,
+      );
+
+      const quoted = [
+        'const assuranceRank = {',
+        "  'best_effort': 0,",
+        "  'claim_validated': 1,",
+        "  'idp_verified': 2,",
+        '};',
+      ].join('\n');
+      expect(findAll(quoted).some((v) => v.rule === 'duplicate-assurance-tier-enumeration')).toBe(
+        true,
+      );
+    });
+
+    it('fires on a Map rank table', () => {
+      const map = [
+        'const assuranceRank = new Map([',
+        "  ['best_effort', 0],",
+        "  ['claim_validated', 1],",
+        "  ['idp_verified', 2],",
+        ']);',
+      ].join('\n');
+      expect(findAll(map).some((v) => v.rule === 'duplicate-assurance-tier-enumeration')).toBe(
+        true,
+      );
+
+      const sequential = [
+        'const assuranceRank = new Map();',
+        "assuranceRank.set('best_effort', 0);",
+        "assuranceRank.set('claim_validated', 1);",
+        "assuranceRank.set('idp_verified', 2);",
+      ].join('\n');
+      expect(
+        findAll(sequential).some((v) => v.rule === 'duplicate-assurance-tier-enumeration'),
+      ).toBe(true);
+    });
+
+    it('fires on a switch or if/else cascade over all three tiers', () => {
+      const switchFixture = [
+        'switch (tier) {',
+        "  case 'best_effort':",
+        '    return 0;',
+        "  case 'claim_validated':",
+        '    return 1;',
+        "  case 'idp_verified':",
+        '    return 2;',
+        '}',
+      ].join('\n');
+      expect(
+        findAll(switchFixture).some((v) => v.rule === 'duplicate-assurance-tier-enumeration'),
+      ).toBe(true);
+
+      const cascade = [
+        "if (tier === 'best_effort') return 0;",
+        "if (tier === 'claim_validated') return 1;",
+        "if (tier === 'idp_verified') return 2;",
+      ].join('\n');
+      expect(findAll(cascade).some((v) => v.rule === 'duplicate-assurance-tier-enumeration')).toBe(
+        true,
+      );
+    });
+
+    it('does NOT fire on distributed single-tier assignments or tier mentions in messages', () => {
+      // A resolution function assigns one tier per branch across the file, and
+      // recovery messages mention a tier name inside prose — neither is a
+      // second enumeration authority.
+      const distributed = [
+        "const fallback = 'idp_verified';",
+        ...Array.from({ length: 14 }, () => ''),
+        "const claim = 'claim_validated';",
+        ...Array.from({ length: 14 }, () => ''),
+        "const best = 'best_effort';",
+        "const message = 'A verified actor with assurance=claim_validated is required';",
+        'const single = { best_effort: 0 } as const;',
+      ].join('\n');
+      expect(findAll(distributed)).toEqual([]);
     });
 
     it('does NOT fire in the authority itself (path exemption)', () => {

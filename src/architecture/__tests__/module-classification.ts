@@ -65,7 +65,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassification[] = [
   {
     name: 'shared',
     kind: 'governed',
-    description: 'Canonical serialization and digest primitives',
+    description: 'Canonical cross-layer schemas and low-level primitives',
   },
   // Governed modules admitted by the default-deny tranche.
   {

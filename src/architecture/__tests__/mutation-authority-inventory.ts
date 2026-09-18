@@ -273,7 +273,7 @@ export const AUTHORITY_ROOTS: readonly AuthorityRoot[] = [
   },
   {
     root: 'src/shared',
-    authority: 'Canonical serialization and digest primitives',
+    authority: 'Canonical cross-layer schemas and low-level primitives',
     source: [SOURCE.rootAgents],
   },
   {
