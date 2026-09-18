@@ -104,7 +104,7 @@ function isNumericValue(node: ts.Expression): boolean {
 
 type ObjectPropertyEntry =
   | { readonly kind: 'assignment'; readonly initializer: ts.Expression }
-  | { readonly kind: 'shorthand' };
+  | { readonly kind: 'shorthand'; readonly identifier: string };
 
 /** Property map including shorthand assignments (`{ from, to, event }`). */
 function objectPropertyEntries(node: ts.ObjectLiteralExpression): Map<string, ObjectPropertyEntry> {
@@ -114,7 +114,7 @@ function objectPropertyEntries(node: ts.ObjectLiteralExpression): Map<string, Ob
       const name = propertyName(property);
       if (name) entries.set(name, { kind: 'assignment', initializer: property.initializer });
     } else if (ts.isShorthandPropertyAssignment(property)) {
-      entries.set(property.name.text, { kind: 'shorthand' });
+      entries.set(property.name.text, { kind: 'shorthand', identifier: property.name.text });
     }
   }
   return entries;
@@ -236,12 +236,12 @@ function helperDerivesFromTopology(
     readyTransitionObjects += 1;
     if (derivedBinding === undefined) return;
     returnedToIsDerived =
-      to.kind === 'shorthand' ||
+      (to.kind === 'shorthand' && to.identifier === derivedBinding) ||
       (to.kind === 'assignment' &&
         ts.isIdentifier(to.initializer) &&
         to.initializer.text === derivedBinding);
     returnedEventIsBound =
-      event.kind === 'shorthand' ||
+      (event.kind === 'shorthand' && event.identifier === eventParameterName) ||
       (event.kind === 'assignment' &&
         ts.isIdentifier(event.initializer) &&
         event.initializer.text === eventParameterName);
@@ -479,6 +479,36 @@ describe('topology authority SSOT (default-deny)', () => {
       ].join('\n');
       expect(
         findAll(detachedEvent, 'rails/types.ts').some(
+          (v) => v.rule === 'controlled-helper-without-topology-derivation',
+        ),
+      ).toBe(true);
+    });
+
+    it('D2 fires on a shorthand that aliases another binding, not the resolver result', () => {
+      const shadowedTarget = [
+        'function buildFlowSelectionTransition(event, at) {',
+        "  const target = resolveTransition('READY', event);",
+        "  const to = 'PEER_REVIEW';",
+        "  return { from: 'READY', to, event, at };",
+        '}',
+      ].join('\n');
+      expect(
+        findAll(shadowedTarget, 'rails/types.ts').some(
+          (v) => v.rule === 'controlled-helper-without-topology-derivation',
+        ),
+      ).toBe(true);
+    });
+
+    it('D2 fires on a shorthand event that shadows a renamed helper parameter', () => {
+      const shadowedEvent = [
+        'function buildFlowSelectionTransition(selectionEvent, at) {',
+        "  const to = resolveTransition('READY', selectionEvent);",
+        "  const event = 'TICKET_SELECTED';",
+        "  return { from: 'READY', to, event, at };",
+        '}',
+      ].join('\n');
+      expect(
+        findAll(shadowedEvent, 'rails/types.ts').some(
           (v) => v.rule === 'controlled-helper-without-topology-derivation',
         ),
       ).toBe(true);
