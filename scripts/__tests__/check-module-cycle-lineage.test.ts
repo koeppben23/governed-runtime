@@ -26,11 +26,13 @@ describe('validateCycleBaseline', () => {
   });
 
   it('rejects wrong versions and malformed structures', () => {
-    expect(validateCycleBaseline({ ...baselineOf([]), version: 99 }).join('; ')).toContain('version');
-    expect(validateCycleBaseline(null).join('; ')).toContain('not an object');
-    expect(validateCycleBaseline({ version: BASELINE_VERSION, edges: 'nope' }).join('; ')).toContain(
-      'not an array',
+    expect(validateCycleBaseline({ ...baselineOf([]), version: 99 }).join('; ')).toContain(
+      'version',
     );
+    expect(validateCycleBaseline(null).join('; ')).toContain('not an object');
+    expect(
+      validateCycleBaseline({ version: BASELINE_VERSION, edges: 'nope' }).join('; '),
+    ).toContain('not an array');
     expect(validateCycleBaseline(baselineOf([{ from: 'a' }])).join('; ')).toContain('malformed');
   });
 
@@ -43,6 +45,19 @@ describe('validateCycleBaseline', () => {
     expect(validateCycleBaseline(baselineOf([edge('state', 'state')])).join('; ')).toContain(
       'self edge',
     );
+  });
+
+  it('rejects unknown fields instead of ignoring them', () => {
+    const unknownTopLevel = validateCycleBaseline({
+      ...baselineOf([]),
+      updatedAt: '2026-09-19',
+    });
+    expect(unknownTopLevel.join('; ')).toContain("unknown field 'updatedAt'");
+
+    const unknownEdgeField = validateCycleBaseline(
+      baselineOf([{ from: 'state', to: 'shared', note: 'legacy' }]),
+    );
+    expect(unknownEdgeField.join('; ')).toContain("unknown field 'note' in baseline edge");
   });
 });
 

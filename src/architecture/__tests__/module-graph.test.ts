@@ -122,4 +122,14 @@ describe('stronglyConnectedComponents', () => {
       cycleParticipatingEdges(modules, shuffled),
     );
   });
+
+  it('consumes a one-shot iterable only once', () => {
+    const modules = ['a', 'b', 'leaf'];
+    const oneShot = function* (): Generator<{ from: string; to: string }> {
+      yield edge('a', 'b');
+      yield edge('b', 'a');
+      yield edge('a', 'leaf');
+    };
+    expect(cycleParticipatingEdges(modules, oneShot())).toEqual([edge('a', 'b'), edge('b', 'a')]);
+  });
 });

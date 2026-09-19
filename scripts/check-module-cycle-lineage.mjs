@@ -55,6 +55,9 @@ function isNonEmptyString(value) {
 export function validateCycleBaseline(baseline) {
   if (baseline === null || typeof baseline !== 'object') return ['baseline is not an object'];
   const problems = [];
+  for (const key of Object.keys(baseline)) {
+    if (key !== 'version' && key !== 'edges') problems.push(`unknown field '${key}'`);
+  }
   if (baseline.version !== BASELINE_VERSION) {
     problems.push(`unsupported baseline version ${String(baseline.version)}`);
   }
@@ -72,6 +75,9 @@ export function validateCycleBaseline(baseline) {
     ) {
       problems.push('malformed baseline edge entry');
       continue;
+    }
+    for (const key of Object.keys(edge)) {
+      if (key !== 'from' && key !== 'to') problems.push(`unknown field '${key}' in baseline edge`);
     }
     if (edge.from === edge.to) {
       problems.push(`self edge is not a cycle debt: ${edge.from}`);
@@ -161,9 +167,7 @@ function main() {
     console.error(`[module-cycle-lineage] ERROR: invalid baseline: ${headProblems.join('; ')}`);
     process.exit(1);
   }
-  console.log(
-    `[module-cycle-lineage] OK: baseline has ${headBaseline.edges.length} cyclic edges`,
-  );
+  console.log(`[module-cycle-lineage] OK: baseline has ${headBaseline.edges.length} cyclic edges`);
 
   if (options.against === undefined) return;
 

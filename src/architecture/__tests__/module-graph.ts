@@ -114,15 +114,16 @@ export function cycleParticipatingEdges(
   modules: readonly string[],
   edges: Iterable<ModuleEdge>,
 ): readonly ModuleEdge[] {
+  const edgeList = [...edges];
   const cyclicMembers = new Set<string>();
   const componentOf = new Map<string, number>();
-  cyclicStronglyConnectedComponents(modules, edges).forEach((component, componentIndex) => {
+  cyclicStronglyConnectedComponents(modules, edgeList).forEach((component, componentIndex) => {
     for (const member of component) {
       cyclicMembers.add(member);
       componentOf.set(member, componentIndex);
     }
   });
-  return [...edges]
+  return edgeList
     .filter(
       (edge) =>
         edge.from !== edge.to &&

@@ -858,6 +858,10 @@ describe('Layer Dependency Rules', () => {
       expect(observedEdgeSet.size).toBeLessThanOrEqual(observed.length);
     });
 
+    // Intentional second topology pin beside the edge baseline: name the real
+    // SCC shape explicitly and update both together when a cycle is dissolved
+    // or a module joins an existing SCC. The edge baseline remains the debt
+    // authority; this assertion documents the structure the debt lives in.
     it('classifies the real module graph as exactly three cyclic SCCs', () => {
       const sccs = cyclicStronglyConnectedComponents(governedNames, observed);
       expect(sccs.map((component) => [...component].sort().join(',')).sort()).toEqual([
