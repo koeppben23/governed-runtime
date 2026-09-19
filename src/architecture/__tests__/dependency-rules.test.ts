@@ -222,15 +222,6 @@ function resolveTargetEntry(importerDir: string, specifier: string): string | nu
   return relToSrc.split('/')[0] || null;
 }
 
-/** Test scaffolding may import test-support entries; production code may not. */
-function isTestScaffoldingFile(relativePath: string): boolean {
-  return (
-    relativePath.includes('.test.') ||
-    relativePath.includes('/__tests__/') ||
-    relativePath.endsWith('-test-helpers.ts')
-  );
-}
-
 function parseImports(
   fileContent: string,
   importerDir: string,
@@ -357,10 +348,7 @@ function detectViolations(analyses: Map<string, FileAnalysis>): ImportViolation[
         });
         continue;
       }
-      if (
-        TEST_SUPPORT_ENTRIES.has(imp.targetModule) &&
-        !isTestScaffoldingFile(analysis.relativePath)
-      ) {
+      if (TEST_SUPPORT_ENTRIES.has(imp.targetModule) && !isTestSourcePath(analysis.relativePath)) {
         allViolations.push({
           file: analysis.relativePath,
           rule: 'test-support-import',

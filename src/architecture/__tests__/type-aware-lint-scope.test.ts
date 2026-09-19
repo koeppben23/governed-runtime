@@ -25,6 +25,7 @@ import { readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import { normalizeRepoPath, repoRelative } from './repo-path.js';
+import { isTestSourcePath } from './module-classification.js';
 
 const ROOT = resolve(join(import.meta.dirname, '..', '..', '..'));
 const SRC = join(ROOT, 'src');
@@ -71,12 +72,14 @@ function missingCorrectnessRules(config: EffectiveConfig): string[] {
 }
 
 /**
- * The only metric exclusion class: test suites (allowed to be broader).
- * Mirrors the metric `ignores` patterns in `eslint.config.mjs` exactly — a
- * divergence between this classifier and the config is a guard bug.
+ * The metric exclusion class IS the source-class authority. The metric
+ * `ignores` in `eslint.config.mjs` are the declarative projection of
+ * `isTestSourcePath`; the projection is enforced below against the effective
+ * ESLint config, so a divergence is a guard failure.
  */
 function isTestFileClass(fileRel: string): boolean {
-  return fileRel.endsWith('.test.ts') || fileRel.includes('/__tests__/');
+  const relativeFromSrc = fileRel.startsWith('src/') ? fileRel.slice('src/'.length) : fileRel;
+  return isTestSourcePath(relativeFromSrc);
 }
 
 function ruleOptions(entry: unknown): Record<string, unknown> | undefined {
@@ -176,6 +179,24 @@ describe('lint scope (default-wide correctness and metrics)', () => {
     expect(problems).toEqual([]);
   });
 
+  it('excludes every classified test file from production metrics (ESLint projection)', async () => {
+    const problems: string[] = [];
+    let checked = 0;
+    for (const file of files) {
+      const fileRel = rel(file);
+      if (!isTestFileClass(fileRel)) continue;
+      checked += 1;
+      const config = (await eslint.calculateConfigForFile(file)) as EffectiveConfig;
+      for (const { rule } of METRICS_CONTRACT) {
+        if (config.rules?.[rule] !== undefined) {
+          problems.push(`${fileRel}: metrics rule ${rule} applies to a test-class file`);
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
+    expect(problems).toEqual([]);
+  });
+
   it('covers the file classes that a directory allowlist historically skipped (guard is not vacuous)', () => {
     const rels = files.map(rel);
     expect(rels.length).toBeGreaterThan(0);
@@ -256,19 +277,29 @@ describe('lint scope (default-wide correctness and metrics)', () => {
       ]);
     });
 
-    it('classifies test suites as the only metric exclusion class', () => {
+    it('classifies every test-support class as the metric exclusion', () => {
       expect(isTestFileClass('src/a/b.test.ts')).toBe(true);
       expect(isTestFileClass('src/a/__tests__/b.ts')).toBe(true);
-      // `.spec.ts` is NOT a test class here: the repo convention and the
-      // metric config treat it as production code.
-      expect(isTestFileClass('src/a/b.spec.ts')).toBe(false);
+      expect(isTestFileClass('src/a/b.spec.ts')).toBe(true);
+      expect(isTestFileClass('src/a/__fixtures__/b.ts')).toBe(true);
+      expect(isTestFileClass('src/a/b-test-helpers.ts')).toBe(true);
+      expect(isTestFileClass('src/a/test-helpers.ts')).toBe(true);
+      expect(isTestFileClass('src/a/b-test-fixtures.ts')).toBe(true);
+      expect(isTestFileClass('src/state/evidence-test-constants.ts')).toBe(true);
+      expect(isTestFileClass('src/fixtures.ts')).toBe(true);
+      expect(isTestFileClass('src/test-policy.ts')).toBe(true);
+      expect(isTestFileClass('src/architecture/helper.ts')).toBe(true);
       expect(isTestFileClass('src/a/b.ts')).toBe(false);
+      // Non-test helpers stay production.
+      expect(isTestFileClass('src/integration/plugin-helpers.ts')).toBe(false);
+      expect(isTestFileClass('src/integration/tools/helpers.ts')).toBe(false);
     });
 
     it('classifies Windows-separator paths after canonicalization', () => {
       expect(isTestFileClass(normalizeRepoPath('src\\a\\__tests__\\b.ts'))).toBe(true);
       expect(isTestFileClass(normalizeRepoPath('src\\a\\b.test.ts'))).toBe(true);
-      expect(isTestFileClass(normalizeRepoPath('src\\a\\b.spec.ts'))).toBe(false);
+      expect(isTestFileClass(normalizeRepoPath('src\\a\\b.spec.ts'))).toBe(true);
+      expect(isTestFileClass(normalizeRepoPath('src\\a\\b-test-helpers.ts'))).toBe(true);
       expect(isTestFileClass(normalizeRepoPath('src\\a\\b.ts'))).toBe(false);
     });
   });

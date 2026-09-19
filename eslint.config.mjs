@@ -62,12 +62,31 @@ export default tseslint.config(
   },
   {
     // Maintainability metrics: default-wide for production code under src/.
-    // Tests are excluded as a file class (suites are allowed to be broader),
-    // never by directory allowlist. Thresholds are repository-wide ceilings
-    // calibrated against the measured distribution (see PR 2b); the tail above
-    // them is refactored, never exempted. They do not use type information.
+    // Tests and internal test support are excluded as file classes (suites and
+    // fixtures are allowed to be broader), never by an ad-hoc directory
+    // allowlist. These patterns are the declarative projection of
+    // `isTestSourcePath`; the projection is enforced by
+    // src/architecture/__tests__/type-aware-lint-scope.test.ts against the
+    // effective config. Thresholds are repository-wide ceilings calibrated
+    // against the measured distribution (see PR 2b); the tail above them is
+    // refactored, never exempted. They do not use type information.
     files: ['src/**/*.ts'],
-    ignores: ['src/**/*.test.ts', 'src/**/__tests__/**/*.ts'],
+    ignores: [
+      'src/**/*.test.ts',
+      'src/**/*.spec.ts',
+      'src/**/__tests__/**/*.ts',
+      'src/**/__fixtures__/**/*.ts',
+      'src/**/*-test-helpers.ts',
+      'src/**/test-helpers.ts',
+      'src/**/*-test-fixtures.ts',
+      'src/**/evidence-test-constants.ts',
+      'src/fixtures.ts',
+      'src/fixtures/**/*.ts',
+      'src/test-policy.ts',
+      'src/architecture/**/*.ts',
+      'src/documentation/**/*.ts',
+      'src/security/**/*.ts',
+    ],
     rules: {
       'max-params': ['warn', { max: 5 }],
       complexity: ['warn', { max: 25 }],

@@ -49,6 +49,8 @@
  * configured range.
  */
 
+import { isTestSourcePath } from './module-classification.js';
+
 export type MutationProfile =
   'base' | 'human-projection' | 'identity-jwks' | 'mandates' | 'schemas';
 
@@ -1352,19 +1354,18 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
   ),
 ];
 
-const TEST_FILE_PATTERN = /\.(test|spec)\.ts$/;
-
-/** Production source predicate used by the completeness closure. */
+/**
+ * Production source predicate used by the completeness closure.
+ *
+ * Delegates to the single source-class authority. Callers pass repo-relative
+ * paths (`src/...`); the authority operates on paths relative to `src/`.
+ */
 export function isProductionSource(relativePath: string): boolean {
   if (!relativePath.endsWith('.ts')) return false;
-  if (TEST_FILE_PATTERN.test(relativePath)) return false;
-  if (relativePath.includes('/__fixtures__/')) return false;
-  const basename = relativePath.split('/').pop() ?? '';
-  if (basename === 'fixtures.ts') return false;
-  if (basename === 'test-helpers.ts') return false;
-  if (basename === 'evidence-test-constants.ts') return false;
-  if (basename.endsWith('-test-helpers.ts')) return false;
-  return true;
+  const relativeFromSrc = relativePath.startsWith('src/')
+    ? relativePath.slice('src/'.length)
+    : relativePath;
+  return !isTestSourcePath(relativeFromSrc);
 }
 
 /** Normalizes a Stryker mutate selector to its target path. */

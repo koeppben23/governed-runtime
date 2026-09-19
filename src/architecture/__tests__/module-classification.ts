@@ -131,11 +131,24 @@ export const MODULE_CLASSIFICATION_BY_NAME: ReadonlyMap<string, ModuleClassifica
 const TEST_DIRECTORY_NAMES: ReadonlySet<string> = new Set(['__tests__', '__fixtures__']);
 
 /**
+ * Conventional internal test-support file names. These are the classes that
+ * must never enter the production compiler graph, the `dist/` emit, or the
+ * npm tarball. `testing.ts` is deliberately NOT here: it is the public
+ * `@flowguard/core/testing` entry point and stays production.
+ */
+const TEST_FILE_SUFFIXES = ['-test-helpers.ts', '-test-fixtures.ts'] as const;
+const TEST_FILE_NAMES: ReadonlySet<string> = new Set([
+  'test-helpers.ts',
+  'evidence-test-constants.ts',
+]);
+
+/**
  * Semantic test classification for source inventories. A path is test code
  * when it lives under a conventional test/fixture directory, is a `.test.ts`
- * / `.spec.ts` file, or sits in a classified test-support tree. Directory
- * names containing `__` for any other reason are NOT test code: name-based
- * escape hatches would hide production files from the governance inventory.
+ * / `.spec.ts` file, is a conventional internal test-support file, or sits in
+ * a classified test-support tree. Directory names containing `__` for any
+ * other reason are NOT test code: name-based escape hatches would hide
+ * production files from the governance inventory.
  *
  * Input is normalized through the path authority first, so a caller that
  * passes a native filesystem path with `\` separators still receives the
@@ -147,6 +160,8 @@ export function isTestSourcePath(relativeFromSrc: string): boolean {
   if (segments.some((segment) => TEST_DIRECTORY_NAMES.has(segment))) return true;
   const fileName = segments[segments.length - 1] ?? '';
   if (fileName.endsWith('.test.ts') || fileName.endsWith('.spec.ts')) return true;
+  if (TEST_FILE_NAMES.has(fileName)) return true;
+  if (TEST_FILE_SUFFIXES.some((suffix) => fileName.endsWith(suffix))) return true;
   const top = segments[0];
   return top !== undefined && MODULE_CLASSIFICATION_BY_NAME.get(top)?.kind === 'test-support';
 }

@@ -27,6 +27,17 @@
     ".opencode",
     "**/*.test.ts",
     "**/*.spec.ts",
-    "**/__tests__/**"
+    "**/__tests__/**",
+    "**/__fixtures__/**",
+    "**/*-test-helpers.ts",
+    "**/test-helpers.ts",
+    "**/*-test-fixtures.ts",
+    "**/evidence-test-constants.ts",
+    "src/fixtures.ts",
+    "src/fixtures/**",
+    "src/test-policy.ts",
+    "src/architecture/**",
+    "src/documentation/**",
+    "src/security/**"
   ]
 }
