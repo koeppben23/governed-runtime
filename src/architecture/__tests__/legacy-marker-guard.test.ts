@@ -12,8 +12,9 @@
  * Product templates are production authority and therefore remain inside it.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, sep } from 'node:path';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { normalizeRepoPath, repoRelative } from './repo-path.js';
 
 const SRC = join(process.cwd(), 'src');
 
@@ -45,7 +46,7 @@ function productionFlowGuardFiles(directory: string): string[] {
     }
     if (!/\.[cm]?[jt]sx?$/u.test(entry)) continue;
     if (EXCLUDED_FILE_PATTERN.test(entry)) continue;
-    const normalized = full.split(sep).join('/');
+    const normalized = normalizeRepoPath(full);
     if (EXCLUDED_PATH_PARTS.some((part) => normalized.includes(part))) continue;
     results.push(full);
   }
@@ -53,10 +54,7 @@ function productionFlowGuardFiles(directory: string): string[] {
 }
 
 function relative(path: string): string {
-  return path
-    .slice(SRC.length + 1)
-    .split(sep)
-    .join('/');
+  return repoRelative(SRC, path);
 }
 
 function isCommentOnlyMatch(content: string, index: number): boolean {

@@ -6,8 +6,9 @@
  * legacy invocation modes must not reappear in production code.
  */
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, sep } from 'node:path';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { repoRelative } from './repo-path.js';
 
 const SRC = join(process.cwd(), 'src');
 
@@ -26,10 +27,7 @@ function listProductionSources(dir: string): string[] {
 }
 
 function relative(path: string): string {
-  return path
-    .slice(SRC.length + 1)
-    .split(sep)
-    .join('/');
+  return repoRelative(SRC, path);
 }
 
 describe('structured review authority hard cut', () => {

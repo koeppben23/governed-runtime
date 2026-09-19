@@ -1,7 +1,9 @@
 import { readFileSync, readdirSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
+
+import { repoRelative } from './repo-path.js';
 
 /**
  * @module architecture/mode-validation-ssot.test
@@ -62,7 +64,7 @@ function collectToolsFiles(dir: string, acc: SourceFile[]): void {
       continue;
     }
     if (!entry.isFile() || !full.endsWith('.ts') || full.endsWith('.test.ts')) continue;
-    const rel = relative(SRC_ROOT, full).split(sep).join('/');
+    const rel = repoRelative(SRC_ROOT, full);
     if (!rel.startsWith(TOOLS_DIR)) continue;
     acc.push({ rel, content: readFileSync(full, 'utf8') });
   }

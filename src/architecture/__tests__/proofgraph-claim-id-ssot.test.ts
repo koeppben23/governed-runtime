@@ -27,8 +27,9 @@
 
 import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, resolve, relative, sep } from 'node:path';
+import { join, resolve } from 'node:path';
 import { isTestSourcePath } from './module-classification.js';
+import { repoRelative } from './repo-path.js';
 
 const SRC = resolve(join(import.meta.dirname, '..', '..'));
 
@@ -58,7 +59,7 @@ function collectSourceFiles(): string[] {
     for (const entry of entries) {
       if (entry === 'node_modules') continue;
       const full = join(dir, entry);
-      const relativeFromSrc = relative(SRC, full).split(sep).join('/');
+      const relativeFromSrc = repoRelative(SRC, full);
       // Semantic test classification only — a directory whose name merely
       // contains `__` is scanned like any other production surface.
       if (isTestSourcePath(relativeFromSrc)) continue;
@@ -124,7 +125,7 @@ function referencesManualScope(content: string): boolean {
 
 describe('ProofGraph claim-id SSOT', () => {
   const files = collectSourceFiles().map((abs) => ({
-    rel: relative(SRC, abs).split(sep).join('/'),
+    rel: repoRelative(SRC, abs),
     content: readFileSync(abs, 'utf-8'),
   }));
 

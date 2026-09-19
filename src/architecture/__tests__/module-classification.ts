@@ -23,6 +23,8 @@
  * @version v1
  */
 
+import { normalizeRepoPath } from './repo-path.js';
+
 type ModuleKind = 'governed' | 'entry' | 'test-support';
 
 export interface ModuleClassification {
@@ -134,9 +136,14 @@ const TEST_DIRECTORY_NAMES: ReadonlySet<string> = new Set(['__tests__', '__fixtu
  * / `.spec.ts` file, or sits in a classified test-support tree. Directory
  * names containing `__` for any other reason are NOT test code: name-based
  * escape hatches would hide production files from the governance inventory.
+ *
+ * Input is normalized through the path authority first, so a caller that
+ * passes a native filesystem path with `\` separators still receives the
+ * canonical classification instead of a silent non-match.
  */
 export function isTestSourcePath(relativeFromSrc: string): boolean {
-  const segments = relativeFromSrc.split('/');
+  const normalized = normalizeRepoPath(relativeFromSrc);
+  const segments = normalized.split('/');
   if (segments.some((segment) => TEST_DIRECTORY_NAMES.has(segment))) return true;
   const fileName = segments[segments.length - 1] ?? '';
   if (fileName.endsWith('.test.ts') || fileName.endsWith('.spec.ts')) return true;

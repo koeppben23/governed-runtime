@@ -15,9 +15,10 @@
  */
 
 import { readFileSync, readdirSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { join } from 'node:path';
 
 import { isTestSourcePath } from './module-classification.js';
+import { repoRelative } from './repo-path.js';
 
 /** A production `.ts` file with its path relative to `src/`. */
 export interface ProductionSourceFile {
@@ -37,7 +38,7 @@ export function collectProductionSources(srcRoot: string): ProductionSourceFile[
         continue;
       }
       if (!entry.isFile() || !entry.name.endsWith('.ts')) continue;
-      const rel = relative(srcRoot, full).split(sep).join('/');
+      const rel = repoRelative(srcRoot, full);
       if (isTestSourcePath(rel)) continue;
       files.push({ rel, content: readFileSync(full, 'utf8') });
     }

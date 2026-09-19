@@ -118,9 +118,6 @@ export const PERF_BUDGETS = {
   /** Decision receipts redaction (100 entries, strict mode). */
   redactionStrict100Ms: 30 * (process.env.CI ? 3 : 1) * PERF_BUDGET_FACTOR,
 
-  /** Architecture dependency scan for all source files. */
-  architectureAnalyzeAllMs: 800 * (process.env.CI ? 3 : 1) * PERF_BUDGET_FACTOR,
-
   /** Query filter over 10k audit events. */
   filterEvents10000Ms: 50 * (process.env.CI ? 3 : 1) * PERF_BUDGET_FACTOR,
 
