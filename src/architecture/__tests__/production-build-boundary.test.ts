@@ -18,13 +18,13 @@
  */
 
 import { existsSync } from 'node:fs';
-import { join, resolve, sep } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import * as ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 import { isTestSourcePath } from './module-classification.js';
-import { repoRelative } from './repo-path.js';
+import { normalizeRepoPath, repoRelative } from './repo-path.js';
 
 const REPO_ROOT = resolve(import.meta.dirname, '..', '..', '..');
 const SRC_ROOT = join(REPO_ROOT, 'src');
@@ -55,8 +55,12 @@ function parseConfig(fileName: string): ts.ParsedCommandLine {
   return ts.parseJsonConfigFileContent(read.config, ts.sys, REPO_ROOT);
 }
 
+/**
+ * The TypeScript compiler normalizes program file names to `/` separators on
+ * every platform, so the containment check must be separator-agnostic.
+ */
 function isUnderSrc(fileName: string): boolean {
-  return fileName.startsWith(`${SRC_ROOT}${sep}`);
+  return normalizeRepoPath(fileName).startsWith(`${normalizeRepoPath(SRC_ROOT)}/`);
 }
 
 describe('production/test distribution boundary', () => {
@@ -75,7 +79,10 @@ describe('production/test distribution boundary', () => {
 
     // Non-vacuum: the production program really is the production graph.
     expect(srcSources.length).toBeGreaterThan(100);
-    expect(program.getSourceFile(join(SRC_ROOT, 'testing.ts')), 'src/testing.ts').toBeDefined();
+    expect(
+      program.getSourceFile(normalizeRepoPath(join(SRC_ROOT, 'testing.ts'))),
+      'src/testing.ts',
+    ).toBeDefined();
 
     // Transitive inclusion: TypeScript re-adds an excluded file when production
     // imports it, so a forbidden production import fails here.
