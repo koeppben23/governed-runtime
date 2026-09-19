@@ -48,7 +48,11 @@ const execFileAsync = promisify(execFile);
 /** Default timeout for git commands (ms). 5 seconds is generous for local ops. */
 const GIT_TIMEOUT_MS = 5_000;
 
-/** Known package/dependency manifest filenames. */
+/**
+ * Known package/dependency manifest basenames — exact matches.
+ * `.csproj` / `.sln` are suffix-based manifest families and are handled by the
+ * explicit `basename.endsWith(...)` check in the classifier below.
+ */
 const PACKAGE_FILES: ReadonlySet<string> = new Set([
   'pom.xml',
   'build.gradle',
@@ -61,8 +65,6 @@ const PACKAGE_FILES: ReadonlySet<string> = new Set([
   'requirements.txt',
   'Gemfile',
   'composer.json',
-  '*.csproj',
-  '*.sln',
 ]);
 
 /** Known config filenames (exact match on basename). */

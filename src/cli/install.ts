@@ -10,6 +10,7 @@
 
 import { realpathSync } from 'node:fs';
 import { relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { initCliLogger } from './cli-logging.js';
 import { doctor } from './doctor-command.js';
 import { install } from './install-command.js';
@@ -653,13 +654,57 @@ export async function main(argv: string[]): Promise<number> {
 }
 
 // Auto-run when executed directly.
-// realpathSync resolves symlinks so that both `flowguard` (symlink) and
-// `install.js` (direct) executions trigger main().
-const isDirectExecution =
-  typeof process !== 'undefined' &&
-  process.argv[1] !== undefined &&
-  realpathSync(process.argv[1]).endsWith('install.js');
+//
+// `isDirectCliExecution` is fail-closed: a missing or unresolvable
+// `process.argv[1]` is never a direct execution and never throws at import
+// time. `realpath` equivalence supports npm bin symlinks (`flowguard` →
+// install.js) while rejecting an unrelated script that merely ends in
+// `install.js`.
 
-if (isDirectExecution) {
-  void main(process.argv.slice(2)).then((code) => process.exit(code));
+/**
+ * Whether the CLI was started as this exact module.
+ *
+ * Contract: missing `argvEntry` → false; unresolvable `argvEntry` → false,
+ * never throw; realpath equality with this module → true; any other
+ * `.../install.js` → false.
+ */
+export function isDirectCliExecution(argvEntry: string | undefined, moduleUrl: string): boolean {
+  if (argvEntry === undefined) return false;
+  try {
+    return realpathSync(argvEntry) === realpathSync(fileURLToPath(moduleUrl));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Process-boundary dispatcher for the CLI entry point.
+ *
+ * A resolved runner exits with its code unchanged. An unexpected rejection
+ * (Error or non-Error) is reported deterministically to the injected error
+ * sink and exits 1. The runner/exit/report dependencies are injected so these
+ * boundary semantics are unit-testable without terminating the test process.
+ */
+export async function dispatchCliEntrypoint(
+  args: string[],
+  runner: (argv: string[]) => Promise<number>,
+  exit: (code: number) => void,
+  reportError: (message: string) => void,
+): Promise<void> {
+  try {
+    exit(await runner(args));
+  } catch (error: unknown) {
+    const detail = error instanceof Error ? error.message : String(error);
+    reportError(`[error] flowguard CLI failed unexpectedly: ${detail}`);
+    exit(1);
+  }
+}
+
+if (isDirectCliExecution(process.argv[1], import.meta.url)) {
+  void dispatchCliEntrypoint(
+    process.argv.slice(2),
+    main,
+    (code) => process.exit(code),
+    (message) => console.error(message),
+  );
 }

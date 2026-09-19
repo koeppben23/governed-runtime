@@ -4,10 +4,18 @@
  * @test-policy HAPPY, BAD, CORNER, EDGE, PERF — all five categories present.
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterAll } from 'vitest';
 import * as path from 'node:path';
-import { mkdirSync } from 'node:fs';
-import { formatResult, formatDoctor, main } from './install.js';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import {
+  dispatchCliEntrypoint,
+  formatResult,
+  formatDoctor,
+  isDirectCliExecution,
+  main,
+} from './install.js';
 import type { CliResult, DoctorCheck } from './install-types.js';
 import { createMockTarball, setupCliTestEnvironment } from './install-test-helpers.test.js';
 
@@ -222,6 +230,109 @@ describe('cli/main', () => {
       const start = performance.now();
       await main(['install', '--install-scope', 'repo', '--core-tarball', tarball]);
       expect(performance.now() - start).toBeLessThan(1000);
+    });
+  });
+});
+
+// ─── Entry-point boundary ─────────────────────────────────────────────────────
+
+describe('cli/entrypoint boundary', () => {
+  const installModuleUrl = new URL('./install.ts', import.meta.url);
+  const installModulePath = fileURLToPath(installModuleUrl);
+  let boundaryDir: string | undefined;
+
+  function boundaryDirOrThrow(): string {
+    boundaryDir ??= mkdtempSync(path.join(tmpdir(), 'fg-cli-entrypoint-'));
+    return boundaryDir;
+  }
+
+  afterAll(() => {
+    if (boundaryDir !== undefined) rmSync(boundaryDir, { recursive: true, force: true });
+  });
+
+  describe('direct execution detection', () => {
+    it('HAPPY: recognizes this module as direct execution', () => {
+      expect(isDirectCliExecution(installModulePath, installModuleUrl.href)).toBe(true);
+    });
+
+    it.skipIf(process.platform === 'win32')(
+      'HAPPY: resolves npm-bin-style symlinks to the same module',
+      () => {
+        const dir = boundaryDirOrThrow();
+        const target = path.join(dir, 'real-install.js');
+        const link = path.join(dir, 'flowguard');
+        writeFileSync(target, '// entry\n', 'utf8');
+        symlinkSync(target, link);
+        expect(isDirectCliExecution(link, pathToFileURL(target).href)).toBe(true);
+      },
+    );
+
+    it('BAD: rejects a different existing install.js', () => {
+      const other = path.join(boundaryDirOrThrow(), 'other', 'install.js');
+      mkdirSync(path.dirname(other), { recursive: true });
+      writeFileSync(other, '// other entry\n', 'utf8');
+      expect(isDirectCliExecution(other, installModuleUrl.href)).toBe(false);
+    });
+
+    it('BAD: rejects an unresolvable argv entry without throwing', () => {
+      const missing = path.join(boundaryDirOrThrow(), 'missing', 'install.js');
+      expect(() => isDirectCliExecution(missing, installModuleUrl.href)).not.toThrow();
+      expect(isDirectCliExecution(missing, installModuleUrl.href)).toBe(false);
+    });
+
+    it('BAD: rejects a missing argv entry', () => {
+      expect(isDirectCliExecution(undefined, installModuleUrl.href)).toBe(false);
+    });
+  });
+
+  describe('process-boundary dispatcher', () => {
+    function capture(): {
+      exitCodes: number[];
+      errors: string[];
+      exit: (code: number) => void;
+      reportError: (message: string) => void;
+    } {
+      const exitCodes: number[] = [];
+      const errors: string[] = [];
+      return {
+        exitCodes,
+        errors,
+        exit: (code: number) => exitCodes.push(code),
+        reportError: (message: string) => errors.push(message),
+      };
+    }
+
+    it.each([0, 1, 2])('HAPPY: exits with the runner code %i', async (code) => {
+      const sink = capture();
+      await dispatchCliEntrypoint(['x'], async () => code, sink.exit, sink.reportError);
+      expect(sink.exitCodes).toEqual([code]);
+      expect(sink.errors).toEqual([]);
+    });
+
+    it('BAD: reports an Error rejection deterministically and exits 1', async () => {
+      const sink = capture();
+      await dispatchCliEntrypoint(
+        ['x'],
+        async () => {
+          throw new Error('boom');
+        },
+        sink.exit,
+        sink.reportError,
+      );
+      expect(sink.exitCodes).toEqual([1]);
+      expect(sink.errors).toEqual(['[error] flowguard CLI failed unexpectedly: boom']);
+    });
+
+    it('BAD: reports a non-Error rejection deterministically and exits 1', async () => {
+      const sink = capture();
+      await dispatchCliEntrypoint(
+        ['x'],
+        () => Promise.reject('plain failure'),
+        sink.exit,
+        sink.reportError,
+      );
+      expect(sink.exitCodes).toEqual([1]);
+      expect(sink.errors).toEqual(['[error] flowguard CLI failed unexpectedly: plain failure']);
     });
   });
 });
