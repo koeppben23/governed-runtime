@@ -135,6 +135,7 @@ blocker.
 Before implementing a change, identify the canonical authority. Change the authority, not a local duplicate.
 
 - State transitions: `src/machine/`
+- Module direction policy: `src/architecture/__tests__/module-dependency-policy.ts`
 - Canonical serialization: `src/shared/canonical-json.ts`
 - Hash/digest primitives: `src/shared/hashing.ts`
 - Archive content digest formula: `src/archive/content-digest.ts`

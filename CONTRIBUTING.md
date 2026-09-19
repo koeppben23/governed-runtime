@@ -17,13 +17,18 @@ integration/  -> rails/  -> machine/  -> state/
 
 ### Key Layers
 
-| Layer          | Purpose                                         | Rules                                                              |
-| -------------- | ----------------------------------------------- | ------------------------------------------------------------------ |
-| `state/`       | Core domain model (Zod schemas, types)          | Leaf module - may import discovery/types only                      |
-| `machine/`     | State machine (topology, guards, evaluation)    | Only imports state/                                                |
-| `rails/`       | Workflow orchestrators (stateless)              | No integration/ imports, prefer adapter I/O                        |
-| `adapters/`    | File I/O, git, workspace management             | May import config/, discovery/, archive/, state/, machine/, rails/ |
-| `integration/` | Host integration surfaces and OpenCode bindings | Entry point - may import any layer                                 |
+| Layer          | Purpose                                         | Role                                                          |
+| -------------- | ----------------------------------------------- | ------------------------------------------------------------- |
+| `state/`       | Core domain model (Zod schemas, types)          | Canonical domain primitives                                   |
+| `machine/`     | State machine (topology, guards, evaluation)    | Enforces transitions; no runtime authority of its own         |
+| `rails/`       | Workflow orchestrators (stateless)              | Orchestration; I/O through adapters                           |
+| `adapters/`    | File I/O, git, workspace management             | Host-agnostic I/O boundary                                    |
+| `integration/` | Host integration surfaces and OpenCode bindings | Runtime-facing composition; entry points compose separately   |
+
+The diagram shows the intended direction for new code, not the enforced set:
+top-level module directions are owned exclusively by `MODULE_DEPENDENCY_POLICY`
+(`src/architecture/__tests__/module-dependency-policy.ts`), and existing cyclic
+directions are frozen debt (see [Architecture Rules](#architecture-rules)).
 
 ## Development Setup
 

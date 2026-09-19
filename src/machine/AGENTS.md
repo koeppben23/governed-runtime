@@ -59,8 +59,10 @@ phase transitions, guard evaluation, and command routing.
 
 ## Module Boundary
 
-- `src/machine/` may import from `src/state/` and `src/shared/` only.
-- `src/machine/` must not import from `src/config/` or `src/rails/`.
+- Top-level module directions are owned exclusively by
+  `src/architecture/__tests__/module-dependency-policy.ts`
+  (`MODULE_DEPENDENCY_POLICY`); changes in this subtree must comply with that
+  positive policy and pass `npm run test:architecture`.
 
 ## Additional Verification for This Subtree
 

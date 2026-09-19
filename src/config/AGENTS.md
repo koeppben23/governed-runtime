@@ -34,7 +34,6 @@ npx vitest run --project unit src/config/reasons-completeness.test.ts
 - Core policy types are defined in `policy-types.ts`.
 - Policy resolution logic is split across `policy-resolver.ts`, `policy-central.ts`,
   `policy-ci.ts`, and `policy-snapshot.ts`.
-- Policy must not import from `src/state/`, `src/rails/`, or `src/integration/`.
 - `PolicySnapshot` parity: every executable `FlowGuardPolicy` field must be
   frozen by `createPolicySnapshot()` and reconstructed by
   `resolvePolicyFromSnapshot()`; optional executable fields follow the same rule
@@ -51,10 +50,12 @@ npx vitest run --project unit src/config/reasons-completeness.test.ts
 
 ## Module Boundary
 
-- `src/config/` may import from `src/shared/` and `src/logging/log-level.ts` only.
-- `src/config/` must not import from `src/state/`, `src/rails/`, or
-  `src/integration/`.
-- `src/config/` must not derive runtime state — it defines schemas, not behavior.
+- Top-level module directions are owned exclusively by
+  `src/architecture/__tests__/module-dependency-policy.ts`
+  (`MODULE_DEPENDENCY_POLICY`). Changes in this subtree must comply with that
+  policy and pass `npm run test:architecture`.
+- Subtree-specific: `src/config/` must not derive runtime state — it defines
+  schemas, not behavior.
 
 ## Do Not Introduce
 
