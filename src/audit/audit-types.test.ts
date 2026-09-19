@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
   computeChainHash,
   CURRENT_AUDIT_FORMAT_VERSION,
+  ENFORCEMENT_DENIED_EVENT_NAME,
   GENESIS_HASH,
+  STATE_WRITE_EVENT_NAME,
   createTransitionEvent,
   createToolCallEvent,
   createErrorEvent,
@@ -804,6 +806,13 @@ describe('host session provenance on event bodies', () => {
     for (const [name, build] of Object.entries(buildBodies)) {
       expect('hostSessionId' in build(undefined), name).toBe(false);
     }
+  });
+
+  it('carries the canonical event-core authority names on their bodies', () => {
+    expect(STATE_WRITE_EVENT_NAME).toBe('state_write');
+    expect(ENFORCEMENT_DENIED_EVENT_NAME).toBe('enforcement:denied');
+    expect(buildBodies.stateWrite(undefined).event).toBe('state_write');
+    expect(buildBodies.enforcementDenied(undefined).event).toBe('enforcement:denied');
   });
 });
 

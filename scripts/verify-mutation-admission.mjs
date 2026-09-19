@@ -62,6 +62,7 @@ const REPO_ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 
 const PROFILE_CONFIG = {
   base: 'stryker.conf.json',
+  'event-core': 'stryker.event-core.conf.json',
   'human-projection': 'stryker.human-projection.conf.json',
   'identity-jwks': 'stryker.identity-jwks.conf.json',
   mandates: 'stryker.mandates.conf.json',
@@ -118,7 +119,9 @@ function parseArguments(argv) {
     } else fail(`unsupported argument '${argument}'`);
   }
   if (options.profile === undefined) {
-    fail('missing required --profile <base|human-projection|identity-jwks|mandates|schemas>');
+    fail(
+      'missing required --profile <base|event-core|human-projection|identity-jwks|mandates|schemas>',
+    );
   }
   if (!Object.hasOwn(PROFILE_CONFIG, options.profile)) {
     fail(`unknown profile '${options.profile}'`);

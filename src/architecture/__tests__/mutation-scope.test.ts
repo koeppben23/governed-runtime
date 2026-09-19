@@ -39,6 +39,7 @@ import { describe, expect, it } from 'vitest';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import baseStrykerVitest from '../../../vitest.stryker.config.js';
+import eventCoreVitest from '../../../vitest.stryker-event-core.config.js';
 import humanProjectionVitest from '../../../vitest.stryker-human-projection.config.js';
 import identityJwksVitest from '../../../vitest.stryker-identity-jwks.config.js';
 import mandatesVitest from '../../../vitest.mandates.config.js';
@@ -70,6 +71,7 @@ interface VitestConfig {
 
 const PROFILE_VITEST: Readonly<Record<MutationProfile, VitestConfig>> = {
   base: baseStrykerVitest,
+  'event-core': eventCoreVitest,
   'human-projection': humanProjectionVitest,
   'identity-jwks': identityJwksVitest,
   mandates: mandatesVitest,

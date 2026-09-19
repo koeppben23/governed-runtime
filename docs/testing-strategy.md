@@ -295,6 +295,15 @@ finding-render range to `src/presentation/markdown.ts:264-292`. The three static
 copy modules above carry no valid mutants and are explicitly not
 mutation-suitable for this profile.
 
+Event-core profile (`stryker.event-core.conf.json`): focused authority profile
+for `src/audit/event-core.ts` (module-init event-kind authority, chain-hash and
+timestamp-finalization contracts). It uses `coverageAnalysis: "all"`,
+`ignoreStatic: false` and keeps `StringLiteral` enabled so the format, event-name
+and genesis constants are mutated; the base regime excludes literal mutations
+and the remaining operator mutations are rejected by the TypeScript checker.
+The profile is required and must pass its own full run plus
+`verify-mutation-admission.mjs --profile event-core`.
+
 Deferred surfaces (whole roots behind the admission gate):
 `src/config/**`, `src/state/**`, `src/shared/**`, `src/audit/**`,
 `src/adapters/**`, `src/identity/**`, `src/verification/**`, `src/discovery/**`,
@@ -324,7 +333,6 @@ scoped; a target may still be a valid mutation target in another profile):
 - `src/presentation/reason-copy.ts` — static copy, 0 valid mutants (human-projection).
 - `src/presentation/human-projection.ts` — type-driven composition, 0 valid mutants (human-projection).
 - `src/presentation/claim-diagnostic-copy.ts` — static diagnostic copy, 0 valid mutants (human-projection).
-- `src/audit/event-core.ts` — base full run 2026-09-19: 7 excluded literal mutants, 13 mutants rejected by the TypeScript checker (block/condition mutations violate the declared return types of `computeChainHash()`/`finalizeWithTimestampEvidence()`), and the single valid operator mutant is killed; no meaningful mutant exists under the profile regime (base).
 
 Reason-catalog diagnostic (2026-09-17, base regime): all 175 mutants across the
 ten catalog files are rejected by the TypeScript checker (CompileError, 0

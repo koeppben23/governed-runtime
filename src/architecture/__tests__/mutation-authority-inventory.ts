@@ -52,7 +52,7 @@
 import { isTestSourcePath } from './module-classification.js';
 
 export type MutationProfile =
-  'base' | 'human-projection' | 'identity-jwks' | 'mandates' | 'schemas';
+  'base' | 'event-core' | 'human-projection' | 'identity-jwks' | 'mandates' | 'schemas';
 
 export type MutationAuthorityClass = 'required' | 'admission-backlog' | 'not-mutation-suitable';
 
@@ -65,6 +65,10 @@ export const MUTATION_PROFILES: Readonly<Record<MutationProfile, MutationProfile
   base: {
     configFile: 'stryker.conf.json',
     vitestConfigFile: 'vitest.stryker.config.ts',
+  },
+  'event-core': {
+    configFile: 'stryker.event-core.conf.json',
+    vitestConfigFile: 'vitest.stryker-event-core.config.ts',
   },
   'human-projection': {
     configFile: 'stryker.human-projection.conf.json',
@@ -820,6 +824,18 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'src/hooks/shared/phase-gate.test.ts',
   ]),
 
+  // ── Event-core profile: required ──────────────────────────────────────────
+  required(
+    'src/audit/event-core.ts',
+    'Audit event schema, chain hash and finalization',
+    [
+      'src/audit/audit-integrity.test.ts',
+      'src/audit/audit-integrity-timestamps.test.ts',
+      'src/audit/audit-types.test.ts',
+    ],
+    { profile: 'event-core', source: [SOURCE.trustBoundaries] },
+  ),
+
   // ── Human-projection profile: required ────────────────────────────────────
   required(
     'src/presentation/reason-projection.ts',
@@ -1368,13 +1384,6 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
   ),
 
   // ── Explicitly not mutation-suitable ──────────────────────────────────────
-  notSuitable(
-    'src/audit/event-core.ts',
-    'Audit event schema, chain hash and finalization',
-    'Base-regime full run 2026-09-19: of 21 produced mutants, 7 are excluded literal mutations (StringLiteral), 13 are rejected by the TypeScript checker because block/condition mutations in computeChainHash()/finalizeWithTimestampEvidence() violate the declared return types, and the single valid operator mutant (tsa.digestAlgorithm ?? "sha256") is killed. Under the profile mutator regime no meaningful mutant can encode a semantic contract; chain-hash and finalization behavior is asserted by the audit-chain integrity suites, and the event-body factory authority is admitted via event-builders.ts.',
-    'base',
-    { source: [SOURCE.trustBoundaries] },
-  ),
   notSuitable(
     'src/presentation/reason-copy.ts',
     'Human reason copy authority',
