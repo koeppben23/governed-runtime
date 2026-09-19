@@ -22,7 +22,9 @@
 import { describe, expect, it } from 'vitest';
 import { ESLint } from 'eslint';
 import { readdirSync } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
+
+import { normalizeRepoPath, repoRelative } from './repo-path.js';
 
 const ROOT = resolve(join(import.meta.dirname, '..', '..', '..'));
 const SRC = join(ROOT, 'src');
@@ -134,7 +136,7 @@ function collectTypeScriptFiles(dir: string): string[] {
 }
 
 function rel(file: string): string {
-  return relative(ROOT, file);
+  return repoRelative(ROOT, file);
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -261,6 +263,13 @@ describe('lint scope (default-wide correctness and metrics)', () => {
       // metric config treat it as production code.
       expect(isTestFileClass('src/a/b.spec.ts')).toBe(false);
       expect(isTestFileClass('src/a/b.ts')).toBe(false);
+    });
+
+    it('classifies Windows-separator paths after canonicalization', () => {
+      expect(isTestFileClass(normalizeRepoPath('src\\a\\__tests__\\b.ts'))).toBe(true);
+      expect(isTestFileClass(normalizeRepoPath('src\\a\\b.test.ts'))).toBe(true);
+      expect(isTestFileClass(normalizeRepoPath('src\\a\\b.spec.ts'))).toBe(false);
+      expect(isTestFileClass(normalizeRepoPath('src\\a\\b.ts'))).toBe(false);
     });
   });
 });

@@ -7,8 +7,9 @@
  * public backdoor.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, sep } from 'node:path';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { repoRelative } from './repo-path.js';
 
 const SRC = join(process.cwd(), 'src');
 
@@ -32,12 +33,7 @@ function listSourceFiles(dir: string): string[] {
 function filesCallingCreateAttempt(): string[] {
   return listSourceFiles(SRC)
     .filter((p) => /\bcreateAttemptForExistingObligation\s*\(/.test(readFileSync(p, 'utf8')))
-    .map((p) =>
-      p
-        .slice(SRC.length + 1)
-        .split(sep)
-        .join('/'),
-    );
+    .map((p) => repoRelative(SRC, p));
 }
 
 describe('createAttemptForExistingObligation call-site whitelist', () => {
@@ -67,10 +63,7 @@ describe('createAttemptForExistingObligation call-site whitelist', () => {
   it('the removed repair and task-rearm authorities have no production reference', () => {
     for (const file of listSourceFiles(SRC)) {
       const content = readFileSync(file, 'utf8');
-      const relative = file
-        .slice(SRC.length + 1)
-        .split(sep)
-        .join('/');
+      const relative = repoRelative(SRC, file);
       expect(content, `${relative} must not reference the removed repair authority`).not.toContain(
         'authorizeOutputRepairReissue',
       );

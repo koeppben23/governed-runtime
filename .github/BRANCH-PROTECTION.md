@@ -47,6 +47,11 @@ From `.github/workflows/ci.yml`:
 - `install-verify (windows-latest)`
 - `independent-review-e2e`
 
+`architecture` is the stable required aggregator for the Linux and Windows
+architecture workers (`architecture-linux`, `architecture-windows`). The
+platform workers are implementation details and are not configured
+individually as branch-protection contexts.
+
 The `format` check is the merge-blocking Prettier gate for both protected
 branches. Mutation testing is deliberately NOT a PR gate: it runs on the
 scheduled/release cadence via `.github/workflows/mutation.yml` (the full-suite

@@ -22,12 +22,13 @@
  */
 
 import { readFileSync, readdirSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
 import { POLICY_MODES } from '../../state/policy-mode.js';
 import { MANIFEST_POLICY_MODES, MANIFEST_POLICY_MODE_UNKNOWN } from '../../archive/types.js';
+import { repoRelative } from './repo-path.js';
 
 const SRC_ROOT = join(process.cwd(), 'src');
 
@@ -95,7 +96,7 @@ function collectProductionFiles(dir: string, acc: SourceFile[]): void {
     }
     if (!entry.isFile() || !full.endsWith('.ts') || full.endsWith('.test.ts')) continue;
     acc.push({
-      rel: relative(SRC_ROOT, full).split(sep).join('/'),
+      rel: repoRelative(SRC_ROOT, full),
       content: readFileSync(full, 'utf8'),
     });
   }

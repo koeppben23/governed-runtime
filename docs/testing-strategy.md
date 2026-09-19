@@ -152,6 +152,14 @@ runners. Representative budgets at local-development baseline:
 `PERF_BUDGETS` at this revision; treat their cost as advisory rather than
 gated.
 
+Architecture correctness is blocking and deterministic: the required
+`architecture` check contains no wall-clock pass/fail assertions. Architecture
+runtime is observed through the non-blocking `ci-runtime-report` job, not
+through timing thresholds inside the suite. `architecture` is a stable
+aggregator over `architecture-linux` and `architecture-windows`; the platform
+workers are implementation details and are not individual branch-protection
+contexts.
+
 ## Mutation Testing
 
 FlowGuard uses [StrykerJS](https://stryker-mutator.io/) (v10) for mutation testing

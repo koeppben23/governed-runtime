@@ -37,7 +37,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, relative, resolve, sep } from 'node:path';
+import { join, resolve } from 'node:path';
 import baseStrykerVitest from '../../../vitest.stryker.config.js';
 import humanProjectionVitest from '../../../vitest.stryker-human-projection.config.js';
 import identityJwksVitest from '../../../vitest.stryker-identity-jwks.config.js';
@@ -52,6 +52,7 @@ import {
   targetOfSelector,
   type MutationProfile,
 } from './mutation-authority-inventory.js';
+import { repoRelative } from './repo-path.js';
 
 const ROOT = resolve(__dirname, '..', '..', '..');
 
@@ -125,7 +126,7 @@ function walkFiles(absoluteDir: string, out: string[] = []): string[] {
     if (statSync(full).isDirectory()) {
       walkFiles(full, out);
     } else {
-      out.push(relative(ROOT, full).split(sep).join('/'));
+      out.push(repoRelative(ROOT, full));
     }
   }
   return out;

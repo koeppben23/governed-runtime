@@ -5,9 +5,11 @@
  */
 
 import { readdirSync, readFileSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
+
+import { repoRelative } from './repo-path.js';
 
 const SRC_ROOT = join(process.cwd(), 'src');
 const HUMAN_APPROVAL_AUTHORITY = 'rails/review-decision.ts';
@@ -29,7 +31,7 @@ function productionFiles(dir: string, files: string[] = []): string[] {
 describe('architecture acceptance authority', () => {
   it('promotes architecture status to accepted only in the explicit human decision rail', () => {
     const violations = productionFiles(SRC_ROOT).flatMap((path) => {
-      const relativePath = relative(SRC_ROOT, path).split(sep).join('/');
+      const relativePath = repoRelative(SRC_ROOT, path);
       if (relativePath === HUMAN_APPROVAL_AUTHORITY || relativePath === FIXTURE_MODULE) return [];
       const content = readFileSync(path, 'utf8');
       return [...content.matchAll(ACCEPTED_STATUS_ASSIGNMENT)].map((match) => ({

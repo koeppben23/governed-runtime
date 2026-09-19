@@ -47,13 +47,13 @@ import * as fs from 'node:fs/promises';
 import { existsSync, readdirSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { benchmarkAsync, PERF_BUDGETS } from '../../test-policy.js';
 import {
   CROSS_MODULE_ALLOWLIST,
   isTestSourcePath,
   MODULE_CLASSIFICATION,
   MODULE_CLASSIFICATION_BY_NAME,
 } from './module-classification.js';
+import { normalizeRepoPath, repoRelative } from './repo-path.js';
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../../');
 const SRC_DIR = path.join(PROJECT_ROOT, 'src');
@@ -153,15 +153,6 @@ const NODE_BUILTIN_PREFIXES = [
   'node:perf_hooks',
 ];
 
-/**
- * Normalize a file path to use forward slashes.
- * Ensures `.includes("/state/")` etc. work on all platforms
- * (Windows `path.join()` produces backslash separators).
- */
-function normalizeSep(p: string): string {
-  return p.replace(/\\/g, '/');
-}
-
 interface ImportInfo {
   module: string;
   raw: string;
@@ -226,7 +217,7 @@ const ENTRY_ENTRIES: ReadonlySet<string> = new Set(
 function resolveTargetEntry(importerDir: string, specifier: string): string | null {
   const resolved = resolveImportPath(importerDir, specifier);
   if (!resolved) return null;
-  const relToSrc = normalizeSep(path.relative(SRC_DIR, resolved));
+  const relToSrc = repoRelative(SRC_DIR, resolved);
   if (relToSrc.startsWith('..')) return null;
   return relToSrc.split('/')[0] || null;
 }
@@ -289,12 +280,12 @@ function parseImports(
 
 async function analyzeFile(filePath: string): Promise<FileAnalysis> {
   const content = await fs.readFile(filePath, 'utf-8');
-  const relativePath = normalizeSep(path.relative(SRC_DIR, filePath));
+  const relativePath = repoRelative(SRC_DIR, filePath);
   const importerModule = relativePath.split('/')[0]!;
   const imports = parseImports(content, path.dirname(filePath), importerModule);
 
   return {
-    filePath: normalizeSep(filePath),
+    filePath: normalizeRepoPath(filePath),
     relativePath,
     imports,
   };
@@ -307,7 +298,7 @@ async function collectFiles(dir: string, pattern: RegExp): Promise<string[]> {
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
     if (entry.name === 'node_modules') continue;
-    const relativeFromSrc = normalizeSep(path.relative(SRC_DIR, fullPath));
+    const relativeFromSrc = repoRelative(SRC_DIR, fullPath);
     if (entry.isDirectory()) {
       // Semantic test classification only — a directory whose name merely
       // contains `__` is analyzed like any other production surface.
@@ -330,7 +321,7 @@ async function collectFiles(dir: string, pattern: RegExp): Promise<string[]> {
  * `providers/state/foo.ts` is `providers`, not `state`).
  */
 function getLayerFromPath(filePath: string): string | null {
-  const relativePath = normalizeSep(path.relative(SRC_DIR, filePath));
+  const relativePath = repoRelative(SRC_DIR, filePath);
   const topLevel = relativePath.split('/')[0];
   if (topLevel === undefined || topLevel.length === 0) return null;
   return MODULE_CLASSIFICATION_BY_NAME.get(topLevel)?.kind === 'governed' ? topLevel : null;
@@ -581,7 +572,7 @@ function detectViolations(analyses: Map<string, FileAnalysis>): ImportViolation[
 function resolveImportPath(importerDir: string, importPath: string): string {
   if (!importPath.startsWith('.')) return '';
 
-  const resolved = normalizeSep(path.resolve(importerDir, importPath));
+  const resolved = normalizeRepoPath(path.resolve(importerDir, importPath));
 
   if (existsSync(resolved)) return resolved;
   if (existsSync(resolved + '.ts')) return resolved + '.ts';
@@ -590,7 +581,7 @@ function resolveImportPath(importerDir: string, importPath: string): string {
   if (withoutJs !== resolved && existsSync(withoutJs + '.ts')) return withoutJs + '.ts';
 
   const indexPath = path.join(resolved, 'index.ts');
-  if (existsSync(indexPath)) return normalizeSep(indexPath);
+  if (existsSync(indexPath)) return normalizeRepoPath(indexPath);
 
   return '';
 }
@@ -609,7 +600,7 @@ function detectCycles(analyses: Map<string, FileAnalysis>): string[] {
         targets.add(resolved);
       }
     }
-    adjacency.set(normalizeSep(filePath), targets);
+    adjacency.set(normalizeRepoPath(filePath), targets);
   }
 
   // DFS from each node. Do not use a global visited set: a node can participate
@@ -668,7 +659,7 @@ function detectCycles(analyses: Map<string, FileAnalysis>): string[] {
       }
       const rotated = [...orderedCycle.slice(minIdx), ...orderedCycle.slice(0, minIdx)];
       const normalized = [...rotated, rotated[0]!];
-      const key = normalized.map((f) => path.relative(PROJECT_ROOT, f)).join(' -> ');
+      const key = normalized.map((f) => repoRelative(PROJECT_ROOT, f)).join(' -> ');
       cycles.push(key);
     }
 
@@ -1442,39 +1433,6 @@ describe('Layer Dependency Rules', () => {
     });
   });
 
-  describe('Performance', () => {
-    it(`should analyze all files in < ${PERF_BUDGETS.architectureAnalyzeAllMs}ms (p95)`, async () => {
-      const { p95Ms } = await benchmarkAsync(
-        async () => {
-          const tsFiles = await collectFiles(SRC_DIR, /\.ts$/);
-          for (const file of tsFiles) {
-            await analyzeFile(file);
-          }
-        },
-        5,
-        1,
-      );
-
-      expect(p95Ms).toBeLessThan(PERF_BUDGETS.architectureAnalyzeAllMs);
-    });
-
-    it('should handle files with many imports efficiently', async () => {
-      const largeFiles = Array.from(analyses.entries())
-        .filter(([, a]) => a.imports.length > 30)
-        .slice(0, 5);
-
-      if (largeFiles.length > 0) {
-        const start = performance.now();
-        for (const [file] of largeFiles) {
-          await analyzeFile(file);
-        }
-        const duration = performance.now() - start;
-
-        expect(duration).toBeLessThan(50);
-      }
-    });
-  });
-
   describe('Edge Cases', () => {
     it('should handle files with no imports', () => {
       const noImportFiles = Array.from(analyses.values()).filter((a) => a.imports.length === 0);
@@ -1521,7 +1479,7 @@ describe('Layer Dependency Rules', () => {
     it('detects a prohibited state → integration import edge', () => {
       const fakeFile = 'state/deliberate-violation.ts';
       const fakeAnalysis: FileAnalysis = {
-        filePath: normalizeSep(path.join(SRC_DIR, fakeFile)),
+        filePath: normalizeRepoPath(path.join(SRC_DIR, fakeFile)),
         relativePath: fakeFile,
         imports: [
           {
@@ -1548,7 +1506,7 @@ describe('Layer Dependency Rules', () => {
     it('detects prohibited presentation → integration re-export edge', () => {
       const fakeFile = 'presentation/deliberate-violation.ts';
       const fakeAnalysis: FileAnalysis = {
-        filePath: normalizeSep(path.join(SRC_DIR, fakeFile)),
+        filePath: normalizeRepoPath(path.join(SRC_DIR, fakeFile)),
         relativePath: fakeFile,
         imports: [
           {
@@ -1602,16 +1560,14 @@ describe('Layer Dependency Rules', () => {
         const imports = parseImports(
           content,
           path.dirname(filePath),
-          normalizeSep(path.relative(SRC_DIR, filePath)).split('/')[0]!,
+          repoRelative(SRC_DIR, filePath).split('/')[0]!,
         );
         for (const imp of imports) {
           // plugin-helpers is a pure stateless utility (no lifecycle coupling),
           // so it's allowed as an inward dependency for review/
           if (imp.module.includes('plugin-helpers')) continue;
           if (imp.module.includes('plugin-') || imp.module.includes('/plugin.')) {
-            violations.push(
-              `${normalizeSep(path.relative(SRC_DIR, filePath))}: imports ${imp.module}`,
-            );
+            violations.push(`${repoRelative(SRC_DIR, filePath)}: imports ${imp.module}`);
           }
         }
       }
@@ -1745,9 +1701,9 @@ describe('Layer Dependency Rules', () => {
     it('reports cycles in real import-edge order', async () => {
       const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'flowguard-cycle-test-'));
       try {
-        const a = normalizeSep(path.join(dir, 'a.ts'));
-        const b = normalizeSep(path.join(dir, 'b.ts'));
-        const c = normalizeSep(path.join(dir, 'c.ts'));
+        const a = normalizeRepoPath(path.join(dir, 'a.ts'));
+        const b = normalizeRepoPath(path.join(dir, 'b.ts'));
+        const c = normalizeRepoPath(path.join(dir, 'c.ts'));
         await Promise.all([
           fs.writeFile(a, "import './c.js';\n", 'utf-8'),
           fs.writeFile(b, "import './a.js';\n", 'utf-8'),
@@ -1759,7 +1715,7 @@ describe('Layer Dependency Rules', () => {
             a,
             {
               filePath: a,
-              relativePath: path.relative(PROJECT_ROOT, a),
+              relativePath: repoRelative(PROJECT_ROOT, a),
               imports: [mockImport('./c.js')],
             },
           ],
@@ -1767,7 +1723,7 @@ describe('Layer Dependency Rules', () => {
             b,
             {
               filePath: b,
-              relativePath: path.relative(PROJECT_ROOT, b),
+              relativePath: repoRelative(PROJECT_ROOT, b),
               imports: [mockImport('./a.js')],
             },
           ],
@@ -1775,14 +1731,14 @@ describe('Layer Dependency Rules', () => {
             c,
             {
               filePath: c,
-              relativePath: path.relative(PROJECT_ROOT, c),
+              relativePath: repoRelative(PROJECT_ROOT, c),
               imports: [mockImport('./b.js')],
             },
           ],
         ]);
 
         expect(detectCycles(fakeAnalyses)).toContain(
-          [a, c, b, a].map((f) => path.relative(PROJECT_ROOT, f)).join(' -> '),
+          [a, c, b, a].map((f) => repoRelative(PROJECT_ROOT, f)).join(' -> '),
         );
       } finally {
         await fs.rm(dir, { recursive: true, force: true });
@@ -1855,21 +1811,21 @@ describe('Module classification (default-deny)', () => {
 
   it('every governed module is recognized by the path classifier', () => {
     for (const name of GOVERNED_MODULES) {
-      const synthetic = normalizeSep(path.join(SRC_DIR, name, 'probe.ts'));
+      const synthetic = normalizeRepoPath(path.join(SRC_DIR, name, 'probe.ts'));
       expect(getLayerFromPath(synthetic), `${name} must map to its own layer`).toBe(name);
     }
   });
 
   it('classifies by the top-level module, not nested names shadowing another module', () => {
     expect(
-      getLayerFromPath(normalizeSep(path.join(SRC_DIR, 'providers', 'state', 'probe.ts'))),
+      getLayerFromPath(normalizeRepoPath(path.join(SRC_DIR, 'providers', 'state', 'probe.ts'))),
     ).toBe('providers');
     expect(
-      getLayerFromPath(normalizeSep(path.join(SRC_DIR, 'integration', 'shared', 'probe.ts'))),
+      getLayerFromPath(normalizeRepoPath(path.join(SRC_DIR, 'integration', 'shared', 'probe.ts'))),
     ).toBe('integration');
     // Root-level entries are not layers.
-    expect(getLayerFromPath(normalizeSep(path.join(SRC_DIR, 'index.ts')))).toBeNull();
-    expect(getLayerFromPath(normalizeSep(path.join(SRC_DIR, 'shared.ts')))).toBeNull();
+    expect(getLayerFromPath(normalizeRepoPath(path.join(SRC_DIR, 'index.ts')))).toBeNull();
+    expect(getLayerFromPath(normalizeRepoPath(path.join(SRC_DIR, 'shared.ts')))).toBeNull();
   });
 
   function violationForImport(
@@ -1877,7 +1833,7 @@ describe('Module classification (default-deny)', () => {
     relativePath = 'state/deliberate-violation.ts',
   ): ImportViolation[] {
     const fakeAnalysis: FileAnalysis = {
-      filePath: normalizeSep(path.join(SRC_DIR, relativePath)),
+      filePath: normalizeRepoPath(path.join(SRC_DIR, relativePath)),
       relativePath,
       imports: [imp],
     };

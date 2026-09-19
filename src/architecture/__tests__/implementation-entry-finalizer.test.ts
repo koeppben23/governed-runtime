@@ -25,9 +25,11 @@
  */
 
 import { readFileSync, readdirSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
+
+import { repoRelative } from './repo-path.js';
 
 const SRC_ROOT = join(process.cwd(), 'src');
 
@@ -52,7 +54,7 @@ function sourceFilePaths(): string[] {
       }
       if (!entry.isFile() || !entry.name.endsWith('.ts')) continue;
       if (entry.name.endsWith('.test.ts')) continue;
-      out.push(relative(SRC_ROOT, full).replace(/\\/g, '/'));
+      out.push(repoRelative(SRC_ROOT, full));
     }
   };
   walk(SRC_ROOT);

@@ -6,8 +6,9 @@
  * appear.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, sep } from 'node:path';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { repoRelative } from './repo-path.js';
 
 const SRC = join(process.cwd(), 'src');
 const CANONICAL_TRAIL_ADAPTER = 'adapters/persistence-audit.ts';
@@ -28,10 +29,7 @@ function listProductionSources(dir: string): string[] {
 }
 
 function relative(path: string): string {
-  return path
-    .slice(SRC.length + 1)
-    .split(sep)
-    .join('/');
+  return repoRelative(SRC, path);
 }
 
 function productionSources(): { readonly rel: string; readonly content: string }[] {
