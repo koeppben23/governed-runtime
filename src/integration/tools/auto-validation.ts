@@ -249,12 +249,121 @@ export async function rearmPendingSystemWork(
   });
 }
 
-function unavailableAfterAttemptResponse(reason: string): SystemWorkResumeOutcome {
+function unavailableAfterAttemptResponse(
+  reason: string,
+): Extract<SystemWorkResumeOutcome, { readonly kind: 'blocked' }> {
   return {
     kind: 'blocked',
     code: 'SYSTEM_WORK_STATE_UNREADABLE',
     response: formatBlocked('SYSTEM_WORK_STATE_UNREADABLE', { reason }),
   };
+}
+
+type CheckSequenceResult =
+  | { readonly kind: 'completed'; readonly phase: Phase; readonly response: string }
+  | { readonly kind: 'blocked'; readonly code: string; readonly response: string }
+  | { readonly kind: 'finished'; readonly lastResponse: string }
+  | { readonly kind: 'empty' };
+
+async function runActiveCheckSequence(
+  context: WorkspaceToolContext,
+  phase: ValidationPhase,
+  activeChecks: readonly string[],
+): Promise<CheckSequenceResult> {
+  let lastResponse: string | null = null;
+  for (const kind of activeChecks) {
+    const text = await executeCheckResponse(kind as VerificationCandidateKind, context);
+    lastResponse = text;
+
+    if (responseReportsError(text)) break;
+
+    const fresh = await readSession(context);
+    if (fresh.kind === 'unreadable') {
+      return {
+        kind: 'blocked',
+        code: 'SYSTEM_WORK_STATE_UNREADABLE',
+        response: unreadableResponse(fresh),
+      };
+    }
+    if (fresh.kind === 'none') {
+      return unavailableAfterAttemptResponse(
+        'session disappeared while automatic validation was running',
+      );
+    }
+    if (fresh.session.phase !== phase) {
+      return { kind: 'completed', phase: fresh.session.phase, response: text };
+    }
+  }
+
+  if (lastResponse === null) return { kind: 'empty' };
+  return { kind: 'finished', lastResponse };
+}
+
+async function rearmAfterTechnicalOutcome(input: {
+  readonly context: WorkspaceToolContext;
+  readonly deps: SystemWorkRetryDeps;
+  readonly pendingSystemWork: SystemWorkOperation;
+  readonly fallbackPhase: Phase;
+  readonly lastResponse: string;
+}): Promise<SystemWorkResumeOutcome> {
+  try {
+    const rearmed = await rearmPendingSystemWork(
+      input.context,
+      input.pendingSystemWork,
+      input.deps,
+    );
+    if (rearmed.kind === 'completed') {
+      const completed = await readSession(input.context);
+      if (completed.kind === 'ok' && !isValidationPhase(completed.session.phase)) {
+        return {
+          kind: 'completed',
+          phase: completed.session.phase,
+          response: input.lastResponse,
+        };
+      }
+    }
+    return {
+      kind: 'still_pending',
+      phase: input.fallbackPhase,
+      response: input.lastResponse,
+    };
+  } catch (err) {
+    return retryPersistenceBlockedResponse(input.context, err);
+  }
+}
+
+async function finalizeAutomaticValidationAttempt(input: {
+  readonly context: WorkspaceToolContext;
+  readonly deps: SystemWorkRetryDeps;
+  readonly pendingSystemWork: SystemWorkOperation | null;
+  readonly lastResponse: string;
+}): Promise<SystemWorkResumeOutcome> {
+  const after = await readSession(input.context);
+  if (after.kind === 'unreadable') {
+    return {
+      kind: 'blocked',
+      code: 'SYSTEM_WORK_STATE_UNREADABLE',
+      response: unreadableResponse(after),
+    };
+  }
+  if (after.kind === 'none') {
+    return unavailableAfterAttemptResponse(
+      'session disappeared after automatic validation completed',
+    );
+  }
+  if (!isValidationPhase(after.session.phase)) {
+    return { kind: 'completed', phase: after.session.phase, response: input.lastResponse };
+  }
+  if (input.pendingSystemWork === null) {
+    return retryPersistenceBlockedResponse(input.context, pendingSystemWorkMarkerMissingError());
+  }
+  return rearmAfterTechnicalOutcome({
+    context: input.context,
+    deps: input.deps,
+    pendingSystemWork: input.pendingSystemWork,
+    fallbackPhase: after.session.phase,
+    lastResponse: input.lastResponse,
+  });
 }
 
 /**
@@ -295,74 +404,16 @@ async function runAutomaticValidationAttempt(
       ...getLogTraceFields(),
     });
 
-    let lastResponse: string | null = null;
-    for (const kind of activeChecks) {
-      const text = await executeCheckResponse(kind as VerificationCandidateKind, context);
-      lastResponse = text;
+    const sequence = await runActiveCheckSequence(context, phase, activeChecks);
+    if (sequence.kind === 'completed' || sequence.kind === 'blocked') return sequence;
+    if (sequence.kind === 'empty') return { kind: 'none' };
 
-      if (responseReportsError(text)) break;
-
-      const fresh = await readSession(context);
-      if (fresh.kind === 'unreadable') {
-        return {
-          kind: 'blocked',
-          code: 'SYSTEM_WORK_STATE_UNREADABLE',
-          response: unreadableResponse(fresh),
-        };
-      }
-      if (fresh.kind === 'none') {
-        return unavailableAfterAttemptResponse(
-          'session disappeared while automatic validation was running',
-        );
-      }
-      if (fresh.session.phase !== phase) {
-        return { kind: 'completed', phase: fresh.session.phase, response: text };
-      }
-    }
-
-    if (lastResponse === null) return { kind: 'none' };
-
-    const after = await readSession(context);
-    if (after.kind === 'unreadable') {
-      return {
-        kind: 'blocked',
-        code: 'SYSTEM_WORK_STATE_UNREADABLE',
-        response: unreadableResponse(after),
-      };
-    }
-    if (after.kind === 'none') {
-      return unavailableAfterAttemptResponse(
-        'session disappeared after automatic validation completed',
-      );
-    }
-    if (!isValidationPhase(after.session.phase)) {
-      return { kind: 'completed', phase: after.session.phase, response: lastResponse };
-    }
-
-    if (pendingSystemWork === null) {
-      return retryPersistenceBlockedResponse(context, pendingSystemWorkMarkerMissingError());
-    }
-
-    try {
-      const rearmed = await rearmPendingSystemWork(context, pendingSystemWork, deps);
-      if (rearmed.kind === 'completed') {
-        const completed = await readSession(context);
-        if (completed.kind === 'ok' && !isValidationPhase(completed.session.phase)) {
-          return {
-            kind: 'completed',
-            phase: completed.session.phase,
-            response: lastResponse,
-          };
-        }
-      }
-      return {
-        kind: 'still_pending',
-        phase: after.session.phase,
-        response: lastResponse,
-      };
-    } catch (err) {
-      return retryPersistenceBlockedResponse(context, err);
-    }
+    return finalizeAutomaticValidationAttempt({
+      context,
+      deps,
+      pendingSystemWork,
+      lastResponse: sequence.lastResponse,
+    });
   } finally {
     activeValidationSessions.delete(sessionKey);
   }

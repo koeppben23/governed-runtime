@@ -49,6 +49,41 @@ export function buildJestLocalId(
   return `${normalized}::${title}`;
 }
 
+function buildJestFailure(msg: string | undefined): StructuredAssertionEvidence['failure'] {
+  return {
+    message: msg ? msg.split('\n')[0] : undefined,
+    detailDigest: msg ? hashText(msg) : undefined,
+  };
+}
+
+function buildJestAssertion(
+  ar: JestAssertionResult,
+  fileName: string,
+  providerId: ProviderId,
+): StructuredAssertionEvidence {
+  const ancestors = ar.ancestorTitles ?? [];
+  const status = mapStatus(ar.status ?? 'passed');
+  const testTitle = ar.title ?? 'unknown';
+  const localId = buildJestLocalId(fileName, ancestors, testTitle);
+  const assertion: AssertionIdentity = { providerId, localId };
+
+  let sourceFile: string | undefined;
+  if (ar.location) {
+    sourceFile = ar.location.replace(/:\d+:\d+$/, '');
+  }
+
+  return {
+    assertion,
+    providerId,
+    status,
+    suiteName: ancestors.length > 0 ? ancestors.join(' > ') : undefined,
+    testName: testTitle,
+    sourceFile,
+    durationMs: typeof ar.duration === 'number' ? ar.duration : undefined,
+    failure: status === 'failed' ? buildJestFailure(ar.failureMessages?.[0]) : undefined,
+  };
+}
+
 export function parseJestJson(jsonText: string, context: ParseContext): ParserResult {
   const providerId: ProviderId = context.providerId;
 
@@ -75,37 +110,7 @@ export function parseJestJson(jsonText: string, context: ParseContext): ParserRe
     if (!Array.isArray(assertionResults)) continue;
 
     for (const ar of assertionResults) {
-      const ancestors = ar.ancestorTitles ?? [];
-      const rawStatus = ar.status ?? 'passed';
-      const status = mapStatus(rawStatus);
-      const testTitle = ar.title ?? 'unknown';
-      const localId = buildJestLocalId(fileName, ancestors, testTitle);
-      const assertion: AssertionIdentity = { providerId, localId };
-
-      let failure: StructuredAssertionEvidence['failure'];
-      if (status === 'failed') {
-        const msg = ar.failureMessages?.[0];
-        failure = {
-          message: msg ? msg.split('\n')[0] : undefined,
-          detailDigest: msg ? hashText(msg) : undefined,
-        };
-      }
-
-      let sourceFile: string | undefined;
-      if (ar.location) {
-        sourceFile = ar.location.replace(/:\d+:\d+$/, '');
-      }
-
-      assertions.push({
-        assertion,
-        providerId,
-        status,
-        suiteName: ancestors.length > 0 ? ancestors.join(' > ') : undefined,
-        testName: testTitle,
-        sourceFile,
-        durationMs: typeof ar.duration === 'number' ? ar.duration : undefined,
-        failure,
-      });
+      assertions.push(buildJestAssertion(ar, fileName, providerId));
     }
   }
 

@@ -48,6 +48,35 @@ export function buildVitestLocalId(
   return `${normalized}::${title}`;
 }
 
+function buildVitestFailure(msg: string | undefined): StructuredAssertionEvidence['failure'] {
+  return {
+    message: msg ? msg.split('\n')[0] : undefined,
+    detailDigest: msg ? hashText(msg) : undefined,
+  };
+}
+
+function buildVitestAssertion(
+  ar: VitestAssertionResult,
+  fileName: string,
+  providerId: ProviderId,
+): StructuredAssertionEvidence {
+  const ancestors = ar.ancestorTitles ?? [];
+  const status = mapStatus(ar.status ?? 'passed');
+  const testTitle = ar.title ?? 'unknown';
+  const localId = buildVitestLocalId(fileName, ancestors, testTitle);
+  const assertion: AssertionIdentity = { providerId, localId };
+
+  return {
+    assertion,
+    providerId,
+    status,
+    suiteName: ancestors.length > 0 ? ancestors.join(' > ') : undefined,
+    testName: testTitle,
+    durationMs: typeof ar.duration === 'number' ? ar.duration : undefined,
+    failure: status === 'failed' ? buildVitestFailure(ar.failureMessages?.[0]) : undefined,
+  };
+}
+
 export function parseVitestJson(jsonText: string, context: ParseContext): ParserResult {
   const providerId: ProviderId = context.providerId;
 
@@ -74,31 +103,7 @@ export function parseVitestJson(jsonText: string, context: ParseContext): Parser
     if (!Array.isArray(assertionResults)) continue;
 
     for (const ar of assertionResults) {
-      const ancestors = ar.ancestorTitles ?? [];
-      const rawStatus = ar.status ?? 'passed';
-      const status = mapStatus(rawStatus);
-      const testTitle = ar.title ?? 'unknown';
-      const localId = buildVitestLocalId(fileName, ancestors, testTitle);
-      const assertion: AssertionIdentity = { providerId, localId };
-
-      let failure: StructuredAssertionEvidence['failure'];
-      if (status === 'failed') {
-        const msg = ar.failureMessages?.[0];
-        failure = {
-          message: msg ? msg.split('\n')[0] : undefined,
-          detailDigest: msg ? hashText(msg) : undefined,
-        };
-      }
-
-      assertions.push({
-        assertion,
-        providerId,
-        status,
-        suiteName: ancestors.length > 0 ? ancestors.join(' > ') : undefined,
-        testName: testTitle,
-        durationMs: typeof ar.duration === 'number' ? ar.duration : undefined,
-        failure,
-      });
+      assertions.push(buildVitestAssertion(ar, fileName, providerId));
     }
   }
 

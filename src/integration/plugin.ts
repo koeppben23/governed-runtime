@@ -58,14 +58,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
 
   const ws = createWorkspace({ auditWorktree });
 
-  try {
-    await ws.resolveFingerprint();
-  } catch (err) {
-    console.warn(
-      '[flowguard] workspace fingerprint resolution failed (non-blocking):',
-      err instanceof Error ? err.message : String(err),
-    );
-  }
+  await resolveWorkspaceFingerprint(ws);
 
   const { log, config, disposeLogging } = await createPluginLogger(
     client,
@@ -101,29 +94,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     worktree: candidateWorktree ?? '',
   });
 
-  // Fail-closed boot: on any initialization or capability failure, release the
-  // resources acquired above (adapter + logging/OTLP/reloader) before
-  // rethrowing. Without this, repeated failed boots would leak SIGUSR1
-  // listeners and OTLP exporter timers while hooks.dispose never exists.
-  try {
-    await adapter.initialize();
-    const capabilityValidation = await adapter.validateCapabilities();
-    if (!capabilityValidation.valid) {
-      throw new HostCapabilityMismatchError(capabilityValidation.mismatches);
-    }
-    log.warn('adapter', 'host capabilities are contract-attested only', {
-      code: 'HOST_CAPABILITY_UNVERIFIED',
-      runtimeVerified: capabilityValidation.runtimeVerified,
-      contractAttested: capabilityValidation.contractAttested,
-    });
-  } catch (err) {
-    try {
-      await adapter.shutdown();
-    } finally {
-      await disposeLogging?.();
-    }
-    throw err;
-  }
+  await initializeHostAdapter(adapter, log, disposeLogging);
 
   const orchestratorDeps = createOrchestratorDeps(ws, log, typedClient);
   const toolTraceIds = new Map<string, string>();
@@ -174,6 +145,48 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
 
 type PluginLogger = Awaited<ReturnType<typeof createPluginLogger>>['log'];
 type PluginWorkspaceRuntime = ReturnType<typeof createWorkspace>;
+type PluginLoggingRuntime = Awaited<ReturnType<typeof createPluginLogger>>;
+
+async function resolveWorkspaceFingerprint(ws: PluginWorkspaceRuntime): Promise<void> {
+  try {
+    await ws.resolveFingerprint();
+  } catch (err) {
+    console.warn(
+      '[flowguard] workspace fingerprint resolution failed (non-blocking):',
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+}
+
+async function initializeHostAdapter(
+  adapter: ReturnType<typeof createOpenCodeHostAdapter>,
+  log: PluginLogger,
+  disposeLogging: PluginLoggingRuntime['disposeLogging'],
+): Promise<void> {
+  // Fail-closed boot: on any initialization or capability failure, release the
+  // resources acquired above (adapter + logging/OTLP/reloader) before
+  // rethrowing. Without this, repeated failed boots would leak SIGUSR1
+  // listeners and OTLP exporter timers while hooks.dispose never exists.
+  try {
+    await adapter.initialize();
+    const capabilityValidation = await adapter.validateCapabilities();
+    if (!capabilityValidation.valid) {
+      throw new HostCapabilityMismatchError(capabilityValidation.mismatches);
+    }
+    log.warn('adapter', 'host capabilities are contract-attested only', {
+      code: 'HOST_CAPABILITY_UNVERIFIED',
+      runtimeVerified: capabilityValidation.runtimeVerified,
+      contractAttested: capabilityValidation.contractAttested,
+    });
+  } catch (err) {
+    try {
+      await adapter.shutdown();
+    } finally {
+      await disposeLogging?.();
+    }
+    throw err;
+  }
+}
 
 function createOrchestratorDeps(
   ws: PluginWorkspaceRuntime,

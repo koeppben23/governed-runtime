@@ -449,12 +449,21 @@ function buildSignatureMap(): ReadonlyMap<ProviderId, readonly ScriptSignature[]
   return map;
 }
 
-function addNonAssertionFallbacks(
+function setNonAssertionFallback(
+  byKind: Map<string, PlannedVerificationCandidate>,
+  candidate: UnidentifiedVerificationCandidate,
+): void {
+  byKind.set(candidate.kind, {
+    candidate,
+    executionSubjectInputs: [{ kind: 'implementation' as const }],
+  });
+}
+
+function addMavenBuildFallback(
   byKind: Map<string, PlannedVerificationCandidate>,
   blockedKinds: ReadonlySet<VerificationCandidateKind>,
   ctx: PlannerContext,
   ids: ReadonlySet<string>,
-  packageManager: PackageManager,
 ): void {
   if (
     ids.has('buildTool:maven') &&
@@ -462,70 +471,89 @@ function addNonAssertionFallbacks(
     !blockedKinds.has('build') &&
     !byKind.has('build')
   ) {
-    byKind.set('build', {
-      candidate: {
-        assertionCapability: 'unsupported' as const,
-        kind: 'build',
-        command: 'mvn verify',
-        source: 'detectedStack:buildTool:maven',
-        confidence: 'medium',
-        reason: 'Maven build tool detected without wrapper evidence',
-      },
-      executionSubjectInputs: [{ kind: 'implementation' as const }],
+    setNonAssertionFallback(byKind, {
+      assertionCapability: 'unsupported' as const,
+      kind: 'build',
+      command: 'mvn verify',
+      source: 'detectedStack:buildTool:maven',
+      confidence: 'medium',
+      reason: 'Maven build tool detected without wrapper evidence',
     });
   }
+}
 
+function addGradleTestFallback(
+  byKind: Map<string, PlannedVerificationCandidate>,
+  blockedKinds: ReadonlySet<VerificationCandidateKind>,
+  ids: ReadonlySet<string>,
+): void {
   if (
     (ids.has('buildTool:gradle') || ids.has('buildTool:gradle-kotlin')) &&
     !blockedKinds.has('test') &&
     !byKind.has('test')
   ) {
-    byKind.set('test', {
-      candidate: {
-        assertionCapability: 'unsupported' as const,
-        kind: 'test',
-        command: 'gradle check',
-        source: ids.has('buildTool:gradle')
-          ? 'detectedStack:buildTool:gradle'
-          : 'detectedStack:buildTool:gradle-kotlin',
-        confidence: 'medium',
-        reason: 'Gradle build tool detected without wrapper evidence',
-      },
-      executionSubjectInputs: [{ kind: 'implementation' as const }],
+    setNonAssertionFallback(byKind, {
+      assertionCapability: 'unsupported' as const,
+      kind: 'test',
+      command: 'gradle check',
+      source: ids.has('buildTool:gradle')
+        ? 'detectedStack:buildTool:gradle'
+        : 'detectedStack:buildTool:gradle-kotlin',
+      confidence: 'medium',
+      reason: 'Gradle build tool detected without wrapper evidence',
     });
   }
+}
 
+function addEslintLintFallback(
+  byKind: Map<string, PlannedVerificationCandidate>,
+  ids: ReadonlySet<string>,
+  packageManager: PackageManager,
+): void {
   if ((ids.has('qualityTool:eslint') || ids.has('tool:eslint')) && !byKind.has('lint')) {
-    byKind.set('lint', {
-      candidate: {
-        assertionCapability: 'unsupported' as const,
-        kind: 'lint',
-        command: fallbackCommand(packageManager, 'eslint .'),
-        source: ids.has('qualityTool:eslint')
-          ? 'detectedStack:qualityTool:eslint'
-          : 'detectedStack:tool:eslint',
-        confidence: 'medium',
-        reason: `ESLint detected and no repo-native lint script found; using ${packageManager} fallback`,
-      },
-      executionSubjectInputs: [{ kind: 'implementation' as const }],
+    setNonAssertionFallback(byKind, {
+      assertionCapability: 'unsupported' as const,
+      kind: 'lint',
+      command: fallbackCommand(packageManager, 'eslint .'),
+      source: ids.has('qualityTool:eslint')
+        ? 'detectedStack:qualityTool:eslint'
+        : 'detectedStack:tool:eslint',
+      confidence: 'medium',
+      reason: `ESLint detected and no repo-native lint script found; using ${packageManager} fallback`,
     });
   }
+}
 
+function addTypeScriptTypecheckFallback(
+  byKind: Map<string, PlannedVerificationCandidate>,
+  ids: ReadonlySet<string>,
+  packageManager: PackageManager,
+): void {
   if ((ids.has('language:typescript') || ids.has('tool:typescript')) && !byKind.has('typecheck')) {
-    byKind.set('typecheck', {
-      candidate: {
-        assertionCapability: 'unsupported' as const,
-        kind: 'typecheck',
-        command: fallbackCommand(packageManager, 'tsc --noEmit'),
-        source: ids.has('language:typescript')
-          ? 'detectedStack:language:typescript'
-          : 'detectedStack:tool:typescript',
-        confidence: 'low',
-        reason: `TypeScript detected and no repo-native typecheck script found; using ${packageManager} fallback`,
-      },
-      executionSubjectInputs: [{ kind: 'implementation' as const }],
+    setNonAssertionFallback(byKind, {
+      assertionCapability: 'unsupported' as const,
+      kind: 'typecheck',
+      command: fallbackCommand(packageManager, 'tsc --noEmit'),
+      source: ids.has('language:typescript')
+        ? 'detectedStack:language:typescript'
+        : 'detectedStack:tool:typescript',
+      confidence: 'low',
+      reason: `TypeScript detected and no repo-native typecheck script found; using ${packageManager} fallback`,
     });
   }
+}
+
+function addNonAssertionFallbacks(
+  byKind: Map<string, PlannedVerificationCandidate>,
+  blockedKinds: ReadonlySet<VerificationCandidateKind>,
+  ctx: PlannerContext,
+  ids: ReadonlySet<string>,
+  packageManager: PackageManager,
+): void {
+  addMavenBuildFallback(byKind, blockedKinds, ctx, ids);
+  addGradleTestFallback(byKind, blockedKinds, ids);
+  addEslintLintFallback(byKind, ids, packageManager);
+  addTypeScriptTypecheckFallback(byKind, ids, packageManager);
 }
 
 function fallbackCommand(packageManager: PackageManager, command: string): string {

@@ -24,41 +24,48 @@ interface ChallengeBindingRejection {
   readonly diagnostic: Record<string, unknown>;
 }
 
+function planAdrSectionIdentity(ref: Record<string, unknown>): string | null {
+  if (
+    typeof ref.artifactKind !== 'string' ||
+    typeof ref.artifactDigest !== 'string' ||
+    !Array.isArray(ref.sectionPath)
+  ) {
+    return null;
+  }
+  const stablePath = ref.sectionPath.map((part) => {
+    if (typeof part !== 'object' || part === null || Array.isArray(part)) return part;
+    const segment = part as Record<string, unknown>;
+    return { headingDepth: segment.headingDepth, siblingIndex: segment.siblingIndex };
+  });
+  return canonicalJsonStringify({
+    kind: ref.kind,
+    artifactKind: ref.artifactKind,
+    artifactDigest: ref.artifactDigest,
+    sectionPath: stablePath,
+  });
+}
+
+function singleFieldIdentity(
+  kind: unknown,
+  field: 'implementationDigest' | 'attemptId' | 'digest',
+  ref: Record<string, unknown>,
+): string | null {
+  const value = ref[field];
+  return typeof value === 'string' ? canonicalJsonStringify({ kind, [field]: value }) : null;
+}
+
 function referenceIdentity(reference: unknown): string | null {
   if (typeof reference !== 'object' || reference === null || Array.isArray(reference)) return null;
   const ref = reference as Record<string, unknown>;
   switch (ref.kind) {
-    case 'plan_adr_section': {
-      if (
-        typeof ref.artifactKind !== 'string' ||
-        typeof ref.artifactDigest !== 'string' ||
-        !Array.isArray(ref.sectionPath)
-      )
-        return null;
-      const stablePath = ref.sectionPath.map((part) => {
-        if (typeof part !== 'object' || part === null || Array.isArray(part)) return part;
-        const segment = part as Record<string, unknown>;
-        return { headingDepth: segment.headingDepth, siblingIndex: segment.siblingIndex };
-      });
-      return canonicalJsonStringify({
-        kind: ref.kind,
-        artifactKind: ref.artifactKind,
-        artifactDigest: ref.artifactDigest,
-        sectionPath: stablePath,
-      });
-    }
+    case 'plan_adr_section':
+      return planAdrSectionIdentity(ref);
     case 'implementation':
-      return typeof ref.implementationDigest === 'string'
-        ? canonicalJsonStringify({ kind: ref.kind, implementationDigest: ref.implementationDigest })
-        : null;
+      return singleFieldIdentity(ref.kind, 'implementationDigest', ref);
     case 'validation_attempt':
-      return typeof ref.attemptId === 'string'
-        ? canonicalJsonStringify({ kind: ref.kind, attemptId: ref.attemptId })
-        : null;
+      return singleFieldIdentity(ref.kind, 'attemptId', ref);
     case 'content':
-      return typeof ref.digest === 'string'
-        ? canonicalJsonStringify({ kind: ref.kind, digest: ref.digest })
-        : null;
+      return singleFieldIdentity(ref.kind, 'digest', ref);
     default:
       return null;
   }

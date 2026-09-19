@@ -308,12 +308,98 @@ export async function buildRollbackSnapshot(
 
 // ─── Step: Write artifacts (tarball + mandates + platform plugins) ────────────
 
+function createInstallMutationSink(
+  journal: MutationJournal,
+  preStateEntries: RollbackEntry[],
+): InstallMutationSink {
+  return {
+    ensureDir: async (path) => await ensureDirTracked(path, journal),
+    recordFile: (path) => {
+      journal.record(findPreState(preStateEntries, path));
+    },
+  };
+}
+
+async function writeClaudeCodeArtifacts(
+  ctx: InstallContext,
+  snapshot: SnapshotResult,
+): Promise<void> {
+  const journal = snapshot.mutationJournal;
+  await ensureDirTracked(join(ctx.target, 'flowguard-plugin'), journal);
+  const mutations = createInstallMutationSink(journal, snapshot.preStateEntries);
+  ctx.ops.push(
+    ...(await installClaudeCodePlugin(ctx.target, PACKAGE_VERSION(), ctx.args.force, mutations)),
+  );
+  const hintOp = await writeClaudeCodePluginInstallHint(ctx.target);
+  ctx.ops.push(hintOp);
+  if (hintOp.action !== 'skipped')
+    journal.record(findPreState(snapshot.preStateEntries, hintOp.path));
+}
+
+async function writeCodexArtifacts(ctx: InstallContext, snapshot: SnapshotResult): Promise<void> {
+  const journal = snapshot.mutationJournal;
+  await ensureDirTracked(resolveCodexPluginRoot(ctx.args.installScope), journal);
+  const mutations = createInstallMutationSink(journal, snapshot.preStateEntries);
+  ctx.ops.push(
+    ...(await installCodexPlugin(
+      ctx.args.installScope,
+      PACKAGE_VERSION(),
+      ctx.args.force,
+      mutations,
+    )),
+  );
+}
+
+async function writeOpencodeArtifacts(
+  ctx: InstallContext,
+  snapshot: SnapshotResult,
+): Promise<void> {
+  const { target, args } = ctx;
+  const journal = snapshot.mutationJournal;
+  const reviewerDefinition = reviewerDefinitionForPlatform(ctx.installPlatform);
+  const reviewerPath = join(target, reviewerDefinition.relativePath);
+
+  const toolOp = await writeIfAbsent(
+    join(target, 'tools', 'flowguard.ts'),
+    TOOL_WRAPPER,
+    args.force,
+  );
+  ctx.ops.push(toolOp);
+  if (toolOp.action !== 'skipped')
+    journal.record(findPreState(snapshot.preStateEntries, join(target, 'tools', 'flowguard.ts')));
+
+  const pluginOp = await writeIfAbsent(
+    join(target, 'plugins', 'flowguard-audit.ts'),
+    PLUGIN_WRAPPER,
+    args.force,
+  );
+  ctx.ops.push(pluginOp);
+  if (pluginOp.action !== 'skipped') {
+    journal.record(
+      findPreState(snapshot.preStateEntries, join(target, 'plugins', 'flowguard-audit.ts')),
+    );
+  }
+
+  for (const [name, content] of Object.entries(COMMANDS)) {
+    const cmdOp = await writeIfAbsent(join(target, 'commands', name), content, args.force);
+    ctx.ops.push(cmdOp);
+    if (cmdOp.action !== 'skipped') {
+      journal.record(findPreState(snapshot.preStateEntries, join(target, 'commands', name)));
+    }
+  }
+
+  const revOp = await writeIfAbsent(reviewerPath, reviewerDefinition.content, args.force);
+  ctx.ops.push(revOp);
+  if (revOp.action !== 'skipped')
+    journal.record(findPreState(snapshot.preStateEntries, reviewerPath));
+}
+
 export async function writeArtifacts(
   ctx: InstallContext,
   tarball: ValidatedTarball,
   snapshot: SnapshotResult,
 ): Promise<void> {
-  const { target, installPlatform, args } = ctx;
+  const { target, installPlatform } = ctx;
   const journal = snapshot.mutationJournal;
 
   // Re-check immediately before the first mutation to close the TOCTOU window.
@@ -340,64 +426,11 @@ export async function writeArtifacts(
   ctx.ops.push({ path: snapshot.mandatesPath, action: 'written' });
 
   if (installPlatform === 'claude-code') {
-    await ensureDirTracked(join(target, 'flowguard-plugin'), journal);
-    const mutations: InstallMutationSink = {
-      ensureDir: async (path) => await ensureDirTracked(path, journal),
-      recordFile: (path) => {
-        journal.record(findPreState(snapshot.preStateEntries, path));
-      },
-    };
-    ctx.ops.push(
-      ...(await installClaudeCodePlugin(target, PACKAGE_VERSION(), args.force, mutations)),
-    );
-    const hintOp = await writeClaudeCodePluginInstallHint(target);
-    ctx.ops.push(hintOp);
-    if (hintOp.action !== 'skipped')
-      journal.record(findPreState(snapshot.preStateEntries, hintOp.path));
+    await writeClaudeCodeArtifacts(ctx, snapshot);
   } else if (installPlatform === 'codex') {
-    await ensureDirTracked(resolveCodexPluginRoot(args.installScope), journal);
-    const mutations: InstallMutationSink = {
-      ensureDir: async (path) => await ensureDirTracked(path, journal),
-      recordFile: (path) => {
-        journal.record(findPreState(snapshot.preStateEntries, path));
-      },
-    };
-    ctx.ops.push(
-      ...(await installCodexPlugin(args.installScope, PACKAGE_VERSION(), args.force, mutations)),
-    );
+    await writeCodexArtifacts(ctx, snapshot);
   } else {
-    const reviewerDefinition = reviewerDefinitionForPlatform(installPlatform);
-    const reviewerPath = join(target, reviewerDefinition.relativePath);
-    const toolOp = await writeIfAbsent(
-      join(target, 'tools', 'flowguard.ts'),
-      TOOL_WRAPPER,
-      args.force,
-    );
-    ctx.ops.push(toolOp);
-    if (toolOp.action !== 'skipped')
-      journal.record(findPreState(snapshot.preStateEntries, join(target, 'tools', 'flowguard.ts')));
-    const pluginOp = await writeIfAbsent(
-      join(target, 'plugins', 'flowguard-audit.ts'),
-      PLUGIN_WRAPPER,
-      args.force,
-    );
-    ctx.ops.push(pluginOp);
-    if (pluginOp.action !== 'skipped') {
-      journal.record(
-        findPreState(snapshot.preStateEntries, join(target, 'plugins', 'flowguard-audit.ts')),
-      );
-    }
-    for (const [name, content] of Object.entries(COMMANDS)) {
-      const cmdOp = await writeIfAbsent(join(target, 'commands', name), content, args.force);
-      ctx.ops.push(cmdOp);
-      if (cmdOp.action !== 'skipped') {
-        journal.record(findPreState(snapshot.preStateEntries, join(target, 'commands', name)));
-      }
-    }
-    const revOp = await writeIfAbsent(reviewerPath, reviewerDefinition.content, args.force);
-    ctx.ops.push(revOp);
-    if (revOp.action !== 'skipped')
-      journal.record(findPreState(snapshot.preStateEntries, reviewerPath));
+    await writeOpencodeArtifacts(ctx, snapshot);
   }
 }
 

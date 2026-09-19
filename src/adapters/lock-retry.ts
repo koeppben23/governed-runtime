@@ -26,6 +26,34 @@ function retryDelayMs(delaysMs: readonly number[], attempt: number): number {
   return delaysMs[attempt] ?? 0;
 }
 
+function isTransientLockTimeout(error: unknown): error is PersistenceError {
+  return error instanceof PersistenceError && error.code === 'LOCK_TIMEOUT';
+}
+
+async function retryAfterDelay(
+  delaysMs: readonly number[],
+  attempt: number,
+  onRetry: ((attempt: number, delayMs: number, error: PersistenceError) => void) | undefined,
+  error: PersistenceError,
+): Promise<void> {
+  const delayMs = retryDelayMs(delaysMs, attempt);
+  onRetry?.(attempt + 1, delayMs, error);
+  await new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
+async function runUnderSessionWriteLock<T>(
+  sessionDir: string,
+  timeoutMs: number,
+  operation: (lock: SessionWriteLock) => Promise<T>,
+): Promise<T> {
+  const lock = await acquireSessionWriteLock(sessionDir, timeoutMs);
+  try {
+    return await operation(lock);
+  } finally {
+    await lock.release();
+  }
+}
+
 export interface SessionWriteLockRetryCallbacks {
   onRetry?: (attempt: number, delayMs: number, error: PersistenceError) => void;
 }
@@ -67,21 +95,12 @@ export async function withSessionWriteLockRetry<T>(
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
-      const lock = await acquireSessionWriteLock(sessionDir, timeoutMs);
-      try {
-        return await operation(lock);
-      } finally {
-        await lock.release();
-      }
+      return await runUnderSessionWriteLock(sessionDir, timeoutMs, operation);
     } catch (err) {
-      if (!(err instanceof PersistenceError) || err.code !== 'LOCK_TIMEOUT') {
-        throw err;
-      }
+      if (!isTransientLockTimeout(err)) throw err;
       lastError = err;
       if (attempt >= delaysMs.length) break;
-      const delayMs = retryDelayMs(delaysMs, attempt);
-      options?.onRetry?.(attempt + 1, delayMs, err);
-      await new Promise((r) => setTimeout(r, delayMs));
+      await retryAfterDelay(delaysMs, attempt, options?.onRetry, err);
     }
   }
 

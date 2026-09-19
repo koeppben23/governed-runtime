@@ -127,11 +127,11 @@ export async function auditEnforcementDenied(input: {
     const identity = auditIdentity(state);
     if (!identity) return;
     const tracker = createStrictTimestampTracker(ctx.timestampAssurance);
-    const body = buildEnforcementDeniedBody(
-      identity.flowguardSessionId,
-      identity.hostSessionId,
-      ctx.phase as Phase,
-      {
+    const body = buildEnforcementDeniedBody({
+      flowguardSessionId: identity.flowguardSessionId,
+      hostSessionId: identity.hostSessionId,
+      phase: ctx.phase as Phase,
+      detail: {
         tool: input.tool,
         reasonCode: input.reasonCode,
         hostCallId: input.hostCallId,
@@ -139,9 +139,9 @@ export async function auditEnforcementDenied(input: {
         policyMode: policy.mode,
         enforcementLevel: 'synchronous',
       },
-      ctx.now,
-      ctx.prevHash,
-    );
+      occurredAt: ctx.now,
+      prevHash: ctx.prevHash,
+    });
     await emitAuditBodyWithEvidence({
       deps: input.deps,
       ctx,

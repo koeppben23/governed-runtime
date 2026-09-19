@@ -121,19 +121,19 @@ function buildOperationAuditBody(
   prevHash: string,
 ): EventBody {
   if (operation.kind === 'state_write') {
-    return buildStateWriteBody(
-      state.flowguardSessionId,
-      state.binding.hostSessionId,
-      operation.stateWrite.phase,
-      {
+    return buildStateWriteBody({
+      flowguardSessionId: state.flowguardSessionId,
+      hostSessionId: state.binding.hostSessionId,
+      phase: operation.stateWrite.phase,
+      detail: {
         operationId: operation.operationId,
         preStateDigest: operation.preStateDigest,
         mutationDigest: operation.mutationDigest,
         postStateDigest: operation.postStateDigest,
       },
-      operation.stateWrite.at,
+      occurredAt: operation.stateWrite.at,
       prevHash,
-    );
+    });
   }
   if (operation.kind === 'semantic') {
     return buildSemanticAuditBody({
@@ -155,11 +155,11 @@ function buildOperationAuditBody(
     });
   }
   const t = operation.transition;
-  return buildTransitionBody(
-    state.flowguardSessionId,
-    state.binding.hostSessionId,
-    t.to,
-    {
+  return buildTransitionBody({
+    flowguardSessionId: state.flowguardSessionId,
+    hostSessionId: state.binding.hostSessionId,
+    phase: t.to,
+    detail: {
       operationId: operation.operationId,
       preStateDigest: operation.preStateDigest,
       mutationDigest: operation.mutationDigest,
@@ -170,9 +170,9 @@ function buildOperationAuditBody(
       autoAdvanced: t.autoAdvanced,
       chainIndex: t.chainIndex,
     },
-    t.at,
+    occurredAt: t.at,
     prevHash,
-  );
+  });
 }
 
 /**

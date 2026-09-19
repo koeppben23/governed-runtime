@@ -83,6 +83,24 @@ function parsePort(rawPort: string | undefined): number {
   return port;
 }
 
+function readRequiredHookToken(env: Readonly<Record<string, string | undefined>>): string {
+  const token = env['FLOWGUARD_HOOK_TOKEN'];
+  if (token === undefined || token.trim().length < MINIMUM_HOOK_TOKEN_LENGTH || /\s/.test(token)) {
+    throw new TypeError(
+      'FLOWGUARD_HOOK_TOKEN must contain at least 32 non-whitespace characters and is required',
+    );
+  }
+  return token;
+}
+
+function readAllowRemoteFlag(env: Readonly<Record<string, string | undefined>>): string {
+  const raw = env['FLOWGUARD_HOOK_ALLOW_REMOTE'];
+  if (raw !== undefined && raw !== '' && raw !== '1') {
+    throw new TypeError('FLOWGUARD_HOOK_ALLOW_REMOTE must be exactly 1 when set');
+  }
+  return raw ?? '';
+}
+
 /** Validates all externally supplied HTTP listener configuration before binding. */
 export function readHttpHookServerConfig(
   env: Readonly<Record<string, string | undefined>> = process.env,
@@ -90,19 +108,10 @@ export function readHttpHookServerConfig(
   const host = env['FLOWGUARD_HOOK_HOST'] ?? DEFAULT_HOST;
   if (host.length === 0) throw new TypeError('FLOWGUARD_HOOK_HOST must not be empty');
 
-  const token = env['FLOWGUARD_HOOK_TOKEN'];
-  if (token === undefined || token.trim().length < MINIMUM_HOOK_TOKEN_LENGTH || /\s/.test(token)) {
-    throw new TypeError(
-      'FLOWGUARD_HOOK_TOKEN must contain at least 32 non-whitespace characters and is required',
-    );
-  }
-
-  const allowRemoteRaw = env['FLOWGUARD_HOOK_ALLOW_REMOTE'];
-  if (allowRemoteRaw !== undefined && allowRemoteRaw !== '' && allowRemoteRaw !== '1') {
-    throw new TypeError('FLOWGUARD_HOOK_ALLOW_REMOTE must be exactly 1 when set');
-  }
-
+  const token = readRequiredHookToken(env);
+  const allowRemoteRaw = readAllowRemoteFlag(env);
   const port = parsePort(env['FLOWGUARD_HOOK_PORT']);
+
   if (host === '127.0.0.1' || host === '::1') {
     return { binding: 'loopback', host, port, token };
   }
@@ -427,6 +436,80 @@ const ROUTES: Record<string, HookRoute> = {
 
 // ─── Server ──────────────────────────────────────────────────────────────────
 
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+async function readRequestBodyOrRespond(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<string | undefined> {
+  try {
+    return await readBody(req);
+  } catch (err) {
+    if (err instanceof BodyTooLargeError) {
+      jsonResponse(res, 413, { error: 'Request body too large' });
+      return undefined;
+    }
+    jsonResponse(res, 400, { error: 'Failed to read request body' });
+    return undefined;
+  }
+}
+
+function parseJsonObjectOrRespond(
+  body: string,
+  res: ServerResponse,
+): Record<string, unknown> | undefined {
+  try {
+    const parsed: unknown = JSON.parse(body);
+    if (!isJsonObject(parsed)) {
+      jsonResponse(res, 400, { error: 'Request body must be a JSON object' });
+      return undefined;
+    }
+    return parsed;
+  } catch {
+    jsonResponse(res, 400, { error: 'Invalid JSON in request body' });
+    return undefined;
+  }
+}
+
+async function dispatchHookRoute(
+  url: string,
+  route: HookRoute,
+  payload: Record<string, unknown>,
+  res: ServerResponse,
+): Promise<void> {
+  try {
+    const result = await route.handle(payload);
+
+    // For pre-tool-use denials, also include the hookSpecificOutput format
+    // so Claude Code can interpret it directly.
+    if (result.decision === 'deny' && url === '/hooks/pre-tool-use') {
+      const denyOutput = formatDenyOutput(
+        route.event,
+        result.code ?? 'DENIED',
+        result.reason ?? '',
+      );
+      jsonResponse(res, 200, { ...result, ...denyOutput });
+    } else {
+      jsonResponse(res, 200, result);
+    }
+  } catch (err) {
+    log(`ERROR: ${url} handler failed: ${err instanceof Error ? err.message : String(err)}`);
+    // Fail-closed for pre-tool-use: return deny on internal error.
+    if (url === '/hooks/pre-tool-use') {
+      const denyOutput = formatDenyOutput(
+        route.event,
+        'INTERNAL_ERROR',
+        `Hook server internal error: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      jsonResponse(res, 200, { decision: 'deny', ...denyOutput });
+    } else {
+      jsonResponse(res, 500, { error: 'Internal server error' });
+    }
+  }
+}
+
 /** @internal Exported for unit testing only. */
 export async function handleHttpRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = req.url ?? '/';
@@ -462,60 +545,13 @@ export async function handleHttpRequest(req: IncomingMessage, res: ServerRespons
     return;
   }
 
-  let body: string;
-  try {
-    body = await readBody(req);
-  } catch (err) {
-    if (err instanceof BodyTooLargeError) {
-      jsonResponse(res, 413, { error: 'Request body too large' });
-      return;
-    }
-    jsonResponse(res, 400, { error: 'Failed to read request body' });
-    return;
-  }
+  const body = await readRequestBodyOrRespond(req, res);
+  if (body === undefined) return;
 
-  let payload: Record<string, unknown>;
-  try {
-    const parsed = JSON.parse(body);
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-      jsonResponse(res, 400, { error: 'Request body must be a JSON object' });
-      return;
-    }
-    payload = parsed as Record<string, unknown>;
-  } catch {
-    jsonResponse(res, 400, { error: 'Invalid JSON in request body' });
-    return;
-  }
+  const payload = parseJsonObjectOrRespond(body, res);
+  if (payload === undefined) return;
 
-  try {
-    const result = await route.handle(payload);
-
-    // For pre-tool-use denials, also include the hookSpecificOutput format
-    // so Claude Code can interpret it directly.
-    if (result.decision === 'deny' && url === '/hooks/pre-tool-use') {
-      const denyOutput = formatDenyOutput(
-        route.event,
-        result.code ?? 'DENIED',
-        result.reason ?? '',
-      );
-      jsonResponse(res, 200, { ...result, ...denyOutput });
-    } else {
-      jsonResponse(res, 200, result);
-    }
-  } catch (err) {
-    log(`ERROR: ${url} handler failed: ${err instanceof Error ? err.message : String(err)}`);
-    // Fail-closed for pre-tool-use: return deny on internal error.
-    if (url === '/hooks/pre-tool-use') {
-      const denyOutput = formatDenyOutput(
-        route.event,
-        'INTERNAL_ERROR',
-        `Hook server internal error: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      jsonResponse(res, 200, { decision: 'deny', ...denyOutput });
-    } else {
-      jsonResponse(res, 500, { error: 'Internal server error' });
-    }
-  }
+  await dispatchHookRoute(url, route, payload, res);
 }
 
 const server = createServer(handleHttpRequest);

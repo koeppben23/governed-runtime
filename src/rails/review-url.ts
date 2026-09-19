@@ -136,6 +136,21 @@ export async function validateResolvedReviewUrlTarget(
   return 'reason' in target ? { valid: false, reason: target.reason } : { valid: true };
 }
 
+function stripHostnameBrackets(hostname: string): string {
+  return hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname;
+}
+
+function literalReviewTarget(bareHostname: string, port: number): ResolvedReviewTarget | null {
+  const literal = parseIPv4(bareHostname);
+  if (literal !== null) {
+    return { hostname: bareHostname, port, address: bareHostname, family: 4 };
+  }
+  if (bareHostname.includes(':') && isLiteralAddressAllowed(bareHostname)) {
+    return { hostname: bareHostname, port, address: bareHostname, family: 6 };
+  }
+  return null;
+}
+
 /** Resolve and validate the one concrete network peer used by the HTTPS request. */
 // The explicit branches preserve distinct fail-closed diagnostics for each boundary.
 export async function resolveReviewTarget(
@@ -147,26 +162,11 @@ export async function resolveReviewTarget(
 
   const parsed = new URL(url);
   const hostname = parsed.hostname.toLowerCase();
-  const bareHostname =
-    hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname;
+  const bareHostname = stripHostnameBrackets(hostname);
+  const port = parsed.port ? Number(parsed.port) : 443;
 
-  const literal = parseIPv4(bareHostname);
-  if (literal !== null) {
-    return {
-      hostname: bareHostname,
-      port: parsed.port ? Number(parsed.port) : 443,
-      address: bareHostname,
-      family: 4,
-    };
-  }
-  if (bareHostname.includes(':') && isLiteralAddressAllowed(bareHostname)) {
-    return {
-      hostname: bareHostname,
-      port: parsed.port ? Number(parsed.port) : 443,
-      address: bareHostname,
-      family: 6,
-    };
-  }
+  const literal = literalReviewTarget(bareHostname, port);
+  if (literal !== null) return literal;
 
   let addresses: readonly { readonly address: string; readonly family: 4 | 6 }[];
   try {
@@ -189,7 +189,7 @@ export async function resolveReviewTarget(
 
   return {
     hostname: bareHostname,
-    port: parsed.port ? Number(parsed.port) : 443,
+    port,
     address: target.address,
     family: target.family,
   };
@@ -245,6 +245,31 @@ function validateResolvedAddress(
   return { valid: true };
 }
 
+function blockedReviewFetch(reason: string): RailBlocked {
+  return blocked('COMMAND_BLOCKED', { command: '/review', reason });
+}
+
+function responseStatusFailure(response: IncomingMessage, url: string): string | null {
+  if (!response.statusCode || response.statusCode < 200 || response.statusCode >= 300) {
+    return `Failed to fetch ${url}: HTTP ${response.statusCode ?? 0} ${response.statusMessage ?? ''}`;
+  }
+  return null;
+}
+
+function decodeFailure(err: unknown): RailBlocked {
+  if (err instanceof RangeError) {
+    return blockedReviewFetch(
+      `Response exceeds the ${MAX_REVIEW_URL_RESPONSE_BYTES}-byte review material limit`,
+    );
+  }
+  if (err instanceof ReviewUrlError) {
+    return blocked('REVIEW_URL_CONTENT_ENCODING_INVALID', { reason: err.message });
+  }
+  return blocked('REVIEW_URL_CONTENT_ENCODING_INVALID', {
+    reason: 'response bytes are not valid UTF-8',
+  });
+}
+
 /** Fetch content through the validated target, with no connection-time DNS lookup. */
 // The response boundary deliberately distinguishes transport, status, charset, and byte-limit failures.
 export async function fetchUrlContent(
@@ -254,26 +279,19 @@ export async function fetchUrlContent(
 ): Promise<{ content: string } | RailBlocked> {
   const target = await resolveReviewTarget(url, dnsLookup);
   if ('reason' in target) {
-    return blocked('COMMAND_BLOCKED', {
-      command: '/review',
-      reason: `URL validation blocked: ${target.reason}`,
-    });
+    return blockedReviewFetch(`URL validation blocked: ${target.reason}`);
   }
   let response: IncomingMessage;
   try {
     response = await transport(url, target);
   } catch (err) {
-    return blocked('COMMAND_BLOCKED', {
-      command: '/review',
-      reason: `Failed to fetch ${url}: ${err instanceof Error ? err.message : String(err)}`,
-    });
+    return blockedReviewFetch(
+      `Failed to fetch ${url}: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
-  if (!response.statusCode || response.statusCode < 200 || response.statusCode >= 300) {
-    return blocked('COMMAND_BLOCKED', {
-      command: '/review',
-      reason: `Failed to fetch ${url}: HTTP ${response.statusCode ?? 0} ${response.statusMessage ?? ''}`,
-    });
-  }
+  const statusFailure = responseStatusFailure(response, url);
+  if (statusFailure !== null) return blockedReviewFetch(statusFailure);
+
   const contentType = headerValue(response, 'content-type');
   if (!isUtf8ContentType(contentType)) {
     return blocked('REVIEW_URL_CONTENT_ENCODING_INVALID', {
@@ -287,18 +305,7 @@ export async function fetchUrlContent(
       ),
     };
   } catch (err) {
-    if (err instanceof RangeError) {
-      return blocked('COMMAND_BLOCKED', {
-        command: '/review',
-        reason: `Response exceeds the ${MAX_REVIEW_URL_RESPONSE_BYTES}-byte review material limit`,
-      });
-    }
-    if (err instanceof ReviewUrlError) {
-      return blocked('REVIEW_URL_CONTENT_ENCODING_INVALID', { reason: err.message });
-    }
-    return blocked('REVIEW_URL_CONTENT_ENCODING_INVALID', {
-      reason: 'response bytes are not valid UTF-8',
-    });
+    return decodeFailure(err);
   }
 }
 

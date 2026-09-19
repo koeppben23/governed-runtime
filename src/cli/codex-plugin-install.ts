@@ -95,10 +95,7 @@ export function codexPluginFilePaths(scope: InstallScope): string[] {
   return [...CODEX_PLUGIN_RELATIVE_FILES.map((relativePath) => join(pluginRoot, relativePath))];
 }
 
-async function withMarketplaceLock<T>(marketplacePath: string, fn: () => Promise<T>): Promise<T> {
-  // Precondition: parent of marketplacePath must already exist
-  const lockPath = `${marketplacePath}.flowguard.lock`;
-  const token = randomUUID();
+async function acquireMarketplaceLock(lockPath: string, token: string): Promise<void> {
   try {
     await writeFile(lockPath, JSON.stringify({ pid: process.pid, token }), { flag: 'wx' });
   } catch (err) {
@@ -110,6 +107,32 @@ async function withMarketplaceLock<T>(marketplacePath: string, fn: () => Promise
     }
     throw err;
   }
+}
+
+function releaseMarketplaceLock(lockPath: string, token: string): unknown {
+  try {
+    const raw = readFileSync(lockPath, 'utf-8');
+    const lock: { token?: string } = JSON.parse(raw);
+    if (lock.token !== token) {
+      throw new CliInstallError(
+        'CODEX_MARKETPLACE_LOCK_OWNERSHIP_CHANGED',
+        'Codex marketplace lock ownership changed.',
+      );
+    }
+    unlinkSync(lockPath);
+    return undefined;
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined;
+    return error;
+  }
+}
+
+async function withMarketplaceLock<T>(marketplacePath: string, fn: () => Promise<T>): Promise<T> {
+  // Precondition: parent of marketplacePath must already exist
+  const lockPath = `${marketplacePath}.flowguard.lock`;
+  const token = randomUUID();
+  await acquireMarketplaceLock(lockPath, token);
+
   let result: T | undefined;
   let operationError: unknown;
   try {
@@ -118,22 +141,7 @@ async function withMarketplaceLock<T>(marketplacePath: string, fn: () => Promise
     operationError = error;
   }
 
-  let cleanupError: unknown;
-  try {
-    const raw = readFileSync(lockPath, 'utf-8');
-    const lock = JSON.parse(raw) as { token?: string };
-    if (lock.token !== token) {
-      throw new CliInstallError(
-        'CODEX_MARKETPLACE_LOCK_OWNERSHIP_CHANGED',
-        'Codex marketplace lock ownership changed.',
-      );
-    }
-    unlinkSync(lockPath);
-  } catch (error) {
-    if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) {
-      cleanupError = error;
-    }
-  }
+  const cleanupError = releaseMarketplaceLock(lockPath, token);
 
   if (operationError && cleanupError) {
     throw new AggregateError(

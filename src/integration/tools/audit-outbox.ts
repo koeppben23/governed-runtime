@@ -206,11 +206,11 @@ function addTransitionOperations(
       chainIndex,
       autoAdvanced: chainIndex > 0,
     };
-    const body = buildTransitionBody(
-      next.flowguardSessionId,
-      next.binding.hostSessionId,
-      normalizedTransition.to,
-      {
+    const body = buildTransitionBody({
+      flowguardSessionId: next.flowguardSessionId,
+      hostSessionId: next.binding.hostSessionId,
+      phase: normalizedTransition.to,
+      detail: {
         operationId,
         preStateDigest,
         mutationDigest,
@@ -221,9 +221,9 @@ function addTransitionOperations(
         autoAdvanced: normalizedTransition.autoAdvanced,
         chainIndex: normalizedTransition.chainIndex,
       },
-      transition.at,
-      'genesis',
-    );
+      occurredAt: transition.at,
+      prevHash: 'genesis',
+    });
     return {
       kind: 'transition',
       operationId,
@@ -301,14 +301,14 @@ function addStateWriteOperation(
     }),
   );
   const at = new Date().toISOString();
-  const body = buildStateWriteBody(
-    next.flowguardSessionId,
-    next.binding.hostSessionId,
-    next.phase,
-    { operationId, preStateDigest, mutationDigest, postStateDigest },
-    at,
-    'genesis',
-  );
+  const body = buildStateWriteBody({
+    flowguardSessionId: next.flowguardSessionId,
+    hostSessionId: next.binding.hostSessionId,
+    phase: next.phase,
+    detail: { operationId, preStateDigest, mutationDigest, postStateDigest },
+    occurredAt: at,
+    prevHash: 'genesis',
+  });
   const operation: PendingAuditOperation = {
     kind: 'state_write',
     operationId,

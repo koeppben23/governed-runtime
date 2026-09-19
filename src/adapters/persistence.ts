@@ -280,12 +280,9 @@ async function syncDirectory(dir: string): Promise<void> {
  * reference, never a shared mutable object.
  */
 
-export async function readState(sessionDir: string): Promise<SessionState | null> {
-  const filePath = statePath(sessionDir);
-
-  let raw: string;
+async function readStateFile(filePath: string): Promise<string | null> {
   try {
-    raw = await fs.readFile(filePath, 'utf-8');
+    return await fs.readFile(filePath, 'utf-8');
   } catch (err: unknown) {
     if (isEnoent(err)) return null;
     // Stryker disable next-line ObjectLiteral — diagnostic-only payload.
@@ -298,15 +295,20 @@ export async function readState(sessionDir: string): Promise<SessionState | null
       `Failed to read state file: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
+}
 
-  let json: unknown;
+function parseStateJson(raw: string, filePath: string): unknown {
   try {
-    json = JSON.parse(raw);
+    return JSON.parse(raw);
   } catch {
     throw new PersistenceError('PARSE_FAILED', `State file is not valid JSON: ${filePath}`);
   }
+}
 
-  const contract = json as Record<string, unknown> | null;
+function assertCurrentStateContract(
+  contract: Record<string, unknown> | null,
+  filePath: string,
+): void {
   if (
     !contract ||
     typeof contract !== 'object' ||
@@ -321,22 +323,24 @@ export async function readState(sessionDir: string): Promise<SessionState | null
         'Start a new FlowGuard session in the current Assurance Epoch.',
     );
   }
+}
 
-  if (
-    'archiveStatus' in contract ||
-    (contract.policySnapshot !== null &&
-      typeof contract.policySnapshot === 'object' &&
-      ('selfReview' in contract.policySnapshot ||
-        'requireVerifiedActorsForApproval' in contract.policySnapshot))
-  ) {
+function assertNoRemovedStateFields(contract: Record<string, unknown> | null): void {
+  if (!contract) return;
+  const snapshot = contract.policySnapshot;
+  const snapshotHasRemovedField =
+    typeof snapshot === 'object' &&
+    snapshot !== null &&
+    ('selfReview' in snapshot || 'requireVerifiedActorsForApproval' in snapshot);
+  if ('archiveStatus' in contract || snapshotHasRemovedField) {
     throw new PersistenceError(
       'SCHEMA_VALIDATION_FAILED',
       'State file contains a field removed by the current session-state contract.',
     );
   }
+}
 
-  // No read migration, partial parsing, defaulting, or authority carry-forward.
-
+function validateStateJson(json: unknown): SessionState {
   const result = SessionState.safeParse(json);
   if (!result.success) {
     throw new PersistenceError(
@@ -344,8 +348,22 @@ export async function readState(sessionDir: string): Promise<SessionState | null
       `State file failed Zod validation: ${result.error.message}`,
     );
   }
-
   return result.data;
+}
+
+export async function readState(sessionDir: string): Promise<SessionState | null> {
+  const filePath = statePath(sessionDir);
+
+  const raw = await readStateFile(filePath);
+  if (raw === null) return null;
+
+  const json = parseStateJson(raw, filePath);
+  const contract = json as Record<string, unknown> | null;
+  assertCurrentStateContract(contract, filePath);
+  assertNoRemovedStateFields(contract);
+
+  // No read migration, partial parsing, defaulting, or authority carry-forward.
+  return validateStateJson(json);
 }
 
 /**

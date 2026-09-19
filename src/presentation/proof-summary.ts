@@ -18,8 +18,16 @@
  */
 
 import type { ProofGraphSection } from './model.js';
-import type { CompactProofPresentation, ProofApprovalPresentation } from './proof-model.js';
-import type { HumanProofSummary } from './claim-human-projection.js';
+import type {
+  CompactProofClaim,
+  CompactProofPresentation,
+  ProofApprovalPresentation,
+} from './proof-model.js';
+import type {
+  ClaimDiagnosticProjection,
+  ClaimHumanProjection,
+  HumanProofSummary,
+} from './claim-human-projection.js';
 import { humanVerificationLabel, projectHumanVerificationStatus } from './human-verification.js';
 import { UNICODE_GLYPHS } from './glyph-profile.js';
 
@@ -207,15 +215,12 @@ function renderEvaluationFallback(
   visibility: ClaimVisibility = 'all',
 ): string {
   const lines: string[] = [];
-  const glyphs = UNICODE_GLYPHS;
 
   const primReason = 'primaryReason' in p ? p.primaryReason : undefined;
   const provenCount = 'provenCount' in p ? p.provenCount : 0;
-  const claimCount = p.claimCount;
   const criticalProven = 'criticalProvenCount' in p ? p.criticalProvenCount : 0;
-  const criticalCount = p.criticalCount;
 
-  lines.push(`${provenCount} of ${claimCount} claims verified`);
+  lines.push(`${provenCount} of ${p.claimCount} claims verified`);
 
   if (primReason) {
     lines.push('');
@@ -223,29 +228,12 @@ function renderEvaluationFallback(
   }
 
   if (visibility !== 'none') {
-    const unmet = 'unmetCriticalClaims' in p ? p.unmetCriticalClaims : [];
-    for (const claim of unmet) {
-      const status = projectHumanVerificationStatus(claim.status);
-      const glyph = humanGlyph(status, glyphs);
-      lines.push('');
-      lines.push(`${glyph} ${claim.statement}`);
-      lines.push(`  ${humanVerificationLabel(claim.status)}`);
-      if (claim.reason) lines.push(`  ${claim.reason}`);
-    }
-
-    const other = 'otherHighlightedClaims' in p ? p.otherHighlightedClaims : [];
-    for (const claim of other) {
-      const status = projectHumanVerificationStatus(claim.status);
-      const glyph = humanGlyph(status, glyphs);
-      lines.push('');
-      lines.push(`${glyph} ${claim.statement}`);
-      lines.push(`  ${humanVerificationLabel(claim.status)}`);
-      if (claim.reason) lines.push(`  ${claim.reason}`);
-    }
+    appendHighlightedClaims(lines, 'unmetCriticalClaims' in p ? p.unmetCriticalClaims : []);
+    appendHighlightedClaims(lines, 'otherHighlightedClaims' in p ? p.otherHighlightedClaims : []);
   }
 
   lines.push('');
-  lines.push(`Critical coverage: ${criticalProven}/${criticalCount} verified`);
+  lines.push(`Critical coverage: ${criticalProven}/${p.criticalCount} verified`);
   appendApproval(lines, p.approval);
   lines.push('');
   lines.push('Diagnostic: `flowguard_status({ proofGraph: true })`');
@@ -253,7 +241,24 @@ function renderEvaluationFallback(
   return lines.join('\n');
 }
 
+function appendHighlightedClaims(lines: string[], claims: readonly CompactProofClaim[]): void {
+  for (const claim of claims) {
+    const status = projectHumanVerificationStatus(claim.status);
+    const glyph = humanGlyph(status, UNICODE_GLYPHS);
+    lines.push('');
+    lines.push(`${glyph} ${claim.statement}`);
+    lines.push(`  ${humanVerificationLabel(claim.status)}`);
+    if (claim.reason) lines.push(`  ${claim.reason}`);
+  }
+}
+
 // ─── Diagnostic evaluation rendering ─────────────────────────────────────────
+
+/** Evaluation variants whose overall status is a real claim state (not NOT_DECLARED). */
+type ResolvedEvaluationPresentation = Exclude<
+  CompactProofPresentation & { kind: 'evaluation' },
+  { overallStatus: 'NOT_DECLARED' }
+>;
 
 function renderEvaluationDiagnostic(
   p: CompactProofPresentation & { kind: 'evaluation' },
@@ -268,7 +273,29 @@ function renderEvaluationDiagnostic(
     return lines.join('\n');
   }
 
-  // Raw counts
+  appendDiagnosticCounts(lines, p);
+
+  if (summary !== undefined) {
+    // Per-claim diagnostic when humanSummary available
+    for (const claim of summary.claims) {
+      appendDiagnosticClaim(lines, claim);
+    }
+  } else {
+    // Fallback: show raw claims from CompactProofClaim
+    for (const claim of p.unmetCriticalClaims) {
+      appendDiagnosticRawClaim(lines, claim);
+    }
+  }
+
+  appendApproval(lines, p.approval);
+  lines.push('');
+  lines.push('Diagnostic: `flowguard_status({ proofGraph: true })`');
+
+  return lines.join('\n');
+}
+
+/** Raw state counts, revision, and evidence freshness. */
+function appendDiagnosticCounts(lines: string[], p: ResolvedEvaluationPresentation): void {
   const parts: string[] = [];
   parts.push(`${p.provenCount} PROVEN`);
   if (p.contradictedCount > 0) parts.push(`${p.contradictedCount} CONTRADICTED`);
@@ -289,63 +316,64 @@ function renderEvaluationDiagnostic(
     NOT_VERIFIED: 'Not verified',
   };
   lines.push(`Evidence freshness: ${freshnessLabel[p.evidenceFreshness]}`);
+}
 
-  // Per-claim diagnostic when humanSummary available
-  if (summary !== undefined) {
-    for (const claim of summary.claims) {
-      lines.push('');
-      lines.push(`Claim \`${claim.claimId}\``);
-      lines.push(`  Canonical state: ${claim.diagnostic.canonicalState}`);
-      if (claim.diagnostic.claimScope) {
-        lines.push(`  Scope: ${claim.diagnostic.claimScope}`);
-      }
-      if (claim.diagnostic.bindingReason) {
-        lines.push(`  Binding diagnostic: ${claim.diagnostic.bindingReason}`);
-      }
-      if (claim.diagnostic.requiredEvidence) {
-        const pos = claim.diagnostic.requiredEvidence.positive;
-        const adv = claim.diagnostic.requiredEvidence.adversarial;
-        if (pos.length > 0) {
-          lines.push(`  Required evidence: ${pos.join(', ')}`);
-        }
-        if (adv.length > 0) {
-          lines.push(`  Adversarial required: ${adv.join(', ')}`);
-        }
-      }
-      if (claim.diagnostic.counterexampleRequirement) {
-        const cr = claim.diagnostic.counterexampleRequirement;
-        lines.push(`  Counterexample requirement: ${cr.kind}`);
-        lines.push(`  Check: ${cr.checkId}`);
-        if (cr.kind === 'assertion') {
-          lines.push(`  Provider: ${cr.assertion.providerId}`);
-          lines.push(`  Assertion: ${cr.assertion.localId}`);
-        }
-        if (cr.kind === 'aggregate_check' && cr.candidateId) {
-          lines.push(`  Candidate: ${cr.candidateId}`);
-        }
-      }
-      if (claim.diagnostic.freshness) {
-        const f = claim.diagnostic.freshness;
-        lines.push(`  Freshness: ${f.boundDigest.slice(0, 12)} (stale: ${String(f.stale)})`);
-      }
-      lines.push(`  Statement: ${claim.statement}`);
-    }
-  } else {
-    // Fallback: show raw claims from CompactProofClaim
-    for (const claim of p.unmetCriticalClaims) {
-      lines.push('');
-      lines.push(`Claim \`${claim.claimId}\``);
-      lines.push(`  Canonical state: ${claim.status}`);
-      lines.push(`  Statement: ${claim.statement}`);
-      if (claim.reason) lines.push(`  Reason: ${claim.reason}`);
-    }
-  }
-
-  appendApproval(lines, p.approval);
+function appendDiagnosticClaim(lines: string[], claim: ClaimHumanProjection): void {
   lines.push('');
-  lines.push('Diagnostic: `flowguard_status({ proofGraph: true })`');
+  lines.push(`Claim \`${claim.claimId}\``);
+  lines.push(`  Canonical state: ${claim.diagnostic.canonicalState}`);
+  if (claim.diagnostic.claimScope) {
+    lines.push(`  Scope: ${claim.diagnostic.claimScope}`);
+  }
+  if (claim.diagnostic.bindingReason) {
+    lines.push(`  Binding diagnostic: ${claim.diagnostic.bindingReason}`);
+  }
+  appendDiagnosticRequiredEvidence(lines, claim.diagnostic.requiredEvidence);
+  appendDiagnosticCounterexample(lines, claim.diagnostic.counterexampleRequirement);
+  if (claim.diagnostic.freshness) {
+    const f = claim.diagnostic.freshness;
+    lines.push(`  Freshness: ${f.boundDigest.slice(0, 12)} (stale: ${String(f.stale)})`);
+  }
+  lines.push(`  Statement: ${claim.statement}`);
+}
 
-  return lines.join('\n');
+function appendDiagnosticRequiredEvidence(
+  lines: string[],
+  requiredEvidence: ClaimDiagnosticProjection['requiredEvidence'],
+): void {
+  if (!requiredEvidence) return;
+  const pos = requiredEvidence.positive;
+  const adv = requiredEvidence.adversarial;
+  if (pos.length > 0) {
+    lines.push(`  Required evidence: ${pos.join(', ')}`);
+  }
+  if (adv.length > 0) {
+    lines.push(`  Adversarial required: ${adv.join(', ')}`);
+  }
+}
+
+function appendDiagnosticCounterexample(
+  lines: string[],
+  requirement: ClaimDiagnosticProjection['counterexampleRequirement'],
+): void {
+  if (!requirement) return;
+  lines.push(`  Counterexample requirement: ${requirement.kind}`);
+  lines.push(`  Check: ${requirement.checkId}`);
+  if (requirement.kind === 'assertion') {
+    lines.push(`  Provider: ${requirement.assertion.providerId}`);
+    lines.push(`  Assertion: ${requirement.assertion.localId}`);
+  }
+  if (requirement.kind === 'aggregate_check' && requirement.candidateId) {
+    lines.push(`  Candidate: ${requirement.candidateId}`);
+  }
+}
+
+function appendDiagnosticRawClaim(lines: string[], claim: CompactProofClaim): void {
+  lines.push('');
+  lines.push(`Claim \`${claim.claimId}\``);
+  lines.push(`  Canonical state: ${claim.status}`);
+  lines.push(`  Statement: ${claim.statement}`);
+  if (claim.reason) lines.push(`  Reason: ${claim.reason}`);
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

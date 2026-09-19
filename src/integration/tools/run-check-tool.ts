@@ -382,114 +382,156 @@ interface PersistCheckInput {
   worktree: string;
 }
 
-// The lock-retry callback keeps execution and persistence intentionally separated.
-// eslint-disable-next-line max-lines-per-function
-async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<ToolResult> {
+// The lock-retry callback keeps execution and persistence intentionally
+// separated: the callback re-reads and revalidates under the lock, then
+// finalizes the already-executed check against that fresh state.
+interface RevalidatedCheck {
+  readonly freshState: SessionState;
+  readonly freshPolicy: FlowGuardPolicy;
+  readonly nextState: SessionState;
+  readonly railCtx: ReturnType<typeof createPolicyContext>;
+  readonly validationResult: ValidationResult;
+  readonly executionObservation: ValidationExecutionObservation;
+  readonly advanced: Exclude<ReturnType<typeof autoAdvance>, { kind: 'overflow' }>;
+}
+
+type CheckRevalidation = string | RevalidatedCheck;
+
+async function revalidateCheckUnderLock(input: PersistCheckInput): Promise<CheckRevalidation> {
+  // Re-read fresh state under lock and revalidate
+  const freshState = await requireStateForMutation(input.sessDir);
+  const freshPolicy = resolvePolicyFromState(freshState);
+  const railCtx = createPolicyContext(freshPolicy);
+
+  const reGuard = validateRunCheckRequest(input.kind, input.candidateId, freshState);
+  if (typeof reGuard === 'string') {
+    // State changed under us; do not persist stale result.
+    return reGuard;
+  }
+  const subjectBlock = validationSubjectBlock(freshState, input.subject);
+  if (subjectBlock) return subjectBlock;
+
+  // Host-observed continuity binding, persisted with the attempt: the state
+  // observed before the command ran and the state re-read under this lock.
+  const executionObservation: ValidationExecutionObservation = {
+    executionObservedStateDigest: input.executionObservedStateDigest,
+    preCommitStateDigest: hashText(canonicalJsonStringify(freshState)),
+  };
+
+  const validationResult = buildValidationResult({
+    checkId: reGuard.checkId,
+    candidateId: reGuard.candidate.candidateId,
+    evidence: input.evidence,
+    outcome: input.outcome,
+    derivedRepairGuidance: input.derivedRepairGuidance,
+    extraction: input.extraction,
+    fullCheckScopeAttestation: input.fullCheckScopeAttestation,
+    classificationReasonOverride: input.classificationReasonOverride,
+  });
+  const allResults = mergeValidationResult(freshState, validationResult);
+  const validationAttempt = buildValidationAttempt(
+    input.subject,
+    validationResult,
+    input.attemptId,
+    executionObservation,
+  );
+  const nextState = buildNextValidationState(freshState, allResults, validationAttempt);
+  const advanced = autoAdvance(nextState, (s) => evaluate(s, railCtx.policy), railCtx);
+  if (advanced.kind === 'overflow') return formatAutoAdvanceOverflow(advanced);
+
+  return {
+    freshState,
+    freshPolicy,
+    nextState,
+    railCtx,
+    validationResult,
+    executionObservation,
+    advanced,
+  };
+}
+
+async function finalizeCheckUnderLock(input: {
+  readonly worktree: string;
+  readonly sessDir: string;
+  readonly kind: VerificationCandidateKind;
+  readonly sessionId: string;
+  readonly evidence: Awaited<ReturnType<typeof executeCheck>>;
+  readonly derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance> | undefined;
+  readonly logger: ReturnType<typeof getAdapterLogger>;
+  readonly revalidated: RevalidatedCheck;
+}): Promise<ToolResult> {
   const {
-    kind,
-    candidateId,
-    evidence,
-    derivedRepairGuidance,
-    outcome,
-    extraction,
-    fullCheckScopeAttestation,
-    attemptId,
-    subject,
-    sessDir,
-    sessionId,
-    executionObservedStateDigest,
-    classificationReasonOverride,
-    worktree,
-  } = input;
+    freshState,
+    freshPolicy,
+    nextState,
+    railCtx,
+    validationResult,
+    executionObservation,
+    advanced,
+  } = input.revalidated;
+  const stateWithMaterializedContract = await materializeImplReviewContract(
+    advanced.state,
+    freshState.binding.worktree,
+  );
+  const activation = await activateReviewObligationAndPersist({
+    state: stateWithMaterializedContract,
+    preAdvanceState: nextState,
+    iteration: nextImplementationReviewIteration(advanced.state),
+    planVersion: (advanced.state.plan?.history.length ?? 0) + 1,
+    now: railCtx.now(),
+    worktree: input.worktree,
+    sessDir: input.sessDir,
+    locked: true,
+    persistPreAdvance: true,
+  });
+  if ('response' in activation) return activation.response;
+  const { activated } = activation;
+  const persisted = await writeStateWithArtifactsAndAuditOperationsAlreadyLocked(
+    input.sessDir,
+    activated.state,
+    advanced.transitions,
+  );
+  const authorityResult = checkDispatchAuthority(activated, persisted);
+  if (typeof authorityResult === 'string') return authorityResult;
+  input.logger.info('tool', 'check_persisted', {
+    sessionId: input.sessionId,
+    checkId: input.kind,
+    passed: validationResult.passed,
+    outcome: validationResult.outcome,
+    ...getLogTraceFields(),
+  });
+
+  return formatRunCheckResponse({
+    kind: input.kind,
+    candidateId: validationResult.candidateId,
+    evidence: input.evidence,
+    validationResult,
+    derivedRepairGuidance: input.derivedRepairGuidance,
+    originalState: freshState,
+    executionObservation,
+    advanced,
+    finalState: persisted,
+    authority: authorityResult?.authority ?? null,
+    policy: freshPolicy,
+  });
+}
+
+async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<ToolResult> {
   const logger = getAdapterLogger();
   return withSessionWriteLockRetry(
-    sessDir,
+    input.sessDir,
     async () => {
-      // Re-read fresh state under lock and revalidate
-      const freshState = await requireStateForMutation(sessDir);
-      const freshPolicy = resolvePolicyFromState(freshState);
-      const railCtx = createPolicyContext(freshPolicy);
-
-      const reGuard = validateRunCheckRequest(kind, candidateId, freshState);
-      if (typeof reGuard === 'string') {
-        // State changed under us; do not persist stale result.
-        return reGuard;
-      }
-      const subjectBlock = validationSubjectBlock(freshState, subject);
-      if (subjectBlock) return subjectBlock;
-
-      // Host-observed continuity binding, persisted with the attempt: the state
-      // observed before the command ran and the state re-read under this lock.
-      const executionObservation: ValidationExecutionObservation = {
-        executionObservedStateDigest,
-        preCommitStateDigest: hashText(canonicalJsonStringify(freshState)),
-      };
-
-      const validationResult = buildValidationResult({
-        checkId: reGuard.checkId,
-        candidateId: reGuard.candidate.candidateId,
-        evidence,
-        outcome,
-        derivedRepairGuidance,
-        extraction,
-        fullCheckScopeAttestation,
-        classificationReasonOverride,
-      });
-      const allResults = mergeValidationResult(freshState, validationResult);
-      const validationAttempt = buildValidationAttempt(
-        subject,
-        validationResult,
-        attemptId,
-        executionObservation,
-      );
-      const nextState = buildNextValidationState(freshState, allResults, validationAttempt);
-      const advanced = autoAdvance(nextState, (s) => evaluate(s, railCtx.policy), railCtx);
-      if (advanced.kind === 'overflow') return formatAutoAdvanceOverflow(advanced);
-
-      const stateWithMaterializedContract = await materializeImplReviewContract(
-        advanced.state,
-        freshState.binding.worktree,
-      );
-      const activation = await activateReviewObligationAndPersist({
-        state: stateWithMaterializedContract,
-        preAdvanceState: nextState,
-        iteration: nextImplementationReviewIteration(advanced.state),
-        planVersion: (advanced.state.plan?.history.length ?? 0) + 1,
-        now: railCtx.now(),
-        worktree,
-        sessDir,
-        locked: true,
-        persistPreAdvance: true,
-      });
-      if ('response' in activation) return activation.response;
-      const { activated } = activation;
-      const persisted = await writeStateWithArtifactsAndAuditOperationsAlreadyLocked(
-        sessDir,
-        activated.state,
-        advanced.transitions,
-      );
-      const authorityResult = checkDispatchAuthority(activated, persisted);
-      if (typeof authorityResult === 'string') return authorityResult;
-      logger.info('tool', 'check_persisted', {
-        sessionId,
-        checkId: kind,
-        passed: validationResult.passed,
-        outcome: validationResult.outcome,
-        ...getLogTraceFields(),
-      });
-
-      return formatRunCheckResponse({
-        kind,
-        candidateId: validationResult.candidateId,
-        evidence,
-        validationResult,
-        derivedRepairGuidance,
-        originalState: freshState,
-        executionObservation,
-        advanced,
-        finalState: persisted,
-        authority: authorityResult?.authority ?? null,
-        policy: freshPolicy,
+      const revalidated = await revalidateCheckUnderLock(input);
+      if (typeof revalidated === 'string') return revalidated;
+      return finalizeCheckUnderLock({
+        worktree: input.worktree,
+        sessDir: input.sessDir,
+        kind: input.kind,
+        sessionId: input.sessionId,
+        evidence: input.evidence,
+        derivedRepairGuidance: input.derivedRepairGuidance,
+        logger,
+        revalidated,
       });
     },
     {
@@ -497,8 +539,8 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
       onRetry: (attempt, delayMs, err) => {
         if (attempt !== 1 && attempt !== RUN_CHECK_RETRIES) return;
         logger.warn(TOOL_FLOWGUARD_RUN_CHECK, 'Lock contention — retrying persistence', {
-          sessionId,
-          checkId: kind,
+          sessionId: input.sessionId,
+          checkId: input.kind,
           attempt,
           delayMs,
           retries: RUN_CHECK_RETRIES,
@@ -507,8 +549,8 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
           ...getLogTraceFields(),
         });
         logger.warn('tool', 'lock_health', {
-          sessionId,
-          checkId: kind,
+          sessionId: input.sessionId,
+          checkId: input.kind,
           lockContended: true,
           retries: RUN_CHECK_RETRIES,
           ...getLogTraceFields(),

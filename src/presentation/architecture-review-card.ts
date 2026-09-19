@@ -122,39 +122,53 @@ export function buildArchitectureReviewCard(
 export function buildArchitectureReviewDocument(
   input: ArchitectureReviewCardInput,
 ): ReviewCardDocument {
-  const {
-    phaseLabel,
-    adrTitle,
-    adrId,
-    adrDigest,
-    adrText,
-    iteration,
-    overallVerdict,
-    blockingIssues,
-    majorRisks,
-    missingVerification,
-    scopeCreep,
-    unknowns,
-    directive,
-    isApproved,
-  } = input;
+  const sections: PresentationSection[] = [
+    { kind: 'title', text: 'FlowGuard Architecture Review' },
+    buildArchitectureMetadataSection(input),
+  ];
 
-  const sections: PresentationSection[] = [];
-  const verdict = overallVerdict ?? 'pending';
+  sections.push(...buildArchitectureWarningNotices(input));
 
-  // ── Title ──────────────────────────────────────────────────────────
-  sections.push({ kind: 'title', text: 'FlowGuard Architecture Review' });
+  sections.push(buildProofGraphSection(input.proofSummary));
 
-  // ── Metadata ───────────────────────────────────────────────────────
+  const details = buildAdrDetailsSection(input);
+  if (details) sections.push(details);
+
+  const body = buildAdrBodySection(input.adrText);
+  if (body) sections.push(body);
+
+  appendFindingsSections(sections, {
+    blockingIssues: input.blockingIssues,
+    majorRisks: input.majorRisks,
+    missingVerification: input.missingVerification,
+    scopeCreep: input.scopeCreep,
+    unknowns: input.unknowns,
+  });
+
+  return buildArchitectureReviewDocumentShell(input, sections);
+}
+
+/** Metadata section (ADR title when present, status, verdict). */
+function buildArchitectureMetadataSection(input: ArchitectureReviewCardInput): PresentationSection {
   const metadata: KeyValueItem[] = [];
-  if (adrTitle) metadata.push({ label: 'ADR', value: adrTitle });
-  metadata.push({ label: 'Status', value: phaseLabel });
-  metadata.push({ label: 'Verdict', value: verdict });
-  sections.push({ kind: 'keyValue', items: metadata });
+  if (input.adrTitle) metadata.push({ label: 'ADR', value: input.adrTitle });
+  metadata.push({ label: 'Status', value: input.phaseLabel });
+  metadata.push({ label: 'Verdict', value: input.overallVerdict ?? 'pending' });
+  return { kind: 'keyValue', items: metadata };
+}
 
-  // ── Review exhaustion warning ──────────────────────────────────────
-  if (input.reviewCompletion === 'review_exhausted' && !isApproved) {
-    sections.push({
+/**
+ * Warning notices for an unreviewed/force-converged ADR: review exhaustion and
+ * the prior-revision provenance mismatch (the displayed findings were bound to
+ * a different artifact revision than the one at this gate). Both notices may
+ * apply to the same card and render in this order.
+ */
+function buildArchitectureWarningNotices(
+  input: ArchitectureReviewCardInput,
+): PresentationSection[] {
+  const notices: PresentationSection[] = [];
+  if (input.reviewCompletion === 'review_exhausted' && !input.isApproved) {
+    notices.push({
       kind: 'notice',
       level: 'warning',
       message: 'Reviewer did NOT approve this ADR.',
@@ -165,76 +179,66 @@ export function buildArchitectureReviewDocument(
       details: [],
     });
   }
-
-  // ── Prior-revision provenance mismatch ─────────────────────────────
-  // The displayed findings were bound to a different artifact revision than
-  // the one at this gate (e.g. the final revision was submitted after the
-  // last independent review and exhausted the iteration budget unreviewed).
-  if (input.reviewedDigest && adrDigest && input.reviewedDigest !== adrDigest) {
-    sections.push({
+  if (input.reviewedDigest && input.adrDigest && input.reviewedDigest !== input.adrDigest) {
+    notices.push({
       kind: 'notice',
       level: 'warning',
       message: 'These reviewer findings apply to a prior artifact revision.',
       additionalMessages: [
         `Reviewed digest: \`${input.reviewedDigest}\``,
-        `Current digest:  \`${adrDigest}\``,
+        `Current digest:  \`${input.adrDigest}\``,
         'The current revision was submitted after the final independent review ' +
           'and has not itself been independently reviewed.',
       ],
       details: [],
     });
   }
+  return notices;
+}
 
-  // ── Decision claims (advisory) ──────────────────────────────────────
-  sections.push(buildProofGraphSection(input.proofSummary));
-
-  // ── ADR Details ────────────────────────────────────────────────────
-  if (adrId || adrDigest || iteration > 0 || input.reviewedDigest) {
-    const details: KeyValueItem[] = [];
-    if (adrId) details.push({ label: 'ID', value: `\`${adrId}\`` });
-    if (adrDigest) details.push({ label: 'Digest', value: `\`${adrDigest}\`` });
-    if (iteration > 0) details.push({ label: 'Review iteration', value: String(iteration) });
-    if (input.reviewedDigest) {
-      details.push({ label: 'Reviewed ADR digest', value: `\`${input.reviewedDigest}\`` });
-    }
-    if (input.reviewedObligationId) {
-      details.push({
-        label: 'Reviewed obligation',
-        value: `\`${input.reviewedObligationId}\``,
-      });
-    }
-    sections.push({ kind: 'keyValue', heading: 'ADR Details', items: details });
+function buildAdrDetailItems(input: ArchitectureReviewCardInput): KeyValueItem[] {
+  const items: KeyValueItem[] = [];
+  if (input.adrId) items.push({ label: 'ID', value: `\`${input.adrId}\`` });
+  if (input.adrDigest) items.push({ label: 'Digest', value: `\`${input.adrDigest}\`` });
+  if (input.iteration > 0) {
+    items.push({ label: 'Review iteration', value: String(input.iteration) });
   }
+  if (input.reviewedDigest) {
+    items.push({ label: 'Reviewed ADR digest', value: `\`${input.reviewedDigest}\`` });
+  }
+  if (input.reviewedObligationId) {
+    items.push({ label: 'Reviewed obligation', value: `\`${input.reviewedObligationId}\`` });
+  }
+  return items;
+}
 
-  // ── ADR Body (verbatim) ────────────────────────────────────────────
+function buildAdrDetailsSection(
+  input: ArchitectureReviewCardInput,
+): PresentationSection | undefined {
+  const hasDetails = input.adrId || input.adrDigest || input.iteration > 0 || input.reviewedDigest;
+  if (!hasDetails) return undefined;
+  return { kind: 'keyValue', heading: 'ADR Details', items: buildAdrDetailItems(input) };
+}
+
+function buildAdrBodySection(adrText: string | undefined): PresentationSection | undefined {
   const normalizedAdrText = adrText?.trim();
-  if (normalizedAdrText) {
-    sections.push({
-      kind: 'embeddedMarkdown',
-      heading: 'Architecture Decision',
-      content: normalizedAdrText,
-    });
-  }
+  return normalizedAdrText
+    ? { kind: 'embeddedMarkdown', heading: 'Architecture Decision', content: normalizedAdrText }
+    : undefined;
+}
 
-  // ── Reviewer Findings ──────────────────────────────────────────────
-  appendFindingsSections(sections, {
-    blockingIssues,
-    majorRisks,
-    missingVerification,
-    scopeCreep,
-    unknowns,
-  });
-
-  const document: ReviewCardDocument = {
+function buildArchitectureReviewDocumentShell(
+  input: ArchitectureReviewCardInput,
+  sections: PresentationSection[],
+): ReviewCardDocument {
+  return {
     kind: 'review_card',
-    form: !isApproved && directive.kind === 'human_gate' ? 'decision' : 'terminal',
+    form: !input.isApproved && input.directive.kind === 'human_gate' ? 'decision' : 'terminal',
     sections,
-    conclusion: isApproved
-      ? { kind: 'terminal', message: directiveLabel(directive.code) }
-      : buildReviewDecisionConclusion(directive, ADR_ACTION_DESCRIPTIONS),
+    conclusion: input.isApproved
+      ? { kind: 'terminal', message: directiveLabel(input.directive.code) }
+      : buildReviewDecisionConclusion(input.directive, ADR_ACTION_DESCRIPTIONS),
   };
-
-  return document;
 }
 
 // ─── Findings Projection ────────────────────────────────────────────────────────
@@ -271,14 +275,17 @@ function toFindingItems(
   }));
 }
 
+function hasItems(items: readonly unknown[] | undefined): boolean {
+  return (items?.length ?? 0) > 0;
+}
+
 function hasAnyFindings(inputs: FindingInputs): boolean {
-  const { blockingIssues, majorRisks, missingVerification, scopeCreep, unknowns } = inputs;
   return (
-    (blockingIssues?.length ?? 0) > 0 ||
-    (majorRisks?.length ?? 0) > 0 ||
-    (missingVerification?.length ?? 0) > 0 ||
-    (scopeCreep?.length ?? 0) > 0 ||
-    (unknowns?.length ?? 0) > 0
+    hasItems(inputs.blockingIssues) ||
+    hasItems(inputs.majorRisks) ||
+    hasItems(inputs.missingVerification) ||
+    hasItems(inputs.scopeCreep) ||
+    hasItems(inputs.unknowns)
   );
 }
 

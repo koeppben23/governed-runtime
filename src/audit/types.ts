@@ -321,18 +321,19 @@ export type EventBody = Omit<
   'chainHash' | 'timestampEvidence' | 'auditSequence' | 'recordedAt' | 'semanticEventDigest'
 >;
 
+/** Shared body-input shape; the detail payload is specific to each body builder. */
+interface AuditBodyInput<D> extends Omit<TransitionEventInput, 'timestampEvidence' | 'detail'> {
+  readonly detail: D;
+}
+
+/** Input object for buildTransitionBody. */
+export type TransitionBodyInput = AuditBodyInput<Omit<TransitionDetail, 'kind'>>;
+
 /**
  * Build a transition event body (no chainHash, no canonical digest, no evidence).
  */
-// eslint-disable-next-line max-params -- positional factory API kept explicit for call-site auditability
-export function buildTransitionBody(
-  flowguardSessionId: string,
-  hostSessionId: string | undefined,
-  phase: Phase,
-  detail: Omit<TransitionDetail, 'kind'>,
-  occurredAt: string,
-  prevHash: string,
-): EventBody {
+export function buildTransitionBody(input: TransitionBodyInput): EventBody {
+  const { flowguardSessionId, hostSessionId, phase, detail, occurredAt, prevHash } = input;
   return {
     id: detail.operationId ?? crypto.randomUUID(),
     flowguardSessionId,
@@ -347,16 +348,12 @@ export function buildTransitionBody(
   };
 }
 
+/** Input object for buildStateWriteBody. */
+export type StateWriteBodyInput = AuditBodyInput<Omit<StateWriteDetail, 'kind'>>;
+
 /** Build a state-write event body from a durable outbox operation. */
-// eslint-disable-next-line max-params -- positional factory API kept explicit for call-site auditability
-export function buildStateWriteBody(
-  flowguardSessionId: string,
-  hostSessionId: string | undefined,
-  phase: Phase,
-  detail: Omit<StateWriteDetail, 'kind'>,
-  occurredAt: string,
-  prevHash: string,
-): EventBody {
+export function buildStateWriteBody(input: StateWriteBodyInput): EventBody {
+  const { flowguardSessionId, hostSessionId, phase, detail, occurredAt, prevHash } = input;
   return {
     id: detail.operationId,
     flowguardSessionId,
@@ -371,16 +368,12 @@ export function buildStateWriteBody(
   };
 }
 
+/** Input object for buildEnforcementDeniedBody. */
+export type EnforcementDeniedBodyInput = AuditBodyInput<Omit<EnforcementDeniedDetail, 'kind'>>;
+
 /** Build a denied-enforcement event body from the synchronous host hook. */
-// eslint-disable-next-line max-params -- positional factory API kept explicit for call-site auditability
-export function buildEnforcementDeniedBody(
-  flowguardSessionId: string,
-  hostSessionId: string | undefined,
-  phase: Phase,
-  detail: Omit<EnforcementDeniedDetail, 'kind'>,
-  occurredAt: string,
-  prevHash: string,
-): EventBody {
+export function buildEnforcementDeniedBody(input: EnforcementDeniedBodyInput): EventBody {
+  const { flowguardSessionId, hostSessionId, phase, detail, occurredAt, prevHash } = input;
   return {
     id: crypto.randomUUID(),
     flowguardSessionId,
@@ -428,14 +421,14 @@ export function createTransitionEvent(
 ): ChainedAuditEvent {
   const input = normalizeTransitionEventInput(args);
   return finalizeWithTimestampEvidence(
-    buildTransitionBody(
-      input.flowguardSessionId,
-      input.hostSessionId,
-      input.phase,
-      input.detail,
-      input.occurredAt,
-      input.prevHash,
-    ),
+    buildTransitionBody({
+      flowguardSessionId: input.flowguardSessionId,
+      hostSessionId: input.hostSessionId,
+      phase: input.phase,
+      detail: input.detail,
+      occurredAt: input.occurredAt,
+      prevHash: input.prevHash,
+    }),
     input.prevHash,
     input.timestampEvidence,
   );
@@ -563,23 +556,31 @@ export function buildErrorBody(
   };
 }
 
+/** Input object for createErrorEvent. */
+export interface ErrorEventInput {
+  readonly flowguardSessionId: string;
+  readonly hostSessionId?: string | undefined;
+  readonly detail: Omit<ErrorDetail, 'kind'>;
+  readonly occurredAt: string;
+  readonly prevHash: string;
+  readonly timestampEvidence?: TimestampEvidence | undefined;
+}
+
 /**
  * Create an error audit event.
  * Emitted when the state machine enters an error state.
  */
-// eslint-disable-next-line max-params -- positional factory API kept explicit for call-site auditability
-export function createErrorEvent(
-  flowguardSessionId: string,
-  hostSessionId: string | undefined,
-  detail: Omit<ErrorDetail, 'kind'>,
-  occurredAt: string,
-  prevHash: string,
-  timestampEvidence?: TimestampEvidence,
-): ChainedAuditEvent {
+export function createErrorEvent(input: ErrorEventInput): ChainedAuditEvent {
   return finalizeWithTimestampEvidence(
-    buildErrorBody(flowguardSessionId, hostSessionId, detail, occurredAt, prevHash),
-    prevHash,
-    timestampEvidence,
+    buildErrorBody(
+      input.flowguardSessionId,
+      input.hostSessionId,
+      input.detail,
+      input.occurredAt,
+      input.prevHash,
+    ),
+    input.prevHash,
+    input.timestampEvidence,
   );
 }
 

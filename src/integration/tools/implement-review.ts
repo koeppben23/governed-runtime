@@ -480,6 +480,70 @@ function handleTaskTransportFailureRetry(input: ImplementRuntime): string | null
   });
 }
 
+type ResolvedStructuredFindings = Extract<
+  ReturnType<typeof resolveStructuredEffectiveFindings>,
+  { readonly kind: 'resolved' }
+>;
+
+async function handleUnableToReviewSubmission(input: {
+  runtime: ImplementRuntime;
+  iteration: number;
+  planVersion: number;
+  submittedVerdict: LoopVerdict;
+  pendingObligation: ReturnType<typeof findPendingImplObligation>;
+  resolved: ResolvedStructuredFindings;
+}): Promise<string> {
+  const { runtime, iteration, planVersion, submittedVerdict, pendingObligation, resolved } = input;
+  if (submittedVerdict !== 'unable_to_review') {
+    return formatBlocked('SUBAGENT_FINDINGS_VERDICT_MISMATCH', {
+      reviewVerdict: submittedVerdict,
+      overallVerdict: resolved.effectiveFindings.overallVerdict,
+    });
+  }
+  if (!pendingObligation) {
+    return formatBlocked('SUBAGENT_REVIEW_NOT_INVOKED', {
+      reason: 'unable_to_review requires bound host-task reviewer evidence',
+    });
+  }
+  // Prepare the successor before consuming evidence. A failed Discovery mint
+  // must preserve the current bound verdict as the executable recovery path.
+  const reissued = await activateImplementationReviewObligation(runtime.state, {
+    iteration: iteration + 1,
+    planVersion,
+    now: runtime.ctx.now(),
+    worktree: runtime.worktree,
+  });
+  if (reissued.blocked || !reissued.obligation || !reissued.attempt) {
+    return JSON.stringify(
+      enrichWithWorkflowDirective(
+        JSON.parse(
+          formatBlocked('REVIEWER_CONTEXT_UNAVAILABLE', {
+            reason:
+              reissued.blocked?.reason ?? 'a fresh reviewer obligation could not be activated',
+          }),
+        ),
+        runtime.state,
+      ),
+    );
+  }
+  const retryAttempt = reissued.attempt;
+  const { reviewedState } = appendImplReviewState({
+    runtime,
+    iteration,
+    planVersion,
+    effectiveFindings: resolved.effectiveFindings,
+    evidenceInvocationId: resolved.evidenceInvocationId,
+    obligationToConsume: pendingObligation,
+  });
+  return handleUnableToReview({
+    runtime,
+    reviewedState,
+    obligationId: pendingObligation.obligationId,
+    retryObligation: reissued.obligation,
+    retryAttempt,
+  });
+}
+
 async function handleSubmittedImplementationReview(input: {
   runtime: ImplementRuntime;
   iteration: number;
@@ -495,53 +559,13 @@ async function handleSubmittedImplementationReview(input: {
   if (resolved.kind === 'blocked') return resolved.blocked;
 
   if (resolved.effectiveFindings.overallVerdict === 'unable_to_review') {
-    if (submittedVerdict !== 'unable_to_review') {
-      return formatBlocked('SUBAGENT_FINDINGS_VERDICT_MISMATCH', {
-        reviewVerdict: submittedVerdict,
-        overallVerdict: resolved.effectiveFindings.overallVerdict,
-      });
-    }
-    if (!pendingObligation) {
-      return formatBlocked('SUBAGENT_REVIEW_NOT_INVOKED', {
-        reason: 'unable_to_review requires bound host-task reviewer evidence',
-      });
-    }
-    // Prepare the successor before consuming evidence. A failed Discovery mint
-    // must preserve the current bound verdict as the executable recovery path.
-    const reissued = await activateImplementationReviewObligation(runtime.state, {
-      iteration: iteration + 1,
-      planVersion,
-      now: runtime.ctx.now(),
-      worktree: runtime.worktree,
-    });
-    if (reissued.blocked || !reissued.obligation || !reissued.attempt) {
-      return JSON.stringify(
-        enrichWithWorkflowDirective(
-          JSON.parse(
-            formatBlocked('REVIEWER_CONTEXT_UNAVAILABLE', {
-              reason:
-                reissued.blocked?.reason ?? 'a fresh reviewer obligation could not be activated',
-            }),
-          ),
-          runtime.state,
-        ),
-      );
-    }
-    const retryAttempt = reissued.attempt;
-    const { reviewedState } = appendImplReviewState({
+    return handleUnableToReviewSubmission({
       runtime,
       iteration,
       planVersion,
-      effectiveFindings: resolved.effectiveFindings,
-      evidenceInvocationId: resolved.evidenceInvocationId,
-      obligationToConsume: pendingObligation,
-    });
-    return handleUnableToReview({
-      runtime,
-      reviewedState,
-      obligationId: pendingObligation.obligationId,
-      retryObligation: reissued.obligation,
-      retryAttempt,
+      submittedVerdict,
+      pendingObligation,
+      resolved,
     });
   }
 

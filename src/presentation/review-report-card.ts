@@ -267,7 +267,7 @@ function buildCoverageSection(coverage: ReviewReportCardInput['coverage']): Pres
   };
 }
 
-function buildEvidenceSection(input: ReviewReportCardInput): PresentationSection | null {
+function hasEvidence(input: ReviewReportCardInput): boolean {
   const {
     obligationId,
     invocationSource,
@@ -275,24 +275,39 @@ function buildEvidenceSection(input: ReviewReportCardInput): PresentationSection
     hostVisible,
     reviewerSessionId,
     reviewOutputMode,
-    structuredOutputUsed,
     reviewAssuranceLevel,
   } = input;
-
-  const hasEvidence =
+  return Boolean(
     obligationId ||
     invocationSource ||
     invocationMode ||
     typeof hostVisible === 'boolean' ||
     reviewerSessionId ||
     reviewOutputMode ||
-    reviewAssuranceLevel;
-  if (!hasEvidence) return null;
+    reviewAssuranceLevel,
+  );
+}
 
-  const evidence: KeyValueItem[] = [];
+/** Invocation identity rows, in canonical render order. */
+function appendInvocationEvidenceItems(
+  evidence: KeyValueItem[],
+  input: ReviewReportCardInput,
+): void {
+  const { obligationId, invocationSource, invocationMode } = input;
   if (obligationId) evidence.push({ label: 'Obligation', value: `\`${obligationId}\`` });
   if (invocationSource) evidence.push({ label: 'Invocation source', value: invocationSource });
   if (invocationMode) evidence.push({ label: 'Invocation mode', value: invocationMode });
+}
+
+/** Host-observed invocation assurance rows, in canonical render order. */
+function appendHostEvidenceItems(evidence: KeyValueItem[], input: ReviewReportCardInput): void {
+  const {
+    hostVisible,
+    reviewerSessionId,
+    reviewOutputMode,
+    structuredOutputUsed,
+    reviewAssuranceLevel,
+  } = input;
   if (typeof hostVisible === 'boolean') {
     evidence.push({ label: 'Host visible', value: hostVisible ? 'yes' : 'no' });
   }
@@ -309,6 +324,13 @@ function buildEvidenceSection(input: ReviewReportCardInput): PresentationSection
   if (reviewAssuranceLevel) {
     evidence.push({ label: 'Review assurance', value: reviewAssuranceLevel });
   }
+}
+
+function buildEvidenceSection(input: ReviewReportCardInput): PresentationSection | null {
+  if (!hasEvidence(input)) return null;
+  const evidence: KeyValueItem[] = [];
+  appendInvocationEvidenceItems(evidence, input);
+  appendHostEvidenceItems(evidence, input);
   return { kind: 'keyValue', heading: 'Evidence', items: evidence };
 }
 

@@ -68,7 +68,6 @@ import {
 import {
   refineAssuranceDiscoveryCoherence,
   refineAssuranceIdentityUniqueness,
-  refineAssuranceInvocationDispatchLinkage,
   refineAssuranceInvocationLinkageCoherence,
   refineAssuranceProvenanceCoherence,
   refineAuthorityStructure,
@@ -81,6 +80,7 @@ import { refineReviewCycleCoherence } from './review-cycles.js';
 import {
   refineAssuranceAttemptLineageCoherence,
   refineAssuranceDispatchCoherence,
+  refineAssuranceInvocationDispatchLinkage,
 } from './evidence-review-ledger-refinements.js';
 export { classifyRepositoryPath, type RepositoryPathClassification } from './repository-path.js';
 

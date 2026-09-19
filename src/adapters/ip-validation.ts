@@ -184,6 +184,18 @@ export function isIPv6Address(addr: string): boolean {
   return hextetPrefixValid(lo, 8);
 }
 
+function allSegmentsAreHextets(segments: readonly string[]): boolean {
+  return segments.every((segment) => /^[0-9a-f]{1,4}$/.test(segment));
+}
+
+function splitHextetSegments(text: string): string[] {
+  return text ? text.split(':') : [];
+}
+
+function withinCompressedBudget(segments: readonly string[], max: number): boolean {
+  return segments.length <= max - 1 && allSegmentsAreHextets(segments);
+}
+
 /**
  * Validate an IPv6 address or prefix consisting only of hex hextets
  * with optional `::` compression.  `max` is the maximum total hextet
@@ -195,30 +207,27 @@ function hextetPrefixValid(prefix: string, max: number): boolean {
     const rest = prefix.slice(2);
     if (rest === '') return true;
     if (rest.startsWith(':')) return false;
-    const segments = rest.split(':');
-    return segments.length <= max - 1 && segments.every((s) => /^[0-9a-f]{1,4}$/.test(s));
+    return withinCompressedBudget(splitHextetSegments(rest), max);
   }
 
   // Trailing :: — e.g. 2001:db8::
   if (prefix.endsWith('::')) {
     const before = prefix.slice(0, -2);
     if (before.endsWith(':')) return false;
-    const segments = before.split(':');
-    return segments.length <= max - 1 && segments.every((s) => /^[0-9a-f]{1,4}$/.test(s));
+    return withinCompressedBudget(splitHextetSegments(before), max);
   }
 
   // Middle :: — e.g. 2001:db8::1
   if (prefix.includes('::')) {
     const parts = prefix.split('::');
     if (parts.length !== 2) return false;
-    const left = parts[0] ? parts[0].split(':') : [];
-    const right = parts[1] ? parts[1].split(':') : [];
-    if (left.length + right.length > max - 1) return false;
-    return [...left, ...right].every((s) => /^[0-9a-f]{1,4}$/.test(s));
+    const left = splitHextetSegments(parts[0] ?? '');
+    const right = splitHextetSegments(parts[1] ?? '');
+    return withinCompressedBudget([...left, ...right], max);
   }
 
   // Full address — exactly max segments
   const parts = prefix.split(':');
   if (parts.length !== max) return false;
-  return parts.every((s) => /^[0-9a-f]{1,4}$/.test(s));
+  return allSegmentsAreHextets(parts);
 }

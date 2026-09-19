@@ -569,6 +569,106 @@ async function verifyArchiveIntegrity(
 }
 
 // Extraction, manifest validation, and cleanup must stay in one transaction.
+async function prepareArchiveForVerification(
+  archiveTarPath: string,
+  archiveSnapshotPath: string,
+  validSessionId: string,
+  extractionRoot: string,
+  findings: ArchiveFinding[],
+): Promise<boolean> {
+  try {
+    await snapshotArchive(archiveTarPath, archiveSnapshotPath);
+  } catch (error) {
+    findings.push({
+      code: 'missing_manifest',
+      severity: 'error',
+      message: `Archive snapshot failed: ${error instanceof Error ? error.message : String(error)}`,
+    });
+    return false;
+  }
+  const inspection = await inspectArchiveTar(archiveSnapshotPath, validSessionId);
+  if (inspection.kind === 'blocked') {
+    findings.push({
+      code: 'unexpected_file',
+      severity: 'error',
+      message: `Archive member policy violation: ${inspection.reason}`,
+    });
+    return false;
+  }
+  try {
+    await promisify(execFile)('tar', ['xzf', archiveSnapshotPath, '-C', extractionRoot], {
+      timeout: 30_000,
+      windowsHide: true,
+    });
+    return true;
+  } catch (error) {
+    findings.push({
+      code: 'missing_manifest',
+      severity: 'error',
+      message: `Archive extraction failed: ${error instanceof Error ? error.message : String(error)}`,
+    });
+    return false;
+  }
+}
+
+async function loadArchiveState(
+  sessDir: string,
+  findings: ArchiveFinding[],
+): Promise<import('../../state/schema.js').SessionState | null> {
+  const stateDir = path.join(sessDir, 'state');
+  const stateExists = await fileExists(path.join(stateDir, 'session-state.json'));
+  if (!stateExists) {
+    findings.push({
+      code: 'state_missing',
+      severity: 'error',
+      message: 'Session state file not found',
+      file: 'state/session-state.json',
+    });
+    return null;
+  }
+  try {
+    return await readState(stateDir);
+  } catch (error) {
+    findings.push({
+      code: 'state_invalid',
+      severity: 'error',
+      message: `Session state file could not be parsed or validated: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      file: 'state/session-state.json',
+    });
+    return null;
+  }
+}
+
+async function checkDiscoverySnapshots(
+  sessDir: string,
+  manifest: ArchiveManifest,
+  findings: ArchiveFinding[],
+): Promise<void> {
+  if (!manifest.discoveryDigest) return;
+  for (const snapshotFile of ['discovery-snapshot.json', 'profile-resolution-snapshot.json']) {
+    const archivePath = `context/${snapshotFile}`;
+    const exists = await fileExists(path.join(sessDir, archivePath));
+    if (!exists) {
+      findings.push({
+        code: 'snapshot_missing',
+        severity: 'warning',
+        message: `Discovery snapshot not found: ${snapshotFile}`,
+        file: archivePath,
+      });
+    }
+  }
+}
+
+async function discardExtractionAndFail(
+  extractionRoot: string,
+  findings: ArchiveFinding[],
+): Promise<ArchiveVerification> {
+  await fs.rm(extractionRoot, { recursive: true, force: true });
+  return buildVerificationResult(findings, null);
+}
+
 async function verifyArchiveImpl(
   fingerprint: string,
   sessionId: string,
@@ -586,89 +686,22 @@ async function verifyArchiveImpl(
   const extractionRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'flowguard-archive-verify-'));
   const sessDir = path.join(extractionRoot, validSessionId);
   const archiveSnapshotPath = path.join(extractionRoot, 'archive.tar.gz');
-  try {
-    await snapshotArchive(archiveTarPath, archiveSnapshotPath);
-  } catch (error) {
-    findings.push({
-      code: 'missing_manifest',
-      severity: 'error',
-      message: `Archive snapshot failed: ${error instanceof Error ? error.message : String(error)}`,
-    });
-    await fs.rm(extractionRoot, { recursive: true, force: true });
-    return buildVerificationResult(findings, null);
-  }
 
-  const inspection = await inspectArchiveTar(archiveSnapshotPath, validSessionId);
-  if (inspection.kind === 'blocked') {
-    findings.push({
-      code: 'unexpected_file',
-      severity: 'error',
-      message: `Archive member policy violation: ${inspection.reason}`,
-    });
-    await fs.rm(extractionRoot, { recursive: true, force: true });
-    return buildVerificationResult(findings, null);
-  }
-
-  try {
-    await promisify(execFile)('tar', ['xzf', archiveSnapshotPath, '-C', extractionRoot], {
-      timeout: 30_000,
-      windowsHide: true,
-    });
-  } catch (error) {
-    findings.push({
-      code: 'missing_manifest',
-      severity: 'error',
-      message: `Archive extraction failed: ${error instanceof Error ? error.message : String(error)}`,
-    });
-    await fs.rm(extractionRoot, { recursive: true, force: true });
-    return buildVerificationResult(findings, null);
-  }
+  const prepared = await prepareArchiveForVerification(
+    archiveTarPath,
+    archiveSnapshotPath,
+    validSessionId,
+    extractionRoot,
+    findings,
+  );
+  if (!prepared) return discardExtractionAndFail(extractionRoot, findings);
 
   try {
     const manifest = await loadArchiveManifest(sessDir, findings);
     if (!manifest) return buildVerificationResult(findings, null);
 
-    const stateDir = path.join(sessDir, 'state');
-    const stateExists = await fileExists(path.join(stateDir, 'session-state.json'));
-    let state: import('../../state/schema.js').SessionState | null = null;
-    if (stateExists) {
-      try {
-        state = await readState(stateDir);
-      } catch (error) {
-        findings.push({
-          code: 'state_invalid',
-          severity: 'error',
-          message: `Session state file could not be parsed or validated: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-          file: 'state/session-state.json',
-        });
-      }
-    }
-    if (!stateExists) {
-      findings.push({
-        code: 'state_missing',
-        severity: 'error',
-        message: 'Session state file not found',
-        file: 'state/session-state.json',
-      });
-    }
-
-    if (manifest.discoveryDigest) {
-      for (const snapshotFile of ['discovery-snapshot.json', 'profile-resolution-snapshot.json']) {
-        const archivePath = `context/${snapshotFile}`;
-        const exists = await fileExists(path.join(sessDir, archivePath));
-        if (!exists) {
-          findings.push({
-            code: 'snapshot_missing',
-            severity: 'warning',
-            message: `Discovery snapshot not found: ${snapshotFile}`,
-            file: archivePath,
-          });
-        }
-      }
-    }
-
+    const state = await loadArchiveState(sessDir, findings);
+    await checkDiscoverySnapshots(sessDir, manifest, findings);
     await verifyManifestFiles(sessDir, manifest, findings);
     await checkUnexpectedFiles(sessDir, manifest, findings);
     await verifyArchiveIntegrity(

@@ -489,7 +489,7 @@ export function isRollbackPossible(tx: DependencyTransaction): boolean {
   return tx.phase < TransactionPhase.DeletingOriginal;
 }
 
-export async function rollbackDependencyTransaction(tx: DependencyTransaction): Promise<void> {
+async function refreshRollbackJournal(tx: DependencyTransaction): Promise<void> {
   try {
     const fresh = await loadJournal(tx.journalPath);
     tx.phase = fresh.phase;
@@ -498,13 +498,17 @@ export async function rollbackDependencyTransaction(tx: DependencyTransaction): 
     tx.failedPath = fresh.failedPath;
     tx.liveWasIsolated = fresh.liveWasIsolated;
   } catch (err) {
-    if (!isEnoent(err))
-      throw fail(
-        'TRANSACTION_JOURNAL_LOAD_FAILED',
-        `Cannot load journal: ${err instanceof Error ? err.message : String(err)}`,
-        { cause: err },
-      );
+    if (isEnoent(err)) return;
+    throw fail(
+      'TRANSACTION_JOURNAL_LOAD_FAILED',
+      `Cannot load journal: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
+    );
   }
+}
+
+export async function rollbackDependencyTransaction(tx: DependencyTransaction): Promise<void> {
+  await refreshRollbackJournal(tx);
 
   const recoveryPhase = tx.rollbackFromPhase ?? tx.phase;
 

@@ -89,16 +89,23 @@ type PolicyResolutionProvenance = Pick<
 function buildResolutionProvenance(
   resolution: Parameters<typeof createPolicySnapshot>[3],
 ): PolicyResolutionProvenance {
+  const {
+    source,
+    degradedReason,
+    resolutionReason,
+    centralMinimumMode,
+    policyDigest,
+    policyVersion,
+    policyPathHint,
+  } = resolution ?? {};
   return {
-    ...(resolution?.source ? { source: resolution.source } : {}),
-    ...(resolution?.degradedReason ? { degradedReason: resolution.degradedReason } : {}),
-    ...(resolution?.resolutionReason ? { resolutionReason: resolution.resolutionReason } : {}),
-    ...(resolution?.centralMinimumMode
-      ? { centralMinimumMode: resolution.centralMinimumMode }
-      : {}),
-    ...(resolution?.policyDigest ? { policyDigest: resolution.policyDigest } : {}),
-    ...(resolution?.policyVersion ? { policyVersion: resolution.policyVersion } : {}),
-    ...(resolution?.policyPathHint ? { policyPathHint: resolution.policyPathHint } : {}),
+    ...(source ? { source } : {}),
+    ...(degradedReason ? { degradedReason } : {}),
+    ...(resolutionReason ? { resolutionReason } : {}),
+    ...(centralMinimumMode ? { centralMinimumMode } : {}),
+    ...(policyDigest ? { policyDigest } : {}),
+    ...(policyVersion ? { policyVersion } : {}),
+    ...(policyPathHint ? { policyPathHint } : {}),
   };
 }
 

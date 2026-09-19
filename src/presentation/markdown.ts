@@ -42,6 +42,7 @@ import type {
   BulletListSection,
   GuidanceSection,
   GuidanceStatus,
+  DetailedCommandItem,
   DetailedCommandListSection,
   HelpSummarySection,
   HelpArtifactSection,
@@ -95,7 +96,39 @@ function sectionHeading(section: { readonly heading?: string }): string {
   return section.heading && section.heading.length > 0 ? `## ${section.heading}\n\n` : '';
 }
 
+/** Card sections that render their body without an extra heading level. */
+type CorePresentationSection = Extract<
+  PresentationSection,
+  {
+    kind:
+      'title' | 'keyValue' | 'commandList' | 'blocker' | 'artifactList' | 'findings' | 'checklist';
+  }
+>;
+
+/** Help/diagnostic and free-form sections rendered below the core card body. */
+type SupportPresentationSection = Exclude<PresentationSection, CorePresentationSection>;
+
+const CORE_SECTION_KINDS: ReadonlySet<PresentationSection['kind']> = new Set([
+  'title',
+  'keyValue',
+  'commandList',
+  'blocker',
+  'artifactList',
+  'findings',
+  'checklist',
+]);
+
+function isCoreSection(section: PresentationSection): section is CorePresentationSection {
+  return CORE_SECTION_KINDS.has(section.kind);
+}
+
 function renderSection(section: PresentationSection, glyphs: PresentationGlyphs): string {
+  return isCoreSection(section)
+    ? renderCoreSection(section, glyphs)
+    : renderSupportSection(section, glyphs);
+}
+
+function renderCoreSection(section: CorePresentationSection, glyphs: PresentationGlyphs): string {
   switch (section.kind) {
     case 'title':
       return renderTitle(section);
@@ -111,6 +144,14 @@ function renderSection(section: PresentationSection, glyphs: PresentationGlyphs)
       return sectionHeading(section) + renderFindings(section.groups, section.detail ?? 'compact');
     case 'checklist':
       return sectionHeading(section) + renderChecklist(section);
+  }
+}
+
+function renderSupportSection(
+  section: SupportPresentationSection,
+  glyphs: PresentationGlyphs,
+): string {
+  switch (section.kind) {
     case 'text':
       return sectionHeading(section) + renderText(section);
     case 'proofGraph':
@@ -346,19 +387,7 @@ function renderDetailedCommandList(section: DetailedCommandListSection): string 
     lines.push(`**${section.label}:**`);
   }
   for (const item of section.items) {
-    if (item.invocation.trim().length === 0) {
-      throw new PresentationContractError('DetailedCommandItem: invocation must not be empty');
-    }
-    if (item.description.trim().length === 0) {
-      throw new PresentationContractError('DetailedCommandItem: description must not be empty');
-    }
-    for (const alias of item.aliases) {
-      if (alias.trim().length === 0) {
-        throw new PresentationContractError(
-          'DetailedCommandItem: aliases must not contain empty strings',
-        );
-      }
-    }
+    validateDetailedCommandItem(item);
     const sym = detailedCommandSymbol(item.visibility);
     const aliases =
       item.aliases.length > 0
@@ -367,15 +396,33 @@ function renderDetailedCommandList(section: DetailedCommandListSection): string 
     const inv =
       item.visibility === 'recommended' ? `**\`${item.invocation}\`**` : `\`${item.invocation}\``;
     lines.push(`  ${sym} ${inv} — ${item.description}${aliases}`);
-
-    if (item.preflight.status === 'blocked') {
-      const p = item.preflight;
-      if (p.message) lines.push(`    blocked: ${p.message}`);
-      if (p.reasonCode) lines.push(`    code: ${p.reasonCode}`);
-      if (p.recovery) lines.push(`    recovery: ${p.recovery}`);
-    }
+    appendDetailedCommandPreflight(lines, item);
   }
   return lines.join('\n');
+}
+
+function validateDetailedCommandItem(item: DetailedCommandItem): void {
+  if (item.invocation.trim().length === 0) {
+    throw new PresentationContractError('DetailedCommandItem: invocation must not be empty');
+  }
+  if (item.description.trim().length === 0) {
+    throw new PresentationContractError('DetailedCommandItem: description must not be empty');
+  }
+  for (const alias of item.aliases) {
+    if (alias.trim().length === 0) {
+      throw new PresentationContractError(
+        'DetailedCommandItem: aliases must not contain empty strings',
+      );
+    }
+  }
+}
+
+function appendDetailedCommandPreflight(lines: string[], item: DetailedCommandItem): void {
+  if (item.preflight.status !== 'blocked') return;
+  const p = item.preflight;
+  if (p.message) lines.push(`    blocked: ${p.message}`);
+  if (p.reasonCode) lines.push(`    code: ${p.reasonCode}`);
+  if (p.recovery) lines.push(`    recovery: ${p.recovery}`);
 }
 
 function detailedCommandSymbol(

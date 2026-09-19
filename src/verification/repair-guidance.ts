@@ -122,45 +122,53 @@ export function parseFailureOutput(evidence: ExecutionEvidence): ParsedOutput {
   };
 }
 
+interface CategoryMatcher {
+  readonly category: RepairGuidanceCategory;
+  readonly pattern: RegExp;
+}
+
+const CATEGORY_MATCHERS: readonly CategoryMatcher[] = [
+  { category: 'typecheck', pattern: /\bTS\d{4}\b|Type '.*' is not assignable|tsc/i },
+  {
+    category: 'lint',
+    pattern: /\beslint\b|\bno-unused-vars\b|\bprefer-const\b|\berror\s+[^\n]+\s+\w[\w/-]+/i,
+  },
+  {
+    category: 'test',
+    pattern: /\bFAIL\b|AssertionError|\bExpected\b|\btest failed\b|\bTests?\s+failed\b/i,
+  },
+  { category: 'format', pattern: /prettier|formatting|Code style issues found|not formatted/i },
+  {
+    category: 'security',
+    pattern: /\b(CVE|GHSA)-[\w-]+\b|\bvulnerabilit(?:y|ies)\b|\bseverity\b|npm audit/i,
+  },
+  {
+    category: 'coverage',
+    pattern: /coverage threshold|Statements\s*:\s*\d|Branches\s*:\s*\d|coverage.*failed/i,
+  },
+  {
+    category: 'build',
+    pattern:
+      /\bbuild failed\b|\bModule not found\b|\bCannot find module\b|\bwebpack\b|\bvite\b|\brollup\b/i,
+  },
+];
+
+function firstMatchingCategory(combined: string): RepairGuidanceCategory | null {
+  for (const matcher of CATEGORY_MATCHERS) {
+    if (matcher.pattern.test(combined)) return matcher.category;
+  }
+  return null;
+}
+
 function detectCategory(
   evidence: ExecutionEvidence,
   lines: readonly StreamLine[],
 ): RepairGuidanceCategory | null {
   const combined = lines.map((line) => line.text).join('\n');
-  const kind = evidence.kind;
-
-  const typeCheckMatch = /\bTS\d{4}\b|Type '.*' is not assignable|tsc/i.test(combined);
-  const lintMatch =
-    /\beslint\b|\bno-unused-vars\b|\bprefer-const\b|\berror\s+[^\n]+\s+\w[\w/-]+/i.test(combined);
-  const testMatch =
-    /\bFAIL\b|AssertionError|\bExpected\b|\btest failed\b|\bTests?\s+failed\b/i.test(combined);
-  const formatMatch = /prettier|formatting|Code style issues found|not formatted/i.test(combined);
-  const securityMatch =
-    /\b(CVE|GHSA)-[\w-]+\b|\bvulnerabilit(?:y|ies)\b|\bseverity\b|npm audit/i.test(combined);
-  const coverageMatch =
-    /coverage threshold|Statements\s*:\s*\d|Branches\s*:\s*\d|coverage.*failed/i.test(combined);
-  const buildMatch =
-    /\bbuild failed\b|\bModule not found\b|\bCannot find module\b|\bwebpack\b|\bvite\b|\brollup\b/i.test(
-      combined,
-    );
-
-  if (kind === 'typecheck' && typeCheckMatch) return 'typecheck';
-  if (kind === 'lint' && lintMatch) return 'lint';
-  if (kind === 'test' && testMatch) return 'test';
-  if (kind === 'format' && formatMatch) return 'format';
-  if (kind === 'security' && securityMatch) return 'security';
-  if (kind === 'coverage' && coverageMatch) return 'coverage';
-  if (kind === 'build' && buildMatch) return 'build';
-
-  if (typeCheckMatch) return 'typecheck';
-  if (lintMatch) return 'lint';
-  if (testMatch) return 'test';
-  if (formatMatch) return 'format';
-  if (securityMatch) return 'security';
-  if (coverageMatch) return 'coverage';
-  if (buildMatch) return 'build';
-
-  return null;
+  const kindMatcher = CATEGORY_MATCHERS.find(
+    (matcher) => matcher.category === evidence.kind && matcher.pattern.test(combined),
+  );
+  return kindMatcher ? kindMatcher.category : firstMatchingCategory(combined);
 }
 
 function recommendedActions(category: RepairGuidanceCategory): string[] {

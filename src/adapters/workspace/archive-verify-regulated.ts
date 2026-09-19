@@ -4,32 +4,72 @@ import type { ChainedAuditEvent } from '../../audit/types.js';
 import type { SessionState } from '../../state/schema.js';
 import type { DecisionIdentity } from '../../state/evidence-identity.js';
 
+function isRegulatedCompletionArchive(state: SessionState | null): state is SessionState {
+  return !!state && state.policySnapshot.mode === 'regulated' && !!state.regulatedArchiveStatus;
+}
+
+function ensureTerminalState(state: SessionState, findings: ArchiveFinding[]): boolean {
+  // A regulated completion archive must never contain a non-terminal or
+  // failed snapshot. Fail closed here — skipping would let an incomplete
+  // archive pass every other integrity check.
+  if (isTerminalPhase(state.phase) && !state.error) return true;
+  findings.push({
+    code: 'regulated_terminal_transition_missing',
+    severity: 'error',
+    message: 'Regulated completion archive lacks terminal completion authority',
+    file: 'state/session-state.json',
+  });
+  return false;
+}
+
+function addUnreconciledOperationFindings(state: SessionState, findings: ArchiveFinding[]): void {
+  if (!state.pendingAuditOperations.some((operation) => operation.status !== 'reconciled')) return;
+  findings.push({
+    code: 'regulated_audit_outbox_unreconciled',
+    severity: 'error',
+    message: 'Regulated completion archive contains unreconciled audit operations',
+    file: 'state/session-state.json',
+  });
+}
+
+function addCompletionEvidenceFindings(
+  events: readonly ChainedAuditEvent[],
+  transition: NonNullable<SessionState['transition']>,
+  decision: NonNullable<SessionState['reviewDecision']>,
+  findings: ArchiveFinding[],
+): void {
+  const completionEvidence = locateCompletionEvidence(events, transition);
+  addCompletenessFindings(
+    findings,
+    completionEvidence.approvalTransitionIndex,
+    completionEvidence.exportTransitionIndex,
+    completionEvidence.decisions.length,
+    completionEvidence.lifecycle.length,
+  );
+  const { decisions } = completionEvidence;
+  const [decisionEntry] = decisions;
+  if (!hasValidCompletionOrder(completionEvidence)) {
+    findings.push({
+      code: 'regulated_completion_order_invalid',
+      severity: 'error',
+      message:
+        'Regulated completion evidence must order the approval transition, decision, export transition, then session_completed',
+      file: 'audit/audit.jsonl',
+    });
+  }
+  if (decisions.length === 1 && decisionEntry !== undefined) {
+    addDecisionBindingFindings(findings, decisionEntry.event, decision);
+  }
+}
+
 export function verifyRegulatedCompletionCompleteness(
   state: SessionState | null,
   events: readonly ChainedAuditEvent[],
   findings: ArchiveFinding[],
 ): void {
-  if (!state || state.policySnapshot.mode !== 'regulated' || !state.regulatedArchiveStatus) return;
-  // A regulated completion archive must never contain a non-terminal or
-  // failed snapshot. Fail closed here — skipping would let an incomplete
-  // archive pass every other integrity check.
-  if (!isTerminalPhase(state.phase) || state.error) {
-    findings.push({
-      code: 'regulated_terminal_transition_missing',
-      severity: 'error',
-      message: 'Regulated completion archive lacks terminal completion authority',
-      file: 'state/session-state.json',
-    });
-    return;
-  }
-  if (state.pendingAuditOperations.some((operation) => operation.status !== 'reconciled')) {
-    findings.push({
-      code: 'regulated_audit_outbox_unreconciled',
-      severity: 'error',
-      message: 'Regulated completion archive contains unreconciled audit operations',
-      file: 'state/session-state.json',
-    });
-  }
+  if (!isRegulatedCompletionArchive(state)) return;
+  if (!ensureTerminalState(state, findings)) return;
+  addUnreconciledOperationFindings(state, findings);
   const transition = state.transition;
   const isExactCompletionTransition =
     !!transition &&
@@ -57,28 +97,7 @@ export function verifyRegulatedCompletionCompleteness(
     });
     return;
   }
-  const completionEvidence = locateCompletionEvidence(events, transition);
-  addCompletenessFindings(
-    findings,
-    completionEvidence.approvalTransitionIndex,
-    completionEvidence.exportTransitionIndex,
-    completionEvidence.decisions.length,
-    completionEvidence.lifecycle.length,
-  );
-  const { decisions } = completionEvidence;
-  const [decisionEntry] = decisions;
-  if (!hasValidCompletionOrder(completionEvidence)) {
-    findings.push({
-      code: 'regulated_completion_order_invalid',
-      severity: 'error',
-      message:
-        'Regulated completion evidence must order the approval transition, decision, export transition, then session_completed',
-      file: 'audit/audit.jsonl',
-    });
-  }
-  if (decisions.length === 1 && decisionEntry !== undefined) {
-    addDecisionBindingFindings(findings, decisionEntry.event, decision);
-  }
+  addCompletionEvidenceFindings(events, transition, decision, findings);
 }
 
 /**

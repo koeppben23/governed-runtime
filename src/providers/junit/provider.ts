@@ -146,6 +146,56 @@ function selectMavenFileOption(
   return MAVEN_FILE_SELECTORS.has(parsedOption) ? parsedOption : shortOption;
 }
 
+type MavenTokenSelection =
+  | { readonly kind: 'skip' }
+  | { readonly kind: 'blocked'; readonly reason: string }
+  | {
+      readonly kind: 'selected';
+      readonly input: ExecutionSubjectInput;
+      readonly pomPath: string | null;
+      readonly consumedNextToken: boolean;
+    };
+
+function normalizeMavenConfigPath(value: string): string | null {
+  const path = value.replace(/^(?:"|')|(?:"|')$/g, '').replace(/^\.\//, '');
+  if (path.startsWith('/') || path.split('/').includes('..')) return null;
+  return path;
+}
+
+function selectMavenConfigToken(
+  tokens: readonly string[],
+  index: number,
+  allFiles: ReadonlySet<string>,
+): MavenTokenSelection {
+  const token = tokens[index];
+  if (token === undefined) return { kind: 'skip' };
+  const [parsedOption = '', inlineValue] = token.split('=', 2);
+  const shortOption = MAVEN_SHORT_FILE_SELECTORS.find(
+    (candidate) =>
+      parsedOption !== candidate &&
+      parsedOption.startsWith(candidate) &&
+      parsedOption.length > candidate.length,
+  );
+  const option = selectMavenFileOption(parsedOption, shortOption);
+  if (!option) return { kind: 'skip' };
+  const consumedNextToken = inlineValue === undefined && shortOption === undefined;
+  const value =
+    inlineValue ?? (shortOption ? parsedOption.slice(shortOption.length) : tokens[index + 1]);
+  if (!value) {
+    return { kind: 'blocked', reason: `Maven config selector '${option}' has no value` };
+  }
+  const path = normalizeMavenConfigPath(value);
+  if (path === null || !allFiles.has(path)) {
+    return { kind: 'blocked', reason: `Maven config selector '${option}' is not repo-local` };
+  }
+  return {
+    kind: 'selected',
+    input: { kind: 'file', path },
+    pomPath: option === '-f' || option === '--file' ? path : null,
+    consumedNextToken,
+  };
+}
+
 async function mavenConfigSelectedFiles(ctx: PlannerContext): Promise<MavenConfigSelection> {
   const config = await ctx.readFile('.mvn/maven.config');
   if (!config) return { kind: 'resolved', inputs: [], pomPaths: [] };
@@ -155,27 +205,12 @@ async function mavenConfigSelectedFiles(ctx: PlannerContext): Promise<MavenConfi
   const inputs: ExecutionSubjectInput[] = [];
   const pomPaths: string[] = [];
   for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index];
-    if (token === undefined) continue;
-    const [parsedOption = '', inlineValue] = token.split('=', 2);
-    const shortOption = MAVEN_SHORT_FILE_SELECTORS.find(
-      (candidate) =>
-        parsedOption !== candidate &&
-        parsedOption.startsWith(candidate) &&
-        parsedOption.length > candidate.length,
-    );
-    const option = selectMavenFileOption(parsedOption, shortOption);
-    if (!option) continue;
-    const value =
-      inlineValue ?? (shortOption ? parsedOption.slice(shortOption.length) : tokens[++index]);
-    if (!value)
-      return { kind: 'blocked', reason: `Maven config selector '${option}' has no value` };
-    const path = value.replace(/^(?:"|')|(?:"|')$/g, '').replace(/^\.\//, '');
-    if (path.startsWith('/') || path.split('/').includes('..') || !allFiles.has(path)) {
-      return { kind: 'blocked', reason: `Maven config selector '${option}' is not repo-local` };
-    }
-    inputs.push({ kind: 'file', path });
-    if (option === '-f' || option === '--file') pomPaths.push(path);
+    const selection = selectMavenConfigToken(tokens, index, allFiles);
+    if (selection.kind === 'blocked') return selection;
+    if (selection.kind !== 'selected') continue;
+    inputs.push(selection.input);
+    if (selection.pomPath !== null) pomPaths.push(selection.pomPath);
+    if (selection.consumedNextToken) index += 1;
   }
   return { kind: 'resolved', inputs, pomPaths };
 }

@@ -270,32 +270,28 @@ function strictReviewOrchestrationFailed(detail: DiagnosticDetail): RuntimeDiagn
   };
 }
 
+const BLOCKED_DIAGNOSTIC_BUILDERS: ReadonlyMap<
+  string,
+  (detail: DiagnosticDetail) => RuntimeDiagnostics
+> = new Map([
+  ['PLUGIN_ENFORCEMENT_UNAVAILABLE', enforcementUnavailable],
+  ['SESSION_DIR_NOT_FOUND', sessionDirMissing],
+  ['HOST_TOOL_PHASE_DENIED', hostToolPhaseDenied],
+  ['RISK_CLASSIFICATION_MISMATCH', riskClassificationBlocked],
+  ['RISK_CLASSIFICATION_REQUIRED', riskClassificationBlocked],
+  ['RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE', riskClassificationBlocked],
+  ['RISK_GATE_BLOCKED', riskClassificationBlocked],
+  ['RISK_DOWNGRADE_OVERRIDE_DENIED', riskClassificationBlocked],
+  ['ENVELOPE_SCHEMA_INVALID', hostTaskSchemaInvalid],
+  ['SUBAGENT_EVIDENCE_MISSING', subagentEvidenceMissing],
+  ['SUBAGENT_EVIDENCE_REUSED', subagentEvidenceReused],
+  ['STRICT_REVIEW_ORCHESTRATION_FAILED', strictReviewOrchestrationFailed],
+]);
+
 export function buildBlockedDiagnostics(
   code: string,
   detail: DiagnosticDetail = {},
 ): RuntimeDiagnostics | null {
-  switch (code) {
-    case 'PLUGIN_ENFORCEMENT_UNAVAILABLE':
-      return enforcementUnavailable(detail);
-    case 'SESSION_DIR_NOT_FOUND':
-      return sessionDirMissing(detail);
-    case 'HOST_TOOL_PHASE_DENIED':
-      return hostToolPhaseDenied(detail);
-    case 'RISK_CLASSIFICATION_MISMATCH':
-    case 'RISK_CLASSIFICATION_REQUIRED':
-    case 'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE':
-    case 'RISK_GATE_BLOCKED':
-    case 'RISK_DOWNGRADE_OVERRIDE_DENIED':
-      return riskClassificationBlocked(detail);
-    case 'ENVELOPE_SCHEMA_INVALID':
-      return hostTaskSchemaInvalid(detail);
-    case 'SUBAGENT_EVIDENCE_MISSING':
-      return subagentEvidenceMissing(detail);
-    case 'SUBAGENT_EVIDENCE_REUSED':
-      return subagentEvidenceReused(detail);
-    case 'STRICT_REVIEW_ORCHESTRATION_FAILED':
-      return strictReviewOrchestrationFailed(detail);
-    default:
-      return null;
-  }
+  const builder = BLOCKED_DIAGNOSTIC_BUILDERS.get(code);
+  return builder ? builder(detail) : null;
 }

@@ -354,42 +354,113 @@ function extractFromNestedPyprojectToml(
   return facts;
 }
 
+/** Compose image names mapped to the database id they indicate. */
+const COMPOSE_IMAGE_DATABASE_IDS: Readonly<Record<string, string>> = {
+  postgres: 'postgresql',
+  postgresql: 'postgresql',
+  mysql: 'mysql',
+  mongo: 'mongodb',
+  mongodb: 'mongodb',
+  redis: 'redis',
+};
+
+/** Parsed image name and optional numeric version from a compose image reference. */
+interface ParsedComposeImage {
+  readonly imageName: string;
+  readonly version: string | undefined;
+}
+
+function parseComposeImageRef(imageRef: string): ParsedComposeImage | null {
+  const withoutDigest = imageRef.split('@')[0] ?? imageRef;
+  const lastSegment = withoutDigest.split('/').pop()?.toLowerCase();
+  if (!lastSegment) return null;
+
+  const [imageName, rawTag] = lastSegment.split(':');
+  if (imageName === undefined) return null;
+
+  let version: string | undefined;
+  if (rawTag && rawTag !== 'latest' && !rawTag.includes('${')) {
+    version = rawTag.match(/^(\d+(?:\.\d+)*)/)?.[1];
+  }
+
+  return { imageName, version };
+}
+
 /**
  * Extract database facts from nested docker-compose content.
  * Only extracts from explicit image: lines, not from arbitrary text matches.
  */
-function extractFromNestedDockerCompose(
-  content: string,
-): Array<{ id: string; kind: DetectedStackTarget; version?: string }> {
-  const facts: Array<{ id: string; kind: DetectedStackTarget; version?: string }> = [];
+function extractFromNestedDockerCompose(content: string): ScopeFact[] {
+  const facts: ScopeFact[] = [];
 
   const imageMatches = content.matchAll(/^\s*image\s*:\s*['"]?([^'"\s]+)['"]?/gm);
   for (const match of imageMatches) {
     const imageRef = match[1]?.trim();
     if (!imageRef || imageRef.includes('${')) continue;
 
-    const withoutDigest = imageRef.split('@')[0] ?? imageRef;
-    const lastSegment = withoutDigest.split('/').pop()?.toLowerCase();
-    if (!lastSegment) continue;
+    const image = parseComposeImageRef(imageRef);
+    if (image === null) continue;
 
-    const [imageName, rawTag] = lastSegment.split(':');
-    let version: string | undefined;
-    if (rawTag && rawTag !== 'latest' && !rawTag.includes('${')) {
-      version = rawTag.match(/^(\d+(?:\.\d+)*)/)?.[1];
-    }
+    const databaseId = COMPOSE_IMAGE_DATABASE_IDS[image.imageName];
+    if (!databaseId) continue;
 
-    if (imageName === 'postgres' || imageName === 'postgresql') {
-      facts.push({ id: 'postgresql', kind: 'database', ...(version ? { version } : {}) });
-    } else if (imageName === 'mysql') {
-      facts.push({ id: 'mysql', kind: 'database', ...(version ? { version } : {}) });
-    } else if (imageName === 'mongo' || imageName === 'mongodb') {
-      facts.push({ id: 'mongodb', kind: 'database', ...(version ? { version } : {}) });
-    } else if (imageName === 'redis') {
-      facts.push({ id: 'redis', kind: 'database', ...(version ? { version } : {}) });
-    }
+    facts.push({
+      id: databaseId,
+      kind: 'database',
+      ...(image.version ? { version: image.version } : {}),
+    });
   }
 
   return facts;
+}
+
+/** Matches a manifest path and extracts its nested stack facts from content. */
+interface NestedManifestExtractor {
+  readonly matches: (normalizedPath: string) => boolean;
+  readonly extract: (content: string) => ScopeFact[];
+}
+
+function isDockerComposeBasename(normalizedPath: string): boolean {
+  return /^docker-compose(?:[.-][a-z0-9_.-]+)?\.ya?ml$/.test(
+    normalizedPath.split('/').pop()?.toLowerCase() ?? '',
+  );
+}
+
+const NESTED_MANIFEST_EXTRACTORS: readonly NestedManifestExtractor[] = [
+  { matches: (path) => path.endsWith('/package.json'), extract: extractFromNestedPackageJson },
+  { matches: (path) => path.endsWith('/pom.xml'), extract: extractFromNestedPomXml },
+  { matches: (path) => path.endsWith('/Cargo.toml'), extract: extractFromNestedCargoToml },
+  { matches: (path) => path.endsWith('/pyproject.toml'), extract: extractFromNestedPyprojectToml },
+  { matches: isDockerComposeBasename, extract: extractFromNestedDockerCompose },
+];
+
+async function readNestedManifestFacts(
+  normalizedPath: string,
+  readFile: ReadFileFn,
+): Promise<ScopeFact[]> {
+  const extractor = NESTED_MANIFEST_EXTRACTORS.find((candidate) =>
+    candidate.matches(normalizedPath),
+  );
+  if (extractor === undefined) return [];
+  const content = await readFile(normalizedPath);
+  if (!content) return [];
+  return extractor.extract(content);
+}
+
+function appendScopedFacts(
+  scopeFacts: Map<string, ScopedFactWithEvidence[]>,
+  scopePath: string,
+  facts: readonly ScopeFact[],
+  evidence: string,
+): void {
+  let scopedFacts = scopeFacts.get(scopePath);
+  if (scopedFacts === undefined) {
+    scopedFacts = [];
+    scopeFacts.set(scopePath, scopedFacts);
+  }
+  for (const fact of facts) {
+    scopedFacts.push({ ...fact, evidence });
+  }
 }
 
 /**
@@ -399,13 +470,8 @@ function extractFromNestedDockerCompose(
 async function detectNestedStackFacts(
   allFiles: readonly string[],
   readFile: ReadFileFn,
-): Promise<
-  Map<string, Array<{ id: string; kind: DetectedStackTarget; version?: string; evidence: string }>>
-> {
-  const scopeFacts = new Map<
-    string,
-    Array<{ id: string; kind: DetectedStackTarget; version?: string; evidence: string }>
-  >();
+): Promise<Map<string, ScopedFactWithEvidence[]>> {
+  const scopeFacts = new Map<string, ScopedFactWithEvidence[]>();
 
   for (const file of allFiles) {
     const normalizedPath = normalizeRepoSignalPath(file);
@@ -413,49 +479,9 @@ async function detectNestedStackFacts(
     if (!scopePath) continue;
 
     try {
-      let facts: Array<{ id: string; kind: DetectedStackTarget; version?: string }> = [];
-
-      if (normalizedPath.endsWith('/package.json')) {
-        const content = await readFile(normalizedPath);
-        if (content) {
-          facts = extractFromNestedPackageJson(content);
-        }
-      } else if (normalizedPath.endsWith('/pom.xml')) {
-        const content = await readFile(normalizedPath);
-        if (content) {
-          facts = extractFromNestedPomXml(content);
-        }
-      } else if (normalizedPath.endsWith('/Cargo.toml')) {
-        const content = await readFile(normalizedPath);
-        if (content) {
-          facts = extractFromNestedCargoToml(content);
-        }
-      } else if (normalizedPath.endsWith('/pyproject.toml')) {
-        const content = await readFile(normalizedPath);
-        if (content) {
-          facts = extractFromNestedPyprojectToml(content);
-        }
-      } else if (
-        /^docker-compose(?:[.-][a-z0-9_.-]+)?\.ya?ml$/.test(
-          normalizedPath.split('/').pop()?.toLowerCase() ?? '',
-        )
-      ) {
-        const content = await readFile(normalizedPath);
-        if (content) {
-          facts = extractFromNestedDockerCompose(content);
-        }
-      }
-
-      if (facts.length > 0) {
-        let scopedFacts = scopeFacts.get(scopePath);
-        if (scopedFacts === undefined) {
-          scopedFacts = [];
-          scopeFacts.set(scopePath, scopedFacts);
-        }
-        for (const fact of facts) {
-          scopedFacts.push({ ...fact, evidence: normalizedPath });
-        }
-      }
+      const facts = await readNestedManifestFacts(normalizedPath, readFile);
+      if (facts.length === 0) continue;
+      appendScopedFacts(scopeFacts, scopePath, facts, normalizedPath);
     } catch {
       // Skip files that can't be read
     }
