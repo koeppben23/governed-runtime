@@ -40,10 +40,14 @@ const REQUIRED_RULES = [
 ] as const;
 
 /**
- * The default-wide metrics contract for production files. Test suites are the
- * only excluded file class — never a directory. The ceilings are the measured
- * repository values (PR 2b); tightening them is a deliberate guard change and
- * weakening them requires one too.
+ * The default-wide production metrics HARD CEILINGS. Test suites and internal
+ * test support are the excluded file classes — never a directory. `25 / 120 /
+ * 5` is the transitional cap that keeps the repository lintable, not the
+ * quality target: the clean-code targets are `12 / 80 / 5`, and existing
+ * target debt is frozen in the monotonic maintainability baseline
+ * (`scripts/maintainability-baseline.json`, `npm run check:maintainability`).
+ * Tightening the cap is a deliberate guard change and weakening it requires
+ * one too.
  */
 const METRICS_CONTRACT = [
   { rule: 'complexity', option: 'max', value: 25 },

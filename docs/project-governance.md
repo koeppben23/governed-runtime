@@ -26,7 +26,19 @@ no exceptions. Each principle below is either enforced by an automated guard
 
 - **Single Responsibility Principle** — Every module, file, and function MUST
   have exactly one reason to change. No god-files, no god-functions.
-  (Enforced: `eslint` complexity/max-lines.)
+  (Enforced: monotonic maintainability ratchet `npm run check:maintainability`.)
+
+Maintainability targets and transitional ceilings:
+
+- Clean-code target: `complexity:12`, `max-lines-per-function:80`, `max-params:5`.
+- Transitional hard ceiling (ESLint): `25 / 120 / 5` — it keeps the repository
+  lintable while the debt is drained, and is not the quality target.
+- Existing target debt is frozen in `scripts/maintainability-baseline.json`;
+  the baseline is an exact debt snapshot, never a maximum.
+- New or worsening debt is blocked, new metric `eslint-disable` suppressions are
+  blocked, inline suppressions cannot hide findings, and every improvement must
+  be locked into the baseline in the same change
+  (`node scripts/check-maintainability-ratchet.mjs --update`, monotonic).
 - **Layer Isolation** — Code MUST respect FlowGuard's documented layer boundaries
   (`state/` → `machine/` → `rails/` → `adapters/` → `integration/`). No upward
   imports, no layer bypass. (Enforced: `architecture/__tests__/dependency-rules.test.ts`.)
