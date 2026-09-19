@@ -300,6 +300,12 @@ Mandates profile: `src/rendering/mandates-renderer.ts` — focused contract pass
 
 Schemas profile (`stryker.schemas.conf.json`): `src/config/flowguard-config.ts` — admitted 2026-09-17 at 91.11 % on its profile full run; `src/state/schema.ts` reached 77.78 % and remains in the schemas-profile backlog.
 
+Human-projection profile (`stryker.human-projection.conf.json`): full run
+2026-09-19 at 85.26 % after the #921 split re-anchored the markdown
+finding-render range to `src/presentation/markdown.ts:264-292`. The three static
+copy modules above carry no valid mutants and are explicitly not
+mutation-suitable for this profile.
+
 Deferred surfaces (whole roots behind the admission gate):
 `src/config/**`, `src/state/**`, `src/shared/**`, `src/audit/**`,
 `src/adapters/**`, `src/identity/**`, `src/verification/**`, `src/discovery/**`,
@@ -326,6 +332,9 @@ scoped; a target may still be a valid mutation target in another profile):
 - `src/config/reasons-validation-observation.ts` (base)
 - `src/config/reasons-validation-review.ts` (base)
 - `src/config/reasons-validation-structured.ts` (base)
+- `src/presentation/reason-copy.ts` — static copy, 0 valid mutants (human-projection).
+- `src/presentation/human-projection.ts` — type-driven composition, 0 valid mutants (human-projection).
+- `src/presentation/claim-diagnostic-copy.ts` — static diagnostic copy, 0 valid mutants (human-projection).
 
 Reason-catalog diagnostic (2026-09-17, base regime): all 175 mutants across the
 ten catalog files are rejected by the TypeScript checker (CompileError, 0

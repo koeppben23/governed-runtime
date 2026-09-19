@@ -10,11 +10,8 @@
     "configFile": "vitest.stryker-human-projection.config.ts"
   },
   "mutate": [
-    "src/presentation/reason-copy.ts",
     "src/presentation/reason-projection.ts",
-    "src/presentation/human-projection.ts",
     "src/presentation/claim-resolution.ts",
-    "src/presentation/claim-diagnostic-copy.ts",
     "src/presentation/human-verification.ts",
     "src/presentation/claim-human-projection.ts",
     "src/presentation/proof-requirement-copy.ts",
