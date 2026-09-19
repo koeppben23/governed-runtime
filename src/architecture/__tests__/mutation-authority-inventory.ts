@@ -466,6 +466,30 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
   required('src/adapters/workspace/archive-verify-chain.ts', 'Archive verification verdict chain', [
     'src/adapters/workspace/archive-verify-chain.test.ts',
   ]),
+  required(
+    'src/adapters/workspace/archive-verify-artifact-binding.ts',
+    'Archive artifact-binding verification',
+    [
+      'src/adapters/workspace/archive-verify-chain.test.ts',
+      'src/adapters/workspace/archive-verify-artifact-binding-mutation.test.ts',
+    ],
+  ),
+  required(
+    'src/adapters/workspace/archive-verify-audit-chain.ts',
+    'Archive audit-chain verification',
+    [
+      'src/adapters/workspace/archive-verify-chain.test.ts',
+      'src/adapters/workspace/archive-verify-audit-chain-mutation.test.ts',
+    ],
+  ),
+  required('src/adapters/workspace/archive-verify-checksum.ts', 'Archive checksum verification', [
+    'src/adapters/workspace/archive-verify-chain.test.ts',
+    'src/adapters/workspace/archive-verify-checksum-mutation.test.ts',
+  ]),
+  required('src/adapters/workspace/archive-verify-integrity.ts', 'Archive integrity verification', [
+    'src/adapters/workspace/archive-verify-chain.test.ts',
+    'src/adapters/workspace/archive-verify-integrity-mutation.test.ts',
+  ]),
   required('src/adapters/workspace/archive-verify-helpers.ts', 'Archive verification helpers', [
     'src/adapters/workspace/archive-verify-helpers.test.ts',
   ]),
@@ -590,6 +614,9 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     { critical: true },
   ),
   required('src/integration/plugin-audit.ts', 'In-process audit lifecycle authority', [
+    'src/integration/plugin-audit.test.ts',
+  ]),
+  required('src/integration/plugin-audit-decisions.ts', 'Audit decision receipt authority', [
     'src/integration/plugin-audit.test.ts',
   ]),
   required('src/integration/plugin-audit-reconcile.ts', 'Durable audit reconciliation authority', [
@@ -1262,49 +1289,6 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     { source: [SOURCE.trustBoundaries] },
   ),
 
-  // ── #921 split surfaces: measured verdicts (diagnostic 2026-09-19) ────────
-  // Moving the audit/archive/factory logic out of an existing required target
-  // must not silently shrink the trusted computing base. These files were
-  // measured with the base config on the #921 tree; every one is below the
-  // 80% admission gate, so they stay explicitly backlog with the measured
-  // verdict until a dedicated hardening pass admits them.
-  deferred(
-    'src/audit/event-core.ts',
-    'Audit event schema, chain hash and finalization',
-    'Base-regime diagnostic 2026-09-19 on the #921 split: 1 valid mutant, 13 checker-rejected; mutant density is insufficient to carry an authority admission. The event-body factory authority is admitted via event-builders.ts.',
-    { profile: 'base', source: [SOURCE.trustBoundaries] },
-  ),
-  deferred(
-    'src/adapters/workspace/archive-verify-artifact-binding.ts',
-    'Archive artifact-binding verification',
-    'Base-regime diagnostic 2026-09-19 on the #921 split: 75.00% (21 killed / 6 survived / 1 no-coverage). Below the admission gate; stays backlog until a focused archive-verification test pass admits it.',
-    { profile: 'base', source: [SOURCE.trustBoundaries] },
-  ),
-  deferred(
-    'src/adapters/workspace/archive-verify-audit-chain.ts',
-    'Archive audit-chain verification',
-    'Base-regime diagnostic 2026-09-19 on the #921 split: 75.00% (66 killed / 21 survived / 1 no-coverage). Below the admission gate; stays backlog until a focused archive-verification test pass admits it.',
-    { profile: 'base', source: [SOURCE.trustBoundaries] },
-  ),
-  deferred(
-    'src/adapters/workspace/archive-verify-checksum.ts',
-    'Archive checksum verification',
-    'Base-regime diagnostic 2026-09-19 on the #921 split: 64.29% (18 killed / 4 survived / 6 no-coverage). Below the admission gate; stays backlog until a focused archive-verification test pass admits it.',
-    { profile: 'base', source: [SOURCE.trustBoundaries] },
-  ),
-  deferred(
-    'src/adapters/workspace/archive-verify-integrity.ts',
-    'Archive integrity verification',
-    'Base-regime diagnostic 2026-09-19 on the #921 split: 44.44% (8 killed / 9 survived / 1 no-coverage). Below the admission gate; stays backlog until a focused archive-verification test pass admits it.',
-    { profile: 'base', source: [SOURCE.trustBoundaries] },
-  ),
-  deferred(
-    'src/integration/plugin-audit-decisions.ts',
-    'Audit decision receipt authority',
-    'Base-regime diagnostic 2026-09-19 on the #921 split: 30.00% (18 killed / 35 survived / 7 no-coverage). Below the admission gate; stays backlog until the decision-receipt contracts are covered.',
-    { profile: 'base', source: [SOURCE.trustBoundaries] },
-  ),
-
   // ── Deep authority expansion bundle ───────────────────────────────────────
   deferred(
     'src/config/policy-ci.ts',
@@ -1324,6 +1308,13 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
   ),
 
   // ── Explicitly not mutation-suitable ──────────────────────────────────────
+  notSuitable(
+    'src/audit/event-core.ts',
+    'Audit event schema, chain hash and finalization',
+    'Base-regime full run 2026-09-19: of 21 produced mutants, 7 are excluded literal mutations (StringLiteral), 13 are rejected by the TypeScript checker because block/condition mutations in computeChainHash()/finalizeWithTimestampEvidence() violate the declared return types, and the single valid operator mutant (tsa.digestAlgorithm ?? "sha256") is killed. Under the profile mutator regime no meaningful mutant can encode a semantic contract; chain-hash and finalization behavior is asserted by the audit-chain integrity suites, and the event-body factory authority is admitted via event-builders.ts.',
+    'base',
+    { source: [SOURCE.trustBoundaries] },
+  ),
   notSuitable(
     'src/presentation/reason-copy.ts',
     'Human reason copy authority',

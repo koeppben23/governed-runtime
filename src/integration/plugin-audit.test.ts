@@ -30,6 +30,10 @@ import {
   resetChainSeq,
   SESSION_ID,
 } from './plugin-audit-test-helpers.js';
+// Mutation-hardening cases for plugin-audit-decisions.ts. Kept in a focused
+// module so this suite stays inside the 2000-LOC test budget; the side-effect
+// import registers them under this stryker-selected owning suite.
+import './plugin-audit-decisions-mutation.test.js';
 import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
 import {
   buildTransitionBody,
