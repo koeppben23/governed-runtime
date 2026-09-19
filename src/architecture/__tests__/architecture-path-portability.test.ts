@@ -9,13 +9,12 @@
  * additionally proves that the real production-source scanner emits only
  * canonical repo-relative paths.
  *
- * `*-test-helpers.ts` is deliberately pinned at the normalization layer only:
- * its semantic classification is owned by `dependency-rules.test.ts`
- * (`isTestScaffoldingFile`) and `mutation-authority-inventory.ts`
- * (`isProductionSource`), not by `isTestSourcePath`. Extending the latter is a
- * classification-semantics change outside this portability contract.
+ * `isTestSourcePath` is the single source-class authority for every test class,
+ * including the conventional internal test-support files (`*-test-helpers.ts`,
+ * `test-helpers.ts`, `*-test-fixtures.ts`, `evidence-test-constants.ts`). The
+ * build, metrics, dependency-rule, and mutation projections all derive from it.
  *
- * @version v1
+ * @version v2
  */
 
 import { join, resolve } from 'node:path';
@@ -51,6 +50,14 @@ describe('architecture path portability', () => {
       'state\\probe.test.ts',
       'state/probe.spec.ts',
       'state\\probe.spec.ts',
+      'integration/plugin-audit-test-helpers.ts',
+      'integration\\plugin-audit-test-helpers.ts',
+      'integration/test-helpers.ts',
+      'integration\\test-helpers.ts',
+      'discovery/discovery-test-fixtures.ts',
+      'discovery\\discovery-test-fixtures.ts',
+      'state/evidence-test-constants.ts',
+      'state\\evidence-test-constants.ts',
       'architecture/mutation-authority-inventory.ts',
       'architecture\\mutation-authority-inventory.ts',
     ];
@@ -65,6 +72,11 @@ describe('architecture path portability', () => {
       // explicit conventional names `__tests__` / `__fixtures__` qualify.
       'state/__internal__/runtime.ts',
       'state\\__internal__\\runtime.ts',
+      // Ordinary helpers are production; only the `-test-` classes are test.
+      'integration/plugin-helpers.ts',
+      'integration\\plugin-helpers.ts',
+      'integration/tools/helpers.ts',
+      'integration\\tools\\helpers.ts',
     ];
     for (const path of productionPaths) {
       expect(isTestSourcePath(path), path).toBe(false);
@@ -79,11 +91,9 @@ describe('architecture path portability', () => {
     expect(sources.some(({ rel }) => rel.includes('/__tests__/'))).toBe(false);
   });
 
-  it('normalizes test-helper paths without changing classification semantics', () => {
+  it('classifies test-helper paths as test support and keeps them canonical', () => {
     const helper = 'integration/plugin-audit-test-helpers.ts';
     expect(normalizeRepoPath('integration\\plugin-audit-test-helpers.ts')).toBe(helper);
-    // Semantic ownership of this class lives in the dependency-rule
-    // scaffolding classifier and the mutation production predicate.
-    expect(isTestSourcePath(helper)).toBe(false);
+    expect(isTestSourcePath(helper)).toBe(true);
   });
 });

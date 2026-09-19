@@ -20,6 +20,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { repoRelative } from './repo-path.js';
+import { isTestSourcePath } from './module-classification.js';
 
 const SRC_ROOT = join(process.cwd(), 'src');
 
@@ -53,10 +54,7 @@ function collectFiles(dir: string, acc: SourceFile[]): void {
     }
     if (!entry.isFile() || !full.endsWith('.ts')) continue;
     const rel = repoRelative(SRC_ROOT, full);
-    const isTest =
-      full.endsWith('.test.ts') ||
-      full.endsWith('.spec.ts') ||
-      rel.split('/').includes('__tests__');
+    const isTest = isTestSourcePath(rel);
     acc.push({ rel, loc: countLoc(readFileSync(full, 'utf8')), isTest });
   }
 }

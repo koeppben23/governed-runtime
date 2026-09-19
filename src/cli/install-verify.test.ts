@@ -281,6 +281,28 @@ describe('install-verify', () => {
     it('has expected files in tarball', async () => {
       const distFiles = packedFiles.filter((file) => file.startsWith('package/dist/'));
       expect(distFiles.length).toBeGreaterThan(10);
+      // The public testing entry stays production.
+      expect(distFiles).toContain('package/dist/testing.js');
+      expect(distFiles).toContain('package/dist/testing.d.ts');
+    });
+
+    it('never ships internal test support in the tarball', async () => {
+      const scaffolding = packedFiles.filter((file) => {
+        if (!file.startsWith('package/dist/')) return false;
+        const rel = file.slice('package/dist/'.length);
+        return (
+          /(^|\/)(test-helpers|evidence-test-constants)\.(js|d\.ts|js\.map)$/.test(rel) ||
+          /-test-helpers\.(js|d\.ts|js\.map)$/.test(rel) ||
+          /-test-fixtures\.(js|d\.ts|js\.map)$/.test(rel) ||
+          /^fixtures\./.test(rel) ||
+          /^test-policy\./.test(rel) ||
+          rel.startsWith('audit/__fixtures__/') ||
+          rel.startsWith('architecture/') ||
+          rel.startsWith('documentation/') ||
+          rel.startsWith('security/')
+        );
+      });
+      expect(scaffolding, scaffolding.join('\n')).toEqual([]);
     });
 
     it('checksums.sha256 matches tarball (integrity smoke)', async () => {

@@ -366,7 +366,6 @@ export async function freezeRepositoryReviewObligation(
  * Production fulfillment runs through the OpenCode plugin orchestrator; direct
  * tool tests use this helper to set the same mandate-bound evidence.
  */
-// eslint-disable-next-line max-lines-per-function -- shared strict-review fixture must bind evidence, attempt lineage, and invocation together
 export async function fulfillStrictReviewObligation(
   sessDir: string,
   input: {
