@@ -758,7 +758,7 @@ async function main() {
       console.error(
         `[maintainability-ratchet] ERROR: cannot read base commit '${options.against}': ${
           error instanceof Error ? error.message : String(error)
-        }`,
+        } (is the base commit fetched? CI checkouts need fetch-depth: 0 for --against)`,
       );
       process.exit(1);
     }
