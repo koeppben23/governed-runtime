@@ -12,7 +12,27 @@ import {
   validateBaseline,
 } from '../check-maintainability-ratchet.mjs';
 
-function baselineOf(entries = [], metricSuppressions = []) {
+interface Finding {
+  file: string;
+  function: string;
+  rule: string;
+  value: number;
+}
+
+interface Suppression {
+  file: string;
+  function: string;
+  rule: string;
+}
+
+interface Baseline {
+  version: number;
+  targets: Record<string, number>;
+  entries: Finding[];
+  metricSuppressions: Suppression[];
+}
+
+function baselineOf(entries: Finding[] = [], metricSuppressions: Suppression[] = []): Baseline {
   return {
     version: BASELINE_VERSION,
     targets: { ...TARGETS },
@@ -21,15 +41,15 @@ function baselineOf(entries = [], metricSuppressions = []) {
   };
 }
 
-function finding(file, fn, rule, value) {
+function finding(file: string, fn: string, rule: string, value: number): Finding {
   return { file, function: fn, rule, value };
 }
 
-function suppression(file, fn, rule) {
+function suppression(file: string, fn: string, rule: string): Suppression {
   return { file, function: fn, rule };
 }
 
-function sourceFileOf(code) {
+function sourceFileOf(code: string): ts.SourceFile {
   return ts.createSourceFile('fixture.ts', code, ts.ScriptTarget.Latest, true);
 }
 

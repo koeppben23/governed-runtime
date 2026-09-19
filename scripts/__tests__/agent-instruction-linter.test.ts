@@ -17,6 +17,14 @@ import { join, dirname } from 'node:path';
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 
+interface LintDiagnostic {
+  file?: string;
+  kind: 'error' | 'warn';
+  message: string;
+  check?: string;
+  details?: { bytes: number; files: string[] };
+}
+
 function lintFixture(name: string) {
   return lintAgentInstructions({ root: join(FIXTURES, name) });
 }
@@ -404,21 +412,23 @@ describe('Check 10 — chain byte budget', () => {
   it('warns when chain exceeds 16 KiB warning threshold', () => {
     const result = lintFixture('chain-warn');
     expect(result.ok).toBe(true);
-    const warnDiag = result.diagnostics.find(
+    const diagnostics = result.diagnostics as LintDiagnostic[];
+    const warnDiag = diagnostics.find(
       (d) => d.kind === 'warn' && d.check === 'instruction-chain-budget',
     );
     expect(warnDiag).toBeDefined();
-    expect(warnDiag!.details.files).toHaveLength(2);
+    expect(warnDiag?.details?.files).toHaveLength(2);
   });
 
   it('errors when chain exceeds 20 KiB maximum', () => {
     const result = lintFixture('chain-error');
     expect(result.ok).toBe(false);
-    const errDiag = result.diagnostics.find(
+    const diagnostics = result.diagnostics as LintDiagnostic[];
+    const errDiag = diagnostics.find(
       (d) => d.kind === 'error' && d.check === 'instruction-chain-budget',
     );
     expect(errDiag).toBeDefined();
-    expect(errDiag!.details.files).toHaveLength(2);
+    expect(errDiag?.details?.files).toHaveLength(2);
   });
 
   it('includes all ancestor files in deep chain structure', () => {

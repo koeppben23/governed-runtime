@@ -1,5 +1,5 @@
 /**
- * @module integration/review/enforcement/durable-dispatch
+ * @module integration/durable-dispatch
  * @description Transport-neutral durable reviewer dispatch ledger operations.
  *
  * Every reviewer invocation must be recorded durably BEFORE the host releases

@@ -1,5 +1,5 @@
 /**
- * @module discovery/collectors/stack-detection
+ * @module discovery/collectors/stack-detection-rules
  * @description Collector: technology stack detection.
  *
  * Detects languages, frameworks, build tools, test frameworks, runtimes,
