@@ -102,17 +102,15 @@ describe('readState failure modes', () => {
     });
   });
 
-  it('throws READ_FAILED when the file cannot be read', async () => {
+  it('throws READ_FAILED when the state path cannot be read as a file', async () => {
     const dir = await tmpDir();
-    await fs.mkdir(dir, { recursive: true });
     const stateFile = path.join(dir, 'session-state.json');
-    await fs.writeFile(stateFile, '{}', 'utf8');
-    await fs.chmod(stateFile, 0o000);
-    try {
-      await expect(readState(dir)).rejects.toMatchObject({ code: 'READ_FAILED' });
-    } finally {
-      await fs.chmod(stateFile, 0o600);
-    }
+    // A directory at the state path is a structural, identity-independent
+    // read failure: fs.readFile() rejects on Linux, macOS, and Windows, unlike
+    // chmod(0o000), which root or an elevated runner can still read.
+    await fs.mkdir(stateFile);
+
+    await expect(readState(dir)).rejects.toMatchObject({ code: 'READ_FAILED' });
   });
 });
 
