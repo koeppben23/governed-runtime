@@ -106,6 +106,28 @@ function isCanonical(value: string): boolean {
   return ALL_FLOWGUARD_TOOL_NAMES.has(value as (typeof FLOWGUARD_TOOL_NAMES)[number]);
 }
 
+/**
+ * The text of a property name in every identity-bearing spelling:
+ * `flowguard_x:`, `'flowguard_x':`, and `['flowguard_x']:`. A computed name
+ * whose expression is not a string literal (`[TOOL_FLOWGUARD_STATUS]:`) is the
+ * canonical computed-key form and intentionally yields `undefined`.
+ */
+function propertyNameText(name: ts.PropertyName): string | undefined {
+  if (ts.isIdentifier(name) || ts.isStringLiteralLike(name)) return name.text;
+  if (ts.isComputedPropertyName(name) && ts.isStringLiteralLike(name.expression)) {
+    return name.expression.text;
+  }
+  return undefined;
+}
+
+/** Whether the property name is a bare literal, i.e. avoidable by a constant. */
+function isLiteralPropertyName(name: ts.PropertyName): boolean {
+  return (
+    ts.isStringLiteralLike(name) ||
+    (ts.isComputedPropertyName(name) && ts.isStringLiteralLike(name.expression))
+  );
+}
+
 /** Analyze one source text and report every structural identity violation. */
 function analyze(sourceText: string): Violation[] {
   const sourceFile = ts.createSourceFile('analysis.ts', sourceText, ts.ScriptTarget.Latest, true);
@@ -148,12 +170,9 @@ function analyze(sourceText: string): Violation[] {
         if (isToolLiteral(stringLiteralValue(element))) report('D2', element);
       }
     }
-    if (
-      ts.isPropertyAssignment(node) &&
-      ts.isStringLiteral(node.name) &&
-      isToolLiteral(node.name.text)
-    ) {
-      report('D2', node.name);
+    if (ts.isPropertyAssignment(node)) {
+      const name = propertyNameText(node.name);
+      if (isLiteralPropertyName(node.name) && isToolLiteral(name)) report('D2', node.name);
     }
 
     // D3 — identity-argument positions.
@@ -169,11 +188,7 @@ function analyze(sourceText: string): Violation[] {
 
     // D4 — property names must be canonical members.
     if (ts.isPropertyAssignment(node)) {
-      const name = ts.isIdentifier(node.name)
-        ? node.name.text
-        : ts.isStringLiteral(node.name)
-          ? node.name.text
-          : undefined;
+      const name = propertyNameText(node.name);
       if (name !== undefined && isToolLiteral(name) && !isCanonical(name)) {
         report('D4', node.name);
       }
@@ -229,6 +244,13 @@ describe('tool identity SSOT (default-deny)', () => {
       expect(FLOWGUARD_TOOL_NAMES, `${name} missing from FLOWGUARD_TOOL_NAMES`).toContain(value);
     }
 
+    // Tuple and prefix are one authority: no canonical identity may live
+    // outside the declared namespace.
+    for (const toolName of FLOWGUARD_TOOL_NAMES) {
+      expect(toolName, toolName).toMatch(TOOL_NAME_PATTERN);
+      expect(toolName.startsWith(FLOWGUARD_TOOL_PREFIX), toolName).toBe(true);
+    }
+
     expect(isFlowGuardToolName(TOOL_FLOWGUARD_STATUS)).toBe(true);
     expect(isFlowGuardToolName('flowguard_fake')).toBe(false);
     expect(isFlowGuardVerdictTool(TOOL_FLOWGUARD_STATUS)).toBe(false);
@@ -253,6 +275,9 @@ describe('tool identity SSOT (default-deny)', () => {
       expect(analyze(`const map = { 'flowguard_status': true };`).map((v) => v.rule)).toEqual([
         'D2',
       ]);
+      expect(analyze(`const map = { ['flowguard_status']: true };`).map((v) => v.rule)).toEqual([
+        'D2',
+      ]);
     });
 
     it('D3 rejects literals in identity-argument positions', () => {
@@ -272,10 +297,13 @@ describe('tool identity SSOT (default-deny)', () => {
       ).toEqual([]);
     });
 
-    it('D4 rejects non-canonical property names', () => {
+    it('D4 rejects non-canonical property names, including computed keys', () => {
       expect(analyze(`const policy = { flowguard_fake: 'human' };`).map((v) => v.rule)).toEqual([
         'D4',
       ]);
+      expect(analyze(`const policy = { ['flowguard_fake']: 'human' };`).map((v) => v.rule)).toEqual(
+        ['D2', 'D4'],
+      );
     });
 
     it('D5 rejects non-canonical embedded audit-event names', () => {
