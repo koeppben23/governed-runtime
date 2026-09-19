@@ -29,7 +29,7 @@ import type {
   FinishPresentationProjection,
   FinishConclusionProjection,
 } from './status-why-finish.js';
-import type { FinishCard } from './status.js';
+import type { FinishCard, FinishReviewCaveat } from './status.js';
 import { buildProofGraphSection } from '../presentation/proof-summary.js';
 
 // ─── Exit Option Copy ──────────────────────────────────────────────────────────
@@ -95,7 +95,10 @@ export function buildFinishDocument(
     });
   }
 
-  // 5. Warnings
+  // 5. Review caveats — persisted reviewer-authority projection
+  sections.push(...buildReviewCaveatSections(f));
+
+  // 6. Warnings
   if (f.warnings.length > 0) {
     const firstWarning = f.warnings[0];
     if (!firstWarning) {
@@ -113,7 +116,7 @@ export function buildFinishDocument(
     });
   }
 
-  // 6. Guidance
+  // 7. Guidance
   sections.push({
     kind: 'guidance',
     heading: 'Guidance',
@@ -124,7 +127,7 @@ export function buildFinishDocument(
     })),
   });
 
-  // 7. Exit options
+  // 8. Exit options
   if (f.exitOptions.length > 0) {
     sections.push({
       kind: 'bulletList',
@@ -146,6 +149,44 @@ export function buildFinishDocument(
 }
 
 // ─── Internal Builders ─────────────────────────────────────────────────────────
+
+/**
+ * Reviewer-authored caveats, split by disclosure semantics: a
+ * `missing_verification` statement is `not_verified`, an `unknown` is
+ * informational. The reviewer's plain text is copied unmodified; the internal
+ * category is deliberately not rendered.
+ */
+function buildReviewCaveatSections(finish: FinishCard): PresentationSection[] {
+  const sections: PresentationSection[] = [];
+  const verification = finish.reviewCaveats.filter((c) => c.source === 'missing_verification');
+  const unknowns = finish.reviewCaveats.filter((c) => c.source === 'unknown');
+  if (verification.length > 0) {
+    sections.push(buildCaveatNotice('Review verification caveats', 'not_verified', verification));
+  }
+  if (unknowns.length > 0) {
+    sections.push(buildCaveatNotice('Review unknowns', 'info', unknowns));
+  }
+  return sections;
+}
+
+function buildCaveatNotice(
+  heading: string,
+  level: 'not_verified' | 'info',
+  caveats: readonly FinishReviewCaveat[],
+): PresentationSection {
+  const first = caveats[0];
+  if (!first) {
+    throw new PresentationContractError(`FinishCard: ${heading} must not be empty`);
+  }
+  return {
+    kind: 'notice',
+    heading,
+    level,
+    message: first.message,
+    additionalMessages: caveats.slice(1).map((caveat) => caveat.message),
+    details: [],
+  };
+}
 
 function buildBlockerSection(code: string | null, reasonText: string): PresentationSection {
   const reasonProjection = code ? projectReasonFromRegistry(code) : null;

@@ -5,10 +5,11 @@
  * Contract under test:
  *   /finish is a thin, read-only presentation wrapper. buildFinishCard MUST
  *   compose the existing authorities (buildReadinessProjection,
- *   buildEvidenceDetailProjection, resolveWorkflowDirective) and add only the single
- *   presentation classifier deriveFinishOverallStatus. It performs NO
- *   independent evidence/gate evaluation, never mutates state, and never
- *   renders an exit option as forbidden.
+ *   buildEvidenceDetailProjection, resolveWorkflowDirective,
+ *   projectFinishReviewCaveats) and add only the single presentation classifier
+ *   deriveFinishOverallStatus. It performs NO independent evidence/gate
+ *   evaluation, never mutates state, and never renders an exit option as
+ *   forbidden.
  *
  * Test strategy:
  * - MATRIX: READY / READY_WITH_WARNINGS / CHANGES_REQUIRED / NOT_VERIFIED / BLOCKED with explicit
@@ -21,7 +22,7 @@
 
 import { describe, it, expect } from 'vitest';
 import type { SessionState } from '../state/schema.js';
-import type { ReviewReport } from '../state/evidence.js';
+import type { ReviewReport, ReviewReportFinding } from '../state/evidence.js';
 import {
   buildReadinessProjection,
   buildEvidenceDetailProjection,
@@ -35,7 +36,30 @@ import { makeProgressedState } from '../fixtures.js';
 const policy = getPolicyPreset('solo');
 const blockedPolicy = getPolicyPreset('team');
 
-function makeReviewReport(overallStatus: ReviewReport['overallStatus']): ReviewReport {
+/**
+ * Lifecycle reports cannot carry material findings by schema — only
+ * `content_review` reports can. The projection tests must use schema-valid
+ * fixtures so they prove real persisted-report behavior.
+ */
+type LifecycleFinding = Exclude<ReviewReport['findings'][number], { source: 'material_finding' }>;
+
+const PEER_REVIEW_COVERAGE = {
+  targetResolved: false,
+  targetFrozen: false,
+  repositoryIdentityVerified: null,
+  baseSha: null,
+  headSha: null,
+  changedPathCount: 0,
+  objectivesCovered: 0,
+  objectivesTotal: 0,
+  reviewAssurance: null,
+  missingVerification: [],
+};
+
+function makeReviewReport(
+  overallStatus: ReviewReport['overallStatus'],
+  findings: readonly LifecycleFinding[] = [],
+): Extract<ReviewReport, { reviewKind: 'lifecycle_review' }> {
   return {
     reviewKind: 'lifecycle_review',
     schemaVersion: 'flowguard-review-report.v1',
@@ -45,20 +69,35 @@ function makeReviewReport(overallStatus: ReviewReport['overallStatus']): ReviewR
     planDigest: null,
     implDigest: null,
     validationSummary: [],
-    findings: [],
+    findings: [...findings],
     overallStatus,
-    peerReviewCoverage: {
-      targetResolved: false,
-      targetFrozen: false,
-      repositoryIdentityVerified: null,
-      baseSha: null,
-      headSha: null,
-      changedPathCount: 0,
-      objectivesCovered: 0,
-      objectivesTotal: 0,
-      reviewAssurance: null,
-      missingVerification: [],
+    peerReviewCoverage: PEER_REVIEW_COVERAGE,
+  };
+}
+
+/** Content reviews are the only report kind that can carry material findings. */
+function makeContentReviewReport(
+  findings: readonly ReviewReportFinding[],
+): Extract<ReviewReport, { reviewKind: 'content_review' }> {
+  return {
+    reviewKind: 'content_review',
+    schemaVersion: 'flowguard-review-report.v1',
+    sessionId: '00000000-0000-4000-8000-000000000001',
+    generatedAt: '2026-01-01T00:00:00.000Z',
+    phase: 'PEER_REVIEW_COMPLETE',
+    planDigest: null,
+    implDigest: null,
+    validationSummary: [],
+    reviewSubject: {
+      kind: 'content',
+      source: { kind: 'inline', mediaType: 'text' },
+      materialDigest: 'a'.repeat(64),
+      subjectDigest: 'b'.repeat(64),
+      lineCount: 1,
     },
+    findings: [...findings],
+    overallStatus: 'warnings',
+    peerReviewCoverage: PEER_REVIEW_COVERAGE,
   };
 }
 
@@ -287,5 +326,175 @@ describe('buildFinishCard — guarantees and non-normative action framing', () =
     for (const g of proceed) {
       expect(g.status).toBe('not_recommended');
     }
+  });
+});
+
+// ─── REVIEW CAVEATS: pure projection of persisted ReviewReport truth ────────
+
+const MATERIAL_FINDING: ReviewReportFinding = {
+  source: 'material_finding',
+  reportSeverity: 'error',
+  finding: {
+    severity: 'major',
+    category: 'correctness',
+    message: 'Material issue must not appear at /finish',
+    relation: {
+      subjectAnchors: [
+        {
+          kind: 'repository_location',
+          location: { path: 'src/foo.ts', revision: 'head', line: 1 },
+        },
+      ],
+      evidenceLocations: [],
+    },
+  },
+};
+
+describe('buildFinishCard — review caveats', () => {
+  it('projects only missing_verification and unknown from a lifecycle report', () => {
+    const report = makeReviewReport('warnings', [
+      {
+        source: 'scope_creep',
+        reportSeverity: 'warning',
+        category: 'scope-creep',
+        message: 'Scope grew',
+      },
+      {
+        source: 'mechanical',
+        reportSeverity: 'warning',
+        category: 'correctness',
+        message: 'Mechanical note',
+      },
+      {
+        source: 'challenge',
+        reportSeverity: 'warning',
+        category: 'challenge',
+        message: 'Challenge note',
+      },
+      {
+        source: 'missing_verification',
+        reportSeverity: 'warning',
+        category: 'missing-verification',
+        message: 'Could not verify the failure path',
+      },
+      {
+        source: 'unknown',
+        reportSeverity: 'info',
+        category: 'unknown',
+        message: 'Unknown dependency surface',
+      },
+    ]);
+
+    const card = buildFinishCard(makeProgressedState('PEER_REVIEW_COMPLETE'), policy, report);
+    expect(card.reviewCaveats).toEqual([
+      { source: 'missing_verification', message: 'Could not verify the failure path' },
+      { source: 'unknown', message: 'Unknown dependency surface' },
+    ]);
+  });
+
+  it('excludes material findings from a content review report', () => {
+    const report = makeContentReviewReport([
+      MATERIAL_FINDING,
+      {
+        source: 'missing_verification',
+        reportSeverity: 'warning',
+        category: 'missing-verification',
+        message: 'Could not verify the failure path',
+      },
+      {
+        source: 'unknown',
+        reportSeverity: 'info',
+        category: 'unknown',
+        message: 'Unknown dependency surface',
+      },
+    ]);
+
+    const card = buildFinishCard(makeProgressedState('PEER_REVIEW_COMPLETE'), policy, report);
+    expect(card.reviewCaveats).toEqual([
+      { source: 'missing_verification', message: 'Could not verify the failure path' },
+      { source: 'unknown', message: 'Unknown dependency surface' },
+    ]);
+    expect(card.reviewCaveats.some((c) => c.message === MATERIAL_FINDING.finding.message)).toBe(
+      false,
+    );
+  });
+
+  it('is empty without a report and for reports without caveat sources', () => {
+    expect(buildFinishCard(makeProgressedState('COMPLETE'), policy).reviewCaveats).toEqual([]);
+    expect(
+      buildFinishCard(makeProgressedState('COMPLETE'), policy, makeReviewReport('warnings'))
+        .reviewCaveats,
+    ).toEqual([]);
+    expect(
+      buildFinishCard(
+        makeProgressedState('COMPLETE'),
+        policy,
+        makeReviewReport('warnings', [
+          {
+            source: 'scope_creep',
+            reportSeverity: 'warning',
+            category: 'scope-creep',
+            message: 'Scope grew',
+          },
+        ]),
+      ).reviewCaveats,
+    ).toEqual([]);
+  });
+
+  it('skips whitespace-only messages without transforming preserved text', () => {
+    const report = makeReviewReport('warnings', [
+      {
+        source: 'missing_verification',
+        reportSeverity: 'warning',
+        category: 'missing-verification',
+        message: '   ',
+      },
+      {
+        source: 'unknown',
+        reportSeverity: 'info',
+        category: 'unknown',
+        message: '  trailing space kept  ',
+      },
+    ]);
+
+    const card = buildFinishCard(makeProgressedState('PEER_REVIEW_COMPLETE'), policy, report);
+    expect(card.reviewCaveats).toEqual([{ source: 'unknown', message: '  trailing space kept  ' }]);
+  });
+
+  it('does not couple caveats to FinishOverallStatus semantics', () => {
+    // A missing_verification caveat is a reviewer statement, not evidence
+    // completeness: it must never derive NOT_VERIFIED on its own.
+    const complete = buildFinishCard(
+      makeProgressedState('COMPLETE'),
+      policy,
+      makeReviewReport('warnings', [
+        {
+          source: 'missing_verification',
+          reportSeverity: 'warning',
+          category: 'missing-verification',
+          message: 'Could not verify the failure path',
+        },
+      ]),
+    );
+    expect(complete.overallStatus).toBe('READY');
+    expect(complete.reviewCaveats).toHaveLength(1);
+
+    // Issues stay CHANGES_REQUIRED; the caveat merely remains visible.
+    const issues = buildFinishCard(
+      makeProgressedState('PEER_REVIEW_COMPLETE'),
+      policy,
+      makeReviewReport('issues', [
+        {
+          source: 'unknown',
+          reportSeverity: 'info',
+          category: 'unknown',
+          message: 'Unknown dependency surface',
+        },
+      ]),
+    );
+    expect(issues.overallStatus).toBe('CHANGES_REQUIRED');
+    expect(issues.reviewCaveats).toEqual([
+      { source: 'unknown', message: 'Unknown dependency surface' },
+    ]);
   });
 });

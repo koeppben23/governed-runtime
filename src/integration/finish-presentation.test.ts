@@ -6,6 +6,7 @@ import { describe, it, expect } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { SessionState } from '../state/schema.js';
+import type { ReviewReport, ReviewReportFinding } from '../state/evidence.js';
 import { renderMarkdown } from '../presentation/markdown.js';
 import { buildFinishDocument } from './finish-presentation.js';
 import { buildFinishCard } from './status-finish.js';
@@ -41,6 +42,74 @@ function ticketState(): SessionState {
     policySnapshot: sp('solo'),
     activeChecks: [],
     verificationCandidates: [],
+  };
+}
+
+/** Persisted-review fixture for the caveat projection (content reviews can carry material findings). */
+function makeCaveatReport(
+  findings: readonly ReviewReportFinding[] = [
+    {
+      source: 'material_finding',
+      reportSeverity: 'error',
+      finding: {
+        severity: 'major',
+        category: 'correctness',
+        message: 'Material issue must not appear at /finish',
+        relation: {
+          subjectAnchors: [
+            {
+              kind: 'repository_location',
+              location: { path: 'src/foo.ts', revision: 'head', line: 1 },
+            },
+          ],
+          evidenceLocations: [],
+        },
+      },
+    },
+    {
+      source: 'missing_verification',
+      reportSeverity: 'warning',
+      category: 'missing-verification',
+      message: 'Could not verify the failure path',
+    },
+    {
+      source: 'unknown',
+      reportSeverity: 'info',
+      category: 'unknown',
+      message: 'Unknown dependency surface',
+    },
+  ],
+): Extract<ReviewReport, { reviewKind: 'content_review' }> {
+  return {
+    reviewKind: 'content_review',
+    schemaVersion: 'flowguard-review-report.v1',
+    sessionId: '00000000-0000-4000-8000-000000000001',
+    generatedAt: '2026-01-01T00:00:00.000Z',
+    phase: 'PEER_REVIEW_COMPLETE',
+    planDigest: null,
+    implDigest: null,
+    validationSummary: [],
+    reviewSubject: {
+      kind: 'content',
+      source: { kind: 'inline', mediaType: 'text' },
+      materialDigest: 'a'.repeat(64),
+      subjectDigest: 'b'.repeat(64),
+      lineCount: 1,
+    },
+    findings: [...findings],
+    overallStatus: 'warnings',
+    peerReviewCoverage: {
+      targetResolved: false,
+      targetFrozen: false,
+      repositoryIdentityVerified: null,
+      baseSha: null,
+      headSha: null,
+      changedPathCount: 0,
+      objectivesCovered: 0,
+      objectivesTotal: 0,
+      reviewAssurance: null,
+      missingVerification: [],
+    },
   };
 }
 
@@ -85,6 +154,85 @@ describe('golden fixtures for /finish', () => {
     expect(output).toBe(golden.trimEnd());
     // Missing evidence → NOT_VERIFIED
     expect(card.overallStatus).toBe('NOT_VERIFIED');
+  });
+
+  it('finish-review-caveats matches golden output', async () => {
+    const state = completeState();
+    const policy = getPolicyPreset('solo');
+    const card = buildFinishCard(state, policy, makeCaveatReport());
+    const pres = buildFinishPresentationProjection(state, card);
+    const output = renderMarkdown(buildFinishDocument(pres));
+    const golden = await readGolden('finish-review-caveats.md');
+    expect(output).toBe(golden.trimEnd());
+    expect(card.overallStatus).toBe('READY');
+  });
+});
+
+// ─── Review Caveat Presentation ────────────────────────────────────────────────
+
+describe('review caveats presentation', () => {
+  const state = completeState();
+  const policy = getPolicyPreset('solo');
+
+  function caveatDoc(report: ReviewReport | null) {
+    const card = buildFinishCard(state, policy, report);
+    return {
+      card,
+      doc: buildFinishDocument(buildFinishPresentationProjection(state, card)),
+    };
+  }
+
+  it('renders missing_verification as a not_verified notice and unknown as info', () => {
+    const { doc } = caveatDoc(makeCaveatReport());
+    const notices = doc.sections.filter((section) => section.kind === 'notice');
+    expect(notices).toEqual([
+      {
+        kind: 'notice',
+        heading: 'Review verification caveats',
+        level: 'not_verified',
+        message: 'Could not verify the failure path',
+        additionalMessages: [],
+        details: [],
+      },
+      {
+        kind: 'notice',
+        heading: 'Review unknowns',
+        level: 'info',
+        message: 'Unknown dependency surface',
+        additionalMessages: [],
+        details: [],
+      },
+    ]);
+  });
+
+  it('renders the exact reviewer text and never the internal category or other sources', () => {
+    const output = renderMarkdown(caveatDoc(makeCaveatReport()).doc);
+    expect(output).toContain(
+      '## Review verification caveats\n\n? Could not verify the failure path',
+    );
+    expect(output).toContain('## Review unknowns\n\n- Unknown dependency surface');
+    expect(output).not.toContain('missing-verification');
+    expect(output).not.toContain('Material issue must not appear at /finish');
+  });
+
+  it('omits a caveat section when its source has no entries', () => {
+    const onlyUnknown = makeCaveatReport([
+      {
+        source: 'unknown',
+        reportSeverity: 'info',
+        category: 'unknown',
+        message: 'Unknown dependency surface',
+      },
+    ]);
+    const output = renderMarkdown(caveatDoc(onlyUnknown).doc);
+    expect(output).not.toContain('## Review verification caveats');
+    expect(output).toContain('## Review unknowns');
+  });
+
+  it('renders no caveat sections without a report', () => {
+    const output = renderMarkdown(caveatDoc(null).doc);
+    expect(output).not.toContain('## Review verification caveats');
+    expect(output).not.toContain('## Review unknowns');
   });
 });
 

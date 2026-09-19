@@ -281,13 +281,29 @@ export interface FinishActionGuidance {
 }
 
 /**
+ * A reviewer-authored caveat projected from the persisted ReviewReport.
+ *
+ * Only the two human-visible caveat sources are projected; material findings,
+ * scope creep, mechanical findings, and challenge outcomes are owned by other
+ * surfaces. `message` is the reviewer's plain text, copied verbatim — this is
+ * a projection of persisted review authority, never a second interpretation of
+ * the original ReviewFindings.
+ */
+export interface FinishReviewCaveat {
+  readonly source: 'missing_verification' | 'unknown';
+  readonly message: string;
+}
+
+/**
  * Finish Card — a curated, read-only overview of session readiness before
  * /export / PR / archive decisions.
  *
  * Composition-only: every field is either copied verbatim from an existing
  * projection ({@link buildReadinessProjection}, {@link buildEvidenceDetailProjection},
- * {@link resolveWorkflowDirective}) or derived by the single presentation classifier
- * {@link deriveFinishOverallStatus}. No independent evidence/gate evaluation.
+ * {@link resolveWorkflowDirective}, or the pure `projectFinishReviewCaveats`
+ * projection of the persisted ReviewReport) or derived by the single
+ * presentation classifier {@link deriveFinishOverallStatus}. No independent
+ * evidence/gate evaluation.
  */
 export interface FinishCard {
   phase: string;
@@ -305,6 +321,12 @@ export interface FinishCard {
    * only — no independent blocker logic is invented here.
    */
   blocker: BlockedProjection;
+  /**
+   * Reviewer-authored caveats projected verbatim from the persisted
+   * ReviewReport (`missing_verification` and `unknown` only). Rendered as
+   * advisory notices; never re-classified into blocker/evidence semantics.
+   */
+  reviewCaveats: FinishReviewCaveat[];
   /** Configuration warnings surfaced by the readiness projection. */
   warnings: string[];
   /**
