@@ -60,16 +60,16 @@ interface Violation {
   readonly snippet: string;
 }
 
-function stringLiteralsIn(node: ts.Node): string[] {
+/**
+ * Only DIRECT string-literal elements count as a vocabulary container. Nested
+ * literals — e.g. `[{ taskClass: 'TRIVIAL', rank: 0 }, ...]` — are business
+ * mappings/ordinals and are explicitly allowed by this guard's contract.
+ */
+function directStringLiteralsIn(node: ts.ArrayLiteralExpression): string[] {
   const out: string[] = [];
-  const walk = (current: ts.Node): void => {
-    if (ts.isStringLiteralLike(current)) {
-      out.push(current.text);
-      return;
-    }
-    current.forEachChild(walk);
-  };
-  walk(node);
+  for (const element of node.elements) {
+    if (ts.isStringLiteralLike(element)) out.push(element.text);
+  }
   return out;
 }
 
@@ -225,12 +225,9 @@ function findViolations(content: string, rel: string, vocabulary: Vocabulary): V
       report(node, `${vocabulary.name}-full-tuple`, 'full literal tuple');
     }
     if (ts.isArrayLiteralExpression(node)) {
-      // `new Map([...])` is a business mapping, and `.options` is the canonical
-      // derivation; neither is a competing vocabulary definition.
-      if (
-        !isInsideNewExpression(node, 'Map') &&
-        coversVocabulary(stringLiteralsIn(node), vocabulary)
-      ) {
+      // Direct literals only: `new Map([...])` and object-tuple mappings are
+      // business structures, and `.options` is the canonical derivation.
+      if (coversVocabulary(directStringLiteralsIn(node), vocabulary)) {
         report(
           node,
           isZodEnumArgument(node)
@@ -408,6 +405,19 @@ describe('domain vocabulary SSOT (default-deny)', () => {
       ].join('\n');
       expect(findViolations(keyed, 'fixture.ts', taskClass)).toEqual([]);
       expect(findViolations(keyed, 'fixture.ts', loopVerdict)).toEqual([]);
+    });
+
+    it('allows ordinal/business arrays whose elements merely contain the values', () => {
+      const ranking = [
+        `const ranking = [`,
+        `  { taskClass: 'TRIVIAL', rank: 0 },`,
+        `  { taskClass: 'STANDARD', rank: 1 },`,
+        `  { taskClass: 'HIGH-RISK', rank: 2 },`,
+        `];`,
+        `const verdictOrder = [['accept'], ['changes_requested'], ['unable_to_review']];`,
+      ].join('\n');
+      expect(findViolations(ranking, 'fixture.ts', taskClass)).toEqual([]);
+      expect(findViolations(ranking, 'fixture.ts', loopVerdict)).toEqual([]);
     });
   });
 });

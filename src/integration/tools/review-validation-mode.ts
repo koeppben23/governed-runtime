@@ -35,10 +35,11 @@ export interface ToolCallArgsView {
   /** Optional heavy text payload: planText (plan) / adrText (architecture). */
   readonly text?: string;
   /**
-   * reviewVerdict, when present. Typed with the canonical LoopVerdict so it
-   * accepts each tool's verdict type (plan/implement accept a subset;
-   * architecture includes unable_to_review). The classifier only distinguishes
-   * `changes_requested` from everything else.
+   * reviewVerdict, when present. Typed with the canonical LoopVerdict so the
+   * shared view accepts every tool family: plan and architecture Mode B accept
+   * `accept|changes_requested`, and `flowguard_review_implementation` carries
+   * the full LoopVerdict including `unable_to_review`. The classifier only
+   * distinguishes `changes_requested` from everything else.
    */
   readonly reviewVerdict?: LoopVerdict;
   /** reviewerUnavailable flag. */

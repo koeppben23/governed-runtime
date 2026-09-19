@@ -1,6 +1,6 @@
 /**
  * @module integration/review/enforcement/challenge-consistency
- * @description Canonical, dependency-free authority for challenge requirement,
+ * @description Canonical, runtime dependency-free authority for challenge requirement,
  * evidence, distinctness, outcome, and resolution-verdict coherence (#747).
  *
  * This is the SOLE authority for challenge/resolution consistency. It is
@@ -18,7 +18,7 @@ import { canonicalJsonStringify } from '../../../shared/canonical-json.js';
 
 /**
  * Dependency-free challenge coverage invariant. It accepts structural data so it
- * can be used at schema, SDK, and host-capture boundaries without dependencies.
+ * can be used at schema, SDK, and host-capture boundaries without runtime dependencies.
  */
 export interface ChallengeConsistencyInput {
   readonly overallVerdict: LoopVerdict;
