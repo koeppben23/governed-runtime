@@ -9,9 +9,9 @@
  * fails when a new top-level entry appears without a classification.
  *
  * Kinds:
- * - `governed`: participates in the dependency rules; cross-module imports are
- *   governed by the module's rule branch and, for the modules added by the
- *   default-deny tranche, by `CROSS_MODULE_ALLOWLIST`.
+ * - `governed`: participates in the dependency rules; the positive cross-module
+ *   direction authority is `MODULE_DEPENDENCY_POLICY` in
+ *   `module-dependency-policy.ts`.
  * - `entry`: package entry points / public barrels. They compose broadly by
  *   design (no outbound restriction), but they are outbound-only: governed
  *   modules must not import them, because their re-exports would bypass the
@@ -33,7 +33,7 @@ export interface ModuleClassification {
   readonly description: string;
 }
 
-export const MODULE_CLASSIFICATION: readonly ModuleClassification[] = [
+export const MODULE_CLASSIFICATION = [
   // Governed layers (historical scope of dependency-rules.test.ts).
   { name: 'state', kind: 'governed', description: 'Session state schema and evidence contracts' },
   { name: 'machine', kind: 'governed', description: 'State transitions, guards, commands' },
@@ -99,28 +99,13 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassification[] = [
   // Root-level test-support files.
   { name: 'fixtures.ts', kind: 'test-support', description: 'State fixture factory' },
   { name: 'test-policy.ts', kind: 'test-support', description: 'Test performance budgets' },
-];
+] as const satisfies readonly ModuleClassification[];
 
-/**
- * Cross-module allow-lists for the governed modules admitted by the
- * default-deny tranche. Intra-module imports are always allowed. A target
- * outside the list is a violation — these modules use allow-list semantics
- * rather than the deny-lists of the historical layers.
- *
- * Coupled groups are explicit: `providers` and `verification` may import each
- * other, as may `rendering` and `templates`; both groups stay acyclic at file
- * level, which the existing cycle detection enforces. `verification` also
- * consumes the `adapters` trust boundary.
- */
-export const CROSS_MODULE_ALLOWLIST: Readonly<Record<string, ReadonlySet<string>>> = {
-  providers: new Set(['state', 'verification']),
-  verification: new Set(['state', 'shared', 'providers', 'adapters']),
-  redaction: new Set(['shared', 'logging']),
-  // rendering consumes the canonical hash authority for managed-artifact
-  // content digests (shared/ is the lowest-level governed primitive layer).
-  rendering: new Set(['state', 'templates', 'shared']),
-  templates: new Set(['shared', 'rendering']),
-};
+/** Every governed top-level module name, derived from the classification. */
+export type GovernedModuleName = Extract<
+  (typeof MODULE_CLASSIFICATION)[number],
+  { readonly kind: 'governed' }
+>['name'];
 
 /** Name → classification lookup for path and importer-kind decisions. */
 export const MODULE_CLASSIFICATION_BY_NAME: ReadonlyMap<string, ModuleClassification> = new Map(

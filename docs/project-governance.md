@@ -45,7 +45,12 @@ Maintainability targets and transitional ceilings:
   (`node scripts/check-maintainability-ratchet.mjs --update`, monotonic).
 - **Layer Isolation** — Code MUST respect FlowGuard's documented layer boundaries
   (`state/` → `machine/` → `rails/` → `adapters/` → `integration/`). No upward
-  imports, no layer bypass. (Enforced: `architecture/__tests__/dependency-rules.test.ts`.)
+  imports, no layer bypass; the positive direction authority is
+  `architecture/__tests__/module-dependency-policy.ts`. Existing module-level
+  cycles are frozen as exact debt in `scripts/module-cycle-baseline.json` and may
+  only shrink (CI enforces baseline lineage against the pull-request base).
+  (Enforced: `architecture/__tests__/dependency-rules.test.ts` and
+  `scripts/check-module-cycle-lineage.mjs`.)
 - **Extract, Don't Accumulate** — Split files along domain boundaries within the
   size budget. The canonical budget and its enforced blocker thresholds (750 LOC
   production, 2000 LOC tests) live in CONTRIBUTING.md and are enforced by
