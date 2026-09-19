@@ -34,6 +34,7 @@ import {
 } from './obligation-format.js';
 import { hasReviewContentInput, validateReviewContentSource } from './review-input.js';
 import { formatBlocked, writeStateWithArtifacts } from '../helpers.js';
+import { IntegrationInvariantError } from '../../errors.js';
 import { resolveChallengeClassificationEvidence } from '../review-obligation-classification.js';
 import { type ResolvedBranchReviewSource } from '../../../adapters/gh-cli.js';
 import type { ReviewToolArgs } from './types.js';
@@ -375,7 +376,13 @@ async function createAndPrepareMissingAnalysisObligation(
     ...input.context,
   });
   if (created.blocked) return { message: created.blocked };
-  const obligation = created.obligation!;
+  const obligation = created.obligation;
+  if (obligation === undefined) {
+    throw new IntegrationInvariantError(
+      'REVIEW_OBLIGATION_CREATION_INVARIANT',
+      'creating a review obligation returned neither a blocked result nor an obligation',
+    );
+  }
   // Attempt-bound Discovery context is resolved BEFORE the attempt is minted:
   // a repository review attempt is born with its host-owned snapshot. The
   // loader is advisory-total, so this blocks only on a structural projection

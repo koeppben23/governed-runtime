@@ -91,8 +91,7 @@ export function bindCanonicalEvidenceRefs(
     if (identity) canonicalByIdentity.set(identity, reference);
   }
   const bound: Record<string, unknown>[] = [];
-  for (let challengeIndex = 0; challengeIndex < challenges.length; challengeIndex += 1) {
-    const challenge = challenges[challengeIndex]!;
+  for (const [challengeIndex, challenge] of challenges.entries()) {
     const refs = Array.isArray(challenge.evidenceRefs) ? challenge.evidenceRefs : [];
     const canonicalRefs: unknown[] = [];
     for (let referenceIndex = 0; referenceIndex < refs.length; referenceIndex += 1) {

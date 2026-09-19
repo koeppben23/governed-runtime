@@ -112,6 +112,21 @@ function safeHashHexEqual(a: string, b: string): boolean {
   return timingSafeEqual(left, right);
 }
 
+interface ParsedChecksumEntry {
+  readonly hashHex: string;
+  readonly filename: string;
+}
+
+function parseChecksumEntry(line: string): ParsedChecksumEntry | null {
+  const match = CHECKSUM_LINE_RE.exec(line);
+  if (!match) return null;
+  const hashHex = match[1];
+  const filename = match[2];
+  if (hashHex === undefined || filename === undefined) return null;
+  if (!SHA256_HEX_RE.test(hashHex)) return null;
+  return { hashHex, filename };
+}
+
 export async function verifyTarballChecksum(
   tarballPath: string,
   checksumsFilePath: string,
@@ -132,18 +147,10 @@ export async function verifyTarballChecksum(
   let matchedHash: string | undefined;
 
   for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
+    const entry = parseChecksumEntry(line.trim());
+    if (entry === null) continue;
 
-    const match = trimmed.match(CHECKSUM_LINE_RE);
-    if (!match) continue;
-
-    const hashHex = match[1]!;
-    const filename = match[2]!;
-
-    if (!SHA256_HEX_RE.test(hashHex)) continue;
-
-    if (basename(filename) === tarballName) {
+    if (basename(entry.filename) === tarballName) {
       if (matchedHash !== undefined) {
         throw new InstallError(
           'TARBALL_DUPLICATE_ENTRY',
@@ -151,7 +158,7 @@ export async function verifyTarballChecksum(
             `Ambiguous integrity verification is denied.`,
         );
       }
-      matchedHash = hashHex.toLowerCase();
+      matchedHash = entry.hashHex.toLowerCase();
     }
   }
 
@@ -513,7 +520,7 @@ export async function rollbackArtifacts(
   for (const entry of [...entries].sort((a, b) => b.sequence - a.sequence)) {
     try {
       if (entry.existed && entry.originalContent !== undefined) {
-        await restoreFileFromSnapshot(entry, ops);
+        await restoreFileFromSnapshot(entry, entry.originalContent, ops);
         continue;
       }
       if (entry.existed) continue;
@@ -527,7 +534,11 @@ export async function rollbackArtifacts(
   }
 }
 
-async function restoreFileFromSnapshot(entry: RollbackEntry, ops: FileOp[]): Promise<void> {
+async function restoreFileFromSnapshot(
+  entry: RollbackEntry,
+  originalContent: Buffer,
+  ops: FileOp[],
+): Promise<void> {
   try {
     const stat = await lstat(entry.path);
     if (stat.isSymbolicLink()) {
@@ -549,7 +560,7 @@ async function restoreFileFromSnapshot(entry: RollbackEntry, ops: FileOp[]): Pro
 
   const tmpPath = `${entry.path}.rollback.${process.pid}.${randomUUID()}`;
   try {
-    await writeFile(tmpPath, entry.originalContent!, { flag: 'wx' });
+    await writeFile(tmpPath, originalContent, { flag: 'wx' });
     await rename(tmpPath, entry.path);
     ops.push({ path: entry.path, action: 'written', reason: 'restored pre-install content' });
   } catch (rwErr) {

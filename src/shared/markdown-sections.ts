@@ -32,9 +32,33 @@ interface ParsedHeading {
   readonly headingText: string;
 }
 
+interface ParsedFence {
+  readonly marker: '`' | '~';
+  readonly length: number;
+}
+
 const ATX_HEADING = /^(#{1,6})\s(.*)$/;
 const OPENING_FENCE = /^ {0,3}(`{3,}|~{3,})/;
 const CLOSING_FENCE = /^ {0,3}(`{3,}|~{3,})[ \t]*$/;
+
+function parseFence(line: string, pattern: RegExp): ParsedFence | null {
+  const match = pattern.exec(line);
+  if (match === null) return null;
+  const markerText = match[1];
+  if (markerText === undefined) return null;
+  const marker = markerText.charAt(0);
+  if (marker !== '`' && marker !== '~') return null;
+  return { marker, length: markerText.length };
+}
+
+function parseAtxHeading(line: string, lineIndex: number): ParsedHeading | null {
+  const match = ATX_HEADING.exec(line);
+  if (match === null) return null;
+  const depthHashes = match[1];
+  const headingText = match[2];
+  if (depthHashes === undefined || headingText === undefined) return null;
+  return { lineIndex, headingDepth: depthHashes.length, headingText: headingText.trim() };
+}
 
 /**
  * Index ATX Markdown headings and their bounded excerpts. Heading paths are
@@ -43,43 +67,38 @@ const CLOSING_FENCE = /^ {0,3}(`{3,}|~{3,})[ \t]*$/;
 export function indexMarkdownSections(markdown: string): MarkdownSection[] {
   const lines = markdown.split('\n');
   const headings: ParsedHeading[] = [];
-  let openFence: { marker: '`' | '~'; length: number } | null = null;
+  let openFence: ParsedFence | null = null;
 
   for (const [lineIndex, line] of lines.entries()) {
-    const openingFence = OPENING_FENCE.exec(line);
     if (openFence) {
-      const closingFence = CLOSING_FENCE.exec(line);
+      const closingFence = parseFence(line, CLOSING_FENCE);
       if (
-        closingFence &&
-        closingFence[1]![0] === openFence.marker &&
-        closingFence[1]!.length >= openFence.length
+        closingFence !== null &&
+        closingFence.marker === openFence.marker &&
+        closingFence.length >= openFence.length
       ) {
         openFence = null;
       }
       continue;
     }
-    if (openingFence) {
-      openFence = {
-        marker: openingFence[1]![0] as '`' | '~',
-        length: openingFence[1]!.length,
-      };
+    const openingFence = parseFence(line, OPENING_FENCE);
+    if (openingFence !== null) {
+      openFence = openingFence;
       continue;
     }
-    const match = ATX_HEADING.exec(line);
-    if (!match) continue;
-    headings.push({
-      lineIndex,
-      headingDepth: match[1]!.length,
-      headingText: match[2]!.trim(),
-    });
+    const heading = parseAtxHeading(line, lineIndex);
+    if (heading === null) continue;
+    headings.push(heading);
   }
 
   const path: MarkdownSectionPathSegment[] = [];
   const siblingCounts = new Map<string, number>();
 
   return headings.map((heading, index) => {
-    while (path.length > 0 && path.at(-1)!.headingDepth >= heading.headingDepth) {
+    let lastSegment = path.at(-1);
+    while (lastSegment !== undefined && lastSegment.headingDepth >= heading.headingDepth) {
       path.pop();
+      lastSegment = path.at(-1);
     }
 
     const parentKey = path

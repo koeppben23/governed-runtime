@@ -55,6 +55,7 @@ import {
   toPresentationFindingRelation,
   writeStateWithArtifacts,
 } from './helpers.js';
+import { IntegrationInvariantError } from '../errors.js';
 
 // State & Machine
 import type { SessionState } from '../../state/schema.js';
@@ -233,7 +234,13 @@ function appendImplReviewState(input: {
     evidenceInvocationId,
     obligationToConsume,
   } = input;
-  const implementation = runtime.state.implementation!;
+  const implementation = runtime.state.implementation;
+  if (!implementation) {
+    throw new IntegrationInvariantError(
+      'IMPLEMENTATION_EVIDENCE_REQUIRED',
+      'implementation review persistence requires implementation evidence',
+    );
+  }
   const assuranceBase = ensureReviewAssurance(runtime.state.reviewAssurance);
   const strictObligation = findLatestObligation(
     assuranceBase.obligations,
@@ -280,6 +287,18 @@ function addLatestImplementationReview(
   }
 }
 
+/** Implementation digest of the revision a review decision is recorded against. */
+function requireImplementationDigest(state: SessionState): string {
+  const digest = state.implementation?.digest;
+  if (digest === undefined) {
+    throw new IntegrationInvariantError(
+      'IMPLEMENTATION_EVIDENCE_REQUIRED',
+      'recording an implementation review decision requires implementation evidence',
+    );
+  }
+  return digest;
+}
+
 async function handleChangesRequestedReview(input: {
   runtime: ImplementRuntime;
   reviewedState: SessionState;
@@ -309,7 +328,7 @@ async function handleChangesRequestedReview(input: {
         {
           ...input.reviewedState,
           implementationRework: {
-            rejectedDigest: input.runtime.state.implementation!.digest,
+            rejectedDigest: requireImplementationDigest(input.runtime.state),
             exhausted: true,
           },
         },
@@ -323,7 +342,7 @@ async function handleChangesRequestedReview(input: {
           ...input.reviewedState,
           implementation: null,
           implementationRework: {
-            rejectedDigest: input.runtime.state.implementation!.digest,
+            rejectedDigest: requireImplementationDigest(input.runtime.state),
             exhausted: false,
           },
           implValidation: [],

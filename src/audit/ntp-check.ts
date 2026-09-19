@@ -70,11 +70,11 @@ function validateNtpResponse(
     );
   }
 
-  const header = msg[0]!;
+  const header = msg.readUInt8(0);
   const leapIndicator = header >> 6;
   const version = (header >> 3) & 0x07;
   const mode = header & 0x07;
-  const stratum = msg[1]!;
+  const stratum = msg.readUInt8(1);
   const originateTimestampBytes = msg.subarray(24, 32);
   const transmitTimestampBytes = msg.subarray(40, 48);
 

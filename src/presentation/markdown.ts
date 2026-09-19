@@ -235,9 +235,10 @@ function renderFindings(groups: readonly FindingGroup[], detail: 'compact' | 'ex
 }
 
 function renderFindingItem(item: FindingItem, detail: 'compact' | 'expanded'): string {
-  const lines = [`- **${item.category}:** ${item.message}`];
-  if (item.subjects === undefined && item.evidence === undefined) return lines[0]!;
+  const heading = `- **${item.category}:** ${item.message}`;
+  if (item.subjects === undefined && item.evidence === undefined) return heading;
 
+  const lines = [heading];
   const subjects = item.subjects ?? [];
   const evidence = item.evidence ?? [];
   lines.push(`  ${formatFindingAffected(subjects)} · ${formatFindingEvidence(evidence)}`);
@@ -524,7 +525,7 @@ function normalizeEmbeddedContent(raw: string, minLevel: number): string {
 /** Return the ``` / ~~~ fence marker if the line opens/closes a fenced block. */
 function fenceDelimiter(line: string): string | null {
   const m = /^\s*(`{3,}|~{3,})/.exec(line);
-  return m ? m[1]! : null;
+  return m?.[1] ?? null;
 }
 
 /** Strip trailing whitespace from a non-code line. */
@@ -537,8 +538,11 @@ function demoteHeadingLine(line: string, shift: number): string {
   if (shift <= 0) return line;
   const m = /^(#{1,6})(\s.*)$/.exec(line);
   if (!m) return line;
-  const level = Math.min(6, m[1]!.length + shift);
-  return '#'.repeat(level) + m[2]!;
+  const levelHashes = m[1];
+  const headingText = m[2];
+  if (levelHashes === undefined || headingText === undefined) return line;
+  const level = Math.min(6, levelHashes.length + shift);
+  return '#'.repeat(level) + headingText;
 }
 
 /** Shallowest (smallest) ATX heading level in fence-external content, or null. */
@@ -555,8 +559,9 @@ function shallowestHeadingLevel(content: string): number | null {
     }
     if (inFence) continue;
     const m = /^(#{1,6})\s/.exec(line);
-    if (m && (shallowest === null || m[1]!.length < shallowest)) {
-      shallowest = m[1]!.length;
+    const levelHashes = m?.[1];
+    if (levelHashes !== undefined && (shallowest === null || levelHashes.length < shallowest)) {
+      shallowest = levelHashes.length;
     }
   }
   return shallowest;

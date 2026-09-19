@@ -73,7 +73,7 @@ export function buildStatusDocument(
   sections.push(buildStatusSection(status));
 
   if (status.blocker && status.blocker.reasonText) {
-    sections.push(buildBlockerSection(status, detail));
+    sections.push(buildBlockerSection(status.blocker, status.blocker.reasonText, detail));
   }
 
   buildEvidenceSection(status, detail, sections);
@@ -175,10 +175,10 @@ function buildStatusSection(status: StatusProjection): PresentationSection {
 }
 
 function buildBlockerSection(
-  status: StatusProjection,
+  blocker: NonNullable<StatusProjection['blocker']>,
+  reasonText: string,
   detail: PresentationBuildOptions['detail'],
 ): BlockerSection {
-  const blocker = status.blocker!;
   const reasonProjection = blocker.reasonCode
     ? projectReasonFromRegistry(blocker.reasonCode)
     : null;
@@ -187,7 +187,7 @@ function buildBlockerSection(
     kind: 'blocker',
     heading: 'Blocked',
     code: detail === 'diagnostic' ? (blocker.reasonCode ?? null) : null,
-    text: reasonProjection?.headline ?? blocker.reasonText!,
+    text: reasonProjection?.headline ?? reasonText,
     ...(recovery ? { recovery } : {}),
     ...statusBlockerDetailFields(reasonProjection, detail),
   };

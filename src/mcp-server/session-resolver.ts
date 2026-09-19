@@ -158,7 +158,13 @@ async function gitWorktree(directory: string): Promise<string> {
 }
 
 async function selectWorktree(roots: readonly string[]): Promise<string> {
-  if (roots.length === 1) return roots[0]!;
+  if (roots.length === 1) {
+    const [singleRoot] = roots;
+    if (singleRoot === undefined) {
+      throw new McpSessionResolutionError('MCP roots resolved to no canonical worktree root');
+    }
+    return singleRoot;
+  }
 
   const hint = process.env[ENV_PROJECT_DIR];
   if (!hint) {

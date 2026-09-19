@@ -64,37 +64,36 @@ const DEEP_NESTED_SCOPE_INDICATORS = [
   { pattern: /^([^/]+)\/([^/]+)\/([^/]+)\/docker-compose.*\.ya?ml$/, type: 'compose' },
 ] as const;
 
+/** Scope-indicator families paired with the number of path segments each captures. */
+const SCOPE_INDICATOR_FAMILIES = [
+  { indicators: SCOPE_INDICATORS, depth: 1 },
+  { indicators: NESTED_SCOPE_INDICATORS, depth: 2 },
+  { indicators: DEEP_NESTED_SCOPE_INDICATORS, depth: 3 },
+];
+
+/** Extract the captured segments when all are present and not in ignored directories. */
+function matchScopeSegments(match: RegExpMatchArray | null, depth: number): string[] | null {
+  if (match === null) return null;
+  const segments: string[] = [];
+  for (let index = 1; index <= depth; index += 1) {
+    const segment = match[index];
+    if (segment === undefined || IGNORED_DIRS.has(segment)) return null;
+    segments.push(segment);
+  }
+  return segments;
+}
+
 /**
  * Extract the scope path from a file path.
  * Returns null if the path is not a recognized module indicator or is in an ignored directory.
  */
 function extractScopePath(filePath: string): string | null {
-  for (const indicator of SCOPE_INDICATORS) {
-    const match = filePath.match(indicator.pattern);
-    if (match && !IGNORED_DIRS.has(match[1]!)) {
-      return match[1]!;
+  for (const family of SCOPE_INDICATOR_FAMILIES) {
+    for (const indicator of family.indicators) {
+      const segments = matchScopeSegments(filePath.match(indicator.pattern), family.depth);
+      if (segments !== null) return segments.join('/');
     }
   }
-
-  for (const indicator of NESTED_SCOPE_INDICATORS) {
-    const match = filePath.match(indicator.pattern);
-    if (match && !IGNORED_DIRS.has(match[1]!) && !IGNORED_DIRS.has(match[2]!)) {
-      return `${match[1]!}/${match[2]!}`;
-    }
-  }
-
-  for (const indicator of DEEP_NESTED_SCOPE_INDICATORS) {
-    const match = filePath.match(indicator.pattern);
-    if (
-      match &&
-      !IGNORED_DIRS.has(match[1]!) &&
-      !IGNORED_DIRS.has(match[2]!) &&
-      !IGNORED_DIRS.has(match[3]!)
-    ) {
-      return `${match[1]!}/${match[2]!}/${match[3]!}`;
-    }
-  }
-
   return null;
 }
 
@@ -103,7 +102,8 @@ function extractScopePath(filePath: string): string | null {
  */
 function isEvidenceInScope(evidence: string[], scopePath: string): boolean {
   for (const ev of evidence) {
-    const evPath = normalizeRepoSignalPath(ev.split(':')[0]!);
+    const [evidenceSource = ''] = ev.split(':');
+    const evPath = normalizeRepoSignalPath(evidenceSource);
     if (evPath.startsWith(scopePath + '/') || evPath === scopePath) {
       return true;
     }
@@ -447,11 +447,13 @@ async function detectNestedStackFacts(
       }
 
       if (facts.length > 0) {
-        if (!scopeFacts.has(scopePath)) {
-          scopeFacts.set(scopePath, []);
+        let scopedFacts = scopeFacts.get(scopePath);
+        if (scopedFacts === undefined) {
+          scopedFacts = [];
+          scopeFacts.set(scopePath, scopedFacts);
         }
         for (const fact of facts) {
-          scopeFacts.get(scopePath)!.push({ ...fact, evidence: normalizedPath });
+          scopedFacts.push({ ...fact, evidence: normalizedPath });
         }
       }
     } catch {

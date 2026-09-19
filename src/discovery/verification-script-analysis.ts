@@ -171,7 +171,7 @@ function matchSignatures(
   signatures: ReadonlyMap<ProviderId, readonly ScriptSignature[]>,
 ): SignatureMatch | null {
   if (tokens.length === 0) return null;
-  const firstToken = tokens[0]!;
+  const [firstToken] = tokens;
 
   for (const [providerId, sigs] of signatures) {
     for (const sig of sigs) {

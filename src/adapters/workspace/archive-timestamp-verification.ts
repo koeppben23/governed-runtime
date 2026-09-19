@@ -42,7 +42,8 @@ function reportPolicyTokenDowngrades(
   if (timestampPolicy?.enabled !== true || timestampPolicy.mode !== 'tsa_critical') return;
 
   for (let i = 0; i < events.length; i++) {
-    const event = events[i]!;
+    const event = events[i];
+    if (event === undefined) continue;
     if (!timestampPolicy.criticalEvents.includes(extractEventKind(event.event))) continue;
     const evidence = event.timestampEvidence as Record<string, unknown> | undefined;
     const tsa = evidence?.tsa as Record<string, unknown> | undefined;

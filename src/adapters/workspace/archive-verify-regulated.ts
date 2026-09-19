@@ -65,19 +65,9 @@ export function verifyRegulatedCompletionCompleteness(
     completionEvidence.decisions.length,
     completionEvidence.lifecycle.length,
   );
-  const { decisions, lifecycle } = completionEvidence;
-  if (
-    completionEvidence.approvalTransitionIndex >= 0 &&
-    completionEvidence.exportTransitionIndex >= 0 &&
-    decisions.length === 1 &&
-    lifecycle.length === 1 &&
-    !(
-      completionEvidence.approvalTransitionIndex < decisions[0]!.index &&
-      decisions[0]!.index < lifecycle[0]!.index &&
-      completionEvidence.approvalTransitionIndex < completionEvidence.exportTransitionIndex &&
-      completionEvidence.exportTransitionIndex < lifecycle[0]!.index
-    )
-  ) {
+  const { decisions } = completionEvidence;
+  const [decisionEntry] = decisions;
+  if (!hasValidCompletionOrder(completionEvidence)) {
     findings.push({
       code: 'regulated_completion_order_invalid',
       severity: 'error',
@@ -86,9 +76,35 @@ export function verifyRegulatedCompletionCompleteness(
       file: 'audit/audit.jsonl',
     });
   }
-  if (decisions.length === 1) {
-    addDecisionBindingFindings(findings, decisions[0]!.event, decision);
+  if (decisions.length === 1 && decisionEntry !== undefined) {
+    addDecisionBindingFindings(findings, decisionEntry.event, decision);
   }
+}
+
+/**
+ * Whether completion evidence orders the approval transition, the decision,
+ * the export transition, and the session_completed event.
+ */
+function hasValidCompletionOrder(evidence: CompletionEvidence): boolean {
+  const { approvalTransitionIndex, exportTransitionIndex, decisions, lifecycle } = evidence;
+  const [decisionEntry] = decisions;
+  const [lifecycleEntry] = lifecycle;
+  if (
+    approvalTransitionIndex < 0 ||
+    exportTransitionIndex < 0 ||
+    decisionEntry === undefined ||
+    lifecycleEntry === undefined ||
+    decisions.length !== 1 ||
+    lifecycle.length !== 1
+  ) {
+    return false;
+  }
+  return (
+    approvalTransitionIndex < decisionEntry.index &&
+    decisionEntry.index < lifecycleEntry.index &&
+    approvalTransitionIndex < exportTransitionIndex &&
+    exportTransitionIndex < lifecycleEntry.index
+  );
 }
 
 interface CompletionEvidence {

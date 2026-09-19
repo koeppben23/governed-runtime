@@ -320,7 +320,8 @@ export function resolveAuthoritativePeerReviewTask(
     ...index.completedByTask.keys(),
     ...index.supersededByTask.keys(),
   ]);
-  if (taskIds.size === 0) {
+  const [reviewTaskId] = [...taskIds];
+  if (reviewTaskId === undefined) {
     return { kind: 'none', reason: 'no peer review evidence for this obligation' };
   }
   if (taskIds.size > 1) {
@@ -329,7 +330,6 @@ export function resolveAuthoritativePeerReviewTask(
       reason: 'multiple reviewTaskIds exist for one obligation; the lifecycle chain is ambiguous',
     };
   }
-  const reviewTaskId = [...taskIds][0]!;
 
   const completions = index.completedByTask.get(reviewTaskId) ?? [];
   if (completions.length > 1) {

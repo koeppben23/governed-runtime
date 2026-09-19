@@ -600,7 +600,8 @@ export class PkijsTimestampVerifier implements TimestampVerifier {
     const signer = signerCertificate(parsed.signedData);
     if (!signer) return invalid('missing_signer_info');
 
-    const signerInfo = parsed.signedData.signerInfos[0]!;
+    const [signerInfo] = parsed.signedData.signerInfos;
+    if (signerInfo === undefined) return invalid('missing_signer_info');
     const imprint = parsed.tstInfo.messageImprint;
 
     const imprintDecision = decideDigestKind(imprint.hashAlgorithm.algorithmId, 'message-imprint');

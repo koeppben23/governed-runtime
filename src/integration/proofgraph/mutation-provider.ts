@@ -222,11 +222,14 @@ export function resolveVerifiedMutationAttempt(
       (verdicts.get(attempt.attemptId)?.get(profileId)?.covered ?? false),
   );
   if (eligible.length === 0) return null;
-  return [...eligible].sort((a, b) =>
+  const sorted = [...eligible].sort((a, b) =>
     a.completedAt === b.completedAt
       ? a.attemptId.localeCompare(b.attemptId)
       : a.completedAt.localeCompare(b.completedAt),
-  )[eligible.length - 1]!;
+  );
+  const newest = sorted.at(-1);
+  if (newest === undefined) return null;
+  return newest;
 }
 
 /**

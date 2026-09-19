@@ -322,7 +322,17 @@ export async function resolveGitControlPlanePaths(
     'hooks',
   ]);
   const lines = out.split('\n').map((line) => line.trim());
-  if (lines.length !== 6 || lines.some((line) => line.length === 0)) {
+  const [gitDir, commonDir, headPath, configPath, worktreeConfigPath, hooksPath] = lines;
+  if (
+    lines.length !== 6 ||
+    lines.some((line) => line.length === 0) ||
+    gitDir === undefined ||
+    commonDir === undefined ||
+    headPath === undefined ||
+    configPath === undefined ||
+    worktreeConfigPath === undefined ||
+    hooksPath === undefined
+  ) {
     throw new GitError(
       'GIT_COMMAND_FAILED',
       `git rev-parse returned an unexpected control-plane layout: "${out}"`,
@@ -330,12 +340,12 @@ export async function resolveGitControlPlanePaths(
   }
   const resolve = (line: string) => path.resolve(worktree, line);
   return {
-    gitDir: resolve(lines[0]!),
-    commonDir: resolve(lines[1]!),
-    headPath: resolve(lines[2]!),
-    configPath: resolve(lines[3]!),
-    worktreeConfigPath: resolve(lines[4]!),
-    hooksPath: resolve(lines[5]!),
+    gitDir: resolve(gitDir),
+    commonDir: resolve(commonDir),
+    headPath: resolve(headPath),
+    configPath: resolve(configPath),
+    worktreeConfigPath: resolve(worktreeConfigPath),
+    hooksPath: resolve(hooksPath),
   };
 }
 

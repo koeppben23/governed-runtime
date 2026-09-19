@@ -576,12 +576,13 @@ export function classifyProofClaimContract(input: ClaimContractInput): ClaimCont
   const rejectedBlocking: ClaimContractRejectedDeclaration[] = [];
   for (const [index, claim] of input.claims.entries()) {
     const violations = claimViolations(input, claim);
-    if (violations.length === 0) {
+    const firstViolation = violations[0];
+    if (firstViolation === undefined) {
       accepted.push({ claim, index });
       continue;
     }
     const result =
-      violations.find((violation) => violation.failureKind !== 'unsatisfiable') ?? violations[0]!;
+      violations.find((violation) => violation.failureKind !== 'unsatisfiable') ?? firstViolation;
     const rejected = { claim, index, result };
     if (result.failureKind === 'unsatisfiable' && !claim.critical) {
       rejectedNonBlocking.push(rejected);

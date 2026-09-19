@@ -51,6 +51,7 @@ import {
   writeStateWithArtifacts,
 } from './helpers.js';
 import type { SessionState } from '../../state/schema.js';
+import { IntegrationInvariantError } from '../errors.js';
 import { evaluate } from '../../machine/evaluate.js';
 import { isCommandAllowed, Command } from '../../machine/commands.js';
 import { autoAdvance } from '../../rails/types.js';
@@ -254,13 +255,20 @@ function currentClaimSubmissionDiagnostics(scope: PlanExecutionScope) {
 function submittedPlanClaimDeclarations(
   scope: PlanExecutionScope,
 ): import('../../state/proofgraph-approval.js').PlanClaimDeclarations | undefined {
-  return scope.args.claims
-    ? {
-        flow: 'plan',
-        version: 'v2' as const,
-        claims: normalizePlanClaims(scope.args.claims)!,
-      }
-    : scope.state.plan?.claimDeclarations;
+  const submittedClaims = scope.args.claims;
+  if (!submittedClaims) return scope.state.plan?.claimDeclarations;
+  const normalizedClaims = normalizePlanClaims(submittedClaims);
+  if (normalizedClaims === undefined) {
+    throw new IntegrationInvariantError(
+      'PROOFGRAPH_CLAIM_NORMALIZATION_UNAVAILABLE',
+      'normalizing submitted plan claims produced no canonical declarations',
+    );
+  }
+  return {
+    flow: 'plan',
+    version: 'v2' as const,
+    claims: normalizedClaims,
+  };
 }
 
 function appendClaimSubmissionHistory(scope: PlanExecutionScope, planVersion: number) {
@@ -326,10 +334,17 @@ function findUnconsumedPlanObligation(state: SessionState) {
 }
 
 function resolveEffectivePlanFindings(scope: PlanExecutionScope) {
+  const selfReview = scope.state.selfReview;
+  const plan = scope.state.plan;
+  if (!selfReview || !plan) {
+    throw new IntegrationInvariantError(
+      'PLAN_REVIEW_STATE_REQUIRED',
+      'plan review finding resolution requires plan and self-review state',
+    );
+  }
   const { assuranceBase, pendingObligation } = findUnconsumedPlanObligation(scope.state);
-  const expectedIteration = pendingObligation?.iteration ?? scope.state.selfReview!.iteration;
-  const expectedPlanVersion =
-    pendingObligation?.planVersion ?? scope.state.plan!.history.length + 1;
+  const expectedIteration = pendingObligation?.iteration ?? selfReview.iteration;
+  const expectedPlanVersion = pendingObligation?.planVersion ?? plan.history.length + 1;
   const resolved = resolveStructuredEffectiveFindings({
     pendingObligation: pendingObligation ?? null,
     expected: {
@@ -381,10 +396,14 @@ function applyPlanRevision(
   originatingReviewObligationId?: string | null,
 ): PlanRevisionResult | string {
   const state = scope.state;
+  const plan = state.plan;
+  if (!plan) {
+    throw new IntegrationInvariantError('NO_PLAN', 'plan revision requires a plan in state');
+  }
   const verdict = scope.args.reviewVerdict as LoopVerdict;
-  const prevDigest = state.plan!.current.digest;
-  let currentPlan = state.plan!.current;
-  let history = [...state.plan!.history];
+  const prevDigest = plan.current.digest;
+  let currentPlan = plan.current;
+  let history = [...plan.history];
   let revisionDelta: RevisionDelta = 'none';
 
   if (verdict !== 'changes_requested') {
@@ -416,10 +435,17 @@ function buildReviewedPlanState(
   effectiveFindings: ReviewFindings,
   consumedAssurance: ReturnType<typeof consumeReviewObligation>,
 ): SessionState {
+  const selfReview = scope.state.selfReview;
+  if (!selfReview) {
+    throw new IntegrationInvariantError(
+      'NO_SELF_REVIEW',
+      'plan review persistence requires a self-review loop in state',
+    );
+  }
   // Only host-captured effective findings are ever appended.
   const existingReviewFindings = scope.state.plan?.reviewFindings;
   const newReviewFindings = [...(existingReviewFindings ?? []), effectiveFindings];
-  const nextIteration = scope.state.selfReview!.iteration + 1;
+  const nextIteration = selfReview.iteration + 1;
 
   return {
     ...scope.state,

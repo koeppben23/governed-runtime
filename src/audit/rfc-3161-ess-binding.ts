@@ -113,15 +113,19 @@ export async function verifySigningCertificateBinding(
   const v2 = attrs.filter((attr) => attr.type === OID_SIGNING_CERTIFICATE_V2);
   if (v1.length + v2.length === 0 || v1.length > 1 || v2.length > 1) return false;
   const bindings = [...v1.map(signingCertificateHash), ...v2.map(signingCertificateV2Hash)];
-  if (bindings.some((binding) => !binding)) return false;
+  const verifiedBindings: SigningCertificateBinding[] = [];
+  for (const binding of bindings) {
+    if (binding === null) return false;
+    verifiedBindings.push(binding);
+  }
   const crypto = getCrypto(true);
   const certificateDer = signer.toSchema().toBER(false);
   return Promise.all(
-    bindings.map(async (binding) => {
+    verifiedBindings.map(async (binding) => {
       const hashName =
-        binding!.algorithm === 'sha1' ? 'SHA-1' : webcryptoHashName(binding!.algorithm);
+        binding.algorithm === 'sha1' ? 'SHA-1' : webcryptoHashName(binding.algorithm);
       const actual = await crypto.digest({ name: hashName }, certificateDer);
-      return constantTimeBytesEqual(new Uint8Array(actual), binding!.hash);
+      return constantTimeBytesEqual(new Uint8Array(actual), binding.hash);
     }),
   ).then((matches) => matches.every(Boolean));
 }

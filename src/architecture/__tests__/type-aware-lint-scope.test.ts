@@ -56,6 +56,14 @@ const METRICS_CONTRACT = [
   { rule: 'max-lines-per-function', option: 'max', value: 120 },
 ] as const;
 
+/**
+ * Zero-debt syntax rules enforced as errors for every PRODUCTION file. The
+ * executable assertion of the current stock (0 findings) lives in
+ * `production-zero-debt.test.ts`; this contract proves the ESLint rule itself
+ * cannot be narrowed to a directory or dropped.
+ */
+const PRODUCTION_SYNTAX_RULES = ['@typescript-eslint/no-non-null-assertion'] as const;
+
 interface EffectiveConfig {
   readonly rules?: Record<string, unknown>;
   readonly languageOptions?: {
@@ -92,6 +100,13 @@ function ruleOptions(entry: unknown): Record<string, unknown> | undefined {
   const options: unknown = entry[1];
   if (typeof options !== 'object' || options === null) return undefined;
   return options as Record<string, unknown>;
+}
+
+/** Production syntax-rule violations for one production file. */
+function syntaxProblems(config: EffectiveConfig, fileRel: string): string[] {
+  return PRODUCTION_SYNTAX_RULES.filter((rule) => severityOf(config.rules?.[rule]) < 2).map(
+    (rule) => `${fileRel}: production syntax rule ${rule} is not enforced as error`,
+  );
 }
 
 /** Metric-contract violations for one production file. */
@@ -180,6 +195,7 @@ describe('lint scope (default-wide correctness and metrics)', () => {
       }
       const config = (await eslint.calculateConfigForFile(file)) as EffectiveConfig;
       problems.push(...metricProblems(config, fileRel));
+      problems.push(...syntaxProblems(config, fileRel));
     }
     expect(problems).toEqual([]);
   });
@@ -266,6 +282,24 @@ describe('lint scope (default-wide correctness and metrics)', () => {
       const problems = metricProblems(incomplete, 'src/example.ts');
       expect(problems).toContain('src/example.ts: metrics rule max-params not enabled');
       expect(problems).toContain('src/example.ts: metrics rule max-lines-per-function not enabled');
+    });
+
+    it('detects production files without the zero-debt syntax rule', () => {
+      expect(syntaxProblems({ rules: {} }, 'src/example.ts')).toEqual([
+        'src/example.ts: production syntax rule @typescript-eslint/no-non-null-assertion is not enforced as error',
+      ]);
+      expect(
+        syntaxProblems(
+          { rules: { '@typescript-eslint/no-non-null-assertion': 'warn' } },
+          'src/example.ts',
+        ),
+      ).toHaveLength(1);
+      expect(
+        syntaxProblems(
+          { rules: { '@typescript-eslint/no-non-null-assertion': 'error' } },
+          'src/example.ts',
+        ),
+      ).toEqual([]);
     });
 
     it('detects weakened metric ceilings', () => {

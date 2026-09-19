@@ -214,13 +214,7 @@ export async function emitTransitionAudits(input: {
   deps.log.debug('audit', 'reconciling durable audit operations', {
     count: operations.length,
   });
-  const latestOperation = operations.at(-1)!;
-  if (computeStateDigest(state) !== latestOperation.postStateDigest) {
-    throw new PersistenceError(
-      'SCHEMA_VALIDATION_FAILED',
-      `Persisted state does not match audit operation ${latestOperation.operationId} post-state digest`,
-    );
-  }
+  assertLatestOperationMatchesState(state, operations);
   for (const operation of operations) {
     const body = buildOperationAuditBody(state, operation, ctx.prevHash);
     const expectedDigest = computeCanonicalEventDigest(body);
@@ -251,6 +245,25 @@ export async function emitTransitionAudits(input: {
     });
     await acknowledgeAuditOperation(ctx.sessDir, operation.operationId, 'audit_committed');
     await acknowledgeAuditOperation(ctx.sessDir, operation.operationId, 'reconciled');
+  }
+}
+
+function assertLatestOperationMatchesState(
+  state: SessionState,
+  operations: readonly PendingAuditOperation[],
+): void {
+  const latestOperation = operations.at(-1);
+  if (latestOperation === undefined) {
+    throw new PersistenceError(
+      'READ_FAILED',
+      'Cannot reconcile audit operations without a latest committed operation',
+    );
+  }
+  if (computeStateDigest(state) !== latestOperation.postStateDigest) {
+    throw new PersistenceError(
+      'SCHEMA_VALIDATION_FAILED',
+      `Persisted state does not match audit operation ${latestOperation.operationId} post-state digest`,
+    );
   }
 }
 
@@ -350,7 +363,14 @@ export async function emitAuditBodyWithEvidence(input: {
     : undefined;
   timestampTracker.record(eventKind, resolution?.error);
   const evt = finalizeWithTimestampEvidence(body, ctx.prevHash, resolution?.evidence, digest);
-  ctx.prevHash = evt.chainHash!;
+  const chainHash = evt.chainHash;
+  if (chainHash === undefined) {
+    throw new PersistenceError(
+      'SCHEMA_VALIDATION_FAILED',
+      'Finalized audit event is missing its chain hash',
+    );
+  }
+  ctx.prevHash = chainHash;
   await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
 }
 

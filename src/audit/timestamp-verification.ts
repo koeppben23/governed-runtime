@@ -79,9 +79,8 @@ function epochOf(value: string): number | null {
 export function verifyTimestampMonotonicity(
   events: readonly AuditEvent[],
 ): TimestampMonotonicityResult {
-  let previous: number | null = null;
-  for (let i = 0; i < events.length; i++) {
-    const event = events[i]!;
+  let previous: { readonly recorded: number; readonly recordedAt: string } | null = null;
+  for (const [i, event] of events.entries()) {
     const recorded = epochOf(event.recordedAt);
     if (recorded === null) {
       return {
@@ -105,14 +104,14 @@ export function verifyTimestampMonotonicity(
         message: `Occurrence timestamp at index ${i} postdates its record timestamp: "${event.occurredAt}" > "${event.recordedAt}"`,
       };
     }
-    if (previous !== null && recorded < previous) {
+    if (previous !== null && recorded < previous.recorded) {
       return {
         valid: false,
         firstBreak: i,
-        message: `Record timestamp non-monotonic at index ${i}: "${event.recordedAt}" < "${events[i - 1]!.recordedAt}"`,
+        message: `Record timestamp non-monotonic at index ${i}: "${event.recordedAt}" < "${previous.recordedAt}"`,
       };
     }
-    previous = recorded;
+    previous = { recorded, recordedAt: event.recordedAt };
   }
   return { valid: true, firstBreak: null, message: null };
 }
@@ -255,8 +254,7 @@ export function verifyTimestampEvidencePresence(
 ): EvidencePresenceCheck {
   const missingCriticalEvents: number[] = [];
 
-  for (let i = 0; i < events.length; i++) {
-    const event = events[i]!;
+  for (const [i, event] of events.entries()) {
     const evidence = (event as Record<string, unknown>).timestampEvidence as
       Record<string, unknown> | undefined;
 

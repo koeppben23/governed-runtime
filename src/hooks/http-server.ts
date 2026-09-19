@@ -177,15 +177,20 @@ function secureTokenEquals(actual: string, expected: string): boolean {
 
 function isAuthorizedHookRequest(req: IncomingMessage, token: string): boolean {
   const authorization = headerValues(req, 'authorization');
-  if (authorization.length !== 1) return false;
-  const match = /^Bearer ([^\s]+)$/i.exec(authorization[0]!);
-  return match !== null && secureTokenEquals(match[1]!, token);
+  const [authorizationHeader] = authorization;
+  if (authorization.length !== 1 || authorizationHeader === undefined) return false;
+  const match = /^Bearer ([^\s]+)$/i.exec(authorizationHeader);
+  if (match === null) return false;
+  const [, bearerToken] = match;
+  return bearerToken !== undefined && secureTokenEquals(bearerToken, token);
 }
 
 function hasJsonContentType(req: IncomingMessage): boolean {
   const contentTypes = headerValues(req, 'content-type');
-  if (contentTypes.length !== 1) return false;
-  return contentTypes[0]!.split(';', 1)[0]!.trim().toLowerCase() === 'application/json';
+  const [contentType] = contentTypes;
+  if (contentTypes.length !== 1 || contentType === undefined) return false;
+  const [mediaType] = contentType.split(';', 1);
+  return mediaType !== undefined && mediaType.trim().toLowerCase() === 'application/json';
 }
 
 function log(message: string): void {
@@ -408,19 +413,16 @@ function truncateInput(input: Record<string, unknown>): Record<string, unknown> 
 
 // ─── Router ──────────────────────────────────────────────────────────────────
 
-const ROUTES: Record<string, (payload: Record<string, unknown>) => Promise<HttpHookResponse>> = {
-  '/hooks/pre-tool-use': handlePreToolUse,
-  '/hooks/post-tool-use': handlePostToolUse,
-  '/hooks/session-start': handleSessionStart,
-  '/hooks/stop': handleStop,
-};
+interface HookRoute {
+  readonly event: HookEventName;
+  readonly handle: (payload: Record<string, unknown>) => Promise<HttpHookResponse>;
+}
 
-/** Map route path to hook event name for deny response formatting. */
-const ROUTE_EVENTS: Record<string, HookEventName> = {
-  '/hooks/pre-tool-use': 'PreToolUse',
-  '/hooks/post-tool-use': 'PostToolUse',
-  '/hooks/session-start': 'SessionStart',
-  '/hooks/stop': 'Stop',
+const ROUTES: Record<string, HookRoute> = {
+  '/hooks/pre-tool-use': { event: 'PreToolUse', handle: handlePreToolUse },
+  '/hooks/post-tool-use': { event: 'PostToolUse', handle: handlePostToolUse },
+  '/hooks/session-start': { event: 'SessionStart', handle: handleSessionStart },
+  '/hooks/stop': { event: 'Stop', handle: handleStop },
 };
 
 // ─── Server ──────────────────────────────────────────────────────────────────
@@ -449,8 +451,8 @@ export async function handleHttpRequest(req: IncomingMessage, res: ServerRespons
     return;
   }
 
-  const handler = ROUTES[url];
-  if (!handler) {
+  const route = ROUTES[url];
+  if (!route) {
     jsonResponse(res, 404, { error: `Unknown route: ${url}` });
     return;
   }
@@ -486,13 +488,16 @@ export async function handleHttpRequest(req: IncomingMessage, res: ServerRespons
   }
 
   try {
-    const result = await handler(payload);
+    const result = await route.handle(payload);
 
     // For pre-tool-use denials, also include the hookSpecificOutput format
     // so Claude Code can interpret it directly.
     if (result.decision === 'deny' && url === '/hooks/pre-tool-use') {
-      const eventName = ROUTE_EVENTS[url]!;
-      const denyOutput = formatDenyOutput(eventName, result.code ?? 'DENIED', result.reason ?? '');
+      const denyOutput = formatDenyOutput(
+        route.event,
+        result.code ?? 'DENIED',
+        result.reason ?? '',
+      );
       jsonResponse(res, 200, { ...result, ...denyOutput });
     } else {
       jsonResponse(res, 200, result);
@@ -501,9 +506,8 @@ export async function handleHttpRequest(req: IncomingMessage, res: ServerRespons
     log(`ERROR: ${url} handler failed: ${err instanceof Error ? err.message : String(err)}`);
     // Fail-closed for pre-tool-use: return deny on internal error.
     if (url === '/hooks/pre-tool-use') {
-      const eventName = ROUTE_EVENTS[url]!;
       const denyOutput = formatDenyOutput(
-        eventName,
+        route.event,
         'INTERNAL_ERROR',
         `Hook server internal error: ${err instanceof Error ? err.message : String(err)}`,
       );
@@ -517,16 +521,18 @@ export async function handleHttpRequest(req: IncomingMessage, res: ServerRespons
 const server = createServer(handleHttpRequest);
 
 function startServer(): void {
+  let config: HttpHookServerConfig;
   try {
-    serverConfig = readHttpHookServerConfig();
+    config = readHttpHookServerConfig();
   } catch (err) {
     log(`ERROR: invalid configuration: ${err instanceof Error ? err.message : String(err)}`);
     process.exitCode = 1;
     return;
   }
+  serverConfig = config;
 
-  server.listen(serverConfig.port, serverConfig.host, () => {
-    log(`listening on ${serverConfig!.host}:${serverConfig!.port}`);
+  server.listen(config.port, config.host, () => {
+    log(`listening on ${config.host}:${config.port}`);
     log(`PID: ${process.pid}`);
     log(`routes: ${Object.keys(ROUTES).join(', ')}`);
   });

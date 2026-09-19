@@ -397,7 +397,8 @@ function assertPlanRevisionCoverage(
     const matches = entries.filter(
       (candidate) => candidate.meta.recordDigest === revision.recordDigest,
     );
-    if (matches.length === 0) {
+    const [onlyMatch] = matches;
+    if (onlyMatch === undefined) {
       throw new EvidenceArtifactError(
         'EVIDENCE_ARTIFACT_MISSING',
         `Plan artifact missing for revision v${revision.planVersion}`,
@@ -409,7 +410,7 @@ function assertPlanRevisionCoverage(
         `Plan revision v${revision.planVersion} is materialized more than once`,
       );
     }
-    const artifact = matches[0]!.meta;
+    const artifact = onlyMatch.meta;
     if (artifact.contentHash !== revision.digest) {
       throw new EvidenceArtifactError(
         'EVIDENCE_ARTIFACT_MISMATCH',
@@ -716,7 +717,8 @@ async function assertMarkdownIntegrity(
 
 async function cleanupCreatedArtifacts(createdPaths: string[]): Promise<void> {
   for (let i = createdPaths.length - 1; i >= 0; i -= 1) {
-    const filePath = createdPaths[i]!;
+    const filePath = createdPaths[i];
+    if (filePath === undefined) continue;
     try {
       await fs.unlink(filePath);
     } catch {

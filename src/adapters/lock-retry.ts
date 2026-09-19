@@ -21,6 +21,11 @@ export { PersistenceError };
 const DEFAULT_DELAYS_MS = [100, 200, 400];
 const DEFAULT_TIMEOUT_MS = 10_000;
 
+/** Delay for a retry attempt; an absent entry retries immediately. */
+function retryDelayMs(delaysMs: readonly number[], attempt: number): number {
+  return delaysMs[attempt] ?? 0;
+}
+
 export interface SessionWriteLockRetryCallbacks {
   onRetry?: (attempt: number, delayMs: number, error: PersistenceError) => void;
 }
@@ -74,7 +79,7 @@ export async function withSessionWriteLockRetry<T>(
       }
       lastError = err;
       if (attempt >= delaysMs.length) break;
-      const delayMs = delaysMs[attempt]!;
+      const delayMs = retryDelayMs(delaysMs, attempt);
       options?.onRetry?.(attempt + 1, delayMs, err);
       await new Promise((r) => setTimeout(r, delayMs));
     }

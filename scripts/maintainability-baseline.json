@@ -58,13 +58,7 @@
       "file": "src/adapters/workspace/archive-verify-regulated.ts",
       "function": "function:verifyRegulatedCompletionCompleteness",
       "rule": "complexity",
-      "value": 22
-    },
-    {
-      "file": "src/adapters/workspace/archive-verify-regulated.ts",
-      "function": "function:verifyRegulatedCompletionCompleteness",
-      "rule": "max-lines-per-function",
-      "value": 83
+      "value": 16
     },
     {
       "file": "src/audit/types.ts",
@@ -197,12 +191,6 @@
       "function": "function:extractFromNestedDockerCompose",
       "rule": "complexity",
       "value": 22
-    },
-    {
-      "file": "src/discovery/scoped-stack.ts",
-      "function": "function:extractScopePath",
-      "rule": "complexity",
-      "value": 13
     },
     {
       "file": "src/discovery/verification-planner.ts",

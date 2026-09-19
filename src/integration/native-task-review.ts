@@ -90,7 +90,7 @@ function pendingBinding(runtime: FlowGuardPluginRuntime, sessionId: string) {
   const candidates = [...runtime.ws.getEnforcementState(sessionId).pendingReviews.values()].filter(
     (pending) => pending.obligationId !== null && pending.attemptId !== null,
   );
-  return candidates.length === 1 ? candidates[0]! : null;
+  return candidates.length === 1 ? (candidates[0] ?? null) : null;
 }
 
 function subjectLabel(type: ReviewObligationType): string {

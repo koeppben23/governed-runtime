@@ -20,6 +20,7 @@ import type {
   PresentationAction,
   FindingRelationPresentation,
 } from './model.js';
+import { PresentationContractError } from './model.js';
 import { projectFindingRelation } from './finding-relation.js';
 import { renderMarkdown } from './markdown.js';
 import type { PresentationRenderOptions } from './glyph-profile.js';
@@ -186,11 +187,19 @@ function buildFindingGroups(
   const severityOrder = ['critical', 'major', 'minor'];
   return severityOrder
     .filter((s) => bySeverity.has(s))
-    .map((s) => ({
-      severity: severityToPresentation(s),
-      label: `${label} (${s})`,
-      items: bySeverity.get(s)!,
-    }));
+    .map((s) => {
+      const items = bySeverity.get(s);
+      if (items === undefined) {
+        throw new PresentationContractError(
+          `finding group '${s}' vanished from the severity map after presence was verified`,
+        );
+      }
+      return {
+        severity: severityToPresentation(s),
+        label: `${label} (${s})`,
+        items,
+      };
+    });
 }
 
 function severityToPresentation(severity: string): FindingGroup['severity'] {

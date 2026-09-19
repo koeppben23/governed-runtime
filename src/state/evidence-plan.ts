@@ -193,8 +193,7 @@ export const PlanRecord = z
     const chain = [...record.history, record.current].sort(
       (left, right) => left.planVersion - right.planVersion,
     );
-    for (let index = 0; index < chain.length; index += 1) {
-      const revision = chain[index]!;
+    for (const [index, revision] of chain.entries()) {
       const path = planRevisionIssuePath(record, revision);
       if (revision.digest !== hashText(revision.body)) {
         context.addIssue({
@@ -228,7 +227,8 @@ export const PlanRecord = z
         });
         return;
       }
-      const predecessorRecordDigest = index === 0 ? null : chain[index - 1]!.recordDigest;
+      const predecessor = index === 0 ? undefined : chain.at(index - 1);
+      const predecessorRecordDigest = predecessor?.recordDigest ?? null;
       if (revision.supersedesRecordDigest !== predecessorRecordDigest) {
         context.addIssue({
           code: z.ZodIssueCode.custom,

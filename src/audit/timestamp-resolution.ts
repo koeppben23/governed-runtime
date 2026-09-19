@@ -107,7 +107,7 @@ async function resolveTsaCriticalTimestamp(
   }
   if (!input.tsaProvider) return tsaProviderUnavailableResult(input);
   try {
-    const tsaResponse = await requestTimestamp(input);
+    const tsaResponse = await requestTimestamp(input, input.tsaProvider);
     const verification = await verifyTimestampResponse(input, tsaResponse.tokenDerBase64);
     return verification?.status === 'invalid'
       ? invalidTsaResult(input, tsaResponse, verification.reason ?? 'invalid_timestamp_token')
@@ -131,8 +131,11 @@ function tsaProviderUnavailableResult(input: TimestampResolutionInput): Timestam
   };
 }
 
-async function requestTimestamp(input: TimestampResolutionInput) {
-  return input.tsaProvider!.requestTimestamp({
+async function requestTimestamp(
+  input: TimestampResolutionInput,
+  tsaProvider: TimestampAuthorityProvider,
+) {
+  return tsaProvider.requestTimestamp({
     digest: canonicalDigestToUint8Array(input.canonicalEventDigest),
     digestAlgorithm: 'sha256',
     tsaUrl: input.policy.tsaUrl ?? '',

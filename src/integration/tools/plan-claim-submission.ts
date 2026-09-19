@@ -5,6 +5,7 @@
 
 import { defaultReasonRegistry } from '../../config/reasons.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
+import { IntegrationInvariantError } from '../errors.js';
 import type { SessionState } from '../../state/schema.js';
 import { normalizePlanClaims } from '../../state/proofgraph-approval.js';
 import {
@@ -31,7 +32,13 @@ export function classifyPlanClaimSubmission(
   digest: (value: string) => string,
 ): PlanClaimSubmissionClassification {
   if (!args.claims || args.claims.length === 0) return { kind: 'ok', args };
-  const normalized = normalizePlanClaims(args.claims)!;
+  const normalized = normalizePlanClaims(args.claims);
+  if (normalized === undefined) {
+    throw new IntegrationInvariantError(
+      'PROOFGRAPH_CLAIM_NORMALIZATION_UNAVAILABLE',
+      'normalizing submitted plan claims produced no canonical declarations',
+    );
+  }
   const batch = classifyProofClaimContract({
     source: 'plan',
     activeChecks: state.activeChecks,
@@ -98,14 +105,21 @@ function buildPartialAcceptanceDiagnostics(
     submittedClaimDeclarationsDigest: digest(canonicalJsonStringify(submittedDeclarations)),
     acceptedClaimDeclarationsDigest: digest(canonicalJsonStringify(acceptedDeclarations)),
     rejectedClaims: rejected.map(({ claim, result }) => {
+      const claimId = claim.claimId;
+      if (claimId === undefined) {
+        throw new IntegrationInvariantError(
+          'PROOFGRAPH_CLAIM_ID_MISSING',
+          'a rejected plan claim declaration is missing its canonical claim id',
+        );
+      }
       const code = 'PROOFGRAPH_CLAIM_NOT_DECLARED';
       const formatted = defaultReasonRegistry.format(code, {
-        claimRef: claim.claimId!,
+        claimRef: claimId,
         field: result.field,
         detail: result.detail,
       });
       return {
-        claimRef: claim.claimId!,
+        claimRef: claimId,
         statement: claim.statement,
         critical: claim.critical,
         disposition: claim.critical

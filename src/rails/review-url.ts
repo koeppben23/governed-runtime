@@ -177,7 +177,8 @@ export async function resolveReviewTarget(
     };
   }
 
-  if (addresses.length === 0) {
+  const [target] = addresses;
+  if (target === undefined) {
     return { reason: `DNS lookup for "${hostname}" returned no addresses` };
   }
 
@@ -186,7 +187,6 @@ export async function resolveReviewTarget(
     if (!validation.valid) return { reason: validation.reason };
   }
 
-  const target = addresses[0]!;
   return {
     hostname: bareHostname,
     port: parsed.port ? Number(parsed.port) : 443,
@@ -214,7 +214,13 @@ function validateResolvedAddress(
         reason: `DNS lookup for "${hostname}" returned malformed IPv4 address "${address}"`,
       };
     }
-    const ipv4 = parseIPv4(address)!;
+    const ipv4 = parseIPv4(address);
+    if (ipv4 === null) {
+      return {
+        valid: false,
+        reason: `DNS lookup for "${hostname}" returned malformed IPv4 address "${address}"`,
+      };
+    }
     if (isPrivateIPv4(ipv4)) {
       return {
         valid: false,

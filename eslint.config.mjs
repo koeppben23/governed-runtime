@@ -96,6 +96,9 @@ export default tseslint.config(
       'src/security/**/*.ts',
     ],
     rules: {
+      // Zero-debt syntax invariant for production: non-null assertions must be
+      // replaced by real narrowing. Test suites keep the syntax for fixtures.
+      '@typescript-eslint/no-non-null-assertion': 'error',
       'max-params': ['warn', { max: 5 }],
       complexity: ['warn', { max: 25 }],
       'max-lines-per-function': ['warn', { max: 120, skipBlankLines: true, skipComments: true }],

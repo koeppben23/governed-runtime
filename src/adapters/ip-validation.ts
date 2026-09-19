@@ -70,7 +70,9 @@ function parseIPv4CompatibleIpv6(ip: string): number | null {
   }
   const expanded = expandIpv6Hextets(ip);
   if (!expanded || expanded.slice(0, 6).some((hextet) => hextet !== 0)) return null;
-  return (((expanded[6]! << 16) >>> 0) | expanded[7]!) >>> 0;
+  const sixth = expanded[6] ?? 0;
+  const seventh = expanded[7] ?? 0;
+  return (((sixth << 16) >>> 0) | seventh) >>> 0;
 }
 
 function parseIPv4MappedIPv6(ip: string): number | null {
@@ -80,7 +82,19 @@ function parseIPv4MappedIPv6(ip: string): number | null {
   if (!expanded || expanded.slice(0, 5).some((hextet) => hextet !== 0) || expanded[5] !== 0xffff) {
     return null;
   }
-  return (((expanded[6]! << 16) >>> 0) | expanded[7]!) >>> 0;
+  const sixth = expanded[6] ?? 0;
+  const seventh = expanded[7] ?? 0;
+  return (((sixth << 16) >>> 0) | seventh) >>> 0;
+}
+
+function parseHextets(segments: readonly string[]): number[] | null {
+  const parsed: number[] = [];
+  for (const segment of segments) {
+    const hextet = parseHextet(segment);
+    if (hextet === null) return null;
+    parsed.push(hextet);
+  }
+  return parsed;
 }
 
 function expandIpv6Hextets(ip: string): number[] | null {
@@ -89,16 +103,14 @@ function expandIpv6Hextets(ip: string): number[] | null {
   if (halves.length > 2) return null;
   const left = halves[0] ? halves[0].split(':') : [];
   const right = halves[1] ? halves[1].split(':') : [];
-  const segments = [...left, ...right];
-  if (segments.some((segment) => parseHextet(segment) === null)) return null;
-  if (halves.length === 1 && segments.length !== 8) return null;
-  if (halves.length === 2 && segments.length >= 8) return null;
-  const zeros = halves.length === 2 ? Array.from({ length: 8 - segments.length }, () => 0) : [];
-  return [
-    ...left.map((segment) => parseHextet(segment)!),
-    ...zeros,
-    ...right.map((segment) => parseHextet(segment)!),
-  ];
+  const parsedLeft = parseHextets(left);
+  const parsedRight = parseHextets(right);
+  if (parsedLeft === null || parsedRight === null) return null;
+  const segmentCount = parsedLeft.length + parsedRight.length;
+  if (halves.length === 1 && segmentCount !== 8) return null;
+  if (halves.length === 2 && segmentCount >= 8) return null;
+  const zeros = halves.length === 2 ? Array.from({ length: 8 - segmentCount }, () => 0) : [];
+  return [...parsedLeft, ...zeros, ...parsedRight];
 }
 
 function parseLegacyMappedIpv4(ip: string): number | null {
@@ -110,8 +122,10 @@ function parseLegacyMappedIpv4(ip: string): number | null {
 
   const hextets = suffix.split(':');
   if (hextets.length !== 2) return null;
-  const high = parseHextet(hextets[0]!);
-  const low = parseHextet(hextets[1]!);
+  const [highHextet, lowHextet] = hextets;
+  if (highHextet === undefined || lowHextet === undefined) return null;
+  const high = parseHextet(highHextet);
+  const low = parseHextet(lowHextet);
   if (high === null || low === null) return null;
   return (((high << 16) >>> 0) | low) >>> 0;
 }

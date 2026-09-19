@@ -62,6 +62,7 @@ import { resolvePreImplementationChallengeClassification } from './pre-implement
 import { projectPlanProofStatus } from '../proofgraph/proof-summary-projectors.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { hashText } from '../../shared/hashing.js';
+import { IntegrationInvariantError } from '../errors.js';
 
 function findPriorPlanTargetPaths(
   assurance: import('../../state/schema.js').SessionState['reviewAssurance'],
@@ -502,19 +503,27 @@ export function nonConvergedPlanResponse(
   authority: ReviewDispatchAuthority,
 ): Record<string, unknown> {
   const nextPlanVersion = revision.history.length + 1;
+  const selfReview = scope.state.selfReview;
+  if (!selfReview) {
+    throw new IntegrationInvariantError(
+      'NO_SELF_REVIEW',
+      'a non-converged plan review response requires a self-review loop in state',
+    );
+  }
+  const nextIteration = selfReview.iteration + 1;
   const reviewInstruction = buildPlanReviewInstruction({
     scope,
     authority,
-    iteration: scope.state.selfReview!.iteration + 1,
+    iteration: nextIteration,
     planVersion: nextPlanVersion,
     subjectLabel: 'revised plan text and ticket text',
     state: finalState,
   });
   return {
     phase: finalState.phase,
-    status: `Independent review iteration ${scope.state.selfReview!.iteration + 1}/${scope.maxPlanReviewIterations}. Verdict: ${revision.verdict}.`,
+    status: `Independent review iteration ${nextIteration}/${scope.maxPlanReviewIterations}. Verdict: ${revision.verdict}.`,
     planDigest: revision.currentPlan.digest,
-    selfReviewIteration: scope.state.selfReview!.iteration + 1,
+    selfReviewIteration: nextIteration,
     revisionDelta: revision.revisionDelta,
     reviewMode: 'subagent',
     ...reviewObligationResponseFields(authority),
@@ -544,7 +553,14 @@ export async function persistPlanReview(
     return formatAutoAdvanceOverflow(advanced);
   }
   const { state: finalState, evalResult: ev, transitions } = advanced;
-  const iteration = scope.state.selfReview!.iteration + 1;
+  const selfReview = scope.state.selfReview;
+  if (!selfReview) {
+    throw new IntegrationInvariantError(
+      'NO_SELF_REVIEW',
+      'persisting a plan review requires a self-review loop in state',
+    );
+  }
+  const iteration = selfReview.iteration + 1;
   const approvedConverged = revision.revisionDelta === 'none' && revision.verdict === 'accept';
   const maxReached = iteration >= scope.maxPlanReviewIterations;
 

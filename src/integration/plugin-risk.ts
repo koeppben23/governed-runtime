@@ -46,7 +46,8 @@ export function targetPathsForRisk(
 // ─── Path Resolution Helper ──────────────────────────────────────────────────
 
 function resolveRelativePath(filePath: string, getWorktreeRoot: () => string | undefined): string {
-  const worktreeRoot = getWorktreeRoot() ? path.resolve(getWorktreeRoot()!) : null;
+  const rootPath = getWorktreeRoot();
+  const worktreeRoot = rootPath === undefined ? null : path.resolve(rootPath);
   const resolved = path.resolve(filePath);
   if (worktreeRoot && resolved.startsWith(`${worktreeRoot}${path.sep}`)) {
     // Normalize to forward slashes for platform-independent audit output.

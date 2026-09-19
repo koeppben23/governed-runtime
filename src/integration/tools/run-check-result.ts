@@ -24,6 +24,7 @@ import type {
 } from '../../state/discovery-schemas.js';
 import type { executeCheck } from '../../verification/executor.js';
 import type { deriveRepairGuidance } from '../../verification/repair-guidance.js';
+import { IntegrationInvariantError } from '../errors.js';
 import { formatBlocked } from './helpers.js';
 import { formatValidationDetail } from './run-check-presentation.js';
 
@@ -114,14 +115,28 @@ export type ValidationSubject =
 
 export function freezeValidationSubject(state: SessionState): ValidationSubject {
   if (state.phase === 'VALIDATION') {
+    const plan = state.plan;
+    if (!plan) {
+      throw new IntegrationInvariantError(
+        'VALIDATION_PLAN_REQUIRED',
+        'VALIDATION phase requires plan evidence to freeze the validation subject',
+      );
+    }
     return {
       scope: 'baseline',
-      planDigest: state.plan!.current.digest,
+      planDigest: plan.current.digest,
     };
+  }
+  const implementation = state.implementation;
+  if (!implementation) {
+    throw new IntegrationInvariantError(
+      'VALIDATION_IMPLEMENTATION_REQUIRED',
+      'implementation validation requires implementation evidence to freeze the validation subject',
+    );
   }
   return {
     scope: 'implementation',
-    implementationDigest: state.implementation!.digest,
+    implementationDigest: implementation.digest,
   };
 }
 

@@ -74,6 +74,7 @@ import { resolveAttemptDiscoveryOrBlock } from '../review/discovery-attempt-cont
 import { repositoryEvidenceUnavailableField } from '../review/observation-access.js';
 import { hasFrozenRepositoryAuthority } from '../../state/evidence.js';
 import type { ReviewAttemptDiscoveryContext } from '../../state/evidence.js';
+import { IntegrationInvariantError } from '../errors.js';
 
 // ─── Mode-B Internal Types ────────────────────────────────────────────────
 
@@ -121,7 +122,14 @@ function getObligationExpectation(
   state: SessionState,
 ): { expectedIteration: number; expectedPlanVersion: number } {
   if (!pendingObligation) {
-    return { expectedIteration: state.selfReview!.iteration, expectedPlanVersion: 1 };
+    const selfReview = state.selfReview;
+    if (!selfReview) {
+      throw new IntegrationInvariantError(
+        'ARCHITECTURE_REVIEW_LOOP_REQUIRED',
+        'ADR review expectations require a self-review loop in state',
+      );
+    }
+    return { expectedIteration: selfReview.iteration, expectedPlanVersion: 1 };
   }
   return {
     expectedIteration: pendingObligation.iteration,
@@ -204,9 +212,11 @@ function applyAdrRevision(
   session: ArchitectureSession,
 ): AdrRevision | string {
   const { state, ctx } = session;
+  const architecture = state.architecture;
+  if (!architecture) return formatBlocked('NO_ARCHITECTURE');
   const verdict = args.reviewVerdict as LoopVerdict;
-  const prevDigest = state.architecture!.digest;
-  let currentAdr = state.architecture!;
+  const prevDigest = architecture.digest;
+  let currentAdr = architecture;
   let revisionDelta: RevisionDelta = 'none';
 
   if (verdict !== 'changes_requested') return { currentAdr, prevDigest, revisionDelta };
@@ -220,18 +230,27 @@ function applyAdrRevision(
 
   const revisedDigest = ctx.digest(revisedText);
   revisionDelta = revisedDigest === prevDigest ? 'none' : 'minor';
+  let claimDeclarations:
+    | {
+        flow: 'architecture';
+        claims: NonNullable<ReturnType<typeof normalizeArchitectureClaims>>;
+      }
+    | undefined;
+  if (args.claims) {
+    const normalizedClaims = normalizeArchitectureClaims(args.claims);
+    if (normalizedClaims === undefined) {
+      throw new IntegrationInvariantError(
+        'PROOFGRAPH_CLAIM_NORMALIZATION_UNAVAILABLE',
+        'normalizing submitted architecture claims produced no canonical declarations',
+      );
+    }
+    claimDeclarations = { flow: 'architecture', claims: normalizedClaims };
+  }
   currentAdr = {
     ...currentAdr,
     adrText: revisedText,
     digest: revisedDigest,
-    ...(args.claims
-      ? {
-          claimDeclarations: {
-            flow: 'architecture' as const,
-            claims: normalizeArchitectureClaims(args.claims)!,
-          },
-        }
-      : {}),
+    ...(claimDeclarations ? { claimDeclarations } : {}),
     // A revision makes a prior human approval attest to a superseded ADR.
     approvalCertificate: undefined,
   };
@@ -245,9 +264,17 @@ function buildReviewedState(
   session: ArchitectureSession,
 ): SessionState {
   const { state, policy, ctx } = session;
-  const iteration = state.selfReview!.iteration + 1;
+  const selfReview = state.selfReview;
+  const architecture = state.architecture;
+  if (!selfReview || !architecture) {
+    throw new IntegrationInvariantError(
+      'ARCHITECTURE_REVIEW_STATE_REQUIRED',
+      'ADR review persistence requires architecture and self-review state',
+    );
+  }
+  const iteration = selfReview.iteration + 1;
   // Only host-captured effective findings are ever appended.
-  const existingReviewFindings = state.architecture!.reviewFindings;
+  const existingReviewFindings = architecture.reviewFindings;
   const newReviewFindings = [...(existingReviewFindings ?? []), review.effectiveFindings];
   const strictObligation = findLatestObligation(
     review.assuranceBase.obligations,
@@ -332,7 +359,14 @@ export async function handleAdrReview(
 }
 
 async function persistAndFormatReviewResult(input: ReviewResultContext): Promise<string> {
-  const iteration = input.session.state.selfReview!.iteration + 1;
+  const selfReview = input.session.state.selfReview;
+  if (!selfReview) {
+    throw new IntegrationInvariantError(
+      'ARCHITECTURE_REVIEW_LOOP_REQUIRED',
+      'ADR review result persistence requires a self-review loop in state',
+    );
+  }
+  const iteration = selfReview.iteration + 1;
   const completion = input.advanced.state.architecture?.reviewCompletion;
   const verdict = input.args.reviewVerdict as LoopVerdict;
   const context = { ...input, iteration };

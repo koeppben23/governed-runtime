@@ -53,7 +53,7 @@ import type { IdpConfig, IdentityProviderMode } from '../shared/policy-idp-confi
 import { evaluate } from '../machine/evaluate.js';
 import type { RailResult, RailBlocked, RailContext } from './types.js';
 import { blocked } from '../config/reasons.js';
-import { defaultProfileRegistry } from '../config/profile.js';
+import { baselineProfile, defaultProfileRegistry } from '../config/profile.js';
 import type { FlowGuardProfile, RepoSignals } from '../config/profile.js';
 import type { DiscoveryResult } from '../discovery/types.js';
 import { extractBaseInstructions, extractByPhaseInstructions } from '../config/profile.js';
@@ -259,7 +259,7 @@ function resolveProfile(pr: HydrateProfileInput, s: HydrateSessionInput) {
       repoSignals: pr.repoSignals,
       ...(pr.discoveryResult !== undefined ? { discovery: pr.discoveryResult } : {}),
     });
-  if (!profile) profile = defaultProfileRegistry.get('baseline')!;
+  if (!profile) profile = baselineProfile;
 
   const activeChecks =
     pr.activeChecks && pr.activeChecks.length > 0

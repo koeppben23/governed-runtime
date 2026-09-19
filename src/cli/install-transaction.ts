@@ -632,9 +632,14 @@ export async function recoverOrAbort(configTargetDir: string): Promise<void> {
     return;
   }
 
+  const journalPath = journals[0];
+  if (journalPath === undefined) {
+    throw fail('TRANSACTION_JOURNAL_LOAD_FAILED', 'Cannot load journal: journal path missing');
+  }
+
   let journal: DependencyTransaction;
   try {
-    journal = await loadJournal(journals[0]!);
+    journal = await loadJournal(journalPath);
     validateJournal(journal, configTargetDir);
   } catch (err) {
     throw fail(

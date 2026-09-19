@@ -148,7 +148,7 @@ export function buildInterruptedDispatchRearm(
   spent: ReviewAttempt,
   now: string,
 ): InterruptedDispatchRearm {
-  const authorization = authorizeDispatchRearm(assurance!, spent);
+  const authorization = authorizeDispatchRearm(ensureReviewAssurance(assurance), spent);
   if (authorization.kind === 'blocked') {
     return { kind: 'blocked', reason: authorization.reason };
   }

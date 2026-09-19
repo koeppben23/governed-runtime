@@ -471,7 +471,9 @@ function terminalTransitionOperation(
       operation.transition.at === transition.at,
   );
   if (matches.length !== 1) throw new TerminalTransitionAuthorityError(matches.length);
-  return matches[0]!;
+  const [match] = matches;
+  if (match === undefined) throw new TerminalTransitionAuthorityError(matches.length);
+  return match;
 }
 
 function scheduleSoloArchive(

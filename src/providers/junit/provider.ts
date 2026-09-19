@@ -139,6 +139,13 @@ function isSupportedSingleProjectSettings(settings: string): boolean {
   return GRADLE_SINGLE_PROJECT_SETTINGS_RE.test(withoutComments);
 }
 
+function selectMavenFileOption(
+  parsedOption: string,
+  shortOption: string | undefined,
+): string | undefined {
+  return MAVEN_FILE_SELECTORS.has(parsedOption) ? parsedOption : shortOption;
+}
+
 async function mavenConfigSelectedFiles(ctx: PlannerContext): Promise<MavenConfigSelection> {
   const config = await ctx.readFile('.mvn/maven.config');
   if (!config) return { kind: 'resolved', inputs: [], pomPaths: [] };
@@ -148,7 +155,8 @@ async function mavenConfigSelectedFiles(ctx: PlannerContext): Promise<MavenConfi
   const inputs: ExecutionSubjectInput[] = [];
   const pomPaths: string[] = [];
   for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index]!;
+    const token = tokens[index];
+    if (token === undefined) continue;
     const [parsedOption = '', inlineValue] = token.split('=', 2);
     const shortOption = MAVEN_SHORT_FILE_SELECTORS.find(
       (candidate) =>
@@ -156,7 +164,7 @@ async function mavenConfigSelectedFiles(ctx: PlannerContext): Promise<MavenConfi
         parsedOption.startsWith(candidate) &&
         parsedOption.length > candidate.length,
     );
-    const option = MAVEN_FILE_SELECTORS.has(parsedOption) ? parsedOption : shortOption;
+    const option = selectMavenFileOption(parsedOption, shortOption);
     if (!option) continue;
     const value =
       inlineValue ?? (shortOption ? parsedOption.slice(shortOption.length) : tokens[++index]);
@@ -182,7 +190,8 @@ async function mavenPomGraphInputs(
   const inputs: ExecutionSubjectInput[] = [];
 
   while (pending.length > 0) {
-    const pomPath = pending.pop()!;
+    const pomPath = pending.pop();
+    if (pomPath === undefined) break;
     if (visited.has(pomPath)) continue;
     if (!allFiles.has(pomPath)) {
       return { kind: 'blocked', reason: `Maven POM '${pomPath}' is not repo-local` };

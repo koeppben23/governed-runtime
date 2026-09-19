@@ -115,9 +115,11 @@ function parseSemver(version: string): Semver | null {
 }
 
 function compareSemver(a: Semver, b: Semver): number {
-  for (let i = 0; i < 3; i++) {
-    if (a[i] !== b[i]) return a[i]! < b[i]! ? -1 : 1;
-  }
+  const [aMajor, aMinor, aPatch] = a;
+  const [bMajor, bMinor, bPatch] = b;
+  if (aMajor !== bMajor) return aMajor < bMajor ? -1 : 1;
+  if (aMinor !== bMinor) return aMinor < bMinor ? -1 : 1;
+  if (aPatch !== bPatch) return aPatch < bPatch ? -1 : 1;
   return 0;
 }
 
@@ -126,8 +128,10 @@ function versionInBoundedRange(version: string, range: string): boolean {
   if (!parsed) return false;
   const lowerMatch = range.match(/>=(\d+\.\d+\.\d+)/);
   const upperMatch = range.match(/<(\d+\.\d+\.\d+)/);
-  const lower = lowerMatch ? parseSemver(lowerMatch[1]!) : null;
-  const upper = upperMatch ? parseSemver(upperMatch[1]!) : null;
+  const lowerVersion = lowerMatch?.[1];
+  const upperVersion = upperMatch?.[1];
+  const lower = lowerVersion === undefined ? null : parseSemver(lowerVersion);
+  const upper = upperVersion === undefined ? null : parseSemver(upperVersion);
   if (!lower && !upper) return false;
   if (lower && compareSemver(parsed, lower) < 0) return false;
   if (upper && compareSemver(parsed, upper) >= 0) return false;

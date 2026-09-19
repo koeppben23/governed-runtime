@@ -243,9 +243,12 @@ function buildChange(
   representation: RepositoryChangeRepresentation,
   reviewerMaterial: string,
 ): CanonicalRepositoryChange {
-  const modeChange = headers.isMode
-    ? { oldMode: headers.oldModes[0]!, newMode: headers.newModes[0]! }
-    : undefined;
+  const [oldMode] = headers.oldModes;
+  const [newMode] = headers.newModes;
+  const modeChange =
+    headers.isMode && oldMode !== undefined && newMode !== undefined
+      ? { oldMode, newMode }
+      : undefined;
   if (headers.isAdd) return { kind: 'add', newPath, representation, reviewerMaterial };
   if (headers.isDelete) return { kind: 'delete', oldPath, representation, reviewerMaterial };
   const modeChangeFields = modeChange !== undefined ? { modeChange } : {};

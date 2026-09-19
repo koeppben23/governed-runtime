@@ -25,6 +25,7 @@ import { buildInterruptedDispatchRearm } from '../durable-dispatch.js';
 import type { PlanExecutionScope } from './plan-types.js';
 import { buildPlanReviewInstruction } from './plan-response.js';
 import { enrichWithWorkflowDirective, formatBlocked, writeStateWithArtifacts } from './helpers.js';
+import { IntegrationInvariantError } from '../errors.js';
 
 /**
  * Gate an initial plan submission against the plan review loop: a pending plan
@@ -181,11 +182,19 @@ function planInstructionResponse(
     subjectLabel: 'full plan text and ticket text',
     state: scope.state,
   });
+  const plan = scope.state.plan;
+  const selfReview = scope.state.selfReview;
+  if (!plan || !selfReview) {
+    throw new IntegrationInvariantError(
+      'PLAN_REVIEW_STATE_REQUIRED',
+      'a plan review instruction requires plan and self-review state',
+    );
+  }
   const response: Record<string, unknown> = {
     phase: scope.state.phase,
     status: 'Plan review is pending; reusing the existing review obligation.',
-    planDigest: scope.state.plan!.current.digest,
-    selfReviewIteration: scope.state.selfReview!.iteration,
+    planDigest: plan.current.digest,
+    selfReviewIteration: selfReview.iteration,
     reviewMode: 'subagent',
     ...reviewObligationResponseFields(authority),
     reviewDispatch: instruction.reviewDispatch,

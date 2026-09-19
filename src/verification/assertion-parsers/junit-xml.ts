@@ -69,20 +69,23 @@ function collectJUnitTestCases(xmlContent: string): JUnitTestCaseRef[] {
     const classnameMatch = attrClassname.exec(tag);
     const nameMatch = attrName.exec(tag);
     if (!classnameMatch || !nameMatch) continue;
+    const classname = classnameMatch[1];
+    const name = nameMatch[1];
+    if (classname === undefined || name === undefined) continue;
     const isSelfClosing = tag.endsWith('/>');
     const afterOpen = tcm.index + tag.length;
     if (isSelfClosing) {
       testCases.push({
-        classname: classnameMatch[1]!,
-        name: nameMatch[1]!,
+        classname,
+        name,
         offset: afterOpen,
         endOffset: afterOpen,
       });
     } else {
       const closeTag = xmlContent.indexOf('</testcase>', afterOpen);
       testCases.push({
-        classname: classnameMatch[1]!,
-        name: nameMatch[1]!,
+        classname,
+        name,
         offset: afterOpen,
         endOffset: closeTag !== -1 ? closeTag : afterOpen,
       });
