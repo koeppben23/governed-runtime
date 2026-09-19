@@ -188,7 +188,7 @@ regress silently; review-enforced rules depend on reviewer diligence.
 
 | Principle                     | Rule                                                                      | Red Flag                                              | Enforced by                                                                                                     |
 | ----------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| **Single Responsibility**     | One reason to change per module/file/function                             | God-files; over-long/over-complex functions           | `eslint` `complexity:12`, `max-lines-per-function:80`, `max-params:5` (lint:strict = `--max-warnings=0`)        |
+| **Single Responsibility**     | One reason to change per module/file/function                             | God-files; over-long/over-complex functions           | Monotonic maintainability ratchet: `npm run check:maintainability` against `scripts/maintainability-baseline.json` (clean-code targets `complexity:12`, `max-lines-per-function:80`, `max-params:5`; ESLint default ceilings `25 / 120 / 5` with seven legacy metric suppressions frozen as baseline exceptions; `lint:strict` = `--max-warnings=0`) |
 | **Layer Isolation**           | Respect `state/` `machine/` `rails/` `adapters/` `integration/`           | Upward imports, layer bypass                          | `src/architecture/__tests__/dependency-rules.test.ts`                                                           |
 | **Extract, Don't Accumulate** | Split files along domain boundaries within the size budget                | Linear growth with every feature                      | `src/architecture/__tests__/file-size.test.ts`                                                                  |
 | **No Duplicate Authority**    | One canonical implementation per concept                                  | Near-identical functions, duplicated pipelines        | SSOT guards: `actor-assurance-ssot`, `canonical-json-ssot`, `digest-authority-ssot`, `policy-mode-ssot`, `review-acceptance-ssot`, `terminal-phase-ssot` |
@@ -200,6 +200,21 @@ regress silently; review-enforced rules depend on reviewer diligence.
 | **Typed Errors**              | Throw typed errors with codes, not bare `throw new Error` in control flow | Bare throws in runtime paths                          | Review                                                                                                          |
 | **Determinism**               | Same input → same output for digests/canonicalization/state               | Hidden nondeterminism (time, ordering) in hash inputs | `canonical-json-ssot`, `digest-authority-ssot`, digest byte-identity tests                                      |
 | **API Stability**             | Public surface stays intentional; no test-only utilities leaked           | Test helpers exported from the public barrel          | Review (barrel-export tests)                                                                                    |
+
+Maintainability model (Single Responsibility):
+
+- Clean-code target: `complexity:12`, `max-lines-per-function:80`, `max-params:5`.
+- Default ESLint ceiling: `25 / 120 / 5` — not absolute: the seven existing
+  metric rule suppressions are frozen legacy exceptions in the baseline, and
+  new exceptions are forbidden.
+- Existing target debt is frozen in `scripts/maintainability-baseline.json` and
+  enforced by `npm run check:maintainability` (part of `npm run check`). CI also
+  enforces baseline lineage against the pull-request base, so a manually raised
+  baseline cannot launder new debt.
+- New or worsening debt is blocked, new metric `eslint-disable` suppressions are
+  blocked, inline suppressions cannot hide findings, and every improvement must
+  be locked into the baseline in the same change
+  (`node scripts/check-maintainability-ratchet.mjs --update`, monotonic).
 
 ### File Size Budget
 

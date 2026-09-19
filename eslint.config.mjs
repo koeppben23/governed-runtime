@@ -67,9 +67,17 @@ export default tseslint.config(
     // allowlist. These patterns are the declarative projection of
     // `isTestSourcePath`; the projection is enforced by
     // src/architecture/__tests__/type-aware-lint-scope.test.ts against the
-    // effective config. Thresholds are repository-wide ceilings calibrated
-    // against the measured distribution (see PR 2b); the tail above them is
-    // refactored, never exempted. They do not use type information.
+    // effective config.
+    //
+    // 25 / 120 / 5 are the repository-wide DEFAULT ESLINT CEILINGS, not the
+    // quality target. Because seven legacy metric rule suppressions are frozen
+    // in the maintainability baseline, they are not an absolute bound: the
+    // current exception set is exactly the committed baseline, and new
+    // exceptions are forbidden. The clean-code targets are 12 / 80 / 5;
+    // existing target debt is frozen in scripts/maintainability-baseline.json
+    // and enforced by `npm run check:maintainability`: no new or worsening
+    // debt, no new metric suppressions, and every improvement must be locked
+    // into the baseline in the same change. Rules do not use type information.
     files: ['src/**/*.ts'],
     ignores: [
       'src/**/*.test.ts',
