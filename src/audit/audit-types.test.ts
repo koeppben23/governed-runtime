@@ -768,7 +768,7 @@ describe('host session provenance on event bodies', () => {
     toolCall: (hostSessionId: string | undefined) =>
       buildToolCallBody({
         flowguardSessionId: SESSION_ID,
-        hostSessionId,
+        ...(hostSessionId !== undefined ? { hostSessionId } : {}),
         phase: 'PLAN',
         detail: { tool: 'bash', argsSummary: {}, success: true } as never,
         occurredAt: TS1,
@@ -786,7 +786,7 @@ describe('host session provenance on event bodies', () => {
     lifecycle: (hostSessionId: string | undefined) =>
       buildLifecycleBody({
         flowguardSessionId: SESSION_ID,
-        hostSessionId,
+        ...(hostSessionId !== undefined ? { hostSessionId } : {}),
         detail: { action: 'session_created', finalPhase: 'PLAN' } as never,
         occurredAt: TS1,
         actor: 'machine',

@@ -69,7 +69,7 @@ export async function buildReviewDiscoveryContext(
           workspaceDir: wsDir,
           worktree: input.worktree,
           fingerprint: input.fingerprint,
-          timeoutMs: input.driftTimeoutMs,
+          ...(input.driftTimeoutMs !== undefined ? { timeoutMs: input.driftTimeoutMs } : {}),
         })
       : notCheckedDiscoveryDriftStatus(
           'Discovery drift was not checked during review prompt construction to avoid hidden review-orchestration latency.',

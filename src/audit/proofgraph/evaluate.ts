@@ -351,7 +351,11 @@ function selectCurrentCounterexamples(
     }
   }
 
-  return { counterexamples: resolved, conflicting, conflictReason };
+  return {
+    counterexamples: resolved,
+    conflicting,
+    ...(conflictReason !== undefined ? { conflictReason } : {}),
+  };
 }
 
 /**

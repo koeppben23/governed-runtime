@@ -24,6 +24,8 @@ import type {
   KeyValueItem,
   FindingGroup,
   FindingItem,
+  FindingRelationPresentation,
+  FindingRepositoryLocation,
 } from './model.js';
 import { projectFindingRelation } from './finding-relation.js';
 import { directiveLabel } from './directive-copy.js';
@@ -170,11 +172,12 @@ export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewC
     items: buildFollowUpItems(input.findings),
   });
 
+  const conclusion = buildConclusion(input);
   return {
     kind: 'review_card',
     form: input.conclusionAction ? 'success' : 'terminal',
     sections,
-    conclusion: buildConclusion(input),
+    ...(conclusion !== undefined ? { conclusion } : {}),
   };
 }
 
@@ -354,11 +357,59 @@ function safeMarkdownText(value: string): string {
   return value.replace(/[\\`*_{}\x5b\x5d<>()#+.!|\x2d\n\r]/g, '\\$&');
 }
 
+type ReviewReportFindingRelation = Extract<
+  ReviewReportFinding,
+  { source: 'material_finding' }
+>['finding']['relation'];
+
+function projectRepositoryLocation(
+  location: ReviewReportFindingRelation['evidenceLocations'][number],
+): FindingRepositoryLocation {
+  return {
+    path: location.path,
+    revision: location.revision,
+    ...(location.line !== undefined ? { line: location.line } : {}),
+    ...(location.endLine !== undefined ? { endLine: location.endLine } : {}),
+  };
+}
+
+function projectFindingRelationPresentation(
+  relation: ReviewReportFindingRelation,
+): FindingRelationPresentation {
+  return {
+    subjectAnchors: relation.subjectAnchors.map((subject) => {
+      if (subject.kind === 'repository_location') {
+        return {
+          kind: 'repository_location',
+          location: projectRepositoryLocation(subject.location),
+        };
+      }
+      if (subject.kind === 'content') {
+        const range = subject.range;
+        return {
+          kind: 'content',
+          subjectDigest: subject.subjectDigest,
+          ...(range !== undefined
+            ? {
+                range: {
+                  startLine: range.startLine,
+                  ...(range.endLine !== undefined ? { endLine: range.endLine } : {}),
+                },
+              }
+            : {}),
+        };
+      }
+      return subject;
+    }),
+    evidenceLocations: relation.evidenceLocations.map(projectRepositoryLocation),
+  };
+}
+
 function projectReviewReportFinding(entry: ReviewReportFinding): {
   readonly severity: string;
   readonly category: string;
   readonly message: string;
-  readonly relation?: import('./model.js').FindingRelationPresentation;
+  readonly relation?: FindingRelationPresentation;
 } {
   switch (entry.source) {
     case 'material_finding':
@@ -366,7 +417,7 @@ function projectReviewReportFinding(entry: ReviewReportFinding): {
         severity: entry.reportSeverity,
         category: entry.finding.category,
         message: entry.finding.message,
-        relation: entry.finding.relation,
+        relation: projectFindingRelationPresentation(entry.finding.relation),
       };
     case 'mechanical':
     case 'missing_verification':

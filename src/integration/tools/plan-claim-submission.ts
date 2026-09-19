@@ -44,9 +44,13 @@ export function classifyPlanClaimSubmission(
       critical: claim.critical,
       claimScope: claim.claimScope,
       positiveCheckId: claim.expectedCheckId,
-      counterexampleRequirement: claim.counterexampleRequirement,
-      structuralSurface: claim.structuralSurface,
-      mutationProfile: claim.mutationProfile,
+      ...(claim.counterexampleRequirement !== undefined
+        ? { counterexampleRequirement: claim.counterexampleRequirement }
+        : {}),
+      ...(claim.structuralSurface !== undefined
+        ? { structuralSurface: claim.structuralSurface }
+        : {}),
+      ...(claim.mutationProfile !== undefined ? { mutationProfile: claim.mutationProfile } : {}),
       authoritySectionId: claim.authoritySectionId,
     })),
   });
@@ -66,6 +70,20 @@ export function classifyPlanClaimSubmission(
 
   const acceptedIndexes = new Set(batch.accepted.map((entry) => entry.index));
   const acceptedClaims = args.claims.filter((_, index) => acceptedIndexes.has(index));
+  return {
+    kind: 'ok',
+    args: { ...args, claims: acceptedClaims },
+    diagnostics: buildPartialAcceptanceDiagnostics(normalized, batch, digest),
+  };
+}
+
+function buildPartialAcceptanceDiagnostics(
+  normalized: NonNullable<ReturnType<typeof normalizePlanClaims>>,
+  batch: ReturnType<typeof classifyProofClaimContract>,
+  digest: (value: string) => string,
+): PlanClaimSubmissionDiagnostics {
+  const acceptedIndexes = new Set(batch.accepted.map((entry) => entry.index));
+  const rejected = [...batch.rejectedNonBlocking, ...batch.rejectedBlocking];
   const submittedDeclarations = {
     flow: 'plan' as const,
     version: 'v2' as const,
@@ -77,30 +95,26 @@ export function classifyPlanClaimSubmission(
     claims: normalized.filter((_, index) => acceptedIndexes.has(index)),
   };
   return {
-    kind: 'ok',
-    args: { ...args, claims: acceptedClaims },
-    diagnostics: {
-      submittedClaimDeclarationsDigest: digest(canonicalJsonStringify(submittedDeclarations)),
-      acceptedClaimDeclarationsDigest: digest(canonicalJsonStringify(acceptedDeclarations)),
-      rejectedClaims: rejected.map(({ claim, result }) => {
-        const code = 'PROOFGRAPH_CLAIM_NOT_DECLARED';
-        const formatted = defaultReasonRegistry.format(code, {
-          claimRef: claim.claimId!,
-          field: result.field,
-          detail: result.detail,
-        });
-        return {
-          claimRef: claim.claimId!,
-          statement: claim.statement,
-          critical: claim.critical,
-          disposition: claim.critical
-            ? ('rejected_blocking' as const)
-            : ('rejected_non_blocking' as const),
-          code,
-          reason: formatted.reason,
-          recovery: [...formatted.recovery],
-        };
-      }),
-    },
+    submittedClaimDeclarationsDigest: digest(canonicalJsonStringify(submittedDeclarations)),
+    acceptedClaimDeclarationsDigest: digest(canonicalJsonStringify(acceptedDeclarations)),
+    rejectedClaims: rejected.map(({ claim, result }) => {
+      const code = 'PROOFGRAPH_CLAIM_NOT_DECLARED';
+      const formatted = defaultReasonRegistry.format(code, {
+        claimRef: claim.claimId!,
+        field: result.field,
+        detail: result.detail,
+      });
+      return {
+        claimRef: claim.claimId!,
+        statement: claim.statement,
+        critical: claim.critical,
+        disposition: claim.critical
+          ? ('rejected_blocking' as const)
+          : ('rejected_non_blocking' as const),
+        code,
+        reason: formatted.reason,
+        recovery: [...formatted.recovery],
+      };
+    }),
   };
 }

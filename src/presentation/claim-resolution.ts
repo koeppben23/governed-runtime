@@ -199,6 +199,10 @@ export function projectClaimResolutionFacts(
   claim: ProofClaim,
   bindingDiagnostic?: AssertionBindingReasonCode,
 ): ClaimResolutionFacts {
+  const freshness = projectFreshness(claim);
+  const requiredEvidence = projectRequiredEvidence(claim);
+  const counterexampleRequirement = projectCounterexampleRequirement(claim);
+  const provenance = projectProvenance(claim);
   return {
     claimId: claim.claimId,
     statement: claim.statement,
@@ -206,14 +210,10 @@ export function projectClaimResolutionFacts(
     signalClass: claim.signalClass,
     ...(claim.claimScope !== undefined ? { claimScope: claim.claimScope } : {}),
     verificationState: claim.verificationState,
-    ...(claim.freshness !== undefined ? { freshness: projectFreshness(claim) } : {}),
-    ...(claim.requiredEvidence !== undefined
-      ? { requiredEvidence: projectRequiredEvidence(claim) }
-      : {}),
-    ...(claim.counterexampleRequirement !== undefined
-      ? { counterexampleRequirement: projectCounterexampleRequirement(claim) }
-      : {}),
+    ...(freshness !== undefined ? { freshness } : {}),
+    ...(requiredEvidence !== undefined ? { requiredEvidence } : {}),
+    ...(counterexampleRequirement !== undefined ? { counterexampleRequirement } : {}),
     ...(bindingDiagnostic !== undefined ? { bindingDiagnostic } : {}),
-    ...(claim.provenance !== null ? { provenance: projectProvenance(claim) } : {}),
+    ...(provenance !== undefined ? { provenance } : {}),
   };
 }

@@ -25,11 +25,12 @@ import {
   PROFILE_BY_ID,
   SCRIPT_SIGNATURES_BY_PROVIDER,
   type PlannerContext,
+  type ExecutionProfile,
   type ExecutionSubjectResolution,
   type ScriptSignature,
 } from '../providers/registry.js';
 import { buildScriptInvocation, type PackageManager } from './package-script-command.js';
-import { analyzeVerificationScript } from './verification-script-analysis.js';
+import { analyzeVerificationScript, type ScriptAnalysis } from './verification-script-analysis.js';
 import type { ProviderId } from '../state/assertion-identity.js';
 import type {
   IdentifiedPlannedVerificationCandidate,
@@ -151,60 +152,67 @@ export function extractExecutionSubjectInputsByCandidateId(
   return map;
 }
 
+/** Alternate evidence routes preserve the repo-native execution authority. */
+function routeProfileCandidate(
+  profile: ExecutionProfile,
+  raw: UnidentifiedVerificationCandidate,
+  defaultPlan: PlannedVerificationCandidate | undefined,
+): UnidentifiedVerificationCandidate {
+  if (!profile.alternate || !defaultPlan) return raw;
+  return { ...raw, command: defaultPlan.candidate.command, source: defaultPlan.candidate.source };
+}
+
+function resolveProfileScopeSemanticCommand(
+  profile: ExecutionProfile,
+  raw: UnidentifiedVerificationCandidate,
+  defaultPlan: PlannedVerificationCandidate | undefined,
+): string {
+  if (profile.alternate && defaultPlan?.scopeSemanticCommand) {
+    return defaultPlan.scopeSemanticCommand;
+  }
+  return raw.command;
+}
+
+async function resolveProfileSubjectInputs(
+  profile: ExecutionProfile,
+  ctx: PlannerContext,
+): Promise<ExecutionSubjectResolution> {
+  const result = profile.resolveExecutionSubjectInputs
+    ? await profile.resolveExecutionSubjectInputs(ctx)
+    : [];
+  return normalizeSubjectResolution(result);
+}
+
 async function applyProfiles(
   byKind: Map<string, PlannedVerificationCandidate>,
   blockedKinds: Set<VerificationCandidateKind>,
   ctx: PlannerContext,
-  profiles: ReadonlyArray<{
-    readonly profileId?: string;
-    readonly kind: VerificationCandidateKind;
-    readonly alternate?: boolean;
-    createCandidate(ctx: PlannerContext): UnidentifiedVerificationCandidate | null;
-    attestFullCheckScope?(command: string): boolean;
-    resolveExecutionSubjectInputs?(
-      ctx: PlannerContext,
-    ):
-      | readonly ExecutionSubjectInput[]
-      | ExecutionSubjectResolution
-      | Promise<readonly ExecutionSubjectInput[] | ExecutionSubjectResolution>;
-  }>,
+  profiles: ReadonlyArray<ExecutionProfile>,
 ): Promise<void> {
   for (const profile of profiles) {
     if (blockedKinds.has(profile.kind)) continue;
     if (byKind.has(profile.kind) && !profile.alternate) continue;
 
     const raw = profile.createCandidate(ctx);
-    if (raw) {
-      const defaultPlan = byKind.get(profile.kind);
-      const defaultCandidate = defaultPlan?.candidate;
-      // Alternate evidence routes preserve the repo-native execution authority.
-      const routed =
-        profile.alternate && defaultCandidate
-          ? { ...raw, command: defaultCandidate.command, source: defaultCandidate.source }
-          : raw;
-      const scopeSemanticCommand =
-        profile.alternate && defaultPlan?.scopeSemanticCommand
-          ? defaultPlan.scopeSemanticCommand
-          : raw.command;
-      const candidate = attestFullCheckScope(profile, routed, scopeSemanticCommand);
-      const subjectInputs: ExecutionSubjectInput[] = [{ kind: 'implementation' as const }];
-      const resolution = normalizeSubjectResolution(
-        profile.resolveExecutionSubjectInputs
-          ? await profile.resolveExecutionSubjectInputs(ctx)
-          : [],
-      );
-      if (resolution.kind === 'blocked') {
-        blockedKinds.add(profile.kind);
-        continue;
-      }
-      for (const f of resolution.inputs) subjectInputs.push(f);
-      byKind.set(profile.alternate ? profile.profileId! : raw.kind, {
-        candidate,
-        executionProfileId: profile.profileId,
-        scopeSemanticCommand,
-        executionSubjectInputs: subjectInputs,
-      });
+    if (!raw) continue;
+
+    const defaultPlan = byKind.get(profile.kind);
+    const routed = routeProfileCandidate(profile, raw, defaultPlan);
+    const scopeSemanticCommand = resolveProfileScopeSemanticCommand(profile, raw, defaultPlan);
+    const resolution = await resolveProfileSubjectInputs(profile, ctx);
+    if (resolution.kind === 'blocked') {
+      blockedKinds.add(profile.kind);
+      continue;
     }
+
+    const subjectInputs: ExecutionSubjectInput[] = [{ kind: 'implementation' as const }];
+    for (const f of resolution.inputs) subjectInputs.push(f);
+    byKind.set(profile.alternate ? profile.profileId : raw.kind, {
+      candidate: attestFullCheckScope(profile, routed, scopeSemanticCommand),
+      executionProfileId: profile.profileId,
+      scopeSemanticCommand,
+      executionSubjectInputs: subjectInputs,
+    });
   }
 }
 
@@ -250,6 +258,131 @@ async function readPackageScripts(readFile: ReadFileFn): Promise<Record<string, 
   return result;
 }
 
+/** One package.json script mapped to the verification kind it satisfies. */
+interface ScriptKindMapping {
+  readonly kind: VerificationCandidateKind;
+  readonly script: string;
+}
+
+const SCRIPT_CANDIDATE_MAPPINGS: readonly ScriptKindMapping[] = [
+  { kind: 'test', script: 'test' },
+  { kind: 'lint', script: 'lint' },
+  { kind: 'typecheck', script: 'typecheck' },
+  { kind: 'build', script: 'build' },
+  { kind: 'format', script: 'format' },
+  { kind: 'coverage', script: 'coverage' },
+  { kind: 'coverage', script: 'test:coverage' },
+  { kind: 'security', script: 'security' },
+  { kind: 'security', script: 'audit' },
+];
+
+type ScriptEnrichment =
+  | { readonly kind: 'enriched'; readonly plan: PlannedVerificationCandidate }
+  | { readonly kind: 'blocked' }
+  /** The script kind contradicts the identified provider kind: emit no candidate. */
+  | { readonly kind: 'skip' }
+  | { readonly kind: 'fallback' };
+
+function isEnrichableScript(analysis: ScriptAnalysis): analysis is ScriptAnalysis & {
+  provider: Extract<ScriptAnalysis['provider'], { status: 'identified' }>;
+} {
+  return (
+    analysis.provider.status === 'identified' &&
+    !analysis.isCompound &&
+    !analysis.reporterConfigurationPresent &&
+    analysis.argumentForwarding === 'supported'
+  );
+}
+
+async function enrichScriptCandidate(
+  mapping: ScriptKindMapping,
+  command: string,
+  analysis: ScriptAnalysis,
+  packageManager: PackageManager,
+  ctx: PlannerContext,
+): Promise<ScriptEnrichment> {
+  if (!isEnrichableScript(analysis)) return { kind: 'fallback' };
+  if (analysis.provider.candidateKind !== mapping.kind) return { kind: 'skip' };
+  const profileId = analysis.provider.executionProfileId;
+  const profile = PROFILE_BY_ID.get(profileId);
+  if (!profile) return { kind: 'fallback' };
+
+  const resolution = normalizeSubjectResolution(
+    profile.resolveExecutionSubjectInputs
+      ? await profile.resolveExecutionSubjectInputs(ctx, {
+          ...(analysis.provider.matchedExecutable !== undefined
+            ? { matchedExecutable: analysis.provider.matchedExecutable }
+            : {}),
+        })
+      : [],
+  );
+  if (resolution.kind === 'blocked') return { kind: 'blocked' };
+
+  return {
+    kind: 'enriched',
+    plan: {
+      candidate: attestFullCheckScope(
+        profile,
+        {
+          assertionCapability: 'structured' as const,
+          kind: mapping.kind,
+          command: buildScriptInvocation(packageManager, mapping.script).command,
+          source: `package.json:scripts.${mapping.script}`,
+          confidence: 'high',
+          reason: `Repo-native ${mapping.script} script enriched via ${profileId}`,
+          assertionReport: profile.assertionReport,
+        },
+        command,
+      ),
+      executionProfileId: profileId,
+      scopeSemanticCommand: command,
+      executionSubjectInputs: [
+        { kind: 'implementation' as const },
+        { kind: 'file' as const, path: 'package.json' },
+        ...resolution.inputs,
+      ],
+    },
+  };
+}
+
+function buildPlainScriptCandidateReason(
+  mapping: ScriptKindMapping,
+  analysis: ScriptAnalysis,
+  packageManager: PackageManager,
+): string {
+  let reason = `Repo-native ${mapping.script} script detected and ${packageManager} package manager detected`;
+  if (analysis.provider.status === 'identified') {
+    if (analysis.isCompound) {
+      reason += `; provider '${analysis.provider.providerId}' detected but script is a compound shell command`;
+    } else if (analysis.reporterConfigurationPresent) {
+      reason += `; existing reporter configuration detected, cannot safely enrich`;
+    }
+  }
+  return reason;
+}
+
+function buildPlainScriptCandidate(
+  mapping: ScriptKindMapping,
+  command: string,
+  analysis: ScriptAnalysis,
+  packageManager: PackageManager,
+): PlannedVerificationCandidate {
+  return {
+    candidate: {
+      assertionCapability: 'unsupported' as const,
+      kind: mapping.kind,
+      command: buildScriptInvocation(packageManager, mapping.script).command,
+      source: `package.json:scripts.${mapping.script}`,
+      confidence: 'high',
+      reason: buildPlainScriptCandidateReason(mapping, analysis, packageManager),
+    },
+    executionSubjectInputs: [
+      { kind: 'implementation' as const },
+      { kind: 'file' as const, path: 'package.json' },
+    ],
+  };
+}
+
 async function addScriptCandidates(
   byKind: Map<string, PlannedVerificationCandidate>,
   blockedKinds: Set<VerificationCandidateKind>,
@@ -257,99 +390,32 @@ async function addScriptCandidates(
   packageManager: PackageManager,
   _ctx: PlannerContext,
 ): Promise<void> {
-  const mappings: Array<{ kind: VerificationCandidateKind; script: string }> = [
-    { kind: 'test', script: 'test' },
-    { kind: 'lint', script: 'lint' },
-    { kind: 'typecheck', script: 'typecheck' },
-    { kind: 'build', script: 'build' },
-    { kind: 'format', script: 'format' },
-    { kind: 'coverage', script: 'coverage' },
-    { kind: 'coverage', script: 'test:coverage' },
-    { kind: 'security', script: 'security' },
-    { kind: 'security', script: 'audit' },
-  ];
-
   const signatureMap = buildSignatureMap();
 
-  for (const mapping of mappings) {
-    if (!(mapping.script in scripts)) continue;
-    const command = scripts[mapping.script]!;
+  for (const mapping of SCRIPT_CANDIDATE_MAPPINGS) {
+    const command = scripts[mapping.script];
+    if (command === undefined) continue;
     if (isLikelyPlaceholderScript(command)) continue;
     if (byKind.has(mapping.kind)) continue;
 
     const analysis = analyzeVerificationScript(mapping.script, command, signatureMap);
-
-    const canEnrich =
-      analysis.provider.status === 'identified' &&
-      !analysis.isCompound &&
-      !analysis.reporterConfigurationPresent &&
-      analysis.argumentForwarding === 'supported';
-
-    if (canEnrich) {
-      const profileId = analysis.provider.executionProfileId;
-      if (analysis.provider.candidateKind !== mapping.kind) continue;
-      const profile = PROFILE_BY_ID.get(profileId);
-      if (profile) {
-        const resolution = normalizeSubjectResolution(
-          profile.resolveExecutionSubjectInputs
-            ? await profile.resolveExecutionSubjectInputs(_ctx, {
-                matchedExecutable: analysis.provider.matchedExecutable,
-              })
-            : [],
-        );
-        if (resolution.kind === 'blocked') {
-          blockedKinds.add(mapping.kind);
-          continue;
-        }
-        byKind.set(mapping.kind, {
-          candidate: attestFullCheckScope(
-            profile,
-            {
-              assertionCapability: 'structured' as const,
-              kind: mapping.kind,
-              command: buildScriptInvocation(packageManager, mapping.script).command,
-              source: `package.json:scripts.${mapping.script}`,
-              confidence: 'high',
-              reason: `Repo-native ${mapping.script} script enriched via ${profileId}`,
-              assertionReport: profile.assertionReport,
-            },
-            command,
-          ),
-          executionProfileId: profileId,
-          scopeSemanticCommand: command,
-          executionSubjectInputs: [
-            { kind: 'implementation' as const },
-            { kind: 'file' as const, path: 'package.json' },
-            ...resolution.inputs,
-          ],
-        });
-        continue;
-      }
+    const enrichment = await enrichScriptCandidate(
+      mapping,
+      command,
+      analysis,
+      packageManager,
+      _ctx,
+    );
+    if (enrichment.kind === 'blocked') {
+      blockedKinds.add(mapping.kind);
+      continue;
     }
-
-    let reason = `Repo-native ${mapping.script} script detected and ${packageManager} package manager detected`;
-    if (analysis.provider.status === 'identified') {
-      if (analysis.isCompound) {
-        reason += `; provider '${analysis.provider.providerId}' detected but script is a compound shell command`;
-      } else if (analysis.reporterConfigurationPresent) {
-        reason += `; existing reporter configuration detected, cannot safely enrich`;
-      }
+    if (enrichment.kind === 'skip') continue;
+    if (enrichment.kind === 'enriched') {
+      byKind.set(mapping.kind, enrichment.plan);
+      continue;
     }
-
-    byKind.set(mapping.kind, {
-      candidate: {
-        assertionCapability: 'unsupported' as const,
-        kind: mapping.kind,
-        command: buildScriptInvocation(packageManager, mapping.script).command,
-        source: `package.json:scripts.${mapping.script}`,
-        confidence: 'high',
-        reason,
-      },
-      executionSubjectInputs: [
-        { kind: 'implementation' as const },
-        { kind: 'file' as const, path: 'package.json' },
-      ],
-    });
+    byKind.set(mapping.kind, buildPlainScriptCandidate(mapping, command, analysis, packageManager));
   }
 }
 

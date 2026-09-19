@@ -200,57 +200,15 @@
     },
     {
       "file": "src/discovery/scoped-stack.ts",
-      "function": "function:extractFromNestedPackageJson",
-      "rule": "complexity",
-      "value": 20
-    },
-    {
-      "file": "src/discovery/scoped-stack.ts",
-      "function": "function:extractFromNestedPomXml",
-      "rule": "complexity",
-      "value": 15
-    },
-    {
-      "file": "src/discovery/scoped-stack.ts",
       "function": "function:extractScopePath",
       "rule": "complexity",
       "value": 13
-    },
-    {
-      "file": "src/discovery/scoped-stack.ts",
-      "function": "function:extractScopedStack",
-      "rule": "complexity",
-      "value": 24
-    },
-    {
-      "file": "src/discovery/scoped-stack.ts",
-      "function": "function:extractScopedStack",
-      "rule": "max-lines-per-function",
-      "value": 117
     },
     {
       "file": "src/discovery/verification-planner.ts",
       "function": "function:addNonAssertionFallbacks",
       "rule": "complexity",
       "value": 19
-    },
-    {
-      "file": "src/discovery/verification-planner.ts",
-      "function": "function:addScriptCandidates",
-      "rule": "complexity",
-      "value": 16
-    },
-    {
-      "file": "src/discovery/verification-planner.ts",
-      "function": "function:addScriptCandidates",
-      "rule": "max-lines-per-function",
-      "value": 95
-    },
-    {
-      "file": "src/discovery/verification-planner.ts",
-      "function": "function:applyProfiles",
-      "rule": "complexity",
-      "value": 16
     },
     {
       "file": "src/discovery/verification-script-analysis.ts",
@@ -355,24 +313,6 @@
       "value": 14
     },
     {
-      "file": "src/integration/tools/review-validation-structured-evidence.ts",
-      "function": "function:resolveStructuredFindings",
-      "rule": "complexity",
-      "value": 26
-    },
-    {
-      "file": "src/integration/tools/review-validation-structured-evidence.ts",
-      "function": "function:resolveStructuredFindings",
-      "rule": "max-lines-per-function",
-      "value": 180
-    },
-    {
-      "file": "src/integration/tools/review-validation.ts",
-      "function": "function:validateReviewFindings",
-      "rule": "complexity",
-      "value": 18
-    },
-    {
       "file": "src/integration/tools/run-check-tool.ts",
       "function": "function:persistCheckResultWithRetry",
       "rule": "max-lines-per-function",
@@ -381,12 +321,6 @@
     {
       "file": "src/logging/file-sink.ts",
       "function": "function:createFileSink",
-      "rule": "max-lines-per-function",
-      "value": 88
-    },
-    {
-      "file": "src/logging/logger.ts",
-      "function": "function:createLogger",
       "rule": "max-lines-per-function",
       "value": 88
     },
@@ -597,16 +531,6 @@
       "file": "src/audit/types.ts",
       "function": "function:createErrorEvent",
       "rule": "max-params"
-    },
-    {
-      "file": "src/integration/tools/review-validation-structured-evidence.ts",
-      "function": "function:resolveStructuredFindings",
-      "rule": "complexity"
-    },
-    {
-      "file": "src/integration/tools/review-validation-structured-evidence.ts",
-      "function": "function:resolveStructuredFindings",
-      "rule": "max-lines-per-function"
     },
     {
       "file": "src/integration/tools/run-check-tool.ts",

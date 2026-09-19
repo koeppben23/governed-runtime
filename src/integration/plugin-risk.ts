@@ -193,7 +193,7 @@ export function evidenceUnavailableRiskDecision(
     code: 'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
     reason,
     decisionId: `RISK-${new Date().toISOString().replace(/[^0-9]/g, '')}-evidence-unavailable`,
-    claimedTaskClass: state.claimedTaskClass,
+    ...(state.claimedTaskClass !== undefined ? { claimedTaskClass: state.claimedTaskClass } : {}),
     minimumTaskClass: 'HIGH-RISK',
     touchedSurfaces: ['risk-classification-evidence'],
     riskTriggers: ['ceremony_only'],

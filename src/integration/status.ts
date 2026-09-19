@@ -150,7 +150,7 @@ export interface StatusProjection {
    * Active check IDs that have not yet been validated.
    * Populated only during VALIDATION phase. Absent otherwise.
    */
-  remainingChecks?: string[];
+  remainingChecks?: string[] | undefined;
 
   /**
    * Canonical readiness derived from evalResult and evidenceSummary.

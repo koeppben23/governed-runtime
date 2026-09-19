@@ -52,11 +52,11 @@ export interface AuditContext {
   prevHash: string;
   phase: string;
   success: boolean;
-  errorCode?: string;
+  errorCode?: string | undefined;
   errorMessage: string | undefined;
   parsed: ReturnType<typeof parseToolResult>;
   timestampAssurance: TimestampAssurancePolicy;
-  ntpResult?: NtpCheckResult;
+  ntpResult?: NtpCheckResult | undefined;
 }
 
 // ─── Context Resolution ──────────────────────────────────────────────────────

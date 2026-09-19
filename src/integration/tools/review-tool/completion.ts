@@ -261,9 +261,7 @@ export function buildPeerReviewCoverage(input: {
   };
 }
 
-function reviewCardInvocationFields(
-  boundInvocation: ReturnType<typeof ensureReviewAssurance>['invocations'][number] | undefined,
-): {
+interface ReviewCardInvocationFields {
   invocationSource?: ReviewInvocationEvidence['source'];
   invocationMode?: ReviewInvocationEvidence['invocationMode'];
   hostVisible?: boolean;
@@ -271,15 +269,50 @@ function reviewCardInvocationFields(
   structuredOutputUsed?: ReviewInvocationEvidence['structuredOutputUsed'];
   reviewAssuranceLevel?: ReviewInvocationEvidence['reviewAssuranceLevel'];
   reviewerSessionId?: string;
-} {
+}
+
+type BoundReviewInvocation =
+  ReturnType<typeof ensureReviewAssurance>['invocations'][number] | undefined;
+
+function invocationTransportFields(
+  boundInvocation: BoundReviewInvocation,
+): ReviewCardInvocationFields {
   return {
-    invocationSource: boundInvocation?.source,
-    invocationMode: boundInvocation?.invocationMode,
-    hostVisible: boundInvocation?.hostVisible,
-    reviewOutputMode: boundInvocation?.reviewOutputMode,
-    structuredOutputUsed: boundInvocation?.structuredOutputUsed,
-    reviewAssuranceLevel: boundInvocation?.reviewAssuranceLevel,
-    reviewerSessionId: boundInvocation?.childSessionId,
+    ...(boundInvocation?.source !== undefined ? { invocationSource: boundInvocation.source } : {}),
+    ...(boundInvocation?.invocationMode !== undefined
+      ? { invocationMode: boundInvocation.invocationMode }
+      : {}),
+    ...(boundInvocation?.hostVisible !== undefined
+      ? { hostVisible: boundInvocation.hostVisible }
+      : {}),
+    ...(boundInvocation?.reviewOutputMode !== undefined
+      ? { reviewOutputMode: boundInvocation.reviewOutputMode }
+      : {}),
+  };
+}
+
+function invocationAssuranceFields(
+  boundInvocation: BoundReviewInvocation,
+): ReviewCardInvocationFields {
+  return {
+    ...(boundInvocation?.structuredOutputUsed !== undefined
+      ? { structuredOutputUsed: boundInvocation.structuredOutputUsed }
+      : {}),
+    ...(boundInvocation?.reviewAssuranceLevel !== undefined
+      ? { reviewAssuranceLevel: boundInvocation.reviewAssuranceLevel }
+      : {}),
+    ...(boundInvocation?.childSessionId !== undefined
+      ? { reviewerSessionId: boundInvocation.childSessionId }
+      : {}),
+  };
+}
+
+function reviewCardInvocationFields(
+  boundInvocation: BoundReviewInvocation,
+): ReviewCardInvocationFields {
+  return {
+    ...invocationTransportFields(boundInvocation),
+    ...invocationAssuranceFields(boundInvocation),
   };
 }
 
@@ -306,8 +339,10 @@ function buildPeerReviewCard(
       overallStatus: report.overallStatus,
       findings: report.findings ?? [],
       coverage: report.peerReviewCoverage,
-      reviewSubject: report.reviewKind === 'content_review' ? report.reviewSubject : undefined,
-      obligationId: validatedReviewObligation?.obligationId,
+      ...(report.reviewKind === 'content_review' ? { reviewSubject: report.reviewSubject } : {}),
+      ...(validatedReviewObligation?.obligationId !== undefined
+        ? { obligationId: validatedReviewObligation.obligationId }
+        : {}),
       proofSummary: projectCompletionProofStatus(finalState),
       directive,
       ...(conclusionAction ? { conclusionAction } : {}),
@@ -342,7 +377,7 @@ function formatReviewCompletionResponse(input: {
   allTransitions: StartedReviewResult['transitions'];
   reviewCard: string;
   presentationMarkdown: string;
-  artifactWarning?: { code: string; message: string };
+  artifactWarning?: { code: string; message: string } | undefined;
 }): string {
   const {
     result,

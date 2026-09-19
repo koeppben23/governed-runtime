@@ -26,8 +26,8 @@ import { UNICODE_GLYPHS } from './glyph-profile.js';
 export type ClaimVisibility = 'none' | 'selected' | 'all';
 
 export interface ProofGraphRenderOptions {
-  readonly detail?: 'human' | 'diagnostic';
-  readonly humanSummary?: HumanProofSummary;
+  readonly detail?: 'human' | 'diagnostic' | undefined;
+  readonly humanSummary?: HumanProofSummary | undefined;
   readonly claimVisibility?: ClaimVisibility;
   readonly selectedClaimIds?: readonly string[];
 }

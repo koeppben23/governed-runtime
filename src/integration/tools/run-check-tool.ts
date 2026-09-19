@@ -301,9 +301,9 @@ export async function executeRunCheckPhased(
 
 async function persistAfterAttestation(params: {
   kind: VerificationCandidateKind;
-  candidateId?: string;
+  candidateId?: string | undefined;
   evidence: Awaited<ReturnType<typeof executeCheck>>;
-  extraction?: AssertionExtractionResult;
+  extraction?: AssertionExtractionResult | undefined;
   attemptId: string;
   subject: ValidationSubject;
   subjectInputs: readonly ExecutionSubjectInput[];
@@ -312,7 +312,7 @@ async function persistAfterAttestation(params: {
   implementationDigest: string;
   changedFiles: readonly string[];
   outcome: ValidationOutcome;
-  fullCheckScopeAttestation?: FullCheckScopeAttestation;
+  fullCheckScopeAttestation?: FullCheckScopeAttestation | undefined;
   sessDir: string;
   sessionId: string;
   executionObservedStateDigest: string;
@@ -365,18 +365,18 @@ async function persistAfterAttestation(params: {
 
 interface PersistCheckInput {
   kind: VerificationCandidateKind;
-  candidateId?: string;
+  candidateId?: string | undefined;
   evidence: Awaited<ReturnType<typeof executeCheck>>;
   derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance>;
   outcome: ValidationOutcome;
-  extraction?: AssertionExtractionResult;
-  fullCheckScopeAttestation?: FullCheckScopeAttestation;
+  extraction?: AssertionExtractionResult | undefined;
+  fullCheckScopeAttestation?: FullCheckScopeAttestation | undefined;
   attemptId: string;
   subject: ValidationSubject;
   sessDir: string;
   sessionId: string;
   executionObservedStateDigest: string;
-  classificationReasonOverride?: string;
+  classificationReasonOverride?: string | undefined;
   worktree: string;
 }
 
@@ -542,7 +542,7 @@ function checkDispatchAuthority(
 
 function formatRunCheckResponse(input: {
   kind: string;
-  candidateId?: string;
+  candidateId?: string | undefined;
   evidence: CheckEvidence;
   validationResult: ValidationResult;
   derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance> | undefined;

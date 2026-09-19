@@ -39,11 +39,11 @@ function planAssurance(input: PlanAssuranceInput): ReviewAssuranceState {
       obligationType: input.obligationType ?? 'plan',
       subjectDigest: input.subjectDigest,
       status: input.status,
-      iteration: input.iteration,
-      createdAt: input.createdAt,
+      ...(input.iteration !== undefined ? { iteration: input.iteration } : {}),
+      ...(input.createdAt !== undefined ? { createdAt: input.createdAt } : {}),
       invocationId: input.invocationId ?? PLAN_INVOCATION_ID,
       findingsHash: input.findingsHash ?? 'a'.repeat(64),
-      capturedVerdict: input.capturedVerdict,
+      ...(input.capturedVerdict !== undefined ? { capturedVerdict: input.capturedVerdict } : {}),
       // Default: the empty declaration set (most plan-approval tests carry no claims).
       claimDeclarationsDigest:
         input.claimDeclarationsDigest ??

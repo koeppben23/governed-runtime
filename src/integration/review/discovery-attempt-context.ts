@@ -206,7 +206,11 @@ export async function resolveAttemptDiscoveryOrBlock(input: {
   readonly obligationId?: string;
 }): Promise<
   | { readonly kind: 'ok'; readonly context: ReviewAttemptDiscoveryContext }
-  | { readonly kind: 'blocked'; readonly reason: string; readonly obligationId?: string }
+  | {
+      readonly kind: 'blocked';
+      readonly reason: string;
+      readonly obligationId?: string | undefined;
+    }
 > {
   const resolved = await resolveReviewAttemptDiscoveryContext(input);
   if (resolved.kind === 'blocked') {

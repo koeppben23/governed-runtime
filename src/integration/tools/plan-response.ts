@@ -100,7 +100,8 @@ export function buildPlanReviewObligationInput(
   classificationFiles: readonly string[] | undefined,
   options: {
     freeze: RepositoryAuthorityFreezeResult;
-    planClaimDeclarations?: import('../../state/proofgraph-approval.js').PlanClaimDeclarations;
+    planClaimDeclarations?:
+      import('../../state/proofgraph-approval.js').PlanClaimDeclarations | undefined;
   },
 ): Parameters<typeof createObligationAndAttempt>[1] {
   const metadata: Record<string, unknown> = {};
@@ -237,7 +238,9 @@ export function buildPlanReviewInstruction(input: {
     authority: input.authority,
     iteration: input.iteration,
     planVersion: input.planVersion,
-    observationCapability: input.authority.attempt.observationCapability ?? undefined,
+    ...(input.authority.attempt.observationCapability !== undefined
+      ? { observationCapability: input.authority.attempt.observationCapability }
+      : {}),
   });
 }
 
@@ -272,31 +275,48 @@ export function convergedPlanResponse(input: ConvergedPlanReviewInput): Record<s
   };
 }
 
+function convergedReviewCardInput(
+  input: ConvergedPlanReviewInput,
+  taskTitle: string | undefined,
+  reviewedIdentity: ReturnType<typeof resolveReviewedArtifactIdentity>,
+): Parameters<typeof buildPlanReviewCard>[0] {
+  const { finalState, revision, forcedConvergence } = input;
+  return {
+    planText: revision.currentPlan.body,
+    phase: finalState.phase,
+    phaseLabel: PHASE_LABELS[finalState.phase],
+    directive: resolveWorkflowDirective(finalState),
+    planVersion: revision.history.length + 1,
+    ...(finalState.policySnapshot?.mode !== undefined
+      ? { policyMode: finalState.policySnapshot.mode }
+      : {}),
+    ...(taskTitle !== undefined ? { taskTitle } : {}),
+    ...(forcedConvergence !== undefined ? { forcedConvergence } : {}),
+    proofSummary: projectPlanProofStatus(finalState),
+    ...(finalState.plan?.claimDeclarations !== undefined
+      ? { claimDeclarations: finalState.plan.claimDeclarations }
+      : {}),
+    currentPlanDigest: revision.currentPlan.digest,
+    ...(reviewedIdentity?.reviewedDigest !== undefined
+      ? { reviewedDigest: reviewedIdentity.reviewedDigest }
+      : {}),
+    ...(reviewedIdentity?.reviewedObligationId !== undefined
+      ? { reviewedObligationId: reviewedIdentity.reviewedObligationId }
+      : {}),
+  };
+}
+
 export async function convergedPlanReviewCardResponse(
   input: ConvergedPlanReviewInput,
 ): Promise<Record<string, unknown>> {
   const { scope, finalState, transitions, revision, iteration, forcedConvergence } = input;
-  const directive = resolveWorkflowDirective(finalState);
   const reviewedIdentity = resolveReviewedArtifactIdentity(
     finalState.reviewAssurance,
     'plan',
     finalState.plan?.reviewFindings?.at(-1),
   );
-  const reviewCardInput = {
-    planText: revision.currentPlan.body,
-    phase: finalState.phase,
-    phaseLabel: PHASE_LABELS[finalState.phase],
-    directive,
-    planVersion: revision.history.length + 1,
-    policyMode: finalState.policySnapshot?.mode,
-    taskTitle: firstLine(finalState.ticket?.text),
-    forcedConvergence,
-    proofSummary: projectPlanProofStatus(finalState),
-    claimDeclarations: finalState.plan?.claimDeclarations,
-    currentPlanDigest: revision.currentPlan.digest,
-    reviewedDigest: reviewedIdentity?.reviewedDigest,
-    reviewedObligationId: reviewedIdentity?.reviewedObligationId,
-  };
+  const taskTitle = firstLine(finalState.ticket?.text);
+  const reviewCardInput = convergedReviewCardInput(input, taskTitle, reviewedIdentity);
   // Cards and artifacts are canonical Unicode; only host-visible Markdown uses preferences.
   const reviewCard = buildPlanReviewCard(reviewCardInput);
   const presentationMarkdown = buildPlanReviewCard(reviewCardInput, {

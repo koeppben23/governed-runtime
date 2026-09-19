@@ -273,14 +273,14 @@ describe('buildReviewReportCard', () => {
     // PEER_REVIEW_COMPLETE resolves the terminal PEER_REVIEW_COMPLETE directive with
     // no commands; the card must render a valid terminal document rather than
     // failing the success-form presentation contract.
-    const card = buildReviewReportCard({
-      ...baseInput,
+    const { conclusionAction: _conclusionAction, ...baseWithoutConclusion } = baseInput;
+    const card = buildCard({
+      ...baseWithoutConclusion,
       directive: {
         kind: 'terminal',
         code: 'PEER_REVIEW_COMPLETE',
         commands: [],
       },
-      conclusionAction: undefined,
     });
     expect(card).toContain('Peer review complete.');
     expect(card).not.toContain('/export');

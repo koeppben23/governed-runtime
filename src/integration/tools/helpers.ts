@@ -33,9 +33,11 @@ import { PHASE_LABELS } from '../../presentation/index.js';
 import { renderMarkdown, lookupReasonCopy } from '../../presentation/index.js';
 import {
   buildEvidenceApprovalCompletionDocument,
+  type FindingRelationPresentation,
   type PresentationConclusion,
   type PresentationDocument,
 } from '../../presentation/index.js';
+import type { ReviewFindings } from '../../state/evidence.js';
 import { buildRailConclusion } from './rail-conclusion.js';
 import { projectStatusActionFromCommand } from '../status-conclusion.js';
 import { getReviewLoopProgress } from '../review/review-loop-progress.js';
@@ -224,11 +226,66 @@ function buildEvidenceApprovalCompletionPresentation(state: SessionState): { mar
   const document = buildEvidenceApprovalCompletionDocument({
     proofSummary: projectCompletionProofStatus(state),
     exportAction: projectStatusActionFromCommand('/export', 'recommended'),
-    missingVerification: latestFindings?.missingVerification,
+    ...(latestFindings?.missingVerification !== undefined
+      ? { missingVerification: latestFindings.missingVerification }
+      : {}),
   });
   const markdown = renderMarkdown(document);
   emitPresentationTelemetry(document, state.phase, state.id);
   return { markdown };
+}
+
+type ReviewFindingRelation = ReviewFindings['blockingIssues'][number]['relation'];
+
+export function toPresentationFindingRelation(
+  relation: ReviewFindingRelation,
+): FindingRelationPresentation {
+  return {
+    subjectAnchors: relation.subjectAnchors.map((anchor) => {
+      if (anchor.kind === 'repository_location') {
+        return {
+          kind: 'repository_location' as const,
+          location: {
+            path: anchor.location.path,
+            revision: anchor.location.revision,
+            ...(anchor.location.line !== undefined ? { line: anchor.location.line } : {}),
+            ...(anchor.location.endLine !== undefined ? { endLine: anchor.location.endLine } : {}),
+          },
+        };
+      }
+      if (anchor.kind === 'artifact_section') {
+        return {
+          kind: 'artifact_section' as const,
+          artifactKind: anchor.artifactKind,
+          sectionPath: anchor.sectionPath.map(({ headingText }) => ({ headingText })),
+        };
+      }
+      if (anchor.kind === 'content') {
+        return {
+          kind: 'content' as const,
+          subjectDigest: anchor.subjectDigest,
+          ...(anchor.range !== undefined
+            ? {
+                range: {
+                  startLine: anchor.range.startLine,
+                  ...(anchor.range.endLine !== undefined ? { endLine: anchor.range.endLine } : {}),
+                },
+              }
+            : {}),
+        };
+      }
+      return {
+        kind: 'implementation' as const,
+        implementationDigest: anchor.implementationDigest,
+      };
+    }),
+    evidenceLocations: relation.evidenceLocations.map((location) => ({
+      path: location.path,
+      revision: location.revision,
+      ...(location.line !== undefined ? { line: location.line } : {}),
+      ...(location.endLine !== undefined ? { endLine: location.endLine } : {}),
+    })),
+  };
 }
 
 /**

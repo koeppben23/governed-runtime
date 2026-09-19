@@ -360,7 +360,7 @@ describe('audit/archive tamper matrix', () => {
       level: string;
       service: string;
       message: string;
-      extra?: Record<string, unknown>;
+      extra: Record<string, unknown> | undefined;
     }> = [];
     const logger: AdapterLogger = {
       info: (service, message, extra) => logs.push({ level: 'info', service, message, extra }),
@@ -624,7 +624,7 @@ describe('audit/archive tamper matrix', () => {
         level: string;
         service: string;
         message: string;
-        extra?: Record<string, unknown>;
+        extra: Record<string, unknown> | undefined;
       }> = [];
       const logger: AdapterLogger = {
         info: (service, message, extra) => logs.push({ level: 'info', service, message, extra }),
@@ -893,7 +893,11 @@ describe('audit/archive tamper matrix', () => {
         await fs.writeFile(manifestPath, JSON.stringify(manifest), 'utf-8');
       });
 
-      const logs: Array<{ level: string; service: string; extra?: Record<string, unknown> }> = [];
+      const logs: Array<{
+        level: string;
+        service: string;
+        extra: Record<string, unknown> | undefined;
+      }> = [];
       const logger: AdapterLogger = {
         info: (service, _m, extra) => logs.push({ level: 'info', service, extra }),
         warn: (service, _m, extra) => logs.push({ level: 'warn', service, extra }),
@@ -941,7 +945,11 @@ describe('audit/archive tamper matrix', () => {
         );
       });
 
-      const logs: Array<{ level: string; service: string; extra?: Record<string, unknown> }> = [];
+      const logs: Array<{
+        level: string;
+        service: string;
+        extra: Record<string, unknown> | undefined;
+      }> = [];
       const logger: AdapterLogger = {
         info: (service, _m, extra) => logs.push({ level: 'info', service, extra }),
         warn: (service, _m, extra) => logs.push({ level: 'warn', service, extra }),

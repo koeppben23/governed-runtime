@@ -373,8 +373,8 @@ interface BuildReportOptions {
   now: string;
   validationSummary: Array<{ checkId: string; passed: boolean; detail: string }>;
   findings: ReviewReportFinding[];
-  refInput?: ReviewReferenceInput;
-  reviewSubject?: FrozenReviewSubject;
+  refInput?: ReviewReferenceInput | undefined;
+  reviewSubject?: FrozenReviewSubject | undefined;
 }
 export function buildReviewReport(opts: BuildReportOptions): ReviewReportDraft {
   const { state, now, validationSummary, findings, refInput, reviewSubject } = opts;

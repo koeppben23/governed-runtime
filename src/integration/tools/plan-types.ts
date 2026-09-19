@@ -12,11 +12,11 @@ import type { MutableSession, ToolContext } from './helpers.js';
 import { classifyToolCallMode, toolCallFlags } from './review-validation-mode.js';
 
 export type PlanArgs = {
-  planText?: string;
-  claims?: PlanClaimDeclarationInput[];
-  reviewVerdict?: 'accept' | 'changes_requested';
-  reviewerUnavailable?: boolean;
-  targetPaths?: string[];
+  planText?: string | undefined;
+  claims?: PlanClaimDeclarationInput[] | undefined;
+  reviewVerdict?: 'accept' | 'changes_requested' | undefined;
+  reviewerUnavailable?: boolean | undefined;
+  targetPaths?: string[] | undefined;
 };
 
 export type MutablePlanSession = MutableSession;
@@ -35,7 +35,7 @@ export type PlanCallMode =
   | {
       kind: 'invalid';
       code: 'INVALID_PLAN_TOOL_SEQUENCE' | 'PLAN_APPROVE_WITH_TEXT';
-      params?: Record<string, string>;
+      params?: Record<string, string> | undefined;
     };
 
 export type PlanReviewPolicy = Record<never, never>;

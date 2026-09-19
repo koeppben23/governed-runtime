@@ -60,7 +60,7 @@ import {
 
 function resolveSubjectDigest(input: {
   subjectDigest: string;
-  reviewSubject?: FrozenReviewSubject;
+  reviewSubject?: FrozenReviewSubject | undefined;
 }): string {
   return input.reviewSubject?.subjectDigest ?? input.subjectDigest;
 }
@@ -128,6 +128,22 @@ function assertSubjectDigest(subjectDigest: string): void {
   }
 }
 
+function assertObligationFreezeCoherence(input: {
+  obligationType: ReviewObligationType;
+  repositoryAuthority?: FrozenRepositoryAuthority | undefined;
+  repositoryEvidenceFreeze?: RepositoryEvidenceFreeze | undefined;
+}): void {
+  assertRepositoryFreezeCoherence({
+    obligationType: input.obligationType,
+    ...(input.repositoryAuthority !== undefined
+      ? { repositoryAuthority: input.repositoryAuthority }
+      : {}),
+    ...(input.repositoryEvidenceFreeze !== undefined
+      ? { repositoryEvidenceFreeze: input.repositoryEvidenceFreeze }
+      : {}),
+  });
+}
+
 export function createReviewObligation(input: {
   obligationType: ReviewObligationType;
   iteration: number;
@@ -135,29 +151,34 @@ export function createReviewObligation(input: {
   planVersion: number;
   now: string;
   subjectDigest: string;
-  claimDeclarationsDigest?: string;
-  reviewSubject?: FrozenReviewSubject;
+  claimDeclarationsDigest?: string | undefined;
+  reviewSubject?: FrozenReviewSubject | undefined;
   reviewMaterial: ReviewMaterial;
-  reviewProfile?: ReviewProfile;
-  profileSource?: ReviewProfileSource;
+  reviewProfile?: ReviewProfile | undefined;
+  profileSource?: ReviewProfileSource | undefined;
   policySnapshot?:
     | (Pick<PolicySnapshot, 'maxReviewerAttempts'> & {
         challengePolicy?: ChallengePolicy;
       })
-    | null;
-  changedFiles?: readonly string[];
-  reviewSubjectScope?: ReviewSubjectScope;
-  repositoryAuthority?: FrozenRepositoryAuthority;
-  repositoryEvidenceFreeze?: RepositoryEvidenceFreeze;
-  claimedTaskClass?: TaskClass;
-  metadata?: Record<string, unknown>;
-  fingerprintVersion?: 'v2';
+    | null
+    | undefined;
+  changedFiles?: readonly string[] | undefined;
+  reviewSubjectScope?: ReviewSubjectScope | undefined;
+  repositoryAuthority?: FrozenRepositoryAuthority | undefined;
+  repositoryEvidenceFreeze?: RepositoryEvidenceFreeze | undefined;
+  claimedTaskClass?: TaskClass | undefined;
+  metadata?: Record<string, unknown> | undefined;
+  fingerprintVersion?: 'v2' | undefined;
 }): ReviewObligation {
   assertSubjectDigest(input.subjectDigest);
-  assertRepositoryFreezeCoherence(input);
+  assertObligationFreezeCoherence(input);
   requireArtifactSubjectScope(input.obligationType, input.reviewSubjectScope);
   const challengePolicy = input.policySnapshot?.challengePolicy ?? CHALLENGE_POLICY_V1;
-  const resolvedChallengeRequirements = resolveChallengeRequirements(challengePolicy, input);
+  const resolvedChallengeRequirements = resolveChallengeRequirements(challengePolicy, {
+    obligationType: input.obligationType,
+    ...(input.changedFiles !== undefined ? { changedFiles: input.changedFiles } : {}),
+    ...(input.claimedTaskClass !== undefined ? { claimedTaskClass: input.claimedTaskClass } : {}),
+  });
   const subjectDigest = resolveSubjectDigest(input);
   const reviewSubjectScope = resolveSubjectScope(
     subjectDigest,

@@ -148,8 +148,10 @@ function buildOperationAuditBody(
       preStateDigest: operation.preStateDigest,
       mutationDigest: operation.mutationDigest,
       postStateDigest: operation.postStateDigest,
-      actor: operation.semantic.actor,
-      actorInfo: operation.semantic.actorInfo,
+      ...(operation.semantic.actor !== undefined ? { actor: operation.semantic.actor } : {}),
+      ...(operation.semantic.actorInfo !== undefined
+        ? { actorInfo: operation.semantic.actorInfo }
+        : {}),
     });
   }
   const t = operation.transition;

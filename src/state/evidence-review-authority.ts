@@ -205,9 +205,13 @@ export type RepositoryObservation = z.infer<typeof RepositoryObservation>;
 
 // ─── Authority Predicates and Resolution ───────────────────────────────────────
 
-/** Minimal structural obligation shape the authority predicates operate on. */
+/**
+ * Minimal structural obligation shape the authority predicates operate on.
+ * The property tolerates an explicit `undefined` because Zod-optional inputs
+ * may materialize the key with an undefined value.
+ */
 export interface RepositoryAuthorityCarrier {
-  readonly repositoryAuthority?: FrozenRepositoryAuthorityValue;
+  readonly repositoryAuthority?: FrozenRepositoryAuthorityValue | undefined;
 }
 
 /** True when the carrier holds frozen repository authority of any kind. */

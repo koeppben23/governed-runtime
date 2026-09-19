@@ -15,13 +15,18 @@ import { runWithLogContext } from '../log-context.js';
 
 function captureLogger(): {
   log: AdapterLogger;
-  entries: { level: string; service: string; message: string; extra?: Record<string, unknown> }[];
+  entries: {
+    level: string;
+    service: string;
+    message: string;
+    extra?: Record<string, unknown> | undefined;
+  }[];
 } {
   const entries: {
     level: string;
     service: string;
     message: string;
-    extra?: Record<string, unknown>;
+    extra?: Record<string, unknown> | undefined;
   }[] = [];
   return {
     entries,

@@ -227,10 +227,11 @@ function resolveDecisionReceiptFields(
   fallbackDecidedAt: string,
 ): { rationale: string; decisionIdentity?: DecisionIdentity; decidedAt: string } {
   const parsedDecision = parsedReviewDecision(ctx);
+  const decisionIdentity =
+    decisionIdentityField(parsedDecision) ?? state?.reviewDecision?.decisionIdentity;
   return {
     rationale: resolveDecisionRationale(parsedDecision, input, state),
-    decisionIdentity:
-      decisionIdentityField(parsedDecision) ?? state?.reviewDecision?.decisionIdentity,
+    ...(decisionIdentity !== undefined ? { decisionIdentity } : {}),
     decidedAt:
       stringField(parsedDecision, 'decidedAt') ??
       state?.reviewDecision?.decidedAt ??
@@ -322,7 +323,7 @@ async function emitDecisionReceiptEvent(
   if (!identity) return input.prevHash;
   const body = buildDecisionBody({
     flowguardSessionId: identity.flowguardSessionId,
-    hostSessionId: identity.hostSessionId,
+    ...(identity.hostSessionId !== undefined ? { hostSessionId: identity.hostSessionId } : {}),
     gatePhase: input.firstTransition.from,
     detail: {
       decisionId: input.decisionId,
@@ -340,7 +341,7 @@ async function emitDecisionReceiptEvent(
     actor: ctx.actor,
     prevHash: input.prevHash,
     // Stryker disable next-line OptionalChaining — equivalent: decision receipts only run with a resolved, non-null session state.
-    actorInfo: state?.actorInfo,
+    ...(state?.actorInfo !== undefined ? { actorInfo: state.actorInfo } : {}),
   });
   const evt = await finalizeAuditBodyWithTimestamp(params, body, input.prevHash, 'decision');
   recordTimestampFailure('decision', evt.error);
@@ -362,14 +363,15 @@ async function finalizeAuditBodyWithTimestamp(
         canonicalEventDigest: digest,
         eventKind,
         localTimestamp: ctx.now,
-        ntpResult: ctx.ntpResult,
+        ...(ctx.ntpResult !== undefined ? { ntpResult: ctx.ntpResult } : {}),
         tsaProvider: deps.tsaProvider,
         tsaVerifier: deps.timestampVerifier,
       })
     : undefined;
+  const error = resolution?.error;
   return {
     event: finalizeWithTimestampEvidence(body, prevHash, resolution?.evidence, digest),
-    error: resolution?.error,
+    ...(error !== undefined ? { error } : {}),
   };
 }
 
@@ -423,12 +425,12 @@ async function emitSessionCompletedLifecycle(
   const body = buildLifecycleBody({
     id: completionLifecycleEventId(identity.flowguardSessionId, terminalOperation.operationId),
     flowguardSessionId: identity.flowguardSessionId,
-    hostSessionId: identity.hostSessionId,
+    ...(identity.hostSessionId !== undefined ? { hostSessionId: identity.hostSessionId } : {}),
     detail: { action: 'session_completed', finalPhase: 'COMPLETE' },
     occurredAt: terminalOperation.transition.at,
     actor: 'machine',
     prevHash: ctx.prevHash,
-    actorInfo: state.actorInfo,
+    ...(state.actorInfo !== undefined ? { actorInfo: state.actorInfo } : {}),
   });
   const digest = computeCanonicalEventDigest(body);
   const resolution = ctx.timestampAssurance.enabled
@@ -437,7 +439,7 @@ async function emitSessionCompletedLifecycle(
         canonicalEventDigest: digest,
         eventKind: 'lifecycle',
         localTimestamp: ctx.now,
-        ntpResult: ctx.ntpResult,
+        ...(ctx.ntpResult !== undefined ? { ntpResult: ctx.ntpResult } : {}),
         tsaProvider: deps.tsaProvider,
         tsaVerifier: deps.timestampVerifier,
       })
@@ -514,20 +516,20 @@ async function emitToolCallAudit(input: {
   if (!identity) return;
   const body = buildToolCallBody({
     flowguardSessionId: identity.flowguardSessionId,
-    hostSessionId: identity.hostSessionId,
+    ...(identity.hostSessionId !== undefined ? { hostSessionId: identity.hostSessionId } : {}),
     phase: ctx.phase,
     detail: {
       tool: toolName,
       argsSummary: summarizeArgs((input.input as Record<string, unknown>) ?? {}),
       success: ctx.success,
-      errorCode: ctx.errorCode,
-      errorMessage: ctx.errorMessage,
+      ...(ctx.errorCode !== undefined ? { errorCode: ctx.errorCode } : {}),
+      ...(ctx.errorMessage !== undefined ? { errorMessage: ctx.errorMessage } : {}),
       transitionCount: transitionCountFromToolOutput(input.output),
     },
     occurredAt: ctx.now,
     actor: ctx.actor,
     prevHash: ctx.prevHash,
-    actorInfo: state?.actorInfo,
+    ...(state?.actorInfo !== undefined ? { actorInfo: state.actorInfo } : {}),
   });
   await emitAuditBodyWithEvidence({
     deps,
@@ -565,12 +567,12 @@ async function emitLifecycleAudit(input: {
   deps.log.info('audit', 'lifecycle event', { action: lifecycleAction, tool: toolName });
   const body = buildLifecycleBody({
     flowguardSessionId: identity.flowguardSessionId,
-    hostSessionId: identity.hostSessionId,
+    ...(identity.hostSessionId !== undefined ? { hostSessionId: identity.hostSessionId } : {}),
     detail: buildLifecycleDetail(ctx, lifecycleAction, state, policy),
     occurredAt: ctx.now,
     actor: ctx.actor,
     prevHash: ctx.prevHash,
-    actorInfo: state?.actorInfo,
+    ...(state?.actorInfo !== undefined ? { actorInfo: state.actorInfo } : {}),
   });
   await emitAuditBodyWithEvidence({
     deps,

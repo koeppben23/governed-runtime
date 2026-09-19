@@ -73,7 +73,7 @@ import {
 import { bindMutationEvidence } from '../../audit/proofgraph/mutation-binder.js';
 import { checkRegistrationConsistency } from '../proofgraph/registration-consistency.js';
 import { checkConfigDefaultConsistency } from '../proofgraph/config-default-consistency.js';
-import { evaluateProofGraphGate } from '../../audit/proofgraph/gate.js';
+import { evaluateProofGraphGate, planClaimAuthorityOf } from '../../audit/proofgraph/gate.js';
 import { buildProofApprovalProjection } from '../proofgraph/approval-projection.js';
 import {
   buildStatusProjection,
@@ -177,13 +177,14 @@ async function buildProofGraphProjectionResponse(
     surfaceDigests: surfaceDigestMap(structuralSurfaces),
     mutationSummaries,
   });
-  const authorization = authorizedCriticalPlanClaimIds(state.plan);
+  const authorization = authorizedCriticalPlanClaimIds(planClaimAuthorityOf(state.plan));
+  const riskAssessment = state.implementationRiskAssessment;
   const proofGraphGate = evaluateProofGraphGate({
     projection: proofGraph.projection,
     authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
     certificateValid: authorization.kind === 'authorized',
-    implementationDigest: state.implementation?.digest,
-    riskAssessment: state.implementationRiskAssessment,
+    ...(state.implementation ? { implementationDigest: state.implementation.digest } : {}),
+    ...(riskAssessment !== undefined ? { riskAssessment } : {}),
     claimDiagnostics: proofGraph.claimDiagnostics,
   });
   const registrationConsistency = checkRegistrationConsistency();
@@ -551,7 +552,7 @@ function buildImplementationStatus(state: SessionState): Record<string, unknown>
     }),
     latestArchitectureReview: latestReviewSummary(state.architecture?.reviewFindings ?? null, {
       includePlanVersion: true,
-      hostIteration: state.selfReview?.iteration,
+      ...(state.selfReview ? { hostIteration: state.selfReview.iteration } : {}),
       assurance: state.reviewAssurance,
       obligationType: 'architecture',
     }),
@@ -591,7 +592,7 @@ function buildFullStatusResponse(input: FullStatusInput): string {
     status: projection,
     discoveryHealth: discoveryHealth ?? null,
     discoveryDrift,
-    remainingChecks: projection.remainingChecks,
+    ...(projection.remainingChecks ? { remainingChecks: projection.remainingChecks } : {}),
   });
   const presentationMarkdown = renderMarkdown(presentationDoc, presentation);
 

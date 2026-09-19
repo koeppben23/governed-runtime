@@ -43,6 +43,59 @@ export {
   type RequiredBranchReviewProvenance,
 } from '../../review/review-provenance.js';
 
+function validateSubmittedChallengeConsistency(
+  state: SessionState,
+  findings: ReviewFindings,
+  obligation: ReviewObligation,
+): string | null {
+  const challengeContract = buildReviewChallengeContract(state, obligation);
+  const challengeConsistency = validateChallengeConsistency({
+    overallVerdict: findings.overallVerdict,
+    requiredChallengeCount: obligation.requiredChallengeCount,
+    requiredChallengeKind: obligation.requiredChallengeKind ?? 'implementation_challenge',
+    challenges: findings.challenges,
+    // Obligation-scope + evidence binding for content challenges (findings
+    // B3/B5): a content challenge must carry the active obligation id and cite
+    // the canonical content ref, not a fabricated digest.
+    expectedObligationId: obligation.obligationId,
+    ...(challengeContract?.evidenceRefs !== undefined
+      ? { allowedEvidenceRefs: challengeContract.evidenceRefs }
+      : {}),
+    ...(findings.challengeResolutionVerdicts !== undefined
+      ? { resolutionVerdicts: findings.challengeResolutionVerdicts }
+      : {}),
+    previouslyUsedChallengeIds: collectPreviouslyUsedChallengeIds(state),
+  });
+  if (challengeConsistency.ok) return null;
+  return formatSubagentReviewNotInvoked(
+    `${challengeConsistency.code}: ${JSON.stringify(challengeConsistency.details)}`,
+    obligation.obligationId,
+  );
+}
+
+function validateSubmittedFindingsScope(
+  findings: ReviewFindings,
+  obligation: ReviewObligation,
+): string | null {
+  const scopeRelations: FindingWithRelation[] = [
+    ...findings.blockingIssues,
+    ...findings.majorRisks,
+  ];
+  const scopeResult = validateReviewFindingsScope({
+    findings: scopeRelations,
+    reviewSubjectScope: obligation.reviewSubjectScope,
+    ...(obligation.repositoryRevisionProvenance !== undefined
+      ? { repositoryRevisionProvenance: obligation.repositoryRevisionProvenance }
+      : {}),
+  });
+  if (scopeResult.ok) return null;
+  const message =
+    scopeResult.code === 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE'
+      ? `Reviewer findings do not relate to the reviewed subject scope at indexes: ${scopeResult.details.outOfScopeFindingIndexes.join(', ')}`
+      : `Review subject scope could not be verified for obligation ${obligation.obligationId}`;
+  return formatSubagentReviewNotInvoked(message, obligation.obligationId);
+}
+
 export function validateSubmittedReviewFindings(
   state: SessionState,
   findings: ReviewFindings,
@@ -74,43 +127,11 @@ export function validateSubmittedReviewFindings(
     );
   }
 
-  const challengeConsistency = validateChallengeConsistency({
-    overallVerdict: findings.overallVerdict,
-    requiredChallengeCount: obligation.requiredChallengeCount,
-    requiredChallengeKind: obligation.requiredChallengeKind ?? 'implementation_challenge',
-    challenges: findings.challenges,
-    // Obligation-scope + evidence binding for content challenges (findings
-    // B3/B5): a content challenge must carry the active obligation id and cite
-    // the canonical content ref, not a fabricated digest.
-    expectedObligationId: obligation.obligationId,
-    allowedEvidenceRefs: buildReviewChallengeContract(state, obligation)?.evidenceRefs,
-    resolutionVerdicts: findings.challengeResolutionVerdicts,
-    previouslyUsedChallengeIds: collectPreviouslyUsedChallengeIds(state),
-  });
-  if (!challengeConsistency.ok) {
-    return formatSubagentReviewNotInvoked(
-      `${challengeConsistency.code}: ${JSON.stringify(challengeConsistency.details)}`,
-      obligation.obligationId,
-    );
-  }
+  const challengeBlock = validateSubmittedChallengeConsistency(state, findings, obligation);
+  if (challengeBlock) return challengeBlock;
 
-  const scopeRelations: FindingWithRelation[] = [
-    ...findings.blockingIssues,
-    ...findings.majorRisks,
-  ];
-  const scopeResult = validateReviewFindingsScope({
-    findings: scopeRelations,
-    reviewSubjectScope: obligation.reviewSubjectScope,
-    repositoryRevisionProvenance: obligation.repositoryRevisionProvenance,
-  });
-  if (!scopeResult.ok) {
-    return formatSubagentReviewNotInvoked(
-      scopeResult.code === 'REVIEW_FINDING_SUBJECT_ANCHOR_OUT_OF_SCOPE'
-        ? `Reviewer findings do not relate to the reviewed subject scope at indexes: ${scopeResult.details.outOfScopeFindingIndexes.join(', ')}`
-        : `Review subject scope could not be verified for obligation ${obligation.obligationId}`,
-      obligation.obligationId,
-    );
-  }
+  const scopeBlock = validateSubmittedFindingsScope(findings, obligation);
+  if (scopeBlock) return scopeBlock;
 
   const verdict = validateStrictAttestation(findings, {
     obligationId: obligation.obligationId,
@@ -129,8 +150,8 @@ export function consumeValidatedReviewObligation(
   obligation: ReviewObligation | null,
   now: string,
   consumption?: {
-    readonly acceptedInvocationId?: string | null;
-    readonly effectiveReviewFindings?: ReviewFindings;
+    readonly acceptedInvocationId?: string | null | undefined;
+    readonly effectiveReviewFindings?: ReviewFindings | undefined;
   },
 ): StartedReviewResult {
   if (!obligation) return result;

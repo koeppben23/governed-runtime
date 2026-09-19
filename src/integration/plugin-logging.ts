@@ -166,7 +166,8 @@ export function buildLogSinks(
 export function addOtlpSinkIfEnabled(
   config: {
     logging: {
-      otlp?: { enabled: boolean; endpoint?: string; allowInsecure?: boolean };
+      otlp?:
+        { enabled: boolean; endpoint?: string | undefined; allowInsecure?: boolean } | undefined;
     };
   },
   sinks: LogSink[],

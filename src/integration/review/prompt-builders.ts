@@ -85,15 +85,15 @@ export interface ReviewerTaskPromptInput {
   /** Review semantics selected by the runtime. Inferred from frozen task authority when omitted. */
   readonly reviewType?: ReviewerPromptType;
   readonly repositoryReview?: boolean;
-  readonly challengeContract?: ReviewerChallengePromptContract;
+  readonly challengeContract?: ReviewerChallengePromptContract | undefined;
   readonly proofContext?: readonly string[];
   readonly artifactContext?: readonly string[];
   readonly challengeResolutions?: ReadonlyArray<AdvisoryChallengeResolution>;
-  readonly frozenReviewerContext?: FrozenReviewerContext;
-  readonly artifactAnchorContract?: readonly string[];
+  readonly frozenReviewerContext?: FrozenReviewerContext | undefined;
+  readonly artifactAnchorContract?: readonly string[] | undefined;
   readonly implementationAnchorContract?: readonly string[];
   readonly repositoryDiscoverySnapshot?: RepositoryDiscoverySnapshot | null;
-  readonly observationCapability?: string;
+  readonly observationCapability?: string | undefined;
   readonly observationRevisions?: readonly ('base' | 'head')[];
   readonly retrySchemaErrors?: readonly string[];
 }
@@ -163,8 +163,8 @@ function renderObservationContractLines(input: ReviewerTaskPromptInput): string[
 }
 
 function renderAnchorContractLines(input: {
-  readonly artifactAnchorContract?: readonly string[];
-  readonly implementationAnchorContract?: readonly string[];
+  readonly artifactAnchorContract?: readonly string[] | undefined;
+  readonly implementationAnchorContract?: readonly string[] | undefined;
 }): string[] {
   const lines: string[] = [];
   if (input.artifactAnchorContract && input.artifactAnchorContract.length > 0) {
@@ -229,7 +229,7 @@ function resolveReviewerPromptType(input: ReviewerTaskPromptInput): ReviewerProm
 export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string {
   const context = renderReviewContext({
     iteration: input.iteration,
-    planVersion: input.planVersion,
+    ...(input.planVersion !== undefined ? { planVersion: input.planVersion } : {}),
   });
   const promptType = resolveReviewerPromptType(input);
   const isRepositoryReview = input.repositoryReview === true;

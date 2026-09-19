@@ -40,29 +40,41 @@ export interface ObligationRefinementShape {
   readonly criteriaVersion: string;
   readonly status: string;
   readonly invocationId: string | null;
-  readonly fulfilledAt?: string | null;
-  readonly consumedAt?: string | null;
-  readonly reviewMaterial?: {
-    readonly subjectDigest: string;
-  } | null;
-  readonly reviewSubject?: {
-    readonly kind: string;
-    readonly subjectDigest: string;
-    readonly baseRepository?: RepositoryIdentityValue;
-    readonly headRepository?: RepositoryIdentityValue | null;
-    readonly baseSha?: string;
-    readonly headSha?: string;
-  } | null;
-  readonly repositoryAuthority?: FrozenRepositoryAuthority;
-  readonly repositoryEvidenceFreeze?: {
-    readonly kind: 'available' | 'unavailable';
-    readonly reason?: string;
-  } | null;
-  readonly repositoryRevisionProvenance?: ProvenanceValue;
-  readonly reviewSubjectScope?: {
-    readonly kind: string;
-    readonly implementationDigest?: string;
-  } | null;
+  readonly fulfilledAt?: string | null | undefined;
+  readonly consumedAt?: string | null | undefined;
+  readonly reviewMaterial?:
+    | {
+        readonly subjectDigest: string;
+      }
+    | null
+    | undefined;
+  readonly reviewSubject?:
+    | {
+        readonly kind: string;
+        readonly subjectDigest: string;
+        readonly baseRepository?: RepositoryIdentityValue | undefined;
+        readonly headRepository?: RepositoryIdentityValue | null | undefined;
+        readonly baseSha?: string | undefined;
+        readonly headSha?: string | undefined;
+      }
+    | null
+    | undefined;
+  readonly repositoryAuthority?: FrozenRepositoryAuthority | undefined;
+  readonly repositoryEvidenceFreeze?:
+    | {
+        readonly kind: 'available' | 'unavailable';
+        readonly reason?: string | undefined;
+      }
+    | null
+    | undefined;
+  readonly repositoryRevisionProvenance?: ProvenanceValue | undefined;
+  readonly reviewSubjectScope?:
+    | {
+        readonly kind: string;
+        readonly implementationDigest?: string | undefined;
+      }
+    | null
+    | undefined;
 }
 
 /**
@@ -110,15 +122,15 @@ export interface AttemptRefinementShape {
   readonly subjectDigest: string;
   readonly ordinal: number;
   readonly status: string;
-  readonly childSessionId?: string;
-  readonly completedAt?: string;
-  readonly observationCapability?: string;
-  readonly rejectionReason?: string;
+  readonly childSessionId?: string | undefined;
+  readonly completedAt?: string | undefined;
+  readonly observationCapability?: string | undefined;
+  readonly rejectionReason?: string | undefined;
   readonly createdAt: string;
   readonly origin: {
     readonly kind: string;
-    readonly predecessorAttemptId?: string;
-    readonly triggerReason?: string;
+    readonly predecessorAttemptId?: string | undefined;
+    readonly triggerReason?: string | undefined;
   };
   readonly repositoryDiscovery: { readonly kind: 'repository' | 'not_applicable' };
 }
@@ -131,17 +143,17 @@ export interface AssuranceRefinementShape {
     readonly obligationId: string;
     readonly obligationType: string;
     readonly childSessionId: string;
-    readonly attemptId?: string;
-    readonly invocationMode?: string;
-    readonly source?: string;
-    readonly hostVisible?: boolean;
-    readonly transcriptNavigable?: boolean;
+    readonly attemptId?: string | undefined;
+    readonly invocationMode?: string | undefined;
+    readonly source?: string | undefined;
+    readonly hostVisible?: boolean | undefined;
+    readonly transcriptNavigable?: boolean | undefined;
     readonly promptHash: string;
-    readonly canonicalPromptDigest?: string;
-    readonly consumedByObligationId?: string | null;
-    readonly reviewOutputMode?: string;
-    readonly structuredOutputUsed?: boolean;
-    readonly reviewAssuranceLevel?: string;
+    readonly canonicalPromptDigest?: string | undefined;
+    readonly consumedByObligationId?: string | null | undefined;
+    readonly reviewOutputMode?: string | undefined;
+    readonly structuredOutputUsed?: boolean | undefined;
+    readonly reviewAssuranceLevel?: string | undefined;
   }[];
   readonly attempts: readonly AttemptRefinementShape[];
   readonly dispatches: readonly {
@@ -151,7 +163,7 @@ export interface AssuranceRefinementShape {
     readonly hostCallId: string;
     readonly canonicalPromptDigest: string;
     readonly dispatchStatus: string;
-    readonly completedAt?: string;
+    readonly completedAt?: string | undefined;
   }[];
 }
 

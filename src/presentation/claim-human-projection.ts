@@ -100,6 +100,7 @@ function toDiagnosticProjection(facts: ClaimResolutionFacts): ClaimDiagnosticPro
   };
 }
 export function projectClaimHumanProjection(facts: ClaimResolutionFacts): ClaimHumanProjection {
+  const requiredEvidenceLabel = extractRequiredEvidenceLabel(facts);
   return {
     claimId: facts.claimId,
     statement: facts.statement,
@@ -107,9 +108,7 @@ export function projectClaimHumanProjection(facts: ClaimResolutionFacts): ClaimH
     statusLabel: humanVerificationLabel(facts.verificationState),
     critical: facts.critical,
     explanation: buildExplanation(facts),
-    ...(extractRequiredEvidenceLabel(facts) !== undefined
-      ? { requiredEvidenceLabel: extractRequiredEvidenceLabel(facts) }
-      : {}),
+    ...(requiredEvidenceLabel !== undefined ? { requiredEvidenceLabel } : {}),
     ...(facts.counterexampleRequirement !== undefined
       ? {
           counterexampleRequirementLabel: humanCounterexampleRequirementText(

@@ -415,15 +415,22 @@ function validateCapturedFindings(
   prepared: Record<string, unknown>,
 ) {
   const findings = ReviewFindingsSchema.parse(prepared);
-  const attestation = validatePipelineAttestation(findings, {
-    obligationId: obligation.obligationId,
-    criteriaVersion: obligation.criteriaVersion,
-    mandateDigest: obligation.mandateDigest,
-    iteration: obligation.iteration,
-    planVersion: obligation.planVersion,
-    checkReviewedBy: true,
-    checkUnableToReview: false,
-  });
+  const attestation = validatePipelineAttestation(
+    {
+      reviewMode: findings.reviewMode,
+      ...(findings.attestation !== undefined ? { attestation: findings.attestation } : {}),
+      overallVerdict: findings.overallVerdict,
+    },
+    {
+      obligationId: obligation.obligationId,
+      criteriaVersion: obligation.criteriaVersion,
+      mandateDigest: obligation.mandateDigest,
+      iteration: obligation.iteration,
+      planVersion: obligation.planVersion,
+      checkReviewedBy: true,
+      checkUnableToReview: false,
+    },
+  );
   if (!attestation.valid) {
     return {
       kind: 'blocked' as const,
@@ -431,14 +438,16 @@ function validateCapturedFindings(
       reason: 'Reviewer attestation mismatch.',
     };
   }
+  const allowedEvidenceRefs = buildReviewChallengeContract(state, obligation)?.evidenceRefs;
+  const resolutionVerdicts = findings.challengeResolutionVerdicts;
   const challenge = validateChallengeConsistency({
     overallVerdict: findings.overallVerdict,
     requiredChallengeCount: obligation.requiredChallengeCount,
     requiredChallengeKind: obligation.requiredChallengeKind ?? 'implementation_challenge',
     challenges: findings.challenges,
     expectedObligationId: obligation.obligationId,
-    allowedEvidenceRefs: buildReviewChallengeContract(state, obligation)?.evidenceRefs,
-    resolutionVerdicts: findings.challengeResolutionVerdicts,
+    ...(allowedEvidenceRefs !== undefined ? { allowedEvidenceRefs } : {}),
+    ...(resolutionVerdicts !== undefined ? { resolutionVerdicts } : {}),
     previouslyUsedChallengeIds: collectPreviouslyUsedChallengeIds(state),
   });
   if (!challenge.ok) {

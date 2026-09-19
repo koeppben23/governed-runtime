@@ -136,11 +136,13 @@ export function buildEvidenceReviewDocument(input: EvidenceReviewCardInput): Rev
 
 function buildDecisionSection(input: EvidenceReviewCardInput): PresentationSection {
   const reviewInput: ReviewDecisionProjectionInput = {
-    blockingIssues: input.blockingIssues,
-    majorRisks: input.majorRisks,
-    missingVerification: input.missingVerification,
-    scopeCreep: input.scopeCreep,
-    unknowns: input.unknowns,
+    ...(input.blockingIssues !== undefined ? { blockingIssues: input.blockingIssues } : {}),
+    ...(input.majorRisks !== undefined ? { majorRisks: input.majorRisks } : {}),
+    ...(input.missingVerification !== undefined
+      ? { missingVerification: input.missingVerification }
+      : {}),
+    ...(input.scopeCreep !== undefined ? { scopeCreep: input.scopeCreep } : {}),
+    ...(input.unknowns !== undefined ? { unknowns: input.unknowns } : {}),
   };
   const decision = projectReviewDecision(reviewInput);
   const items: KeyValueItem[] = [

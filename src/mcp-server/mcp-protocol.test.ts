@@ -31,7 +31,7 @@ interface JsonRpcRequest {
   jsonrpc: '2.0';
   id: number;
   method: string;
-  params?: Record<string, unknown>;
+  params?: Record<string, unknown> | undefined;
 }
 
 interface JsonRpcResponse {

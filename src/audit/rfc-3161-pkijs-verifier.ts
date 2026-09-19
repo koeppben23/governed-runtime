@@ -663,12 +663,13 @@ async function completeTokenVerification(
     return invalid('untrusted_cert');
   }
 
+  const signerSubject = subjectText(signer);
   return {
     status: 'valid',
     tsaTimestamp: parsed.tstInfo.genTime.toISOString(),
     policyOid: parsed.tstInfo.policy,
     serialNumber: serialHex(parsed.tstInfo.serialNumber),
-    signerSubject: subjectText(signer),
+    ...(signerSubject !== undefined ? { signerSubject } : {}),
     messageImprintHex: imprintHex(parsed.tstInfo),
     digestAlgorithm: kinds.imprint,
   };

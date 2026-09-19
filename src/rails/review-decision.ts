@@ -57,7 +57,7 @@ import { compareActorIdentity } from '../identity/actor-info.js';
 import { isAssuranceAtLeast } from '../shared/actor-assurance.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { digestToId } from '../shared/hashing.js';
-import { evaluateProofGraphGate } from '../audit/proofgraph/gate.js';
+import { evaluateProofGraphGate, planClaimAuthorityOf } from '../audit/proofgraph/gate.js';
 import { mapEnforcementReasonToRegistryCode } from '../audit/proofgraph/reason-code-mapping.js';
 import {
   resolveArchitectureReviewEvidence,
@@ -288,28 +288,39 @@ function rejectedCriticalClaimBlock(state: SessionState): RailBlocked | null {
     : null;
 }
 
+/** True when the decision is a human approval at the plan or evidence gate. */
+function isEvidenceApprovalPhase(state: SessionState, input: ReviewDecisionInput): boolean {
+  return (
+    (state.phase === 'PLAN_REVIEW' || state.phase === 'EVIDENCE_REVIEW') &&
+    isApprovalVerdict(input.verdict)
+  );
+}
+
+function evaluateEvidenceProofGraphGate(
+  state: SessionState,
+): ReturnType<typeof evaluateProofGraphGate> {
+  const authorization = authorizedCriticalPlanClaimIds(planClaimAuthorityOf(state.plan));
+  return evaluateProofGraphGate({
+    ...(state.proofGraph !== undefined ? { projection: state.proofGraph } : {}),
+    authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
+    certificateValid: authorization.kind === 'authorized',
+    ...(state.implementation?.digest !== undefined
+      ? { implementationDigest: state.implementation.digest }
+      : {}),
+    riskAssessment: state.implementationRiskAssessment,
+  });
+}
+
 /** Enforce ProofGraph only for governed plan and final evidence approval. */
 function enforceProofGraphEvidenceApproval(
   state: SessionState,
   input: ReviewDecisionInput,
 ): RailBlocked | null {
-  if (
-    (state.phase !== 'PLAN_REVIEW' && state.phase !== 'EVIDENCE_REVIEW') ||
-    !isApprovalVerdict(input.verdict)
-  ) {
-    return null;
-  }
+  if (!isEvidenceApprovalPhase(state, input)) return null;
   const rejectedBlock = rejectedCriticalClaimBlock(state);
   if (rejectedBlock) return rejectedBlock;
   if (state.phase !== 'EVIDENCE_REVIEW') return null;
-  const authorization = authorizedCriticalPlanClaimIds(state.plan);
-  const decision = evaluateProofGraphGate({
-    projection: state.proofGraph,
-    authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
-    certificateValid: authorization.kind === 'authorized',
-    implementationDigest: state.implementation?.digest,
-    riskAssessment: state.implementationRiskAssessment,
-  });
+  const decision = evaluateEvidenceProofGraphGate(state);
   if (!decision.gated) return null;
   if (decision.kind === 'critical_fact_required') {
     return blocked('PROOFGRAPH_CRITICAL_FACT_REQUIRED', {

@@ -42,7 +42,7 @@ export interface RegistrationConsistencyReport {
 export interface InstalledCommandView {
   readonly invocation: string;
   readonly templateFile: string;
-  readonly target: { readonly toolName: string; readonly workflowCommand?: string };
+  readonly target: { readonly toolName: string; readonly workflowCommand?: string | undefined };
 }
 
 /** Injected registries the evaluation is checked against. */

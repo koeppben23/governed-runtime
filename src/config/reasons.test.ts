@@ -432,7 +432,6 @@ describe('cli/templates/verification-output-contract', () => {
     describe('BAD', () => {
       it('undefined state is handled gracefully', () => {
         const result = resolveRuntimePolicyMode({
-          state: undefined,
           configDefaultMode: 'team',
         });
         expect(result).toBe('team');
@@ -450,15 +449,12 @@ describe('cli/templates/verification-output-contract', () => {
     // ─── CORNER ─────────────────────────────────────────────────
     describe('CORNER', () => {
       it('null configDefaultMode falls back to team (fail-closed)', () => {
-        const result = resolveRuntimePolicyMode({
-          configDefaultMode: undefined,
-        });
+        const result = resolveRuntimePolicyMode({});
         expect(result).toBe('team');
       });
 
       it('null state falls back to config', () => {
         const result = resolveRuntimePolicyMode({
-          state: undefined,
           configDefaultMode: 'team',
         });
         expect(result).toBe('team');
@@ -477,7 +473,7 @@ describe('cli/templates/verification-output-contract', () => {
 
       it('state with null mode falls back to config', () => {
         const result = resolveRuntimePolicyMode({
-          state: { policySnapshot: { mode: undefined } },
+          state: { policySnapshot: {} },
           configDefaultMode: 'team',
         });
         expect(result).toBe('team');

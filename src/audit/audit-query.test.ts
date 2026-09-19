@@ -276,7 +276,7 @@ describe('audit query', () => {
       const malformed = makeAuditEvent({
         id: 'bad-decision',
         event: 'decision:DEC-999',
-        detail: { kind: 'decision', decisionId: 999 as unknown as string },
+        detail: { kind: 'decision', decisionId: 999 },
       });
       try {
         decisionReceipts([...events, malformed]);

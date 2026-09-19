@@ -40,7 +40,7 @@ export interface ProbeRequest {
 }
 
 export type ToolAvailability =
-  | { readonly status: 'available'; readonly version?: string }
+  | { readonly status: 'available'; readonly version?: string | undefined }
   | { readonly status: 'missing' }
   | { readonly status: 'unknown'; readonly reason: string };
 

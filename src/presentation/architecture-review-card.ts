@@ -240,21 +240,25 @@ export function buildArchitectureReviewDocument(
 // ─── Findings Projection ────────────────────────────────────────────────────────
 
 interface FindingInputs {
-  blockingIssues?: Array<{
-    severity: string;
-    category: string;
-    message: string;
-    relation?: FindingRelationPresentation;
-  }>;
-  majorRisks?: Array<{
-    severity: string;
-    category: string;
-    message: string;
-    relation?: FindingRelationPresentation;
-  }>;
-  missingVerification?: string[];
-  scopeCreep?: string[];
-  unknowns?: string[];
+  blockingIssues?:
+    | Array<{
+        severity: string;
+        category: string;
+        message: string;
+        relation?: FindingRelationPresentation;
+      }>
+    | undefined;
+  majorRisks?:
+    | Array<{
+        severity: string;
+        category: string;
+        message: string;
+        relation?: FindingRelationPresentation;
+      }>
+    | undefined;
+  missingVerification?: string[] | undefined;
+  scopeCreep?: string[] | undefined;
+  unknowns?: string[] | undefined;
 }
 
 function toFindingItems(

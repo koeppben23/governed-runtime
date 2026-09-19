@@ -168,7 +168,11 @@ export async function handleAdrSubmission(
   const claims = normalizeArchitectureClaims(args.claims);
   const result = executeArchitecture(
     state,
-    { title: args.title, adrText: args.adrText, claims },
+    {
+      title: args.title,
+      adrText: args.adrText,
+      ...(claims !== undefined ? { claims } : {}),
+    },
     ctx,
   );
 

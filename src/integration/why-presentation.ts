@@ -64,7 +64,7 @@ export function buildWhyDocument(
         label: slot.label,
         status: slot.status,
         required: true,
-        hint: slot.hint ?? undefined,
+        ...(slot.hint !== null ? { hint: slot.hint } : {}),
       })),
     });
   }

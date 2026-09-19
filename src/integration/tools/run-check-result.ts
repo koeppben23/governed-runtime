@@ -31,13 +31,13 @@ export type CheckEvidence = Awaited<ReturnType<typeof executeCheck>>;
 
 export function buildValidationResult(params: {
   checkId: string;
-  candidateId?: string;
+  candidateId?: string | undefined;
   evidence: CheckEvidence;
   outcome: ValidationOutcome;
   derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance>;
-  extraction?: AssertionExtractionResult;
-  fullCheckScopeAttestation?: FullCheckScopeAttestation;
-  classificationReasonOverride?: string;
+  extraction?: AssertionExtractionResult | undefined;
+  fullCheckScopeAttestation?: FullCheckScopeAttestation | undefined;
+  classificationReasonOverride?: string | undefined;
 }): ValidationResult {
   const {
     checkId,
@@ -159,7 +159,17 @@ export function buildNextValidationState(
   // approval/implementation authority. A technical block (blocked outcome,
   // execution error, inconclusive extraction) keeps the phase and the
   // authority for a retry.
-  const hasTechnicalBlock = validation.some(isTechnicalValidationBlock);
+  const hasTechnicalBlock = validation.some((result) =>
+    isTechnicalValidationBlock({
+      passed: result.passed,
+      outcome: result.outcome,
+      timedOut: result.timedOut,
+      exitCode: result.exitCode,
+      ...(result.assertionExtraction !== undefined
+        ? { assertionExtraction: result.assertionExtraction }
+        : {}),
+    }),
+  );
 
   if (state.phase === 'IMPL_VALIDATION') {
     // Post-implementation validation writes to implValidation. A genuine failure

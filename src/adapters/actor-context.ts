@@ -44,7 +44,7 @@ export async function resolveActorForPolicy(
   }
 
   return resolveActor(worktree, {
-    idpConfig: policy.identityProvider,
+    ...(policy.identityProvider !== undefined ? { idpConfig: policy.identityProvider } : {}),
     idpMode: policy.identityProviderMode,
   });
 }

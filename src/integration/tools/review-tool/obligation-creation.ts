@@ -77,6 +77,48 @@ interface NewReviewObligationInput {
   readonly fingerprintVersion: 'v2';
 }
 
+/**
+ * Repository subjects have already been materialized from immutable base/head
+ * SHAs. Re-resolving a mutable branch or PR here could scope risk to different
+ * paths than the subject the reviewer receives.
+ */
+async function resolveObligationClassification(
+  input: NewReviewObligationInput,
+  reviewSubject: NonNullable<PreparedReviewContent['reviewSubject']>,
+): Promise<ReturnType<typeof resolveChallengeClassificationEvidence>> {
+  if (reviewSubject.kind === 'repository_change') {
+    return { kind: 'available', changedFiles: reviewSubject.changedPaths };
+  }
+  return resolveChallengeClassificationEvidence(input.state, input.worktree, {
+    ...(input.args.targetPaths !== undefined ? { targetPaths: input.args.targetPaths } : {}),
+    ...(input.args.branch !== undefined ? { branch: input.args.branch } : {}),
+    ...(input.args.base !== undefined ? { base: input.args.base } : {}),
+    ...(input.args.prNumber !== undefined ? { prNumber: input.args.prNumber } : {}),
+  });
+}
+
+function buildReviewSubjectScope(
+  reviewSubject: NonNullable<PreparedReviewContent['reviewSubject']>,
+): ReviewSubjectScope {
+  if (reviewSubject.kind === 'repository_change') {
+    return {
+      kind: 'repository_change',
+      paths: [...reviewSubject.changedPaths],
+      // The frozen source includes both SHAs, so findings may cite either side
+      // of the reviewed diff without introducing free-form revision authority.
+      revisions: ['base', 'head'],
+    };
+  }
+  if (reviewSubject.kind === 'content') {
+    return {
+      kind: 'content',
+      subjectDigest: reviewSubject.subjectDigest,
+      lineCount: reviewSubject.lineCount,
+    };
+  }
+  return { kind: 'unavailable', reason: 'review_content_not_materialized' };
+}
+
 async function createNewReviewObligation(
   input: NewReviewObligationInput,
 ): Promise<{ obligation?: ReviewObligation; blocked?: string }> {
@@ -89,18 +131,7 @@ async function createNewReviewObligation(
       }),
     };
   }
-  // Repository subjects have already been materialized from immutable base/head
-  // SHAs. Re-resolving a mutable branch or PR here could scope risk to different
-  // paths than the subject the reviewer receives.
-  const classification =
-    reviewSubject.kind === 'repository_change'
-      ? { kind: 'available' as const, changedFiles: reviewSubject.changedPaths }
-      : await resolveChallengeClassificationEvidence(input.state, input.worktree, {
-          targetPaths: input.args.targetPaths,
-          branch: input.args.branch,
-          base: input.args.base,
-          prNumber: input.args.prNumber,
-        });
+  const classification = await resolveObligationClassification(input, reviewSubject);
   if (classification.kind === 'unavailable') {
     return {
       blocked: formatBlocked('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE', {
@@ -109,9 +140,7 @@ async function createNewReviewObligation(
     };
   }
   const resolvedTargetPaths =
-    classification.kind === 'available'
-      ? [...classification.changedFiles]
-      : ([] as readonly string[]);
+    classification.kind === 'available' ? [...classification.changedFiles] : [];
   const metadata: Record<string, unknown> = {
     fingerprint: input.fingerprint,
     inputFingerprint: input.inputFingerprint,
@@ -119,22 +148,6 @@ async function createNewReviewObligation(
   if (resolvedTargetPaths) {
     metadata.targetPaths = resolvedTargetPaths;
   }
-  const reviewSubjectScope: ReviewSubjectScope =
-    reviewSubject.kind === 'repository_change'
-      ? {
-          kind: 'repository_change',
-          paths: [...reviewSubject.changedPaths],
-          // The frozen source includes both SHAs, so findings may cite either side
-          // of the reviewed diff without introducing free-form revision authority.
-          revisions: ['base', 'head'],
-        }
-      : reviewSubject.kind === 'content'
-        ? {
-            kind: 'content',
-            subjectDigest: reviewSubject.subjectDigest,
-            lineCount: reviewSubject.lineCount,
-          }
-        : { kind: 'unavailable', reason: 'review_content_not_materialized' };
   return {
     obligation: createReviewObligation({
       obligationType: 'review',
@@ -153,7 +166,7 @@ async function createNewReviewObligation(
       profileSource: 'policy_default',
       policySnapshot: input.state.policySnapshot,
       changedFiles: resolvedTargetPaths,
-      reviewSubjectScope,
+      reviewSubjectScope: buildReviewSubjectScope(reviewSubject),
       // Explicit frozen repository authority projected from the frozen review
       // subject: same-repository pairs stay candidate pairs, fork PRs keep
       // both repository identities. Never derived from mutable runtime state.
@@ -173,7 +186,7 @@ export interface MissingAnalysisObligationResult {
   obligation?: ReviewObligation;
   attemptId?: string;
   /** Set only when this call wrote state; authoritative over the caller's snapshot. */
-  assurance?: ReviewAssuranceState;
+  assurance?: ReviewAssuranceState | undefined;
 }
 
 /**
@@ -228,12 +241,21 @@ export async function ensureMissingAnalysisObligation(
   const explicit = await resolveExplicitObligationIdPath(sessDir, state, args, now);
   if (explicit.handled) return explicit.result;
 
+  const { inputOrigin, ...argsWithoutOrigin } = args;
   const fingerprint = fingerprintReviewInput({
-    ...args,
-    resolvedBranchSha: context.resolvedSource?.resolvedBranchSha,
-    resolvedBaseSha: context.resolvedSource?.resolvedBaseSha,
+    ...argsWithoutOrigin,
+    ...(inputOrigin !== undefined ? { inputOrigin } : {}),
+    ...(context.resolvedSource?.resolvedBranchSha !== undefined
+      ? { resolvedBranchSha: context.resolvedSource.resolvedBranchSha }
+      : {}),
+    ...(context.resolvedSource?.resolvedBaseSha !== undefined
+      ? { resolvedBaseSha: context.resolvedSource.resolvedBaseSha }
+      : {}),
   });
-  const inputFingerprint = fingerprintReviewInput(args);
+  const inputFingerprint = fingerprintReviewInput({
+    ...argsWithoutOrigin,
+    ...(inputOrigin !== undefined ? { inputOrigin } : {}),
+  });
   const existing = findLatestPendingReviewObligation(
     state.reviewAssurance,
     'review',

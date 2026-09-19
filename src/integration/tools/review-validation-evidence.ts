@@ -96,7 +96,16 @@ export function evaluateRepositoryEvidenceBinding(
         ? resolveEvidenceAuthorizingAttempt(ctx.assurance, obligation.obligationId, childSessionId)
         : null;
   const binding = bindRepositoryEvidenceLocations({
-    findings: relations,
+    findings: relations.map((finding) => ({
+      relation: {
+        evidenceLocations: finding.relation.evidenceLocations.map((location) => ({
+          path: location.path,
+          revision: location.revision,
+          ...(location.line !== undefined ? { line: location.line } : {}),
+          ...(location.endLine !== undefined ? { endLine: location.endLine } : {}),
+        })),
+      },
+    })),
     obligation,
     attempt,
     childSessionId,

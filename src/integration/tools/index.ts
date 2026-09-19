@@ -122,7 +122,11 @@ function attachPresentationToBlockedResult(
           : record.message,
     },
   };
-  record.presentation = { markdown: renderMarkdown(document, { glyphProfile }) };
+  record.presentation = {
+    markdown: renderMarkdown(document, {
+      ...(glyphProfile !== undefined ? { glyphProfile } : {}),
+    }),
+  };
 }
 
 function needsPresentationProfile(result: ToolResult): boolean {

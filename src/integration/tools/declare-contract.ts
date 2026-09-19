@@ -286,9 +286,13 @@ function validateDeclaredClaimContract(
       critical: claim.critical,
       claimScope: claim.claimScope,
       positiveCheckId: claim.checkId,
-      counterexampleRequirement: claim.counterexampleRequirement,
-      structuralSurface: claim.structuralSurface,
-      mutationProfile: claim.mutationProfile,
+      ...(claim.counterexampleRequirement !== undefined
+        ? { counterexampleRequirement: claim.counterexampleRequirement }
+        : {}),
+      ...(claim.structuralSurface !== undefined
+        ? { structuralSurface: claim.structuralSurface }
+        : {}),
+      ...(claim.mutationProfile !== undefined ? { mutationProfile: claim.mutationProfile } : {}),
     })),
   });
   if (result.kind === 'ok') return null;

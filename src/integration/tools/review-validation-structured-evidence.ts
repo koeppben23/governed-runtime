@@ -9,6 +9,7 @@
  * @version v1
  */
 
+import type { ZodIssue } from 'zod';
 import type { ReviewFindings } from '../../state/evidence.js';
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
@@ -24,7 +25,10 @@ import {
   hasValidStructuredInvocationContract,
   type ReviewFindingsAcceptanceRejection,
 } from './review-validation-acceptance.js';
-import { validateChallengeConsistency } from '../review/enforcement/challenge-consistency.js';
+import {
+  validateChallengeConsistency,
+  type ChallengeConsistencyInput,
+} from '../review/enforcement/challenge-consistency.js';
 import { validateReviewFindingsConsistency } from '../review/enforcement/findings-consistency.js';
 import { hashFindings } from '../review/findings-hash.js';
 import { bindCanonicalEvidenceRefs } from '../review/enforcement/challenge-binding.js';
@@ -66,6 +70,44 @@ export type StructuredFindingsResolution =
     }
   | { readonly kind: 'not_found' };
 
+interface StructuredFindingsEvaluationContext {
+  readonly assurance: ReviewAssuranceState;
+  readonly obligation: ReviewObligation;
+  readonly parentSessionId: string | undefined;
+  readonly allowedChallengeEvidenceRefs: readonly unknown[] | undefined;
+  readonly unresolvedImplementationChallengeIds: readonly string[] | undefined;
+  readonly unaddressedPriorFailIds: readonly string[] | undefined;
+  readonly previouslyUsedChallengeIds: readonly string[] | undefined;
+}
+
+interface UnavailableLineageDiagnostic {
+  readonly invocationId: string;
+  readonly obligationId: string;
+}
+
+interface IncoherentStructuredDiagnostic {
+  readonly code: string;
+  readonly details: Record<string, unknown>;
+  readonly invocationId: string;
+  readonly attemptId: string;
+}
+
+interface DeferredStructuredDiagnostics {
+  readonly unparseableDetail: string | null;
+  readonly incoherent: IncoherentStructuredDiagnostic | null;
+  readonly unavailableLineage: UnavailableLineageDiagnostic | null;
+}
+
+type DeferredStructuredDiagnostic =
+  | { readonly kind: 'unusable_lineage'; readonly lineage: UnavailableLineageDiagnostic }
+  | ({ readonly kind: 'incoherent' } & IncoherentStructuredDiagnostic)
+  | { readonly kind: 'unparseable'; readonly detail: string };
+
+type StructuredInvocationEvaluation =
+  | { readonly kind: 'skip' }
+  | { readonly kind: 'terminal'; readonly resolution: StructuredFindingsResolution }
+  | { readonly kind: 'deferred'; readonly diagnostic: DeferredStructuredDiagnostic };
+
 /**
  * Resolve review findings from host-observed structured invocation evidence.
  *
@@ -81,7 +123,6 @@ export type StructuredFindingsResolution =
  * @param obligation - The pending/fulfilled obligation to resolve findings for
  * @returns Parsed findings + invocationId, or null if evidence is unavailable
  */
-// eslint-disable-next-line complexity, max-lines-per-function
 export function resolveStructuredFindings(
   assurance: ReviewAssuranceState | undefined,
   obligation: ReviewObligation | null,
@@ -106,203 +147,330 @@ export function resolveStructuredFindings(
     return { kind: 'rejected', rejection: obligationRejection };
   }
 
+  const context: StructuredFindingsEvaluationContext = {
+    assurance,
+    obligation,
+    parentSessionId,
+    allowedChallengeEvidenceRefs,
+    unresolvedImplementationChallengeIds,
+    unaddressedPriorFailIds,
+    previouslyUsedChallengeIds,
+  };
   const matchingInvocations = assurance.invocations.filter(
     (inv) =>
       inv.obligationId === obligation.obligationId &&
       inv.invocationMode === 'native_task_structured_followup' &&
       inv.capturedRawFindings != null,
   );
-  // Track the first unparseable capture so the caller can emit a DISTINCT
-  // HOST_TASK_FINDINGS_UNPARSEABLE block instead of a generic "no evidence"
-  // REVIEW_FINDINGS_REQUIRED. Without this, a garbled host capture is
-  // indistinguishable from "no evidence at all" in the tool output (both
-  // historically degraded to not_found), which is exactly the confusing
-  // failure operators hit when the reviewer ran but its findings were corrupt.
-  let unparseableDetail: string | null = null;
-  let incoherent: {
-    code: string;
-    details: Record<string, unknown>;
-    invocationId: string;
-    attemptId: string;
-  } | null = null;
-  let unavailableLineage: {
-    invocationId: string;
-    obligationId: string;
-  } | null = null;
-  // An unusable earlier capture must not deadlock a later coherent retry. The
-  // earlier evidence remains persisted for audit while this loop continues to
-  // consider subsequent captures for the same obligation.
+  return resolveFromStructuredInvocations(context, matchingInvocations);
+}
+
+/**
+ * An unusable earlier capture must not deadlock a later coherent retry. The
+ * earlier evidence remains persisted for audit while this loop continues to
+ * consider subsequent captures for the same obligation.
+ */
+function resolveFromStructuredInvocations(
+  context: StructuredFindingsEvaluationContext,
+  matchingInvocations: readonly ReviewInvocationEvidence[],
+): StructuredFindingsResolution {
+  let deferred = emptyDeferredDiagnostics();
   for (const invocation of matchingInvocations) {
-    const capturedRawFindings = invocation.capturedRawFindings;
-    if (!capturedRawFindings) continue;
-    const invocationRejection = getReviewFindingsAcceptanceRejection({ obligation, invocation });
-    if (invocationRejection) {
-      return { kind: 'rejected', rejection: invocationRejection };
-    }
-
-    if (!hasValidStructuredInvocationContract({ obligation, invocation, parentSessionId })) {
-      continue;
-    }
-
-    if (!hasExactBoundAttempt(assurance.attempts, obligation, invocation)) {
-      unavailableLineage ??= {
-        invocationId: invocation.invocationId,
-        obligationId: obligation.obligationId,
-      };
-      continue;
-    }
-
-    // Parse through ReviewFindings schema for type safety and validation.
-    // safeParse: if the raw findings are malformed (missing required fields,
-    // invalid types), surface it as `unparseable` so the caller falls back to
-    // a distinct BLOCKED code (not silent not_found).
-    const parsed = ReviewFindingsSchema.safeParse(capturedRawFindings);
-    if (parsed.success) {
-      if (hashFindings(capturedRawFindings) !== invocation.findingsHash) {
-        return {
-          kind: 'invalid',
-          code: 'REVIEW_FINDINGS_HASH_MISMATCH',
-          obligationId: obligation.obligationId,
-        };
-      }
-      if (
-        invocation.capturedVerdict !== undefined &&
-        invocation.capturedVerdict !== parsed.data.overallVerdict
-      ) {
-        return {
-          kind: 'invalid',
-          code: 'REVIEW_FINDINGS_HASH_MISMATCH',
-          obligationId: obligation.obligationId,
-        };
-      }
-      if (parsed.data.reviewedBy.sessionId !== invocation.childSessionId) {
-        return {
-          kind: 'invalid',
-          code: 'SUBAGENT_EVIDENCE_MISSING',
-          obligationId: obligation.obligationId,
-        };
-      }
-      // F12: coherence of the host-captured record. An `accept` verdict that
-      // still carries blocking issues is self-contradictory and must fail closed
-      // before the findings are treated as valid evidence — this is the host-task
-      // ingestion boundary (verdict-only submission never reaches the tool-layer
-      // validateReviewFindings coherence check). Canonical rule in
-      // findings-consistency.ts.
-      const consistency = validateReviewFindingsConsistency({
-        overallVerdict: parsed.data.overallVerdict,
-        blockingIssueCount: parsed.data.blockingIssues.length,
-      });
-      if (!consistency.ok) {
-        incoherent ??= {
-          code: consistency.code,
-          details: consistency.details,
-          invocationId: invocation.invocationId,
-          attemptId: invocation.attemptId,
-        };
-        continue;
-      }
-      // Host-authoritative evidence identity. This path validates the RAW
-      // reviewer submission (`capturedRawFindings`) against the frozen
-      // challenge contract by exact canonical JSON, unlike the review binding
-      // seam which first rebinds refs to the host's canonical copies. A
-      // `plan_adr_section` ref carries presentation-only fields —
-      // `sectionPath[].headingText` and `excerptDigest` — that add no locating
-      // power, because `artifactDigest` plus heading depth and sibling index
-      // already identify the section. Comparing them exactly meant a heading
-      // reproduced without its backticks failed as `evidence_mismatch` and
-      // killed the session. Rebind through the same canonical authority the
-      // binding seam uses. A ref genuinely outside the contract does not
-      // rebind; the raw refs are then kept so the unchanged exact check below
-      // still rejects it.
-      const challengesForConsistency = ((): typeof parsed.data.challenges => {
-        if (!allowedChallengeEvidenceRefs) {
-          return parsed.data.challenges;
-        }
-        const rebound = bindCanonicalEvidenceRefs(
-          parsed.data.challenges,
-          allowedChallengeEvidenceRefs,
-          obligation.obligationId,
-          // Only used for a rejection diagnostic, which this path discards in
-          // favour of the unchanged consistency check below.
-          parentSessionId ?? '',
-        );
-        return 'kind' in rebound
-          ? parsed.data.challenges
-          : (rebound.challenges as typeof parsed.data.challenges);
-      })();
-      const challengeConsistency = validateChallengeConsistency({
-        overallVerdict: parsed.data.overallVerdict,
-        requiredChallengeCount: obligation.requiredChallengeCount,
-        requiredChallengeKind: obligation.requiredChallengeKind ?? 'implementation_challenge',
-        challenges: challengesForConsistency,
-        expectedObligationId: obligation.obligationId,
-        allowedEvidenceRefs: allowedChallengeEvidenceRefs,
-        resolutionVerdicts: parsed.data.challengeResolutionVerdicts,
-        unresolvedImplementationChallengeIds,
-        unaddressedPriorFailIds,
-        previouslyUsedChallengeIds,
-      });
-      if (!challengeConsistency.ok) {
-        incoherent ??= {
-          code: challengeConsistency.code,
-          details: challengeConsistency.details,
-          invocationId: invocation.invocationId,
-          attemptId: invocation.attemptId,
-        };
-        continue;
-      }
-      return {
-        kind: 'resolved',
-        findings: parsed.data,
-        invocation,
-        invocationId: invocation.invocationId,
-      };
-    }
-    // Diagnostic for error analysis: captured findings are PRESENT (filter above
-    // requires capturedRawFindings != null) but FAIL schema validation. Surface it.
-    const issues = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).slice(0, 8);
-    unparseableDetail = issues.join('; ') || 'unknown schema validation failure';
-    getAdapterLogger().warn(
-      TOOL_FLOWGUARD_REVIEW,
-      'structured captured findings present but unparseable; treated as unparseable',
-      {
-        obligationId: obligation.obligationId,
-        invocationId: invocation.invocationId,
-        issues,
-      },
-    );
+    const evaluation = evaluateStructuredInvocation(context, invocation);
+    if (evaluation.kind === 'skip') continue;
+    if (evaluation.kind === 'terminal') return evaluation.resolution;
+    deferred = mergeDeferredDiagnostics(deferred, evaluation.diagnostic);
   }
+  return finalizeStructuredResolution(context, matchingInvocations, deferred);
+}
 
-  if (unavailableLineage !== null) {
+function emptyDeferredDiagnostics(): DeferredStructuredDiagnostics {
+  return { unparseableDetail: null, incoherent: null, unavailableLineage: null };
+}
+
+function mergeDeferredDiagnostics(
+  current: DeferredStructuredDiagnostics,
+  incoming: DeferredStructuredDiagnostic,
+): DeferredStructuredDiagnostics {
+  if (incoming.kind === 'unusable_lineage') {
+    return current.unavailableLineage === null
+      ? { ...current, unavailableLineage: incoming.lineage }
+      : current;
+  }
+  if (incoming.kind === 'incoherent') {
+    return current.incoherent === null
+      ? {
+          ...current,
+          incoherent: {
+            code: incoming.code,
+            details: incoming.details,
+            invocationId: incoming.invocationId,
+            attemptId: incoming.attemptId,
+          },
+        }
+      : current;
+  }
+  return { ...current, unparseableDetail: incoming.detail };
+}
+
+function finalizeStructuredResolution(
+  context: StructuredFindingsEvaluationContext,
+  matchingInvocations: readonly ReviewInvocationEvidence[],
+  deferred: DeferredStructuredDiagnostics,
+): StructuredFindingsResolution {
+  if (deferred.unavailableLineage !== null) {
     return {
       kind: 'attempt_lineage_unavailable',
-      invocationId: unavailableLineage.invocationId,
-      obligationId: unavailableLineage.obligationId,
+      invocationId: deferred.unavailableLineage.invocationId,
+      obligationId: deferred.unavailableLineage.obligationId,
     };
   }
-  if (incoherent !== null) {
+  if (deferred.incoherent !== null) {
     return {
       kind: 'incoherent',
-      code: incoherent.code,
-      details: incoherent.details,
-      invocationId: incoherent.invocationId,
-      attemptId: incoherent.attemptId,
-      ...(typeof incoherent.details.blockingIssueCount === 'number'
-        ? { blockingIssueCount: incoherent.details.blockingIssueCount }
+      code: deferred.incoherent.code,
+      details: deferred.incoherent.details,
+      invocationId: deferred.incoherent.invocationId,
+      attemptId: deferred.incoherent.attemptId,
+      ...(typeof deferred.incoherent.details.blockingIssueCount === 'number'
+        ? { blockingIssueCount: deferred.incoherent.details.blockingIssueCount }
         : {}),
     };
   }
-  if (unparseableDetail !== null) {
-    return { kind: 'unparseable', detail: unparseableDetail };
+  if (deferred.unparseableDetail !== null) {
+    return { kind: 'unparseable', detail: deferred.unparseableDetail };
   }
   if (matchingInvocations.length > 0) {
     return {
       kind: 'invalid',
       code: 'SUBAGENT_EVIDENCE_MISSING',
-      obligationId: obligation.obligationId,
+      obligationId: context.obligation.obligationId,
     };
   }
   return { kind: 'not_found' };
+}
+
+function evaluateStructuredInvocation(
+  context: StructuredFindingsEvaluationContext,
+  invocation: ReviewInvocationEvidence,
+): StructuredInvocationEvaluation {
+  const capturedRawFindings = invocation.capturedRawFindings;
+  if (!capturedRawFindings) return { kind: 'skip' };
+
+  const invocationRejection = getReviewFindingsAcceptanceRejection({
+    obligation: context.obligation,
+    invocation,
+  });
+  if (invocationRejection) {
+    return {
+      kind: 'terminal',
+      resolution: { kind: 'rejected', rejection: invocationRejection },
+    };
+  }
+
+  if (
+    !hasValidStructuredInvocationContract({
+      obligation: context.obligation,
+      invocation,
+      ...(context.parentSessionId !== undefined
+        ? { parentSessionId: context.parentSessionId }
+        : {}),
+    })
+  ) {
+    return { kind: 'skip' };
+  }
+
+  if (!hasExactBoundAttempt(context.assurance.attempts, context.obligation, invocation)) {
+    return {
+      kind: 'deferred',
+      diagnostic: {
+        kind: 'unusable_lineage',
+        lineage: {
+          invocationId: invocation.invocationId,
+          obligationId: context.obligation.obligationId,
+        },
+      },
+    };
+  }
+
+  // Parse through ReviewFindings schema for type safety and validation.
+  // safeParse: if the raw findings are malformed (missing required fields,
+  // invalid types), surface it as `unparseable` so the caller falls back to
+  // a distinct BLOCKED code (not silent not_found).
+  const parsed = ReviewFindingsSchema.safeParse(capturedRawFindings);
+  if (!parsed.success) {
+    return {
+      kind: 'deferred',
+      diagnostic: {
+        kind: 'unparseable',
+        detail: describeUnparseableFindings(context.obligation, invocation, parsed.error.issues),
+      },
+    };
+  }
+  return evaluateParsedStructuredFindings(context, invocation, capturedRawFindings, parsed.data);
+}
+
+function evaluateParsedStructuredFindings(
+  context: StructuredFindingsEvaluationContext,
+  invocation: ReviewInvocationEvidence,
+  capturedRawFindings: Record<string, unknown>,
+  findings: ReviewFindings,
+): StructuredInvocationEvaluation {
+  if (hashFindings(capturedRawFindings) !== invocation.findingsHash) {
+    return invalidFindingsEvaluation('REVIEW_FINDINGS_HASH_MISMATCH', context.obligation);
+  }
+  if (
+    invocation.capturedVerdict !== undefined &&
+    invocation.capturedVerdict !== findings.overallVerdict
+  ) {
+    return invalidFindingsEvaluation('REVIEW_FINDINGS_HASH_MISMATCH', context.obligation);
+  }
+  if (findings.reviewedBy.sessionId !== invocation.childSessionId) {
+    return invalidFindingsEvaluation('SUBAGENT_EVIDENCE_MISSING', context.obligation);
+  }
+  // F12: coherence of the host-captured record. An `accept` verdict that
+  // still carries blocking issues is self-contradictory and must fail closed
+  // before the findings are treated as valid evidence — this is the host-task
+  // ingestion boundary (verdict-only submission never reaches the tool-layer
+  // validateReviewFindings coherence check). Canonical rule in
+  // findings-consistency.ts.
+  const consistency = validateReviewFindingsConsistency({
+    overallVerdict: findings.overallVerdict,
+    blockingIssueCount: findings.blockingIssues.length,
+  });
+  if (!consistency.ok) {
+    return incoherentFindingsEvaluation(invocation, consistency.code, consistency.details);
+  }
+  // Host-authoritative evidence identity. This path validates the RAW reviewer
+  // submission (`capturedRawFindings`) against the frozen challenge contract by
+  // exact canonical JSON, unlike the review binding seam which first rebinds
+  // refs to the host's canonical copies. A `plan_adr_section` ref carries
+  // presentation-only fields — `sectionPath[].headingText` and
+  // `excerptDigest` — that add no locating power, because `artifactDigest` plus
+  // heading depth and sibling index already identify the section. Comparing
+  // them exactly meant a heading reproduced without its backticks failed as
+  // `evidence_mismatch` and killed the session. Rebind through the same
+  // canonical authority the binding seam uses. A ref genuinely outside the
+  // contract does not rebind; the raw refs are then kept so the unchanged
+  // exact check below still rejects it.
+  const challenges = rebindChallengesForConsistency(context, findings);
+  const challengeConsistency = validateChallengeConsistency(
+    buildChallengeConsistencyInput(context, findings, challenges),
+  );
+  if (!challengeConsistency.ok) {
+    return incoherentFindingsEvaluation(
+      invocation,
+      challengeConsistency.code,
+      challengeConsistency.details,
+    );
+  }
+  return {
+    kind: 'terminal',
+    resolution: {
+      kind: 'resolved',
+      findings,
+      invocation,
+      invocationId: invocation.invocationId,
+    },
+  };
+}
+
+function invalidFindingsEvaluation(
+  code: 'REVIEW_FINDINGS_HASH_MISMATCH' | 'SUBAGENT_EVIDENCE_MISSING',
+  obligation: ReviewObligation,
+): StructuredInvocationEvaluation {
+  return {
+    kind: 'terminal',
+    resolution: { kind: 'invalid', code, obligationId: obligation.obligationId },
+  };
+}
+
+function incoherentFindingsEvaluation(
+  invocation: ReviewInvocationEvidence,
+  code: string,
+  details: Record<string, unknown>,
+): StructuredInvocationEvaluation {
+  return {
+    kind: 'deferred',
+    diagnostic: {
+      kind: 'incoherent',
+      code,
+      details,
+      invocationId: invocation.invocationId,
+      attemptId: invocation.attemptId,
+    },
+  };
+}
+
+function rebindChallengesForConsistency(
+  context: StructuredFindingsEvaluationContext,
+  findings: ReviewFindings,
+): ReviewFindings['challenges'] {
+  if (!context.allowedChallengeEvidenceRefs) return findings.challenges;
+  const rebound = bindCanonicalEvidenceRefs(
+    findings.challenges,
+    context.allowedChallengeEvidenceRefs,
+    context.obligation.obligationId,
+    // Only used for a rejection diagnostic, which this path discards in
+    // favour of the unchanged consistency check below.
+    context.parentSessionId ?? '',
+  );
+  return 'kind' in rebound
+    ? findings.challenges
+    : (rebound.challenges as ReviewFindings['challenges']);
+}
+
+function buildChallengeConsistencyInput(
+  context: StructuredFindingsEvaluationContext,
+  findings: ReviewFindings,
+  challenges: ReviewFindings['challenges'],
+): ChallengeConsistencyInput {
+  return {
+    overallVerdict: findings.overallVerdict,
+    requiredChallengeCount: context.obligation.requiredChallengeCount,
+    requiredChallengeKind: context.obligation.requiredChallengeKind ?? 'implementation_challenge',
+    challenges,
+    expectedObligationId: context.obligation.obligationId,
+    ...(context.allowedChallengeEvidenceRefs !== undefined
+      ? { allowedEvidenceRefs: context.allowedChallengeEvidenceRefs }
+      : {}),
+    ...(findings.challengeResolutionVerdicts !== undefined
+      ? { resolutionVerdicts: findings.challengeResolutionVerdicts }
+      : {}),
+    ...(context.unresolvedImplementationChallengeIds !== undefined
+      ? { unresolvedImplementationChallengeIds: context.unresolvedImplementationChallengeIds }
+      : {}),
+    ...(context.unaddressedPriorFailIds !== undefined
+      ? { unaddressedPriorFailIds: context.unaddressedPriorFailIds }
+      : {}),
+    ...(context.previouslyUsedChallengeIds !== undefined
+      ? { previouslyUsedChallengeIds: context.previouslyUsedChallengeIds }
+      : {}),
+  };
+}
+
+/**
+ * Diagnostic for error analysis: captured findings are PRESENT (the invocation
+ * filter requires capturedRawFindings != null) but FAIL schema validation.
+ */
+function describeUnparseableFindings(
+  obligation: ReviewObligation,
+  invocation: ReviewInvocationEvidence,
+  issues: readonly ZodIssue[],
+): string {
+  const formattedIssues = issues
+    .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
+    .slice(0, 8);
+  getAdapterLogger().warn(
+    TOOL_FLOWGUARD_REVIEW,
+    'structured captured findings present but unparseable; treated as unparseable',
+    {
+      obligationId: obligation.obligationId,
+      invocationId: invocation.invocationId,
+      issues: formattedIssues,
+    },
+  );
+  return formattedIssues.join('; ') || 'unknown schema validation failure';
 }
 
 /**

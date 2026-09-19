@@ -283,7 +283,7 @@ describe('PkijsTimestampVerifier', () => {
     }
   });
 
-  it('an empty signer subject renders signerSubject undefined', async () => {
+  it('an empty signer subject omits signerSubject', async () => {
     const fixture = await makeRfc3161Fixture({ emptySubject: true });
     const result = await new PkijsTimestampVerifier().verifyToken({
       tokenDerBase64: fixture.tokenDerBase64,
@@ -291,7 +291,8 @@ describe('PkijsTimestampVerifier', () => {
       trustAnchors: [fixture.trustAnchorPem],
     });
 
-    expect(result).toMatchObject({ status: 'valid', signerSubject: undefined });
+    expect(result).toMatchObject({ status: 'valid' });
+    expect(result).not.toHaveProperty('signerSubject');
   });
 
   it('a valid token with NO trust anchors returns untrusted_cert', async () => {

@@ -609,7 +609,7 @@ describe('cli/install', () => {
 
     it('EDGE: npm install disables network audit/fund work and uses bounded CI timeout', async () => {
       const { execSync: mockExec } = await import('node:child_process');
-      const installCalls: Array<{ cmd: string; timeout?: number }> = [];
+      const installCalls: Array<{ cmd: string; timeout?: number | undefined }> = [];
       const originalImpl = vi.mocked(mockExec).getMockImplementation()!;
       vi.mocked(mockExec).mockImplementation((cmd: string, opts?: ExecSyncOptions) => {
         if (cmd === 'bun --version') throw new Error('bun unavailable');
@@ -1244,8 +1244,11 @@ describe('cli/install', () => {
 
     it('logs warn on explicit unverified opt-out', async () => {
       const tarball = await createMockTarball(VERSION, { writeChecksum: false });
-      const warnings: Array<{ service: string; message: string; extra?: Record<string, unknown> }> =
-        [];
+      const warnings: Array<{
+        service: string;
+        message: string;
+        extra?: Record<string, unknown> | undefined;
+      }> = [];
       const logger: AdapterLogger = {
         info: () => {},
         warn: (service, message, extra) => warnings.push({ service, message, extra }),
@@ -1265,8 +1268,11 @@ describe('cli/install', () => {
 
     it('logs error on verification failure', async () => {
       const tarball = await createMockTarball(VERSION, { writeChecksum: false });
-      const errors: Array<{ service: string; message: string; extra?: Record<string, unknown> }> =
-        [];
+      const errors: Array<{
+        service: string;
+        message: string;
+        extra?: Record<string, unknown> | undefined;
+      }> = [];
       const logger: AdapterLogger = {
         info: () => {},
         warn: () => {},

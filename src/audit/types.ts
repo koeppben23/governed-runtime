@@ -191,7 +191,7 @@ export interface ChainedAuditEvent {
   /** FlowGuard session identity — the SAME FlowGuard UUID on every event class. */
   readonly flowguardSessionId: string;
   /** Host session identity (OpenCode session id), bound where host context exists. */
-  readonly hostSessionId?: string;
+  readonly hostSessionId?: string | undefined;
   readonly phase: string;
   readonly event: string;
   readonly auditSequence: number;
@@ -199,21 +199,21 @@ export interface ChainedAuditEvent {
   readonly recordedAt: string;
   readonly actor: string;
   readonly auditFormatVersion: AuditFormatVersion;
-  readonly actorInfo?: ActorInfo;
+  readonly actorInfo?: ActorInfo | undefined;
   readonly detail: Readonly<Record<string, unknown>>;
   readonly prevHash: string;
   readonly chainHash: string;
   /** SHA-256 of event without timestampEvidence and chainHash. TSA anchoring. */
   readonly semanticEventDigest: string;
   /** Timestamp assurance evidence (NTP offset, TSA token, verification status). */
-  readonly timestampEvidence?: TimestampEvidence;
+  readonly timestampEvidence?: TimestampEvidence | undefined;
   /**
    * Enforcement level active when this event was recorded.
    * Optional: event classes not bound to a host enforcement decision omit it;
    * absence is not a legacy or migration signal (non-v3 trails are rejected).
    * @since v1.3.0 (HAI #242)
    */
-  readonly enforcementLevel?: 'synchronous' | 'hook_gated' | 'advisory';
+  readonly enforcementLevel?: 'synchronous' | 'hook_gated' | 'advisory' | undefined;
 }
 
 // ─── Genesis Constant ─────────────────────────────────────────────────────────
@@ -401,12 +401,12 @@ export function buildEnforcementDeniedBody(
  */
 export interface TransitionEventInput {
   readonly flowguardSessionId: string;
-  readonly hostSessionId?: string;
+  readonly hostSessionId?: string | undefined;
   readonly phase: Phase;
   readonly detail: Omit<TransitionDetail, 'kind'>;
   readonly occurredAt: string;
   readonly prevHash: string;
-  readonly timestampEvidence?: TimestampEvidence;
+  readonly timestampEvidence?: TimestampEvidence | undefined;
 }
 
 /**

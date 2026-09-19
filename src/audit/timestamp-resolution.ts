@@ -29,9 +29,9 @@ export interface TimestampResolutionInput {
   readonly canonicalEventDigest: string;
   readonly eventKind: string;
   readonly localTimestamp: string;
-  readonly tsaProvider?: TimestampAuthorityProvider;
-  readonly tsaVerifier?: TimestampVerifier;
-  readonly ntpResult?: NtpCheckResult;
+  readonly tsaProvider?: TimestampAuthorityProvider | undefined;
+  readonly tsaVerifier?: TimestampVerifier | undefined;
+  readonly ntpResult?: NtpCheckResult | undefined;
 }
 
 export interface TimestampResolutionResult {

@@ -24,6 +24,7 @@ import { InputOriginSchema, ExternalReferenceSchema } from '../../../state/evide
 import type { ReviewExecutionContext, ReviewPreparation } from './types.js';
 import type { StartedReviewResult } from './types.js';
 import type { SessionState } from '../../../state/schema.js';
+import type { ReviewObligation } from '../../../state/evidence.js';
 import type { RailBlocked } from '../../../rails/types.js';
 import type { ReviewToolArgs } from './types.js';
 import {
@@ -32,7 +33,10 @@ import {
   validateSubmittedReviewFindings,
   consumeValidatedReviewObligation,
 } from './obligation.js';
-import { resolveStructuredFindings } from '../review-validation-structured-evidence.js';
+import {
+  resolveStructuredFindings,
+  type StructuredFindingsResolution,
+} from '../review-validation-structured-evidence.js';
 import { formatStructuredResolutionFailure } from '../review-validation.js';
 import {
   buildReviewExecutors,
@@ -137,13 +141,63 @@ function prepareMissingFindingsSubmission(
 ): ReviewPreparation {
   return {
     result,
-    refInput,
+    ...(refInput !== undefined ? { refInput } : {}),
     validatedReviewObligation: null,
-    pendingObligation: missingResult.obligation,
-    persistedAssurance: missingResult.assurance,
-    blockMessage: missingResult.message ?? undefined,
+    ...(missingResult.obligation !== undefined
+      ? { pendingObligation: missingResult.obligation }
+      : {}),
+    ...(missingResult.assurance !== undefined
+      ? { persistedAssurance: missingResult.assurance }
+      : {}),
+    ...(missingResult.message !== null ? { blockMessage: missingResult.message } : {}),
     materializedContent,
-    reviewSubject: materializedContent?.reviewSubject,
+    ...(materializedContent?.reviewSubject !== undefined
+      ? { reviewSubject: materializedContent.reviewSubject }
+      : {}),
+  };
+}
+
+interface StructuredPreparationInput {
+  readonly state: SessionState;
+  readonly result: StartedReviewResult;
+  readonly exec: ReviewExecutionContext;
+  readonly obligation: ReviewObligation;
+  readonly resolution: Extract<StructuredFindingsResolution, { kind: 'resolved' }>;
+  readonly materializedContent: PreparedReviewContent | null;
+}
+
+/**
+ * No bound findings means the pending obligation must project its canonical
+ * native dispatch authority, not a second evidence-missing transport.
+ */
+function isMissingStructuredEvidenceResolution(resolution: StructuredFindingsResolution): boolean {
+  return (
+    resolution.kind === 'not_found' ||
+    (resolution.kind === 'invalid' && resolution.code === 'SUBAGENT_EVIDENCE_MISSING')
+  );
+}
+
+function buildStructuredPreparation(input: StructuredPreparationInput): ReviewPreparation {
+  const { state, result, exec, obligation, resolution, materializedContent } = input;
+  const refInput = populateRefInput(exec.args, state, undefined);
+  return {
+    result,
+    ...(refInput
+      ? {
+          refInput: {
+            ...refInput,
+            skipExternalContentLoad: true,
+            ...(exec.context.worktree && { cwd: exec.context.worktree }),
+          },
+        }
+      : {}),
+    validatedReviewObligation: obligation,
+    effectiveReviewFindings: resolution.findings,
+    evidenceInvocationId: resolution.invocationId,
+    materializedContent,
+    ...(materializedContent?.reviewSubject !== undefined
+      ? { reviewSubject: materializedContent.reviewSubject }
+      : {}),
   };
 }
 
@@ -169,33 +223,18 @@ function prepareStructuredEvidenceSubmission(
     undefined,
     exec.context.sessionID,
   );
-  // No bound findings means the pending obligation must project its canonical
-  // native dispatch authority, not a second evidence-missing transport.
-  if (
-    resolution.kind === 'not_found' ||
-    (resolution.kind === 'invalid' && resolution.code === 'SUBAGENT_EVIDENCE_MISSING')
-  ) {
-    return null;
-  }
+  if (isMissingStructuredEvidenceResolution(resolution)) return null;
   if (resolution.kind !== 'resolved') return formatStructuredResolutionFailure(resolution);
   const validation = validateSubmittedReviewFindings(state, resolution.findings, obligation);
   if (validation) return validation;
-  const refInput = populateRefInput(exec.args, state, undefined);
-  return {
+  return buildStructuredPreparation({
+    state,
     result,
-    refInput: refInput
-      ? {
-          ...refInput,
-          skipExternalContentLoad: true,
-          ...(exec.context.worktree && { cwd: exec.context.worktree }),
-        }
-      : undefined,
-    validatedReviewObligation: obligation,
-    effectiveReviewFindings: resolution.findings,
-    evidenceInvocationId: resolution.invocationId,
+    exec,
+    obligation,
+    resolution,
     materializedContent,
-    reviewSubject: materializedContent?.reviewSubject,
-  };
+  });
 }
 
 type PreparedReviewExecution = ReviewPreparation & {

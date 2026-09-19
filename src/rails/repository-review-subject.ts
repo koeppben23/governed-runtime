@@ -72,7 +72,7 @@ export function prepareResolvedRepositoryContent(
     materialDigest,
     subjectDigest: hashCanonicalRepositorySubject({
       baseRepository: source.baseRepository,
-      headRepository: source.headRepository,
+      ...(source.headRepository !== undefined ? { headRepository: source.headRepository } : {}),
       baseSha: source.baseSha,
       headSha: source.headSha,
       changedPaths,

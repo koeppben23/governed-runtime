@@ -114,149 +114,184 @@ function isEvidenceInScope(evidence: string[], scopePath: string): boolean {
 /** ReadFile function type. */
 type ReadFileFn = (relativePath: string) => Promise<string | undefined>;
 
+/** One detected stack fact inside a scope. */
+type ScopeFact = { id: string; kind: DetectedStackTarget; version?: string };
+
+/** A stack fact bound to the manifest file it was extracted from. */
+type ScopedFactWithEvidence = ScopeFact & { evidence: string };
+
+/** One projected scoped stack item. */
+type ScopedStackItem = {
+  kind: DetectedStackTarget;
+  id: string;
+  version?: string;
+  evidence?: string;
+};
+
+/** Minimal shape of a nested package.json used for fact extraction. */
+interface ParsedPackageJson {
+  readonly dependencies?: Record<string, string>;
+  readonly devDependencies?: Record<string, string>;
+  readonly packageManager?: string;
+  readonly engines?: { readonly node?: string };
+}
+
+/** Maps one package.json dependency to a detected fact. */
+interface PackageDependencyFact {
+  readonly dependency: string;
+  readonly id: string;
+  readonly kind: DetectedStackTarget;
+  readonly withVersion: boolean;
+}
+
+const PACKAGE_DEPENDENCY_FACTS: readonly PackageDependencyFact[] = [
+  { dependency: 'react', id: 'react', kind: 'framework', withVersion: true },
+  { dependency: 'react-dom', id: 'react-dom', kind: 'framework', withVersion: true },
+  { dependency: 'vue', id: 'vue', kind: 'framework', withVersion: true },
+  { dependency: 'next', id: 'next', kind: 'framework', withVersion: true },
+  { dependency: '@angular/core', id: 'angular', kind: 'framework', withVersion: false },
+  { dependency: 'vite', id: 'vite', kind: 'buildTool', withVersion: false },
+  { dependency: 'esbuild', id: 'esbuild', kind: 'tool', withVersion: false },
+  { dependency: 'typescript', id: 'typescript', kind: 'language', withVersion: false },
+  { dependency: 'jest', id: 'jest', kind: 'testFramework', withVersion: false },
+  { dependency: 'vitest', id: 'vitest', kind: 'testFramework', withVersion: false },
+  { dependency: 'mocha', id: 'mocha', kind: 'testFramework', withVersion: false },
+  { dependency: 'eslint', id: 'eslint', kind: 'qualityTool', withVersion: false },
+  { dependency: 'prettier', id: 'prettier', kind: 'qualityTool', withVersion: false },
+];
+
+/** Content markers mapped to pom.xml facts; each entry matches any marker. */
+const POM_CONTENT_FACTS: ReadonlyArray<{
+  readonly id: string;
+  readonly kind: DetectedStackTarget;
+  readonly needles: readonly string[];
+}> = [
+  {
+    id: 'spring-boot',
+    kind: 'framework',
+    needles: [
+      '<groupId>org.springframework.boot</groupId>',
+      '<artifactId>spring-boot</artifactId>',
+    ],
+  },
+  {
+    id: 'maven',
+    kind: 'buildTool',
+    needles: ['<artifactId>maven</artifactId>', '<artifactId>maven-compiler-plugin</artifactId>'],
+  },
+  {
+    id: 'gradle',
+    kind: 'buildTool',
+    needles: ['<artifactId>gradle</artifactId>', 'gradle.plugin', 'com.github.gradle'],
+  },
+  { id: 'junit', kind: 'testFramework', needles: ['<artifactId>junit</artifactId>'] },
+  { id: 'testng', kind: 'testFramework', needles: ['<artifactId>testng</artifactId>'] },
+];
+
+const SPRING_PARENT_PATTERN =
+  /<parent>[\s\S]*?<groupId>([^<]+)<\/groupId>[\s\S]*?<artifactId>([^<]+)<\/artifactId>[\s\S]*?<version>([^<]+)<\/version>[\s\S]*?<\/parent>/;
+
+function extractNumericVersion(raw: string | undefined): string | undefined {
+  return raw?.match(/(\d+(?:\.\d+)*)/)?.[1];
+}
+
+function includesAny(content: string, needles: readonly string[]): boolean {
+  for (const needle of needles) {
+    if (content.includes(needle)) return true;
+  }
+  return false;
+}
+
+function pushNodeRuntimeFact(facts: ScopeFact[], pkg: ParsedPackageJson): void {
+  const node = pkg.engines?.node;
+  if (!node) return;
+  const version = extractNumericVersion(node);
+  facts.push({ id: 'node', kind: 'runtime', ...(version !== undefined ? { version } : {}) });
+}
+
+function pushPackageDependencyFact(
+  facts: ScopeFact[],
+  deps: Readonly<Record<string, string>>,
+  spec: PackageDependencyFact,
+): void {
+  const raw = deps[spec.dependency];
+  if (!raw) return;
+  if (!spec.withVersion) {
+    facts.push({ id: spec.id, kind: spec.kind });
+    return;
+  }
+  const version = extractNumericVersion(raw);
+  facts.push({ id: spec.id, kind: spec.kind, ...(version !== undefined ? { version } : {}) });
+}
+
+function resolvePackageManagerFact(packageManager: string | undefined): ScopeFact | null {
+  if (!packageManager) return null;
+  const pm = packageManager.replace(/@.*$/, '').toLowerCase();
+  if (!['pnpm', 'yarn', 'npm', 'bun'].includes(pm)) return null;
+  return { id: pm, kind: 'buildTool' };
+}
+
 /**
  * Extract obvious facts from nested package.json content.
  */
-function extractFromNestedPackageJson(
-  content: string,
-): Array<{ id: string; kind: DetectedStackTarget; version?: string }> {
-  const facts: Array<{ id: string; kind: DetectedStackTarget; version?: string }> = [];
-
-  const extractNumericVersion = (raw: string | undefined): string | undefined =>
-    raw?.match(/(\d+(?:\.\d+)*)/)?.[1];
-
+function extractFromNestedPackageJson(content: string): ScopeFact[] {
+  const facts: ScopeFact[] = [];
   try {
-    const pkg = JSON.parse(content);
-    const deps = { ...pkg.dependencies, ...pkg.devDependencies } as Record<string, string>;
-    const packageManager = pkg.packageManager;
-
-    if (pkg.engines?.node) {
-      const nodeVersion = extractNumericVersion(pkg.engines.node);
-      if (nodeVersion) {
-        facts.push({ id: 'node', kind: 'runtime', version: nodeVersion });
-      } else {
-        facts.push({ id: 'node', kind: 'runtime' });
-      }
+    const pkg: ParsedPackageJson = JSON.parse(content);
+    const deps: Record<string, string> = { ...pkg.dependencies, ...pkg.devDependencies };
+    pushNodeRuntimeFact(facts, pkg);
+    for (const spec of PACKAGE_DEPENDENCY_FACTS) {
+      pushPackageDependencyFact(facts, deps, spec);
     }
-
-    if (deps.react) {
-      facts.push({ id: 'react', kind: 'framework', version: extractNumericVersion(deps.react) });
-    }
-    if (deps['react-dom']) {
-      facts.push({
-        id: 'react-dom',
-        kind: 'framework',
-        version: extractNumericVersion(deps['react-dom']),
-      });
-    }
-    if (deps.vue) {
-      facts.push({ id: 'vue', kind: 'framework', version: extractNumericVersion(deps.vue) });
-    }
-    if (deps.next) {
-      facts.push({ id: 'next', kind: 'framework', version: extractNumericVersion(deps.next) });
-    }
-    if (deps['@angular/core']) {
-      facts.push({ id: 'angular', kind: 'framework' });
-    }
-    if (deps.vite) {
-      facts.push({ id: 'vite', kind: 'buildTool' });
-    }
-    if (deps.esbuild) {
-      facts.push({ id: 'esbuild', kind: 'tool' });
-    }
-    if (deps.typescript) {
-      facts.push({ id: 'typescript', kind: 'language' });
-    }
-    if (deps.jest) {
-      facts.push({ id: 'jest', kind: 'testFramework' });
-    }
-    if (deps.vitest) {
-      facts.push({ id: 'vitest', kind: 'testFramework' });
-    }
-    if (deps.mocha) {
-      facts.push({ id: 'mocha', kind: 'testFramework' });
-    }
-    if (deps.eslint) {
-      facts.push({ id: 'eslint', kind: 'qualityTool' });
-    }
-    if (deps.prettier) {
-      facts.push({ id: 'prettier', kind: 'qualityTool' });
-    }
-
-    if (packageManager) {
-      const pm = packageManager.replace(/@.*$/, '').toLowerCase();
-      if (['pnpm', 'yarn', 'npm', 'bun'].includes(pm)) {
-        facts.push({ id: pm, kind: 'buildTool' });
-      }
-    }
+    const managerFact = resolvePackageManagerFact(pkg.packageManager);
+    if (managerFact) facts.push(managerFact);
   } catch {
     // Invalid JSON, skip
   }
-
   return facts;
+}
+
+function pushJavaVersionFact(facts: ScopeFact[], content: string): void {
+  const match = content.match(/<java\.version>([^<]+)<\/java\.version>/);
+  if (!match) return;
+  const version = match[1];
+  facts.push({ id: 'java', kind: 'language', ...(version !== undefined ? { version } : {}) });
+}
+
+function pushSpringParentFact(facts: ScopeFact[], content: string): void {
+  const match = content.match(SPRING_PARENT_PATTERN);
+  if (!match) return;
+  const parentGroupId = match[1];
+  const parentArtifactId = match[2];
+  const parentVersion = match[3];
+  if (
+    parentGroupId !== 'org.springframework.boot' &&
+    parentArtifactId !== 'spring-boot-starter-parent'
+  ) {
+    return;
+  }
+  facts.push({
+    id: 'spring-boot',
+    kind: 'framework',
+    ...(parentVersion !== undefined ? { version: parentVersion } : {}),
+  });
 }
 
 /**
  * Extract obvious facts from nested pom.xml content.
  */
-function extractFromNestedPomXml(
-  content: string,
-): Array<{ id: string; kind: DetectedStackTarget; version?: string }> {
-  const facts: Array<{ id: string; kind: DetectedStackTarget; version?: string }> = [];
-
-  facts.push({ id: 'maven', kind: 'buildTool' });
-
-  const javaVersionMatch = content.match(/<java\.version>([^<]+)<\/java\.version>/);
-  if (javaVersionMatch) {
-    facts.push({ id: 'java', kind: 'language', version: javaVersionMatch[1] });
-  }
-
-  const parentBlockMatch = content.match(
-    /<parent>[\s\S]*?<groupId>([^<]+)<\/groupId>[\s\S]*?<artifactId>([^<]+)<\/artifactId>[\s\S]*?<version>([^<]+)<\/version>[\s\S]*?<\/parent>/,
-  );
-  if (parentBlockMatch) {
-    const [, parentGroupId, parentArtifactId, parentVersion] = parentBlockMatch;
-    if (
-      parentGroupId === 'org.springframework.boot' ||
-      parentArtifactId === 'spring-boot-starter-parent'
-    ) {
-      facts.push({ id: 'spring-boot', kind: 'framework', version: parentVersion });
-    }
-  }
-
+function extractFromNestedPomXml(content: string): ScopeFact[] {
+  const facts: ScopeFact[] = [{ id: 'maven', kind: 'buildTool' }];
+  pushJavaVersionFact(facts, content);
+  pushSpringParentFact(facts, content);
   if (content.includes('<maven.compiler.source>')) {
     facts.push({ id: 'java', kind: 'language' });
   }
-
-  if (
-    content.includes('<groupId>org.springframework.boot</groupId>') ||
-    content.includes('<artifactId>spring-boot</artifactId>')
-  ) {
-    facts.push({ id: 'spring-boot', kind: 'framework' });
+  for (const spec of POM_CONTENT_FACTS) {
+    if (includesAny(content, spec.needles)) {
+      facts.push({ id: spec.id, kind: spec.kind });
+    }
   }
-
-  if (
-    content.includes('<artifactId>maven</artifactId>') ||
-    content.includes('<artifactId>maven-compiler-plugin</artifactId>')
-  ) {
-    facts.push({ id: 'maven', kind: 'buildTool' });
-  }
-
-  if (
-    content.includes('<artifactId>gradle</artifactId>') ||
-    content.includes('gradle.plugin') ||
-    content.includes('com.github.gradle')
-  ) {
-    facts.push({ id: 'gradle', kind: 'buildTool' });
-  }
-
-  if (content.includes('<artifactId>junit</artifactId>')) {
-    facts.push({ id: 'junit', kind: 'testFramework' });
-  }
-  if (content.includes('<artifactId>testng</artifactId>')) {
-    facts.push({ id: 'testng', kind: 'testFramework' });
-  }
-
   return facts;
 }
 
@@ -454,6 +489,111 @@ function generateSummary(
   return sorted.map((item) => (item.version ? `${item.id}=${item.version}` : item.id)).join(', ');
 }
 
+/** Detected stack groups the scoped projection reads from. */
+interface DetectedStackGroups {
+  readonly languages: DetectedItem[];
+  readonly frameworks: DetectedItem[];
+  readonly buildTools: DetectedItem[];
+  readonly testFrameworks: DetectedItem[];
+  readonly runtimes: DetectedItem[];
+  readonly tools: DetectedItem[];
+  readonly qualityTools: DetectedItem[];
+  readonly databases: DetectedItem[];
+}
+
+/** One stack item paired with its detection category. */
+type StackItemWithCategory = { category: DetectedStackTarget; item: DetectedItem };
+
+/** A scoped item draft whose optional fields may be explicitly undefined. */
+interface ScopedItemDraft {
+  readonly kind: DetectedStackTarget;
+  readonly id: string;
+  readonly version: string | undefined;
+  readonly evidence: string | undefined;
+}
+
+function collectScopePaths(allFiles: readonly string[]): Map<string, Set<string>> {
+  const scopeMap = new Map<string, Set<string>>();
+  for (const file of allFiles) {
+    const normalizedPath = normalizeRepoSignalPath(file);
+    const scope = extractScopePath(normalizedPath);
+    if (!scope) continue;
+    const paths = scopeMap.get(scope);
+    if (paths) {
+      paths.add(normalizedPath);
+    } else {
+      scopeMap.set(scope, new Set([normalizedPath]));
+    }
+  }
+  return scopeMap;
+}
+
+function collectStackItems(stackInfo: DetectedStackGroups): StackItemWithCategory[] {
+  const groups: ReadonlyArray<readonly [DetectedStackTarget, readonly DetectedItem[]]> = [
+    ['language', stackInfo.languages],
+    ['framework', stackInfo.frameworks],
+    ['buildTool', stackInfo.buildTools],
+    ['testFramework', stackInfo.testFrameworks],
+    ['runtime', stackInfo.runtimes],
+    ['tool', stackInfo.tools],
+    ['qualityTool', stackInfo.qualityTools],
+    ['database', stackInfo.databases],
+  ];
+  const items: StackItemWithCategory[] = [];
+  for (const [category, group] of groups) {
+    for (const item of group) {
+      items.push({ category, item });
+    }
+  }
+  return items;
+}
+
+function pushScopedItem(
+  target: ScopedStackItem[],
+  seen: Set<string>,
+  draft: ScopedItemDraft,
+): void {
+  if (target.length >= MAX_ITEMS_PER_SCOPE) return;
+  const key = `${draft.kind}:${draft.id}`;
+  if (seen.has(key)) return;
+  seen.add(key);
+  target.push({
+    kind: draft.kind,
+    id: draft.id,
+    ...(draft.version !== undefined ? { version: draft.version } : {}),
+    ...(draft.evidence !== undefined ? { evidence: draft.evidence } : {}),
+  });
+}
+
+function collectScopedItems(
+  scopePath: string,
+  allItems: ReadonlyArray<StackItemWithCategory>,
+  nestedFacts: ReadonlyArray<ScopedFactWithEvidence> | undefined,
+): ScopedStackItem[] {
+  const scopedItems: ScopedStackItem[] = [];
+  const seenItems = new Set<string>();
+  for (const { category, item } of allItems) {
+    if (!isEvidenceInScope(item.evidence, scopePath)) continue;
+    pushScopedItem(scopedItems, seenItems, {
+      kind: category,
+      id: item.id,
+      version: item.version,
+      evidence: item.evidence[0],
+    });
+  }
+  if (nestedFacts) {
+    for (const fact of nestedFacts) {
+      pushScopedItem(scopedItems, seenItems, {
+        kind: fact.kind,
+        id: fact.id,
+        version: fact.version,
+        evidence: fact.evidence,
+      });
+    }
+  }
+  return scopedItems;
+}
+
 /**
  * Extract scoped stack items from a list of detected items based on allFiles.
  * Optionally detects nested manifest facts if readFile is provided.
@@ -483,110 +623,21 @@ export async function extractScopedStack(
     items: Array<{ kind: DetectedStackTarget; id: string; version?: string; evidence?: string }>;
   }>
 > {
-  const scopeMap = new Map<string, Set<string>>();
-
-  for (const file of allFiles) {
-    const normalizedPath = normalizeRepoSignalPath(file);
-    const scope = extractScopePath(normalizedPath);
-    if (scope) {
-      if (!scopeMap.has(scope)) {
-        scopeMap.set(scope, new Set());
-      }
-      scopeMap.get(scope)!.add(normalizedPath);
-    }
-  }
+  const scopeMap = collectScopePaths(allFiles);
 
   // Detect nested manifest facts if readFile is available
-  let nestedFacts: Map<
-    string,
-    Array<{ id: string; kind: DetectedStackTarget; version?: string; evidence: string }>
-  > = new Map();
+  let nestedFacts = new Map<string, ScopedFactWithEvidence[]>();
   if (readFile) {
     nestedFacts = await detectNestedStackFacts(allFiles, readFile);
   }
 
-  const allItems: Array<{ category: DetectedStackTarget; item: DetectedItem }> = [];
-  for (const item of stackInfo.languages) {
-    allItems.push({ category: 'language', item });
-  }
-  for (const item of stackInfo.frameworks) {
-    allItems.push({ category: 'framework', item });
-  }
-  for (const item of stackInfo.buildTools) {
-    allItems.push({ category: 'buildTool', item });
-  }
-  for (const item of stackInfo.testFrameworks) {
-    allItems.push({ category: 'testFramework', item });
-  }
-  for (const item of stackInfo.runtimes) {
-    allItems.push({ category: 'runtime', item });
-  }
-  for (const item of stackInfo.tools) {
-    allItems.push({ category: 'tool', item });
-  }
-  for (const item of stackInfo.qualityTools) {
-    allItems.push({ category: 'qualityTool', item });
-  }
-  for (const item of stackInfo.databases) {
-    allItems.push({ category: 'database', item });
-  }
-
-  const scopedResults: Array<{
-    path: string;
-    summary: string;
-    items: Array<{ kind: DetectedStackTarget; id: string; version?: string; evidence?: string }>;
-  }> = [];
-
+  const allItems = collectStackItems(stackInfo);
+  const scopedResults: Array<{ path: string; summary: string; items: ScopedStackItem[] }> = [];
   const scopePaths = Array.from(scopeMap.keys()).sort();
 
   for (const scopePath of scopePaths) {
     if (scopedResults.length >= MAX_SCOPES) break;
-
-    const scopedItems: Array<{
-      kind: DetectedStackTarget;
-      id: string;
-      version?: string;
-      evidence?: string;
-    }> = [];
-    const seenItems = new Set<string>();
-
-    // First: Add projected items from existing stackInfo
-    for (const { category, item } of allItems) {
-      if (isEvidenceInScope(item.evidence, scopePath)) {
-        if (scopedItems.length >= MAX_ITEMS_PER_SCOPE) continue;
-
-        const key = `${category}:${item.id}`;
-        if (seenItems.has(key)) continue;
-        seenItems.add(key);
-
-        scopedItems.push({
-          kind: category,
-          id: item.id,
-          version: item.version,
-          evidence: item.evidence[0],
-        });
-      }
-    }
-
-    // Second: Add nested manifest-detected facts
-    const nestedScopeFacts = nestedFacts.get(scopePath);
-    if (nestedScopeFacts) {
-      for (const fact of nestedScopeFacts) {
-        if (scopedItems.length >= MAX_ITEMS_PER_SCOPE) break;
-
-        const key = `${fact.kind}:${fact.id}`;
-        if (seenItems.has(key)) continue;
-        seenItems.add(key);
-
-        scopedItems.push({
-          kind: fact.kind,
-          id: fact.id,
-          version: fact.version,
-          evidence: fact.evidence,
-        });
-      }
-    }
-
+    const scopedItems = collectScopedItems(scopePath, allItems, nestedFacts.get(scopePath));
     if (scopedItems.length > 0) {
       scopedResults.push({
         path: scopePath,

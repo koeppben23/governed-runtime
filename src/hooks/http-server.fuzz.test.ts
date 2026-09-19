@@ -96,7 +96,7 @@ beforeEach(async () => {
 function makeRequest(
   body: string | Buffer,
   opts?: {
-    contentLength?: string;
+    contentLength?: string | undefined;
     url?: string;
     headers?: Record<string, string>;
     rawHeaders?: string[];

@@ -532,7 +532,7 @@ async function checkPlatformPluginArtifacts(
     checks.push({
       file: filePath,
       status: existsSync(filePath) ? 'ok' : 'missing',
-      detail: existsSync(filePath) ? 'configured; runtime load NOT_VERIFIED_RUNTIME' : undefined,
+      ...(existsSync(filePath) ? { detail: 'configured; runtime load NOT_VERIFIED_RUNTIME' } : {}),
     });
   }
 

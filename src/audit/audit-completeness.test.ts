@@ -358,7 +358,8 @@ describe('audit completeness', () => {
     });
 
     it("no policy snapshot → policyMode is 'unknown'", () => {
-      const state = makeState('TICKET', { policySnapshot: undefined });
+      const state = makeState('TICKET');
+      Reflect.deleteProperty(state, 'policySnapshot');
       const report = evaluateCompleteness(state);
       expect(report.policyMode).toBe('unknown');
     });

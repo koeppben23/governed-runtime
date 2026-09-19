@@ -220,10 +220,10 @@ function buildArgs(action: CliAction, st: ParseState): CliArgs {
     installPlatform: st.installPlatform,
     policyMode: st.policyMode,
     force: st.force,
-    coreTarball: st.coreTarball,
-    checksumsFile: st.checksumsFile,
+    ...(st.coreTarball !== undefined ? { coreTarball: st.coreTarball } : {}),
+    ...(st.checksumsFile !== undefined ? { checksumsFile: st.checksumsFile } : {}),
     allowUnverifiedTarball: st.allowUnverifiedTarball,
-    logMode: st.logMode,
+    ...(st.logMode !== undefined ? { logMode: st.logMode } : {}),
   };
 }
 

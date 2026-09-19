@@ -52,6 +52,7 @@ import {
   formatBlocked,
   formatAutoAdvanceOverflow,
   enrichWithWorkflowDirective,
+  toPresentationFindingRelation,
   writeStateWithArtifacts,
 } from './helpers.js';
 
@@ -417,11 +418,26 @@ async function handleApprovedReview(input: {
     proofSummary: input.proofSummary,
     statusLine,
     forcedConvergence: input.runtime.args.reviewVerdict !== 'accept',
-    blockingIssues: latestFindings?.blockingIssues,
-    majorRisks: latestFindings?.majorRisks,
-    missingVerification: latestFindings?.missingVerification,
-    scopeCreep: latestFindings?.scopeCreep,
-    unknowns: latestFindings?.unknowns,
+    ...(latestFindings
+      ? {
+          blockingIssues: latestFindings.blockingIssues.map((finding) => ({
+            severity: finding.severity,
+            category: finding.category,
+            message: finding.message,
+            relation: toPresentationFindingRelation(finding.relation),
+            ...(finding.findingId !== undefined ? { findingId: finding.findingId } : {}),
+          })),
+          majorRisks: latestFindings.majorRisks.map((finding) => ({
+            severity: finding.severity,
+            category: finding.category,
+            message: finding.message,
+            relation: toPresentationFindingRelation(finding.relation),
+          })),
+          missingVerification: [...latestFindings.missingVerification],
+          scopeCreep: [...latestFindings.scopeCreep],
+          unknowns: [...latestFindings.unknowns],
+        }
+      : {}),
   };
   response.presentation = {
     markdown: buildEvidenceReviewCard(cardInput, { glyphProfile }),

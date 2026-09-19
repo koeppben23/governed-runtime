@@ -277,7 +277,9 @@ function assertLegacyBoundary(ctx: InstallContext, snapshot: SnapshotResult): vo
   assertNoAmbiguousLegacyInstruction({
     platform: ctx.installPlatform,
     verifiedReinstall: ctx.args.force && configPreState.existed,
-    opencodeOriginalContent: opencodePreState?.originalContent,
+    ...(opencodePreState?.originalContent !== undefined
+      ? { opencodeOriginalContent: opencodePreState.originalContent }
+      : {}),
   });
 }
 
@@ -290,9 +292,13 @@ function deriveOwnership(ctx: InstallContext, snapshot: SnapshotResult): Install
     platform: ctx.installPlatform,
     scope: ctx.args.installScope,
     packageJsonExisted: packagePreState.existed,
-    packageJsonOriginalContent: packagePreState.originalContent,
+    ...(packagePreState.originalContent !== undefined
+      ? { packageJsonOriginalContent: packagePreState.originalContent }
+      : {}),
     packageJsonCurrentContent: readFileSync(snapshot.pkgPath, 'utf-8'),
-    opencodeOriginalContent: opencodePreState?.originalContent,
+    ...(opencodePreState?.originalContent !== undefined
+      ? { opencodeOriginalContent: opencodePreState.originalContent }
+      : {}),
     opencodeCurrentContent: snapshot.opencodeJsonPath
       ? readFileSync(snapshot.opencodeJsonPath, 'utf-8')
       : null,

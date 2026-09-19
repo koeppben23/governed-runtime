@@ -10,6 +10,7 @@ import {
   formatBlocked,
   formatAutoAdvanceOverflow,
   enrichWithWorkflowDirective,
+  toPresentationFindingRelation,
   writeStateWithArtifacts,
 } from './helpers.js';
 
@@ -460,18 +461,38 @@ async function attachReviewCard(input: {
     adrDigest: revision.currentAdr.digest,
     adrText: revision.currentAdr.adrText,
     iteration,
-    overallVerdict: latestReview?.overallVerdict as string | undefined,
-    blockingIssues: reviewFindings?.blockingIssues,
-    majorRisks: reviewFindings?.majorRisks,
-    missingVerification: reviewFindings?.missingVerification,
-    scopeCreep: reviewFindings?.scopeCreep,
-    unknowns: reviewFindings?.unknowns,
+    ...(typeof latestReview?.overallVerdict === 'string'
+      ? { overallVerdict: latestReview.overallVerdict }
+      : {}),
+    ...(reviewFindings
+      ? {
+          blockingIssues: reviewFindings.blockingIssues.map((finding) => ({
+            severity: finding.severity,
+            category: finding.category,
+            message: finding.message,
+            relation: toPresentationFindingRelation(finding.relation),
+          })),
+          majorRisks: reviewFindings.majorRisks.map((finding) => ({
+            severity: finding.severity,
+            category: finding.category,
+            message: finding.message,
+            relation: toPresentationFindingRelation(finding.relation),
+          })),
+          missingVerification: [...reviewFindings.missingVerification],
+          scopeCreep: [...reviewFindings.scopeCreep],
+          unknowns: [...reviewFindings.unknowns],
+        }
+      : {}),
     directive,
     isApproved: finalState.architecture?.status === 'accepted',
-    reviewCompletion: input.reviewCompletion,
+    ...(input.reviewCompletion !== undefined ? { reviewCompletion: input.reviewCompletion } : {}),
     proofSummary: projectArchitectureProofStatus(finalState),
-    reviewedDigest: input.reviewedIdentity.reviewedDigest,
-    reviewedObligationId: input.reviewedIdentity.reviewedObligationId,
+    ...(input.reviewedIdentity.reviewedDigest !== undefined
+      ? { reviewedDigest: input.reviewedIdentity.reviewedDigest }
+      : {}),
+    ...(input.reviewedIdentity.reviewedObligationId !== undefined
+      ? { reviewedObligationId: input.reviewedIdentity.reviewedObligationId }
+      : {}),
   };
   // Cards and artifacts are canonical Unicode; only host-visible Markdown uses preferences.
   resp.reviewCard = buildArchitectureReviewCard(reviewCardInput);

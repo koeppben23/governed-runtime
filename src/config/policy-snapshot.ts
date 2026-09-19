@@ -169,19 +169,21 @@ export function freezePolicySnapshot(
   resolvedAt: string,
   digestFn: (text: string) => string,
 ): PolicySnapshot {
+  const centralEvidence = 'centralEvidence' in resolution ? resolution.centralEvidence : undefined;
   return createPolicySnapshot(resolution.policy, resolvedAt, digestFn, {
     requestedMode: resolution.requestedMode,
     effectiveGateBehavior: resolution.effectiveGateBehavior,
-    degradedReason: resolution.degradedReason,
-    source: 'effectiveSource' in resolution ? resolution.effectiveSource : undefined,
-    resolutionReason: 'resolutionReason' in resolution ? resolution.resolutionReason : undefined,
-    centralMinimumMode:
-      'centralEvidence' in resolution ? resolution.centralEvidence?.minimumMode : undefined,
-    policyDigest: 'centralEvidence' in resolution ? resolution.centralEvidence?.digest : undefined,
-    policyVersion:
-      'centralEvidence' in resolution ? resolution.centralEvidence?.version : undefined,
-    policyPathHint:
-      'centralEvidence' in resolution ? resolution.centralEvidence?.pathHint : undefined,
+    ...(resolution.degradedReason !== undefined
+      ? { degradedReason: resolution.degradedReason }
+      : {}),
+    ...('effectiveSource' in resolution ? { source: resolution.effectiveSource } : {}),
+    ...('resolutionReason' in resolution && resolution.resolutionReason !== undefined
+      ? { resolutionReason: resolution.resolutionReason }
+      : {}),
+    ...(centralEvidence !== undefined ? { centralMinimumMode: centralEvidence.minimumMode } : {}),
+    ...(centralEvidence !== undefined ? { policyDigest: centralEvidence.digest } : {}),
+    ...(centralEvidence?.version !== undefined ? { policyVersion: centralEvidence.version } : {}),
+    ...(centralEvidence !== undefined ? { policyPathHint: centralEvidence.pathHint } : {}),
   });
 }
 
@@ -202,10 +204,28 @@ export function resolvePolicyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPo
       emitTransitions: snapshot.audit.emitTransitions,
       emitToolCalls: snapshot.audit.emitToolCalls,
       enableChainHash: snapshot.audit.enableChainHash,
-      timestampAssurance: snapshot.audit.timestampAssurance,
+      timestampAssurance: {
+        enabled: snapshot.audit.timestampAssurance.enabled,
+        mode: snapshot.audit.timestampAssurance.mode,
+        strict: snapshot.audit.timestampAssurance.strict,
+        criticalEvents: [...snapshot.audit.timestampAssurance.criticalEvents],
+        ...(snapshot.audit.timestampAssurance.tsaUrl !== undefined
+          ? { tsaUrl: snapshot.audit.timestampAssurance.tsaUrl }
+          : {}),
+        ...(snapshot.audit.timestampAssurance.trustAnchors !== undefined
+          ? { trustAnchors: [...snapshot.audit.timestampAssurance.trustAnchors] }
+          : {}),
+        ...(snapshot.audit.timestampAssurance.ntpServers !== undefined
+          ? { ntpServers: [...snapshot.audit.timestampAssurance.ntpServers] }
+          : {}),
+        ntpDriftThresholdMs: snapshot.audit.timestampAssurance.ntpDriftThresholdMs,
+        tsaTimeoutMs: snapshot.audit.timestampAssurance.tsaTimeoutMs,
+      },
     } satisfies AuditPolicy,
     actorClassification: { ...snapshot.actorClassification },
-    identityProvider: snapshot.identityProvider,
+    ...(snapshot.identityProvider !== undefined
+      ? { identityProvider: snapshot.identityProvider }
+      : {}),
     identityProviderMode: snapshot.identityProviderMode,
     enforceRiskClassification: snapshot.enforceRiskClassification,
     allowRiskDowngradeOverride: snapshot.allowRiskDowngradeOverride,

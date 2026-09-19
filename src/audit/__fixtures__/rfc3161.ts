@@ -199,12 +199,14 @@ export async function makeRfc3161Fixture(
     commonName: 'FlowGuard Test TSA',
     notBefore: input.notBefore ?? new Date('2025-01-01T00:00:00.000Z'),
     notAfter: input.notAfter ?? new Date('2027-01-01T00:00:00.000Z'),
-    eku: input.eku,
-    unknownCriticalExtension: input.unknownCriticalExtension,
-    keyScheme: input.keyScheme,
-    emptySubject: input.emptySubject,
-    pssSaltLength: input.pssSaltLength,
-    duplicateEku: input.duplicateEku,
+    ...(input.eku !== undefined ? { eku: input.eku } : {}),
+    ...(input.unknownCriticalExtension !== undefined
+      ? { unknownCriticalExtension: input.unknownCriticalExtension }
+      : {}),
+    ...(input.keyScheme !== undefined ? { keyScheme: input.keyScheme } : {}),
+    ...(input.emptySubject !== undefined ? { emptySubject: input.emptySubject } : {}),
+    ...(input.pssSaltLength !== undefined ? { pssSaltLength: input.pssSaltLength } : {}),
+    ...(input.duplicateEku !== undefined ? { duplicateEku: input.duplicateEku } : {}),
     keyHash: webcryptoHashNameForOid(input.cmsDigestOid ?? '2.16.840.1.101.3.4.2.1') as
       'SHA-256' | 'SHA-384' | 'SHA-512',
   });
@@ -479,7 +481,7 @@ export async function makeRfc3161TamperedFixture(
     commonName: 'FlowGuard Test TSA',
     notBefore: new Date('2025-01-01T00:00:00.000Z'),
     notAfter: new Date('2027-01-01T00:00:00.000Z'),
-    keyScheme: options.keyScheme,
+    ...(options.keyScheme !== undefined ? { keyScheme: options.keyScheme } : {}),
   });
   const tstInfoDer = await buildTstInfoDer(
     kind === 'signer_digest_divergence' ? { digestOid: '2.16.840.1.101.3.4.2.2' } : {},
@@ -554,7 +556,7 @@ function buildTamperedSignedData(
       eContent: new asn1js.OctetString({ valueHex: tstInfoDer }),
     }),
     signerInfos: signedAttrsAttr ? [buildSignerInfo(cert, signedAttrsAttr)] : [],
-    certificates: kind === 'no_certificate' ? undefined : [cert],
+    ...(kind === 'no_certificate' ? {} : { certificates: [cert] }),
   });
 }
 
