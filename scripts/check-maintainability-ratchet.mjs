@@ -28,8 +28,12 @@
  * Usage:
  *   node scripts/check-maintainability-ratchet.mjs            # read-only check
  *   node scripts/check-maintainability-ratchet.mjs --update   # monotonic update
+ *   node scripts/check-maintainability-ratchet.mjs --against <base-sha>
+ *     # CI lineage: the head baseline may only lower/remove base baseline debt,
+ *     # so a manually raised baseline cannot launder new debt in the same PR
  */
 
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -40,6 +44,7 @@ import ts from 'typescript';
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, '..');
 const BASELINE_PATH = path.join(SCRIPT_DIR, 'maintainability-baseline.json');
+const BASELINE_REPO_PATH = 'scripts/maintainability-baseline.json';
 
 /** Clean-code targets. The baseline must not contain values at or below them. */
 export const TARGETS = Object.freeze({
@@ -51,6 +56,12 @@ export const TARGETS = Object.freeze({
 export const BASELINE_VERSION = 1;
 
 const METRIC_RULES = ['complexity', 'max-lines-per-function', 'max-params'];
+
+const TARGET_BY_RULE = Object.freeze({
+  complexity: TARGETS.complexity,
+  'max-lines-per-function': TARGETS.maxLinesPerFunction,
+  'max-params': TARGETS.maxParams,
+});
 
 // ─── Function identity ────────────────────────────────────────────────────────
 
@@ -99,7 +110,15 @@ function classNameOf(node) {
       if (ts.isVariableDeclaration(variable) && ts.isIdentifier(variable.name)) {
         return variable.name.text;
       }
-      return 'anonymousClass';
+      const siblings = [];
+      const parent = current.parent;
+      if (parent !== undefined) {
+        parent.forEachChild((child) => {
+          if (ts.isClassDeclaration(child) || ts.isClassExpression(child)) siblings.push(child);
+        });
+      }
+      const ordinal = siblings.indexOf(current);
+      return `anonymousClass#${ordinal === -1 ? 0 : ordinal}`;
     }
     current = current.parent;
   }
@@ -145,7 +164,8 @@ function ordinalAmongKind(node) {
   return index === -1 ? 0 : index;
 }
 
-function functionIdentity(node) {
+/** Identity segment of one function-like node, without its ancestors. */
+function functionSegment(node) {
   if (ts.isFunctionDeclaration(node) && node.name !== undefined) {
     return `function:${node.name.text}`;
   }
@@ -160,6 +180,23 @@ function functionIdentity(node) {
   if (binding !== undefined) return `${label}:${binding}`;
   const parentKind = node.parent === undefined ? 'unknown' : ts.SyntaxKind[node.parent.kind];
   return `${label}:anonymous:${parentKind}:${ordinalAmongKind(node)}`;
+}
+
+/**
+ * Full AST function path: every enclosing function segment, outermost first,
+ * joined with ` > `. Two same-named helpers in different enclosing functions
+ * or classes therefore keep distinct identities, and line shifts stay inert.
+ */
+function functionIdentity(node) {
+  const segments = [];
+  let current = node.parent;
+  while (current !== undefined) {
+    if (isFunctionLike(current)) segments.push(functionSegment(current));
+    current = current.parent;
+  }
+  segments.reverse();
+  segments.push(functionSegment(node));
+  return segments.join(' > ');
 }
 
 /**
@@ -339,6 +376,9 @@ export async function measureMaintainability() {
     );
   }
 
+  assertUniqueIdentities(entries, 'finding');
+  assertUniqueIdentities(metricSuppressions, 'suppression');
+
   return {
     targets: { ...TARGETS },
     entries: sortEntries(entries),
@@ -368,6 +408,8 @@ function findingKey(entry) {
 }
 
 export function buildBaseline(current) {
+  assertUniqueIdentities(current.entries, 'finding');
+  assertUniqueIdentities(current.metricSuppressions, 'suppression');
   return {
     version: BASELINE_VERSION,
     targets: { ...current.targets },
@@ -386,32 +428,77 @@ function targetsMatch(targets) {
   );
 }
 
-function validateBaseline(baseline) {
-  if (baseline === null || typeof baseline !== 'object') return 'baseline is not an object';
-  if (baseline.version !== BASELINE_VERSION) return `unsupported baseline version ${baseline.version}`;
+function entryProblems(entries, kind) {
+  const problems = [];
+  if (!Array.isArray(entries)) return [`baseline ${kind} list is not an array`];
+  const seen = new Set();
+  for (const entry of entries) {
+    const shaped =
+      entry !== null &&
+      typeof entry === 'object' &&
+      typeof entry.file === 'string' &&
+      entry.file.length > 0 &&
+      typeof entry.function === 'string' &&
+      entry.function.length > 0 &&
+      typeof entry.rule === 'string';
+    if (!shaped) {
+      problems.push(`malformed baseline ${kind} entry`);
+      continue;
+    }
+    if (!METRIC_RULES.includes(entry.rule)) {
+      problems.push(`unknown rule '${entry.rule}' in baseline ${kind}`);
+      continue;
+    }
+    const key = findingKey(entry);
+    if (seen.has(key)) {
+      problems.push(`duplicate baseline ${kind} key: ${entry.rule}(${entry.function}) in ${entry.file}`);
+    }
+    seen.add(key);
+    if (kind === 'finding') {
+      if (typeof entry.value !== 'number' || !Number.isFinite(entry.value)) {
+        problems.push(`non-numeric baseline finding value in ${entry.file}`);
+        continue;
+      }
+      if (entry.value <= TARGET_BY_RULE[entry.rule]) {
+        problems.push(
+          `baseline finding at or below target: ${entry.rule}(${entry.function}) in ${entry.file} = ${entry.value}`,
+        );
+      }
+    }
+  }
+  return problems;
+}
+
+/**
+ * Validate the baseline contract. Fails closed on structural drift, unknown
+ * rules, duplicate identities, and entries that are not above their target.
+ */
+export function validateBaseline(baseline) {
+  if (baseline === null || typeof baseline !== 'object') return ['baseline is not an object'];
+  const problems = [];
+  if (baseline.version !== BASELINE_VERSION) {
+    problems.push(`unsupported baseline version ${String(baseline.version)}`);
+  }
   if (!targetsMatch(baseline.targets)) {
-    return 'baseline targets do not match the clean-code targets (12 / 80 / 5)';
+    problems.push('baseline targets do not match the clean-code targets (12 / 80 / 5)');
   }
-  for (const entry of baseline.entries ?? []) {
-    if (
-      typeof entry.file !== 'string' ||
-      typeof entry.function !== 'string' ||
-      typeof entry.rule !== 'string' ||
-      typeof entry.value !== 'number'
-    ) {
-      return 'malformed baseline finding entry';
+  problems.push(...entryProblems(baseline.entries, 'finding'));
+  problems.push(...entryProblems(baseline.metricSuppressions, 'suppression'));
+  return problems;
+}
+
+/** Fail closed when a measurement would collapse two identities into one. */
+function assertUniqueIdentities(entries, kind) {
+  const seen = new Set();
+  for (const entry of entries) {
+    const key = findingKey(entry);
+    if (seen.has(key)) {
+      throw new Error(
+        `duplicate ${kind} identity: ${entry.rule}(${entry.function}) in ${entry.file}`,
+      );
     }
+    seen.add(key);
   }
-  for (const suppression of baseline.metricSuppressions ?? []) {
-    if (
-      typeof suppression.file !== 'string' ||
-      typeof suppression.function !== 'string' ||
-      typeof suppression.rule !== 'string'
-    ) {
-      return 'malformed baseline suppression entry';
-    }
-  }
-  return undefined;
 }
 
 /**
@@ -500,6 +587,15 @@ export function applyMonotonicUpdate(baseline, current) {
   };
 }
 
+/**
+ * Baseline lineage: the head baseline may only lower or shrink the base
+ * baseline. `--against <base-sha>` enforces this in CI, so a manually raised
+ * baseline cannot launder new debt inside the same pull request.
+ */
+export function checkBaselineLineage(baseBaseline, headBaseline) {
+  return applyMonotonicUpdate(baseBaseline, headBaseline).violations;
+}
+
 // ─── CLI ──────────────────────────────────────────────────────────────────────
 
 function readBaseline() {
@@ -511,6 +607,29 @@ function readBaseline() {
     throw new Error(`Cannot parse ${path.relative(REPO_ROOT, BASELINE_PATH)}`);
   }
   return parsed;
+}
+
+/** Resolve a commit and read its baseline; `null` when absent at that commit. */
+function readBaselineAtCommit(sha) {
+  execFileSync('git', ['rev-parse', '--verify', `${sha}^{commit}`], {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  try {
+    execFileSync('git', ['cat-file', '-e', `${sha}:${BASELINE_REPO_PATH}`], {
+      cwd: REPO_ROOT,
+      stdio: 'ignore',
+    });
+  } catch {
+    return null;
+  }
+  const raw = execFileSync('git', ['show', `${sha}:${BASELINE_REPO_PATH}`], {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  return JSON.parse(raw);
 }
 
 function describeProblem(problem) {
@@ -543,17 +662,49 @@ function writeBaseline(baseline) {
   writeFileSync(BASELINE_PATH, `${JSON.stringify(baseline, null, 2)}\n`, 'utf8');
 }
 
+function parseCliOptions(argv) {
+  const options = { update: false, against: undefined };
+  for (let i = 0; i < argv.length; i += 1) {
+    const argument = argv[i];
+    if (argument === '--update') {
+      options.update = true;
+    } else if (argument === '--against') {
+      const value = argv[i + 1];
+      if (typeof value !== 'string' || value.length === 0) {
+        throw new Error('--against requires a base commit SHA');
+      }
+      options.against = value;
+      i += 1;
+    } else {
+      throw new Error(`unsupported argument '${argument}'`);
+    }
+  }
+  if (options.update && options.against !== undefined) {
+    throw new Error('--update and --against are mutually exclusive');
+  }
+  return options;
+}
+
+function printProblems(prefix, problems) {
+  console.error(`[maintainability-ratchet] ${prefix} (${problems.length} violation(s)):`);
+  for (const problem of problems) console.error(`  - ${describeProblem(problem)}`);
+}
+
 async function main() {
-  const update = process.argv.includes('--update');
+  const options = parseCliOptions(process.argv.slice(2));
   const current = await measureMaintainability();
   const baseline = readBaseline();
-  const baselineProblem = baseline === null ? undefined : validateBaseline(baseline);
-  if (baselineProblem !== undefined) {
-    console.error(`[maintainability-ratchet] ERROR: ${baselineProblem}`);
-    process.exit(1);
-  }
 
-  if (update) {
+  if (options.update) {
+    if (baseline !== null) {
+      const baselineProblems = validateBaseline(baseline);
+      if (baselineProblems.length > 0) {
+        console.error(
+          `[maintainability-ratchet] ERROR: invalid baseline: ${baselineProblems.join('; ')}`,
+        );
+        process.exit(1);
+      }
+    }
     if (baseline === null) {
       writeBaseline(buildBaseline(current));
       console.log(
@@ -564,8 +715,7 @@ async function main() {
     }
     const { violations, next } = applyMonotonicUpdate(baseline, current);
     if (violations.length > 0) {
-      console.error('[maintainability-ratchet] --update refused: it would increase debt:');
-      for (const violation of violations) console.error(`  - ${describeProblem(violation)}`);
+      printProblems('--update refused: it would increase debt', violations);
       process.exit(1);
     }
     writeBaseline(next);
@@ -582,17 +732,56 @@ async function main() {
     );
     process.exit(1);
   }
+  const baselineProblems = validateBaseline(baseline);
+  if (baselineProblems.length > 0) {
+    console.error(
+      `[maintainability-ratchet] ERROR: invalid baseline: ${baselineProblems.join('; ')}`,
+    );
+    process.exit(1);
+  }
 
   const problems = diffMaintainability(baseline, current);
   if (problems.length > 0) {
-    console.error(`[maintainability-ratchet] ${problems.length} violation(s):`);
-    for (const problem of problems) console.error(`  - ${describeProblem(problem)}`);
+    printProblems('fail', problems);
     process.exit(1);
   }
   console.log(
     `[maintainability-ratchet] OK: ${current.entries.length} findings, ` +
       `${current.metricSuppressions.length} suppressions match the baseline`,
   );
+
+  if (options.against !== undefined) {
+    let baseBaseline;
+    try {
+      baseBaseline = readBaselineAtCommit(options.against);
+    } catch (error) {
+      console.error(
+        `[maintainability-ratchet] ERROR: cannot read base commit '${options.against}': ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      process.exit(1);
+    }
+    if (baseBaseline === null) {
+      console.log(
+        `[maintainability-ratchet] lineage bootstrap: base commit ${options.against} has no baseline yet`,
+      );
+      return;
+    }
+    const baseProblems = validateBaseline(baseBaseline);
+    if (baseProblems.length > 0) {
+      console.error(
+        `[maintainability-ratchet] ERROR: invalid base baseline: ${baseProblems.join('; ')}`,
+      );
+      process.exit(1);
+    }
+    const lineage = checkBaselineLineage(baseBaseline, baseline);
+    if (lineage.length > 0) {
+      printProblems(`baseline lineage vs ${options.against} may only lower or remove debt`, lineage);
+      process.exit(1);
+    }
+    console.log(`[maintainability-ratchet] lineage OK vs ${options.against}`);
+  }
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {

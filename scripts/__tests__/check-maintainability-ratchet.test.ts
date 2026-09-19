@@ -5,9 +5,11 @@ import {
   TARGETS,
   applyMonotonicUpdate,
   buildBaseline,
+  checkBaselineLineage,
   collectMetricSuppressions,
   diffMaintainability,
   functionIdentityAt,
+  validateBaseline,
 } from '../check-maintainability-ratchet.mjs';
 
 function baselineOf(entries = [], metricSuppressions = []) {
@@ -110,6 +112,34 @@ describe('functionIdentityAt', () => {
     expect(first).not.toBe(second);
   });
 
+  it('keeps same-named nested helpers distinguishable through the enclosing path', () => {
+    const sourceFile = sourceFileOf(
+      [
+        'function a() {',
+        '  function helper() { return 1; }',
+        '  return helper();',
+        '}',
+        'function b() {',
+        '  function helper() { return 2; }',
+        '  return helper();',
+        '}',
+      ].join('\n'),
+    );
+    expect(functionIdentityAt(sourceFile, 2, 3)).toBe('function:a > function:helper');
+    expect(functionIdentityAt(sourceFile, 6, 3)).toBe('function:b > function:helper');
+  });
+
+  it('distinguishes methods of sibling anonymous classes', () => {
+    const sourceFile = sourceFileOf(
+      'const x = [class { run() { return 1; } }, class { run() { return 2; } }];',
+    );
+    const first = functionIdentityAt(sourceFile, 1, 20);
+    const second = functionIdentityAt(sourceFile, 1, 51);
+    expect(first).toContain('anonymousClass#0');
+    expect(second).toContain('anonymousClass#1');
+    expect(first).not.toBe(second);
+  });
+
   it('names methods with their class and function bindings with their variable', () => {
     const sourceFile = sourceFileOf(
       ['class A { run() { return 1; } }', 'const f = function named() { return 2; };'].join('\n'),
@@ -146,11 +176,11 @@ describe('collectMetricSuppressions', () => {
 
   it('treats a bare disable as suppressing every metric rule (fail-closed)', () => {
     const sourceFile = sourceFileOf('/* eslint-disable */\nexport function f() { return 1; }');
-    expect(collectMetricSuppressions(sourceFile, 'src/x.ts').map((e) => e.rule).sort()).toEqual([
-      'complexity',
-      'max-lines-per-function',
-      'max-params',
-    ]);
+    expect(
+      collectMetricSuppressions(sourceFile, 'src/x.ts')
+        .map((e) => e.rule)
+        .sort(),
+    ).toEqual(['complexity', 'max-lines-per-function', 'max-params']);
   });
 });
 
@@ -172,13 +202,13 @@ describe('applyMonotonicUpdate', () => {
 
   it('locks improvements and removals into the next baseline', () => {
     const base = baselineOf(
-      [finding('src/a.ts', 'function:foo', 'complexity', 18), finding('src/a.ts', 'function:old', 'complexity', 15)],
+      [
+        finding('src/a.ts', 'function:foo', 'complexity', 18),
+        finding('src/a.ts', 'function:old', 'complexity', 15),
+      ],
       [suppression('src/a.ts', 'function:foo', 'max-params')],
     );
-    const current = baselineOf(
-      [finding('src/a.ts', 'function:foo', 'complexity', 16)],
-      [],
-    );
+    const current = baselineOf([finding('src/a.ts', 'function:foo', 'complexity', 16)], []);
     const { violations, next } = applyMonotonicUpdate(base, current);
     expect(violations).toEqual([]);
     expect(next.entries).toEqual([finding('src/a.ts', 'function:foo', 'complexity', 16)]);
@@ -208,5 +238,97 @@ describe('buildBaseline', () => {
       'src/b.ts:complexity',
     ]);
     expect(built.metricSuppressions.map((e) => e.file)).toEqual(['src/a.ts', 'src/b.ts']);
+  });
+});
+
+describe('checkBaselineLineage', () => {
+  it('fails the PR bypass: base 18, head baseline 19, head code 19', () => {
+    const base = baselineOf([finding('src/a.ts', 'function:foo', 'complexity', 18)]);
+    const head = baselineOf([finding('src/a.ts', 'function:foo', 'complexity', 19)]);
+    const current = baselineOf([finding('src/a.ts', 'function:foo', 'complexity', 19)]);
+
+    // The snapshot comparison alone cannot see the manually raised baseline.
+    expect(diffMaintainability(head, current)).toEqual([]);
+    // The lineage comparison against the PR base does.
+    expect(checkBaselineLineage(base, head).map((v) => v.kind)).toEqual(['worsened']);
+  });
+
+  it('refuses new findings and new suppressions relative to the base', () => {
+    const base = baselineOf([finding('src/a.ts', 'function:foo', 'complexity', 18)]);
+    const head = baselineOf(
+      [
+        finding('src/a.ts', 'function:foo', 'complexity', 18),
+        finding('src/a.ts', 'function:bar', 'complexity', 13),
+      ],
+      [suppression('src/a.ts', 'function:foo', 'max-params')],
+    );
+    expect(
+      checkBaselineLineage(base, head)
+        .map((v) => v.kind)
+        .sort(),
+    ).toEqual(['new', 'new-suppression']);
+  });
+
+  it('allows lowering and removing debt relative to the base', () => {
+    const base = baselineOf(
+      [
+        finding('src/a.ts', 'function:foo', 'complexity', 18),
+        finding('src/a.ts', 'function:bar', 'complexity', 15),
+      ],
+      [suppression('src/a.ts', 'function:foo', 'max-params')],
+    );
+    const head = baselineOf([finding('src/a.ts', 'function:foo', 'complexity', 16)]);
+    expect(checkBaselineLineage(base, head)).toEqual([]);
+  });
+});
+
+describe('validateBaseline', () => {
+  it('accepts a well-formed baseline', () => {
+    expect(
+      validateBaseline(
+        baselineOf(
+          [finding('src/a.ts', 'function:foo', 'complexity', 18)],
+          [suppression('src/a.ts', 'function:foo', 'max-params')],
+        ),
+      ),
+    ).toEqual([]);
+  });
+
+  it('rejects duplicate identities, unknown rules, and values at or below target', () => {
+    const duplicate = validateBaseline(
+      baselineOf([
+        finding('src/a.ts', 'function:foo', 'complexity', 18),
+        finding('src/a.ts', 'function:foo', 'complexity', 19),
+      ]),
+    );
+    expect(duplicate.join('; ')).toContain('duplicate');
+
+    const unknown = validateBaseline(
+      baselineOf([finding('src/a.ts', 'function:foo', 'no-console', 18)]),
+    );
+    expect(unknown.join('; ')).toContain('unknown rule');
+
+    const belowTarget = validateBaseline(
+      baselineOf([finding('src/a.ts', 'function:foo', 'complexity', 12)]),
+    );
+    expect(belowTarget.join('; ')).toContain('at or below target');
+
+    const duplicateSuppression = validateBaseline(
+      baselineOf(
+        [],
+        [
+          suppression('src/a.ts', 'function:foo', 'complexity'),
+          suppression('src/a.ts', 'function:foo', 'complexity'),
+        ],
+      ),
+    );
+    expect(duplicateSuppression.join('; ')).toContain('duplicate');
+  });
+
+  it('rejects mismatched targets and versions', () => {
+    const wrongTargets = { ...baselineOf(), targets: { ...TARGETS, complexity: 99 } };
+    expect(validateBaseline(wrongTargets).join('; ')).toContain('targets');
+    const wrongVersion = { ...baselineOf(), version: 99 };
+    expect(validateBaseline(wrongVersion).join('; ')).toContain('version');
   });
 });

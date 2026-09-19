@@ -40,14 +40,15 @@ const REQUIRED_RULES = [
 ] as const;
 
 /**
- * The default-wide production metrics HARD CEILINGS. Test suites and internal
- * test support are the excluded file classes — never a directory. `25 / 120 /
- * 5` is the transitional cap that keeps the repository lintable, not the
- * quality target: the clean-code targets are `12 / 80 / 5`, and existing
- * target debt is frozen in the monotonic maintainability baseline
+ * The default-wide production metrics DEFAULT ESLINT CEILINGS. Test suites and
+ * internal test support are the excluded file classes — never a directory.
+ * `25 / 120 / 5` is the repository-wide default cap, not the quality target:
+ * the clean-code targets are `12 / 80 / 5`, and existing target debt is frozen
+ * in the monotonic maintainability baseline
  * (`scripts/maintainability-baseline.json`, `npm run check:maintainability`).
- * Tightening the cap is a deliberate guard change and weakening it requires
- * one too.
+ * The cap is not absolute — seven legacy metric rule suppressions are frozen
+ * as baseline exceptions, and new exceptions are forbidden. Tightening the cap
+ * is a deliberate guard change and weakening it requires one too.
  */
 const METRICS_CONTRACT = [
   { rule: 'complexity', option: 'max', value: 25 },

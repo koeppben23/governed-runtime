@@ -31,10 +31,14 @@ no exceptions. Each principle below is either enforced by an automated guard
 Maintainability targets and transitional ceilings:
 
 - Clean-code target: `complexity:12`, `max-lines-per-function:80`, `max-params:5`.
-- Transitional hard ceiling (ESLint): `25 / 120 / 5` — it keeps the repository
-  lintable while the debt is drained, and is not the quality target.
+- Default ESLint ceiling: `25 / 120 / 5` — it keeps the repository lintable
+  while the debt is drained, and it is **not absolute**: the seven existing
+  metric rule suppressions are frozen legacy exceptions in the baseline, and
+  new exceptions are forbidden.
 - Existing target debt is frozen in `scripts/maintainability-baseline.json`;
-  the baseline is an exact debt snapshot, never a maximum.
+  the baseline is an exact debt snapshot, never a maximum. CI additionally
+  enforces baseline lineage against the pull-request base, so a manually raised
+  baseline cannot launder new debt.
 - New or worsening debt is blocked, new metric `eslint-disable` suppressions are
   blocked, inline suppressions cannot hide findings, and every improvement must
   be locked into the baseline in the same change

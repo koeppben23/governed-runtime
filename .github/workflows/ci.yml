@@ -327,6 +327,10 @@ jobs:
         run: npm run check
         env:
           FORCE_COLOR: 0
+      - name: Check maintainability baseline lineage
+        run: node scripts/check-maintainability-ratchet.mjs --against "${{ github.event.pull_request.base.sha }}"
+        env:
+          FORCE_COLOR: 0
 
   sdk-baseline:
     name: sdk-baseline
