@@ -30,6 +30,7 @@ import {
 } from '../tools/helpers.js';
 import type { SemanticAuditIntent } from '../tools/audit-outbox.js';
 import { reconcilePendingAuditOperations, type AuditDeps } from '../plugin-audit.js';
+import { TOOL_FLOWGUARD_DECISION } from '../tool-names.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import { serializeError } from '../../logging/error-serialize.js';
 
@@ -535,7 +536,7 @@ async function reconcileCompletionAuditOperations(
   // legitimate concurrency as a completion failure.
   let reconciled: SessionState | null = null;
   for (let attempt = 0; attempt < 3; attempt++) {
-    const outcome = await reconcilePendingAuditOperations(deps, sessionID, 'flowguard_decision');
+    const outcome = await reconcilePendingAuditOperations(deps, sessionID, TOOL_FLOWGUARD_DECISION);
     if (outcome?.auditOk === false) {
       throw new PersistenceError('WRITE_FAILED', outcome.reason ?? 'Audit reconciliation failed');
     }

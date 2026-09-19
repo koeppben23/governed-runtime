@@ -23,7 +23,6 @@ import type { ToolHookBeforeInput, ToolHookAfterInput } from './types.js';
 type PluginLogger = Awaited<ReturnType<typeof createPluginLogger>>['log'];
 type PluginWorkspaceRuntime = ReturnType<typeof createWorkspace>;
 
-export const FG_PREFIX = 'flowguard_';
 const TRACE_REGISTRY_LIMIT = 1000;
 
 /** Limits tool use until the host observes the next explicit user command. */
