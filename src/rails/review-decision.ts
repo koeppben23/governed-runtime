@@ -13,16 +13,20 @@
  * initiator (state.initiatedByIdentity.actorId).
  * This satisfies MaRisk AT 7.2 (5) — separation of duties.
  *
- * State clearing patterns (FlowGuard-critical):
+ * State clearing patterns (FlowGuard-critical). The table distinguishes three
+ * effects precisely:
+ * - clear:    the field is set to null/empty
+ * - reset:    a sub-state is rewound to its pre-review value (not cleared)
+ * - preserve: the field survives the decision unchanged
  *
- * | Gate            | Verdict            | Keep                    | Clear                                    |
- * |-----------------|--------------------|-------------------------|------------------------------------------|
- * | PLAN_REVIEW     | approve            | ticket, plan, selfReview| reviewDecision                           |
- * | PLAN_REVIEW     | changes_requested  | ticket, plan            | selfReview, reviewDecision               |
- * | EVIDENCE_REVIEW | approve            | everything              | (nothing — complete)                     |
- * | EVIDENCE_REVIEW | changes_requested  | ticket, plan, validation| impl, implReview, reviewDecision         |
- * | ARCH_REVIEW     | approve            | architecture, selfReview| (nothing — complete)                     |
- * | ARCH_REVIEW     | changes_requested  | architecture            | selfReview                               |
+ * | Gate            | Verdict           | Actual persisted behavior                                                                                                  |
+ * |-----------------|-------------------|----------------------------------------------------------------------------------------------------------------------------|
+ * | PLAN_REVIEW     | approve           | reviewDecision preserved; nothing is cleared                                                                               |
+ * | PLAN_REVIEW     | changes_requested | selfReview and reviewDecision cleared; reviewCycles.plan + 1                                                               |
+ * | EVIDENCE_REVIEW | approve           | everything preserved, including reviewDecision                                                                             |
+ * | EVIDENCE_REVIEW | changes_requested | implementation, implValidation, implReview, reducedCeremony, reviewDecision cleared; reviewCycles.implementation + 1       |
+ * | ARCH_REVIEW     | approve           | architecture marked accepted; reviewDecision preserved; nothing is cleared                                                 |
+ * | ARCH_REVIEW     | changes_requested | architecture kept but reviewCompletion reset to 'pending' and approvalCertificate reset; selfReview cleared; reviewDecision preserved; reviewCycles.architecture + 1 |
  *
  * A `changes_requested` verdict also increments exactly the owning loop's human
  * review-cycle counter (`state.reviewCycles.plan|architecture|implementation`):
@@ -129,15 +133,22 @@ function enforceOverrideAgreement(
 }
 
 /**
- * Apply state clearing pattern based on gate + verdict.
+ * Apply the gate- and verdict-specific state pattern.
  *
- * Clearing rules (FlowGuard-critical):
- * - approve: keep everything (state flows forward)
- * - changes_requested at PLAN_REVIEW: clear selfReview (fresh review loop)
- * - changes_requested at IMPL_REVIEW: cleared by handleChangesRequestedReview in implement.ts
- * - changes_requested at EVIDENCE_REVIEW: clear impl + implReview + reducedCeremony (re-implement)
- * - changes_requested at ARCH_REVIEW: clear selfReview (fresh review loop)
- * - reject: preserve the reviewed evidence and recorded decision at REJECTED
+ * - approve:      preserve everything (at ARCH_REVIEW the architecture status is
+ *                 additionally marked 'accepted'); nothing is cleared
+ * - reject:       preserve the reviewed evidence and the recorded decision at
+ *                 the REJECTED terminal position
+ * - changes_requested: clear the owning loop state, reset the architecture
+ *                 review sub-state at ARCH_REVIEW (reviewCompletion back to
+ *                 'pending', approvalCertificate back to undefined), and advance
+ *                 exactly the owning `reviewCycles` counter. `reviewDecision`
+ *                 itself is preserved at ARCH_REVIEW and cleared at
+ *                 PLAN_REVIEW / EVIDENCE_REVIEW — see the module table.
+ *
+ * `changes_requested` at the implementation readiness loop (IMPL_REVIEW) is
+ * handled by `handleChangesRequestedReview` in
+ * `integration/tools/implement-review.ts`.
  *
  * reducedCeremony is revoked on any changes_requested that loops back to IMPLEMENTATION
  * because the prior TRIVIAL determination is invalidated by the review finding issues.

@@ -194,6 +194,10 @@ describe('review-decision rail', () => {
         certificateId: expect.any(String),
       });
       expect(result.state.plan?.history).toEqual(PLAN_RECORD.history);
+      // approve is preserve-only: the recorded decision and the counters survive.
+      expect(result.state.reviewDecision?.verdict).toBe('approve');
+      expect(result.state.reviewDecision?.decidedAt).toBe(FIXED_TIME);
+      expect(result.state.reviewCycles).toEqual(state.reviewCycles);
     }
   });
 
@@ -203,15 +207,16 @@ describe('review-decision rail', () => {
       reviewCompletion: 'reviewer_accepted' as const,
       claimDeclarations: { flow: 'architecture' as const, claims: [ARCHITECTURE_CLAIM] },
     };
-    const result = executeReviewDecision(
-      makeState('ARCH_REVIEW', {
-        architecture,
-        reviewAssurance: architectureAssurance({
-          subjectDigest: architecture.digest,
-          status: 'consumed',
-          capturedVerdict: 'accept',
-        }),
+    const state = makeState('ARCH_REVIEW', {
+      architecture,
+      reviewAssurance: architectureAssurance({
+        subjectDigest: architecture.digest,
+        status: 'consumed',
+        capturedVerdict: 'accept',
       }),
+    });
+    const result = executeReviewDecision(
+      state,
       { verdict: 'approve', rationale: 'approved', decisionIdentity: reviewerIdentity },
       baseCtx,
     );
@@ -237,6 +242,10 @@ describe('review-decision rail', () => {
           reviewedSubjectDigest: architecture.digest,
         },
       });
+      // approve is preserve-only: the recorded decision and the counters survive.
+      expect(result.state.reviewDecision?.verdict).toBe('approve');
+      expect(result.state.reviewDecision?.decidedAt).toBe(FIXED_TIME);
+      expect(result.state.reviewCycles).toEqual(state.reviewCycles);
     }
   });
 
@@ -1397,6 +1406,7 @@ describe('review-decision rail', () => {
         plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         selfReview: CONVERGED_SELF_REVIEW,
       });
+      const planCycle = state.reviewCycles.plan;
       const result = executeReviewDecision(
         state,
         { verdict: 'changes_requested', rationale: 'rework', decisionIdentity: reviewerIdentity },
@@ -1406,6 +1416,7 @@ describe('review-decision rail', () => {
       if (result.kind === 'ok') {
         expect(result.state.selfReview).toBeNull();
         expect(result.state.reviewDecision).toBeNull();
+        expect(result.state.reviewCycles.plan).toBe(planCycle + 1);
       }
     });
 
@@ -1423,6 +1434,7 @@ describe('review-decision rail', () => {
           executedAt: FIXED_TIME,
         },
       });
+      const implementationCycle = state.reviewCycles.implementation;
       const result = executeReviewDecision(
         state,
         { verdict: 'changes_requested', rationale: 'rework', decisionIdentity: reviewerIdentity },
@@ -1431,8 +1443,10 @@ describe('review-decision rail', () => {
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
         expect(result.state.implementation).toBeNull();
+        expect(result.state.implValidation).toEqual([]);
         expect(result.state.implReview).toBeNull();
         expect(result.state.reviewDecision).toBeNull();
+        expect(result.state.reviewCycles.implementation).toBe(implementationCycle + 1);
       }
     });
 
@@ -1441,6 +1455,7 @@ describe('review-decision rail', () => {
         architecture: { ...ARCHITECTURE_DECISION, reviewCompletion: 'review_exhausted' },
         selfReview: CONVERGED_SELF_REVIEW,
       });
+      const architectureCycle = state.reviewCycles.architecture;
       const result = executeReviewDecision(
         state,
         { verdict: 'changes_requested', rationale: 'rework', decisionIdentity: reviewerIdentity },
@@ -1450,6 +1465,12 @@ describe('review-decision rail', () => {
       if (result.kind === 'ok') {
         expect(result.state.selfReview).toBeNull();
         expect(result.state.architecture?.reviewCompletion).toBe('pending');
+        expect(result.state.architecture?.approvalCertificate).toBeUndefined();
+        // reset, not clear: the reviewed architecture survives.
+        expect(result.state.architecture?.digest).toBe(ARCHITECTURE_DECISION.digest);
+        // preserve: the human decision itself stays recorded at ARCH_REVIEW.
+        expect(result.state.reviewDecision?.verdict).toBe('changes_requested');
+        expect(result.state.reviewCycles.architecture).toBe(architectureCycle + 1);
       }
     });
 
