@@ -29,7 +29,7 @@ export interface HookStdoutGuard {
 }
 
 /** Error thrown when the hook stdout guard cannot deliver the response payload. */
-export class StdoutGuardError extends Error {
+class StdoutGuardError extends Error {
   readonly code: string = 'STDOUT_GUARD_WRITE_FAILED';
 
   constructor(message: string, options?: { cause?: unknown }) {

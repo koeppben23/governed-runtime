@@ -36,7 +36,7 @@ export function compactReviewBudget(
   };
 }
 
-export function compactDiscoveryHealth(
+function compactDiscoveryHealth(
   health: NonNullable<HydrateConfig['policy']['discoveryHealth']>,
 ): Partial<DiscoveryHealthPolicy> {
   return {
@@ -46,7 +46,7 @@ export function compactDiscoveryHealth(
   };
 }
 
-export function compactValidationEvidence(
+function compactValidationEvidence(
   policy: NonNullable<HydrateConfig['policy']['validationEvidence']>,
 ): Partial<ValidationEvidencePolicy> {
   return {

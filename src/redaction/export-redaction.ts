@@ -15,7 +15,7 @@ export type ExportRedactionErrorCode =
   'REDACTION_MAX_DEPTH_EXCEEDED' | 'REDACTION_CIRCULAR_REFERENCE';
 
 /** Typed error for export-time redaction boundary failures. */
-export class ExportRedactionError extends Error {
+class ExportRedactionError extends Error {
   readonly code: ExportRedactionErrorCode;
 
   constructor(code: ExportRedactionErrorCode, message: string, options?: { cause?: unknown }) {
