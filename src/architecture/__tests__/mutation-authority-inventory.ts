@@ -473,6 +473,16 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
       'src/adapters/workspace/archive-verify-chain.test.ts',
       'src/adapters/workspace/archive-verify-artifact-binding-mutation.test.ts',
     ],
+    {
+      admission: {
+        verifiedAt: '2026-09-19',
+        commitSha: 'd29f399371faca9ccafa8be20a0317b533229937',
+        scoreAtAdmission: 100,
+        killed: 28,
+        survived: 0,
+        config: 'stryker.conf.json',
+      },
+    },
   ),
   required(
     'src/adapters/workspace/archive-verify-audit-chain.ts',
@@ -481,15 +491,53 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
       'src/adapters/workspace/archive-verify-chain.test.ts',
       'src/adapters/workspace/archive-verify-audit-chain-mutation.test.ts',
     ],
+    {
+      admission: {
+        verifiedAt: '2026-09-19',
+        commitSha: 'd29f399371faca9ccafa8be20a0317b533229937',
+        scoreAtAdmission: 100,
+        killed: 88,
+        survived: 0,
+        config: 'stryker.conf.json',
+      },
+    },
   ),
-  required('src/adapters/workspace/archive-verify-checksum.ts', 'Archive checksum verification', [
-    'src/adapters/workspace/archive-verify-chain.test.ts',
-    'src/adapters/workspace/archive-verify-checksum-mutation.test.ts',
-  ]),
-  required('src/adapters/workspace/archive-verify-integrity.ts', 'Archive integrity verification', [
-    'src/adapters/workspace/archive-verify-chain.test.ts',
-    'src/adapters/workspace/archive-verify-integrity-mutation.test.ts',
-  ]),
+  required(
+    'src/adapters/workspace/archive-verify-checksum.ts',
+    'Archive checksum verification',
+    [
+      'src/adapters/workspace/archive-verify-chain.test.ts',
+      'src/adapters/workspace/archive-verify-checksum-mutation.test.ts',
+    ],
+    {
+      admission: {
+        verifiedAt: '2026-09-19',
+        commitSha: 'd29f399371faca9ccafa8be20a0317b533229937',
+        scoreAtAdmission: 92.86,
+        killed: 26,
+        survived: 2,
+        config: 'stryker.conf.json',
+      },
+    },
+  ),
+  required(
+    'src/adapters/workspace/archive-verify-integrity.ts',
+    'Archive integrity verification',
+    [
+      'src/adapters/workspace/archive-verify-chain.test.ts',
+      'src/adapters/workspace/archive-verify-integrity-mutation.test.ts',
+    ],
+    {
+      admission: {
+        verifiedAt: '2026-09-19',
+        commitSha: 'd29f399371faca9ccafa8be20a0317b533229937',
+        scoreAtAdmission: 100,
+        killed: 18,
+        survived: 0,
+        config: 'stryker.conf.json',
+      },
+    },
+  ),
   required('src/adapters/workspace/archive-verify-helpers.ts', 'Archive verification helpers', [
     'src/adapters/workspace/archive-verify-helpers.test.ts',
   ]),
@@ -616,9 +664,21 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
   required('src/integration/plugin-audit.ts', 'In-process audit lifecycle authority', [
     'src/integration/plugin-audit.test.ts',
   ]),
-  required('src/integration/plugin-audit-decisions.ts', 'Audit decision receipt authority', [
-    'src/integration/plugin-audit.test.ts',
-  ]),
+  required(
+    'src/integration/plugin-audit-decisions.ts',
+    'Audit decision receipt authority',
+    ['src/integration/plugin-audit.test.ts'],
+    {
+      admission: {
+        verifiedAt: '2026-09-19',
+        commitSha: 'd29f399371faca9ccafa8be20a0317b533229937',
+        scoreAtAdmission: 91.67,
+        killed: 55,
+        survived: 5,
+        config: 'stryker.conf.json',
+      },
+    },
+  ),
   required('src/integration/plugin-audit-reconcile.ts', 'Durable audit reconciliation authority', [
     'src/integration/plugin-audit.test.ts',
     'src/integration/plugin-audit-reconcile.test.ts',
