@@ -626,7 +626,7 @@ describe('status', () => {
       expect(Array.isArray(result.activeChecks)).toBe(true);
     });
 
-    it('reports CHANGES_REQUIRED for a completed peer review with issues', async () => {
+    it('reports CHANGES_REQUIRED for issues and surfaces persisted reviewer caveats', async () => {
       await hydrateSession();
       const { computeFingerprint, sessionDir: resolveSessionDir } =
         await import('../adapters/workspace/index.js');
@@ -656,6 +656,24 @@ describe('status', () => {
             category: 'correctness',
             message: 'Changes required',
           },
+          {
+            source: 'scope_creep',
+            reportSeverity: 'warning',
+            category: 'scope-creep',
+            message: 'Scope grew beyond the ticket',
+          },
+          {
+            source: 'missing_verification',
+            reportSeverity: 'warning',
+            category: 'missing-verification',
+            message: 'Could not verify the failure path',
+          },
+          {
+            source: 'unknown',
+            reportSeverity: 'info',
+            category: 'unknown',
+            message: 'Unknown dependency surface',
+          },
         ],
         overallStatus: 'issues',
         peerReviewCoverage: {
@@ -676,11 +694,25 @@ describe('status', () => {
       const finish = result.finish as {
         overallStatus: string;
         actionGuidance: Array<{ action: string; status: string }>;
+        reviewCaveats: Array<{ source: string; message: string }>;
       };
       expect(finish.overallStatus).toBe('CHANGES_REQUIRED');
       expect(
         finish.actionGuidance.find((guidance) => guidance.action === 'create PR')?.status,
       ).toBe('not_recommended');
+      // The persisted reviewer caveats flow through the real /finish wiring and
+      // stay verbatim; other sources remain outside the projection boundary.
+      expect(finish.reviewCaveats).toEqual([
+        { source: 'missing_verification', message: 'Could not verify the failure path' },
+        { source: 'unknown', message: 'Unknown dependency surface' },
+      ]);
+      const markdown = (result.presentation as { markdown: string }).markdown;
+      expect(markdown).toContain('## Review verification caveats');
+      expect(markdown).toContain('? Could not verify the failure path');
+      expect(markdown).toContain('## Review unknowns');
+      expect(markdown).toContain('- Unknown dependency surface');
+      expect(markdown).not.toContain('Scope grew beyond the ticket');
+      expect(markdown).not.toContain('missing-verification');
     });
 
     it('does not mutate persisted state (read-only)', async () => {

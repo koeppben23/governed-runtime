@@ -4,8 +4,9 @@
  *
  * Split out of status.ts to keep that module within the file-size budget. This
  * module performs NO independent evidence, phase, obligation, or gate
- * evaluation: it composes existing projections and applies one presentational
- * classifier. It is not an authority.
+ * evaluation: it composes existing projections (including a verbatim
+ * projection of the persisted ReviewReport's reviewer caveats) and applies one
+ * presentational classifier. It is not an authority.
  *
  * @version v1
  */
@@ -25,9 +26,31 @@ import {
   type FinishActionGuidance,
   type FinishCard,
   type FinishOverallStatus,
+  type FinishReviewCaveat,
 } from './status.js';
 
 // ─── Finish Card ──────────────────────────────────────────────────────────────
+
+/**
+ * Project the reviewer-authored caveats of the persisted ReviewReport.
+ *
+ * Pure projection of persisted review authority: only `missing_verification`
+ * and `unknown` are human-visible at /finish; material findings, scope creep,
+ * mechanical findings, and challenge outcomes belong to other surfaces. The
+ * reviewer `message` is copied verbatim (no trim, no rewrite). Whitespace-only
+ * messages are skipped because `NoticeSection` rejects empty bodies — the
+ * read-only finish surface must not fail on schema-valid persisted data.
+ */
+function projectFinishReviewCaveats(reviewReport: ReviewReport | null): FinishReviewCaveat[] {
+  if (!reviewReport) return [];
+  const caveats: FinishReviewCaveat[] = [];
+  for (const finding of reviewReport.findings) {
+    if (finding.source !== 'missing_verification' && finding.source !== 'unknown') continue;
+    if (finding.message.trim().length === 0) continue;
+    caveats.push({ source: finding.source, message: finding.message });
+  }
+  return caveats;
+}
 
 /**
  * Whether any REQUIRED evidence slot is unverified (missing or failed).
@@ -214,8 +237,9 @@ function buildFinishActionGuidance(
  *
  * This function performs NO independent evidence, phase, obligation, or gate
  * evaluation — it only composes buildReadinessProjection,
- * buildEvidenceDetailProjection, resolveWorkflowDirective, and the single
- * presentation classifier deriveFinishOverallStatus.
+ * buildEvidenceDetailProjection, resolveWorkflowDirective,
+ * projectFinishReviewCaveats (pure projection of persisted ReviewReport truth),
+ * and the single presentation classifier deriveFinishOverallStatus.
  */
 export function buildFinishCard(
   state: SessionState,
@@ -235,6 +259,7 @@ export function buildFinishCard(
     evidence,
     directive,
     blocker,
+    reviewCaveats: projectFinishReviewCaveats(reviewReport),
     warnings: readiness.warnings,
     actionGuidance: buildFinishActionGuidance(overallStatus, state.phase),
     exitOptions: [...FINISH_EXIT_OPTIONS],
