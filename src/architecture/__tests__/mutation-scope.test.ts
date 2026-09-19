@@ -49,8 +49,10 @@ import {
   AUTHORITY_ROOTS,
   MUTATION_AUTHORITY_INVENTORY,
   MUTATION_PROFILES,
+  assertRequiredProvenance,
   isProductionSource,
   targetOfSelector,
+  type AdmissionRecord,
   type MutationProfile,
 } from './mutation-authority-inventory.js';
 import { repoRelative } from './repo-path.js';
@@ -309,6 +311,26 @@ describe('mutation scope', () => {
       }
     }
     expect(problems).toEqual([]);
+  });
+
+  it('A7: provenance cannot be synthesized implicitly', () => {
+    const admission: AdmissionRecord = {
+      verifiedAt: '2026-09-19',
+      commitSha: '0'.repeat(40),
+      scoreAtAdmission: 100,
+      killed: 1,
+      survived: 0,
+      config: 'stryker.conf.json',
+    };
+
+    expect(() => assertRequiredProvenance('fixture.ts', {})).toThrow(
+      /exactly one of 'admission' or 'legacy: true'/,
+    );
+    expect(() => assertRequiredProvenance('fixture.ts', { admission, legacy: true })).toThrow(
+      /exactly one of 'admission' or 'legacy: true'/,
+    );
+    expect(() => assertRequiredProvenance('fixture.ts', { legacy: true })).not.toThrow();
+    expect(() => assertRequiredProvenance('fixture.ts', { admission })).not.toThrow();
   });
 
   it('A8: every production file under an authority root is covered by an entry', () => {
