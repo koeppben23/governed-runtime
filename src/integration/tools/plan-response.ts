@@ -33,6 +33,7 @@ import { resolveWorkflowDirective } from '../../machine/workflow-directive.js';
 import { evaluate } from '../../machine/evaluate.js';
 import { autoAdvance } from '../../rails/types.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
+import { TOOL_FLOWGUARD_PLAN } from '../tool-names.js';
 import {
   artifactReviewSubjectScope,
   createObligationAndAttempt,
@@ -539,7 +540,7 @@ export async function persistPlanReview(
 
   if (forcedConvergence) {
     getAdapterLogger().warn(
-      'flowguard_plan',
+      TOOL_FLOWGUARD_PLAN,
       'Plan review force-converged at iteration limit without reviewer approval',
       {
         sessionId: scope.context.sessionID,

@@ -44,12 +44,11 @@ import {
 } from '../shared/flowguard-identifiers.js';
 import type { ToolHookAfterInput, ToolHookAfterOutput } from './types.js';
 import {
-  FG_PREFIX,
   cleanupSessionRuntime,
   getToolTraceId,
   type FlowGuardPluginRuntime,
 } from './plugin-shared.js';
-import { TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
+import { FLOWGUARD_TOOL_PREFIX, TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
 import { resumePendingSystemWork as runSystemWorkResume } from './tools/auto-validation.js';
 import { enforceRiskClassificationAfterBash as enforceRiskAfterBash } from './plugin-risk.js';
 import { enforceDiscoveryHealthAfterBash } from './plugin-discovery-health.js';
@@ -286,7 +285,7 @@ async function runFlowGuardAuditAfter(args: {
   hookOutput: ToolHookAfterOutput;
 }): Promise<void> {
   const { runtime, toolName, input, output, sessionId, hookOutput } = args;
-  if (!toolName.startsWith(FG_PREFIX)) return;
+  if (!toolName.startsWith(FLOWGUARD_TOOL_PREFIX)) return;
   await runtime.ws.runSerializedForSession(sessionId, async () => {
     const auditResult = await runAuditModule(runtime.auditDeps, toolName, input, output, sessionId);
     if (auditResult?.block) {

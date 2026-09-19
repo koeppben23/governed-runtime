@@ -6,6 +6,7 @@
 import { createSessionState, onFlowGuardToolAfter } from './review/enforcement/enforcement.js';
 import { reviewDispatchRequired } from './review/dispatch-signal.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
+import { TOOL_FLOWGUARD_PLAN } from './tool-names.js';
 import {
   artifactReviewSubjectScope,
   createReviewObligation,
@@ -198,7 +199,7 @@ export function setupFullCycle(
 
   const state = createSessionState();
   // Step 1: Mode A — FlowGuard tool carries the review-dispatch signal
-  onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(iteration, planVersion), NOW);
+  onFlowGuardToolAfter(state, TOOL_FLOWGUARD_PLAN, {}, modeAResponse(iteration, planVersion), NOW);
 
   const obligation = pendingObligation({
     ...(customObligationId ? { obligationId: customObligationId } : {}),

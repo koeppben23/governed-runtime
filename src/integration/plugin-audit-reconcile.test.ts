@@ -20,6 +20,7 @@ import { readState, writeState } from '../adapters/persistence.js';
 import { appendAuditEvent, readAuditTrail } from '../adapters/persistence-audit.js';
 import { makeState } from '../fixtures.js';
 import { reconcilePendingAuditOperations, type AuditDeps } from './plugin-audit.js';
+import { TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
 import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
 import { prepareAuditOperations } from './tools/audit-outbox.js';
 
@@ -235,6 +236,59 @@ describe('reconcilePendingAuditOperations', () => {
             (item) => item.operationId === semantic.operationId,
           )!.status,
         ).toBe('reconciled');
+      } finally {
+        await fs.rm(sessDir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe('phantom identity', () => {
+    it('resolves the audit context under the real caller tool name, never a synthetic one', async () => {
+      // Regression: reconciliation used to resolve its context under the
+      // non-canonical identity 'flowguard_reconcile', which silently missed
+      // `policy.actorClassification[toolName]` and misattributed the audit
+      // diagnostic tool label. The resolved actor is not consumed by the
+      // transition/state-write builders today, so the observable contract is
+      // the classification lookup and the diagnostic label themselves.
+      const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-audit-reconcile-identity-'));
+      try {
+        const state = noTransitionAudit('TICKET');
+        await writeState(sessDir, state);
+
+        const lookedUpKeys: string[] = [];
+        const actorClassification: Record<string, string> = new Proxy(
+          { [TOOL_FLOWGUARD_HYDRATE]: 'human' },
+          {
+            get(target, property, receiver) {
+              if (typeof property === 'string') lookedUpKeys.push(property);
+              return Reflect.get(target, property, receiver);
+            },
+          },
+        );
+        const deps = makeDeps({
+          getSessionDir: vi.fn().mockReturnValue(sessDir),
+          resolveSessionPolicy: vi.fn().mockResolvedValue({
+            policy: {
+              audit: { emitToolCalls: false, emitTransitions: false, enableChainHash: true },
+              actorClassification,
+              mode: 'team',
+              requireHumanGates: false,
+            },
+            state,
+          }),
+        });
+
+        await expect(
+          reconcilePendingAuditOperations(deps, SESSION_ID, TOOL_FLOWGUARD_HYDRATE),
+        ).resolves.toBeUndefined();
+
+        expect(lookedUpKeys).toContain(TOOL_FLOWGUARD_HYDRATE);
+        expect(lookedUpKeys).not.toContain('flowguard_reconcile');
+        expect(deps.log.debug).toHaveBeenCalledWith(
+          'audit',
+          'processing tool call',
+          expect.objectContaining({ tool: TOOL_FLOWGUARD_HYDRATE }),
+        );
       } finally {
         await fs.rm(sessDir, { recursive: true, force: true });
       }

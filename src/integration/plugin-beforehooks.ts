@@ -11,13 +11,17 @@ import type { CommandHookBeforeInput, ToolHookBeforeInput, ToolHookBeforeOutput 
 import { recordUserDecisionIntentFromCommand } from './user-decision-intent.js';
 import {
   getToolTraceId,
-  FG_PREFIX,
   type ActiveCommandScope,
   type FlowGuardPluginRuntime,
 } from './plugin-shared.js';
 import {
+  FLOWGUARD_TOOL_PREFIX,
   isFlowGuardVerdictTool,
+  TOOL_FLOWGUARD_OBSERVE_REPOSITORY,
   TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE,
+  TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
+  TOOL_FLOWGUARD_RUN_CHECK,
+  TOOL_FLOWGUARD_STATUS,
 } from './tool-names.js';
 import { runWithAdapterLoggerAsync } from '../logging/adapter-logger.js';
 import { runWithLogContextAsync } from '../logging/log-context.js';
@@ -80,7 +84,7 @@ export async function toolBefore(
     const sessionId = hookInput?.sessionID ?? 'unknown';
     const traceId = getToolTraceId(runtime, input, 'before');
     return runWithLogContextAsync({ traceId, sessionId }, async () => {
-      if (toolName.startsWith(FG_PREFIX) || isMutatingHostTool(toolName)) {
+      if (toolName.startsWith(FLOWGUARD_TOOL_PREFIX) || isMutatingHostTool(toolName)) {
         await recoverRegulatedCompletion(runtime, sessionId);
       }
       const args = (output as ToolHookBeforeOutput)?.args ?? {};
@@ -90,7 +94,7 @@ export async function toolBefore(
       try {
         await enforceBeforeRules(runtime, toolName, sessionId, hookInput?.callID ?? '', args);
       } catch (err) {
-        if (!toolName.startsWith(FG_PREFIX)) {
+        if (!toolName.startsWith(FLOWGUARD_TOOL_PREFIX)) {
           const reasonCode = enforcementReasonCode(err);
           if (reasonCode) {
             await auditEnforcementDenied({
@@ -160,7 +164,7 @@ async function enforceBeforeRules(
 
   await enforceVerdictCheck(runtime, toolName, sessionId, args);
 
-  if (toolName === 'flowguard_observe_repository') {
+  if (toolName === TOOL_FLOWGUARD_OBSERVE_REPOSITORY) {
     await reconcileObservationParent(runtime, args);
     return;
   }
@@ -291,7 +295,7 @@ async function reconcileObservationParent(
     capability,
   });
   if (!resolution) return;
-  await reconcileBeforeMutation(runtime, resolution.sessionId, 'flowguard_observe_repository');
+  await reconcileBeforeMutation(runtime, resolution.sessionId, TOOL_FLOWGUARD_OBSERVE_REPOSITORY);
 }
 
 function updateCommandScope(
@@ -323,7 +327,7 @@ async function isAllowedInImplReview(
   sessionId: string,
 ): Promise<boolean> {
   const reviewSurface =
-    toolName === 'flowguard_review_implementation' ||
+    toolName === TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION ||
     toolName === TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE;
   if (!reviewSurface) return false;
   return (await readScopedState(runtime, sessionId))?.phase === 'IMPL_REVIEW';
@@ -337,7 +341,7 @@ async function enforceCommandScope(
   const scope = runtime.activeCommandScopes.get(sessionId);
   if (scope !== 'check') return;
 
-  const allowed = new Set(['flowguard_status', 'flowguard_run_check']);
+  const allowed = new Set([TOOL_FLOWGUARD_STATUS, TOOL_FLOWGUARD_RUN_CHECK]);
   if (await isAllowedInImplReview(runtime, toolName, sessionId)) {
     allowed.add(toolName);
   }

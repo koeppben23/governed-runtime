@@ -12,6 +12,7 @@
 import type { ReviewFindings } from '../../state/evidence.js';
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
+import { TOOL_FLOWGUARD_REVIEW } from '../tool-names.js';
 import type {
   ReviewAssuranceState,
   ReviewAttempt,
@@ -262,7 +263,7 @@ export function resolveStructuredFindings(
     const issues = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).slice(0, 8);
     unparseableDetail = issues.join('; ') || 'unknown schema validation failure';
     getAdapterLogger().warn(
-      'flowguard_review',
+      TOOL_FLOWGUARD_REVIEW,
       'structured captured findings present but unparseable; treated as unparseable',
       {
         obligationId: obligation.obligationId,

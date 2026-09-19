@@ -53,6 +53,7 @@ import { materializeReviewCardArtifact } from '../../adapters/workspace/index.js
 import { readConfig } from '../../adapters/persistence-config.js';
 import { resolveWorkflowDirective } from '../../machine/workflow-directive.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
+import { TOOL_FLOWGUARD_ARCHITECTURE } from '../tool-names.js';
 import { normalizeArchitectureClaims } from '../../state/proofgraph-approval.js';
 import { projectArchitectureProofStatus } from '../proofgraph/proof-summary-projectors.js';
 
@@ -337,7 +338,7 @@ async function persistAndFormatReviewResult(input: ReviewResultContext): Promise
 
   if (completion === 'review_exhausted') {
     getAdapterLogger().warn(
-      'flowguard_architecture',
+      TOOL_FLOWGUARD_ARCHITECTURE,
       'ADR review exhausted at iteration limit without reviewer approval',
       {
         sessDir: input.session.sessDir,

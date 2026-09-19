@@ -41,6 +41,11 @@ import { resolveAuditContext, type AuditContext } from './plugin-audit-context.j
 import { getToolMetadata } from './plugin-helpers.js';
 import { buildLifecycleDetail } from './plugin-audit-lifecycle-reason.js';
 import {
+  TOOL_FLOWGUARD_ABORT,
+  TOOL_FLOWGUARD_DECISION,
+  TOOL_FLOWGUARD_HYDRATE,
+} from './tool-names.js';
+import {
   createStrictTimestampTracker,
   emitAuditBodyWithEvidence,
   emitTransitionAudits,
@@ -55,8 +60,8 @@ export { reconcilePendingAuditOperations } from './plugin-audit-reconcile.js';
 export type { AuditDeps } from './plugin-audit-reconcile.js';
 
 const LIFECYCLE_TOOLS: Record<string, string> = {
-  flowguard_hydrate: 'session_created',
-  flowguard_abort_session: 'session_aborted',
+  [TOOL_FLOWGUARD_HYDRATE]: 'session_created',
+  [TOOL_FLOWGUARD_ABORT]: 'session_aborted',
 };
 
 class TerminalTransitionAuthorityError extends Error {
@@ -166,7 +171,7 @@ async function emitDecisionReceipt(params: DecisionReceiptParams): Promise<strin
   const { deps, ctx, toolName, input, sessionId, policyMode, state } = params;
   const prevHash = ctx.prevHash;
   const transition = state?.transition;
-  if (toolName !== 'flowguard_decision' || !ctx.success || !transition) return prevHash;
+  if (toolName !== TOOL_FLOWGUARD_DECISION || !ctx.success || !transition) return prevHash;
 
   const firstTransition = transition;
   const inferredVerdict = inferDecisionVerdict(firstTransition.event);

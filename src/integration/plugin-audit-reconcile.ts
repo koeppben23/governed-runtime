@@ -29,6 +29,7 @@ import { resolveTimestampEvidence } from '../audit/timestamp-resolution.js';
 import type { TimestampAssurancePolicy } from '../config/policy-types.js';
 import type { TimestampAuthorityProvider, TimestampVerifier } from '../audit/tsa-provider.js';
 import { resolveAuditContext, type AuditContext } from './plugin-audit-context.js';
+import { TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
 import { computeStateDigest, writeStateWithAuditOperations } from './tools/audit-outbox.js';
 
 /** Closure dependencies injected from plugin.ts. */
@@ -402,14 +403,18 @@ export async function reconcilePendingAuditOperations(
   toolName: string,
 ): Promise<AuditRunOutcome> {
   try {
-    const resolved = await resolveAuditContext(deps, 'flowguard_reconcile', {}, sessionId);
+    // The reconciliation context is resolved under the REAL tool identity of
+    // the call whose mutation is being reconciled. A synthetic identity here
+    // would silently miss `policy.actorClassification[toolName]` and
+    // misattribute the diagnostic tool label.
+    const resolved = await resolveAuditContext(deps, toolName, {}, sessionId);
     if (!resolved) {
       // Only a genuine bootstrap may tolerate a missing audit session
       // authority: the very first flowguard_hydrate creates the session and
       // its outbox — and only when the absence of a session is positively
       // proven. An unavailable resolution authority fails closed.
       const existence = await resolveBootstrapStateExistence(deps, sessionId);
-      if (toolName === 'flowguard_hydrate' && existence === 'absent') {
+      if (toolName === TOOL_FLOWGUARD_HYDRATE && existence === 'absent') {
         return undefined;
       }
       return {

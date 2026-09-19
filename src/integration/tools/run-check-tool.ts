@@ -65,6 +65,7 @@ import { completeAssertionExtraction } from '../../verification/assertion-extrac
 import { withSessionWriteLockRetry, PersistenceError } from '../../adapters/lock-retry.js';
 import { REASON_LOCK_TIMEOUT_EXHAUSTED } from '../../shared/flowguard-identifiers.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
+import { TOOL_FLOWGUARD_RUN_CHECK } from '../tool-names.js';
 import {
   resolveReviewDispatchAuthority,
   reviewObligationResponseFields,
@@ -493,7 +494,7 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
       delaysMs: [...RUN_CHECK_RETRY_DELAYS_MS],
       onRetry: (attempt, delayMs, err) => {
         if (attempt !== 1 && attempt !== RUN_CHECK_RETRIES) return;
-        logger.warn('flowguard_run_check', 'Lock contention — retrying persistence', {
+        logger.warn(TOOL_FLOWGUARD_RUN_CHECK, 'Lock contention — retrying persistence', {
           sessionId,
           checkId: kind,
           attempt,

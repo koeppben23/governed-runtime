@@ -17,6 +17,7 @@
 import type { Phase, RiskTrigger, SessionState, TaskClass } from '../state/schema.js';
 import { randomUUID } from 'node:crypto';
 import type { GateDecision } from '../shared/gate-decision.js';
+import { FLOWGUARD_TOOL_PREFIX, MCP_FLOWGUARD_TOOL_PREFIX } from './tool-names.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -55,8 +56,8 @@ export const READ_ONLY_HOST_TOOLS: ReadonlySet<string> = new Set([
 function isGovernedOutsideHostPhaseGate(toolName: string): boolean {
   return (
     toolName === 'task' ||
-    toolName.startsWith('flowguard_') ||
-    toolName.startsWith('mcp__flowguard__')
+    toolName.startsWith(FLOWGUARD_TOOL_PREFIX) ||
+    toolName.startsWith(MCP_FLOWGUARD_TOOL_PREFIX)
   );
 }
 
