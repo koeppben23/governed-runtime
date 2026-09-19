@@ -42,11 +42,12 @@ export interface CompactionDeps {
 function buildCompactionLines(
   state: {
     phase: string;
-    id?: string;
-    ticket?: { text?: string } | null;
-    plan?: { current?: { body?: string } } | null;
-    policySnapshot?: { mode?: string } | null;
-    reviewAssurance?: { obligations?: Array<{ status?: string }> } | null;
+    id?: string | undefined;
+    ticket?: { text?: string | undefined } | null | undefined;
+    plan?: { current?: { body?: string | undefined } | undefined } | null | undefined;
+    policySnapshot?: { mode?: string | undefined } | null | undefined;
+    reviewAssurance?:
+      { obligations?: Array<{ status?: string | undefined }> | undefined } | null | undefined;
   },
   sessionId: string,
   pendingObligations: Array<{ status?: string }>,

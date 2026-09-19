@@ -12,9 +12,11 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { defaultReasonRegistry } from '../config/reasons.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
+import { CliInstallError } from './errors.js';
 import type { CliArgs, CliResult, FileOp } from './install-types.js';
-import type { RollbackEntry as InstallRollbackEntry } from './install-helpers.js';
-import { rollbackArtifacts, snapshotForRollback, toCliError } from './install-helpers.js';
+import type { RollbackEntry as InstallRollbackEntry } from './install-helpers-rollback.js';
+import { rollbackArtifacts, snapshotForRollback } from './install-helpers-rollback.js';
+import { toCliError } from './install-helpers.js';
 import {
   assertManagedMandatesOwnership,
   assertNoAmbiguousLegacyInstruction,
@@ -37,20 +39,15 @@ import {
   commitDependencyTransaction,
   createDependencyTransaction,
   executeDependencyTransaction,
+} from './install-transaction.js';
+import type { DependencyTransaction } from './install-transaction-journal.js';
+import {
   isRollbackPossible,
   recoverOrAbort,
   rollbackDependencyTransaction,
-  type DependencyTransaction,
-} from './install-transaction.js';
+} from './install-transaction-rollback.js';
 import { classifyOpenCodeRuntime } from './opencode-runtime-compat.js';
 import { detectOpenCodeRuntimeEvidence } from './opencode-runtime-detect.js';
-
-export {
-  detectPackageManager,
-  type RollbackEntry,
-  rollbackArtifacts,
-  snapshotForRollback,
-} from './install-helpers.js';
 
 const DEFAULT_LOCK = join(homedir(), '.config', 'opencode', '.flowguard-install.lock');
 
@@ -75,9 +72,13 @@ async function acquireInstallLock(): Promise<{ release(): void }> {
       try {
         existing = JSON.parse(readFileSync(lockPath, 'utf-8'));
       } catch {
-        throw new Error(`Install lock exists but is unreadable. Remove ${lockPath} manually.`);
+        throw new CliInstallError(
+          'INSTALL_LOCK_CONFLICT',
+          `Install lock exists but is unreadable. Remove ${lockPath} manually.`,
+        );
       }
-      throw new Error(
+      throw new CliInstallError(
+        'INSTALL_LOCK_CONFLICT',
         `Install already in progress (PID: ${existing.pid}).\n` +
           'The lock may be stale if the previous process was interrupted.\n' +
           `If no install runs, remove ${lockPath} manually.`,
@@ -184,7 +185,11 @@ async function rollbackSnap(
 
 function snapshotEntry(snapshot: SnapshotResult, path: string): InstallRollbackEntry {
   const entry = snapshot.preStateEntries.find((candidate) => candidate.path === path);
-  if (!entry) throw new Error(`Missing pre-install ownership snapshot: ${path}`);
+  if (!entry)
+    throw new CliInstallError(
+      'PRE_STATE_ENTRY_MISSING',
+      `Missing pre-install ownership snapshot: ${path}`,
+    );
   return entry;
 }
 
@@ -277,7 +282,9 @@ function assertLegacyBoundary(ctx: InstallContext, snapshot: SnapshotResult): vo
   assertNoAmbiguousLegacyInstruction({
     platform: ctx.installPlatform,
     verifiedReinstall: ctx.args.force && configPreState.existed,
-    opencodeOriginalContent: opencodePreState?.originalContent,
+    ...(opencodePreState?.originalContent !== undefined
+      ? { opencodeOriginalContent: opencodePreState.originalContent }
+      : {}),
   });
 }
 
@@ -290,9 +297,13 @@ function deriveOwnership(ctx: InstallContext, snapshot: SnapshotResult): Install
     platform: ctx.installPlatform,
     scope: ctx.args.installScope,
     packageJsonExisted: packagePreState.existed,
-    packageJsonOriginalContent: packagePreState.originalContent,
+    ...(packagePreState.originalContent !== undefined
+      ? { packageJsonOriginalContent: packagePreState.originalContent }
+      : {}),
     packageJsonCurrentContent: readFileSync(snapshot.pkgPath, 'utf-8'),
-    opencodeOriginalContent: opencodePreState?.originalContent,
+    ...(opencodePreState?.originalContent !== undefined
+      ? { opencodeOriginalContent: opencodePreState.originalContent }
+      : {}),
     opencodeCurrentContent: snapshot.opencodeJsonPath
       ? readFileSync(snapshot.opencodeJsonPath, 'utf-8')
       : null,

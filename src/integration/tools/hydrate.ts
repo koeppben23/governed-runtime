@@ -121,8 +121,8 @@ async function runHydrate(args: HydrateArgs, context: ToolContext): Promise<Tool
         discovery,
         actorInfo,
         args,
-        baselineDirtyFiles,
-        baselineControlPlaneMarker,
+        ...(baselineDirtyFiles !== undefined ? { baselineDirtyFiles } : {}),
+        ...(baselineControlPlaneMarker !== undefined ? { baselineControlPlaneMarker } : {}),
       }),
       policyContext.ctx,
     );

@@ -133,13 +133,28 @@ describe('Plugin logging e2e', () => {
       const entries: LogEntry[] = [];
       const mockAdapter = {
         info: (_s: string, _m: string, _e?: Record<string, unknown>) => {
-          entries.push({ level: 'info', service: _s, message: _m, extra: _e });
+          entries.push({
+            level: 'info',
+            service: _s,
+            message: _m,
+            ...(_e !== undefined ? { extra: _e } : {}),
+          });
         },
         warn: (_s: string, _m: string, _e?: Record<string, unknown>) => {
-          entries.push({ level: 'warn', service: _s, message: _m, extra: _e });
+          entries.push({
+            level: 'warn',
+            service: _s,
+            message: _m,
+            ...(_e !== undefined ? { extra: _e } : {}),
+          });
         },
         error: (_s: string, _m: string, _e?: Record<string, unknown>) => {
-          entries.push({ level: 'error', service: _s, message: _m, extra: _e });
+          entries.push({
+            level: 'error',
+            service: _s,
+            message: _m,
+            ...(_e !== undefined ? { extra: _e } : {}),
+          });
         },
       };
       setAdapterLogger(mockAdapter);

@@ -24,6 +24,7 @@ import type {
 } from '../../state/discovery-schemas.js';
 import type { executeCheck } from '../../verification/executor.js';
 import type { deriveRepairGuidance } from '../../verification/repair-guidance.js';
+import { IntegrationInvariantError } from '../errors.js';
 import { formatBlocked } from './helpers.js';
 import { formatValidationDetail } from './run-check-presentation.js';
 
@@ -31,13 +32,13 @@ export type CheckEvidence = Awaited<ReturnType<typeof executeCheck>>;
 
 export function buildValidationResult(params: {
   checkId: string;
-  candidateId?: string;
+  candidateId?: string | undefined;
   evidence: CheckEvidence;
   outcome: ValidationOutcome;
   derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance>;
-  extraction?: AssertionExtractionResult;
-  fullCheckScopeAttestation?: FullCheckScopeAttestation;
-  classificationReasonOverride?: string;
+  extraction?: AssertionExtractionResult | undefined;
+  fullCheckScopeAttestation?: FullCheckScopeAttestation | undefined;
+  classificationReasonOverride?: string | undefined;
 }): ValidationResult {
   const {
     checkId,
@@ -114,14 +115,28 @@ export type ValidationSubject =
 
 export function freezeValidationSubject(state: SessionState): ValidationSubject {
   if (state.phase === 'VALIDATION') {
+    const plan = state.plan;
+    if (!plan) {
+      throw new IntegrationInvariantError(
+        'VALIDATION_PLAN_REQUIRED',
+        'VALIDATION phase requires plan evidence to freeze the validation subject',
+      );
+    }
     return {
       scope: 'baseline',
-      planDigest: state.plan!.current.digest,
+      planDigest: plan.current.digest,
     };
+  }
+  const implementation = state.implementation;
+  if (!implementation) {
+    throw new IntegrationInvariantError(
+      'VALIDATION_IMPLEMENTATION_REQUIRED',
+      'implementation validation requires implementation evidence to freeze the validation subject',
+    );
   }
   return {
     scope: 'implementation',
-    implementationDigest: state.implementation!.digest,
+    implementationDigest: implementation.digest,
   };
 }
 
@@ -159,7 +174,17 @@ export function buildNextValidationState(
   // approval/implementation authority. A technical block (blocked outcome,
   // execution error, inconclusive extraction) keeps the phase and the
   // authority for a retry.
-  const hasTechnicalBlock = validation.some(isTechnicalValidationBlock);
+  const hasTechnicalBlock = validation.some((result) =>
+    isTechnicalValidationBlock({
+      passed: result.passed,
+      outcome: result.outcome,
+      timedOut: result.timedOut,
+      exitCode: result.exitCode,
+      ...(result.assertionExtraction !== undefined
+        ? { assertionExtraction: result.assertionExtraction }
+        : {}),
+    }),
+  );
 
   if (state.phase === 'IMPL_VALIDATION') {
     // Post-implementation validation writes to implValidation. A genuine failure

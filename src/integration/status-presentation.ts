@@ -12,7 +12,7 @@
  * @version v2
  */
 
-import type { StatusProjection } from './status.js';
+import type { StatusProjection } from './status-types.js';
 import type { DiscoveryHealthProjection } from '../discovery/discovery-health.js';
 import type { DiscoveryDriftStatusProjection } from './discovery-drift-status.js';
 import { projectStatusActionFromCommand } from './status-conclusion.js';
@@ -37,6 +37,7 @@ import {
 import { buildProofGraphSection } from '../presentation/proof-summary.js';
 import type { ProofGraphRenderOptions } from '../presentation/proof-summary.js';
 import { getInstalledCommand } from './installed-commands.js';
+import { IntegrationInvariantError } from './errors.js';
 
 // ─── Presentation Input ────────────────────────────────────────────────────────
 
@@ -72,7 +73,7 @@ export function buildStatusDocument(
   sections.push(buildStatusSection(status));
 
   if (status.blocker && status.blocker.reasonText) {
-    sections.push(buildBlockerSection(status, detail));
+    sections.push(buildBlockerSection(status.blocker, status.blocker.reasonText, detail));
   }
 
   buildEvidenceSection(status, detail, sections);
@@ -135,7 +136,10 @@ function proofGraphOpts(
 export function buildNoSessionDocument(): PresentationDocument {
   const startCmd = getInstalledCommand('/start');
   if (!startCmd) {
-    throw new Error('buildNoSessionDocument: no installed command metadata for "/start".');
+    throw new IntegrationInvariantError(
+      'STATUS_START_COMMAND_METADATA_MISSING',
+      'buildNoSessionDocument: no installed command metadata for "/start".',
+    );
   }
   return {
     kind: 'compact_card',
@@ -171,10 +175,10 @@ function buildStatusSection(status: StatusProjection): PresentationSection {
 }
 
 function buildBlockerSection(
-  status: StatusProjection,
+  blocker: NonNullable<StatusProjection['blocker']>,
+  reasonText: string,
   detail: PresentationBuildOptions['detail'],
 ): BlockerSection {
-  const blocker = status.blocker!;
   const reasonProjection = blocker.reasonCode
     ? projectReasonFromRegistry(blocker.reasonCode)
     : null;
@@ -183,7 +187,7 @@ function buildBlockerSection(
     kind: 'blocker',
     heading: 'Blocked',
     code: detail === 'diagnostic' ? (blocker.reasonCode ?? null) : null,
-    text: reasonProjection?.headline ?? blocker.reasonText!,
+    text: reasonProjection?.headline ?? reasonText,
     ...(recovery ? { recovery } : {}),
     ...statusBlockerDetailFields(reasonProjection, detail),
   };

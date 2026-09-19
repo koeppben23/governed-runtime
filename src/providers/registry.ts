@@ -60,106 +60,163 @@ export interface ProviderRegistry {
   readonly profilesById: ReadonlyMap<string, ExecutionProfile>;
 }
 
-export function buildProviderRegistry(
-  extensions: readonly AssertionProviderExtension[],
-): ProviderRegistry {
-  const parserByFormat = new Map<ReportFormatId, AssertionReportParser>();
-  const codecByProvider = new Map<ProviderId, AssertionIdentityCodec>();
-  const formatsByProvider = new Map<ProviderId, Set<ReportFormatId>>();
-  const assertionFormatsByProvider = new Map<ProviderId, Set<ReportFormatId>>();
-  const aggregateFormatsByProvider = new Map<ProviderId, Set<ReportFormatId>>();
-  const descriptorByProvider = new Map<ProviderId, ProviderManifest>();
-  const descriptorByDetection = new Map<DetectionId, ProviderManifest>();
-  const profiles: ExecutionProfile[] = [];
-  const profilesByProvider = new Map<ProviderId, ExecutionProfile[]>();
-  const runtimeRequirementsByProvider = new Map<ProviderId, readonly RuntimeRequirement[]>();
-  const scriptSignaturesByProvider = new Map<ProviderId, readonly ScriptSignature[]>();
-  const reportTemplatesByProvider = new Map<ProviderId, AssertionReportSpec | undefined>();
+interface RegistryAccumulator {
+  readonly parserByFormat: Map<ReportFormatId, AssertionReportParser>;
+  readonly codecByProvider: Map<ProviderId, AssertionIdentityCodec>;
+  readonly formatsByProvider: Map<ProviderId, Set<ReportFormatId>>;
+  readonly assertionFormatsByProvider: Map<ProviderId, Set<ReportFormatId>>;
+  readonly aggregateFormatsByProvider: Map<ProviderId, Set<ReportFormatId>>;
+  readonly descriptorByProvider: Map<ProviderId, ProviderManifest>;
+  readonly descriptorByDetection: Map<DetectionId, ProviderManifest>;
+  readonly profiles: ExecutionProfile[];
+  readonly profilesByProvider: Map<ProviderId, ExecutionProfile[]>;
+  readonly runtimeRequirementsByProvider: Map<ProviderId, readonly RuntimeRequirement[]>;
+  readonly scriptSignaturesByProvider: Map<ProviderId, readonly ScriptSignature[]>;
+  readonly reportTemplatesByProvider: Map<ProviderId, AssertionReportSpec | undefined>;
+}
 
-  for (const ext of extensions) {
-    const { manifest, discovery, verification } = ext;
-    const pid = manifest.providerId;
+function emptyRegistryAccumulator(): RegistryAccumulator {
+  return {
+    parserByFormat: new Map(),
+    codecByProvider: new Map(),
+    formatsByProvider: new Map(),
+    assertionFormatsByProvider: new Map(),
+    aggregateFormatsByProvider: new Map(),
+    descriptorByProvider: new Map(),
+    descriptorByDetection: new Map(),
+    profiles: [],
+    profilesByProvider: new Map(),
+    runtimeRequirementsByProvider: new Map(),
+    scriptSignaturesByProvider: new Map(),
+    reportTemplatesByProvider: new Map(),
+  };
+}
 
-    descriptorByProvider.set(pid, manifest);
+function registerProviderDiscovery(
+  acc: RegistryAccumulator,
+  ext: AssertionProviderExtension,
+): void {
+  const { manifest, discovery } = ext;
+  const pid = manifest.providerId;
 
-    for (const detId of discovery.detectionIds) {
-      descriptorByDetection.set(detId, manifest);
+  acc.descriptorByProvider.set(pid, manifest);
+
+  for (const detId of discovery.detectionIds) {
+    acc.descriptorByDetection.set(detId, manifest);
+  }
+
+  if (discovery.scriptSignatures) {
+    acc.scriptSignaturesByProvider.set(pid, discovery.scriptSignatures);
+  }
+
+  if (discovery.runtimeRequirements) {
+    acc.runtimeRequirementsByProvider.set(pid, discovery.runtimeRequirements);
+  }
+
+  if (discovery.assertionReportTemplate) {
+    acc.reportTemplatesByProvider.set(pid, discovery.assertionReportTemplate);
+  }
+}
+
+function registerProviderVerification(
+  acc: RegistryAccumulator,
+  ext: AssertionProviderExtension,
+): void {
+  const { manifest, discovery, verification } = ext;
+  const pid = manifest.providerId;
+
+  for (const fmt of verification.formats) {
+    acc.parserByFormat.set(fmt.format, fmt.parser);
+
+    const existing = acc.formatsByProvider.get(pid) ?? new Set();
+    existing.add(fmt.format);
+    acc.formatsByProvider.set(pid, existing);
+
+    if (fmt.bindingCapability === 'assertion') {
+      const bindingSet = acc.assertionFormatsByProvider.get(pid) ?? new Set();
+      bindingSet.add(fmt.format);
+      acc.assertionFormatsByProvider.set(pid, bindingSet);
     }
-
-    if (discovery.scriptSignatures) {
-      scriptSignaturesByProvider.set(pid, discovery.scriptSignatures);
-    }
-
-    if (discovery.runtimeRequirements) {
-      runtimeRequirementsByProvider.set(pid, discovery.runtimeRequirements);
-    }
-
-    if (discovery.assertionReportTemplate) {
-      reportTemplatesByProvider.set(pid, discovery.assertionReportTemplate);
-    }
-
-    for (const fmt of verification.formats) {
-      parserByFormat.set(fmt.format, fmt.parser);
-
-      const existing = formatsByProvider.get(pid) ?? new Set();
-      existing.add(fmt.format);
-      formatsByProvider.set(pid, existing);
-
-      if (fmt.bindingCapability === 'assertion') {
-        const bindingSet = assertionFormatsByProvider.get(pid) ?? new Set();
-        bindingSet.add(fmt.format);
-        assertionFormatsByProvider.set(pid, bindingSet);
-      }
-      if (fmt.bindingCapability === 'aggregate') {
-        const bindingSet = aggregateFormatsByProvider.get(pid) ?? new Set();
-        bindingSet.add(fmt.format);
-        aggregateFormatsByProvider.set(pid, bindingSet);
-      }
-    }
-
-    if (verification.identityCodec) {
-      codecByProvider.set(pid, verification.identityCodec);
-    }
-
-    for (const profile of discovery.executionProfiles) {
-      profiles.push(profile);
-      const existing = profilesByProvider.get(pid) ?? [];
-      existing.push(profile);
-      profilesByProvider.set(pid, existing);
+    if (fmt.bindingCapability === 'aggregate') {
+      const bindingSet = acc.aggregateFormatsByProvider.get(pid) ?? new Set();
+      bindingSet.add(fmt.format);
+      acc.aggregateFormatsByProvider.set(pid, bindingSet);
     }
   }
 
-  profiles.sort((a, b) => a.priority - b.priority);
+  if (verification.identityCodec) {
+    acc.codecByProvider.set(pid, verification.identityCodec);
+  }
 
+  for (const profile of discovery.executionProfiles) {
+    acc.profiles.push(profile);
+    const existing = acc.profilesByProvider.get(pid) ?? [];
+    existing.push(profile);
+    acc.profilesByProvider.set(pid, existing);
+  }
+}
+
+function registerProviderExtension(
+  acc: RegistryAccumulator,
+  ext: AssertionProviderExtension,
+): void {
+  registerProviderDiscovery(acc, ext);
+  registerProviderVerification(acc, ext);
+}
+
+function collectProfilesById(profiles: readonly ExecutionProfile[]): Map<string, ExecutionProfile> {
   const profilesById = new Map<string, ExecutionProfile>();
   for (const p of profiles) {
     profilesById.set(p.profileId, p);
   }
+  return profilesById;
+}
 
+function toProviderRegistry(
+  extensions: readonly AssertionProviderExtension[],
+  acc: RegistryAccumulator,
+  profilesById: ReadonlyMap<string, ExecutionProfile>,
+): ProviderRegistry {
   return {
     extensions,
-    parserByFormat,
-    codecByProvider,
+    parserByFormat: acc.parserByFormat,
+    codecByProvider: acc.codecByProvider,
     formatsByProvider: new Map(
-      [...formatsByProvider].map(([k, v]) => [k, v as ReadonlySet<ReportFormatId>]),
+      [...acc.formatsByProvider].map(([k, v]) => [k, v as ReadonlySet<ReportFormatId>]),
     ),
     assertionFormatsByProvider: new Map(
-      [...assertionFormatsByProvider].map(([k, v]) => [k, v as ReadonlySet<ReportFormatId>]),
+      [...acc.assertionFormatsByProvider].map(([k, v]) => [k, v as ReadonlySet<ReportFormatId>]),
     ),
     aggregateFormatsByProvider: new Map(
-      [...aggregateFormatsByProvider].map(([k, v]) => [k, v as ReadonlySet<ReportFormatId>]),
+      [...acc.aggregateFormatsByProvider].map(([k, v]) => [k, v as ReadonlySet<ReportFormatId>]),
     ),
-    descriptorByProvider,
-    descriptorByDetection,
-    profiles,
+    descriptorByProvider: acc.descriptorByProvider,
+    descriptorByDetection: acc.descriptorByDetection,
+    profiles: acc.profiles,
     profilesByProvider: new Map(
-      [...profilesByProvider].map(([k, v]) => [k, v as readonly ExecutionProfile[]]),
+      [...acc.profilesByProvider].map(([k, v]) => [k, v as readonly ExecutionProfile[]]),
     ),
-    runtimeRequirementsByProvider,
-    scriptSignaturesByProvider,
-    reportTemplatesByProvider,
+    runtimeRequirementsByProvider: acc.runtimeRequirementsByProvider,
+    scriptSignaturesByProvider: acc.scriptSignaturesByProvider,
+    reportTemplatesByProvider: acc.reportTemplatesByProvider,
     profilesById,
   };
+}
+
+export function buildProviderRegistry(
+  extensions: readonly AssertionProviderExtension[],
+): ProviderRegistry {
+  const acc = emptyRegistryAccumulator();
+
+  for (const ext of extensions) {
+    registerProviderExtension(acc, ext);
+  }
+
+  acc.profiles.sort((a, b) => a.priority - b.priority);
+
+  const profilesById = collectProfilesById(acc.profiles);
+
+  return toProviderRegistry(extensions, acc, profilesById);
 }
 
 // ─── Singleton Default Registry ──────────────────────────────────────────────

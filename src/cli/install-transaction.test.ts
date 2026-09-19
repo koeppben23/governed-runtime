@@ -4,11 +4,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  recoverOrAbort,
   recoveryActionForPhase,
   TransactionPhase,
   type DependencyTransaction,
-} from './install-transaction.js';
+} from './install-transaction-journal.js';
+import { recoverOrAbort } from './install-transaction-rollback.js';
 
 let testDir: string | undefined;
 

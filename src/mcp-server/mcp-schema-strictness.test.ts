@@ -26,10 +26,10 @@ import { createMcpServer } from './server.js';
 interface ListedTool {
   readonly name: string;
   readonly inputSchema: {
-    readonly type?: string;
+    readonly type?: string | undefined;
     readonly additionalProperties?: unknown;
-    readonly required?: readonly string[];
-    readonly properties?: Record<string, unknown>;
+    readonly required?: readonly string[] | undefined;
+    readonly properties?: Record<string, unknown> | undefined;
   };
 }
 

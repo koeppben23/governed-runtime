@@ -313,7 +313,9 @@ export function findBindableAttempt(
   const candidates = (base.attempts ?? []).filter(
     (a) => a.obligationId === obligationId && a.status === 'created' && !a.childSessionId,
   );
-  return candidates.length === 1 ? candidates[0]! : null;
+  const [candidate] = candidates;
+  if (candidates.length !== 1 || candidate === undefined) return null;
+  return candidate;
 }
 
 // ─── Dispatch-rearm budget ───────────────────────────────────────────────────

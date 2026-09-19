@@ -238,40 +238,37 @@ export async function extractArtifactsFromPomXml(
   }
 }
 
-/**
- * Extract tool/testFramework/qualityTool artifacts from build.gradle(.kts).
- *
- * Scans plugin declarations and dependency configurations for known artifacts.
- * Runs AFTER pom.xml extraction — Maven is authoritative; Gradle values are
- * only added for IDs not already detected (first-write-wins across files).
- */
-export async function extractArtifactsFromGradle(
+/** Detected-item arrays grouped for Gradle artifact extraction helpers. */
+interface GradleTargetArrays {
+  readonly testFrameworks: DetectedItem[];
+  readonly tools: DetectedItem[];
+  readonly qualityTools: DetectedItem[];
+  readonly databases: DetectedItem[];
+}
+
+interface ResolvedGradleBuildFile {
+  readonly content: string;
+  readonly file: string;
+}
+
+async function resolveGradleBuildFile(
   readFile: ReadFileFn,
-  testFrameworks: DetectedItem[],
-  tools: DetectedItem[],
-  qualityTools: DetectedItem[],
-  databases: DetectedItem[],
-): Promise<void> {
-  let content: string | undefined;
-  let file: string | undefined;
-
+): Promise<ResolvedGradleBuildFile | null> {
   for (const candidate of ['build.gradle.kts', 'build.gradle']) {
-    content = await safeRead(readFile, candidate);
-    if (content) {
-      file = candidate;
-      break;
-    }
+    const content = await safeRead(readFile, candidate);
+    if (content) return { content, file: candidate };
   }
-  if (!content || !file) return;
+  return null;
+}
 
-  // ── Plugin declarations with explicit version ──────────────────────────
+function applyGradlePluginRules(content: string, file: string, targets: GradleTargetArrays): void {
   for (const rule of GRADLE_PLUGIN_RULES) {
     const targetArray = resolveTargetArray(
       rule.category,
-      testFrameworks,
-      tools,
-      qualityTools,
-      databases,
+      targets.testFrameworks,
+      targets.tools,
+      targets.qualityTools,
+      targets.databases,
     );
     if (findItem(targetArray, rule.id)) continue; // first-match-wins
 
@@ -298,15 +295,20 @@ export async function extractArtifactsFromGradle(
       }
     }
   }
+}
 
-  // ── Dependency declarations: "group:artifact:version" or "group:artifact" ──
+function applyGradleDependencyRules(
+  content: string,
+  file: string,
+  targets: GradleTargetArrays,
+): void {
   for (const rule of GRADLE_DEPENDENCY_RULES) {
     const targetArray = resolveTargetArray(
       rule.category,
-      testFrameworks,
-      tools,
-      qualityTools,
-      databases,
+      targets.testFrameworks,
+      targets.tools,
+      targets.qualityTools,
+      targets.databases,
     );
     if (findItem(targetArray, rule.id)) continue; // first-match-wins
 
@@ -321,6 +323,32 @@ export async function extractArtifactsFromGradle(
       enrichDetectedItem(targetArray, rule.id, `${file}:dependency.${rule.artifact}`, depMatch[1]);
     }
   }
+}
+
+/**
+ * Extract tool/testFramework/qualityTool artifacts from build.gradle(.kts).
+ *
+ * Scans plugin declarations and dependency configurations for known artifacts.
+ * Runs AFTER pom.xml extraction — Maven is authoritative; Gradle values are
+ * only added for IDs not already detected (first-write-wins across files).
+ */
+export async function extractArtifactsFromGradle(
+  readFile: ReadFileFn,
+  testFrameworks: DetectedItem[],
+  tools: DetectedItem[],
+  qualityTools: DetectedItem[],
+  databases: DetectedItem[],
+): Promise<void> {
+  const resolved = await resolveGradleBuildFile(readFile);
+  if (resolved === null) return;
+
+  const targets: GradleTargetArrays = { testFrameworks, tools, qualityTools, databases };
+
+  // ── Plugin declarations with explicit version ──────────────────────────
+  applyGradlePluginRules(resolved.content, resolved.file, targets);
+
+  // ── Dependency declarations: "group:artifact:version" or "group:artifact" ──
+  applyGradleDependencyRules(resolved.content, resolved.file, targets);
 }
 
 /**

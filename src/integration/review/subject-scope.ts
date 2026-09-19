@@ -16,6 +16,7 @@ import { assessMinimumTaskClass, maxTaskClass } from '../phase-tool-gate.js';
 import { challengeKindForObligation, type ChallengeKind } from '../../config/policy-types.js';
 import type { PolicySnapshot } from '../../state/evidence.js';
 import type { ReviewObligationType } from '../../state/evidence.js';
+import { IntegrationInvariantError } from '../errors.js';
 
 /**
  * Pre-implementation artifact reviews (plan, ADR) MUST mint an explicit
@@ -31,7 +32,8 @@ export function requireArtifactSubjectScope(
     (obligationType === 'plan' || obligationType === 'architecture') &&
     reviewSubjectScope?.kind !== 'artifact'
   ) {
-    throw new Error(
+    throw new IntegrationInvariantError(
+      'REVIEW_ARTIFACT_SCOPE_REQUIRED',
       'FAIL_CLOSED: plan/architecture review obligations require an explicit artifact ' +
         'reviewSubjectScope.',
     );
@@ -54,13 +56,15 @@ export function requireImplementationSubjectScope(
 ): void {
   if (obligationType !== 'implement') return;
   if (reviewSubjectScope?.kind !== 'implementation') {
-    throw new Error(
+    throw new IntegrationInvariantError(
+      'REVIEW_IMPLEMENTATION_SCOPE_REQUIRED',
       'FAIL_CLOSED: implement review obligations require an explicit implementation ' +
         'reviewSubjectScope bound to the implementation subject digest.',
     );
   }
   if (reviewSubjectScope.implementationDigest !== subjectDigest) {
-    throw new Error(
+    throw new IntegrationInvariantError(
+      'REVIEW_SUBJECT_DIGEST_MISMATCH',
       'FAIL_CLOSED: implementation reviewSubjectScope digest does not match the ' +
         'obligation subject digest.',
     );

@@ -7,6 +7,7 @@ import { lstat, readFile, readdir, rename, rmdir, unlink, writeFile } from 'node
 import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
+import { CliInstallError } from './errors.js';
 import type { FileOp, InstallScope } from './install-types.js';
 import {
   claudeCodePluginInstallHint,
@@ -148,6 +149,87 @@ function isFlowGuardMarketplaceEntry(entry: CodexMarketplaceEntry, scope: Instal
   );
 }
 
+async function acquireMarketplaceUninstallLock(lockPath: string, token: string): Promise<void> {
+  try {
+    await writeFile(lockPath, JSON.stringify({ pid: process.pid, token }), { flag: 'wx' });
+  } catch (err) {
+    if (isErrno(err, 'EEXIST')) {
+      throw new CliInstallError(
+        'CODEX_MARKETPLACE_LOCKED',
+        'Codex marketplace is locked by another process.',
+      );
+    }
+    throw err;
+  }
+}
+
+function releaseMarketplaceUninstallLock(lockPath: string, token: string): void {
+  try {
+    const raw = readFileSync(lockPath, 'utf-8');
+    const parsed: { token?: string } = JSON.parse(raw);
+    if (parsed.token === token) unlinkSync(lockPath);
+  } catch {
+    // Lock cleanup is best effort during uninstall.
+  }
+}
+
+async function removeLockedMarketplaceEntry(
+  marketplacePath: string,
+  scope: InstallScope,
+): Promise<FileOp> {
+  const originalContent = await readFile(marketplacePath, 'utf-8');
+  const marketplace: { plugins?: CodexMarketplaceEntry[] } = JSON.parse(originalContent);
+  if (!Array.isArray(marketplace.plugins)) {
+    return { path: marketplacePath, action: 'skipped', reason: 'no plugins array' };
+  }
+
+  const matching = marketplace.plugins.filter((entry) => isFlowGuardMarketplaceEntry(entry, scope));
+  if (matching.length === 0) {
+    return {
+      path: marketplacePath,
+      action: 'skipped',
+      reason: 'no exact FlowGuard-owned Codex marketplace entry',
+    };
+  }
+  if (matching.length > 1) {
+    return {
+      path: marketplacePath,
+      action: 'skipped',
+      reason: 'ambiguous duplicate FlowGuard marketplace entries; preserved',
+    };
+  }
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  await writeFile(
+    `${marketplacePath}.flowguard-backup-${timestamp}-${randomUUID()}`,
+    originalContent,
+    { flag: 'wx' },
+  );
+
+  marketplace.plugins = marketplace.plugins.filter(
+    (entry) => !isFlowGuardMarketplaceEntry(entry, scope),
+  );
+
+  const tmpPath = `${marketplacePath}.tmp.${process.pid}.${randomUUID()}`;
+  try {
+    await writeFile(tmpPath, JSON.stringify(marketplace, null, 2) + '\n', { flag: 'wx' });
+    await rename(tmpPath, marketplacePath);
+  } catch (err) {
+    try {
+      await unlink(tmpPath);
+    } catch {
+      // best-effort temporary cleanup
+    }
+    throw err;
+  }
+
+  return {
+    path: marketplacePath,
+    action: 'merged',
+    reason: 'removed exact FlowGuard Codex entry',
+  };
+}
+
 async function removeCodexMarketplaceEntry(scope: InstallScope): Promise<FileOp> {
   const marketplacePath = resolveCodexMarketplacePath(scope);
 
@@ -160,79 +242,15 @@ async function removeCodexMarketplaceEntry(scope: InstallScope): Promise<FileOp>
   await ensureDir(dirname(marketplacePath));
   const lockPath = `${marketplacePath}.flowguard.lock`;
   const token = randomUUID();
-  try {
-    await writeFile(lockPath, JSON.stringify({ pid: process.pid, token }), { flag: 'wx' });
-  } catch (err) {
-    if (err instanceof Error && 'code' in err && err.code === 'EEXIST') {
-      throw new Error('Codex marketplace is locked by another process.');
-    }
-    throw err;
-  }
+  await acquireMarketplaceUninstallLock(lockPath, token);
 
   try {
-    const originalContent = await readFile(marketplacePath, 'utf-8');
-    const marketplace = JSON.parse(originalContent) as { plugins?: CodexMarketplaceEntry[] };
-    if (!Array.isArray(marketplace.plugins)) {
-      return { path: marketplacePath, action: 'skipped', reason: 'no plugins array' };
-    }
-
-    const matching = marketplace.plugins.filter((entry) =>
-      isFlowGuardMarketplaceEntry(entry, scope),
-    );
-    if (matching.length === 0) {
-      return {
-        path: marketplacePath,
-        action: 'skipped',
-        reason: 'no exact FlowGuard-owned Codex marketplace entry',
-      };
-    }
-    if (matching.length > 1) {
-      return {
-        path: marketplacePath,
-        action: 'skipped',
-        reason: 'ambiguous duplicate FlowGuard marketplace entries; preserved',
-      };
-    }
-
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    await writeFile(
-      `${marketplacePath}.flowguard-backup-${timestamp}-${randomUUID()}`,
-      originalContent,
-      { flag: 'wx' },
-    );
-
-    marketplace.plugins = marketplace.plugins.filter(
-      (entry) => !isFlowGuardMarketplaceEntry(entry, scope),
-    );
-
-    const tmpPath = `${marketplacePath}.tmp.${process.pid}.${randomUUID()}`;
-    try {
-      await writeFile(tmpPath, JSON.stringify(marketplace, null, 2) + '\n', { flag: 'wx' });
-      await rename(tmpPath, marketplacePath);
-    } catch (err) {
-      try {
-        await unlink(tmpPath);
-      } catch {
-        // best-effort temporary cleanup
-      }
-      throw err;
-    }
-
-    return {
-      path: marketplacePath,
-      action: 'merged',
-      reason: 'removed exact FlowGuard Codex entry',
-    };
+    return await removeLockedMarketplaceEntry(marketplacePath, scope);
   } catch (err) {
     if (isErrno(err, 'ENOENT')) return { path: marketplacePath, action: 'not_found' };
     throw err;
   } finally {
-    try {
-      const raw = readFileSync(lockPath, 'utf-8');
-      if (JSON.parse(raw).token === token) unlinkSync(lockPath);
-    } catch {
-      // Lock cleanup is best effort during uninstall.
-    }
+    releaseMarketplaceUninstallLock(lockPath, token);
   }
 }
 

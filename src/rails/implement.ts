@@ -140,7 +140,10 @@ export async function executeImplement(
   const plan = state.plan;
   const loop = await runConvergenceLoop(currentImpl, maxIterations, async (impl, iter) => {
     const review = await executors.reviewAndRevise(impl, plan, iter);
-    return { verdict: review.verdict, updated: review.updatedImpl };
+    return {
+      verdict: review.verdict,
+      ...(review.updatedImpl !== undefined ? { updated: review.updatedImpl } : {}),
+    };
   });
 
   if (loop.kind === 'blocked') {

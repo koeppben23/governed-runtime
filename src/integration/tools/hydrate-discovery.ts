@@ -81,8 +81,12 @@ export async function runRequiredDiscovery(
       allFiles: repoSignals.files,
       packageFiles: repoSignals.packageFiles,
       configFiles: repoSignals.configFiles,
-      packageFilePaths: repoSignals.packageFilePaths,
-      configFilePaths: repoSignals.configFilePaths,
+      ...(repoSignals.packageFilePaths !== undefined
+        ? { packageFilePaths: repoSignals.packageFilePaths }
+        : {}),
+      ...(repoSignals.configFilePaths !== undefined
+        ? { configFilePaths: repoSignals.configFilePaths }
+        : {}),
     });
   } catch (err) {
     throwHydrateError(

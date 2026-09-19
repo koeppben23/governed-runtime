@@ -128,9 +128,9 @@ export class BlockedReasonRegistry {
       code: reason.code,
       reason: interpolate(reason.code, reason.messageTemplate, vars, this.warn),
       recovery: reason.recoverySteps.map((step) => interpolate(reason.code, step, vars, this.warn)),
-      quickFix: reason.quickFixCommand
-        ? interpolate(reason.code, reason.quickFixCommand, vars, this.warn)
-        : undefined,
+      ...(reason.quickFixCommand
+        ? { quickFix: interpolate(reason.code, reason.quickFixCommand, vars, this.warn) }
+        : {}),
     };
   }
 
@@ -173,6 +173,6 @@ export function blocked(
     code: formatted.code,
     reason: formatted.reason,
     recovery: formatted.recovery,
-    quickFix: formatted.quickFix,
+    ...(formatted.quickFix !== undefined ? { quickFix: formatted.quickFix } : {}),
   };
 }

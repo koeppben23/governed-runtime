@@ -92,32 +92,55 @@ export function buildPlanReviewCard(
 
 /** Build the typed plan-review document before Markdown rendering. */
 export function buildPlanReviewDocument(input: PlanReviewCardInput): ReviewCardDocument {
-  const { planText, phaseLabel, directive, planVersion, policyMode, taskTitle } = input;
+  const sections: PresentationSection[] = [
+    { kind: 'title', text: 'FlowGuard Plan Review' },
+    buildPlanMetadataSection(input),
+  ];
 
-  const sections: PresentationSection[] = [];
+  sections.push(...buildPlanWarningNotices(input));
 
-  // ── Title ──────────────────────────────────────────────────────────
-  sections.push({ kind: 'title', text: 'FlowGuard Plan Review' });
+  const provenance = buildPlanProvenanceSection(input);
+  if (provenance) sections.push(provenance);
 
-  // ── Metadata ───────────────────────────────────────────────────────
-  const metadata: KeyValueItem[] = [{ label: 'Status', value: phaseLabel }];
+  sections.push(buildProofGraphSection(input.proofSummary));
+
+  const declarations = buildPlanClaimDeclarationsSection(input);
+  if (declarations) sections.push(declarations);
+
+  sections.push({
+    kind: 'embeddedMarkdown',
+    heading: 'Proposed Plan',
+    content: input.planText,
+  });
+
+  return buildPlanReviewDocumentShell(input, sections);
+}
+
+function buildPlanMetadataSection(input: PlanReviewCardInput): PresentationSection {
+  const metadata: KeyValueItem[] = [{ label: 'Status', value: input.phaseLabel }];
+  const { planVersion } = input;
   if (planVersion !== undefined && Number.isInteger(planVersion) && planVersion > 0) {
     metadata.push({ label: 'Plan version', value: `v${planVersion}` });
   }
-  if (policyMode) {
-    metadata.push({ label: 'Policy', value: policyMode });
+  if (input.policyMode) {
+    metadata.push({ label: 'Policy', value: input.policyMode });
   }
-  if (taskTitle) {
-    metadata.push({ label: 'Task', value: taskTitle });
+  if (input.taskTitle) {
+    metadata.push({ label: 'Task', value: input.taskTitle });
   }
-  sections.push({ kind: 'keyValue', items: metadata });
+  return { kind: 'keyValue', items: metadata };
+}
 
-  // ── Force-convergence warning ──────────────────────────────────────
-  // The loop hit its iteration budget without the reviewer approving. Surface
-  // this unmistakably — the human gate must be a deliberate decision, never a
-  // rubber-stamp of an unreviewed plan.
+/**
+ * Warning notices: force-convergence (the loop hit its iteration budget without
+ * the reviewer approving) and the prior-revision provenance mismatch. The human
+ * gate must be a deliberate decision, never a rubber-stamp of an unreviewed plan.
+ * Both notices may apply to the same card and render in this order.
+ */
+function buildPlanWarningNotices(input: PlanReviewCardInput): PresentationSection[] {
+  const notices: PresentationSection[] = [];
   if (input.forcedConvergence) {
-    sections.push({
+    notices.push({
       kind: 'notice',
       level: 'warning',
       message: 'Reviewer did NOT approve this plan.',
@@ -128,14 +151,12 @@ export function buildPlanReviewDocument(input: PlanReviewCardInput): ReviewCardD
       details: [],
     });
   }
-
-  // ── Prior-revision provenance mismatch ─────────────────────────────
   if (
     input.reviewedDigest &&
     input.currentPlanDigest &&
     input.reviewedDigest !== input.currentPlanDigest
   ) {
-    sections.push({
+    notices.push({
       kind: 'notice',
       level: 'warning',
       message: 'These reviewer findings apply to a prior plan revision.',
@@ -148,44 +169,41 @@ export function buildPlanReviewDocument(input: PlanReviewCardInput): ReviewCardD
       details: [],
     });
   }
+  return notices;
+}
 
-  // ── Review provenance details ─────────────────────────────────────
-  if (input.reviewedDigest) {
-    const provenance: KeyValueItem[] = [];
-    provenance.push({ label: 'Reviewed plan digest', value: `\`${input.reviewedDigest}\`` });
-    if (input.reviewedObligationId) {
-      provenance.push({
-        label: 'Reviewed obligation',
-        value: `\`${input.reviewedObligationId}\``,
-      });
-    }
-    sections.push({ kind: 'keyValue', heading: 'Review Provenance', items: provenance });
-  }
-
-  // ── Proof obligations (pre-approval) ───────────────────────────────
-  sections.push(buildProofGraphSection(input.proofSummary));
-
-  if (input.claimDeclarations) {
-    sections.push({
-      kind: 'embeddedMarkdown',
-      heading: 'Claim Declarations Under Approval',
-      content: renderPlanClaimDeclarations(input.claimDeclarations),
+function buildPlanProvenanceSection(input: PlanReviewCardInput): PresentationSection | undefined {
+  if (!input.reviewedDigest) return undefined;
+  const provenance: KeyValueItem[] = [];
+  provenance.push({ label: 'Reviewed plan digest', value: `\`${input.reviewedDigest}\`` });
+  if (input.reviewedObligationId) {
+    provenance.push({
+      label: 'Reviewed obligation',
+      value: `\`${input.reviewedObligationId}\``,
     });
   }
+  return { kind: 'keyValue', heading: 'Review Provenance', items: provenance };
+}
 
-  // ── Plan Body (verbatim) ───────────────────────────────────────────
-  sections.push({
+function buildPlanClaimDeclarationsSection(
+  input: PlanReviewCardInput,
+): PresentationSection | undefined {
+  if (!input.claimDeclarations) return undefined;
+  return {
     kind: 'embeddedMarkdown',
-    heading: 'Proposed Plan',
-    content: planText,
-  });
-
-  const document: ReviewCardDocument = {
-    kind: 'review_card',
-    form: directive.kind === 'human_gate' ? 'decision' : 'terminal',
-    sections,
-    conclusion: buildReviewDecisionConclusion(directive, PLAN_ACTION_DESCRIPTIONS),
+    heading: 'Claim Declarations Under Approval',
+    content: renderPlanClaimDeclarations(input.claimDeclarations),
   };
+}
 
-  return document;
+function buildPlanReviewDocumentShell(
+  input: PlanReviewCardInput,
+  sections: PresentationSection[],
+): ReviewCardDocument {
+  return {
+    kind: 'review_card',
+    form: input.directive.kind === 'human_gate' ? 'decision' : 'terminal',
+    sections,
+    conclusion: buildReviewDecisionConclusion(input.directive, PLAN_ACTION_DESCRIPTIONS),
+  };
 }

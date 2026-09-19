@@ -214,7 +214,9 @@ export function resolveEvidenceAuthorizingAttempt(
       a.childSessionId === childSessionId &&
       EVIDENCE_AUTHORIZING_ATTEMPT_STATUSES.has(a.status),
   );
-  return eligible.length === 1 ? eligible[0]! : null;
+  if (eligible.length !== 1) return null;
+  const [eligibleAttempt] = eligible;
+  return eligibleAttempt === undefined ? null : eligibleAttempt;
 }
 
 export function updateAttemptStatus(

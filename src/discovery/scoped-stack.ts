@@ -11,6 +11,13 @@
 import type { DetectedItem } from './types.js';
 import type { DetectedStackTarget } from '../state/discovery-schemas.js';
 import { normalizeRepoSignalPath } from './repo-paths.js';
+import {
+  extractScopePath,
+  readNestedManifestFacts,
+  type ReadFileFn,
+  type ScopeFact,
+  type ScopedFactWithEvidence,
+} from './scoped-stack-extractors.js';
 
 /** Maximum number of scopes to return (budget limit). */
 const MAX_SCOPES = 20;
@@ -18,92 +25,13 @@ const MAX_SCOPES = 20;
 /** Maximum number of items per scope (budget limit). */
 const MAX_ITEMS_PER_SCOPE = 25;
 
-/** Directories to ignore when detecting module roots. */
-const IGNORED_DIRS = new Set([
-  'examples',
-  'example',
-  'fixtures',
-  'fixture',
-  'test',
-  'tests',
-  'docs',
-  'scripts',
-]);
-
-/** Manifest files that indicate a module root. */
-const SCOPE_INDICATORS = [
-  { pattern: /^([^/]+)\/package\.json$/, type: 'package' },
-  { pattern: /^([^/]+)\/pom\.xml$/, type: 'maven' },
-  { pattern: /^([^/]+)\/build\.gradle(\.kts)?$/, type: 'gradle' },
-  { pattern: /^([^/]+)\/Cargo\.toml$/, type: 'rust' },
-  { pattern: /^([^/]+)\/pyproject\.toml$/, type: 'python' },
-  { pattern: /^([^/]+)\/\.python-version$/, type: 'python' },
-  { pattern: /^([^/]+)\/go\.mod$/, type: 'go' },
-  { pattern: /^([^/]+)\/docker-compose.*\.ya?ml$/, type: 'compose' },
-] as const;
-
-/** Extended indicators for nested paths (depth 2). */
-const NESTED_SCOPE_INDICATORS = [
-  { pattern: /^([^/]+)\/([^/]+)\/package\.json$/, type: 'package' },
-  { pattern: /^([^/]+)\/([^/]+)\/pom\.xml$/, type: 'maven' },
-  { pattern: /^([^/]+)\/([^/]+)\/build\.gradle(\.kts)?$/, type: 'gradle' },
-  { pattern: /^([^/]+)\/([^/]+)\/Cargo\.toml$/, type: 'rust' },
-  { pattern: /^([^/]+)\/([^/]+)\/pyproject\.toml$/, type: 'python' },
-  { pattern: /^([^/]+)\/([^/]+)\/go\.mod$/, type: 'go' },
-  { pattern: /^([^/]+)\/([^/]+)\/docker-compose.*\.ya?ml$/, type: 'compose' },
-] as const;
-
-/** Extended indicators for deeper nested paths (depth 3). */
-const DEEP_NESTED_SCOPE_INDICATORS = [
-  { pattern: /^([^/]+)\/([^/]+)\/([^/]+)\/package\.json$/, type: 'package' },
-  { pattern: /^([^/]+)\/([^/]+)\/([^/]+)\/pom\.xml$/, type: 'maven' },
-  { pattern: /^([^/]+)\/([^/]+)\/([^/]+)\/build\.gradle(\.kts)?$/, type: 'gradle' },
-  { pattern: /^([^/]+)\/([^/]+)\/([^/]+)\/Cargo\.toml$/, type: 'rust' },
-  { pattern: /^([^/]+)\/([^/]+)\/([^/]+)\/pyproject\.toml$/, type: 'python' },
-  { pattern: /^([^/]+)\/([^/]+)\/([^/]+)\/go\.mod$/, type: 'go' },
-  { pattern: /^([^/]+)\/([^/]+)\/([^/]+)\/docker-compose.*\.ya?ml$/, type: 'compose' },
-] as const;
-
-/**
- * Extract the scope path from a file path.
- * Returns null if the path is not a recognized module indicator or is in an ignored directory.
- */
-function extractScopePath(filePath: string): string | null {
-  for (const indicator of SCOPE_INDICATORS) {
-    const match = filePath.match(indicator.pattern);
-    if (match && !IGNORED_DIRS.has(match[1]!)) {
-      return match[1]!;
-    }
-  }
-
-  for (const indicator of NESTED_SCOPE_INDICATORS) {
-    const match = filePath.match(indicator.pattern);
-    if (match && !IGNORED_DIRS.has(match[1]!) && !IGNORED_DIRS.has(match[2]!)) {
-      return `${match[1]!}/${match[2]!}`;
-    }
-  }
-
-  for (const indicator of DEEP_NESTED_SCOPE_INDICATORS) {
-    const match = filePath.match(indicator.pattern);
-    if (
-      match &&
-      !IGNORED_DIRS.has(match[1]!) &&
-      !IGNORED_DIRS.has(match[2]!) &&
-      !IGNORED_DIRS.has(match[3]!)
-    ) {
-      return `${match[1]!}/${match[2]!}/${match[3]!}`;
-    }
-  }
-
-  return null;
-}
-
 /**
  * Check if evidence originates from within a given scope path.
  */
 function isEvidenceInScope(evidence: string[], scopePath: string): boolean {
   for (const ev of evidence) {
-    const evPath = normalizeRepoSignalPath(ev.split(':')[0]!);
+    const [evidenceSource = ''] = ev.split(':');
+    const evPath = normalizeRepoSignalPath(evidenceSource);
     if (evPath.startsWith(scopePath + '/') || evPath === scopePath) {
       return true;
     }
@@ -111,250 +39,20 @@ function isEvidenceInScope(evidence: string[], scopePath: string): boolean {
   return false;
 }
 
-/** ReadFile function type. */
-type ReadFileFn = (relativePath: string) => Promise<string | undefined>;
-
-/**
- * Extract obvious facts from nested package.json content.
- */
-function extractFromNestedPackageJson(
-  content: string,
-): Array<{ id: string; kind: DetectedStackTarget; version?: string }> {
-  const facts: Array<{ id: string; kind: DetectedStackTarget; version?: string }> = [];
-
-  const extractNumericVersion = (raw: string | undefined): string | undefined =>
-    raw?.match(/(\d+(?:\.\d+)*)/)?.[1];
-
-  try {
-    const pkg = JSON.parse(content);
-    const deps = { ...pkg.dependencies, ...pkg.devDependencies } as Record<string, string>;
-    const packageManager = pkg.packageManager;
-
-    if (pkg.engines?.node) {
-      const nodeVersion = extractNumericVersion(pkg.engines.node);
-      if (nodeVersion) {
-        facts.push({ id: 'node', kind: 'runtime', version: nodeVersion });
-      } else {
-        facts.push({ id: 'node', kind: 'runtime' });
-      }
-    }
-
-    if (deps.react) {
-      facts.push({ id: 'react', kind: 'framework', version: extractNumericVersion(deps.react) });
-    }
-    if (deps['react-dom']) {
-      facts.push({
-        id: 'react-dom',
-        kind: 'framework',
-        version: extractNumericVersion(deps['react-dom']),
-      });
-    }
-    if (deps.vue) {
-      facts.push({ id: 'vue', kind: 'framework', version: extractNumericVersion(deps.vue) });
-    }
-    if (deps.next) {
-      facts.push({ id: 'next', kind: 'framework', version: extractNumericVersion(deps.next) });
-    }
-    if (deps['@angular/core']) {
-      facts.push({ id: 'angular', kind: 'framework' });
-    }
-    if (deps.vite) {
-      facts.push({ id: 'vite', kind: 'buildTool' });
-    }
-    if (deps.esbuild) {
-      facts.push({ id: 'esbuild', kind: 'tool' });
-    }
-    if (deps.typescript) {
-      facts.push({ id: 'typescript', kind: 'language' });
-    }
-    if (deps.jest) {
-      facts.push({ id: 'jest', kind: 'testFramework' });
-    }
-    if (deps.vitest) {
-      facts.push({ id: 'vitest', kind: 'testFramework' });
-    }
-    if (deps.mocha) {
-      facts.push({ id: 'mocha', kind: 'testFramework' });
-    }
-    if (deps.eslint) {
-      facts.push({ id: 'eslint', kind: 'qualityTool' });
-    }
-    if (deps.prettier) {
-      facts.push({ id: 'prettier', kind: 'qualityTool' });
-    }
-
-    if (packageManager) {
-      const pm = packageManager.replace(/@.*$/, '').toLowerCase();
-      if (['pnpm', 'yarn', 'npm', 'bun'].includes(pm)) {
-        facts.push({ id: pm, kind: 'buildTool' });
-      }
-    }
-  } catch {
-    // Invalid JSON, skip
+function appendScopedFacts(
+  scopeFacts: Map<string, ScopedFactWithEvidence[]>,
+  scopePath: string,
+  facts: readonly ScopeFact[],
+  evidence: string,
+): void {
+  let scopedFacts = scopeFacts.get(scopePath);
+  if (scopedFacts === undefined) {
+    scopedFacts = [];
+    scopeFacts.set(scopePath, scopedFacts);
   }
-
-  return facts;
-}
-
-/**
- * Extract obvious facts from nested pom.xml content.
- */
-function extractFromNestedPomXml(
-  content: string,
-): Array<{ id: string; kind: DetectedStackTarget; version?: string }> {
-  const facts: Array<{ id: string; kind: DetectedStackTarget; version?: string }> = [];
-
-  facts.push({ id: 'maven', kind: 'buildTool' });
-
-  const javaVersionMatch = content.match(/<java\.version>([^<]+)<\/java\.version>/);
-  if (javaVersionMatch) {
-    facts.push({ id: 'java', kind: 'language', version: javaVersionMatch[1] });
+  for (const fact of facts) {
+    scopedFacts.push({ ...fact, evidence });
   }
-
-  const parentBlockMatch = content.match(
-    /<parent>[\s\S]*?<groupId>([^<]+)<\/groupId>[\s\S]*?<artifactId>([^<]+)<\/artifactId>[\s\S]*?<version>([^<]+)<\/version>[\s\S]*?<\/parent>/,
-  );
-  if (parentBlockMatch) {
-    const [, parentGroupId, parentArtifactId, parentVersion] = parentBlockMatch;
-    if (
-      parentGroupId === 'org.springframework.boot' ||
-      parentArtifactId === 'spring-boot-starter-parent'
-    ) {
-      facts.push({ id: 'spring-boot', kind: 'framework', version: parentVersion });
-    }
-  }
-
-  if (content.includes('<maven.compiler.source>')) {
-    facts.push({ id: 'java', kind: 'language' });
-  }
-
-  if (
-    content.includes('<groupId>org.springframework.boot</groupId>') ||
-    content.includes('<artifactId>spring-boot</artifactId>')
-  ) {
-    facts.push({ id: 'spring-boot', kind: 'framework' });
-  }
-
-  if (
-    content.includes('<artifactId>maven</artifactId>') ||
-    content.includes('<artifactId>maven-compiler-plugin</artifactId>')
-  ) {
-    facts.push({ id: 'maven', kind: 'buildTool' });
-  }
-
-  if (
-    content.includes('<artifactId>gradle</artifactId>') ||
-    content.includes('gradle.plugin') ||
-    content.includes('com.github.gradle')
-  ) {
-    facts.push({ id: 'gradle', kind: 'buildTool' });
-  }
-
-  if (content.includes('<artifactId>junit</artifactId>')) {
-    facts.push({ id: 'junit', kind: 'testFramework' });
-  }
-  if (content.includes('<artifactId>testng</artifactId>')) {
-    facts.push({ id: 'testng', kind: 'testFramework' });
-  }
-
-  return facts;
-}
-
-/**
- * Extract obvious facts from nested Cargo.toml content.
- */
-function extractFromNestedCargoToml(
-  content: string,
-): Array<{ id: string; kind: DetectedStackTarget; version?: string }> {
-  const facts: Array<{ id: string; kind: DetectedStackTarget; version?: string }> = [];
-  if (content.includes('[package]')) {
-    facts.push({ id: 'rust', kind: 'language' });
-    facts.push({ id: 'cargo', kind: 'buildTool' });
-  }
-
-  if (content.includes('[dev-dependencies]') || content.includes('[dependencies]')) {
-    if (!facts.find((f) => f.id === 'rust')) {
-      facts.push({ id: 'rust', kind: 'language' });
-    }
-  }
-
-  return facts;
-}
-
-/**
- * Extract obvious facts from nested pyproject.toml content.
- */
-function extractFromNestedPyprojectToml(
-  content: string,
-): Array<{ id: string; kind: DetectedStackTarget; version?: string }> {
-  const facts: Array<{ id: string; kind: DetectedStackTarget; version?: string }> = [];
-
-  const requiresPython = content.match(/requires-python\s*=\s*"([^"]+)"/);
-  const pythonVersion = requiresPython?.[1]?.match(/(\d+)/)?.[1];
-  if (pythonVersion) {
-    facts.push({ id: 'python', kind: 'language', version: pythonVersion });
-  }
-
-  if (
-    content.includes('[project]') ||
-    content.includes('[tool.poetry]') ||
-    content.includes('[tool.hatch]')
-  ) {
-    facts.push({ id: 'python', kind: 'language' });
-  }
-
-  if (content.includes('[tool.pytest')) {
-    facts.push({ id: 'pytest', kind: 'testFramework' });
-  }
-  if (content.includes('[tool.ruff]')) {
-    facts.push({ id: 'ruff', kind: 'qualityTool' });
-  }
-  if (content.includes('[tool.black]')) {
-    facts.push({ id: 'black', kind: 'qualityTool' });
-  }
-  if (content.includes('[tool.mypy]')) {
-    facts.push({ id: 'mypy', kind: 'qualityTool' });
-  }
-
-  return facts;
-}
-
-/**
- * Extract database facts from nested docker-compose content.
- * Only extracts from explicit image: lines, not from arbitrary text matches.
- */
-function extractFromNestedDockerCompose(
-  content: string,
-): Array<{ id: string; kind: DetectedStackTarget; version?: string }> {
-  const facts: Array<{ id: string; kind: DetectedStackTarget; version?: string }> = [];
-
-  const imageMatches = content.matchAll(/^\s*image\s*:\s*['"]?([^'"\s]+)['"]?/gm);
-  for (const match of imageMatches) {
-    const imageRef = match[1]?.trim();
-    if (!imageRef || imageRef.includes('${')) continue;
-
-    const withoutDigest = imageRef.split('@')[0] ?? imageRef;
-    const lastSegment = withoutDigest.split('/').pop()?.toLowerCase();
-    if (!lastSegment) continue;
-
-    const [imageName, rawTag] = lastSegment.split(':');
-    let version: string | undefined;
-    if (rawTag && rawTag !== 'latest' && !rawTag.includes('${')) {
-      version = rawTag.match(/^(\d+(?:\.\d+)*)/)?.[1];
-    }
-
-    if (imageName === 'postgres' || imageName === 'postgresql') {
-      facts.push({ id: 'postgresql', kind: 'database', ...(version ? { version } : {}) });
-    } else if (imageName === 'mysql') {
-      facts.push({ id: 'mysql', kind: 'database', ...(version ? { version } : {}) });
-    } else if (imageName === 'mongo' || imageName === 'mongodb') {
-      facts.push({ id: 'mongodb', kind: 'database', ...(version ? { version } : {}) });
-    } else if (imageName === 'redis') {
-      facts.push({ id: 'redis', kind: 'database', ...(version ? { version } : {}) });
-    }
-  }
-
-  return facts;
 }
 
 /**
@@ -364,13 +62,8 @@ function extractFromNestedDockerCompose(
 async function detectNestedStackFacts(
   allFiles: readonly string[],
   readFile: ReadFileFn,
-): Promise<
-  Map<string, Array<{ id: string; kind: DetectedStackTarget; version?: string; evidence: string }>>
-> {
-  const scopeFacts = new Map<
-    string,
-    Array<{ id: string; kind: DetectedStackTarget; version?: string; evidence: string }>
-  >();
+): Promise<Map<string, ScopedFactWithEvidence[]>> {
+  const scopeFacts = new Map<string, ScopedFactWithEvidence[]>();
 
   for (const file of allFiles) {
     const normalizedPath = normalizeRepoSignalPath(file);
@@ -378,47 +71,9 @@ async function detectNestedStackFacts(
     if (!scopePath) continue;
 
     try {
-      let facts: Array<{ id: string; kind: DetectedStackTarget; version?: string }> = [];
-
-      if (normalizedPath.endsWith('/package.json')) {
-        const content = await readFile(normalizedPath);
-        if (content) {
-          facts = extractFromNestedPackageJson(content);
-        }
-      } else if (normalizedPath.endsWith('/pom.xml')) {
-        const content = await readFile(normalizedPath);
-        if (content) {
-          facts = extractFromNestedPomXml(content);
-        }
-      } else if (normalizedPath.endsWith('/Cargo.toml')) {
-        const content = await readFile(normalizedPath);
-        if (content) {
-          facts = extractFromNestedCargoToml(content);
-        }
-      } else if (normalizedPath.endsWith('/pyproject.toml')) {
-        const content = await readFile(normalizedPath);
-        if (content) {
-          facts = extractFromNestedPyprojectToml(content);
-        }
-      } else if (
-        /^docker-compose(?:[.-][a-z0-9_.-]+)?\.ya?ml$/.test(
-          normalizedPath.split('/').pop()?.toLowerCase() ?? '',
-        )
-      ) {
-        const content = await readFile(normalizedPath);
-        if (content) {
-          facts = extractFromNestedDockerCompose(content);
-        }
-      }
-
-      if (facts.length > 0) {
-        if (!scopeFacts.has(scopePath)) {
-          scopeFacts.set(scopePath, []);
-        }
-        for (const fact of facts) {
-          scopeFacts.get(scopePath)!.push({ ...fact, evidence: normalizedPath });
-        }
-      }
+      const facts = await readNestedManifestFacts(normalizedPath, readFile);
+      if (facts.length === 0) continue;
+      appendScopedFacts(scopeFacts, scopePath, facts, normalizedPath);
     } catch {
       // Skip files that can't be read
     }
@@ -454,6 +109,119 @@ function generateSummary(
   return sorted.map((item) => (item.version ? `${item.id}=${item.version}` : item.id)).join(', ');
 }
 
+/** Detected stack groups the scoped projection reads from. */
+interface DetectedStackGroups {
+  readonly languages: DetectedItem[];
+  readonly frameworks: DetectedItem[];
+  readonly buildTools: DetectedItem[];
+  readonly testFrameworks: DetectedItem[];
+  readonly runtimes: DetectedItem[];
+  readonly tools: DetectedItem[];
+  readonly qualityTools: DetectedItem[];
+  readonly databases: DetectedItem[];
+}
+
+/** One stack item paired with its detection category. */
+type StackItemWithCategory = { category: DetectedStackTarget; item: DetectedItem };
+
+/** A scoped item draft whose optional fields may be explicitly undefined. */
+interface ScopedItemDraft {
+  readonly kind: DetectedStackTarget;
+  readonly id: string;
+  readonly version: string | undefined;
+  readonly evidence: string | undefined;
+}
+
+function collectScopePaths(allFiles: readonly string[]): Map<string, Set<string>> {
+  const scopeMap = new Map<string, Set<string>>();
+  for (const file of allFiles) {
+    const normalizedPath = normalizeRepoSignalPath(file);
+    const scope = extractScopePath(normalizedPath);
+    if (!scope) continue;
+    const paths = scopeMap.get(scope);
+    if (paths) {
+      paths.add(normalizedPath);
+    } else {
+      scopeMap.set(scope, new Set([normalizedPath]));
+    }
+  }
+  return scopeMap;
+}
+
+function collectStackItems(stackInfo: DetectedStackGroups): StackItemWithCategory[] {
+  const groups: ReadonlyArray<readonly [DetectedStackTarget, readonly DetectedItem[]]> = [
+    ['language', stackInfo.languages],
+    ['framework', stackInfo.frameworks],
+    ['buildTool', stackInfo.buildTools],
+    ['testFramework', stackInfo.testFrameworks],
+    ['runtime', stackInfo.runtimes],
+    ['tool', stackInfo.tools],
+    ['qualityTool', stackInfo.qualityTools],
+    ['database', stackInfo.databases],
+  ];
+  const items: StackItemWithCategory[] = [];
+  for (const [category, group] of groups) {
+    for (const item of group) {
+      items.push({ category, item });
+    }
+  }
+  return items;
+}
+
+function pushScopedItem(
+  target: ScopedStackItem[],
+  seen: Set<string>,
+  draft: ScopedItemDraft,
+): void {
+  if (target.length >= MAX_ITEMS_PER_SCOPE) return;
+  const key = `${draft.kind}:${draft.id}`;
+  if (seen.has(key)) return;
+  seen.add(key);
+  target.push({
+    kind: draft.kind,
+    id: draft.id,
+    ...(draft.version !== undefined ? { version: draft.version } : {}),
+    ...(draft.evidence !== undefined ? { evidence: draft.evidence } : {}),
+  });
+}
+
+/** One projected scoped stack item. */
+type ScopedStackItem = {
+  kind: DetectedStackTarget;
+  id: string;
+  version?: string;
+  evidence?: string;
+};
+
+function collectScopedItems(
+  scopePath: string,
+  allItems: ReadonlyArray<StackItemWithCategory>,
+  nestedFacts: ReadonlyArray<ScopedFactWithEvidence> | undefined,
+): ScopedStackItem[] {
+  const scopedItems: ScopedStackItem[] = [];
+  const seenItems = new Set<string>();
+  for (const { category, item } of allItems) {
+    if (!isEvidenceInScope(item.evidence, scopePath)) continue;
+    pushScopedItem(scopedItems, seenItems, {
+      kind: category,
+      id: item.id,
+      version: item.version,
+      evidence: item.evidence[0],
+    });
+  }
+  if (nestedFacts) {
+    for (const fact of nestedFacts) {
+      pushScopedItem(scopedItems, seenItems, {
+        kind: fact.kind,
+        id: fact.id,
+        version: fact.version,
+        evidence: fact.evidence,
+      });
+    }
+  }
+  return scopedItems;
+}
+
 /**
  * Extract scoped stack items from a list of detected items based on allFiles.
  * Optionally detects nested manifest facts if readFile is provided.
@@ -483,110 +251,21 @@ export async function extractScopedStack(
     items: Array<{ kind: DetectedStackTarget; id: string; version?: string; evidence?: string }>;
   }>
 > {
-  const scopeMap = new Map<string, Set<string>>();
-
-  for (const file of allFiles) {
-    const normalizedPath = normalizeRepoSignalPath(file);
-    const scope = extractScopePath(normalizedPath);
-    if (scope) {
-      if (!scopeMap.has(scope)) {
-        scopeMap.set(scope, new Set());
-      }
-      scopeMap.get(scope)!.add(normalizedPath);
-    }
-  }
+  const scopeMap = collectScopePaths(allFiles);
 
   // Detect nested manifest facts if readFile is available
-  let nestedFacts: Map<
-    string,
-    Array<{ id: string; kind: DetectedStackTarget; version?: string; evidence: string }>
-  > = new Map();
+  let nestedFacts = new Map<string, ScopedFactWithEvidence[]>();
   if (readFile) {
     nestedFacts = await detectNestedStackFacts(allFiles, readFile);
   }
 
-  const allItems: Array<{ category: DetectedStackTarget; item: DetectedItem }> = [];
-  for (const item of stackInfo.languages) {
-    allItems.push({ category: 'language', item });
-  }
-  for (const item of stackInfo.frameworks) {
-    allItems.push({ category: 'framework', item });
-  }
-  for (const item of stackInfo.buildTools) {
-    allItems.push({ category: 'buildTool', item });
-  }
-  for (const item of stackInfo.testFrameworks) {
-    allItems.push({ category: 'testFramework', item });
-  }
-  for (const item of stackInfo.runtimes) {
-    allItems.push({ category: 'runtime', item });
-  }
-  for (const item of stackInfo.tools) {
-    allItems.push({ category: 'tool', item });
-  }
-  for (const item of stackInfo.qualityTools) {
-    allItems.push({ category: 'qualityTool', item });
-  }
-  for (const item of stackInfo.databases) {
-    allItems.push({ category: 'database', item });
-  }
-
-  const scopedResults: Array<{
-    path: string;
-    summary: string;
-    items: Array<{ kind: DetectedStackTarget; id: string; version?: string; evidence?: string }>;
-  }> = [];
-
+  const allItems = collectStackItems(stackInfo);
+  const scopedResults: Array<{ path: string; summary: string; items: ScopedStackItem[] }> = [];
   const scopePaths = Array.from(scopeMap.keys()).sort();
 
   for (const scopePath of scopePaths) {
     if (scopedResults.length >= MAX_SCOPES) break;
-
-    const scopedItems: Array<{
-      kind: DetectedStackTarget;
-      id: string;
-      version?: string;
-      evidence?: string;
-    }> = [];
-    const seenItems = new Set<string>();
-
-    // First: Add projected items from existing stackInfo
-    for (const { category, item } of allItems) {
-      if (isEvidenceInScope(item.evidence, scopePath)) {
-        if (scopedItems.length >= MAX_ITEMS_PER_SCOPE) continue;
-
-        const key = `${category}:${item.id}`;
-        if (seenItems.has(key)) continue;
-        seenItems.add(key);
-
-        scopedItems.push({
-          kind: category,
-          id: item.id,
-          version: item.version,
-          evidence: item.evidence[0],
-        });
-      }
-    }
-
-    // Second: Add nested manifest-detected facts
-    const nestedScopeFacts = nestedFacts.get(scopePath);
-    if (nestedScopeFacts) {
-      for (const fact of nestedScopeFacts) {
-        if (scopedItems.length >= MAX_ITEMS_PER_SCOPE) break;
-
-        const key = `${fact.kind}:${fact.id}`;
-        if (seenItems.has(key)) continue;
-        seenItems.add(key);
-
-        scopedItems.push({
-          kind: fact.kind,
-          id: fact.id,
-          version: fact.version,
-          evidence: fact.evidence,
-        });
-      }
-    }
-
+    const scopedItems = collectScopedItems(scopePath, allItems, nestedFacts.get(scopePath));
     if (scopedItems.length > 0) {
       scopedResults.push({
         path: scopePath,

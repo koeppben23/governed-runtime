@@ -9,9 +9,9 @@ import {
   ReviewAttempt,
   ReviewInvocationEvidence,
   ReviewAssuranceState,
-  ReviewDecision,
   ReviewInputFingerprintVersion,
 } from './evidence-review.js';
+import { ReviewDecision } from './evidence-review-report.js';
 import { FIXED_TIME, FIXED_UUID } from './evidence-test-constants.js';
 
 describe('Obligation repository authority coherence (schema refinement)', () => {

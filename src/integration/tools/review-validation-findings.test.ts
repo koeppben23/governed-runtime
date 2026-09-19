@@ -32,14 +32,25 @@ function makeFindings(overrides: Partial<ReviewFindings> = {}): ReviewFindings {
   };
 }
 
+type UndefinedableOverrides<T> = {
+  [K in keyof T]?: T[K] | undefined;
+};
+
 function makeCtx(
-  overrides: Partial<ReviewFindingsValidationContext> = {},
+  overrides: UndefinedableOverrides<ReviewFindingsValidationContext> = {},
 ): ReviewFindingsValidationContext {
-  return {
+  const context: ReviewFindingsValidationContext = {
     expectedPlanVersion: 1,
     expectedIteration: 0,
-    ...overrides,
   };
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === undefined) {
+      Reflect.deleteProperty(context, key);
+    } else {
+      Object.assign(context, { [key]: value });
+    }
+  }
+  return context;
 }
 
 function parseBlocked(result: string): { code: string; error: boolean; message: string } {
@@ -723,7 +734,7 @@ describe('validateReviewFindings — implementation challenge freshness', () => 
   }
 
   function challengeCtx(
-    overrides: Partial<ReviewFindingsValidationContext> = {},
+    overrides: UndefinedableOverrides<ReviewFindingsValidationContext> = {},
   ): ReviewFindingsValidationContext {
     return makeCtx({
       obligationType: 'implement',

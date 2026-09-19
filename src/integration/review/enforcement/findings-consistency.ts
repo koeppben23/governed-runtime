@@ -199,6 +199,80 @@ function relationFailureCode(
   return 'REVIEW_FINDING_SUBJECT_ANCHOR_REQUIRED';
 }
 
+type ParsedReviewSubjectScope = ReturnType<typeof ReviewSubjectScope.safeParse>;
+
+type ScopedRepositoryScope = Extract<
+  ReviewSubjectScopeValue,
+  { readonly kind: 'repository_change' }
+>;
+
+type FindingScopeClassification =
+  | { readonly kind: 'failure'; readonly result: ReviewFindingsScopeResult }
+  | { readonly kind: 'out_of_scope' }
+  | { readonly kind: 'in_scope' };
+
+function resolveRepositoryScope(
+  parsedScope: ParsedReviewSubjectScope | undefined,
+): ScopedRepositoryScope | undefined {
+  return parsedScope?.success && parsedScope.data.kind === 'repository_change'
+    ? parsedScope.data
+    : undefined;
+}
+
+function classifyFindingScope(
+  index: number,
+  relationCandidate: unknown,
+  parsedScope: ParsedReviewSubjectScope | undefined,
+  repositoryScope: ScopedRepositoryScope | undefined,
+  provenance: ReviewRepositoryRevisionProvenance | undefined,
+): FindingScopeClassification {
+  const relation = FindingRelation.safeParse(relationCandidate);
+  if (!relation.success) {
+    return {
+      kind: 'failure',
+      result: {
+        ok: false,
+        code: relationFailureCode(relationCandidate),
+        details: { outOfScopeFindingIndexes: [], reviewSubjectScope: parsedScope?.data },
+      },
+    };
+  }
+  if (hasUnavailableFrozenRepositoryRevision(relation.data, provenance)) {
+    return {
+      kind: 'failure',
+      result: {
+        ok: false,
+        code: 'REVIEW_REPOSITORY_REVISION_UNAVAILABLE',
+        details: { outOfScopeFindingIndexes: [index], reviewSubjectScope: parsedScope?.data },
+      },
+    };
+  }
+  if (!parsedScope || !parsedScope.success || parsedScope.data.kind === 'unavailable') {
+    return {
+      kind: 'failure',
+      result: {
+        ok: false,
+        code: 'REVIEW_SUBJECT_SCOPE_UNAVAILABLE',
+        details: { outOfScopeFindingIndexes: [], reviewSubjectScope: undefined },
+      },
+    };
+  }
+  if (repositoryScope && hasUnavailableScopedRepositoryRevision(relation.data, repositoryScope)) {
+    return {
+      kind: 'failure',
+      result: {
+        ok: false,
+        code: 'REVIEW_REPOSITORY_REVISION_UNAVAILABLE',
+        details: { outOfScopeFindingIndexes: [index], reviewSubjectScope: parsedScope.data },
+      },
+    };
+  }
+  if (!relationIntersectsScope(relation.data, parsedScope.data)) {
+    return { kind: 'out_of_scope' };
+  }
+  return { kind: 'in_scope' };
+}
+
 /**
  * Validate that every finding has a schema-valid relation and at least one
  * subject anchor in the frozen scope. Evidence locations are intentionally not
@@ -212,43 +286,18 @@ export function validateReviewFindingsScope(input: {
 }): ReviewFindingsScopeResult {
   const parsedScope =
     input.reviewSubjectScope && ReviewSubjectScope.safeParse(input.reviewSubjectScope);
-  const repositoryScope =
-    parsedScope?.success && parsedScope.data.kind === 'repository_change'
-      ? parsedScope.data
-      : undefined;
+  const repositoryScope = resolveRepositoryScope(parsedScope);
   const outOfScopeFindingIndexes: number[] = [];
   for (const [index, finding] of input.findings.entries()) {
-    const relation = FindingRelation.safeParse(finding.relation);
-    if (!relation.success) {
-      return {
-        ok: false,
-        code: relationFailureCode(finding.relation),
-        details: { outOfScopeFindingIndexes: [], reviewSubjectScope: parsedScope?.data },
-      };
-    }
-    if (hasUnavailableFrozenRepositoryRevision(relation.data, input.repositoryRevisionProvenance)) {
-      return {
-        ok: false,
-        code: 'REVIEW_REPOSITORY_REVISION_UNAVAILABLE',
-        details: { outOfScopeFindingIndexes: [index], reviewSubjectScope: parsedScope?.data },
-      };
-    }
-    if (!parsedScope || !parsedScope.success || parsedScope.data.kind === 'unavailable') {
-      return {
-        ok: false,
-        code: 'REVIEW_SUBJECT_SCOPE_UNAVAILABLE',
-        details: { outOfScopeFindingIndexes: [], reviewSubjectScope: undefined },
-      };
-    }
-    if (repositoryScope && hasUnavailableScopedRepositoryRevision(relation.data, repositoryScope)) {
-      return {
-        ok: false,
-        code: 'REVIEW_REPOSITORY_REVISION_UNAVAILABLE',
-        details: { outOfScopeFindingIndexes: [index], reviewSubjectScope: parsedScope.data },
-      };
-    }
-    if (!relationIntersectsScope(relation.data, parsedScope.data))
-      outOfScopeFindingIndexes.push(index);
+    const classification = classifyFindingScope(
+      index,
+      finding.relation,
+      parsedScope,
+      repositoryScope,
+      input.repositoryRevisionProvenance,
+    );
+    if (classification.kind === 'failure') return classification.result;
+    if (classification.kind === 'out_of_scope') outOfScopeFindingIndexes.push(index);
   }
 
   if (outOfScopeFindingIndexes.length > 0) {

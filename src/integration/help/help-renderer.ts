@@ -223,6 +223,6 @@ export function renderHelp(result: HelpResult, output: RenderOutput): string {
   }
 
   return renderMarkdown(buildHelpDocument(result, includeContent), {
-    glyphProfile: output.glyphProfile,
+    ...(output.glyphProfile !== undefined ? { glyphProfile: output.glyphProfile } : {}),
   });
 }

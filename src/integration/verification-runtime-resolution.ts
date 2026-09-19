@@ -24,7 +24,7 @@ export interface ResolvedRequirement {
   readonly id: string;
   readonly role: ProbeRole;
   readonly status: 'available' | 'missing' | 'unknown';
-  readonly version?: string;
+  readonly version?: string | undefined;
 }
 
 export interface ResolvedVerificationCandidate {
@@ -94,7 +94,7 @@ function buildProbeSpec(
     id: req.id,
     role: req.role,
     command: req.probe.command,
-    versionPattern: req.probe.versionPattern,
+    ...(req.probe.versionPattern !== undefined ? { versionPattern: req.probe.versionPattern } : {}),
   };
 }
 

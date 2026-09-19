@@ -474,7 +474,7 @@ describe('certificate integrity', () => {
     return {
       current: { digest: 'plan-digest', planVersion: 1, recordDigest: 'rec-digest' },
       claimDeclarations: declarations,
-      approvalCertificate: certificate,
+      ...(certificate !== undefined ? { approvalCertificate: certificate } : {}),
     };
   }
 

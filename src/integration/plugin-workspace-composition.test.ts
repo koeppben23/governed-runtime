@@ -97,7 +97,7 @@ function decisionReceipt(
 ) {
   return createDecisionEvent({
     flowguardSessionId,
-    hostSessionId,
+    ...(hostSessionId !== undefined ? { hostSessionId } : {}),
     gatePhase: 'PLAN_REVIEW',
     detail: {
       decisionId: `DEC-${decisionSequence}`,

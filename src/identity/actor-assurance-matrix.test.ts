@@ -143,7 +143,6 @@ describe('actor assurance matrix', () => {
       const policy = {
         ...getPolicyPreset('regulated'),
         identityProviderMode: 'required' as const,
-        identityProvider: undefined,
       };
       await expect(resolveActorForPolicy('/tmp/worktree', policy)).rejects.toMatchObject({
         code: 'ACTOR_IDP_CONFIG_REQUIRED',

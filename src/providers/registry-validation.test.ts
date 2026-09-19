@@ -20,11 +20,11 @@ describe('validateProviderExtensions', () => {
       ...pytestProvider,
       discovery: {
         ...pytestProvider.discovery,
-        executionProfiles: pytestProvider.discovery.executionProfiles.map((profile) =>
-          profile.profileId === 'pytest-junit-aggregate'
-            ? { ...profile, attestFullCheckScope: undefined }
-            : profile,
-        ),
+        executionProfiles: pytestProvider.discovery.executionProfiles.map((profile) => {
+          if (profile.profileId !== 'pytest-junit-aggregate') return profile;
+          const { attestFullCheckScope: _attestFullCheckScope, ...withoutAttestation } = profile;
+          return withoutAttestation;
+        }),
       },
     };
 

@@ -7,6 +7,7 @@
 import type { SessionState } from '../../state/schema.js';
 import type { ImplementRuntime } from './implement-shared.js';
 import type { ReviewAttempt, ReviewObligation } from '../../state/evidence.js';
+import { IntegrationInvariantError } from '../errors.js';
 import { enrichWithWorkflowDirective, formatBlocked, writeStateWithArtifacts } from './helpers.js';
 
 export async function handleUnableToReview(input: {
@@ -16,7 +17,13 @@ export async function handleUnableToReview(input: {
   retryObligation: ReviewObligation;
   retryAttempt: ReviewAttempt;
 }): Promise<string> {
-  const assurance = input.reviewedState.reviewAssurance!;
+  const assurance = input.reviewedState.reviewAssurance;
+  if (assurance === undefined) {
+    throw new IntegrationInvariantError(
+      'REVIEW_ASSURANCE_REQUIRED',
+      'unable-to-review retry requires review assurance on the reviewed state',
+    );
+  }
   const finalState: SessionState = {
     ...input.reviewedState,
     reviewAssurance: {

@@ -6,7 +6,7 @@
 
 import { z } from 'zod';
 
-export const MutationEpisode = z
+const MutationEpisodeBase = z
   .object({
     episodeId: z.string().uuid(),
     hostCallId: z.string().min(1),
@@ -26,60 +26,75 @@ export const MutationEpisode = z
     implementationDigest: z.string().min(1).nullable(),
     evidenceStatus: z.enum(['ineligible', 'eligible', 'stale']),
   })
-  .strict()
-  .superRefine((episode, context) => {
-    if (episode.status === 'dispatch_authorized') {
-      if (
-        episode.completedAt !== null ||
-        episode.outcome !== null ||
-        episode.implementationDigest !== null ||
-        episode.evidenceStatus !== 'ineligible'
-      ) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'dispatch_authorized mutation episodes cannot carry completed evidence',
-        });
-      }
-      return;
-    }
-    if (episode.completedAt === null || episode.outcome === null) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'completed mutation episodes require completion time and outcome',
-      });
-    }
-    // An unobservable outcome is not evidence. Binding it to an implementation
-    // digest would launder a missing host signal into `eligible` evidence that
-    // is indistinguishable from a confirmed success — the exact approximation
-    // the `unknown` classification exists to prevent. The state is made
-    // unrepresentable here so that EVERY write path fails closed, not just the
-    // binding path known today. Recovery is the append-only unknown-outcome
-    // resolution, which forces a fresh worktree recapture.
-    if (
-      episode.outcome === 'unknown' &&
-      (episode.implementationDigest !== null || episode.evidenceStatus !== 'ineligible')
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message:
-          'a mutation episode with an unobservable outcome cannot carry bound or eligible ' +
-          'evidence; it requires an unknown-outcome resolution and a fresh worktree recapture',
-      });
-    }
-    if (episode.implementationDigest === null && episode.evidenceStatus !== 'ineligible') {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'unbound completed mutation episodes are ineligible',
-      });
-    }
-    if (episode.implementationDigest !== null && episode.evidenceStatus === 'ineligible') {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'bound completed mutation episodes must be eligible or stale',
-      });
-    }
-  })
-  .readonly();
+  .strict();
+
+type MutationEpisodeShape = z.infer<typeof MutationEpisodeBase>;
+
+/** `dispatch_authorized` episodes carry no completed evidence. */
+function refineDispatchAuthorizedEpisode(
+  episode: MutationEpisodeShape,
+  context: z.RefinementCtx,
+): boolean {
+  if (episode.status !== 'dispatch_authorized') return false;
+  if (
+    episode.completedAt !== null ||
+    episode.outcome !== null ||
+    episode.implementationDigest !== null ||
+    episode.evidenceStatus !== 'ineligible'
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'dispatch_authorized mutation episodes cannot carry completed evidence',
+    });
+  }
+  return true;
+}
+
+function refineCompletedEpisode(episode: MutationEpisodeShape, context: z.RefinementCtx): void {
+  if (episode.completedAt === null || episode.outcome === null) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'completed mutation episodes require completion time and outcome',
+    });
+  }
+  // An unobservable outcome is not evidence. Binding it to an implementation
+  // digest would launder a missing host signal into `eligible` evidence that
+  // is indistinguishable from a confirmed success — the exact approximation
+  // the `unknown` classification exists to prevent. The state is made
+  // unrepresentable here so that EVERY write path fails closed, not just the
+  // binding path known today. Recovery is the append-only unknown-outcome
+  // resolution, which forces a fresh worktree recapture.
+  if (
+    episode.outcome === 'unknown' &&
+    (episode.implementationDigest !== null || episode.evidenceStatus !== 'ineligible')
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message:
+        'a mutation episode with an unobservable outcome cannot carry bound or eligible ' +
+        'evidence; it requires an unknown-outcome resolution and a fresh worktree recapture',
+    });
+  }
+  if (episode.implementationDigest === null && episode.evidenceStatus !== 'ineligible') {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'unbound completed mutation episodes are ineligible',
+    });
+  }
+  if (episode.implementationDigest !== null && episode.evidenceStatus === 'ineligible') {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'bound completed mutation episodes must be eligible or stale',
+    });
+  }
+}
+
+function refineMutationEpisode(episode: MutationEpisodeShape, context: z.RefinementCtx): void {
+  if (refineDispatchAuthorizedEpisode(episode, context)) return;
+  refineCompletedEpisode(episode, context);
+}
+
+export const MutationEpisode = MutationEpisodeBase.superRefine(refineMutationEpisode).readonly();
 export type MutationEpisode = z.infer<typeof MutationEpisode>;
 
 /**

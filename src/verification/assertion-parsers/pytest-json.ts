@@ -20,6 +20,7 @@ import type { ProviderId } from '../../state/evidence-validation.js';
 import type { AssertionIdentity } from '../../state/assertion-identity.js';
 import type { ParseContext, ParserResult } from './types.js';
 import { hashText } from '../../shared/hashing.js';
+import { VerificationError } from '../errors.js';
 
 interface PytestTest {
   nodeid: string;
@@ -48,27 +49,28 @@ export function buildPytestLocalId(nodeId: string): string {
   return nodeId;
 }
 
+function buildPytestCallFailure(
+  longrepr: string | undefined,
+): StructuredAssertionEvidence['failure'] {
+  if (!longrepr) return undefined;
+  return {
+    message: longrepr.split('\n')[0] || undefined,
+    detailDigest: hashText(longrepr),
+  };
+}
+
 function buildPytestFailure(
   test: PytestTest,
   status: StructuredAssertionEvidence['status'],
 ): StructuredAssertionEvidence['failure'] {
-  if (status === 'failed' && test.call?.longrepr) {
-    const longrepr = test.call.longrepr;
-    return {
-      message: longrepr.split('\n')[0] || undefined,
-      detailDigest: hashText(longrepr),
-    };
+  if (status === 'failed') {
+    return buildPytestCallFailure(test.call?.longrepr);
   }
   if (status === 'errored') {
     const setupErr = test.setup?.outcome === 'error' ? test.setup : undefined;
     const teardownErr = test.teardown?.outcome === 'error' ? test.teardown : undefined;
     const detail = setupErr ?? teardownErr;
-    if (detail && test.call?.longrepr) {
-      return {
-        message: test.call.longrepr.split('\n')[0] || undefined,
-        detailDigest: hashText(test.call.longrepr),
-      };
-    }
+    return detail ? buildPytestCallFailure(test.call?.longrepr) : undefined;
   }
   return undefined;
 }
@@ -106,7 +108,10 @@ export function parsePytestJson(jsonText: string, context: ParseContext): Parser
   try {
     report = JSON.parse(jsonText) as PytestJsonReport;
   } catch {
-    throw new Error('pytest_json: failed to parse JSON report');
+    throw new VerificationError(
+      'VERIFICATION_REPORT_PARSE_FAILED',
+      'pytest_json: failed to parse JSON report',
+    );
   }
 
   const tests = report?.tests;

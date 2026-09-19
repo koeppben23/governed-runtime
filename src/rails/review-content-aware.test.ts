@@ -333,12 +333,7 @@ describe('EDGE: empty and undefined input', () => {
   });
 
   it('all undefined fields returns null', async () => {
-    const result = await loadExternalContent({
-      text: undefined,
-      prNumber: undefined,
-      branch: undefined,
-      url: undefined,
-    });
+    const result = await loadExternalContent({});
     expect(result).toBeNull();
   });
 });

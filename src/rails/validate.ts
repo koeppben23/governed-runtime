@@ -113,7 +113,17 @@ function buildValidationResultState(
   results: ValidationResult[],
 ): SessionState {
   const allPassed = results.every((r) => r.passed);
-  const hasTechnicalBlock = results.some(isTechnicalValidationBlock);
+  const hasTechnicalBlock = results.some((result) =>
+    isTechnicalValidationBlock({
+      passed: result.passed,
+      outcome: result.outcome,
+      timedOut: result.timedOut,
+      exitCode: result.exitCode,
+      ...(result.assertionExtraction !== undefined
+        ? { assertionExtraction: result.assertionExtraction }
+        : {}),
+    }),
+  );
   // Only a proven artifact failure may clear approval authority. A technical
   // block (subject drift, infrastructure error, inconclusive extraction, or an
   // execution error) keeps the phase and all evidence for a retry.

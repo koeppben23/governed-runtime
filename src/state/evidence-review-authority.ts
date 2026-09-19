@@ -22,6 +22,7 @@
 
 import { z } from 'zod';
 import { GitSha, ReviewRepositoryIdentity } from './evidence-review-subject.js';
+import type { LocalRepositoryIdentity, RepositoryIdentity } from './evidence-review-subject.js';
 import type { ReviewRepositoryRevisionProvenance as ReviewRepositoryRevisionProvenanceValue } from './evidence-primitives.js';
 import { RepositoryPathSchema } from './evidence-findings.js';
 
@@ -205,9 +206,13 @@ export type RepositoryObservation = z.infer<typeof RepositoryObservation>;
 
 // ─── Authority Predicates and Resolution ───────────────────────────────────────
 
-/** Minimal structural obligation shape the authority predicates operate on. */
+/**
+ * Minimal structural obligation shape the authority predicates operate on.
+ * The property tolerates an explicit `undefined` because Zod-optional inputs
+ * may materialize the key with an undefined value.
+ */
 export interface RepositoryAuthorityCarrier {
-  readonly repositoryAuthority?: FrozenRepositoryAuthorityValue;
+  readonly repositoryAuthority?: FrozenRepositoryAuthorityValue | undefined;
 }
 
 /** True when the carrier holds frozen repository authority of any kind. */
@@ -273,51 +278,54 @@ export function verifyFrozenRepositoryAuthority(
   if (authority.kind === 'context') return null;
   const base = authority.base.repositoryIdentity;
   const head = authority.head.repositoryIdentity;
-  const baseIsLocal = 'kind' in base && base.kind === 'local';
-  const headIsLocal = 'kind' in head && head.kind === 'local';
+  const baseIsLocal = isLocalRepositoryIdentity(base);
+  const headIsLocal = isLocalRepositoryIdentity(head);
   if (baseIsLocal !== headIsLocal) {
     return `${authority.kind} revisions must share one repository identity kind`;
   }
-  if (authority.kind === 'fork_pair') {
-    if (baseIsLocal || headIsLocal) {
-      return 'fork_pair revisions must be remote repository identities';
-    }
-    const remoteBase = base as {
-      readonly host: string;
-      readonly owner: string;
-      readonly name: string;
-    };
-    const remoteHead = head as {
-      readonly host: string;
-      readonly owner: string;
-      readonly name: string;
-    };
-    if (remoteBase.host !== remoteHead.host) {
-      return 'fork_pair revisions must share one remote host';
-    }
-    return remoteBase.owner === remoteHead.owner && remoteBase.name === remoteHead.name
-      ? 'fork_pair revisions must name distinct repositories (use candidate_pair for one repository)'
-      : null;
+  return authority.kind === 'fork_pair'
+    ? verifyForkPairAuthority(base, head)
+    : verifyCandidatePairAuthority(base, head);
+}
+
+function isLocalRepositoryIdentity(
+  identity: ReviewRepositoryIdentity,
+): identity is LocalRepositoryIdentity {
+  return 'kind' in identity && identity.kind === 'local';
+}
+
+function isRemoteRepositoryIdentity(
+  identity: ReviewRepositoryIdentity,
+): identity is RepositoryIdentity {
+  return !('kind' in identity);
+}
+
+function verifyForkPairAuthority(
+  base: ReviewRepositoryIdentity,
+  head: ReviewRepositoryIdentity,
+): string | null {
+  if (!isRemoteRepositoryIdentity(base) || !isRemoteRepositoryIdentity(head)) {
+    return 'fork_pair revisions must be remote repository identities';
   }
-  if (baseIsLocal && headIsLocal) {
+  if (base.host !== head.host) {
+    return 'fork_pair revisions must share one remote host';
+  }
+  return base.owner === head.owner && base.name === head.name
+    ? 'fork_pair revisions must name distinct repositories (use candidate_pair for one repository)'
+    : null;
+}
+
+function verifyCandidatePairAuthority(
+  base: ReviewRepositoryIdentity,
+  head: ReviewRepositoryIdentity,
+): string | null {
+  if (isLocalRepositoryIdentity(base) && isLocalRepositoryIdentity(head)) {
     return base.rootCommitDigest === head.rootCommitDigest
       ? null
       : 'candidate_pair local identities must share one rootCommitDigest';
   }
-  if (!baseIsLocal && !headIsLocal) {
-    const remoteBase = base as {
-      readonly host: string;
-      readonly owner: string;
-      readonly name: string;
-    };
-    const remoteHead = head as {
-      readonly host: string;
-      readonly owner: string;
-      readonly name: string;
-    };
-    return remoteBase.host === remoteHead.host &&
-      remoteBase.owner === remoteHead.owner &&
-      remoteBase.name === remoteHead.name
+  if (isRemoteRepositoryIdentity(base) && isRemoteRepositoryIdentity(head)) {
+    return base.host === head.host && base.owner === head.owner && base.name === head.name
       ? null
       : 'candidate_pair revisions must share one remote repository identity';
   }

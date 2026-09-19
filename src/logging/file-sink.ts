@@ -95,6 +95,119 @@ function normalizeFileSinkOptions(options?: FileSinkOptions | number): {
   };
 }
 
+/** Mutable state shared by the file sink's module-scope helpers. */
+interface FileSinkRuntime {
+  readonly enabled: boolean;
+  readonly logDir: string;
+  readonly retentionDays: number;
+  readonly maxSizeBytes: number;
+  readonly onRotate: FileSinkOptions['onRotate'];
+  readonly onFailure: FileSinkOptions['onFailure'];
+  initialized: boolean;
+  initPromise: Promise<void> | null;
+}
+
+// Diagnostic callback failures are deliberately isolated from the original
+// sink failure. The sink rejection itself is the canonical health signal.
+function notifyFileSinkFailure(runtime: FileSinkRuntime, error: unknown): void {
+  try {
+    runtime.onFailure?.(error);
+  } catch {
+    // Never replace the original sink failure with an observer failure.
+  }
+}
+
+async function ensureLogDir(logDir: string): Promise<void> {
+  await mkdir(logDir, { recursive: true });
+}
+
+async function cleanupOldLogs(logDir: string, retentionDays: number): Promise<void> {
+  try {
+    const entries = await readdir(logDir);
+    const cutoffMs = retentionDays * 24 * 60 * 60 * 1000;
+    const cutoffTime = Date.now() - cutoffMs;
+
+    for (const entry of entries) {
+      if (!entry.startsWith(LOG_PREFIX)) continue;
+      if (!entry.endsWith(LOG_EXT)) continue;
+
+      const fileDate = parseLogFileDate(entry);
+      if (!fileDate) continue;
+
+      const fileTime = new Date(fileDate).getTime();
+      if (!isNaN(fileTime) && fileTime < cutoffTime) {
+        const filePath = join(logDir, entry);
+        try {
+          await unlink(filePath);
+        } catch {
+          // Retention cleanup is housekeeping, not delivery of the current entry.
+        }
+      }
+    }
+  } catch {
+    // Retention cleanup is best-effort and does not imply loss of the current entry.
+  }
+}
+
+async function initializeFileSink(runtime: FileSinkRuntime): Promise<void> {
+  if (runtime.initialized) return;
+  if (!runtime.initPromise) {
+    runtime.initPromise = ensureLogDir(runtime.logDir)
+      .then(() => cleanupOldLogs(runtime.logDir, runtime.retentionDays))
+      .finally(() => {
+        runtime.initPromise = null;
+      });
+  }
+  await runtime.initPromise;
+  runtime.initialized = true;
+}
+
+function buildLogRecord(entry: LogEntry): Record<string, unknown> {
+  const logEntry: Record<string, unknown> = {
+    ts: new Date().toISOString(),
+    level: entry.level,
+    component: 'flowguard',
+    message: entry.message,
+    service: entry.service,
+  };
+  if (entry.traceId) logEntry.traceId = entry.traceId;
+  if (entry.sessionId) logEntry.sessionId = entry.sessionId;
+  if (entry.extra) logEntry.fields = entry.extra;
+  return logEntry;
+}
+
+async function rotateLogFileIfNeeded(
+  runtime: FileSinkRuntime,
+  logFile: string,
+  date: string,
+): Promise<void> {
+  // Post-write rotation: check size after writing, rotate if needed.
+  // This avoids the stat→appendFile TOCTOU that CodeQL flags.
+  const st = await stat(logFile);
+  if (st.size <= runtime.maxSizeBytes) return;
+
+  let n = 1;
+  let rotatedPath: string;
+  do {
+    rotatedPath = join(runtime.logDir, `${LOG_PREFIX}${date}.${n}${LOG_EXT}`);
+    n++;
+  } while (await pathExists(rotatedPath));
+
+  await rename(logFile, rotatedPath);
+  try {
+    runtime.onRotate?.({ oldPath: logFile, newPath: rotatedPath, reason: 'size' });
+  } catch {
+    // onRotate is an observer; rotation itself already succeeded.
+  }
+}
+
+async function appendLogEntry(runtime: FileSinkRuntime, entry: LogEntry): Promise<void> {
+  const date = new Date().toISOString().slice(0, 10);
+  const logFile = join(runtime.logDir, `${LOG_PREFIX}${date}${LOG_EXT}`);
+  await appendFile(logFile, JSON.stringify(buildLogRecord(entry)) + '\n', 'utf8');
+  await rotateLogFileIfNeeded(runtime, logFile, date);
+}
+
 /**
  * Create a file-based logging sink.
  *
@@ -110,110 +223,26 @@ function normalizeFileSinkOptions(options?: FileSinkOptions | number): {
  */
 export function createFileSink(workspaceDir: string, options?: FileSinkOptions | number): LogSink {
   const normalized = normalizeFileSinkOptions(options);
-  const effectiveRetention = normalized.retentionDays;
-  const effectiveMaxSize = normalized.maxSizeBytes;
-  const onRotate = normalized.onRotate;
-  const onFailure = normalized.onFailure;
   const enabled = isAbsolute(workspaceDir);
-  const logDir = enabled ? join(workspaceDir, LOG_SUBDIR) : '';
-
-  // Diagnostic callback failures are deliberately isolated from the original
-  // sink failure. The sink rejection itself is the canonical health signal.
-  const notifyFailure = (error: unknown): void => {
-    try {
-      onFailure?.(error);
-    } catch {
-      // Never replace the original sink failure with an observer failure.
-    }
+  const runtime: FileSinkRuntime = {
+    enabled,
+    logDir: enabled ? join(workspaceDir, LOG_SUBDIR) : '',
+    retentionDays: normalized.retentionDays,
+    maxSizeBytes: normalized.maxSizeBytes,
+    onRotate: normalized.onRotate,
+    onFailure: normalized.onFailure,
+    initialized: false,
+    initPromise: null,
   };
 
-  let initialized = false;
-  let _initPromise: Promise<void> | null = null;
-
-  async function ensureDir(): Promise<void> {
-    await mkdir(logDir, { recursive: true });
-  }
-
-  async function cleanupOldLogs(): Promise<void> {
-    try {
-      const entries = await readdir(logDir);
-      const cutoffMs = effectiveRetention * 24 * 60 * 60 * 1000;
-      const cutoffTime = Date.now() - cutoffMs;
-
-      for (const entry of entries) {
-        if (!entry.startsWith(LOG_PREFIX)) continue;
-        if (!entry.endsWith(LOG_EXT)) continue;
-
-        const fileDate = parseLogFileDate(entry);
-        if (!fileDate) continue;
-
-        const fileTime = new Date(fileDate).getTime();
-        if (!isNaN(fileTime) && fileTime < cutoffTime) {
-          const filePath = join(logDir, entry);
-          try {
-            await unlink(filePath);
-          } catch {
-            // Retention cleanup is housekeeping, not delivery of the current entry.
-          }
-        }
-      }
-    } catch {
-      // Retention cleanup is best-effort and does not imply loss of the current entry.
-    }
-  }
-
   return async (entry: LogEntry): Promise<void> => {
-    if (!enabled) return;
+    if (!runtime.enabled) return;
 
     try {
-      if (!initialized) {
-        if (!_initPromise) {
-          _initPromise = ensureDir()
-            .then(cleanupOldLogs)
-            .finally(() => {
-              _initPromise = null;
-            });
-        }
-        await _initPromise;
-        initialized = true;
-      }
-
-      const date = new Date().toISOString().slice(0, 10);
-      const logFile = join(logDir, `${LOG_PREFIX}${date}${LOG_EXT}`);
-
-      const logEntry: Record<string, unknown> = {
-        ts: new Date().toISOString(),
-        level: entry.level,
-        component: 'flowguard',
-        message: entry.message,
-        service: entry.service,
-      };
-      if (entry.traceId) logEntry.traceId = entry.traceId;
-      if (entry.sessionId) logEntry.sessionId = entry.sessionId;
-      if (entry.extra) logEntry.fields = entry.extra;
-
-      await appendFile(logFile, JSON.stringify(logEntry) + '\n', 'utf8');
-
-      // Post-write rotation: check size after writing, rotate if needed.
-      // This avoids the stat→appendFile TOCTOU that CodeQL flags.
-      const st = await stat(logFile);
-      if (st.size > effectiveMaxSize) {
-        let n = 1;
-        let rotatedPath: string;
-        do {
-          rotatedPath = join(logDir, `${LOG_PREFIX}${date}.${n}${LOG_EXT}`);
-          n++;
-        } while (await pathExists(rotatedPath));
-
-        await rename(logFile, rotatedPath);
-        try {
-          onRotate?.({ oldPath: logFile, newPath: rotatedPath, reason: 'size' });
-        } catch {
-          // onRotate is an observer; rotation itself already succeeded.
-        }
-      }
+      await initializeFileSink(runtime);
+      await appendLogEntry(runtime, entry);
     } catch (err) {
-      notifyFailure(err);
+      notifyFileSinkFailure(runtime, err);
       throw err;
     }
   };

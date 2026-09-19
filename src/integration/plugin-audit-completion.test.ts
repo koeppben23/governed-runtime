@@ -59,11 +59,11 @@ async function completionDeps(state: SessionState): Promise<{ deps: AuditDeps; s
       operation.kind === 'transition' && operation.transition.to === 'COMPLETE',
   );
   if (terminalOperation) {
-    const body = buildTransitionBody(
-      state.flowguardSessionId,
-      state.binding.hostSessionId,
-      terminalOperation.transition.to,
-      {
+    const body = buildTransitionBody({
+      flowguardSessionId: state.flowguardSessionId,
+      hostSessionId: state.binding.hostSessionId,
+      phase: terminalOperation.transition.to,
+      detail: {
         operationId: terminalOperation.operationId,
         preStateDigest: terminalOperation.preStateDigest,
         mutationDigest: terminalOperation.mutationDigest,
@@ -74,9 +74,9 @@ async function completionDeps(state: SessionState): Promise<{ deps: AuditDeps; s
         autoAdvanced: terminalOperation.transition.autoAdvanced,
         chainIndex: terminalOperation.transition.chainIndex,
       },
-      terminalOperation.transition.at,
-      'genesis',
-    );
+      occurredAt: terminalOperation.transition.at,
+      prevHash: 'genesis',
+    });
     await appendAuditEvent(sessDir, finalizeWithTimestampEvidence(body, 'genesis'));
   }
   const appendAndTrack = vi.fn(async (event: { chainHash?: string }) => {

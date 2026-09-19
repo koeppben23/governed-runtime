@@ -316,7 +316,7 @@ describe('abort_session', () => {
         const warns: Array<{
           service: string;
           message: string;
-          extra?: Record<string, unknown>;
+          extra: Record<string, unknown> | undefined;
         }> = [];
         const capturing: AdapterLogger = {
           info: () => {},

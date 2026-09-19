@@ -13,7 +13,8 @@ import type { ReviewReferenceInput } from '../../../rails/review.js';
 import { formatBlocked } from '../helpers.js';
 
 // ─── Input helpers ───────────────────────────────────────────────────────────
-export function buildReviewReferenceInput(args: {
+
+interface ReviewReferenceInputArgs {
   inputOrigin?: ReviewReferenceInput['inputOrigin'];
   references?: ReviewReferenceInput['references'];
   text?: string;
@@ -21,19 +22,31 @@ export function buildReviewReferenceInput(args: {
   branch?: string;
   url?: string;
   targetPaths?: readonly string[];
-}): ReviewReferenceInput | undefined {
-  const hasContent =
-    args.inputOrigin || args.references || args.text || args.prNumber || args.branch || args.url;
-  if (!hasContent) return undefined;
+}
+
+function hasAnyReviewReferenceContent(args: ReviewReferenceInputArgs): boolean {
+  return Boolean(
+    args.inputOrigin || args.references || args.text || args.prNumber || args.branch || args.url,
+  );
+}
+
+function assembleReviewReferenceInput(args: ReviewReferenceInputArgs): ReviewReferenceInput {
   return {
-    inputOrigin: args.inputOrigin,
-    references: args.references,
-    text: args.text,
-    prNumber: args.prNumber,
-    branch: args.branch,
-    url: args.url,
-    targetPaths: args.targetPaths,
+    ...(args.inputOrigin !== undefined ? { inputOrigin: args.inputOrigin } : {}),
+    ...(args.references !== undefined ? { references: args.references } : {}),
+    ...(args.text !== undefined ? { text: args.text } : {}),
+    ...(args.prNumber !== undefined ? { prNumber: args.prNumber } : {}),
+    ...(args.branch !== undefined ? { branch: args.branch } : {}),
+    ...(args.url !== undefined ? { url: args.url } : {}),
+    ...(args.targetPaths !== undefined ? { targetPaths: args.targetPaths } : {}),
   };
+}
+
+export function buildReviewReferenceInput(
+  args: ReviewReferenceInputArgs,
+): ReviewReferenceInput | undefined {
+  if (!hasAnyReviewReferenceContent(args)) return undefined;
+  return assembleReviewReferenceInput(args);
 }
 
 export function hasReviewContentInput(args: {
@@ -77,12 +90,12 @@ export type ReviewContentSourceResult =
  * metadata.
  */
 export function validateReviewContentSource(args: {
-  inputOrigin?: string;
+  inputOrigin?: string | undefined;
   references?: unknown;
-  text?: string;
-  prNumber?: number;
-  branch?: string;
-  url?: string;
+  text?: string | undefined;
+  prNumber?: number | undefined;
+  branch?: string | undefined;
+  url?: string | undefined;
 }): ReviewContentSourceResult {
   if (hasConcreteContentField(args)) return { kind: 'valid' };
 
@@ -109,10 +122,10 @@ export function validateReviewContentSource(args: {
 }
 
 function hasConcreteContentField(args: {
-  text?: string;
-  prNumber?: number;
-  branch?: string;
-  url?: string;
+  text?: string | undefined;
+  prNumber?: number | undefined;
+  branch?: string | undefined;
+  url?: string | undefined;
 }): boolean {
   return (
     (typeof args.text === 'string' && args.text.trim().length > 0) ||
@@ -123,10 +136,10 @@ function hasConcreteContentField(args: {
 }
 
 function hasDeclaredContentField(args: {
-  text?: string;
-  prNumber?: number;
-  branch?: string;
-  url?: string;
+  text?: string | undefined;
+  prNumber?: number | undefined;
+  branch?: string | undefined;
+  url?: string | undefined;
 }): boolean {
   return (
     args.text !== undefined ||
@@ -137,7 +150,7 @@ function hasDeclaredContentField(args: {
 }
 
 export function hasImplicitContentSignal(args: {
-  inputOrigin?: string;
+  inputOrigin?: string | undefined;
   references?: unknown;
 }): boolean {
   const hasInputOrigin = typeof args.inputOrigin === 'string' && args.inputOrigin.trim().length > 0;

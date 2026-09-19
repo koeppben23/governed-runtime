@@ -204,7 +204,8 @@ function checkSessionTerminated(filtered: AuditEvent[]): ComplianceCheck {
   const hasCompletion = filtered.some(
     (e) => e.event === 'lifecycle:session_completed' || e.event === 'lifecycle:session_aborted',
   );
-  const lastPhase = filtered.length > 0 ? filtered[filtered.length - 1]!.phase : 'unknown';
+  const lastEvent = filtered[filtered.length - 1];
+  const lastPhase = lastEvent === undefined ? 'unknown' : lastEvent.phase;
   return {
     name: 'session_terminated',
     passed: hasCompletion || isTerminalPhase(lastPhase),
@@ -219,17 +220,19 @@ function checkSessionTerminated(filtered: AuditEvent[]): ComplianceCheck {
 /** Check 3: No unresolved errors at session end. */
 function checkNoUnresolvedErrors(filtered: AuditEvent[]): ComplianceCheck {
   const errors = filterEvents(filtered, byKind('error'));
-  const lastError = errors.length > 0 ? errors[errors.length - 1] : null;
-  const lastPhase = filtered.length > 0 ? filtered[filtered.length - 1]!.phase : 'unknown';
+  const lastError = errors[errors.length - 1] ?? null;
+  const lastEvent = filtered[filtered.length - 1];
+  const lastPhase = lastEvent === undefined ? 'unknown' : lastEvent.phase;
   const hasUnresolvedError = lastError !== null && !isTerminalPhase(lastPhase);
   return {
     name: 'no_unresolved_errors',
     passed: !hasUnresolvedError,
-    detail: hasUnresolvedError
-      ? `Unresolved error: ${lastError!.event} in phase ${lastError!.phase}`
-      : errors.length === 0
-        ? 'No errors recorded'
-        : `${errors.length} error(s) recorded, all resolved`,
+    detail:
+      hasUnresolvedError && lastError !== null
+        ? `Unresolved error: ${lastError.event} in phase ${lastError.phase}`
+        : errors.length === 0
+          ? 'No errors recorded'
+          : `${errors.length} error(s) recorded, all resolved`,
   };
 }
 

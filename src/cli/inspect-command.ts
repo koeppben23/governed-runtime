@@ -58,7 +58,10 @@ export function parseInspectArgs(
     }
   }
 
-  return { ok: true, args: { sessionId, json } };
+  return {
+    ok: true,
+    args: { json, ...(sessionId !== undefined ? { sessionId } : {}) },
+  };
 }
 
 export function getInspectUsage(): string {

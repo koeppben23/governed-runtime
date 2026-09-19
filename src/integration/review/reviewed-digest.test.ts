@@ -262,9 +262,13 @@ function bindObligation(
 
 function captureWarnings(): {
   log: AdapterLogger;
-  warnings: Array<{ service: string; event: string; extra?: Record<string, unknown> }>;
+  warnings: Array<{ service: string; event: string; extra: Record<string, unknown> | undefined }>;
 } {
-  const warnings: Array<{ service: string; event: string; extra?: Record<string, unknown> }> = [];
+  const warnings: Array<{
+    service: string;
+    event: string;
+    extra: Record<string, unknown> | undefined;
+  }> = [];
   const log: AdapterLogger = {
     info: () => {},
     warn: (service, event, extra) => warnings.push({ service, event, extra }),

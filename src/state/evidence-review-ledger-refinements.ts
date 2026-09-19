@@ -12,7 +12,7 @@ import { z } from 'zod';
 import type {
   AssuranceRefinementShape,
   AttemptRefinementShape,
-} from './evidence-review-refinements.js';
+} from './evidence-review-assurance-refinements.js';
 
 /**
  * Dispatch-ledger referential closure. The durable dispatch ledger is
@@ -179,6 +179,47 @@ function hasCoherentLifecycleFields(
   return true;
 }
 
+function addAttemptIssue(context: z.RefinementCtx, message: string): false {
+  context.addIssue({ code: z.ZodIssueCode.custom, path: ['attempts'], message });
+  return false;
+}
+
+/** Predecessor obligation/subject identity and strict ordering. */
+function predecessorCoherenceError(
+  attempt: AttemptRefinementShape,
+  predecessor: AttemptRefinementShape,
+): string | null {
+  if (
+    predecessor.obligationId !== attempt.obligationId ||
+    predecessor.obligationType !== attempt.obligationType ||
+    predecessor.subjectDigest !== attempt.subjectDigest
+  ) {
+    return `attempt ${attempt.attemptId} predecessor ${predecessor.attemptId} belongs to a different obligation`;
+  }
+  if (predecessor.ordinal >= attempt.ordinal || predecessor.createdAt > attempt.createdAt) {
+    return `attempt ${attempt.attemptId} predecessor ${predecessor.attemptId} is not an earlier attempt`;
+  }
+  return null;
+}
+
+/** Trigger reason coherence against the predecessor's durable release record. */
+function triggerReasonCoherenceError(
+  attempt: AttemptRefinementShape,
+  origin: AttemptRefinementShape['origin'],
+  predecessor: AttemptRefinementShape,
+  dispatches: AssuranceRefinementShape['dispatches'],
+): string | null {
+  const expectedTriggers = triggerReasonsForPredecessor(origin.kind, predecessor, dispatches);
+  if (
+    expectedTriggers === null ||
+    origin.triggerReason === undefined ||
+    !expectedTriggers.includes(origin.triggerReason)
+  ) {
+    return `attempt ${attempt.attemptId} trigger reason does not match its predecessor state`;
+  }
+  return null;
+}
+
 /**
  * Non-initial origins (`dispatch_rearm`) are authority-bearing: the referenced
  * predecessor must exist, belong to the same obligation/subject, be a STRICTLY
@@ -195,59 +236,27 @@ function hasCoherentPredecessorLineage(
     if (origin.kind === 'initial') continue;
     const predecessorId = origin.predecessorAttemptId;
     if (!predecessorId) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['attempts'],
-        message: `attempt ${attempt.attemptId} has a non-initial origin without a predecessor`,
-      });
-      return false;
+      return addAttemptIssue(
+        context,
+        `attempt ${attempt.attemptId} has a non-initial origin without a predecessor`,
+      );
     }
     const predecessor = attemptsById.get(predecessorId);
     if (!predecessor) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['attempts'],
-        message: `attempt ${attempt.attemptId} references unknown predecessor ${predecessorId}`,
-      });
-      return false;
+      return addAttemptIssue(
+        context,
+        `attempt ${attempt.attemptId} references unknown predecessor ${predecessorId}`,
+      );
     }
-    if (
-      predecessor.obligationId !== attempt.obligationId ||
-      predecessor.obligationType !== attempt.obligationType ||
-      predecessor.subjectDigest !== attempt.subjectDigest
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['attempts'],
-        message: `attempt ${attempt.attemptId} predecessor ${predecessorId} belongs to a different obligation`,
-      });
-      return false;
-    }
-    if (predecessor.ordinal >= attempt.ordinal || predecessor.createdAt > attempt.createdAt) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['attempts'],
-        message: `attempt ${attempt.attemptId} predecessor ${predecessorId} is not an earlier attempt`,
-      });
-      return false;
-    }
-    const expectedTriggers = triggerReasonsForPredecessor(
-      origin.kind,
+    const coherenceError = predecessorCoherenceError(attempt, predecessor);
+    if (coherenceError) return addAttemptIssue(context, coherenceError);
+    const triggerError = triggerReasonCoherenceError(
+      attempt,
+      origin,
       predecessor,
       assurance.dispatches,
     );
-    if (
-      expectedTriggers === null ||
-      origin.triggerReason === undefined ||
-      !expectedTriggers.includes(origin.triggerReason)
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['attempts'],
-        message: `attempt ${attempt.attemptId} trigger reason does not match its predecessor state`,
-      });
-      return false;
-    }
+    if (triggerError) return addAttemptIssue(context, triggerError);
   }
   return true;
 }
@@ -288,4 +297,106 @@ function triggerReasonsForPredecessor(
     return ['interrupted', 'spent'];
   }
   return null;
+}
+
+type InvocationRefinementShape = AssuranceRefinementShape['invocations'][number];
+type DispatchRefinementShape = AssuranceRefinementShape['dispatches'][number];
+
+function dispatchLinksInvocation(
+  dispatch: DispatchRefinementShape,
+  invocation: InvocationRefinementShape,
+): boolean {
+  return (
+    dispatch.attemptId === invocation.attemptId &&
+    dispatch.obligationId === invocation.obligationId &&
+    dispatch.hostCallId === invocation.childSessionId &&
+    dispatch.canonicalPromptDigest === invocation.promptHash
+  );
+}
+
+function groupByAttemptId<T>(
+  items: readonly T[],
+  attemptIdOf: (item: T) => string | undefined,
+): Map<string, T[]> {
+  const grouped = new Map<string, T[]>();
+  for (const item of items) {
+    const key = attemptIdOf(item) ?? '';
+    const bucket = grouped.get(key) ?? [];
+    bucket.push(item);
+    grouped.set(key, bucket);
+  }
+  return grouped;
+}
+
+/** Every invocation requires exactly one completed dispatch for its release identity. */
+function validateInvocationDispatchLinks(
+  assurance: AssuranceRefinementShape,
+  context: z.RefinementCtx,
+  dispatchesByAttempt: ReadonlyMap<string, DispatchRefinementShape[]>,
+): boolean {
+  for (const invocation of assurance.invocations) {
+    const dispatches = dispatchesByAttempt.get(invocation.attemptId ?? '') ?? [];
+    const matches = dispatches.filter(
+      (dispatch) =>
+        dispatchLinksInvocation(dispatch, invocation) &&
+        dispatch.dispatchStatus === 'completed' &&
+        dispatch.completedAt != null,
+    );
+    if (matches.length !== 1) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['invocations'],
+        message: `invocation ${invocation.invocationId} requires exactly one completed dispatch for its attempt, host call, and prompt digest (found ${String(matches.length)})`,
+      });
+      return false;
+    }
+  }
+  return true;
+}
+
+/** A completed dispatch requires exactly one invocation; a pending dispatch requires none. */
+function validateDispatchInvocationLinks(
+  assurance: AssuranceRefinementShape,
+  context: z.RefinementCtx,
+  invocationsByAttempt: ReadonlyMap<string, InvocationRefinementShape[]>,
+): boolean {
+  for (const dispatch of assurance.dispatches) {
+    const matches = (invocationsByAttempt.get(dispatch.attemptId) ?? []).filter((invocation) =>
+      dispatchLinksInvocation(dispatch, invocation),
+    );
+    if (dispatch.dispatchStatus === 'completed' && matches.length !== 1) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['dispatches'],
+        message: `completed dispatch ${dispatch.dispatchId} requires exactly one matching invocation (found ${String(matches.length)})`,
+      });
+      return false;
+    }
+    if (dispatch.dispatchStatus !== 'completed' && matches.length > 0) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['dispatches'],
+        message: `dispatch ${dispatch.dispatchId} is ${dispatch.dispatchStatus} but has a matching invocation`,
+      });
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Durable dispatch and invocation evidence must describe the same host release. */
+export function refineAssuranceInvocationDispatchLinkage(
+  assurance: AssuranceRefinementShape,
+  context: z.RefinementCtx,
+): void {
+  const dispatchesByAttempt = groupByAttemptId(
+    assurance.dispatches,
+    (dispatch) => dispatch.attemptId,
+  );
+  const invocationsByAttempt = groupByAttemptId(
+    assurance.invocations,
+    (invocation) => invocation.attemptId,
+  );
+  if (!validateInvocationDispatchLinks(assurance, context, dispatchesByAttempt)) return;
+  if (!validateDispatchInvocationLinks(assurance, context, invocationsByAttempt)) return;
 }

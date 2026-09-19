@@ -81,8 +81,9 @@ export function formatFindingSubject(subject: FindingSubject): string {
 }
 
 export function formatFindingAffected(subjects: readonly FindingSubject[]): string {
-  if (subjects.length === 0) return 'Affected: not cited';
-  if (subjects.length === 1) return `Affected: ${formatFindingSubject(subjects[0]!)}`;
+  const [first] = subjects;
+  if (first === undefined) return 'Affected: not cited';
+  if (subjects.length === 1) return `Affected: ${formatFindingSubject(first)}`;
   return `Affected: ${subjects.length} reviewed locations`;
 }
 

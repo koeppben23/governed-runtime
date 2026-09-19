@@ -366,7 +366,7 @@ export function isRiskClassificationAllowed(
       code: 'RISK_GATE_BLOCKED',
       reason: state.riskGate.message,
       decisionId: state.riskGate.lastDecisionId,
-      claimedTaskClass: state.claimedTaskClass,
+      ...(state.claimedTaskClass !== undefined ? { claimedTaskClass: state.claimedTaskClass } : {}),
       minimumTaskClass: assessment.minimumTaskClass,
       touchedSurfaces: assessment.touchedSurfaces,
       riskTriggers: assessment.riskTriggers,
@@ -434,8 +434,9 @@ function hasOutstandingReviewObligation(state: SessionState): boolean {
 
 export function resolveCeremonyProfile(input: CeremonyProfileInput): CeremonyProfileDecision {
   const assessment = assessMinimumTaskClass(input.changedFiles);
+  const claimedTaskClass = input.state.claimedTaskClass;
   const base = {
-    claimedTaskClass: input.state.claimedTaskClass,
+    ...(claimedTaskClass !== undefined ? { claimedTaskClass } : {}),
     computedMinimumTaskClass: assessment.minimumTaskClass,
     touchedSurfaces: assessment.touchedSurfaces,
     riskTriggers: assessment.riskTriggers,

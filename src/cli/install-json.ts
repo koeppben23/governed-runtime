@@ -24,8 +24,8 @@ import {
 export function parseJsonc<T = Record<string, unknown>>(content: string): T {
   const errors: ParseError[] = [];
   const result = jsoncParse(content, errors, { allowTrailingComma: true });
-  if (errors.length > 0) {
-    const first = errors[0]!;
+  const first = errors[0];
+  if (first !== undefined) {
     throw new SyntaxError(`JSONC parse error at offset ${first.offset}: error code ${first.error}`);
   }
   return result as T;

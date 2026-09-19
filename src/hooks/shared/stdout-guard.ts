@@ -28,6 +28,16 @@ export interface HookStdoutGuard {
   restore(): void;
 }
 
+/** Error thrown when the hook stdout guard cannot deliver the response payload. */
+class StdoutGuardError extends Error {
+  readonly code: string = 'STDOUT_GUARD_WRITE_FAILED';
+
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'StdoutGuardError';
+  }
+}
+
 /**
  * Install the hook stdout guard.
  *
@@ -98,7 +108,7 @@ export function installHookStdoutGuard(): HookStdoutGuard {
             settled = true;
             restoreOriginal();
           }
-          reject(err instanceof Error ? err : new Error(String(err)));
+          reject(err instanceof Error ? err : new StdoutGuardError(String(err), { cause: err }));
         }
       });
     },

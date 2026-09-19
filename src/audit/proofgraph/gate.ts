@@ -18,7 +18,10 @@
 import type { ProofGraphSummary } from './summary.js';
 import type { ProofGraphProjection } from '../../state/proofgraph.js';
 import type { RiskTrigger, SessionState } from '../../state/schema.js';
-import { authorizedCriticalPlanClaimIds } from '../../state/proofgraph-approval.js';
+import {
+  authorizedCriticalPlanClaimIds,
+  type PlanClaimAuthority,
+} from '../../state/proofgraph-approval.js';
 import type { AssertionBindingReasonCode } from './assertion-evidence-binding.js';
 import {
   computeProofGraphEnforcement,
@@ -70,7 +73,22 @@ export interface ProofGraphGateDecision {
 
 export interface ImplementationRiskAssessmentForGate {
   readonly implementationDigest: string;
-  readonly riskTriggers?: readonly RiskTrigger[];
+  readonly riskTriggers?: readonly RiskTrigger[] | undefined;
+}
+
+export function planClaimAuthorityOf(plan: SessionState['plan']): PlanClaimAuthority | null {
+  if (plan === null) return null;
+  return {
+    current: {
+      digest: plan.current.digest,
+      planVersion: plan.current.planVersion,
+      recordDigest: plan.current.recordDigest,
+    },
+    ...(plan.claimDeclarations !== undefined ? { claimDeclarations: plan.claimDeclarations } : {}),
+    ...(plan.approvalCertificate !== undefined
+      ? { approvalCertificate: plan.approvalCertificate }
+      : {}),
+  };
 }
 
 export function isRiskAssessmentCurrent(
@@ -98,7 +116,7 @@ export function evaluateProofGraphGate(input: {
   readonly authorizedCriticalClaimIds?: readonly string[];
   readonly certificateValid?: boolean;
   readonly implementationDigest?: string;
-  readonly riskAssessment?: ImplementationRiskAssessmentForGate;
+  readonly riskAssessment?: ImplementationRiskAssessmentForGate | undefined;
   /** Per-claim binding diagnostics for enforcement surface. */
   readonly claimDiagnostics?: ReadonlyMap<string, AssertionBindingReasonCode>;
 }): ProofGraphGateDecision {
@@ -109,14 +127,20 @@ export function evaluateProofGraphGate(input: {
     input.implementationDigest !== undefined &&
     !isRiskAssessmentCurrent(input.riskAssessment, input.implementationDigest);
 
+  const claimDiagnostics =
+    input.claimDiagnostics ?? readDiagnosticsFromProjection(input.projection);
   const enforcement = computeProofGraphEnforcement({
-    projection: input.projection,
-    authorizedCriticalClaimIds: input.authorizedCriticalClaimIds,
-    certificateValid: input.certificateValid,
-    implementationDigest: input.implementationDigest,
+    ...(input.projection !== undefined ? { projection: input.projection } : {}),
+    ...(input.authorizedCriticalClaimIds !== undefined
+      ? { authorizedCriticalClaimIds: input.authorizedCriticalClaimIds }
+      : {}),
+    ...(input.certificateValid !== undefined ? { certificateValid: input.certificateValid } : {}),
+    ...(input.implementationDigest !== undefined
+      ? { implementationDigest: input.implementationDigest }
+      : {}),
     riskAssessmentStale: riskStale,
     riskTriggersPresent: triggers.length > 0,
-    claimDiagnostics: input.claimDiagnostics ?? readDiagnosticsFromProjection(input.projection),
+    ...(claimDiagnostics !== undefined ? { claimDiagnostics } : {}),
   });
 
   return {
@@ -136,12 +160,14 @@ export function evaluateProofGraphGate(input: {
  * status surface — never a second gating authority.
  */
 export function evaluateProofGraphGateFromState(state: SessionState): ProofGraphGateDecision {
-  const authorization = authorizedCriticalPlanClaimIds(state.plan);
+  const authorization = authorizedCriticalPlanClaimIds(planClaimAuthorityOf(state.plan));
   return evaluateProofGraphGate({
-    projection: state.proofGraph,
+    ...(state.proofGraph !== undefined ? { projection: state.proofGraph } : {}),
     authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
     certificateValid: authorization.kind === 'authorized',
-    implementationDigest: state.implementation?.digest,
+    ...(state.implementation?.digest !== undefined
+      ? { implementationDigest: state.implementation.digest }
+      : {}),
     riskAssessment: state.implementationRiskAssessment,
   });
 }

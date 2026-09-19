@@ -40,7 +40,7 @@ export interface ProbeRequest {
 }
 
 export type ToolAvailability =
-  | { readonly status: 'available'; readonly version?: string }
+  | { readonly status: 'available'; readonly version?: string | undefined }
   | { readonly status: 'missing' }
   | { readonly status: 'unknown'; readonly reason: string };
 
@@ -99,10 +99,10 @@ export class ProcessProbeRunner implements ProbeRunner {
     versionPattern?: string,
   ): Promise<ProbeResult> {
     const tokens = parseShellCommand(command);
-    if (tokens.length === 0) {
+    const cmd = tokens[0];
+    if (cmd === undefined) {
       return { status: 'unknown', reason: `empty probe command: ${command}` };
     }
-    const cmd = tokens[0]!;
     const args = tokens.slice(1);
 
     try {
@@ -204,7 +204,7 @@ function parseShellCommand(command: string): string[] {
   let inDouble = false;
 
   for (let i = 0; i < command.length; i++) {
-    const ch = command[i]!;
+    const ch = command.charAt(i);
     if (inSingle) {
       if (ch === "'") inSingle = false;
       else current += ch;

@@ -39,7 +39,7 @@
  * - **Enforcement Layers** — distinct review enforcement checks L1-L4
  *   (`src/integration/review/enforcement/enforcement.ts`)
  * - **Audit Event Kinds** — members of `AuditEventKind` union
- *   (`src/audit/types.ts`)
+ *   (`src/audit/event-core.ts`)
  * - **Archive Finding Codes** — members of `ArchiveFindingCodeSchema`
  *   (`src/archive/types.ts`)
  * - **Archive Verify JSDoc Checks** — numbered checks in the `verifyArchive()`
@@ -62,7 +62,7 @@ export const PRODUCT_INVENTORY = {
   archiveFindingCodes: 31,
   archiveVerifyJsdocChecks: 9,
   cliBins: 7,
-  mutationFiles: 101,
+  mutationFiles: 104,
 } as const;
 
 export type ProductInventory = typeof PRODUCT_INVENTORY;

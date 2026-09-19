@@ -2,7 +2,7 @@
  * @module integration/tools/status-provider-projection
  * @description Provider capability and runtime readiness projection for status.
  *
- * Extracted from status-tool.ts to stay within the 750 LOC file-size budget.
+ * Extracted from status-tool.ts to stay within the 650 LOC file-size budget.
  *
  * @version v2
  */
@@ -16,6 +16,7 @@ import type { ProbeRunner } from '../../verification/toolchain-probe.js';
 import type { ResolvedVerificationCandidate } from '../verification-runtime-resolution.js';
 import { join } from 'node:path';
 import { resolveExecutionSubjectInputs } from './execution-subject-input-resolution.js';
+import { IntegrationInvariantError } from '../errors.js';
 
 export function computeProviderCapabilities(
   state: SessionState,
@@ -40,13 +41,18 @@ export async function resolveRuntimeProviderCapabilities(
       if (resolution.kind === 'unavailable') {
         return { candidate, runtime: { status: 'unavailable' as const, requirements: [] } };
       }
-      return (
-        await resolveRuntimeReadiness(
-          [{ candidate, executionSubjectInputs: resolution.inputs }],
-          runner,
-          cwd,
-        )
-      )[0]!;
+      const [resolved] = await resolveRuntimeReadiness(
+        [{ candidate, executionSubjectInputs: resolution.inputs }],
+        runner,
+        cwd,
+      );
+      if (resolved === undefined) {
+        throw new IntegrationInvariantError(
+          'VERIFICATION_RUNTIME_RESOLUTION_MISSING',
+          'runtime readiness resolution produced no candidate for a submitted verification candidate',
+        );
+      }
+      return resolved;
     }),
   );
   return resolveProviderCapabilities(

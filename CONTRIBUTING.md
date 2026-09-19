@@ -193,7 +193,7 @@ regress silently; review-enforced rules depend on reviewer diligence.
 
 | Principle                     | Rule                                                                      | Red Flag                                              | Enforced by                                                                                                     |
 | ----------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| **Single Responsibility**     | One reason to change per module/file/function                             | God-files; over-long/over-complex functions           | Monotonic maintainability ratchet: `npm run check:maintainability` against `scripts/maintainability-baseline.json` (clean-code targets `complexity:12`, `max-lines-per-function:80`, `max-params:5`; ESLint default ceilings `25 / 120 / 5` with seven legacy metric suppressions frozen as baseline exceptions; `lint:strict` = `--max-warnings=0`) |
+| **Single Responsibility**     | One reason to change per module/file/function                             | God-files; over-long/over-complex functions           | ESLint metrics for every production file: `complexity:12`, `max-lines-per-function:80`, `max-params:5`, enforced by `lint:strict` (`--max-warnings=0`) and pinned by `type-aware-lint-scope.test.ts` |
 | **Layer Isolation**           | Respect `state/` `machine/` `rails/` `adapters/` `integration/`           | Upward imports, layer bypass                          | `module-dependency-policy.ts` + `dependency-rules.test.ts`; module cycle debt frozen in `scripts/module-cycle-baseline.json` (lineage-gated)  |
 | **Extract, Don't Accumulate** | Split files along domain boundaries within the size budget                | Linear growth with every feature                      | `src/architecture/__tests__/file-size.test.ts`                                                                  |
 | **No Duplicate Authority**    | One canonical implementation per concept                                  | Near-identical functions, duplicated pipelines        | SSOT guards: `actor-assurance-ssot`, `canonical-json-ssot`, `digest-authority-ssot`, `policy-mode-ssot`, `review-acceptance-ssot`, `terminal-phase-ssot` |
@@ -206,32 +206,28 @@ regress silently; review-enforced rules depend on reviewer diligence.
 | **Determinism**               | Same input → same output for digests/canonicalization/state               | Hidden nondeterminism (time, ordering) in hash inputs | `canonical-json-ssot`, `digest-authority-ssot`, digest byte-identity tests                                      |
 | **API Stability**             | Public surface stays intentional; no test-only utilities leaked           | Test helpers exported from the public barrel          | Review (barrel-export tests)                                                                                    |
 
-Maintainability model (Single Responsibility):
+Maintainability limits (Single Responsibility):
 
-- Clean-code target: `complexity:12`, `max-lines-per-function:80`, `max-params:5`.
-- Default ESLint ceiling: `25 / 120 / 5` — not absolute: the seven existing
-  metric rule suppressions are frozen legacy exceptions in the baseline, and
-  new exceptions are forbidden.
-- Existing target debt is frozen in `scripts/maintainability-baseline.json` and
-  enforced by `npm run check:maintainability` (part of `npm run check`). CI also
-  enforces baseline lineage against the pull-request base, so a manually raised
-  baseline cannot launder new debt.
-- New or worsening debt is blocked, new metric `eslint-disable` suppressions are
-  blocked, inline suppressions cannot hide findings, and every improvement must
-  be locked into the baseline in the same change
-  (`node scripts/check-maintainability-ratchet.mjs --update`, monotonic).
+- Enforced limits for every production file: `complexity:12`,
+  `max-lines-per-function:80`, `max-params:5`.
+- `lint:strict` (`--max-warnings=0`) is the single enforcement authority. The
+  former monotonic maintainability ratchet and its baseline were removed once
+  the debt reached zero; `type-aware-lint-scope.test.ts` pins the values and the
+  production file-class scope against the effective ESLint config.
+- Metric `eslint-disable` suppressions are not part of the model: the tree
+  contains none, and a new suppression fails `lint:strict`.
 
 ### File Size Budget
 
 Exceeding the file-size budget is a review blocker. Single source of truth for the size budget. The blocker thresholds are enforced
 by `src/architecture/__tests__/file-size.test.ts` (constants `PROD_FILE_LOC_BLOCKER`
-= 750, `TEST_FILE_LOC_BLOCKER` = 2000).
+= 650, `TEST_FILE_LOC_BLOCKER` = 2000).
 
 | Threshold (production) | Action Required                                  |
 | ---------------------- | ------------------------------------------------ |
 | =< 400 LOC             | Healthy - no action                              |
-| 400-750 LOC            | Consider splitting at next touch                 |
-| > 750 LOC              | Blocker - split required before merge (enforced) |
+| 400-650 LOC            | Consider splitting at next touch                 |
+| > 650 LOC              | Blocker - split required before merge (enforced) |
 
 Test files may be broader (suites group related cases): advisory split at
 1500 LOC, hard blocker above 2000 LOC (enforced).
@@ -245,8 +241,10 @@ following hold:
 2. `npm run lint:strict` passes (`eslint --max-warnings=0`).
 3. `dependency-rules.test.ts` passes (no layer violation).
 4. All SSOT guards pass (no duplicate authority).
-5. `file-size.test.ts` passes (no production file > 750 LOC, no test file > 2000 LOC).
-6. No bare `throw new Error(...)` in production control flow (typed errors only).
+5. `file-size.test.ts` passes (no production file > 650 LOC, no test file > 2000 LOC).
+6. No bare `throw new Error(...)`/native `new Error(...)` or non-null assertion in
+   production source (typed errors and real narrowing only; enforced by
+   `production-zero-debt.test.ts` and the production ESLint scope).
 7. New behavior touching state/policy/evidence/audit has negative-path tests.
 
 ## Repository Governance

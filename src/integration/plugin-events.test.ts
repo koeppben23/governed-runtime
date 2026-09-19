@@ -176,7 +176,6 @@ describe('integration/plugin-events', () => {
       const deps = createMockDeps();
       const event: PluginEvent = {
         type: 'session.error',
-        properties: undefined,
       };
 
       await handleEvent(deps, event);

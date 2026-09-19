@@ -25,7 +25,7 @@ import {
 } from './discovery-context-prompt.js';
 import type { ImplementationGuidanceItem } from '../implementation-guidance.js';
 
-const BASE_CONTEXT: DiscoveryReviewContext = {
+const BASE_CONTEXT = {
   health: {
     kind: 'derived_discovery_health',
     advisory: true,
@@ -93,7 +93,7 @@ const BASE_CONTEXT: DiscoveryReviewContext = {
     discovery: null,
     discoveryHealth: unavailableDiscoveryHealth('missing'),
   }),
-};
+} satisfies DiscoveryReviewContext;
 
 describe('buildDiscoveryContextSection', () => {
   it('renders one advisory Discovery Context section with repo-native candidates', () => {
@@ -140,7 +140,7 @@ describe('buildDiscoveryContextSection', () => {
         ageWarning: null,
       },
       drift: {
-        ...BASE_CONTEXT.drift!,
+        ...BASE_CONTEXT.drift,
         status: 'drifted',
         drifted: true,
         changedContributorNames: ['stack-detection'],

@@ -11,12 +11,8 @@
 
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
-import {
-  formatBlocked,
-  formatAutoAdvanceOverflow,
-  getWorktree,
-  formatRailResult,
-} from './helpers.js';
+import { formatBlocked, formatAutoAdvanceOverflow, getWorktree } from './helpers.js';
+import { formatRailResult } from './helpers-rail-presentation.js';
 import { projectMarkdownHeadings } from '../../shared/markdown-sections.js';
 import { formatError } from './error-format.js';
 import type { RailResult, AutoAdvanceOverflow } from '../../rails/types.js';

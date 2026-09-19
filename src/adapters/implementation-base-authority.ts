@@ -27,7 +27,7 @@
 
 import { headCommitFull } from './git.js';
 import { FrozenRepositoryError, freezeRepositoryIdentity } from './frozen-repository.js';
-import { IMPLEMENTATION_BASE_FREEZE_FAILED_CODE } from './implementation-entry-guard.js';
+import { ImplementationBaseAuthorityError } from './implementation-entry-guard.js';
 import type { SessionState } from '../state/schema.js';
 import type { FrozenRepositoryRevisionTarget } from '../state/evidence.js';
 
@@ -93,9 +93,7 @@ export async function finalizeImplementationEntry(state: SessionState): Promise<
     return await ensureImplementationBase(state, state.binding.worktree);
   } catch (err) {
     if (err instanceof FrozenRepositoryError) {
-      throw Object.assign(new Error(err.message), {
-        code: IMPLEMENTATION_BASE_FREEZE_FAILED_CODE,
-      });
+      throw new ImplementationBaseAuthorityError(err.message);
     }
     throw err;
   }

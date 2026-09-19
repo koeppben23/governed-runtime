@@ -25,6 +25,7 @@ import { buildInterruptedDispatchRearm } from '../durable-dispatch.js';
 import type { PlanExecutionScope } from './plan-types.js';
 import { buildPlanReviewInstruction } from './plan-response.js';
 import { enrichWithWorkflowDirective, formatBlocked, writeStateWithArtifacts } from './helpers.js';
+import { IntegrationInvariantError } from '../errors.js';
 
 /**
  * Gate an initial plan submission against the plan review loop: a pending plan
@@ -52,6 +53,28 @@ export function blockedPlanReviewInProgress(state: SessionState): string | null 
   return null;
 }
 
+type PlanReviewObligation = NonNullable<
+  PlanExecutionScope['state']['reviewAssurance']
+>['obligations'][number];
+
+async function routePlanAwaitingTask(
+  scope: PlanExecutionScope,
+  obligation: PlanReviewObligation,
+): Promise<string | null> {
+  // A pending continuation reviews the FROZEN subject: a submitted plan
+  // with a different digest must never be silently ignored — fail closed.
+  const changed = changedSubjectWhilePending(scope, obligation);
+  if (changed) return changed;
+  const authority = resolveReviewDispatchAuthority(
+    scope.state.reviewAssurance,
+    obligation.obligationId,
+  );
+  if (authority.kind === 'blocked') {
+    return formatBlocked(authority.code, { reason: authority.reason });
+  }
+  return planInstructionResponse(scope, authority.authority);
+}
+
 export async function routePlanInitialSubmission(
   scope: PlanExecutionScope,
 ): Promise<string | null> {
@@ -61,20 +84,8 @@ export async function routePlanInitialSubmission(
   const continuation = resolveReviewContinuation(state.reviewAssurance, 'plan');
 
   switch (continuation.kind) {
-    case 'awaiting_task': {
-      // A pending continuation reviews the FROZEN subject: a submitted plan
-      // with a different digest must never be silently ignored — fail closed.
-      const changed = changedSubjectWhilePending(scope, continuation.obligation);
-      if (changed) return changed;
-      const authority = resolveReviewDispatchAuthority(
-        state.reviewAssurance,
-        continuation.obligation.obligationId,
-      );
-      if (authority.kind === 'blocked') {
-        return formatBlocked(authority.code, { reason: authority.reason });
-      }
-      return planInstructionResponse(scope, authority.authority);
-    }
+    case 'awaiting_task':
+      return routePlanAwaitingTask(scope, continuation.obligation);
     case 'interrupted_dispatch': {
       // A bindable attempt carries an unresolved durable dispatch. `/plan` is
       // the authorized trigger to re-arm the review durably: the spent attempt
@@ -107,7 +118,7 @@ export async function routePlanInitialSubmission(
 
 async function routePlanMissingAttempt(
   scope: PlanExecutionScope,
-  obligation: NonNullable<PlanExecutionScope['state']['reviewAssurance']>['obligations'][number],
+  obligation: PlanReviewObligation,
   code: string,
 ): Promise<string> {
   const blockedState = blockObligation(scope.state, obligation.obligationId, code);
@@ -121,7 +132,7 @@ async function routePlanMissingAttempt(
 
 async function routePlanInterruptedDispatch(
   scope: PlanExecutionScope,
-  obligation: NonNullable<PlanExecutionScope['state']['reviewAssurance']>['obligations'][number],
+  obligation: PlanReviewObligation,
   attemptId: string,
 ): Promise<string> {
   const spent = scope.state.reviewAssurance?.attempts.find((a) => a.attemptId === attemptId);
@@ -156,7 +167,7 @@ async function routePlanInterruptedDispatch(
 
 function changedSubjectWhilePending(
   scope: PlanExecutionScope,
-  obligation: NonNullable<PlanExecutionScope['state']['reviewAssurance']>['obligations'][number],
+  obligation: PlanReviewObligation,
 ): string | null {
   const planText = scope.args.planText;
   if (typeof planText !== 'string' || !planText.trim()) return null;
@@ -181,11 +192,19 @@ function planInstructionResponse(
     subjectLabel: 'full plan text and ticket text',
     state: scope.state,
   });
+  const plan = scope.state.plan;
+  const selfReview = scope.state.selfReview;
+  if (!plan || !selfReview) {
+    throw new IntegrationInvariantError(
+      'PLAN_REVIEW_STATE_REQUIRED',
+      'a plan review instruction requires plan and self-review state',
+    );
+  }
   const response: Record<string, unknown> = {
     phase: scope.state.phase,
     status: 'Plan review is pending; reusing the existing review obligation.',
-    planDigest: scope.state.plan!.current.digest,
-    selfReviewIteration: scope.state.selfReview!.iteration,
+    planDigest: plan.current.digest,
+    selfReviewIteration: selfReview.iteration,
     reviewMode: 'subagent',
     ...reviewObligationResponseFields(authority),
     reviewDispatch: instruction.reviewDispatch,

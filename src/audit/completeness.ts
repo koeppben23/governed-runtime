@@ -320,14 +320,16 @@ function buildSlotEntry(
   isRequired: boolean,
   label: string,
 ): EvidenceSlotStatus {
+  const detail = getSlotDetail(state, slot);
+  const artifactKind = SLOT_ARTIFACT_KIND[slot];
   return {
     slot,
     label,
     required: isRequired,
     present: isSlotPresent(state, slot),
     status: determineSlotStatus(isRequired, isSlotFailed(state, slot), isSlotPresent(state, slot)),
-    detail: getSlotDetail(state, slot),
-    artifactKind: SLOT_ARTIFACT_KIND[slot],
+    ...(detail !== undefined ? { detail } : {}),
+    ...(artifactKind !== undefined ? { artifactKind } : {}),
   };
 }
 

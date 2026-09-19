@@ -3,14 +3,16 @@ import { z } from 'zod';
 // State & Machine
 import { SessionState } from '../../state/schema.js';
 import { hashText } from '../../shared/hashing.js';
-import type { EvalResult } from '../../machine/evaluate.js';
 import { resolveWorkflowDirective } from '../../machine/workflow-directive.js';
-import { TERMINAL } from '../../machine/topology.js';
 // Rail helpers
-import type { RailResult, RailContext, AutoAdvanceOverflow } from '../../rails/types.js';
+import type { RailContext, AutoAdvanceOverflow } from '../../rails/types.js';
 import { AUTO_ADVANCE_OVERFLOW_CODE } from '../../rails/auto-advance-overflow.js';
 // Adapters
-import { readState, writeStateAlreadyLocked } from '../../adapters/persistence.js';
+import {
+  PersistenceError,
+  readState,
+  writeStateAlreadyLocked,
+} from '../../adapters/persistence.js';
 import { finalizeImplementationEntry } from '../../adapters/implementation-base-authority.js';
 import { prepareStateWithAuditOperations, type SemanticAuditIntent } from './audit-outbox.js';
 import { acquireSessionWriteLock, withSessionWriteLock } from '../../adapters/persistence-lock.js';
@@ -29,19 +31,9 @@ import type { FlowGuardPolicy } from '../../config/policy.js';
 import { defaultReasonRegistry } from '../../config/reasons.js';
 import { buildBlockedPresentation } from './blocked-presentation.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
-import { PHASE_LABELS } from '../../presentation/index.js';
-import { renderMarkdown, lookupReasonCopy } from '../../presentation/index.js';
-import {
-  buildEvidenceApprovalCompletionDocument,
-  type PresentationConclusion,
-  type PresentationDocument,
-} from '../../presentation/index.js';
-import { buildRailConclusion } from './rail-conclusion.js';
-import { projectStatusActionFromCommand } from '../status-conclusion.js';
-import { getReviewLoopProgress } from '../review/review-loop-progress.js';
+import { PHASE_LABELS, lookupReasonCopy } from '../../presentation/index.js';
 import { refreshProofGraph } from '../proofgraph/refresh.js';
-import { projectCompletionProofStatus } from '../proofgraph/proof-summary-projectors.js';
-import { emitPresentationTelemetry } from './presentation-telemetry.js';
+import { IntegrationInvariantError } from '../errors.js';
 const lockedSessionDir = new AsyncLocalStorage<string>();
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
@@ -106,129 +98,15 @@ export type ToolDefinition = {
 
 // ─── Formatting Helpers ───────────────────────────────────────────────────────
 
-/** Migrated reason-copy headline field, present only for authored codes. */
-function headlineFields(code: string): { headline?: string } {
+/**
+ * Migrated reason-copy headline field, present only for authored codes.
+ *
+ * Shared with the rail-result presentation helpers
+ * (`helpers-rail-presentation.ts`).
+ */
+export function headlineFields(code: string): { headline?: string } {
   const copy = lookupReasonCopy(code);
   return copy?.headline ? { headline: copy.headline } : {};
-}
-
-/**
- * Render the rail-surface Next-Action conclusion to Markdown for display.
- *
- * Builds a conclusion-only compact-card PresentationDocument (no sections) and
- * renders it through the shared renderer, so the mutating-tool next action is
- * displayed identically to /status, /why, and /finish. Additive only — this is
- * the user-facing display; the structured `directive` and `_audit.transitions`
- * remain the machine-readable routing fields.
- */
-export function buildNextActionPresentation(
-  state: SessionState,
-  evalResult: EvalResult,
-): { markdown: string } {
-  const conclusion = buildRailConclusion(state, evalResult);
-  const document: PresentationDocument = {
-    kind: 'compact_card',
-    density: 'compact',
-    form: presentationFormForConclusion(conclusion),
-    sections: [],
-    conclusion,
-  };
-  const markdown = renderMarkdown(document);
-  emitPresentationTelemetry(document, state.phase, state.id);
-  return { markdown };
-}
-
-function presentationFormForConclusion(
-  conclusion: PresentationConclusion,
-): 'success' | 'decision' | 'review_pending' | 'terminal' {
-  if (conclusion.kind === 'decision_required') return 'decision';
-  if (conclusion.kind === 'review_pending') return 'review_pending';
-  if (conclusion.kind === 'terminal') return 'terminal';
-  return 'success';
-}
-
-interface RailPresentationOptions {
-  readonly evidenceApprovalCompletion?: boolean;
-}
-
-/** Format a RailResult for LLM consumption. Audit transitions in metadata channel. */
-export function formatRailResult(
-  result: RailResult,
-  options: RailPresentationOptions = {},
-): ToolResult {
-  if (result.kind === 'blocked') {
-    getAdapterLogger().warn('machine', 'tool_blocked', {
-      code: result.code,
-      ...(result.overflow ? { overflowLimit: result.overflow.limit } : {}),
-      ...getLogTraceFields(),
-    });
-    // Unify the blocked surface with the rest of the presentation layer: when a
-    // structured diagnostic is available, also render it through the shared
-    // renderer so the display path matches /status, /why, /finish, and /help.
-    const blockedPresentation = buildBlockedPresentation(result.code, result.reason, {
-      reason: result.reason,
-    });
-    return JSON.stringify({
-      error: true,
-      code: result.code,
-      message: result.reason,
-      recovery: result.recovery,
-      quickFix: result.quickFix,
-      ...headlineFields(result.code),
-      ...blockedPresentation,
-      // #428: surface structured overflow context so the plugin boundary can
-      // detect and log the fail-closed overflow without parsing the message.
-      ...(result.overflow ? { autoAdvanceOverflow: result.overflow } : {}),
-    });
-  }
-  const directive = resolveWorkflowDirective(result.state);
-  const aborted = result.state.error?.code === 'ABORTED';
-  const reviewDecision = result.state.reviewDecision;
-  const archiveStatus = result.state.regulatedArchiveStatus;
-  const reviewLoop = getReviewLoopProgress(result.state);
-  const presentation = options.evidenceApprovalCompletion
-    ? buildEvidenceApprovalCompletionPresentation(result.state)
-    : buildNextActionPresentation(result.state, result.evalResult);
-  const json = JSON.stringify({
-    phase: result.state.phase,
-    phaseLabel: PHASE_LABELS[result.state.phase],
-    status: 'ok',
-    directive,
-    // Render the user-facing next action through the shared renderer so mutating
-    // tools display it identically to /status, /why, and /finish. The
-    // machine-readable `directive` field above is the routing authority.
-    presentation,
-    // Governance integrity: mark an aborted terminal session explicitly so it is
-    // never presented as an indistinguishable clean completion. Distinct from the
-    // blocked-result `error: true` convention (this is a successful tool call that
-    // reports a terminated session). Omitted for clean states.
-    ...(aborted ? { aborted: true } : {}),
-    ...(reviewDecision
-      ? {
-          reviewDecision: {
-            verdict: reviewDecision.verdict,
-            rationale: reviewDecision.rationale,
-            decisionIdentity: reviewDecision.decisionIdentity,
-            decidedAt: reviewDecision.decidedAt,
-          },
-        }
-      : {}),
-    ...(archiveStatus ? { archiveStatus } : {}),
-    ...(reviewLoop ? { reviewLoop } : {}),
-  });
-  return { output: json, metadata: { transitions: result.transitions } };
-}
-
-function buildEvidenceApprovalCompletionPresentation(state: SessionState): { markdown: string } {
-  const latestFindings = state.implReviewFindings?.at(-1);
-  const document = buildEvidenceApprovalCompletionDocument({
-    proofSummary: projectCompletionProofStatus(state),
-    exportAction: projectStatusActionFromCommand('/export', 'recommended'),
-    missingVerification: latestFindings?.missingVerification,
-  });
-  const markdown = renderMarkdown(document);
-  emitPresentationTelemetry(document, state.phase, state.id);
-  return { markdown };
 }
 
 /**
@@ -328,9 +206,9 @@ export async function resolveWorkspacePaths(context: {
 export async function requireState(sessDir: string): Promise<SessionState> {
   const state = await readState(sessDir);
   if (!state) {
-    throw Object.assign(
-      new Error('No FlowGuard session found. Run /hydrate first to bootstrap a session.'),
-      { code: 'NO_SESSION' },
+    throw new IntegrationInvariantError(
+      'NO_SESSION',
+      'No FlowGuard session found. Run /hydrate first to bootstrap a session.',
     );
   }
   return state;
@@ -382,9 +260,10 @@ export async function writeStateWithArtifactsAlreadyLocked(
   // 1. Validate BEFORE any I/O — fail-closed
   const result = SessionState.safeParse(nextState);
   if (!result.success) {
-    throw Object.assign(new Error(`Refusing to persist invalid state: ${result.error.message}`), {
-      code: 'SCHEMA_VALIDATION_FAILED',
-    });
+    throw new PersistenceError(
+      'SCHEMA_VALIDATION_FAILED',
+      `Refusing to persist invalid state: ${result.error.message}`,
+    );
   }
 
   // 2. Single transition finalizer: entering IMPLEMENTATION freezes the
@@ -402,11 +281,9 @@ export async function writeStateWithArtifactsAlreadyLocked(
   };
   const refreshed = SessionState.safeParse(stateWithProofGraph);
   if (!refreshed.success) {
-    throw Object.assign(
-      new Error(`Refusing to persist invalid ProofGraph: ${refreshed.error.message}`),
-      {
-        code: 'SCHEMA_VALIDATION_FAILED',
-      },
+    throw new PersistenceError(
+      'SCHEMA_VALIDATION_FAILED',
+      `Refusing to persist invalid ProofGraph: ${refreshed.error.message}`,
     );
   }
 
@@ -514,12 +391,10 @@ export function resolvePolicyFromState(state: SessionState): FlowGuardPolicy {
   }
   // Fail-closed: a hydrated session must always have a policySnapshot.
   // If missing, this is a data integrity error — not a recoverable fallback.
-  throw Object.assign(
-    new Error(
-      'Session state is missing policySnapshot. This indicates data corruption — ' +
-        'every hydrated session must have a frozen policy snapshot.',
-    ),
-    { code: 'POLICY_SNAPSHOT_MISSING' },
+  throw new IntegrationInvariantError(
+    'POLICY_SNAPSHOT_MISSING',
+    'Session state is missing policySnapshot. This indicates data corruption — ' +
+      'every hydrated session must have a frozen policy snapshot.',
   );
 }
 
@@ -529,61 +404,6 @@ export function resolvePolicyFromState(state: SessionState): FlowGuardPolicy {
  */
 export function createPolicyContext(policy: FlowGuardPolicy): RailContext {
   return { ...createRailContext(), policy };
-}
-
-/**
- * Persist a RailResult if it's an "ok" result. Returns the formatted JSON.
- * Rails don't persist — the caller (this tool layer) does it atomically.
- */
-export async function persistAndFormat(
-  sessDir: string,
-  result: RailResult,
-  options: RailPresentationOptions = {},
-): Promise<ToolResult> {
-  if (result.kind === 'ok') {
-    if (result.transitions.length > 0) {
-      getAdapterLogger().info('machine', 'transitions_applied', {
-        sessionId: result.state.binding.hostSessionId,
-        stateId: result.state.id,
-        path: result.transitions.map((t) => `${t.from}\u2192${t.to}`),
-        count: result.transitions.length,
-        ...getLogTraceFields(),
-      });
-    }
-    await writeStateWithArtifactsAndAuditOperations(sessDir, result.state, result.transitions);
-    logPersistedLifecycle(result);
-  }
-  return formatRailResult(result, options);
-}
-
-function logPersistedLifecycle(result: Extract<RailResult, { kind: 'ok' }>): void {
-  if (result.transitions.length === 0) return;
-  const sessionId = result.state.binding.hostSessionId;
-  const phase = result.state.phase;
-  const log = getAdapterLogger();
-
-  if (isPersistedAbort(result)) {
-    log.info('machine', 'session_aborted', {
-      sessionId,
-      phase,
-      ...getLogTraceFields(),
-    });
-    return;
-  }
-
-  if (TERMINAL.has(phase)) {
-    log.info('machine', 'session_completed', {
-      sessionId,
-      phase,
-      ...getLogTraceFields(),
-    });
-  }
-}
-
-function isPersistedAbort(result: Extract<RailResult, { kind: 'ok' }>): boolean {
-  return (
-    result.state.error?.code === 'ABORTED' && result.transitions.some((t) => t.event === 'ABORT')
-  );
 }
 
 /**

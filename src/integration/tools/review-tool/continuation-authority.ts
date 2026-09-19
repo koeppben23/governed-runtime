@@ -61,11 +61,12 @@ function getPersistedObligationBranchSource(
   const obligation = obligationById(state, exec);
   const provenance = obligation?.repositoryRevisionProvenance;
   if (provenance?.kind !== 'available' || !provenance.baseSha) return undefined;
+  const repository = repositoryFromBranchSubject(obligation?.reviewSubject);
   return {
     branch: exec.args.branch,
     baseBranch: exec.args.base ?? frozenRequestedBaseOf(obligation) ?? provenance.baseSha,
     resolvedBranchSha: provenance.headSha,
     resolvedBaseSha: provenance.baseSha,
-    repository: repositoryFromBranchSubject(obligation?.reviewSubject),
+    ...(repository !== undefined ? { repository } : {}),
   };
 }

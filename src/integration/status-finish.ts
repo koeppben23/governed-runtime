@@ -21,13 +21,15 @@ import {
   buildEvidenceDetailProjection,
   buildReadinessProjection,
   buildBlockedProjection,
-  type EvidenceDetailProjection,
-  type ReadinessProjection,
-  type FinishActionGuidance,
-  type FinishCard,
-  type FinishOverallStatus,
-  type FinishReviewCaveat,
-} from './status.js';
+} from './status-detail-projections.js';
+import type {
+  EvidenceDetailProjection,
+  ReadinessProjection,
+  FinishActionGuidance,
+  FinishCard,
+  FinishOverallStatus,
+  FinishReviewCaveat,
+} from './status-types.js';
 
 // ─── Finish Card ──────────────────────────────────────────────────────────────
 

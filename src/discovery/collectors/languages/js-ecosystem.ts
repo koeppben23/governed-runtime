@@ -46,13 +46,14 @@ export async function refineFromPackageManagerField(
   const match = pmField.match(PACKAGE_MANAGER_RE);
   if (!match) return false;
 
-  const managerId = match[1]!;
-  const version = match[2]!;
+  const [, managerId, version] = match;
+  if (managerId === undefined || version === undefined) return false;
   const evidence = 'package.json:packageManager';
 
   if (managerId === 'npm') {
     // npm is already the default — just add version
-    const npmItem = buildTools[npmIndex]!;
+    const npmItem = buildTools[npmIndex];
+    if (npmItem === undefined) return false;
     npmItem.version = version;
     npmItem.versionEvidence = evidence;
     if (!npmItem.evidence.includes(evidence)) {
@@ -102,7 +103,8 @@ export function refineBuildToolFromLockfiles(
 
   // If package-lock.json is present at root, enrich npm evidence
   if (rootFiles.has('package-lock.json')) {
-    const npmItem = buildTools[npmIndex]!;
+    const npmItem = buildTools[npmIndex];
+    if (npmItem === undefined) return;
     if (!npmItem.evidence.includes('package-lock.json')) {
       npmItem.evidence.push('package-lock.json');
     }

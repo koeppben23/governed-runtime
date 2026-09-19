@@ -7,7 +7,7 @@
 
 import { z } from 'zod';
 import { AdrStatus, ArchitectureReviewCompletion } from './evidence-primitives.js';
-import { ReviewFindings } from './evidence-review.js';
+import { ReviewFindings } from './evidence-review-attestation.js';
 import {
   ArchitectureApprovalCertificate,
   ArchitectureClaimDeclarations,

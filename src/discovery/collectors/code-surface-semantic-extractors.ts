@@ -266,6 +266,44 @@ function extractJavaSpringRouteHandlers(content: string, relPath: string): CodeS
   return endpoints;
 }
 
+function isJavaQuote(character: string): character is '"' | "'" {
+  return character === '"' || character === "'";
+}
+
+function isJavaBlockCommentStart(line: string, index: number): boolean {
+  return line[index] === '/' && line[index + 1] === '*';
+}
+
+function isJavaLineCommentStart(line: string, index: number): boolean {
+  return line[index] === '/' && line[index + 1] === '/';
+}
+
+function blockCommentEndOnLine(line: string, index: number): number | null {
+  if (line[index] === '*' && line[index + 1] === '/') return index + 1;
+  return null;
+}
+
+function advanceJavaQuotedScan(
+  line: string,
+  index: number,
+  quote: '"' | "'",
+): { readonly index: number; readonly quote: '"' | "'" | null } {
+  const character = line[index] ?? '';
+  if (character === '\\') return { index: index + 1, quote };
+  if (character === quote) return { index, quote: null };
+  return { index, quote };
+}
+
+function isJavaMappingAnnotationAt(
+  line: string,
+  index: number,
+  annotationColumn: number | null,
+): boolean {
+  if (annotationColumn !== null) return false;
+  if (line[index] !== '@') return false;
+  return JAVA_MAPPING_ANNOTATION.test(line.slice(index));
+}
+
 function scanJavaLineForMapping(
   line: string,
   alreadyInBlockComment: boolean,
@@ -277,40 +315,77 @@ function scanJavaLineForMapping(
   for (let index = 0; index < line.length; index++) {
     const character = line[index] ?? '';
     if (inBlockComment) {
-      if (character === '*' && line[index + 1] === '/') {
-        inBlockComment = false;
-        index++;
-      }
+      const commentEnd = blockCommentEndOnLine(line, index);
+      if (commentEnd === null) continue;
+      inBlockComment = false;
+      index = commentEnd;
       continue;
     }
     if (quote !== null) {
-      if (character === '\\') {
-        index++;
-      } else if (character === quote) {
-        quote = null;
-      }
+      const advanced = advanceJavaQuotedScan(line, index, quote);
+      quote = advanced.quote;
+      index = advanced.index;
       continue;
     }
-    if (character === '"' || character === "'") {
+    if (isJavaQuote(character)) {
       quote = character;
       continue;
     }
-    if (character === '/' && line[index + 1] === '/') break;
-    if (character === '/' && line[index + 1] === '*') {
+    if (isJavaLineCommentStart(line, index)) break;
+    if (isJavaBlockCommentStart(line, index)) {
       inBlockComment = true;
       index++;
       continue;
     }
-    if (
-      annotationColumn === null &&
-      character === '@' &&
-      JAVA_MAPPING_ANNOTATION.test(line.slice(index))
-    ) {
+    if (isJavaMappingAnnotationAt(line, index, annotationColumn)) {
       annotationColumn = index;
     }
   }
 
   return { annotationColumn, inBlockComment };
+}
+
+function isJavaWhitespaceAt(line: string, index: number): boolean {
+  return index < line.length && /\s/.test(line[index] ?? '');
+}
+
+function advanceJavaQuotedScanInArguments(
+  character: string,
+  columnIndex: number,
+  quote: '"' | "'" | null,
+): { readonly columnIndex: number; readonly quote: '"' | "'" | null } {
+  if (quote === null) {
+    if (isJavaQuote(character)) return { columnIndex, quote: character };
+    return { columnIndex, quote };
+  }
+  if (character === '\\') return { columnIndex: columnIndex + 1, quote };
+  if (character === quote) return { columnIndex, quote: null };
+  return { columnIndex, quote };
+}
+
+function consumeJavaAnnotationArguments(
+  lines: readonly string[],
+  start: JavaSourcePosition,
+): JavaSourcePosition | null {
+  let depth = 0;
+  let quote: '"' | "'" | null = null;
+  for (let lineIndex = start.lineIndex; lineIndex < lines.length; lineIndex++) {
+    const currentLine = lines[lineIndex] ?? '';
+    const fromColumn = lineIndex === start.lineIndex ? start.columnIndex : 0;
+    for (let columnIndex = fromColumn; columnIndex < currentLine.length; columnIndex++) {
+      const character = currentLine[columnIndex] ?? '';
+      const advanced = advanceJavaQuotedScanInArguments(character, columnIndex, quote);
+      columnIndex = advanced.columnIndex;
+      quote = advanced.quote;
+      if (quote !== null) continue;
+      if (character === '(') {
+        depth++;
+      } else if (character === ')' && --depth === 0) {
+        return { lineIndex, columnIndex: columnIndex + 1 };
+      }
+    }
+  }
+  return null;
 }
 
 function consumeJavaAnnotation(
@@ -321,35 +396,36 @@ function consumeJavaAnnotation(
   const annotation = JAVA_ANNOTATION.exec(line.slice(start.columnIndex));
   if (annotation === null) return null;
 
-  let lineIndex = start.lineIndex;
+  const lineIndex = start.lineIndex;
   let columnIndex = start.columnIndex + annotation[0].length;
-  while (/\s/.test((lines[lineIndex] ?? '')[columnIndex] ?? '')) columnIndex++;
-  if ((lines[lineIndex] ?? '')[columnIndex] !== '(') return { lineIndex, columnIndex };
+  while (isJavaWhitespaceAt(line, columnIndex)) columnIndex++;
+  if (line[columnIndex] !== '(') return { lineIndex, columnIndex };
 
-  let depth = 0;
-  let quote: '"' | "'" | null = null;
-  for (; lineIndex < lines.length; lineIndex++) {
+  return consumeJavaAnnotationArguments(lines, { lineIndex, columnIndex });
+}
+
+function skipJavaHorizontalWhitespace(line: string, columnIndex: number): number {
+  let index = columnIndex;
+  while (isJavaWhitespaceAt(line, index)) index++;
+  return index;
+}
+
+function skipJavaBlockComment(
+  lines: readonly string[],
+  startLineIndex: number,
+  startColumnIndex: number,
+): JavaSourcePosition | null {
+  let lineIndex = startLineIndex;
+  let columnIndex = startColumnIndex;
+
+  while (lineIndex < lines.length) {
     const currentLine = lines[lineIndex] ?? '';
-    for (; columnIndex < currentLine.length; columnIndex++) {
-      const character = currentLine[columnIndex] ?? '';
-      if (quote !== null) {
-        if (character === '\\') {
-          columnIndex++;
-        } else if (character === quote) {
-          quote = null;
-        }
-        continue;
-      }
-      if (character === '"' || character === "'") {
-        quote = character;
-      } else if (character === '(') {
-        depth++;
-      } else if (character === ')' && --depth === 0) {
-        return { lineIndex, columnIndex: columnIndex + 1 };
-      }
-    }
+    const commentEnd = currentLine.indexOf('*/', columnIndex);
+    if (commentEnd >= 0) return { lineIndex, columnIndex: commentEnd + 2 };
+    lineIndex++;
     columnIndex = 0;
   }
+
   return null;
 }
 
@@ -362,7 +438,7 @@ function skipJavaWhitespaceAndComments(
 
   while (lineIndex < lines.length) {
     const line = lines[lineIndex] ?? '';
-    while (columnIndex < line.length && /\s/.test(line[columnIndex] ?? '')) columnIndex++;
+    columnIndex = skipJavaHorizontalWhitespace(line, columnIndex);
 
     if (columnIndex >= line.length) {
       lineIndex++;
@@ -370,27 +446,17 @@ function skipJavaWhitespaceAndComments(
       continue;
     }
 
-    if (line[columnIndex] === '/' && line[columnIndex + 1] === '/') {
+    if (isJavaLineCommentStart(line, columnIndex)) {
       lineIndex++;
       columnIndex = 0;
       continue;
     }
 
-    if (line[columnIndex] === '/' && line[columnIndex + 1] === '*') {
-      columnIndex += 2;
-      let closed = false;
-      while (lineIndex < lines.length) {
-        const currentLine = lines[lineIndex] ?? '';
-        const commentEnd = currentLine.indexOf('*/', columnIndex);
-        if (commentEnd >= 0) {
-          columnIndex = commentEnd + 2;
-          closed = true;
-          break;
-        }
-        lineIndex++;
-        columnIndex = 0;
-      }
-      if (!closed) return null;
+    if (isJavaBlockCommentStart(line, columnIndex)) {
+      const afterComment = skipJavaBlockComment(lines, lineIndex, columnIndex + 2);
+      if (afterComment === null) return null;
+      lineIndex = afterComment.lineIndex;
+      columnIndex = afterComment.columnIndex;
       continue;
     }
 

@@ -9,6 +9,7 @@ import { readdir, rm, rmdir, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { globalConfigPath } from '../adapters/persistence.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
+import { CliInstallError } from './errors.js';
 import {
   computeMandatesDigest,
   findParallelOpencodeConfig,
@@ -350,7 +351,8 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
     const manifestPath = ownershipManifestPath(target);
     const ownership = await readInstallOwnershipManifest(target);
     if (ownership === null && existsSync(manifestPath)) {
-      throw new Error(
+      throw new CliInstallError(
+        'OWNERSHIP_MANIFEST_INVALID',
         `${manifestPath} exists but is not a valid FlowGuard ownership manifest; refusing uninstall because ownership cannot be proven`,
       );
     }

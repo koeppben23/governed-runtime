@@ -274,7 +274,7 @@ function loadPullRequestContent(
   }
 }
 function loadBranchContent(refInput: ReviewReferenceInput): PrepareReviewResult {
-  if (!refInput.resolvedBranchSha || !refInput.resolvedBaseSha) {
+  if (!refInput.branch || !refInput.resolvedBranchSha || !refInput.resolvedBaseSha) {
     return blocked('REVIEW_BRANCH_PROVENANCE_MISSING', {
       command: '/review',
       reason: 'Branch review requires resolved head and base commit provenance.',
@@ -300,7 +300,7 @@ function loadBranchContent(refInput: ReviewReferenceInput): PrepareReviewResult 
       {
         source: {
           kind: 'branch',
-          branch: refInput.branch!,
+          branch: refInput.branch,
           ...(refInput.baseBranch ? { requestedBase: refInput.baseBranch } : {}),
         },
         baseRepository: refInput.repository,
@@ -355,15 +355,22 @@ async function loadUrlContent(
   refInput: ReviewReferenceInput,
   dnsLookup?: ReviewDnsLookup,
 ): Promise<{ content: string } | RailBlocked> {
+  const url = refInput.url;
+  if (typeof url !== 'string' || url.trim().length === 0) {
+    return blocked('COMMAND_BLOCKED', {
+      command: '/review',
+      reason: 'URL blocked: no URL provided',
+    });
+  }
   // BUG-13: Validate URL before fetch to block SSRF attempts with a clear reason.
-  const validation = validateReviewUrl(refInput.url!);
+  const validation = validateReviewUrl(url);
   if (!validation.valid) {
     return blocked('COMMAND_BLOCKED', {
       command: '/review',
       reason: `URL blocked: ${validation.reason}`,
     });
   }
-  const fetchResult = await fetchUrlContent(refInput.url!, dnsLookup);
+  const fetchResult = await fetchUrlContent(url, dnsLookup);
   if ('kind' in fetchResult) return fetchResult;
   return { content: fetchResult.content };
 }
@@ -373,8 +380,8 @@ interface BuildReportOptions {
   now: string;
   validationSummary: Array<{ checkId: string; passed: boolean; detail: string }>;
   findings: ReviewReportFinding[];
-  refInput?: ReviewReferenceInput;
-  reviewSubject?: FrozenReviewSubject;
+  refInput?: ReviewReferenceInput | undefined;
+  reviewSubject?: FrozenReviewSubject | undefined;
 }
 export function buildReviewReport(opts: BuildReportOptions): ReviewReportDraft {
   const { state, now, validationSummary, findings, refInput, reviewSubject } = opts;

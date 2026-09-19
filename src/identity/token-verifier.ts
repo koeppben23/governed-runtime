@@ -79,16 +79,22 @@ export class JwtStaticTokenVerifier implements TokenVerifier {
       throw new IdpError('IDP_SUBJECT_MISSING', 'Required subject claim missing in token');
     }
 
-    const email = this.extractClaimOrNull(verifiedPayload, claimMapping.emailClaim);
-    const displayName = this.extractClaimOrNull(verifiedPayload, claimMapping.nameClaim);
+    return this.buildVerifiedToken(verifiedPayload, subject, kid, header.alg);
+  }
 
-    const audience = Array.isArray(verifiedPayload.aud)
-      ? verifiedPayload.aud
-      : verifiedPayload.aud
-        ? [verifiedPayload.aud]
-        : [];
+  private buildVerifiedToken(
+    payload: JwtPayload,
+    subject: string,
+    keyId: string,
+    algorithm: string,
+  ): VerifiedToken {
+    const claimMapping = this.config.claimMapping;
+    const email = this.extractClaimOrNull(payload, claimMapping.emailClaim);
+    const displayName = this.extractClaimOrNull(payload, claimMapping.nameClaim);
 
-    if (typeof verifiedPayload.exp !== 'number') {
+    const audience = Array.isArray(payload.aud) ? payload.aud : payload.aud ? [payload.aud] : [];
+
+    if (typeof payload.exp !== 'number') {
       throw new IdpError('IDP_TOKEN_INVALID', 'IdP token missing required exp claim');
     }
 
@@ -96,16 +102,14 @@ export class JwtStaticTokenVerifier implements TokenVerifier {
       subject,
       email,
       displayName,
-      issuer: typeof verifiedPayload.iss === 'string' ? verifiedPayload.iss : this.config.issuer,
+      issuer: typeof payload.iss === 'string' ? payload.iss : this.config.issuer,
       audience,
-      issuedAt:
-        typeof verifiedPayload.iat === 'number' ? new Date(verifiedPayload.iat * 1000) : null,
-      notBefore:
-        typeof verifiedPayload.nbf === 'number' ? new Date(verifiedPayload.nbf * 1000) : null,
-      expiresAt: new Date(verifiedPayload.exp * 1000),
-      keyId: kid,
-      algorithm: header.alg,
-      rawClaims: verifiedPayload,
+      issuedAt: typeof payload.iat === 'number' ? new Date(payload.iat * 1000) : null,
+      notBefore: typeof payload.nbf === 'number' ? new Date(payload.nbf * 1000) : null,
+      expiresAt: new Date(payload.exp * 1000),
+      keyId,
+      algorithm,
+      rawClaims: payload,
     };
   }
 

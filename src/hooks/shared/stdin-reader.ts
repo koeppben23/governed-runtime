@@ -65,6 +65,36 @@ export async function readStdin(
   return parsed as Record<string, unknown>;
 }
 
+function isRecordValue(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function collectToolPayloadErrors(payload: Record<string, unknown>): string[] {
+  const errors: string[] = [];
+
+  if (typeof payload['tool_name'] !== 'string' || payload['tool_name'].length === 0) {
+    errors.push('tool_name must be a non-empty string');
+  }
+  if (typeof payload['session_id'] !== 'string' || payload['session_id'].length === 0) {
+    errors.push('session_id must be a non-empty string');
+  }
+  if (typeof payload['cwd'] !== 'string' || payload['cwd'].length === 0) {
+    errors.push('cwd must be a non-empty string');
+  }
+
+  return errors;
+}
+
+function readRequiredString(payload: Record<string, unknown>, key: string): string {
+  const value = payload[key];
+  return typeof value === 'string' ? value : '';
+}
+
+function readOptionalString(payload: Record<string, unknown>, key: string): string | undefined {
+  const value = payload[key];
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
 /**
  * Validate that the parsed payload contains required fields for PreToolUse/PostToolUse.
  *
@@ -84,25 +114,9 @@ export function validateToolHookPayload(payload: Record<string, unknown>): {
   /** Tool result the model received; shape depends on the tool. */
   tool_response?: unknown;
 } {
-  const errors: string[] = [];
-
-  if (typeof payload['tool_name'] !== 'string' || payload['tool_name'].length === 0) {
-    errors.push('tool_name must be a non-empty string');
-  }
-  if (typeof payload['session_id'] !== 'string' || payload['session_id'].length === 0) {
-    errors.push('session_id must be a non-empty string');
-  }
-  if (typeof payload['cwd'] !== 'string' || payload['cwd'].length === 0) {
-    errors.push('cwd must be a non-empty string');
-  }
-
   // tool_input may be absent or non-object — default to empty
-  const toolInput =
-    typeof payload['tool_input'] === 'object' &&
-    payload['tool_input'] !== null &&
-    !Array.isArray(payload['tool_input'])
-      ? (payload['tool_input'] as Record<string, unknown>)
-      : {};
+  const toolInput = isRecordValue(payload['tool_input']) ? payload['tool_input'] : {};
+  const errors = collectToolPayloadErrors(payload);
 
   if (errors.length > 0) {
     throw new StdinReadError(
@@ -120,19 +134,21 @@ export function validateToolHookPayload(payload: Record<string, unknown>): {
     agent_type?: string;
     tool_response?: unknown;
   } = {
-    tool_name: payload['tool_name'] as string,
+    tool_name: readRequiredString(payload, 'tool_name'),
     tool_input: toolInput,
-    session_id: payload['session_id'] as string,
-    cwd: payload['cwd'] as string,
+    session_id: readRequiredString(payload, 'session_id'),
+    cwd: readRequiredString(payload, 'cwd'),
   };
 
   // Subagent context: present only when the hook fires inside a subagent.
   // Absence is normal (main-thread call) — never an error.
-  if (typeof payload['agent_id'] === 'string' && payload['agent_id'].length > 0) {
-    result.agent_id = payload['agent_id'];
+  const agentId = readOptionalString(payload, 'agent_id');
+  if (agentId !== undefined) {
+    result.agent_id = agentId;
   }
-  if (typeof payload['agent_type'] === 'string' && payload['agent_type'].length > 0) {
-    result.agent_type = payload['agent_type'];
+  const agentType = readOptionalString(payload, 'agent_type');
+  if (agentType !== undefined) {
+    result.agent_type = agentType;
   }
   if (payload['tool_response'] !== undefined) {
     result.tool_response = payload['tool_response'];

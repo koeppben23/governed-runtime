@@ -106,11 +106,11 @@ describe('prepareStateWithAuditOperations', () => {
 
     const prepared = await prepareStateWithAuditOperations(previous, next, undefined);
     const op = requireTransition(prepared.pendingAuditOperations[0]!);
-    const body = buildTransitionBody(
-      prepared.flowguardSessionId,
-      prepared.binding.hostSessionId,
-      op.transition.to,
-      {
+    const body = buildTransitionBody({
+      flowguardSessionId: prepared.flowguardSessionId,
+      hostSessionId: prepared.binding.hostSessionId,
+      phase: op.transition.to,
+      detail: {
         operationId: op.operationId,
         preStateDigest: op.preStateDigest,
         mutationDigest: op.mutationDigest,
@@ -121,9 +121,9 @@ describe('prepareStateWithAuditOperations', () => {
         autoAdvanced: op.transition.autoAdvanced,
         chainIndex: op.transition.chainIndex,
       },
-      op.transition.at,
-      'genesis',
-    );
+      occurredAt: op.transition.at,
+      prevHash: 'genesis',
+    });
 
     expect(computeCanonicalEventDigest(body)).toBe(op.auditEventDigest);
   });
@@ -183,19 +183,19 @@ describe('prepareStateWithAuditOperations', () => {
     const operation = prepared.pendingAuditOperations[0]!;
     expect(operation.kind).toBe('state_write');
     if (operation.kind !== 'state_write') throw new Error('expected state_write operation');
-    const body = buildStateWriteBody(
-      prepared.flowguardSessionId,
-      prepared.binding.hostSessionId,
-      operation.stateWrite.phase,
-      {
+    const body = buildStateWriteBody({
+      flowguardSessionId: prepared.flowguardSessionId,
+      hostSessionId: prepared.binding.hostSessionId,
+      phase: operation.stateWrite.phase,
+      detail: {
         operationId: operation.operationId,
         preStateDigest: operation.preStateDigest,
         mutationDigest: operation.mutationDigest,
         postStateDigest: operation.postStateDigest,
       },
-      operation.stateWrite.at,
-      'genesis',
-    );
+      occurredAt: operation.stateWrite.at,
+      prevHash: 'genesis',
+    });
     expect(operation.preStateDigest).toBe(computeStateDigest(previous));
     expect(operation.postStateDigest).toBe(computeStateDigest(prepared));
     expect(computeCanonicalEventDigest(body)).toBe(operation.auditEventDigest);

@@ -10,11 +10,9 @@ import type { SessionState } from '../../state/schema.js';
 import type { ReviewReport } from '../../state/evidence.js';
 import { PHASE_LABELS } from '../../presentation/phase-labels.js';
 import { directiveLabel } from '../../presentation/directive-copy.js';
-import {
-  buildStatusProjection,
-  buildEvidenceDetailProjection,
-  type FinishOverallStatus,
-} from '../status.js';
+import { buildStatusProjection } from '../status.js';
+import { buildEvidenceDetailProjection } from '../status-detail-projections.js';
+import type { FinishOverallStatus } from '../status-types.js';
 import { buildFinishCard } from '../status-finish.js';
 import { evaluateArchivePreflight, type CommandPreflight } from '../archive-preflight.js';
 import {
@@ -33,6 +31,7 @@ import {
   TOOL_FLOWGUARD_HYDRATE,
   TOOL_FLOWGUARD_STATUS,
 } from '../tool-names.js';
+import { IntegrationInvariantError } from '../errors.js';
 
 export type HelpVisibility =
   'recommended' | 'available' | 'upcoming' | 'blocked_recoverable' | 'not_applicable' | 'hidden';
@@ -429,8 +428,20 @@ function buildNoSessionResult(): HelpResult {
   const start = INSTALLED_COMMANDS.find(
     (definition) =>
       definition.target.toolName === TOOL_FLOWGUARD_HYDRATE && definition.visibility === 'primary',
-  )!;
-  const status = INSTALLED_COMMANDS.find((definition) => definition.id === 'operational.status')!;
+  );
+  if (start === undefined) {
+    throw new IntegrationInvariantError(
+      'HELP_HYDRATE_COMMAND_METADATA_MISSING',
+      'buildNoSessionResult: no installed command metadata for the primary hydrate command.',
+    );
+  }
+  const status = INSTALLED_COMMANDS.find((definition) => definition.id === 'operational.status');
+  if (status === undefined) {
+    throw new IntegrationInvariantError(
+      'HELP_STATUS_COMMAND_METADATA_MISSING',
+      'buildNoSessionResult: no installed command metadata for "operational.status".',
+    );
+  }
   return {
     phase: null,
     lifecycle: 'No active session',

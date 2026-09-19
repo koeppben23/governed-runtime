@@ -168,13 +168,35 @@ export function renderCoverageGaps(state: SessionState): string[] {
 /** Render the persisted critical-fact requirement without performing fresh classification. */
 export function renderCriticalClaimRequirement(state: SessionState): string[] {
   if (!state.implementation) return [];
-  const authorization = authorizedCriticalPlanClaimIds(state.plan);
+  const plan = state.plan;
+  const authorization = authorizedCriticalPlanClaimIds(
+    plan
+      ? {
+          current: plan.current,
+          ...(plan.claimDeclarations !== undefined
+            ? { claimDeclarations: plan.claimDeclarations }
+            : {}),
+          ...(plan.approvalCertificate !== undefined
+            ? { approvalCertificate: plan.approvalCertificate }
+            : {}),
+        }
+      : undefined,
+  );
+  const riskAssessment = state.implementationRiskAssessment;
   const decision = evaluateProofGraphGate({
-    projection: state.proofGraph,
+    ...(state.proofGraph !== undefined ? { projection: state.proofGraph } : {}),
     authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
     certificateValid: authorization.kind === 'authorized',
     implementationDigest: state.implementation.digest,
-    riskAssessment: state.implementationRiskAssessment,
+    riskAssessment:
+      riskAssessment !== undefined
+        ? {
+            implementationDigest: riskAssessment.implementationDigest,
+            ...(riskAssessment.riskTriggers !== undefined
+              ? { riskTriggers: riskAssessment.riskTriggers }
+              : {}),
+          }
+        : undefined,
   });
   if (decision.kind === 'risk_assessment_stale') {
     return [

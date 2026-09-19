@@ -30,7 +30,7 @@
  * @version v1
  */
 
-import { ReviewActorInfo, ReviewFindings } from '../../../state/evidence-review.js';
+import { ReviewActorInfo, ReviewFindings } from '../../../state/evidence-review-attestation.js';
 import { ReviewerFindingsInput } from '../../../state/evidence-review-input.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import { normalizeChallenges } from './normalize.js';

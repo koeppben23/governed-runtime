@@ -14,6 +14,7 @@
  */
 
 import type { SessionState } from '../../state/schema.js';
+import { resolvePolicyFromSnapshot } from '../../config/policy.js';
 import { DecisionIdentity } from '../../state/evidence-identity.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { archiveRegulatedEvidence } from '../../adapters/workspace/archive.js';
@@ -53,7 +54,7 @@ export function createSessionCompletionAuditDeps(input: {
     getSessionDir: (candidate) => (candidate === sessionID ? sessDir : null),
     resolveCanonicalSessionDir: async () => ({ status: 'resolved', sessDir }),
     resolveSessionPolicy: async () => ({
-      policy: state.policySnapshot,
+      policy: resolvePolicyFromSnapshot(state.policySnapshot),
       state: await readState(sessDir),
     }),
     initChain: async () => getLastChainHash(await readAuditTrail(sessDir)),

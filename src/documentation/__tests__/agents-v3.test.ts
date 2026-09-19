@@ -143,7 +143,7 @@ describe('repository AGENTS guidance', () => {
   describe('agent contract completeness', () => {
     it('documents file-size budget (Tier 2)', async () => {
       const content = await readAll();
-      expect(content).toContain('750 LOC');
+      expect(content).toContain('650 LOC');
       expect(content).toContain('review blocker');
     });
 

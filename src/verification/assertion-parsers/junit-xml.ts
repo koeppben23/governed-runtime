@@ -25,6 +25,7 @@ import type { ProviderId } from '../../state/evidence-validation.js';
 import type { AssertionIdentity } from '../../state/assertion-identity.js';
 import type { ParseContext, ParserResult } from './types.js';
 import { hashText } from '../../shared/hashing.js';
+import { VerificationError } from '../errors.js';
 
 /**
  * Canonical localId for a JUnit test: classname followed by # and method name.
@@ -49,7 +50,8 @@ function assertJUnitDocumentShape(xmlContent: string): void {
   const hasTestsuiteTag = /<testsuite\b/i.test(xmlContent);
   const hasTestcaseTag = /<testcase\b/i.test(xmlContent);
   if (!hasTestsuiteTag && !hasTestcaseTag) {
-    throw new Error(
+    throw new VerificationError(
+      'VERIFICATION_REPORT_SHAPE_INVALID',
       'junit_xml: not a valid JUnit XML report — no <testsuite> or <testcase> tags found',
     );
   }
@@ -67,20 +69,23 @@ function collectJUnitTestCases(xmlContent: string): JUnitTestCaseRef[] {
     const classnameMatch = attrClassname.exec(tag);
     const nameMatch = attrName.exec(tag);
     if (!classnameMatch || !nameMatch) continue;
+    const classname = classnameMatch[1];
+    const name = nameMatch[1];
+    if (classname === undefined || name === undefined) continue;
     const isSelfClosing = tag.endsWith('/>');
     const afterOpen = tcm.index + tag.length;
     if (isSelfClosing) {
       testCases.push({
-        classname: classnameMatch[1]!,
-        name: nameMatch[1]!,
+        classname,
+        name,
         offset: afterOpen,
         endOffset: afterOpen,
       });
     } else {
       const closeTag = xmlContent.indexOf('</testcase>', afterOpen);
       testCases.push({
-        classname: classnameMatch[1]!,
-        name: nameMatch[1]!,
+        classname,
+        name,
         offset: afterOpen,
         endOffset: closeTag !== -1 ? closeTag : afterOpen,
       });

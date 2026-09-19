@@ -63,6 +63,7 @@ import {
   type ArchitectureSession,
 } from './architecture-shared.js';
 import { enrichWithWorkflowDirective, formatBlocked, writeStateWithArtifacts } from './helpers.js';
+import { IntegrationInvariantError } from '../errors.js';
 
 export async function routeArchitectureInitialSubmission(
   args: ArchitectureArgs,
@@ -209,6 +210,13 @@ function architectureInstructionResponse(
   },
 ): string {
   const { state } = session;
+  const architecture = state.architecture;
+  if (!architecture) {
+    throw new IntegrationInvariantError(
+      'NO_ARCHITECTURE',
+      'an architecture review instruction requires ADR state',
+    );
+  }
   const subagentEnabled = true;
   const instruction = buildArchitectureReviewInstruction({
     authority: input.authority,
@@ -220,8 +228,8 @@ function architectureInstructionResponse(
   const response: Record<string, unknown> = {
     phase: state.phase,
     status: input.status,
-    adrId: state.architecture!.id,
-    adrDigest: state.architecture!.digest,
+    adrId: architecture.id,
+    adrDigest: architecture.digest,
     selfReviewIteration: state.selfReview?.iteration ?? 0,
     reviewMode: subagentEnabled ? 'subagent' : 'self',
     ...reviewObligationResponseFields(input.authority),
@@ -482,6 +490,13 @@ function buildRestartResponse(
     instruction: ReturnType<typeof buildArchitectureReviewInstruction>;
   },
 ): Record<string, unknown> {
+  const selfReview = augmentedState.selfReview;
+  if (!selfReview) {
+    throw new IntegrationInvariantError(
+      'NO_SELF_REVIEW',
+      'an architecture review restart response requires self-review state',
+    );
+  }
   return {
     phase: augmentedState.phase,
     status: input.sameRevision
@@ -489,7 +504,7 @@ function buildRestartResponse(
       : `ADR ${input.nextAdr.id} revised after blocked review; fresh review orchestration started.`,
     adrId: input.nextAdr.id,
     adrDigest: input.nextAdr.digest,
-    selfReviewIteration: augmentedState.selfReview!.iteration,
+    selfReviewIteration: selfReview.iteration,
     revisionDelta: input.revisionDelta,
     reviewMode: input.subagentEnabled ? 'subagent' : 'self',
     ...reviewObligationResponseFields(input.authority),
@@ -510,16 +525,24 @@ function buildRestartedState(
     assurance: SessionState['reviewAssurance'];
   },
 ): SessionState {
+  const selfReview = state.selfReview;
+  const architecture = state.architecture;
+  if (!selfReview || !architecture) {
+    throw new IntegrationInvariantError(
+      'ARCHITECTURE_RESTART_STATE_REQUIRED',
+      'an architecture review restart requires architecture and self-review state',
+    );
+  }
   // ADR identity, createdAt, and nextAdrNumber are NEVER mutated here:
   // a blocked review obligation is a new review generation, not a new ADR.
   return {
     ...state,
     architecture: input.nextAdr,
     selfReview: {
-      ...state.selfReview!,
-      prevDigest: input.sameRevision ? state.selfReview!.prevDigest : state.architecture!.digest,
+      ...selfReview,
+      prevDigest: input.sameRevision ? selfReview.prevDigest : architecture.digest,
       currDigest: input.nextAdr.digest,
-      revisionDelta: input.sameRevision ? state.selfReview!.revisionDelta : input.revisionDelta,
+      revisionDelta: input.sameRevision ? selfReview.revisionDelta : input.revisionDelta,
       verdict: 'changes_requested',
     },
     reviewAssurance: input.assurance,
@@ -538,10 +561,24 @@ function resolveRestartRevision(
       readonly nextAdr: NonNullable<SessionState['architecture']>;
       readonly revisionDelta: 'none' | 'minor';
     } {
-  if (sameRevision) {
-    return { kind: 'ok', nextAdr: state.architecture!, revisionDelta: 'none' };
+  const architecture = state.architecture;
+  if (!architecture) {
+    throw new IntegrationInvariantError(
+      'NO_ARCHITECTURE',
+      'an architecture review restart resolution requires ADR state',
+    );
   }
-  const missingSections = validateAdrSections(args.adrText!);
+  if (sameRevision) {
+    return { kind: 'ok', nextAdr: architecture, revisionDelta: 'none' };
+  }
+  const adrText = args.adrText;
+  if (adrText === undefined) {
+    throw new IntegrationInvariantError(
+      'EMPTY_ADR_TEXT',
+      'an architecture revision requires ADR text to validate',
+    );
+  }
+  const missingSections = validateAdrSections(adrText);
   if (missingSections.length > 0) {
     return {
       kind: 'blocked',
@@ -550,20 +587,29 @@ function resolveRestartRevision(
       }),
     };
   }
+  let claimDeclarations:
+    | {
+        flow: 'architecture';
+        claims: NonNullable<ReturnType<typeof normalizeArchitectureClaims>>;
+      }
+    | undefined;
+  if (args.claims) {
+    const normalizedClaims = normalizeArchitectureClaims(args.claims);
+    if (normalizedClaims === undefined) {
+      throw new IntegrationInvariantError(
+        'PROOFGRAPH_CLAIM_NORMALIZATION_UNAVAILABLE',
+        'normalizing submitted architecture claims produced no canonical declarations',
+      );
+    }
+    claimDeclarations = { flow: 'architecture', claims: normalizedClaims };
+  }
   return {
     kind: 'ok',
     nextAdr: {
-      ...state.architecture!,
-      adrText: args.adrText!,
+      ...architecture,
+      adrText,
       digest: submittedDigest,
-      ...(args.claims
-        ? {
-            claimDeclarations: {
-              flow: 'architecture' as const,
-              claims: normalizeArchitectureClaims(args.claims)!,
-            },
-          }
-        : {}),
+      ...(claimDeclarations ? { claimDeclarations } : {}),
       // A revision invalidates any prior approval over the old digest.
       approvalCertificate: undefined,
     },

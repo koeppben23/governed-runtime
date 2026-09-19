@@ -33,7 +33,7 @@ export type ToolFamily = 'plan' | 'architecture' | 'implement';
 /** Normalized, family-agnostic view of the shared multi-mode arguments. */
 export interface ToolCallArgsView {
   /** Optional heavy text payload: planText (plan) / adrText (architecture). */
-  readonly text?: string;
+  readonly text?: string | undefined;
   /**
    * reviewVerdict, when present. Typed with the canonical LoopVerdict so the
    * shared view accepts every tool family: plan and architecture Mode B accept
@@ -41,11 +41,11 @@ export interface ToolCallArgsView {
    * the full LoopVerdict including `unable_to_review`. The classifier only
    * distinguishes `changes_requested` from everything else.
    */
-  readonly reviewVerdict?: LoopVerdict;
+  readonly reviewVerdict?: LoopVerdict | undefined;
   /** reviewerUnavailable flag. */
-  readonly reviewerUnavailable?: boolean;
+  readonly reviewerUnavailable?: boolean | undefined;
   /** Explicit typed transport-recovery intent (implementation review). */
-  readonly reviewRecovery?: 'retry_transport';
+  readonly reviewRecovery?: 'retry_transport' | undefined;
 }
 
 /** Pure boolean flags derived from the arguments (the once-canonical idiom). */
@@ -63,7 +63,11 @@ export type ToolCallMode =
   | { readonly kind: 'approval' }
   | { readonly kind: 'transport_failure_retry' }
   | { readonly kind: 'transport_recovery' }
-  | { readonly kind: 'invalid'; readonly code: string; readonly params?: Record<string, string> };
+  | {
+      readonly kind: 'invalid';
+      readonly code: string;
+      readonly params?: Record<string, string> | undefined;
+    };
 
 /**
  * Per-family invalid reason codes. Existing codes are preserved verbatim so the
@@ -99,7 +103,6 @@ const FAMILY_CODES: Record<ToolFamily, FamilyCodes> = {
   },
   implement: {
     // implement has no text payload, so approve-with-text is structurally N/A.
-    approveWithText: undefined,
     unavailableWithSubmission: 'INVALID_IMPLEMENT_TOOL_SEQUENCE',
     unavailableRequiresText: false,
     recoveryWithOtherInput: 'INVALID_IMPLEMENT_TOOL_SEQUENCE',
@@ -142,7 +145,7 @@ function detectInvalidShape(
   const rules: ReadonlyArray<{
     readonly when: boolean;
     readonly code: string | undefined;
-    readonly params?: Record<string, string>;
+    readonly params?: Record<string, string> | undefined;
   }> = [
     // text + verdict=accept: heavy payload submitted with an approval.
     {

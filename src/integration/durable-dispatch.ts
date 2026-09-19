@@ -1,5 +1,5 @@
 /**
- * @module integration/review/enforcement/durable-dispatch
+ * @module integration/durable-dispatch
  * @description Transport-neutral durable reviewer dispatch ledger operations.
  *
  * Every reviewer invocation must be recorded durably BEFORE the host releases
@@ -148,7 +148,7 @@ export function buildInterruptedDispatchRearm(
   spent: ReviewAttempt,
   now: string,
 ): InterruptedDispatchRearm {
-  const authorization = authorizeDispatchRearm(assurance!, spent);
+  const authorization = authorizeDispatchRearm(ensureReviewAssurance(assurance), spent);
   if (authorization.kind === 'blocked') {
     return { kind: 'blocked', reason: authorization.reason };
   }

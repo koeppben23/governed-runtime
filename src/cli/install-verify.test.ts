@@ -306,7 +306,7 @@ describe('install-verify', () => {
     });
 
     it('checksums.sha256 matches tarball (integrity smoke)', async () => {
-      const { verifyTarballChecksum } = await import('./install-helpers.js');
+      const { verifyTarballChecksum } = await import('./install-helpers-integrity.js');
       const { hashFile } = await import('../shared/hashing.js');
       const checksumsPath = path.join(tmpDir, 'checksums.sha256');
       const tarballName = path.basename(tarballPath);

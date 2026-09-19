@@ -77,7 +77,6 @@ export function repoArgs(overrides: Partial<CliArgs> = {}): CliArgs {
     scopeSource: 'default',
     policyMode: 'solo',
     force: false,
-    coreTarball: undefined,
     ...overrides,
   };
 }
@@ -89,7 +88,6 @@ export function globalArgs(overrides: Partial<CliArgs> = {}): CliArgs {
     scopeSource: 'default',
     policyMode: 'solo',
     force: false,
-    coreTarball: undefined,
     ...overrides,
   };
 }

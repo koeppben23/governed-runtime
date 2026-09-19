@@ -36,7 +36,12 @@ import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decis
 import type { ToolDefinition } from './tools/helpers.js';
 
 type Mode = 'solo' | 'team' | 'team-ci' | 'regulated';
-type CellResult = { allowed: boolean; code?: string; phase?: string; detail?: string };
+type CellResult = {
+  allowed: boolean;
+  code?: string | undefined;
+  phase?: string | undefined;
+  detail?: string | undefined;
+};
 
 const MODES: Mode[] = ['solo', 'team', 'team-ci', 'regulated'];
 

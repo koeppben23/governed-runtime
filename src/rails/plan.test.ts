@@ -31,7 +31,7 @@ function makeExecutors(overrides?: Partial<PlanExecutors>): PlanExecutors {
 }
 
 function planInput(text?: string): PlanInput {
-  return { text };
+  return text !== undefined ? { text } : {};
 }
 
 describe('plan rail', () => {

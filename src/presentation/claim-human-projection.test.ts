@@ -126,12 +126,12 @@ describe('projectClaimHumanProjection', () => {
   });
 
   it('absent requiredEvidence omits label', () => {
-    const p = projectClaimHumanProjection(facts({ requiredEvidence: undefined }));
+    const p = projectClaimHumanProjection(facts());
     expect(p.requiredEvidenceLabel).toBeUndefined();
   });
 
   it('absent counterexampleRequirement omits label', () => {
-    const p = projectClaimHumanProjection(facts({ counterexampleRequirement: undefined }));
+    const p = projectClaimHumanProjection(facts());
     expect(p.counterexampleRequirementLabel).toBeUndefined();
   });
 
@@ -207,9 +207,7 @@ describe('projectClaimHumanProjection', () => {
   });
 
   it('diagnostic omits counterexampleRequirement when absent', () => {
-    const p = projectClaimHumanProjection(
-      facts({ verificationState: 'PROVEN', counterexampleRequirement: undefined }),
-    );
+    const p = projectClaimHumanProjection(facts({ verificationState: 'PROVEN' }));
     expect(p.diagnostic.counterexampleRequirement).toBeUndefined();
   });
 

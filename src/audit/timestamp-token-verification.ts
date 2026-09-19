@@ -26,8 +26,8 @@ export async function verifyTimestampTokensForEvents(input: {
 }): Promise<TimestampTokenVerificationResult> {
   const findings: TimestampTokenFinding[] = [];
 
-  for (let i = 0; i < input.events.length; i++) {
-    const finding = await verifyTokenForEvent(input.events[i]!, input.verifier, input.trustAnchors);
+  for (const [i, event] of input.events.entries()) {
+    const finding = await verifyTokenForEvent(event, input.verifier, input.trustAnchors);
     if (finding) findings.push({ index: i, ...finding });
   }
 

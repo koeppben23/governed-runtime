@@ -84,11 +84,12 @@ function hasValidationAttemptReference(challenge: Challenge): boolean {
   );
 }
 
-function validateChallenge(
+type ChallengeConsistencyFailure = Extract<ChallengeConsistencyResult, { readonly ok: false }>;
+
+function obligationMismatchFailure(
   input: ChallengeConsistencyInput,
   challenge: Challenge,
-  allowedRefs: ReadonlySet<string> | undefined,
-): ChallengeConsistencyResult {
+): ChallengeConsistencyFailure | null {
   if (
     input.expectedObligationId !== undefined &&
     challenge.obligationId !== input.expectedObligationId
@@ -99,6 +100,13 @@ function validateChallenge(
       details: { kind: challenge.kind, reason: 'obligation_mismatch' },
     };
   }
+  return null;
+}
+
+function kindIncoherentFailure(
+  input: ChallengeConsistencyInput,
+  challenge: Challenge,
+): ChallengeConsistencyFailure | null {
   if (input.requiredChallengeCount > 0 && challenge.kind !== input.requiredChallengeKind) {
     return {
       ok: false,
@@ -106,6 +114,10 @@ function validateChallenge(
       details: { required: input.requiredChallengeKind, actual: challenge.kind },
     };
   }
+  return null;
+}
+
+function evidenceMissingFailure(challenge: Challenge): ChallengeConsistencyFailure | null {
   if (!challenge.evidenceRefs || challenge.evidenceRefs.length === 0) {
     return {
       ok: false,
@@ -113,16 +125,26 @@ function validateChallenge(
       details: { kind: challenge.kind, reason: 'evidence_missing' },
     };
   }
-  if (
-    allowedRefs &&
-    challenge.evidenceRefs.some((ref) => !allowedRefs.has(canonicalJsonStringify(ref)))
-  ) {
-    return {
-      ok: false,
-      code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
-      details: { kind: challenge.kind, reason: 'evidence_mismatch' },
-    };
-  }
+  return null;
+}
+
+function evidenceMismatchFailure(
+  challenge: Challenge,
+  allowedRefs: ReadonlySet<string> | undefined,
+): ChallengeConsistencyFailure | null {
+  const evidenceRefs = challenge.evidenceRefs;
+  if (!allowedRefs || !evidenceRefs) return null;
+  if (!evidenceRefs.some((ref) => !allowedRefs.has(canonicalJsonStringify(ref)))) return null;
+  return {
+    ok: false,
+    code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
+    details: { kind: challenge.kind, reason: 'evidence_mismatch' },
+  };
+}
+
+function implementationPassEvidenceFailure(
+  challenge: Challenge,
+): ChallengeConsistencyFailure | null {
   if (
     challenge.kind === 'implementation_challenge' &&
     challenge.outcome === 'pass' &&
@@ -138,6 +160,13 @@ function validateChallenge(
       },
     };
   }
+  return null;
+}
+
+function implementationUnresolvedFailure(
+  input: ChallengeConsistencyInput,
+  challenge: Challenge,
+): ChallengeConsistencyFailure | null {
   if (
     challenge.kind === 'implementation_challenge' &&
     input.overallVerdict === 'accept' &&
@@ -149,6 +178,13 @@ function validateChallenge(
       details: { outcome: challenge.outcome },
     };
   }
+  return null;
+}
+
+function contradictedFailure(
+  input: ChallengeConsistencyInput,
+  challenge: Challenge,
+): ChallengeConsistencyFailure | null {
   if (
     (challenge.kind === 'design_challenge' || challenge.kind === 'content_challenge') &&
     input.overallVerdict === 'accept' &&
@@ -160,7 +196,23 @@ function validateChallenge(
       details: { kind: challenge.kind, outcome: challenge.outcome },
     };
   }
-  return { ok: true };
+  return null;
+}
+
+function validateChallenge(
+  input: ChallengeConsistencyInput,
+  challenge: Challenge,
+  allowedRefs: ReadonlySet<string> | undefined,
+): ChallengeConsistencyResult {
+  return (
+    obligationMismatchFailure(input, challenge) ??
+    kindIncoherentFailure(input, challenge) ??
+    evidenceMissingFailure(challenge) ??
+    evidenceMismatchFailure(challenge, allowedRefs) ??
+    implementationPassEvidenceFailure(challenge) ??
+    implementationUnresolvedFailure(input, challenge) ??
+    contradictedFailure(input, challenge) ?? { ok: true }
+  );
 }
 
 export function validateChallengeConsistency(

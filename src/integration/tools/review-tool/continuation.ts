@@ -7,7 +7,7 @@
  * than re-entering the user-level /review start rail.
  */
 
-import { formatRailResult } from '../helpers.js';
+import { formatRailResult } from '../helpers-rail-presentation.js';
 import { startReviewFlow } from '../../../rails/review.js';
 import { findReviewObligationById } from '../../review/assurance.js';
 import type { SessionState } from '../../../state/schema.js';

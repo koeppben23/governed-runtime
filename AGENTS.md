@@ -63,7 +63,7 @@ an instruction-only rule.
   in product code.
 - Do not hide failures with silent fallbacks; surface errors explicitly.
 - Do not claim tests or verification passed unless they were run.
-- File-size budget: 750 LOC production, 2000 LOC test. Exceeding is a review
+- File-size budget: 650 LOC production, 2000 LOC test. Exceeding is a review
   blocker.
 - Lockfile discipline: use `npm install` (not `npm audit fix` alone) for dependency changes.
 

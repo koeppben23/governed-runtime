@@ -25,7 +25,7 @@ import { isTestSourcePath } from './module-classification.js';
 const SRC_ROOT = join(process.cwd(), 'src');
 
 /** Production source file blocker threshold (LOC). Exceeding this fails the build. */
-export const PROD_FILE_LOC_BLOCKER = 750;
+export const PROD_FILE_LOC_BLOCKER = 650;
 /**
  * Test file blocker threshold (LOC). Test suites are allowed to be broader than
  * production modules before they must split; the repo's established convention

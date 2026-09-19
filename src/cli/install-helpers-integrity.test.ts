@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { verifyTarballChecksum } from './install-helpers.js';
+import { verifyTarballChecksum } from './install-helpers-integrity.js';
 import { hashFile } from '../shared/hashing.js';
 
 describe('hashFile', () => {

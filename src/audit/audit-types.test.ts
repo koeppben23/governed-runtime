@@ -86,13 +86,13 @@ describe('audit types', () => {
     });
 
     it('createErrorEvent produces valid chained event', () => {
-      const event = createErrorEvent(
-        SESSION_ID,
-        undefined,
-        { code: 'TOOL_ERROR', message: 'oops', recoveryHint: 'retry', errorPhase: 'PLAN' },
-        TS1,
-        GENESIS_HASH,
-      );
+      const event = createErrorEvent({
+        flowguardSessionId: SESSION_ID,
+        hostSessionId: undefined,
+        detail: { code: 'TOOL_ERROR', message: 'oops', recoveryHint: 'retry', errorPhase: 'PLAN' },
+        occurredAt: TS1,
+        prevHash: GENESIS_HASH,
+      });
       expect(event.event).toBe('error:TOOL_ERROR');
       expect(event.phase).toBe('PLAN');
       expect(event.detail.kind).toBe('error');
@@ -498,13 +498,13 @@ describe('audit types', () => {
         actor: 'user',
         prevHash: GENESIS_HASH,
       });
-      const e = createErrorEvent(
-        SESSION_ID,
-        undefined,
-        { code: 'ERR', message: 'msg', recoveryHint: 'fix', errorPhase: 'PLAN' },
-        TS1,
-        GENESIS_HASH,
-      );
+      const e = createErrorEvent({
+        flowguardSessionId: SESSION_ID,
+        hostSessionId: undefined,
+        detail: { code: 'ERR', message: 'msg', recoveryHint: 'fix', errorPhase: 'PLAN' },
+        occurredAt: TS1,
+        prevHash: GENESIS_HASH,
+      });
       const l = createLifecycleEvent({
         flowguardSessionId: SESSION_ID,
         detail: { action: 'session_created', finalPhase: 'TICKET' },
@@ -613,13 +613,13 @@ describe('audit types', () => {
         TS1,
         GENESIS_HASH,
       );
-      const error = createErrorEvent(
-        SESSION_ID,
-        undefined,
-        { code: 'ERR', message: 'msg', recoveryHint: 'fix', errorPhase: 'PLAN' },
-        TS1,
-        GENESIS_HASH,
-      );
+      const error = createErrorEvent({
+        flowguardSessionId: SESSION_ID,
+        hostSessionId: undefined,
+        detail: { code: 'ERR', message: 'msg', recoveryHint: 'fix', errorPhase: 'PLAN' },
+        occurredAt: TS1,
+        prevHash: GENESIS_HASH,
+      });
       expect('actorInfo' in transition).toBe(false);
       expect('actorInfo' in error).toBe(false);
     });
@@ -727,34 +727,34 @@ describe('audit types', () => {
 describe('host session provenance on event bodies', () => {
   const buildBodies = {
     transition: (hostSessionId: string | undefined) =>
-      buildTransitionBody(
-        SESSION_ID,
+      buildTransitionBody({
+        flowguardSessionId: SESSION_ID,
         hostSessionId,
-        'PLAN',
-        { event: 'PLAN_READY' } as never,
-        TS1,
-        GENESIS_HASH,
-      ),
+        phase: 'PLAN',
+        detail: { event: 'PLAN_READY' } as never,
+        occurredAt: TS1,
+        prevHash: GENESIS_HASH,
+      }),
     stateWrite: (hostSessionId: string | undefined) =>
-      buildStateWriteBody(
-        SESSION_ID,
+      buildStateWriteBody({
+        flowguardSessionId: SESSION_ID,
         hostSessionId,
-        'PLAN',
-        {
+        phase: 'PLAN',
+        detail: {
           operationId: 'op-1',
           preStateDigest: 'a',
           mutationDigest: 'b',
           postStateDigest: 'c',
         },
-        TS1,
-        GENESIS_HASH,
-      ),
+        occurredAt: TS1,
+        prevHash: GENESIS_HASH,
+      }),
     enforcementDenied: (hostSessionId: string | undefined) =>
-      buildEnforcementDeniedBody(
-        SESSION_ID,
+      buildEnforcementDeniedBody({
+        flowguardSessionId: SESSION_ID,
         hostSessionId,
-        'PLAN',
-        {
+        phase: 'PLAN',
+        detail: {
           tool: 'bash',
           reasonCode: 'RISK_CLASSIFICATION_REQUIRED',
           hostCallId: 'host-call-1',
@@ -762,13 +762,13 @@ describe('host session provenance on event bodies', () => {
           policyMode: 'team',
           enforcementLevel: 'synchronous',
         } as never,
-        TS1,
-        GENESIS_HASH,
-      ),
+        occurredAt: TS1,
+        prevHash: GENESIS_HASH,
+      }),
     toolCall: (hostSessionId: string | undefined) =>
       buildToolCallBody({
         flowguardSessionId: SESSION_ID,
-        hostSessionId,
+        ...(hostSessionId !== undefined ? { hostSessionId } : {}),
         phase: 'PLAN',
         detail: { tool: 'bash', argsSummary: {}, success: true } as never,
         occurredAt: TS1,
@@ -786,7 +786,7 @@ describe('host session provenance on event bodies', () => {
     lifecycle: (hostSessionId: string | undefined) =>
       buildLifecycleBody({
         flowguardSessionId: SESSION_ID,
-        hostSessionId,
+        ...(hostSessionId !== undefined ? { hostSessionId } : {}),
         detail: { action: 'session_created', finalPhase: 'PLAN' } as never,
         occurredAt: TS1,
         actor: 'machine',
@@ -809,14 +809,14 @@ describe('host session provenance on event bodies', () => {
 
 describe('finalizeWithTimestampEvidence defaults', () => {
   it('defaults the TSA digest algorithm to sha256 when evidence omits one', () => {
-    const body = buildTransitionBody(
-      SESSION_ID,
-      undefined,
-      'PLAN',
-      { event: 'PLAN_READY' } as never,
-      TS1,
-      GENESIS_HASH,
-    );
+    const body = buildTransitionBody({
+      flowguardSessionId: SESSION_ID,
+      hostSessionId: undefined,
+      phase: 'PLAN',
+      detail: { event: 'PLAN_READY' } as never,
+      occurredAt: TS1,
+      prevHash: GENESIS_HASH,
+    });
     const event = finalizeWithTimestampEvidence(body, GENESIS_HASH, {
       tsa: { algorithmOid: '1.2.3' },
     } as never);

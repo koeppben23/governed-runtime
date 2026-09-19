@@ -41,7 +41,10 @@ import {
   resolveStructuredFindings,
   type StructuredFindingsResolution,
 } from './review-validation-structured-evidence.js';
-import { validateChallengeConsistency } from '../review/enforcement/challenge-consistency.js';
+import {
+  validateChallengeConsistency,
+  type ChallengeConsistencyInput,
+} from '../review/enforcement/challenge-consistency.js';
 import {
   validateReviewFindingsConsistency,
   validateReviewFindingsScope,
@@ -101,13 +104,8 @@ export function validateReviewFindings(
   findings: ReviewFindings,
   ctx: ReviewFindingsValidationContext,
 ): string | null {
-  const reviewMode = (findings as { reviewMode?: unknown }).reviewMode;
-  if (reviewMode !== 'subagent') {
-    return formatBlocked('REVIEW_MODE_SELF_NOT_ALLOWED', {
-      action: 'submit non-subagent review findings',
-      policyHint: `mandatory ${REVIEWER_SUBAGENT_TYPE} subagent review required`,
-    });
-  }
+  const modeBlock = checkReviewMode(findings);
+  if (modeBlock) return modeBlock;
 
   // P1.3 slice 4e: third-verdict tool-layer assertion.
   // The schema (slice 1) accepts overallVerdict='unable_to_review' so
@@ -123,26 +121,17 @@ export function validateReviewFindings(
   // Per Decision C (obligation IS consumed via SUBAGENT_UNABLE_TO_REVIEW)
   // and Decision G (BLOCKED is the only legitimate outcome on this
   // verdict), this layer fail-closes with the SSOT reason from slice 2.
-  if ((findings as { overallVerdict?: unknown }).overallVerdict === 'unable_to_review') {
-    return formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', {
-      obligationId: ctx.obligationType ?? 'review',
-    });
-  }
+  const verdictBlock = checkUnreviewableVerdict(findings, ctx);
+  if (verdictBlock) return verdictBlock;
 
   // F12: verdict/blocking-issues coherence. An `accept` verdict that still
   // carries blocking issues is internally self-contradictory and must fail
   // closed regardless of anti-tampering (the reviewer honestly reporting a
   // contradiction must still be stopped). Canonical rule lives in
   // findings-consistency.ts; this boundary passes the submitted array length.
-  const consistency = validateReviewFindingsConsistency({
-    overallVerdict: findings.overallVerdict,
-    blockingIssueCount: findings.blockingIssues.length,
-  });
-  if (!consistency.ok) {
-    return formatBlocked(consistency.code, {
-      count: String(consistency.details.blockingIssueCount),
-    });
-  }
+  const consistencyBlock = checkFindingsConsistency(findings);
+  if (consistencyBlock) return consistencyBlock;
+
   const obligation = ctx.assurance
     ? findLatestObligation(
         ctx.assurance.obligations,
@@ -151,45 +140,13 @@ export function validateReviewFindings(
         ctx.expectedPlanVersion,
       )
     : null;
-  const expectedIteration = ctx.expectedIteration;
-  const expectedPlanVersion = ctx.expectedPlanVersion;
 
-  // Rule 3: planVersion binding
-  if (findings.planVersion !== expectedPlanVersion) {
-    return formatBlocked('REVIEW_PLAN_VERSION_MISMATCH', {
-      provided: String(findings.planVersion),
-      expected: String(expectedPlanVersion),
-    });
-  }
+  // Rule 3 (planVersion binding) and Rule 4 (iteration binding).
+  const versionBlock = checkFindingsVersionBinding(findings, ctx);
+  if (versionBlock) return versionBlock;
 
-  // Rule 4: iteration binding
-  if (findings.iteration !== expectedIteration) {
-    return formatBlocked('REVIEW_ITERATION_MISMATCH', {
-      provided: String(findings.iteration),
-      expected: String(expectedIteration),
-    });
-  }
-
-  const challengeConsistency = validateChallengeConsistency({
-    overallVerdict: findings.overallVerdict,
-    requiredChallengeCount: obligation?.requiredChallengeCount ?? 0,
-    requiredChallengeKind: obligation?.requiredChallengeKind ?? 'implementation_challenge',
-    challenges: findings.challenges,
-    expectedObligationId: ctx.expectedObligationId ?? obligation?.obligationId,
-    allowedEvidenceRefs: ctx.allowedEvidenceRefs,
-    resolutionVerdicts: findings.challengeResolutionVerdicts,
-    unresolvedImplementationChallengeIds: ctx.unresolvedImplementationChallengeIds,
-    unaddressedPriorFailIds: ctx.unaddressedPriorFailIds,
-    previouslyUsedChallengeIds: ctx.previouslyUsedChallengeIds,
-  });
-  if (!challengeConsistency.ok) {
-    return formatBlocked(
-      challengeConsistency.code,
-      Object.fromEntries(
-        Object.entries(challengeConsistency.details).map(([key, value]) => [key, String(value)]),
-      ),
-    );
-  }
+  const challengeBlock = checkChallengeConsistency(findings, ctx, obligation);
+  if (challengeBlock) return challengeBlock;
 
   const scopeBlock = checkReviewFindingsScope(findings, obligation);
   if (scopeBlock) return scopeBlock;
@@ -198,6 +155,112 @@ export function validateReviewFindings(
   if (evidenceBlock) return evidenceBlock;
 
   return validateStrictReviewFindings(findings, ctx);
+}
+
+function checkReviewMode(findings: ReviewFindings): string | null {
+  const reviewMode = (findings as { reviewMode?: unknown }).reviewMode;
+  if (reviewMode === 'subagent') return null;
+  return formatBlocked('REVIEW_MODE_SELF_NOT_ALLOWED', {
+    action: 'submit non-subagent review findings',
+    policyHint: `mandatory ${REVIEWER_SUBAGENT_TYPE} subagent review required`,
+  });
+}
+
+function checkUnreviewableVerdict(
+  findings: ReviewFindings,
+  ctx: ReviewFindingsValidationContext,
+): string | null {
+  if ((findings as { overallVerdict?: unknown }).overallVerdict !== 'unable_to_review') return null;
+  return formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', {
+    obligationId: ctx.obligationType ?? 'review',
+  });
+}
+
+function checkFindingsConsistency(findings: ReviewFindings): string | null {
+  const consistency = validateReviewFindingsConsistency({
+    overallVerdict: findings.overallVerdict,
+    blockingIssueCount: findings.blockingIssues.length,
+  });
+  if (consistency.ok) return null;
+  return formatBlocked(consistency.code, {
+    count: String(consistency.details.blockingIssueCount),
+  });
+}
+
+function checkFindingsVersionBinding(
+  findings: ReviewFindings,
+  ctx: ReviewFindingsValidationContext,
+): string | null {
+  if (findings.planVersion !== ctx.expectedPlanVersion) {
+    return formatBlocked('REVIEW_PLAN_VERSION_MISMATCH', {
+      provided: String(findings.planVersion),
+      expected: String(ctx.expectedPlanVersion),
+    });
+  }
+  if (findings.iteration !== ctx.expectedIteration) {
+    return formatBlocked('REVIEW_ITERATION_MISMATCH', {
+      provided: String(findings.iteration),
+      expected: String(ctx.expectedIteration),
+    });
+  }
+  return null;
+}
+
+function challengeOptionalInputFields(
+  findings: ReviewFindings,
+  ctx: ReviewFindingsValidationContext,
+): Partial<ChallengeConsistencyInput> {
+  return {
+    ...(ctx.allowedEvidenceRefs !== undefined
+      ? { allowedEvidenceRefs: ctx.allowedEvidenceRefs }
+      : {}),
+    ...(findings.challengeResolutionVerdicts !== undefined
+      ? { resolutionVerdicts: findings.challengeResolutionVerdicts }
+      : {}),
+    ...(ctx.unresolvedImplementationChallengeIds !== undefined
+      ? { unresolvedImplementationChallengeIds: ctx.unresolvedImplementationChallengeIds }
+      : {}),
+    ...(ctx.unaddressedPriorFailIds !== undefined
+      ? { unaddressedPriorFailIds: ctx.unaddressedPriorFailIds }
+      : {}),
+    ...(ctx.previouslyUsedChallengeIds !== undefined
+      ? { previouslyUsedChallengeIds: ctx.previouslyUsedChallengeIds }
+      : {}),
+  };
+}
+
+function buildChallengeConsistencyInput(
+  findings: ReviewFindings,
+  ctx: ReviewFindingsValidationContext,
+  obligation: ReviewObligation | null,
+  expectedObligationId: string | undefined,
+): ChallengeConsistencyInput {
+  return {
+    overallVerdict: findings.overallVerdict,
+    requiredChallengeCount: obligation?.requiredChallengeCount ?? 0,
+    requiredChallengeKind: obligation?.requiredChallengeKind ?? 'implementation_challenge',
+    challenges: findings.challenges,
+    ...(expectedObligationId !== undefined ? { expectedObligationId } : {}),
+    ...challengeOptionalInputFields(findings, ctx),
+  };
+}
+
+function checkChallengeConsistency(
+  findings: ReviewFindings,
+  ctx: ReviewFindingsValidationContext,
+  obligation: ReviewObligation | null,
+): string | null {
+  const expectedObligationId = ctx.expectedObligationId ?? obligation?.obligationId;
+  const challengeConsistency = validateChallengeConsistency(
+    buildChallengeConsistencyInput(findings, ctx, obligation, expectedObligationId),
+  );
+  if (challengeConsistency.ok) return null;
+  return formatBlocked(
+    challengeConsistency.code,
+    Object.fromEntries(
+      Object.entries(challengeConsistency.details).map(([key, value]) => [key, String(value)]),
+    ),
+  );
 }
 
 function checkReviewFindingsScope(
@@ -215,7 +278,9 @@ function checkReviewFindingsScope(
   const scopeResult = validateReviewFindingsScope({
     findings: scopeRelations,
     reviewSubjectScope: obligation.reviewSubjectScope,
-    repositoryRevisionProvenance: obligation.repositoryRevisionProvenance,
+    ...(obligation.repositoryRevisionProvenance !== undefined
+      ? { repositoryRevisionProvenance: obligation.repositoryRevisionProvenance }
+      : {}),
   });
   if (!scopeResult.ok)
     return formatBlocked(scopeResult.code, {
@@ -389,7 +454,9 @@ function validateStructuredInvocationContract(
   return hasValidStructuredInvocationContract({
     obligation: binding.obligation,
     invocation: binding.invocation,
-    parentSessionId: ctx.reviewParentSessionId,
+    ...(ctx.reviewParentSessionId !== undefined
+      ? { parentSessionId: ctx.reviewParentSessionId }
+      : {}),
   })
     ? null
     : formatBlocked('SUBAGENT_EVIDENCE_MISSING', {
@@ -408,16 +475,16 @@ interface StructuredResolutionContext {
     readonly planVersion: number;
   };
   readonly input: {
-    readonly reviewerUnavailable?: boolean;
-    readonly verdict?: string;
+    readonly reviewerUnavailable?: boolean | undefined;
+    readonly verdict?: string | undefined;
   };
   readonly state: {
-    readonly assurance?: ReviewAssuranceState;
+    readonly assurance?: ReviewAssuranceState | undefined;
     readonly sessionId: string;
-    readonly unresolvedImplementationChallengeIds?: readonly string[];
-    readonly unaddressedPriorFailIds?: readonly string[];
-    readonly allowedChallengeEvidenceRefs?: readonly unknown[];
-    readonly previouslyUsedChallengeIds?: readonly string[];
+    readonly unresolvedImplementationChallengeIds?: readonly string[] | undefined;
+    readonly unaddressedPriorFailIds?: readonly string[] | undefined;
+    readonly allowedChallengeEvidenceRefs?: readonly unknown[] | undefined;
+    readonly previouslyUsedChallengeIds?: readonly string[] | undefined;
   };
 }
 

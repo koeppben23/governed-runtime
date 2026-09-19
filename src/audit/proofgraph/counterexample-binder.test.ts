@@ -104,6 +104,17 @@ function stateWith(
   });
 }
 
+/** Reproduces a persisted contract whose claim omits counterexampleRequirement. */
+function stateWithoutCounterexampleRequirement(
+  attempts: SessionState['validationAttempts'],
+): SessionState {
+  const state = stateWith(attempts);
+  for (const claimRecord of state.proofContract?.claims ?? []) {
+    Reflect.deleteProperty(claimRecord, 'counterexampleRequirement');
+  }
+  return state;
+}
+
 describe('bindCounterexamples', () => {
   it('maps a failing counterexample check to not_verified (inconclusive)', () => {
     const state = stateWith([
@@ -293,19 +304,15 @@ describe('bindCounterexamples', () => {
   });
 
   it('returns not_verified when counterexampleRequirement is absent (defensive corruption handling)', () => {
-    const state = stateWith(
-      [
-        {
-          attemptId: ATT,
-          scope: 'implementation',
-          implementationDigest: IMPL_DIGEST,
-          executionObservation: TEST_EXECUTION_OBSERVATION,
-          result: { ...validationResult(true), outcome: 'supported' as const },
-        },
-      ],
-      'IMPL_REVIEW',
-      { counterexampleRequirement: undefined },
-    );
+    const state = stateWithoutCounterexampleRequirement([
+      {
+        attemptId: ATT,
+        scope: 'implementation',
+        implementationDigest: IMPL_DIGEST,
+        executionObservation: TEST_EXECUTION_OBSERVATION,
+        result: { ...validationResult(true), outcome: 'supported' as const },
+      },
+    ]);
     expect(bindCounterexamples(state, NOW).counterexamples[0]!.outcome).toBe('not_verified');
   });
 
