@@ -118,6 +118,17 @@ export type Phase = z.infer<typeof Phase>;
 export const TaskClass = z.enum(['TRIVIAL', 'STANDARD', 'HIGH-RISK']);
 export type TaskClass = z.infer<typeof TaskClass>;
 
+/**
+ * Membership predicate over the canonical task-class vocabulary.
+ *
+ * Boundary-neutral: accepts any value so untyped transport input
+ * (`claimedTaskClass: string`) can be narrowed at the authority instead of
+ * re-enumerating the vocabulary at each consumer.
+ */
+export function isTaskClass(value: unknown): value is TaskClass {
+  return TaskClass.safeParse(value).success;
+}
+
 /** Specific authority affected by a HIGH-RISK implementation change. */
 export const RiskTrigger = z.enum([
   'state_integrity',

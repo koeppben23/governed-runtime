@@ -26,6 +26,8 @@
  * @version v1
  */
 
+import type { LoopVerdict } from '../../state/evidence.js';
+
 export type ToolFamily = 'plan' | 'architecture' | 'implement';
 
 /** Normalized, family-agnostic view of the shared multi-mode arguments. */
@@ -33,12 +35,12 @@ export interface ToolCallArgsView {
   /** Optional heavy text payload: planText (plan) / adrText (architecture). */
   readonly text?: string;
   /**
-   * reviewVerdict, when present. Typed as a string union superset so it accepts
-   * each tool's verdict type (plan/implement: accept|changes_requested;
-   * architecture: LoopVerdict, which also includes unable_to_review). The
-   * classifier only distinguishes `changes_requested` from everything else.
+   * reviewVerdict, when present. Typed with the canonical LoopVerdict so it
+   * accepts each tool's verdict type (plan/implement accept a subset;
+   * architecture includes unable_to_review). The classifier only distinguishes
+   * `changes_requested` from everything else.
    */
-  readonly reviewVerdict?: 'accept' | 'changes_requested' | 'unable_to_review';
+  readonly reviewVerdict?: LoopVerdict;
   /** reviewerUnavailable flag. */
   readonly reviewerUnavailable?: boolean;
   /** Explicit typed transport-recovery intent (implementation review). */

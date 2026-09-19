@@ -28,7 +28,8 @@ import type {
   CommandListSection,
   NoticeSection,
 } from '../../presentation/model.js';
-import type { Phase } from '../../state/schema.js';
+import type { Phase, TaskClass } from '../../state/schema.js';
+import { isTaskClass } from '../../state/schema.js';
 
 import type {
   DiscoveryHydration,
@@ -157,9 +158,9 @@ export function buildHydrateInput(params: BuildHydrateInputParams): HydrateInput
   };
 }
 
-export function contextClaimedTaskClass(params: BuildHydrateInputParams) {
+export function contextClaimedTaskClass(params: BuildHydrateInputParams): TaskClass | undefined {
   const raw = params.args.claimedTaskClass;
-  return raw === 'TRIVIAL' || raw === 'STANDARD' || raw === 'HIGH-RISK' ? raw : undefined;
+  return isTaskClass(raw) ? raw : undefined;
 }
 
 // ─── Response Formatting ─────────────────────────────────────────────────
