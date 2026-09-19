@@ -11,10 +11,10 @@ API. It must never become a provider of new authorities for lower layers.
 
 ## Module Boundary
 
-- `src/integration/` may import from downstream layers to compose and expose
-  runtime behavior.
-- `src/integration/` must not be imported by `src/state/`, `src/machine/`,
-  `src/rails/`, `src/config/`, or `src/adapters/`.
+- Directions are enforced, not redefined here: the positive authority is
+  `src/architecture/__tests__/module-dependency-policy.ts`
+  (`MODULE_DEPENDENCY_POLICY`), and changes in this subtree must satisfy
+  `npm run test:architecture`.
 
 ## Plugin Lifecycle
 

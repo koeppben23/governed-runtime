@@ -17,13 +17,18 @@ integration/  -> rails/  -> machine/  -> state/
 
 ### Key Layers
 
-| Layer          | Purpose                                         | Rules                                                              |
-| -------------- | ----------------------------------------------- | ------------------------------------------------------------------ |
-| `state/`       | Core domain model (Zod schemas, types)          | Leaf module - may import discovery/types only                      |
-| `machine/`     | State machine (topology, guards, evaluation)    | Only imports state/                                                |
-| `rails/`       | Workflow orchestrators (stateless)              | No integration/ imports, prefer adapter I/O                        |
-| `adapters/`    | File I/O, git, workspace management             | May import config/, discovery/, archive/, state/, machine/, rails/ |
-| `integration/` | Host integration surfaces and OpenCode bindings | Entry point - may import any layer                                 |
+| Layer          | Purpose                                         | Role                                                          |
+| -------------- | ----------------------------------------------- | ------------------------------------------------------------- |
+| `state/`       | Core domain model (Zod schemas, types)          | Canonical domain primitives                                   |
+| `machine/`     | State machine (topology, guards, evaluation)    | Enforces transitions; no runtime authority of its own         |
+| `rails/`       | Workflow orchestrators (stateless)              | Orchestration; I/O through adapters                           |
+| `adapters/`    | File I/O, git, workspace management             | Host-agnostic I/O boundary                                    |
+| `integration/` | Host integration surfaces and OpenCode bindings | Runtime-facing composition; entry points compose separately   |
+
+The diagram shows the intended direction for new code, not the enforced set:
+top-level module directions are owned exclusively by `MODULE_DEPENDENCY_POLICY`
+(`src/architecture/__tests__/module-dependency-policy.ts`), and existing cyclic
+directions are frozen debt (see [Architecture Rules](#architecture-rules)).
 
 ## Development Setup
 
@@ -189,7 +194,7 @@ regress silently; review-enforced rules depend on reviewer diligence.
 | Principle                     | Rule                                                                      | Red Flag                                              | Enforced by                                                                                                     |
 | ----------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | **Single Responsibility**     | One reason to change per module/file/function                             | God-files; over-long/over-complex functions           | Monotonic maintainability ratchet: `npm run check:maintainability` against `scripts/maintainability-baseline.json` (clean-code targets `complexity:12`, `max-lines-per-function:80`, `max-params:5`; ESLint default ceilings `25 / 120 / 5` with seven legacy metric suppressions frozen as baseline exceptions; `lint:strict` = `--max-warnings=0`) |
-| **Layer Isolation**           | Respect `state/` `machine/` `rails/` `adapters/` `integration/`           | Upward imports, layer bypass                          | `src/architecture/__tests__/dependency-rules.test.ts`                                                           |
+| **Layer Isolation**           | Respect `state/` `machine/` `rails/` `adapters/` `integration/`           | Upward imports, layer bypass                          | `module-dependency-policy.ts` + `dependency-rules.test.ts`; module cycle debt frozen in `scripts/module-cycle-baseline.json` (lineage-gated)  |
 | **Extract, Don't Accumulate** | Split files along domain boundaries within the size budget                | Linear growth with every feature                      | `src/architecture/__tests__/file-size.test.ts`                                                                  |
 | **No Duplicate Authority**    | One canonical implementation per concept                                  | Near-identical functions, duplicated pipelines        | SSOT guards: `actor-assurance-ssot`, `canonical-json-ssot`, `digest-authority-ssot`, `policy-mode-ssot`, `review-acceptance-ssot`, `terminal-phase-ssot` |
 | **Content/Logic Separation**  | Template content in content files, assembly in renderer files             | Template strings mixed with business logic            | Review                                                                                                          |
@@ -450,20 +455,34 @@ See [Conventional Commits](#conventional-commits) section above.
 
 Import rules must stay aligned with `npm run test:architecture`.
 
-These rules are enforced by `src/architecture/__tests__/dependency-rules.test.ts`:
+The positive authority for top-level module direction is
+`src/architecture/__tests__/module-dependency-policy.ts` (`MODULE_DEPENDENCY_POLICY`):
+the exact set of governed modules each governed module may import. The observed
+import graph and the policy must match in both directions, so both an unapproved
+direction and a stale policy edge fail. Add a new direction to the policy file in
+the same change that introduces the import.
+
+Fine-grained boundaries are additionally enforced by
+`src/architecture/__tests__/dependency-rules.test.ts`:
 
 ### Must Follow
 
-1. **Leaf modules** (`state/`, `archive/types`, `discovery/types`) must not import from outer layers
-2. **`machine/`** may only import from `state/`
-3. **`rails/`** must not import from `integration/` (to prevent circular dependencies)
-4. **`rails/`** should not import node built-ins directly (I/O is handled by adapters)
+1. **`state/`** may only import the listed shared primitives (canonicalization,
+   hashing, actor assurance) and owns its evidence discriminators
+2. **Leaf modules** (`archive/types`, `discovery/types`) must not import other FF modules
+3. **`rails/`** must not import node built-ins directly (I/O is handled by adapters)
+4. **`integration/tools/`** must not import `plugin-*` modules
+5. Entry points, test-support files, and unclassified imports stay default-deny
 
-### May Use
+### Cycle Debt
 
-- `rails/` may import `config/`, `audit/`, `discovery/types`, `state/`, `machine/`
-- `adapters/` may import `config/`, `discovery/`, `archive/`, `state/`, `machine/`, `rails/`
-- `integration/` may import any layer (entry point pattern)
+Module-level cycles are frozen debt, not free: `scripts/module-cycle-baseline.json`
+lists every currently cyclic directed edge, `dependency-rules.test.ts` requires the
+observed cyclic-edge set to equal it, and CI
+(`scripts/check-module-cycle-lineage.mjs --against <base-sha>`) enforces that the
+baseline may only shrink relative to the pull-request base. Shrinking the baseline
+is a visible manual edit in the same PR that removes the cycle. File-level cycles
+remain prohibited outright.
 
 ## Error Handling
 

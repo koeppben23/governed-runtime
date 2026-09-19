@@ -326,10 +326,10 @@ tracked separately. (Merged via #585.)
 | NR4  | Non-Regression Note | Auto-advance self-loop break avoids duplicate ERROR-loop transition writes.                                                                  |
 | NR5  | Non-Regression Note | Blocked reason duplicate registration rejects duplicates.                                                                                    |
 | NR6  | Non-Regression Note | Next-action resolution remains compile-time exhaustive over phases.                                                                          |
-| NR7  | Non-Regression Note | Acyclic module dependencies are test-enforced (`architecture/__tests__/dependency-rules.test.ts` Rule 8) over the real import graph (#563).  |
+| NR7  | Non-Regression Note | File-level import cycles are test-enforced (`architecture/__tests__/dependency-rules.test.ts` Rule 8) over the real import graph (#563); module-level cycle debt is frozen in `scripts/module-cycle-baseline.json`. |
 | NR8  | Non-Regression Note | Adapters/audit/hooks/review use typed errors, not bare `throw new Error` (#534, #539, #542).                                                 |
 | NR9  | Non-Regression Note | Diagnostic logs are centrally redacted at the sink layer (message + extra); console/file/OTLP sinks cannot emit unredacted secrets or paths. |
-| NR10 | Non-Regression Note | `logging/` owns its `LogLevel` type and must not import `config/`; enforced by the `logging-no-config` rule in `dependency-rules.test.ts`.   |
+| NR10 | Non-Regression Note | `logging/` owns its `LogLevel` type and must not import `config/`; enforced by `MODULE_DEPENDENCY_POLICY` in `architecture/__tests__/module-dependency-policy.ts`. |
 
 ## 2026-08-07 — ProofGraph Closure Triaged
 
