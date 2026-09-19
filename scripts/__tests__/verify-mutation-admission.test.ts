@@ -233,15 +233,30 @@ describe('verify-mutation-admission', () => {
     expect(result.stderr).toContain('src/audit/integrity.ts: missing from report');
   });
 
-  it('notes a legacy target that generated no mutants', () => {
+  it('rejects a legacy target missing from the report (fail closed)', () => {
     const report = baseReport();
-    delete report.files['src/config/policy.ts'];
+    delete report.files['src/adapters/ip-validation.ts'];
     const reportPath = writeReport(report);
 
     const result = runVerifier(['--profile', 'base', '--report', reportPath]);
 
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain('src/config/policy.ts: no mutants or missing from report');
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      'src/adapters/ip-validation.ts: missing from report (configured selector produced no mutants)',
+    );
+  });
+
+  it('rejects every configured selector that vanishes from the report', () => {
+    const report = baseReport();
+    for (const selector of baseConfig.mutate.slice(0, 3)) {
+      delete report.files[selector];
+    }
+    const reportPath = writeReport(report);
+
+    const result = runVerifier(['--profile', 'base', '--report', reportPath]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('3 violation(s)');
   });
 
   it('rejects unknown mutant statuses instead of ignoring them', () => {

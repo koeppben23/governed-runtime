@@ -389,8 +389,9 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     ['src/audit/audit-integrity.test.ts'],
     { critical: true },
   ),
-  required('src/audit/types.ts', 'Audit event schema authority', [
-    'src/audit/audit-integrity.test.ts',
+  required('src/audit/event-builders.ts', 'Audit event body builders and factories', [
+    'src/audit/audit-types.test.ts',
+    'src/integration/plugin-audit.test.ts',
   ]),
   required('src/audit/ntp-check.ts', 'NTP clock-skew check for TSA evidence', [
     'src/audit/ntp-check.test.ts',
@@ -398,6 +399,14 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
   required('src/audit/rfc-3161-pkijs-verifier.ts', 'RFC 3161 timestamp token verification', [
     'src/audit/rfc3161-pkijs-verifier.test.ts',
   ]),
+  required('src/audit/rfc-3161-token-parse.ts', 'RFC 3161 token structure parsing', [
+    'src/audit/rfc3161-pkijs-verifier.test.ts',
+  ]),
+  required(
+    'src/audit/rfc-3161-signer-verification.ts',
+    'RFC 3161 signer certificate verification',
+    ['src/audit/rfc3161-pkijs-verifier.test.ts'],
+  ),
   required('src/audit/timestamp-verification.ts', 'Timestamp evidence verification', [
     'src/audit/timestamp-verification.test.ts',
   ]),
@@ -437,6 +446,11 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'src/integration/proofgraph/claim-contract.test.ts',
   ]),
   required(
+    'src/integration/proofgraph/claim-contract-rules.ts',
+    'Claim declaration contract rules',
+    ['src/integration/proofgraph/claim-contract.test.ts'],
+  ),
+  required(
     'src/integration/proofgraph/materialize-contract.ts',
     'Proof contract evidence binding',
     ['src/integration/proofgraph/materialize-contract.test.ts'],
@@ -459,12 +473,6 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
   required('src/discovery/verification-planner.ts', 'Verification candidate planning', [
     'src/discovery/verification-planner.test.ts',
   ]),
-  required(
-    'src/config/policy.ts',
-    'Policy validation authority',
-    ['src/config/policy-snapshot.test.ts'],
-    { critical: true },
-  ),
   required(
     'src/config/policy-snapshot.ts',
     'Policy snapshot capture and validation',
@@ -652,6 +660,9 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
   required('src/rails/review-decision.ts', 'Review decision rail authority', [
     'src/rails/review-decision.test.ts',
   ]),
+  required('src/rails/review-decision-gates.ts', 'Review decision gate evaluation', [
+    'src/rails/review-decision.test.ts',
+  ]),
   required('src/rails/review-evidence-resolution.ts', 'Review evidence resolution', [
     'src/rails/review-evidence-resolution.test.ts',
   ]),
@@ -720,7 +731,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'src/presentation/markdown.ts',
     'Markdown review rendering range',
     ['src/presentation/markdown.test.ts'],
-    { profile: 'human-projection', selector: 'src/presentation/markdown.ts:255-287' },
+    { profile: 'human-projection', selector: 'src/presentation/markdown.ts:264-292' },
   ),
 
   // ── Identity-JWKS profile: required range targets ─────────────────────────
@@ -1212,6 +1223,49 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'Check result projection',
     'Diagnostic run 2026-09-17 scored 0.00% (0 killed / 66 survived); test gaps must be closed before admission.',
     { source: [SOURCE.trustBoundaries] },
+  ),
+
+  // ── #921 split surfaces: measured verdicts (diagnostic 2026-09-19) ────────
+  // Moving the audit/archive/factory logic out of an existing required target
+  // must not silently shrink the trusted computing base. These files were
+  // measured with the base config on the #921 tree; every one is below the
+  // 80% admission gate, so they stay explicitly backlog with the measured
+  // verdict until a dedicated hardening pass admits them.
+  deferred(
+    'src/audit/event-core.ts',
+    'Audit event schema, chain hash and finalization',
+    'Base-regime diagnostic 2026-09-19 on the #921 split: 1 valid mutant, 13 checker-rejected; mutant density is insufficient to carry an authority admission. The event-body factory authority is admitted via event-builders.ts.',
+    { profile: 'base', source: [SOURCE.trustBoundaries] },
+  ),
+  deferred(
+    'src/adapters/workspace/archive-verify-artifact-binding.ts',
+    'Archive artifact-binding verification',
+    'Base-regime diagnostic 2026-09-19 on the #921 split: 75.00% (21 killed / 6 survived / 1 no-coverage). Below the admission gate; stays backlog until a focused archive-verification test pass admits it.',
+    { profile: 'base', source: [SOURCE.trustBoundaries] },
+  ),
+  deferred(
+    'src/adapters/workspace/archive-verify-audit-chain.ts',
+    'Archive audit-chain verification',
+    'Base-regime diagnostic 2026-09-19 on the #921 split: 75.00% (66 killed / 21 survived / 1 no-coverage). Below the admission gate; stays backlog until a focused archive-verification test pass admits it.',
+    { profile: 'base', source: [SOURCE.trustBoundaries] },
+  ),
+  deferred(
+    'src/adapters/workspace/archive-verify-checksum.ts',
+    'Archive checksum verification',
+    'Base-regime diagnostic 2026-09-19 on the #921 split: 64.29% (18 killed / 4 survived / 6 no-coverage). Below the admission gate; stays backlog until a focused archive-verification test pass admits it.',
+    { profile: 'base', source: [SOURCE.trustBoundaries] },
+  ),
+  deferred(
+    'src/adapters/workspace/archive-verify-integrity.ts',
+    'Archive integrity verification',
+    'Base-regime diagnostic 2026-09-19 on the #921 split: 44.44% (8 killed / 9 survived / 1 no-coverage). Below the admission gate; stays backlog until a focused archive-verification test pass admits it.',
+    { profile: 'base', source: [SOURCE.trustBoundaries] },
+  ),
+  deferred(
+    'src/integration/plugin-audit-decisions.ts',
+    'Audit decision receipt authority',
+    'Base-regime diagnostic 2026-09-19 on the #921 split: 30.00% (18 killed / 35 survived / 7 no-coverage). Below the admission gate; stays backlog until the decision-receipt contracts are covered.',
+    { profile: 'base', source: [SOURCE.trustBoundaries] },
   ),
 
   // ── Deep authority expansion bundle ───────────────────────────────────────

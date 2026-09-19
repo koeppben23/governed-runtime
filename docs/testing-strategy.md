@@ -68,18 +68,19 @@ local composite-action dependencies: external GitHub Actions must use full
 40-character lowercase commit SHAs, local actions under `./` are allowed, local
 and Docker actions are allowed only when pinned by `sha256` digest.
 
-The `mutation` job runs StrykerJS mutation testing against 101 security-critical
+The `mutation` job runs StrykerJS mutation testing against 104 security-critical
 files spanning adapters (persistence-lock, host-adapter, persistence, IP validation),
 archive creation,
 publication, inventory validation, and digesting,
-audit (integrity + completeness + NTP + types), config (policy + policy snapshot + reasons + profile), hooks (HTTP hook server + command pre-tool-use + shared obligation-tracker +
+audit (integrity + completeness + NTP + event builders + RFC3161 parse/signer verification),
+config (policy snapshot/resolver/central + reasons + profile), hooks (HTTP hook server + command pre-tool-use + shared obligation-tracker +
 phase-gate), identity (token-verifier + key-resolver), integration
 (installed-commands, tool-classification, discovery-risk-paths, pre-implementation challenge, architecture submit, review-validation-mode,
 plugin-audit, plugin-audit-reconcile, plugin-beforehooks, plugin-afterhooks, plugin-helpers, audit-outbox, plugin-audit-lifecycle-reason, review enforcement,
 dispatch signal, and agent resolution), logging (error-serialize),
 templates (codex-plugin, claude-code-plugin, mandates),
 shared canonical JSON and hashing, machine (commands, evaluate, guards, workflow-directive, validation-evidence), and
-rails (architecture, hydrate, review, URL review transport, review-decision, review-evidence-resolution,
+rails (architecture, hydrate, review, URL review transport, review-decision, review-decision-gates, review-evidence-resolution,
 ticket). It uploads a
 mutation report artifact (`reports/mutation/`) and enforces the `break: 80`
 threshold in `stryker.conf.json` when the scheduled/release/manual mutation
@@ -205,7 +206,7 @@ protects a security-relevant literal: `stryker.identity-jwks.conf.json` enables
 
 ### Scope
 
-101 files are mutated in the base profile, covering the fail-closed governance
+104 files are mutated in the base profile, covering the fail-closed governance
 core (see `stryker.conf.json` for the canonical list; the authority inventory
 above is the classification authority):
 
@@ -213,10 +214,10 @@ above is the classification authority):
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- | ------------------------------- |
 | Adapters (`persistence-lock`, `host-adapter`, `persistence`, `persistence-core`, `persistence-config`, `persistence-audit`, `ip-validation`, implementation base freeze/entry) | 9       | see `reports/mutation/`         |
 | Archive (`content-digest`, archive creation, publication, tar/manifest inspection, chain and helper verification)                                                              | 8       | see `reports/mutation/`         |
-| Audit (`integrity`, `completeness`, `ntp-check`, `types`, timestamp and RFC3161 verification)                                                                                  | 7       | see `reports/mutation/`         |
+| Audit (`integrity`, `completeness`, `ntp-check`, `event-builders`, timestamp and RFC3161 parse/signer verification)                                                            | 9       | see `reports/mutation/`         |
 | Audit ProofGraph (`evaluate`, `gate`, evidence binders, `enforcement-projection`, mutation report/binder)                                                                      | 8       | see `reports/mutation/`         |
-| Integration ProofGraph (`claim-contract`, `materialize-contract`)                                                                                                              | 2       | see `reports/mutation/`         |
-| Config (`policy`, `policy-snapshot`, `reasons`, `profile`, `policy-resolver`, `policy-central`)                                                                                | 6       | see `reports/mutation/`         |
+| Integration ProofGraph (`claim-contract`, `claim-contract-rules`, `materialize-contract`)                                                                                      | 3       | see `reports/mutation/`         |
+| Config (`policy-snapshot`, `policy-resolver`, `policy-central`, `reasons`, `profile`)                                                                                          | 5       | see `reports/mutation/`         |
 | MCP (`execution-limiter`, `session-resolver`, `tool-adapter`, `server`)                                                                                                        | 4       | see `reports/mutation/`         |
 | Hooks (`http-server`, `pre-tool-use`, `post-tool-use`, `shared/obligation-tracker`, `shared/phase-gate`)                                                                       | 5       | see `reports/mutation/`         |
 | Identity (`token-verifier`, `key-resolver`)                                                                                                                                    | 2       | see `reports/mutation/`         |
@@ -228,8 +229,8 @@ above is the classification authority):
 | Shared (`canonical-json`, `hashing`)                                                                                                                                           | 2       | see `reports/mutation/`         |
 | Logging (`error-serialize`)                                                                                                                                                    | 1       | see `reports/mutation/`         |
 | Machine (`commands`, `evaluate`, `guards`, `workflow-directive`, `validation-evidence`)                                                                                        | 5       | see `reports/mutation/`         |
-| Rails (`architecture`, `hydrate`, `review`, `review-url`, `review-decision`, `ticket`, plan and review evidence)                                                               | 8       | see `reports/mutation/`         |
-| **Total**                                                                                                                                                                      | **101** | uploaded as `reports/mutation/` |
+| Rails (`architecture`, `hydrate`, `review`, `review-url`, `review-decision`, `review-decision-gates`, `ticket`, plan and review evidence)                                      | 9       | see `reports/mutation/`         |
+| **Total**                                                                                                                                                                      | **104** | uploaded as `reports/mutation/` |
 
 Per-file mutation scores are produced fresh in CI; consult the latest
 `reports/mutation/` artifact for current numbers.
@@ -283,6 +284,17 @@ Deep authority expansion bundle:
 
 - `src/config/policy-ci.ts` — 100 % on five valid mutants; density too low (thin evidence).
 - `src/config/policy-types.ts` — 20 % on five valid mutants; evidence too weak.
+
+Split surfaces from the #921 quality closure (diagnostic 2026-09-19, base
+config; the moved logic left a still-required parent target, so every surface
+is tracked explicitly and must not silently shrink the trusted computing base):
+
+- `src/audit/event-core.ts` — 1 valid mutant (13 checker-rejected); density too low.
+- `src/adapters/workspace/archive-verify-artifact-binding.ts` — 75.00 % (21 killed / 6 survived / 1 no-coverage).
+- `src/adapters/workspace/archive-verify-audit-chain.ts` — 75.00 % (66 killed / 21 survived / 1 no-coverage).
+- `src/adapters/workspace/archive-verify-checksum.ts` — 64.29 % (18 killed / 4 survived / 6 no-coverage).
+- `src/adapters/workspace/archive-verify-integrity.ts` — 44.44 % (8 killed / 9 survived / 1 no-coverage).
+- `src/integration/plugin-audit-decisions.ts` — 30.00 % (18 killed / 35 survived / 7 no-coverage).
 
 Mandates profile: `src/rendering/mandates-renderer.ts` — focused contract pass reached 72.40 % (below the per-target gate); dedicated mandates hardening pass required before admission.
 
