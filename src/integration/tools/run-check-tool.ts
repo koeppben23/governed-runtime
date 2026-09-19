@@ -42,6 +42,7 @@ import {
 import type { SessionState } from '../../state/schema.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import { evaluate } from '../../machine/evaluate.js';
+import { IntegrationInvariantError } from '../errors.js';
 import {
   type FullCheckScopeAttestation,
   type VerificationCandidate,
@@ -177,9 +178,10 @@ async function validateAndAttest(
 ): Promise<PhaseAResult> {
   const { sessDir, state } = await withReadOnlySession(context);
   if (!state) {
-    throw Object.assign(new Error('No FlowGuard session found — run /hydrate first.'), {
-      code: 'NO_SESSION',
-    });
+    throw new IntegrationInvariantError(
+      'NO_SESSION',
+      'No FlowGuard session found — run /hydrate first.',
+    );
   }
 
   const guard = validateRunCheckRequest(kind, candidateId, state);

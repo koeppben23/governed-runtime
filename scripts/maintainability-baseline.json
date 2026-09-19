@@ -286,7 +286,7 @@
       "file": "src/integration/tools/auto-validation.ts",
       "function": "function:runAutomaticValidationAttempt",
       "rule": "max-lines-per-function",
-      "value": 98
+      "value": 95
     },
     {
       "file": "src/integration/tools/decision-tool.ts",

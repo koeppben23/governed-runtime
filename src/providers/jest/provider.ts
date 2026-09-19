@@ -6,6 +6,7 @@
 
 import { parseJestJson, buildJestLocalId } from '../../verification/assertion-parsers/jest-json.js';
 import type { AssertionProviderExtension } from '../contract.js';
+import { ProviderError } from '../errors.js';
 import type { ParsedAssertion } from '../../verification/assertion-parsers/types.js';
 import type { ReportFormatId } from '../../state/assertion-identity.js';
 
@@ -98,7 +99,11 @@ export const jestProvider: AssertionProviderExtension = {
       providerId: 'jest',
       assertionBindingFormats: new Set<ReportFormatId>(['jest_json']),
       buildLocalId(parsed: ParsedAssertion) {
-        if (parsed.kind !== 'jest_json') throw new Error(`jest codec received ${parsed.kind}`);
+        if (parsed.kind !== 'jest_json')
+          throw new ProviderError(
+            'PROVIDER_CODEC_KIND_MISMATCH',
+            `jest codec received ${parsed.kind}`,
+          );
         return buildJestLocalId(parsed.filePath, [...parsed.ancestorTitles], parsed.title);
       },
       validateLocalId(localId: string) {

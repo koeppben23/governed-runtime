@@ -68,6 +68,15 @@ const UI_SINK_FAILURE_WARN_LIMIT = 3;
 const UI_HEALTH_REPORT_MS = 5 * 60 * 1000;
 const FILE_SINK_FAILURE_REPORT_MS = 5 * 60 * 1000;
 
+class LogSinkError extends Error {
+  readonly code = 'UI_LOG_SINK_FAILURE';
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'LogSinkError';
+  }
+}
+
 /**
  * Build logging sinks based on config mode, client, and workspace.
  *
@@ -147,7 +156,7 @@ export function buildLogSinks(
             process.stderr.write(`[FlowGuard] UI log sink failure (${uiSinkFailures} total)\n`);
             lastHealthReport = now;
           }
-          throw new Error('UI log sink failure'); // rethrow for central counting (G10)
+          throw new LogSinkError('UI log sink failure'); // rethrow for central counting (G10)
         }
       });
     }

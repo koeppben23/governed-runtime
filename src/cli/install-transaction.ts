@@ -12,6 +12,7 @@ import { execFileSync, execSync, type ExecSyncOptions } from 'node:child_process
 import { dirname, join, relative, basename } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ensureDir } from '../adapters/persistence.js';
+import { CliInstallError } from './errors.js';
 import type { FileOp } from './install-types.js';
 import type { RollbackEntry } from './install-helpers.js';
 
@@ -71,7 +72,10 @@ export function recoveryActionForPhase(phase: TransactionPhase): RecoveryAction 
   if (phase >= TransactionPhase.StagingActive && phase < TransactionPhase.DeletingOriginal) {
     return 'rollback';
   }
-  throw new Error(`Unsupported recovery phase: ${TransactionPhase[phase]}`);
+  throw fail(
+    'TRANSACTION_RECOVERY_PHASE_UNSUPPORTED',
+    `Unsupported recovery phase: ${TransactionPhase[phase]}`,
+  );
 }
 
 // ─── Dependency Transaction ─────────────────────────────────────────────
@@ -95,6 +99,10 @@ export interface DependencyTransaction {
 
 // ─── Utilities ──────────────────────────────────────────────────────────
 
+function fail(code: string, message: string, options?: ErrorOptions): never {
+  throw new CliInstallError(code, message, options);
+}
+
 function isEnoent(err: unknown): boolean {
   return err instanceof Error && 'code' in err && err.code === 'ENOENT';
 }
@@ -117,11 +125,12 @@ async function observePath(
   if (!p) return 'absent';
   try {
     const stat = await lstat(p);
-    if (stat.isSymbolicLink()) throw new Error(`Symlink not allowed: ${p}`);
+    if (stat.isSymbolicLink())
+      throw fail('TRANSACTION_SYMLINK_NOT_ALLOWED', `Symlink not allowed: ${p}`);
     if (expectedKind === 'directory' && !stat.isDirectory())
-      throw new Error(`Expected directory, found other type: ${p}`);
+      throw fail('TRANSACTION_PATH_TYPE_MISMATCH', `Expected directory, found other type: ${p}`);
     if (expectedKind === 'file' && !stat.isFile())
-      throw new Error(`Expected file, found other type: ${p}`);
+      throw fail('TRANSACTION_PATH_TYPE_MISMATCH', `Expected file, found other type: ${p}`);
     return 'present';
   } catch (err) {
     if (isEnoent(err)) return 'absent';
@@ -139,7 +148,8 @@ async function safeUnlink(p: string): Promise<void> {
 
 function assertPathContained(candidate: string, parent: string): void {
   const rel = relative(parent, candidate);
-  if (rel.startsWith('..') || rel === '') throw new Error(`Path outside target: ${candidate}`);
+  if (rel.startsWith('..') || rel === '')
+    throw fail('TRANSACTION_PATH_OUTSIDE_TARGET', `Path outside target: ${candidate}`);
 }
 
 function assertOwnedTransactionPath(
@@ -148,14 +158,17 @@ function assertOwnedTransactionPath(
   transactionId: string,
 ): void {
   if (dirname(candidate) !== configTargetDir) {
-    throw new Error(`Transaction path not direct child of config target: ${candidate}`);
+    throw fail(
+      'TRANSACTION_PATH_UNOWNED',
+      `Transaction path not direct child of config target: ${candidate}`,
+    );
   }
 
   try {
     const realParent = realpathSync(configTargetDir);
     const realDir = realpathSync(dirname(candidate));
     if (realDir !== realParent)
-      throw new Error(`Transaction path real parent differs: ${candidate}`);
+      throw fail('TRANSACTION_PATH_UNOWNED', `Transaction path real parent differs: ${candidate}`);
   } catch (err) {
     if (!isEnoent(err)) throw err;
   }
@@ -165,11 +178,16 @@ function assertOwnedTransactionPath(
     `node_modules.saved.${transactionId}`,
     `node_modules.failed.${transactionId}`,
   ]);
-  if (!allowed.has(basename(candidate))) throw new Error(`Unowned transaction path: ${candidate}`);
+  if (!allowed.has(basename(candidate)))
+    throw fail('TRANSACTION_PATH_UNOWNED', `Unowned transaction path: ${candidate}`);
 
   try {
     const ts = lstatSync(configTargetDir);
-    if (ts.isSymbolicLink()) throw new Error(`Config target is a symlink: ${configTargetDir}`);
+    if (ts.isSymbolicLink())
+      throw fail(
+        'TRANSACTION_CONFIG_TARGET_SYMLINK',
+        `Config target is a symlink: ${configTargetDir}`,
+      );
   } catch (err) {
     if (!isEnoent(err)) throw err;
   }
@@ -190,8 +208,13 @@ async function removeOwnedStagingTree(
     if (isEnoent(err)) return;
     throw err;
   }
-  if (rootStat.isSymbolicLink()) throw new Error(`Staging root is a symlink: ${stagingPath}`);
-  if (!rootStat.isDirectory()) throw new Error(`Staging root is not a directory: ${stagingPath}`);
+  if (rootStat.isSymbolicLink())
+    throw fail('TRANSACTION_STAGING_SYMLINK', `Staging root is a symlink: ${stagingPath}`);
+  if (!rootStat.isDirectory())
+    throw fail(
+      'TRANSACTION_STAGING_NOT_DIRECTORY',
+      `Staging root is not a directory: ${stagingPath}`,
+    );
   await rm(stagingPath, { recursive: true, force: true });
 }
 
@@ -226,9 +249,11 @@ async function loadJournal(journalPath: string): Promise<DependencyTransaction> 
 }
 
 function validateJournal(tx: DependencyTransaction, configTargetDir: string): void {
-  if (!VALID_PHASES.has(tx.phase)) throw new Error(`Invalid transaction phase: ${tx.phase}`);
+  if (!VALID_PHASES.has(tx.phase))
+    throw fail('TRANSACTION_PHASE_INVALID', `Invalid transaction phase: ${tx.phase}`);
   const expectedName = `.flowguard-dependency-transaction.${tx.transactionId}.json`;
-  if (basename(tx.journalPath) !== expectedName) throw new Error('Journal filename mismatch');
+  if (basename(tx.journalPath) !== expectedName)
+    throw fail('TRANSACTION_JOURNAL_FILENAME_MISMATCH', 'Journal filename mismatch');
   for (const p of [tx.stagingRoot, tx.savedPath, tx.failedPath]) {
     if (p) assertPathContained(p, configTargetDir);
   }
@@ -307,8 +332,10 @@ function doPackageInstall(pm: 'npm' | 'bun', stagingRoot: string): void {
       });
     }
   } catch (error) {
-    throw new Error(
+    throw fail(
+      'DEPENDENCY_INSTALL_FAILED',
       `Dependency install failed: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
     );
   }
 }
@@ -350,7 +377,7 @@ export async function createDependencyTransaction(
 
 export async function executeDependencyTransaction(tx: DependencyTransaction): Promise<void> {
   const pm = detectPackageManager();
-  if (pm === null) throw new Error('Neither bun nor npm found in PATH.');
+  if (pm === null) throw fail('PACKAGE_MANAGER_UNAVAILABLE', 'Neither bun nor npm found in PATH.');
 
   // --- Staging ---
   tx.phase = TransactionPhase.StagingActive;
@@ -369,9 +396,9 @@ export async function executeDependencyTransaction(tx: DependencyTransaction): P
   doPackageInstall(pm, tx.stagingRoot);
 
   if ((await observePath(tx.stagingModules, 'directory')) !== 'present')
-    throw new Error('Staging: node_modules not created.');
+    throw fail('TRANSACTION_STAGING_NODE_MODULES_MISSING', 'Staging: node_modules not created.');
   if ((await observePath(join(tx.stagingModules, '@flowguard', 'core'), 'directory')) !== 'present')
-    throw new Error('Staging: @flowguard/core not found.');
+    throw fail('TRANSACTION_STAGING_CORE_MISSING', 'Staging: @flowguard/core not found.');
 
   tx.phase = TransactionPhase.StagingValidated;
   await persistJournal(tx);
@@ -390,7 +417,7 @@ export async function executeDependencyTransaction(tx: DependencyTransaction): P
   } else if (livePres === 'absent' && savedPres === 'present') {
     tx.hadOriginal = true;
   } else if (livePres === 'present' && savedPres === 'present') {
-    throw new Error('Ambiguous save-old: both live and saved exist');
+    throw fail('TRANSACTION_SAVE_OLD_AMBIGUOUS', 'Ambiguous save-old: both live and saved exist');
   } else {
     tx.hadOriginal = false;
     tx.savedPath = null;
@@ -425,7 +452,11 @@ export async function commitDependencyTransaction(
   await persistJournal(tx);
 
   if (tx.hadOriginal) {
-    if (!tx.savedPath) throw new Error('Journal inconsistent: hadOriginal but no savedPath');
+    if (!tx.savedPath)
+      throw fail(
+        'TRANSACTION_JOURNAL_INCONSISTENT',
+        'Journal inconsistent: hadOriginal but no savedPath',
+      );
     try {
       await removeOwnedStagingTree(tx.savedPath, tx.configTargetDir, tx.transactionId);
     } catch (err) {
@@ -442,7 +473,8 @@ export async function commitDependencyTransaction(
   await persistJournal(tx);
 
   const residuals = await inspectTransactionArtifacts(tx);
-  if (residuals.length > 0) throw new Error(`Cleanup incomplete: ${residuals.join(', ')}`);
+  if (residuals.length > 0)
+    throw fail('TRANSACTION_CLEANUP_INCOMPLETE', `Cleanup incomplete: ${residuals.join(', ')}`);
 
   tx.phase = TransactionPhase.Committed;
   await persistJournal(tx);
@@ -467,7 +499,11 @@ export async function rollbackDependencyTransaction(tx: DependencyTransaction): 
     tx.liveWasIsolated = fresh.liveWasIsolated;
   } catch (err) {
     if (!isEnoent(err))
-      throw new Error(`Cannot load journal: ${err instanceof Error ? err.message : String(err)}`);
+      throw fail(
+        'TRANSACTION_JOURNAL_LOAD_FAILED',
+        `Cannot load journal: ${err instanceof Error ? err.message : String(err)}`,
+        { cause: err },
+      );
   }
 
   const recoveryPhase = tx.rollbackFromPhase ?? tx.phase;
@@ -517,14 +553,22 @@ async function isolateLive(tx: DependencyTransaction): Promise<void> {
     tx.liveWasIsolated = true;
   } else if (!livePresent && !failedPresent) {
     tx.liveWasIsolated = false;
-  } else throw new Error(`Ambiguous isolation: live=${livePresent}, failed=${failedPresent}`);
+  } else
+    throw fail(
+      'TRANSACTION_ISOLATION_AMBIGUOUS',
+      `Ambiguous isolation: live=${livePresent}, failed=${failedPresent}`,
+    );
 
   tx.phase = TransactionPhase.LiveIsolated;
   await persistJournal(tx);
 }
 
 async function restoreOriginal(tx: DependencyTransaction): Promise<void> {
-  if (!tx.savedPath) throw new Error('Journal inconsistent: hadOriginal but no savedPath');
+  if (!tx.savedPath)
+    throw fail(
+      'TRANSACTION_JOURNAL_INCONSISTENT',
+      'Journal inconsistent: hadOriginal but no savedPath',
+    );
   tx.phase = TransactionPhase.RestoringOriginal;
   await persistJournal(tx);
 
@@ -534,9 +578,18 @@ async function restoreOriginal(tx: DependencyTransaction): Promise<void> {
   if (savedPresent && !livePresent) {
     await rename(tx.savedPath, tx.liveModulesPath);
   } else if (!savedPresent && livePresent) {
-    if (!tx.liveWasIsolated) throw new Error('Cannot verify live is restored original');
-    if (!(await pathExistsNoFollow(tx.failedPath))) throw new Error('Isolated replacement missing');
-  } else throw new Error(`Ambiguous restore: saved=${savedPresent}, live=${livePresent}`);
+    if (!tx.liveWasIsolated)
+      throw fail(
+        'TRANSACTION_RESTORE_VERIFICATION_FAILED',
+        'Cannot verify live is restored original',
+      );
+    if (!(await pathExistsNoFollow(tx.failedPath)))
+      throw fail('TRANSACTION_ISOLATED_REPLACEMENT_MISSING', 'Isolated replacement missing');
+  } else
+    throw fail(
+      'TRANSACTION_RESTORE_AMBIGUOUS',
+      `Ambiguous restore: saved=${savedPresent}, live=${livePresent}`,
+    );
 
   tx.phase = TransactionPhase.OriginalRestored;
   await persistJournal(tx);
@@ -565,13 +618,15 @@ async function cleanupRollbackArtifacts(tx: DependencyTransaction): Promise<void
 export async function recoverOrAbort(configTargetDir: string): Promise<void> {
   const journals = await findJournals(configTargetDir);
   if (journals.length > 1)
-    throw new Error(
+    throw fail(
+      'TRANSACTION_MULTIPLE_JOURNALS',
       `Multiple incomplete transactions:\n${journals.map((p) => `  ${p}`).join('\n')}`,
     );
   if (journals.length === 0) {
     const orphans = await findTransactionArtifacts(configTargetDir);
     if (orphans.length > 0)
-      throw new Error(
+      throw fail(
+        'TRANSACTION_ORPHANED_ARTIFACTS',
         `Orphaned artifacts without journal:\n${orphans.map((p) => `  ${p}`).join('\n')}`,
       );
     return;
@@ -582,7 +637,11 @@ export async function recoverOrAbort(configTargetDir: string): Promise<void> {
     journal = await loadJournal(journals[0]!);
     validateJournal(journal, configTargetDir);
   } catch (err) {
-    throw new Error(`Cannot load journal: ${err instanceof Error ? err.message : String(err)}`);
+    throw fail(
+      'TRANSACTION_JOURNAL_LOAD_FAILED',
+      `Cannot load journal: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
+    );
   }
 
   switch (recoveryActionForPhase(journal.phase)) {
@@ -611,7 +670,8 @@ async function continueCommitCleanup(journal: DependencyTransaction): Promise<vo
   journal.phase = TransactionPhase.OriginalDeleted;
   await persistJournal(journal);
   const residuals = await inspectTransactionArtifacts(journal);
-  if (residuals.length > 0) throw new Error(`Cleanup incomplete: ${residuals.join(', ')}`);
+  if (residuals.length > 0)
+    throw fail('TRANSACTION_CLEANUP_INCOMPLETE', `Cleanup incomplete: ${residuals.join(', ')}`);
   journal.phase = TransactionPhase.Committed;
   await persistJournal(journal);
   await safeUnlink(journal.journalPath);
@@ -640,7 +700,8 @@ export class MutationJournal {
     for (const entry of this.entries) {
       const existing = byPath.get(entry.path);
       if (existing && existing.expectedKind !== entry.expectedKind)
-        throw new Error(
+        throw fail(
+          'ROLLBACK_TYPE_CONFLICT',
           `Type conflict: ${entry.path} (${existing.expectedKind}, ${entry.expectedKind})`,
         );
       if (existing) continue;
@@ -657,8 +718,10 @@ export async function ensureDirTracked(dir: string, journal: MutationJournal): P
   while (true) {
     try {
       const stat = await lstat(current);
-      if (stat.isSymbolicLink()) throw new Error(`Symlink not allowed: ${current}`);
-      if (!stat.isDirectory()) throw new Error(`Expected directory: ${current}`);
+      if (stat.isSymbolicLink())
+        throw fail('TRANSACTION_SYMLINK_NOT_ALLOWED', `Symlink not allowed: ${current}`);
+      if (!stat.isDirectory())
+        throw fail('TRANSACTION_PATH_TYPE_MISMATCH', `Expected directory: ${current}`);
       break; // found existing directory — ancestors exist
     } catch (err) {
       if (!isEnoent(err)) throw err;

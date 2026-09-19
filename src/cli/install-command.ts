@@ -12,6 +12,7 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { defaultReasonRegistry } from '../config/reasons.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
+import { CliInstallError } from './errors.js';
 import type { CliArgs, CliResult, FileOp } from './install-types.js';
 import type { RollbackEntry as InstallRollbackEntry } from './install-helpers.js';
 import { rollbackArtifacts, snapshotForRollback, toCliError } from './install-helpers.js';
@@ -75,9 +76,13 @@ async function acquireInstallLock(): Promise<{ release(): void }> {
       try {
         existing = JSON.parse(readFileSync(lockPath, 'utf-8'));
       } catch {
-        throw new Error(`Install lock exists but is unreadable. Remove ${lockPath} manually.`);
+        throw new CliInstallError(
+          'INSTALL_LOCK_CONFLICT',
+          `Install lock exists but is unreadable. Remove ${lockPath} manually.`,
+        );
       }
-      throw new Error(
+      throw new CliInstallError(
+        'INSTALL_LOCK_CONFLICT',
         `Install already in progress (PID: ${existing.pid}).\n` +
           'The lock may be stale if the previous process was interrupted.\n' +
           `If no install runs, remove ${lockPath} manually.`,
@@ -184,7 +189,11 @@ async function rollbackSnap(
 
 function snapshotEntry(snapshot: SnapshotResult, path: string): InstallRollbackEntry {
   const entry = snapshot.preStateEntries.find((candidate) => candidate.path === path);
-  if (!entry) throw new Error(`Missing pre-install ownership snapshot: ${path}`);
+  if (!entry)
+    throw new CliInstallError(
+      'PRE_STATE_ENTRY_MISSING',
+      `Missing pre-install ownership snapshot: ${path}`,
+    );
   return entry;
 }
 

@@ -42,6 +42,7 @@ import { executeRunCheckPhased } from './run-check-tool.js';
 import { formatError } from './error-format.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
 import type { VerificationCandidateKind } from '../../state/discovery-schemas.js';
+import { IntegrationInvariantError } from '../errors.js';
 
 type ValidationPhase = 'VALIDATION' | 'IMPL_VALIDATION';
 
@@ -141,6 +142,13 @@ async function readSession(context: WorkspaceToolContext): Promise<ReadOutcome> 
 
 function unreadableResponse(outcome: Extract<ReadOutcome, { kind: 'unreadable' }>): string {
   return formatBlocked('SYSTEM_WORK_STATE_UNREADABLE', { reason: outcome.reason });
+}
+
+function pendingSystemWorkMarkerMissingError(): IntegrationInvariantError {
+  return new IntegrationInvariantError(
+    'SYSTEM_WORK_MARKER_MISSING',
+    'pending system-work marker missing while validation remained active',
+  );
 }
 
 function retryPersistenceBlockedResponse(
@@ -332,10 +340,7 @@ async function runAutomaticValidationAttempt(
     }
 
     if (pendingSystemWork === null) {
-      return retryPersistenceBlockedResponse(
-        context,
-        new Error('pending system-work marker missing while validation remained active'),
-      );
+      return retryPersistenceBlockedResponse(context, pendingSystemWorkMarkerMissingError());
     }
 
     try {

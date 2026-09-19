@@ -28,6 +28,7 @@ import {
   resolveCodexMarketplacePath,
   resolveCodexPluginRoot,
 } from './codex-plugin-install.js';
+import { CliInstallError } from './errors.js';
 import { InstallError, pushError } from './install-helpers.js';
 import {
   computeMandatesDigest,
@@ -227,7 +228,8 @@ export interface SnapshotResult {
 
 function findPreState(entries: RollbackEntry[], path: string): RollbackEntry {
   const entry = entries.find((e) => e.path === path);
-  if (!entry) throw new Error(`Pre-state entry not found: ${path}`);
+  if (!entry)
+    throw new CliInstallError('PRE_STATE_ENTRY_MISSING', `Pre-state entry not found: ${path}`);
   return entry;
 }
 
@@ -518,7 +520,8 @@ export async function installDependencies(
 ): Promise<void> {
   const pm = detectPackageManager();
   if (pm === null) {
-    throw new Error(
+    throw new CliInstallError(
+      'PACKAGE_MANAGER_UNAVAILABLE',
       'Neither bun nor npm found in PATH. Install bun (https://bun.sh) or Node.js/npm.',
     );
   }
@@ -533,11 +536,16 @@ export async function installDependencies(
 
     const corePath = join(snapshot.configTargetDir, 'node_modules', '@flowguard', 'core');
     if (!existsSync(corePath)) {
-      throw new Error('Dependencies installed but @flowguard/core not found.');
+      throw new CliInstallError(
+        'DEPENDENCY_CORE_MISSING',
+        'Dependencies installed but @flowguard/core not found.',
+      );
     }
   } catch (err) {
-    throw new Error(
+    throw new CliInstallError(
+      'DEPENDENCY_INSTALL_FAILED',
       `Dependency install failed: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
     );
   }
 }

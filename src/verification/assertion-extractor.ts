@@ -18,6 +18,7 @@ import type { AssertionReportSpec } from '../state/discovery-schemas.js';
 import type { PreparedVerificationExecution } from './verification-execution.js';
 import type { CollectedAssertionReport } from './assertion-report-collector.js';
 import { collectAssertionReports } from './assertion-report-collector.js';
+import { VerificationError } from './errors.js';
 import type { ExecutionEvidence } from './executor.js';
 
 import {
@@ -42,7 +43,10 @@ function parseWithFormat(
 ): ParserResult {
   const parser = PARSER_BY_FORMAT.get(format);
   if (!parser) {
-    throw new Error(`unsupported assertion report format: ${format}`);
+    throw new VerificationError(
+      'VERIFICATION_PARSER_NOT_REGISTERED',
+      `unsupported assertion report format: ${format}`,
+    );
   }
   return parser.parse(content, fileName, { providerId });
 }

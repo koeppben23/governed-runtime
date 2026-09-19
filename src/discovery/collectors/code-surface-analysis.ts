@@ -28,6 +28,7 @@ import type {
   ReadOutcome,
 } from '../types.js';
 import { extractSemanticCodeSurfaces } from './code-surface-semantic-extractors.js';
+import { DiscoveryError } from '../errors.js';
 
 const MAX_FILES = 200;
 const MAX_BYTES_PER_FILE = 64 * 1024;
@@ -432,7 +433,10 @@ function detectSignals(
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`Timed out after ${ms}ms`)), ms);
+    const timer = setTimeout(
+      () => reject(new DiscoveryError('DISCOVERY_CODE_SURFACE_TIMEOUT', `Timed out after ${ms}ms`)),
+      ms,
+    );
     promise.then(
       (value) => {
         clearTimeout(timer);

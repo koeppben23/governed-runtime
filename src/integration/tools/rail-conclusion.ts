@@ -30,6 +30,7 @@ import type { EvalResult } from '../../machine/evaluate.js';
 import { directiveLabel, type PresentationConclusion } from '../../presentation/index.js';
 import { resolveWorkflowDirective } from '../../machine/workflow-directive.js';
 import { projectStatusActionFromCommand } from '../status-conclusion.js';
+import { IntegrationInvariantError } from '../errors.js';
 
 /**
  * Project the canonical rail-surface conclusion from state + evalResult.
@@ -58,11 +59,9 @@ export function buildRailConclusion(
     }));
 
     if (actions.length === 0) {
-      throw Object.assign(
-        new Error(
-          `RailConclusion: waiting gate has no canonical decision actions: ${evalResult.reason}`,
-        ),
-        { code: 'RAIL_DECISION_PROJECTION_EMPTY' },
+      throw new IntegrationInvariantError(
+        'RAIL_DECISION_PROJECTION_EMPTY',
+        `RailConclusion: waiting gate has no canonical decision actions: ${evalResult.reason}`,
       );
     }
 

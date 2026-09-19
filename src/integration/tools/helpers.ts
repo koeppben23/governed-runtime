@@ -10,7 +10,11 @@ import { TERMINAL } from '../../machine/topology.js';
 import type { RailResult, RailContext, AutoAdvanceOverflow } from '../../rails/types.js';
 import { AUTO_ADVANCE_OVERFLOW_CODE } from '../../rails/auto-advance-overflow.js';
 // Adapters
-import { readState, writeStateAlreadyLocked } from '../../adapters/persistence.js';
+import {
+  PersistenceError,
+  readState,
+  writeStateAlreadyLocked,
+} from '../../adapters/persistence.js';
 import { finalizeImplementationEntry } from '../../adapters/implementation-base-authority.js';
 import { prepareStateWithAuditOperations, type SemanticAuditIntent } from './audit-outbox.js';
 import { acquireSessionWriteLock, withSessionWriteLock } from '../../adapters/persistence-lock.js';
@@ -44,6 +48,7 @@ import { getReviewLoopProgress } from '../review/review-loop-progress.js';
 import { refreshProofGraph } from '../proofgraph/refresh.js';
 import { projectCompletionProofStatus } from '../proofgraph/proof-summary-projectors.js';
 import { emitPresentationTelemetry } from './presentation-telemetry.js';
+import { IntegrationInvariantError } from '../errors.js';
 const lockedSessionDir = new AsyncLocalStorage<string>();
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
@@ -385,9 +390,9 @@ export async function resolveWorkspacePaths(context: {
 export async function requireState(sessDir: string): Promise<SessionState> {
   const state = await readState(sessDir);
   if (!state) {
-    throw Object.assign(
-      new Error('No FlowGuard session found. Run /hydrate first to bootstrap a session.'),
-      { code: 'NO_SESSION' },
+    throw new IntegrationInvariantError(
+      'NO_SESSION',
+      'No FlowGuard session found. Run /hydrate first to bootstrap a session.',
     );
   }
   return state;
@@ -439,9 +444,10 @@ export async function writeStateWithArtifactsAlreadyLocked(
   // 1. Validate BEFORE any I/O — fail-closed
   const result = SessionState.safeParse(nextState);
   if (!result.success) {
-    throw Object.assign(new Error(`Refusing to persist invalid state: ${result.error.message}`), {
-      code: 'SCHEMA_VALIDATION_FAILED',
-    });
+    throw new PersistenceError(
+      'SCHEMA_VALIDATION_FAILED',
+      `Refusing to persist invalid state: ${result.error.message}`,
+    );
   }
 
   // 2. Single transition finalizer: entering IMPLEMENTATION freezes the
@@ -459,11 +465,9 @@ export async function writeStateWithArtifactsAlreadyLocked(
   };
   const refreshed = SessionState.safeParse(stateWithProofGraph);
   if (!refreshed.success) {
-    throw Object.assign(
-      new Error(`Refusing to persist invalid ProofGraph: ${refreshed.error.message}`),
-      {
-        code: 'SCHEMA_VALIDATION_FAILED',
-      },
+    throw new PersistenceError(
+      'SCHEMA_VALIDATION_FAILED',
+      `Refusing to persist invalid ProofGraph: ${refreshed.error.message}`,
     );
   }
 
@@ -571,12 +575,10 @@ export function resolvePolicyFromState(state: SessionState): FlowGuardPolicy {
   }
   // Fail-closed: a hydrated session must always have a policySnapshot.
   // If missing, this is a data integrity error — not a recoverable fallback.
-  throw Object.assign(
-    new Error(
-      'Session state is missing policySnapshot. This indicates data corruption — ' +
-        'every hydrated session must have a frozen policy snapshot.',
-    ),
-    { code: 'POLICY_SNAPSHOT_MISSING' },
+  throw new IntegrationInvariantError(
+    'POLICY_SNAPSHOT_MISSING',
+    'Session state is missing policySnapshot. This indicates data corruption — ' +
+      'every hydrated session must have a frozen policy snapshot.',
   );
 }
 

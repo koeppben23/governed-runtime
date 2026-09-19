@@ -30,6 +30,7 @@ import type {
 } from '../../presentation/model.js';
 import type { Phase, TaskClass } from '../../state/schema.js';
 import { isTaskClass } from '../../state/schema.js';
+import { IntegrationInvariantError } from '../errors.js';
 
 import type {
   DiscoveryHydration,
@@ -526,7 +527,10 @@ function hydrateCommandAction(
 } {
   const cmd = getInstalledCommand(invocation);
   if (!cmd) {
-    throw new Error(`hydrate presentation: no installed command metadata for "${invocation}".`);
+    throw new IntegrationInvariantError(
+      'HYDRATE_COMMAND_METADATA_MISSING',
+      `hydrate presentation: no installed command metadata for "${invocation}".`,
+    );
   }
   return {
     invocation: cmd.invocation,

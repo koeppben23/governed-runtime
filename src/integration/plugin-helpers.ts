@@ -78,15 +78,28 @@ export function strictBlockedOutput(code: string, detail: Record<string, string>
 }
 
 /**
- * Build a structured FlowGuard enforcement error suitable for throwing
- * from a plugin hook.
+ * Error class for structured FlowGuard enforcement failures.
  *
  * The OpenCode plugin runtime captures `Error.message` and surfaces it to
  * the LLM. Encoding the structured payload as JSON in the message gives
  * the agent actionable recovery guidance instead of an opaque string.
  *
- * The error name is set to "FlowGuardEnforcementError" so callers can
- * branch on `instanceof Error && err.name === 'FlowGuardEnforcementError'`.
+ * The name is "FlowGuardEnforcementError" so callers can branch on
+ * `instanceof Error && err.name === 'FlowGuardEnforcementError'`.
+ */
+class FlowGuardEnforcementError extends Error {
+  readonly code: string;
+
+  constructor(code: string, message: string) {
+    super(message);
+    this.name = 'FlowGuardEnforcementError';
+    this.code = code;
+  }
+}
+
+/**
+ * Build a structured FlowGuard enforcement error suitable for throwing
+ * from a plugin hook.
  *
  * @param code - Reason code from the registry
  * @param reason - Human-readable reason from the enforcement layer
@@ -116,9 +129,7 @@ export function buildEnforcementError(
     ...(formatted.quickFix !== undefined ? { quickFix: formatted.quickFix } : {}),
     ...(diagnostics ? { diagnostics } : {}),
   };
-  const err = new Error(`[FlowGuard] ${JSON.stringify(payload)}`);
-  err.name = 'FlowGuardEnforcementError';
-  return err;
+  return new FlowGuardEnforcementError(code, `[FlowGuard] ${JSON.stringify(payload)}`);
 }
 
 function appendUnregisteredContext(formattedReason: string, reason: string): string {

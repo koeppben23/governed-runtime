@@ -10,6 +10,21 @@ import { sanitizeDiagnosticString } from '../logging/redact.js';
 
 export type RedactionMode = 'none' | 'basic' | 'pseudonymous';
 
+/** Compile-time validated export redaction error codes. */
+export type ExportRedactionErrorCode =
+  'REDACTION_MAX_DEPTH_EXCEEDED' | 'REDACTION_CIRCULAR_REFERENCE';
+
+/** Typed error for export-time redaction boundary failures. */
+export class ExportRedactionError extends Error {
+  readonly code: ExportRedactionErrorCode;
+
+  constructor(code: ExportRedactionErrorCode, message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'ExportRedactionError';
+    this.code = code;
+  }
+}
+
 export interface ArchiveRedactionPolicy {
   readonly mode: RedactionMode;
   readonly includeRaw: boolean;
@@ -54,7 +69,10 @@ function redactUnknownStrings(
     if (mode === 'none') return v;
 
     if (depth >= MAX_REDACT_DEPTH) {
-      throw new Error('Redaction failed: maximum nesting depth exceeded');
+      throw new ExportRedactionError(
+        'REDACTION_MAX_DEPTH_EXCEEDED',
+        'Redaction failed: maximum nesting depth exceeded',
+      );
     }
 
     if (typeof v === 'string') {
@@ -64,7 +82,10 @@ function redactUnknownStrings(
     if (v === null || typeof v !== 'object') return v;
 
     if (active.has(v)) {
-      throw new Error('Redaction failed: circular reference detected');
+      throw new ExportRedactionError(
+        'REDACTION_CIRCULAR_REFERENCE',
+        'Redaction failed: circular reference detected',
+      );
     }
 
     active.add(v);

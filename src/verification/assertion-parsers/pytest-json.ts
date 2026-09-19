@@ -20,6 +20,7 @@ import type { ProviderId } from '../../state/evidence-validation.js';
 import type { AssertionIdentity } from '../../state/assertion-identity.js';
 import type { ParseContext, ParserResult } from './types.js';
 import { hashText } from '../../shared/hashing.js';
+import { VerificationError } from '../errors.js';
 
 interface PytestTest {
   nodeid: string;
@@ -106,7 +107,10 @@ export function parsePytestJson(jsonText: string, context: ParseContext): Parser
   try {
     report = JSON.parse(jsonText) as PytestJsonReport;
   } catch {
-    throw new Error('pytest_json: failed to parse JSON report');
+    throw new VerificationError(
+      'VERIFICATION_REPORT_PARSE_FAILED',
+      'pytest_json: failed to parse JSON report',
+    );
   }
 
   const tests = report?.tests;

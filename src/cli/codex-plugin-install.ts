@@ -8,6 +8,7 @@ import { chmod, readFile, writeFile, rename, unlink } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { CliInstallError } from './errors.js';
 import type { FileOp, InstallScope } from './install-types.js';
 import { writeIfAbsent } from './install-helpers.js';
 import type { InstallMutationSink } from './install-mutation-types.js';
@@ -102,7 +103,10 @@ async function withMarketplaceLock<T>(marketplacePath: string, fn: () => Promise
     await writeFile(lockPath, JSON.stringify({ pid: process.pid, token }), { flag: 'wx' });
   } catch (err) {
     if (err instanceof Error && 'code' in err && err.code === 'EEXIST') {
-      throw new Error('Codex marketplace is locked by another process.');
+      throw new CliInstallError(
+        'CODEX_MARKETPLACE_LOCKED',
+        'Codex marketplace is locked by another process.',
+      );
     }
     throw err;
   }
@@ -119,7 +123,10 @@ async function withMarketplaceLock<T>(marketplacePath: string, fn: () => Promise
     const raw = readFileSync(lockPath, 'utf-8');
     const lock = JSON.parse(raw) as { token?: string };
     if (lock.token !== token) {
-      throw new Error('Codex marketplace lock ownership changed.');
+      throw new CliInstallError(
+        'CODEX_MARKETPLACE_LOCK_OWNERSHIP_CHANGED',
+        'Codex marketplace lock ownership changed.',
+      );
     }
     unlinkSync(lockPath);
   } catch (error) {
@@ -186,7 +193,8 @@ async function doRegister(
         originalContent,
         { flag: 'wx' },
       );
-      throw new Error(
+      throw new CliInstallError(
+        'CODEX_MARKETPLACE_CORRUPTED',
         'Marketplace JSON is corrupted. A raw backup was saved. Inspect the backup before retrying.',
       );
     }

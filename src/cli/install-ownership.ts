@@ -8,6 +8,7 @@ import { readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
+import { CliInstallError } from './errors.js';
 import { InstallError } from './install-recovery.js';
 import { parseJsonc } from './install-json.js';
 import { isManagedArtifact } from './templates.js';
@@ -204,7 +205,8 @@ export async function writeInstallOwnershipManifest(
   const path = ownershipManifestPath(target);
   const existing = await readExistingManifestState(target);
   if (existing.kind === 'invalid') {
-    throw new Error(
+    throw new CliInstallError(
+      'OWNERSHIP_MANIFEST_INVALID',
       `${INSTALL_OWNERSHIP_FILENAME} exists but is not a valid FlowGuard ownership manifest; preserving it`,
     );
   }
@@ -212,7 +214,8 @@ export async function writeInstallOwnershipManifest(
     existing.kind === 'valid' &&
     (existing.manifest.platform !== manifest.platform || existing.manifest.scope !== manifest.scope)
   ) {
-    throw new Error(
+    throw new CliInstallError(
+      'OWNERSHIP_MANIFEST_SCOPE_MISMATCH',
       `${INSTALL_OWNERSHIP_FILENAME} belongs to a different FlowGuard host/scope; preserving it`,
     );
   }

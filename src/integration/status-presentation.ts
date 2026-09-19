@@ -37,6 +37,7 @@ import {
 import { buildProofGraphSection } from '../presentation/proof-summary.js';
 import type { ProofGraphRenderOptions } from '../presentation/proof-summary.js';
 import { getInstalledCommand } from './installed-commands.js';
+import { IntegrationInvariantError } from './errors.js';
 
 // ─── Presentation Input ────────────────────────────────────────────────────────
 
@@ -135,7 +136,10 @@ function proofGraphOpts(
 export function buildNoSessionDocument(): PresentationDocument {
   const startCmd = getInstalledCommand('/start');
   if (!startCmd) {
-    throw new Error('buildNoSessionDocument: no installed command metadata for "/start".');
+    throw new IntegrationInvariantError(
+      'STATUS_START_COMMAND_METADATA_MISSING',
+      'buildNoSessionDocument: no installed command metadata for "/start".',
+    );
   }
   return {
     kind: 'compact_card',

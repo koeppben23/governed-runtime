@@ -6,6 +6,7 @@ import type { ProviderId } from '../../state/evidence-validation.js';
 import type { AssertionIdentity } from '../../state/assertion-identity.js';
 import type { ParseContext, ParserResult } from './types.js';
 import { hashText } from '../../shared/hashing.js';
+import { VerificationError } from '../errors.js';
 
 interface JestAssertionResult {
   ancestorTitles?: string[];
@@ -55,7 +56,10 @@ export function parseJestJson(jsonText: string, context: ParseContext): ParserRe
   try {
     report = JSON.parse(jsonText) as JestJsonReport;
   } catch {
-    throw new Error('jest_json: failed to parse JSON report');
+    throw new VerificationError(
+      'VERIFICATION_REPORT_PARSE_FAILED',
+      'jest_json: failed to parse JSON report',
+    );
   }
 
   const testResults = report?.testResults;

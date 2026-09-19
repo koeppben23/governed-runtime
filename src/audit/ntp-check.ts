@@ -14,6 +14,8 @@
 
 import * as dgram from 'node:dgram';
 
+import { NtpError } from './errors.js';
+
 const NTP_DEFAULT_SERVERS = ['pool.ntp.org'];
 const NTP_DEFAULT_TIMEOUT_MS = 5000;
 const NTP_PORT = 123;
@@ -62,7 +64,10 @@ function validateNtpResponse(
   requestTransmitTimestamp: Buffer,
 ): { receiveTimestamp: number; transmitTimestamp: number } {
   if (msg.length < NTP_PACKET_SIZE) {
-    throw new Error(`NTP response from ${server} is shorter than ${NTP_PACKET_SIZE} bytes`);
+    throw new NtpError(
+      'NTP_RESPONSE_TOO_SHORT',
+      `NTP response from ${server} is shorter than ${NTP_PACKET_SIZE} bytes`,
+    );
   }
 
   const header = msg[0]!;
@@ -73,20 +78,39 @@ function validateNtpResponse(
   const originateTimestampBytes = msg.subarray(24, 32);
   const transmitTimestampBytes = msg.subarray(40, 48);
 
-  if (leapIndicator === 3) throw new Error(`NTP response from ${server} is unsynchronized`);
+  if (leapIndicator === 3)
+    throw new NtpError(
+      'NTP_RESPONSE_UNSYNCHRONIZED',
+      `NTP response from ${server} is unsynchronized`,
+    );
   if (version < NTP_MIN_COMPATIBLE_VERSION || version > NTP_VERSION) {
-    throw new Error(`NTP response from ${server} has unsupported version ${version}`);
+    throw new NtpError(
+      'NTP_RESPONSE_VERSION_UNSUPPORTED',
+      `NTP response from ${server} has unsupported version ${version}`,
+    );
   }
   if (mode !== NTP_SERVER_MODE)
-    throw new Error(`NTP response from ${server} has unexpected mode ${mode}`);
+    throw new NtpError(
+      'NTP_RESPONSE_MODE_UNEXPECTED',
+      `NTP response from ${server} has unexpected mode ${mode}`,
+    );
   if (stratum === 0 || stratum > NTP_MAX_STRATUM) {
-    throw new Error(`NTP response from ${server} has invalid stratum ${stratum}`);
+    throw new NtpError(
+      'NTP_RESPONSE_STRATUM_INVALID',
+      `NTP response from ${server} has invalid stratum ${stratum}`,
+    );
   }
   if (!originateTimestampBytes.equals(requestTransmitTimestamp)) {
-    throw new Error(`NTP response from ${server} does not match the request timestamp`);
+    throw new NtpError(
+      'NTP_RESPONSE_ORIGINATE_MISMATCH',
+      `NTP response from ${server} does not match the request timestamp`,
+    );
   }
   if (transmitTimestampBytes.equals(ZERO_NTP_TIMESTAMP)) {
-    throw new Error(`NTP response from ${server} has no transmit timestamp`);
+    throw new NtpError(
+      'NTP_RESPONSE_TRANSMIT_MISSING',
+      `NTP response from ${server} has no transmit timestamp`,
+    );
   }
 
   return {
@@ -122,7 +146,7 @@ async function querySingleServer(
     }
 
     const timer = setTimeout(() => {
-      fail(new Error(`NTP query timeout for ${server}`));
+      fail(new NtpError('NTP_QUERY_TIMEOUT', `NTP query timeout for ${server}`));
     }, timeoutMs);
 
     socket.on('message', (msg: Buffer) => {
@@ -150,7 +174,7 @@ async function querySingleServer(
           roundTripMs,
         });
       } catch (err) {
-        fail(err instanceof Error ? err : new Error(String(err)));
+        fail(err instanceof Error ? err : new NtpError('NTP_QUERY_FAILED', String(err)));
       }
     });
 
@@ -169,11 +193,11 @@ async function querySingleServer(
           requestTransmitTimestamp = Buffer.from(packet.subarray(40, 48));
           socket.send(packet);
         } catch (err) {
-          fail(err instanceof Error ? err : new Error(String(err)));
+          fail(err instanceof Error ? err : new NtpError('NTP_QUERY_FAILED', String(err)));
         }
       });
     } catch (err) {
-      fail(err instanceof Error ? err : new Error(String(err)));
+      fail(err instanceof Error ? err : new NtpError('NTP_QUERY_FAILED', String(err)));
     }
   });
 }

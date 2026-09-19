@@ -32,6 +32,29 @@ export class TsaError extends Error {
   }
 }
 
+// ─── NTP Clock Check Errors ──────────────────────────────────────────────────
+
+export type NtpErrorCode =
+  | 'NTP_RESPONSE_TOO_SHORT'
+  | 'NTP_RESPONSE_UNSYNCHRONIZED'
+  | 'NTP_RESPONSE_VERSION_UNSUPPORTED'
+  | 'NTP_RESPONSE_MODE_UNEXPECTED'
+  | 'NTP_RESPONSE_STRATUM_INVALID'
+  | 'NTP_RESPONSE_ORIGINATE_MISMATCH'
+  | 'NTP_RESPONSE_TRANSMIT_MISSING'
+  | 'NTP_QUERY_TIMEOUT'
+  | 'NTP_QUERY_FAILED';
+
+export class NtpError extends Error {
+  readonly code: NtpErrorCode;
+
+  constructor(code: NtpErrorCode, message: string) {
+    super(message);
+    this.name = 'NtpError';
+    this.code = code;
+  }
+}
+
 // ─── Audit Query Errors ──────────────────────────────────────────────────────
 
 export type AuditQueryErrorCode = 'AUDIT_DECISION_RECEIPT_INVALID';

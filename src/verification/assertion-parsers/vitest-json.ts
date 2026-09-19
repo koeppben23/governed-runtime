@@ -6,6 +6,7 @@ import type { ProviderId } from '../../state/evidence-validation.js';
 import type { AssertionIdentity } from '../../state/assertion-identity.js';
 import type { ParseContext, ParserResult } from './types.js';
 import { hashText } from '../../shared/hashing.js';
+import { VerificationError } from '../errors.js';
 
 interface VitestAssertionResult {
   ancestorTitles?: string[];
@@ -54,7 +55,10 @@ export function parseVitestJson(jsonText: string, context: ParseContext): Parser
   try {
     report = JSON.parse(jsonText) as VitestJsonReport;
   } catch {
-    throw new Error('vitest_json: failed to parse JSON report');
+    throw new VerificationError(
+      'VERIFICATION_REPORT_PARSE_FAILED',
+      'vitest_json: failed to parse JSON report',
+    );
   }
 
   const testResults = report?.testResults;

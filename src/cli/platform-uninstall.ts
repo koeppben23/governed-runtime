@@ -7,6 +7,7 @@ import { lstat, readFile, readdir, rename, rmdir, unlink, writeFile } from 'node
 import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
+import { CliInstallError } from './errors.js';
 import type { FileOp, InstallScope } from './install-types.js';
 import {
   claudeCodePluginInstallHint,
@@ -164,7 +165,10 @@ async function removeCodexMarketplaceEntry(scope: InstallScope): Promise<FileOp>
     await writeFile(lockPath, JSON.stringify({ pid: process.pid, token }), { flag: 'wx' });
   } catch (err) {
     if (err instanceof Error && 'code' in err && err.code === 'EEXIST') {
-      throw new Error('Codex marketplace is locked by another process.');
+      throw new CliInstallError(
+        'CODEX_MARKETPLACE_LOCKED',
+        'Codex marketplace is locked by another process.',
+      );
     }
     throw err;
   }

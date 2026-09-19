@@ -30,6 +30,7 @@ import {
 // ─── Typed Errors ────────────────────────────────────────────────────────────
 
 export type { InstallErrorCode } from './install-types.js';
+import { CliInstallError } from './errors.js';
 import { InstallError } from './install-recovery.js';
 export { InstallError };
 
@@ -440,7 +441,10 @@ export async function snapshotForRollback(
       return { path: filePath, existed: false, expectedKind, sequence: 0 };
     }
     if (err instanceof Error && 'code' in err && err.code === 'ELOOP') {
-      throw new Error(`Refusing to snapshot symlink: ${filePath}`);
+      throw new CliInstallError(
+        'ROLLBACK_SNAPSHOT_SYMLINK',
+        `Refusing to snapshot symlink: ${filePath}`,
+      );
     }
     throw err;
   } finally {
@@ -456,21 +460,29 @@ async function snapshotFromHandle(
   const stat = await handle.stat();
 
   if (stat.isSymbolicLink()) {
-    throw new Error(`Refusing to snapshot symlink: ${filePath}`);
+    throw new CliInstallError(
+      'ROLLBACK_SNAPSHOT_SYMLINK',
+      `Refusing to snapshot symlink: ${filePath}`,
+    );
   }
   if (stat.isDirectory()) {
     if (expectedKind !== 'directory') {
-      throw new Error(
+      throw new CliInstallError(
+        'ROLLBACK_TARGET_TYPE_MISMATCH',
         `Rollback target type mismatch: ${filePath} (expected ${expectedKind}, found directory)`,
       );
     }
     return { path: filePath, existed: true, expectedKind: 'directory', sequence: 0 };
   }
   if (!stat.isFile()) {
-    throw new Error(`Unsupported rollback target type: ${filePath}`);
+    throw new CliInstallError(
+      'ROLLBACK_TARGET_TYPE_UNSUPPORTED',
+      `Unsupported rollback target type: ${filePath}`,
+    );
   }
   if (expectedKind !== 'file') {
-    throw new Error(
+    throw new CliInstallError(
+      'ROLLBACK_TARGET_TYPE_MISMATCH',
       `Rollback target type mismatch: ${filePath} (expected ${expectedKind}, found file)`,
     );
   }
@@ -519,10 +531,16 @@ async function restoreFileFromSnapshot(entry: RollbackEntry, ops: FileOp[]): Pro
   try {
     const stat = await lstat(entry.path);
     if (stat.isSymbolicLink()) {
-      throw new Error(`Rollback restore target was replaced by a symlink: ${entry.path}`);
+      throw new CliInstallError(
+        'ROLLBACK_RESTORE_SYMLINK',
+        `Rollback restore target was replaced by a symlink: ${entry.path}`,
+      );
     }
     if (!stat.isFile()) {
-      throw new Error(`Rollback restore target type changed: ${entry.path} (expected file)`);
+      throw new CliInstallError(
+        'ROLLBACK_RESTORE_TYPE_CHANGED',
+        `Rollback restore target type changed: ${entry.path} (expected file)`,
+      );
     }
   } catch (err) {
     if (!isEnoent(err)) throw err;
@@ -554,13 +572,22 @@ async function removeNewlyCreatedEntry(entry: RollbackEntry, ops: FileOp[]): Pro
 
   const stat = await lstat(entry.path);
   if (stat.isSymbolicLink()) {
-    throw new Error(`Rollback target was replaced by a symlink: ${entry.path}`);
+    throw new CliInstallError(
+      'ROLLBACK_REMOVE_SYMLINK',
+      `Rollback target was replaced by a symlink: ${entry.path}`,
+    );
   }
   if (entry.expectedKind === 'file' && !stat.isFile()) {
-    throw new Error(`Rollback target type changed: ${entry.path} (expected file)`);
+    throw new CliInstallError(
+      'ROLLBACK_REMOVE_TYPE_CHANGED',
+      `Rollback target type changed: ${entry.path} (expected file)`,
+    );
   }
   if (entry.expectedKind === 'directory' && !stat.isDirectory()) {
-    throw new Error(`Rollback target type changed: ${entry.path} (expected directory)`);
+    throw new CliInstallError(
+      'ROLLBACK_REMOVE_TYPE_CHANGED',
+      `Rollback target type changed: ${entry.path} (expected directory)`,
+    );
   }
   if (entry.expectedKind === 'directory') {
     await removeDirectoryRecursively(entry.path);
@@ -576,14 +603,20 @@ async function removeDirectoryRecursively(directoryPath: string): Promise<void> 
     const childPath = join(directoryPath, name);
     const childStat = await lstat(childPath);
     if (childStat.isSymbolicLink()) {
-      throw new Error(`Rollback target contains a symlink: ${childPath}`);
+      throw new CliInstallError(
+        'ROLLBACK_TREE_SYMLINK',
+        `Rollback target contains a symlink: ${childPath}`,
+      );
     }
     if (childStat.isDirectory()) {
       await removeDirectoryRecursively(childPath);
       continue;
     }
     if (!childStat.isFile()) {
-      throw new Error(`Unsupported rollback target type: ${childPath}`);
+      throw new CliInstallError(
+        'ROLLBACK_TARGET_TYPE_UNSUPPORTED',
+        `Unsupported rollback target type: ${childPath}`,
+      );
     }
     await unlink(childPath);
   }

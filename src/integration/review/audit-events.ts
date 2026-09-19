@@ -18,6 +18,7 @@ import * as crypto from 'node:crypto';
 import { appendAuditEvent } from '../../adapters/persistence-audit.js';
 import { readState } from '../../adapters/persistence.js';
 import type { SessionState } from '../../state/schema.js';
+import { IntegrationInvariantError } from '../errors.js';
 
 /**
  * Append a review-related audit event to the session trail.
@@ -43,7 +44,10 @@ export async function appendReviewAuditEvent(
 ): Promise<void> {
   const state = await readState(sessDir);
   if (!state) {
-    throw new Error('Cannot append review audit event without session state');
+    throw new IntegrationInvariantError(
+      'REVIEW_AUDIT_STATE_MISSING',
+      'Cannot append review audit event without session state',
+    );
   }
   await appendAuditEvent(sessDir, {
     id: crypto.randomUUID(),

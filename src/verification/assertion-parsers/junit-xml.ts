@@ -25,6 +25,7 @@ import type { ProviderId } from '../../state/evidence-validation.js';
 import type { AssertionIdentity } from '../../state/assertion-identity.js';
 import type { ParseContext, ParserResult } from './types.js';
 import { hashText } from '../../shared/hashing.js';
+import { VerificationError } from '../errors.js';
 
 /**
  * Canonical localId for a JUnit test: classname followed by # and method name.
@@ -49,7 +50,8 @@ function assertJUnitDocumentShape(xmlContent: string): void {
   const hasTestsuiteTag = /<testsuite\b/i.test(xmlContent);
   const hasTestcaseTag = /<testcase\b/i.test(xmlContent);
   if (!hasTestsuiteTag && !hasTestcaseTag) {
-    throw new Error(
+    throw new VerificationError(
+      'VERIFICATION_REPORT_SHAPE_INVALID',
       'junit_xml: not a valid JUnit XML report — no <testsuite> or <testcase> tags found',
     );
   }

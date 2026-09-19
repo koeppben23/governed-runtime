@@ -39,8 +39,20 @@ export type ReviewHttpsTransport = (
   target: ResolvedReviewTarget,
 ) => Promise<IncomingMessage>;
 
-class ReviewContentEncodingError extends Error {
-  readonly code = 'REVIEW_URL_CONTENT_ENCODING_INVALID';
+/** Compile-time validated review URL error codes. */
+type ReviewUrlErrorCode =
+  | 'REVIEW_URL_CONTENT_ENCODING_INVALID'
+  | 'REVIEW_URL_REQUEST_TIMEOUT'
+  | 'REVIEW_URL_PEER_ADDRESS_MISMATCH';
+
+class ReviewUrlError extends Error {
+  readonly code: ReviewUrlErrorCode;
+
+  constructor(code: ReviewUrlErrorCode, message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'ReviewUrlError';
+    this.code = code;
+  }
 }
 
 // ─── URL Validation (BUG-13: SSRF Mitigation) ───────────────────────
@@ -275,7 +287,7 @@ export async function fetchUrlContent(
         reason: `Response exceeds the ${MAX_REVIEW_URL_RESPONSE_BYTES}-byte review material limit`,
       });
     }
-    if (err instanceof ReviewContentEncodingError) {
+    if (err instanceof ReviewUrlError) {
       return blocked('REVIEW_URL_CONTENT_ENCODING_INVALID', { reason: err.message });
     }
     return blocked('REVIEW_URL_CONTENT_ENCODING_INVALID', {
@@ -295,12 +307,19 @@ function requestPinnedTarget(url: string, target: ResolvedReviewTarget): Promise
       lookup: (_hostname, _options, callback) => callback(null, target.address, target.family),
     };
     const req = request(url, options);
-    req.setTimeout(15_000, () => req.destroy(new Error('HTTPS request timed out')));
+    req.setTimeout(15_000, () =>
+      req.destroy(new ReviewUrlError('REVIEW_URL_REQUEST_TIMEOUT', 'HTTPS request timed out')),
+    );
     req.once('error', reject);
     req.once('socket', (socket) => {
       socket.once('secureConnect', () => {
         if (!sameIpAddress(socket.remoteAddress ?? '', target.address)) {
-          req.destroy(new Error('HTTPS peer address differs from the validated target'));
+          req.destroy(
+            new ReviewUrlError(
+              'REVIEW_URL_PEER_ADDRESS_MISMATCH',
+              'HTTPS peer address differs from the validated target',
+            ),
+          );
         }
       });
     });
@@ -352,7 +371,11 @@ function decodedStream(
         : encoding === 'br'
           ? createBrotliDecompress()
           : undefined;
-  if (!decoder) throw new ReviewContentEncodingError(`unsupported Content-Encoding: ${encoding}`);
+  if (!decoder)
+    throw new ReviewUrlError(
+      'REVIEW_URL_CONTENT_ENCODING_INVALID',
+      `unsupported Content-Encoding: ${encoding}`,
+    );
   response.pipe(decoder);
   return decoder;
 }

@@ -12,6 +12,7 @@
 import { buildJUnitLocalId } from '../../verification/assertion-parsers/junit-xml.js';
 import { junitXmlParser } from '../../verification/assertion-parsers/parsers.js';
 import { classifyRepositoryPath } from '../../state/repository-path.js';
+import { ProviderError } from '../errors.js';
 import type {
   AssertionProviderExtension,
   ExecutionSubjectResolution,
@@ -263,7 +264,11 @@ function junitCodec() {
     providerId: 'junit' as ProviderId,
     assertionBindingFormats: new Set<ReportFormatId>(['junit_xml']),
     buildLocalId(parsed: ParsedAssertion) {
-      if (parsed.kind !== 'junit_xml') throw new Error(`junit codec received ${parsed.kind}`);
+      if (parsed.kind !== 'junit_xml')
+        throw new ProviderError(
+          'PROVIDER_CODEC_KIND_MISMATCH',
+          `junit codec received ${parsed.kind}`,
+        );
       return buildJUnitLocalId(parsed.className, parsed.methodName);
     },
     validateLocalId(localId: string) {
