@@ -225,13 +225,13 @@ Maintainability model (Single Responsibility):
 
 Exceeding the file-size budget is a review blocker. Single source of truth for the size budget. The blocker thresholds are enforced
 by `src/architecture/__tests__/file-size.test.ts` (constants `PROD_FILE_LOC_BLOCKER`
-= 750, `TEST_FILE_LOC_BLOCKER` = 2000).
+= 650, `TEST_FILE_LOC_BLOCKER` = 2000).
 
 | Threshold (production) | Action Required                                  |
 | ---------------------- | ------------------------------------------------ |
 | =< 400 LOC             | Healthy - no action                              |
-| 400-750 LOC            | Consider splitting at next touch                 |
-| > 750 LOC              | Blocker - split required before merge (enforced) |
+| 400-650 LOC            | Consider splitting at next touch                 |
+| > 650 LOC              | Blocker - split required before merge (enforced) |
 
 Test files may be broader (suites group related cases): advisory split at
 1500 LOC, hard blocker above 2000 LOC (enforced).
@@ -245,8 +245,10 @@ following hold:
 2. `npm run lint:strict` passes (`eslint --max-warnings=0`).
 3. `dependency-rules.test.ts` passes (no layer violation).
 4. All SSOT guards pass (no duplicate authority).
-5. `file-size.test.ts` passes (no production file > 750 LOC, no test file > 2000 LOC).
-6. No bare `throw new Error(...)` in production control flow (typed errors only).
+5. `file-size.test.ts` passes (no production file > 650 LOC, no test file > 2000 LOC).
+6. No bare `throw new Error(...)`/native `new Error(...)` or non-null assertion in
+   production source (typed errors and real narrowing only; enforced by
+   `production-zero-debt.test.ts` and the production ESLint scope).
 7. New behavior touching state/policy/evidence/audit has negative-path tests.
 
 ## Repository Governance

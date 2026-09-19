@@ -81,7 +81,8 @@ describe('boundary-logging', () => {
     it('logs warn on blocked rail result and returns unchanged output', async () => {
       const { log, entries } = captureLogger();
       setAdapterLogger(log);
-      const { formatRailResult } = await import('../../integration/tools/helpers.js');
+      const { formatRailResult } =
+        await import('../../integration/tools/helpers-rail-presentation.js');
 
       const result = formatRailResult({
         kind: 'blocked',
@@ -103,7 +104,8 @@ describe('boundary-logging', () => {
     it('includes overflowLimit when overflow is present', async () => {
       const { log, entries } = captureLogger();
       setAdapterLogger(log);
-      const { formatRailResult } = await import('../../integration/tools/helpers.js');
+      const { formatRailResult } =
+        await import('../../integration/tools/helpers-rail-presentation.js');
 
       formatRailResult({
         kind: 'blocked',
@@ -153,7 +155,8 @@ describe('boundary-logging', () => {
 
   describe('CORNER — noop logger does not alter control flow', () => {
     it('blocked result unchanged when no adapter logger is set', async () => {
-      const { formatRailResult } = await import('../../integration/tools/helpers.js');
+      const { formatRailResult } =
+        await import('../../integration/tools/helpers-rail-presentation.js');
 
       const result = formatRailResult({
         kind: 'blocked',

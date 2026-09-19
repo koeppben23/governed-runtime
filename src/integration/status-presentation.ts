@@ -12,7 +12,7 @@
  * @version v2
  */
 
-import type { StatusProjection } from './status.js';
+import type { StatusProjection } from './status-types.js';
 import type { DiscoveryHealthProjection } from '../discovery/discovery-health.js';
 import type { DiscoveryDriftStatusProjection } from './discovery-drift-status.js';
 import { projectStatusActionFromCommand } from './status-conclusion.js';

@@ -12,7 +12,7 @@ import { z } from 'zod';
 import type {
   AssuranceRefinementShape,
   AttemptRefinementShape,
-} from './evidence-review-refinements.js';
+} from './evidence-review-assurance-refinements.js';
 
 /**
  * Dispatch-ledger referential closure. The durable dispatch ledger is

@@ -32,14 +32,13 @@ import { CliInstallError } from './errors.js';
 import { InstallError, pushError } from './install-helpers.js';
 import {
   computeMandatesDigest,
-  detectPackageManager,
   reviewerDefinitionForPlatform,
   resolveOpencodeConfigPath,
   resolveTarget,
-  snapshotForRollback,
-  verifyTarballChecksum,
   writeIfAbsent,
 } from './install-helpers.js';
+import { verifyTarballChecksum } from './install-helpers-integrity.js';
+import { detectPackageManager, snapshotForRollback } from './install-helpers-rollback.js';
 import {
   FLOWGUARD_TARBALL_PATTERN,
   PACKAGE_VERSION,
@@ -51,7 +50,7 @@ import {
   type InstallPlatform,
 } from './install-types.js';
 import { mergeOpencodeJson, mergePackageJson } from './install-json.js';
-import type { RollbackEntry } from './install-helpers.js';
+import type { RollbackEntry } from './install-helpers-rollback.js';
 import type { InstallMutationSink } from './install-mutation-types.js';
 import { assertManagedMandatesOwnership } from './install-ownership.js';
 import { ensureDirTracked, MutationJournal } from './install-transaction.js';

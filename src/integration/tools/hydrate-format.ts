@@ -10,11 +10,10 @@ import type { HydrateInput, HydratePolicyInput, HydrateProfileInput } from '../.
 import { executeHydrate } from '../../rails/hydrate.js';
 import type { ToolResult } from './helpers.js';
 import {
-  persistAndFormat,
   enrichWithWorkflowDirective,
-  formatRailResult,
   writeStateWithArtifactsAndAuditOperations,
 } from './helpers.js';
+import { persistAndFormat, formatRailResult } from './helpers-rail-presentation.js';
 import type { SemanticAuditIntent } from './audit-outbox.js';
 import { LOCK_CONTENDED_OUTPUT_FIELD } from '../../shared/flowguard-identifiers.js';
 import { PHASE_LABELS } from '../../presentation/phase-labels.js';

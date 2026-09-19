@@ -55,7 +55,7 @@ Maintainability targets and transitional ceilings:
   `architecture/__tests__/dependency-rules.test.ts` and
   `scripts/check-module-cycle-lineage.mjs`.)
 - **Extract, Don't Accumulate** — Split files along domain boundaries within the
-  size budget. The canonical budget and its enforced blocker thresholds (750 LOC
+  size budget. The canonical budget and its enforced blocker thresholds (650 LOC
   production, 2000 LOC tests) live in CONTRIBUTING.md and are enforced by
   `architecture/__tests__/file-size.test.ts`. Do not let files grow unbounded.
 - **No Duplicate Authority** — Every concept MUST have exactly one canonical

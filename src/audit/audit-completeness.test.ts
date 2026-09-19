@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { evaluateCompleteness } from './completeness.js';
 import { makeState, makeProgressedState, FIXED_TIME, FIXED_SESSION_UUID } from '../fixtures.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
-import { ReviewDecision } from '../state/evidence-review.js';
+import { ReviewDecision } from '../state/evidence-review-report.js';
 import type { ValidationResult } from '../state/evidence.js';
 import type { SessionState, Phase } from '../state/schema.js';
 import { makePlanRevision } from '../state/evidence-test-constants.js';

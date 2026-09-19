@@ -16,8 +16,8 @@ import {
   buildHeuristicRiskWarning,
   classifyProofClaimContract,
   validateProofClaimContract,
-  type NormalizedClaimDeclaration,
 } from './claim-contract.js';
+import type { NormalizedClaimDeclaration } from './claim-contract-rules.js';
 import { isRiskAssessmentCurrent } from '../../audit/proofgraph/gate.js';
 
 const CLAIM_A = '10000000-0000-4000-8000-00000000000a';

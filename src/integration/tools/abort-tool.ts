@@ -10,7 +10,8 @@
 import { z } from 'zod';
 
 import type { ToolDefinition } from './helpers.js';
-import { withMutableSessionTransaction, persistAndFormat } from './helpers.js';
+import { withMutableSessionTransaction } from './helpers.js';
+import { persistAndFormat } from './helpers-rail-presentation.js';
 import { executeAbort } from '../../rails/abort.js';
 import { TERMINAL } from '../../machine/topology.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';

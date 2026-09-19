@@ -8,7 +8,7 @@
 
 import { describe, it, expect } from 'vitest';
 
-import { buildDiscoveryHealthGateStatus } from './status-tool.js';
+import { buildDiscoveryHealthGateStatus } from './status-full-response.js';
 import type { SessionState } from '../../state/schema.js';
 import { makeState } from '../../fixtures.js';
 

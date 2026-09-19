@@ -18,6 +18,7 @@ const LEGACY_FILES = [
   'audit/proofgraph/counterexample-binder.ts',
   'audit/proofgraph/evaluate.ts',
   'integration/proofgraph/claim-contract.ts',
+  'integration/proofgraph/claim-contract-rules.ts',
   'integration/proofgraph/materialize-contract.ts',
   'integration/tools/declare-contract.ts',
 ];
@@ -43,6 +44,12 @@ const PROOFGRAPH_CORE_FILES = [
   'audit/proofgraph/executed-test-binder.ts',
   'audit/proofgraph/derive.ts',
 ];
+
+/**
+ * Canonical writer of normalized plan claim declarations: plan declarations
+ * are persisted only as proofgraph v2 from this module.
+ */
+const PLAN_DECLARATION_WRITER = 'integration/tools/plan-submission-state.ts';
 
 const FORBIDDEN = [
   /counterexampleCheckId/,
@@ -163,12 +170,12 @@ describe('proofgraph legacy guard', () => {
   });
 
   it('plan declarations are only written as v2', () => {
-    const content = readFileSync(join(SRC, 'integration/tools/plan.ts'), 'utf-8');
+    const content = readFileSync(join(SRC, PLAN_DECLARATION_WRITER), 'utf-8');
     expect(content.match(/version:\s*'v2' as const/g)).toHaveLength(1);
   });
 
   it('production code does not construct legacy plan declaration literals', () => {
-    const content = readFileSync(join(SRC, 'integration/tools/plan.ts'), 'utf-8');
+    const content = readFileSync(join(SRC, PLAN_DECLARATION_WRITER), 'utf-8');
     expect(content).not.toMatch(/claimDeclarations:\s*\{\s*flow:\s*'plan',\s*claims:/);
   });
 

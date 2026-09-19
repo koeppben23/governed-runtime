@@ -10,11 +10,9 @@ import type { SessionState } from '../../state/schema.js';
 import type { ReviewReport } from '../../state/evidence.js';
 import { PHASE_LABELS } from '../../presentation/phase-labels.js';
 import { directiveLabel } from '../../presentation/directive-copy.js';
-import {
-  buildStatusProjection,
-  buildEvidenceDetailProjection,
-  type FinishOverallStatus,
-} from '../status.js';
+import { buildStatusProjection } from '../status.js';
+import { buildEvidenceDetailProjection } from '../status-detail-projections.js';
+import type { FinishOverallStatus } from '../status-types.js';
 import { buildFinishCard } from '../status-finish.js';
 import { evaluateArchivePreflight, type CommandPreflight } from '../archive-preflight.js';
 import {

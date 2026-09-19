@@ -12,25 +12,28 @@ import {
   ContentRef,
   ReviewChallenge,
   ChallengeResolution,
-  ReviewActorInfo,
-  ReviewAttestation,
-  ReviewFindings,
   ReviewObligation,
   ReviewInvocationEvidence,
   ReviewProfile,
   ReviewProfileSource,
   ReviewAssuranceState,
-  ReviewDecision,
-  ReviewReport,
-  EvidenceSlotStatusSchema,
-  FourEyesStatusSchema,
-  CompletenessSummarySchema,
-  CompletenessReportSchema,
   classifyRepositoryPath,
   RepositoryLocation,
   ReviewSubjectScope,
   FrozenReviewSubject,
 } from './evidence-review.js';
+import {
+  ReviewActorInfo,
+  ReviewAttestation,
+  ReviewFindings,
+} from './evidence-review-attestation.js';
+import {
+  EvidenceSlotStatusSchema,
+  FourEyesStatusSchema,
+  CompletenessSummarySchema,
+  CompletenessReportSchema,
+} from './evidence-review-completeness.js';
+import { ReviewDecision, ReviewReport } from './evidence-review-report.js';
 import { FIXED_TIME, FIXED_UUID } from './evidence-test-constants.js';
 
 describe('evidence-review', () => {

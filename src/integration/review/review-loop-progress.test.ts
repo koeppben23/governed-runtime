@@ -384,7 +384,7 @@ describe('getReviewLoopProgress', () => {
 
   describe('SURFACE', () => {
     it('formatRailResult includes reviewLoop in PLAN_REVIEW', async () => {
-      const { formatRailResult } = await import('../tools/helpers.js');
+      const { formatRailResult } = await import('../tools/helpers-rail-presentation.js');
       const { makeState } = await import('../../fixtures.js');
 
       const state = makeState('PLAN_REVIEW', {
@@ -417,7 +417,7 @@ describe('getReviewLoopProgress', () => {
     });
 
     it('formatRailResult omits reviewLoop in non-review phase', async () => {
-      const { formatRailResult } = await import('../tools/helpers.js');
+      const { formatRailResult } = await import('../tools/helpers-rail-presentation.js');
       const { makeState } = await import('../../fixtures.js');
 
       const state = makeState('TICKET', {});

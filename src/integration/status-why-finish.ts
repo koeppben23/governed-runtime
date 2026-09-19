@@ -2,7 +2,7 @@
  * @module integration/status-why-finish
  * @description Presentation projection types and builders for /why and /finish.
  *
- * Extracted from status.ts to stay under the 750 LOC file-size budget.
+ * Extracted from status.ts to stay under the 650 LOC file-size budget.
  * These types and functions are consumed by why-presentation.ts,
  * finish-presentation.ts, and status-tool.ts.
  *
@@ -17,7 +17,7 @@ import { PHASE_LABELS } from '../presentation/phase-labels.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
 import { projectStatusActionFromCommand } from './status-conclusion.js';
 import { directiveLabel, type PresentationAction } from '../presentation/index.js';
-import type { BlockedProjection, FinishCard } from './status.js';
+import type { BlockedProjection, FinishCard } from './status-types.js';
 import { projectProofStatusForState } from './proofgraph/proof-summary-projectors.js';
 import { IntegrationInvariantError } from './errors.js';
 

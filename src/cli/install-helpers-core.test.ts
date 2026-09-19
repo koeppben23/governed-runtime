@@ -20,13 +20,8 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   };
 });
 
-import {
-  sha256,
-  safeRead,
-  safeUnlink,
-  resolveOpencodeConfigPath,
-  rollbackArtifacts,
-} from './install-helpers.js';
+import { sha256, safeRead, safeUnlink, resolveOpencodeConfigPath } from './install-helpers.js';
+import { rollbackArtifacts } from './install-helpers-rollback.js';
 import { PACKAGE_VERSION } from './install-types.js';
 import {
   createMalformedJsonBackup,

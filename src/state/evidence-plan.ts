@@ -7,7 +7,7 @@
 
 import { z } from 'zod';
 import { LoopVerdict, RevisionDelta, ReviewCompletion } from './evidence-primitives.js';
-import { ReviewFindings } from './evidence-review.js';
+import { ReviewFindings } from './evidence-review-attestation.js';
 import { PlanApprovalCertificate, PlanClaimDeclarations } from './proofgraph-approval.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { hashText } from '../shared/hashing.js';

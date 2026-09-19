@@ -27,7 +27,6 @@
 import type {
   PresentationDocument,
   PresentationSection,
-  PresentationConclusion,
   PresentationAction,
   KeyValueItem,
   TitleSection,
@@ -54,8 +53,10 @@ import {
   formatFindingLocation,
   formatFindingSubject,
 } from './finding-relation.js';
-import { validateCodeLanguage, normalizedMarkdown, PresentationContractError } from './model.js';
-import { validateDocumentContract, validateRecoveryConclusion } from './markdown-contract.js';
+import { validateCodeLanguage, PresentationContractError } from './model.js';
+import { validateDocumentContract } from './markdown-contract.js';
+import { normalizeEmbeddedContent } from './markdown-embedded.js';
+import { renderAction, renderConclusion } from './markdown-conclusion.js';
 import { GUIDANCE_STATUS_LABELS } from './labels.js';
 import { renderProofGraphMarkdown } from './proof-summary.js';
 import {
@@ -518,161 +519,6 @@ function renderEmbeddedMarkdown(section: EmbeddedMarkdownSection): string {
   }
 
   return section.label !== undefined ? `**${section.label}:**\n${normalized}` : normalized;
-}
-
-/**
- * Normalise untrusted embedded Markdown for safe inclusion in a document:
- * boundary-trims, sanitises structural whitespace, and demotes ATX headings so
- * the shallowest heading is at least `minLevel`. Fenced code blocks are opaque:
- * their content (and internal blank lines/indentation) is preserved verbatim.
- */
-function normalizeEmbeddedContent(raw: string, minLevel: number): string {
-  const boundaryTrimmed = raw.replace(/^\n+/, '').replace(/\n+$/, '');
-  if (boundaryTrimmed.length === 0) return '';
-
-  const shallowest = shallowestHeadingLevel(boundaryTrimmed);
-  const shift = shallowest !== null && shallowest < minLevel ? minLevel - shallowest : 0;
-
-  const lines = boundaryTrimmed.split('\n');
-  const out: string[] = [];
-  let inFence = false;
-  let fenceMarker = '';
-  let prevBlankOutsideFence = false;
-
-  for (const line of lines) {
-    const fence = fenceDelimiter(line);
-    if (fence !== null && (!inFence || line.trimStart().startsWith(fenceMarker))) {
-      if (!inFence) {
-        inFence = true;
-        fenceMarker = fence;
-      } else {
-        inFence = false;
-        fenceMarker = '';
-      }
-      out.push(line); // fence delimiter lines are preserved verbatim
-      prevBlankOutsideFence = false;
-      continue;
-    }
-    if (inFence) {
-      out.push(line); // code content preserved verbatim (exempt from all normalisation)
-      continue;
-    }
-    const sanitized = sanitizeStructuralLine(demoteHeadingLine(line, shift));
-    const blank = sanitized.length === 0;
-    // Collapse triple+ newlines between structural blocks: never allow two
-    // consecutive blank lines outside a code fence.
-    if (blank && prevBlankOutsideFence) continue;
-    out.push(sanitized);
-    prevBlankOutsideFence = blank;
-  }
-
-  return out.join('\n');
-}
-
-/** Return the ``` / ~~~ fence marker if the line opens/closes a fenced block. */
-function fenceDelimiter(line: string): string | null {
-  const m = /^\s*(`{3,}|~{3,})/.exec(line);
-  return m?.[1] ?? null;
-}
-
-/** Strip trailing whitespace from a non-code line. */
-function sanitizeStructuralLine(line: string): string {
-  return line.replace(/[ \t]+$/, '');
-}
-
-/** Demote an ATX heading line by `shift` levels (capped at H6). No-op otherwise. */
-function demoteHeadingLine(line: string, shift: number): string {
-  if (shift <= 0) return line;
-  const m = /^(#{1,6})(\s.*)$/.exec(line);
-  if (!m) return line;
-  const levelHashes = m[1];
-  const headingText = m[2];
-  if (levelHashes === undefined || headingText === undefined) return line;
-  const level = Math.min(6, levelHashes.length + shift);
-  return '#'.repeat(level) + headingText;
-}
-
-/** Shallowest (smallest) ATX heading level in fence-external content, or null. */
-function shallowestHeadingLevel(content: string): number | null {
-  let inFence = false;
-  let fenceMarker = '';
-  let shallowest: number | null = null;
-  for (const line of content.split('\n')) {
-    const fence = fenceDelimiter(line);
-    if (fence !== null && (!inFence || line.trimStart().startsWith(fenceMarker))) {
-      inFence = !inFence;
-      fenceMarker = inFence ? fence : '';
-      continue;
-    }
-    if (inFence) continue;
-    const m = /^(#{1,6})\s/.exec(line);
-    const levelHashes = m?.[1];
-    if (levelHashes !== undefined && (shallowest === null || levelHashes.length < shallowest)) {
-      shallowest = levelHashes.length;
-    }
-  }
-  return shallowest;
-}
-
-// ─── Conclusion Renderer ───────────────────────────────────────────────────────
-
-function renderConclusion(conclusion: PresentationConclusion, glyphs: PresentationGlyphs): string {
-  switch (conclusion.kind) {
-    case 'next_action':
-      return renderAction(conclusion.action, glyphs);
-    case 'decision_required': {
-      // The question is free-form text sourced from upstream projections
-      // (e.g. directive/evalResult). Validate it against the
-      // structural contract so a stray trailing newline/whitespace fails
-      // closed instead of silently violating the document invariants.
-      const question = normalizedMarkdown(conclusion.question);
-      if (question.length === 0) {
-        throw new PresentationContractError(
-          'PresentationConclusion: decision_required question must not be empty',
-        );
-      }
-      const lines: string[] = [];
-      lines.push(`## Decision required\n`);
-      lines.push(question);
-      for (const action of conclusion.actions) {
-        lines.push(renderAction(action, glyphs));
-      }
-      return lines.join('\n');
-    }
-    case 'terminal': {
-      // Terminal message is free-form upstream text; enforce the same
-      // structural contract as all other rendered content.
-      const message = normalizedMarkdown(conclusion.message);
-      if (message.length === 0) {
-        throw new PresentationContractError(
-          'PresentationConclusion: terminal message must not be empty',
-        );
-      }
-      return message;
-    }
-    case 'review_pending': {
-      const message = normalizedMarkdown(conclusion.message);
-      if (message.length === 0) {
-        throw new PresentationContractError(
-          'PresentationConclusion: review_pending message must not be empty',
-        );
-      }
-      return `## Independent review pending\n\n${message}`;
-    }
-    case 'recovery': {
-      validateRecoveryConclusion(conclusion);
-      return `## Recovery\n\n${conclusion.message}\n${conclusion.steps.map((step) => `- ${step}`).join('\n')}`;
-    }
-  }
-}
-
-// ─── Action Renderer ───────────────────────────────────────────────────────────
-
-function renderAction(action: PresentationAction, glyphs: PresentationGlyphs): string {
-  const symbol =
-    action.visibility === 'recommended' ? glyphs.recommendedAction : glyphs.availableAction;
-  const invocation = action.invocation ? ` \`${action.invocation}\`` : '';
-  return `${symbol}${invocation} — ${action.description}`;
 }
 
 // ─── Code Fence Helper ─────────────────────────────────────────────────────────

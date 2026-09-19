@@ -14,8 +14,9 @@ import { defaultReasonRegistry } from '../config/reasons.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import { CliInstallError } from './errors.js';
 import type { CliArgs, CliResult, FileOp } from './install-types.js';
-import type { RollbackEntry as InstallRollbackEntry } from './install-helpers.js';
-import { rollbackArtifacts, snapshotForRollback, toCliError } from './install-helpers.js';
+import type { RollbackEntry as InstallRollbackEntry } from './install-helpers-rollback.js';
+import { rollbackArtifacts, snapshotForRollback } from './install-helpers-rollback.js';
+import { toCliError } from './install-helpers.js';
 import {
   assertManagedMandatesOwnership,
   assertNoAmbiguousLegacyInstruction,
@@ -38,20 +39,15 @@ import {
   commitDependencyTransaction,
   createDependencyTransaction,
   executeDependencyTransaction,
+} from './install-transaction.js';
+import type { DependencyTransaction } from './install-transaction-journal.js';
+import {
   isRollbackPossible,
   recoverOrAbort,
   rollbackDependencyTransaction,
-  type DependencyTransaction,
-} from './install-transaction.js';
+} from './install-transaction-rollback.js';
 import { classifyOpenCodeRuntime } from './opencode-runtime-compat.js';
 import { detectOpenCodeRuntimeEvidence } from './opencode-runtime-detect.js';
-
-export {
-  detectPackageManager,
-  type RollbackEntry,
-  rollbackArtifacts,
-  snapshotForRollback,
-} from './install-helpers.js';
 
 const DEFAULT_LOCK = join(homedir(), '.config', 'opencode', '.flowguard-install.lock');
 

@@ -33,15 +33,8 @@
  */
 
 import { z } from 'zod';
-import { randomUUID } from 'node:crypto';
-import {
-  freezeContextAuthorityAtHead,
-  frozenAuthorityOrUndefined,
-} from '../../rails/repository-authority.js';
-import { resolveAttemptDiscoveryOrBlock } from '../review/discovery-attempt-context.js';
 
 import type { ToolDefinition } from './helpers.js';
-import { projectMarkdownHeadings } from '../../shared/markdown-sections.js';
 import { formatError } from './error-format.js';
 import {
   withMutableSessionTransaction,
@@ -51,34 +44,28 @@ import {
   writeStateWithArtifacts,
 } from './helpers.js';
 import type { SessionState } from '../../state/schema.js';
-import { IntegrationInvariantError } from '../errors.js';
 import { evaluate } from '../../machine/evaluate.js';
 import { isCommandAllowed, Command } from '../../machine/commands.js';
 import { autoAdvance } from '../../rails/types.js';
-import type {
-  PlanEvidence,
-  LoopVerdict,
-  RevisionDelta,
-  ReviewFindings,
-} from '../../state/evidence.js';
-import { computeRecordDigest, resolvePlanReviewCompletion } from '../../state/evidence-plan.js';
 import { PlanClaimDeclarationInput as PlanClaimDeclarationSchema } from '../../state/proofgraph-approval.js';
-import { normalizePlanClaims } from '../../state/proofgraph-approval.js';
-import { resolveStructuredEffectiveFindings } from './review-validation.js';
-import { collectPreviouslyUsedChallengeIds } from '../review/challenge-history.js';
-import {
-  appendReviewObligation,
-  consumeReviewObligation,
-  createObligationAndAttempt,
-  ensureReviewAssurance,
-  findLatestObligation,
-} from '../review/assurance.js';
+import { findLatestObligation } from '../review/assurance.js';
 import {
   resolveReviewDispatchAuthority,
   type ReviewDispatchAuthority,
 } from '../review/dispatch-authority.js';
-import { buildReviewChallengeContract } from '../review/challenge-contract.js';
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
+import {
+  buildPlanEvidence,
+  buildPlanSubmissionState,
+  createPlanReviewAttempt,
+} from './plan-submission-state.js';
+import {
+  applyPlanRevision,
+  blockedInvalidPlanFindings,
+  buildReviewedPlanState,
+  consumePlanObligation,
+  resolveEffectivePlanFindings,
+} from './plan-review-state.js';
 // presentation imports moved to plan-response.ts
 
 // ---- re-exported from sub-modules for backward-compatible import paths ----
@@ -107,12 +94,7 @@ export {
 } from './plan-response.js';
 
 // ---- internal types ----
-import type {
-  PlanArgs,
-  PlanInputFlags,
-  PlanExecutionScope,
-  PlanRevisionResult,
-} from './plan-types.js';
+import type { PlanArgs, PlanInputFlags, PlanExecutionScope } from './plan-types.js';
 
 // ---- internal helpers ----
 
@@ -122,7 +104,6 @@ import { routePlanInitialSubmission, blockedPlanReviewInProgress } from './plan-
 import { classifyPlanClaimSubmission } from './plan-claim-submission.js';
 import {
   buildPlanSubmissionResponse as buildSubmissionResponse,
-  buildPlanReviewObligationInput,
   persistPlanReview as persistReview,
 } from './plan-response.js';
 
@@ -160,344 +141,6 @@ function validateReviewInputShape(input: PlanInputFlags, state: SessionState): s
   if (input.hasVerdict && !state.plan) return formatBlocked('PLAN_SUBMISSION_REQUIRED');
   if (input.hasVerdict && !state.selfReview) return formatBlocked('PLAN_REVIEW_LOOP_REQUIRED');
   return null;
-}
-
-function buildPlanEvidence(
-  planBody: string,
-  scope: PlanExecutionScope,
-  lineage?: {
-    planVersion: number;
-    supersedesRecordDigest?: string | null;
-    originatingReviewObligationId?: string | null;
-    revisionReason?: string | null;
-  },
-): PlanEvidence {
-  const contentDigest = scope.ctx.digest(planBody);
-  const planVersion = lineage?.planVersion ?? 1;
-  const supersedesRecordDigest = lineage?.supersedesRecordDigest ?? null;
-  const originatingReviewObligationId = lineage?.originatingReviewObligationId ?? null;
-  const revisionReason = lineage?.revisionReason ?? null;
-  const revisionId = randomUUID();
-
-  return {
-    body: planBody,
-    digest: contentDigest,
-    sections: projectMarkdownHeadings(planBody),
-    createdAt: scope.ctx.now(),
-    revisionId,
-    recordDigest: computeRecordDigest({
-      contentDigest,
-      planVersion,
-      supersedesRecordDigest,
-      originatingReviewObligationId,
-      revisionReason,
-      revisionId,
-    }),
-    planVersion,
-    supersedesRecordDigest,
-    originatingReviewObligationId,
-    revisionReason,
-    lineageStatus: 'verified' as const,
-  };
-}
-
-/** Register the plan review obligation and its first attempt, when review applies. */
-async function createPlanReviewAttempt(
-  scope: PlanExecutionScope,
-  planEvidence: PlanEvidence,
-  planVersion: number,
-  classificationFiles?: readonly string[],
-): Promise<
-  | {
-      kind: 'ok';
-      attemptResult: ReturnType<typeof createObligationAndAttempt> | null;
-    }
-  | { kind: 'blocked'; message: string }
-> {
-  const freeze = await freezeContextAuthorityAtHead(scope.worktree);
-  const authority = frozenAuthorityOrUndefined(freeze);
-  // Repository-governed attempts are minted WITH their host-owned Discovery
-  // snapshot (persistence coherence); a structural projection failure blocks
-  // the submission before any state mutation.
-  const discovery = await resolveAttemptDiscoveryOrBlock({
-    state: scope.state,
-    worktree: scope.worktree,
-    repositoryGoverned: authority !== undefined,
-    now: scope.ctx.now(),
-  });
-  if (discovery.kind === 'blocked') {
-    return {
-      kind: 'blocked',
-      message: formatBlocked('REVIEWER_CONTEXT_UNAVAILABLE', {
-        reason: discovery.reason,
-      }),
-    };
-  }
-  const attemptResult = createObligationAndAttempt(
-    scope.state.reviewAssurance,
-    buildPlanReviewObligationInput(scope, planEvidence, planVersion, classificationFiles, {
-      freeze,
-      planClaimDeclarations: submittedPlanClaimDeclarations(scope),
-    }),
-    scope.ctx.now(),
-    discovery.context,
-  );
-  return { kind: 'ok', attemptResult };
-}
-
-function currentClaimSubmissionDiagnostics(scope: PlanExecutionScope) {
-  return scope.args.claims
-    ? scope.claimSubmissionDiagnostics
-    : scope.state.plan?.claimSubmissionDiagnostics;
-}
-
-/** The declaration set a plan submission writes: fresh normalized claims or the carried-over set. */
-function submittedPlanClaimDeclarations(
-  scope: PlanExecutionScope,
-): import('../../state/proofgraph-approval.js').PlanClaimDeclarations | undefined {
-  const submittedClaims = scope.args.claims;
-  if (!submittedClaims) return scope.state.plan?.claimDeclarations;
-  const normalizedClaims = normalizePlanClaims(submittedClaims);
-  if (normalizedClaims === undefined) {
-    throw new IntegrationInvariantError(
-      'PROOFGRAPH_CLAIM_NORMALIZATION_UNAVAILABLE',
-      'normalizing submitted plan claims produced no canonical declarations',
-    );
-  }
-  return {
-    flow: 'plan',
-    version: 'v2' as const,
-    claims: normalizedClaims,
-  };
-}
-
-function appendClaimSubmissionHistory(scope: PlanExecutionScope, planVersion: number) {
-  const history = scope.state.plan?.claimSubmissionHistory ?? [];
-  if (!scope.args.claims || !scope.claimSubmissionDiagnostics) return history;
-  return [...history, { planVersion, ...scope.claimSubmissionDiagnostics }];
-}
-
-function buildPlanSubmissionState(
-  scope: PlanExecutionScope,
-  planEvidence: PlanEvidence,
-  planVersion: number,
-  attempt: Extract<Awaited<ReturnType<typeof createPlanReviewAttempt>>, { kind: 'ok' }>,
-): SessionState {
-  const history = scope.state.plan ? [scope.state.plan.current, ...scope.state.plan.history] : [];
-  const nextObligation = attempt.attemptResult?.obligation ?? null;
-
-  return {
-    ...scope.state,
-    plan: {
-      current: planEvidence,
-      history,
-      // Host-captured review findings are append-only and are only ever
-      // written by handlePlanReview from the resolved structured evidence.
-      reviewFindings: scope.state.plan?.reviewFindings,
-      claimDeclarations: submittedPlanClaimDeclarations(scope),
-      claimSubmissionDiagnostics: currentClaimSubmissionDiagnostics(scope),
-      claimSubmissionHistory: appendClaimSubmissionHistory(scope, planVersion),
-      reviewCompletion: 'pending',
-    },
-    // #428: a new plan invalidates any prior validation evidence. Without this
-    // reset, a stale failed-check result (passed:false) survives the re-plan and
-    // makes VALIDATION re-entry fire CHECK_FAILED → PLAN before any check is
-    // re-executed — an infinite PLAN→PLAN_REVIEW→VALIDATION→PLAN cycle that
-    // auto-advance now (correctly) fails closed on. Clearing validation returns
-    // VALIDATION to the "checks pending" WAIT state so checks must be re-run.
-    validation: [],
-    selfReview: {
-      iteration: 0,
-      reviewCycle: scope.state.reviewCycles.plan,
-      maxIterations: scope.maxPlanReviewIterations,
-      prevDigest: null,
-      currDigest: planEvidence.digest,
-      revisionDelta: 'major',
-      verdict: 'changes_requested',
-    },
-    reviewAssurance:
-      attempt.attemptResult?.assurance ??
-      appendReviewObligation(scope.state.reviewAssurance, nextObligation),
-    error: null,
-  };
-}
-
-function findUnconsumedPlanObligation(state: SessionState) {
-  const assuranceBase = ensureReviewAssurance(state.reviewAssurance);
-  const pendingObligation = [...assuranceBase.obligations]
-    .reverse()
-    .find(
-      (item) =>
-        item.obligationType === 'plan' && item.status !== 'consumed' && item.consumedAt == null,
-    );
-  return { assuranceBase, pendingObligation };
-}
-
-function resolveEffectivePlanFindings(scope: PlanExecutionScope) {
-  const selfReview = scope.state.selfReview;
-  const plan = scope.state.plan;
-  if (!selfReview || !plan) {
-    throw new IntegrationInvariantError(
-      'PLAN_REVIEW_STATE_REQUIRED',
-      'plan review finding resolution requires plan and self-review state',
-    );
-  }
-  const { assuranceBase, pendingObligation } = findUnconsumedPlanObligation(scope.state);
-  const expectedIteration = pendingObligation?.iteration ?? selfReview.iteration;
-  const expectedPlanVersion = pendingObligation?.planVersion ?? plan.history.length + 1;
-  const resolved = resolveStructuredEffectiveFindings({
-    pendingObligation: pendingObligation ?? null,
-    expected: {
-      obligationType: 'plan',
-      iteration: expectedIteration,
-      planVersion: expectedPlanVersion,
-    },
-    input: {
-      reviewerUnavailable: scope.args.reviewerUnavailable,
-      verdict: scope.args.reviewVerdict,
-    },
-    state: {
-      assurance: scope.state.reviewAssurance,
-      sessionId: scope.context.sessionID,
-      // Bind design-challenge evidence to the plan's canonical allowed refs
-      // (finding B3): without this, a plan review challenge could cite a
-      // fabricated ADR section / digest and pass.
-      allowedChallengeEvidenceRefs: buildReviewChallengeContract(
-        scope.state,
-        pendingObligation ?? null,
-      )?.evidenceRefs,
-      previouslyUsedChallengeIds: collectPreviouslyUsedChallengeIds(scope.state),
-    },
-  });
-  return { assuranceBase, pendingObligation, expectedIteration, expectedPlanVersion, resolved };
-}
-
-function blockedInvalidPlanFindings(
-  args: PlanArgs,
-  effectiveFindings: ReviewFindings,
-  obligationId: string | undefined,
-): string | null {
-  if (effectiveFindings.overallVerdict === 'unable_to_review') {
-    return formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', {
-      obligationId: obligationId ?? 'unknown',
-    });
-  }
-  if (effectiveFindings.overallVerdict !== args.reviewVerdict) {
-    return formatBlocked('SUBAGENT_FINDINGS_VERDICT_MISMATCH', {
-      submittedVerdict: args.reviewVerdict as string,
-      findingsVerdict: effectiveFindings.overallVerdict,
-    });
-  }
-  return null;
-}
-
-function applyPlanRevision(
-  scope: PlanExecutionScope,
-  originatingReviewObligationId?: string | null,
-): PlanRevisionResult | string {
-  const state = scope.state;
-  const plan = state.plan;
-  if (!plan) {
-    throw new IntegrationInvariantError('NO_PLAN', 'plan revision requires a plan in state');
-  }
-  const verdict = scope.args.reviewVerdict as LoopVerdict;
-  const prevDigest = plan.current.digest;
-  let currentPlan = plan.current;
-  let history = [...plan.history];
-  let revisionDelta: RevisionDelta = 'none';
-
-  if (verdict !== 'changes_requested') {
-    return { currentPlan, history, revisionDelta, prevDigest, verdict };
-  }
-
-  const revisedBody = scope.args.planText?.trim();
-  if (!revisedBody) return formatBlocked('REVISED_PLAN_REQUIRED');
-  if (!scope.args.claims) {
-    return formatBlocked('REVISED_PLAN_CLAIMS_REQUIRED');
-  }
-
-  const predecessorVersion = currentPlan.planVersion;
-  const revised = buildPlanEvidence(revisedBody, scope, {
-    planVersion: predecessorVersion + 1,
-    supersedesRecordDigest: currentPlan.recordDigest,
-    originatingReviewObligationId: originatingReviewObligationId ?? null,
-    revisionReason: 'Review requested changes',
-  });
-  revisionDelta = revised.digest === prevDigest ? 'none' : 'minor';
-  history = [currentPlan, ...history];
-  currentPlan = revised;
-  return { currentPlan, history, revisionDelta, prevDigest, verdict };
-}
-
-function buildReviewedPlanState(
-  scope: PlanExecutionScope,
-  revision: PlanRevisionResult,
-  effectiveFindings: ReviewFindings,
-  consumedAssurance: ReturnType<typeof consumeReviewObligation>,
-): SessionState {
-  const selfReview = scope.state.selfReview;
-  if (!selfReview) {
-    throw new IntegrationInvariantError(
-      'NO_SELF_REVIEW',
-      'plan review persistence requires a self-review loop in state',
-    );
-  }
-  // Only host-captured effective findings are ever appended.
-  const existingReviewFindings = scope.state.plan?.reviewFindings;
-  const newReviewFindings = [...(existingReviewFindings ?? []), effectiveFindings];
-  const nextIteration = selfReview.iteration + 1;
-
-  return {
-    ...scope.state,
-    plan: {
-      current: revision.currentPlan,
-      history: revision.history,
-      reviewFindings: newReviewFindings,
-      claimDeclarations: submittedPlanClaimDeclarations(scope),
-      claimSubmissionDiagnostics: currentClaimSubmissionDiagnostics(scope),
-      claimSubmissionHistory: appendClaimSubmissionHistory(scope, revision.currentPlan.planVersion),
-      reviewCompletion: resolvePlanReviewCompletion(
-        nextIteration,
-        scope.maxPlanReviewIterations,
-        revision.revisionDelta,
-        revision.verdict,
-      ),
-    },
-    selfReview: {
-      iteration: nextIteration,
-      reviewCycle: scope.state.reviewCycles.plan,
-      maxIterations: scope.maxPlanReviewIterations,
-      prevDigest: revision.prevDigest,
-      currDigest: revision.currentPlan.digest,
-      revisionDelta: revision.revisionDelta,
-      verdict: revision.verdict,
-    },
-    reviewAssurance: {
-      ...consumedAssurance,
-    },
-    error: null,
-  };
-}
-
-function consumePlanObligation(
-  scope: PlanExecutionScope,
-  assuranceBase: ReturnType<typeof ensureReviewAssurance>,
-  expectedIteration: number,
-  expectedPlanVersion: number,
-  evidenceInvocationId: string,
-) {
-  const strictObligation = findLatestObligation(
-    assuranceBase.obligations,
-    'plan',
-    expectedIteration,
-    expectedPlanVersion,
-  );
-  return consumeReviewObligation(
-    assuranceBase,
-    strictObligation,
-    scope.ctx.now(),
-    evidenceInvocationId,
-  );
 }
 
 // ---- tool handlers ----

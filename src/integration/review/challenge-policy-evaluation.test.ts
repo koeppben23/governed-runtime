@@ -19,7 +19,7 @@ import { resolveStructuredFindings } from '../tools/review-validation-structured
 import {
   computeTargetedResolutionChallengeIds,
   computeUnaddressedPriorFailIds,
-} from '../tools/implement-review.js';
+} from '../tools/implement-review-state.js';
 import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,

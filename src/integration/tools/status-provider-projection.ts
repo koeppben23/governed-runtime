@@ -2,7 +2,7 @@
  * @module integration/tools/status-provider-projection
  * @description Provider capability and runtime readiness projection for status.
  *
- * Extracted from status-tool.ts to stay within the 750 LOC file-size budget.
+ * Extracted from status-tool.ts to stay within the 650 LOC file-size budget.
  *
  * @version v2
  */
