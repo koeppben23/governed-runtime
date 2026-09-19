@@ -26,23 +26,20 @@ no exceptions. Each principle below is either enforced by an automated guard
 
 - **Single Responsibility Principle** — Every module, file, and function MUST
   have exactly one reason to change. No god-files, no god-functions.
-  (Enforced: monotonic maintainability ratchet `npm run check:maintainability`.)
+  (Enforced: ESLint metrics `complexity:12`, `max-lines-per-function:80`,
+  `max-params:5` under `lint:strict` = `--max-warnings=0`.)
 
-Maintainability targets and transitional ceilings:
+Maintainability limits:
 
-- Clean-code target: `complexity:12`, `max-lines-per-function:80`, `max-params:5`.
-- Default ESLint ceiling: `25 / 120 / 5` — it keeps the repository lintable
-  while the debt is drained, and it is **not absolute**: the seven existing
-  metric rule suppressions are frozen legacy exceptions in the baseline, and
-  new exceptions are forbidden.
-- Existing target debt is frozen in `scripts/maintainability-baseline.json`;
-  the baseline is an exact debt snapshot, never a maximum. CI additionally
-  enforces baseline lineage against the pull-request base, so a manually raised
-  baseline cannot launder new debt.
-- New or worsening debt is blocked, new metric `eslint-disable` suppressions are
-  blocked, inline suppressions cannot hide findings, and every improvement must
-  be locked into the baseline in the same change
-  (`node scripts/check-maintainability-ratchet.mjs --update`, monotonic).
+- The enforced limits are `complexity:12`, `max-lines-per-function:80`,
+  `max-params:5` for every production file.
+- The former monotonic maintainability ratchet and its baseline were removed
+  after the debt reached zero. `lint:strict` is the single enforcement
+  authority; `architecture/__tests__/type-aware-lint-scope.test.ts` pins the
+  values and the production file-class scope against the effective ESLint
+  config, so weakening either requires a deliberate guard change.
+- Metric `eslint-disable` suppressions are not part of the model: the tree
+  contains none, and a new suppression fails `lint:strict`.
 - **Layer Isolation** — Top-level module imports MUST match
   `MODULE_DEPENDENCY_POLICY`
   (`architecture/__tests__/module-dependency-policy.ts`) exactly; imports outside

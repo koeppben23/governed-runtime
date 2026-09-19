@@ -69,15 +69,13 @@ export default tseslint.config(
     // src/architecture/__tests__/type-aware-lint-scope.test.ts against the
     // effective config.
     //
-    // 25 / 120 / 5 are the repository-wide DEFAULT ESLINT CEILINGS, not the
-    // quality target. Because seven legacy metric rule suppressions are frozen
-    // in the maintainability baseline, they are not an absolute bound: the
-    // current exception set is exactly the committed baseline, and new
-    // exceptions are forbidden. The clean-code targets are 12 / 80 / 5;
-    // existing target debt is frozen in scripts/maintainability-baseline.json
-    // and enforced by `npm run check:maintainability`: no new or worsening
-    // debt, no new metric suppressions, and every improvement must be locked
-    // into the baseline in the same change. Rules do not use type information.
+    // 12 / 80 / 5 ARE the enforced clean-code limits — not a transitional
+    // ceiling. The former monotonic maintainability ratchet and its baseline
+    // were removed once the debt reached zero; `lint:strict` (max-warnings=0)
+    // is now the single enforcement authority for these metrics, and
+    // src/architecture/__tests__/type-aware-lint-scope.test.ts pins the values
+    // and the production file-class scope against the effective config.
+    // Rules do not use type information.
     files: ['src/**/*.ts'],
     ignores: [
       'src/**/*.test.ts',
@@ -100,8 +98,8 @@ export default tseslint.config(
       // replaced by real narrowing. Test suites keep the syntax for fixtures.
       '@typescript-eslint/no-non-null-assertion': 'error',
       'max-params': ['warn', { max: 5 }],
-      complexity: ['warn', { max: 25 }],
-      'max-lines-per-function': ['warn', { max: 120, skipBlankLines: true, skipComments: true }],
+      complexity: ['warn', { max: 12 }],
+      'max-lines-per-function': ['warn', { max: 80, skipBlankLines: true, skipComments: true }],
     },
   },
 );

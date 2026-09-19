@@ -40,20 +40,17 @@ const REQUIRED_RULES = [
 ] as const;
 
 /**
- * The default-wide production metrics DEFAULT ESLINT CEILINGS. Test suites and
+ * The enforced clean-code metrics for every PRODUCTION file. Test suites and
  * internal test support are the excluded file classes — never a directory.
- * `25 / 120 / 5` is the repository-wide default cap, not the quality target:
- * the clean-code targets are `12 / 80 / 5`, and existing target debt is frozen
- * in the monotonic maintainability baseline
- * (`scripts/maintainability-baseline.json`, `npm run check:maintainability`).
- * The cap is not absolute — seven legacy metric rule suppressions are frozen
- * as baseline exceptions, and new exceptions are forbidden. Tightening the cap
- * is a deliberate guard change and weakening it requires one too.
+ * `12 / 80 / 5` is the final limit, not a transitional ceiling: the
+ * maintainability ratchet and its baseline were removed once the debt reached
+ * zero, so `lint:strict` is the single enforcement authority. Weakening any
+ * value is a deliberate guard change and fails here.
  */
 const METRICS_CONTRACT = [
-  { rule: 'complexity', option: 'max', value: 25 },
+  { rule: 'complexity', option: 'max', value: 12 },
   { rule: 'max-params', option: 'max', value: 5 },
-  { rule: 'max-lines-per-function', option: 'max', value: 120 },
+  { rule: 'max-lines-per-function', option: 'max', value: 80 },
 ] as const;
 
 /**
@@ -276,7 +273,7 @@ describe('lint scope (default-wide correctness and metrics)', () => {
 
     it('detects a production file outside the metrics contract', () => {
       const incomplete: EffectiveConfig = {
-        rules: { complexity: ['warn', { max: 25 }] },
+        rules: { complexity: ['warn', { max: 12 }] },
         languageOptions: {},
       };
       const problems = metricProblems(incomplete, 'src/example.ts');
@@ -312,7 +309,8 @@ describe('lint scope (default-wide correctness and metrics)', () => {
         languageOptions: {},
       };
       expect(metricProblems(weakened, 'src/example.ts')).toEqual([
-        'src/example.ts: complexity max is 40, expected 25',
+        'src/example.ts: complexity max is 40, expected 12',
+        'src/example.ts: max-lines-per-function max is 120, expected 80',
       ]);
     });
 
