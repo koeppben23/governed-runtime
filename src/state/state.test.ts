@@ -32,6 +32,8 @@ import {
   ReducedCeremonyDecision,
   ImplementationRiskAssessment,
   RiskGate,
+  TaskClass,
+  isTaskClass,
 } from '../state/schema.js';
 import {
   artifactReviewSubjectScope,
@@ -1107,5 +1109,19 @@ describe('schema invariant contracts', () => {
     });
 
     expect(result.success).toBe(true);
+  });
+});
+
+describe('isTaskClass', () => {
+  it('HAPPY: accepts every canonical task class', () => {
+    for (const taskClass of TaskClass.options) {
+      expect(isTaskClass(taskClass)).toBe(true);
+    }
+  });
+
+  it('BAD: rejects unknown and non-string values', () => {
+    for (const invalid of ['TRIVIAL ', 'high-risk', '', 'unknown', null, undefined, 0, {}, []]) {
+      expect(isTaskClass(invalid)).toBe(false);
+    }
   });
 });

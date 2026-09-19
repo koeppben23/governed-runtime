@@ -1,6 +1,6 @@
 /**
  * @module integration/review/enforcement/challenge-consistency
- * @description Canonical, dependency-free authority for challenge requirement,
+ * @description Canonical, runtime dependency-free authority for challenge requirement,
  * evidence, distinctness, outcome, and resolution-verdict coherence (#747).
  *
  * This is the SOLE authority for challenge/resolution consistency. It is
@@ -9,18 +9,19 @@
  * authorities to stay distinct; the architecture guard
  * `challenge-consistency-authority-ssot.test.ts` pins that separation.
  *
- * Dependency-free by design: only canonical JSON. Callers translate
- * `ChallengeConsistencyResult` into their own blocked format.
+ * Runtime dependency-free by design: only canonical JSON. The LoopVerdict input
+ * is a type-only import and is erased at emit time.
  */
 
+import type { LoopVerdict } from '../../../state/evidence.js';
 import { canonicalJsonStringify } from '../../../shared/canonical-json.js';
 
 /**
  * Dependency-free challenge coverage invariant. It accepts structural data so it
- * can be used at schema, SDK, and host-capture boundaries without dependencies.
+ * can be used at schema, SDK, and host-capture boundaries without runtime dependencies.
  */
 export interface ChallengeConsistencyInput {
-  readonly overallVerdict: 'accept' | 'changes_requested' | 'unable_to_review';
+  readonly overallVerdict: LoopVerdict;
   /**
    * Frozen challenge requirement. REQUIRED in the Hard Assurance Epoch:
    * 0 is the explicit TRIVIAL value; there is no undefined no-policy state.

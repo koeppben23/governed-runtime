@@ -12,6 +12,7 @@ import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logge
 import { executeHydrate } from '../../rails/hydrate.js';
 import { REASON_SESSION_LOCK_CONTENDED } from '../../shared/flowguard-identifiers.js';
 import { PolicyModeSchema } from '../../state/policy-mode.js';
+import { TaskClass } from '../../state/schema.js';
 import { formatBlocked, getWorktree, withSessionWriteTransaction } from './helpers.js';
 import { formatError } from './error-format.js';
 import type { ToolContext, ToolDefinition, ToolResult } from './helpers.js';
@@ -190,14 +191,11 @@ export const hydrate: ToolDefinition = {
       .string()
       .default('baseline')
       .describe("Governance profile ID. Defaults to 'baseline'."),
-    claimedTaskClass: z
-      .enum(['TRIVIAL', 'STANDARD', 'HIGH-RISK'])
-      .optional()
-      .describe(
-        'Agent/operator risk-classification claim. Runtime still computes the minimum class. ' +
-          'On an existing session this may only update claimedTaskClass; a blocked riskGate ' +
-          'is NOT cleared (recovering from a blocked risk gate requires a fresh governed session).',
-      ),
+    claimedTaskClass: TaskClass.optional().describe(
+      'Agent/operator risk-classification claim. Runtime still computes the minimum class. ' +
+        'On an existing session this may only update claimedTaskClass; a blocked riskGate ' +
+        'is NOT cleared (recovering from a blocked risk gate requires a fresh governed session).',
+    ),
   },
   async execute(args, context) {
     return executeHydrateTool(args, context);
