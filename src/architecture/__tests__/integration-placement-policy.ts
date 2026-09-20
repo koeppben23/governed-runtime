@@ -10,17 +10,16 @@
  * owner fails, a file whose current zone does not match its physical directory
  * fails, and an owner whose target zone disagrees with the entry fails.
  *
- * PLACEMENT DEBT is a frozen ratchet: `PLACEMENT_DEBT` is exactly the set of
- * files whose current zone differs from the target zone. New debt fails; debt
- * may only be removed by the move that resolves it in the same change.
+ * PLACEMENT CONTRACT: every file's current zone equals its target zone. Any
+ * debt is a hard failure; the authority is the positive contract, not a
+ * baseline snapshot.
  *
- * C1 STATUS: baseline of the pre-move tree (#922). This authority commit moves
- * no production file; it freezes the exact current placement and the debt set.
- * `MODULE_DEPENDENCY_POLICY` and `scripts/module-cycle-baseline.json` are
- * untouched: every entry is a top-level `integration` file, so the module graph
+ * CLOSURE STATUS (#922): the integration tree carries zero placement debt.
+ * MODULE_DEPENDENCY_POLICY and scripts/module-cycle-baseline.json are
+ * untouched: every entry is a top-level integration file, so the module graph
  * is unchanged by construction.
  *
- * @version v1
+ * @version v2
  */
 
 export interface IntegrationPlacementZone {
@@ -44,7 +43,7 @@ export interface IntegrationPlacementEntry {
   readonly owner: string;
   /** Current physical zone (must equal the file's parent directory zone). */
   readonly zone: string;
-  /** Required physical zone; differs from `zone` exactly for frozen debt. */
+  /** Required physical zone; must equal the current zone. */
   readonly targetZone: string;
 }
 
@@ -365,7 +364,7 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   },
   {
     file: 'integration/plugin-helpers.ts',
-    owner: 'root-composition',
+    owner: 'root-authority',
     zone: 'root',
     targetZone: 'root',
   },
@@ -1439,8 +1438,28 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   },
 ];
 
-/** Frozen placement debt: files that still must move (C1 baseline). */
-export const PLACEMENT_DEBT: readonly string[] = [];
+/** Placement owner of a file, or null when the file has no placement entry. */
+const PLACEMENT_BY_FILE = new Map(INTEGRATION_PLACEMENT.map((entry) => [entry.file, entry]));
+
+export function placementOwnerOf(file: string): string | null {
+  return PLACEMENT_BY_FILE.get(file)?.owner ?? null;
+}
+
+/** True when the file is plugin composition (index.ts, plugin.ts, plugin-*). */
+export function isRootCompositionFile(file: string): boolean {
+  return placementOwnerOf(file) === 'root-composition';
+}
+
+/** True when the file is host/runtime wiring that contexts must not import. */
+export function isRootHostRuntimeFile(file: string): boolean {
+  return placementOwnerOf(file) === 'root-host-runtime';
+}
+
+/** True when the file is a tool command context (tools/<context>/**). */
+export function isToolCommandContextFile(file: string): boolean {
+  const entry = PLACEMENT_BY_FILE.get(file);
+  return entry !== undefined && entry.targetZone.startsWith('tools/');
+}
 
 export interface IntegrationPlacementViolation {
   readonly rule: string;
@@ -1453,7 +1472,6 @@ export interface IntegrationPlacementAnalysisInput {
   readonly placement: readonly IntegrationPlacementEntry[];
   readonly zones: readonly IntegrationPlacementZone[];
   readonly owners: readonly IntegrationOwner[];
-  readonly debt: readonly string[];
   readonly isTestFile: (rel: string) => boolean;
 }
 
@@ -1559,27 +1577,11 @@ export function analyzeIntegrationPlacement(
         message: 'owner ' + entry.owner + ' requires target zone ' + owner.targetZone,
       });
     }
-  }
-
-  const debtSet = new Set(input.debt);
-  const observedDebt = new Set(
-    input.placement.filter((entry) => entry.zone !== entry.targetZone).map((entry) => entry.file),
-  );
-  for (const file of observedDebt) {
-    if (!debtSet.has(file)) {
+    if (entry.zone !== entry.targetZone) {
       violations.push({
-        rule: 'new-placement-debt',
-        file,
-        message: 'file left its target zone without a frozen debt entry',
-      });
-    }
-  }
-  for (const file of input.debt) {
-    if (!observedDebt.has(file)) {
-      violations.push({
-        rule: 'stale-placement-debt',
-        file,
-        message: 'debt is resolved and must be removed in the same change',
+        rule: 'placement-debt',
+        file: entry.file,
+        message: 'file is outside its target zone ' + entry.targetZone,
       });
     }
   }

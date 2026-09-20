@@ -6,14 +6,13 @@
  * every production file under `src/integration/`: owner, current zone, and
  * target zone. This suite proves the projection in BOTH directions against the
  * real tree (no unclassified file, no stale entry), checks the zone/owner
- * registries, classifies test support separately, and ratchets the frozen
- * placement debt: new debt always fails, resolved debt must be removed from
- * `PLACEMENT_DEBT` in the same change.
+ * registries, classifies test support separately, and fails closed on ANY
+ * placement debt: a file whose current zone differs from its target zone.
  *
  * Negative fixtures drive the pure analyzer with synthetic inputs so the guard
  * is proven to fire, not merely to accept today's tree.
  *
- * @version v1
+ * @version v2
  */
 
 import { existsSync } from 'node:fs';
@@ -25,8 +24,11 @@ import {
   INTEGRATION_OWNERS,
   INTEGRATION_PLACEMENT,
   INTEGRATION_PLACEMENT_ZONES,
-  PLACEMENT_DEBT,
   analyzeIntegrationPlacement,
+  isRootCompositionFile,
+  isRootHostRuntimeFile,
+  isToolCommandContextFile,
+  placementOwnerOf,
   type IntegrationOwner,
   type IntegrationPlacementEntry,
   type IntegrationPlacementViolation,
@@ -36,6 +38,8 @@ import { isTestSourcePath } from './module-classification.js';
 import { collectProductionSources } from './production-source.js';
 
 const SRC = join(process.cwd(), 'src');
+
+const ROOT_OWNERS = new Set(['root-composition', 'root-host-runtime', 'root-authority']);
 
 function integrationProductionFiles(): string[] {
   return collectProductionSources(SRC)
@@ -50,7 +54,6 @@ function analyzeReal(): IntegrationPlacementViolation[] {
     placement: INTEGRATION_PLACEMENT,
     zones: INTEGRATION_PLACEMENT_ZONES,
     owners: INTEGRATION_OWNERS,
-    debt: PLACEMENT_DEBT,
     isTestFile: isTestSourcePath,
   });
 }
@@ -71,20 +74,18 @@ describe('integration placement authority', () => {
     expect(new Set(INTEGRATION_PLACEMENT.map((entry) => entry.file)).size).toBe(files.length);
   });
 
-  it('freezes the placement debt baseline exactly', () => {
-    const observedDebt = INTEGRATION_PLACEMENT.filter((entry) => entry.zone !== entry.targetZone)
-      .map((entry) => entry.file)
-      .sort();
-
-    expect(observedDebt).toEqual([...PLACEMENT_DEBT].sort());
-    expect(PLACEMENT_DEBT.length).toBe(0);
-    expect(new Set(PLACEMENT_DEBT).size).toBe(PLACEMENT_DEBT.length);
+  it('holds the zero-debt contract: every file is at its target zone', () => {
+    const debt = INTEGRATION_PLACEMENT.filter((entry) => entry.zone !== entry.targetZone).map(
+      (entry) => entry.file,
+    );
+    expect(debt, debt.join('\n')).toEqual([]);
   });
 
   it('classifies test support separately and keeps it out of the placement authority', () => {
     const testSupport = [
       'integration/test-helpers.ts',
       'integration/plugin-audit-test-helpers.ts',
+      'integration/plugin-host-task-diagnostics-test-helpers.ts',
       'integration/tools/review-validation-test-helpers.ts',
       'integration/review/enforcement/test-helpers.ts',
     ];
@@ -115,6 +116,48 @@ describe('integration placement authority', () => {
       expect(zone.dir === 'integration' || zone.dir.startsWith('integration/'), zone.id).toBe(true);
     }
   });
+
+  it('admits only composition, host/runtime wiring, and authorities at the root', () => {
+    const rootFiles = INTEGRATION_PLACEMENT.filter((entry) => entry.zone === 'root');
+    expect(rootFiles.length).toBeGreaterThan(0);
+    for (const entry of rootFiles) {
+      expect(ROOT_OWNERS.has(entry.owner), entry.file).toBe(true);
+    }
+    for (const owner of ROOT_OWNERS) {
+      expect(
+        rootFiles.some((entry) => entry.owner === owner),
+        owner,
+      ).toBe(true);
+    }
+  });
+
+  it('ties every context owner to its target zone', () => {
+    for (const entry of INTEGRATION_PLACEMENT) {
+      if (entry.owner.startsWith('tools-')) {
+        expect(entry.targetZone.startsWith('tools'), entry.file).toBe(true);
+      }
+      if (entry.owner === 'review') expect(entry.targetZone, entry.file).toBe('review');
+      if (entry.owner === 'review-enforcement')
+        expect(entry.targetZone, entry.file).toBe('review/enforcement');
+      if (entry.owner === 'status') expect(entry.targetZone, entry.file).toBe('status');
+      if (entry.owner === 'discovery') expect(entry.targetZone, entry.file).toBe('discovery');
+    }
+  });
+
+  it('exposes positive placement helpers for the context boundaries', () => {
+    expect(placementOwnerOf('integration/plugin.ts')).toBe('root-composition');
+    expect(placementOwnerOf('integration/plugin-helpers.ts')).toBe('root-authority');
+    expect(placementOwnerOf('integration/rogue.ts')).toBeNull();
+
+    expect(isRootCompositionFile('integration/plugin-risk.ts')).toBe(true);
+    expect(isRootCompositionFile('integration/plugin-helpers.ts')).toBe(false);
+    expect(isRootHostRuntimeFile('integration/opencode-host-adapter.ts')).toBe(true);
+    expect(isRootHostRuntimeFile('integration/errors.ts')).toBe(false);
+
+    expect(isToolCommandContextFile('integration/tools/plan/plan.ts')).toBe(true);
+    expect(isToolCommandContextFile('integration/tools/review-tool/index.ts')).toBe(true);
+    expect(isToolCommandContextFile('integration/tools/helpers.ts')).toBe(false);
+  });
 });
 
 // ─── Negative fixtures — prove the analyzer fires ────────────────────────────
@@ -144,7 +187,6 @@ function analyzeFixture(input: {
   readonly placement?: readonly IntegrationPlacementEntry[];
   readonly zones?: readonly IntegrationPlacementZone[];
   readonly owners?: readonly IntegrationOwner[];
-  readonly debt?: readonly string[];
   readonly testFiles?: readonly string[];
 }): string[] {
   const testFiles = new Set(input.testFiles ?? []);
@@ -153,7 +195,6 @@ function analyzeFixture(input: {
     placement: input.placement ?? [],
     zones: input.zones ?? FIXTURE_ZONES,
     owners: input.owners ?? FIXTURE_OWNERS,
-    debt: input.debt ?? [],
     isTestFile: (rel) => testFiles.has(rel),
   }).map((violation) => violation.rule);
 }
@@ -209,23 +250,13 @@ describe('integration placement negative fixtures', () => {
     ).toContain('zone-directory-mismatch');
   });
 
-  it('detects new placement debt', () => {
+  it('detects any placement debt', () => {
     expect(
       analyzeFixture({
         productionFiles: ['integration/rogue.ts'],
         placement: [entry('integration/rogue.ts', 'status', 'root', 'status')],
       }),
-    ).toEqual(['new-placement-debt']);
-  });
-
-  it('detects debt that must be removed after a move', () => {
-    expect(
-      analyzeFixture({
-        productionFiles: ['integration/rogue.ts'],
-        placement: [entry('integration/rogue.ts', 'root-authority', 'root', 'root')],
-        debt: ['integration/rogue.ts'],
-      }),
-    ).toEqual(['stale-placement-debt']);
+    ).toEqual(['placement-debt']);
   });
 
   it('detects a test file carrying a placement entry', () => {
