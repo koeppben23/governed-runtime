@@ -68,7 +68,7 @@ local composite-action dependencies: external GitHub Actions must use full
 40-character lowercase commit SHAs, local actions under `./` are allowed, local
 and Docker actions are allowed only when pinned by `sha256` digest.
 
-The `mutation` job runs StrykerJS mutation testing against 103 security-critical
+The `mutation` job runs StrykerJS mutation testing against 101 security-critical
 files spanning adapters (persistence-lock, host-adapter, persistence, IP validation),
 archive creation,
 publication, inventory validation, and digesting,
@@ -206,7 +206,7 @@ protects a security-relevant literal: `stryker.identity-jwks.conf.json` enables
 
 ### Scope
 
-103 files are mutated in the base profile, covering the fail-closed governance
+101 files are mutated in the base profile, covering the fail-closed governance
 core (see `stryker.conf.json` for the canonical list; the authority inventory
 above is the classification authority):
 
@@ -230,7 +230,7 @@ above is the classification authority):
 | Logging (`error-serialize`)                                                                                                                                                    | 1       | see `reports/mutation/`         |
 | Machine (`commands`, `evaluate`, `guards`, `workflow-directive`, `validation-evidence`)                                                                                        | 5       | see `reports/mutation/`         |
 | Rails (`architecture`, `hydrate`, `review`, `review-url`, `review-decision`, `review-decision-gates`, `ticket`, plan and review evidence)                                      | 9       | see `reports/mutation/`         |
-| **Total**                                                                                                                                                                      | **103** | uploaded as `reports/mutation/` |
+| **Total**                                                                                                                                                                      | **101** | uploaded as `reports/mutation/` |
 
 Per-file mutation scores are produced fresh in CI; consult the latest
 `reports/mutation/` artifact for current numbers.
@@ -288,6 +288,8 @@ inherited legacy baseline):
 - `src/integration/audit-outbox.ts` — relocated from `tools/` to the integration root; admission pending a base profile full run.
 - `src/integration/tools/architecture/architecture-submit.ts` — relocated into the architecture command context; admission pending a base profile full run.
 - `src/integration/tools/challenge/pre-implementation-challenge.ts` — relocated into the challenge command context; admission pending a base profile full run.
+- `src/integration/tools/mutation/record-mutation-evidence.ts` — relocated into the mutation command context; the pre-move admission is not transferred, re-admission pending a base profile full run.
+- `src/integration/tools/mutation/reconcile-mutation-episode.ts` — relocated into the mutation command context; the pre-move admission is not transferred, re-admission pending a base profile full run.
 - `src/integration/discovery/discovery-risk-paths.ts` — relocated into the discovery context; admission pending a base profile full run.
 
 Deep authority expansion bundle:
