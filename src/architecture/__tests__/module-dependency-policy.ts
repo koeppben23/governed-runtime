@@ -10,9 +10,9 @@
  * architectural direction change is therefore always a visible change of both
  * code and this authority in the same pull request.
  *
- * Module-level cycles are NOT governed here: existing cycle debt is frozen in
- * `scripts/module-cycle-baseline.json` and enforced by the cycle ratchet. The
- * policy records the current topology, not a desired acyclic architecture.
+ * Module-level cycles are prohibited outright: the graph MUST contain zero
+ * cyclic edges and zero cyclic strongly connected components. There is no
+ * cycle-debt baseline; the policy records the current acyclic topology.
  *
  * @version v1
  */

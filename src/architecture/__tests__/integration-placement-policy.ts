@@ -15,9 +15,8 @@
  * baseline snapshot.
  *
  * CLOSURE STATUS (#922): the integration tree carries zero placement debt.
- * MODULE_DEPENDENCY_POLICY and scripts/module-cycle-baseline.json are
- * untouched: every entry is a top-level integration file, so the module graph
- * is unchanged by construction.
+ * Every entry is a top-level integration file, so MODULE_DEPENDENCY_POLICY is
+ * unchanged by construction.
  *
  * @version v2
  */
