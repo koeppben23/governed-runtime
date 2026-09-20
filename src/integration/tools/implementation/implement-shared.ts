@@ -5,7 +5,7 @@
  * @version v1
  */
 
-import { DISCOVERY_DRIFT_PROVIDER } from '../../discovery/discovery-drift-status.js';
+import { REVIEW_DISCOVERY_PROVIDER } from '../../discovery/review-discovery-provider.js';
 import type { ToolContext } from '../helpers.js';
 import { formatBlocked } from '../../blocked-result.js';
 import {
@@ -40,6 +40,7 @@ import { classifyToolCallMode } from '../review-validation-mode.js';
 import { freezeCandidatePairAuthority } from '../../../rails/repository-authority.js';
 import { buildFrozenReviewMaterialContent } from '../../review/reviewer-context.js';
 import { resolveAttemptDiscoveryOrBlock } from '../../review/discovery-attempt-context.js';
+import { renderPlanClaimDeclarations } from '../../../presentation/index.js';
 import { hasFrozenRepositoryAuthority } from '../../../state/evidence-review.js';
 import { materializeApprovedPlanContractResult } from '../../proofgraph/materialize-contract.js';
 import { latestUnknownOutcomeResolvedAt } from '../../../state/evidence-mutation-episode.js';
@@ -115,7 +116,7 @@ async function resolveActivationDiscovery(
     worktree: input.worktree,
     repositoryGoverned: hasFrozenRepositoryAuthority(obligation),
     now: input.now,
-    driftProvider: DISCOVERY_DRIFT_PROVIDER,
+    discoveryProvider: REVIEW_DISCOVERY_PROVIDER,
     obligationId: obligation.obligationId,
   });
   if (discovery.kind === 'blocked') {
@@ -148,6 +149,7 @@ function buildImplementationReviewObligation(
         obligationType: 'implement',
         state,
         artifact: JSON.stringify(state.implementation),
+        renderPlanClaimDeclarations,
       }),
       digest,
     ),

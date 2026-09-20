@@ -6,6 +6,8 @@ import {
   type ReviewFindingsValidationContext,
 } from '../review/review-validation.js';
 import { resolveStructuredFindings } from '../review/review-validation-structured-evidence.js';
+
+const testLogger = { warn: () => {} };
 import type { ReviewFindings } from '../../state/evidence.js';
 import type { ReviewChallenge } from '../../state/evidence-review.js';
 import {
@@ -1077,6 +1079,7 @@ describe('validateReviewFindings — branch and payload contracts', () => {
     const findings = strictFindings();
     const assurance = strictAssuranceFixture(findings);
     const resolved = resolveStructuredEffectiveFindings({
+      logger: testLogger,
       pendingObligation: assurance.obligations[0]!,
       expected: { obligationType: 'plan', iteration: 0, planVersion: 1 },
       input: { reviewerUnavailable: true },
@@ -1094,6 +1097,7 @@ describe('validateReviewFindings — branch and payload contracts', () => {
     const assurance = strictAssuranceFixture(findings);
     assurance.invocations.splice(0);
     const resolved = resolveStructuredEffectiveFindings({
+      logger: testLogger,
       pendingObligation: assurance.obligations[0]!,
       expected: { obligationType: 'plan', iteration: 0, planVersion: 1 },
       input: { reviewerUnavailable: true },
@@ -1111,6 +1115,7 @@ describe('validateReviewFindings — branch and payload contracts', () => {
     const assurance = strictAssuranceFixture(findings);
     assurance.attempts[0] = { ...assurance.attempts[0]!, childSessionId: 'ses_child' };
     const resolved = resolveStructuredEffectiveFindings({
+      logger: testLogger,
       pendingObligation: assurance.obligations[0]!,
       expected: { obligationType: 'plan', iteration: 0, planVersion: 1 },
       input: {},
@@ -1314,6 +1319,7 @@ describe('resolveStructuredFindings — diagnostics and deferral merges', () => 
     const assurance = assuranceFor(captured);
     mutate(assurance);
     return resolveStructuredFindings(
+      testLogger,
       assurance,
       assurance.obligations[0]!,
       undefined,
@@ -1327,6 +1333,7 @@ describe('resolveStructuredFindings — diagnostics and deferral merges', () => 
   it('returns not_found when obligation or assurance is missing', () => {
     expect(
       resolveStructuredFindings(
+        testLogger,
         undefined,
         null,
         undefined,

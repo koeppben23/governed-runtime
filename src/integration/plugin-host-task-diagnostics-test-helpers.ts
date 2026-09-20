@@ -4,6 +4,7 @@
  */
 
 import { createSessionState, onFlowGuardToolAfter } from './review/enforcement/enforcement.js';
+import { isTerminalPhase } from '../machine/topology.js';
 import { reviewDispatchRequired } from './review/dispatch-signal.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { TOOL_FLOWGUARD_PLAN } from './tool-names.js';
@@ -199,7 +200,10 @@ export function setupFullCycle(
 
   const state = createSessionState();
   // Step 1: Mode A — FlowGuard tool carries the review-dispatch signal
-  onFlowGuardToolAfter(state, TOOL_FLOWGUARD_PLAN, {}, modeAResponse(iteration, planVersion), NOW);
+  onFlowGuardToolAfter(state, TOOL_FLOWGUARD_PLAN, {}, modeAResponse(iteration, planVersion), {
+    now: NOW,
+    isTerminalPhase,
+  });
 
   const obligation = pendingObligation({
     ...(customObligationId ? { obligationId: customObligationId } : {}),

@@ -5,7 +5,7 @@
  * @version v1
  */
 
-import { DISCOVERY_DRIFT_PROVIDER } from '../../discovery/discovery-drift-status.js';
+import { REVIEW_DISCOVERY_PROVIDER } from '../../discovery/review-discovery-provider.js';
 import type { SessionState } from '../../../state/schema.js';
 import type { PlanEvidence, ReviewFindings, ReviewObligation } from '../../../state/evidence.js';
 import {
@@ -27,7 +27,11 @@ import {
   enrichWithWorkflowDirective,
   writeStateWithArtifacts,
 } from '../helpers.js';
-import { PHASE_LABELS, buildPlanReviewCard } from '../../../presentation/index.js';
+import {
+  PHASE_LABELS,
+  buildPlanReviewCard,
+  renderPlanClaimDeclarations,
+} from '../../../presentation/index.js';
 import { materializeReviewCardArtifact } from '../../../adapters/workspace/index.js';
 import { readConfig } from '../../../adapters/persistence-config.js';
 import { resolveWorkflowDirective } from '../../../machine/workflow-directive.js';
@@ -132,6 +136,7 @@ export function buildPlanReviewObligationInput(
         state: scope.state,
         artifact: planEvidence.body,
         planClaimDeclarations: effectiveClaimDeclarations,
+        renderPlanClaimDeclarations,
       }),
       planEvidence.digest,
     ),
@@ -260,7 +265,9 @@ export function latestPlanReviewSummary(
     missingVerificationCount: reviewFindings.missingVerification.length,
     reviewMode: reviewFindings.reviewMode,
     reviewedAt: reviewFindings.reviewedAt,
-    ...reviewedIdentityFields(resolveReviewedArtifactIdentity(assurance, 'plan', reviewFindings)),
+    ...reviewedIdentityFields(
+      resolveReviewedArtifactIdentity(assurance, 'plan', reviewFindings, getAdapterLogger()),
+    ),
   };
 }
 
@@ -316,6 +323,7 @@ export async function convergedPlanReviewCardResponse(
     finalState.reviewAssurance,
     'plan',
     finalState.plan?.reviewFindings?.at(-1),
+    getAdapterLogger(),
   );
   const taskTitle = firstLine(finalState.ticket?.text);
   const reviewCardInput = convergedReviewCardInput(input, taskTitle, reviewedIdentity);
@@ -443,7 +451,7 @@ async function mintPlanRevisionAttempt(input: {
     worktree: scope.worktree,
     repositoryGoverned: authority !== undefined,
     now: scope.ctx.now(),
-    driftProvider: DISCOVERY_DRIFT_PROVIDER,
+    discoveryProvider: REVIEW_DISCOVERY_PROVIDER,
   });
   if (discovery.kind === 'blocked') {
     return {
@@ -472,6 +480,7 @@ async function mintPlanRevisionAttempt(input: {
           obligationType: 'plan',
           state: finalState,
           artifact: revision.currentPlan.body,
+          renderPlanClaimDeclarations,
         }),
         revision.currentPlan.digest,
       ),

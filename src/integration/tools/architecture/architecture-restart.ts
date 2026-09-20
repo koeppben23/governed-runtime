@@ -24,7 +24,7 @@
  * @version v1
  */
 
-import { DISCOVERY_DRIFT_PROVIDER } from '../../discovery/discovery-drift-status.js';
+import { REVIEW_DISCOVERY_PROVIDER } from '../../discovery/review-discovery-provider.js';
 import { readState } from '../../../adapters/persistence.js';
 import { validateAdrSections } from '../../../state/evidence.js';
 import type { ReviewObligation } from '../../../state/evidence.js';
@@ -55,6 +55,7 @@ import {
   frozenAuthorityOrUndefined,
 } from '../../../rails/repository-authority.js';
 import { resolveAttemptDiscoveryOrBlock } from '../../review/discovery-attempt-context.js';
+import { renderPlanClaimDeclarations } from '../../../presentation/index.js';
 import { repositoryEvidenceUnavailableField } from '../../review/observation-access.js';
 import { hasFrozenRepositoryAuthority } from '../../../state/evidence.js';
 import { buildFrozenReviewMaterialContent } from '../../review/reviewer-context.js';
@@ -285,6 +286,7 @@ async function mintRestartObligation(
         obligationType: 'architecture',
         state: { ...session.state, architecture: nextAdr },
         artifact: nextAdr.adrText,
+        renderPlanClaimDeclarations,
       }),
       nextAdr.digest,
     ),
@@ -456,7 +458,7 @@ async function mintRestartObligationWithAttempt(
     worktree: session.worktree,
     repositoryGoverned: hasFrozenRepositoryAuthority(obligation),
     now: cycle.now,
-    driftProvider: DISCOVERY_DRIFT_PROVIDER,
+    discoveryProvider: REVIEW_DISCOVERY_PROVIDER,
     obligationId: obligation.obligationId,
   });
   if (discovery.kind === 'blocked') {

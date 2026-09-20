@@ -7,6 +7,7 @@
  *
  * @version v1
  */
+import { getAdapterLogger } from '../../../logging/adapter-logger.js';
 import { z } from 'zod';
 import type { ToolDefinition } from '../helpers.js';
 import { formatError } from '../error-format.js';
@@ -212,6 +213,7 @@ function prepareStructuredEvidenceSubmission(
     });
   }
   const resolution = resolveStructuredFindings(
+    getAdapterLogger(),
     state.reviewAssurance,
     obligation,
     undefined,

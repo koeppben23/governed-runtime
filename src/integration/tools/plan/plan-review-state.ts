@@ -11,6 +11,7 @@
  * @version v1
  */
 
+import { getAdapterLogger } from '../../../logging/adapter-logger.js';
 import { IntegrationInvariantError } from '../../errors.js';
 import { formatBlocked } from '../../blocked-result.js';
 
@@ -58,6 +59,7 @@ export function resolveEffectivePlanFindings(scope: PlanExecutionScope) {
   const expectedPlanVersion = pendingObligation?.planVersion ?? plan.history.length + 1;
   const resolved = resolveStructuredEffectiveFindings({
     pendingObligation: pendingObligation ?? null,
+    logger: getAdapterLogger(),
     expected: {
       obligationType: 'plan',
       iteration: expectedIteration,

@@ -5,6 +5,7 @@
  * @version v1
  */
 
+import { getAdapterLogger } from '../../../logging/adapter-logger.js';
 import type { ToolContext } from '../helpers.js';
 import { formatBlocked } from '../../blocked-result.js';
 import { formatAutoAdvanceOverflow } from '../helpers.js';
@@ -90,6 +91,7 @@ function resolveArchitectureReview(
   );
   const resolved = resolveStructuredEffectiveFindings({
     pendingObligation,
+    logger: getAdapterLogger(),
     expected: {
       obligationType: 'architecture',
       iteration: expectedIteration,

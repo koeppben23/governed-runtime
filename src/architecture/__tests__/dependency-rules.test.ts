@@ -423,12 +423,7 @@ const REVIEW_ALLOWED_INTEGRATION_OWNERS: ReadonlySet<string> = new Set([
  */
 const REVIEW_LOWER_LAYERS: ReadonlySet<string> = new Set([
   'adapters',
-  'audit',
   'config',
-  'discovery',
-  'logging',
-  'machine',
-  'presentation',
   'shared',
   'state',
   'templates',
@@ -1004,7 +999,7 @@ describe('Layer Dependency Rules', () => {
       expect(rulesFor('../proofgraph/refresh.js')).toEqual(['review-boundary']);
       expect(rulesFor('../tool-names.js')).toEqual([]);
       expect(rulesFor('../../state/evidence.js')).toEqual([]);
-      expect(rulesFor('../../discovery/discovery-health.js')).toEqual([]);
+      expect(rulesFor('../../discovery/discovery-health.js')).toEqual(['review-boundary']);
     });
   });
 

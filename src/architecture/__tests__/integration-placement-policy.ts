@@ -250,6 +250,12 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
     zone: 'discovery',
     targetZone: 'discovery',
   },
+  {
+    file: 'integration/discovery/review-discovery-provider.ts',
+    owner: 'discovery',
+    zone: 'discovery',
+    targetZone: 'discovery',
+  },
   { file: 'integration/errors.ts', owner: 'root-authority', zone: 'root', targetZone: 'root' },
   {
     file: 'integration/git-control-plane.ts',
@@ -568,7 +574,7 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
     targetZone: 'review',
   },
   {
-    file: 'integration/review/discovery-drift-port.ts',
+    file: 'integration/review/discovery-port.ts',
     owner: 'review',
     zone: 'review',
     targetZone: 'review',
@@ -822,6 +828,12 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   },
   {
     file: 'integration/review/review-execution-projection.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/review-logger-port.ts',
     owner: 'review',
     zone: 'review',
     targetZone: 'review',

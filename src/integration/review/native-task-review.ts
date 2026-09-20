@@ -39,7 +39,7 @@ import { reviewerPromptTypeForTask } from './reviewer-task-type.js';
 import { renderArtifactAnchorContract } from './frozen-reviewer-context.js';
 import { resolveObservationRevisions } from './observation-access.js';
 import { buildReviewChallengeContract } from './challenge-contract.js';
-import { buildReviewerProofContext } from './proof-context.js';
+import { buildReviewerProofContext, type ReviewerProofGraphAuthorities } from './proof-context.js';
 import {
   abandonReviewDispatchByHostCall,
   persistAuthorizedReviewDispatch,
@@ -132,6 +132,7 @@ function canonicalTaskPrompt(
   state: PersistedState,
   obligation: ReviewObligation,
   attempt: BindableAttempt,
+  proofGraphAuthorities: ReviewerProofGraphAuthorities,
 ): string {
   const material = verifyFrozenMaterialForObligation(obligation, obligation.reviewMaterial);
   if (material.kind === 'blocked') {
@@ -153,7 +154,7 @@ function canonicalTaskPrompt(
     reviewType: reviewerPromptTypeForTask(obligation.obligationType),
     repositoryReview: observationRevisions.length > 0,
     challengeContract: buildReviewChallengeContract(state, obligation) ?? undefined,
-    proofContext: buildReviewerProofContext(state),
+    proofContext: buildReviewerProofContext(state, proofGraphAuthorities),
     frozenReviewerContext,
     artifactAnchorContract: artifactScope ? renderArtifactAnchorContract(artifactScope) : undefined,
     repositoryDiscoverySnapshot:
@@ -262,6 +263,7 @@ export async function nativeReviewTaskBefore(
   input: unknown,
   output: unknown,
   reconcile: NativeReviewAuditReconciler,
+  proofGraphAuthorities: ReviewerProofGraphAuthorities,
 ): Promise<void> {
   const hookInput = input as ToolHookBeforeInput;
   const hookOutput = output as ToolHookBeforeOutput;
@@ -280,7 +282,7 @@ export async function nativeReviewTaskBefore(
   await reconcileBeforeReviewerDispatch(reconcile, sessionId);
   const { sessDir, state } = await requireState(runtime, sessionId);
   const { obligation, attempt } = requireCurrentAttempt(runtime, sessionId, state);
-  const prompt = canonicalTaskPrompt(state, obligation, attempt);
+  const prompt = canonicalTaskPrompt(state, obligation, attempt, proofGraphAuthorities);
   const authorizedAt = new Date().toISOString();
   await persistAuthorizedReviewDispatch(runtime.orchestratorDeps, sessDir, {
     attemptId: attempt.attemptId,

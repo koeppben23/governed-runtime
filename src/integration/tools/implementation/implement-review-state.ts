@@ -9,6 +9,7 @@
  * @version v1
  */
 
+import { getAdapterLogger } from '../../../logging/adapter-logger.js';
 import type { SessionState } from '../../../state/schema.js';
 import type { LoopVerdict, ReviewFindings } from '../../../state/evidence.js';
 import { IntegrationInvariantError } from '../../errors.js';
@@ -103,6 +104,7 @@ export function resolveImplementationFindings(
   const challengeContract = buildReviewChallengeContract(input.state, pendingObligation);
   const resolved = resolveStructuredEffectiveFindings({
     pendingObligation,
+    logger: getAdapterLogger(),
     expected: { obligationType: 'implement', iteration, planVersion },
     input: {
       reviewerUnavailable: input.args.reviewerUnavailable,

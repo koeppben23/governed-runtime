@@ -33,6 +33,9 @@ export interface PendingReview {
 }
 
 /** Session-level enforcement state. */
+/** Injected machine terminal-phase predicate (review/ must not import machine/). */
+export type TerminalPhasePredicate = (phase: string) => boolean;
+
 export interface SessionEnforcementState {
   /** Pending reviews keyed by tool name. */
   readonly pendingReviews: Map<PendingReviewTool, PendingReview>;

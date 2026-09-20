@@ -16,6 +16,8 @@ import { hashCanonicalReviewContent } from '../../shared/review-subject.js';
 import { createTestWorkspace, createToolContext, parseToolResult } from '../test-helpers.js';
 import { resolve_implementation_challenge } from '../tools/challenge/challenge-resolution.js';
 import { resolveStructuredFindings } from './review-validation-structured-evidence.js';
+
+const testLogger = { warn: () => {} };
 import {
   computeTargetedResolutionChallengeIds,
   computeUnaddressedPriorFailIds,
@@ -228,6 +230,7 @@ async function resolveCapturedFixture(
     attemptId: attempt.attemptId,
   });
   const result = resolveStructuredFindings(
+    testLogger,
     {
       assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [obligation],
@@ -303,6 +306,7 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
   );
   expect(
     resolveStructuredFindings(
+      testLogger,
       {
         assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [firstObligation],
@@ -402,6 +406,7 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
     secondInvocation.attemptId,
   );
   const reReview = resolveStructuredFindings(
+    testLogger,
     {
       assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [secondObligation],

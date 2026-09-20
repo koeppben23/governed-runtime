@@ -56,11 +56,15 @@ API. It must never become a provider of new authorities for lower layers.
 - Review findings/evidence validation authority lives in `review/`; tool
   adapters call it, not the other way around.
 - `review/` may import ONLY `review/**`, integration root authorities, and the
-  explicit lower layers (`adapters`, `audit`, `config`, `discovery`, `logging`,
-  `machine`, `presentation`, `shared`, `state`, `templates`). Plugin
-  composition, host/runtime wiring, `tools/**`, and sibling integration
-  contexts (`status/`, `discovery/`, `proofgraph/`, ...) are enforced
-  violations (`dependency-rules.test.ts`).
+  frozen lower layers (`adapters`, `config`, `shared`, `state`, `templates`).
+  Plugin composition, host/runtime wiring, `tools/**`, sibling integration
+  contexts (`status/`, `discovery/`, `proofgraph/`, ...), and other
+  top-level layers are enforced violations (`dependency-rules.test.ts`).
+  Non-frozen authorities are consumed through injected structural ports:
+  `review/discovery-port.ts` (drift/health), `review/review-logger-port.ts`
+  (diagnostics), the convergence predicate in `review-loop-progress.ts`, and
+  `ReviewerProofGraphAuthorities` in `proof-context.ts` (gate + renderer);
+  `onFlowGuardToolAfter` receives the machine `isTerminalPhase` predicate.
 - Evidence binding, obligation tracking, and findings validation are managed
   by the enforcement subsystem in `src/integration/review/enforcement/`.
 - `plugin-helpers.ts` is plugin composition. The pure blocked/enforcement

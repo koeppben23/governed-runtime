@@ -48,6 +48,7 @@ import {
   type FindingWithRelation,
 } from './enforcement/findings-consistency.js';
 import { checkRepositoryEvidenceBinding } from './review-validation-evidence.js';
+import type { ReviewDiagnosticLogger } from './review-logger-port.js';
 
 // ─── Validation Context ───────────────────────────────────────────────────────
 
@@ -475,6 +476,8 @@ interface StructuredResolutionContext {
     readonly reviewerUnavailable?: boolean | undefined;
     readonly verdict?: string | undefined;
   };
+  /** Injected diagnostic logger (review/ must not import logging/). */
+  readonly logger: ReviewDiagnosticLogger;
   readonly state: {
     readonly assurance?: ReviewAssuranceState | undefined;
     readonly sessionId: string;
@@ -544,6 +547,7 @@ function resolveCapturedEvidenceFindings(
   ctx: StructuredResolutionContext,
 ): StructuredResolutionResult {
   const resolution = resolveStructuredFindings(
+    ctx.logger,
     ctx.state.assurance,
     ctx.pendingObligation,
     ctx.state.unresolvedImplementationChallengeIds,

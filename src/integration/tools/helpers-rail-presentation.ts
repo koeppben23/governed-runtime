@@ -9,6 +9,7 @@
  * @version v1
  */
 
+import { isConverged } from '../../machine/guards.js';
 import type { EvalResult } from '../../machine/evaluate.js';
 import { resolveWorkflowDirective } from '../../machine/workflow-directive.js';
 import { TERMINAL } from '../../machine/topology.js';
@@ -108,7 +109,7 @@ export function formatRailResult(
   const aborted = result.state.error?.code === 'ABORTED';
   const reviewDecision = result.state.reviewDecision;
   const archiveStatus = result.state.regulatedArchiveStatus;
-  const reviewLoop = getReviewLoopProgress(result.state);
+  const reviewLoop = getReviewLoopProgress(result.state, isConverged);
   const presentation = options.evidenceApprovalCompletion
     ? buildEvidenceApprovalCompletionPresentation(result.state)
     : buildNextActionPresentation(result.state, result.evalResult);

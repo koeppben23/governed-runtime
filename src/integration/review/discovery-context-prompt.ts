@@ -7,8 +7,7 @@
  * the review authority.
  */
 
-import type { DiscoveryHealthProjection } from '../../discovery/discovery-health.js';
-import type { ReviewDiscoveryDriftProjection } from './discovery-drift-port.js';
+import type { ReviewDiscoveryDriftProjection, ReviewDiscoveryHealth } from './discovery-port.js';
 import type {
   ImplementationGuidanceItem,
   ImplementationGuidanceProjection,
@@ -31,7 +30,7 @@ export interface DiscoveryContextLimits {
 }
 
 export interface DiscoveryReviewContext {
-  readonly health?: DiscoveryHealthProjection | null;
+  readonly health?: ReviewDiscoveryHealth | null;
   readonly drift?: ReviewDiscoveryDriftProjection | null;
   readonly detectedStack?: DetectedStack | null;
   readonly verificationCandidates?: VerificationCandidates;
@@ -88,7 +87,7 @@ export function buildDiscoveryContextSection(context?: DiscoveryReviewContext): 
   return trimTrailingBlanks(lines).join('\n');
 }
 
-function appendHealth(lines: string[], health: DiscoveryHealthProjection | null | undefined): void {
+function appendHealth(lines: string[], health: ReviewDiscoveryHealth | null | undefined): void {
   lines.push('### Health');
   if (!health) {
     lines.push('- status: unavailable', '- NOT_VERIFIED: Discovery health was not available.', '');

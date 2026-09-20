@@ -7,7 +7,6 @@ import type { SessionState } from '../../state/schema.js';
 import type { PlanClaimDeclarations } from '../../state/proofgraph-approval.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { stateVerificationEvidence } from './shared-helpers.js';
-import { renderPlanClaimDeclarations } from '../../presentation/index.js';
 
 /**
  * Presentation cleanup (NOT requirement provenance): when no ticket was
@@ -38,6 +37,8 @@ export function buildFrozenReviewMaterialContent(input: {
   readonly artifact: string;
   /** Effective plan claim declarations for a fresh plan submission. */
   readonly planClaimDeclarations?: PlanClaimDeclarations;
+  /** Injected presentation authority (review/ must not import presentation/). */
+  readonly renderPlanClaimDeclarations: (declarations: PlanClaimDeclarations | undefined) => string;
 }): string {
   const ticket = section(
     'Ticket Under Review (originating request)',
@@ -49,7 +50,7 @@ export function buildFrozenReviewMaterialContent(input: {
       ...section('Plan Artifact', input.artifact),
       ...section(
         'Plan Claim Declarations Under Review',
-        renderPlanClaimDeclarations(
+        input.renderPlanClaimDeclarations(
           input.planClaimDeclarations ?? input.state.plan?.claimDeclarations,
         ),
       ),

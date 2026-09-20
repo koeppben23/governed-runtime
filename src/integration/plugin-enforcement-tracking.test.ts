@@ -61,7 +61,7 @@ describe('trackFlowGuardEnforcement', () => {
       'flowguard_plan',
       { key: 'val' },
       'plan result text',
-      FIXED_NOW,
+      { now: FIXED_NOW, isTerminalPhase: expect.any(Function) },
     );
   });
 
@@ -77,7 +77,7 @@ describe('trackFlowGuardEnforcement', () => {
       'flowguard_review',
       expect.any(Object),
       expect.any(String),
-      FIXED_NOW,
+      { now: FIXED_NOW, isTerminalPhase: expect.any(Function) },
     );
   });
 
@@ -100,13 +100,10 @@ describe('trackFlowGuardEnforcement', () => {
 
     trackFlowGuardEnforcement(eState, 'flowguard_plan', input, { output: 'text' }, FIXED_NOW);
 
-    expect(mockOnFlowGuardToolAfter).toHaveBeenCalledWith(
-      eState,
-      'flowguard_plan',
-      {},
-      'text',
-      FIXED_NOW,
-    );
+    expect(mockOnFlowGuardToolAfter).toHaveBeenCalledWith(eState, 'flowguard_plan', {}, 'text', {
+      now: FIXED_NOW,
+      isTerminalPhase: expect.any(Function),
+    });
   });
 
   it('delegates with rawOutput = JSON-stringified fallback when output has no output field', () => {
@@ -121,7 +118,7 @@ describe('trackFlowGuardEnforcement', () => {
       'flowguard_plan',
       { x: 1 },
       '""',
-      FIXED_NOW,
+      { now: FIXED_NOW, isTerminalPhase: expect.any(Function) },
     );
   });
 
@@ -137,7 +134,7 @@ describe('trackFlowGuardEnforcement', () => {
       '',
       expect.any(Object),
       expect.any(String),
-      FIXED_NOW,
+      { now: FIXED_NOW, isTerminalPhase: expect.any(Function) },
     );
   });
 });

@@ -45,6 +45,7 @@ import {
 import { PHASE_LABELS } from '../../presentation/phase-labels.js';
 import { evaluateCompleteness } from '../../audit/completeness.js';
 import { getReviewLoopProgress } from '../review/review-loop-progress.js';
+import { isConverged } from '../../machine/guards.js';
 import { projectStatusConclusion } from './status-conclusion.js';
 import { summarizePersistedProofGraph } from '../../audit/proofgraph/summary.js';
 import { buildProofApprovalProjection } from '../proofgraph/approval-projection.js';
@@ -175,7 +176,7 @@ export function buildStatusProjection(
     proofGraph: summarizePersistedProofGraph(state),
     proofSummary: projectProofStatusForState(state),
     proofApprovals: buildProofApprovalProjection(state),
-    reviewLoop: getReviewLoopProgress(state),
+    reviewLoop: getReviewLoopProgress(state, isConverged),
     implementationRework: projectImplementationRework(state),
     remainingChecks: remainingValidationChecks(state),
     conclusion: projectStatusConclusion(evalResult, directive),

@@ -11,12 +11,24 @@ import { describe, expect, it } from 'vitest';
 import { makeState, PLAN_RECORD, ARCHITECTURE_DECISION } from '../../fixtures.js';
 import type { SessionState } from '../../state/schema.js';
 import type { ProofGraphProjection } from '../../state/proofgraph.js';
+import { evaluateProofGraphGate } from '../../audit/proofgraph/gate.js';
+import { renderPlanClaimDeclarations } from '../../presentation/index.js';
 import {
-  buildReviewerProofContext,
+  buildReviewerProofContext as rawBuildReviewerProofContext,
   renderCoverageGaps,
-  renderDeclarationPreview,
+  renderDeclarationPreview as rawRenderDeclarationPreview,
   renderPersistedProofGraphContext,
 } from './proof-context.js';
+
+const authorities = { evaluateProofGraphGate, renderPlanClaimDeclarations };
+
+function renderDeclarationPreview(state: SessionState): string[] {
+  return rawRenderDeclarationPreview(state, authorities);
+}
+
+function buildReviewerProofContext(state: SessionState): string[] {
+  return rawBuildReviewerProofContext(state, authorities);
+}
 
 const CLAIM_ID = '33333333-3333-4333-8333-333333333333';
 

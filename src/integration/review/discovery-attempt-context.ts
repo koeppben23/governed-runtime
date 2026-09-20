@@ -24,11 +24,11 @@ import type {
 } from '../../state/evidence.js';
 import { buildReviewDiscoveryContext } from './discovery-context-loader.js';
 import type { DiscoveryReviewContext } from './discovery-context-prompt.js';
-import type { DiscoveryHealthProjection } from '../../discovery/discovery-health.js';
 import type {
   ReviewDiscoveryDriftProjection,
-  ReviewDiscoveryDriftProvider,
-} from './discovery-drift-port.js';
+  ReviewDiscoveryHealth,
+  ReviewDiscoveryProvider,
+} from './discovery-port.js';
 
 export type ReviewerDiscoveryResolution =
   | { readonly kind: 'repository'; readonly context: ReviewAttemptDiscoveryContext }
@@ -36,7 +36,7 @@ export type ReviewerDiscoveryResolution =
   | { readonly kind: 'blocked'; readonly reason: string };
 
 function projectHealth(
-  health: DiscoveryHealthProjection | null | undefined,
+  health: ReviewDiscoveryHealth | null | undefined,
 ): RepositoryDiscoverySnapshot['health'] {
   if (!health || health.status === 'unavailable') {
     return {
@@ -142,7 +142,7 @@ export async function resolveReviewAttemptDiscoveryContext(input: {
   readonly repositoryGoverned: boolean;
   readonly now: string;
   readonly fingerprint?: string | null;
-  readonly driftProvider: ReviewDiscoveryDriftProvider;
+  readonly discoveryProvider: ReviewDiscoveryProvider;
 }): Promise<ReviewerDiscoveryResolution> {
   if (!input.repositoryGoverned) {
     return { kind: 'not_applicable', context: { kind: 'not_applicable' } };
@@ -166,7 +166,7 @@ export async function resolveReviewAttemptDiscoveryContext(input: {
     fingerprint,
     worktree: input.worktree,
     includeDriftCheck: true,
-    driftProvider: input.driftProvider,
+    discoveryProvider: input.discoveryProvider,
   });
   // Structural boundary: an unavailable health projection means the persisted
   // Discovery basis itself is missing/corrupt/unreadable — the host cannot
@@ -209,7 +209,7 @@ export async function resolveAttemptDiscoveryOrBlock(input: {
   readonly repositoryGoverned: boolean;
   readonly now: string;
   readonly obligationId?: string;
-  readonly driftProvider: ReviewDiscoveryDriftProvider;
+  readonly discoveryProvider: ReviewDiscoveryProvider;
 }): Promise<
   | { readonly kind: 'ok'; readonly context: ReviewAttemptDiscoveryContext }
   | {

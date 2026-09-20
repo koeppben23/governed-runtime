@@ -9,7 +9,7 @@
  * @version v1
  */
 
-import { DISCOVERY_DRIFT_PROVIDER } from '../../discovery/discovery-drift-status.js';
+import { REVIEW_DISCOVERY_PROVIDER } from '../../discovery/review-discovery-provider.js';
 import type { SessionState } from '../../../state/schema.js';
 import type { AutoAdvanceResult } from '../../../rails/types.js';
 import type {
@@ -33,7 +33,11 @@ import {
 } from '../../review/dispatch-authority.js';
 import type { ReviewDispatchAuthority } from '../../review/dispatch-authority.js';
 import { buildFrozenReviewMaterialContent } from '../../review/reviewer-context.js';
-import { PHASE_LABELS, buildArchitectureReviewCard } from '../../../presentation/index.js';
+import {
+  PHASE_LABELS,
+  buildArchitectureReviewCard,
+  renderPlanClaimDeclarations,
+} from '../../../presentation/index.js';
 import { materializeReviewCardArtifact } from '../../../adapters/workspace/index.js';
 import { readConfig } from '../../../adapters/persistence-config.js';
 import { resolveWorkflowDirective } from '../../../machine/workflow-directive.js';
@@ -300,7 +304,12 @@ function frozenArchitectureReviewMaterial(
   subjectDigest: string,
 ) {
   return freezeReviewMaterial(
-    buildFrozenReviewMaterialContent({ obligationType: 'architecture', state, artifact }),
+    buildFrozenReviewMaterialContent({
+      obligationType: 'architecture',
+      state,
+      artifact,
+      renderPlanClaimDeclarations,
+    }),
     subjectDigest,
   );
 }
@@ -343,7 +352,7 @@ async function persistAndFormatNonConvergedReview(
     worktree: session.worktree,
     repositoryGoverned: nextObligation ? hasFrozenRepositoryAuthority(nextObligation) : false,
     now: session.ctx.now(),
-    driftProvider: DISCOVERY_DRIFT_PROVIDER,
+    discoveryProvider: REVIEW_DISCOVERY_PROVIDER,
     ...(nextObligation ? { obligationId: nextObligation.obligationId } : {}),
   });
   if (discovery.kind === 'blocked') {

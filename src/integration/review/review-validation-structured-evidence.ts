@@ -12,7 +12,7 @@
 import type { ZodIssue } from 'zod';
 import type { ReviewFindings } from '../../state/evidence.js';
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
-import { getAdapterLogger } from '../../logging/adapter-logger.js';
+import type { ReviewDiagnosticLogger } from './review-logger-port.js';
 import { TOOL_FLOWGUARD_REVIEW } from '../tool-names.js';
 import type {
   ReviewAssuranceState,
@@ -71,6 +71,7 @@ export type StructuredFindingsResolution =
   | { readonly kind: 'not_found' };
 
 interface StructuredFindingsEvaluationContext {
+  readonly logger: ReviewDiagnosticLogger;
   readonly assurance: ReviewAssuranceState;
   readonly obligation: ReviewObligation;
   readonly parentSessionId: string | undefined;
@@ -124,6 +125,7 @@ type StructuredInvocationEvaluation =
  * @returns Parsed findings + invocationId, or null if evidence is unavailable
  */
 export function resolveStructuredFindings(
+  logger: ReviewDiagnosticLogger,
   assurance: ReviewAssuranceState | undefined,
   obligation: ReviewObligation | null,
   ...[
@@ -148,6 +150,7 @@ export function resolveStructuredFindings(
   }
 
   const context: StructuredFindingsEvaluationContext = {
+    logger,
     assurance,
     obligation,
     parentSessionId,
@@ -303,7 +306,12 @@ function evaluateStructuredInvocation(
       kind: 'deferred',
       diagnostic: {
         kind: 'unparseable',
-        detail: describeUnparseableFindings(context.obligation, invocation, parsed.error.issues),
+        detail: describeUnparseableFindings(
+          context.obligation,
+          invocation,
+          parsed.error.issues,
+          context.logger,
+        ),
       },
     };
   }
@@ -457,11 +465,12 @@ function describeUnparseableFindings(
   obligation: ReviewObligation,
   invocation: ReviewInvocationEvidence,
   issues: readonly ZodIssue[],
+  logger: ReviewDiagnosticLogger,
 ): string {
   const formattedIssues = issues
     .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
     .slice(0, 8);
-  getAdapterLogger().warn(
+  logger.warn(
     TOOL_FLOWGUARD_REVIEW,
     'structured captured findings present but unparseable; treated as unparseable',
     {

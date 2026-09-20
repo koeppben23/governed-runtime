@@ -12,6 +12,7 @@
  * @version v1
  */
 
+import { getAdapterLogger } from '../../../logging/adapter-logger.js';
 import type { SessionState } from '../../../state/schema.js';
 import type { ReviewFindings, ReviewObligationType } from '../../../state/evidence.js';
 import {
@@ -32,7 +33,12 @@ export function latestReviewSummary(
   const latest = findings.at(-1);
   if (!latest) return null;
   const identity = opts.obligationType
-    ? resolveReviewedArtifactIdentity(opts.assurance, opts.obligationType, latest)
+    ? resolveReviewedArtifactIdentity(
+        opts.assurance,
+        opts.obligationType,
+        latest,
+        getAdapterLogger(),
+      )
     : undefined;
   return {
     iteration: opts.hostIteration ?? latest.iteration,

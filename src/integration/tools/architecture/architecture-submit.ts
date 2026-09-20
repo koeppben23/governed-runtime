@@ -5,7 +5,7 @@
  * @version v1
  */
 
-import { DISCOVERY_DRIFT_PROVIDER } from '../../discovery/discovery-drift-status.js';
+import { REVIEW_DISCOVERY_PROVIDER } from '../../discovery/review-discovery-provider.js';
 import type { ArchitectureArgs, ArchitectureSession } from './architecture-shared.js';
 import { buildArchitectureReviewInstruction } from './architecture-shared.js';
 import { formatBlocked } from '../../blocked-result.js';
@@ -32,6 +32,7 @@ import {
   frozenAuthorityOrUndefined,
 } from '../../../rails/repository-authority.js';
 import { resolveAttemptDiscoveryOrBlock } from '../../review/discovery-attempt-context.js';
+import { renderPlanClaimDeclarations } from '../../../presentation/index.js';
 import { repositoryEvidenceUnavailableField } from '../../review/observation-access.js';
 import { hasFrozenRepositoryAuthority } from '../../../state/evidence.js';
 import { buildFrozenReviewMaterialContent } from '../../review/reviewer-context.js';
@@ -81,7 +82,7 @@ async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Prom
     worktree: ctx.worktree,
     repositoryGoverned,
     now: ctx.now,
-    driftProvider: DISCOVERY_DRIFT_PROVIDER,
+    discoveryProvider: REVIEW_DISCOVERY_PROVIDER,
     ...(minted ? { obligationId: minted.obligationId } : {}),
   });
   if (discovery.kind === 'blocked') {
@@ -140,6 +141,7 @@ async function mintArchSubmissionObligation(
         obligationType: 'architecture',
         state: ctx.state,
         artifact: adrText,
+        renderPlanClaimDeclarations,
       }),
       digest,
     ),
