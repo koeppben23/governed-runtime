@@ -14,11 +14,6 @@ export {
   mandatesInstructionEntry,
   FLOWGUARD_MANDATES_FULL_BODY,
   FLOWGUARD_MANDATES_KERNEL,
-  buildMandatesContent,
-  extractManagedDigest,
-  extractManagedVersion,
-  isManagedArtifact,
-  extractManagedBody,
   REVIEWER_AGENT,
   CLAUDE_REVIEWER_AGENT,
   CODEX_REVIEWER_SUBAGENT,
@@ -32,3 +27,10 @@ export {
   CODEX_PLUGIN_RELATIVE_FILES,
   codexPluginFiles,
 } from '../templates/index.js';
+export {
+  buildMandatesContent,
+  extractManagedDigest,
+  extractManagedVersion,
+  isManagedArtifact,
+  extractManagedBody,
+} from '../rendering/mandates-renderer.js';

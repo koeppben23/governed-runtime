@@ -1,4 +1,4 @@
-import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
+import { renderCommandGovernanceRules } from '../mandates.js';
 
 export const FINISH_COMMAND = `---
 description: FlowGuard — Show the read-only Finish Card before export / PR / archive.

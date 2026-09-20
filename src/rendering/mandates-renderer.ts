@@ -214,19 +214,6 @@ export function renderMandates(
   return renderPhaseAwareMandates(ctx, phase);
 }
 
-export function renderCommandGovernanceRules(): string {
-  const section = MANDATES_SECTION_DEFINITIONS.find(
-    (candidate) => candidate.id === 'command-execution',
-  );
-  if (!section) {
-    throw new MandatesRenderError(
-      'MANDATES_SECTION_NOT_FOUND',
-      'Mandates section not found: command-execution',
-    );
-  }
-  return section.content;
-}
-
 export function renderCompactionMandatesSummary(
   phase: Phase | MandatesRenderPhase | string | null | undefined,
 ): string {

@@ -1,4 +1,4 @@
-import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
+import { renderCommandGovernanceRules } from '../mandates.js';
 
 export const TASK_COMMAND = `---
 description: FlowGuard — Capture a governed task description with optional external references.

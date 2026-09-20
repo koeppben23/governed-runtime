@@ -74,16 +74,8 @@
       "to": "discovery"
     },
     {
-      "from": "rendering",
-      "to": "templates"
-    },
-    {
       "from": "telemetry",
       "to": "presentation"
-    },
-    {
-      "from": "templates",
-      "to": "rendering"
     },
     {
       "from": "verification",

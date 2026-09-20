@@ -1,4 +1,4 @@
-import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
+import { renderCommandGovernanceRules } from '../mandates.js';
 
 export const REQUEST_CHANGES_COMMAND = `---
 description: FlowGuard — Request changes on the currently active review gate.

@@ -1,4 +1,4 @@
-import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
+import { renderCommandGovernanceRules } from '../mandates.js';
 
 export const HYDRATE_COMMAND = `---
 description: FlowGuard — Bootstrap or reload the session. Run this FIRST before any other FlowGuard command.

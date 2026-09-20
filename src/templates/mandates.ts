@@ -584,3 +584,31 @@ export const REVIEWER_AGENT_FILENAME = `${REVIEWER_SUBAGENT_TYPE}.md`;
 export const CLAUDE_REVIEWER_AGENT_PATH = `agents/${REVIEWER_AGENT_FILENAME}`;
 
 export const CODEX_REVIEWER_SUBAGENT_PATH = `subagents/${REVIEWER_AGENT_FILENAME}`;
+
+/**
+ * Narrow content-authority error for mandate section lookups. This is not a
+ * general renderer error; the renderer keeps its own `MandatesRenderError`.
+ */
+class MandatesContentError extends Error {
+  readonly code = 'MANDATES_SECTION_NOT_FOUND';
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'MandatesContentError';
+  }
+}
+
+/**
+ * Canonical command governance rules content. Lives with the content authority
+ * so command templates never import the renderer (dependency direction:
+ * rendering assembles template content, templates do not import rendering).
+ */
+export function renderCommandGovernanceRules(): string {
+  const section = MANDATES_SECTION_DEFINITIONS.find(
+    (candidate) => candidate.id === 'command-execution',
+  );
+  if (!section) {
+    throw new MandatesContentError('Mandates section not found: command-execution');
+  }
+  return section.content;
+}
