@@ -107,7 +107,7 @@ describe('canonical compatibility surfaces', () => {
     const [helpers, structuredEvidenceResolver, reviewTool, envelopeReasons, evidenceRefinements] =
       await Promise.all([
         source('integration/tools/helpers.ts'),
-        source('integration/tools/review-validation-structured-evidence.ts'),
+        source('integration/review/review-validation-structured-evidence.ts'),
         source('integration/tools/review-tool/index.ts'),
         source('config/reasons-envelope.ts'),
         source('state/evidence-review-refinements.ts'),

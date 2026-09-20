@@ -4,6 +4,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { isConverged } from '../../machine/guards.js';
 import { getReviewLoopProgress } from './review-loop-progress.js';
 import { makeState } from '../../fixtures.js';
 import type { SessionState } from '../../state/schema.js';
@@ -35,6 +36,10 @@ function finding(message: string) {
       evidenceLocations: [location],
     },
   };
+}
+
+function progress(state: SessionState) {
+  return getReviewLoopProgress(state, isConverged);
 }
 
 describe('getReviewLoopProgress', () => {
@@ -90,7 +95,7 @@ describe('getReviewLoopProgress', () => {
           ],
         },
       });
-      const p = getReviewLoopProgress(state)!;
+      const p = progress(state)!;
       expect(p.iteration).toBe(2);
       expect(p.maxIterations).toBe(3);
       expect(p.previousVerdict).toBe('changes_requested');
@@ -114,7 +119,7 @@ describe('getReviewLoopProgress', () => {
           verdict: 'accept',
         },
       });
-      const p = getReviewLoopProgress(state)!;
+      const p = progress(state)!;
       expect(p.iteration).toBe(1);
       expect(p.maxIterations).toBe(5);
       expect(p.previousVerdict).toBe('accept');
@@ -151,7 +156,7 @@ describe('getReviewLoopProgress', () => {
           },
         ],
       });
-      const p = getReviewLoopProgress(state)!;
+      const p = progress(state)!;
       expect(p.iteration).toBe(0);
       expect(p.maxIterations).toBe(3);
       expect(p.previousVerdict).toBe('changes_requested');
@@ -189,7 +194,7 @@ describe('getReviewLoopProgress', () => {
           },
         ],
       });
-      expect(getReviewLoopProgress(state)!.outstandingIssues).toHaveLength(3);
+      expect(progress(state)!.outstandingIssues).toHaveLength(3);
     });
   });
 
@@ -206,7 +211,7 @@ describe('getReviewLoopProgress', () => {
           verdict: 'accept',
         },
       });
-      expect(getReviewLoopProgress(state)).toBeNull();
+      expect(progress(state)).toBeNull();
     });
 
     it('returns null for ARCHITECTURE with selfReview (not a review phase)', () => {
@@ -221,16 +226,16 @@ describe('getReviewLoopProgress', () => {
           verdict: 'accept',
         },
       });
-      expect(getReviewLoopProgress(state)).toBeNull();
+      expect(progress(state)).toBeNull();
     });
 
     it('returns null for PLAN_REVIEW with null selfReview', () => {
-      expect(getReviewLoopProgress(reviewState('PLAN_REVIEW', { selfReview: null }))).toBeNull();
+      expect(progress(reviewState('PLAN_REVIEW', { selfReview: null }))).toBeNull();
     });
 
     it('returns null for non-review phases', () => {
       for (const phase of ['TICKET', 'VALIDATION', 'IMPLEMENTATION', 'COMPLETE', 'READY']) {
-        expect(getReviewLoopProgress(reviewState(phase))).toBeNull();
+        expect(progress(reviewState(phase))).toBeNull();
       }
     });
 
@@ -238,14 +243,14 @@ describe('getReviewLoopProgress', () => {
       const state = reviewState('PLAN_REVIEW', {
         selfReview: null,
       });
-      expect(getReviewLoopProgress(state)).toBeNull();
+      expect(progress(state)).toBeNull();
     });
 
     it('returns null when review slot has an invalid verdict', () => {
       const state = reviewState('PLAN_REVIEW', {
         selfReview: null,
       });
-      expect(getReviewLoopProgress(state)).toBeNull();
+      expect(progress(state)).toBeNull();
     });
 
     it('does not throw when capturedRawFindings.blockingIssues is malformed', () => {
@@ -294,7 +299,7 @@ describe('getReviewLoopProgress', () => {
           dispatches: [],
         },
       });
-      const p = getReviewLoopProgress(state)!;
+      const p = progress(state)!;
       expect(p.iteration).toBe(1);
       expect(p.outstandingIssues).toBeUndefined();
     });
@@ -345,7 +350,7 @@ describe('getReviewLoopProgress', () => {
           ],
         },
       });
-      const p = getReviewLoopProgress(state)!;
+      const p = progress(state)!;
       expect(p.outstandingIssues).toBeUndefined();
     });
 
@@ -361,7 +366,7 @@ describe('getReviewLoopProgress', () => {
           verdict: 'accept',
         },
       });
-      expect(getReviewLoopProgress(state)!.outstandingIssues).toBeUndefined();
+      expect(progress(state)!.outstandingIssues).toBeUndefined();
     });
 
     it('outstandingIssues absent when verdict is unable_to_review', () => {
@@ -376,7 +381,7 @@ describe('getReviewLoopProgress', () => {
           verdict: 'unable_to_review',
         },
       });
-      const p = getReviewLoopProgress(state)!;
+      const p = progress(state)!;
       expect(p.converged).toBe(false);
       expect(p.outstandingIssues).toBeUndefined();
     });
@@ -435,7 +440,7 @@ describe('getReviewLoopProgress', () => {
     });
 
     it('buildStatusProjection includes reviewLoop in IMPL_REVIEW', async () => {
-      const { buildStatusProjection } = await import('../status.js');
+      const { buildStatusProjection } = await import('../status/status.js');
       const { makeState } = await import('../../fixtures.js');
 
       const state = makeState('IMPL_REVIEW', {
@@ -466,7 +471,7 @@ describe('getReviewLoopProgress', () => {
     });
 
     it('buildStatusProjection reviewLoop is null in non-review phase', async () => {
-      const { buildStatusProjection } = await import('../status.js');
+      const { buildStatusProjection } = await import('../status/status.js');
       const { makeState } = await import('../../fixtures.js');
 
       const state = makeState('TICKET', {});

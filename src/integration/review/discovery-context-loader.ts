@@ -10,15 +10,8 @@
 
 import { readDiscovery } from '../../adapters/persistence-discovery.js';
 import { workspaceDir } from '../../adapters/workspace/index.js';
-import {
-  extractDiscoveryHealth,
-  unavailableDiscoveryHealth,
-} from '../../discovery/discovery-health.js';
-import {
-  buildDiscoveryDriftStatus,
-  notCheckedDiscoveryDriftStatus,
-} from '../discovery-drift-status.js';
 import { buildImplementationGuidance } from '../implementation-guidance.js';
+import type { ReviewDiscoveryProvider } from './discovery-port.js';
 import type { SessionState } from '../../state/schema.js';
 import type { DiscoveryReviewContext } from './discovery-context-prompt.js';
 
@@ -28,6 +21,8 @@ export interface BuildReviewDiscoveryContextInput {
   readonly worktree: string;
   readonly includeDriftCheck?: boolean;
   readonly driftTimeoutMs?: number;
+  /** Injected Discovery context authority (review owns no discovery import). */
+  readonly discoveryProvider: ReviewDiscoveryProvider;
 }
 
 export async function buildReviewDiscoveryContext(
@@ -38,6 +33,7 @@ export async function buildReviewDiscoveryContext(
     return unavailableContext(
       baseContext,
       'Discovery context unavailable: workspace fingerprint could not be resolved.',
+      input.discoveryProvider,
     );
   }
 
@@ -45,11 +41,11 @@ export async function buildReviewDiscoveryContext(
     const wsDir = workspaceDir(input.fingerprint);
     const discovery = await readDiscovery(wsDir);
     if (!discovery) {
-      const health = unavailableDiscoveryHealth('missing');
+      const health = input.discoveryProvider.unavailableHealth('missing');
       return {
         ...baseContext,
         health,
-        drift: notCheckedDiscoveryDriftStatus(
+        drift: input.discoveryProvider.notChecked(
           'Discovery drift was not checked during review prompt construction because persisted discovery is missing.',
         ),
         implementationGuidance: buildImplementationGuidance({
@@ -63,15 +59,15 @@ export async function buildReviewDiscoveryContext(
       };
     }
 
-    const health = extractDiscoveryHealth(discovery);
+    const health = input.discoveryProvider.extractHealth(discovery);
     const drift = input.includeDriftCheck
-      ? await buildDiscoveryDriftStatus({
+      ? await input.discoveryProvider.build({
           workspaceDir: wsDir,
           worktree: input.worktree,
           fingerprint: input.fingerprint,
           ...(input.driftTimeoutMs !== undefined ? { timeoutMs: input.driftTimeoutMs } : {}),
         })
-      : notCheckedDiscoveryDriftStatus(
+      : input.discoveryProvider.notChecked(
           'Discovery drift was not checked during review prompt construction to avoid hidden review-orchestration latency.',
         );
     const implementationGuidance = buildImplementationGuidance({
@@ -85,6 +81,7 @@ export async function buildReviewDiscoveryContext(
     return unavailableContext(
       baseContext,
       `Discovery context unavailable: ${error instanceof Error ? error.message : String(error)}`,
+      input.discoveryProvider,
     );
   }
 }
@@ -96,12 +93,16 @@ function baseSessionContext(state: SessionState): DiscoveryReviewContext {
   };
 }
 
-function unavailableContext(base: DiscoveryReviewContext, reason: string): DiscoveryReviewContext {
-  const health = unavailableDiscoveryHealth('read_failed');
+function unavailableContext(
+  base: DiscoveryReviewContext,
+  reason: string,
+  discoveryProvider: ReviewDiscoveryProvider,
+): DiscoveryReviewContext {
+  const health = discoveryProvider.unavailableHealth('read_failed');
   return {
     ...base,
     health,
-    drift: notCheckedDiscoveryDriftStatus(reason),
+    drift: discoveryProvider.notChecked(reason),
     implementationGuidance: null,
     notVerified: [`NOT_VERIFIED: ${reason}`],
   };

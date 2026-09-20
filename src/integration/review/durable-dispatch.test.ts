@@ -15,7 +15,7 @@ import {
   buildInterruptedDispatchRearm,
   persistAuthorizedReviewDispatch,
   type DispatchLedgerWriteDeps,
-} from '../durable-dispatch.js';
+} from './durable-dispatch.js';
 import { recordEvidenceOrBlockReuse } from './reviewer-evidence-recorder.js';
 import {
   artifactReviewSubjectScope,

@@ -13,35 +13,34 @@
  * - status-tool.ts    — read-only session state check
  * - decision-tool.ts  — human review verdict at user gates
  * - run-check-tool.ts — verification command execution with evidence
- * - simple-tools.ts   — ticket, review, abort, archive
+ * - simple/          — ticket, abort, archive, export, help, continue command contexts
+ * - review-tool/     — peer review command transport
  *
  * Barrel re-exports are resolved by the post-build ESM import fixer.
  *
  * @version v6
  */
 
-import { status as rawStatus } from './status-tool.js';
-import { decision as rawDecision } from './decision-tool.js';
-import { run_check as rawRunCheck } from './run-check-tool.js';
-import {
-  ticket as rawTicket,
-  review as rawReview,
-  abort_session as rawAbortSession,
-  archive as rawArchive,
-} from './simple-tools.js';
-import { hydrate as rawHydrate } from './hydrate.js';
-import { plan as rawPlan } from './plan.js';
-import { implement as rawImplement } from './implement.js';
-import { review_implementation as rawReviewImplementation } from './implement.js';
-import { architecture as rawArchitecture } from './architecture.js';
-import { continue_cmd as rawContinue } from './continue-tool.js';
-import { help as rawHelp } from './help-tool.js';
-import { resolve_implementation_challenge as rawResolveImplementationChallenge } from './challenge-resolution.js';
-import { declare_contract as rawDeclareContract } from './declare-contract.js';
-import { record_mutation_evidence as rawRecordMutationEvidence } from './record-mutation-evidence.js';
-import { reconcile_mutation_episode as rawReconcileMutationEpisode } from './reconcile-mutation-episode.js';
-import { observe_repository as rawObserveRepository } from './observe-repository.js';
-import { export_session as rawExportSession } from './export-tool.js';
+import { status as rawStatus } from './status/status-tool.js';
+import { decision as rawDecision } from './decision/decision-tool.js';
+import { run_check as rawRunCheck } from './validation/run-check-tool.js';
+import { ticket as rawTicket } from './simple/ticket-tool.js';
+import { review as rawReview } from './review-tool/index.js';
+import { abort_session as rawAbortSession } from './simple/abort-tool.js';
+import { archive as rawArchive } from './simple/archive-tool.js';
+import { hydrate as rawHydrate } from './hydrate/hydrate.js';
+import { plan as rawPlan } from './plan/plan.js';
+import { implement as rawImplement } from './implementation/implement.js';
+import { review_implementation as rawReviewImplementation } from './implementation/implement.js';
+import { architecture as rawArchitecture } from './architecture/architecture.js';
+import { continue_cmd as rawContinue } from './simple/continue-tool.js';
+import { help as rawHelp } from './simple/help-tool.js';
+import { resolve_implementation_challenge as rawResolveImplementationChallenge } from './challenge/challenge-resolution.js';
+import { declare_contract as rawDeclareContract } from './contract/declare-contract.js';
+import { record_mutation_evidence as rawRecordMutationEvidence } from './mutation/record-mutation-evidence.js';
+import { reconcile_mutation_episode as rawReconcileMutationEpisode } from './mutation/reconcile-mutation-episode.js';
+import { observe_repository as rawObserveRepository } from './observe/observe-repository.js';
+import { export_session as rawExportSession } from './simple/export-tool.js';
 import type { ToolDefinition, ToolResult } from './helpers.js';
 import { readConfig } from '../../adapters/persistence-config.js';
 import type { GlyphProfile } from '../../presentation/glyph-profile.js';

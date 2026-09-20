@@ -10,8 +10,8 @@ import {
   buildExistingPolicyInput,
   buildNewPolicyInput,
   buildPolicyInput,
-} from './hydrate-format.js';
-import type { HydratePolicyResolution } from './hydrate.js';
+} from './hydrate/hydrate-format.js';
+import type { HydratePolicyResolution } from './hydrate/hydrate.js';
 import type { PolicyMode } from '../../state/policy-mode.js';
 import { DEFAULT_CONFIG } from '../../config/flowguard-config.js';
 

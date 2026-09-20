@@ -88,9 +88,9 @@ describe('ProofGraph presentation SSOT', () => {
       'presentation/evidence-review-card.ts',
       'presentation/architecture-review-card.ts',
       'presentation/review-report-card.ts',
-      'integration/status-presentation.ts',
-      'integration/why-presentation.ts',
-      'integration/finish-presentation.ts',
+      'integration/status/status-presentation.ts',
+      'integration/status/why-presentation.ts',
+      'integration/status/finish-presentation.ts',
     ];
     const violations = requiredBuilders.filter((rel) => {
       const content = readFileSync(join(SRC, rel), 'utf-8');

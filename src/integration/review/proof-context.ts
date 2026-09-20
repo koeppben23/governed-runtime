@@ -13,11 +13,42 @@
  * - declarations are stated intent and are explicitly NOT evidence.
  */
 
-import type { SessionState } from '../../state/schema.js';
+import type { RiskTrigger, SessionState } from '../../state/schema.js';
 import type { ProofGraphProjection } from '../../state/proofgraph.js';
-import { authorizedCriticalPlanClaimIds } from '../../state/proofgraph-approval.js';
-import { evaluateProofGraphGate } from '../../audit/proofgraph/gate.js';
-import { renderPlanClaimDeclarations } from '../../presentation/index.js';
+import {
+  authorizedCriticalPlanClaimIds,
+  type PlanClaimDeclarations,
+} from '../../state/proofgraph-approval.js';
+
+/**
+ * Structural ProofGraph gate port. review/ must not import audit/; the host
+ * composition injects the canonical gate authority.
+ */
+export interface ReviewProofGraphGateInput {
+  readonly projection?: ProofGraphProjection;
+  readonly authorizedCriticalClaimIds?: readonly string[];
+  readonly certificateValid?: boolean;
+  readonly implementationDigest?: string;
+  readonly riskAssessment?: {
+    readonly implementationDigest: string;
+    readonly riskTriggers?: readonly RiskTrigger[];
+  };
+}
+
+export interface ReviewProofGraphGateDecision {
+  readonly kind: string;
+  readonly relevantTriggers: readonly string[];
+}
+
+export type ReviewProofGraphGateEvaluator = (
+  input: ReviewProofGraphGateInput,
+) => ReviewProofGraphGateDecision;
+
+/** Injected lower-layer authorities for reviewer ProofGraph context. */
+export interface ReviewerProofGraphAuthorities {
+  readonly evaluateProofGraphGate: ReviewProofGraphGateEvaluator;
+  readonly renderPlanClaimDeclarations: (declarations: PlanClaimDeclarations | undefined) => string;
+}
 
 /** Bound on rendered list entries so a large graph cannot dominate the prompt. */
 const MAX_RENDERED_ENTRIES = 20;
@@ -95,12 +126,15 @@ function renderCertificateLine(
   );
 }
 
-function renderPlanDeclarations(state: SessionState): string[] {
+function renderPlanDeclarations(
+  state: SessionState,
+  authorities: ReviewerProofGraphAuthorities,
+): string[] {
   const declarations = state.plan?.claimDeclarations;
   if (!declarations || declarations.claims.length === 0) return [];
   return [
     `### Plan claim declarations (${declarations.claims.length})`,
-    renderPlanClaimDeclarations(declarations),
+    authorities.renderPlanClaimDeclarations(declarations),
     renderCertificateLine('Plan', state.plan?.approvalCertificate),
     '',
   ];
@@ -136,8 +170,14 @@ function renderArchitectureDeclarations(state: SessionState): string[] {
  * NOT become graph claims here: a claim without a revision binding could never
  * be fresh. The reviewer receives them as the assertions to falsify.
  */
-export function renderDeclarationPreview(state: SessionState): string[] {
-  const sections = [...renderPlanDeclarations(state), ...renderArchitectureDeclarations(state)];
+export function renderDeclarationPreview(
+  state: SessionState,
+  authorities: ReviewerProofGraphAuthorities,
+): string[] {
+  const sections = [
+    ...renderPlanDeclarations(state, authorities),
+    ...renderArchitectureDeclarations(state),
+  ];
   if (sections.length === 0) return [];
   return [
     '## Declared Claims (pre-evidence, advisory)',
@@ -166,7 +206,10 @@ export function renderCoverageGaps(state: SessionState): string[] {
 }
 
 /** Render the persisted critical-fact requirement without performing fresh classification. */
-export function renderCriticalClaimRequirement(state: SessionState): string[] {
+export function renderCriticalClaimRequirement(
+  state: SessionState,
+  authorities: ReviewerProofGraphAuthorities,
+): string[] {
   if (!state.implementation) return [];
   const plan = state.plan;
   const authorization = authorizedCriticalPlanClaimIds(
@@ -183,20 +226,21 @@ export function renderCriticalClaimRequirement(state: SessionState): string[] {
       : undefined,
   );
   const riskAssessment = state.implementationRiskAssessment;
-  const decision = evaluateProofGraphGate({
+  const decision = authorities.evaluateProofGraphGate({
     ...(state.proofGraph !== undefined ? { projection: state.proofGraph } : {}),
     authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
     certificateValid: authorization.kind === 'authorized',
     implementationDigest: state.implementation.digest,
-    riskAssessment:
-      riskAssessment !== undefined
-        ? {
+    ...(riskAssessment !== undefined
+      ? {
+          riskAssessment: {
             implementationDigest: riskAssessment.implementationDigest,
             ...(riskAssessment.riskTriggers !== undefined
               ? { riskTriggers: riskAssessment.riskTriggers }
               : {}),
-          }
-        : undefined,
+          },
+        }
+      : {}),
   });
   if (decision.kind === 'risk_assessment_stale') {
     return [
@@ -222,11 +266,14 @@ export function renderCriticalClaimRequirement(state: SessionState): string[] {
  * Used by every reviewer transport so the host-task Task prompt and the SDK
  * prompts stay structurally identical.
  */
-export function buildReviewerProofContext(state: SessionState): string[] {
+export function buildReviewerProofContext(
+  state: SessionState,
+  authorities: ReviewerProofGraphAuthorities,
+): string[] {
   return [
     ...renderPersistedProofGraphContext(state.proofGraph),
-    ...renderDeclarationPreview(state),
+    ...renderDeclarationPreview(state, authorities),
     ...renderCoverageGaps(state),
-    ...renderCriticalClaimRequirement(state),
+    ...renderCriticalClaimRequirement(state, authorities),
   ];
 }

@@ -11,7 +11,7 @@ vi.mock('../../adapters/persistence-discovery.js', async (importOriginal) => {
   return { ...original, readDiscovery: mocks.readDiscovery };
 });
 
-import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
+import { resolvePreImplementationChallengeClassification } from './challenge/pre-implementation-challenge.js';
 import { CHALLENGE_POLICY_V1 } from '../../config/policy-types.js';
 
 const withChallenge = {

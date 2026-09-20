@@ -10,7 +10,8 @@
  */
 
 import type { SessionState } from '../state/schema.js';
-import { parseToolResult } from './plugin-helpers.js';
+import { parseToolResult } from './blocked-result.js';
+
 import { sanitizeDiagnosticString } from '../logging/redact.js';
 import { checkNtpClock, type NtpCheckResult } from '../audit/ntp-check.js';
 import type { TimestampAssurancePolicy } from '../config/policy-types.js';

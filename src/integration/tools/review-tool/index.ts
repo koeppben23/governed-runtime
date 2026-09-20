@@ -7,14 +7,12 @@
  *
  * @version v1
  */
+import { getAdapterLogger } from '../../../logging/adapter-logger.js';
 import { z } from 'zod';
 import type { ToolDefinition } from '../helpers.js';
 import { formatError } from '../error-format.js';
-import {
-  withMutableSessionTransaction,
-  formatAutoAdvanceOverflow,
-  formatBlocked,
-} from '../helpers.js';
+import { formatBlocked } from '../../blocked-result.js';
+import { withMutableSessionTransaction, formatAutoAdvanceOverflow } from '../helpers.js';
 import {
   executeReview,
   type PreparedReviewContent,
@@ -36,8 +34,8 @@ import {
 import {
   resolveStructuredFindings,
   type StructuredFindingsResolution,
-} from '../review-validation-structured-evidence.js';
-import { formatStructuredResolutionFailure } from '../review-validation.js';
+} from '../../review/review-validation-structured-evidence.js';
+import { formatStructuredResolutionFailure } from '../../review/review-validation.js';
 import {
   buildReviewExecutors,
   formatBlockedReviewReport,
@@ -215,6 +213,7 @@ function prepareStructuredEvidenceSubmission(
     });
   }
   const resolution = resolveStructuredFindings(
+    getAdapterLogger(),
     state.reviewAssurance,
     obligation,
     undefined,

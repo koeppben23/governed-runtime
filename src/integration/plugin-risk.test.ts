@@ -44,7 +44,7 @@ vi.mock('../adapters/git.js', () => ({
   changedFiles: mockChangedFiles,
 }));
 
-vi.mock('./plugin-helpers.js', () => ({
+vi.mock('./blocked-result.js', () => ({
   buildEnforcementError: mockBuildEnforcementError,
   strictBlockedOutput: mockStrictBlockedOutput,
 }));

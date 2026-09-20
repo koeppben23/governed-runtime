@@ -13,7 +13,7 @@ import {
   reconcileDiscoveryHealthGate,
   classifyGateTransition,
   evaluateDiscoveryEvidenceGate,
-} from './discovery-health-gate.js';
+} from './discovery/discovery-health-gate.js';
 import {
   extractDiscoveryHealth,
   unavailableDiscoveryHealth,

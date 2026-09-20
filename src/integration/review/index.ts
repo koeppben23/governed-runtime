@@ -19,9 +19,15 @@
  * - Findings JSON Schema definition
  * - Review audit event emission
  *
- * Dependency direction: review/ depends on state/, shared/, templates/,
- * config/, and adapters/persistence (audit trail I/O).
- * review/ MUST NOT import from plugin-*, tools/, or integration root.
+ * Dependency direction (default-deny): review/ may import review/**,
+ * integration root authorities (blocked-result, audit-outbox, errors,
+ * tool-names, ...), and the frozen lower layers (adapters, config, shared,
+ * state, templates). Non-frozen authorities are consumed through injected
+ * structural ports (`discovery-port.ts`, `review-logger-port.ts`, the
+ * convergence predicate, `ReviewerProofGraphAuthorities`, the machine
+ * terminal-phase predicate). review/ MUST NOT import plugin-*, tools/**, the
+ * composition barrels (index.ts, plugin.ts), host-runtime wiring, sibling
+ * integration contexts, or any other top-level layer.
  *
  * @version v3
  */

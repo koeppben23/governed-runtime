@@ -12,7 +12,7 @@
  */
 
 import type { SessionState } from '../../state/schema.js';
-import type { SemanticAuditIntent } from '../tools/audit-outbox.js';
+import type { SemanticAuditIntent } from '../audit-outbox.js';
 import { ensureReviewAssurance } from './assurance.js';
 import { replayObservationCaptures, type ObservationReplayResult } from './observation-replay.js';
 

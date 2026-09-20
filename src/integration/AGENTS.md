@@ -15,6 +15,10 @@ API. It must never become a provider of new authorities for lower layers.
   `src/architecture/__tests__/module-dependency-policy.ts`
   (`MODULE_DEPENDENCY_POLICY`), and changes in this subtree must satisfy
   `npm run test:architecture`.
+- Production placement is enforced by the positive authority
+  `src/architecture/__tests__/integration-placement-policy.ts`: every
+  production file has exactly one owner/zone entry and zero placement debt. A
+  new file requires an explicit placement entry in the same change.
 
 ## Plugin Lifecycle
 
@@ -27,8 +31,18 @@ API. It must never become a provider of new authorities for lower layers.
 
 ## Tools
 
-- Tools are the FlowGuard command surface exposed to the host agent. All tools
-  live in `src/integration/tools/`.
+- Tools are the FlowGuard command surface exposed to the host agent. The tool
+  layer lives in `src/integration/tools/`:
+  - `index.ts` is the command surface composition point and the only external
+    production entry into the tool layer;
+  - command files live in per-command contexts (`plan/`, `architecture/`,
+    `implementation/`, `validation/`, `status/`, `hydrate/`, `challenge/`,
+    `decision/`, `simple/`, `contract/`, `mutation/`, `observe/`,
+    `review-tool/`);
+  - cross-command infrastructure stays at the tools root.
+- Command contexts orchestrate and project only; they must not become a new
+  domain authority. Production outside `tools/**` must not deep-import a
+  command context.
 - New tools must:
   - validate inputs against canonical schemas;
   - route through the state machine before mutating state;
@@ -39,8 +53,26 @@ API. It must never become a provider of new authorities for lower layers.
 
 - The review pipeline orchestrates independent review obligations through
   `src/integration/review/`.
+- Review findings/evidence validation authority lives in `review/`; tool
+  adapters call it, not the other way around.
+- `review/` may import ONLY `review/**`, integration root authorities, and the
+  frozen lower layers (`adapters`, `config`, `shared`, `state`, `templates`).
+  Plugin composition, host/runtime wiring, `tools/**`, sibling integration
+  contexts (`status/`, `discovery/`, `proofgraph/`, ...), and other
+  top-level layers are enforced violations (`dependency-rules.test.ts`).
+  Non-frozen authorities are consumed through injected structural ports:
+  `review/discovery-port.ts` (drift/health), `review/review-logger-port.ts`
+  (diagnostics), the convergence predicate in `review-loop-progress.ts`, and
+  `ReviewerProofGraphAuthorities` in `proof-context.ts` (gate + renderer);
+  `onFlowGuardToolAfter` receives the machine `isTerminalPhase` predicate.
 - Evidence binding, obligation tracking, and findings validation are managed
   by the enforcement subsystem in `src/integration/review/enforcement/`.
+- `plugin-helpers.ts` is plugin composition. The pure blocked/enforcement
+  result utilities live in the root authority `blocked-result.ts`; `review/`
+  consumes those instead of the plugin boundary.
+- Advisory Discovery input is injected into `review/` through
+  `review/discovery-drift-port.ts`; `review/` never imports a discovery
+  module.
 
 ## Error Boundaries
 

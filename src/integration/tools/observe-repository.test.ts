@@ -42,6 +42,16 @@ vi.mock('../../adapters/workspace/index.js', async (importOriginal) => {
   };
 });
 
+vi.mock('../blocked-result.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../blocked-result.js')>();
+  return {
+    ...original,
+    formatBlocked: vi.fn((code: string, params: Record<string, unknown>) =>
+      JSON.stringify({ error: true, code, ...params }),
+    ),
+  };
+});
+
 vi.mock('./helpers.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('./helpers.js')>();
   return {
@@ -52,9 +62,6 @@ vi.mock('./helpers.js', async (importOriginal) => {
       sessDir: path.join(LEDGER_HOME, 'sessions', 'unused'),
       wsDir: path.join(LEDGER_HOME, 'ws'),
     })),
-    formatBlocked: vi.fn((code: string, params: Record<string, unknown>) =>
-      JSON.stringify({ error: true, code, ...params }),
-    ),
     getWorktree: vi.fn(() => worktree),
   };
 });
@@ -173,7 +180,7 @@ afterAll(() => {
 
 describe('observe_repository', () => {
   it('HAPPY: delivers exact frozen bytes and appends a transport capture', async () => {
-    const { observe_repository } = await import('./observe-repository.js');
+    const { observe_repository } = await import('./observe/observe-repository.js');
     const capability = (globalThis as Record<string, unknown>).__OBS_CAPABILITY as string;
     const output = await observe_repository.execute(
       { capability, revision: 'head', path: 'src/foo.ts' },
@@ -229,7 +236,7 @@ describe('observe_repository', () => {
   });
 
   it('BAD: unknown capability fails closed', async () => {
-    const { observe_repository } = await import('./observe-repository.js');
+    const { observe_repository } = await import('./observe/observe-repository.js');
     const output = await observe_repository.execute(
       { capability: 'fgc_' + '0'.repeat(64), revision: 'head', path: 'src/foo.ts' },
       {
@@ -246,7 +253,7 @@ describe('observe_repository', () => {
   });
 
   it('BAD: escaping path fails closed', async () => {
-    const { observe_repository } = await import('./observe-repository.js');
+    const { observe_repository } = await import('./observe/observe-repository.js');
     const capability = (globalThis as Record<string, unknown>).__OBS_CAPABILITY as string;
     const output = await observe_repository.execute(
       { capability, revision: 'head', path: '../outside.ts' },
@@ -264,7 +271,7 @@ describe('observe_repository', () => {
   });
 
   it('HAPPY: candidate-pair base resolves to frozen commit bytes', async () => {
-    const { observe_repository } = await import('./observe-repository.js');
+    const { observe_repository } = await import('./observe/observe-repository.js');
     const capability = (globalThis as Record<string, unknown>).__OBS_CAPABILITY as string;
     const output = await observe_repository.execute(
       { capability, revision: 'base', path: 'src/foo.ts' },
@@ -285,7 +292,7 @@ describe('observe_repository', () => {
   });
 
   it('CORNER: capture write failure never fabricates a delivery', async () => {
-    const { observe_repository } = await import('./observe-repository.js');
+    const { observe_repository } = await import('./observe/observe-repository.js');
     const capability = (globalThis as Record<string, unknown>).__OBS_CAPABILITY as string;
     const output = await observe_repository.execute(
       { capability, revision: 'head', path: 'src/foo.ts' },

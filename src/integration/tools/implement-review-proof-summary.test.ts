@@ -15,14 +15,15 @@ import {
   resolveSubmittedReviewProofResponse,
   buildImplReviewChangesRequestedMarkdown,
   type ResolvedSubmittedReviewProof,
-} from './implement-review.js';
+} from './implementation/implement-review.js';
 import { buildEvidenceReviewCard } from '../../presentation/index.js';
 import type { EvidenceReviewCardInput } from '../../presentation/evidence-review-card.js';
 import {
   projectCompletionProofStatus,
   projectImplementationProofStatus,
 } from '../proofgraph/proof-summary-projectors.js';
-import { formatBlocked } from './helpers.js';
+import { formatBlocked } from '../blocked-result.js';
+
 import { makeState, IMPL_EVIDENCE } from '../../fixtures.js';
 
 function proofGraphState() {

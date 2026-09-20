@@ -67,7 +67,7 @@ const SINGLE_PHASE_ALLOWLIST: readonly SinglePhaseAllowance[] = [
     reason: 'detects the ticket-flow COMPLETE transition specifically (not terminal membership)',
   },
   {
-    file: 'integration/tools/architecture-review.ts',
+    file: 'integration/tools/architecture/architecture-review.ts',
     max: 2,
     reason: 'architecture-flow completion checks tied to ARCH_COMPLETE only',
   },
@@ -94,7 +94,7 @@ const SINGLE_PHASE_ALLOWLIST: readonly SinglePhaseAllowance[] = [
       'flow-specific completion contract: recovery/resume must select only the ticket-flow COMPLETE terminal (phase AND transition target) and never touch regulated ARCH/PEER_REVIEW completions',
   },
   {
-    file: 'integration/tools/export-tool.ts',
+    file: 'integration/tools/simple/export-tool.ts',
     max: 1,
     reason:
       'flow-specific contention re-read: the export rail can only have produced the ticket-flow COMPLETE position after materialization',

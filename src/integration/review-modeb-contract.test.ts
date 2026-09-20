@@ -25,8 +25,8 @@ import { sessionDir } from '../adapters/workspace/index.js';
 import { computeFingerprint } from '../adapters/workspace/fingerprint.js';
 import { writeStateWithArtifacts } from './tools/helpers.js';
 
-import { plan } from './tools/plan.js';
-import { architecture } from './tools/architecture.js';
+import { plan } from './tools/plan/plan.js';
+import { architecture } from './tools/architecture/architecture.js';
 import type { ToolContext } from './tools/helpers.js';
 import type { ReviewFindings, ReviewObligation } from '../state/evidence.js';
 import {

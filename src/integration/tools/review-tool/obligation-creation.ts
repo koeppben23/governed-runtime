@@ -10,6 +10,7 @@
  * @version v1
  */
 
+import { REVIEW_DISCOVERY_PROVIDER } from '../../discovery/review-discovery-provider.js';
 import type { SessionState } from '../../../state/schema.js';
 import { hasFrozenRepositoryAuthority } from '../../../state/evidence.js';
 import type { ReviewObligation } from '../../../state/evidence.js';
@@ -23,7 +24,7 @@ import {
   findReviewObligationById,
 } from '../../review/assurance.js';
 import { resolveReviewDispatchAuthority } from '../../review/dispatch-authority.js';
-import { buildInterruptedDispatchRearm } from '../../durable-dispatch.js';
+import { buildInterruptedDispatchRearm } from '../../review/durable-dispatch.js';
 import { resolveReviewContinuation } from '../../../state/review-continuation.js';
 import { resolveReviewAttemptDiscoveryContext } from '../../review/discovery-attempt-context.js';
 import type { ReviewAttemptDiscoveryContext } from '../../../state/evidence.js';
@@ -33,9 +34,10 @@ import {
   repositoryAuthorityFromSubject,
 } from './obligation-format.js';
 import { hasReviewContentInput, validateReviewContentSource } from './review-input.js';
-import { formatBlocked, writeStateWithArtifacts } from '../helpers.js';
+import { formatBlocked } from '../../blocked-result.js';
+import { writeStateWithArtifacts } from '../helpers.js';
 import { IntegrationInvariantError } from '../../errors.js';
-import { resolveChallengeClassificationEvidence } from '../review-obligation-classification.js';
+import { resolveChallengeClassificationEvidence } from '../../review/review-obligation-classification.js';
 import { type ResolvedBranchReviewSource } from '../../../adapters/gh-cli.js';
 import type { ReviewToolArgs } from './types.js';
 
@@ -392,6 +394,7 @@ async function createAndPrepareMissingAnalysisObligation(
     worktree: input.context.worktree ?? input.state.binding.worktree,
     repositoryGoverned: hasFrozenRepositoryAuthority(obligation),
     now: input.now,
+    discoveryProvider: REVIEW_DISCOVERY_PROVIDER,
   });
   if (discovery.kind === 'blocked') {
     return {

@@ -11,7 +11,7 @@
 import type { SessionEnforcementState } from './enforcement/types.js';
 import type { OrchestratorClient } from './types.js';
 import type { SessionState } from '../../state/schema.js';
-import type { SemanticAuditIntent } from '../tools/audit-outbox.js';
+import type { SemanticAuditIntent } from '../audit-outbox.js';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 

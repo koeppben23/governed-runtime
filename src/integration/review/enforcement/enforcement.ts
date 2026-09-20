@@ -49,9 +49,10 @@ import {
   reviewSignalOwner,
   type ReviewableTool,
 } from '../obligation-tools.js';
-import { parseToolResult } from '../../plugin-helpers.js';
+import { parseToolResult } from '../../blocked-result.js';
+import type { TerminalPhasePredicate } from './types.js';
+
 import { TOOL_FLOWGUARD_REVIEW } from '../../tool-names.js';
-import { isTerminalPhase } from '../../../machine/topology.js';
 
 // ─── State factory ───────────────────────────────────────────────────────────
 
@@ -92,12 +93,18 @@ function trackReviewRequired(
   state.pendingReviews.set(reviewTool, buildPendingReview(reviewTool, now, binding));
 }
 
+/** Injected authorities for the after-hook review tracking boundary. */
+export interface ReviewTrackingDeps {
+  readonly now: string;
+  readonly isTerminalPhase: TerminalPhasePredicate;
+}
+
 export function onFlowGuardToolAfter(
   state: SessionEnforcementState,
   toolName: string,
   args: Record<string, unknown>,
   output: string,
-  now: string,
+  deps: ReviewTrackingDeps,
 ): ReviewTrackingResult {
   const reviewContext = resolveReviewTrackingContext(toolName);
   if (!reviewContext) return { kind: 'ok' };
@@ -105,8 +112,8 @@ export function onFlowGuardToolAfter(
   const parsed = parseToolResult(output);
   if (!parsed) return { kind: 'ok' };
 
-  clearSubmittedReview(state, reviewContext.obligationTool, args, parsed);
-  return trackRequiredReview(state, reviewContext, parsed, now);
+  clearSubmittedReview(state, reviewContext.obligationTool, args, parsed, deps.isTerminalPhase);
+  return trackRequiredReview(state, reviewContext, parsed, deps.now);
 }
 
 function resolveReviewTrackingContext(toolName: string): {
@@ -124,6 +131,7 @@ function clearSubmittedReview(
   obligationTool: ReviewableTool | undefined,
   args: Record<string, unknown>,
   parsed: NonNullable<ReturnType<typeof parseToolResult>>,
+  isTerminalPhase: TerminalPhasePredicate,
 ): void {
   const hasSelfReviewVerdict =
     typeof args.reviewVerdict === 'string' && args.reviewVerdict.length > 0;

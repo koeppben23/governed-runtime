@@ -8,9 +8,19 @@
  * @version v1
  */
 
-import { isConverged } from '../../machine/guards.js';
 import type { SessionState } from '../../state/schema.js';
 import { LoopVerdict } from '../../state/evidence.js';
+
+/**
+ * Injected machine convergence guard. review/ must not import machine/; the
+ * status/tool caller passes the canonical `isConverged` authority.
+ */
+export type ReviewConvergenceGuard = (review: {
+  readonly iteration: number;
+  readonly maxIterations: number;
+  readonly revisionDelta: string;
+  readonly verdict: LoopVerdict;
+}) => boolean;
 
 export const REVIEW_LOOP_PHASES = new Set<SessionState['phase']>([
   'PLAN_REVIEW',
@@ -40,7 +50,10 @@ export interface ReviewLoopProgress {
  * - The relevant review slot is null
  * - The review slot exists but the verdict is invalid or missing
  */
-export function getReviewLoopProgress(state: SessionState): ReviewLoopProgress | null {
+export function getReviewLoopProgress(
+  state: SessionState,
+  isConverged: ReviewConvergenceGuard,
+): ReviewLoopProgress | null {
   if (!REVIEW_LOOP_PHASES.has(state.phase)) return null;
 
   const review = state.phase === 'IMPL_REVIEW' ? state.implReview : state.selfReview;

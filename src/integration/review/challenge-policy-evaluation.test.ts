@@ -14,12 +14,14 @@ import { readState, writeState } from '../../adapters/persistence.js';
 import { computeFingerprint, sessionDir } from '../../adapters/workspace/index.js';
 import { hashCanonicalReviewContent } from '../../shared/review-subject.js';
 import { createTestWorkspace, createToolContext, parseToolResult } from '../test-helpers.js';
-import { resolve_implementation_challenge } from '../tools/challenge-resolution.js';
-import { resolveStructuredFindings } from '../tools/review-validation-structured-evidence.js';
+import { resolve_implementation_challenge } from '../tools/challenge/challenge-resolution.js';
+import { resolveStructuredFindings } from './review-validation-structured-evidence.js';
+
+const testLogger = { warn: () => {} };
 import {
   computeTargetedResolutionChallengeIds,
   computeUnaddressedPriorFailIds,
-} from '../tools/implement-review-state.js';
+} from '../tools/implementation/implement-review-state.js';
 import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
@@ -228,6 +230,7 @@ async function resolveCapturedFixture(
     attemptId: attempt.attemptId,
   });
   const result = resolveStructuredFindings(
+    testLogger,
     {
       assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [obligation],
@@ -303,6 +306,7 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
   );
   expect(
     resolveStructuredFindings(
+      testLogger,
       {
         assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [firstObligation],
@@ -402,6 +406,7 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
     secondInvocation.attemptId,
   );
   const reReview = resolveStructuredFindings(
+    testLogger,
     {
       assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [secondObligation],

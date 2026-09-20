@@ -17,13 +17,8 @@
 
 import { runWithAdapterLoggerAsync } from '../logging/adapter-logger.js';
 import { runWithLogContextAsync } from '../logging/log-context.js';
-import {
-  getToolOutput,
-  getAutoAdvanceOverflow,
-  getSessionLockSignal,
-  parseToolResult,
-  strictBlockedOutput,
-} from './plugin-helpers.js';
+import { parseToolResult, strictBlockedOutput } from './blocked-result.js';
+import { getToolOutput, getAutoAdvanceOverflow, getSessionLockSignal } from './plugin-helpers.js';
 import { trackFlowGuardEnforcement } from './plugin-enforcement-tracking.js';
 import { runAudit as runAuditModule } from './plugin-audit.js';
 import { handleEvent, type EventHandlerDeps } from './plugin-events.js';

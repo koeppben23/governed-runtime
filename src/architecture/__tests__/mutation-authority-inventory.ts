@@ -759,22 +759,49 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     { legacy: true },
   ),
   required(
-    'src/integration/discovery-risk-paths.ts',
+    'src/integration/discovery/discovery-risk-paths.ts',
     'Discovery risk path classification',
     ['src/integration/discovery-risk-paths.test.ts'],
-    { legacy: true },
+    {
+      admission: {
+        verifiedAt: '2026-09-20',
+        commitSha: 'd1ef19ebbdda89af96869f7c3659de6a8ea1c8c7',
+        scoreAtAdmission: 100,
+        killed: 17,
+        survived: 0,
+        config: 'stryker.conf.json',
+      },
+    },
   ),
   required(
-    'src/integration/tools/pre-implementation-challenge.ts',
+    'src/integration/tools/challenge/pre-implementation-challenge.ts',
     'Pre-implementation challenge policy',
     ['src/integration/tools/pre-implementation-challenge.test.ts'],
-    { legacy: true },
+    {
+      admission: {
+        verifiedAt: '2026-09-20',
+        commitSha: 'd1ef19ebbdda89af96869f7c3659de6a8ea1c8c7',
+        scoreAtAdmission: 100,
+        killed: 4,
+        survived: 0,
+        config: 'stryker.conf.json',
+      },
+    },
   ),
   required(
-    'src/integration/tools/architecture-submit.ts',
+    'src/integration/tools/architecture/architecture-submit.ts',
     'Architecture evidence submission',
     ['src/integration/tools/architecture-tool.test.ts'],
-    { legacy: true },
+    {
+      admission: {
+        verifiedAt: '2026-09-20',
+        commitSha: 'd1ef19ebbdda89af96869f7c3659de6a8ea1c8c7',
+        scoreAtAdmission: 80.95,
+        killed: 17,
+        survived: 4,
+        config: 'stryker.conf.json',
+      },
+    },
   ),
   required(
     'src/integration/tools/review-validation-mode.ts',
@@ -783,19 +810,37 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     { legacy: true, critical: true },
   ),
   required(
-    'src/integration/tools/review-validation.ts',
+    'src/integration/review/review-validation.ts',
     'Review validation aggregation',
     ['src/integration/tools/review-validation-findings.test.ts'],
-    { legacy: true },
+    {
+      admission: {
+        verifiedAt: '2026-09-20',
+        commitSha: 'd1ef19ebbdda89af96869f7c3659de6a8ea1c8c7',
+        scoreAtAdmission: 83.57,
+        killed: 117,
+        survived: 23,
+        config: 'stryker.conf.json',
+      },
+    },
   ),
   required(
-    'src/integration/tools/review-validation-structured-evidence.ts',
+    'src/integration/review/review-validation-structured-evidence.ts',
     'Structured review validation evidence',
     [
       'src/integration/review/challenge-policy-evaluation.test.ts',
       'src/integration/tools/review-validation-findings.test.ts',
     ],
-    { legacy: true },
+    {
+      admission: {
+        verifiedAt: '2026-09-20',
+        commitSha: 'd1ef19ebbdda89af96869f7c3659de6a8ea1c8c7',
+        scoreAtAdmission: 82.93,
+        killed: 68,
+        survived: 14,
+        config: 'stryker.conf.json',
+      },
+    },
   ),
   required(
     'src/integration/plugin-audit-lifecycle-reason.ts',
@@ -879,10 +924,19 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     { legacy: true },
   ),
   required(
-    'src/integration/tools/audit-outbox.ts',
+    'src/integration/audit-outbox.ts',
     'Audit outbox durable delivery',
     ['src/integration/tools/audit-outbox.test.ts'],
-    { legacy: true },
+    {
+      admission: {
+        verifiedAt: '2026-09-20',
+        commitSha: 'd1ef19ebbdda89af96869f7c3659de6a8ea1c8c7',
+        scoreAtAdmission: 93.02,
+        killed: 40,
+        survived: 3,
+        config: 'stryker.conf.json',
+      },
+    },
   ),
   required(
     'src/templates/codex-plugin.ts',
@@ -1280,23 +1334,21 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
       config: 'stryker.conf.json',
     },
   },
-  {
-    classification: 'required',
-    profile: 'base',
-    mutateSelector: 'src/integration/tools/record-mutation-evidence.ts',
-    target: 'src/integration/tools/record-mutation-evidence.ts',
-    authority: 'Canonical MutationAttempt evidence producer',
-    source: [SOURCE.trustBoundaries],
-    coveringSuites: ['src/integration/tools/record-mutation-evidence.test.ts'],
-    admission: {
-      verifiedAt: '2026-09-17',
-      commitSha: 'cc713cb029ad1028793e6a7cdd67381efd33b88f',
-      scoreAtAdmission: 81.25,
-      killed: 13,
-      survived: 3,
-      config: 'stryker.conf.json',
+  required(
+    'src/integration/tools/mutation/record-mutation-evidence.ts',
+    'Canonical MutationAttempt evidence producer',
+    ['src/integration/tools/record-mutation-evidence.test.ts'],
+    {
+      admission: {
+        verifiedAt: '2026-09-20',
+        commitSha: 'd1ef19ebbdda89af96869f7c3659de6a8ea1c8c7',
+        scoreAtAdmission: 81.25,
+        killed: 13,
+        survived: 3,
+        config: 'stryker.conf.json',
+      },
     },
-  },
+  ),
   {
     classification: 'required',
     profile: 'base',
@@ -1314,23 +1366,21 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
       config: 'stryker.conf.json',
     },
   },
-  {
-    classification: 'required',
-    profile: 'base',
-    mutateSelector: 'src/integration/tools/reconcile-mutation-episode.ts',
-    target: 'src/integration/tools/reconcile-mutation-episode.ts',
-    authority: 'Unknown-outcome mutation episode resolution',
-    source: [SOURCE.trustBoundaries],
-    coveringSuites: ['src/integration/mutation-episode-e2e.test.ts'],
-    admission: {
-      verifiedAt: '2026-09-17',
-      commitSha: 'cc713cb029ad1028793e6a7cdd67381efd33b88f',
-      scoreAtAdmission: 93.33,
-      killed: 28,
-      survived: 2,
-      config: 'stryker.conf.json',
+  required(
+    'src/integration/tools/mutation/reconcile-mutation-episode.ts',
+    'Unknown-outcome mutation episode resolution',
+    ['src/integration/mutation-episode-e2e.test.ts'],
+    {
+      admission: {
+        verifiedAt: '2026-09-20',
+        commitSha: 'd1ef19ebbdda89af96869f7c3659de6a8ea1c8c7',
+        scoreAtAdmission: 93.33,
+        killed: 28,
+        survived: 2,
+        config: 'stryker.conf.json',
+      },
     },
-  },
+  ),
   {
     classification: 'required',
     profile: 'base',
@@ -1571,7 +1621,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     { source: [SOURCE.trustBoundaries] },
   ),
   deferred(
-    'src/integration/tools/run-check-result.ts',
+    'src/integration/tools/validation/run-check-result.ts',
     'Check result projection',
     'Diagnostic run 2026-09-17 scored 0.00% (0 killed / 66 survived); test gaps must be closed before admission.',
     { source: [SOURCE.trustBoundaries] },

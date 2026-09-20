@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { IMPL_EVIDENCE, VALIDATION_PASSED, makeState } from '../../fixtures.js';
+import { renderPlanClaimDeclarations } from '../../presentation/index.js';
 import { buildFrozenReviewMaterialContent } from './reviewer-context.js';
 
 const ATTEMPT_ID = '22222222-2222-4222-8222-222222222222';
@@ -36,6 +37,7 @@ describe('buildFrozenReviewMaterialContent', () => {
   it('binds the executed attempt and its observed state digests into reviewer material', () => {
     const content = buildFrozenReviewMaterialContent({
       obligationType: 'implement',
+      renderPlanClaimDeclarations,
       state: implementationState({
         executionObservedStateDigest: OBSERVED_DIGEST,
         preCommitStateDigest: PRE_COMMIT_DIGEST,
@@ -54,6 +56,7 @@ describe('buildFrozenReviewMaterialContent', () => {
   it('derives an unchanged continuity projection from equal digests', () => {
     const content = buildFrozenReviewMaterialContent({
       obligationType: 'implement',
+      renderPlanClaimDeclarations,
       state: implementationState({
         executionObservedStateDigest: OBSERVED_DIGEST,
         preCommitStateDigest: OBSERVED_DIGEST,
@@ -67,6 +70,7 @@ describe('buildFrozenReviewMaterialContent', () => {
   it('carries no verification evidence for plan material', () => {
     const content = buildFrozenReviewMaterialContent({
       obligationType: 'plan',
+      renderPlanClaimDeclarations,
       state: makeState('PLAN_REVIEW'),
       artifact: 'the plan',
     });

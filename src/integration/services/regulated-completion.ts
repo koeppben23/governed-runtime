@@ -29,7 +29,7 @@ import {
   writeStateWithArtifactsAndAuditOperations,
   withSessionWriteTransaction,
 } from '../tools/helpers.js';
-import type { SemanticAuditIntent } from '../tools/audit-outbox.js';
+import type { SemanticAuditIntent } from '../audit-outbox.js';
 import { reconcilePendingAuditOperations, type AuditDeps } from '../plugin-audit.js';
 import { TOOL_FLOWGUARD_DECISION } from '../tool-names.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';

@@ -4,7 +4,7 @@ import {
   computeTargetedResolutionChallengeIds,
   computeUnaddressedPriorFailIds,
   isOpenImplementationChallenge,
-} from './implement-review-state.js';
+} from './implementation/implement-review-state.js';
 
 // #747 lifecycle semantics. An author resolution is advisory: it does NOT close
 // a challenge, it moves it into the set the NEXT independent reviewer must judge.

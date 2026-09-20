@@ -50,6 +50,21 @@ A 2026-09-12 post-merge review of the OpenCode host-boundary hardening (#880,
 head `4f70dc9e`) confirmed the material fixes and recorded four non-blocking
 host-assurance follow-ups (HA1–HA4); see the dated section below.
 
+A 2026-09-20 integration architecture closure (#922) moved the review
+findings/evidence validation modules from `src/integration/tools/` into
+`src/integration/review/`, moved `durable-dispatch`, the native-review bindings,
+types and native transport into `review/`, and elevated
+`audit-outbox`/`blocked-result` to integration-root authorities. The relocated
+code is behavior-identical; the trust-boundary surface
+(`src/integration/review/`) now owns the validation authority, so the review
+enforcement invariants cover a larger share of the pipeline. The review
+boundary is enforced as a positive default-deny allowlist (review/** plus root
+authorities plus explicit lower layers); plugin composition utilities required
+by review were extracted to the non-plugin root authority `blocked-result.ts`,
+and advisory Discovery input is injected via a structural drift provider.
+Mutation targets at relocated paths moved to the admission backlog instead of
+inheriting `legacyBaseline`; no new findings were recorded.
+
 ## Status Legend
 
 | Status                 | Meaning                                                   |
@@ -93,9 +108,9 @@ host-assurance follow-ups (HA1–HA4); see the dated section below.
 | AC4  | HIGH        | Fixed  | #728       | NTP requests timestamp T1 at send and use RFC 5905 four-timestamp offset and delay calculations.                   |
 | AC5  | HIGH        | Fixed  | #728       | NTP responses require a bound origin timestamp, valid protocol fields, and a non-null transmit timestamp.          |
 | AC7  | MEDIUM      | Fixed  | #678       | Completeness selects ticket, architecture, or review slots before calculating summary totals.                      |
-| G4   | MEDIUM      | Fixed  | (this PR)  | `team-ci` without CI context now resolves to canonical `TEAM_POLICY`; requested `team-ci` provenance is retained.   |
+| G4   | MEDIUM      | Fixed  | (this PR)  | `team-ci` without CI context now resolves to canonical `TEAM_POLICY`; requested `team-ci` provenance is retained.  |
 | AC6  | MEDIUM      | Fixed  | (this PR)  | Review-flow completeness cannot be true before `REVIEW_COMPLETE`; terminal report completeness is recomputed.      |
-| LOG1 | MEDIUM      | Fixed  | (this PR)  | File-sink failures propagate through `LogSink` so central `sinkFailuresTotal` reflects actual file-log loss.        |
+| LOG1 | MEDIUM      | Fixed  | (this PR)  | File-sink failures propagate through `LogSink` so central `sinkFailuresTotal` reflects actual file-log loss.       |
 
 ## Re-Triaged (2026-06-24, 2026-07-10, 2026-07-23)
 
@@ -116,14 +131,14 @@ disproven, update the status and link the evidence."
 
 ## Priority Work Packages
 
-| Package | Priority | Status          | Findings                                            | Summary                                                                                                                                                                                   |
-| ------- | -------- | --------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A       | P1       | Partially Fixed | G1, G2, G24, G25, G26                               | Four-eyes and identity normalization/reporting. G1/G2/G24/G25 fixed; G26 remains open.                                                                                                    |
-| B       | P1       | Fixed           | AC1, AC2, AC3, AC4, AC5, TSA1, TSA2, TSA3, TSA4     | Hash-chain, canonical digest, TSA, and NTP hardening. #832/#833 fix TSA1–TSA4 with a strict RFC 3161 verifier contract, including ESS signer-certificate binding.                         |
-| C       | P1       | Partially Fixed | AR1, AR2, AR3, AR4, AR5, AUD1, AUD2, AUD3, AUD4     | Archive integrity and audit write-lock recovery. AR1 and AUD2 fixed (#670); AR2 fixed by trusted-policy severity derivation; AR3/AR4/AUD1/AUD3/AUD4 fixed (#837); AR5 is tracked in #836. |
-| D       | P1       | Fixed           | R1, R2, R3, R4, R5, AC3                             | Secret-leak, redaction, logging, telemetry boundaries. R3, R5 fixed (#585); R1, R2, R4, AC3 fixed (redaction fail-closed).                                                                |
-| E       | P1       | Partially Fixed | H1, H2, H4, C1, C2, C3, C4, C5, M1, M2, M3, I4      | Hook, CLI, MCP, installer, and integration fail-closed hardening. H1, H2, H4, M1, M3 and C2–C5 fixed (#645, #646, #667); M2 fixed by #848; I4 is partially fixed; C1 remains open.        |
-| F       | P2       | Partially Fixed | G3, G4, G7, G9, G15, AC6, AC7, G12, G13             | State-machine correctness and audit completeness. G3/G9 pre-existing, G7 #421, AC7 #678; G4/AC6 fixed in this PR; G15 and G12–G13 remain open.                                           |
+| Package | Priority | Status          | Findings                                        | Summary                                                                                                                                                                                   |
+| ------- | -------- | --------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A       | P1       | Partially Fixed | G1, G2, G24, G25, G26                           | Four-eyes and identity normalization/reporting. G1/G2/G24/G25 fixed; G26 remains open.                                                                                                    |
+| B       | P1       | Fixed           | AC1, AC2, AC3, AC4, AC5, TSA1, TSA2, TSA3, TSA4 | Hash-chain, canonical digest, TSA, and NTP hardening. #832/#833 fix TSA1–TSA4 with a strict RFC 3161 verifier contract, including ESS signer-certificate binding.                         |
+| C       | P1       | Partially Fixed | AR1, AR2, AR3, AR4, AR5, AUD1, AUD2, AUD3, AUD4 | Archive integrity and audit write-lock recovery. AR1 and AUD2 fixed (#670); AR2 fixed by trusted-policy severity derivation; AR3/AR4/AUD1/AUD3/AUD4 fixed (#837); AR5 is tracked in #836. |
+| D       | P1       | Fixed           | R1, R2, R3, R4, R5, AC3                         | Secret-leak, redaction, logging, telemetry boundaries. R3, R5 fixed (#585); R1, R2, R4, AC3 fixed (redaction fail-closed).                                                                |
+| E       | P1       | Partially Fixed | H1, H2, H4, C1, C2, C3, C4, C5, M1, M2, M3, I4  | Hook, CLI, MCP, installer, and integration fail-closed hardening. H1, H2, H4, M1, M3 and C2–C5 fixed (#645, #646, #667); M2 fixed by #848; I4 is partially fixed; C1 remains open.        |
+| F       | P2       | Partially Fixed | G3, G4, G7, G9, G15, AC6, AC7, G12, G13         | State-machine correctness and audit completeness. G3/G9 pre-existing, G7 #421, AC7 #678; G4/AC6 fixed in this PR; G15 and G12–G13 remain open.                                            |
 
 ## High-Priority Findings
 
@@ -317,19 +332,19 @@ tracked separately. (Merged via #585.)
 
 ## Non-Regression Notes
 
-| ID   | Status              | Summary                                                                                                                                      |
-| ---- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| P1   | Non-Regression Note | Atomic and durable write contracts currently use safe temp/write/rename patterns.                                                            |
-| NR1  | Non-Regression Note | `safeHashEqual` uses length-aware constant-time comparison pattern.                                                                          |
-| NR2  | Non-Regression Note | Chain hash recomputation destructures and recomputes consistently.                                                                           |
-| NR3  | Non-Regression Note | Topology gap detection fails closed.                                                                                                         |
-| NR4  | Non-Regression Note | Auto-advance self-loop break avoids duplicate ERROR-loop transition writes.                                                                  |
-| NR5  | Non-Regression Note | Blocked reason duplicate registration rejects duplicates.                                                                                    |
-| NR6  | Non-Regression Note | Next-action resolution remains compile-time exhaustive over phases.                                                                          |
+| ID   | Status              | Summary                                                                                                                                                                                                             |
+| ---- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P1   | Non-Regression Note | Atomic and durable write contracts currently use safe temp/write/rename patterns.                                                                                                                                   |
+| NR1  | Non-Regression Note | `safeHashEqual` uses length-aware constant-time comparison pattern.                                                                                                                                                 |
+| NR2  | Non-Regression Note | Chain hash recomputation destructures and recomputes consistently.                                                                                                                                                  |
+| NR3  | Non-Regression Note | Topology gap detection fails closed.                                                                                                                                                                                |
+| NR4  | Non-Regression Note | Auto-advance self-loop break avoids duplicate ERROR-loop transition writes.                                                                                                                                         |
+| NR5  | Non-Regression Note | Blocked reason duplicate registration rejects duplicates.                                                                                                                                                           |
+| NR6  | Non-Regression Note | Next-action resolution remains compile-time exhaustive over phases.                                                                                                                                                 |
 | NR7  | Non-Regression Note | File-level import cycles are test-enforced (`architecture/__tests__/dependency-rules.test.ts` Rule 8) over the real import graph (#563); module-level cycle debt is frozen in `scripts/module-cycle-baseline.json`. |
-| NR8  | Non-Regression Note | Adapters/audit/hooks/review use typed errors, not bare `throw new Error` (#534, #539, #542).                                                 |
-| NR9  | Non-Regression Note | Diagnostic logs are centrally redacted at the sink layer (message + extra); console/file/OTLP sinks cannot emit unredacted secrets or paths. |
-| NR10 | Non-Regression Note | `logging/` owns its `LogLevel` type and must not import `config/`; enforced by `MODULE_DEPENDENCY_POLICY` in `architecture/__tests__/module-dependency-policy.ts`. |
+| NR8  | Non-Regression Note | Adapters/audit/hooks/review use typed errors, not bare `throw new Error` (#534, #539, #542).                                                                                                                        |
+| NR9  | Non-Regression Note | Diagnostic logs are centrally redacted at the sink layer (message + extra); console/file/OTLP sinks cannot emit unredacted secrets or paths.                                                                        |
+| NR10 | Non-Regression Note | `logging/` owns its `LogLevel` type and must not import `config/`; enforced by `MODULE_DEPENDENCY_POLICY` in `architecture/__tests__/module-dependency-policy.ts`.                                                  |
 
 ## 2026-08-07 — ProofGraph Closure Triaged
 
@@ -508,12 +523,12 @@ the real reviewer path already fails closed, and the live block proof remains
 explicitly `NOT_VERIFIED`. The items below keep the HAI and matrix language
 aligned with what the implementation actually proves.
 
-| ID  | Severity | Status | Summary                                                                                                                                                                          |
-| --- | -------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| HA1 | P3       | Open   | HAI `validateCapabilities()` docs still say "match advertised capabilities"; the OpenCode adapter classifies all six as `contractAttested` and performs no runtime validation.   |
-| HA2 | P3       | Open   | Attack-matrix scenario PL-02 is still named "Capability mismatch at boot" after the boot probe was removed; the expected-behavior text is correct.                              |
+| ID  | Severity | Status | Summary                                                                                                                                                                              |
+| --- | -------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| HA1 | P3       | Open   | HAI `validateCapabilities()` docs still say "match advertised capabilities"; the OpenCode adapter classifies all six as `contractAttested` and performs no runtime validation.       |
+| HA2 | P3       | Open   | Attack-matrix scenario PL-02 is still named "Capability mismatch at boot" after the boot probe was removed; the expected-behavior text is correct.                                   |
 | HA3 | P2       | Open   | Human-projection telemetry sink is process-global and can be overwritten across plugin instances; matrix CI-02 "No shared mutable state" is too absolute. Pre-existing on `develop`. |
-| HA4 | P3/P2    | Open   | `enforcementLevel: 'synchronous'` is a host-contract property, not a live-proven guarantee; the F-08 model-dispatch proof is still `NOT_VERIFIED`.                               |
+| HA4 | P3/P2    | Open   | `enforcementLevel: 'synchronous'` is a host-contract property, not a live-proven guarantee; the F-08 model-dispatch proof is still `NOT_VERIFIED`.                                   |
 
 **HA1 — HAI capability wording drifts from the OpenCode implementation (P3, Open).**
 `src/adapters/host-adapter.ts:248` documents `validateCapabilities()` as

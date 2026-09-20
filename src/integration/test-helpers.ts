@@ -35,7 +35,7 @@ import {
 import { mintObservationCapabilityIfResolvable } from './review/attempt-lifecycle.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { completedDispatchForInvocation } from '../state/evidence-test-constants.js';
-import { writeStateWithAuditOperations } from './tools/audit-outbox.js';
+import { writeStateWithAuditOperations } from './audit-outbox.js';
 
 // ─── Safety Guards ───────────────────────────────────────────────────────────
 

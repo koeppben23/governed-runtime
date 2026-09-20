@@ -12,10 +12,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { parseToolResult, strictBlockedOutput, buildEnforcementError } from './blocked-result.js';
 import {
-  parseToolResult,
-  strictBlockedOutput,
-  buildEnforcementError,
   getToolOutput,
   getToolArgs,
   getToolMetadata,

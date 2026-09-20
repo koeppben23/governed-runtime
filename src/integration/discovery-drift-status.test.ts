@@ -9,7 +9,7 @@ import type { DriftResult } from '../discovery/drift.js';
 import {
   buildDiscoveryDriftStatus,
   notCheckedDiscoveryDriftStatus,
-} from './discovery-drift-status.js';
+} from './discovery/discovery-drift-status.js';
 
 const CLEAN_DRIFT: DriftResult = {
   drifted: false,

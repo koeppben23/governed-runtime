@@ -11,12 +11,12 @@ import {
   buildProfileEvidence,
   buildProfileResolution,
   collectProfileCandidates,
-} from './hydrate-discovery.js';
+} from './hydrate/hydrate-discovery.js';
 import type { FlowGuardProfile } from '../../config/profile.js';
 import type { DiscoveryResult } from '../../discovery/types.js';
 import type { RepoSignals } from '../../config/profile.js';
 import { DEFAULT_CONFIG } from '../../config/flowguard-config.js';
-import type { HydrateConfig } from './hydrate.js';
+import type { HydrateConfig } from './hydrate/hydrate.js';
 
 // ─── Minimal Fixtures ─────────────────────────────────────────────────────────
 

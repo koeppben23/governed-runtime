@@ -14,7 +14,8 @@
  * @version v1
  */
 
-import { buildEnforcementError } from './plugin-helpers.js';
+import { buildEnforcementError } from './blocked-result.js';
+
 import { GitError, isGitRepoStrict } from '../adapters/git.js';
 
 export interface GitPrerequisiteDeps {

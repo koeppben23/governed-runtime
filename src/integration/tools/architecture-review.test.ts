@@ -11,8 +11,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { handleAdrReview } from './architecture-review.js';
-import type { ArchitectureArgs, ArchitectureSession } from './architecture-shared.js';
+import { handleAdrReview } from './architecture/architecture-review.js';
+import type { ArchitectureArgs, ArchitectureSession } from './architecture/architecture-shared.js';
 import type { ToolContext } from './helpers.js';
 
 function parseJSON(s: string): Record<string, unknown> {

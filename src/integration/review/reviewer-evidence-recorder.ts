@@ -25,7 +25,7 @@ import {
 import { hasAuthorizedDispatch } from '../../state/review-dispatch.js';
 import { updateObligation } from './obligation-state.js';
 import type { ReviewerSuccessResult } from './types.js';
-import type { SemanticAuditIntent } from '../tools/audit-outbox.js';
+import type { SemanticAuditIntent } from '../audit-outbox.js';
 import type { SessionState } from '../../state/schema.js';
 import type { EvidenceRecordResult, OrchestratorDeps } from './pipeline-types.js';
 import { validatePreBindFindings, type PreBindFindingsResult } from './pre-bind-findings.js';

@@ -11,14 +11,15 @@ import { existsSync } from 'node:fs';
 import type { SessionState } from '../state/schema.js';
 import { readState } from '../adapters/persistence.js';
 import { changedFiles } from '../adapters/git.js';
-import { strictBlockedOutput, buildEnforcementError } from './plugin-helpers.js';
+import { strictBlockedOutput, buildEnforcementError } from './blocked-result.js';
+
 import {
   isRiskClassificationAllowed,
   type DeniedRiskClassificationDecision,
   type RiskClassificationDecision,
 } from './phase-tool-gate.js';
 import { appendReviewAuditEvent } from './review/audit-events.js';
-import { writeStateWithAuditOperations } from './tools/audit-outbox.js';
+import { writeStateWithAuditOperations } from './audit-outbox.js';
 
 export interface RiskEnforcementDeps {
   getSessionDir(sessionId: string): string | null;

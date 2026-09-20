@@ -37,6 +37,7 @@ const INTERNAL_TEST_SUPPORT = [
   'src/discovery/verification-planner-test-helpers.ts',
   'src/fixtures.ts',
   'src/integration/plugin-audit-test-helpers.ts',
+  'src/integration/plugin-host-task-diagnostics-test-helpers.ts',
   'src/integration/review/enforcement/test-helpers.ts',
   'src/integration/test-helpers.ts',
   'src/integration/tools/review-validation-test-helpers.ts',
@@ -65,7 +66,7 @@ function isUnderSrc(fileName: string): boolean {
 
 describe('production/test distribution boundary', () => {
   it('every internal test-support file exists and is classified as test code', () => {
-    expect(INTERNAL_TEST_SUPPORT).toHaveLength(12);
+    expect(INTERNAL_TEST_SUPPORT).toHaveLength(13);
     for (const rel of INTERNAL_TEST_SUPPORT) {
       expect(existsSync(join(REPO_ROOT, rel)), rel).toBe(true);
       expect(isTestSourcePath(rel.slice('src/'.length)), rel).toBe(true);

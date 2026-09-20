@@ -68,6 +68,11 @@ const mocks = vi.hoisted(() => {
   };
 });
 
+vi.mock('../blocked-result.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../blocked-result.js')>()),
+  formatBlocked: mocks.formatBlocked,
+}));
+
 vi.mock('./helpers.js', () => ({
   withReadOnlySession: vi.fn(async () => mocks.readOnlySession),
   withMutableSession: vi.fn(async (ctx) => {
@@ -104,7 +109,6 @@ vi.mock('./helpers.js', () => ({
   requireStateForMutation: mocks.requireStateForMutation,
   resolvePolicyFromState: mocks.resolvePolicyFromState,
   createPolicyContext: mocks.createPolicyContext,
-  formatBlocked: mocks.formatBlocked,
   enrichWithWorkflowDirective: mocks.enrichWithWorkflowDirective,
   writeStateWithArtifacts: mocks.writeStateWithArtifacts,
 }));
@@ -146,7 +150,7 @@ describe('flowguard_continue (runtime)', () => {
 
   it('ARCHITECTURE phase derives its action from the canonical product projection', async () => {
     setPhase('ARCHITECTURE');
-    const { continue_cmd } = await import('./continue-tool.js');
+    const { continue_cmd } = await import('./simple/continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('ARCHITECTURE');
@@ -156,7 +160,7 @@ describe('flowguard_continue (runtime)', () => {
 
   it('PEER_REVIEW phase derives its action from the canonical product projection', async () => {
     setPhase('PEER_REVIEW');
-    const { continue_cmd } = await import('./continue-tool.js');
+    const { continue_cmd } = await import('./simple/continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('PEER_REVIEW');
@@ -166,7 +170,7 @@ describe('flowguard_continue (runtime)', () => {
 
   it('IMPL_REVIEW does not introduce a local reviewer command', async () => {
     setPhase('IMPL_REVIEW');
-    const { continue_cmd } = await import('./continue-tool.js');
+    const { continue_cmd } = await import('./simple/continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('IMPL_REVIEW');
@@ -189,7 +193,7 @@ describe('flowguard_continue (runtime)', () => {
       },
     };
     mocks.readOnlySession = { state: mocks.state, policy: null };
-    const { continue_cmd } = await import('./continue-tool.js');
+    const { continue_cmd } = await import('./simple/continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.status).toContain('blocked (REVIEW_ATTEMPT_UNAVAILABLE)');
@@ -200,7 +204,7 @@ describe('flowguard_continue (runtime)', () => {
 
   it('blocks READY phase with CONTINUE_AMBIGUOUS', async () => {
     setPhase('READY');
-    const { continue_cmd } = await import('./continue-tool.js');
+    const { continue_cmd } = await import('./simple/continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     expect(mocks.formatBlocked).toHaveBeenCalledWith('CONTINUE_AMBIGUOUS', expect.anything());
     const parsed = JSON.parse(String(res));
@@ -209,7 +213,7 @@ describe('flowguard_continue (runtime)', () => {
 
   it('VALIDATION phase returns guidance with /check', async () => {
     setPhase('VALIDATION');
-    const { continue_cmd } = await import('./continue-tool.js');
+    const { continue_cmd } = await import('./simple/continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('VALIDATION');
@@ -219,7 +223,7 @@ describe('flowguard_continue (runtime)', () => {
 
   it('blocks unknown phase with CONTINUE_UNKNOWN_PHASE', async () => {
     setPhase('BOGUS_ZONE');
-    const { continue_cmd } = await import('./continue-tool.js');
+    const { continue_cmd } = await import('./simple/continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     expect(mocks.formatBlocked).toHaveBeenCalledWith('CONTINUE_UNKNOWN_PHASE', expect.anything());
     const parsed = JSON.parse(String(res));
@@ -230,7 +234,7 @@ describe('flowguard_continue (runtime)', () => {
 
   it('PLAN_REVIEW returns user-gate manual_decision', async () => {
     setPhase('PLAN_REVIEW');
-    const { continue_cmd } = await import('./continue-tool.js');
+    const { continue_cmd } = await import('./simple/continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('PLAN_REVIEW');
@@ -241,7 +245,7 @@ describe('flowguard_continue (runtime)', () => {
 
   it('EVIDENCE_REVIEW returns user-gate manual_decision', async () => {
     setPhase('EVIDENCE_REVIEW');
-    const { continue_cmd } = await import('./continue-tool.js');
+    const { continue_cmd } = await import('./simple/continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('EVIDENCE_REVIEW');
@@ -250,7 +254,7 @@ describe('flowguard_continue (runtime)', () => {
 
   it('ARCH_REVIEW returns user-gate manual_decision', async () => {
     setPhase('ARCH_REVIEW');
-    const { continue_cmd } = await import('./continue-tool.js');
+    const { continue_cmd } = await import('./simple/continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('ARCH_REVIEW');
@@ -261,7 +265,7 @@ describe('flowguard_continue (runtime)', () => {
 
   it('COMPLETE returns terminal action', async () => {
     setPhase('COMPLETE');
-    const { continue_cmd } = await import('./continue-tool.js');
+    const { continue_cmd } = await import('./simple/continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('COMPLETE');
@@ -271,7 +275,7 @@ describe('flowguard_continue (runtime)', () => {
 
   it('ARCH_COMPLETE returns terminal action', async () => {
     setPhase('ARCH_COMPLETE');
-    const { continue_cmd } = await import('./continue-tool.js');
+    const { continue_cmd } = await import('./simple/continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('ARCH_COMPLETE');
@@ -281,7 +285,7 @@ describe('flowguard_continue (runtime)', () => {
 
   it('REVIEW_COMPLETE returns terminal action', async () => {
     setPhase('PEER_REVIEW_COMPLETE');
-    const { continue_cmd } = await import('./continue-tool.js');
+    const { continue_cmd } = await import('./simple/continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('PEER_REVIEW_COMPLETE');
@@ -295,7 +299,7 @@ describe('flowguard_continue (runtime)', () => {
     const state = { phase: 'COMPLETE', error: { code: 'ABORTED', message: 'Operator aborted' } };
     mocks.state = state;
     mocks.readOnlySession = { state, policy: null };
-    const { continue_cmd } = await import('./continue-tool.js');
+    const { continue_cmd } = await import('./simple/continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('COMPLETE');
@@ -308,7 +312,7 @@ describe('flowguard_continue (runtime)', () => {
 
   it('returns INTERNAL_ERROR when dependency throws', async () => {
     setPhase('TICKET');
-    const { continue_cmd } = await import('./continue-tool.js');
+    const { continue_cmd } = await import('./simple/continue-tool.js');
     mocks.enrichWithWorkflowDirective.mockImplementation(() => {
       throw new Error('catastrophic');
     });
@@ -355,7 +359,7 @@ describe('implement: empty evidence guard (P8a.1)', () => {
 
   it('blocks when worktree has no changed files (empty implementation)', async () => {
     mocks.changedFilesResult = [];
-    const { implement } = await import('./implement.js');
+    const { implement } = await import('./implementation/implement.js');
     const res = await implement.execute({}, {} as never);
     expect(mocks.formatBlocked).toHaveBeenCalledWith(
       'IMPLEMENTATION_EVIDENCE_EMPTY',
@@ -368,7 +372,7 @@ describe('implement: empty evidence guard (P8a.1)', () => {
 
   it('does NOT block when worktree has changed files', async () => {
     mocks.changedFilesResult = ['src/foo.ts'];
-    const { implement } = await import('./implement.js');
+    const { implement } = await import('./implementation/implement.js');
     await implement.execute({}, {} as never);
     const blockedCalls = mocks.formatBlocked.mock.calls.filter(
       (c: [string]) => c[0] === 'IMPLEMENTATION_EVIDENCE_EMPTY',

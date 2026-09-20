@@ -6,9 +6,13 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { digestText, mergeCentralEvidence, snapshotCentralEvidence } from './hydrate-policy.js';
+import {
+  digestText,
+  mergeCentralEvidence,
+  snapshotCentralEvidence,
+} from './hydrate/hydrate-policy.js';
 import type { PolicyMode } from '../../state/policy-mode.js';
-import type { ExistingHydrateState } from './hydrate.js';
+import type { ExistingHydrateState } from './hydrate/hydrate.js';
 
 vi.mock('../../config/policy.js', () => ({
   validateExistingPolicyAgainstCentral: vi.fn().mockResolvedValue({ valid: true }),

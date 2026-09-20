@@ -27,10 +27,32 @@ import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './assurance.js';
-import { runWithAdapterLogger, type AdapterLogger } from '../../logging/adapter-logger.js';
+import {
+  getAdapterLogger,
+  runWithAdapterLogger,
+  type AdapterLogger,
+} from '../../logging/adapter-logger.js';
 import { hashFindings } from './findings-hash.js';
 import { completedDispatchForInvocation } from '../../state/evidence-test-constants.js';
-import { resolveReviewedArtifactIdentity, reviewedIdentityFields } from './reviewed-digest.js';
+import type { ReviewDiagnosticLogger } from './review-logger-port.js';
+import {
+  resolveReviewedArtifactIdentity as rawResolveReviewedArtifactIdentity,
+  reviewedIdentityFields,
+} from './reviewed-digest.js';
+
+type IdentityArgs = Parameters<typeof rawResolveReviewedArtifactIdentity>;
+
+const testLogger: ReviewDiagnosticLogger = {
+  warn: (service, message, extra) => getAdapterLogger().warn(service, message, extra),
+};
+
+function resolveReviewedArtifactIdentity(
+  assurance: IdentityArgs[0],
+  obligationType: IdentityArgs[1],
+  findings: IdentityArgs[2],
+): ReturnType<typeof rawResolveReviewedArtifactIdentity> {
+  return rawResolveReviewedArtifactIdentity(assurance, obligationType, findings, testLogger);
+}
 
 const NOW = '2026-08-15T10:00:00.000Z';
 

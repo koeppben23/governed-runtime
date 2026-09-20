@@ -10,6 +10,7 @@ import {
   renderReviewerTaskPrompt,
 } from './prompt-builders.js';
 import { renderPersistedProofGraphContext } from './proof-context.js';
+import { renderPlanClaimDeclarations } from '../../presentation/index.js';
 import { buildFrozenReviewMaterialContent } from './reviewer-context.js';
 import type { FrozenReviewerContext } from './frozen-reviewer-context.js';
 
@@ -301,6 +302,7 @@ describe('native implementation review execution-continuity semantics', () => {
     });
     const content = buildFrozenReviewMaterialContent({
       obligationType: 'implement',
+      renderPlanClaimDeclarations,
       state,
       artifact: 'the diff under review',
     });

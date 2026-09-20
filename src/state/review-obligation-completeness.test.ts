@@ -8,9 +8,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const SRC_ROOT = join(__dirname, '..');
 
 const PRODUCER_BY_OBLIGATION_TYPE: Readonly<Record<string, string>> = {
-  plan: 'integration/tools/plan-response.ts',
-  implement: 'integration/tools/implement-shared.ts',
-  architecture: 'integration/tools/architecture-submit.ts',
+  plan: 'integration/tools/plan/plan-response.ts',
+  implement: 'integration/tools/implementation/implement-shared.ts',
+  architecture: 'integration/tools/architecture/architecture-submit.ts',
   review: 'integration/tools/review-tool/obligation-creation.ts',
 };
 

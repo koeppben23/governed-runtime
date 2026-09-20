@@ -25,13 +25,14 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
+import { renderPlanClaimDeclarations } from '../presentation/index.js';
 import { readState } from '../adapters/persistence.js';
 import { sessionDir, workspaceDir } from '../adapters/workspace/index.js';
 import { computeFingerprint } from '../adapters/workspace/fingerprint.js';
 import { writeDiscovery } from '../adapters/persistence-discovery.js';
 import { writeStateWithArtifacts, type ToolContext } from './tools/helpers.js';
-import { runRequiredDiscovery } from './tools/hydrate-discovery.js';
-import { plan } from './tools/plan.js';
+import { runRequiredDiscovery } from './tools/hydrate/hydrate-discovery.js';
+import { plan } from './tools/plan/plan.js';
 import { review } from './tools/review-tool/index.js';
 import {
   REVIEW_CRITERIA_VERSION,
@@ -484,7 +485,10 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     await plan.execute({ planText: PLAN_TEXT, claims: [CRITICAL_CLAIM_INPUT] }, env.tc);
 
     const state = await readState(env.sDir);
-    const context = buildReviewerProofContext(state!).join('\n');
+    const context = buildReviewerProofContext(state!, {
+      evaluateProofGraphGate,
+      renderPlanClaimDeclarations,
+    }).join('\n');
 
     expect(context).toContain('Declared Claims (pre-evidence, advisory)');
     expect(context).toContain(CRITICAL_CLAIM_ID);

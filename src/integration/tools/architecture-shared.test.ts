@@ -11,7 +11,7 @@ import {
   hasText,
   validateInitialSubmissionGate,
   buildArchitectureReviewInstruction,
-} from './architecture-shared.js';
+} from './architecture/architecture-shared.js';
 import type { SessionState, Phase } from '../../state/schema.js';
 import type { ReviewDispatchAuthority } from '../review/dispatch-authority.js';
 

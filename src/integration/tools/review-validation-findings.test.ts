@@ -1,8 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import {
+  formatStructuredResolutionFailure,
+  resolveStructuredEffectiveFindings,
   validateReviewFindings,
   type ReviewFindingsValidationContext,
-} from './review-validation.js';
+} from '../review/review-validation.js';
+import { resolveStructuredFindings } from '../review/review-validation-structured-evidence.js';
+
+const testLogger = { warn: () => {} };
 import type { ReviewFindings } from '../../state/evidence.js';
 import type { ReviewChallenge } from '../../state/evidence-review.js';
 import {
@@ -831,5 +836,611 @@ describe('validateReviewFindings — implementation challenge freshness', () => 
     );
     expect(result).not.toBeNull();
     expect(parseBlocked(result!).code).toBe('SUBAGENT_CHALLENGE_EVIDENCE_MISSING');
+  });
+
+  it('blocks an accept verdict while prior failing challenges are unaddressed', () => {
+    const result = validateReviewFindings(
+      makeFindings({ challenges: [implChallenge([IMPL_REF, FRESH_ATTEMPT_REF])] }),
+      challengeCtx({
+        unaddressedPriorFailIds: ['00000000-0000-4000-8000-000000000001'],
+      }),
+    );
+    expect(result).not.toBeNull();
+    expect(parseBlocked(result!).code).toBe('SUBAGENT_PRIOR_CHALLENGE_UNRESOLVED');
+  });
+
+  it('gates supplied resolution verdicts through the unresolved challenge ids', () => {
+    const openId = '00000000-0000-4000-8000-000000000001';
+    const result = validateReviewFindings(
+      makeFindings({
+        overallVerdict: 'changes_requested',
+        challenges: [implChallenge([IMPL_REF, FRESH_ATTEMPT_REF])],
+        challengeResolutionVerdicts: [{ challengeId: openId, verdict: 'resolved' }],
+      }),
+      challengeCtx({ unresolvedImplementationChallengeIds: [openId] }),
+    );
+    // The resolution verdict is coherent; the strict evidence gap is the next
+    // (unrelated) gate. Dropping the unresolved ids would block earlier with
+    // SUBAGENT_RESOLUTION_VERDICT_UNEXPECTED.
+    expect(parseBlocked(result!).code).toBe('SUBAGENT_EVIDENCE_MISSING');
+  });
+
+  it('passes previously used challenge ids into distinctness validation', () => {
+    const challenge = implChallenge([IMPL_REF, FRESH_ATTEMPT_REF]);
+    const result = validateReviewFindings(
+      makeFindings({ challenges: [challenge] }),
+      challengeCtx({ previouslyUsedChallengeIds: [challenge.challengeId] }),
+    );
+    expect(result).not.toBeNull();
+    expect(parseBlocked(result!).code).toBe('SUBAGENT_CHALLENGE_NOT_DISTINCT');
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Admission hardening — branch and payload contracts
+//
+// These tests exercise the strict / structured-resolution branches that the
+// flow suites never reach and pin the interpolated payload where the reason
+// registry exposes it. They are the mutation-admission evidence for the
+// relocated validation authority.
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('validateReviewFindings — branch and payload contracts', () => {
+  const OBLIGATION_ID = '11111111-1111-4111-8111-111111111111';
+  const INVOCATION_ID = '22222222-2222-4222-8222-222222222222';
+
+  function blockedPayload(result: string): Record<string, unknown> {
+    return JSON.parse(result) as Record<string, unknown>;
+  }
+
+  function issue(overrides: Record<string, unknown> = {}) {
+    return {
+      severity: 'critical' as const,
+      category: 'correctness' as const,
+      message: 'contract drift',
+      relation: findingRelation(),
+      ...overrides,
+    };
+  }
+
+  it('blocks self-review with the independent-review contract', () => {
+    const parsed = blockedPayload(
+      validateReviewFindings(makeFindings({ reviewMode: 'self' }), makeCtx())!,
+    );
+    expect(parsed.code).toBe('REVIEW_MODE_SELF_NOT_ALLOWED');
+    expect(String(parsed.message)).toContain('reviewMode=self');
+  });
+
+  it('interpolates the unable_to_review obligation context', () => {
+    const parsed = blockedPayload(
+      validateReviewFindings(
+        makeFindings({ overallVerdict: 'unable_to_review' }),
+        makeCtx({ obligationType: 'architecture' }),
+      )!,
+    );
+    expect(parsed.code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
+    expect(String(parsed.message)).toContain('architecture');
+  });
+
+  it('interpolates the coherence block count', () => {
+    const parsed = blockedPayload(
+      validateReviewFindings(
+        makeFindings({ overallVerdict: 'accept', blockingIssues: [issue()] }),
+        makeCtx(),
+      )!,
+    );
+    expect(parsed.code).toBe('SUBAGENT_VERDICT_FINDINGS_INCOHERENT');
+    expect(String(parsed.message)).toContain('1 blocking issue');
+  });
+
+  it('interpolates the planVersion mismatch payload', () => {
+    const parsed = blockedPayload(
+      validateReviewFindings(makeFindings({ planVersion: 7 }), makeCtx())!,
+    );
+    expect(parsed.code).toBe('REVIEW_PLAN_VERSION_MISMATCH');
+    expect(String(parsed.message)).toContain('plan version 7');
+    expect(String(parsed.message)).toContain('plan version 1');
+  });
+
+  it('interpolates the iteration mismatch payload', () => {
+    const parsed = blockedPayload(
+      validateReviewFindings(makeFindings({ iteration: 9 }), makeCtx())!,
+    );
+    expect(parsed.code).toBe('REVIEW_ITERATION_MISMATCH');
+    expect(String(parsed.message)).toContain('iteration 9');
+    expect(String(parsed.message)).toContain('iteration 0');
+  });
+
+  it('interpolates the unresolvable scope payload', () => {
+    const parsed = blockedPayload(
+      validateReviewFindings(
+        makeFindings({ overallVerdict: 'changes_requested', blockingIssues: [issue()] }),
+        makeCtx(),
+      )!,
+    );
+    expect(parsed.code).toBe('REVIEW_SUBJECT_SCOPE_UNAVAILABLE');
+    expect(String(parsed.message)).toContain('unresolved');
+  });
+
+  it('blocks without strict assurance state', () => {
+    const parsed = blockedPayload(
+      validateReviewFindings(strictFindings(), makeCtx({ obligationType: 'plan' }))!,
+    );
+    expect(parsed.code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+    expect(parsed.error).toBe(true);
+  });
+
+  it('blocks when no strict obligation matches the expected binding', () => {
+    const findings = strictFindings();
+    const assurance = strictAssuranceFixture(findings);
+    assurance.obligations.splice(0);
+    const parsed = blockedPayload(
+      validateReviewFindings(findings, makeCtx({ assurance, obligationType: 'plan' }))!,
+    );
+    expect(parsed.code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+    expect(parsed.error).toBe(true);
+  });
+
+  it('resolves the strict invocation through the triple match without a bound invocationId', () => {
+    const findings = strictFindings();
+    const assurance = strictAssuranceFixture(findings);
+    assurance.obligations[0] = { ...assurance.obligations[0]!, invocationId: null };
+    expect(
+      validateReviewFindings(findings, makeCtx({ assurance, obligationType: 'plan' })),
+    ).toBeNull();
+  });
+
+  it('interpolates the missing strict invocation obligation', () => {
+    const findings = strictFindings();
+    const assurance = strictAssuranceFixture(findings);
+    assurance.obligations[0] = { ...assurance.obligations[0]!, invocationId: null };
+    assurance.invocations.splice(0);
+    const parsed = blockedPayload(
+      validateReviewFindings(findings, makeCtx({ assurance, obligationType: 'plan' }))!,
+    );
+    expect(parsed.code).toBe('SUBAGENT_EVIDENCE_MISSING');
+    expect(String(parsed.message)).toContain(OBLIGATION_ID);
+  });
+
+  it('blocks a strict self-session binding', () => {
+    const findings = strictFindings({ reviewedBy: { sessionId: 'ses_parent' } });
+    const assurance = strictAssuranceFixture(findings);
+    const parsed = blockedPayload(
+      validateReviewFindings(
+        findings,
+        makeCtx({ assurance, obligationType: 'plan', reviewParentSessionId: 'ses_parent' }),
+      )!,
+    );
+    expect(parsed.code).toBe('REVIEW_SELF_APPROVAL_DENIED');
+    expect(parsed.error).toBe(true);
+  });
+
+  it('blocks a strict attestation mismatch', () => {
+    const findings = strictFindings();
+    delete (findings as { attestation?: unknown }).attestation;
+    const assurance = strictAssuranceFixture(findings);
+    const parsed = blockedPayload(
+      validateReviewFindings(findings, makeCtx({ assurance, obligationType: 'plan' }))!,
+    );
+    expect(parsed.error).toBe(true);
+    expect(parsed.code).toBeTruthy();
+  });
+
+  it('interpolates the invocation obligation mismatch', () => {
+    const findings = strictFindings();
+    const assurance = strictAssuranceFixture(findings);
+    assurance.invocations[0] = {
+      ...assurance.invocations[0]!,
+      obligationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+    };
+    const parsed = blockedPayload(
+      validateReviewFindings(findings, makeCtx({ assurance, obligationType: 'plan' }))!,
+    );
+    expect(parsed.code).toBe('SUBAGENT_MANDATE_MISMATCH');
+    expect(String(parsed.message)).toContain(OBLIGATION_ID);
+  });
+
+  it('interpolates the invocation session mismatch', () => {
+    const findings = strictFindings({ reviewedBy: { sessionId: 'ses_other' } });
+    const assurance = strictAssuranceFixture(findings);
+    const parsed = blockedPayload(
+      validateReviewFindings(findings, makeCtx({ assurance, obligationType: 'plan' }))!,
+    );
+    expect(parsed.code).toBe('REVIEW_FINDINGS_SESSION_MISMATCH');
+    expect(String(parsed.message)).toContain('ses_other');
+    expect(String(parsed.message)).toContain('ses_child');
+  });
+
+  it('interpolates the findings-hash mismatch obligation', () => {
+    const findings = strictFindings();
+    const assurance = strictAssuranceFixture(findings);
+    assurance.invocations[0] = { ...assurance.invocations[0]!, findingsHash: 'deadbeef' };
+    const parsed = blockedPayload(
+      validateReviewFindings(findings, makeCtx({ assurance, obligationType: 'plan' }))!,
+    );
+    expect(parsed.code).toBe('REVIEW_FINDINGS_HASH_MISMATCH');
+    expect(String(parsed.message)).toContain(OBLIGATION_ID);
+  });
+
+  it('rejects a mismatched structured-contract parent session', () => {
+    const findings = strictFindings();
+    const assurance = strictAssuranceFixture(findings);
+    const parsed = blockedPayload(
+      validateReviewFindings(
+        findings,
+        makeCtx({ assurance, obligationType: 'plan', reviewParentSessionId: 'ses_elsewhere' }),
+      )!,
+    );
+    expect(parsed.code).toBe('SUBAGENT_EVIDENCE_MISSING');
+    expect(String(parsed.message)).toContain(OBLIGATION_ID);
+  });
+
+  it('blocks reviewerUnavailable when a host-structured invocation already exists', () => {
+    const findings = strictFindings();
+    const assurance = strictAssuranceFixture(findings);
+    const resolved = resolveStructuredEffectiveFindings({
+      logger: testLogger,
+      pendingObligation: assurance.obligations[0]!,
+      expected: { obligationType: 'plan', iteration: 0, planVersion: 1 },
+      input: { reviewerUnavailable: true },
+      state: { assurance, sessionId: 'ses_parent' },
+    });
+    expect(resolved.kind).toBe('blocked');
+    const parsed = blockedPayload((resolved as { blocked: string }).blocked);
+    expect(parsed.code).toBe('INVALID_REVIEW_TOOL_SEQUENCE');
+    expect(String(parsed.message)).toContain(OBLIGATION_ID);
+    expect(String(parsed.message)).toContain('reviewerUnavailable submitted');
+  });
+
+  it('blocks reviewerUnavailable without invocations through the strict reviewer recovery', () => {
+    const findings = strictFindings();
+    const assurance = strictAssuranceFixture(findings);
+    assurance.invocations.splice(0);
+    const resolved = resolveStructuredEffectiveFindings({
+      logger: testLogger,
+      pendingObligation: assurance.obligations[0]!,
+      expected: { obligationType: 'plan', iteration: 0, planVersion: 1 },
+      input: { reviewerUnavailable: true },
+      state: { assurance, sessionId: 'ses_parent' },
+    });
+    expect(resolved.kind).toBe('blocked');
+    const parsed = blockedPayload((resolved as { blocked: string }).blocked);
+    expect(parsed.code).toBe('REVIEWER_UNAVAILABLE_STRICT');
+    expect(String(parsed.message)).toContain('reviewer unavailable');
+    expect(String(parsed.recovery)).toContain('structured reviewer transport');
+  });
+
+  it('resolves captured evidence findings through the structured resolution', () => {
+    const findings = strictFindings();
+    const assurance = strictAssuranceFixture(findings);
+    assurance.attempts[0] = { ...assurance.attempts[0]!, childSessionId: 'ses_child' };
+    const resolved = resolveStructuredEffectiveFindings({
+      logger: testLogger,
+      pendingObligation: assurance.obligations[0]!,
+      expected: { obligationType: 'plan', iteration: 0, planVersion: 1 },
+      input: {},
+      state: { assurance, sessionId: 'ses_parent' },
+    });
+    expect(resolved.kind).toBe('resolved');
+    expect((resolved as { evidenceInvocationId: string }).evidenceInvocationId).toBe(INVOCATION_ID);
+  });
+
+  it('formats rejected structured resolutions through the acceptance authority', () => {
+    const parsed = blockedPayload(
+      formatStructuredResolutionFailure({
+        kind: 'rejected',
+        rejection: { reason: 'SUBAGENT_EVIDENCE_REUSED', status: 'invocation_consumed' },
+      }),
+    );
+    expect(parsed.error).toBe(true);
+    expect(parsed.code).toBe('SUBAGENT_EVIDENCE_REUSED');
+  });
+
+  it('formats incoherent structured resolutions with stringified details', () => {
+    const parsed = blockedPayload(
+      formatStructuredResolutionFailure({
+        kind: 'incoherent',
+        code: 'REVIEW_FINDINGS_INCOHERENT',
+        details: { index: 1, flag: true },
+        invocationId: INVOCATION_ID,
+        attemptId: '55555555-5555-4555-8555-555555555555',
+      }),
+    );
+    expect(parsed.code).toBe('REVIEW_FINDINGS_INCOHERENT');
+  });
+
+  it('formats attempt-lineage-unavailable structured resolutions', () => {
+    const parsed = blockedPayload(
+      formatStructuredResolutionFailure({
+        kind: 'attempt_lineage_unavailable',
+        invocationId: INVOCATION_ID,
+        obligationId: OBLIGATION_ID,
+      }),
+    );
+    expect(parsed.code).toBe('REVIEW_ATTEMPT_LINEAGE_UNAVAILABLE');
+    expect(String(parsed.message)).toContain(INVOCATION_ID);
+    expect(String(parsed.message)).toContain(OBLIGATION_ID);
+  });
+
+  it('formats unparseable structured resolutions', () => {
+    const parsed = blockedPayload(
+      formatStructuredResolutionFailure({ kind: 'unparseable', detail: 'invalid JSON at 3' }),
+    );
+    expect(parsed.code).toBe('SUBAGENT_EVIDENCE_MISSING');
+    expect(parsed.error).toBe(true);
+  });
+
+  it('formats not-found structured resolutions', () => {
+    const parsed = blockedPayload(formatStructuredResolutionFailure({ kind: 'not_found' }));
+    expect(parsed.code).toBe('SUBAGENT_EVIDENCE_MISSING');
+    expect(parsed.error).toBe(true);
+  });
+
+  it('does not resolve a triple match whose child session differs', () => {
+    const findings = strictFindings();
+    const assurance = strictAssuranceFixture(findings);
+    assurance.obligations[0] = { ...assurance.obligations[0]!, invocationId: null };
+    assurance.invocations[0] = { ...assurance.invocations[0]!, childSessionId: 'ses_other' };
+    const parsed = blockedPayload(
+      validateReviewFindings(findings, makeCtx({ assurance, obligationType: 'plan' }))!,
+    );
+    expect(parsed.code).toBe('SUBAGENT_EVIDENCE_MISSING');
+    expect(String(parsed.message)).toContain(OBLIGATION_ID);
+  });
+
+  it('does not resolve a triple match whose findings hash differs', () => {
+    const findings = strictFindings();
+    const assurance = strictAssuranceFixture(findings);
+    assurance.obligations[0] = { ...assurance.obligations[0]!, invocationId: null };
+    assurance.invocations[0] = { ...assurance.invocations[0]!, findingsHash: 'not-the-hash' };
+    const parsed = blockedPayload(
+      validateReviewFindings(findings, makeCtx({ assurance, obligationType: 'plan' }))!,
+    );
+    expect(parsed.code).toBe('SUBAGENT_EVIDENCE_MISSING');
+    expect(String(parsed.message)).toContain(OBLIGATION_ID);
+  });
+
+  it('formats invalid structured resolutions with the obligation id', () => {
+    const parsed = blockedPayload(
+      formatStructuredResolutionFailure({
+        kind: 'invalid',
+        code: 'REVIEW_FINDINGS_HASH_MISMATCH',
+        obligationId: OBLIGATION_ID,
+      }),
+    );
+    expect(parsed.code).toBe('REVIEW_FINDINGS_HASH_MISMATCH');
+    expect(String(parsed.message)).toContain(OBLIGATION_ID);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Structured evidence resolution — diagnostics and deferral merges
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('resolveStructuredFindings — diagnostics and deferral merges', () => {
+  const OBLIGATION_ID = '11111111-1111-4111-8111-111111111111';
+  const ATTEMPT_ID = '55555555-5555-4555-8555-555555555555';
+  const INVOCATION_ID = '22222222-2222-4222-8222-222222222222';
+
+  function findings() {
+    return makeFindings({ reviewedBy: { sessionId: 'ses_child' } });
+  }
+
+  function assuranceFor(
+    captured: ReviewFindings,
+  ): NonNullable<ReviewFindingsValidationContext['assurance']> {
+    return {
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
+      attempts: [
+        {
+          attemptId: ATTEMPT_ID,
+          obligationId: OBLIGATION_ID,
+          obligationType: 'plan' as const,
+          subjectDigest: 'test-subject-digest',
+          ordinal: 0,
+          status: 'bound' as const,
+          origin: { kind: 'initial' } as const,
+          repositoryDiscovery: { kind: 'not_applicable' } as const,
+          observations: [],
+          childSessionId: 'ses_child',
+          createdAt: new Date().toISOString(),
+        },
+      ],
+      dispatches: [],
+      obligations: [
+        {
+          obligationId: OBLIGATION_ID,
+          obligationType: 'plan' as const,
+          reviewCycle: 1,
+          requiredChallengeCount: 0,
+          requiredChallengeKind: 'design_challenge' as const,
+          challengePolicyVersion: 'challenge-policy.v1' as const,
+          subjectDigest: 'test-subject-digest',
+          iteration: 0,
+          planVersion: 1,
+          criteriaVersion: REVIEW_CRITERIA_VERSION,
+          mandateDigest: REVIEW_MANDATE_DIGEST,
+          maxReviewerAttempts: 1,
+          reviewProfile: 'core' as const,
+          profileSource: 'policy_default' as const,
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test-subject-digest'),
+          createdAt: new Date().toISOString(),
+          pluginHandshakeAt: new Date().toISOString(),
+          status: 'fulfilled' as const,
+          invocationId: INVOCATION_ID,
+          blockedCode: null,
+          fulfilledAt: new Date().toISOString(),
+          consumedAt: null,
+          reviewSubjectScope: {
+            kind: 'repository_change' as const,
+            paths: ['src/foo.ts'],
+            revisions: ['base', 'head'] as const,
+          },
+          repositoryRevisionProvenance: {
+            kind: 'available' as const,
+            headSha: 'a'.repeat(40),
+            baseSha: 'b'.repeat(40),
+          },
+        },
+      ],
+      invocations: [
+        {
+          invocationId: INVOCATION_ID,
+          obligationId: OBLIGATION_ID,
+          obligationType: 'plan' as const,
+          parentSessionId: 'ses_parent',
+          childSessionId: 'ses_child',
+          agentType: 'flowguard-reviewer' as const,
+          attemptId: ATTEMPT_ID,
+          invocationMode: 'native_task_structured_followup' as const,
+          reviewOutputMode: 'structured_output' as const,
+          structuredOutputUsed: true,
+          reviewAssuranceLevel: 'structured_high' as const,
+          hostVisible: true,
+          transcriptNavigable: true,
+          source: 'host-orchestrated' as const,
+          promptHash: 'abc',
+          mandateDigest: REVIEW_MANDATE_DIGEST,
+          criteriaVersion: REVIEW_CRITERIA_VERSION,
+          findingsHash: hashFindings(captured),
+          capturedRawFindings: captured,
+          invokedAt: new Date().toISOString(),
+          fulfilledAt: new Date().toISOString(),
+          consumedByObligationId: null,
+        },
+      ],
+    };
+  }
+
+  function resolveWith(
+    captured: ReviewFindings,
+    mutate: (assurance: ReturnType<typeof assuranceFor>) => void = () => {},
+  ) {
+    const assurance = assuranceFor(captured);
+    mutate(assurance);
+    return resolveStructuredFindings(
+      testLogger,
+      assurance,
+      assurance.obligations[0]!,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      'ses_parent',
+    );
+  }
+
+  it('returns not_found when obligation or assurance is missing', () => {
+    expect(
+      resolveStructuredFindings(
+        testLogger,
+        undefined,
+        null,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+      ),
+    ).toEqual({ kind: 'not_found' });
+  });
+
+  it('reports attempt_lineage_unavailable when no exact bound attempt exists', () => {
+    const captured = findings();
+    const resolution = resolveWith(captured, (assurance) => {
+      assurance.attempts[0] = { ...assurance.attempts[0]!, childSessionId: 'ses_elsewhere' };
+    });
+    expect(resolution.kind).toBe('attempt_lineage_unavailable');
+    if (resolution.kind !== 'attempt_lineage_unavailable') return;
+    expect(resolution.invocationId).toBe(INVOCATION_ID);
+    expect(resolution.obligationId).toBe(OBLIGATION_ID);
+  });
+
+  it('reports unparseable when captured findings fail schema validation', () => {
+    const resolution = resolveWith({ nonsense: true } as unknown as ReviewFindings);
+    expect(resolution.kind).toBe('unparseable');
+    if (resolution.kind !== 'unparseable') return;
+    expect(resolution.detail).not.toBe('unknown schema validation failure');
+    expect(resolution.detail.length).toBeGreaterThan(0);
+  });
+
+  it('reports incoherent with the blocking issue count', () => {
+    const captured = makeFindings({
+      overallVerdict: 'accept',
+      reviewedBy: { sessionId: 'ses_child' },
+      blockingIssues: [
+        {
+          severity: 'critical' as const,
+          category: 'correctness' as const,
+          message: 'drift',
+          relation: findingRelation(),
+        },
+      ],
+    });
+    const resolution = resolveWith(captured);
+    expect(resolution.kind).toBe('incoherent');
+    if (resolution.kind !== 'incoherent') return;
+    expect(resolution.code).toBe('SUBAGENT_VERDICT_FINDINGS_INCOHERENT');
+    expect(resolution.blockingIssueCount).toBe(1);
+  });
+
+  it('reports invalid when every matching invocation is skipped', () => {
+    const captured = findings();
+    const resolution = resolveWith(captured, (assurance) => {
+      assurance.invocations[0] = { ...assurance.invocations[0]!, parentSessionId: 'ses_other' };
+    });
+    expect(resolution.kind).toBe('invalid');
+    if (resolution.kind !== 'invalid') return;
+    expect(resolution.code).toBe('SUBAGENT_EVIDENCE_MISSING');
+    expect(resolution.obligationId).toBe(OBLIGATION_ID);
+  });
+
+  it('reports invalid on a captured findings hash mismatch', () => {
+    const captured = findings();
+    const resolution = resolveWith(captured, (assurance) => {
+      assurance.invocations[0] = { ...assurance.invocations[0]!, findingsHash: 'not-the-hash' };
+    });
+    expect(resolution.kind).toBe('invalid');
+    if (resolution.kind !== 'invalid') return;
+    expect(resolution.code).toBe('REVIEW_FINDINGS_HASH_MISMATCH');
+  });
+
+  it('prefers the lineage diagnostic when deferred diagnostics are merged', () => {
+    const captured = findings();
+    const resolution = resolveWith(captured, (assurance) => {
+      const first = assurance.invocations[0]!;
+      assurance.invocations.push({
+        ...first,
+        invocationId: '33333333-3333-4333-8333-333333333333',
+        attemptId: '66666666-6666-4666-8666-666666666666',
+        findingsHash: hashFindings(
+          makeFindings({
+            overallVerdict: 'accept',
+            blockingIssues: [
+              {
+                severity: 'critical' as const,
+                category: 'correctness' as const,
+                message: 'drift',
+                relation: findingRelation(),
+              },
+            ],
+          }),
+        ),
+        capturedRawFindings: makeFindings({
+          overallVerdict: 'accept',
+          blockingIssues: [
+            {
+              severity: 'critical' as const,
+              category: 'correctness' as const,
+              message: 'drift',
+              relation: findingRelation(),
+            },
+          ],
+        }),
+      });
+      // First invocation: no bound attempt -> lineage diagnostic.
+      assurance.attempts[0] = { ...assurance.attempts[0]!, childSessionId: 'ses_elsewhere' };
+    });
+    expect(resolution.kind).toBe('attempt_lineage_unavailable');
   });
 });

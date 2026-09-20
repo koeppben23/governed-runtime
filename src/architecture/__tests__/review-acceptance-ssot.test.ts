@@ -2,7 +2,7 @@
  * @module architecture/review-acceptance-ssot.test
  * @description Anti-drift guard (#434, finding M1): the blocked/consumed
  * acceptance-rejection decision for review findings has exactly ONE authority —
- * `getReviewFindingsAcceptanceRejection` in `integration/tools/review-validation.ts`.
+ * `getReviewFindingsAcceptanceRejection` in `integration/review/review-validation.ts`.
  * The M1 defect class was divergent guards: the host-task path omitted the
  * blocked/consumed checks the strict path enforced, so reused/blocked evidence
  * could be accepted on one path but not the other.
@@ -28,7 +28,7 @@ const REVIEW_VALIDATION_PATH = join(
   process.cwd(),
   'src',
   'integration',
-  'tools',
+  'review',
   'review-validation.ts',
 );
 

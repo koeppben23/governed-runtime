@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { discoveryRiskPaths } from './discovery-risk-paths.js';
+import { discoveryRiskPaths } from './discovery/discovery-risk-paths.js';
 import type { DiscoveryResult } from '../discovery/types.js';
 
 function surface(id: string, evidence: string[]) {

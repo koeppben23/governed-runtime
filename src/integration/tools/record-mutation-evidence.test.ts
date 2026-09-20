@@ -11,7 +11,7 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { record_mutation_evidence } from './record-mutation-evidence.js';
+import { record_mutation_evidence } from './mutation/record-mutation-evidence.js';
 import { MutationAttempt } from '../../state/evidence-mutation.js';
 import { resolveWorkspacePaths, writeStateWithArtifacts } from './helpers.js';
 import { readState } from '../../adapters/persistence.js';

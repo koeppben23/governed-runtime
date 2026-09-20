@@ -24,7 +24,8 @@ import { decisionReceipts } from '../audit/query.js';
 import { getLastChainHash } from '../audit/integrity.js';
 import { blockObligation } from './review/obligation-state.js';
 import type { SessionState } from '../state/schema.js';
-import { strictBlockedOutput } from './plugin-helpers.js';
+import { strictBlockedOutput } from './blocked-result.js';
+
 import { createSessionState as createEnforcementState } from './review/enforcement/enforcement.js';
 import type { SessionEnforcementState } from './review/enforcement/types.js';
 import type { ReviewSessionContext } from './review/pipeline-types.js';
@@ -32,7 +33,7 @@ import { recordAssuranceWithAudit } from './review/shared-helpers.js';
 import {
   type SemanticAuditIntent,
   writeStateWithAuditOperationsAlreadyLocked,
-} from './tools/audit-outbox.js';
+} from './audit-outbox.js';
 
 /** Mutable per-session chain state. */
 export type MutableChainState = {

@@ -5,7 +5,7 @@ import { TEAM_POLICY } from '../../config/policy-presets.js';
 import { CHALLENGE_POLICY_V1 } from '../../config/policy-types.js';
 import type { SessionState } from '../../state/schema.js';
 import type { DiscoveryResult } from '../../discovery/types.js';
-import { discoveryRiskPaths } from '../discovery-risk-paths.js';
+import { discoveryRiskPaths } from '../discovery/discovery-risk-paths.js';
 import { assessMinimumTaskClass, maxTaskClass } from '../phase-tool-gate.js';
 
 const originalFlowguardHostPlatform = process.env.FLOWGUARD_HOST_PLATFORM;
@@ -46,13 +46,27 @@ const mocks = vi.hoisted(() => {
   };
 });
 
+vi.mock('../blocked-result.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../blocked-result.js')>()),
+  formatBlocked: mocks.formatBlocked,
+}));
+
+const discoveryMock = vi.hoisted(() => ({
+  fn: undefined as unknown as (typeof import('../review/discovery-attempt-context.js'))['resolveAttemptDiscoveryOrBlock'],
+}));
+
+vi.mock('../review/discovery-attempt-context.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../review/discovery-attempt-context.js')>();
+  discoveryMock.fn = vi.fn(actual.resolveAttemptDiscoveryOrBlock);
+  return { ...actual, resolveAttemptDiscoveryOrBlock: discoveryMock.fn };
+});
+
 vi.mock('./helpers.js', () => ({
   resolveWorkspacePaths: mocks.resolveWorkspacePaths,
   requireStateForMutation: mocks.requireStateForMutation,
   resolvePolicyFromState: mocks.resolvePolicyFromState,
   createPolicyContext: mocks.createPolicyContext,
   formatEval: mocks.formatEval,
-  formatBlocked: mocks.formatBlocked,
   formatError: mocks.formatError,
   enrichWithWorkflowDirective: mocks.enrichWithWorkflowDirective,
   writeStateWithArtifacts: mocks.writeStateWithArtifacts,
@@ -186,13 +200,13 @@ describe('integration/tools/architecture (wrapper)', () => {
   });
 
   it('blocks Mode A without title', async () => {
-    const { architecture } = await import('./architecture.js');
+    const { architecture } = await import('./architecture/architecture.js');
     const res = await architecture.execute({ adrText: 'x' }, {} as never);
     expect(JSON.parse(String(res)).code).toBe('EMPTY_ADR_TITLE');
   });
 
   it('blocks Mode A without adrText', async () => {
-    const { architecture } = await import('./architecture.js');
+    const { architecture } = await import('./architecture/architecture.js');
     const res = await architecture.execute({ title: 'x' }, {} as never);
     expect(JSON.parse(String(res)).code).toBe('EMPTY_ADR_TEXT');
   });
@@ -205,7 +219,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       recovery: ['fix'],
       quickFix: ['fix'],
     });
-    const { architecture } = await import('./architecture.js');
+    const { architecture } = await import('./architecture/architecture.js');
     const res = await architecture.execute({ title: 'x', adrText: 'y' }, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.code).toBe('MISSING_ADR_SECTIONS');
@@ -213,7 +227,7 @@ describe('integration/tools/architecture (wrapper)', () => {
   });
 
   it('writes state and returns payload on Mode A success', async () => {
-    const { architecture } = await import('./architecture.js');
+    const { architecture } = await import('./architecture/architecture.js');
     const res = await architecture.execute({ title: 'x', adrText: 'y' }, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('ARCHITECTURE');
@@ -257,7 +271,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     mocks.readDiscovery.mockResolvedValueOnce(null);
     mocks.changedFiles.mockRejectedValueOnce(new Error('git unavailable'));
 
-    const { architecture } = await import('./architecture.js');
+    const { architecture } = await import('./architecture/architecture.js');
     const parsed = JSON.parse(
       String(await architecture.execute({ title: 'x', adrText: 'y' }, {} as never)),
     );
@@ -345,7 +359,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     });
     mocks.readDiscovery.mockResolvedValueOnce(discovery);
 
-    const { architecture } = await import('./architecture.js');
+    const { architecture } = await import('./architecture/architecture.js');
     const parsed = JSON.parse(
       String(await architecture.execute({ title: 'x', adrText: 'y' }, {} as never)),
     );
@@ -420,7 +434,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     });
     mocks.readDiscovery.mockResolvedValueOnce(discovery);
 
-    const { architecture } = await import('./architecture.js');
+    const { architecture } = await import('./architecture/architecture.js');
     const parsed = JSON.parse(
       String(
         await architecture.execute(
@@ -438,7 +452,7 @@ describe('integration/tools/architecture (wrapper)', () => {
   });
 
   it('blocks mixed ADR submission and review verdict', async () => {
-    const { architecture } = await import('./architecture.js');
+    const { architecture } = await import('./architecture/architecture.js');
     const res = await architecture.execute(
       {
         title: 'ADR',
@@ -454,7 +468,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     // #499: an approval carrying adrText (the heavy payload, no title) previously
     // routed to review and SILENTLY DROPPED the adrText. It now fails closed,
     // analogous to plan's PLAN_APPROVE_WITH_TEXT.
-    const { architecture } = await import('./architecture.js');
+    const { architecture } = await import('./architecture/architecture.js');
     const res = await architecture.execute(
       {
         adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
@@ -473,7 +487,7 @@ describe('integration/tools/architecture (wrapper)', () => {
   });
 
   it('blocks reviewerUnavailable mixed into an ADR submission with INVALID_ARCHITECTURE_TOOL_SEQUENCE (#499: dead code now wired)', async () => {
-    const { architecture } = await import('./architecture.js');
+    const { architecture } = await import('./architecture/architecture.js');
     const res = await architecture.execute(
       {
         title: 'ADR',
@@ -510,7 +524,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
     });
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
-    const { architecture } = await import('./architecture.js');
+    const { architecture } = await import('./architecture/architecture.js');
     const res = await architecture.execute(
       { title: 'ADR 2', adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC' },
       {} as never,
@@ -522,7 +536,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     mocks.state = makeState('TICKET');
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
     mocks.isCommandAllowed.mockReturnValue(false);
-    const { architecture } = await import('./architecture.js');
+    const { architecture } = await import('./architecture/architecture.js');
     const res = await architecture.execute({ reviewVerdict: 'accept' }, {} as never);
     expect(JSON.parse(String(res)).code).toBe('COMMAND_NOT_ALLOWED');
   });
@@ -541,7 +555,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       selfReview: null,
     });
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
-    const { architecture } = await import('./architecture.js');
+    const { architecture } = await import('./architecture/architecture.js');
     const res = await architecture.execute({ reviewVerdict: 'accept' }, {} as never);
     expect(JSON.parse(String(res)).code).toBe('ARCHITECTURE_REVIEW_LOOP_REQUIRED');
   });
@@ -559,7 +573,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
     });
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
-    const { architecture } = await import('./architecture.js');
+    const { architecture } = await import('./architecture/architecture.js');
     const res = await architecture.execute({ reviewVerdict: 'accept' }, {} as never);
     expect(JSON.parse(String(res)).code).toBe('NO_ARCHITECTURE');
   });
@@ -608,7 +622,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       transitions: [],
     }));
 
-    const { architecture } = await import('./architecture.js');
+    const { architecture } = await import('./architecture/architecture.js');
     await architecture.execute(
       {
         reviewVerdict: 'changes_requested',
@@ -648,7 +662,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       evalResult: { kind: 'waiting', phase: 'ARCH_REVIEW', reason: 'human decision required' },
       transitions: [],
     }));
-    const { architecture } = await import('./architecture.js');
+    const { architecture } = await import('./architecture/architecture.js');
     const res = await architecture.execute({ reviewVerdict: 'accept' }, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.code).toBe('SUBAGENT_EVIDENCE_MISSING');
@@ -683,7 +697,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       evalResult: { kind: 'waiting', phase: 'ARCH_REVIEW', reason: 'human decision required' },
       transitions: [],
     }));
-    const { architecture } = await import('./architecture.js');
+    const { architecture } = await import('./architecture/architecture.js');
     const parsed = JSON.parse(
       String(
         await architecture.execute(
@@ -702,7 +716,7 @@ describe('integration/tools/architecture (wrapper)', () => {
 
   it('formats error when dependency throws', async () => {
     mocks.resolveWorkspacePaths.mockRejectedValueOnce(new Error('boom'));
-    const { architecture } = await import('./architecture.js');
+    const { architecture } = await import('./architecture/architecture.js');
     const res = await architecture.execute({ title: 'x', adrText: 'y' }, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.error).toBe(true);
@@ -720,7 +734,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       ...TEAM_POLICY,
       reviewBudget: { ...TEAM_POLICY.reviewBudget, architecture: 3 },
     });
-    const { architecture } = await import('./architecture.js');
+    const { architecture } = await import('./architecture/architecture.js');
     const res = await architecture.execute({ title: 'x', adrText: 'y' }, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.reviewDispatch).toEqual({ required: true });
@@ -742,7 +756,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       ...TEAM_POLICY,
       reviewBudget: { ...TEAM_POLICY.reviewBudget, architecture: 3 },
     });
-    const { architecture } = await import('./architecture.js');
+    const { architecture } = await import('./architecture/architecture.js');
     const res = await architecture.execute({ title: 'x', adrText: 'y' }, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.reviewObligation).toBeDefined();
@@ -761,7 +775,7 @@ describe('integration/tools/architecture (wrapper)', () => {
   });
 
   it('requires independent review for every initial submission (Mode A)', async () => {
-    const { architecture } = await import('./architecture.js');
+    const { architecture } = await import('./architecture/architecture.js');
     const res = await architecture.execute({ title: 'x', adrText: 'y' }, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.reviewDispatch).toEqual({ required: true });
@@ -802,7 +816,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
     });
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
-    const { architecture } = await import('./architecture.js');
+    const { architecture } = await import('./architecture/architecture.js');
     const res = await architecture.execute({ reviewVerdict: 'accept' }, {} as never);
     expect(JSON.parse(String(res)).code).toBe('SUBAGENT_EVIDENCE_MISSING');
   });
@@ -847,7 +861,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
     });
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
-    const { architecture } = await import('./architecture.js');
+    const { architecture } = await import('./architecture/architecture.js');
     const res = await architecture.execute({ reviewVerdict: 'accept' }, {} as never);
     expect(JSON.parse(String(res)).code).toBe('SUBAGENT_EVIDENCE_MISSING');
     expect(mocks.writeStateWithArtifacts).not.toHaveBeenCalled();
@@ -879,7 +893,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
     });
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
-    const { architecture } = await import('./architecture.js');
+    const { architecture } = await import('./architecture/architecture.js');
     const res = await architecture.execute({ reviewVerdict: 'accept' }, {} as never);
     expect(JSON.parse(String(res)).code).toBe('SUBAGENT_EVIDENCE_MISSING');
   });
@@ -911,7 +925,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
     });
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
-    const { architecture } = await import('./architecture.js');
+    const { architecture } = await import('./architecture/architecture.js');
     const res = await architecture.execute(
       {
         reviewVerdict: 'changes_requested',
@@ -934,7 +948,7 @@ describe('integration/tools/architecture (wrapper)', () => {
           ticket: { text: 'x', digest: 'd', source: 'user', createdAt: '2026-01-01T00:00:00.000Z' },
         }),
       );
-      const { architecture } = await import('./architecture.js');
+      const { architecture } = await import('./architecture/architecture.js');
       const raw = await architecture.execute(
         {
           title: 'ADR-001',
@@ -955,7 +969,7 @@ describe('integration/tools/architecture (wrapper)', () => {
           ticket: { text: 'x', digest: 'd', source: 'user', createdAt: '2026-01-01T00:00:00.000Z' },
         }),
       );
-      const { architecture } = await import('./architecture.js');
+      const { architecture } = await import('./architecture/architecture.js');
       const raw = await architecture.execute(
         {
           title: 'ADR-001',
@@ -974,7 +988,7 @@ describe('integration/tools/architecture (wrapper)', () => {
           ticket: { text: 'x', digest: 'd', source: 'user', createdAt: '2026-01-01T00:00:00.000Z' },
         }),
       );
-      const { architecture } = await import('./architecture.js');
+      const { architecture } = await import('./architecture/architecture.js');
       // With null verdict AND title → isInitialSubmission should be true
       // The ADR_SUBMISSION_MIXED_INPUTS guard: if (hasTitle && hasVerdict) → blocked
       // With hasVerdict=false (null), this guard doesn't fire
@@ -996,9 +1010,51 @@ describe('integration/tools/architecture (wrapper)', () => {
   // Tool boundary: the published strict input schema rejects unknown args
   // ═══════════════════════════════════════════════════════════════════════════════
 
+  it('surfaces a structurally blocked reviewer Discovery context with its obligation', async () => {
+    vi.mocked(discoveryMock.fn).mockResolvedValueOnce({
+      kind: 'blocked',
+      reason: 'persisted Discovery basis is unavailable for this repository review',
+      obligationId: 'obligation-x',
+    });
+    const { architecture } = await import('./architecture/architecture.js');
+    const res = await architecture.execute({ title: 'x', adrText: 'y' }, {} as never);
+    const parsed = JSON.parse(String(res)) as Record<string, unknown>;
+    expect(parsed.code).toBe('REVIEWER_CONTEXT_UNAVAILABLE');
+    expect(parsed.obligationId).toBe('obligation-x');
+    expect(parsed.reason).toBe(
+      'persisted Discovery basis is unavailable for this repository review',
+    );
+    const callArgs = vi.mocked(discoveryMock.fn).mock.calls.at(-1)?.[0] as
+      { obligationId?: string } | undefined;
+    expect(callArgs?.obligationId).toBeDefined();
+  });
+
+  it('forwards provided architecture claims into the rails execution', async () => {
+    const { architecture } = await import('./architecture/architecture.js');
+    await architecture.execute(
+      {
+        title: 'x',
+        adrText: 'y',
+        claims: [
+          {
+            statement: 'The decision uses a safe approach.',
+            authoritySectionId: 'sec-1',
+            critical: true,
+            requiredReviewEvidence: ['review-evid-1'],
+          },
+        ],
+      },
+      {} as never,
+    );
+    const call = mocks.executeArchitecture.mock.calls.at(-1) as unknown[] | undefined;
+    expect(call?.[1]).toMatchObject({
+      claims: [expect.objectContaining({ statement: 'The decision uses a safe approach.' })],
+    });
+  });
+
   describe('strict tool input schema', () => {
     it('rejects an unknown reviewFindings argument (no agent findings submission)', async () => {
-      const { architecture } = await import('./architecture.js');
+      const { architecture } = await import('./architecture/architecture.js');
       const schema = convertArgsToInputSchema(architecture.args);
       const parsed = schema.safeParse({ reviewVerdict: 'accept', reviewFindings: {} });
       expect(parsed.success).toBe(false);

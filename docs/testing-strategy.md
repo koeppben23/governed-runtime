@@ -221,7 +221,7 @@ above is the classification authority):
 | MCP (`execution-limiter`, `session-resolver`, `tool-adapter`, `server`)                                                                                                        | 4       | see `reports/mutation/`         |
 | Hooks (`http-server`, `pre-tool-use`, `post-tool-use`, `shared/obligation-tracker`, `shared/phase-gate`)                                                                       | 5       | see `reports/mutation/`         |
 | Identity (`token-verifier`, `key-resolver`)                                                                                                                                    | 2       | see `reports/mutation/`         |
-| Integration (plugin hooks, audit outbox, review-validation tools, mutation evidence tools/episodes, `plugin-workspace`, `plugin`, `runtime-lease`)                             | 22      | see `reports/mutation/`         |
+| Integration (plugin hooks, mutation evidence tools/episodes, `plugin-workspace`, `plugin`, `runtime-lease`)                                                                    | 16      | see `reports/mutation/`         |
 | Integration Review (`enforcement`, `findings-consistency`, `challenge-consistency`, `challenge-binding`, agent resolution, dispatch signal, findings hash, reviewed digest)    | 8       | see `reports/mutation/`         |
 | State (`evidence-mutation-episode`)                                                                                                                                            | 1       | see `reports/mutation/`         |
 | Verification/Discovery (`execution-subject`, `verification-planner`)                                                                                                           | 2       | see `reports/mutation/`         |
@@ -278,7 +278,7 @@ diagnostic only; these targets must close their test gaps first):
 
 - `src/state/evidence-validation.ts` (18.68%)
 - `src/integration/review/shared-helpers.ts` (68.66%)
-- `src/integration/tools/run-check-result.ts` (0.00%)
+- `src/integration/tools/validation/run-check-result.ts` (0.00%)
 
 Deep authority expansion bundle:
 

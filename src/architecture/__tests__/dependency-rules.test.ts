@@ -40,6 +40,12 @@ import {
   MODULE_CLASSIFICATION,
   MODULE_CLASSIFICATION_BY_NAME,
 } from './module-classification.js';
+import {
+  isRootCompositionFile,
+  isRootHostRuntimeFile,
+  isToolCommandContextFile,
+  placementOwnerOf,
+} from './integration-placement-policy.js';
 import { MODULE_DEPENDENCY_POLICY } from './module-dependency-policy.js';
 import {
   cycleParticipatingEdges,
@@ -365,6 +371,127 @@ function detectViolations(analyses: Map<string, FileAnalysis>): ImportViolation[
   }
 
   return allViolations;
+}
+
+/**
+ * Resolve a relative import to its canonical path relative to `src/`, or null
+ * when the specifier is bare or does not resolve to a source under `src/`.
+ */
+function resolveSrcTarget(analysis: FileAnalysis, imp: ImportInfo): string | null {
+  if (!imp.isRelative) return null;
+  const resolved = resolveImportPath(path.dirname(analysis.filePath), imp.module);
+  if (!resolved) return null;
+  const relToSrc = repoRelative(SRC_DIR, resolved);
+  if (relToSrc.startsWith('..')) return null;
+  return relToSrc;
+}
+
+/**
+ * #922 boundary: files in `integration/tools/**` must not import plugin
+ * composition (index.ts, plugin.ts, plugin-* lifecycle).
+ */
+function detectToolsCompositionImports(analyses: Map<string, FileAnalysis>): ImportViolation[] {
+  const violations: ImportViolation[] = [];
+  for (const [, analysis] of analyses) {
+    if (!analysis.relativePath.startsWith('integration/tools/')) continue;
+    if (analysis.filePath.includes('.test.')) continue;
+    for (const imp of analysis.imports) {
+      const target = resolveSrcTarget(analysis, imp);
+      if (target !== null && isRootCompositionFile(target)) {
+        violations.push({
+          file: analysis.relativePath,
+          rule: 'tools-no-composition',
+          message: `integration/tools/ imports integration composition (bridge bypass): ${target}`,
+          imports: [imp.module],
+        });
+      }
+    }
+  }
+  return violations;
+}
+
+/** Integration owners that review/** may consume (positive allowlist). */
+const REVIEW_ALLOWED_INTEGRATION_OWNERS: ReadonlySet<string> = new Set([
+  'review',
+  'review-enforcement',
+  'root-authority',
+]);
+
+/**
+ * Lower layers that review/** may consume. This is an explicit, default-deny
+ * set: adding a layer here is a deliberate contract change.
+ */
+const REVIEW_LOWER_LAYERS: ReadonlySet<string> = new Set([
+  'adapters',
+  'config',
+  'shared',
+  'state',
+  'templates',
+]);
+
+/**
+ * #922 boundary (default-deny): review/** may import ONLY review/** (owner
+ * review or review-enforcement), integration root authorities, and the
+ * explicit lower layers. Plugin composition, host/runtime wiring, tools/**,
+ * and every sibling integration context (status, discovery, proofgraph, ...)
+ * are violations.
+ */
+function detectReviewBoundaryViolations(analyses: Map<string, FileAnalysis>): ImportViolation[] {
+  const violations: ImportViolation[] = [];
+  for (const [, analysis] of analyses) {
+    if (!analysis.relativePath.startsWith('integration/review/')) continue;
+    if (analysis.filePath.includes('.test.')) continue;
+    for (const imp of analysis.imports) {
+      const target = resolveSrcTarget(analysis, imp);
+      if (target === null) continue;
+      if (target.startsWith('integration/')) {
+        const owner = placementOwnerOf(target);
+        if (owner !== null && REVIEW_ALLOWED_INTEGRATION_OWNERS.has(owner)) continue;
+        violations.push({
+          file: analysis.relativePath,
+          rule: 'review-boundary',
+          message: `review/ imports integration target outside its contract: '${target}' (owner ${owner ?? 'unclassified'})`,
+          imports: [imp.module],
+        });
+        continue;
+      }
+      const topLevel = target.split('/')[0] ?? '';
+      if (!REVIEW_LOWER_LAYERS.has(topLevel)) {
+        violations.push({
+          file: analysis.relativePath,
+          rule: 'review-boundary',
+          message: `review/ imports non-lower-layer target '${target}'`,
+          imports: [imp.module],
+        });
+      }
+    }
+  }
+  return violations;
+}
+
+/**
+ * #922 boundary: production code outside `integration/tools/**` may not
+ * deep-import a tool command context (tools/<context>/**). The single external
+ * entry into the tool layer is `integration/tools/index.ts`.
+ */
+function detectExternalToolContextImports(analyses: Map<string, FileAnalysis>): ImportViolation[] {
+  const violations: ImportViolation[] = [];
+  for (const [, analysis] of analyses) {
+    if (analysis.relativePath.startsWith('integration/tools/')) continue;
+    if (analysis.filePath.includes('.test.')) continue;
+    for (const imp of analysis.imports) {
+      const target = resolveSrcTarget(analysis, imp);
+      if (target !== null && isToolCommandContextFile(target)) {
+        violations.push({
+          file: analysis.relativePath,
+          rule: 'external-tool-context-import',
+          message: `deep import into a tool command context: ${target}`,
+          imports: [imp.module],
+        });
+      }
+    }
+  }
+  return violations;
 }
 
 function resolveImportPath(importerDir: string, importPath: string): string {
@@ -747,27 +874,11 @@ describe('Layer Dependency Rules', () => {
     });
   });
 
-  describe('Rule 5g: integration/tools/ must NOT import from plugin-* modules', () => {
+  describe('Rule 5g: integration/tools/ must NOT import integration composition', () => {
     const violations: ImportViolation[] = [];
 
     beforeAll(() => {
-      for (const [, analysis] of analyses) {
-        if (!analysis.filePath.includes('/integration/tools/')) continue;
-        if (analysis.filePath.includes('.test.')) continue;
-
-        const pluginImports = analysis.imports.filter(
-          (i) => i.module.startsWith('../plugin-') || i.module.startsWith('./plugin-'),
-        );
-
-        for (const imp of pluginImports) {
-          violations.push({
-            file: analysis.relativePath,
-            rule: 'tools-no-plugin',
-            message: `integration/tools/ imports from plugin-* module (bridge bypass): ${imp.module}`,
-            imports: [imp.module],
-          });
-        }
-      }
+      violations.push(...detectToolsCompositionImports(analyses));
     });
 
     it('should have integration/tools files', () => {
@@ -777,14 +888,118 @@ describe('Layer Dependency Rules', () => {
       expect(toolsFiles.length).toBeGreaterThan(0);
     });
 
-    it('should have no tools -> plugin-* imports', () => {
+    it('should have no tools -> composition imports', () => {
       if (violations.length > 0) {
         console.error(
-          '\nintegration/tools/ -> plugin-* violations:\n' +
+          '\nintegration/tools/ -> composition violations:\n' +
             violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
         );
       }
       expect(violations).toHaveLength(0);
+    });
+
+    it('detects a deep tools -> plugin composition import, depth-independently', () => {
+      const probe: FileAnalysis = {
+        filePath: normalizeRepoPath(path.join(SRC_DIR, 'integration/tools/plan/probe.ts')),
+        relativePath: 'integration/tools/plan/probe.ts',
+        imports: [mockImport('../../plugin-risk.js')],
+      };
+      const detected = detectToolsCompositionImports(
+        new Map([['integration/tools/plan/probe.ts', probe]]),
+      );
+      expect(detected.map((violation) => violation.rule)).toEqual(['tools-no-composition']);
+    });
+
+    it('detects a deep tools -> plugin-helpers composition import', () => {
+      const probe: FileAnalysis = {
+        filePath: normalizeRepoPath(path.join(SRC_DIR, 'integration/tools/plan/probe.ts')),
+        relativePath: 'integration/tools/plan/probe.ts',
+        imports: [mockImport('../../plugin-helpers.js')],
+      };
+      const detected = detectToolsCompositionImports(
+        new Map([['integration/tools/plan/probe.ts', probe]]),
+      );
+      expect(detected.map((violation) => violation.rule)).toEqual(['tools-no-composition']);
+    });
+  });
+
+  describe('Integration tool-context boundary (#922)', () => {
+    it('production outside tools/** does not deep-import a tool command context', () => {
+      const violations = detectExternalToolContextImports(analyses);
+      if (violations.length > 0) {
+        console.error(
+          '\nexternal tool-context deep imports:\n' +
+            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
+        );
+      }
+      expect(violations).toEqual([]);
+    });
+
+    it('is non-vacuous and still permits tool infrastructure imports', () => {
+      const contextTargets = new Set<string>();
+      const infrastructureImporters: string[] = [];
+      for (const [, analysis] of analyses) {
+        if (analysis.filePath.includes('.test.')) continue;
+        for (const imp of analysis.imports) {
+          const target = resolveSrcTarget(analysis, imp);
+          if (target === null) continue;
+          if (isToolCommandContextFile(target)) contextTargets.add(target);
+          if (
+            !analysis.relativePath.startsWith('integration/tools/') &&
+            target.startsWith('integration/tools/') &&
+            !isToolCommandContextFile(target)
+          ) {
+            infrastructureImporters.push(`${analysis.relativePath} -> ${target}`);
+          }
+        }
+      }
+      expect(contextTargets.size).toBeGreaterThan(0);
+      expect(infrastructureImporters.length).toBeGreaterThan(0);
+    });
+
+    it('detects an external deep import into a command context', () => {
+      const probe: FileAnalysis = {
+        filePath: normalizeRepoPath(path.join(SRC_DIR, 'integration/plugin-probe.ts')),
+        relativePath: 'integration/plugin-probe.ts',
+        imports: [mockImport('./tools/plan/plan.js')],
+      };
+      const detected = detectExternalToolContextImports(
+        new Map([['integration/plugin-probe.ts', probe]]),
+      );
+      expect(detected.map((violation) => violation.rule)).toEqual(['external-tool-context-import']);
+    });
+
+    it('permits an external import of the tool barrel (negative fixture)', () => {
+      const probe: FileAnalysis = {
+        filePath: normalizeRepoPath(path.join(SRC_DIR, 'integration/index.ts')),
+        relativePath: 'integration/index.ts',
+        imports: [mockImport('./tools/index.js')],
+      };
+      expect(detectExternalToolContextImports(new Map([['integration/index.ts', probe]]))).toEqual(
+        [],
+      );
+    });
+
+    it('detects review imports of tools or composition, and permits authorities', () => {
+      const rulesFor = (spec: string): string[] => {
+        const probe: FileAnalysis = {
+          filePath: normalizeRepoPath(path.join(SRC_DIR, 'integration/review/probe.ts')),
+          relativePath: 'integration/review/probe.ts',
+          imports: [mockImport(spec)],
+        };
+        return detectReviewBoundaryViolations(
+          new Map([['integration/review/probe.ts', probe]]),
+        ).map((violation) => violation.rule);
+      };
+      expect(rulesFor('../tools/implementation/implement-shared.js')).toEqual(['review-boundary']);
+      expect(rulesFor('../plugin-risk.js')).toEqual(['review-boundary']);
+      expect(rulesFor('../runtime-lease.js')).toEqual(['review-boundary']);
+      expect(rulesFor('../discovery/discovery-drift-status.js')).toEqual(['review-boundary']);
+      expect(rulesFor('../status/status.js')).toEqual(['review-boundary']);
+      expect(rulesFor('../proofgraph/refresh.js')).toEqual(['review-boundary']);
+      expect(rulesFor('../tool-names.js')).toEqual([]);
+      expect(rulesFor('../../state/evidence.js')).toEqual([]);
+      expect(rulesFor('../../discovery/discovery-health.js')).toEqual(['review-boundary']);
     });
   });
 
@@ -1028,60 +1243,33 @@ describe('Layer Dependency Rules', () => {
       expect(existsSync(barrel), 'Expected integration/review/index.ts barrel').toBe(true);
     });
 
-    it('review/ must NOT import from plugin-* files (inward dependency only)', async () => {
-      const reviewDir = path.join(SRC_DIR, 'integration', 'review');
-      const reviewFiles = await collectFiles(reviewDir, /\.ts$/);
-      const violations: string[] = [];
-
-      for (const filePath of reviewFiles) {
-        const content = await fs.readFile(filePath, 'utf-8');
-        const imports = parseImports(
-          content,
-          path.dirname(filePath),
-          repoRelative(SRC_DIR, filePath).split('/')[0]!,
+    it('review/ imports stay inside the review boundary', () => {
+      const violations = detectReviewBoundaryViolations(analyses);
+      if (violations.length > 0) {
+        console.error(
+          '\nreview/ boundary violations:\n' +
+            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
         );
-        for (const imp of imports) {
-          // plugin-helpers is a pure stateless utility (no lifecycle coupling),
-          // so it's allowed as an inward dependency for review/
-          if (imp.module.includes('plugin-helpers')) continue;
-          if (imp.module.includes('plugin-') || imp.module.includes('/plugin.')) {
-            violations.push(`${repoRelative(SRC_DIR, filePath)}: imports ${imp.module}`);
-          }
-        }
       }
-
-      expect(violations, 'review/ must not import from plugin-* files').toEqual([]);
+      expect(violations).toEqual([]);
     });
 
-    it('no review-* files remain at integration/ root level', async () => {
-      const integrationDir = path.join(SRC_DIR, 'integration');
-      const entries = await fs.readdir(integrationDir);
-      const staleReviewFiles = entries.filter(
-        (e) =>
-          e.startsWith('review-') &&
-          e.endsWith('.ts') &&
-          !e.endsWith('.test.ts') &&
-          e !== 'review-validation.ts' &&
-          e !== 'review-summary.ts',
+    it('review/ boundary is non-vacuous: review files import root authorities', () => {
+      const reviewFiles = Array.from(analyses.values()).filter(
+        (analysis) =>
+          analysis.relativePath.startsWith('integration/review/') &&
+          !analysis.filePath.includes('.test.'),
       );
-
-      expect(
-        staleReviewFiles,
-        'All review-* source files should be in review/ subdirectory',
-      ).toEqual([]);
-    });
-
-    it('no plugin-review-* files remain at integration/ root level', async () => {
-      const integrationDir = path.join(SRC_DIR, 'integration');
-      const entries = await fs.readdir(integrationDir);
-      const stalePluginReviewFiles = entries.filter(
-        (e) => e.startsWith('plugin-review-') && e.endsWith('.ts') && !e.endsWith('.test.ts'),
+      expect(reviewFiles.length).toBeGreaterThan(0);
+      const rootAuthorityImports = reviewFiles.flatMap((analysis) =>
+        analysis.imports
+          .map((imp) => resolveSrcTarget(analysis, imp))
+          .filter(
+            (target): target is string =>
+              target !== null && !isRootCompositionFile(target) && !isRootHostRuntimeFile(target),
+          ),
       );
-
-      expect(
-        stalePluginReviewFiles,
-        'plugin-review-state.ts and plugin-review-audit.ts should be in review/ subdirectory (FG-QUAL-003)',
-      ).toEqual([]);
+      expect(rootAuthorityImports).toContain('integration/tool-names.ts');
     });
 
     it('review/ obligation-state.ts and audit-events.ts exist', () => {

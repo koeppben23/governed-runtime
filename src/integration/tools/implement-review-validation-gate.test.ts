@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
 import { makeState, VALIDATION_PASSED, IMPL_EVIDENCE } from '../../fixtures.js';
-import { implValidationEvidenceGate } from './implement-review.js';
+import { implValidationEvidenceGate } from './implementation/implement-review.js';
 import type { ValidationAttempt } from '../../state/evidence-validation.js';
 
 // Gap 3 — defense-in-depth: reviewer acceptance must not advance to

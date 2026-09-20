@@ -22,11 +22,11 @@ vi.mock('../../discovery/discovery-health.js', async () => {
   return { ...actual, loadDiscoveryHealthContext: mockLoadContext };
 });
 
-vi.mock('../discovery-drift-status.js', () => ({
+vi.mock('../discovery/discovery-drift-status.js', () => ({
   buildDiscoveryDriftStatus: mockBuildDrift,
 }));
 
-import { reconcileHydrateDiscoveryHealthGate } from './hydrate-discovery-health.js';
+import { reconcileHydrateDiscoveryHealthGate } from './hydrate/hydrate-discovery-health.js';
 import {
   unavailableDiscoveryHealth,
   extractDiscoveryHealth,

@@ -23,7 +23,7 @@ vi.mock('../../adapters/git.js', async (importOriginal) => {
   return { ...original, isGitRepoStrict };
 });
 
-import { validateGitPrerequisite } from './implement-record.js';
+import { validateGitPrerequisite } from './implementation/implement-record.js';
 import { GitError } from '../../adapters/git.js';
 
 function parseCode(result: string): string {

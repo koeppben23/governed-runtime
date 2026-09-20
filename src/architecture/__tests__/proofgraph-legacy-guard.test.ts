@@ -20,7 +20,7 @@ const LEGACY_FILES = [
   'integration/proofgraph/claim-contract.ts',
   'integration/proofgraph/claim-contract-rules.ts',
   'integration/proofgraph/materialize-contract.ts',
-  'integration/tools/declare-contract.ts',
+  'integration/tools/contract/declare-contract.ts',
 ];
 
 const GATE_FILES = [
@@ -49,7 +49,7 @@ const PROOFGRAPH_CORE_FILES = [
  * Canonical writer of normalized plan claim declarations: plan declarations
  * are persisted only as proofgraph v2 from this module.
  */
-const PLAN_DECLARATION_WRITER = 'integration/tools/plan-submission-state.ts';
+const PLAN_DECLARATION_WRITER = 'integration/tools/plan/plan-submission-state.ts';
 
 const FORBIDDEN = [
   /counterexampleCheckId/,
@@ -183,7 +183,7 @@ describe('proofgraph legacy guard', () => {
     const files = [
       'verification/execution-subject.ts',
       'verification/executor.ts',
-      'integration/tools/run-check-tool.ts',
+      'integration/tools/validation/run-check-tool.ts',
     ];
     const violations: string[] = [];
     for (const rel of files) {

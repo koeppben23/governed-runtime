@@ -25,7 +25,7 @@
  * @version v1
  */
 
-import { getAdapterLogger } from '../../logging/adapter-logger.js';
+import type { ReviewDiagnosticLogger } from './review-logger-port.js';
 import { ensureReviewAssurance } from './assurance.js';
 import type {
   ReviewAssuranceState,
@@ -102,13 +102,14 @@ export function resolveReviewedArtifactIdentity(
   assurance: ReviewAssuranceState | undefined,
   obligationType: ReviewObligationType,
   findings: ReviewFindings | undefined,
+  logger: ReviewDiagnosticLogger,
 ): ReviewedArtifactIdentity | undefined {
   if (!findings) return undefined;
   const base = ensureReviewAssurance(assurance);
 
-  const obligation = resolveProducerObligation(base, obligationType, findings);
+  const obligation = resolveProducerObligation(base, obligationType, findings, logger);
   if (!obligation) {
-    getAdapterLogger().warn('review', 'reviewed_identity_unresolvable', {
+    logger.warn('review', 'reviewed_identity_unresolvable', {
       obligationType,
       attestationObligationId: findings.attestation?.toolObligationId ?? null,
       reviewMode: findings.reviewMode,
@@ -119,7 +120,7 @@ export function resolveReviewedArtifactIdentity(
     obligation.iteration !== findings.iteration ||
     obligation.planVersion !== findings.planVersion
   ) {
-    getAdapterLogger().warn('review', 'reviewed_identity_coherence_mismatch', {
+    logger.warn('review', 'reviewed_identity_coherence_mismatch', {
       obligationId: obligation.obligationId,
       obligationIteration: obligation.iteration,
       findingsIteration: findings.iteration,
@@ -132,7 +133,7 @@ export function resolveReviewedArtifactIdentity(
     findings.reviewMode === 'subagent' &&
     findInvocationForFindingsProvenance(base, obligation, findings) === null
   ) {
-    getAdapterLogger().warn('review', 'reviewed_identity_invocation_unproven', {
+    logger.warn('review', 'reviewed_identity_invocation_unproven', {
       obligationId: obligation.obligationId,
       reviewMode: findings.reviewMode,
     });
@@ -157,10 +158,11 @@ function resolveProducerObligation(
   base: ReviewAssuranceState,
   obligationType: ReviewObligationType,
   findings: ReviewFindings,
+  logger: ReviewDiagnosticLogger,
 ): ReviewObligation | null {
   const attestationObligationId = findings.attestation?.toolObligationId;
   if (attestationObligationId) {
-    return resolveObligationById(base, obligationType, attestationObligationId);
+    return resolveObligationById(base, obligationType, attestationObligationId, logger);
   }
   if (findings.reviewMode !== 'subagent') return null;
   const matches = base.obligations.filter(
@@ -175,10 +177,11 @@ function resolveObligationById(
   base: ReviewAssuranceState,
   obligationType: ReviewObligationType,
   obligationId: string,
+  logger: ReviewDiagnosticLogger,
 ): ReviewObligation | null {
   const byId = base.obligations.find((o) => o.obligationId === obligationId) ?? null;
   if (!byId || byId.obligationType !== obligationType) {
-    getAdapterLogger().warn('review', 'reviewed_identity_type_mismatch', {
+    logger.warn('review', 'reviewed_identity_type_mismatch', {
       obligationId: byId?.obligationId ?? null,
       expected: obligationType,
       actual: byId?.obligationType ?? null,

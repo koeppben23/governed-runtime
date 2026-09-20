@@ -10,7 +10,7 @@
  */
 
 import type { ReviewReferenceInput } from '../../../rails/review.js';
-import { formatBlocked } from '../helpers.js';
+import { formatBlocked } from '../../blocked-result.js';
 
 // ─── Input helpers ───────────────────────────────────────────────────────────
 

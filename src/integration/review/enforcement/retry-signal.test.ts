@@ -1,7 +1,27 @@
 import { describe, expect, it } from 'vitest';
-import { createSessionState, onFlowGuardToolAfter } from './enforcement.js';
+import {
+  createSessionState,
+  onFlowGuardToolAfter as rawOnFlowGuardToolAfter,
+} from './enforcement.js';
 import { reviewDispatchRequired } from '../dispatch-signal.js';
 import { NOW } from './test-helpers.js';
+
+import { isTerminalPhase } from '../../../machine/topology.js';
+
+type ToolAfterArgs = Parameters<typeof rawOnFlowGuardToolAfter>;
+
+function onFlowGuardToolAfter(
+  state: ToolAfterArgs[0],
+  toolName: ToolAfterArgs[1],
+  args: ToolAfterArgs[2],
+  output: ToolAfterArgs[3],
+  now: string,
+): ReturnType<typeof rawOnFlowGuardToolAfter> {
+  return rawOnFlowGuardToolAfter(state, toolName, args, output, {
+    now,
+    isTerminalPhase,
+  });
+}
 
 describe('peer review retry signal', () => {
   it('registers the reissued attempt before the next reviewer dispatch', () => {

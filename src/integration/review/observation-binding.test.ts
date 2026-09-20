@@ -28,8 +28,8 @@ import {
 } from './assurance.js';
 import { mintObservationCapability } from './attempt-lifecycle.js';
 import { completedDispatchForInvocation } from '../../state/evidence-test-constants.js';
-import { validateReviewFindings } from '../tools/review-validation.js';
-import { NOW, SESSION_ID, CHILD_SESSION_ID } from '../plugin-host-task-diagnostics-helpers.js';
+import { validateReviewFindings } from './review-validation.js';
+import { NOW, SESSION_ID, CHILD_SESSION_ID } from '../plugin-host-task-diagnostics-test-helpers.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import type {
   RepositoryObservation,

@@ -102,8 +102,8 @@ describe('implementation-entry invariant (persistence boundary + single finalize
 
   it('every implementation-review activation caller handles the blocked mint-gate branch', () => {
     const callers = [
-      'integration/tools/run-check-tool.ts',
-      'integration/tools/implement-record.ts',
+      'integration/tools/validation/run-check-tool.ts',
+      'integration/tools/implementation/implement-record.ts',
     ];
     for (const rel of callers) {
       const content = read(rel);

@@ -14,7 +14,7 @@ import {
   normalizeHostFindings,
   type ImplementArgs,
   type ImplementRuntime,
-} from './implement-shared.js';
+} from './implementation/implement-shared.js';
 import type { SessionState, Phase } from '../../state/schema.js';
 import type { ReviewFindings } from '../../state/evidence.js';
 
@@ -307,7 +307,7 @@ vi.mock('../review/discovery-attempt-context.js', async (importOriginal) => {
 
 import { freezeCandidatePairAuthority } from '../../rails/repository-authority.js';
 import { resolveAttemptDiscoveryOrBlock } from '../review/discovery-attempt-context.js';
-import { activateImplementationReviewObligation } from './implement-shared.js';
+import { activateImplementationReviewObligation } from './implementation/implement-shared.js';
 
 const CANDIDATE_PAIR = {
   kind: 'candidate_pair' as const,

@@ -22,7 +22,7 @@ import { makeState } from '../fixtures.js';
 import { reconcilePendingAuditOperations, type AuditDeps } from './plugin-audit.js';
 import { TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
 import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
-import { prepareAuditOperations } from './tools/audit-outbox.js';
+import { prepareAuditOperations } from './audit-outbox.js';
 
 const SESSION_ID = 'aaaaaaaa-0000-4000-8000-000000000001';
 const FIXED_DECISION_AT = '2026-05-15T12:00:00.000Z';

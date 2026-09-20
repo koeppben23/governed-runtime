@@ -31,14 +31,14 @@
 import type { Phase, SessionState } from '../../state/schema.js';
 import type { SystemWorkOperation } from '../../state/system-work.js';
 import type { ToolResult, WorkspaceToolContext } from './helpers.js';
+import { formatBlocked } from '../blocked-result.js';
 import {
-  formatBlocked,
   withMutableSessionTransaction,
   withReadOnlySession,
   writeStateWithArtifacts,
 } from './helpers.js';
 import { PersistenceError } from '../../adapters/lock-retry.js';
-import { executeRunCheckPhased } from './run-check-tool.js';
+import { executeRunCheckPhased } from './validation/run-check-tool.js';
 import { formatError } from './error-format.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
 import type { VerificationCandidateKind } from '../../state/discovery-schemas.js';

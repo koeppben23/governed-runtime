@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { resolveRuntimeReadiness, wrapForResolution } from '../verification-runtime-resolution.js';
-import { resolveRuntimeProviderCapabilities } from './status-provider-projection.js';
+import { resolveRuntimeProviderCapabilities } from './status/status-provider-projection.js';
 import type { ProbeRunner, ProbeRequest, ProbeResult } from '../../verification/toolchain-probe.js';
 import type { VerificationCandidate } from '../../state/discovery-schemas.js';
 import type { SessionState } from '../../state/schema.js';

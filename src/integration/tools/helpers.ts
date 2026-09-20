@@ -14,7 +14,7 @@ import {
   writeStateAlreadyLocked,
 } from '../../adapters/persistence.js';
 import { finalizeImplementationEntry } from '../../adapters/implementation-base-authority.js';
-import { prepareStateWithAuditOperations, type SemanticAuditIntent } from './audit-outbox.js';
+import { prepareStateWithAuditOperations, type SemanticAuditIntent } from '../audit-outbox.js';
 import { acquireSessionWriteLock, withSessionWriteLock } from '../../adapters/persistence-lock.js';
 import { createRailContext } from '../../adapters/context.js';
 // Workspace
@@ -29,9 +29,7 @@ import {
 import { resolvePolicyFromSnapshot } from '../../config/policy.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import { defaultReasonRegistry } from '../../config/reasons.js';
-import { buildBlockedPresentation } from './blocked-presentation.js';
-import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
-import { PHASE_LABELS, lookupReasonCopy } from '../../presentation/index.js';
+import { PHASE_LABELS } from '../../presentation/index.js';
 import { refreshProofGraph } from '../proofgraph/refresh.js';
 import { IntegrationInvariantError } from '../errors.js';
 const lockedSessionDir = new AsyncLocalStorage<string>();
@@ -97,48 +95,6 @@ export type ToolDefinition = {
 };
 
 // ─── Formatting Helpers ───────────────────────────────────────────────────────
-
-/**
- * Migrated reason-copy headline field, present only for authored codes.
- *
- * Shared with the rail-result presentation helpers
- * (`helpers-rail-presentation.ts`).
- */
-export function headlineFields(code: string): { headline?: string } {
-  const copy = lookupReasonCopy(code);
-  return copy?.headline ? { headline: copy.headline } : {};
-}
-
-/**
- * Format a blocked error using the reason registry.
- * Used for inline blocked returns in tool logic (outside rail calls).
- */
-export function formatBlocked(
-  code: string,
-  vars?: Record<string, string>,
-  extra?: Record<string, unknown>,
-): string {
-  getAdapterLogger().warn('machine', 'tool_blocked', { code, ...getLogTraceFields() });
-  const info = defaultReasonRegistry.format(code, vars);
-  // Render the diagnostic through the shared renderer so blocked returns from
-  // inline tool logic present consistently with the rest of the surface.
-  const blockedPresentation = buildBlockedPresentation(
-    info.code,
-    info.reason,
-    vars ?? {},
-    typeof extra?.recoveryAction === 'string' ? extra.recoveryAction : undefined,
-  );
-  return JSON.stringify({
-    error: true,
-    code: info.code,
-    message: info.reason,
-    recovery: info.recovery,
-    quickFix: info.quickFix,
-    ...headlineFields(info.code),
-    ...blockedPresentation,
-    ...(extra ?? {}),
-  });
-}
 
 /**
  * Format an auto-advance overflow (#428) as a fail-closed blocked tool result.

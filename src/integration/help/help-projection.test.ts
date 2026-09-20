@@ -3,10 +3,10 @@ import { getPolicyPreset, TEAM_POLICY } from '../../config/policy.js';
 import * as crypto from 'node:crypto';
 import { makeProgressedState, makeState, PLAN_EVIDENCE, TICKET } from '../../fixtures.js';
 import { buildHelpResult, finishToReadiness } from './help-projection.js';
-import { buildFinishCard } from '../status-finish.js';
+import { buildFinishCard } from '../status/status-finish.js';
 import { resolveCurrentReviewReport } from '../review/report-coherence.js';
 import type { ReviewReport } from '../../state/evidence.js';
-import { help } from '../tools/help-tool.js';
+import { help } from '../tools/simple/help-tool.js';
 import {
   createToolContext,
   createTestWorkspace,
@@ -14,9 +14,9 @@ import {
   type TestWorkspace,
   type TestToolContext,
 } from '../test-helpers.js';
-import { hydrate } from '../tools/hydrate.js';
-import { ticket } from '../tools/ticket-tool.js';
-import { plan } from '../tools/plan.js';
+import { hydrate } from '../tools/hydrate/hydrate.js';
+import { ticket } from '../tools/simple/ticket-tool.js';
+import { plan } from '../tools/plan/plan.js';
 import { computeFingerprint, sessionDir } from '../../adapters/workspace/index.js';
 import { readState, writeState } from '../../adapters/persistence.js';
 import { writeRepoConfig } from '../../adapters/persistence-config.js';

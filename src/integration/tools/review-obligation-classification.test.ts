@@ -15,7 +15,7 @@ vi.mock('../../adapters/gh-cli.js', () => ({
 }));
 
 const { resolveChallengeClassificationEvidence } =
-  await import('./review-obligation-classification.js');
+  await import('../review/review-obligation-classification.js');
 
 function stateWithChallengePolicy() {
   const base = makeState('PEER_REVIEW');

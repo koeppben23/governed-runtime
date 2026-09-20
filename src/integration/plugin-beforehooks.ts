@@ -2,7 +2,8 @@ import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { readState } from '../adapters/persistence.js';
 import { workspacesHome } from '../adapters/workspace/index.js';
-import { buildEnforcementError } from './plugin-helpers.js';
+import { buildEnforcementError } from './blocked-result.js';
+
 import { isMutatingHostTool, isHostToolAllowedInPhase } from './phase-tool-gate.js';
 import { isAllowedReworkContinuation } from './plugin-rework-continuation.js';
 import { isMutatingFlowGuardTool } from './tool-classification.js';
@@ -33,7 +34,7 @@ import { reconcilePendingAuditOperations } from './plugin-audit-reconcile.js';
 import { auditEnforcementDenied } from './plugin-audit.js';
 import { withSessionWriteLock } from '../adapters/persistence-lock.js';
 import { recoverRegulatedCompletion } from './plugin-regulated-recovery.js';
-import { writeStateWithAuditOperationsAlreadyLocked } from './tools/audit-outbox.js';
+import { writeStateWithAuditOperationsAlreadyLocked } from './audit-outbox.js';
 import { authorizeMutationEpisode } from '../state/evidence-mutation-episode.js';
 import { getRuntimeInstanceId } from './runtime-instance.js';
 import { acquireRuntimeLease } from './runtime-lease.js';
