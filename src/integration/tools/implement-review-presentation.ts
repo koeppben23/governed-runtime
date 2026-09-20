@@ -14,6 +14,7 @@ import type { CompactProofPresentation } from '../../presentation/proof-model.js
 import { getInstalledCommand } from '../installed-commands.js';
 import { directiveLabel } from '../../presentation/directive-copy.js';
 import type { DirectiveProjection } from '../../presentation/review-decision.js';
+import { IntegrationInvariantError } from '../errors.js';
 
 export function buildImplReviewBlockedMarkdown(
   message: string,
@@ -79,7 +80,8 @@ function implReviewAction(directive: DirectiveProjection): {
   }
   const cmd = getInstalledCommand(invocation);
   if (!cmd) {
-    throw new Error(
+    throw new IntegrationInvariantError(
+      'IMPLEMENT_REVIEW_COMMAND_METADATA_MISSING',
       `implementation review action: no installed command metadata for "${invocation}".`,
     );
   }

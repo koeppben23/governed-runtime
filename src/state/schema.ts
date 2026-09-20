@@ -1,7 +1,9 @@
 /**
  * @module schema
  * @description Core state model — Phase enum, Event enum, Transition, and SessionState.
- *              Single Zod schema validated on every atomic write.
+ *              SessionState's evidence, configuration, and discovery field groups
+ *              live in the `session-state-*-shape.ts` siblings. Single Zod schema
+ *              validated on every atomic write.
  *
  * Design decisions (Lead-reviewed):
  * - No updatedAt at top-level (redundant — evidences have own timestamps)
@@ -14,45 +16,18 @@
  */
 
 import { z } from 'zod';
-import {
-  ActorInfoSchema,
-  ArchitectureDecision,
-  BindingInfo,
-  ChallengeResolution,
-  CheckId,
-  DecisionIdentitySchema,
-  ErrorInfo,
-  FrozenRepositoryRevisionTarget,
-  ImplementationRework,
-  ImplEvidence,
-  ImplReviewResult,
-  MutationAttempt,
-  PlanRecord,
-  PolicySnapshotSchema,
-  ReviewAssuranceState,
-  ReviewCycles,
-  ReviewDecision,
-  ReviewFindings,
-  SelfReviewLoop,
-  TicketEvidence,
-  ValidationAttempt,
-  ValidationResult,
-} from './evidence.js';
-import { MutationEpisode, MutationEpisodeResolution } from './evidence-mutation-episode.js';
+import { ActorInfoSchema, BindingInfo, ErrorInfo, ImplementationRework } from './evidence.js';
 import { enforceMutationEpisodeInvariants } from './evidence-mutation-episode.js';
-import { RuntimeLease } from './runtime-lease.js';
 import { ExportCompletionEvidence } from './evidence-export.js';
 import { SystemWorkOperation } from './system-work.js';
 import { DiscoveryHealthGate } from './discovery-schemas.js';
+import { resolveAuthoritativePeerReviewTask } from './peer-review.js';
+import { SessionStateConfigShape } from './session-state-config-shape.js';
+import { SessionStateDiscoveryShape } from './session-state-discovery-shape.js';
 import {
-  DiscoverySummarySchema,
-  DetectedStackSchema,
-  ExecutionSubjectInputSchema,
-  VerificationCandidatesSchema,
-} from './discovery-schemas.js';
-import { ProofGraphProjection } from './proofgraph.js';
-import { ProofContract, ProofContractCoverage } from './proofgraph-contract.js';
-import { PeerReviewEvidence, resolveAuthoritativePeerReviewTask } from './peer-review.js';
+  SessionStateEvidenceShape,
+  SessionStateReviewEvidenceShape,
+} from './session-state-evidence-shape.js';
 
 /** Immutable compatibility contract for executable session authority. */
 export const CURRENT_ASSURANCE_EPOCH = 'assurance-epoch.v3' as const;
@@ -393,268 +368,16 @@ export const SessionState = z
     /** Workspace binding (OpenCode session <-> git worktree). */
     binding: BindingInfo,
 
-    // ── Evidence Slots ──────────────────────────────────────────
-
-    /** Ticket/task evidence from /ticket. */
-    ticket: TicketEvidence.nullable(),
-
-    /** Architecture Decision Record from /architecture. */
-    architecture: ArchitectureDecision.nullable(),
-
-    /** Plan record with version history from /plan. */
-    plan: PlanRecord.nullable(),
-
-    /** Self-review loop state (PLAN phase, digest-stop). */
-    selfReview: SelfReviewLoop.nullable(),
-
-    /** Validation check results (VALIDATION phase, N checks in one phase). */
-    validation: z.array(ValidationResult),
-
-    /**
-     * Append-only execution ledger. Unlike the current per-check projections above,
-     * this preserves every successful validation-result persistence for audit.
-     */
-    validationAttempts: z.array(ValidationAttempt),
-
-    /**
-     * Append-only mutation-attempt ledger (#762). Records every FlowGuard-attested
-     * mutation report observation, with implementation binding, artifact/projection
-     * digests, and reproducibility metadata. Produced by flowguard_record_mutation_evidence.
-     */
-    mutationAttempts: z.array(MutationAttempt),
-
-    /** Durable host-mutation dispatch and completion ledger. */
-    mutationEpisodes: z.array(MutationEpisode),
-
-    /** Append-only unknown-outcome resolution authority for host mutation episodes. */
-    mutationEpisodeResolutions: z.array(MutationEpisodeResolution),
-
-    /**
-     * Fencing lease naming the single runtime instance governing this session.
-     * Held here, not in a file of its own, so the generation advances in the
-     * same atomic write as the episode that binds it. Null before any host
-     * mutation has been authorized.
-     */
-    runtimeLease: RuntimeLease.nullable(),
-
-    /** Advisory challenge-resolution evidence; defaults for legacy sessions. */
-    challengeResolutions: z.array(ChallengeResolution),
-
-    /**
-     * Post-implementation validation check results (IMPL_VALIDATION phase). Kept
-     * separate from `validation` (the pre-implementation baseline run) so the audit
-     * trail retains both the baseline and the re-run of checks against the fixed code.
-     * Defaulted to [] for backward compatibility with pre-IMPL_VALIDATION sessions.
-     */
-    implValidation: z.array(ValidationResult),
-
-    /** Implementation evidence from /implement. */
-    implementation: ImplEvidence.nullable(),
-
-    /**
-     * Pre-mutation frozen implementation base (commit-kind frozen repository
-     * revision target). Frozen at the transition INTO `IMPLEMENTATION`, before
-     * any governed mutation; the implementation review candidate pair resolves
-     * `revision:'base'` against this target. Absent for sessions that entered
-     * IMPLEMENTATION before the frozen-repository-authority generation — such
-     * sessions have no repository evidence authority.
-     */
-    implementationBaseAuthority: FrozenRepositoryRevisionTarget.optional(),
+    ...SessionStateEvidenceShape,
 
     /** Explicit runtime evidence for reducing implementation-review ceremony. */
     reducedCeremony: ReducedCeremonyDecision.nullable(),
 
-    /** Implementation review iteration result (IMPL_REVIEW phase, digest-stop). */
-    implReview: ImplReviewResult.nullable(),
+    ...SessionStateReviewEvidenceShape,
 
-    /** Human review-cycle counters for the governed loops; REQUIRED — see `review-cycles.ts`. */
-    reviewCycles: ReviewCycles,
+    ...SessionStateConfigShape,
 
-    /** Independent review findings for /implement (parallel, NOT mixed with ImplEvidence). */
-    implReviewFindings: z.array(ReviewFindings).optional(),
-
-    /** Independent review findings for standalone /review, retained append-only for audit. */
-    peerReviewFindings: z.array(ReviewFindings).optional(),
-
-    /** P35 strict independent-review obligations and invocation evidence. */
-    reviewAssurance: ReviewAssuranceState.optional(),
-
-    /** Human review decision at PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REVIEW. */
-    reviewDecision: ReviewDecision.nullable(),
-
-    /** Absolute path to the generated review report file (PEER_REVIEW phase, P8b). */
-    reviewReportPath: z.string().nullable(),
-
-    /** Append-only deterministic task preparation and completion evidence for /review. */
-    peerReviewEvidence: z.array(PeerReviewEvidence),
-
-    /**
-     * Thin ProofGraph contract declaration (advisory; #762).
-     *
-     * Declaration-only: names the claims a change asserts and their approved
-     * sources. Additive/`.optional()`; never a runtime authority. The evaluator
-     * derives `proofGraph` from these claims plus executed evidence.
-     */
-    proofContract: ProofContract.optional(),
-
-    /** Cause-specific gaps from the most recent approved-plan materialization. */
-    proofContractCoverage: z.array(ProofContractCoverage).optional(),
-
-    /**
-     * Compact ProofGraph projection (advisory; #762).
-     *
-     * Additive and `.optional()` for backward compatibility: sessions created
-     * before ProofGraph have no projection, and its absence is treated as "no
-     * graph". It never gates a workflow on its own — blocking eligibility is a
-     * policy-layer decision. Large provider artifacts live outside session state.
-     */
-    proofGraph: ProofGraphProjection.optional(),
-
-    /** Next auto-generated ADR sequence number for /architecture. */
-    nextAdrNumber: z.number().int().positive(),
-
-    // ── Configuration ───────────────────────────────────────────
-
-    /**
-     * Active profile information — resolved at hydrate time.
-     * Contains the profile ID, name, and LLM rule content.
-     * The ruleContent is the stack-specific guidance text injected into
-     * tool responses when commands reference "profile rules".
-     * phaseRuleContent maps Phase values to additional phase-specific text
-     * that is appended to ruleContent when the session is in that phase.
-     * Null only if no profile was resolved (should not happen — baseline is always available).
-     */
-    activeProfile: z
-      .object({
-        id: z.string().min(1),
-        name: z.string().min(1),
-        ruleContent: z.string(),
-        phaseRuleContent: z.record(z.string(), z.string()).optional(),
-      })
-      .nullable(),
-
-    /**
-     * Active validation checks for this session.
-     * Derived from verificationCandidates at hydrate-time (unique kinds).
-     * Empty if no verification commands were discovered.
-     */
-    activeChecks: z.array(CheckId),
-
-    /**
-     * Immutable policy snapshot — frozen at session creation.
-     * Records which FlowGuard rules governed this session.
-     * Its digest supports integrity comparison against a trusted reference.
-     */
-    policySnapshot: PolicySnapshotSchema,
-
-    /**
-     * Identity of the session initiator (author).
-     * Set once at hydrate time, never mutated.
-     * Used for regulated approval four-eyes enforcement:
-     * initiatedBy !== reviewDecision.decisionIdentity.actorId (approve path).
-     *
-     * P30: For regulated sessions, this MUST be a known actor identity,
-     * not the technical session ID. Use initiatedByIdentity for full provenance.
-     */
-    initiatedBy: z.string().min(1),
-
-    /**
-     * Structured initiator identity for regulated approval (P30).
-     * Persists actor identity at session creation for four-eyes proof.
-     * Required for regulated mode.
-     */
-    initiatedByIdentity: DecisionIdentitySchema.optional(),
-
-    /**
-     * Resolved actor identity at hydrate time (P27).
-     * Best-effort operator identity — NOT an authentication claim.
-     * Absent when no actor identity was resolved; null is not a valid state value.
-     */
-    actorInfo: ActorInfoSchema.optional(),
-
-    // ── Discovery ───────────────────────────────────────────────
-
-    /**
-     * SHA-256 digest of the DiscoveryResult at session creation time.
-     * Used for drift detection: if the workspace discovery changes,
-     * this digest will no longer match the current discovery.json.
-     * Null for sessions created before Phase 5 (discovery system).
-     */
-    discoveryDigest: z.string().nullable().optional(),
-
-    /**
-     * Lightweight discovery summary for quick consumption by Plan/Review/Implement.
-     * NOT the full DiscoveryResult — just the most useful fields.
-     * Null for sessions created before Phase 5 (discovery system).
-     */
-    discoverySummary: DiscoverySummarySchema.nullable().optional(),
-
-    /**
-     * Compact detected stack evidence for surfacing in flowguard_status.
-     *
-     * Derived evidence — NOT SSOT. The authoritative stack data lives in
-     * DiscoveryResult.stack. This is a compact projection of all detected
-     * stack items (versioned and unversioned), sorted deterministically
-     * by category then id.
-     *
-     * Null when no items were detected or for pre-discovery sessions.
-     */
-    detectedStack: DetectedStackSchema.nullable().optional(),
-
-    /**
-     * Advisory verification command candidates derived from stack + manifest evidence.
-     *
-     * Derived evidence — NOT SSOT. These candidates are planning hints only and
-     * MUST NOT be treated as executed checks.
-     */
-    verificationCandidates: VerificationCandidatesSchema.optional(),
-
-    /**
-     * Candidate-specific execution-subject inputs keyed by `candidateId`.
-     *
-     * Produced by the planner alongside `verificationCandidates`. Each entry
-     * declares which surfaces (implementation files, config files) must be
-     * attested before and after the check runs. A candidate must fail closed
-     * when its exact entry is absent; there is no kind-level fallback.
-     */
-    executionSubjectInputsByCandidateId: z
-      .record(z.string(), z.array(ExecutionSubjectInputSchema))
-      .optional(),
-
-    /**
-     * Pre-implementation worktree baseline (P-baseline): files already dirty
-     * at session start (hydrate), used by flowguard_implement to scope recorded
-     * evidence to files the task actually changed — pre-existing dirty files
-     * (e.g. a stale opencode.json) are subtracted so they are not attributed to
-     * the implementation or used to raise the risk floor.
-     *
-     * `.optional()` for backward compatibility (no schema version bump): when
-     * absent, implement does NOT subtract (records the full worktree exactly as
-     * before) and surfaces `baselineScoping: "unavailable"` — it never hides
-     * evidence. Null is treated identically to absent.
-     */
-    implementationBaseline: z
-      .object({
-        /**
-         * Files dirty at capture time, each with the git blob hash of its content
-         * at session start. A pre-dirty file is scoped out of implementation
-         * evidence ONLY if its current hash still matches — so a file the task
-         * actually modified (hash changed) is never hidden. `hash` is null for a
-         * path that was unreadable/deleted at capture time.
-         */
-        dirtyFiles: z.array(
-          z.object({
-            path: z.string(),
-            hash: z.string().nullable(),
-          }),
-        ),
-        /** ISO-8601 capture timestamp (hydrate time). */
-        capturedAt: z.string().datetime(),
-        // #852: git control-plane marker frozen at baseline; optional for legacy baselines.
-        controlPlaneMarker: z.string().min(1).optional(),
-      })
-      .nullable()
-      .optional(),
+    ...SessionStateDiscoveryShape,
 
     // ── Metadata ────────────────────────────────────────────────
     /** Last transition (from → to via event). Null before first transition. */

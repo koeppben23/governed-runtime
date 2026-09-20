@@ -213,14 +213,19 @@ async function archiveSessionImpl(
   const events = await readAuditTrail(sessDir);
   if (regulatedEvidence) assertCompletionAuditEvent(events);
 
-  if (
-    opts.redactionMode !== 'none' &&
-    events.length > archiveConfig!.archive.redaction.maxAuditEvents
-  ) {
-    throw new WorkspaceError(
-      'ARCHIVE_FAILED',
-      `Audit trail length (${events.length}) exceeds maxAuditEvents (${archiveConfig!.archive.redaction.maxAuditEvents}). Increase archive.redaction.maxAuditEvents or reduce the audit trail.`,
-    );
+  if (opts.redactionMode !== 'none') {
+    if (archiveConfig === undefined) {
+      throw new WorkspaceError(
+        'ARCHIVE_FAILED',
+        'Archive audit-trail limits require loaded archive configuration.',
+      );
+    }
+    if (events.length > archiveConfig.archive.redaction.maxAuditEvents) {
+      throw new WorkspaceError(
+        'ARCHIVE_FAILED',
+        `Audit trail length (${events.length}) exceeds maxAuditEvents (${archiveConfig.archive.redaction.maxAuditEvents}). Increase archive.redaction.maxAuditEvents or reduce the audit trail.`,
+      );
+    }
   }
 
   await stagePublishAndBind({
@@ -245,7 +250,11 @@ function stripTrailingPublicationBindings(
   events: Awaited<ReturnType<typeof readAuditTrail>>,
 ): Awaited<ReturnType<typeof readAuditTrail>> {
   let end = events.length;
-  while (end > 0 && events[end - 1]!.event === ARCHIVE_PUBLICATION_BINDING_EVENT) end -= 1;
+  while (end > 0) {
+    const event = events[end - 1];
+    if (event === undefined || event.event !== ARCHIVE_PUBLICATION_BINDING_EVENT) break;
+    end -= 1;
+  }
   return events.slice(0, end);
 }
 

@@ -10,6 +10,7 @@ import {
 } from '../../verification/assertion-parsers/vitest-json.js';
 import { junitXmlParser } from '../../verification/assertion-parsers/parsers.js';
 import type { AssertionProviderExtension } from '../contract.js';
+import { ProviderError } from '../errors.js';
 import type { ParsedAssertion } from '../../verification/assertion-parsers/types.js';
 import type { ReportFormatId } from '../../state/assertion-identity.js';
 
@@ -175,7 +176,11 @@ export const vitestProvider: AssertionProviderExtension = {
       providerId: 'vitest',
       assertionBindingFormats: new Set<ReportFormatId>(['vitest_json']),
       buildLocalId(parsed: ParsedAssertion) {
-        if (parsed.kind !== 'vitest_json') throw new Error(`vitest codec received ${parsed.kind}`);
+        if (parsed.kind !== 'vitest_json')
+          throw new ProviderError(
+            'PROVIDER_CODEC_KIND_MISMATCH',
+            `vitest codec received ${parsed.kind}`,
+          );
         return buildVitestLocalId(parsed.filePath, [...parsed.ancestorTitles], parsed.title);
       },
       validateLocalId(localId: string) {

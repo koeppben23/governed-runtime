@@ -61,7 +61,7 @@ import { existsSync } from 'node:fs';
 import { evaluate } from '../../machine/evaluate.js';
 import { autoAdvance } from '../../rails/types.js';
 import type { ReviewFindings, ImplEvidence } from '../../state/evidence.js';
-import type { SessionState } from '../../state/schema.js';
+import type { SessionState, TaskClass } from '../../state/schema.js';
 import { isCommandAllowed, Command } from '../../machine/commands.js';
 
 // Rail helpers
@@ -89,6 +89,7 @@ import type { ReviewDispatchAuthority } from '../review/dispatch-authority.js';
 import { buildLatestImplementationReviewSummary } from './review-summary.js';
 import { collectHistoricallyRejectedImplementationDigests } from '../review/rejected-digests.js';
 import { resolveCeremonyProfile, isNonDomainConfigPath } from '../phase-tool-gate.js';
+import type { CeremonyProfileDecision } from '../phase-tool-gate.js';
 import type { ImplementRuntime, ImplementationCeremony } from './implement-shared.js';
 import {
   hasUnresolvedMutationEpisodes,
@@ -100,6 +101,21 @@ import {
   materializeImplReviewContract,
   nextImplementationReviewIteration,
 } from './implement-shared.js';
+import { IntegrationInvariantError } from '../errors.js';
+
+/**
+ * The claimed task class a ceremony decision was derived from, fail-closed when
+ * a reduced ceremony carries no claim (the profile is unreachable without one).
+ */
+function requireCeremonyClaimedTaskClass(ceremony: CeremonyProfileDecision): TaskClass | undefined {
+  if (ceremony.profile === 'reduced' && ceremony.claimedTaskClass === undefined) {
+    throw new IntegrationInvariantError(
+      'REDUCED_CEREMONY_TASK_CLASS_MISSING',
+      'a reduced ceremony profile requires the claimed task class it was derived from',
+    );
+  }
+  return ceremony.claimedTaskClass;
+}
 
 function blockedImplRecovery(state: SessionState): string | null {
   if (state.phase !== 'IMPL_REVIEW') {
@@ -422,7 +438,7 @@ export async function handleImplRecord(
   const reviewIteration = nextImplementationReviewIteration(input.state);
   const planVersion = (input.state.plan?.history.length ?? 0) + 1;
   const ceremony = resolveCeremonyProfile({ state: input.state, changedFiles: files });
-  const reducedCeremony = ceremony.profile === 'reduced';
+  const ceremonyClaimedTaskClass = requireCeremonyClaimedTaskClass(ceremony);
   const nextState: SessionState = {
     ...input.state,
     mutationEpisodes: reconcileMutationEpisodes(
@@ -452,16 +468,17 @@ export async function handleImplRecord(
     // machine advances to IMPL_VALIDATION where the checks are re-run against the
     // new code (prevents a stale IMPL_VALIDATION failure from looping).
     implValidation: [],
-    reducedCeremony: reducedCeremony
-      ? {
-          profile: 'reduced',
-          reason: ceremony.reason,
-          claimedTaskClass: ceremony.claimedTaskClass!,
-          computedMinimumTaskClass: ceremony.computedMinimumTaskClass,
-          touchedSurfaces: [...ceremony.touchedSurfaces],
-          decidedAt: input.ctx.now(),
-        }
-      : null,
+    reducedCeremony:
+      ceremony.profile === 'reduced' && ceremonyClaimedTaskClass !== undefined
+        ? {
+            profile: 'reduced',
+            reason: ceremony.reason,
+            claimedTaskClass: ceremonyClaimedTaskClass,
+            computedMinimumTaskClass: ceremony.computedMinimumTaskClass,
+            touchedSurfaces: [...ceremony.touchedSurfaces],
+            decidedAt: input.ctx.now(),
+          }
+        : null,
     implReview: null,
     implReviewFindings: existingFindings.length > 0 ? existingFindings : undefined,
     reviewAssurance: input.state.reviewAssurance,

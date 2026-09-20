@@ -5,6 +5,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { hashText } from '../../shared/hashing.js';
+import { IntegrationInvariantError } from '../errors.js';
 export { hashText };
 export { hashFindings } from './findings-hash.js';
 import { hashFindings } from './findings-hash.js';
@@ -60,7 +61,7 @@ import {
 
 function resolveSubjectDigest(input: {
   subjectDigest: string;
-  reviewSubject?: FrozenReviewSubject;
+  reviewSubject?: FrozenReviewSubject | undefined;
 }): string {
   return input.reviewSubject?.subjectDigest ?? input.subjectDigest;
 }
@@ -82,7 +83,8 @@ export function artifactReviewSubjectScope(
 ): ReviewSubjectScope {
   const sectionPaths = indexMarkdownSections(markdown).map((section) => section.sectionPath);
   if (sectionPaths.length === 0) {
-    throw new Error(
+    throw new IntegrationInvariantError(
+      'REVIEW_ARTIFACT_SUBJECT_SECTIONS_MISSING',
       `FAIL_CLOSED: cannot mint a ${kind} artifact review subject scope from Markdown ` +
         'without ATX headings; artifact review findings must anchor to concrete sections.',
     );
@@ -121,11 +123,28 @@ import {
  */
 function assertSubjectDigest(subjectDigest: string): void {
   if (!subjectDigest || subjectDigest.length === 0) {
-    throw new Error(
+    throw new IntegrationInvariantError(
+      'REVIEW_SUBJECT_DIGEST_MISSING',
       'FAIL_CLOSED: createReviewObligation requires a non-empty subjectDigest. ' +
         'Obligations without an authoritative subject identity cannot produce bindable evidence.',
     );
   }
+}
+
+function assertObligationFreezeCoherence(input: {
+  obligationType: ReviewObligationType;
+  repositoryAuthority?: FrozenRepositoryAuthority | undefined;
+  repositoryEvidenceFreeze?: RepositoryEvidenceFreeze | undefined;
+}): void {
+  assertRepositoryFreezeCoherence({
+    obligationType: input.obligationType,
+    ...(input.repositoryAuthority !== undefined
+      ? { repositoryAuthority: input.repositoryAuthority }
+      : {}),
+    ...(input.repositoryEvidenceFreeze !== undefined
+      ? { repositoryEvidenceFreeze: input.repositoryEvidenceFreeze }
+      : {}),
+  });
 }
 
 export function createReviewObligation(input: {
@@ -135,29 +154,34 @@ export function createReviewObligation(input: {
   planVersion: number;
   now: string;
   subjectDigest: string;
-  claimDeclarationsDigest?: string;
-  reviewSubject?: FrozenReviewSubject;
+  claimDeclarationsDigest?: string | undefined;
+  reviewSubject?: FrozenReviewSubject | undefined;
   reviewMaterial: ReviewMaterial;
-  reviewProfile?: ReviewProfile;
-  profileSource?: ReviewProfileSource;
+  reviewProfile?: ReviewProfile | undefined;
+  profileSource?: ReviewProfileSource | undefined;
   policySnapshot?:
     | (Pick<PolicySnapshot, 'maxReviewerAttempts'> & {
         challengePolicy?: ChallengePolicy;
       })
-    | null;
-  changedFiles?: readonly string[];
-  reviewSubjectScope?: ReviewSubjectScope;
-  repositoryAuthority?: FrozenRepositoryAuthority;
-  repositoryEvidenceFreeze?: RepositoryEvidenceFreeze;
-  claimedTaskClass?: TaskClass;
-  metadata?: Record<string, unknown>;
-  fingerprintVersion?: 'v2';
+    | null
+    | undefined;
+  changedFiles?: readonly string[] | undefined;
+  reviewSubjectScope?: ReviewSubjectScope | undefined;
+  repositoryAuthority?: FrozenRepositoryAuthority | undefined;
+  repositoryEvidenceFreeze?: RepositoryEvidenceFreeze | undefined;
+  claimedTaskClass?: TaskClass | undefined;
+  metadata?: Record<string, unknown> | undefined;
+  fingerprintVersion?: 'v2' | undefined;
 }): ReviewObligation {
   assertSubjectDigest(input.subjectDigest);
-  assertRepositoryFreezeCoherence(input);
+  assertObligationFreezeCoherence(input);
   requireArtifactSubjectScope(input.obligationType, input.reviewSubjectScope);
   const challengePolicy = input.policySnapshot?.challengePolicy ?? CHALLENGE_POLICY_V1;
-  const resolvedChallengeRequirements = resolveChallengeRequirements(challengePolicy, input);
+  const resolvedChallengeRequirements = resolveChallengeRequirements(challengePolicy, {
+    obligationType: input.obligationType,
+    ...(input.changedFiles !== undefined ? { changedFiles: input.changedFiles } : {}),
+    ...(input.claimedTaskClass !== undefined ? { claimedTaskClass: input.claimedTaskClass } : {}),
+  });
   const subjectDigest = resolveSubjectDigest(input);
   const reviewSubjectScope = resolveSubjectScope(
     subjectDigest,
@@ -520,10 +544,18 @@ export function fulfillObligation(
 ): ReviewAssuranceState {
   const base = ensureReviewAssurance(assurance);
   const obligation = base.obligations.find((item) => item.obligationId === obligationId);
-  if (!obligation) throw new Error(`Review obligation not found: ${obligationId}`);
+  if (!obligation) {
+    throw new IntegrationInvariantError(
+      'REVIEW_OBLIGATION_NOT_FOUND',
+      `Review obligation not found: ${obligationId}`,
+    );
+  }
   if (obligation.status !== 'pending') {
     if (obligation.status === 'fulfilled' && obligation.invocationId === invocationId) return base;
-    throw new Error(`Cannot fulfill review obligation in status ${obligation.status}`);
+    throw new IntegrationInvariantError(
+      'REVIEW_OBLIGATION_STATUS_INVALID',
+      `Cannot fulfill review obligation in status ${obligation.status}`,
+    );
   }
   return {
     ...base,

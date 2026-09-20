@@ -112,6 +112,8 @@ export function buildArchitectureReviewInstruction(input: {
     authority: input.authority,
     iteration: input.iteration,
     planVersion: input.planVersion,
-    observationCapability: input.authority.attempt.observationCapability ?? undefined,
+    ...(input.authority.attempt.observationCapability !== undefined
+      ? { observationCapability: input.authority.attempt.observationCapability }
+      : {}),
   });
 }

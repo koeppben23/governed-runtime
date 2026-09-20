@@ -58,8 +58,8 @@ export function recordUserDecisionIntent(input: {
   readonly sessionId: string;
   readonly command: UserDecisionCommand;
   readonly expectedVerdict: ReviewVerdict;
-  readonly nowMs?: number;
-  readonly ttlMs?: number;
+  readonly nowMs?: number | undefined;
+  readonly ttlMs?: number | undefined;
 }): UserDecisionIntent {
   const createdAtMs = input.nowMs ?? Date.now();
   const ttlMs = input.ttlMs ?? DEFAULT_TTL_MS;

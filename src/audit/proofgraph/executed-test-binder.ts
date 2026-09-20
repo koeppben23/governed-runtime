@@ -31,8 +31,8 @@ export const EXECUTED_TEST_PROVIDER_VERSION = 'executed-test.v1';
 export const VALIDATION_CHECK_LOCATION_PREFIX = 'validation-check:';
 
 function lacksRequiredSuiteScope(
-  claim: { readonly claimScope?: 'specific_behavior' | 'suite' },
-  result: { readonly fullCheckScopeAttestation?: 'full_check' },
+  claim: { readonly claimScope?: 'specific_behavior' | 'suite' | undefined },
+  result: { readonly fullCheckScopeAttestation?: 'full_check' | undefined },
 ): boolean {
   return claim.claimScope === 'suite' && result.fullCheckScopeAttestation !== 'full_check';
 }

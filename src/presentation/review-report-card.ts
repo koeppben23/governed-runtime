@@ -24,6 +24,8 @@ import type {
   KeyValueItem,
   FindingGroup,
   FindingItem,
+  FindingRelationPresentation,
+  FindingRepositoryLocation,
 } from './model.js';
 import { projectFindingRelation } from './finding-relation.js';
 import { directiveLabel } from './directive-copy.js';
@@ -170,11 +172,12 @@ export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewC
     items: buildFollowUpItems(input.findings),
   });
 
+  const conclusion = buildConclusion(input);
   return {
     kind: 'review_card',
     form: input.conclusionAction ? 'success' : 'terminal',
     sections,
-    conclusion: buildConclusion(input),
+    ...(conclusion !== undefined ? { conclusion } : {}),
   };
 }
 
@@ -264,7 +267,7 @@ function buildCoverageSection(coverage: ReviewReportCardInput['coverage']): Pres
   };
 }
 
-function buildEvidenceSection(input: ReviewReportCardInput): PresentationSection | null {
+function hasEvidence(input: ReviewReportCardInput): boolean {
   const {
     obligationId,
     invocationSource,
@@ -272,24 +275,39 @@ function buildEvidenceSection(input: ReviewReportCardInput): PresentationSection
     hostVisible,
     reviewerSessionId,
     reviewOutputMode,
-    structuredOutputUsed,
     reviewAssuranceLevel,
   } = input;
-
-  const hasEvidence =
+  return Boolean(
     obligationId ||
     invocationSource ||
     invocationMode ||
     typeof hostVisible === 'boolean' ||
     reviewerSessionId ||
     reviewOutputMode ||
-    reviewAssuranceLevel;
-  if (!hasEvidence) return null;
+    reviewAssuranceLevel,
+  );
+}
 
-  const evidence: KeyValueItem[] = [];
+/** Invocation identity rows, in canonical render order. */
+function appendInvocationEvidenceItems(
+  evidence: KeyValueItem[],
+  input: ReviewReportCardInput,
+): void {
+  const { obligationId, invocationSource, invocationMode } = input;
   if (obligationId) evidence.push({ label: 'Obligation', value: `\`${obligationId}\`` });
   if (invocationSource) evidence.push({ label: 'Invocation source', value: invocationSource });
   if (invocationMode) evidence.push({ label: 'Invocation mode', value: invocationMode });
+}
+
+/** Host-observed invocation assurance rows, in canonical render order. */
+function appendHostEvidenceItems(evidence: KeyValueItem[], input: ReviewReportCardInput): void {
+  const {
+    hostVisible,
+    reviewerSessionId,
+    reviewOutputMode,
+    structuredOutputUsed,
+    reviewAssuranceLevel,
+  } = input;
   if (typeof hostVisible === 'boolean') {
     evidence.push({ label: 'Host visible', value: hostVisible ? 'yes' : 'no' });
   }
@@ -306,6 +324,13 @@ function buildEvidenceSection(input: ReviewReportCardInput): PresentationSection
   if (reviewAssuranceLevel) {
     evidence.push({ label: 'Review assurance', value: reviewAssuranceLevel });
   }
+}
+
+function buildEvidenceSection(input: ReviewReportCardInput): PresentationSection | null {
+  if (!hasEvidence(input)) return null;
+  const evidence: KeyValueItem[] = [];
+  appendInvocationEvidenceItems(evidence, input);
+  appendHostEvidenceItems(evidence, input);
   return { kind: 'keyValue', heading: 'Evidence', items: evidence };
 }
 
@@ -354,11 +379,59 @@ function safeMarkdownText(value: string): string {
   return value.replace(/[\\`*_{}\x5b\x5d<>()#+.!|\x2d\n\r]/g, '\\$&');
 }
 
+type ReviewReportFindingRelation = Extract<
+  ReviewReportFinding,
+  { source: 'material_finding' }
+>['finding']['relation'];
+
+function projectRepositoryLocation(
+  location: ReviewReportFindingRelation['evidenceLocations'][number],
+): FindingRepositoryLocation {
+  return {
+    path: location.path,
+    revision: location.revision,
+    ...(location.line !== undefined ? { line: location.line } : {}),
+    ...(location.endLine !== undefined ? { endLine: location.endLine } : {}),
+  };
+}
+
+function projectFindingRelationPresentation(
+  relation: ReviewReportFindingRelation,
+): FindingRelationPresentation {
+  return {
+    subjectAnchors: relation.subjectAnchors.map((subject) => {
+      if (subject.kind === 'repository_location') {
+        return {
+          kind: 'repository_location',
+          location: projectRepositoryLocation(subject.location),
+        };
+      }
+      if (subject.kind === 'content') {
+        const range = subject.range;
+        return {
+          kind: 'content',
+          subjectDigest: subject.subjectDigest,
+          ...(range !== undefined
+            ? {
+                range: {
+                  startLine: range.startLine,
+                  ...(range.endLine !== undefined ? { endLine: range.endLine } : {}),
+                },
+              }
+            : {}),
+        };
+      }
+      return subject;
+    }),
+    evidenceLocations: relation.evidenceLocations.map(projectRepositoryLocation),
+  };
+}
+
 function projectReviewReportFinding(entry: ReviewReportFinding): {
   readonly severity: string;
   readonly category: string;
   readonly message: string;
-  readonly relation?: import('./model.js').FindingRelationPresentation;
+  readonly relation?: FindingRelationPresentation;
 } {
   switch (entry.source) {
     case 'material_finding':
@@ -366,7 +439,7 @@ function projectReviewReportFinding(entry: ReviewReportFinding): {
         severity: entry.reportSeverity,
         category: entry.finding.category,
         message: entry.finding.message,
-        relation: entry.finding.relation,
+        relation: projectFindingRelationPresentation(entry.finding.relation),
       };
     case 'mechanical':
     case 'missing_verification':

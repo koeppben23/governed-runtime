@@ -27,7 +27,7 @@ import {
   buildReadinessProjection,
   buildEvidenceDetailProjection,
   buildBlockedProjection,
-} from './status.js';
+} from './status-detail-projections.js';
 import { buildFinishCard, deriveFinishOverallStatus } from './status-finish.js';
 import { getPolicyPreset } from '../config/policy.js';
 import { resolveWorkflowDirective } from '../machine/workflow-directive.js';

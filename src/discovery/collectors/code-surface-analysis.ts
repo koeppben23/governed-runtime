@@ -28,6 +28,7 @@ import type {
   ReadOutcome,
 } from '../types.js';
 import { extractSemanticCodeSurfaces } from './code-surface-semantic-extractors.js';
+import { DiscoveryError } from '../errors.js';
 
 const MAX_FILES = 200;
 const MAX_BYTES_PER_FILE = 64 * 1024;
@@ -260,6 +261,153 @@ export async function collectCodeSurfaces(
   }
 }
 
+interface CandidateContent {
+  readonly kind: 'content';
+  readonly content: string;
+  readonly outcome: Extract<ReadOutcome, 'read_ok' | 'too_large'>;
+}
+
+interface CandidateUnreadable {
+  readonly kind: 'unreadable';
+  readonly outcome: Extract<ReadOutcome, 'denied' | 'not_found'>;
+}
+
+type CandidateRead = CandidateContent | CandidateUnreadable;
+
+function readErrorCode(err: unknown): string {
+  if (typeof err === 'object' && err !== null && 'code' in err) {
+    return String(err.code);
+  }
+  return '';
+}
+
+async function readSourceCandidate(fullPath: string): Promise<CandidateRead> {
+  let content: string;
+  try {
+    content = await fs.readFile(fullPath, 'utf-8');
+  } catch (err: unknown) {
+    const code = readErrorCode(err);
+    const outcome = code === 'EACCES' || code === 'EPERM' ? 'denied' : 'not_found';
+    return { kind: 'unreadable', outcome };
+  }
+
+  if (Buffer.byteLength(content, 'utf-8') > MAX_BYTES_PER_FILE) {
+    return { kind: 'content', content: content.slice(0, MAX_BYTES_PER_FILE), outcome: 'too_large' };
+  }
+  return { kind: 'content', content, outcome: 'read_ok' };
+}
+
+interface CodeSurfaceRunState {
+  readonly endpoints: CodeSurfaceSignal[];
+  readonly authBoundaries: CodeSurfaceSignal[];
+  readonly dataAccess: CodeSurfaceSignal[];
+  readonly integrations: CodeSurfaceSignal[];
+  readonly testTargets: CodeSurfaceSignal[];
+  readonly readStatuses: Record<string, ReadOutcome>;
+  readonly semanticAppliedExtractors: Set<string>;
+  readonly semanticDiagnostics: string[];
+  semanticPartial: boolean;
+  scannedFiles: number;
+  scannedBytes: number;
+  degraded: boolean;
+}
+
+function createCodeSurfaceRunState(degraded: boolean): CodeSurfaceRunState {
+  return {
+    endpoints: [],
+    authBoundaries: [],
+    dataAccess: [],
+    integrations: [],
+    testTargets: [],
+    readStatuses: {},
+    semanticAppliedExtractors: new Set<string>(),
+    semanticDiagnostics: [],
+    semanticPartial: false,
+    scannedFiles: 0,
+    scannedBytes: 0,
+    degraded,
+  };
+}
+
+function compareSourceCandidates(
+  a: string,
+  b: string,
+  priorities: ReadonlyMap<string, number>,
+): number {
+  const pA = priorities.get(a) ?? 0;
+  const pB = priorities.get(b) ?? 0;
+  if (pA !== pB) return pB - pA;
+  const depthA = a.split(/[/\\]/).length;
+  const depthB = b.split(/[/\\]/).length;
+  if (depthA !== depthB) return depthA - depthB;
+  return a.localeCompare(b);
+}
+
+function collectSignalsFromFile(
+  content: string,
+  relPath: string,
+  state: CodeSurfaceRunState,
+): void {
+  detectSignals(content, relPath, ENDPOINT_RULES, state.endpoints);
+  detectSignals(content, relPath, AUTH_RULES, state.authBoundaries);
+  detectSignals(content, relPath, DATA_RULES, state.dataAccess);
+  detectSignals(content, relPath, INTEGRATION_RULES, state.integrations);
+
+  const semantic = extractSemanticCodeSurfaces(content, relPath);
+  addUniqueSignals(state.endpoints, semantic.endpoints);
+  addUniqueSignals(state.authBoundaries, semantic.authBoundaries);
+  addUniqueSignals(state.dataAccess, semantic.dataAccess);
+  addUniqueSignals(state.testTargets, semantic.testTargets);
+  for (const extractor of semantic.appliedExtractors)
+    state.semanticAppliedExtractors.add(extractor);
+  for (const diagnostic of semantic.diagnostics) {
+    if (diagnostic.startsWith('partial:')) state.semanticPartial = true;
+    state.semanticDiagnostics.push(`${relPath}:${diagnostic}`);
+  }
+}
+
+function buildCodeSurfacesInfo(
+  state: CodeSurfaceRunState,
+  budgetExhausted: boolean,
+  totalSourceCandidates: number,
+): CodeSurfacesInfo {
+  // Only include readStatuses if there were non-ok outcomes
+  const hasNonOkReads = Object.values(state.readStatuses).some((s) => s !== 'read_ok');
+
+  return {
+    status: state.degraded ? 'partial' : 'ok',
+    endpoints: state.endpoints,
+    authBoundaries: state.authBoundaries,
+    dataAccess: state.dataAccess,
+    integrations: state.integrations,
+    testTargets: state.testTargets,
+    budget: {
+      scannedFiles: state.scannedFiles,
+      scannedBytes: state.scannedBytes,
+      maxFiles: MAX_FILES,
+      maxBytesPerFile: MAX_BYTES_PER_FILE,
+      maxTotalBytes: MAX_TOTAL_BYTES,
+      timedOut: false,
+      totalSourceCandidates,
+      budgetExhausted,
+    },
+    semanticExtraction: {
+      status: state.semanticPartial
+        ? 'partial'
+        : state.semanticAppliedExtractors.size > 0
+          ? 'applied'
+          : 'heuristic_only',
+      appliedExtractors: [...state.semanticAppliedExtractors].sort(),
+      unsupportedReason:
+        state.semanticAppliedExtractors.size === 0
+          ? 'No semantic extractor matched scanned source files; heuristic code-surface rules were used.'
+          : null,
+      diagnostics: state.semanticDiagnostics.slice(0, 24),
+    },
+    ...(hasNonOkReads ? { readStatuses: state.readStatuses } : {}),
+  };
+}
+
 async function runCollector(input: CollectorInput): Promise<CodeSurfacesInfo> {
   // Filter to source-extension candidates only, then sort deterministically
   const allSourceCandidates = input.allFiles.filter((f) =>
@@ -270,123 +418,46 @@ async function runCollector(input: CollectorInput): Promise<CodeSurfacesInfo> {
 
   // Deterministic ranking: priority score (higher first), then depth, then alphabetical
   const priorities = precomputePriorities(allSourceCandidates);
-  const sorted = [...allSourceCandidates].sort((a, b) => {
-    const pA = priorities.get(a) ?? 0;
-    const pB = priorities.get(b) ?? 0;
-    if (pA !== pB) return pB - pA;
-    const depthA = a.split(/[/\\]/).length;
-    const depthB = b.split(/[/\\]/).length;
-    if (depthA !== depthB) return depthA - depthB;
-    return a.localeCompare(b);
-  });
+  const sorted = [...allSourceCandidates].sort((a, b) => compareSourceCandidates(a, b, priorities));
 
   // Budget: partial if source candidates exceed MAX_FILES
   const budgetExhausted = totalSourceCandidates > MAX_FILES;
   const candidates = sorted.slice(0, MAX_FILES);
 
-  const endpoints: CodeSurfaceSignal[] = [];
-  const authBoundaries: CodeSurfaceSignal[] = [];
-  const dataAccess: CodeSurfaceSignal[] = [];
-  const integrations: CodeSurfaceSignal[] = [];
-  const testTargets: CodeSurfaceSignal[] = [];
-  const readStatuses: Record<string, ReadOutcome> = {};
-  const semanticAppliedExtractors = new Set<string>();
-  const semanticDiagnostics: string[] = [];
-  let semanticPartial = false;
-
-  let scannedFiles = 0;
-  let scannedBytes = 0;
-  let degraded = budgetExhausted;
+  const state = createCodeSurfaceRunState(budgetExhausted);
 
   for (const relPath of candidates) {
-    if (scannedBytes >= MAX_TOTAL_BYTES) {
-      degraded = true;
+    if (state.scannedBytes >= MAX_TOTAL_BYTES) {
+      state.degraded = true;
       break;
     }
 
-    const fullPath = path.join(input.worktreePath, relPath);
-    let content: string;
-    try {
-      content = await fs.readFile(fullPath, 'utf-8');
-    } catch (err: unknown) {
-      const code = (err as NodeJS.ErrnoException)?.code;
-      if (code === 'EACCES' || code === 'EPERM') {
-        readStatuses[relPath] = 'denied';
-      } else {
-        readStatuses[relPath] = 'not_found';
-      }
-      degraded = true;
+    const read = await readSourceCandidate(path.join(input.worktreePath, relPath));
+    if (read.kind === 'unreadable') {
+      state.readStatuses[relPath] = read.outcome;
+      state.degraded = true;
       continue;
     }
 
-    if (Buffer.byteLength(content, 'utf-8') > MAX_BYTES_PER_FILE) {
-      readStatuses[relPath] = 'too_large';
-      degraded = true;
-      content = content.slice(0, MAX_BYTES_PER_FILE);
+    if (read.outcome === 'too_large') {
+      state.readStatuses[relPath] = 'too_large';
+      state.degraded = true;
     }
 
-    const consumed = Buffer.byteLength(content, 'utf-8');
-    if (scannedBytes + consumed > MAX_TOTAL_BYTES) {
-      degraded = true;
+    const consumed = Buffer.byteLength(read.content, 'utf-8');
+    if (state.scannedBytes + consumed > MAX_TOTAL_BYTES) {
+      state.degraded = true;
       break;
     }
 
-    scannedBytes += consumed;
-    scannedFiles += 1;
-    readStatuses[relPath] = 'read_ok';
+    state.scannedBytes += consumed;
+    state.scannedFiles += 1;
+    state.readStatuses[relPath] = 'read_ok';
 
-    detectSignals(content, relPath, ENDPOINT_RULES, endpoints);
-    detectSignals(content, relPath, AUTH_RULES, authBoundaries);
-    detectSignals(content, relPath, DATA_RULES, dataAccess);
-    detectSignals(content, relPath, INTEGRATION_RULES, integrations);
-
-    const semantic = extractSemanticCodeSurfaces(content, relPath);
-    addUniqueSignals(endpoints, semantic.endpoints);
-    addUniqueSignals(authBoundaries, semantic.authBoundaries);
-    addUniqueSignals(dataAccess, semantic.dataAccess);
-    addUniqueSignals(testTargets, semantic.testTargets);
-    for (const extractor of semantic.appliedExtractors) semanticAppliedExtractors.add(extractor);
-    for (const diagnostic of semantic.diagnostics) {
-      if (diagnostic.startsWith('partial:')) semanticPartial = true;
-      semanticDiagnostics.push(`${relPath}:${diagnostic}`);
-    }
+    collectSignalsFromFile(read.content, relPath, state);
   }
 
-  // Only include readStatuses if there were non-ok outcomes
-  const hasNonOkReads = Object.values(readStatuses).some((s) => s !== 'read_ok');
-
-  return {
-    status: degraded ? 'partial' : 'ok',
-    endpoints,
-    authBoundaries,
-    dataAccess,
-    integrations,
-    testTargets,
-    budget: {
-      scannedFiles,
-      scannedBytes,
-      maxFiles: MAX_FILES,
-      maxBytesPerFile: MAX_BYTES_PER_FILE,
-      maxTotalBytes: MAX_TOTAL_BYTES,
-      timedOut: false,
-      totalSourceCandidates,
-      budgetExhausted,
-    },
-    semanticExtraction: {
-      status: semanticPartial
-        ? 'partial'
-        : semanticAppliedExtractors.size > 0
-          ? 'applied'
-          : 'heuristic_only',
-      appliedExtractors: [...semanticAppliedExtractors].sort(),
-      unsupportedReason:
-        semanticAppliedExtractors.size === 0
-          ? 'No semantic extractor matched scanned source files; heuristic code-surface rules were used.'
-          : null,
-      diagnostics: semanticDiagnostics.slice(0, 24),
-    },
-    ...(hasNonOkReads ? { readStatuses } : {}),
-  };
+  return buildCodeSurfacesInfo(state, budgetExhausted, totalSourceCandidates);
 }
 
 function addUniqueSignals(
@@ -432,7 +503,10 @@ function detectSignals(
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`Timed out after ${ms}ms`)), ms);
+    const timer = setTimeout(
+      () => reject(new DiscoveryError('DISCOVERY_CODE_SURFACE_TIMEOUT', `Timed out after ${ms}ms`)),
+      ms,
+    );
     promise.then(
       (value) => {
         clearTimeout(timer);

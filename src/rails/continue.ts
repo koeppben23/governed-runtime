@@ -279,7 +279,10 @@ async function runOneImplReviewIteration(
     maxIterations,
     async (impl, iter) => {
       const review = await executors.implReview(impl, plan, iter);
-      return { verdict: review.verdict, updated: review.updatedImpl };
+      return {
+        verdict: review.verdict,
+        ...(review.updatedImpl !== undefined ? { updated: review.updatedImpl } : {}),
+      };
     },
     state.implReview?.verdict,
   );

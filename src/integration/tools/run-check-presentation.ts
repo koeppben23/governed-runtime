@@ -13,7 +13,7 @@ export interface RunCheckExecutionPresentation {
 export interface RunCheckClassificationPresentation {
   readonly passed: boolean;
   readonly outcome: ValidationOutcome;
-  readonly assertionExtraction?: AssertionExtractionResult;
+  readonly assertionExtraction?: AssertionExtractionResult | undefined;
 }
 
 /**

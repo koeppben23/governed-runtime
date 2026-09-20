@@ -241,7 +241,11 @@ function validateApprovedPlanCertificate(state: SessionState): CertificateValida
   if (state.phase !== 'IMPL_REVIEW' || !plan) {
     return { kind: 'invalid', cause: 'invalid_certificate' };
   }
-  return hasCurrentPlanApprovalCertificate(plan)
+  return hasCurrentPlanApprovalCertificate({
+    current: plan.current,
+    ...(plan.claimDeclarations !== undefined ? { claimDeclarations: plan.claimDeclarations } : {}),
+    approvalCertificate: certificate,
+  })
     ? { kind: 'valid', certificate }
     : { kind: 'invalid', cause: 'invalid_certificate' };
 }

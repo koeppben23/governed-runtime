@@ -24,7 +24,7 @@ import {
 } from './persistence.js';
 import { makeState, VALIDATION_PASSED } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
-import type { ReviewReport } from '../state/evidence-review.js';
+import type { ReviewReport } from '../state/evidence-review-report.js';
 import { TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
 
 let tmpDirs: string[] = [];

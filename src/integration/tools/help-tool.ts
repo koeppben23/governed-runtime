@@ -62,6 +62,15 @@ export const help: ToolDefinition = {
   },
 };
 
+function resolveArtifactContentPreference(view: z.infer<typeof HelpArgsSchema>): boolean {
+  if (view.view === 'command') return false;
+  return view.includeArtifactContent ?? false;
+}
+
+function resolveRequestedInvocation(view: z.infer<typeof HelpArgsSchema>): string | undefined {
+  return view.view === 'command' ? `/${view.command.replace(/^\/+/, '')}` : undefined;
+}
+
 async function executeHelp(
   view: z.infer<typeof HelpArgsSchema>,
   context: Parameters<ToolDefinition['execute']>[1],
@@ -69,25 +78,22 @@ async function executeHelp(
   const glyphProfile = (await readConfig(context.worktree || context.directory)).presentation
     .opencode.glyphProfile;
   const session = await withReadOnlySession(context);
-  let reviewReport = undefined;
-  if (session.sessDir) {
-    reviewReport = (await readReport(session.sessDir)) ?? undefined;
-  }
+  const reviewReport = session.sessDir
+    ? ((await readReport(session.sessDir)) ?? undefined)
+    : undefined;
+  const includeArtifactContent = resolveArtifactContentPreference(view);
+  const requestedInvocation = resolveRequestedInvocation(view);
   const result = buildHelpResult(session.state, session.policy, {
     view: view.view,
-    scope: view.view === 'commands' ? view.scope : undefined,
-    reviewReport,
-    ...(view.view === 'command'
-      ? { requestedInvocation: `/${view.command.replace(/^\/+/, '')}` }
-      : {}),
-    includeArtifactContent:
-      view.view !== 'command' ? (view.includeArtifactContent ?? false) : false,
+    ...(view.view === 'commands' && view.scope !== undefined ? { scope: view.scope } : {}),
+    ...(reviewReport !== undefined ? { reviewReport } : {}),
+    ...(requestedInvocation !== undefined ? { requestedInvocation } : {}),
+    includeArtifactContent,
   });
   return renderHelp(result, {
     format: view.verbose ? 'json' : 'markdown',
     verbose: view.verbose ?? false,
     glyphProfile,
-    includeArtifactContent:
-      view.view !== 'command' ? (view.includeArtifactContent ?? false) : false,
+    includeArtifactContent,
   });
 }

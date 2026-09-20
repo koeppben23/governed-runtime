@@ -70,26 +70,56 @@ export interface ProofApprovalProjection {
   readonly coverageGaps: readonly ProofContractCoverage[];
 }
 
+function bindingStatus(current: boolean): 'current' | 'stale_or_unbound' {
+  return current ? 'current' : 'stale_or_unbound';
+}
+
+function planCertificateProjection(
+  plan: SessionState['plan'],
+): ApprovalCertificateProjection | null {
+  const certificate = plan?.approvalCertificate;
+  if (!certificate || !plan) return null;
+  return {
+    ...certificate,
+    declaredClaimCount: plan.claimDeclarations?.claims.length ?? 0,
+    binding: bindingStatus(
+      hasCurrentPlanApprovalCertificate({
+        current: plan.current,
+        ...(plan.claimDeclarations !== undefined
+          ? { claimDeclarations: plan.claimDeclarations }
+          : {}),
+        approvalCertificate: certificate,
+      }),
+    ),
+  };
+}
+
+function architectureCertificateProjection(
+  architecture: SessionState['architecture'],
+): ApprovalCertificateProjection | null {
+  const certificate = architecture?.approvalCertificate;
+  if (!certificate || !architecture) return null;
+  return {
+    ...certificate,
+    declaredClaimCount: architecture.claimDeclarations?.claims.length ?? 0,
+    binding: bindingStatus(
+      hasCurrentArchitectureApprovalCertificate({
+        digest: architecture.digest,
+        ...(architecture.claimDeclarations !== undefined
+          ? { claimDeclarations: architecture.claimDeclarations }
+          : {}),
+        approvalCertificate: certificate,
+      }),
+    ),
+  };
+}
+
 function certificateProjection(state: SessionState): ApprovalCertificateProjection[] {
   const certificates: ApprovalCertificateProjection[] = [];
-  const plan = state.plan;
-  if (plan?.approvalCertificate) {
-    certificates.push({
-      ...plan.approvalCertificate,
-      declaredClaimCount: plan.claimDeclarations?.claims.length ?? 0,
-      binding: hasCurrentPlanApprovalCertificate(plan) ? 'current' : 'stale_or_unbound',
-    });
-  }
-  const architecture = state.architecture;
-  if (architecture?.approvalCertificate) {
-    certificates.push({
-      ...architecture.approvalCertificate,
-      declaredClaimCount: architecture.claimDeclarations?.claims.length ?? 0,
-      binding: hasCurrentArchitectureApprovalCertificate(architecture)
-        ? 'current'
-        : 'stale_or_unbound',
-    });
-  }
+  const planProjection = planCertificateProjection(state.plan);
+  if (planProjection) certificates.push(planProjection);
+  const architectureProjection = architectureCertificateProjection(state.architecture);
+  if (architectureProjection) certificates.push(architectureProjection);
   return certificates;
 }
 

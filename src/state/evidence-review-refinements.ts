@@ -9,11 +9,9 @@
  *
  * - peer review obligations require a frozen reviewSubject whose
  *   subjectDigest matches;
- * - frozen repository authorities must be structurally consistent;
- * - an attempt's Discovery variant must match its obligation's frozen
- *   repository governance;
- * - a persisted provenance projection must equal the canonical derivation
- *   from frozen authority.
+ * - frozen repository authorities must be structurally consistent.
+ *
+ * Assurance-level refinements live in `evidence-review-assurance-refinements.ts`.
  *
  * Callback parameter types are STRUCTURAL (deliberately not imported from
  * evidence-review.ts) so this module stays acyclic and the superRefine
@@ -26,11 +24,7 @@ import { z } from 'zod';
 import type { FrozenRepositoryAuthority } from './evidence-review-authority.js';
 import type { ReviewRepositoryIdentity as RepositoryIdentityValue } from './evidence-review-subject.js';
 import type { ReviewRepositoryRevisionProvenance as ProvenanceValue } from './evidence-primitives.js';
-import {
-  deriveRepositoryRevisionProvenance,
-  hasFrozenRepositoryAuthority,
-  verifyFrozenRepositoryAuthority,
-} from './evidence-review-authority.js';
+import { verifyFrozenRepositoryAuthority } from './evidence-review-authority.js';
 
 /** Minimal structural obligation shape the refinements operate on. */
 export interface ObligationRefinementShape {
@@ -40,29 +34,41 @@ export interface ObligationRefinementShape {
   readonly criteriaVersion: string;
   readonly status: string;
   readonly invocationId: string | null;
-  readonly fulfilledAt?: string | null;
-  readonly consumedAt?: string | null;
-  readonly reviewMaterial?: {
-    readonly subjectDigest: string;
-  } | null;
-  readonly reviewSubject?: {
-    readonly kind: string;
-    readonly subjectDigest: string;
-    readonly baseRepository?: RepositoryIdentityValue;
-    readonly headRepository?: RepositoryIdentityValue | null;
-    readonly baseSha?: string;
-    readonly headSha?: string;
-  } | null;
-  readonly repositoryAuthority?: FrozenRepositoryAuthority;
-  readonly repositoryEvidenceFreeze?: {
-    readonly kind: 'available' | 'unavailable';
-    readonly reason?: string;
-  } | null;
-  readonly repositoryRevisionProvenance?: ProvenanceValue;
-  readonly reviewSubjectScope?: {
-    readonly kind: string;
-    readonly implementationDigest?: string;
-  } | null;
+  readonly fulfilledAt?: string | null | undefined;
+  readonly consumedAt?: string | null | undefined;
+  readonly reviewMaterial?:
+    | {
+        readonly subjectDigest: string;
+      }
+    | null
+    | undefined;
+  readonly reviewSubject?:
+    | {
+        readonly kind: string;
+        readonly subjectDigest: string;
+        readonly baseRepository?: RepositoryIdentityValue | undefined;
+        readonly headRepository?: RepositoryIdentityValue | null | undefined;
+        readonly baseSha?: string | undefined;
+        readonly headSha?: string | undefined;
+      }
+    | null
+    | undefined;
+  readonly repositoryAuthority?: FrozenRepositoryAuthority | undefined;
+  readonly repositoryEvidenceFreeze?:
+    | {
+        readonly kind: 'available' | 'unavailable';
+        readonly reason?: string | undefined;
+      }
+    | null
+    | undefined;
+  readonly repositoryRevisionProvenance?: ProvenanceValue | undefined;
+  readonly reviewSubjectScope?:
+    | {
+        readonly kind: string;
+        readonly implementationDigest?: string | undefined;
+      }
+    | null
+    | undefined;
 }
 
 /**
@@ -100,59 +106,6 @@ export function refineImplementationScopeSubjectCoherence(
       message: 'only implement obligations may carry an implementation reviewSubjectScope.',
     });
   }
-}
-
-/** Minimal structural attempt shape for the Discovery-coherence refinement. */
-export interface AttemptRefinementShape {
-  readonly attemptId: string;
-  readonly obligationId: string;
-  readonly obligationType: string;
-  readonly subjectDigest: string;
-  readonly ordinal: number;
-  readonly status: string;
-  readonly childSessionId?: string;
-  readonly completedAt?: string;
-  readonly observationCapability?: string;
-  readonly rejectionReason?: string;
-  readonly createdAt: string;
-  readonly origin: {
-    readonly kind: string;
-    readonly predecessorAttemptId?: string;
-    readonly triggerReason?: string;
-  };
-  readonly repositoryDiscovery: { readonly kind: 'repository' | 'not_applicable' };
-}
-
-/** Minimal structural assurance shape for the cross-record refinements. */
-export interface AssuranceRefinementShape {
-  readonly obligations: readonly ObligationRefinementShape[];
-  readonly invocations: readonly {
-    readonly invocationId: string;
-    readonly obligationId: string;
-    readonly obligationType: string;
-    readonly childSessionId: string;
-    readonly attemptId?: string;
-    readonly invocationMode?: string;
-    readonly source?: string;
-    readonly hostVisible?: boolean;
-    readonly transcriptNavigable?: boolean;
-    readonly promptHash: string;
-    readonly canonicalPromptDigest?: string;
-    readonly consumedByObligationId?: string | null;
-    readonly reviewOutputMode?: string;
-    readonly structuredOutputUsed?: boolean;
-    readonly reviewAssuranceLevel?: string;
-  }[];
-  readonly attempts: readonly AttemptRefinementShape[];
-  readonly dispatches: readonly {
-    readonly dispatchId: string;
-    readonly attemptId: string;
-    readonly obligationId: string;
-    readonly hostCallId: string;
-    readonly canonicalPromptDigest: string;
-    readonly dispatchStatus: string;
-    readonly completedAt?: string;
-  }[];
 }
 
 /** Frozen material must belong to the same subject as its obligation. */
@@ -218,36 +171,57 @@ function sameRepositoryIdentity(a: RepositoryIdentityValue, b: RepositoryIdentit
   return !('kind' in b) && a.host === b.host && a.owner === b.owner && a.name === b.name;
 }
 
-/** Obligation type ↔ frozen repository authority coherence. */
-export function refineObligationRepositoryAuthorityCoherence(
+/** plan/architecture obligations may only carry a frozen repository context authority. */
+function refineContextObligationAuthority(
+  authority: FrozenRepositoryAuthority | undefined,
+  context: z.RefinementCtx,
+): void {
+  if (authority && authority.kind !== 'context') {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['repositoryAuthority'],
+      message: 'plan/architecture obligations may only carry a frozen repository context authority',
+    });
+  }
+}
+
+/** implement obligations may only carry a frozen candidate-pair repository authority. */
+function refineImplementationObligationAuthority(
+  authority: FrozenRepositoryAuthority | undefined,
+  context: z.RefinementCtx,
+): void {
+  if (authority && authority.kind !== 'candidate_pair') {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['repositoryAuthority'],
+      message: 'implement obligations may only carry a frozen candidate-pair repository authority',
+    });
+  }
+}
+
+type RepositoryAuthorityPair = Exclude<FrozenRepositoryAuthority, { kind: 'context' }>;
+
+function frozenAuthorityMatchesRepositorySubject(
+  authority: RepositoryAuthorityPair,
+  baseRepository: RepositoryIdentityValue,
+  headIdentity: RepositoryIdentityValue,
+  baseSha: string | undefined,
+  headSha: string | undefined,
+): boolean {
+  return (
+    sameRepositoryIdentity(authority.base.repositoryIdentity, baseRepository) &&
+    sameRepositoryIdentity(authority.head.repositoryIdentity, headIdentity) &&
+    authority.base.objectSha === baseSha &&
+    authority.head.objectSha === headSha
+  );
+}
+
+/** review obligations ↔ frozen repository authority coherence by subject kind. */
+function refineReviewObligationAuthority(
   obligation: ObligationRefinementShape,
   context: z.RefinementCtx,
 ): void {
   const authority = obligation.repositoryAuthority;
-  const obligationType = obligation.obligationType;
-  if (obligationType === 'plan' || obligationType === 'architecture') {
-    if (authority && authority.kind !== 'context') {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['repositoryAuthority'],
-        message:
-          'plan/architecture obligations may only carry a frozen repository context authority',
-      });
-    }
-    return;
-  }
-  if (obligationType === 'implement') {
-    if (authority && authority.kind !== 'candidate_pair') {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['repositoryAuthority'],
-        message:
-          'implement obligations may only carry a frozen candidate-pair repository authority',
-      });
-    }
-    return;
-  }
-  if (obligationType !== 'review') return;
   const subject = obligation.reviewSubject;
   if (!subject || subject.kind === 'content') {
     if (authority) {
@@ -277,8 +251,9 @@ export function refineObligationRepositoryAuthorityCoherence(
     });
     return;
   }
-  const expectedHeadIdentity = subject.headRepository ?? subject.baseRepository;
-  if (!subject.baseRepository || !expectedHeadIdentity) {
+  const baseRepository = subject.baseRepository;
+  const headIdentity = subject.headRepository ?? baseRepository;
+  if (!baseRepository || !headIdentity) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['reviewSubject'],
@@ -286,18 +261,40 @@ export function refineObligationRepositoryAuthorityCoherence(
     });
     return;
   }
-  const mismatch =
-    !sameRepositoryIdentity(authority.base.repositoryIdentity, subject.baseRepository) ||
-    !sameRepositoryIdentity(authority.head.repositoryIdentity, expectedHeadIdentity) ||
-    authority.base.objectSha !== subject.baseSha ||
-    authority.head.objectSha !== subject.headSha;
-  if (mismatch) {
+  if (
+    !frozenAuthorityMatchesRepositorySubject(
+      authority,
+      baseRepository,
+      headIdentity,
+      subject.baseSha,
+      subject.headSha,
+    )
+  ) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['repositoryAuthority'],
       message:
         'frozen repository authority must exactly match the frozen reviewSubject (identity and SHA)',
     });
+  }
+}
+
+/** Obligation type ↔ frozen repository authority coherence. */
+export function refineObligationRepositoryAuthorityCoherence(
+  obligation: ObligationRefinementShape,
+  context: z.RefinementCtx,
+): void {
+  const obligationType = obligation.obligationType;
+  if (obligationType === 'plan' || obligationType === 'architecture') {
+    refineContextObligationAuthority(obligation.repositoryAuthority, context);
+    return;
+  }
+  if (obligationType === 'implement') {
+    refineImplementationObligationAuthority(obligation.repositoryAuthority, context);
+    return;
+  }
+  if (obligationType === 'review') {
+    refineReviewObligationAuthority(obligation, context);
   }
 }
 
@@ -343,372 +340,5 @@ export function refineRepositoryEvidenceFreezeCoherence(
       message:
         'repositoryEvidenceFreeze records an unavailable repository freeze but the obligation carries a frozen repository authority',
     });
-  }
-}
-
-/** An attempt's Discovery variant must match its obligation's frozen governance. */
-export function refineAssuranceDiscoveryCoherence(
-  assurance: AssuranceRefinementShape,
-  context: z.RefinementCtx,
-): void {
-  const obligationsById = new Map(
-    assurance.obligations.map((obligation) => [obligation.obligationId, obligation]),
-  );
-  for (const attempt of assurance.attempts) {
-    if (attempt.repositoryDiscovery.kind === 'repository' && !attempt.observationCapability) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['attempts'],
-        message: `repository-governed attempt ${attempt.attemptId} requires an observation capability`,
-      });
-      return;
-    }
-    if (attempt.repositoryDiscovery.kind !== 'repository' && attempt.observationCapability) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['attempts'],
-        message: `non-repository attempt ${attempt.attemptId} must not carry an observation capability`,
-      });
-      return;
-    }
-    const obligation = obligationsById.get(attempt.obligationId);
-    if (!obligation) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['attempts'],
-        message: `attempt ${attempt.attemptId} references unknown obligation ${attempt.obligationId}`,
-      });
-      return;
-    }
-    const repositoryGoverned = hasFrozenRepositoryAuthority(obligation);
-    if (repositoryGoverned && attempt.repositoryDiscovery.kind !== 'repository') {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['attempts'],
-        message: `attempt ${attempt.attemptId} must carry a repository Discovery snapshot for a repository-governed obligation`,
-      });
-      return;
-    }
-    if (!repositoryGoverned && attempt.repositoryDiscovery.kind !== 'not_applicable') {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['attempts'],
-        message: `attempt ${attempt.attemptId} must carry not_applicable Discovery for a non-repository-governed obligation`,
-      });
-      return;
-    }
-  }
-}
-
-/** The native Task + structured follow-up is the only sanctioned review invocation generation. */
-function hasCanonicalInvocationShape(
-  assurance: AssuranceRefinementShape,
-  context: z.RefinementCtx,
-): boolean {
-  for (const invocation of assurance.invocations) {
-    if (
-      invocation.invocationMode !== 'native_task_structured_followup' ||
-      invocation.reviewOutputMode !== 'structured_output' ||
-      invocation.reviewAssuranceLevel !== 'structured_high' ||
-      invocation.structuredOutputUsed !== true ||
-      invocation.source !== 'host-orchestrated' ||
-      invocation.hostVisible !== true ||
-      invocation.transcriptNavigable !== true
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['invocations'],
-        message:
-          'Review invocation evidence requires one visible, navigable native Task with structured host-captured output.',
-      });
-      return false;
-    }
-  }
-  return true;
-}
-
-function hasBoundAttemptLinkage(
-  assurance: AssuranceRefinementShape,
-  context: z.RefinementCtx,
-): boolean {
-  const attemptsByAttemptId = new Map(
-    assurance.attempts.map((attempt) => [attempt.attemptId, attempt]),
-  );
-  for (const invocation of assurance.invocations) {
-    const attemptId = invocation.attemptId;
-    if (!attemptId) continue;
-    const attempt = attemptsByAttemptId.get(attemptId);
-    if (!attempt) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['invocations'],
-        message: `invocation ${invocation.invocationId} references unknown attempt ${invocation.attemptId}`,
-      });
-      return false;
-    }
-    if (
-      attempt.obligationId !== invocation.obligationId ||
-      attempt.obligationType !== invocation.obligationType
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['invocations'],
-        message: `invocation ${invocation.invocationId} attempt ${attempt.attemptId} belongs to a different obligation`,
-      });
-      return false;
-    }
-    if (attempt.status !== 'bound' && attempt.status !== 'rejected') {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['invocations'],
-        message: `invocation ${invocation.invocationId} attempt ${attempt.attemptId} has no bound lifecycle`,
-      });
-      return false;
-    }
-    if (attempt.childSessionId !== invocation.childSessionId) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['invocations'],
-        message: `invocation ${invocation.invocationId} child session does not match the bound attempt`,
-      });
-      return false;
-    }
-    if (!attempt.completedAt) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['invocations'],
-        message: `invocation ${invocation.invocationId} bound attempt is missing completedAt`,
-      });
-      return false;
-    }
-  }
-  return true;
-}
-
-function hasObligationBackReference(
-  assurance: AssuranceRefinementShape,
-  context: z.RefinementCtx,
-): boolean {
-  const invocationsByInvocationId = new Map(
-    assurance.invocations.map((invocation) => [invocation.invocationId, invocation]),
-  );
-  for (const obligation of assurance.obligations) {
-    if (obligation.invocationId) {
-      const linked = invocationsByInvocationId.get(obligation.invocationId);
-      if (!linked) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['obligations'],
-          message: `obligation ${obligation.obligationId} references unknown invocation ${obligation.invocationId}`,
-        });
-        return false;
-      }
-      if (
-        linked.obligationId !== obligation.obligationId ||
-        linked.obligationType !== obligation.obligationType
-      ) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['invocations'],
-          message: `invocation ${linked.invocationId} is the canonical linkage of obligation ${obligation.obligationId} but back-references obligation ${linked.obligationId} (type ${linked.obligationType})`,
-        });
-        return false;
-      }
-    }
-    if (
-      (obligation.status === 'fulfilled' || obligation.status === 'consumed') &&
-      (!obligation.invocationId || !obligation.fulfilledAt)
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['obligations'],
-        message: `obligation ${obligation.obligationId} is ${obligation.status} without invocation lineage and fulfilledAt`,
-      });
-      return false;
-    }
-    if (obligation.status === 'consumed' && !obligation.consumedAt) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['obligations'],
-        message: `consumed obligation ${obligation.obligationId} is missing consumedAt`,
-      });
-      return false;
-    }
-  }
-  return true;
-}
-
-function hasConsumedByInvariant(
-  assurance: AssuranceRefinementShape,
-  context: z.RefinementCtx,
-): boolean {
-  for (const invocation of assurance.invocations) {
-    if (
-      invocation.consumedByObligationId != null &&
-      invocation.consumedByObligationId !== invocation.obligationId
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['invocations'],
-        message: `invocation ${invocation.invocationId} consumedByObligationId must equal its own obligationId`,
-      });
-      return false;
-    }
-  }
-  return true;
-}
-
-/**
- * Canonical linkage coherence. The native Task + structured follow-up is the
- * only sanctioned review invocation generation.
- */
-export function refineAssuranceInvocationLinkageCoherence(
-  assurance: AssuranceRefinementShape,
-  context: z.RefinementCtx,
-): void {
-  if (!hasCanonicalInvocationShape(assurance, context)) return;
-  if (!hasBoundAttemptLinkage(assurance, context)) return;
-  if (!hasObligationBackReference(assurance, context)) return;
-  if (!hasConsumedByInvariant(assurance, context)) return;
-}
-
-type InvocationRefinementShape = AssuranceRefinementShape['invocations'][number];
-type DispatchRefinementShape = AssuranceRefinementShape['dispatches'][number];
-
-function dispatchLinksInvocation(
-  dispatch: DispatchRefinementShape,
-  invocation: InvocationRefinementShape,
-): boolean {
-  return (
-    dispatch.attemptId === invocation.attemptId &&
-    dispatch.obligationId === invocation.obligationId &&
-    dispatch.hostCallId === invocation.childSessionId &&
-    dispatch.canonicalPromptDigest === invocation.promptHash
-  );
-}
-
-/** Durable dispatch and invocation evidence must describe the same host release. */
-export function refineAssuranceInvocationDispatchLinkage(
-  assurance: AssuranceRefinementShape,
-  context: z.RefinementCtx,
-): void {
-  const dispatchesByAttempt = new Map<string, DispatchRefinementShape[]>();
-  for (const dispatch of assurance.dispatches) {
-    const bucket = dispatchesByAttempt.get(dispatch.attemptId) ?? [];
-    bucket.push(dispatch);
-    dispatchesByAttempt.set(dispatch.attemptId, bucket);
-  }
-  const invocationsByAttempt = new Map<string, InvocationRefinementShape[]>();
-  for (const invocation of assurance.invocations) {
-    const key = invocation.attemptId ?? '';
-    const bucket = invocationsByAttempt.get(key) ?? [];
-    bucket.push(invocation);
-    invocationsByAttempt.set(key, bucket);
-  }
-  for (const invocation of assurance.invocations) {
-    const matches = (dispatchesByAttempt.get(invocation.attemptId ?? '') ?? []).filter(
-      (dispatch) =>
-        dispatchLinksInvocation(dispatch, invocation) &&
-        dispatch.dispatchStatus === 'completed' &&
-        dispatch.completedAt != null,
-    );
-    if (matches.length !== 1) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['invocations'],
-        message: `invocation ${invocation.invocationId} requires exactly one completed dispatch for its attempt, host call, and prompt digest (found ${String(matches.length)})`,
-      });
-      return;
-    }
-  }
-  for (const dispatch of assurance.dispatches) {
-    const matches = (invocationsByAttempt.get(dispatch.attemptId) ?? []).filter((invocation) =>
-      dispatchLinksInvocation(dispatch, invocation),
-    );
-    if (dispatch.dispatchStatus === 'completed' && matches.length !== 1) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['dispatches'],
-        message: `completed dispatch ${dispatch.dispatchId} requires exactly one matching invocation (found ${String(matches.length)})`,
-      });
-      return;
-    }
-    if (dispatch.dispatchStatus !== 'completed' && matches.length > 0) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['dispatches'],
-        message: `dispatch ${dispatch.dispatchId} is ${dispatch.dispatchStatus} but has a matching invocation`,
-      });
-      return;
-    }
-  }
-}
-
-/** Canonical authority identifiers must be unique. */
-export function refineAssuranceIdentityUniqueness(
-  assurance: AssuranceRefinementShape,
-  context: z.RefinementCtx,
-): void {
-  const obligationIds = new Set<string>();
-  for (const obligation of assurance.obligations) {
-    if (obligationIds.has(obligation.obligationId)) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['obligations'],
-        message: `duplicate obligationId ${obligation.obligationId} — an obligation identity must be unique across the assurance state`,
-      });
-      return;
-    }
-    obligationIds.add(obligation.obligationId);
-  }
-  const invocationIds = new Set<string>();
-  for (const invocation of assurance.invocations) {
-    if (invocationIds.has(invocation.invocationId)) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['invocations'],
-        message: `duplicate invocationId ${invocation.invocationId} — an invocation identity must be unique across the assurance state`,
-      });
-      return;
-    }
-    invocationIds.add(invocation.invocationId);
-  }
-  const attemptIds = new Set<string>();
-  for (const attempt of assurance.attempts) {
-    if (attemptIds.has(attempt.attemptId)) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['attempts'],
-        message: `duplicate attemptId ${attempt.attemptId} — an attempt identity must be unique across the assurance state`,
-      });
-      return;
-    }
-    attemptIds.add(attempt.attemptId);
-  }
-}
-
-/** Persisted revision provenance must equal the derivation from frozen authority. */
-export function refineAssuranceProvenanceCoherence(
-  assurance: AssuranceRefinementShape,
-  context: z.RefinementCtx,
-): void {
-  for (const obligation of assurance.obligations) {
-    if (!obligation.repositoryAuthority) continue;
-    const derived = deriveRepositoryRevisionProvenance(obligation);
-    if (derived.kind === 'unavailable') continue;
-    const persisted = obligation.repositoryRevisionProvenance;
-    if (
-      persisted &&
-      (persisted.kind !== 'available' ||
-        persisted.headSha !== derived.headSha ||
-        persisted.baseSha !== derived.baseSha)
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['obligations'],
-        message: `obligation ${obligation.obligationId} carries a provenance projection that diverges from its frozen repository authority`,
-      });
-      return;
-    }
   }
 }

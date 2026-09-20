@@ -16,8 +16,8 @@ import {
   buildHeuristicRiskWarning,
   classifyProofClaimContract,
   validateProofClaimContract,
-  type NormalizedClaimDeclaration,
 } from './claim-contract.js';
+import type { NormalizedClaimDeclaration } from './claim-contract-rules.js';
 import { isRiskAssessmentCurrent } from '../../audit/proofgraph/gate.js';
 
 const CLAIM_A = '10000000-0000-4000-8000-00000000000a';
@@ -56,10 +56,12 @@ const BASE = {
   ],
 };
 
-function planClaim(
-  overrides: Partial<NormalizedClaimDeclaration> = {},
-): NormalizedClaimDeclaration {
-  return {
+type ClaimOverrides = {
+  [K in keyof NormalizedClaimDeclaration]?: NormalizedClaimDeclaration[K] | undefined;
+};
+
+function planClaim(overrides: ClaimOverrides = {}): NormalizedClaimDeclaration {
+  const claim: NormalizedClaimDeclaration = {
     claimId: CLAIM_A,
     statement: 'updateTask rejects unknown ids',
     critical: true,
@@ -71,8 +73,15 @@ function planClaim(
       assertion: { providerId: 'junit', localId: 'com.example.Test#testMethod' },
     },
     authoritySectionId: 'step-1',
-    ...overrides,
   };
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === undefined) {
+      Reflect.deleteProperty(claim, key);
+    } else {
+      Object.assign(claim, { [key]: value });
+    }
+  }
+  return claim;
 }
 
 const securityFullCheckCandidate = {

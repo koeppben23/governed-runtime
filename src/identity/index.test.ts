@@ -533,7 +533,7 @@ describe('identity resolveIdpToken (P35b1)', () => {
       level: string;
       service: string;
       message: string;
-      extra?: Record<string, unknown>;
+      extra?: Record<string, unknown> | undefined;
     }> = [];
     const logger: AdapterLogger = {
       info: (service, message, extra) => logs.push({ level: 'info', service, message, extra }),
@@ -579,7 +579,7 @@ describe('identity resolveIdpToken (P35b1)', () => {
       level: string;
       service: string;
       message: string;
-      extra?: Record<string, unknown>;
+      extra?: Record<string, unknown> | undefined;
     }> = [];
     const logger: AdapterLogger = {
       info: (service, message, extra) => logs.push({ level: 'info', service, message, extra }),

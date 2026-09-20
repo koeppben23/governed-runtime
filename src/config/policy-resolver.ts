@@ -123,7 +123,9 @@ function applyConfigOverrides(
       basePolicy,
       opts.configMinimumActorAssuranceForApproval,
     ),
-    identityProvider: opts.configIdentityProvider ?? basePolicy.identityProvider,
+    ...(opts.configIdentityProvider !== undefined
+      ? { identityProvider: opts.configIdentityProvider }
+      : {}),
     identityProviderMode: opts.configIdentityProviderMode ?? basePolicy.identityProviderMode,
     enforceRiskClassification:
       opts.configEnforceRiskClassification ?? basePolicy.enforceRiskClassification,
@@ -158,7 +160,9 @@ function hydrateFromRequested(ctx: RequestedPolicyContext): HydratePolicyResolut
     effectiveMode: ctx.requestedResolution.effectiveMode,
     effectiveSource: ctx.requestedSource,
     effectiveGateBehavior: ctx.requestedResolution.effectiveGateBehavior,
-    degradedReason: ctx.requestedResolution.degradedReason,
+    ...(ctx.requestedResolution.degradedReason !== undefined
+      ? { degradedReason: ctx.requestedResolution.degradedReason }
+      : {}),
     policy: ctx.policyWithOverrides,
   };
 }
@@ -219,7 +223,9 @@ function resolveCentralUplift(
     effectiveMode: centralResolution.effectiveMode,
     effectiveSource: 'central',
     effectiveGateBehavior: centralResolution.effectiveGateBehavior,
-    degradedReason: centralResolution.degradedReason,
+    ...(centralResolution.degradedReason !== undefined
+      ? { degradedReason: centralResolution.degradedReason }
+      : {}),
     policy: centralPolicyWithOverrides,
     resolutionReason:
       ctx.requestedSource === 'repo' ? 'repo_weaker_than_central' : 'default_weaker_than_central',

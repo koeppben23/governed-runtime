@@ -33,7 +33,7 @@ interface LogRecord {
   level: 'info' | 'warn' | 'error';
   service: string;
   message: string;
-  extra?: Record<string, unknown>;
+  extra?: Record<string, unknown> | undefined;
 }
 
 function makeCapturingLogger(sink: LogRecord[]): AdapterLogger {

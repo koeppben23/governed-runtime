@@ -60,6 +60,12 @@ export type * from './proofgraph-approval.js';
 
 export * from './evidence-review.js';
 export type * from './evidence-review.js';
+export * from './evidence-review-completeness.js';
+export type * from './evidence-review-completeness.js';
+export * from './evidence-review-attestation.js';
+export type * from './evidence-review-attestation.js';
+export * from './evidence-review-report.js';
+export type * from './evidence-review-report.js';
 export * from './evidence-review-input.js';
 export type * from './evidence-review-input.js';
 

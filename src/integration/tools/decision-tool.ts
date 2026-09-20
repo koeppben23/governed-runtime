@@ -15,16 +15,12 @@
 
 import { z } from 'zod';
 
-import type { ToolDefinition } from './helpers.js';
+import type { ToolDefinition, ToolResult, WorkspaceToolContext } from './helpers.js';
 import { formatError } from './error-format.js';
-import {
-  withMutableSession,
-  withMutableSessionTransaction,
-  formatBlocked,
-  persistAndFormat,
-} from './helpers.js';
+import { withMutableSession, withMutableSessionTransaction, formatBlocked } from './helpers.js';
+import { persistAndFormat } from './helpers-rail-presentation.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
-import type { ReviewVerdict } from '../../state/evidence.js';
+import type { ActorInfo, ReviewVerdict } from '../../state/evidence.js';
 
 // Rails
 import { executeReviewDecision } from '../../rails/review-decision.js';
@@ -63,6 +59,72 @@ function requireHumanDecisionIntent(input: {
   if (gate.ok) return null;
   return formatBlocked('HUMAN_DECISION_REQUIRED', {
     reason: gate.reason,
+  });
+}
+
+type DecisionFinalization = Awaited<ReturnType<typeof finalizeDecision>>;
+
+interface PersistedDecision {
+  readonly output: ToolResult;
+  readonly finalResult: DecisionFinalization;
+}
+
+async function persistHumanDecision(
+  context: WorkspaceToolContext,
+  args: { readonly verdict: ReviewVerdict; readonly rationale: string },
+  actorInfo: ActorInfo,
+): Promise<PersistedDecision> {
+  return withMutableSessionTransaction(context, async ({ fingerprint, sessDir, state, ctx }) => {
+    // P30/P34: Build structured decision identity directly from resolved actor info
+    // actorAssurance comes from the canonical ActorInfo — not re-derived from source
+    const decisionIdentity = {
+      actorId: actorInfo.id,
+      actorEmail: actorInfo.email,
+      actorDisplayName: actorInfo.displayName,
+      actorSource: actorInfo.source,
+      actorAssurance: actorInfo.assurance,
+    };
+
+    const result = executeReviewDecision(
+      state,
+      {
+        verdict: args.verdict,
+        // Fall back to an empty string here rather than relying on the Zod
+        // `.default('')`: the MCP boundary strips null-valued args (some
+        // models inject `rationale: null`), which removes the key entirely
+        // and leaves the value undefined by the time it reaches state
+        // serialization. Without this guard SessionState.safeParse rejects
+        // the decision with SCHEMA_VALIDATION_FAILED.
+        rationale: args.rationale ?? '',
+        decisionIdentity,
+      },
+      ctx,
+    );
+
+    // Approval now stops at EXPORT_READY. Completion side effects belong
+    // exclusively to flowguard_export after package verification.
+    const finalResult = await finalizeDecision({
+      sessDir,
+      fingerprint,
+      sessionID: context.sessionID,
+      priorPhase: state.phase,
+      verdict: args.verdict,
+      result,
+      auditDeps: createSessionCompletionAuditDeps({
+        sessDir,
+        sessionID: context.sessionID,
+        fingerprint,
+        state,
+      }),
+    });
+
+    const persisted = await persistAndFormat(sessDir, finalResult, {
+      evidenceApprovalCompletion:
+        state.phase === 'EVIDENCE_REVIEW' &&
+        (args.verdict === 'approve' || args.verdict === 'approve_with_governance_override'),
+    });
+
+    return { output: persisted, finalResult };
   });
 }
 
@@ -107,62 +169,7 @@ export const decision: ToolDefinition = {
         probe.policy,
       );
 
-      const settled = await withMutableSessionTransaction(
-        context,
-        async ({ fingerprint, sessDir, state, ctx }) => {
-          // P30/P34: Build structured decision identity directly from resolved actor info
-          // actorAssurance comes from the canonical ActorInfo — not re-derived from source
-          const decisionIdentity = {
-            actorId: actorInfo.id,
-            actorEmail: actorInfo.email,
-            actorDisplayName: actorInfo.displayName,
-            actorSource: actorInfo.source,
-            actorAssurance: actorInfo.assurance,
-          };
-
-          const result = executeReviewDecision(
-            state,
-            {
-              verdict: args.verdict,
-              // Fall back to an empty string here rather than relying on the Zod
-              // `.default('')`: the MCP boundary strips null-valued args (some
-              // models inject `rationale: null`), which removes the key entirely
-              // and leaves the value undefined by the time it reaches state
-              // serialization. Without this guard SessionState.safeParse rejects
-              // the decision with SCHEMA_VALIDATION_FAILED.
-              rationale: args.rationale ?? '',
-              decisionIdentity,
-            },
-            ctx,
-          );
-
-          // Approval now stops at EXPORT_READY. Completion side effects belong
-          // exclusively to flowguard_export after package verification.
-          const finalResult = await finalizeDecision({
-            sessDir,
-            fingerprint,
-            sessionID: context.sessionID,
-            priorPhase: state.phase,
-            verdict: args.verdict,
-            result,
-            auditDeps: createSessionCompletionAuditDeps({
-              sessDir,
-              sessionID: context.sessionID,
-              fingerprint,
-              state,
-            }),
-          });
-
-          const persisted = await persistAndFormat(sessDir, finalResult, {
-            evidenceApprovalCompletion:
-              state.phase === 'EVIDENCE_REVIEW' &&
-              (args.verdict === 'approve' || args.verdict === 'approve_with_governance_override'),
-          });
-
-          return { kind: 'formatted' as const, output: persisted, finalResult };
-        },
-      );
-
+      const settled = await persistHumanDecision(context, args, actorInfo);
       const finalResult = settled.finalResult;
       const output = settled.output;
 

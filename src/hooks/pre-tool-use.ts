@@ -25,7 +25,7 @@
 
 import { readStdin, validateToolHookPayload } from './shared/stdin-reader.js';
 import { DenyOutputError, formatDenyOutput, writeLog } from './shared/stdout-writer.js';
-import { installHookStdoutGuard } from './shared/stdout-guard.js';
+import { installHookStdoutGuard, type HookStdoutGuard } from './shared/stdout-guard.js';
 import { resolveSession } from './shared/session-resolver.js';
 import { detectPlatform } from './shared/platform-detect.js';
 import {
@@ -40,53 +40,65 @@ import {
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
+/** Deny helper: format + write via guard, then throw DenyOutputError on failure. */
+async function writePreToolUseDeny(
+  guard: HookStdoutGuard,
+  code: string,
+  reason: string,
+): Promise<void> {
+  const output = formatDenyOutput('PreToolUse', code, reason);
+  const payload = JSON.stringify(output) + '\n';
+  try {
+    await guard.writeResponse(payload);
+  } catch (err) {
+    process.exitCode = 2;
+    try {
+      process.stderr.write(
+        `[FlowGuard Hook] DENY_OUTPUT_FAILED: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.stderr.write(payload);
+    } catch {
+      /* nothing left */
+    }
+    throw new DenyOutputError('Failed to write deny decision to stdout', { cause: err });
+  }
+}
+
+type ValidatedToolHookPayload = ReturnType<typeof validateToolHookPayload>;
+
+async function readValidatedPreToolUseInput(
+  guard: HookStdoutGuard,
+): Promise<ValidatedToolHookPayload | null> {
+  let payload: Record<string, unknown>;
+  try {
+    payload = await readStdin();
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    writeLog(`DENY (fail-closed stdin): ${reason}`);
+    await writePreToolUseDeny(guard, 'HOOK_STDIN_INVALID', reason);
+    return null;
+  }
+
+  const platform = detectPlatform(payload);
+  writeLog(`platform: ${platform}`);
+
+  try {
+    return validateToolHookPayload(payload);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    writeLog(`DENY (fail-closed validation): ${reason}`);
+    await writePreToolUseDeny(guard, 'HOOK_PAYLOAD_INVALID', reason);
+    return null;
+  }
+}
+
 async function main(): Promise<void> {
   // Install stdout guard FIRST — captures any spurious output from transitive deps.
   const guard = installHookStdoutGuard();
 
   try {
-    /** Deny helper: format + write via guard, then throw DenyOutputError on failure. */
-    async function deny(code: string, reason: string): Promise<void> {
-      const output = formatDenyOutput('PreToolUse', code, reason);
-      const payload = JSON.stringify(output) + '\n';
-      try {
-        await guard.writeResponse(payload);
-      } catch (err) {
-        process.exitCode = 2;
-        try {
-          process.stderr.write(
-            `[FlowGuard Hook] DENY_OUTPUT_FAILED: ${err instanceof Error ? err.message : String(err)}\n`,
-          );
-          process.stderr.write(payload);
-        } catch {
-          /* nothing left */
-        }
-        throw new DenyOutputError('Failed to write deny decision to stdout', { cause: err });
-      }
-    }
-
-    let payload: Record<string, unknown>;
-    try {
-      payload = await readStdin();
-    } catch (err) {
-      const reason = err instanceof Error ? err.message : String(err);
-      writeLog(`DENY (fail-closed stdin): ${reason}`);
-      await deny('HOOK_STDIN_INVALID', reason);
-      return;
-    }
-
-    const platform = detectPlatform(payload);
-    writeLog(`platform: ${platform}`);
-
-    let validated: ReturnType<typeof validateToolHookPayload>;
-    try {
-      validated = validateToolHookPayload(payload);
-    } catch (err) {
-      const reason = err instanceof Error ? err.message : String(err);
-      writeLog(`DENY (fail-closed validation): ${reason}`);
-      await deny('HOOK_PAYLOAD_INVALID', reason);
-      return;
-    }
+    const validated = await readValidatedPreToolUseInput(guard);
+    if (validated === null) return;
 
     const { tool_name, session_id, cwd } = validated;
 
@@ -107,7 +119,7 @@ async function main(): Promise<void> {
     const subagentGate = isSubagentAuthorized(toolNameLower, validated.tool_input);
     if (!subagentGate.allowed) {
       writeLog(`DENY (subagent): ${tool_name} — ${subagentGate.code}: ${subagentGate.reason}`);
-      await deny(subagentGate.code, subagentGate.reason);
+      await writePreToolUseDeny(guard, subagentGate.code, subagentGate.reason);
       return;
     }
 
@@ -124,7 +136,7 @@ async function main(): Promise<void> {
     if (!resolution.ok) {
       // Fail-closed: cannot read state → deny.
       writeLog(`DENY (fail-closed): ${resolution.code} — ${resolution.reason}`);
-      await deny(resolution.code, resolution.reason);
+      await writePreToolUseDeny(guard, resolution.code, resolution.reason);
       return;
     }
 
@@ -133,7 +145,7 @@ async function main(): Promise<void> {
     if (unresolved.length > 0) {
       const reason = formatUnresolvedBlockingObligationReason(unresolved);
       writeLog(`DENY (review obligation): ${reason}`);
-      await deny('REVIEW_OBLIGATION_UNRESOLVED', reason);
+      await writePreToolUseDeny(guard, 'REVIEW_OBLIGATION_UNRESOLVED', reason);
       return;
     }
 
@@ -141,7 +153,7 @@ async function main(): Promise<void> {
 
     if (!gateResult.allowed) {
       writeLog(`DENY: ${tool_name} blocked in phase ${state.phase} (${gateResult.code})`);
-      await deny(gateResult.code, gateResult.reason);
+      await writePreToolUseDeny(guard, gateResult.code, gateResult.reason);
       return;
     }
 

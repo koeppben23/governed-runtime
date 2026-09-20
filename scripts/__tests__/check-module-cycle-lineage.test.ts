@@ -12,11 +12,16 @@ import {
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const scriptPath = join(repoRoot, 'scripts', 'check-module-cycle-lineage.mjs');
 
-function baselineOf(edges = []) {
+interface CycleEdge {
+  from: string;
+  to: string;
+}
+
+function baselineOf(edges: unknown[] = []) {
   return { version: BASELINE_VERSION, edges };
 }
 
-function edge(from, to) {
+function edge(from: string, to: string): CycleEdge {
   return { from, to };
 }
 

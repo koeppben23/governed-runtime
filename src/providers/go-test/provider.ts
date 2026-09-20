@@ -9,6 +9,7 @@ import {
   buildGoLocalId,
 } from '../../verification/assertion-parsers/go-test-json.js';
 import type { AssertionProviderExtension } from '../contract.js';
+import { ProviderError } from '../errors.js';
 import type { ParsedAssertion } from '../../verification/assertion-parsers/types.js';
 import type { ReportFormatId } from '../../state/assertion-identity.js';
 
@@ -88,7 +89,10 @@ export const goTestProvider: AssertionProviderExtension = {
       assertionBindingFormats: new Set<ReportFormatId>(['go_test_json']),
       buildLocalId(parsed: ParsedAssertion) {
         if (parsed.kind !== 'go_test_json')
-          throw new Error(`go_test codec received ${parsed.kind}`);
+          throw new ProviderError(
+            'PROVIDER_CODEC_KIND_MISMATCH',
+            `go_test codec received ${parsed.kind}`,
+          );
         return buildGoLocalId(parsed.pkg, parsed.testName);
       },
       validateLocalId(localId: string) {

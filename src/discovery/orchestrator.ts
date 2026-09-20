@@ -19,7 +19,18 @@
 import { readFile as fsReadFile } from 'node:fs/promises';
 import * as nodePath from 'node:path';
 import { withSpan, addFingerprint } from '../telemetry/index.js';
-import type { CollectorInput, DiscoveryResult } from './types.js';
+import type {
+  CodeSurfacesInfo,
+  CollectorDiagnostic,
+  CollectorInput,
+  DetectedItem,
+  DiscoveryResult,
+  DomainSignals,
+  RepoMetadata,
+  StackInfo,
+  SurfacesInfo,
+  TopologyInfo,
+} from './types.js';
 import { DISCOVERY_SCHEMA_VERSION } from './types.js';
 import type {
   DetectedStack,
@@ -35,7 +46,7 @@ import { collectSurfaces } from './collectors/surface-detection.js';
 import { collectCodeSurfaces } from './collectors/code-surface-analysis.js';
 import { collectDomainSignals } from './collectors/domain-signals.js';
 import { extractScopedStack } from './scoped-stack.js';
-import { runCollectorWithDiagnostics } from './collector-runner.js';
+import { runCollectorWithDiagnostics, type CollectorRunResult } from './collector-runner.js';
 
 export { computeDiscoveryDigest } from './discovery-digest.js';
 
@@ -94,6 +105,107 @@ export async function runDiscovery(
   );
 }
 
+function runRepoMetadataCollector(
+  input: CollectorInput,
+  timeoutMs: number,
+): Promise<CollectorRunResult<RepoMetadata>> {
+  return runCollectorWithDiagnostics('repo-metadata', collectRepoMetadata(input), timeoutMs, {
+    defaultBranch: null,
+    headCommit: null,
+    isDirty: true,
+    worktreePath: input.worktreePath,
+    canonicalRemote: null,
+    fingerprint: input.fingerprint,
+  });
+}
+
+function runStackCollector(
+  input: CollectorInput,
+  timeoutMs: number,
+): Promise<CollectorRunResult<StackInfo>> {
+  return runCollectorWithDiagnostics('stack-detection', collectStack(input), timeoutMs, {
+    languages: [],
+    frameworks: [],
+    buildTools: [],
+    testFrameworks: [],
+    runtimes: [],
+    tools: [],
+    qualityTools: [],
+    databases: [],
+  });
+}
+
+function runTopologyCollector(
+  input: CollectorInput,
+  timeoutMs: number,
+): Promise<CollectorRunResult<TopologyInfo>> {
+  return runCollectorWithDiagnostics('topology', collectTopology(input), timeoutMs, {
+    kind: 'unknown' as const,
+    modules: [],
+    entryPoints: [],
+    rootConfigs: [],
+    ignorePaths: [],
+  });
+}
+
+function runSurfaceCollector(
+  input: CollectorInput,
+  timeoutMs: number,
+): Promise<CollectorRunResult<SurfacesInfo>> {
+  return runCollectorWithDiagnostics('surface-detection', collectSurfaces(input), timeoutMs, {
+    api: [],
+    persistence: [],
+    cicd: [],
+    security: [],
+    layers: [],
+  });
+}
+
+function runCodeSurfaceCollector(
+  input: CollectorInput,
+  timeoutMs: number,
+): Promise<CollectorRunResult<CodeSurfacesInfo>> {
+  return runCollectorWithDiagnostics(
+    'code-surface-analysis',
+    collectCodeSurfaces(input),
+    timeoutMs,
+    {
+      status: 'failed' as const,
+      endpoints: [],
+      authBoundaries: [],
+      dataAccess: [],
+      integrations: [],
+      budget: {
+        scannedFiles: 0,
+        scannedBytes: 0,
+        maxFiles: 200,
+        maxBytesPerFile: 64 * 1024,
+        maxTotalBytes: 2 * 1024 * 1024,
+        timedOut: false,
+      },
+    },
+  );
+}
+
+function runDomainSignalsCollector(
+  input: CollectorInput,
+  timeoutMs: number,
+): Promise<CollectorRunResult<DomainSignals>> {
+  return runCollectorWithDiagnostics('domain-signals', collectDomainSignals(input), timeoutMs, {
+    keywords: [],
+    glossarySources: [],
+  });
+}
+
+type DiscoveryDiagnostic = DiscoveryResult['diagnostics'][number];
+
+function namedDiagnostic(
+  name: DiscoveryDiagnostic['name'],
+  diagnostic: CollectorDiagnostic,
+): DiscoveryDiagnostic {
+  return { ...diagnostic, name };
+}
+
 async function runDiscoveryImpl(
   input: CollectorInput,
   timeoutMs: number = COLLECTOR_TIMEOUT_MS,
@@ -105,72 +217,22 @@ async function runDiscoveryImpl(
 
   // Run all collectors in parallel with timeout budget and diagnostics
   const [metaRun, stackRun, topoRun, surfaceRun, codeSurfaceRun, domainRun] = await Promise.all([
-    runCollectorWithDiagnostics('repo-metadata', collectRepoMetadata(enrichedInput), timeoutMs, {
-      defaultBranch: null,
-      headCommit: null,
-      isDirty: true,
-      worktreePath: input.worktreePath,
-      canonicalRemote: null,
-      fingerprint: input.fingerprint,
-    }),
-    runCollectorWithDiagnostics('stack-detection', collectStack(enrichedInput), timeoutMs, {
-      languages: [],
-      frameworks: [],
-      buildTools: [],
-      testFrameworks: [],
-      runtimes: [],
-      tools: [],
-      qualityTools: [],
-      databases: [],
-    }),
-    runCollectorWithDiagnostics('topology', collectTopology(enrichedInput), timeoutMs, {
-      kind: 'unknown' as const,
-      modules: [],
-      entryPoints: [],
-      rootConfigs: [],
-      ignorePaths: [],
-    }),
-    runCollectorWithDiagnostics('surface-detection', collectSurfaces(enrichedInput), timeoutMs, {
-      api: [],
-      persistence: [],
-      cicd: [],
-      security: [],
-      layers: [],
-    }),
-    runCollectorWithDiagnostics(
-      'code-surface-analysis',
-      collectCodeSurfaces(enrichedInput),
-      timeoutMs,
-      {
-        status: 'failed' as const,
-        endpoints: [],
-        authBoundaries: [],
-        dataAccess: [],
-        integrations: [],
-        budget: {
-          scannedFiles: 0,
-          scannedBytes: 0,
-          maxFiles: 200,
-          maxBytesPerFile: 64 * 1024,
-          maxTotalBytes: 2 * 1024 * 1024,
-          timedOut: false,
-        },
-      },
-    ),
-    runCollectorWithDiagnostics('domain-signals', collectDomainSignals(enrichedInput), timeoutMs, {
-      keywords: [],
-      glossarySources: [],
-    }),
+    runRepoMetadataCollector(enrichedInput, timeoutMs),
+    runStackCollector(enrichedInput, timeoutMs),
+    runTopologyCollector(enrichedInput, timeoutMs),
+    runSurfaceCollector(enrichedInput, timeoutMs),
+    runCodeSurfaceCollector(enrichedInput, timeoutMs),
+    runDomainSignalsCollector(enrichedInput, timeoutMs),
   ]);
 
   // Collect diagnostics
   const diagnostics: DiscoveryResult['diagnostics'] = [
-    { ...metaRun.diagnostic, name: 'repo-metadata' },
-    { ...stackRun.diagnostic, name: 'stack-detection' },
-    { ...topoRun.diagnostic, name: 'topology' },
-    { ...surfaceRun.diagnostic, name: 'surface-detection' },
-    { ...codeSurfaceRun.diagnostic, name: 'code-surface-analysis' },
-    { ...domainRun.diagnostic, name: 'domain-signals' },
+    namedDiagnostic('repo-metadata', metaRun.diagnostic),
+    namedDiagnostic('stack-detection', stackRun.diagnostic),
+    namedDiagnostic('topology', topoRun.diagnostic),
+    namedDiagnostic('surface-detection', surfaceRun.diagnostic),
+    namedDiagnostic('code-surface-analysis', codeSurfaceRun.diagnostic),
+    namedDiagnostic('domain-signals', domainRun.diagnostic),
   ];
 
   return {
@@ -236,6 +298,88 @@ const TARGET_ORDER: Record<DetectedStackTarget, number> = {
  *
  * Returns null when no items are detected at all (empty input).
  */
+function collectDetectedStackItems(
+  stack: StackInfo,
+  items: DetectedStackItem[],
+  targets: DetectedStackTargetEntry[],
+): void {
+  const categories: ReadonlyArray<{
+    readonly items: readonly DetectedItem[];
+    readonly target: DetectedStackTarget;
+  }> = [
+    { items: stack.languages, target: 'language' },
+    { items: stack.frameworks, target: 'framework' },
+    { items: stack.runtimes, target: 'runtime' },
+    { items: stack.buildTools, target: 'buildTool' },
+    { items: stack.tools, target: 'tool' },
+    { items: stack.testFrameworks, target: 'testFramework' },
+    { items: stack.qualityTools, target: 'qualityTool' },
+    { items: stack.databases, target: 'database' },
+  ];
+
+  for (const { items: categoryItems, target } of categories) {
+    for (const item of categoryItems) {
+      pushDetectedStackItem(item, target, items, targets);
+    }
+  }
+}
+
+function pushDetectedStackItem(
+  item: DetectedItem,
+  target: DetectedStackTarget,
+  items: DetectedStackItem[],
+  targets: DetectedStackTargetEntry[],
+): void {
+  // Pick one evidence string: versionEvidence > evidence[0]
+  const ev = item.versionEvidence ?? item.evidence[0];
+
+  // All items go into items[] — version optional
+  items.push({
+    kind: target,
+    id: item.id,
+    ...(item.version ? { version: item.version } : {}),
+    ...(ev ? { evidence: ev } : {}),
+  });
+
+  // Compiler targets go into targets[]
+  if (item.compilerTarget) {
+    targets.push({
+      kind: 'compilerTarget',
+      id: item.id,
+      value: item.compilerTarget,
+      ...(item.compilerTargetEvidence ? { evidence: item.compilerTargetEvidence } : {}),
+    });
+  }
+}
+
+// Deterministic sort helper
+function sortByTargetThenId<T extends { id: string }>(
+  arr: T[],
+  getTarget: (item: T) => DetectedStackTarget,
+): void {
+  arr.sort((a, b) => {
+    const orderDiff = TARGET_ORDER[getTarget(a)] - TARGET_ORDER[getTarget(b)];
+    if (orderDiff !== 0) return orderDiff;
+    return a.id.localeCompare(b.id);
+  });
+}
+
+// Summary: versioned "id=version", unversioned "id"
+function buildDetectedStackSummary(items: readonly DetectedStackItem[]): string {
+  return items.map((i) => (i.version ? `${i.id}=${i.version}` : i.id)).join(', ');
+}
+
+// allFiles is passed as second parameter, readFile as third (optional)
+// When called from hydrate.ts: extractDetectedStack(result, repoSignals.files)
+async function resolveScopedStack(
+  allFiles: readonly string[] | undefined,
+  stack: StackInfo,
+  readFile: ((path: string) => Promise<string | undefined>) | undefined,
+): Promise<Awaited<ReturnType<typeof extractScopedStack>> | undefined> {
+  if (!allFiles || allFiles.length === 0) return undefined;
+  return extractScopedStack(allFiles, stack, readFile);
+}
+
 export async function extractDetectedStack(
   result: DiscoveryResult,
   allFiles?: readonly string[],
@@ -244,67 +388,14 @@ export async function extractDetectedStack(
   const items: DetectedStackItem[] = [];
   const targets: DetectedStackTargetEntry[] = [];
 
-  const categories: Array<{ items: typeof result.stack.languages; target: DetectedStackTarget }> = [
-    { items: result.stack.languages, target: 'language' },
-    { items: result.stack.frameworks, target: 'framework' },
-    { items: result.stack.runtimes, target: 'runtime' },
-    { items: result.stack.buildTools, target: 'buildTool' },
-    { items: result.stack.tools, target: 'tool' },
-    { items: result.stack.testFrameworks, target: 'testFramework' },
-    { items: result.stack.qualityTools, target: 'qualityTool' },
-    { items: result.stack.databases, target: 'database' },
-  ];
-
-  for (const { items: categoryItems, target } of categories) {
-    for (const item of categoryItems) {
-      // Pick one evidence string: versionEvidence > evidence[0]
-      const ev = item.versionEvidence ?? item.evidence[0];
-
-      // All items go into items[] — version optional
-      items.push({
-        kind: target,
-        id: item.id,
-        ...(item.version ? { version: item.version } : {}),
-        ...(ev ? { evidence: ev } : {}),
-      });
-
-      // Compiler targets go into targets[]
-      if (item.compilerTarget) {
-        targets.push({
-          kind: 'compilerTarget',
-          id: item.id,
-          value: item.compilerTarget,
-          ...(item.compilerTargetEvidence ? { evidence: item.compilerTargetEvidence } : {}),
-        });
-      }
-    }
-  }
+  collectDetectedStackItems(result.stack, items, targets);
 
   if (items.length === 0) return null;
 
-  // Deterministic sort helper
-  const sortByTargetThenId = <T extends { id: string }>(
-    arr: T[],
-    getTarget: (item: T) => DetectedStackTarget,
-  ): void => {
-    arr.sort((a, b) => {
-      const orderDiff = TARGET_ORDER[getTarget(a)] - TARGET_ORDER[getTarget(b)];
-      if (orderDiff !== 0) return orderDiff;
-      return a.id.localeCompare(b.id);
-    });
-  };
-
   sortByTargetThenId(items, (i) => i.kind);
 
-  // Summary: versioned "id=version", unversioned "id"
-  const summary = items.map((i) => (i.version ? `${i.id}=${i.version}` : i.id)).join(', ');
-
-  // allFiles is passed as second parameter, readFile as third (optional)
-  // When called from hydrate.ts: extractDetectedStack(result, repoSignals.files)
-  const scopes =
-    allFiles && allFiles.length > 0
-      ? await extractScopedStack(allFiles, result.stack, readFile)
-      : undefined;
+  const summary = buildDetectedStackSummary(items);
+  const scopes = await resolveScopedStack(allFiles, result.stack, readFile);
 
   return {
     summary,

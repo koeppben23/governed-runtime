@@ -29,8 +29,12 @@ export function validatePreBindFindings(input: {
   const relations = collectFindingRelations(input.findings);
   const scope = validateReviewFindingsScope({
     findings: relations,
-    reviewSubjectScope: input.obligation.reviewSubjectScope,
-    repositoryRevisionProvenance: input.obligation.repositoryRevisionProvenance,
+    ...(input.obligation.reviewSubjectScope !== undefined
+      ? { reviewSubjectScope: input.obligation.reviewSubjectScope }
+      : {}),
+    ...(input.obligation.repositoryRevisionProvenance !== undefined
+      ? { repositoryRevisionProvenance: input.obligation.repositoryRevisionProvenance }
+      : {}),
   });
   if (!scope.ok) {
     return {

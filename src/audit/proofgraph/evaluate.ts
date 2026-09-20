@@ -127,8 +127,11 @@ function computeFreshness(
   const bound = passingResults.filter((r) => bindingOf(r) !== undefined);
   if (bound.length === 0) return undefined;
   const fresh = bound.find((r) => isFresh(bindingOf(r), input));
-  const chosen = fresh ?? bound[0]!;
-  return { boundDigest: bindingOf(chosen)!.digest, evaluatedAt, stale: fresh === undefined };
+  const chosen = fresh ?? bound[0];
+  if (chosen === undefined) return undefined;
+  const chosenBinding = bindingOf(chosen);
+  if (chosenBinding === undefined) return undefined;
+  return { boundDigest: chosenBinding.digest, evaluatedAt, stale: fresh === undefined };
 }
 
 /** Fresh/stale adversarial (counterexample) analysis for one claim. */
@@ -334,9 +337,11 @@ function selectCurrentCounterexamples(
   let conflicting = false;
   let conflictReason: string | undefined;
 
-  for (const [, group] of groups) {
+  for (const group of groups.values()) {
+    const [first] = group;
+    if (first === undefined) continue;
     if (group.length === 1) {
-      resolved.push(group[0]!);
+      resolved.push(first);
       continue;
     }
     const sorted = [...group].sort(
@@ -347,11 +352,15 @@ function selectCurrentCounterexamples(
       resolved.push(resolution.value);
     } else {
       conflicting = true;
-      conflictReason = `conflicting counterexample outcomes at revision ${group[0]!.boundDigest.slice(0, 12)}`;
+      conflictReason = `conflicting counterexample outcomes at revision ${first.boundDigest.slice(0, 12)}`;
     }
   }
 
-  return { counterexamples: resolved, conflicting, conflictReason };
+  return {
+    counterexamples: resolved,
+    conflicting,
+    ...(conflictReason !== undefined ? { conflictReason } : {}),
+  };
 }
 
 /**

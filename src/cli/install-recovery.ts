@@ -95,11 +95,18 @@ export function pushError(
   if (error instanceof InstallError) {
     const msg = error.message;
     errors.push(msg);
-    errorDetails.push({ code: error.code, message: msg, recoveryContext: recovery });
+    errorDetails.push({
+      code: error.code,
+      message: msg,
+      ...(recovery !== undefined ? { recoveryContext: recovery } : {}),
+    });
   } else {
     const msg = error instanceof Error ? error.message : String(error);
     errors.push(msg);
-    errorDetails.push({ message: msg, recoveryContext: recovery });
+    errorDetails.push({
+      message: msg,
+      ...(recovery !== undefined ? { recoveryContext: recovery } : {}),
+    });
   }
 }
 

@@ -558,7 +558,6 @@ describe('hydrate rail unit tests', () => {
     it('undefined candidates produces empty activeChecks', () => {
       const result = hydrateNew(
         minimalInput({
-          session: { verificationCandidates: undefined },
           profile: {},
         }),
       );

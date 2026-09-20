@@ -20,6 +20,7 @@ import type {
   PresentationAction,
   FindingRelationPresentation,
 } from './model.js';
+import { PresentationContractError } from './model.js';
 import { projectFindingRelation } from './finding-relation.js';
 import { renderMarkdown } from './markdown.js';
 import type { PresentationRenderOptions } from './glyph-profile.js';
@@ -136,11 +137,13 @@ export function buildEvidenceReviewDocument(input: EvidenceReviewCardInput): Rev
 
 function buildDecisionSection(input: EvidenceReviewCardInput): PresentationSection {
   const reviewInput: ReviewDecisionProjectionInput = {
-    blockingIssues: input.blockingIssues,
-    majorRisks: input.majorRisks,
-    missingVerification: input.missingVerification,
-    scopeCreep: input.scopeCreep,
-    unknowns: input.unknowns,
+    ...(input.blockingIssues !== undefined ? { blockingIssues: input.blockingIssues } : {}),
+    ...(input.majorRisks !== undefined ? { majorRisks: input.majorRisks } : {}),
+    ...(input.missingVerification !== undefined
+      ? { missingVerification: input.missingVerification }
+      : {}),
+    ...(input.scopeCreep !== undefined ? { scopeCreep: input.scopeCreep } : {}),
+    ...(input.unknowns !== undefined ? { unknowns: input.unknowns } : {}),
   };
   const decision = projectReviewDecision(reviewInput);
   const items: KeyValueItem[] = [
@@ -184,11 +187,19 @@ function buildFindingGroups(
   const severityOrder = ['critical', 'major', 'minor'];
   return severityOrder
     .filter((s) => bySeverity.has(s))
-    .map((s) => ({
-      severity: severityToPresentation(s),
-      label: `${label} (${s})`,
-      items: bySeverity.get(s)!,
-    }));
+    .map((s) => {
+      const items = bySeverity.get(s);
+      if (items === undefined) {
+        throw new PresentationContractError(
+          `finding group '${s}' vanished from the severity map after presence was verified`,
+        );
+      }
+      return {
+        severity: severityToPresentation(s),
+        label: `${label} (${s})`,
+        items,
+      };
+    });
 }
 
 function severityToPresentation(severity: string): FindingGroup['severity'] {

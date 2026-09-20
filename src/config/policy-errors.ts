@@ -41,6 +41,6 @@ export class PolicyConfigurationError extends Error {
     super(message);
     this.name = 'PolicyConfigurationError';
     this.code = code;
-    this.details = details;
+    if (details !== undefined) this.details = details;
   }
 }

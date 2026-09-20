@@ -20,16 +20,27 @@ import type { HydrateConfig } from './hydrate.js';
 
 // ─── Minimal Fixtures ─────────────────────────────────────────────────────────
 
-function profile(overrides: Partial<FlowGuardProfile> = {}): FlowGuardProfile {
-  return {
+type ProfileOverrides = {
+  [K in keyof FlowGuardProfile]?: FlowGuardProfile[K] | undefined;
+};
+
+function profile(overrides: ProfileOverrides = {}): FlowGuardProfile {
+  const built = {
     ...DEFAULT_CONFIG,
     id: 'node-typescript',
     name: 'Node.js / TypeScript',
     detect: () => 0.9,
     activeChecks: ['test_quality', 'lint_check'],
     profileRules: { plan: [], implement: [], arch: [], review: [] },
-    ...overrides,
-  } as FlowGuardProfile;
+  };
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === undefined) {
+      Reflect.deleteProperty(built, key);
+    } else {
+      Object.assign(built, { [key]: value });
+    }
+  }
+  return built;
 }
 
 function detectionInput(overrides = {}) {

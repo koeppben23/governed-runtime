@@ -166,75 +166,93 @@ interface SignatureMatch {
   viaModuleInvocation: boolean;
 }
 
+function matchModuleInvocation(
+  providerId: ProviderId,
+  signature: Extract<ScriptSignature, { moduleInvocation: { executable: string; module: string } }>,
+  tokens: readonly string[],
+): SignatureMatch | null {
+  const mi = signature.moduleInvocation;
+  const [firstToken] = tokens;
+  if (
+    firstToken === mi.executable &&
+    tokens.length >= 3 &&
+    tokens[1] === '-m' &&
+    tokens[2] === mi.module
+  ) {
+    return {
+      providerId,
+      executionProfileId: signature.executionProfileId,
+      candidateKind: signature.candidateKind,
+      evidence: `script:${mi.executable} -m ${mi.module}`,
+      matchedExecutable: mi.executable,
+      viaModuleInvocation: true,
+    };
+  }
+  if (firstToken === mi.module) {
+    return {
+      providerId,
+      executionProfileId: signature.executionProfileId,
+      candidateKind: signature.candidateKind,
+      evidence: `script:${mi.module}`,
+      matchedExecutable: mi.module,
+      viaModuleInvocation: false,
+    };
+  }
+  return null;
+}
+
+function hasRequiredArgsPrefix(tokens: readonly string[], prefix: readonly string[]): boolean {
+  for (let i = 0; i < prefix.length; i++) {
+    if (tokens[i + 1] !== prefix[i]) return false;
+  }
+  return true;
+}
+
+function matchExecutableSignature(
+  providerId: ProviderId,
+  signature: Extract<ScriptSignature, { executable: string }>,
+  tokens: readonly string[],
+  firstToken: string | undefined,
+): SignatureMatch | null {
+  if (firstToken !== signature.executable) return null;
+
+  const prefix = signature.requiredArgsPrefix;
+  if (prefix && prefix.length > 0) {
+    if (!hasRequiredArgsPrefix(tokens, prefix)) return null;
+    return {
+      providerId,
+      executionProfileId: signature.executionProfileId,
+      candidateKind: signature.candidateKind,
+      evidence: `script:${signature.executable} ${prefix.join(' ')}`,
+      matchedExecutable: signature.executable,
+      viaModuleInvocation: false,
+    };
+  }
+
+  return {
+    providerId,
+    executionProfileId: signature.executionProfileId,
+    candidateKind: signature.candidateKind,
+    evidence: `script:${signature.executable}`,
+    matchedExecutable: signature.executable,
+    viaModuleInvocation: false,
+  };
+}
+
 function matchSignatures(
   tokens: readonly string[],
   signatures: ReadonlyMap<ProviderId, readonly ScriptSignature[]>,
 ): SignatureMatch | null {
   if (tokens.length === 0) return null;
-  const firstToken = tokens[0]!;
+  const [firstToken] = tokens;
 
   for (const [providerId, sigs] of signatures) {
     for (const sig of sigs) {
-      if ('moduleInvocation' in sig) {
-        const mi = sig.moduleInvocation;
-        if (
-          firstToken === mi.executable &&
-          tokens.length >= 3 &&
-          tokens[1] === '-m' &&
-          tokens[2] === mi.module
-        ) {
-          return {
-            providerId,
-            executionProfileId: sig.executionProfileId,
-            candidateKind: sig.candidateKind,
-            evidence: `script:${mi.executable} -m ${mi.module}`,
-            matchedExecutable: mi.executable,
-            viaModuleInvocation: true,
-          };
-        }
-        if (firstToken === mi.module) {
-          return {
-            providerId,
-            executionProfileId: sig.executionProfileId,
-            candidateKind: sig.candidateKind,
-            evidence: `script:${mi.module}`,
-            matchedExecutable: mi.module,
-            viaModuleInvocation: false,
-          };
-        }
-        continue;
-      }
-
-      if (firstToken !== sig.executable) continue;
-
-      if (sig.requiredArgsPrefix && sig.requiredArgsPrefix.length > 0) {
-        const prefix = sig.requiredArgsPrefix;
-        let matched = true;
-        for (let i = 0; i < prefix.length; i++) {
-          if (tokens[i + 1] !== prefix[i]) {
-            matched = false;
-            break;
-          }
-        }
-        if (!matched) continue;
-        return {
-          providerId,
-          executionProfileId: sig.executionProfileId,
-          candidateKind: sig.candidateKind,
-          evidence: `script:${sig.executable} ${prefix.join(' ')}`,
-          matchedExecutable: sig.executable,
-          viaModuleInvocation: false,
-        };
-      }
-
-      return {
-        providerId,
-        executionProfileId: sig.executionProfileId,
-        candidateKind: sig.candidateKind,
-        evidence: `script:${sig.executable}`,
-        matchedExecutable: sig.executable,
-        viaModuleInvocation: false,
-      };
+      const match =
+        'moduleInvocation' in sig
+          ? matchModuleInvocation(providerId, sig, tokens)
+          : matchExecutableSignature(providerId, sig, tokens, firstToken);
+      if (match !== null) return match;
     }
   }
 

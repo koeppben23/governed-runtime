@@ -149,8 +149,8 @@ export async function withSpan<T>(
         span.recordException({
           name: serialized.name,
           message: sanitizedMessage,
-          stack: sanitizedStack,
-          code: serialized.code,
+          ...(sanitizedStack !== undefined ? { stack: sanitizedStack } : {}),
+          ...(serialized.code !== undefined ? { code: serialized.code } : {}),
         });
         throw err;
       } finally {
@@ -205,8 +205,8 @@ export function withSpanSync<T>(
       span.recordException({
         name: serialized.name,
         message: sanitizedMessage,
-        stack: sanitizedStack,
-        code: serialized.code,
+        ...(sanitizedStack !== undefined ? { stack: sanitizedStack } : {}),
+        ...(serialized.code !== undefined ? { code: serialized.code } : {}),
       });
     }
     throw err;

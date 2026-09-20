@@ -245,15 +245,15 @@ function groupBy<T>(items: readonly T[], key: (item: T) => string): ReadonlyMap<
   return map;
 }
 
-function validateSupersessionGraph(index: EvidenceIndexes): string | null {
-  const preparedById = index.preparedById;
+/** Supersession markers must reference same-task prepared entries. */
+function validateSupersessionReferences(index: EvidenceIndexes): string | null {
   for (const markers of index.supersededByTask.values()) {
     for (const marker of markers) {
-      const superseded = preparedById.get(marker.supersededPreparedEvidenceId);
+      const superseded = index.preparedById.get(marker.supersededPreparedEvidenceId);
       if (!superseded) {
         return `supersededPreparedEvidenceId ${marker.supersededPreparedEvidenceId} does not reference a prepared entry`;
       }
-      const replacement = preparedById.get(marker.replacementPreparedEvidenceId);
+      const replacement = index.preparedById.get(marker.replacementPreparedEvidenceId);
       if (!replacement) {
         return `replacementPreparedEvidenceId ${marker.replacementPreparedEvidenceId} does not reference a prepared entry`;
       }
@@ -265,17 +265,33 @@ function validateSupersessionGraph(index: EvidenceIndexes): string | null {
       }
     }
   }
-  // At most one replacement per prepared, and no replacement cycles.
+  return null;
+}
+
+type ReplacementMapResult =
+  | { readonly kind: 'ok'; readonly replacements: ReadonlyMap<string, string> }
+  | { readonly kind: 'error'; readonly reason: string };
+
+/** At most one replacement per prepared entry. */
+function collectReplacementMap(index: EvidenceIndexes): ReplacementMapResult {
   const replacements = new Map<string, string>();
   for (const markers of index.supersededByTask.values()) {
     for (const marker of markers) {
       const existing = replacements.get(marker.supersededPreparedEvidenceId);
       if (existing && existing !== marker.replacementPreparedEvidenceId) {
-        return `prepared ${marker.supersededPreparedEvidenceId} has multiple replacements`;
+        return {
+          kind: 'error',
+          reason: `prepared ${marker.supersededPreparedEvidenceId} has multiple replacements`,
+        };
       }
       replacements.set(marker.supersededPreparedEvidenceId, marker.replacementPreparedEvidenceId);
     }
   }
+  return { kind: 'ok', replacements };
+}
+
+/** No prepared entry may be replaced transitively by itself. */
+function findSupersessionCycle(replacements: ReadonlyMap<string, string>): string | null {
   for (const start of replacements.keys()) {
     const seen = new Set<string>([start]);
     let cursor: string | undefined = replacements.get(start);
@@ -290,6 +306,14 @@ function validateSupersessionGraph(index: EvidenceIndexes): string | null {
   return null;
 }
 
+function validateSupersessionGraph(index: EvidenceIndexes): string | null {
+  const referenceError = validateSupersessionReferences(index);
+  if (referenceError) return referenceError;
+  const replacementMap = collectReplacementMap(index);
+  if (replacementMap.kind === 'error') return replacementMap.reason;
+  return findSupersessionCycle(replacementMap.replacements);
+}
+
 /**
  * Resolve the single authoritative peer-review task for an obligation.
  *
@@ -301,26 +325,30 @@ function validateSupersessionGraph(index: EvidenceIndexes): string | null {
  * supersession, multiple replacements, cycles, completions on superseded
  * prepared entries, or multiple authoritative incarnations) fails closed.
  */
-export function resolveAuthoritativePeerReviewTask(
-  evidence: readonly PeerReviewEvidence[],
-  obligationId: string,
-): AuthoritativePeerReviewTask {
-  const index = indexPeerEvidence(evidence, obligationId);
-
-  const graphError = validateSupersessionGraph(index);
-  if (graphError) return { kind: 'blocked', reason: graphError };
-
+function collectSupersededPreparedIds(index: EvidenceIndexes): Set<string> {
   const supersededPreparedIds = new Set<string>();
   for (const markers of index.supersededByTask.values()) {
-    for (const marker of markers) supersededPreparedIds.add(marker.supersededPreparedEvidenceId);
+    for (const marker of markers) {
+      supersededPreparedIds.add(marker.supersededPreparedEvidenceId);
+    }
   }
+  return supersededPreparedIds;
+}
 
+type ReviewTaskIdResolution =
+  | { readonly kind: 'resolved'; readonly reviewTaskId: string }
+  | { readonly kind: 'none'; readonly reason: string }
+  | { readonly kind: 'blocked'; readonly reason: string };
+
+/** The obligation's lifecycle chain must resolve to exactly one reviewTaskId. */
+function resolveSingleReviewTaskId(index: EvidenceIndexes): ReviewTaskIdResolution {
   const taskIds = new Set([
     ...index.preparedByTask.keys(),
     ...index.completedByTask.keys(),
     ...index.supersededByTask.keys(),
   ]);
-  if (taskIds.size === 0) {
+  const [reviewTaskId] = [...taskIds];
+  if (reviewTaskId === undefined) {
     return { kind: 'none', reason: 'no peer review evidence for this obligation' };
   }
   if (taskIds.size > 1) {
@@ -329,8 +357,15 @@ export function resolveAuthoritativePeerReviewTask(
       reason: 'multiple reviewTaskIds exist for one obligation; the lifecycle chain is ambiguous',
     };
   }
-  const reviewTaskId = [...taskIds][0]!;
+  return { kind: 'resolved', reviewTaskId };
+}
 
+/** Resolve the authoritative incarnation for an unambiguous reviewTaskId chain. */
+function resolveAuthoritativeChain(
+  reviewTaskId: string,
+  index: EvidenceIndexes,
+  supersededPreparedIds: ReadonlySet<string>,
+): AuthoritativePeerReviewTask {
   const completions = index.completedByTask.get(reviewTaskId) ?? [];
   if (completions.length > 1) {
     return { kind: 'blocked', reason: 'multiple completed entries exist for one review task' };
@@ -367,4 +402,19 @@ export function resolveAuthoritativePeerReviewTask(
     return { kind: 'none', reason: 'no pending or completed incarnation for this review task' };
   }
   return { kind: 'ok', task: authoritative.task, reviewTaskId };
+}
+
+export function resolveAuthoritativePeerReviewTask(
+  evidence: readonly PeerReviewEvidence[],
+  obligationId: string,
+): AuthoritativePeerReviewTask {
+  const index = indexPeerEvidence(evidence, obligationId);
+
+  const graphError = validateSupersessionGraph(index);
+  if (graphError) return { kind: 'blocked', reason: graphError };
+
+  const supersededPreparedIds = collectSupersededPreparedIds(index);
+  const taskId = resolveSingleReviewTaskId(index);
+  if (taskId.kind !== 'resolved') return taskId;
+  return resolveAuthoritativeChain(taskId.reviewTaskId, index, supersededPreparedIds);
 }

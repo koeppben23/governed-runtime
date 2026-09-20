@@ -68,18 +68,19 @@ local composite-action dependencies: external GitHub Actions must use full
 40-character lowercase commit SHAs, local actions under `./` are allowed, local
 and Docker actions are allowed only when pinned by `sha256` digest.
 
-The `mutation` job runs StrykerJS mutation testing against 101 security-critical
+The `mutation` job runs StrykerJS mutation testing against 109 security-critical
 files spanning adapters (persistence-lock, host-adapter, persistence, IP validation),
 archive creation,
 publication, inventory validation, and digesting,
-audit (integrity + completeness + NTP + types), config (policy + policy snapshot + reasons + profile), hooks (HTTP hook server + command pre-tool-use + shared obligation-tracker +
+audit (integrity + completeness + NTP + event builders + RFC3161 parse/signer verification),
+config (policy snapshot/resolver/central + reasons + profile), hooks (HTTP hook server + command pre-tool-use + shared obligation-tracker +
 phase-gate), identity (token-verifier + key-resolver), integration
 (installed-commands, tool-classification, discovery-risk-paths, pre-implementation challenge, architecture submit, review-validation-mode,
-plugin-audit, plugin-audit-reconcile, plugin-beforehooks, plugin-afterhooks, plugin-helpers, audit-outbox, plugin-audit-lifecycle-reason, review enforcement,
+plugin-audit, plugin-audit-decisions, plugin-audit-reconcile, plugin-beforehooks, plugin-afterhooks, plugin-helpers, audit-outbox, plugin-audit-lifecycle-reason, review enforcement,
 dispatch signal, and agent resolution), logging (error-serialize),
 templates (codex-plugin, claude-code-plugin, mandates),
 shared canonical JSON and hashing, machine (commands, evaluate, guards, workflow-directive, validation-evidence), and
-rails (architecture, hydrate, review, URL review transport, review-decision, review-evidence-resolution,
+rails (architecture, hydrate, review, URL review transport, review-decision, review-decision-gates, review-evidence-resolution,
 ticket). It uploads a
 mutation report artifact (`reports/mutation/`) and enforces the `break: 80`
 threshold in `stryker.conf.json` when the scheduled/release/manual mutation
@@ -205,22 +206,22 @@ protects a security-relevant literal: `stryker.identity-jwks.conf.json` enables
 
 ### Scope
 
-101 files are mutated in the base profile, covering the fail-closed governance
+109 files are mutated in the base profile, covering the fail-closed governance
 core (see `stryker.conf.json` for the canonical list; the authority inventory
 above is the classification authority):
 
 | Area                                                                                                                                                                           | Files   | Representative score            |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- | ------------------------------- |
 | Adapters (`persistence-lock`, `host-adapter`, `persistence`, `persistence-core`, `persistence-config`, `persistence-audit`, `ip-validation`, implementation base freeze/entry) | 9       | see `reports/mutation/`         |
-| Archive (`content-digest`, archive creation, publication, tar/manifest inspection, chain and helper verification)                                                              | 8       | see `reports/mutation/`         |
-| Audit (`integrity`, `completeness`, `ntp-check`, `types`, timestamp and RFC3161 verification)                                                                                  | 7       | see `reports/mutation/`         |
+| Archive (`content-digest`, archive creation, publication, tar/manifest inspection, chain, artifact-binding, audit-chain, checksum, integrity and helper verification)          | 12      | see `reports/mutation/`         |
+| Audit (`integrity`, `completeness`, `ntp-check`, `event-builders`, timestamp and RFC3161 parse/signer verification)                                                            | 9       | see `reports/mutation/`         |
 | Audit ProofGraph (`evaluate`, `gate`, evidence binders, `enforcement-projection`, mutation report/binder)                                                                      | 8       | see `reports/mutation/`         |
-| Integration ProofGraph (`claim-contract`, `materialize-contract`)                                                                                                              | 2       | see `reports/mutation/`         |
-| Config (`policy`, `policy-snapshot`, `reasons`, `profile`, `policy-resolver`, `policy-central`)                                                                                | 6       | see `reports/mutation/`         |
+| Integration ProofGraph (`claim-contract`, `claim-contract-rules`, `materialize-contract`)                                                                                      | 3       | see `reports/mutation/`         |
+| Config (`policy-snapshot`, `policy-resolver`, `policy-central`, `reasons`, `profile`)                                                                                          | 5       | see `reports/mutation/`         |
 | MCP (`execution-limiter`, `session-resolver`, `tool-adapter`, `server`)                                                                                                        | 4       | see `reports/mutation/`         |
 | Hooks (`http-server`, `pre-tool-use`, `post-tool-use`, `shared/obligation-tracker`, `shared/phase-gate`)                                                                       | 5       | see `reports/mutation/`         |
 | Identity (`token-verifier`, `key-resolver`)                                                                                                                                    | 2       | see `reports/mutation/`         |
-| Integration (plugin hooks, audit outbox, review-validation tools, mutation evidence tools/episodes, `plugin-workspace`, `plugin`, `runtime-lease`)                             | 21      | see `reports/mutation/`         |
+| Integration (plugin hooks, audit outbox, review-validation tools, mutation evidence tools/episodes, `plugin-workspace`, `plugin`, `runtime-lease`)                             | 22      | see `reports/mutation/`         |
 | Integration Review (`enforcement`, `findings-consistency`, `challenge-consistency`, `challenge-binding`, agent resolution, dispatch signal, findings hash, reviewed digest)    | 8       | see `reports/mutation/`         |
 | State (`evidence-mutation-episode`)                                                                                                                                            | 1       | see `reports/mutation/`         |
 | Verification/Discovery (`execution-subject`, `verification-planner`)                                                                                                           | 2       | see `reports/mutation/`         |
@@ -228,8 +229,8 @@ above is the classification authority):
 | Shared (`canonical-json`, `hashing`)                                                                                                                                           | 2       | see `reports/mutation/`         |
 | Logging (`error-serialize`)                                                                                                                                                    | 1       | see `reports/mutation/`         |
 | Machine (`commands`, `evaluate`, `guards`, `workflow-directive`, `validation-evidence`)                                                                                        | 5       | see `reports/mutation/`         |
-| Rails (`architecture`, `hydrate`, `review`, `review-url`, `review-decision`, `ticket`, plan and review evidence)                                                               | 8       | see `reports/mutation/`         |
-| **Total**                                                                                                                                                                      | **101** | uploaded as `reports/mutation/` |
+| Rails (`architecture`, `hydrate`, `review`, `review-url`, `review-decision`, `review-decision-gates`, `ticket`, plan and review evidence)                                      | 9       | see `reports/mutation/`         |
+| **Total**                                                                                                                                                                      | **109** | uploaded as `reports/mutation/` |
 
 Per-file mutation scores are produced fresh in CI; consult the latest
 `reports/mutation/` artifact for current numbers.
@@ -288,6 +289,21 @@ Mandates profile: `src/rendering/mandates-renderer.ts` — focused contract pass
 
 Schemas profile (`stryker.schemas.conf.json`): `src/config/flowguard-config.ts` — admitted 2026-09-17 at 91.11 % on its profile full run; `src/state/schema.ts` reached 77.78 % and remains in the schemas-profile backlog.
 
+Human-projection profile (`stryker.human-projection.conf.json`): full run
+2026-09-19 at 85.26 % after the #921 split re-anchored the markdown
+finding-render range to `src/presentation/markdown.ts:264-292`. The three static
+copy modules above carry no valid mutants and are explicitly not
+mutation-suitable for this profile.
+
+Event-core profile (`stryker.event-core.conf.json`): focused authority profile
+for `src/audit/event-core.ts` (module-init event-kind authority, chain-hash and
+timestamp-finalization contracts). It uses `coverageAnalysis: "all"`,
+`ignoreStatic: false` and keeps `StringLiteral` enabled so the format, event-name
+and genesis constants are mutated; the base regime excludes literal mutations
+and the remaining operator mutations are rejected by the TypeScript checker.
+The profile is required and must pass its own full run plus
+`verify-mutation-admission.mjs --profile event-core`.
+
 Deferred surfaces (whole roots behind the admission gate):
 `src/config/**`, `src/state/**`, `src/shared/**`, `src/audit/**`,
 `src/adapters/**`, `src/identity/**`, `src/verification/**`, `src/discovery/**`,
@@ -314,6 +330,9 @@ scoped; a target may still be a valid mutation target in another profile):
 - `src/config/reasons-validation-observation.ts` (base)
 - `src/config/reasons-validation-review.ts` (base)
 - `src/config/reasons-validation-structured.ts` (base)
+- `src/presentation/reason-copy.ts` — static copy, 0 valid mutants (human-projection).
+- `src/presentation/human-projection.ts` — type-driven composition, 0 valid mutants (human-projection).
+- `src/presentation/claim-diagnostic-copy.ts` — static diagnostic copy, 0 valid mutants (human-projection).
 
 Reason-catalog diagnostic (2026-09-17, base regime): all 175 mutants across the
 ten catalog files are rejected by the TypeScript checker (CompileError, 0

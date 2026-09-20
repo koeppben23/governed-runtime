@@ -121,19 +121,19 @@ function buildOperationAuditBody(
   prevHash: string,
 ): EventBody {
   if (operation.kind === 'state_write') {
-    return buildStateWriteBody(
-      state.flowguardSessionId,
-      state.binding.hostSessionId,
-      operation.stateWrite.phase,
-      {
+    return buildStateWriteBody({
+      flowguardSessionId: state.flowguardSessionId,
+      hostSessionId: state.binding.hostSessionId,
+      phase: operation.stateWrite.phase,
+      detail: {
         operationId: operation.operationId,
         preStateDigest: operation.preStateDigest,
         mutationDigest: operation.mutationDigest,
         postStateDigest: operation.postStateDigest,
       },
-      operation.stateWrite.at,
+      occurredAt: operation.stateWrite.at,
       prevHash,
-    );
+    });
   }
   if (operation.kind === 'semantic') {
     return buildSemanticAuditBody({
@@ -148,16 +148,18 @@ function buildOperationAuditBody(
       preStateDigest: operation.preStateDigest,
       mutationDigest: operation.mutationDigest,
       postStateDigest: operation.postStateDigest,
-      actor: operation.semantic.actor,
-      actorInfo: operation.semantic.actorInfo,
+      ...(operation.semantic.actor !== undefined ? { actor: operation.semantic.actor } : {}),
+      ...(operation.semantic.actorInfo !== undefined
+        ? { actorInfo: operation.semantic.actorInfo }
+        : {}),
     });
   }
   const t = operation.transition;
-  return buildTransitionBody(
-    state.flowguardSessionId,
-    state.binding.hostSessionId,
-    t.to,
-    {
+  return buildTransitionBody({
+    flowguardSessionId: state.flowguardSessionId,
+    hostSessionId: state.binding.hostSessionId,
+    phase: t.to,
+    detail: {
       operationId: operation.operationId,
       preStateDigest: operation.preStateDigest,
       mutationDigest: operation.mutationDigest,
@@ -168,9 +170,9 @@ function buildOperationAuditBody(
       autoAdvanced: t.autoAdvanced,
       chainIndex: t.chainIndex,
     },
-    t.at,
+    occurredAt: t.at,
     prevHash,
-  );
+  });
 }
 
 /**
@@ -212,13 +214,7 @@ export async function emitTransitionAudits(input: {
   deps.log.debug('audit', 'reconciling durable audit operations', {
     count: operations.length,
   });
-  const latestOperation = operations.at(-1)!;
-  if (computeStateDigest(state) !== latestOperation.postStateDigest) {
-    throw new PersistenceError(
-      'SCHEMA_VALIDATION_FAILED',
-      `Persisted state does not match audit operation ${latestOperation.operationId} post-state digest`,
-    );
-  }
+  assertLatestOperationMatchesState(state, operations);
   for (const operation of operations) {
     const body = buildOperationAuditBody(state, operation, ctx.prevHash);
     const expectedDigest = computeCanonicalEventDigest(body);
@@ -249,6 +245,25 @@ export async function emitTransitionAudits(input: {
     });
     await acknowledgeAuditOperation(ctx.sessDir, operation.operationId, 'audit_committed');
     await acknowledgeAuditOperation(ctx.sessDir, operation.operationId, 'reconciled');
+  }
+}
+
+function assertLatestOperationMatchesState(
+  state: SessionState,
+  operations: readonly PendingAuditOperation[],
+): void {
+  const latestOperation = operations.at(-1);
+  if (latestOperation === undefined) {
+    throw new PersistenceError(
+      'READ_FAILED',
+      'Cannot reconcile audit operations without a latest committed operation',
+    );
+  }
+  if (computeStateDigest(state) !== latestOperation.postStateDigest) {
+    throw new PersistenceError(
+      'SCHEMA_VALIDATION_FAILED',
+      `Persisted state does not match audit operation ${latestOperation.operationId} post-state digest`,
+    );
   }
 }
 
@@ -348,7 +363,14 @@ export async function emitAuditBodyWithEvidence(input: {
     : undefined;
   timestampTracker.record(eventKind, resolution?.error);
   const evt = finalizeWithTimestampEvidence(body, ctx.prevHash, resolution?.evidence, digest);
-  ctx.prevHash = evt.chainHash!;
+  const chainHash = evt.chainHash;
+  if (chainHash === undefined) {
+    throw new PersistenceError(
+      'SCHEMA_VALIDATION_FAILED',
+      'Finalized audit event is missing its chain hash',
+    );
+  }
+  ctx.prevHash = chainHash;
   await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
 }
 

@@ -29,7 +29,7 @@ import type {
   FinishPresentationProjection,
   FinishConclusionProjection,
 } from './status-why-finish.js';
-import type { FinishCard, FinishReviewCaveat } from './status.js';
+import type { FinishCard, FinishReviewCaveat } from './status-types.js';
 import { buildProofGraphSection } from '../presentation/proof-summary.js';
 
 // ─── Exit Option Copy ──────────────────────────────────────────────────────────

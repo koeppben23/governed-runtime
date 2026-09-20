@@ -8,6 +8,7 @@
 import type { ArchitectureArgs, ArchitectureSession } from './architecture-shared.js';
 import { buildArchitectureReviewInstruction } from './architecture-shared.js';
 import { formatBlocked, enrichWithWorkflowDirective, writeStateWithArtifacts } from './helpers.js';
+import { IntegrationInvariantError } from '../errors.js';
 import type { SessionState } from '../../state/schema.js';
 import { executeArchitecture } from '../../rails/architecture.js';
 import { normalizeArchitectureClaims } from '../../state/proofgraph-approval.js';
@@ -157,6 +158,17 @@ async function mintArchSubmissionObligation(
   });
 }
 
+function requireSubmittedAdr(state: SessionState): NonNullable<SessionState['architecture']> {
+  const architecture = state.architecture;
+  if (!architecture) {
+    throw new IntegrationInvariantError(
+      'NO_ARCHITECTURE',
+      'an ADR submission must produce architecture state on the augmented session',
+    );
+  }
+  return architecture;
+}
+
 export async function handleAdrSubmission(
   args: ArchitectureArgs,
   session: ArchitectureSession,
@@ -168,7 +180,11 @@ export async function handleAdrSubmission(
   const claims = normalizeArchitectureClaims(args.claims);
   const result = executeArchitecture(
     state,
-    { title: args.title, adrText: args.adrText, claims },
+    {
+      title: args.title,
+      adrText: args.adrText,
+      ...(claims !== undefined ? { claims } : {}),
+    },
     ctx,
   );
 
@@ -219,11 +235,12 @@ export async function handleAdrSubmission(
     subjectLabel: 'full ADR text, ADR title, and ticket text',
     state: persisted,
   });
+  const submittedAdr = requireSubmittedAdr(augmentedState);
   const modeAResponse: Record<string, unknown> = {
     phase: augmentedState.phase,
-    status: `ADR ${augmentedState.architecture!.id} submitted: ${args.title}`,
-    adrId: augmentedState.architecture!.id,
-    adrDigest: augmentedState.architecture!.digest,
+    status: `ADR ${submittedAdr.id} submitted: ${args.title}`,
+    adrId: submittedAdr.id,
+    adrDigest: submittedAdr.digest,
     selfReviewIteration: 0,
     maxArchitectureReviewIterations: policy.reviewBudget.architecture,
     reviewMode: subagentEnabled ? 'subagent' : 'self',

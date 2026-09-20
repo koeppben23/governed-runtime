@@ -5,6 +5,16 @@
  * @version v1
  */
 
+class HydrateError extends Error {
+  readonly code: string;
+
+  constructor(code: string, message: string) {
+    super(message);
+    this.name = 'HydrateError';
+    this.code = code;
+  }
+}
+
 export function throwHydrateError(code: string, message: string): never {
-  throw Object.assign(new Error(message), { code });
+  throw new HydrateError(code, message);
 }

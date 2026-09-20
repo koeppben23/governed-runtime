@@ -288,7 +288,7 @@ describe('integration tools use barrel imports', () => {
     'integration/tools/plan.ts',
     'integration/tools/plan-response.ts',
     'integration/tools/architecture.ts',
-    'integration/tools/architecture-review.ts',
+    'integration/tools/architecture-review-response.ts',
     'integration/tools/architecture-submit.ts',
     'integration/tools/architecture-shared.ts',
     'integration/tools/review-tool/completion.ts',

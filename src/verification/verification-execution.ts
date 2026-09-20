@@ -17,6 +17,7 @@ import { hashBuffer } from '../shared/hashing.js';
 import type { VerificationCandidate } from '../state/discovery-schemas.js';
 import type { AssertionReportSpec } from '../state/discovery-schemas.js';
 import { FORMATS_BY_PROVIDER, PARSER_BY_FORMAT } from '../providers/registry.js';
+import { VerificationError } from './errors.js';
 
 // ─── Public types ────────────────────────────────────────────────────────────
 
@@ -109,13 +110,17 @@ export async function prepareVerificationExecution(
 function validateAssertionReportSpec(spec: AssertionReportSpec): void {
   const supported = FORMATS_BY_PROVIDER.get(spec.providerId);
   if (!supported?.has(spec.format)) {
-    throw new Error(
+    throw new VerificationError(
+      'VERIFICATION_PROVIDER_FORMAT_UNSUPPORTED',
       `Provider '${spec.providerId}' does not support report format '${spec.format}'`,
     );
   }
   const parser = PARSER_BY_FORMAT.get(spec.format);
   if (!parser) {
-    throw new Error(`No parser registered for report format '${spec.format}'`);
+    throw new VerificationError(
+      'VERIFICATION_PARSER_NOT_REGISTERED',
+      `No parser registered for report format '${spec.format}'`,
+    );
   }
 }
 

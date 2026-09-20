@@ -40,21 +40,26 @@ const REQUIRED_RULES = [
 ] as const;
 
 /**
- * The default-wide production metrics DEFAULT ESLINT CEILINGS. Test suites and
+ * The enforced clean-code metrics for every PRODUCTION file. Test suites and
  * internal test support are the excluded file classes — never a directory.
- * `25 / 120 / 5` is the repository-wide default cap, not the quality target:
- * the clean-code targets are `12 / 80 / 5`, and existing target debt is frozen
- * in the monotonic maintainability baseline
- * (`scripts/maintainability-baseline.json`, `npm run check:maintainability`).
- * The cap is not absolute — seven legacy metric rule suppressions are frozen
- * as baseline exceptions, and new exceptions are forbidden. Tightening the cap
- * is a deliberate guard change and weakening it requires one too.
+ * `12 / 80 / 5` is the final limit, not a transitional ceiling: the
+ * maintainability ratchet and its baseline were removed once the debt reached
+ * zero, so `lint:strict` is the single enforcement authority. Weakening any
+ * value is a deliberate guard change and fails here.
  */
 const METRICS_CONTRACT = [
-  { rule: 'complexity', option: 'max', value: 25 },
+  { rule: 'complexity', option: 'max', value: 12 },
   { rule: 'max-params', option: 'max', value: 5 },
-  { rule: 'max-lines-per-function', option: 'max', value: 120 },
+  { rule: 'max-lines-per-function', option: 'max', value: 80 },
 ] as const;
+
+/**
+ * Zero-debt syntax rules enforced as errors for every PRODUCTION file. The
+ * executable assertion of the current stock (0 findings) lives in
+ * `production-zero-debt.test.ts`; this contract proves the ESLint rule itself
+ * cannot be narrowed to a directory or dropped.
+ */
+const PRODUCTION_SYNTAX_RULES = ['@typescript-eslint/no-non-null-assertion'] as const;
 
 interface EffectiveConfig {
   readonly rules?: Record<string, unknown>;
@@ -92,6 +97,13 @@ function ruleOptions(entry: unknown): Record<string, unknown> | undefined {
   const options: unknown = entry[1];
   if (typeof options !== 'object' || options === null) return undefined;
   return options as Record<string, unknown>;
+}
+
+/** Production syntax-rule violations for one production file. */
+function syntaxProblems(config: EffectiveConfig, fileRel: string): string[] {
+  return PRODUCTION_SYNTAX_RULES.filter((rule) => severityOf(config.rules?.[rule]) < 2).map(
+    (rule) => `${fileRel}: production syntax rule ${rule} is not enforced as error`,
+  );
 }
 
 /** Metric-contract violations for one production file. */
@@ -180,6 +192,7 @@ describe('lint scope (default-wide correctness and metrics)', () => {
       }
       const config = (await eslint.calculateConfigForFile(file)) as EffectiveConfig;
       problems.push(...metricProblems(config, fileRel));
+      problems.push(...syntaxProblems(config, fileRel));
     }
     expect(problems).toEqual([]);
   });
@@ -260,12 +273,30 @@ describe('lint scope (default-wide correctness and metrics)', () => {
 
     it('detects a production file outside the metrics contract', () => {
       const incomplete: EffectiveConfig = {
-        rules: { complexity: ['warn', { max: 25 }] },
+        rules: { complexity: ['warn', { max: 12 }] },
         languageOptions: {},
       };
       const problems = metricProblems(incomplete, 'src/example.ts');
       expect(problems).toContain('src/example.ts: metrics rule max-params not enabled');
       expect(problems).toContain('src/example.ts: metrics rule max-lines-per-function not enabled');
+    });
+
+    it('detects production files without the zero-debt syntax rule', () => {
+      expect(syntaxProblems({ rules: {} }, 'src/example.ts')).toEqual([
+        'src/example.ts: production syntax rule @typescript-eslint/no-non-null-assertion is not enforced as error',
+      ]);
+      expect(
+        syntaxProblems(
+          { rules: { '@typescript-eslint/no-non-null-assertion': 'warn' } },
+          'src/example.ts',
+        ),
+      ).toHaveLength(1);
+      expect(
+        syntaxProblems(
+          { rules: { '@typescript-eslint/no-non-null-assertion': 'error' } },
+          'src/example.ts',
+        ),
+      ).toEqual([]);
     });
 
     it('detects weakened metric ceilings', () => {
@@ -278,7 +309,8 @@ describe('lint scope (default-wide correctness and metrics)', () => {
         languageOptions: {},
       };
       expect(metricProblems(weakened, 'src/example.ts')).toEqual([
-        'src/example.ts: complexity max is 40, expected 25',
+        'src/example.ts: complexity max is 40, expected 12',
+        'src/example.ts: max-lines-per-function max is 120, expected 80',
       ]);
     });
 

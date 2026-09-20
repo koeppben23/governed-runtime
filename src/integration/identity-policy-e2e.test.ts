@@ -731,7 +731,6 @@ describe('identity-policy-e2e', () => {
       await expect(
         resolveActorForPolicy('/fake/worktree', {
           ...getPolicyPreset('team'),
-          identityProvider: undefined,
           identityProviderMode: 'required',
         }),
       ).rejects.toThrow(ActorIdentityError);

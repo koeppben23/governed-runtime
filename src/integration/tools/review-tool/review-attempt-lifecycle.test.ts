@@ -25,8 +25,8 @@ function evidence(args: {
 }): PeerReviewPreparedEvidence {
   return preparePeerReviewEvidence(
     {
-      branch: args.branch,
-      base: args.base,
+      ...(args.branch !== undefined ? { branch: args.branch } : {}),
+      ...(args.base !== undefined ? { base: args.base } : {}),
     },
     '2026-08-09T00:00:00.000Z',
     args.refInput,

@@ -18,10 +18,10 @@ import {
 import { projectLatestReviewExecution } from '../review/review-execution-projection.js';
 import {
   formatBlocked,
-  formatRailResult,
   withMutableSessionTransaction,
   writeStateWithArtifactsAndAuditOperations,
 } from './helpers.js';
+import { formatRailResult } from './helpers-rail-presentation.js';
 
 type CompletedExport = Readonly<{
   kind: 'completed';

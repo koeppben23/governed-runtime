@@ -299,9 +299,7 @@ export function verifyChain(
   let lastHash = GENESIS_HASH;
   let trailFlowguardSessionId = options?.expectedFlowguardSessionId;
 
-  for (let i = 0; i < events.length; i++) {
-    const raw = events[i]!;
-
+  for (const [i, raw] of events.entries()) {
     const parsed = AuditEvent.safeParse(raw);
     if (!parsed.success) {
       const verification: EventVerification = {
@@ -403,12 +401,13 @@ function verifyTimestampChecks(
   // Only canonical events participate; their ORIGINAL trail indices are
   // reported so diagnostics never shift after an envelope-invalid record.
   const monotonicityResult = verifyTimestampMonotonicity(indexedEvents.map((entry) => entry.event));
+  const monotonicityBreakEntry =
+    monotonicityResult.firstBreak === null
+      ? undefined
+      : indexedEvents[monotonicityResult.firstBreak];
   const timestampMonotonicity = {
     valid: monotonicityResult.valid,
-    firstBreak:
-      monotonicityResult.firstBreak === null
-        ? null
-        : indexedEvents[monotonicityResult.firstBreak]!.index,
+    firstBreak: monotonicityBreakEntry === undefined ? null : monotonicityBreakEntry.index,
     message: monotonicityResult.message,
   };
 
@@ -425,21 +424,24 @@ function verifyTimestampChecks(
   const missingTimestampEvidence = verifyTimestampEvidencePresence(chainedEvents, [
     'decision',
     'lifecycle',
-  ]).missingCriticalEvents.map((position) => indexedEvents[position]!.index);
+  ]).missingCriticalEvents.flatMap((position) => {
+    const entry = indexedEvents[position];
+    return entry === undefined ? [] : [entry.index];
+  });
 
   const tsaImprintMismatches: number[] = [];
   const tokenVerificationRequired: number[] = [];
   const tsaEvidenceDowngraded: number[] = [];
 
-  for (let i = 0; i < chainedEvents.length; i++) {
-    const check = verifyTsaMessageImprint(chainedEvents[i]!);
+  for (const entry of indexedEvents) {
+    const check = verifyTsaMessageImprint(entry.event);
     if (check.valid) continue;
     if (check.downgraded) {
-      tsaEvidenceDowngraded.push(indexedEvents[i]!.index);
+      tsaEvidenceDowngraded.push(entry.index);
     } else if (check.needsTokenVerification) {
-      tokenVerificationRequired.push(indexedEvents[i]!.index);
+      tokenVerificationRequired.push(entry.index);
     } else {
-      tsaImprintMismatches.push(indexedEvents[i]!.index);
+      tsaImprintMismatches.push(entry.index);
     }
   }
 
@@ -503,7 +505,8 @@ function resolveTimestampReason(timestampChecks: TimestampChecks): ChainVerifica
  */
 export function getLastChainHash(events: Record<string, unknown>[]): string {
   for (let i = events.length - 1; i >= 0; i--) {
-    const raw = events[i]!;
+    const raw = events[i];
+    if (raw === undefined) continue;
     if (isChainedEvent(raw)) {
       return (raw as unknown as ChainedAuditEvent).chainHash;
     }

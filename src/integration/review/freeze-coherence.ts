@@ -13,6 +13,7 @@
 import type { FrozenRepositoryAuthority } from '../../state/evidence.js';
 import type { ReviewObligationType } from '../../state/evidence.js';
 import type { RepositoryEvidenceFreeze } from '../../state/evidence-review-freeze.js';
+import { IntegrationInvariantError } from '../errors.js';
 
 /**
  * Invariant (no third state, no legacy exception):
@@ -33,24 +34,28 @@ export function assertRepositoryFreezeCoherence(input: {
   const freeze = input.repositoryEvidenceFreeze;
   if (!contextFreezeObligation) {
     if (freeze) {
-      throw new Error(
+      throw new IntegrationInvariantError(
+        'REVIEW_FREEZE_NOT_APPLICABLE',
         'FAIL_CLOSED: only plan/architecture obligations carry a repository evidence freeze record',
       );
     }
     return;
   }
   if (!freeze) {
-    throw new Error(
+    throw new IntegrationInvariantError(
+      'REVIEW_FREEZE_REQUIRED',
       'FAIL_CLOSED: plan/architecture obligations require a repository evidence freeze record',
     );
   }
   if (freeze.kind === 'available' && !input.repositoryAuthority) {
-    throw new Error(
+    throw new IntegrationInvariantError(
+      'REVIEW_FREEZE_AUTHORITY_REQUIRED',
       'FAIL_CLOSED: an available repository freeze record requires a frozen repository authority',
     );
   }
   if (freeze.kind === 'unavailable' && input.repositoryAuthority) {
-    throw new Error(
+    throw new IntegrationInvariantError(
+      'REVIEW_FREEZE_AUTHORITY_FORBIDDEN',
       'FAIL_CLOSED: an unavailable repository freeze record forbids a frozen repository authority',
     );
   }

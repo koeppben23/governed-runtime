@@ -5,7 +5,7 @@
 
 import { z } from 'zod';
 import { ChallengeResolutionVerdict, ReviewerChallengeInput } from './evidence-review-challenge.js';
-import { ReviewFindingsObject } from './evidence-review.js';
+import { ReviewFindingsObject } from './evidence-review-attestation.js';
 
 /**
  * The reviewer cannot author execution identity, timestamps, or host-owned

@@ -6,8 +6,12 @@
  * - Admission evidence is a profile full run. The profile-wide aggregate must
  *   meet the break threshold; targets named via `--require-selectors` (new
  *   admissions, typically a newly added mutate selector or range) must
- *   additionally meet the per-target break threshold. Legacy targets outside
- *   the required set are reported as a note.
+ *   additionally meet the per-target break threshold. Legacy targets below the
+ *   per-target threshold are reported as a note.
+ * - Every configured selector must appear in the report as its target file with
+ *   at least one valid mutant. A configured selector with no report entry (for
+ *   example a file that became a pure re-export facade) is a violation, never a
+ *   note: a target cannot silently leave the trusted computing base.
  *
  * The verifier fails closed unless:
  * - the report matches the mutation-testing-elements structure
@@ -58,6 +62,7 @@ const REPO_ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 
 const PROFILE_CONFIG = {
   base: 'stryker.conf.json',
+  'event-core': 'stryker.event-core.conf.json',
   'human-projection': 'stryker.human-projection.conf.json',
   'identity-jwks': 'stryker.identity-jwks.conf.json',
   mandates: 'stryker.mandates.conf.json',
@@ -114,7 +119,9 @@ function parseArguments(argv) {
     } else fail(`unsupported argument '${argument}'`);
   }
   if (options.profile === undefined) {
-    fail('missing required --profile <base|human-projection|identity-jwks|mandates|schemas>');
+    fail(
+      'missing required --profile <base|event-core|human-projection|identity-jwks|mandates|schemas>',
+    );
   }
   if (!Object.hasOwn(PROFILE_CONFIG, options.profile)) {
     fail(`unknown profile '${options.profile}'`);
@@ -401,11 +408,10 @@ for (const selector of mutateSelectors) {
   seenTargets.add(target);
   const file = reportFiles.get(target);
   if (file === undefined) {
-    if (requiredSelectors.has(selector)) {
-      violations.push({ selector, problem: 'missing from report (required per-target)' });
-    } else {
-      belowThreshold.push({ selector, score: null, killed: 0, survived: 0 });
-    }
+    violations.push({
+      selector,
+      problem: 'missing from report (configured selector produced no mutants)',
+    });
     continue;
   }
   const mutants =
@@ -498,10 +504,6 @@ if (belowThreshold.length > 0) {
       `per-target threshold but within the aggregate gate (not required per-target):`,
   );
   for (const entry of belowThreshold) {
-    if (entry.score === null) {
-      console.log(`  - ${entry.selector}: no mutants or missing from report`);
-      continue;
-    }
     console.log(
       `  - ${entry.selector}: ${entry.score.toFixed(2)}% (killed ${entry.killed}, survived ${entry.survived})`,
     );

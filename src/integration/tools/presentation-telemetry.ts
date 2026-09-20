@@ -59,7 +59,7 @@ function emitActionPresented(
 ): void {
   const body: TelemetryEventBody = {
     event: 'action_presented',
-    intent: action.intent,
+    ...(action.intent !== undefined ? { intent: action.intent } : {}),
     visibility: action.visibility,
     conclusionKind,
   };

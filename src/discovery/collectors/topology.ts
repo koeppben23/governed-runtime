@@ -210,6 +210,20 @@ function detectEntryPoints(allFiles: readonly string[]): EntryPointInfo[] {
   return entryPoints;
 }
 
+/** Root-config file extensions. */
+const ROOT_CONFIG_EXTENSIONS = new Set(['.json', '.yaml', '.yml', '.toml', '.xml', '.config']);
+
+/** Root-config files identified by basename. */
+const ROOT_CONFIG_BASENAMES = new Set(['makefile', 'dockerfile', 'rakefile', 'gemfile']);
+
+/** Config patterns: dotfiles, known extensions and well-known build/tool basenames. */
+function isRootConfigFile(filePath: string): boolean {
+  const lowerPath = filePath.toLowerCase();
+  if (lowerPath.startsWith('.')) return true;
+  if (ROOT_CONFIG_EXTENSIONS.has(path.extname(filePath).toLowerCase())) return true;
+  return ROOT_CONFIG_BASENAMES.has(lowerPath);
+}
+
 /**
  * Detect root-level config files (files in the repository root).
  */
@@ -220,26 +234,7 @@ function detectRootConfigs(allFiles: readonly string[]): string[] {
     const normalized = filePath.replace(/\\/g, '/');
     // Root-level only: no directory separator
     if (normalized.includes('/')) continue;
-
-    const ext = path.extname(filePath).toLowerCase();
-    const basename = filePath.toLowerCase();
-
-    // Config patterns: dotfiles, .json, .yaml, .yml, .toml, .xml, Makefile, Dockerfile
-    if (
-      basename.startsWith('.') ||
-      ext === '.json' ||
-      ext === '.yaml' ||
-      ext === '.yml' ||
-      ext === '.toml' ||
-      ext === '.xml' ||
-      ext === '.config' ||
-      basename === 'makefile' ||
-      basename === 'dockerfile' ||
-      basename === 'rakefile' ||
-      basename === 'gemfile'
-    ) {
-      configs.push(filePath);
-    }
+    if (isRootConfigFile(filePath)) configs.push(filePath);
   }
 
   return configs.sort();

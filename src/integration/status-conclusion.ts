@@ -18,6 +18,7 @@ import { evaluate } from '../machine/evaluate.js';
 import type { WorkflowDirective } from '../machine/workflow-directive.js';
 import { getInstalledCommand } from './installed-commands.js';
 import { directiveLabel, type PresentationAction } from '../presentation/index.js';
+import { IntegrationInvariantError } from './errors.js';
 
 // ─── Conclusion Projection ─────────────────────────────────────────────────────
 
@@ -60,11 +61,9 @@ export function projectStatusConclusion(
     );
 
     if (actions.length === 0) {
-      throw Object.assign(
-        new Error(
-          `StatusProjection: waiting gate has no canonical decision actions: ${evalResult.reason}`,
-        ),
-        { code: 'STATUS_DECISION_PROJECTION_EMPTY' },
+      throw new IntegrationInvariantError(
+        'STATUS_DECISION_PROJECTION_EMPTY',
+        `StatusProjection: waiting gate has no canonical decision actions: ${evalResult.reason}`,
       );
     }
 
@@ -100,12 +99,10 @@ export function projectStatusActionFromCommand(
   const command = getInstalledCommand(invocation);
 
   if (!command) {
-    throw Object.assign(
-      new Error(
-        `StatusProjection: no installed command metadata for "${invocation}". ` +
-          'The runtime selected a command without presentation metadata in INSTALLED_COMMANDS.',
-      ),
-      { code: 'STATUS_ACTION_PROJECTION_MISSING_METADATA' },
+    throw new IntegrationInvariantError(
+      'STATUS_ACTION_PROJECTION_MISSING_METADATA',
+      `StatusProjection: no installed command metadata for "${invocation}". ` +
+        'The runtime selected a command without presentation metadata in INSTALLED_COMMANDS.',
     );
   }
 

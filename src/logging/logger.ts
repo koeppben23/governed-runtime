@@ -251,6 +251,47 @@ class TokenBucket {
   }
 }
 
+// ─── Entry Construction and Dispatch ─────────────────────────────────────────
+
+/**
+ * Build the log entry with central sink-layer redaction (defense-in-depth):
+ * every message and extra is sanitized before reaching any sink, so a call
+ * site that forgets to redact cannot leak secrets or absolute paths.
+ */
+function buildLogEntry(
+  level: 'debug' | 'info' | 'warn' | 'error',
+  service: string,
+  message: string,
+  extra: Record<string, unknown> | undefined,
+): LogEntry {
+  const ctx = getLogContext();
+  const redactedExtra = redactExtra(extra);
+  return {
+    level,
+    service,
+    message: redactMessage(message),
+    ...(redactedExtra !== undefined ? { extra: redactedExtra } : {}),
+    ...(ctx?.traceId !== undefined ? { traceId: ctx.traceId } : {}),
+    ...(ctx?.sessionId !== undefined ? { sessionId: ctx.sessionId } : {}),
+  };
+}
+
+/** Deliver one entry to every sink, counting sync throws and async rejections. */
+function dispatchLogEntry(
+  sinks: readonly LogSink[],
+  entry: LogEntry,
+  onSinkFailure: () => void,
+): void {
+  for (const sink of sinks) {
+    try {
+      const result = sink(entry);
+      void Promise.resolve(result).catch(onSinkFailure);
+    } catch {
+      onSinkFailure();
+    }
+  }
+}
+
 // ─── Factories ────────────────────────────────────────────────────────────────
 
 /**
@@ -304,36 +345,17 @@ export function createLogger(
     // here were to throw. A logging failure must never propagate to the caller.
     let entry: LogEntry;
     try {
-      const ctx = getLogContext();
-      entry = {
-        level,
-        service,
-        // Central sink-layer redaction (defense-in-depth): every message and extra
-        // is sanitized before reaching any sink, so a call site that forgets to
-        // redact cannot leak secrets or absolute paths.
-        message: redactMessage(message),
-        extra: redactExtra(extra),
-        traceId: ctx?.traceId,
-        sessionId: ctx?.sessionId,
-      };
+      entry = buildLogEntry(level, service, message, extra);
     } catch {
       sinkFailuresTotal++;
       reportSinkHealth();
       return;
     }
 
-    for (const sink of sinkArray) {
-      try {
-        const result = sink(entry);
-        void Promise.resolve(result).catch(() => {
-          sinkFailuresTotal++;
-          reportSinkHealth();
-        });
-      } catch {
-        sinkFailuresTotal++;
-        reportSinkHealth();
-      }
-    }
+    dispatchLogEntry(sinkArray, entry, () => {
+      sinkFailuresTotal++;
+      reportSinkHealth();
+    });
   }
 
   // Surface sink failures on stderr so a fully broken sink (silent total log

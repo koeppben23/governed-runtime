@@ -151,13 +151,15 @@ function selectHighlightedClaims(
     for (const claim of claims) {
       if (claim.verificationState !== state || claim.critical) continue;
       const planDecl = planById.get(claim.claimId);
+      const reason = claimReason(claim.verificationState);
+      const recovery = claimRecovery(claim.verificationState, planDecl);
       results.push({
         claimId: claim.claimId,
         statement: claim.statement,
         status: claim.verificationState,
         critical: claim.critical,
-        reason: claimReason(claim.verificationState),
-        recovery: claimRecovery(claim.verificationState, planDecl),
+        ...(reason !== undefined ? { reason } : {}),
+        ...(recovery !== undefined ? { recovery } : {}),
       });
       if (results.length >= 3) break;
     }
@@ -178,14 +180,18 @@ function selectUnmetCriticalClaims(
   const planById = new Map((planDeclarations?.claims ?? []).map((d) => [d.claimId, d] as const));
   return claims
     .filter((claim) => claim.critical && claim.verificationState !== 'PROVEN')
-    .map((claim) => ({
-      claimId: claim.claimId,
-      statement: claim.statement,
-      status: claim.verificationState,
-      critical: true,
-      reason: claimReason(claim.verificationState),
-      recovery: claimRecovery(claim.verificationState, planById.get(claim.claimId)),
-    }));
+    .map((claim) => {
+      const reason = claimReason(claim.verificationState);
+      const recovery = claimRecovery(claim.verificationState, planById.get(claim.claimId));
+      return {
+        claimId: claim.claimId,
+        statement: claim.statement,
+        status: claim.verificationState,
+        critical: true,
+        ...(reason !== undefined ? { reason } : {}),
+        ...(recovery !== undefined ? { recovery } : {}),
+      };
+    });
 }
 
 function approvalPresentation(
@@ -339,14 +345,37 @@ function resolveGate(state: SessionState, opts?: { gate?: ProofGraphGateDecision
   return (
     opts?.gate ??
     (() => {
-      const authorization = authorizedCriticalPlanClaimIds(state.plan);
+      const plan = state.plan;
+      const authorization = authorizedCriticalPlanClaimIds(
+        plan
+          ? {
+              current: plan.current,
+              ...(plan.claimDeclarations !== undefined
+                ? { claimDeclarations: plan.claimDeclarations }
+                : {}),
+              ...(plan.approvalCertificate !== undefined
+                ? { approvalCertificate: plan.approvalCertificate }
+                : {}),
+            }
+          : undefined,
+      );
+      const riskAssessment = state.implementationRiskAssessment;
+      const implementationDigest = state.implementation?.digest;
       return evaluateProofGraphGate({
-        projection: state.proofGraph,
+        ...(state.proofGraph !== undefined ? { projection: state.proofGraph } : {}),
         authorizedCriticalClaimIds:
           authorization.kind === 'authorized' ? authorization.claimIds : [],
         certificateValid: authorization.kind === 'authorized',
-        implementationDigest: state.implementation?.digest,
-        riskAssessment: state.implementationRiskAssessment,
+        ...(implementationDigest !== undefined ? { implementationDigest } : {}),
+        riskAssessment:
+          riskAssessment !== undefined
+            ? {
+                implementationDigest: riskAssessment.implementationDigest,
+                ...(riskAssessment.riskTriggers !== undefined
+                  ? { riskTriggers: riskAssessment.riskTriggers }
+                  : {}),
+              }
+            : undefined,
       });
     })()
   );
@@ -383,6 +412,7 @@ function buildEvaluationResult(
   const unmetCriticalClaims = selectUnmetCriticalClaims(claims, state.plan?.claimDeclarations);
   const facts = projectClaimResolutionFactsFromState(state);
   const humanSummary = facts.length > 0 ? projectHumanProofSummary(facts) : undefined;
+  const revisionDigest = state.implementation?.digest;
   const result: CompactProofPresentation = {
     kind: 'evaluation',
     claimCount: summary.claimCount,
@@ -393,7 +423,7 @@ function buildEvaluationResult(
     unmetCriticalClaims,
     otherHighlightedClaims: selectHighlightedClaims(claims, state.plan?.claimDeclarations),
     evidenceFreshness: deriveEvidenceFreshness(claims),
-    revisionDigest: state.implementation?.digest,
+    ...(revisionDigest !== undefined ? { revisionDigest } : {}),
     decisionContext: decisionContext,
     ...tallies,
     criticalCount: tallies.criticalCount,

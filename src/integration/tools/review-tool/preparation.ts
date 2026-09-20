@@ -58,7 +58,7 @@ export function preparePeerReviewEvidence(
 ): PeerReviewPreparedEvidence {
   const { task, requestedDigests } = createPeerReviewTask({
     subjectDigest: subjectDigest(args, refInput),
-    objectives: args.objectives,
+    ...(args.objectives !== undefined ? { objectives: args.objectives } : {}),
   });
   return {
     kind: 'prepared',
@@ -174,7 +174,7 @@ export function appendCompletedReviewEvidence(input: {
   readonly evidence: readonly PeerReviewEvidence[];
   readonly prepared: PeerReviewPreparedEvidence;
   readonly completedAt: string;
-  readonly findings?: ReviewFindings;
+  readonly findings?: ReviewFindings | undefined;
 }): PeerReviewEvidence[] {
   const { evidence, prepared, completedAt, findings } = input;
   // Exact digest match first (unchanged subject); otherwise bind the outstanding

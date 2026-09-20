@@ -60,12 +60,13 @@ export function projectImpact(code: string): UserImpact | undefined {
  * result is a contract violation, not a valid projection.
  */
 export function toRecoveryProjection(steps: readonly string[]): RecoveryProjection {
-  if (steps.length === 0) {
+  const [primary] = steps;
+  if (primary === undefined) {
     throw new PresentationContractError(
       'reason registry must provide at least one recovery step for a registered reason code',
     );
   }
-  return { primary: steps[0]!, secondary: steps.slice(1) };
+  return { primary, secondary: steps.slice(1) };
 }
 
 /**

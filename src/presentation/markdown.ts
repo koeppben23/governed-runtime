@@ -27,7 +27,6 @@
 import type {
   PresentationDocument,
   PresentationSection,
-  PresentationConclusion,
   PresentationAction,
   KeyValueItem,
   TitleSection,
@@ -42,6 +41,7 @@ import type {
   BulletListSection,
   GuidanceSection,
   GuidanceStatus,
+  DetailedCommandItem,
   DetailedCommandListSection,
   HelpSummarySection,
   HelpArtifactSection,
@@ -53,8 +53,10 @@ import {
   formatFindingLocation,
   formatFindingSubject,
 } from './finding-relation.js';
-import { validateCodeLanguage, normalizedMarkdown, PresentationContractError } from './model.js';
-import { validateDocumentContract, validateRecoveryConclusion } from './markdown-contract.js';
+import { validateCodeLanguage, PresentationContractError } from './model.js';
+import { validateDocumentContract } from './markdown-contract.js';
+import { normalizeEmbeddedContent } from './markdown-embedded.js';
+import { renderAction, renderConclusion } from './markdown-conclusion.js';
 import { GUIDANCE_STATUS_LABELS } from './labels.js';
 import { renderProofGraphMarkdown } from './proof-summary.js';
 import {
@@ -95,7 +97,39 @@ function sectionHeading(section: { readonly heading?: string }): string {
   return section.heading && section.heading.length > 0 ? `## ${section.heading}\n\n` : '';
 }
 
+/** Card sections that render their body without an extra heading level. */
+type CorePresentationSection = Extract<
+  PresentationSection,
+  {
+    kind:
+      'title' | 'keyValue' | 'commandList' | 'blocker' | 'artifactList' | 'findings' | 'checklist';
+  }
+>;
+
+/** Help/diagnostic and free-form sections rendered below the core card body. */
+type SupportPresentationSection = Exclude<PresentationSection, CorePresentationSection>;
+
+const CORE_SECTION_KINDS: ReadonlySet<PresentationSection['kind']> = new Set([
+  'title',
+  'keyValue',
+  'commandList',
+  'blocker',
+  'artifactList',
+  'findings',
+  'checklist',
+]);
+
+function isCoreSection(section: PresentationSection): section is CorePresentationSection {
+  return CORE_SECTION_KINDS.has(section.kind);
+}
+
 function renderSection(section: PresentationSection, glyphs: PresentationGlyphs): string {
+  return isCoreSection(section)
+    ? renderCoreSection(section, glyphs)
+    : renderSupportSection(section, glyphs);
+}
+
+function renderCoreSection(section: CorePresentationSection, glyphs: PresentationGlyphs): string {
   switch (section.kind) {
     case 'title':
       return renderTitle(section);
@@ -111,6 +145,14 @@ function renderSection(section: PresentationSection, glyphs: PresentationGlyphs)
       return sectionHeading(section) + renderFindings(section.groups, section.detail ?? 'compact');
     case 'checklist':
       return sectionHeading(section) + renderChecklist(section);
+  }
+}
+
+function renderSupportSection(
+  section: SupportPresentationSection,
+  glyphs: PresentationGlyphs,
+): string {
+  switch (section.kind) {
     case 'text':
       return sectionHeading(section) + renderText(section);
     case 'proofGraph':
@@ -235,9 +277,10 @@ function renderFindings(groups: readonly FindingGroup[], detail: 'compact' | 'ex
 }
 
 function renderFindingItem(item: FindingItem, detail: 'compact' | 'expanded'): string {
-  const lines = [`- **${item.category}:** ${item.message}`];
-  if (item.subjects === undefined && item.evidence === undefined) return lines[0]!;
+  const heading = `- **${item.category}:** ${item.message}`;
+  if (item.subjects === undefined && item.evidence === undefined) return heading;
 
+  const lines = [heading];
   const subjects = item.subjects ?? [];
   const evidence = item.evidence ?? [];
   lines.push(`  ${formatFindingAffected(subjects)} · ${formatFindingEvidence(evidence)}`);
@@ -345,19 +388,7 @@ function renderDetailedCommandList(section: DetailedCommandListSection): string 
     lines.push(`**${section.label}:**`);
   }
   for (const item of section.items) {
-    if (item.invocation.trim().length === 0) {
-      throw new PresentationContractError('DetailedCommandItem: invocation must not be empty');
-    }
-    if (item.description.trim().length === 0) {
-      throw new PresentationContractError('DetailedCommandItem: description must not be empty');
-    }
-    for (const alias of item.aliases) {
-      if (alias.trim().length === 0) {
-        throw new PresentationContractError(
-          'DetailedCommandItem: aliases must not contain empty strings',
-        );
-      }
-    }
+    validateDetailedCommandItem(item);
     const sym = detailedCommandSymbol(item.visibility);
     const aliases =
       item.aliases.length > 0
@@ -366,15 +397,33 @@ function renderDetailedCommandList(section: DetailedCommandListSection): string 
     const inv =
       item.visibility === 'recommended' ? `**\`${item.invocation}\`**` : `\`${item.invocation}\``;
     lines.push(`  ${sym} ${inv} — ${item.description}${aliases}`);
-
-    if (item.preflight.status === 'blocked') {
-      const p = item.preflight;
-      if (p.message) lines.push(`    blocked: ${p.message}`);
-      if (p.reasonCode) lines.push(`    code: ${p.reasonCode}`);
-      if (p.recovery) lines.push(`    recovery: ${p.recovery}`);
-    }
+    appendDetailedCommandPreflight(lines, item);
   }
   return lines.join('\n');
+}
+
+function validateDetailedCommandItem(item: DetailedCommandItem): void {
+  if (item.invocation.trim().length === 0) {
+    throw new PresentationContractError('DetailedCommandItem: invocation must not be empty');
+  }
+  if (item.description.trim().length === 0) {
+    throw new PresentationContractError('DetailedCommandItem: description must not be empty');
+  }
+  for (const alias of item.aliases) {
+    if (alias.trim().length === 0) {
+      throw new PresentationContractError(
+        'DetailedCommandItem: aliases must not contain empty strings',
+      );
+    }
+  }
+}
+
+function appendDetailedCommandPreflight(lines: string[], item: DetailedCommandItem): void {
+  if (item.preflight.status !== 'blocked') return;
+  const p = item.preflight;
+  if (p.message) lines.push(`    blocked: ${p.message}`);
+  if (p.reasonCode) lines.push(`    code: ${p.reasonCode}`);
+  if (p.recovery) lines.push(`    recovery: ${p.recovery}`);
 }
 
 function detailedCommandSymbol(
@@ -470,157 +519,6 @@ function renderEmbeddedMarkdown(section: EmbeddedMarkdownSection): string {
   }
 
   return section.label !== undefined ? `**${section.label}:**\n${normalized}` : normalized;
-}
-
-/**
- * Normalise untrusted embedded Markdown for safe inclusion in a document:
- * boundary-trims, sanitises structural whitespace, and demotes ATX headings so
- * the shallowest heading is at least `minLevel`. Fenced code blocks are opaque:
- * their content (and internal blank lines/indentation) is preserved verbatim.
- */
-function normalizeEmbeddedContent(raw: string, minLevel: number): string {
-  const boundaryTrimmed = raw.replace(/^\n+/, '').replace(/\n+$/, '');
-  if (boundaryTrimmed.length === 0) return '';
-
-  const shallowest = shallowestHeadingLevel(boundaryTrimmed);
-  const shift = shallowest !== null && shallowest < minLevel ? minLevel - shallowest : 0;
-
-  const lines = boundaryTrimmed.split('\n');
-  const out: string[] = [];
-  let inFence = false;
-  let fenceMarker = '';
-  let prevBlankOutsideFence = false;
-
-  for (const line of lines) {
-    const fence = fenceDelimiter(line);
-    if (fence !== null && (!inFence || line.trimStart().startsWith(fenceMarker))) {
-      if (!inFence) {
-        inFence = true;
-        fenceMarker = fence;
-      } else {
-        inFence = false;
-        fenceMarker = '';
-      }
-      out.push(line); // fence delimiter lines are preserved verbatim
-      prevBlankOutsideFence = false;
-      continue;
-    }
-    if (inFence) {
-      out.push(line); // code content preserved verbatim (exempt from all normalisation)
-      continue;
-    }
-    const sanitized = sanitizeStructuralLine(demoteHeadingLine(line, shift));
-    const blank = sanitized.length === 0;
-    // Collapse triple+ newlines between structural blocks: never allow two
-    // consecutive blank lines outside a code fence.
-    if (blank && prevBlankOutsideFence) continue;
-    out.push(sanitized);
-    prevBlankOutsideFence = blank;
-  }
-
-  return out.join('\n');
-}
-
-/** Return the ``` / ~~~ fence marker if the line opens/closes a fenced block. */
-function fenceDelimiter(line: string): string | null {
-  const m = /^\s*(`{3,}|~{3,})/.exec(line);
-  return m ? m[1]! : null;
-}
-
-/** Strip trailing whitespace from a non-code line. */
-function sanitizeStructuralLine(line: string): string {
-  return line.replace(/[ \t]+$/, '');
-}
-
-/** Demote an ATX heading line by `shift` levels (capped at H6). No-op otherwise. */
-function demoteHeadingLine(line: string, shift: number): string {
-  if (shift <= 0) return line;
-  const m = /^(#{1,6})(\s.*)$/.exec(line);
-  if (!m) return line;
-  const level = Math.min(6, m[1]!.length + shift);
-  return '#'.repeat(level) + m[2]!;
-}
-
-/** Shallowest (smallest) ATX heading level in fence-external content, or null. */
-function shallowestHeadingLevel(content: string): number | null {
-  let inFence = false;
-  let fenceMarker = '';
-  let shallowest: number | null = null;
-  for (const line of content.split('\n')) {
-    const fence = fenceDelimiter(line);
-    if (fence !== null && (!inFence || line.trimStart().startsWith(fenceMarker))) {
-      inFence = !inFence;
-      fenceMarker = inFence ? fence : '';
-      continue;
-    }
-    if (inFence) continue;
-    const m = /^(#{1,6})\s/.exec(line);
-    if (m && (shallowest === null || m[1]!.length < shallowest)) {
-      shallowest = m[1]!.length;
-    }
-  }
-  return shallowest;
-}
-
-// ─── Conclusion Renderer ───────────────────────────────────────────────────────
-
-function renderConclusion(conclusion: PresentationConclusion, glyphs: PresentationGlyphs): string {
-  switch (conclusion.kind) {
-    case 'next_action':
-      return renderAction(conclusion.action, glyphs);
-    case 'decision_required': {
-      // The question is free-form text sourced from upstream projections
-      // (e.g. directive/evalResult). Validate it against the
-      // structural contract so a stray trailing newline/whitespace fails
-      // closed instead of silently violating the document invariants.
-      const question = normalizedMarkdown(conclusion.question);
-      if (question.length === 0) {
-        throw new PresentationContractError(
-          'PresentationConclusion: decision_required question must not be empty',
-        );
-      }
-      const lines: string[] = [];
-      lines.push(`## Decision required\n`);
-      lines.push(question);
-      for (const action of conclusion.actions) {
-        lines.push(renderAction(action, glyphs));
-      }
-      return lines.join('\n');
-    }
-    case 'terminal': {
-      // Terminal message is free-form upstream text; enforce the same
-      // structural contract as all other rendered content.
-      const message = normalizedMarkdown(conclusion.message);
-      if (message.length === 0) {
-        throw new PresentationContractError(
-          'PresentationConclusion: terminal message must not be empty',
-        );
-      }
-      return message;
-    }
-    case 'review_pending': {
-      const message = normalizedMarkdown(conclusion.message);
-      if (message.length === 0) {
-        throw new PresentationContractError(
-          'PresentationConclusion: review_pending message must not be empty',
-        );
-      }
-      return `## Independent review pending\n\n${message}`;
-    }
-    case 'recovery': {
-      validateRecoveryConclusion(conclusion);
-      return `## Recovery\n\n${conclusion.message}\n${conclusion.steps.map((step) => `- ${step}`).join('\n')}`;
-    }
-  }
-}
-
-// ─── Action Renderer ───────────────────────────────────────────────────────────
-
-function renderAction(action: PresentationAction, glyphs: PresentationGlyphs): string {
-  const symbol =
-    action.visibility === 'recommended' ? glyphs.recommendedAction : glyphs.availableAction;
-  const invocation = action.invocation ? ` \`${action.invocation}\`` : '';
-  return `${symbol}${invocation} — ${action.description}`;
 }
 
 // ─── Code Fence Helper ─────────────────────────────────────────────────────────

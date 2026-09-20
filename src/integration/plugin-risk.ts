@@ -46,7 +46,8 @@ export function targetPathsForRisk(
 // ─── Path Resolution Helper ──────────────────────────────────────────────────
 
 function resolveRelativePath(filePath: string, getWorktreeRoot: () => string | undefined): string {
-  const worktreeRoot = getWorktreeRoot() ? path.resolve(getWorktreeRoot()!) : null;
+  const rootPath = getWorktreeRoot();
+  const worktreeRoot = rootPath === undefined ? null : path.resolve(rootPath);
   const resolved = path.resolve(filePath);
   if (worktreeRoot && resolved.startsWith(`${worktreeRoot}${path.sep}`)) {
     // Normalize to forward slashes for platform-independent audit output.
@@ -193,7 +194,7 @@ export function evidenceUnavailableRiskDecision(
     code: 'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
     reason,
     decisionId: `RISK-${new Date().toISOString().replace(/[^0-9]/g, '')}-evidence-unavailable`,
-    claimedTaskClass: state.claimedTaskClass,
+    ...(state.claimedTaskClass !== undefined ? { claimedTaskClass: state.claimedTaskClass } : {}),
     minimumTaskClass: 'HIGH-RISK',
     touchedSurfaces: ['risk-classification-evidence'],
     riskTriggers: ['ceremony_only'],

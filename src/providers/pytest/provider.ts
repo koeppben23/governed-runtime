@@ -10,6 +10,7 @@ import {
 } from '../../verification/assertion-parsers/pytest-json.js';
 import { junitXmlParser } from '../../verification/assertion-parsers/parsers.js';
 import type { AssertionProviderExtension } from '../contract.js';
+import { ProviderError } from '../errors.js';
 import type { ParsedAssertion } from '../../verification/assertion-parsers/types.js';
 import type { ReportFormatId } from '../../state/assertion-identity.js';
 
@@ -175,7 +176,11 @@ export const pytestProvider: AssertionProviderExtension = {
       providerId: 'pytest',
       assertionBindingFormats: new Set<ReportFormatId>(['pytest_json']),
       buildLocalId(parsed: ParsedAssertion) {
-        if (parsed.kind !== 'pytest_json') throw new Error(`pytest codec received ${parsed.kind}`);
+        if (parsed.kind !== 'pytest_json')
+          throw new ProviderError(
+            'PROVIDER_CODEC_KIND_MISMATCH',
+            `pytest codec received ${parsed.kind}`,
+          );
         return buildPytestLocalId(parsed.nodeId);
       },
       validateLocalId(localId: string) {

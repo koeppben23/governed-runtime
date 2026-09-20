@@ -29,15 +29,15 @@ export interface DiscoveryHealthDecision {
   /** Human/audit detail for the {reason} or {driftStatus} template variable. */
   readonly detail?: string;
   /** Cached drift verdict considered by this decision, if any. */
-  readonly driftStatus?: DiscoveryDriftAssessment;
+  readonly driftStatus?: DiscoveryDriftAssessment | undefined;
 }
 
 export interface IsDiscoveryHealthAllowedInput {
   readonly policy: DiscoveryHealthPolicy;
   readonly health: DiscoveryHealthProjection;
   /** Cached drift verdict persisted on the gate; undefined ⇒ treated as not_checked. */
-  readonly cachedDrift?: DiscoveryDriftAssessment;
-  readonly existingGate?: DiscoveryHealthGate;
+  readonly cachedDrift?: DiscoveryDriftAssessment | undefined;
+  readonly existingGate?: DiscoveryHealthGate | undefined;
 }
 
 export interface ReconcileDiscoveryHealthGateInput {

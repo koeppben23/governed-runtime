@@ -313,8 +313,9 @@ export function countByPhase(events: AuditEvent[]): Record<string, number> {
 export function timeSpan(
   events: AuditEvent[],
 ): { first: string; last: string; durationMs: number } | null {
-  if (events.length === 0) return null;
-  let first = events[0]!.occurredAt;
+  const firstEvent = events[0];
+  if (firstEvent === undefined) return null;
+  let first = firstEvent.occurredAt;
   let last = first;
   let firstMs = Date.parse(first);
   let lastMs = firstMs;

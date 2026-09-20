@@ -47,10 +47,12 @@ function architectureAssurance(input: {
       obligationId: ARCH_OBLIGATION_ID,
       subjectDigest: input.subjectDigest,
       status: input.status,
-      iteration: input.iteration,
-      findingsHash: input.findingsHash,
-      capturedVerdict: input.capturedVerdict,
-      claimDeclarationsDigest: input.claimDeclarationsDigest,
+      ...(input.iteration !== undefined ? { iteration: input.iteration } : {}),
+      ...(input.findingsHash !== undefined ? { findingsHash: input.findingsHash } : {}),
+      ...(input.capturedVerdict !== undefined ? { capturedVerdict: input.capturedVerdict } : {}),
+      ...(input.claimDeclarationsDigest !== undefined
+        ? { claimDeclarationsDigest: input.claimDeclarationsDigest }
+        : {}),
       invocationId: input.obligationInvocationId === false ? null : ARCH_INVOCATION_ID,
       consumedByObligationId: input.status === 'consumed' ? ARCH_OBLIGATION_ID : null,
     },
@@ -86,11 +88,11 @@ function planAssurance(input: PlanAssuranceInput): ReviewAssuranceState {
       obligationType: input.obligationType ?? 'plan',
       subjectDigest: input.subjectDigest,
       status: input.status,
-      iteration: input.iteration,
-      createdAt: input.createdAt,
+      ...(input.iteration !== undefined ? { iteration: input.iteration } : {}),
+      ...(input.createdAt !== undefined ? { createdAt: input.createdAt } : {}),
       invocationId: input.invocationId ?? PLAN_INVOCATION_ID,
       findingsHash: input.findingsHash ?? 'a'.repeat(64),
-      capturedVerdict: input.capturedVerdict,
+      ...(input.capturedVerdict !== undefined ? { capturedVerdict: input.capturedVerdict } : {}),
       // Default: the empty declaration set (most plan-approval tests carry no claims).
       claimDeclarationsDigest:
         input.claimDeclarationsDigest ??

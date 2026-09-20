@@ -53,7 +53,7 @@ import type { IdpConfig, IdentityProviderMode } from '../shared/policy-idp-confi
 import { evaluate } from '../machine/evaluate.js';
 import type { RailResult, RailBlocked, RailContext } from './types.js';
 import { blocked } from '../config/reasons.js';
-import { defaultProfileRegistry } from '../config/profile.js';
+import { baselineProfile, defaultProfileRegistry } from '../config/profile.js';
 import type { FlowGuardProfile, RepoSignals } from '../config/profile.js';
 import type { DiscoveryResult } from '../discovery/types.js';
 import { extractBaseInstructions, extractByPhaseInstructions } from '../config/profile.js';
@@ -215,6 +215,32 @@ function handleExistingState(
   return { kind: 'ok', state: nextState, evalResult: result, transitions: [] };
 }
 
+function defaultGateBehavior(policy: FlowGuardPolicy): EffectiveGateBehavior {
+  return policy.requireHumanGates ? 'human_gated' : 'auto_approve';
+}
+
+function buildSnapshotOptions(p: HydratePolicyInput, policy: FlowGuardPolicy) {
+  return {
+    requestedMode: p.requestedPolicyMode ?? policy.mode,
+    source: p.policySource ?? 'default',
+    effectiveGateBehavior: p.effectiveGateBehavior ?? defaultGateBehavior(policy),
+    ...(p.policyDegradedReason !== undefined ? { degradedReason: p.policyDegradedReason } : {}),
+    ...(p.policyResolutionReason !== undefined
+      ? { resolutionReason: p.policyResolutionReason }
+      : {}),
+    ...(p.centralMinimumMode !== undefined ? { centralMinimumMode: p.centralMinimumMode } : {}),
+    ...(p.policyDigest !== undefined ? { policyDigest: p.policyDigest } : {}),
+    ...(p.policyVersion !== undefined ? { policyVersion: p.policyVersion } : {}),
+    ...(p.policyPathHint !== undefined ? { policyPathHint: p.policyPathHint } : {}),
+  };
+}
+
+function createSnapshotFromPolicyInput(p: HydratePolicyInput, ctx: RailContext, now: string) {
+  const basePolicy = getPolicyPreset(p.policyMode ?? 'solo');
+  const policy = applyHydrateOverrides(basePolicy, p);
+  return createPolicySnapshot(policy, now, ctx.digest, buildSnapshotOptions(p, policy));
+}
+
 function resolvePolicySnapshot(p: HydratePolicyInput, ctx: RailContext, now: string) {
   if (p.policyResolution) return freezePolicySnapshot(p.policyResolution, now, ctx.digest);
   // NOTE: this preset fallback is only reached by callers that build a
@@ -222,20 +248,7 @@ function resolvePolicySnapshot(p: HydratePolicyInput, ctx: RailContext, now: str
   // defensive callers). The production tool path always sets policyResolution
   // and takes the early return above. The user-facing default for /start is
   // resolved one layer up (resolveNewPolicyResolution → defaultMode: 'team').
-  const basePolicy = getPolicyPreset(p.policyMode ?? 'solo');
-  const policy = applyHydrateOverrides(basePolicy, p);
-  return createPolicySnapshot(policy, now, ctx.digest, {
-    requestedMode: p.requestedPolicyMode ?? policy.mode,
-    source: p.policySource ?? 'default',
-    effectiveGateBehavior:
-      p.effectiveGateBehavior ?? (policy.requireHumanGates ? 'human_gated' : 'auto_approve'),
-    degradedReason: p.policyDegradedReason,
-    resolutionReason: p.policyResolutionReason,
-    centralMinimumMode: p.centralMinimumMode,
-    policyDigest: p.policyDigest,
-    policyVersion: p.policyVersion,
-    policyPathHint: p.policyPathHint,
-  });
+  return createSnapshotFromPolicyInput(p, ctx, now);
 }
 
 function resolveProfile(pr: HydrateProfileInput, s: HydrateSessionInput) {
@@ -244,9 +257,9 @@ function resolveProfile(pr: HydrateProfileInput, s: HydrateSessionInput) {
   else if (pr.repoSignals)
     profile = defaultProfileRegistry.detect({
       repoSignals: pr.repoSignals,
-      discovery: pr.discoveryResult,
+      ...(pr.discoveryResult !== undefined ? { discovery: pr.discoveryResult } : {}),
     });
-  if (!profile) profile = defaultProfileRegistry.get('baseline')!;
+  if (!profile) profile = baselineProfile;
 
   const activeChecks =
     pr.activeChecks && pr.activeChecks.length > 0

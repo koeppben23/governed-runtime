@@ -39,6 +39,7 @@ import { describe, expect, it } from 'vitest';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import baseStrykerVitest from '../../../vitest.stryker.config.js';
+import eventCoreVitest from '../../../vitest.stryker-event-core.config.js';
 import humanProjectionVitest from '../../../vitest.stryker-human-projection.config.js';
 import identityJwksVitest from '../../../vitest.stryker-identity-jwks.config.js';
 import mandatesVitest from '../../../vitest.mandates.config.js';
@@ -48,8 +49,10 @@ import {
   AUTHORITY_ROOTS,
   MUTATION_AUTHORITY_INVENTORY,
   MUTATION_PROFILES,
+  assertRequiredProvenance,
   isProductionSource,
   targetOfSelector,
+  type AdmissionRecord,
   type MutationProfile,
 } from './mutation-authority-inventory.js';
 import { repoRelative } from './repo-path.js';
@@ -70,6 +73,7 @@ interface VitestConfig {
 
 const PROFILE_VITEST: Readonly<Record<MutationProfile, VitestConfig>> = {
   base: baseStrykerVitest,
+  'event-core': eventCoreVitest,
   'human-projection': humanProjectionVitest,
   'identity-jwks': identityJwksVitest,
   mandates: mandatesVitest,
@@ -307,6 +311,26 @@ describe('mutation scope', () => {
       }
     }
     expect(problems).toEqual([]);
+  });
+
+  it('A7: provenance cannot be synthesized implicitly', () => {
+    const admission: AdmissionRecord = {
+      verifiedAt: '2026-09-19',
+      commitSha: '0'.repeat(40),
+      scoreAtAdmission: 100,
+      killed: 1,
+      survived: 0,
+      config: 'stryker.conf.json',
+    };
+
+    expect(() => assertRequiredProvenance('fixture.ts', {})).toThrow(
+      /exactly one of 'admission' or 'legacy: true'/,
+    );
+    expect(() => assertRequiredProvenance('fixture.ts', { admission, legacy: true })).toThrow(
+      /exactly one of 'admission' or 'legacy: true'/,
+    );
+    expect(() => assertRequiredProvenance('fixture.ts', { legacy: true })).not.toThrow();
+    expect(() => assertRequiredProvenance('fixture.ts', { admission })).not.toThrow();
   });
 
   it('A8: every production file under an authority root is covered by an entry', () => {

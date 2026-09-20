@@ -34,7 +34,7 @@ export interface ResolvedProviderCapability {
 
   assertionBinding: {
     status: 'available' | 'unsupported';
-    format?: ReportFormatId;
+    format?: ReportFormatId | undefined;
   };
 
   candidate: {

@@ -10,11 +10,10 @@ import type { HydrateInput, HydratePolicyInput, HydrateProfileInput } from '../.
 import { executeHydrate } from '../../rails/hydrate.js';
 import type { ToolResult } from './helpers.js';
 import {
-  persistAndFormat,
   enrichWithWorkflowDirective,
-  formatRailResult,
   writeStateWithArtifactsAndAuditOperations,
 } from './helpers.js';
+import { persistAndFormat, formatRailResult } from './helpers-rail-presentation.js';
 import type { SemanticAuditIntent } from './audit-outbox.js';
 import { LOCK_CONTENDED_OUTPUT_FIELD } from '../../shared/flowguard-identifiers.js';
 import { PHASE_LABELS } from '../../presentation/phase-labels.js';
@@ -30,6 +29,7 @@ import type {
 } from '../../presentation/model.js';
 import type { Phase, TaskClass } from '../../state/schema.js';
 import { isTaskClass } from '../../state/schema.js';
+import { IntegrationInvariantError } from '../errors.js';
 
 import type {
   DiscoveryHydration,
@@ -39,32 +39,119 @@ import type {
   HydrateConfig,
   BuildHydrateInputParams,
 } from './hydrate-types.js';
+import { compactReviewBudget } from './hydrate-policy.js';
 
 // ─── Input Assembly ──────────────────────────────────────────────────────
+
+interface ExistingPolicyOptionalValues {
+  readonly policyDegradedReason: HydratePolicyInput['policyDegradedReason'];
+  readonly policyResolutionReason: HydratePolicyInput['policyResolutionReason'];
+  readonly centralMinimumMode: HydratePolicyInput['centralMinimumMode'];
+  readonly policyDigest: HydratePolicyInput['policyDigest'];
+  readonly policyVersion: HydratePolicyInput['policyVersion'];
+  readonly policyPathHint: HydratePolicyInput['policyPathHint'];
+}
+
+function pickExistingPolicyOptionalFields(
+  values: ExistingPolicyOptionalValues,
+): HydratePolicyInput {
+  return {
+    ...(values.policyDegradedReason !== undefined
+      ? { policyDegradedReason: values.policyDegradedReason }
+      : {}),
+    ...(values.policyResolutionReason !== undefined
+      ? { policyResolutionReason: values.policyResolutionReason }
+      : {}),
+    ...(values.centralMinimumMode !== undefined
+      ? { centralMinimumMode: values.centralMinimumMode }
+      : {}),
+    ...(values.policyDigest !== undefined ? { policyDigest: values.policyDigest } : {}),
+    ...(values.policyVersion !== undefined ? { policyVersion: values.policyVersion } : {}),
+    ...(values.policyPathHint !== undefined ? { policyPathHint: values.policyPathHint } : {}),
+  };
+}
 
 export function buildExistingPolicyInput(
   existing: NonNullable<ExistingHydrateState>,
   centralEvidenceForExisting: ExistingCentralEvidence | undefined,
 ): HydratePolicyInput {
+  const policyDegradedReason = existing.policySnapshot.degradedReason as
+    'ci_context_missing' | undefined;
+  const policyResolutionReason = existing.policySnapshot.resolutionReason as
+    | 'repo_weaker_than_central'
+    | 'default_weaker_than_central'
+    | 'explicit_stronger_than_central'
+    | undefined;
   return {
     policyMode: existing.policySnapshot.mode,
     requestedPolicyMode: existing.policySnapshot.requestedMode,
     policySource: existing.policySnapshot.source ?? 'default',
     effectiveGateBehavior: existing.policySnapshot.effectiveGateBehavior,
-    policyDegradedReason: existing.policySnapshot.degradedReason as
-      'ci_context_missing' | undefined,
-    policyResolutionReason: existing.policySnapshot.resolutionReason as
-      | 'repo_weaker_than_central'
-      | 'default_weaker_than_central'
-      | 'explicit_stronger_than_central'
-      | undefined,
-    centralMinimumMode:
-      centralEvidenceForExisting?.minimumMode ?? existing.policySnapshot.centralMinimumMode,
-    policyDigest: centralEvidenceForExisting?.digest ?? existing.policySnapshot.policyDigest,
-    policyVersion: centralEvidenceForExisting
-      ? centralEvidenceForExisting.version
-      : existing.policySnapshot.policyVersion,
-    policyPathHint: centralEvidenceForExisting?.pathHint ?? existing.policySnapshot.policyPathHint,
+    ...pickExistingPolicyOptionalFields({
+      policyDegradedReason,
+      policyResolutionReason,
+      centralMinimumMode:
+        centralEvidenceForExisting?.minimumMode ?? existing.policySnapshot.centralMinimumMode,
+      policyDigest: centralEvidenceForExisting?.digest ?? existing.policySnapshot.policyDigest,
+      policyVersion: centralEvidenceForExisting
+        ? centralEvidenceForExisting.version
+        : existing.policySnapshot.policyVersion,
+      policyPathHint:
+        centralEvidenceForExisting?.pathHint ?? existing.policySnapshot.policyPathHint,
+    }),
+  };
+}
+
+function pickPolicyResolutionReasonFields(
+  policyResolution: HydratePolicyResolution,
+): HydratePolicyInput {
+  return {
+    ...(policyResolution.degradedReason !== undefined
+      ? { policyDegradedReason: policyResolution.degradedReason }
+      : {}),
+    ...(policyResolution.resolutionReason !== undefined
+      ? { policyResolutionReason: policyResolution.resolutionReason }
+      : {}),
+  };
+}
+
+function pickPolicyCentralEvidenceFields(
+  policyResolution: HydratePolicyResolution,
+): HydratePolicyInput {
+  const centralEvidence = policyResolution.centralEvidence;
+  return {
+    ...(centralEvidence?.minimumMode !== undefined
+      ? { centralMinimumMode: centralEvidence.minimumMode }
+      : {}),
+    ...(centralEvidence?.digest !== undefined ? { policyDigest: centralEvidence.digest } : {}),
+    ...(centralEvidence?.version !== undefined ? { policyVersion: centralEvidence.version } : {}),
+    ...(centralEvidence?.pathHint !== undefined
+      ? { policyPathHint: centralEvidence.pathHint }
+      : {}),
+  };
+}
+
+function pickPolicyConfigOverrideFields(policy: HydrateConfig['policy']): HydratePolicyInput {
+  return {
+    ...(policy.reviewBudget !== undefined
+      ? { reviewBudget: compactReviewBudget(policy.reviewBudget) }
+      : {}),
+    ...(policy.identityProvider !== undefined ? { identityProvider: policy.identityProvider } : {}),
+    ...(policy.identityProviderMode !== undefined
+      ? { identityProviderMode: policy.identityProviderMode }
+      : {}),
+    ...(policy.minimumActorAssuranceForApproval !== undefined
+      ? { minimumActorAssuranceForApproval: policy.minimumActorAssuranceForApproval }
+      : {}),
+    ...(policy.enforceRiskClassification !== undefined
+      ? { enforceRiskClassification: policy.enforceRiskClassification }
+      : {}),
+    ...(policy.allowRiskDowngradeOverride !== undefined
+      ? { allowRiskDowngradeOverride: policy.allowRiskDowngradeOverride }
+      : {}),
+    ...(policy.allowReducedCeremony !== undefined
+      ? { allowReducedCeremony: policy.allowReducedCeremony }
+      : {}),
   };
 }
 
@@ -77,19 +164,9 @@ export function buildNewPolicyInput(
     requestedPolicyMode: policyResolution.requestedMode,
     policySource: policyResolution.effectiveSource,
     effectiveGateBehavior: policyResolution.effectiveGateBehavior,
-    policyDegradedReason: policyResolution.degradedReason,
-    policyResolutionReason: policyResolution.resolutionReason,
-    centralMinimumMode: policyResolution.centralEvidence?.minimumMode,
-    policyDigest: policyResolution.centralEvidence?.digest,
-    policyVersion: policyResolution.centralEvidence?.version,
-    policyPathHint: policyResolution.centralEvidence?.pathHint,
-    reviewBudget: config.policy.reviewBudget,
-    identityProvider: config.policy.identityProvider,
-    identityProviderMode: config.policy.identityProviderMode,
-    minimumActorAssuranceForApproval: config.policy.minimumActorAssuranceForApproval,
-    enforceRiskClassification: config.policy.enforceRiskClassification,
-    allowRiskDowngradeOverride: config.policy.allowRiskDowngradeOverride,
-    allowReducedCeremony: config.policy.allowReducedCeremony,
+    ...pickPolicyResolutionReasonFields(policyResolution),
+    ...pickPolicyCentralEvidenceFields(policyResolution),
+    ...pickPolicyConfigOverrideFields(config.policy),
     policyResolution,
   };
 }
@@ -110,13 +187,18 @@ export function buildProfileInput(
   config: HydrateConfig,
   actorInfo: Awaited<ReturnType<typeof resolveActor>>,
 ): HydrateProfileInput {
+  const profileId = existing
+    ? existing.activeProfile?.id
+    : (discovery.profileResolution?.primary?.id ?? 'baseline');
   return {
-    profileId: existing
-      ? existing.activeProfile?.id
-      : (discovery.profileResolution?.primary?.id ?? 'baseline'),
-    activeChecks: existing ? undefined : config.profile.activeChecks,
-    repoSignals: discovery.repoSignals,
-    discoveryResult: discovery.discoveryResult,
+    ...(profileId !== undefined ? { profileId } : {}),
+    ...(!existing && config.profile.activeChecks !== undefined
+      ? { activeChecks: config.profile.activeChecks }
+      : {}),
+    ...(discovery.repoSignals !== undefined ? { repoSignals: discovery.repoSignals } : {}),
+    ...(discovery.discoveryResult !== undefined
+      ? { discoveryResult: discovery.discoveryResult }
+      : {}),
     initiatedBy: actorInfo.id,
     initiatedByIdentity: {
       actorId: actorInfo.id,
@@ -132,17 +214,26 @@ export function buildHydrateInput(params: BuildHydrateInputParams): HydrateInput
   const { context, worktree, workspace, policyContext, config, discovery, actorInfo } = params;
   const { existingWithCentralEvidence, centralEvidenceForExisting, policyResolution } =
     policyContext;
+  const claimedTaskClass = contextClaimedTaskClass(params);
   return {
     session: {
       sessionId: context.sessionID,
       worktree,
       fingerprint: workspace.fingerprint,
-      claimedTaskClass: contextClaimedTaskClass(params),
-      discoveryDigest: discovery.discoveryDigest,
-      discoverySummary: discovery.discoverySummary,
-      detectedStack: discovery.detectedStack,
-      verificationCandidates: discovery.verificationCandidates,
-      executionSubjectInputsByCandidateId: discovery.executionSubjectInputsByCandidateId,
+      ...(claimedTaskClass !== undefined ? { claimedTaskClass } : {}),
+      ...(discovery.discoveryDigest !== undefined
+        ? { discoveryDigest: discovery.discoveryDigest }
+        : {}),
+      ...(discovery.discoverySummary !== undefined
+        ? { discoverySummary: discovery.discoverySummary }
+        : {}),
+      ...(discovery.detectedStack !== undefined ? { detectedStack: discovery.detectedStack } : {}),
+      ...(discovery.verificationCandidates !== undefined
+        ? { verificationCandidates: discovery.verificationCandidates }
+        : {}),
+      ...(discovery.executionSubjectInputsByCandidateId !== undefined
+        ? { executionSubjectInputsByCandidateId: discovery.executionSubjectInputsByCandidateId }
+        : {}),
       ...(params.baselineDirtyFiles ? { baselineDirtyFiles: params.baselineDirtyFiles } : {}),
       ...(params.baselineControlPlaneMarker
         ? { baselineControlPlaneMarker: params.baselineControlPlaneMarker }
@@ -435,7 +526,10 @@ function hydrateCommandAction(
 } {
   const cmd = getInstalledCommand(invocation);
   if (!cmd) {
-    throw new Error(`hydrate presentation: no installed command metadata for "${invocation}".`);
+    throw new IntegrationInvariantError(
+      'HYDRATE_COMMAND_METADATA_MISSING',
+      `hydrate presentation: no installed command metadata for "${invocation}".`,
+    );
   }
   return {
     invocation: cmd.invocation,

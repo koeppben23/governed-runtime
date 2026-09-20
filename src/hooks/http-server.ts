@@ -83,6 +83,24 @@ function parsePort(rawPort: string | undefined): number {
   return port;
 }
 
+function readRequiredHookToken(env: Readonly<Record<string, string | undefined>>): string {
+  const token = env['FLOWGUARD_HOOK_TOKEN'];
+  if (token === undefined || token.trim().length < MINIMUM_HOOK_TOKEN_LENGTH || /\s/.test(token)) {
+    throw new TypeError(
+      'FLOWGUARD_HOOK_TOKEN must contain at least 32 non-whitespace characters and is required',
+    );
+  }
+  return token;
+}
+
+function readAllowRemoteFlag(env: Readonly<Record<string, string | undefined>>): string {
+  const raw = env['FLOWGUARD_HOOK_ALLOW_REMOTE'];
+  if (raw !== undefined && raw !== '' && raw !== '1') {
+    throw new TypeError('FLOWGUARD_HOOK_ALLOW_REMOTE must be exactly 1 when set');
+  }
+  return raw ?? '';
+}
+
 /** Validates all externally supplied HTTP listener configuration before binding. */
 export function readHttpHookServerConfig(
   env: Readonly<Record<string, string | undefined>> = process.env,
@@ -90,19 +108,10 @@ export function readHttpHookServerConfig(
   const host = env['FLOWGUARD_HOOK_HOST'] ?? DEFAULT_HOST;
   if (host.length === 0) throw new TypeError('FLOWGUARD_HOOK_HOST must not be empty');
 
-  const token = env['FLOWGUARD_HOOK_TOKEN'];
-  if (token === undefined || token.trim().length < MINIMUM_HOOK_TOKEN_LENGTH || /\s/.test(token)) {
-    throw new TypeError(
-      'FLOWGUARD_HOOK_TOKEN must contain at least 32 non-whitespace characters and is required',
-    );
-  }
-
-  const allowRemoteRaw = env['FLOWGUARD_HOOK_ALLOW_REMOTE'];
-  if (allowRemoteRaw !== undefined && allowRemoteRaw !== '' && allowRemoteRaw !== '1') {
-    throw new TypeError('FLOWGUARD_HOOK_ALLOW_REMOTE must be exactly 1 when set');
-  }
-
+  const token = readRequiredHookToken(env);
+  const allowRemoteRaw = readAllowRemoteFlag(env);
   const port = parsePort(env['FLOWGUARD_HOOK_PORT']);
+
   if (host === '127.0.0.1' || host === '::1') {
     return { binding: 'loopback', host, port, token };
   }
@@ -177,15 +186,20 @@ function secureTokenEquals(actual: string, expected: string): boolean {
 
 function isAuthorizedHookRequest(req: IncomingMessage, token: string): boolean {
   const authorization = headerValues(req, 'authorization');
-  if (authorization.length !== 1) return false;
-  const match = /^Bearer ([^\s]+)$/i.exec(authorization[0]!);
-  return match !== null && secureTokenEquals(match[1]!, token);
+  const [authorizationHeader] = authorization;
+  if (authorization.length !== 1 || authorizationHeader === undefined) return false;
+  const match = /^Bearer ([^\s]+)$/i.exec(authorizationHeader);
+  if (match === null) return false;
+  const [, bearerToken] = match;
+  return bearerToken !== undefined && secureTokenEquals(bearerToken, token);
 }
 
 function hasJsonContentType(req: IncomingMessage): boolean {
   const contentTypes = headerValues(req, 'content-type');
-  if (contentTypes.length !== 1) return false;
-  return contentTypes[0]!.split(';', 1)[0]!.trim().toLowerCase() === 'application/json';
+  const [contentType] = contentTypes;
+  if (contentTypes.length !== 1 || contentType === undefined) return false;
+  const [mediaType] = contentType.split(';', 1);
+  return mediaType !== undefined && mediaType.trim().toLowerCase() === 'application/json';
 }
 
 function log(message: string): void {
@@ -408,22 +422,93 @@ function truncateInput(input: Record<string, unknown>): Record<string, unknown> 
 
 // ─── Router ──────────────────────────────────────────────────────────────────
 
-const ROUTES: Record<string, (payload: Record<string, unknown>) => Promise<HttpHookResponse>> = {
-  '/hooks/pre-tool-use': handlePreToolUse,
-  '/hooks/post-tool-use': handlePostToolUse,
-  '/hooks/session-start': handleSessionStart,
-  '/hooks/stop': handleStop,
-};
+interface HookRoute {
+  readonly event: HookEventName;
+  readonly handle: (payload: Record<string, unknown>) => Promise<HttpHookResponse>;
+}
 
-/** Map route path to hook event name for deny response formatting. */
-const ROUTE_EVENTS: Record<string, HookEventName> = {
-  '/hooks/pre-tool-use': 'PreToolUse',
-  '/hooks/post-tool-use': 'PostToolUse',
-  '/hooks/session-start': 'SessionStart',
-  '/hooks/stop': 'Stop',
+const ROUTES: Record<string, HookRoute> = {
+  '/hooks/pre-tool-use': { event: 'PreToolUse', handle: handlePreToolUse },
+  '/hooks/post-tool-use': { event: 'PostToolUse', handle: handlePostToolUse },
+  '/hooks/session-start': { event: 'SessionStart', handle: handleSessionStart },
+  '/hooks/stop': { event: 'Stop', handle: handleStop },
 };
 
 // ─── Server ──────────────────────────────────────────────────────────────────
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+async function readRequestBodyOrRespond(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<string | undefined> {
+  try {
+    return await readBody(req);
+  } catch (err) {
+    if (err instanceof BodyTooLargeError) {
+      jsonResponse(res, 413, { error: 'Request body too large' });
+      return undefined;
+    }
+    jsonResponse(res, 400, { error: 'Failed to read request body' });
+    return undefined;
+  }
+}
+
+function parseJsonObjectOrRespond(
+  body: string,
+  res: ServerResponse,
+): Record<string, unknown> | undefined {
+  try {
+    const parsed: unknown = JSON.parse(body);
+    if (!isJsonObject(parsed)) {
+      jsonResponse(res, 400, { error: 'Request body must be a JSON object' });
+      return undefined;
+    }
+    return parsed;
+  } catch {
+    jsonResponse(res, 400, { error: 'Invalid JSON in request body' });
+    return undefined;
+  }
+}
+
+async function dispatchHookRoute(
+  url: string,
+  route: HookRoute,
+  payload: Record<string, unknown>,
+  res: ServerResponse,
+): Promise<void> {
+  try {
+    const result = await route.handle(payload);
+
+    // For pre-tool-use denials, also include the hookSpecificOutput format
+    // so Claude Code can interpret it directly.
+    if (result.decision === 'deny' && url === '/hooks/pre-tool-use') {
+      const denyOutput = formatDenyOutput(
+        route.event,
+        result.code ?? 'DENIED',
+        result.reason ?? '',
+      );
+      jsonResponse(res, 200, { ...result, ...denyOutput });
+    } else {
+      jsonResponse(res, 200, result);
+    }
+  } catch (err) {
+    log(`ERROR: ${url} handler failed: ${err instanceof Error ? err.message : String(err)}`);
+    // Fail-closed for pre-tool-use: return deny on internal error.
+    if (url === '/hooks/pre-tool-use') {
+      const denyOutput = formatDenyOutput(
+        route.event,
+        'INTERNAL_ERROR',
+        `Hook server internal error: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      jsonResponse(res, 200, { decision: 'deny', ...denyOutput });
+    } else {
+      jsonResponse(res, 500, { error: 'Internal server error' });
+    }
+  }
+}
 
 /** @internal Exported for unit testing only. */
 export async function handleHttpRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -449,8 +534,8 @@ export async function handleHttpRequest(req: IncomingMessage, res: ServerRespons
     return;
   }
 
-  const handler = ROUTES[url];
-  if (!handler) {
+  const route = ROUTES[url];
+  if (!route) {
     jsonResponse(res, 404, { error: `Unknown route: ${url}` });
     return;
   }
@@ -460,73 +545,30 @@ export async function handleHttpRequest(req: IncomingMessage, res: ServerRespons
     return;
   }
 
-  let body: string;
-  try {
-    body = await readBody(req);
-  } catch (err) {
-    if (err instanceof BodyTooLargeError) {
-      jsonResponse(res, 413, { error: 'Request body too large' });
-      return;
-    }
-    jsonResponse(res, 400, { error: 'Failed to read request body' });
-    return;
-  }
+  const body = await readRequestBodyOrRespond(req, res);
+  if (body === undefined) return;
 
-  let payload: Record<string, unknown>;
-  try {
-    const parsed = JSON.parse(body);
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-      jsonResponse(res, 400, { error: 'Request body must be a JSON object' });
-      return;
-    }
-    payload = parsed as Record<string, unknown>;
-  } catch {
-    jsonResponse(res, 400, { error: 'Invalid JSON in request body' });
-    return;
-  }
+  const payload = parseJsonObjectOrRespond(body, res);
+  if (payload === undefined) return;
 
-  try {
-    const result = await handler(payload);
-
-    // For pre-tool-use denials, also include the hookSpecificOutput format
-    // so Claude Code can interpret it directly.
-    if (result.decision === 'deny' && url === '/hooks/pre-tool-use') {
-      const eventName = ROUTE_EVENTS[url]!;
-      const denyOutput = formatDenyOutput(eventName, result.code ?? 'DENIED', result.reason ?? '');
-      jsonResponse(res, 200, { ...result, ...denyOutput });
-    } else {
-      jsonResponse(res, 200, result);
-    }
-  } catch (err) {
-    log(`ERROR: ${url} handler failed: ${err instanceof Error ? err.message : String(err)}`);
-    // Fail-closed for pre-tool-use: return deny on internal error.
-    if (url === '/hooks/pre-tool-use') {
-      const eventName = ROUTE_EVENTS[url]!;
-      const denyOutput = formatDenyOutput(
-        eventName,
-        'INTERNAL_ERROR',
-        `Hook server internal error: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      jsonResponse(res, 200, { decision: 'deny', ...denyOutput });
-    } else {
-      jsonResponse(res, 500, { error: 'Internal server error' });
-    }
-  }
+  await dispatchHookRoute(url, route, payload, res);
 }
 
 const server = createServer(handleHttpRequest);
 
 function startServer(): void {
+  let config: HttpHookServerConfig;
   try {
-    serverConfig = readHttpHookServerConfig();
+    config = readHttpHookServerConfig();
   } catch (err) {
     log(`ERROR: invalid configuration: ${err instanceof Error ? err.message : String(err)}`);
     process.exitCode = 1;
     return;
   }
+  serverConfig = config;
 
-  server.listen(serverConfig.port, serverConfig.host, () => {
-    log(`listening on ${serverConfig!.host}:${serverConfig!.port}`);
+  server.listen(config.port, config.host, () => {
+    log(`listening on ${config.host}:${config.port}`);
     log(`PID: ${process.pid}`);
     log(`routes: ${Object.keys(ROUTES).join(', ')}`);
   });

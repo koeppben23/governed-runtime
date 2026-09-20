@@ -30,6 +30,10 @@ import {
   resetChainSeq,
   SESSION_ID,
 } from './plugin-audit-test-helpers.js';
+// Mutation-hardening cases for plugin-audit-decisions.ts. Kept in a focused
+// module so this suite stays inside the 2000-LOC test budget; the side-effect
+// import registers them under this stryker-selected owning suite.
+import './plugin-audit-decisions-mutation.test.js';
 import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
 import {
   buildTransitionBody,
@@ -1323,11 +1327,11 @@ describe('runAudit', () => {
         );
         const pending = await readState(sessDir);
         const operation = requireTransition(pending!.pendingAuditOperations[0]!);
-        const body = buildTransitionBody(
-          pending!.flowguardSessionId,
-          pending!.binding.hostSessionId,
-          operation.transition.to,
-          {
+        const body = buildTransitionBody({
+          flowguardSessionId: pending!.flowguardSessionId,
+          hostSessionId: pending!.binding.hostSessionId,
+          phase: operation.transition.to,
+          detail: {
             operationId: operation.operationId,
             preStateDigest: operation.preStateDigest,
             mutationDigest: operation.mutationDigest,
@@ -1338,9 +1342,9 @@ describe('runAudit', () => {
             autoAdvanced: operation.transition.autoAdvanced,
             chainIndex: operation.transition.chainIndex,
           },
-          operation.transition.at,
-          'genesis',
-        );
+          occurredAt: operation.transition.at,
+          prevHash: 'genesis',
+        });
         await appendAuditEvent(sessDir, finalizeWithTimestampEvidence(body, 'genesis'));
 
         const deps = makeDeps({
@@ -1472,11 +1476,11 @@ describe('runAudit', () => {
         );
         const pending = await readState(sessDir);
         const operation = requireTransition(pending!.pendingAuditOperations[0]!);
-        const body = buildTransitionBody(
-          SESSION_ID,
-          undefined,
-          operation.transition.to,
-          {
+        const body = buildTransitionBody({
+          flowguardSessionId: SESSION_ID,
+          hostSessionId: undefined,
+          phase: operation.transition.to,
+          detail: {
             operationId: operation.operationId,
             preStateDigest: operation.preStateDigest,
             mutationDigest: operation.mutationDigest,
@@ -1487,9 +1491,9 @@ describe('runAudit', () => {
             autoAdvanced: operation.transition.autoAdvanced,
             chainIndex: operation.transition.chainIndex,
           },
-          operation.transition.at,
-          'genesis',
-        );
+          occurredAt: operation.transition.at,
+          prevHash: 'genesis',
+        });
         await appendAuditEvent(sessDir, finalizeWithTimestampEvidence(body, 'genesis'));
 
         // Crash before acknowledgement, then tamper the persisted operation:
@@ -1575,20 +1579,20 @@ describe('runAudit', () => {
           pendingAuditOperations: [],
         });
         await writeState(sessDir, legacy);
-        const body = buildTransitionBody(
-          SESSION_ID,
-          undefined,
-          transition.to,
-          {
+        const body = buildTransitionBody({
+          flowguardSessionId: SESSION_ID,
+          hostSessionId: undefined,
+          phase: transition.to,
+          detail: {
             from: transition.from,
             to: transition.to,
             event: transition.event,
             autoAdvanced: false,
             chainIndex: 0,
           },
-          transition.at,
-          'genesis',
-        );
+          occurredAt: transition.at,
+          prevHash: 'genesis',
+        });
         await appendAuditEvent(sessDir, finalizeWithTimestampEvidence(body, 'genesis'));
 
         const deps = makeDeps({
@@ -1630,20 +1634,20 @@ describe('runAudit', () => {
         });
         await writeState(sessDir, legacy);
         // Same kind/from/event/at, different `to` — must NOT count as evidence.
-        const decoy = buildTransitionBody(
-          SESSION_ID,
-          undefined,
-          'PLAN_REVIEW',
-          {
+        const decoy = buildTransitionBody({
+          flowguardSessionId: SESSION_ID,
+          hostSessionId: undefined,
+          phase: 'PLAN_REVIEW',
+          detail: {
             from: transition.from,
             to: 'PLAN_REVIEW',
             event: transition.event,
             autoAdvanced: false,
             chainIndex: 0,
           },
-          transition.at,
-          'genesis',
-        );
+          occurredAt: transition.at,
+          prevHash: 'genesis',
+        });
         await appendAuditEvent(sessDir, finalizeWithTimestampEvidence(decoy, 'genesis'));
         // Same transition fields but a different event kind — must NOT count.
         const decoyToolCall = buildToolCallBody({
@@ -1773,11 +1777,11 @@ describe('runAudit', () => {
         const pending = await readState(sessDir);
         const operation = requireTransition(pending!.pendingAuditOperations[0]!);
         // Same id + operationId, different transition content.
-        const divergent = buildTransitionBody(
-          SESSION_ID,
-          undefined,
-          'PLAN_REVIEW',
-          {
+        const divergent = buildTransitionBody({
+          flowguardSessionId: SESSION_ID,
+          hostSessionId: undefined,
+          phase: 'PLAN_REVIEW',
+          detail: {
             operationId: operation.operationId,
             preStateDigest: operation.preStateDigest,
             mutationDigest: operation.mutationDigest,
@@ -1788,9 +1792,9 @@ describe('runAudit', () => {
             autoAdvanced: false,
             chainIndex: 0,
           },
-          operation.transition.at,
-          'genesis',
-        );
+          occurredAt: operation.transition.at,
+          prevHash: 'genesis',
+        });
         await appendAuditEvent(sessDir, finalizeWithTimestampEvidence(divergent, 'genesis'));
 
         const deps = makeDeps({

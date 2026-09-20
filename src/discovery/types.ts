@@ -383,8 +383,8 @@ export const DiscoveryResultSchema = z
     const codeSurfaceDiagnosticIndex = result.diagnostics.findIndex(
       (diagnostic) => diagnostic.name === 'code-surface-analysis',
     );
-    if (codeSurfaceDiagnosticIndex >= 0) {
-      const codeSurfaceDiagnostic = result.diagnostics[codeSurfaceDiagnosticIndex]!;
+    const codeSurfaceDiagnostic = result.diagnostics[codeSurfaceDiagnosticIndex];
+    if (codeSurfaceDiagnostic !== undefined) {
       const expectedStatus =
         result.codeSurfaces.status === 'ok' ? 'complete' : result.codeSurfaces.status;
       if (codeSurfaceDiagnostic.status !== expectedStatus) {

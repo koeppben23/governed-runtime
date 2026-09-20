@@ -511,10 +511,17 @@ describe('config persistence boundaries', () => {
 
   function captureLogger(): {
     log: AdapterLogger;
-    warnings: Array<{ service: string; message: string; extra?: Record<string, unknown> }>;
+    warnings: Array<{
+      service: string;
+      message: string;
+      extra?: Record<string, unknown> | undefined;
+    }>;
   } {
-    const warnings: Array<{ service: string; message: string; extra?: Record<string, unknown> }> =
-      [];
+    const warnings: Array<{
+      service: string;
+      message: string;
+      extra?: Record<string, unknown> | undefined;
+    }> = [];
     const log: AdapterLogger = {
       info: () => {},
       warn: (service, message, extra) => warnings.push({ service, message, extra }),

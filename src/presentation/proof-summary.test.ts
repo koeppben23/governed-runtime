@@ -31,8 +31,12 @@ function makeDeclaration(opts?: {
     overallStatus: 'AWAITING_EVIDENCE',
     claimCount: opts?.claimCount ?? 3,
     criticalCount: opts?.criticalCount ?? 3,
-    falsificationReadyCount: opts?.falsificationReadyCount,
-    missingFalsificationCount: opts?.missingFalsificationCount,
+    ...(opts?.falsificationReadyCount !== undefined
+      ? { falsificationReadyCount: opts.falsificationReadyCount }
+      : {}),
+    ...(opts?.missingFalsificationCount !== undefined
+      ? { missingFalsificationCount: opts.missingFalsificationCount }
+      : {}),
     approval: { attestations: [] },
   };
 }
@@ -66,7 +70,7 @@ function makeEvaluation(
     coverage: headlineStatus === 'PROVEN' ? 'PROVEN' : 'NOT_VERIFIED',
     headlineStatus,
     decisionContext: opts?.decisionContext ?? 'current_gate',
-    revisionDigest: opts?.revisionDigest,
+    ...(opts?.revisionDigest !== undefined ? { revisionDigest: opts.revisionDigest } : {}),
     evidenceFreshness: opts?.evidenceFreshness ?? 'CURRENT',
     approval: { attestations: [] },
     unmetCriticalClaims: [],

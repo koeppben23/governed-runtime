@@ -88,8 +88,8 @@ export interface CounterexampleBindingResult {
 function bindClaimCounterexamples(
   claim: {
     claimId: string;
-    counterexampleRefs: readonly { kind: string; attemptId?: string }[];
-    counterexampleRequirement?: CounterexampleRequirement;
+    counterexampleRefs: readonly { kind: string; attemptId?: string | undefined }[];
+    counterexampleRequirement?: CounterexampleRequirement | undefined;
   },
   state: SessionState,
   currentDigest: string,

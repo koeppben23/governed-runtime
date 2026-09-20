@@ -1,23 +1,21 @@
 /**
  * @module cli/install-helpers
- * @description Path resolution, tarball integrity, and file helpers for the FlowGuard CLI installer.
+ * @description Path resolution, reviewer agent transport, and file helpers for the FlowGuard CLI installer.
  *
  * Types and JSON merge logic extracted to install-types.ts and install-json.ts
- * following FG-REL-042.
+ * following FG-REL-042. Tarball integrity and rollback helpers live in
+ * install-helpers-integrity.ts and install-helpers-rollback.ts.
  *
  * @version v2
  */
 
-import { execSync } from 'node:child_process';
-import { existsSync, readFileSync, constants as fsConstants } from 'node:fs';
-import { readFile, writeFile, unlink, open, lstat, rename, rmdir, readdir } from 'node:fs/promises';
-import type { FileHandle } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { readFile, writeFile, unlink, rename } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { ensureDir } from '../adapters/persistence.js';
 import { join, resolve, dirname, basename, relative as relativePath } from 'node:path';
 import { homedir } from 'node:os';
-import { timingSafeEqual } from 'node:crypto';
-import { hashText, hashFile } from '../shared/hashing.js';
+import { hashText } from '../shared/hashing.js';
 import {
   CLAUDE_REVIEWER_AGENT,
   CODEX_REVIEWER_SUBAGENT,
@@ -97,82 +95,6 @@ export function reviewerDefinitionForPlatform(platform: InstallPlatform): {
 
 export function computeMandatesDigest(): string {
   return hashText(FLOWGUARD_MANDATES_KERNEL);
-}
-
-// ---- Tarball Integrity Verification ----
-
-const SHA256_HEX_RE = /^[0-9a-fA-F]{64}$/;
-const CHECKSUM_LINE_RE = /^([0-9a-fA-F]{64})\s+[*]?\s*(.+)$/;
-
-function safeHashHexEqual(a: string, b: string): boolean {
-  const left = Buffer.from(a, 'utf8');
-  const right = Buffer.from(b, 'utf8');
-  if (left.length !== right.length) return false;
-  return timingSafeEqual(left, right);
-}
-
-export async function verifyTarballChecksum(
-  tarballPath: string,
-  checksumsFilePath: string,
-): Promise<void> {
-  const tarballName = basename(tarballPath);
-
-  let content: string;
-  try {
-    content = readFileSync(checksumsFilePath, 'utf-8');
-  } catch (err) {
-    throw new InstallError(
-      'TARBALL_CHECKSUMS_UNREADABLE',
-      `Cannot read checksums file: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-
-  const lines = content.split('\n');
-  let matchedHash: string | undefined;
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-
-    const match = trimmed.match(CHECKSUM_LINE_RE);
-    if (!match) continue;
-
-    const hashHex = match[1]!;
-    const filename = match[2]!;
-
-    if (!SHA256_HEX_RE.test(hashHex)) continue;
-
-    if (basename(filename) === tarballName) {
-      if (matchedHash !== undefined) {
-        throw new InstallError(
-          'TARBALL_DUPLICATE_ENTRY',
-          `Duplicate entry for "${tarballName}" in checksums file. ` +
-            `Ambiguous integrity verification is denied.`,
-        );
-      }
-      matchedHash = hashHex.toLowerCase();
-    }
-  }
-
-  if (matchedHash === undefined) {
-    throw new InstallError(
-      'TARBALL_NOT_FOUND',
-      `Tarball "${tarballName}" not found in checksums file "${checksumsFilePath}".`,
-    );
-  }
-
-  const expectedHash = matchedHash;
-  const actualHash = await hashFile(tarballPath);
-
-  if (!safeHashHexEqual(actualHash, expectedHash)) {
-    throw new InstallError(
-      'TARBALL_SHA256_MISMATCH',
-      `Tarball SHA-256 mismatch.\n` +
-        `  Expected: ${expectedHash}\n` +
-        `  Actual:   ${actualHash}\n` +
-        `  The tarball may be corrupted or tampered.`,
-    );
-  }
 }
 
 // ---- Reviewer Agent Capability Transport (model + reasoning effort) ----
@@ -391,203 +313,6 @@ export async function writeIfAbsent(
     throw err;
   }
   return { path: filePath, action: 'written' };
-}
-
-// ─── Rollback utilities (moved from install-command.ts to break circular dep) ─
-
-/** Detect available package manager. Prefers bun (OpenCode runtime), falls back to npm. */
-export function detectPackageManager(): 'bun' | 'npm' | null {
-  const opts = { stdio: 'ignore' as const, timeout: 5_000 };
-  try {
-    execSync('bun --version', opts);
-    return 'bun';
-  } catch {
-    // bun not available
-  }
-  try {
-    execSync('npm --version', opts);
-    return 'npm';
-  } catch {
-    // npm not available
-  }
-  return null;
-}
-
-/** Pre-install snapshot for transactional rollback. */
-export interface RollbackEntry {
-  path: string;
-  existed: boolean;
-  expectedKind: 'file' | 'directory';
-  originalContent?: Buffer;
-  sequence: number;
-}
-
-/**
- * Snapshot a file path before any modification.
- * Reads original content as Buffer so binary artifacts are preserved exactly.
- * Rejects symlinks and enforces expected type coherence.
- */
-export async function snapshotForRollback(
-  filePath: string,
-  expectedKind: 'file' | 'directory',
-): Promise<RollbackEntry> {
-  let handle: FileHandle | undefined;
-  try {
-    handle = await open(filePath, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
-    return await snapshotFromHandle(handle, filePath, expectedKind);
-  } catch (err) {
-    if (err instanceof Error && 'code' in err && err.code === 'ENOENT') {
-      return { path: filePath, existed: false, expectedKind, sequence: 0 };
-    }
-    if (err instanceof Error && 'code' in err && err.code === 'ELOOP') {
-      throw new Error(`Refusing to snapshot symlink: ${filePath}`);
-    }
-    throw err;
-  } finally {
-    await handle?.close();
-  }
-}
-
-async function snapshotFromHandle(
-  handle: FileHandle,
-  filePath: string,
-  expectedKind: 'file' | 'directory',
-): Promise<RollbackEntry> {
-  const stat = await handle.stat();
-
-  if (stat.isSymbolicLink()) {
-    throw new Error(`Refusing to snapshot symlink: ${filePath}`);
-  }
-  if (stat.isDirectory()) {
-    if (expectedKind !== 'directory') {
-      throw new Error(
-        `Rollback target type mismatch: ${filePath} (expected ${expectedKind}, found directory)`,
-      );
-    }
-    return { path: filePath, existed: true, expectedKind: 'directory', sequence: 0 };
-  }
-  if (!stat.isFile()) {
-    throw new Error(`Unsupported rollback target type: ${filePath}`);
-  }
-  if (expectedKind !== 'file') {
-    throw new Error(
-      `Rollback target type mismatch: ${filePath} (expected ${expectedKind}, found file)`,
-    );
-  }
-
-  const content = await handle.readFile();
-  return {
-    path: filePath,
-    existed: true,
-    expectedKind: 'file',
-    originalContent: content,
-    sequence: 0,
-  };
-}
-
-/**
- * Rollback install artifacts after a failed auto-install step.
- *
- * Uniform semantics:
- * - existed before install (has originalContent) -> restore via temp+rename
- * - existed before install (no content, e.g. directory) -> leave untouched
- * - did not exist before install -> delete via unlink/rmdir
- */
-export async function rollbackArtifacts(
-  entries: RollbackEntry[],
-  ops: FileOp[],
-  errors: string[],
-): Promise<void> {
-  for (const entry of [...entries].sort((a, b) => b.sequence - a.sequence)) {
-    try {
-      if (entry.existed && entry.originalContent !== undefined) {
-        await restoreFileFromSnapshot(entry, ops);
-        continue;
-      }
-      if (entry.existed) continue;
-
-      await removeNewlyCreatedEntry(entry, ops);
-    } catch (rollbackErr) {
-      errors.push(
-        `Rollback failed for ${entry.path}: ${rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)}`,
-      );
-    }
-  }
-}
-
-async function restoreFileFromSnapshot(entry: RollbackEntry, ops: FileOp[]): Promise<void> {
-  try {
-    const stat = await lstat(entry.path);
-    if (stat.isSymbolicLink()) {
-      throw new Error(`Rollback restore target was replaced by a symlink: ${entry.path}`);
-    }
-    if (!stat.isFile()) {
-      throw new Error(`Rollback restore target type changed: ${entry.path} (expected file)`);
-    }
-  } catch (err) {
-    if (!isEnoent(err)) throw err;
-    // File was deleted — atomic recreate via temp+rename below restores it
-  }
-
-  const tmpPath = `${entry.path}.rollback.${process.pid}.${randomUUID()}`;
-  try {
-    await writeFile(tmpPath, entry.originalContent!, { flag: 'wx' });
-    await rename(tmpPath, entry.path);
-    ops.push({ path: entry.path, action: 'written', reason: 'restored pre-install content' });
-  } catch (rwErr) {
-    try {
-      await unlink(tmpPath);
-    } catch {
-      /* ok */
-    }
-    throw rwErr;
-  }
-}
-
-async function removeNewlyCreatedEntry(entry: RollbackEntry, ops: FileOp[]): Promise<void> {
-  try {
-    await lstat(entry.path);
-  } catch (err) {
-    if (err instanceof Error && 'code' in err && err.code === 'ENOENT') return;
-    throw err;
-  }
-
-  const stat = await lstat(entry.path);
-  if (stat.isSymbolicLink()) {
-    throw new Error(`Rollback target was replaced by a symlink: ${entry.path}`);
-  }
-  if (entry.expectedKind === 'file' && !stat.isFile()) {
-    throw new Error(`Rollback target type changed: ${entry.path} (expected file)`);
-  }
-  if (entry.expectedKind === 'directory' && !stat.isDirectory()) {
-    throw new Error(`Rollback target type changed: ${entry.path} (expected directory)`);
-  }
-  if (entry.expectedKind === 'directory') {
-    await removeDirectoryRecursively(entry.path);
-  } else {
-    await unlink(entry.path);
-  }
-  ops.push({ path: entry.path, action: 'removed', reason: 'rollback after failure' });
-}
-
-/** Remove only regular files and directories; never traverse a symlink during rollback. */
-async function removeDirectoryRecursively(directoryPath: string): Promise<void> {
-  for (const name of await readdir(directoryPath)) {
-    const childPath = join(directoryPath, name);
-    const childStat = await lstat(childPath);
-    if (childStat.isSymbolicLink()) {
-      throw new Error(`Rollback target contains a symlink: ${childPath}`);
-    }
-    if (childStat.isDirectory()) {
-      await removeDirectoryRecursively(childPath);
-      continue;
-    }
-    if (!childStat.isFile()) {
-      throw new Error(`Unsupported rollback target type: ${childPath}`);
-    }
-    await unlink(childPath);
-  }
-  await rmdir(directoryPath);
 }
 
 // ─── Structured Error Helpers (in install-recovery.ts) ────────────────────────

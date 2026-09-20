@@ -91,7 +91,9 @@ export function buildImplementationReviewInstruction(authority: ReviewDispatchAu
     authority,
     iteration: authority.obligation.iteration,
     planVersion: authority.obligation.planVersion,
-    observationCapability: authority.attempt.observationCapability ?? undefined,
+    ...(authority.attempt.observationCapability !== undefined
+      ? { observationCapability: authority.attempt.observationCapability }
+      : {}),
   });
 }
 

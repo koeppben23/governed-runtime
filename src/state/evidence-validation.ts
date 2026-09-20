@@ -198,8 +198,7 @@ const ExtractedAssertionResultSchema = z
         path: ['summary'],
       });
     }
-    for (let i = 0; i < data.assertions.length; i++) {
-      const a = data.assertions[i]!;
+    for (const [i, a] of data.assertions.entries()) {
       if (a.providerId !== data.providerId) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,

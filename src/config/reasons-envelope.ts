@@ -1,7 +1,7 @@
 /**
  * Reason codes: review envelope validation, extraction, and binding.
  *
- * Extracted from reasons-precondition.ts to stay within the 750 LOC file-size budget.
+ * Extracted from reasons-precondition.ts to stay within the 650 LOC file-size budget.
  * Re-exported by reasons-precondition.ts as part of PRECONDITION_REASONS.
  *
  * @internal — do not import directly. Use reasons.ts barrel.
