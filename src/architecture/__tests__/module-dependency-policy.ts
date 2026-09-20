@@ -78,7 +78,7 @@ export const MODULE_DEPENDENCY_POLICY: Readonly<
   diagnostics: new Set(['presentation']),
   hooks: new Set(['adapters', 'integration', 'shared', 'state']),
   'mcp-server': new Set(['adapters', 'integration', 'logging', 'shared']),
-  shared: new Set(['state']),
+  shared: new Set([]),
   providers: new Set(['state', 'verification']),
   verification: new Set(['adapters', 'providers', 'shared', 'state']),
   redaction: new Set(['logging', 'shared']),

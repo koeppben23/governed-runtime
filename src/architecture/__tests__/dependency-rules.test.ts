@@ -624,7 +624,6 @@ describe('Layer Dependency Rules', () => {
       // normalization/digest authority instead of duplicating it in state.
       '../shared/review-subject.js',
     ]);
-    const forbiddenStateSharedAuthorityImports = new Set(['../shared/policy-digest.js']);
 
     it('keeps identifier authorities separated', async () => {
       const identifiers = await fs.readFile(
@@ -672,16 +671,6 @@ describe('Layer Dependency Rules', () => {
               file: analysis.relativePath,
               rule: 'state-shared-primitive',
               message: `state/ imports an unapproved shared primitive: ${imp.module}`,
-              imports: [imp.module],
-            });
-          }
-        }
-        for (const imp of analysis.imports) {
-          if (forbiddenStateSharedAuthorityImports.has(imp.module)) {
-            stateViolations.push({
-              file: analysis.relativePath,
-              rule: 'state-evidence-discriminator-authority',
-              message: 'state/ imports an evidence discriminator from shared/',
               imports: [imp.module],
             });
           }
@@ -1077,12 +1066,11 @@ describe('Layer Dependency Rules', () => {
     // SCC shape explicitly and update both together when a cycle is dissolved
     // or a module joins an existing SCC. The edge baseline remains the debt
     // authority; this assertion documents the structure the debt lives in.
-    it('classifies the real module graph as exactly three cyclic SCCs', () => {
+    it('classifies the real module graph as exactly two cyclic SCCs', () => {
       const sccs = cyclicStronglyConnectedComponents(governedNames, observed);
       expect(sccs.map((component) => [...component].sort().join(',')).sort()).toEqual([
         'adapters,archive,audit,config,discovery,presentation,providers,rails,telemetry,verification',
         'rendering,templates',
-        'shared,state',
       ]);
     });
 

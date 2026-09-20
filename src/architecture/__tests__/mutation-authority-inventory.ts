@@ -1703,12 +1703,6 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     { source: [SOURCE.config] },
   ),
   notSuitable(
-    'src/shared/policy-digest.ts',
-    'Policy digest re-export',
-    'Pure re-export of state-owned identifiers; no executable mutants in the base regime.',
-    'base',
-  ),
-  notSuitable(
     'src/machine/command-help.ts',
     'Command help text projection',
     'Static help text projection; no semantic contract to mutate in the base regime.',

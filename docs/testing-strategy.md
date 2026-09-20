@@ -314,7 +314,6 @@ Explicitly not mutation-suitable **for the named profile** (the exclusion is
 scoped; a target may still be a valid mutation target in another profile):
 
 - `src/config/reasons-types.ts` — type-only module (base).
-- `src/shared/policy-digest.ts` — pure re-export (base).
 - `src/machine/command-help.ts` — static help text projection (base).
 - `src/config/profile-types.ts` — type-only module (base).
 - `src/machine/topology.ts` — module-init transition table, ignored under `ignoreStatic` (base).
