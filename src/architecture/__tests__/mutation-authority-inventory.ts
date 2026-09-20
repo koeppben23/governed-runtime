@@ -765,7 +765,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     {
       admission: {
         verifiedAt: '2026-09-20',
-        commitSha: '7ff3be443b80380c50b8720595535df35aa29034',
+        commitSha: 'd1ef19ebbdda89af96869f7c3659de6a8ea1c8c7',
         scoreAtAdmission: 100,
         killed: 17,
         survived: 0,
@@ -780,7 +780,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     {
       admission: {
         verifiedAt: '2026-09-20',
-        commitSha: '7ff3be443b80380c50b8720595535df35aa29034',
+        commitSha: 'd1ef19ebbdda89af96869f7c3659de6a8ea1c8c7',
         scoreAtAdmission: 100,
         killed: 4,
         survived: 0,
@@ -795,7 +795,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     {
       admission: {
         verifiedAt: '2026-09-20',
-        commitSha: '7ff3be443b80380c50b8720595535df35aa29034',
+        commitSha: 'd1ef19ebbdda89af96869f7c3659de6a8ea1c8c7',
         scoreAtAdmission: 80.95,
         killed: 17,
         survived: 4,
@@ -816,7 +816,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     {
       admission: {
         verifiedAt: '2026-09-20',
-        commitSha: '7ff3be443b80380c50b8720595535df35aa29034',
+        commitSha: 'd1ef19ebbdda89af96869f7c3659de6a8ea1c8c7',
         scoreAtAdmission: 83.57,
         killed: 117,
         survived: 23,
@@ -834,7 +834,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     {
       admission: {
         verifiedAt: '2026-09-20',
-        commitSha: '7ff3be443b80380c50b8720595535df35aa29034',
+        commitSha: 'd1ef19ebbdda89af96869f7c3659de6a8ea1c8c7',
         scoreAtAdmission: 82.93,
         killed: 68,
         survived: 14,
@@ -930,7 +930,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     {
       admission: {
         verifiedAt: '2026-09-20',
-        commitSha: '7ff3be443b80380c50b8720595535df35aa29034',
+        commitSha: 'd1ef19ebbdda89af96869f7c3659de6a8ea1c8c7',
         scoreAtAdmission: 93.02,
         killed: 40,
         survived: 3,
@@ -1341,7 +1341,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     {
       admission: {
         verifiedAt: '2026-09-20',
-        commitSha: '7ff3be443b80380c50b8720595535df35aa29034',
+        commitSha: 'd1ef19ebbdda89af96869f7c3659de6a8ea1c8c7',
         scoreAtAdmission: 81.25,
         killed: 13,
         survived: 3,
@@ -1373,7 +1373,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     {
       admission: {
         verifiedAt: '2026-09-20',
-        commitSha: '7ff3be443b80380c50b8720595535df35aa29034',
+        commitSha: 'd1ef19ebbdda89af96869f7c3659de6a8ea1c8c7',
         scoreAtAdmission: 93.33,
         killed: 28,
         survived: 2,
