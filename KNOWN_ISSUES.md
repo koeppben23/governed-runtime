@@ -259,7 +259,7 @@ disproven, update the status and link the evidence."
 | EA1  | LOW        | Open         | Artifact-type validation should match declared artifact union.                                                                                                                                     |
 | EA2  | LOW        | Open         | Review-card metadata needs schema coverage.                                                                                                                                                        |
 | SZ1  | LOW-MEDIUM | Open         | Prod files near the 750-LOC blocker: `src/adapters/workspace/evidence-artifacts.ts` (678), `src/config/policy-snapshot-normalize.ts` (692). `src/integration/plugin-audit.ts` relieved 706 -> 603. |
-| SZ2  | LOW        | Open         | `dependency-rules.test.ts` (1656 LOC) exceeds the 1500 advisory; split without breaking the cycle-detection logic when it next grows.                                                              |
+| SZ2  | LOW        | Open         | `dependency-rules.test.ts` (1541 LOC) exceeds the 1500 advisory; split without breaking the cycle-detection logic when it next grows.                                                              |
 | CMP1 | SEE ALSO   | Open         | Compliance mapping overlaps AC6, AC7, AC8, and G2.                                                                                                                                                 |
 
 ## Cross-Cutting Risks

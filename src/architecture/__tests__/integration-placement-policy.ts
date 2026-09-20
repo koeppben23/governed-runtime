@@ -14,9 +14,11 @@
  * debt is a hard failure; the authority is the positive contract, not a
  * baseline snapshot.
  *
- * CLOSURE STATUS (#922): the integration tree carries zero placement debt.
- * Every entry is a top-level integration file, so MODULE_DEPENDENCY_POLICY is
- * unchanged by construction.
+ * CLOSURE STATUS (#923): the integration tree carries zero placement debt.
+ * Placement governs the internal zoning of the top-level `integration` module:
+ * every entry is a production file below `src/integration/`, so this authority
+ * never introduces an additional top-level module name and never changes the
+ * endpoint set of `MODULE_DEPENDENCY_POLICY` by itself.
  *
  * @version v2
  */
