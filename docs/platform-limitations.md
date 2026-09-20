@@ -169,7 +169,7 @@ FlowGuard operates at different enforcement levels depending on the host platfor
 **Code references**:
 
 - All tool implementations in `src/integration/tools/` include `phase` in output
-- `src/integration/tools/status-tool.ts` (full governance projection)
+- `src/integration/tools/status/status-tool.ts` (full governance projection)
 
 **Residual Risk**: LOW — Self-documenting output ensures governance context is available in every FlowGuard tool response. Post-compaction re-orientation may require one extra `flowguard_status` call if hook-gated context injection did not run.
 

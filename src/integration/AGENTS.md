@@ -15,6 +15,10 @@ API. It must never become a provider of new authorities for lower layers.
   `src/architecture/__tests__/module-dependency-policy.ts`
   (`MODULE_DEPENDENCY_POLICY`), and changes in this subtree must satisfy
   `npm run test:architecture`.
+- Production placement is enforced by the positive authority
+  `src/architecture/__tests__/integration-placement-policy.ts`: every
+  production file has exactly one owner/zone entry and zero placement debt. A
+  new file requires an explicit placement entry in the same change.
 
 ## Plugin Lifecycle
 
@@ -27,8 +31,18 @@ API. It must never become a provider of new authorities for lower layers.
 
 ## Tools
 
-- Tools are the FlowGuard command surface exposed to the host agent. All tools
-  live in `src/integration/tools/`.
+- Tools are the FlowGuard command surface exposed to the host agent. The tool
+  layer lives in `src/integration/tools/`:
+  - `index.ts` is the command surface composition point and the only external
+    production entry into the tool layer;
+  - command files live in per-command contexts (`plan/`, `architecture/`,
+    `implementation/`, `validation/`, `status/`, `hydrate/`, `challenge/`,
+    `decision/`, `simple/`, `contract/`, `mutation/`, `observe/`,
+    `review-tool/`);
+  - cross-command infrastructure stays at the tools root.
+- Command contexts orchestrate and project only; they must not become a new
+  domain authority. Production outside `tools/**` must not deep-import a
+  command context.
 - New tools must:
   - validate inputs against canonical schemas;
   - route through the state machine before mutating state;
@@ -39,8 +53,15 @@ API. It must never become a provider of new authorities for lower layers.
 
 - The review pipeline orchestrates independent review obligations through
   `src/integration/review/`.
+- Review findings/evidence validation authority lives in `review/`; tool
+  adapters call it, not the other way around.
+- `review/` may import `review/**`, integration root authorities, and lower
+  layers. It must not import `plugin-*` composition, `tools/**`, or
+  host/runtime wiring (`dependency-rules.test.ts`).
 - Evidence binding, obligation tracking, and findings validation are managed
   by the enforcement subsystem in `src/integration/review/enforcement/`.
+- `plugin-helpers.ts` is a stateless root authority for result/enforcement
+  utilities, not plugin composition.
 
 ## Error Boundaries
 

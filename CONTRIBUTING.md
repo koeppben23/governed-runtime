@@ -469,8 +469,10 @@ Fine-grained boundaries are additionally enforced by
    hashing, actor assurance) and owns its evidence discriminators
 2. **Leaf modules** (`archive/types`, `discovery/types`) must not import other FF modules
 3. **`rails/`** must not import node built-ins directly (I/O is handled by adapters)
-4. **`integration/tools/`** must not import `plugin-*` modules
-5. Entry points, test-support files, and unclassified imports stay default-deny
+4. **`integration/tools/`** must not import integration composition (`plugin.ts`, `plugin-*`; `plugin-helpers.ts` is a root authority)
+5. **`integration/review/`** may import `review/**`, root authorities and lower layers; it must not import `tools/**`, composition, or host/runtime wiring
+6. **Production outside `integration/tools/**`** must not deep-import a tool command context; `integration/tools/index.ts` is the single external entry
+7. Entry points, test-support files, and unclassified imports stay default-deny
 
 ### Cycle Debt
 

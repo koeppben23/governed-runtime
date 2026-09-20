@@ -50,6 +50,16 @@ A 2026-09-12 post-merge review of the OpenCode host-boundary hardening (#880,
 head `4f70dc9e`) confirmed the material fixes and recorded four non-blocking
 host-assurance follow-ups (HA1–HA4); see the dated section below.
 
+A 2026-09-20 integration architecture closure (#922) moved the review
+findings/evidence validation modules from `src/integration/tools/` into
+`src/integration/review/`, moved `durable-dispatch`, the native-review bindings
+and types into `review/`, and elevated `audit-outbox`/`blocked-result` to
+integration-root authorities. The relocated code is behavior-identical; the
+trust-boundary surface (`src/integration/review/`) now owns the validation
+authority, so the review enforcement invariants cover a larger share of the
+pipeline. Mutation targets at relocated paths moved to the admission backlog
+instead of inheriting `legacyBaseline`; no new findings were recorded.
+
 ## Status Legend
 
 | Status                 | Meaning                                                   |
