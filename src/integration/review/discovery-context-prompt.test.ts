@@ -3,6 +3,7 @@
  * @description Tests for bounded Discovery context rendering in reviewer prompts.
  */
 
+import type { DiscoveryDriftStatusProjection } from '../discovery/discovery-drift-status.js';
 import { describe, expect, it, vi } from 'vitest';
 
 import { unavailableDiscoveryHealth } from '../../discovery/discovery-health.js';
@@ -55,7 +56,7 @@ const BASE_CONTEXT = {
     diagnostics: [],
     notVerified: ['NOT_VERIFIED: Drift is advisory.'],
     warnings: [],
-  },
+  } as DiscoveryDriftStatusProjection,
   detectedStack: {
     summary: 'typescript=6.0.3, vitest',
     items: [

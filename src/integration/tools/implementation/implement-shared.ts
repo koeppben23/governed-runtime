@@ -5,6 +5,7 @@
  * @version v1
  */
 
+import { DISCOVERY_DRIFT_PROVIDER } from '../../discovery/discovery-drift-status.js';
 import type { ToolContext } from '../helpers.js';
 import { formatBlocked } from '../../blocked-result.js';
 import {
@@ -114,6 +115,7 @@ async function resolveActivationDiscovery(
     worktree: input.worktree,
     repositoryGoverned: hasFrozenRepositoryAuthority(obligation),
     now: input.now,
+    driftProvider: DISCOVERY_DRIFT_PROVIDER,
     obligationId: obligation.obligationId,
   });
   if (discovery.kind === 'blocked') {

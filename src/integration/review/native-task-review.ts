@@ -1,5 +1,5 @@
 /**
- * @module integration/native-task-review
+ * @module integration/review/native-task-review
  * @description OpenCode-native visible independent-review transport.
  *
  * One reviewer identity spans one native Task child session:
@@ -11,55 +11,86 @@
  * native-task-review-bindings.ts.
  */
 
-import { readState } from '../adapters/persistence.js';
-import { buildEnforcementError, strictBlockedOutput } from './plugin-helpers.js';
-import type { FlowGuardPluginRuntime } from './plugin-shared.js';
+import { readState } from '../../adapters/persistence.js';
+import { buildEnforcementError, strictBlockedOutput } from '../blocked-result.js';
+
+import type { SessionEnforcementState } from './enforcement/types.js';
+import type { OrchestratorDeps } from './pipeline-types.js';
 import type {
   ToolHookAfterInput,
   ToolHookAfterOutput,
   ToolHookBeforeInput,
   ToolHookBeforeOutput,
-} from './types.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
-import type { ReviewObligation, ReviewObligationType } from '../state/evidence.js';
-import { hashText } from '../shared/hashing.js';
+} from '../types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
+import type { ReviewObligation, ReviewObligationType } from '../../state/evidence.js';
+import { hashText } from '../../shared/hashing.js';
 import {
   ensureReviewAssurance,
   findBindableAttempt,
   isCurrentReviewGeneration,
-} from './review/assurance.js';
+} from './assurance.js';
 import {
   hasReleasedDispatch,
   verifyFrozenMaterialForObligation,
-} from '../state/review-continuation.js';
-import { renderReviewerTaskPrompt } from './review/prompt-builders.js';
-import { reviewerPromptTypeForTask } from './review/reviewer-task-type.js';
-import { renderArtifactAnchorContract } from './review/frozen-reviewer-context.js';
-import { resolveObservationRevisions } from './review/observation-access.js';
-import { buildReviewChallengeContract } from './review/challenge-contract.js';
-import { buildReviewerProofContext } from './review/proof-context.js';
+} from '../../state/review-continuation.js';
+import { renderReviewerTaskPrompt } from './prompt-builders.js';
+import { reviewerPromptTypeForTask } from './reviewer-task-type.js';
+import { renderArtifactAnchorContract } from './frozen-reviewer-context.js';
+import { resolveObservationRevisions } from './observation-access.js';
+import { buildReviewChallengeContract } from './challenge-contract.js';
+import { buildReviewerProofContext } from './proof-context.js';
 import {
   abandonReviewDispatchByHostCall,
   persistAuthorizedReviewDispatch,
-} from './review/durable-dispatch.js';
-import { reconcilePendingAuditOperations } from './plugin-audit-reconcile.js';
-import { projectReviewExecution } from './review/review-execution-projection.js';
-import type { PersistedState, NativeReviewLineage } from './review/native-task-review-types.js';
+} from './durable-dispatch.js';
+import { projectReviewExecution } from './review-execution-projection.js';
+import type { PersistedState, NativeReviewLineage } from './native-task-review-types.js';
 import {
   bindNativeReviewEvidence,
   capturePreparedFindings,
   persistReviewerObservations,
   resolveNativeReviewLineage,
   validateCapturedFindings,
-} from './review/native-task-review-bindings.js';
+} from './native-task-review-bindings.js';
 
 const TASK_TOOL = 'task';
 const TASK_DESCRIPTION = 'FlowGuard independent review';
 
+/**
+ * Structural host-runtime port for the native reviewer Task transport.
+ *
+ * review/ must not import plugin-* (FG-QUAL-002); the host caller passes its
+ * full runtime, which satisfies this subset structurally.
+ */
+export interface NativeReviewTransportRuntime {
+  readonly ws: {
+    getEnforcementState(sessionId: string): SessionEnforcementState;
+    getSessionDir(sessionId: string): string | null;
+  };
+  readonly orchestratorDeps: OrchestratorDeps;
+  readonly log: {
+    info(service: string, message: string, extra?: Record<string, unknown>): void;
+    warn(service: string, message: string, extra?: Record<string, unknown>): void;
+  };
+  readonly logError: (message: string, err: unknown) => void;
+}
+
+/**
+ * Injected plugin-lifecycle audit reconciliation. The host composition layer
+ * owns the plugin-* dependency; review/ only consumes the outcome.
+ */
+export type NativeReviewAuditReconciler = (
+  sessionId: string,
+  toolName: string,
+) => Promise<
+  { readonly block?: boolean; readonly code?: string; readonly reason?: string } | undefined
+>;
+
 type BindableAttempt = NonNullable<ReturnType<typeof findBindableAttempt>>;
 
 interface BlockOutputInput {
-  readonly runtime: FlowGuardPluginRuntime;
+  readonly runtime: NativeReviewTransportRuntime;
   readonly sessDir: string;
   readonly callId: string;
   readonly output: ToolHookAfterOutput;
@@ -77,7 +108,7 @@ export function isNativeReviewerTaskAfter(input: unknown): boolean {
   return hook?.tool === TASK_TOOL && hook.args?.subagent_type === REVIEWER_SUBAGENT_TYPE;
 }
 
-function pendingBinding(runtime: FlowGuardPluginRuntime, sessionId: string) {
+function pendingBinding(runtime: NativeReviewTransportRuntime, sessionId: string) {
   const candidates = [...runtime.ws.getEnforcementState(sessionId).pendingReviews.values()].filter(
     (pending) => pending.obligationId !== null && pending.attemptId !== null,
   );
@@ -135,17 +166,17 @@ function canonicalTaskPrompt(
 }
 
 async function reconcileBeforeReviewerDispatch(
-  runtime: FlowGuardPluginRuntime,
+  reconcile: NativeReviewAuditReconciler,
   sessionId: string,
 ): Promise<void> {
-  const result = await reconcilePendingAuditOperations(runtime.auditDeps, sessionId, TASK_TOOL);
+  const result = await reconcile(sessionId, TASK_TOOL);
   if (result?.block) {
     throw buildEnforcementError(result.code ?? 'AUDIT_PERSISTENCE_FAILED', result.reason ?? '');
   }
 }
 
 async function requireState(
-  runtime: FlowGuardPluginRuntime,
+  runtime: NativeReviewTransportRuntime,
   sessionId: string,
 ): Promise<{ readonly sessDir: string; readonly state: PersistedState }> {
   const sessDir = runtime.ws.getSessionDir(sessionId);
@@ -160,7 +191,7 @@ async function requireState(
 }
 
 function requireCurrentAttempt(
-  runtime: FlowGuardPluginRuntime,
+  runtime: NativeReviewTransportRuntime,
   sessionId: string,
   state: PersistedState,
 ): { readonly obligation: ReviewObligation; readonly attempt: BindableAttempt } {
@@ -227,9 +258,10 @@ function mutateNativeTask(output: ToolHookBeforeOutput, prompt: string): void {
 
 /** Host boundary before native Task execution: inject canonical frozen authority and persist release. */
 export async function nativeReviewTaskBefore(
-  runtime: FlowGuardPluginRuntime,
+  runtime: NativeReviewTransportRuntime,
   input: unknown,
   output: unknown,
+  reconcile: NativeReviewAuditReconciler,
 ): Promise<void> {
   const hookInput = input as ToolHookBeforeInput;
   const hookOutput = output as ToolHookBeforeOutput;
@@ -245,7 +277,7 @@ export async function nativeReviewTaskBefore(
     );
   }
 
-  await reconcileBeforeReviewerDispatch(runtime, sessionId);
+  await reconcileBeforeReviewerDispatch(reconcile, sessionId);
   const { sessDir, state } = await requireState(runtime, sessionId);
   const { obligation, attempt } = requireCurrentAttempt(runtime, sessionId, state);
   const prompt = canonicalTaskPrompt(state, obligation, attempt);
@@ -305,7 +337,7 @@ async function writeBindingFailure(
 }
 
 async function projectFulfilledReview(input: {
-  readonly runtime: FlowGuardPluginRuntime;
+  readonly runtime: NativeReviewTransportRuntime;
   readonly sessDir: string;
   readonly sessionId: string;
   readonly childSessionId: string;
@@ -355,7 +387,7 @@ type NativeTaskContextResolution =
  * invocation is rejected by `isNativeReviewerTaskAfter` before this point.
  */
 function resolveNativeTaskContext(
-  runtime: FlowGuardPluginRuntime,
+  runtime: NativeReviewTransportRuntime,
   hookInput: ToolHookAfterInput,
 ): NativeTaskContextResolution {
   const sessionId = hookInput.sessionID;
@@ -382,7 +414,7 @@ function resolveNativeTaskContext(
 
 /** Host boundary after native Task: bind same-child structured findings and replace free-form text. */
 export async function nativeReviewTaskAfter(
-  runtime: FlowGuardPluginRuntime,
+  runtime: NativeReviewTransportRuntime,
   input: unknown,
   output: unknown,
 ): Promise<void> {
@@ -403,7 +435,7 @@ export async function nativeReviewTaskAfter(
 }
 
 async function fulfillNativeReviewTask(
-  runtime: FlowGuardPluginRuntime,
+  runtime: NativeReviewTransportRuntime,
   taskContext: Extract<NativeTaskContextResolution, { kind: 'resolved' }>,
   hookOutput: ToolHookAfterOutput,
 ): Promise<void> {
@@ -441,7 +473,7 @@ async function fulfillNativeReviewTask(
 }
 
 async function completeStructuredReview(
-  runtime: FlowGuardPluginRuntime,
+  runtime: NativeReviewTransportRuntime,
   input: {
     readonly sessionId: string;
     readonly callId: string;

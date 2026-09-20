@@ -5,6 +5,7 @@
  * @version v1
  */
 
+import { DISCOVERY_DRIFT_PROVIDER } from '../../discovery/discovery-drift-status.js';
 import type { SessionState } from '../../../state/schema.js';
 import type { PlanEvidence, ReviewFindings, ReviewObligation } from '../../../state/evidence.js';
 import {
@@ -442,6 +443,7 @@ async function mintPlanRevisionAttempt(input: {
     worktree: scope.worktree,
     repositoryGoverned: authority !== undefined,
     now: scope.ctx.now(),
+    driftProvider: DISCOVERY_DRIFT_PROVIDER,
   });
   if (discovery.kind === 'blocked') {
     return {

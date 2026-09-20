@@ -2,6 +2,10 @@
  * @module integration/review/discovery-provenance-projection
  * @description Regression coverage for reviewer-visible Discovery provenance.
  */
+import {
+  DISCOVERY_DRIFT_PROVIDER,
+  type DiscoveryDriftStatusProjection,
+} from '../discovery/discovery-drift-status.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { makeState } from '../../fixtures.js';
@@ -55,7 +59,7 @@ function reviewContext(): DiscoveryReviewContext {
       diagnostics: [],
       notVerified: ['NOT_VERIFIED: Discovery drift is advisory.'],
       warnings: [],
-    },
+    } as DiscoveryDriftStatusProjection,
     verificationCandidates: [
       {
         candidateId: CANDIDATE_ID,
@@ -139,6 +143,7 @@ describe('Discovery reviewer provenance projection', () => {
       repositoryGoverned: true,
       now: NOW,
       fingerprint: 'workspace-fingerprint',
+      driftProvider: DISCOVERY_DRIFT_PROVIDER,
     });
 
     expect(resolved.kind).toBe('repository');

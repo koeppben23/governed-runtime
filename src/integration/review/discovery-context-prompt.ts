@@ -8,7 +8,7 @@
  */
 
 import type { DiscoveryHealthProjection } from '../../discovery/discovery-health.js';
-import type { DiscoveryDriftStatusProjection } from '../discovery/discovery-drift-status.js';
+import type { ReviewDiscoveryDriftProjection } from './discovery-drift-port.js';
 import type {
   ImplementationGuidanceItem,
   ImplementationGuidanceProjection,
@@ -32,7 +32,7 @@ export interface DiscoveryContextLimits {
 
 export interface DiscoveryReviewContext {
   readonly health?: DiscoveryHealthProjection | null;
-  readonly drift?: DiscoveryDriftStatusProjection | null;
+  readonly drift?: ReviewDiscoveryDriftProjection | null;
   readonly detectedStack?: DetectedStack | null;
   readonly verificationCandidates?: VerificationCandidates;
   readonly implementationGuidance?: Pick<
@@ -126,7 +126,7 @@ function appendHealth(lines: string[], health: DiscoveryHealthProjection | null 
 
 function appendDrift(
   lines: string[],
-  drift: DiscoveryDriftStatusProjection | null | undefined,
+  drift: ReviewDiscoveryDriftProjection | null | undefined,
   limits: DiscoveryContextLimits,
 ): void {
   lines.push('### Drift');

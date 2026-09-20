@@ -69,7 +69,7 @@ describe('integration placement authority', () => {
       );
     }
     expect(violations, JSON.stringify(violations)).toEqual([]);
-    expect(files.length).toBe(214);
+    expect(files.length).toBe(215);
     expect(INTEGRATION_PLACEMENT.length).toBe(files.length);
     expect(new Set(INTEGRATION_PLACEMENT.map((entry) => entry.file)).size).toBe(files.length);
   });
@@ -131,6 +131,27 @@ describe('integration placement authority', () => {
     }
   });
 
+  it('freezes the agreed root matrix exactly (24 + 4 + 13 = 41)', () => {
+    const rootFiles = INTEGRATION_PLACEMENT.filter((entry) => entry.zone === 'root');
+    const byOwner = (owner: string) => rootFiles.filter((entry) => entry.owner === owner);
+
+    expect(byOwner('root-composition').length).toBe(24);
+    expect(byOwner('root-host-runtime').length).toBe(4);
+    expect(byOwner('root-authority').length).toBe(13);
+    expect(rootFiles.length).toBe(41);
+
+    expect(
+      byOwner('root-host-runtime')
+        .map((entry) => entry.file)
+        .sort(),
+    ).toEqual([
+      'integration/installed-commands.ts',
+      'integration/opencode-host-adapter.ts',
+      'integration/runtime-instance.ts',
+      'integration/runtime-lease.ts',
+    ]);
+  });
+
   it('ties every context owner to its target zone', () => {
     for (const entry of INTEGRATION_PLACEMENT) {
       if (entry.owner.startsWith('tools-')) {
@@ -146,11 +167,12 @@ describe('integration placement authority', () => {
 
   it('exposes positive placement helpers for the context boundaries', () => {
     expect(placementOwnerOf('integration/plugin.ts')).toBe('root-composition');
-    expect(placementOwnerOf('integration/plugin-helpers.ts')).toBe('root-authority');
+    expect(placementOwnerOf('integration/plugin-helpers.ts')).toBe('root-composition');
+    expect(placementOwnerOf('integration/review/native-task-review.ts')).toBe('review');
     expect(placementOwnerOf('integration/rogue.ts')).toBeNull();
 
     expect(isRootCompositionFile('integration/plugin-risk.ts')).toBe(true);
-    expect(isRootCompositionFile('integration/plugin-helpers.ts')).toBe(false);
+    expect(isRootCompositionFile('integration/plugin-helpers.ts')).toBe(true);
     expect(isRootHostRuntimeFile('integration/opencode-host-adapter.ts')).toBe(true);
     expect(isRootHostRuntimeFile('integration/errors.ts')).toBe(false);
 

@@ -5,6 +5,7 @@
  * @version v1
  */
 
+import { DISCOVERY_DRIFT_PROVIDER } from '../../discovery/discovery-drift-status.js';
 import type { ArchitectureArgs, ArchitectureSession } from './architecture-shared.js';
 import { buildArchitectureReviewInstruction } from './architecture-shared.js';
 import { formatBlocked } from '../../blocked-result.js';
@@ -80,6 +81,7 @@ async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Prom
     worktree: ctx.worktree,
     repositoryGoverned,
     now: ctx.now,
+    driftProvider: DISCOVERY_DRIFT_PROVIDER,
     ...(minted ? { obligationId: minted.obligationId } : {}),
   });
   if (discovery.kind === 'blocked') {

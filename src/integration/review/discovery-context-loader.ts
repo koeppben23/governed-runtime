@@ -14,11 +14,8 @@ import {
   extractDiscoveryHealth,
   unavailableDiscoveryHealth,
 } from '../../discovery/discovery-health.js';
-import {
-  buildDiscoveryDriftStatus,
-  notCheckedDiscoveryDriftStatus,
-} from '../discovery/discovery-drift-status.js';
 import { buildImplementationGuidance } from '../implementation-guidance.js';
+import type { ReviewDiscoveryDriftProvider } from './discovery-drift-port.js';
 import type { SessionState } from '../../state/schema.js';
 import type { DiscoveryReviewContext } from './discovery-context-prompt.js';
 
@@ -28,6 +25,8 @@ export interface BuildReviewDiscoveryContextInput {
   readonly worktree: string;
   readonly includeDriftCheck?: boolean;
   readonly driftTimeoutMs?: number;
+  /** Injected Discovery drift authority (review owns no discovery import). */
+  readonly driftProvider: ReviewDiscoveryDriftProvider;
 }
 
 export async function buildReviewDiscoveryContext(
@@ -38,6 +37,7 @@ export async function buildReviewDiscoveryContext(
     return unavailableContext(
       baseContext,
       'Discovery context unavailable: workspace fingerprint could not be resolved.',
+      input.driftProvider,
     );
   }
 
@@ -49,7 +49,7 @@ export async function buildReviewDiscoveryContext(
       return {
         ...baseContext,
         health,
-        drift: notCheckedDiscoveryDriftStatus(
+        drift: input.driftProvider.notChecked(
           'Discovery drift was not checked during review prompt construction because persisted discovery is missing.',
         ),
         implementationGuidance: buildImplementationGuidance({
@@ -65,13 +65,13 @@ export async function buildReviewDiscoveryContext(
 
     const health = extractDiscoveryHealth(discovery);
     const drift = input.includeDriftCheck
-      ? await buildDiscoveryDriftStatus({
+      ? await input.driftProvider.build({
           workspaceDir: wsDir,
           worktree: input.worktree,
           fingerprint: input.fingerprint,
           ...(input.driftTimeoutMs !== undefined ? { timeoutMs: input.driftTimeoutMs } : {}),
         })
-      : notCheckedDiscoveryDriftStatus(
+      : input.driftProvider.notChecked(
           'Discovery drift was not checked during review prompt construction to avoid hidden review-orchestration latency.',
         );
     const implementationGuidance = buildImplementationGuidance({
@@ -85,6 +85,7 @@ export async function buildReviewDiscoveryContext(
     return unavailableContext(
       baseContext,
       `Discovery context unavailable: ${error instanceof Error ? error.message : String(error)}`,
+      input.driftProvider,
     );
   }
 }
@@ -96,12 +97,16 @@ function baseSessionContext(state: SessionState): DiscoveryReviewContext {
   };
 }
 
-function unavailableContext(base: DiscoveryReviewContext, reason: string): DiscoveryReviewContext {
+function unavailableContext(
+  base: DiscoveryReviewContext,
+  reason: string,
+  driftProvider: ReviewDiscoveryDriftProvider,
+): DiscoveryReviewContext {
   const health = unavailableDiscoveryHealth('read_failed');
   return {
     ...base,
     health,
-    drift: notCheckedDiscoveryDriftStatus(reason),
+    drift: driftProvider.notChecked(reason),
     implementationGuidance: null,
     notVerified: [`NOT_VERIFIED: ${reason}`],
   };

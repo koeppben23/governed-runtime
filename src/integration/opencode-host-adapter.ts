@@ -28,7 +28,7 @@ import {
   reviewTransportSatisfies,
 } from '../adapters/host-adapter.js';
 import type { OrchestratorClient } from './review/types.js';
-import { buildEnforcementError } from './plugin-helpers.js';
+import { buildEnforcementError } from './blocked-result.js';
 
 export interface OpenCodeAdapterConfig {
   readonly client: OrchestratorClient;

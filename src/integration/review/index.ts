@@ -19,11 +19,12 @@
  * - Findings JSON Schema definition
  * - Review audit event emission
  *
- * Dependency direction: review/ may import review/**, integration root
- * authorities (blocked-result, audit-outbox, errors, tool-names, ...), and the
- * lower layers (state/, shared/, config/, adapters/, templates/). review/ MUST
- * NOT import plugin-*, tools/**, the composition barrels (index.ts, plugin.ts),
- * or host-runtime wiring.
+ * Dependency direction (default-deny): review/ may import review/**,
+ * integration root authorities (blocked-result, audit-outbox, errors,
+ * tool-names, ...), and the explicit lower layers (adapters, audit, config,
+ * discovery, logging, machine, presentation, shared, state, templates).
+ * review/ MUST NOT import plugin-*, tools/**, the composition barrels
+ * (index.ts, plugin.ts), host-runtime wiring, or sibling integration contexts.
  *
  * @version v3
  */

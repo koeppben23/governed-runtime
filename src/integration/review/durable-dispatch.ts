@@ -11,7 +11,8 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { buildEnforcementError } from '../plugin-helpers.js';
+import { buildEnforcementError } from '../blocked-result.js';
+
 import { authorizeDispatchRearm } from './reissue-authority.js';
 import { createAttemptForExistingObligation } from './assurance.js';
 import {

@@ -49,7 +49,8 @@ import {
   reviewSignalOwner,
   type ReviewableTool,
 } from '../obligation-tools.js';
-import { parseToolResult } from '../../plugin-helpers.js';
+import { parseToolResult } from '../../blocked-result.js';
+
 import { TOOL_FLOWGUARD_REVIEW } from '../../tool-names.js';
 import { isTerminalPhase } from '../../../machine/topology.js';
 

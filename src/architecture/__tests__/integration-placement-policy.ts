@@ -273,12 +273,6 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
     targetZone: 'root',
   },
   {
-    file: 'integration/native-task-review.ts',
-    owner: 'root-host-runtime',
-    zone: 'root',
-    targetZone: 'root',
-  },
-  {
     file: 'integration/opencode-host-adapter.ts',
     owner: 'root-host-runtime',
     zone: 'root',
@@ -364,7 +358,7 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   },
   {
     file: 'integration/plugin-helpers.ts',
-    owner: 'root-authority',
+    owner: 'root-composition',
     zone: 'root',
     targetZone: 'root',
   },
@@ -574,6 +568,12 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
     targetZone: 'review',
   },
   {
+    file: 'integration/review/discovery-drift-port.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
     file: 'integration/review/dispatch-authority.ts',
     owner: 'review',
     zone: 'review',
@@ -690,6 +690,12 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   },
   {
     file: 'integration/review/native-task-review-types.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/native-task-review.ts',
     owner: 'review',
     zone: 'review',
     targetZone: 'review',

@@ -60,7 +60,7 @@ describe('structured review authority hard cut', () => {
   });
 
   it('persists the durable dispatch before host release on the native path', () => {
-    const native = readFileSync(join(SRC, 'integration/native-task-review.ts'), 'utf8');
+    const native = readFileSync(join(SRC, 'integration/review/native-task-review.ts'), 'utf8');
     const persistIndex = native.indexOf('persistAuthorizedReviewDispatch(');
     const releaseIndex = native.indexOf('mutateNativeTask(hookOutput');
     expect(persistIndex, 'the dispatch must be persisted').toBeGreaterThan(-1);

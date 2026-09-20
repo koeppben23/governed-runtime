@@ -2,7 +2,8 @@ import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { readState } from '../adapters/persistence.js';
 import { workspacesHome } from '../adapters/workspace/index.js';
-import { buildEnforcementError } from './plugin-helpers.js';
+import { buildEnforcementError } from './blocked-result.js';
+
 import { isMutatingHostTool, isHostToolAllowedInPhase } from './phase-tool-gate.js';
 import { isAllowedReworkContinuation } from './plugin-rework-continuation.js';
 import { isMutatingFlowGuardTool } from './tool-classification.js';

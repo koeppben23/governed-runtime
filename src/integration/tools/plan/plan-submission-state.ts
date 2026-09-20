@@ -11,6 +11,7 @@
  * @version v1
  */
 
+import { DISCOVERY_DRIFT_PROVIDER } from '../../discovery/discovery-drift-status.js';
 import { randomUUID } from 'node:crypto';
 import {
   freezeContextAuthorityAtHead,
@@ -91,6 +92,7 @@ export async function createPlanReviewAttempt(
     worktree: scope.worktree,
     repositoryGoverned: authority !== undefined,
     now: scope.ctx.now(),
+    driftProvider: DISCOVERY_DRIFT_PROVIDER,
   });
   if (discovery.kind === 'blocked') {
     return {

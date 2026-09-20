@@ -47,6 +47,12 @@ const BASE_NOT_VERIFIED = [
 ];
 
 /** Build a bounded, read-only discovery drift projection for full status. */
+/** Structural provider for consumers that must not import a sibling context. */
+export const DISCOVERY_DRIFT_PROVIDER = {
+  build: buildDiscoveryDriftStatus,
+  notChecked: notCheckedDiscoveryDriftStatus,
+} as const;
+
 export async function buildDiscoveryDriftStatus(
   input: BuildDiscoveryDriftStatusInput,
 ): Promise<DiscoveryDriftStatusProjection> {

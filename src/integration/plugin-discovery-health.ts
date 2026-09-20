@@ -16,7 +16,8 @@ import { existsSync } from 'node:fs';
 
 import type { SessionState, DiscoveryHealthGate } from '../state/schema.js';
 import { readState } from '../adapters/persistence.js';
-import { strictBlockedOutput, buildEnforcementError } from './plugin-helpers.js';
+import { strictBlockedOutput, buildEnforcementError } from './blocked-result.js';
+
 import {
   loadDiscoveryHealthContext,
   unavailableDiscoveryHealth,

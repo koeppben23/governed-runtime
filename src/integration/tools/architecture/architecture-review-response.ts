@@ -9,6 +9,7 @@
  * @version v1
  */
 
+import { DISCOVERY_DRIFT_PROVIDER } from '../../discovery/discovery-drift-status.js';
 import type { SessionState } from '../../../state/schema.js';
 import type { AutoAdvanceResult } from '../../../rails/types.js';
 import type {
@@ -342,6 +343,7 @@ async function persistAndFormatNonConvergedReview(
     worktree: session.worktree,
     repositoryGoverned: nextObligation ? hasFrozenRepositoryAuthority(nextObligation) : false,
     now: session.ctx.now(),
+    driftProvider: DISCOVERY_DRIFT_PROVIDER,
     ...(nextObligation ? { obligationId: nextObligation.obligationId } : {}),
   });
   if (discovery.kind === 'blocked') {

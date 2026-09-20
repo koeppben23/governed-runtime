@@ -25,7 +25,10 @@ import type {
 import { buildReviewDiscoveryContext } from './discovery-context-loader.js';
 import type { DiscoveryReviewContext } from './discovery-context-prompt.js';
 import type { DiscoveryHealthProjection } from '../../discovery/discovery-health.js';
-import type { DiscoveryDriftStatusProjection } from '../discovery/discovery-drift-status.js';
+import type {
+  ReviewDiscoveryDriftProjection,
+  ReviewDiscoveryDriftProvider,
+} from './discovery-drift-port.js';
 
 export type ReviewerDiscoveryResolution =
   | { readonly kind: 'repository'; readonly context: ReviewAttemptDiscoveryContext }
@@ -56,7 +59,7 @@ function projectHealth(
 }
 
 function projectDriftDigests(
-  drift: DiscoveryDriftStatusProjection | null | undefined,
+  drift: ReviewDiscoveryDriftProjection | null | undefined,
 ): Pick<RepositoryDiscoverySnapshot['drift'], 'currentDigest' | 'persistedDigest'> {
   if (!drift) return { currentDigest: null, persistedDigest: null };
   return {
@@ -66,7 +69,7 @@ function projectDriftDigests(
 }
 
 function projectDrift(
-  drift: DiscoveryDriftStatusProjection | null | undefined,
+  drift: ReviewDiscoveryDriftProjection | null | undefined,
 ): RepositoryDiscoverySnapshot['drift'] {
   const status =
     drift?.status === 'clean' || drift?.status === 'drifted'
@@ -139,6 +142,7 @@ export async function resolveReviewAttemptDiscoveryContext(input: {
   readonly repositoryGoverned: boolean;
   readonly now: string;
   readonly fingerprint?: string | null;
+  readonly driftProvider: ReviewDiscoveryDriftProvider;
 }): Promise<ReviewerDiscoveryResolution> {
   if (!input.repositoryGoverned) {
     return { kind: 'not_applicable', context: { kind: 'not_applicable' } };
@@ -162,6 +166,7 @@ export async function resolveReviewAttemptDiscoveryContext(input: {
     fingerprint,
     worktree: input.worktree,
     includeDriftCheck: true,
+    driftProvider: input.driftProvider,
   });
   // Structural boundary: an unavailable health projection means the persisted
   // Discovery basis itself is missing/corrupt/unreadable — the host cannot
@@ -204,6 +209,7 @@ export async function resolveAttemptDiscoveryOrBlock(input: {
   readonly repositoryGoverned: boolean;
   readonly now: string;
   readonly obligationId?: string;
+  readonly driftProvider: ReviewDiscoveryDriftProvider;
 }): Promise<
   | { readonly kind: 'ok'; readonly context: ReviewAttemptDiscoveryContext }
   | {

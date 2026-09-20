@@ -44,6 +44,7 @@ import {
   isRootCompositionFile,
   isRootHostRuntimeFile,
   isToolCommandContextFile,
+  placementOwnerOf,
 } from './integration-placement-policy.js';
 import { MODULE_DEPENDENCY_POLICY } from './module-dependency-policy.js';
 import {
@@ -387,8 +388,7 @@ function resolveSrcTarget(analysis: FileAnalysis, imp: ImportInfo): string | nul
 
 /**
  * #922 boundary: files in `integration/tools/**` must not import plugin
- * composition (index.ts, plugin.ts, plugin-* lifecycle). plugin-helpers.ts is a
- * root authority, not composition, and stays importable.
+ * composition (index.ts, plugin.ts, plugin-* lifecycle).
  */
 function detectToolsCompositionImports(analyses: Map<string, FileAnalysis>): ImportViolation[] {
   const violations: ImportViolation[] = [];
@@ -410,10 +410,36 @@ function detectToolsCompositionImports(analyses: Map<string, FileAnalysis>): Imp
   return violations;
 }
 
+/** Integration owners that review/** may consume (positive allowlist). */
+const REVIEW_ALLOWED_INTEGRATION_OWNERS: ReadonlySet<string> = new Set([
+  'review',
+  'review-enforcement',
+  'root-authority',
+]);
+
 /**
- * #922 boundary: review/** may import review/**, root authorities, and lower
- * layers. It must not import tools/**, plugin composition, or host/runtime
- * wiring.
+ * Lower layers that review/** may consume. This is an explicit, default-deny
+ * set: adding a layer here is a deliberate contract change.
+ */
+const REVIEW_LOWER_LAYERS: ReadonlySet<string> = new Set([
+  'adapters',
+  'audit',
+  'config',
+  'discovery',
+  'logging',
+  'machine',
+  'presentation',
+  'shared',
+  'state',
+  'templates',
+]);
+
+/**
+ * #922 boundary (default-deny): review/** may import ONLY review/** (owner
+ * review or review-enforcement), integration root authorities, and the
+ * explicit lower layers. Plugin composition, host/runtime wiring, tools/**,
+ * and every sibling integration context (status, discovery, proofgraph, ...)
+ * are violations.
  */
 function detectReviewBoundaryViolations(analyses: Map<string, FileAnalysis>): ImportViolation[] {
   const violations: ImportViolation[] = [];
@@ -423,15 +449,23 @@ function detectReviewBoundaryViolations(analyses: Map<string, FileAnalysis>): Im
     for (const imp of analysis.imports) {
       const target = resolveSrcTarget(analysis, imp);
       if (target === null) continue;
-      const forbidden =
-        target.startsWith('integration/tools/') ||
-        isRootCompositionFile(target) ||
-        isRootHostRuntimeFile(target);
-      if (forbidden) {
+      if (target.startsWith('integration/')) {
+        const owner = placementOwnerOf(target);
+        if (owner !== null && REVIEW_ALLOWED_INTEGRATION_OWNERS.has(owner)) continue;
         violations.push({
           file: analysis.relativePath,
           rule: 'review-boundary',
-          message: `review/ imports forbidden module '${target}'`,
+          message: `review/ imports integration target outside its contract: '${target}' (owner ${owner ?? 'unclassified'})`,
+          imports: [imp.module],
+        });
+        continue;
+      }
+      const topLevel = target.split('/')[0] ?? '';
+      if (!REVIEW_LOWER_LAYERS.has(topLevel)) {
+        violations.push({
+          file: analysis.relativePath,
+          rule: 'review-boundary',
+          message: `review/ imports non-lower-layer target '${target}'`,
           imports: [imp.module],
         });
       }
@@ -881,15 +915,16 @@ describe('Layer Dependency Rules', () => {
       expect(detected.map((violation) => violation.rule)).toEqual(['tools-no-composition']);
     });
 
-    it('keeps plugin-helpers importable as a root authority (negative fixture)', () => {
+    it('detects a deep tools -> plugin-helpers composition import', () => {
       const probe: FileAnalysis = {
         filePath: normalizeRepoPath(path.join(SRC_DIR, 'integration/tools/plan/probe.ts')),
         relativePath: 'integration/tools/plan/probe.ts',
         imports: [mockImport('../../plugin-helpers.js')],
       };
-      expect(
-        detectToolsCompositionImports(new Map([['integration/tools/plan/probe.ts', probe]])),
-      ).toEqual([]);
+      const detected = detectToolsCompositionImports(
+        new Map([['integration/tools/plan/probe.ts', probe]]),
+      );
+      expect(detected.map((violation) => violation.rule)).toEqual(['tools-no-composition']);
     });
   });
 
@@ -964,7 +999,12 @@ describe('Layer Dependency Rules', () => {
       expect(rulesFor('../tools/implementation/implement-shared.js')).toEqual(['review-boundary']);
       expect(rulesFor('../plugin-risk.js')).toEqual(['review-boundary']);
       expect(rulesFor('../runtime-lease.js')).toEqual(['review-boundary']);
+      expect(rulesFor('../discovery/discovery-drift-status.js')).toEqual(['review-boundary']);
+      expect(rulesFor('../status/status.js')).toEqual(['review-boundary']);
+      expect(rulesFor('../proofgraph/refresh.js')).toEqual(['review-boundary']);
       expect(rulesFor('../tool-names.js')).toEqual([]);
+      expect(rulesFor('../../state/evidence.js')).toEqual([]);
+      expect(rulesFor('../../discovery/discovery-health.js')).toEqual([]);
     });
   });
 

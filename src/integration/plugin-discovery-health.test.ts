@@ -45,7 +45,7 @@ vi.mock('../discovery/discovery-health.js', async () => {
   };
 });
 
-vi.mock('./plugin-helpers.js', () => ({
+vi.mock('./blocked-result.js', () => ({
   buildEnforcementError: mockBuildEnforcementError,
   strictBlockedOutput: mockStrictBlockedOutput,
 }));

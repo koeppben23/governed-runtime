@@ -1,7 +1,8 @@
 import { readState } from '../adapters/persistence.js';
 import { withSessionWriteLock } from '../adapters/persistence-lock.js';
 import { completeMutationEpisode } from '../state/evidence-mutation-episode.js';
-import { strictBlockedOutput } from './plugin-helpers.js';
+import { strictBlockedOutput } from './blocked-result.js';
+
 import type { ToolHookAfterInput, ToolHookAfterOutput } from './types.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
 import { writeStateWithAuditOperationsAlreadyLocked } from './audit-outbox.js';

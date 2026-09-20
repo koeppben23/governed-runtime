@@ -37,7 +37,8 @@ import {
   isNativeReviewerTaskBefore,
   nativeReviewTaskAfter,
   nativeReviewTaskBefore,
-} from './native-task-review.js';
+} from './review/native-task-review.js';
+import { reconcilePendingAuditOperations } from './plugin-audit-reconcile.js';
 import { initHumanProjectionTelemetrySink } from '../telemetry/human-projection/sink.js';
 
 export function isUsableWorktree(worktree: string | undefined): boolean {
@@ -239,7 +240,9 @@ function createFlowGuardPluginHooks(runtime: FlowGuardPluginRuntime): Awaited<Re
       // identity/dispatch semantics; nativeReviewTaskBefore performs the exact
       // durable authorization and canonical prompt injection instead.
       if (isNativeReviewerTaskBefore(output)) {
-        await nativeReviewTaskBefore(runtime, input, output);
+        await nativeReviewTaskBefore(runtime, input, output, (sessionId, toolName) =>
+          reconcilePendingAuditOperations(runtime.auditDeps, sessionId, toolName),
+        );
         return;
       }
       await toolBefore(runtime, input, output);

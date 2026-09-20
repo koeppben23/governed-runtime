@@ -24,6 +24,7 @@
  * @version v1
  */
 
+import { DISCOVERY_DRIFT_PROVIDER } from '../../discovery/discovery-drift-status.js';
 import { readState } from '../../../adapters/persistence.js';
 import { validateAdrSections } from '../../../state/evidence.js';
 import type { ReviewObligation } from '../../../state/evidence.js';
@@ -455,6 +456,7 @@ async function mintRestartObligationWithAttempt(
     worktree: session.worktree,
     repositoryGoverned: hasFrozenRepositoryAuthority(obligation),
     now: cycle.now,
+    driftProvider: DISCOVERY_DRIFT_PROVIDER,
     obligationId: obligation.obligationId,
   });
   if (discovery.kind === 'blocked') {

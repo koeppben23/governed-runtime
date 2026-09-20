@@ -55,13 +55,20 @@ API. It must never become a provider of new authorities for lower layers.
   `src/integration/review/`.
 - Review findings/evidence validation authority lives in `review/`; tool
   adapters call it, not the other way around.
-- `review/` may import `review/**`, integration root authorities, and lower
-  layers. It must not import `plugin-*` composition, `tools/**`, or
-  host/runtime wiring (`dependency-rules.test.ts`).
+- `review/` may import ONLY `review/**`, integration root authorities, and the
+  explicit lower layers (`adapters`, `audit`, `config`, `discovery`, `logging`,
+  `machine`, `presentation`, `shared`, `state`, `templates`). Plugin
+  composition, host/runtime wiring, `tools/**`, and sibling integration
+  contexts (`status/`, `discovery/`, `proofgraph/`, ...) are enforced
+  violations (`dependency-rules.test.ts`).
 - Evidence binding, obligation tracking, and findings validation are managed
   by the enforcement subsystem in `src/integration/review/enforcement/`.
-- `plugin-helpers.ts` is a stateless root authority for result/enforcement
-  utilities, not plugin composition.
+- `plugin-helpers.ts` is plugin composition. The pure blocked/enforcement
+  result utilities live in the root authority `blocked-result.ts`; `review/`
+  consumes those instead of the plugin boundary.
+- Advisory Discovery input is injected into `review/` through
+  `review/discovery-drift-port.ts`; `review/` never imports a discovery
+  module.
 
 ## Error Boundaries
 

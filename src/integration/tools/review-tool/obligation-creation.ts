@@ -10,6 +10,7 @@
  * @version v1
  */
 
+import { DISCOVERY_DRIFT_PROVIDER } from '../../discovery/discovery-drift-status.js';
 import type { SessionState } from '../../../state/schema.js';
 import { hasFrozenRepositoryAuthority } from '../../../state/evidence.js';
 import type { ReviewObligation } from '../../../state/evidence.js';
@@ -393,6 +394,7 @@ async function createAndPrepareMissingAnalysisObligation(
     worktree: input.context.worktree ?? input.state.binding.worktree,
     repositoryGoverned: hasFrozenRepositoryAuthority(obligation),
     now: input.now,
+    driftProvider: DISCOVERY_DRIFT_PROVIDER,
   });
   if (discovery.kind === 'blocked') {
     return {
