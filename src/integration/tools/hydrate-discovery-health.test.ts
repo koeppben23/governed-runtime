@@ -26,7 +26,7 @@ vi.mock('../discovery-drift-status.js', () => ({
   buildDiscoveryDriftStatus: mockBuildDrift,
 }));
 
-import { reconcileHydrateDiscoveryHealthGate } from './hydrate-discovery-health.js';
+import { reconcileHydrateDiscoveryHealthGate } from './hydrate/hydrate-discovery-health.js';
 import {
   unavailableDiscoveryHealth,
   extractDiscoveryHealth,

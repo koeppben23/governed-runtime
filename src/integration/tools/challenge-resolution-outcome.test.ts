@@ -6,7 +6,7 @@ import { readState, writeState } from '../../adapters/persistence.js';
 import { computeFingerprint, sessionDir } from '../../adapters/workspace/index.js';
 import { createTestWorkspace, createToolContext, parseToolResult } from '../test-helpers.js';
 import { TEST_EXECUTION_OBSERVATION } from '../../state/evidence-test-constants.js';
-import { resolve_implementation_challenge } from './challenge-resolution.js';
+import { resolve_implementation_challenge } from './challenge/challenge-resolution.js';
 
 // #747 recording precondition: only a FAILED falsification (fail/not_verified)
 // may be resolved. Recording a resolution for a `pass` challenge would fabricate

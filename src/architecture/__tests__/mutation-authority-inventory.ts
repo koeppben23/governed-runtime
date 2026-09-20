@@ -764,17 +764,15 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     ['src/integration/discovery-risk-paths.test.ts'],
     { legacy: true },
   ),
-  required(
-    'src/integration/tools/pre-implementation-challenge.ts',
+  deferred(
+    'src/integration/tools/challenge/pre-implementation-challenge.ts',
     'Pre-implementation challenge policy',
-    ['src/integration/tools/pre-implementation-challenge.test.ts'],
-    { legacy: true },
+    'Relocated by #922 placement closure; re-admission requires a base profile full run with per-target evidence (no inherited legacyBaseline).',
   ),
-  required(
-    'src/integration/tools/architecture-submit.ts',
+  deferred(
+    'src/integration/tools/architecture/architecture-submit.ts',
     'Architecture evidence submission',
-    ['src/integration/tools/architecture-tool.test.ts'],
-    { legacy: true },
+    'Relocated by #922 placement closure; re-admission requires a base profile full run with per-target evidence (no inherited legacyBaseline).',
   ),
   required(
     'src/integration/tools/review-validation-mode.ts',
@@ -1277,8 +1275,8 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
   {
     classification: 'required',
     profile: 'base',
-    mutateSelector: 'src/integration/tools/record-mutation-evidence.ts',
-    target: 'src/integration/tools/record-mutation-evidence.ts',
+    mutateSelector: 'src/integration/tools/mutation/record-mutation-evidence.ts',
+    target: 'src/integration/tools/mutation/record-mutation-evidence.ts',
     authority: 'Canonical MutationAttempt evidence producer',
     source: [SOURCE.trustBoundaries],
     coveringSuites: ['src/integration/tools/record-mutation-evidence.test.ts'],
@@ -1311,8 +1309,8 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
   {
     classification: 'required',
     profile: 'base',
-    mutateSelector: 'src/integration/tools/reconcile-mutation-episode.ts',
-    target: 'src/integration/tools/reconcile-mutation-episode.ts',
+    mutateSelector: 'src/integration/tools/mutation/reconcile-mutation-episode.ts',
+    target: 'src/integration/tools/mutation/reconcile-mutation-episode.ts',
     authority: 'Unknown-outcome mutation episode resolution',
     source: [SOURCE.trustBoundaries],
     coveringSuites: ['src/integration/mutation-episode-e2e.test.ts'],
@@ -1565,7 +1563,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     { source: [SOURCE.trustBoundaries] },
   ),
   deferred(
-    'src/integration/tools/run-check-result.ts',
+    'src/integration/tools/validation/run-check-result.ts',
     'Check result projection',
     'Diagnostic run 2026-09-17 scored 0.00% (0 killed / 66 survived); test gaps must be closed before admission.',
     { source: [SOURCE.trustBoundaries] },

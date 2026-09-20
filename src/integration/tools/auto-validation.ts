@@ -38,7 +38,7 @@ import {
   writeStateWithArtifacts,
 } from './helpers.js';
 import { PersistenceError } from '../../adapters/lock-retry.js';
-import { executeRunCheckPhased } from './run-check-tool.js';
+import { executeRunCheckPhased } from './validation/run-check-tool.js';
 import { formatError } from './error-format.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
 import type { VerificationCandidateKind } from '../../state/discovery-schemas.js';

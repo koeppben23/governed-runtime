@@ -28,13 +28,13 @@ import { sessionDir } from '../adapters/workspace/index.js';
 import { computeFingerprint } from '../adapters/workspace/fingerprint.js';
 import { writeStateWithArtifacts } from './tools/helpers.js';
 
-import { plan } from './tools/plan.js';
-import { hydrate } from './tools/hydrate.js';
-import { implement, review_implementation } from './tools/implement.js';
-import { architecture } from './tools/architecture.js';
+import { plan } from './tools/plan/plan.js';
+import { hydrate } from './tools/hydrate/hydrate.js';
+import { implement, review_implementation } from './tools/implementation/implement.js';
+import { architecture } from './tools/architecture/architecture.js';
 import { review } from './tools/review-tool/index.js';
-import { run_check } from './tools/run-check-tool.js';
-import { archive } from './tools/archive-tool.js';
+import { run_check } from './tools/validation/run-check-tool.js';
+import { archive } from './tools/simple/archive-tool.js';
 import type { ToolContext } from './tools/helpers.js';
 import type { ReviewFindings, ReviewObligation } from '../state/evidence.js';
 import {

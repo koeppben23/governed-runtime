@@ -15,7 +15,7 @@ import {
   resolveSubmittedReviewProofResponse,
   buildImplReviewChangesRequestedMarkdown,
   type ResolvedSubmittedReviewProof,
-} from './implement-review.js';
+} from './implementation/implement-review.js';
 import { buildEvidenceReviewCard } from '../../presentation/index.js';
 import type { EvidenceReviewCardInput } from '../../presentation/evidence-review-card.js';
 import {

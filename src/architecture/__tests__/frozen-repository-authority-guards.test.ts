@@ -60,11 +60,11 @@ describe('Guard 1: RepositoryObservation minting boundary', () => {
 describe('Guard 2: no mutable revision resolution in review-authority construction', () => {
   /** Review-obligation creation call sites that must consume frozen authority. */
   const OBLIGATION_CREATION_FILES = [
-    'integration/tools/plan.ts',
-    'integration/tools/plan-response.ts',
-    'integration/tools/implement-shared.ts',
-    'integration/tools/architecture-review.ts',
-    'integration/tools/architecture-submit.ts',
+    'integration/tools/plan/plan.ts',
+    'integration/tools/plan/plan-response.ts',
+    'integration/tools/implementation/implement-shared.ts',
+    'integration/tools/architecture/architecture-review.ts',
+    'integration/tools/architecture/architecture-submit.ts',
     'integration/tools/review-tool/obligation-creation.ts',
   ];
 
@@ -94,9 +94,10 @@ describe('Guard 2: no mutable revision resolution in review-authority constructi
         violations.push(`${relative}: raw provenance projection`);
       }
       if (
-        ['integration/tools/plan-response.ts', 'integration/tools/implement-shared.ts'].includes(
-          relative,
-        ) &&
+        [
+          'integration/tools/plan/plan-response.ts',
+          'integration/tools/implementation/implement-shared.ts',
+        ].includes(relative) &&
         !content.includes('repositoryAuthority')
       ) {
         violations.push(`${relative}: missing frozen authority consumption`);

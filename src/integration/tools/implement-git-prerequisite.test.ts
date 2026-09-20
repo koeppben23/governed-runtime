@@ -14,7 +14,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { validateGitPrerequisite } from './implement-record.js';
+import { validateGitPrerequisite } from './implementation/implement-record.js';
 
 let tmpDir: string;
 

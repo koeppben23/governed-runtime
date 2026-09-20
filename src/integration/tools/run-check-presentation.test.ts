@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import type { AssertionExtractionResult } from '../../state/evidence-validation.js';
-import { formatRunCheckStatus, formatValidationDetail } from './run-check-presentation.js';
+import {
+  formatRunCheckStatus,
+  formatValidationDetail,
+} from './validation/run-check-presentation.js';
 
 const PASSING_EXECUTION = {
   passed: true,

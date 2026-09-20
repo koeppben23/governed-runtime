@@ -66,7 +66,7 @@ describe('integration placement authority', () => {
       );
     }
     expect(violations, JSON.stringify(violations)).toEqual([]);
-    expect(files.length).toBe(215);
+    expect(files.length).toBe(214);
     expect(INTEGRATION_PLACEMENT.length).toBe(files.length);
     expect(new Set(INTEGRATION_PLACEMENT.map((entry) => entry.file)).size).toBe(files.length);
   });
@@ -77,7 +77,7 @@ describe('integration placement authority', () => {
       .sort();
 
     expect(observedDebt).toEqual([...PLACEMENT_DEBT].sort());
-    expect(PLACEMENT_DEBT.length).toBe(65);
+    expect(PLACEMENT_DEBT.length).toBe(13);
     expect(new Set(PLACEMENT_DEBT).size).toBe(PLACEMENT_DEBT.length);
   });
 

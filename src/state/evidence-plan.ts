@@ -282,7 +282,7 @@ export type SelfReviewLoop = z.infer<typeof SelfReviewLoop>;
  * - `pending`: the loop has not converged.
  *
  * Canonical authority for the plan completion derivation; both the tool path
- * (`src/integration/tools/plan.ts`) and the self-review rails
+ * (`src/integration/tools/plan/plan.ts`) and the self-review rails
  * (`src/rails/plan.ts`, `src/rails/continue.ts`) derive it here.
  */
 export function resolvePlanReviewCompletion(

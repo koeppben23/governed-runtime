@@ -30,8 +30,8 @@ import { sessionDir, workspaceDir } from '../adapters/workspace/index.js';
 import { computeFingerprint } from '../adapters/workspace/fingerprint.js';
 import { writeDiscovery } from '../adapters/persistence-discovery.js';
 import { writeStateWithArtifacts, type ToolContext } from './tools/helpers.js';
-import { runRequiredDiscovery } from './tools/hydrate-discovery.js';
-import { plan } from './tools/plan.js';
+import { runRequiredDiscovery } from './tools/hydrate/hydrate-discovery.js';
+import { plan } from './tools/plan/plan.js';
 import { review } from './tools/review-tool/index.js';
 import {
   REVIEW_CRITERIA_VERSION,

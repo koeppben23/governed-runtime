@@ -285,12 +285,12 @@ describe('src/index.ts barrel', () => {
 describe('integration tools use barrel imports', () => {
   const INTEGRATION_FILES = [
     'integration/tools/helpers.ts',
-    'integration/tools/plan.ts',
-    'integration/tools/plan-response.ts',
-    'integration/tools/architecture.ts',
-    'integration/tools/architecture-review-response.ts',
-    'integration/tools/architecture-submit.ts',
-    'integration/tools/architecture-shared.ts',
+    'integration/tools/plan/plan.ts',
+    'integration/tools/plan/plan-response.ts',
+    'integration/tools/architecture/architecture.ts',
+    'integration/tools/architecture/architecture-review-response.ts',
+    'integration/tools/architecture/architecture-submit.ts',
+    'integration/tools/architecture/architecture-shared.ts',
     'integration/tools/review-tool/completion.ts',
   ] as const;
 
@@ -350,17 +350,17 @@ describe('integration tools use barrel imports', () => {
   describe('HAPPY — integration files use barrel imports', () => {
     const FILES_USING_PRESENTATION = INTEGRATION_FILES.filter(
       (f) =>
-        f !== 'integration/tools/plan.ts' &&
-        f !== 'integration/tools/architecture.ts' &&
-        f !== 'integration/tools/architecture-submit.ts' &&
-        f !== 'integration/tools/architecture-shared.ts',
+        f !== 'integration/tools/plan/plan.ts' &&
+        f !== 'integration/tools/architecture/architecture.ts' &&
+        f !== 'integration/tools/architecture/architecture-submit.ts' &&
+        f !== 'integration/tools/architecture/architecture-shared.ts',
     );
     const FILES_USING_WORKSPACE = INTEGRATION_FILES.filter(
       (f) =>
-        f !== 'integration/tools/plan.ts' &&
-        f !== 'integration/tools/architecture.ts' &&
-        f !== 'integration/tools/architecture-submit.ts' &&
-        f !== 'integration/tools/architecture-shared.ts',
+        f !== 'integration/tools/plan/plan.ts' &&
+        f !== 'integration/tools/architecture/architecture.ts' &&
+        f !== 'integration/tools/architecture/architecture-submit.ts' &&
+        f !== 'integration/tools/architecture/architecture-shared.ts',
     );
 
     it('tool sub-modules import from presentation/index.js', () => {

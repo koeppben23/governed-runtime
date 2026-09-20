@@ -80,7 +80,7 @@ const VERDICT_TO_EVENT: Record<ReviewVerdict, Event> = {
  *
  * `changes_requested` at the implementation readiness loop (IMPL_REVIEW) is
  * handled by `handleChangesRequestedReview` in
- * `integration/tools/implement-review.ts`.
+ * `integration/tools/implementation/implement-review.ts`.
  *
  * reducedCeremony is revoked on any changes_requested that loops back to IMPLEMENTATION
  * because the prior TRIVIAL determination is invalidated by the review finding issues.

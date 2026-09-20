@@ -40,13 +40,13 @@ const CLAIM_ID_AUTHORITY = 'state/proofgraph-approval.ts';
 const CLAIM_ID_SSOT_GUARD = 'architecture/__tests__/proofgraph-claim-id-ssot.test.ts';
 
 /** Modules that mint claim ids and must therefore consume the authority. */
-const CLAIM_ID_PRODUCERS = ['integration/tools/declare-contract.ts'];
+const CLAIM_ID_PRODUCERS = ['integration/tools/contract/declare-contract.ts'];
 
 /** RFC 4122 DNS namespace reserved for ProofGraph claim identities. */
 const CLAIM_NAMESPACE_HEX = '6ba7b8109dad11d180b400c04fd430c8';
 
 /** Import specifier every integration-layer claim producer uses. */
-const AUTHORITY_IMPORT = "from '../../state/proofgraph-approval.js'";
+const AUTHORITY_IMPORT = /from '(?:\.\.\/)+state\/proofgraph-approval\.js'/;
 
 // ─── File collection ─────────────────────────────────────────────────────────
 
@@ -147,7 +147,7 @@ describe('ProofGraph claim-id SSOT', () => {
     for (const producer of CLAIM_ID_PRODUCERS) {
       const file = files.find((f) => f.rel === producer);
       expect(file, `${producer} must exist`).toBeTruthy();
-      expect(file!.content, `${producer} must import the identity authority`).toContain(
+      expect(file!.content, `${producer} must import the identity authority`).toMatch(
         AUTHORITY_IMPORT,
       );
       expect(file!.content, `${producer} must call mintProofGraphClaimId`).toContain(

@@ -197,8 +197,9 @@ vi.mock('../verification/executor', () => ({
 // Transparent pass-through to the real implement-diff-artifact module so
 // writeImplementationDiffArtifact can be selectively intercepted per-test
 // (e.g. the F3 write-failure negative case).
-vi.mock('./tools/implement-diff-artifact.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./tools/implement-diff-artifact.js')>();
+vi.mock('./tools/implementation/implement-diff-artifact.js', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('./tools/implementation/implement-diff-artifact.js')>();
   return {
     writeImplementationDiffArtifact: vi.fn(actual.writeImplementationDiffArtifact),
   };
@@ -210,7 +211,7 @@ const wsMock = await import('../adapters/workspace/index.js');
 const actorMock = await import('../adapters/actor.js');
 const persistenceMock = await import('../adapters/persistence.js');
 const executorMock = await import('../verification/executor.js');
-const diffArtifactMock = await import('./tools/implement-diff-artifact.js');
+const diffArtifactMock = await import('./tools/implementation/implement-diff-artifact.js');
 
 // ─── Capability Gates ────────────────────────────────────────────────────────
 

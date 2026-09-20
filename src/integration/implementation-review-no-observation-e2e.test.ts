@@ -66,11 +66,11 @@ import { hashText } from '../shared/hashing.js';
 import { sessionDir } from '../adapters/workspace/index.js';
 import { computeFingerprint } from '../adapters/workspace/fingerprint.js';
 import { writeStateWithArtifacts } from './tools/helpers.js';
-import { hydrate } from './tools/hydrate.js';
-import { ticket } from './tools/ticket-tool.js';
-import { plan } from './tools/plan.js';
-import { implement, review_implementation } from './tools/implement.js';
-import { run_check } from './tools/run-check-tool.js';
+import { hydrate } from './tools/hydrate/hydrate.js';
+import { ticket } from './tools/simple/ticket-tool.js';
+import { plan } from './tools/plan/plan.js';
+import { implement, review_implementation } from './tools/implementation/implement.js';
+import { run_check } from './tools/validation/run-check-tool.js';
 import type { ToolContext } from './tools/helpers.js';
 import { makeState, TICKET, FROZEN_IMPLEMENTATION_BASE } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
@@ -376,7 +376,7 @@ async function prepareBoundUnableReview(se: SE, implementationDigest: string) {
   await writeStateWithArtifacts(se.sDir, base);
   const firstState = await readState(se.sDir);
   const activated = await (
-    await import('./tools/implement-shared.js')
+    await import('./tools/implementation/implement-shared.js')
   ).activateImplementationReviewObligation(firstState!, {
     iteration: 1,
     planVersion: 1,
