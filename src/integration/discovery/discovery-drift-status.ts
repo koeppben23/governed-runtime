@@ -1,5 +1,5 @@
 /**
- * @module integration/discovery-drift-status
+ * @module integration/discovery/discovery-drift-status
  * @description Runtime-only advisory discovery drift projection for full status.
  *
  * Reuses checkDiscoveryDrift() as the canonical read-only comparison authority.
@@ -7,7 +7,7 @@
  * into policy, phase, approval, or denial authority.
  */
 
-import { checkDiscoveryDrift, type DriftResult } from '../discovery/drift.js';
+import { checkDiscoveryDrift, type DriftResult } from '../../discovery/drift.js';
 
 export type DiscoveryDriftProjectionStatus =
   'clean' | 'drifted' | 'missing_discovery' | 'unavailable' | 'timeout' | 'not_checked';

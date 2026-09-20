@@ -758,11 +758,10 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     ['src/integration/tool-classification.test.ts'],
     { legacy: true },
   ),
-  required(
-    'src/integration/discovery-risk-paths.ts',
+  deferred(
+    'src/integration/discovery/discovery-risk-paths.ts',
     'Discovery risk path classification',
-    ['src/integration/discovery-risk-paths.test.ts'],
-    { legacy: true },
+    'Relocated by #922 placement closure; re-admission requires a base profile full run with per-target evidence (no inherited legacyBaseline).',
   ),
   deferred(
     'src/integration/tools/challenge/pre-implementation-challenge.ts',

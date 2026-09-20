@@ -10,7 +10,7 @@ import { makeState, PLAN_RECORD, TICKET } from '../../fixtures.js';
 import {
   buildDiscoveryDriftStatus,
   notCheckedDiscoveryDriftStatus,
-} from '../discovery-drift-status.js';
+} from '../discovery/discovery-drift-status.js';
 import { buildImplementationGuidance } from '../implementation-guidance.js';
 import { PLAN_REVIEW_DISCOVERY_INSTRUCTION } from '../../config/profiles/content/shared.js';
 import {

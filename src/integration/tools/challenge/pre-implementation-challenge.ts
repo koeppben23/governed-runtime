@@ -16,7 +16,7 @@
 
 import type { SessionState } from '../../../state/schema.js';
 import { readDiscovery } from '../../../adapters/persistence-discovery.js';
-import { discoveryRiskPaths } from '../../discovery-risk-paths.js';
+import { discoveryRiskPaths } from '../../discovery/discovery-risk-paths.js';
 
 /**
  * Resolve the challenge-path classification for a pre-implementation obligation

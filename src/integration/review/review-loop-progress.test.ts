@@ -435,7 +435,7 @@ describe('getReviewLoopProgress', () => {
     });
 
     it('buildStatusProjection includes reviewLoop in IMPL_REVIEW', async () => {
-      const { buildStatusProjection } = await import('../status.js');
+      const { buildStatusProjection } = await import('../status/status.js');
       const { makeState } = await import('../../fixtures.js');
 
       const state = makeState('IMPL_REVIEW', {
@@ -466,7 +466,7 @@ describe('getReviewLoopProgress', () => {
     });
 
     it('buildStatusProjection reviewLoop is null in non-review phase', async () => {
-      const { buildStatusProjection } = await import('../status.js');
+      const { buildStatusProjection } = await import('../status/status.js');
       const { makeState } = await import('../../fixtures.js');
 
       const state = makeState('TICKET', {});

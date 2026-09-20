@@ -50,9 +50,9 @@ vi.mock('./plugin-helpers.js', () => ({
   strictBlockedOutput: mockStrictBlockedOutput,
 }));
 
-vi.mock('./discovery-health-gate.js', async () => {
-  const actual = await vi.importActual<typeof import('./discovery-health-gate.js')>(
-    './discovery-health-gate.js',
+vi.mock('./discovery/discovery-health-gate.js', async () => {
+  const actual = await vi.importActual<typeof import('./discovery/discovery-health-gate.js')>(
+    './discovery/discovery-health-gate.js',
   );
   return {
     ...actual,

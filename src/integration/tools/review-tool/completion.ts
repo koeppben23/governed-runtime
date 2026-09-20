@@ -31,7 +31,7 @@ import { writeReport, reportPath } from '../../../adapters/persistence.js';
 import { writeStateWithArtifacts, enrichWithWorkflowDirective } from '../helpers.js';
 import { ensureReviewAssurance } from '../../review/assurance.js';
 import { resolveWorkflowDirective } from '../../../machine/workflow-directive.js';
-import { projectStatusActionFromCommand } from '../../status-conclusion.js';
+import { projectStatusActionFromCommand } from '../../status/status-conclusion.js';
 import { projectCompletionProofStatus } from '../../proofgraph/proof-summary-projectors.js';
 import type { StartedReviewResult, ReviewReportResult } from './types.js';
 

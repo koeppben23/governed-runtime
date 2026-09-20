@@ -228,36 +228,30 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
     targetZone: 'root',
   },
   {
-    file: 'integration/discovery-drift-status.ts',
+    file: 'integration/discovery/discovery-drift-status.ts',
     owner: 'discovery',
-    zone: 'root',
+    zone: 'discovery',
     targetZone: 'discovery',
   },
   {
-    file: 'integration/discovery-health-audit.ts',
+    file: 'integration/discovery/discovery-health-audit.ts',
     owner: 'discovery',
-    zone: 'root',
+    zone: 'discovery',
     targetZone: 'discovery',
   },
   {
-    file: 'integration/discovery-health-gate.ts',
+    file: 'integration/discovery/discovery-health-gate.ts',
     owner: 'discovery',
-    zone: 'root',
+    zone: 'discovery',
     targetZone: 'discovery',
   },
   {
-    file: 'integration/discovery-risk-paths.ts',
+    file: 'integration/discovery/discovery-risk-paths.ts',
     owner: 'discovery',
-    zone: 'root',
+    zone: 'discovery',
     targetZone: 'discovery',
   },
   { file: 'integration/errors.ts', owner: 'root-authority', zone: 'root', targetZone: 'root' },
-  {
-    file: 'integration/finish-presentation.ts',
-    owner: 'status',
-    zone: 'root',
-    targetZone: 'status',
-  },
   {
     file: 'integration/git-control-plane.ts',
     owner: 'root-authority',
@@ -942,23 +936,55 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
     zone: 'services',
     targetZone: 'services',
   },
-  { file: 'integration/status-conclusion.ts', owner: 'status', zone: 'root', targetZone: 'status' },
   {
-    file: 'integration/status-detail-projections.ts',
+    file: 'integration/status/finish-presentation.ts',
     owner: 'status',
-    zone: 'root',
+    zone: 'status',
     targetZone: 'status',
   },
-  { file: 'integration/status-finish.ts', owner: 'status', zone: 'root', targetZone: 'status' },
   {
-    file: 'integration/status-presentation.ts',
+    file: 'integration/status/status-conclusion.ts',
     owner: 'status',
-    zone: 'root',
+    zone: 'status',
     targetZone: 'status',
   },
-  { file: 'integration/status-types.ts', owner: 'status', zone: 'root', targetZone: 'status' },
-  { file: 'integration/status-why-finish.ts', owner: 'status', zone: 'root', targetZone: 'status' },
-  { file: 'integration/status.ts', owner: 'status', zone: 'root', targetZone: 'status' },
+  {
+    file: 'integration/status/status-detail-projections.ts',
+    owner: 'status',
+    zone: 'status',
+    targetZone: 'status',
+  },
+  {
+    file: 'integration/status/status-finish.ts',
+    owner: 'status',
+    zone: 'status',
+    targetZone: 'status',
+  },
+  {
+    file: 'integration/status/status-presentation.ts',
+    owner: 'status',
+    zone: 'status',
+    targetZone: 'status',
+  },
+  {
+    file: 'integration/status/status-types.ts',
+    owner: 'status',
+    zone: 'status',
+    targetZone: 'status',
+  },
+  {
+    file: 'integration/status/status-why-finish.ts',
+    owner: 'status',
+    zone: 'status',
+    targetZone: 'status',
+  },
+  { file: 'integration/status/status.ts', owner: 'status', zone: 'status', targetZone: 'status' },
+  {
+    file: 'integration/status/why-presentation.ts',
+    owner: 'status',
+    zone: 'status',
+    targetZone: 'status',
+  },
   {
     file: 'integration/tool-classification.ts',
     owner: 'root-authority',
@@ -1411,25 +1437,10 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
     zone: 'root',
     targetZone: 'root',
   },
-  { file: 'integration/why-presentation.ts', owner: 'status', zone: 'root', targetZone: 'status' },
 ];
 
 /** Frozen placement debt: files that still must move (C1 baseline). */
-export const PLACEMENT_DEBT: readonly string[] = [
-  'integration/discovery-drift-status.ts',
-  'integration/discovery-health-audit.ts',
-  'integration/discovery-health-gate.ts',
-  'integration/discovery-risk-paths.ts',
-  'integration/finish-presentation.ts',
-  'integration/status-conclusion.ts',
-  'integration/status-detail-projections.ts',
-  'integration/status-finish.ts',
-  'integration/status-presentation.ts',
-  'integration/status-types.ts',
-  'integration/status-why-finish.ts',
-  'integration/status.ts',
-  'integration/why-presentation.ts',
-];
+export const PLACEMENT_DEBT: readonly string[] = [];
 
 export interface IntegrationPlacementViolation {
   readonly rule: string;

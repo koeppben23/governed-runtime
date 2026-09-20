@@ -17,7 +17,7 @@ import {
 import {
   buildDiscoveryDriftStatus,
   notCheckedDiscoveryDriftStatus,
-} from '../discovery-drift-status.js';
+} from '../discovery/discovery-drift-status.js';
 import { buildImplementationGuidance } from '../implementation-guidance.js';
 import type { SessionState } from '../../state/schema.js';
 import type { DiscoveryReviewContext } from './discovery-context-prompt.js';

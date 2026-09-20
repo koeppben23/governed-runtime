@@ -1,5 +1,5 @@
 /**
- * @module integration/discovery-risk-paths
+ * @module integration/discovery/discovery-risk-paths
  * @description Canonical extractor of risk-relevant repo paths from a persisted
  * `DiscoveryResult`, for deterministic challenge classification of artifacts that
  * carry no diff of their own (notably ADRs).
@@ -14,7 +14,7 @@
  * classifies as TRIVIAL — never a block.
  */
 
-import type { DiscoveryResult } from '../discovery/types.js';
+import type { DiscoveryResult } from '../../discovery/types.js';
 
 /**
  * Repo-relative paths that constitute the repository's detected risk surfaces:

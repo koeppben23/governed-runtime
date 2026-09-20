@@ -25,12 +25,12 @@ import type { DiscoveryHealthProjection } from '../../../discovery/discovery-hea
 import type { DiscoveryResult } from '../../../discovery/types.js';
 import { getAdapterLogger } from '../../../logging/adapter-logger.js';
 import type { PresentationRenderOptions } from '../../../presentation/glyph-profile.js';
-import type { DiscoveryDriftStatusProjection } from '../../discovery-drift-status.js';
-import { evaluateDiscoveryEvidenceGate } from '../../discovery-health-gate.js';
+import type { DiscoveryDriftStatusProjection } from '../../discovery/discovery-drift-status.js';
+import { evaluateDiscoveryEvidenceGate } from '../../discovery/discovery-health-gate.js';
 import { BUILD_INFO } from '../../../shared/build-info.js';
-import { buildStatusDocument } from '../../status-presentation.js';
+import { buildStatusDocument } from '../../status/status-presentation.js';
 import { renderMarkdown } from '../../../presentation/index.js';
-import { buildStatusProjection } from '../../status.js';
+import { buildStatusProjection } from '../../status/status.js';
 import { buildImplementationGuidance } from '../../implementation-guidance.js';
 import type { ResolvedVerificationCandidate } from '../../verification-runtime-resolution.js';
 import { computeProviderCapabilities } from './status-provider-projection.js';

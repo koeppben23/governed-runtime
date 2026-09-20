@@ -1,5 +1,5 @@
 /**
- * @module integration/status-finish
+ * @module integration/status/status-finish
  * @description Finish-card composition for the read-only completion view.
  *
  * Split out of status.ts to keep that module within the file-size budget. This
@@ -11,12 +11,12 @@
  * @version v1
  */
 
-import type { Phase, SessionState } from '../state/schema.js';
-import type { FlowGuardPolicy } from '../config/policy.js';
-import type { ReviewReport } from '../state/evidence.js';
-import { resolveWorkflowDirective } from '../machine/workflow-directive.js';
-import { projectCompletionProofStatus } from './proofgraph/proof-summary-projectors.js';
-import { isTerminalPhase } from '../machine/topology.js';
+import type { Phase, SessionState } from '../../state/schema.js';
+import type { FlowGuardPolicy } from '../../config/policy.js';
+import type { ReviewReport } from '../../state/evidence.js';
+import { resolveWorkflowDirective } from '../../machine/workflow-directive.js';
+import { projectCompletionProofStatus } from '../proofgraph/proof-summary-projectors.js';
+import { isTerminalPhase } from '../../machine/topology.js';
 import {
   buildEvidenceDetailProjection,
   buildReadinessProjection,

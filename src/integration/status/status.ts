@@ -1,5 +1,5 @@
 /**
- * @module integration/status
+ * @module integration/status/status
  * @description Status projection — pure SSOT-aligned view of canonical runtime truth.
  *
  * Design principle (FlowGuard Agent Rule):
@@ -27,29 +27,29 @@
  * @version v1
  */
 
-import type { SessionState } from '../state/schema.js';
-import type { ReviewFindings } from '../state/evidence.js';
-import type { FlowGuardPolicy } from '../config/policy.js';
-import type { KnownPresentationStatusInput } from '../presentation/labels.js';
-import { evaluate } from '../machine/evaluate.js';
-import { allValidationsPassed, implValidationPassed } from '../machine/guards.js';
+import type { SessionState } from '../../state/schema.js';
+import type { ReviewFindings } from '../../state/evidence.js';
+import type { FlowGuardPolicy } from '../../config/policy.js';
+import type { KnownPresentationStatusInput } from '../../presentation/labels.js';
+import { evaluate } from '../../machine/evaluate.js';
+import { allValidationsPassed, implValidationPassed } from '../../machine/guards.js';
 import {
   resolveExecutionDisposition,
   resolveWorkflowDirective,
-} from '../machine/workflow-directive.js';
+} from '../../machine/workflow-directive.js';
 import {
   isCommandAllowed,
   Command,
   type Command as FlowGuardCommand,
-} from '../machine/commands.js';
-import { PHASE_LABELS } from '../presentation/phase-labels.js';
-import { evaluateCompleteness } from '../audit/completeness.js';
-import { getReviewLoopProgress } from './review/review-loop-progress.js';
+} from '../../machine/commands.js';
+import { PHASE_LABELS } from '../../presentation/phase-labels.js';
+import { evaluateCompleteness } from '../../audit/completeness.js';
+import { getReviewLoopProgress } from '../review/review-loop-progress.js';
 import { projectStatusConclusion } from './status-conclusion.js';
-import { summarizePersistedProofGraph } from '../audit/proofgraph/summary.js';
-import { buildProofApprovalProjection } from './proofgraph/approval-projection.js';
-import { projectProofStatusForState } from './proofgraph/proof-summary-projectors.js';
-import { projectOpenImplementationChallengeIds } from '../state/implementation-review-findings.js';
+import { summarizePersistedProofGraph } from '../../audit/proofgraph/summary.js';
+import { buildProofApprovalProjection } from '../proofgraph/approval-projection.js';
+import { projectProofStatusForState } from '../proofgraph/proof-summary-projectors.js';
+import { projectOpenImplementationChallengeIds } from '../../state/implementation-review-findings.js';
 import type { StatusProjection } from './status-types.js';
 import { proofGraphGateRegistryCode } from './status-detail-projections.js';
 

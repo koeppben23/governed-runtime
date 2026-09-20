@@ -9,7 +9,7 @@
 
 import { describe, it, expect } from 'vitest';
 
-import { buildDiscoveryHealthGateTransitionDetail } from './discovery-health-audit.js';
+import { buildDiscoveryHealthGateTransitionDetail } from './discovery/discovery-health-audit.js';
 import type { SessionState, DiscoveryHealthGate } from '../state/schema.js';
 import { makeState } from '../fixtures.js';
 

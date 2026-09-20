@@ -1,5 +1,5 @@
 /**
- * @module integration/discovery-health-audit
+ * @module integration/discovery/discovery-health-audit
  * @description Single audit authority for Discovery-health gate transitions (#399).
  *
  * For a HIGH-RISK fail-closed gate, both blocking AND recovery (unblock) must be
@@ -9,7 +9,7 @@
  * change (see `classifyGateTransition`) to keep the trail signal-dense.
  */
 
-import type { SessionState, DiscoveryHealthGate } from '../state/schema.js';
+import type { SessionState, DiscoveryHealthGate } from '../../state/schema.js';
 import { classifyGateTransition } from './discovery-health-gate.js';
 
 /**

@@ -1,5 +1,5 @@
 /**
- * @module integration/status-types
+ * @module integration/status/status-types
  * @description Canonical projection contracts for the status surfaces.
  *
  * Every field is derived from an existing SSOT source; these declarations
@@ -7,16 +7,16 @@
  * `status-detail-projections.ts` builds the per-flag detail surfaces.
  */
 
-import type { ReviewFindings } from '../state/evidence.js';
-import type { DecisionIdentity } from '../state/evidence-identity.js';
-import type { ActorAssurance } from '../shared/actor-assurance.js';
-import type { ExecutionDisposition, WorkflowDirective } from '../machine/workflow-directive.js';
-import type { ReviewLoopProgress } from './review/review-loop-progress.js';
+import type { ReviewFindings } from '../../state/evidence.js';
+import type { DecisionIdentity } from '../../state/evidence-identity.js';
+import type { ActorAssurance } from '../../shared/actor-assurance.js';
+import type { ExecutionDisposition, WorkflowDirective } from '../../machine/workflow-directive.js';
+import type { ReviewLoopProgress } from '../review/review-loop-progress.js';
 import type { StatusConclusionProjection } from './status-conclusion.js';
-import type { KnownPresentationStatusInput } from '../presentation/labels.js';
-import type { PersistedProofGraphSummary } from '../audit/proofgraph/summary.js';
-import type { ProofApprovalProjection } from './proofgraph/approval-projection.js';
-import type { CompactProofPresentation } from '../presentation/proof-model.js';
+import type { KnownPresentationStatusInput } from '../../presentation/labels.js';
+import type { PersistedProofGraphSummary } from '../../audit/proofgraph/summary.js';
+import type { ProofApprovalProjection } from '../proofgraph/approval-projection.js';
+import type { CompactProofPresentation } from '../../presentation/proof-model.js';
 
 // ─── Projection Types ─────────────────────────────────────────────────────────
 

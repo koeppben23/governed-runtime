@@ -1,5 +1,5 @@
 /**
- * @module integration/discovery-health-gate
+ * @module integration/discovery/discovery-health-gate
  * @description Pure decision authority for policy-gated Discovery health enforcement (#399).
  *
  * Two authorities, no duplication:
@@ -14,13 +14,13 @@
  * workflow may proceed with degraded/unavailable/drifted evidence.
  */
 
-import type { DiscoveryHealthPolicy } from '../config/policy-types.js';
-import type { DiscoveryHealthProjection } from '../discovery/discovery-health.js';
+import type { DiscoveryHealthPolicy } from '../../config/policy-types.js';
+import type { DiscoveryHealthProjection } from '../../discovery/discovery-health.js';
 import type {
   DiscoveryDriftAssessment,
   DiscoveryHealthGate,
   DiscoveryHealthGateCode,
-} from '../state/schema.js';
+} from '../../state/schema.js';
 
 export interface DiscoveryHealthDecision {
   readonly allowed: boolean;

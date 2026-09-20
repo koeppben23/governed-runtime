@@ -16,7 +16,7 @@ import { Phase } from '../../state/schema.js';
 import type { Event, Phase as PhaseType } from '../../state/schema.js';
 import { resolveTransition } from '../../machine/topology.js';
 import { INSTALLED_COMMANDS } from '../../integration/installed-commands.js';
-import { buildFinishCard } from '../../integration/status-finish.js';
+import { buildFinishCard } from '../../integration/status/status-finish.js';
 import { getPolicyPreset } from '../../config/policy.js';
 import { makeProgressedState } from '../../fixtures.js';
 

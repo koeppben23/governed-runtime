@@ -1,5 +1,5 @@
 /**
- * @module integration/status-why-finish
+ * @module integration/status/status-why-finish
  * @description Presentation projection types and builders for /why and /finish.
  *
  * Extracted from status.ts to stay under the 650 LOC file-size budget.
@@ -9,17 +9,20 @@
  * @version v1
  */
 
-import type { SessionState } from '../state/schema.js';
-import type { FlowGuardPolicy } from '../config/policy.js';
-import { evaluate } from '../machine/evaluate.js';
-import { resolveWorkflowDirective, type WorkflowDirective } from '../machine/workflow-directive.js';
-import { PHASE_LABELS } from '../presentation/phase-labels.js';
-import { evaluateCompleteness } from '../audit/completeness.js';
+import type { SessionState } from '../../state/schema.js';
+import type { FlowGuardPolicy } from '../../config/policy.js';
+import { evaluate } from '../../machine/evaluate.js';
+import {
+  resolveWorkflowDirective,
+  type WorkflowDirective,
+} from '../../machine/workflow-directive.js';
+import { PHASE_LABELS } from '../../presentation/phase-labels.js';
+import { evaluateCompleteness } from '../../audit/completeness.js';
 import { projectStatusActionFromCommand } from './status-conclusion.js';
-import { directiveLabel, type PresentationAction } from '../presentation/index.js';
+import { directiveLabel, type PresentationAction } from '../../presentation/index.js';
 import type { BlockedProjection, FinishCard } from './status-types.js';
-import { projectProofStatusForState } from './proofgraph/proof-summary-projectors.js';
-import { IntegrationInvariantError } from './errors.js';
+import { projectProofStatusForState } from '../proofgraph/proof-summary-projectors.js';
+import { IntegrationInvariantError } from '../errors.js';
 
 // ─── /why Projection Types ─────────────────────────────────────────────────────
 
@@ -52,7 +55,7 @@ export interface WhyPresentationProjection {
     readonly status: 'missing' | 'failed';
     readonly hint: string | null;
   }>;
-  readonly proofSummary: import('../presentation/proof-model.js').CompactProofPresentation;
+  readonly proofSummary: import('../../presentation/proof-model.js').CompactProofPresentation;
   readonly conclusion: WhyConclusionProjection;
 }
 

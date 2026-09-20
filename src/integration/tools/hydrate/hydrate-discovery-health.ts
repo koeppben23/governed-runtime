@@ -3,9 +3,9 @@
 import type { RailResult } from '../../../rails/types.js';
 import type { DiscoveryDriftAssessment } from '../../../state/schema.js';
 import { loadDiscoveryHealthContext } from '../../../discovery/discovery-health.js';
-import { buildDiscoveryDriftStatus } from '../../discovery-drift-status.js';
-import { reconcileDiscoveryHealthGate } from '../../discovery-health-gate.js';
-import { buildDiscoveryHealthGateTransitionDetail } from '../../discovery-health-audit.js';
+import { buildDiscoveryDriftStatus } from '../../discovery/discovery-drift-status.js';
+import { reconcileDiscoveryHealthGate } from '../../discovery/discovery-health-gate.js';
+import { buildDiscoveryHealthGateTransitionDetail } from '../../discovery/discovery-health-audit.js';
 import type { SemanticAuditIntent } from '../../audit-outbox.js';
 export interface ReconcileGateContext {
   readonly sessDir: string;

@@ -23,13 +23,13 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { SessionState } from '../state/schema.js';
-import { buildStatusProjection } from './status.js';
+import { buildStatusProjection } from './status/status.js';
 import {
   buildEvidenceDetailProjection,
   buildBlockedProjection,
   buildContextProjection,
   buildReadinessProjection,
-} from './status-detail-projections.js';
+} from './status/status-detail-projections.js';
 import { getPolicyPreset } from '../config/policy.js';
 import { createPolicySnapshot } from '../config/policy-snapshot.js';
 import { makeState } from '../fixtures.js';

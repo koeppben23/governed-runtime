@@ -5,7 +5,7 @@ import { TEAM_POLICY } from '../../config/policy-presets.js';
 import { CHALLENGE_POLICY_V1 } from '../../config/policy-types.js';
 import type { SessionState } from '../../state/schema.js';
 import type { DiscoveryResult } from '../../discovery/types.js';
-import { discoveryRiskPaths } from '../discovery-risk-paths.js';
+import { discoveryRiskPaths } from '../discovery/discovery-risk-paths.js';
 import { assessMinimumTaskClass, maxTaskClass } from '../phase-tool-gate.js';
 
 const originalFlowguardHostPlatform = process.env.FLOWGUARD_HOST_PLATFORM;

@@ -25,7 +25,7 @@ import type {
 import { buildReviewDiscoveryContext } from './discovery-context-loader.js';
 import type { DiscoveryReviewContext } from './discovery-context-prompt.js';
 import type { DiscoveryHealthProjection } from '../../discovery/discovery-health.js';
-import type { DiscoveryDriftStatusProjection } from '../discovery-drift-status.js';
+import type { DiscoveryDriftStatusProjection } from '../discovery/discovery-drift-status.js';
 
 export type ReviewerDiscoveryResolution =
   | { readonly kind: 'repository'; readonly context: ReviewAttemptDiscoveryContext }

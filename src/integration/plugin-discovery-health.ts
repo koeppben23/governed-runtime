@@ -22,8 +22,11 @@ import {
   unavailableDiscoveryHealth,
   type DiscoveryHealthProjection,
 } from '../discovery/discovery-health.js';
-import { isDiscoveryHealthAllowed, type DiscoveryHealthDecision } from './discovery-health-gate.js';
-import { buildDiscoveryHealthGateTransitionDetail } from './discovery-health-audit.js';
+import {
+  isDiscoveryHealthAllowed,
+  type DiscoveryHealthDecision,
+} from './discovery/discovery-health-gate.js';
+import { buildDiscoveryHealthGateTransitionDetail } from './discovery/discovery-health-audit.js';
 import { writeStateWithAuditOperations } from './audit-outbox.js';
 
 export interface DiscoveryHealthEnforcementDeps {

@@ -8,7 +8,7 @@
  */
 
 import type { DiscoveryHealthProjection } from '../../discovery/discovery-health.js';
-import type { DiscoveryDriftStatusProjection } from '../discovery-drift-status.js';
+import type { DiscoveryDriftStatusProjection } from '../discovery/discovery-drift-status.js';
 import type {
   ImplementationGuidanceItem,
   ImplementationGuidanceProjection,

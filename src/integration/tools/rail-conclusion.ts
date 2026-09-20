@@ -29,7 +29,7 @@ import type { SessionState } from '../../state/schema.js';
 import type { EvalResult } from '../../machine/evaluate.js';
 import { directiveLabel, type PresentationConclusion } from '../../presentation/index.js';
 import { resolveWorkflowDirective } from '../../machine/workflow-directive.js';
-import { projectStatusActionFromCommand } from '../status-conclusion.js';
+import { projectStatusActionFromCommand } from '../status/status-conclusion.js';
 import { IntegrationInvariantError } from '../errors.js';
 
 /**

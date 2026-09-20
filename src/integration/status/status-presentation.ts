@@ -1,5 +1,5 @@
 /**
- * @module integration/status-presentation
+ * @module integration/status/status-presentation
  * @description Presentation builder for the FlowGuard status surface.
  *
  * Consumes the canonical status projection (status.ts) and produces a typed
@@ -13,11 +13,11 @@
  */
 
 import type { StatusProjection } from './status-types.js';
-import type { DiscoveryHealthProjection } from '../discovery/discovery-health.js';
-import type { DiscoveryDriftStatusProjection } from './discovery-drift-status.js';
+import type { DiscoveryHealthProjection } from '../../discovery/discovery-health.js';
+import type { DiscoveryDriftStatusProjection } from '../discovery/discovery-drift-status.js';
 import { projectStatusActionFromCommand } from './status-conclusion.js';
-import { isTerminalPhase } from '../machine/topology.js';
-import { INSTALLED_COMMANDS } from './installed-commands.js';
+import { isTerminalPhase } from '../../machine/topology.js';
+import { INSTALLED_COMMANDS } from '../installed-commands.js';
 import {
   normalizedMarkdown,
   lookupStatusLabel,
@@ -33,11 +33,11 @@ import {
   type BlockerSection,
   type NoticeSection,
   type ReasonProjection,
-} from '../presentation/index.js';
-import { buildProofGraphSection } from '../presentation/proof-summary.js';
-import type { ProofGraphRenderOptions } from '../presentation/proof-summary.js';
-import { getInstalledCommand } from './installed-commands.js';
-import { IntegrationInvariantError } from './errors.js';
+} from '../../presentation/index.js';
+import { buildProofGraphSection } from '../../presentation/proof-summary.js';
+import type { ProofGraphRenderOptions } from '../../presentation/proof-summary.js';
+import { getInstalledCommand } from '../installed-commands.js';
+import { IntegrationInvariantError } from '../errors.js';
 
 // ─── Presentation Input ────────────────────────────────────────────────────────
 

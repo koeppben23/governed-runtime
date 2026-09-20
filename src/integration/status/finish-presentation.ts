@@ -1,5 +1,5 @@
 /**
- * @module integration/finish-presentation
+ * @module integration/status/finish-presentation
  * @description Presentation builder for the /finish surface.
  *
  * Consumes the canonical FinishPresentationProjection and produces a typed
@@ -12,8 +12,8 @@
  * @version v1
  */
 
-import { PHASE_LABELS } from '../presentation/phase-labels.js';
-import type { Phase } from '../state/schema.js';
+import { PHASE_LABELS } from '../../presentation/phase-labels.js';
+import type { Phase } from '../../state/schema.js';
 import {
   lookupStatusLabel,
   parseArchiveLabel,
@@ -24,13 +24,13 @@ import {
   type PresentationSection,
   type PresentationConclusion,
   type KeyValueItem,
-} from '../presentation/index.js';
+} from '../../presentation/index.js';
 import type {
   FinishPresentationProjection,
   FinishConclusionProjection,
 } from './status-why-finish.js';
 import type { FinishCard, FinishReviewCaveat } from './status-types.js';
-import { buildProofGraphSection } from '../presentation/proof-summary.js';
+import { buildProofGraphSection } from '../../presentation/proof-summary.js';
 
 // ─── Exit Option Copy ──────────────────────────────────────────────────────────
 

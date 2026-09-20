@@ -1,5 +1,5 @@
 /**
- * @module integration/why-presentation
+ * @module integration/status/why-presentation
  * @description Presentation builder for the /why surface.
  *
  * Consumes the canonical WhyPresentationProjection and produces a typed
@@ -19,12 +19,12 @@ import type {
   PresentationBuildOptions,
   PresentationDetailLevel,
   ReasonProjection,
-} from '../presentation/index.js';
-import { projectReasonFromRegistry, humanImpactText } from '../presentation/index.js';
+} from '../../presentation/index.js';
+import { projectReasonFromRegistry, humanImpactText } from '../../presentation/index.js';
 import type { WhyPresentationProjection, WhyConclusionProjection } from './status-why-finish.js';
-import type { CompactProofPresentation } from '../presentation/proof-model.js';
-import { buildProofGraphSection } from '../presentation/proof-summary.js';
-import type { ProofGraphRenderOptions } from '../presentation/proof-summary.js';
+import type { CompactProofPresentation } from '../../presentation/proof-model.js';
+import { buildProofGraphSection } from '../../presentation/proof-summary.js';
+import type { ProofGraphRenderOptions } from '../../presentation/proof-summary.js';
 
 /**
  * Build a compact-card PresentationDocument for /why.

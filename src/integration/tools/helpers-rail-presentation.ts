@@ -26,7 +26,7 @@ import type { ReviewFindings } from '../../state/evidence.js';
 import type { SessionState } from '../../state/schema.js';
 import { buildBlockedPresentation } from '../blocked-result.js';
 import { buildRailConclusion } from './rail-conclusion.js';
-import { projectStatusActionFromCommand } from '../status-conclusion.js';
+import { projectStatusActionFromCommand } from '../status/status-conclusion.js';
 import { getReviewLoopProgress } from '../review/review-loop-progress.js';
 import { projectCompletionProofStatus } from '../proofgraph/proof-summary-projectors.js';
 import { emitPresentationTelemetry } from './presentation-telemetry.js';

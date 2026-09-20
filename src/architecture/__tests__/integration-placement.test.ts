@@ -77,7 +77,7 @@ describe('integration placement authority', () => {
       .sort();
 
     expect(observedDebt).toEqual([...PLACEMENT_DEBT].sort());
-    expect(PLACEMENT_DEBT.length).toBe(13);
+    expect(PLACEMENT_DEBT.length).toBe(0);
     expect(new Set(PLACEMENT_DEBT).size).toBe(PLACEMENT_DEBT.length);
   });
 

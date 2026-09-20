@@ -1,5 +1,5 @@
 /**
- * @module integration/status-conclusion
+ * @module integration/status/status-conclusion
  * @description Status conclusion projection — derives the canonical conclusion
  *              from evalResult and directive.
  *
@@ -14,11 +14,11 @@
  * @version v2
  */
 
-import { evaluate } from '../machine/evaluate.js';
-import type { WorkflowDirective } from '../machine/workflow-directive.js';
-import { getInstalledCommand } from './installed-commands.js';
-import { directiveLabel, type PresentationAction } from '../presentation/index.js';
-import { IntegrationInvariantError } from './errors.js';
+import { evaluate } from '../../machine/evaluate.js';
+import type { WorkflowDirective } from '../../machine/workflow-directive.js';
+import { getInstalledCommand } from '../installed-commands.js';
+import { directiveLabel, type PresentationAction } from '../../presentation/index.js';
+import { IntegrationInvariantError } from '../errors.js';
 
 // ─── Conclusion Projection ─────────────────────────────────────────────────────
 

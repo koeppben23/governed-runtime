@@ -57,22 +57,22 @@ import { checkRegistrationConsistency } from '../../proofgraph/registration-cons
 import { checkConfigDefaultConsistency } from '../../proofgraph/config-default-consistency.js';
 import { evaluateProofGraphGate, planClaimAuthorityOf } from '../../../audit/proofgraph/gate.js';
 import { buildProofApprovalProjection } from '../../proofgraph/approval-projection.js';
-import { buildStatusProjection } from '../../status.js';
+import { buildStatusProjection } from '../../status/status.js';
 import {
   buildEvidenceDetailProjection,
   buildBlockedProjection,
   buildContextProjection,
   buildReadinessProjection,
-} from '../../status-detail-projections.js';
-import { buildFinishCard } from '../../status-finish.js';
+} from '../../status/status-detail-projections.js';
+import { buildFinishCard } from '../../status/status-finish.js';
 import {
   buildWhyPresentationProjection,
   buildFinishPresentationProjection,
-} from '../../status-why-finish.js';
-import { buildDiscoveryDriftStatus } from '../../discovery-drift-status.js';
-import { buildNoSessionDocument } from '../../status-presentation.js';
-import { buildWhyDocument } from '../../why-presentation.js';
-import { buildFinishDocument } from '../../finish-presentation.js';
+} from '../../status/status-why-finish.js';
+import { buildDiscoveryDriftStatus } from '../../discovery/discovery-drift-status.js';
+import { buildNoSessionDocument } from '../../status/status-presentation.js';
+import { buildWhyDocument } from '../../status/why-presentation.js';
+import { buildFinishDocument } from '../../status/finish-presentation.js';
 import { renderMarkdown } from '../../../presentation/index.js';
 import { emitDetailRequested } from '../presentation-telemetry.js';
 import {

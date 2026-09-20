@@ -1,19 +1,22 @@
 /**
- * @module integration/status-detail-projections
+ * @module integration/status/status-detail-projections
  * @description Per-flag status surfaces: evidence, why-blocked, context, readiness.
  *
  * Pure projections of canonical runtime truth; no independent interpretation.
  */
 
-import type { SessionState } from '../state/schema.js';
-import type { FlowGuardPolicy } from '../config/policy.js';
-import { evaluate } from '../machine/evaluate.js';
-import { resolveWorkflowDirective, type WorkflowDirective } from '../machine/workflow-directive.js';
-import { evaluateValidationEvidence } from '../machine/validation-evidence.js';
-import { directiveLabel } from '../presentation/directive-copy.js';
-import { evaluateCompleteness } from '../audit/completeness.js';
-import { evaluateProofGraphGateFromState } from '../audit/proofgraph/gate.js';
-import { mapEnforcementReasonToRegistryCode } from '../audit/proofgraph/reason-code-mapping.js';
+import type { SessionState } from '../../state/schema.js';
+import type { FlowGuardPolicy } from '../../config/policy.js';
+import { evaluate } from '../../machine/evaluate.js';
+import {
+  resolveWorkflowDirective,
+  type WorkflowDirective,
+} from '../../machine/workflow-directive.js';
+import { evaluateValidationEvidence } from '../../machine/validation-evidence.js';
+import { directiveLabel } from '../../presentation/directive-copy.js';
+import { evaluateCompleteness } from '../../audit/completeness.js';
+import { evaluateProofGraphGateFromState } from '../../audit/proofgraph/gate.js';
+import { mapEnforcementReasonToRegistryCode } from '../../audit/proofgraph/reason-code-mapping.js';
 import type {
   BlockedProjection,
   ContextProjection,
