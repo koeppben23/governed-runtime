@@ -259,7 +259,7 @@ disproven, update the status and link the evidence."
 | EA1  | LOW        | Open         | Artifact-type validation should match declared artifact union.                                                                                                                                     |
 | EA2  | LOW        | Open         | Review-card metadata needs schema coverage.                                                                                                                                                        |
 | SZ1  | LOW-MEDIUM | Open         | Prod files near the 750-LOC blocker: `src/adapters/workspace/evidence-artifacts.ts` (678), `src/config/policy-snapshot-normalize.ts` (692). `src/integration/plugin-audit.ts` relieved 706 -> 603. |
-| SZ2  | LOW        | Open         | `dependency-rules.test.ts` (1656 LOC) exceeds the 1500 advisory; split without breaking the cycle-detection logic when it next grows.                                                              |
+| SZ2  | LOW        | Open         | `dependency-rules.test.ts` (1541 LOC) exceeds the 1500 advisory; split without breaking the cycle-detection logic when it next grows.                                                              |
 | CMP1 | SEE ALSO   | Open         | Compliance mapping overlaps AC6, AC7, AC8, and G2.                                                                                                                                                 |
 
 ## Cross-Cutting Risks
@@ -341,7 +341,7 @@ tracked separately. (Merged via #585.)
 | NR4  | Non-Regression Note | Auto-advance self-loop break avoids duplicate ERROR-loop transition writes.                                                                                                                                         |
 | NR5  | Non-Regression Note | Blocked reason duplicate registration rejects duplicates.                                                                                                                                                           |
 | NR6  | Non-Regression Note | Next-action resolution remains compile-time exhaustive over phases.                                                                                                                                                 |
-| NR7  | Non-Regression Note | File-level import cycles are test-enforced (`architecture/__tests__/dependency-rules.test.ts` Rule 8) over the real import graph (#563); module-level cycle debt is frozen in `scripts/module-cycle-baseline.json`. |
+| NR7  | Non-Regression Note | File-level import cycles are test-enforced (`architecture/__tests__/dependency-rules.test.ts` Rule 8) over the real import graph (#563); module-level cycles are prohibited outright (zero cyclic edges/SCCs, no baseline). |
 | NR8  | Non-Regression Note | Adapters/audit/hooks/review use typed errors, not bare `throw new Error` (#534, #539, #542).                                                                                                                        |
 | NR9  | Non-Regression Note | Diagnostic logs are centrally redacted at the sink layer (message + extra); console/file/OTLP sinks cannot emit unredacted secrets or paths.                                                                        |
 | NR10 | Non-Regression Note | `logging/` owns its `LogLevel` type and must not import `config/`; enforced by `MODULE_DEPENDENCY_POLICY` in `architecture/__tests__/module-dependency-policy.ts`.                                                  |

@@ -1,4 +1,4 @@
-import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
+import { renderCommandGovernanceRules } from '../mandates.js';
 
 export const EXPORT_COMMAND = `---
 description: FlowGuard — Materialize the required verifiable export and complete development.

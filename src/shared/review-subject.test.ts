@@ -1,7 +1,17 @@
-import { describe, expect, it } from 'vitest';
-import { hashCanonicalRepositorySubject } from './review-subject.js';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import type { ReviewRepositoryIdentity } from '../state/evidence-review-subject.js';
+import {
+  hashCanonicalRepositorySubject,
+  type ReviewRepositoryIdentityValue,
+} from './review-subject.js';
 
 describe('hashCanonicalRepositorySubject', () => {
+  it('keeps the state-owned identity authority assignable to the shared port', () => {
+    // Compile-time drift pin: if state/ changes the identity shape
+    // incompatibly, this assertion fails instead of the port silently drifting.
+    expectTypeOf<ReviewRepositoryIdentity>().toMatchTypeOf<ReviewRepositoryIdentityValue>();
+  });
+
   const input = {
     baseRepository: { kind: 'local' as const, rootCommitDigest: 'd'.repeat(64) },
     baseSha: 'a'.repeat(40),

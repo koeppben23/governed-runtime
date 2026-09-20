@@ -96,7 +96,7 @@ export interface InstalledCommandDefinition {
   /** Presentation copy for operational interfaces. */
   readonly description: string;
   /** Host-neutral semantic action identity (PR 6). */
-  readonly intent?: import('../presentation/action-intent.js').ActionIntent;
+  readonly intent?: import('../shared/presentation-vocabulary.js').ActionIntent;
 }
 
 /** Every installed template has at least one stable public-interface identity. */

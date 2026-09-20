@@ -6,13 +6,13 @@ import {
   FLOWGUARD_MANDATES_FULL_BODY,
   MANDATES_SECTION_DEFINITIONS,
   REVIEWER_AGENT,
+  renderCommandGovernanceRules,
   type MandatesProjectionPhase,
 } from './mandates.js';
 import {
   CANONICAL_FLOWGUARD_PHASES,
   MANDATES_ANCHOR_CATALOG,
   MANDATES_VERBOSITY_VALUES,
-  renderCommandGovernanceRules,
   renderCompactionMandatesSummary,
   renderMandates,
   renderPhaseAwareMandates,

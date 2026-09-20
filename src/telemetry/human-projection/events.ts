@@ -13,10 +13,12 @@
  * @version v1
  */
 
-import type { PresentationForm } from '../../presentation/model.js';
-import type { PresentationDetailLevel } from '../../presentation/model.js';
-import type { ActionIntent } from '../../presentation/action-intent.js';
-import type { PresentationAction } from '../../presentation/model.js';
+import type {
+  ActionIntent,
+  PresentationDetailLevel,
+  PresentationForm,
+  PresentationVisibility,
+} from '../../shared/presentation-vocabulary.js';
 
 /** Shared envelope for all Human Projection telemetry events. */
 export interface HumanProjectionTelemetryEnvelope {
@@ -40,7 +42,7 @@ export interface PresentationRenderedEvent extends HumanProjectionTelemetryEnvel
 export interface ActionPresentedEvent extends HumanProjectionTelemetryEnvelope {
   readonly event: 'action_presented';
   readonly intent?: ActionIntent;
-  readonly visibility: PresentationAction['visibility'];
+  readonly visibility: PresentationVisibility;
   readonly conclusionKind: 'next_action' | 'decision_required';
 }
 

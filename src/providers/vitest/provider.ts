@@ -4,14 +4,11 @@
  * @version v1
  */
 
-import {
-  parseVitestJson,
-  buildVitestLocalId,
-} from '../../verification/assertion-parsers/vitest-json.js';
-import { junitXmlParser } from '../../verification/assertion-parsers/parsers.js';
+import { parseVitestJson, buildVitestLocalId } from '../assertion-parsers/vitest-json.js';
+import { junitXmlParser } from '../assertion-parsers/parsers.js';
 import type { AssertionProviderExtension } from '../contract.js';
 import { ProviderError } from '../errors.js';
-import type { ParsedAssertion } from '../../verification/assertion-parsers/types.js';
+import type { ParsedAssertion } from '../assertion-parsers/types.js';
 import type { ReportFormatId } from '../../state/assertion-identity.js';
 
 const JS_LOCAL_ID_RE = /^[^:]+(::[^:]+)+$/;

@@ -1,4 +1,4 @@
-import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
+import { renderCommandGovernanceRules } from '../mandates.js';
 
 export const CONTINUE_COMMAND = `---
 description: FlowGuard — Route to the canonical next action for the current phase.

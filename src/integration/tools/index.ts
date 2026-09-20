@@ -45,7 +45,7 @@ import type { ToolDefinition, ToolResult } from './helpers.js';
 import { readConfig } from '../../adapters/persistence-config.js';
 import type { GlyphProfile } from '../../presentation/glyph-profile.js';
 import { emitTelemetryEvent } from '../../telemetry/human-projection/emitter.js';
-import type { ActionIntent } from '../../presentation/action-intent.js';
+import type { ActionIntent } from '../../shared/presentation-vocabulary.js';
 import { renderMarkdown } from '../../presentation/markdown.js';
 import type { PresentationDocument } from '../../presentation/model.js';
 

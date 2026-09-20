@@ -4,10 +4,10 @@
  * @version v1
  */
 
-import { parseJestJson, buildJestLocalId } from '../../verification/assertion-parsers/jest-json.js';
+import { parseJestJson, buildJestLocalId } from '../assertion-parsers/jest-json.js';
 import type { AssertionProviderExtension } from '../contract.js';
 import { ProviderError } from '../errors.js';
-import type { ParsedAssertion } from '../../verification/assertion-parsers/types.js';
+import type { ParsedAssertion } from '../assertion-parsers/types.js';
 import type { ReportFormatId } from '../../state/assertion-identity.js';
 
 const JS_LOCAL_ID_RE = /^[^:]+(::[^:]+)+$/;

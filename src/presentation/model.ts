@@ -12,6 +12,12 @@
  * @version v1
  */
 
+import type {
+  PresentationDetailLevel,
+  PresentationForm,
+  PresentationVisibility,
+} from '../shared/presentation-vocabulary.js';
+
 // ─── Branded Normalized Markdown ───────────────────────────────────────────────
 
 declare const normalizedMarkdownBrand: unique symbol;
@@ -82,13 +88,13 @@ export class PresentationContractError extends Error {
 /** Central action representation for commands and non-command actions. */
 export interface PresentationAction {
   /** Host-neutral semantic identity of the action (added PR 6). */
-  readonly intent?: import('./action-intent.js').ActionIntent;
+  readonly intent?: import('../shared/presentation-vocabulary.js').ActionIntent;
   /** Slash-command invocation (e.g. "/approve") or null for non-command actions. */
   readonly invocation: string | null;
   /** Human-readable description of what the action does. */
   readonly description: string;
   /** Whether the action is recommended or merely available. */
-  readonly visibility: 'recommended' | 'available';
+  readonly visibility: PresentationVisibility;
 }
 
 // ─── Key-Value Item ────────────────────────────────────────────────────────────
@@ -436,28 +442,7 @@ export type PresentationConclusion =
       readonly steps: readonly string[];
     };
 
-/**
- * Semantic form of a visible FlowGuard result. Forms are presentation-only:
- * they arrange authoritative projections but never derive workflow state,
- * policy, evidence, or routing.
- */
-export type PresentationForm =
-  'success' | 'blocked' | 'decision' | 'review_pending' | 'terminal' | 'diagnostic';
-
 // ─── Progressive Disclosure ────────────────────────────────────────────────────
-
-/**
- * Controls the information density of a presentation surface.
- *
- * This is a presentation-composition concept — never domain state, never
- * ProofGraph state, never persisted. It selects which canonical facts are
- * visible at each output level.
- *
- *   summary     — immediate state + one primary action + compressed context
- *   explanation — cause + impact + recovery + relevant unresolved claim context
- *   diagnostic  — canonical codes, raw states, structured identifiers, full detail
- */
-export type PresentationDetailLevel = 'summary' | 'explanation' | 'diagnostic';
 
 /**
  * Presentation composition options passed to surface builders.

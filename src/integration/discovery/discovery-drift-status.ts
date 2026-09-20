@@ -8,6 +8,7 @@
  */
 
 import { checkDiscoveryDrift, type DriftResult } from '../../discovery/drift.js';
+import { DISCOVERY_IO } from './discovery-io.js';
 
 export type DiscoveryDriftProjectionStatus =
   'clean' | 'drifted' | 'missing_discovery' | 'unavailable' | 'timeout' | 'not_checked';
@@ -37,7 +38,11 @@ interface BuildDiscoveryDriftStatusInput {
   readonly worktree: string;
   readonly fingerprint: string;
   readonly timeoutMs?: number;
-  readonly check?: typeof checkDiscoveryDrift;
+  readonly check?: (
+    workspaceDir: string,
+    worktree: string,
+    fingerprint: string,
+  ) => Promise<DriftResult>;
 }
 
 const DEFAULT_STATUS_DRIFT_TIMEOUT_MS = 3_000;
@@ -50,7 +55,10 @@ const BASE_NOT_VERIFIED = [
 export async function buildDiscoveryDriftStatus(
   input: BuildDiscoveryDriftStatusInput,
 ): Promise<DiscoveryDriftStatusProjection> {
-  const check = input.check ?? checkDiscoveryDrift;
+  const check =
+    input.check ??
+    ((workspaceDir, worktree, fingerprint) =>
+      checkDiscoveryDrift(workspaceDir, worktree, fingerprint, DISCOVERY_IO));
   const timeoutMs = input.timeoutMs ?? DEFAULT_STATUS_DRIFT_TIMEOUT_MS;
 
   try {

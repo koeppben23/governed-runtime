@@ -45,12 +45,10 @@ Maintainability limits:
   (`architecture/__tests__/module-dependency-policy.ts`) exactly; imports outside
   that positive policy are forbidden. The historical linear layering
   (`state/` → `machine/` → `rails/` → `adapters/` → `integration/`) is the target
-  direction for new code, not a description of the currently frozen graph.
-  Existing cyclic directions are frozen as exact debt in
-  `scripts/module-cycle-baseline.json` and may only shrink (CI enforces baseline
-  lineage against the pull-request base). (Enforced:
-  `architecture/__tests__/dependency-rules.test.ts` and
-  `scripts/check-module-cycle-lineage.mjs`.)
+  direction for new code. The top-level module graph MUST be acyclic: zero
+  cyclic directed edges and zero cyclic strongly connected components, with no
+  baseline or grandfathering. (Enforced:
+  `architecture/__tests__/dependency-rules.test.ts`.)
 - **Extract, Don't Accumulate** — Split files along domain boundaries within the
   size budget. The canonical budget and its enforced blocker thresholds (650 LOC
   production, 2000 LOC tests) live in CONTRIBUTING.md and are enforced by

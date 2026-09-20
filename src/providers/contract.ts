@@ -131,7 +131,7 @@ export interface ExecutionProfile {
 
 export interface ProviderFormatRegistration {
   readonly format: ReportFormatId;
-  readonly parser: import('../verification/assertion-parsers/types.js').AssertionReportParser;
+  readonly parser: import('./assertion-parsers/types.js').AssertionReportParser;
   /** Aggregate is distinct from structured assertion extraction. */
   readonly bindingCapability: 'assertion' | 'aggregate' | 'check_only';
 }
@@ -151,6 +151,6 @@ export interface AssertionProviderExtension {
 
   readonly verification: {
     readonly formats: readonly ProviderFormatRegistration[];
-    readonly identityCodec?: import('../verification/assertion-parsers/types.js').AssertionIdentityCodec;
+    readonly identityCodec?: import('./assertion-parsers/types.js').AssertionIdentityCodec;
   };
 }

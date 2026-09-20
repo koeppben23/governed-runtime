@@ -1,6 +1,6 @@
 /**
  * @module context
- * @description Production RailContext factory.
+ * @description Production RailContextUtilities factory.
  *
  * RailContext provides two determinism-critical utilities to rails:
  * - now(): current ISO-8601 timestamp
@@ -18,18 +18,28 @@
  * @version v1
  */
 
-import type { RailContext } from '../rails/types.js';
 import { hashText } from '../shared/hashing.js';
 
 // -- Factory ------------------------------------------------------------------
 
 /**
- * Create a production RailContext.
+ * Structural port for the determinism-critical rail utilities. The canonical
+ * `RailContext` authority lives in rails/; adapters must not import rails, so
+ * this port mirrors the two utility members. Assignability to `RailContext` is
+ * structural at the call sites.
+ */
+export interface RailContextUtilities {
+  now: () => string;
+  digest: (text: string) => string;
+}
+
+/**
+ * Create a production RailContextUtilities value.
  *
  * This is the factory used by the OpenCode integration layer.
  * Every rail call gets a fresh context (no shared mutable state).
  */
-export function createRailContext(): RailContext {
+export function createRailContext(): RailContextUtilities {
   return {
     now: () => new Date().toISOString(),
     digest: (text: string) => hashText(text),

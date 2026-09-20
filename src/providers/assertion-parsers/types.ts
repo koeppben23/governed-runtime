@@ -1,5 +1,5 @@
 /**
- * @module verification/assertion-parsers/types
+ * @module providers/assertion-parsers/types
  * @description Discriminated assertion parse result, parser context, and
  * provider interfaces for the assertion extraction pipeline.
  *

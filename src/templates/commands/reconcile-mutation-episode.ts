@@ -1,4 +1,4 @@
-import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
+import { renderCommandGovernanceRules } from '../mandates.js';
 
 export const RECONCILE_MUTATION_EPISODE_COMMAND = `---
 description: FlowGuard — Resolve a host mutation episode whose outcome can never be observed.

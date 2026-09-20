@@ -11,8 +11,7 @@ export type PersistenceErrorCode =
   | 'SCHEMA_VALIDATION_FAILED'
   | 'SESSION_STATE_INCOMPATIBLE'
   | 'LOCK_TIMEOUT'
-  | 'LOCK_TIMEOUT_EXHAUSTED'
-  | 'MISSING_FILE_DIGEST';
+  | 'LOCK_TIMEOUT_EXHAUSTED';
 
 /**
  * Typed persistence error shared by adapter persistence modules.

@@ -40,6 +40,7 @@ import type {
   DiscoverySummary,
 } from '../state/discovery-schemas.js';
 import { collectRepoMetadata } from './collectors/repo-metadata.js';
+import type { DiscoveryIoPort } from './io-port.js';
 import { collectStack } from './collectors/stack-detection.js';
 import { collectTopology } from './collectors/topology.js';
 import { collectSurfaces } from './collectors/surface-detection.js';
@@ -93,13 +94,14 @@ function createDefaultReadFile(
  */
 export async function runDiscovery(
   input: CollectorInput,
+  io: DiscoveryIoPort,
   timeoutMs: number = COLLECTOR_TIMEOUT_MS,
 ): Promise<DiscoveryResult> {
   return withSpan(
     'discovery.run',
     async () => {
       addFingerprint(input.fingerprint);
-      return runDiscoveryImpl(input, timeoutMs);
+      return runDiscoveryImpl(input, io, timeoutMs);
     },
     { 'flowguard.fingerprint': input.fingerprint },
   );
@@ -107,9 +109,10 @@ export async function runDiscovery(
 
 function runRepoMetadataCollector(
   input: CollectorInput,
+  io: DiscoveryIoPort,
   timeoutMs: number,
 ): Promise<CollectorRunResult<RepoMetadata>> {
-  return runCollectorWithDiagnostics('repo-metadata', collectRepoMetadata(input), timeoutMs, {
+  return runCollectorWithDiagnostics('repo-metadata', collectRepoMetadata(input, io), timeoutMs, {
     defaultBranch: null,
     headCommit: null,
     isDirty: true,
@@ -208,6 +211,7 @@ function namedDiagnostic(
 
 async function runDiscoveryImpl(
   input: CollectorInput,
+  io: DiscoveryIoPort,
   timeoutMs: number = COLLECTOR_TIMEOUT_MS,
 ): Promise<DiscoveryResult> {
   // Enrich input with default readFile if not provided by caller
@@ -217,7 +221,7 @@ async function runDiscoveryImpl(
 
   // Run all collectors in parallel with timeout budget and diagnostics
   const [metaRun, stackRun, topoRun, surfaceRun, codeSurfaceRun, domainRun] = await Promise.all([
-    runRepoMetadataCollector(enrichedInput, timeoutMs),
+    runRepoMetadataCollector(enrichedInput, io, timeoutMs),
     runStackCollector(enrichedInput, timeoutMs),
     runTopologyCollector(enrichedInput, timeoutMs),
     runSurfaceCollector(enrichedInput, timeoutMs),

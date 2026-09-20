@@ -1,4 +1,4 @@
-import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
+import { renderCommandGovernanceRules } from '../mandates.js';
 
 export const OVERRIDE_APPROVE_COMMAND = `---
 description: FlowGuard — Accept an exhausted review gate with an explicit governance override.

@@ -1,4 +1,4 @@
-import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
+import { renderCommandGovernanceRules } from '../mandates.js';
 
 export const REVIEW_COMMAND = `---
 description: FlowGuard — Start the peer review flow (READY -> PEER_REVIEW -> PEER_REVIEW_COMPLETE).

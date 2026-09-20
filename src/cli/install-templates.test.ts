@@ -26,11 +26,8 @@ import {
   MANDATES_SECTION_DEFINITIONS,
   MANDATES_TRAILER,
 } from '../templates/mandates.js';
-import {
-  renderCommandGovernanceRules,
-  renderMandates,
-  renderPhaseAwareMandates,
-} from '../rendering/mandates-renderer.js';
+import { renderMandates, renderPhaseAwareMandates } from '../rendering/mandates-renderer.js';
+import { renderCommandGovernanceRules } from '../templates/mandates.js';
 import { INSTALLED_TEMPLATE_FILES } from '../integration/installed-commands.js';
 import { REPO_ROOT, setupCliTestEnvironment } from './install-test-helpers.test.js';
 

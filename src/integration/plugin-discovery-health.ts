@@ -19,10 +19,10 @@ import { readState } from '../adapters/persistence.js';
 import { strictBlockedOutput, buildEnforcementError } from './blocked-result.js';
 
 import {
-  loadDiscoveryHealthContext,
   unavailableDiscoveryHealth,
   type DiscoveryHealthProjection,
 } from '../discovery/discovery-health.js';
+import { loadDiscoveryHealthContext } from './discovery/discovery-health-loader.js';
 import {
   isDiscoveryHealthAllowed,
   type DiscoveryHealthDecision,

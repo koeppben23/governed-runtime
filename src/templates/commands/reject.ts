@@ -1,4 +1,4 @@
-import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
+import { renderCommandGovernanceRules } from '../mandates.js';
 
 export const REJECT_COMMAND = `---
 description: FlowGuard — Reject the currently active review gate and terminate the workflow.

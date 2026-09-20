@@ -38,7 +38,6 @@ describe('error code type safety — HAPPY', () => {
       'SCHEMA_VALIDATION_FAILED',
       'LOCK_TIMEOUT',
       'LOCK_TIMEOUT_EXHAUSTED',
-      'MISSING_FILE_DIGEST',
     ];
     for (const code of codes) {
       const err = new PersistenceError(code, `test ${code}`);
@@ -318,7 +317,6 @@ describe('error code type safety — SMOKE', () => {
         case 'SESSION_STATE_INCOMPATIBLE':
         case 'LOCK_TIMEOUT':
         case 'LOCK_TIMEOUT_EXHAUSTED':
-        case 'MISSING_FILE_DIGEST':
           matched = true;
           break;
       }

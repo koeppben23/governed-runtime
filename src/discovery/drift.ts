@@ -16,8 +16,7 @@ import {
   computeStableDriftDigest,
 } from './discovery-digest.js';
 import { runDiscovery } from './orchestrator.js';
-import { readDiscovery } from '../adapters/persistence-discovery.js';
-import { listRepoSignals } from '../adapters/git.js';
+import type { DiscoveryIoPort } from './io-port.js';
 import type { CollectorDiagnostic } from './types.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -59,22 +58,26 @@ export async function checkDiscoveryDrift(
   workspaceDir: string,
   worktree: string,
   fingerprint: string,
+  io: DiscoveryIoPort,
 ): Promise<DriftResult> {
   // Read existing persisted discovery (may not exist for first-run)
-  const persisted = await readDiscovery(workspaceDir);
+  const persisted = await io.readPersistedDiscovery(workspaceDir);
   const persistedDigest = persisted ? computeStableDriftDigest(persisted) : null;
 
   // Re-run discovery (read-only — we never write)
-  const repoSignals = await listRepoSignals(worktree);
-  const freshResult = await runDiscovery({
-    worktreePath: worktree,
-    fingerprint,
-    allFiles: repoSignals.files,
-    packageFiles: repoSignals.packageFiles,
-    configFiles: repoSignals.configFiles,
-    packageFilePaths: repoSignals.packageFilePaths,
-    configFilePaths: repoSignals.configFilePaths,
-  });
+  const repoSignals = await io.listRepoSignals(worktree);
+  const freshResult = await runDiscovery(
+    {
+      worktreePath: worktree,
+      fingerprint,
+      allFiles: repoSignals.files,
+      packageFiles: repoSignals.packageFiles,
+      configFiles: repoSignals.configFiles,
+      packageFilePaths: repoSignals.packageFilePaths,
+      configFilePaths: repoSignals.configFilePaths,
+    },
+    io,
+  );
 
   const currentDigest = computeStableDriftDigest(freshResult);
   const drifted = persistedDigest !== null && currentDigest !== persistedDigest;

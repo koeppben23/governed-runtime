@@ -5,7 +5,7 @@
  * This module owns NO import parsing and NO filesystem access: callers pass the
  * normalized directed module edges they derived from the single import-analysis
  * authority. It provides deterministic strongly-connected-component detection
- * and the intra-SCC edge projection that the cycle-debt baseline freezes.
+ * and the intra-SCC edge projection that the zero-cycle guard asserts empty.
  *
  * Self edges are never cross-module cycles: an SCC must have at least two
  * members to be cyclic.

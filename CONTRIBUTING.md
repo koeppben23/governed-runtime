@@ -194,7 +194,7 @@ regress silently; review-enforced rules depend on reviewer diligence.
 | Principle                     | Rule                                                                      | Red Flag                                              | Enforced by                                                                                                     |
 | ----------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | **Single Responsibility**     | One reason to change per module/file/function                             | God-files; over-long/over-complex functions           | ESLint metrics for every production file: `complexity:12`, `max-lines-per-function:80`, `max-params:5`, enforced by `lint:strict` (`--max-warnings=0`) and pinned by `type-aware-lint-scope.test.ts` |
-| **Layer Isolation**           | Respect `state/` `machine/` `rails/` `adapters/` `integration/`           | Upward imports, layer bypass                          | `module-dependency-policy.ts` + `dependency-rules.test.ts`; module cycle debt frozen in `scripts/module-cycle-baseline.json` (lineage-gated)  |
+| **Layer Isolation**           | Respect `state/` `machine/` `rails/` `adapters/` `integration/`           | Upward imports, layer bypass                          | `module-dependency-policy.ts` + `dependency-rules.test.ts`; module graph must stay acyclic (zero cyclic edges)  |
 | **Extract, Don't Accumulate** | Split files along domain boundaries within the size budget                | Linear growth with every feature                      | `src/architecture/__tests__/file-size.test.ts`                                                                  |
 | **No Duplicate Authority**    | One canonical implementation per concept                                  | Near-identical functions, duplicated pipelines        | SSOT guards: `actor-assurance-ssot`, `canonical-json-ssot`, `digest-authority-ssot`, `policy-mode-ssot`, `review-acceptance-ssot`, `terminal-phase-ssot` |
 | **Content/Logic Separation**  | Template content in content files, assembly in renderer files             | Template strings mixed with business logic            | Review                                                                                                          |
@@ -476,13 +476,10 @@ Fine-grained boundaries are additionally enforced by
 
 ### Cycle Debt
 
-Module-level cycles are frozen debt, not free: `scripts/module-cycle-baseline.json`
-lists every currently cyclic directed edge, `dependency-rules.test.ts` requires the
-observed cyclic-edge set to equal it, and CI
-(`scripts/check-module-cycle-lineage.mjs --against <base-sha>`) enforces that the
-baseline may only shrink relative to the pull-request base. Shrinking the baseline
-is a visible manual edit in the same PR that removes the cycle. File-level cycles
-remain prohibited outright.
+Module-level cycles are prohibited outright: the top-level module graph MUST have
+zero cyclic directed edges and zero cyclic strongly connected components.
+`dependency-rules.test.ts` fails closed on any observed cycle, and there is no
+baseline to update or grandfather. File-level cycles remain prohibited outright.
 
 ## Error Handling
 

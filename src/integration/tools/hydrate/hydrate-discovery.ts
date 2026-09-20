@@ -20,6 +20,7 @@ import {
 } from '../../../discovery/orchestrator.js';
 import type { DiscoveryResult, ProfileResolution } from '../../../discovery/types.js';
 import { PROFILE_RESOLUTION_SCHEMA_VERSION } from '../../../discovery/types.js';
+import { DISCOVERY_IO } from '../../discovery/discovery-io.js';
 import {
   planVerificationCandidates,
   stripToCandidates,
@@ -75,19 +76,22 @@ export async function runRequiredDiscovery(
   repoSignals: RepoSignals,
 ): Promise<DiscoveryResult> {
   try {
-    return await runDiscovery({
-      worktreePath: worktree,
-      fingerprint,
-      allFiles: repoSignals.files,
-      packageFiles: repoSignals.packageFiles,
-      configFiles: repoSignals.configFiles,
-      ...(repoSignals.packageFilePaths !== undefined
-        ? { packageFilePaths: repoSignals.packageFilePaths }
-        : {}),
-      ...(repoSignals.configFilePaths !== undefined
-        ? { configFilePaths: repoSignals.configFilePaths }
-        : {}),
-    });
+    return await runDiscovery(
+      {
+        worktreePath: worktree,
+        fingerprint,
+        allFiles: repoSignals.files,
+        packageFiles: repoSignals.packageFiles,
+        configFiles: repoSignals.configFiles,
+        ...(repoSignals.packageFilePaths !== undefined
+          ? { packageFilePaths: repoSignals.packageFilePaths }
+          : {}),
+        ...(repoSignals.configFilePaths !== undefined
+          ? { configFilePaths: repoSignals.configFilePaths }
+          : {}),
+      },
+      DISCOVERY_IO,
+    );
   } catch (err) {
     throwHydrateError(
       'DISCOVERY_RESULT_MISSING',

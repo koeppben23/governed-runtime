@@ -24,7 +24,12 @@ export {
   projectDetailFields,
 } from './reason-projection.js';
 export type { ReasonProjection } from './reason-projection.js';
-export type { ActionIntent } from './action-intent.js';
+export type {
+  ActionIntent,
+  PresentationDetailLevel,
+  PresentationForm,
+  PresentationVisibility,
+} from '../shared/presentation-vocabulary.js';
 export { buildPlanReviewCard } from './plan-review-card.js';
 export { renderPlanClaimDeclarations } from './plan-claim-declarations.js';
 export {
@@ -86,14 +91,12 @@ export type {
   EmbeddedMarkdownSection,
   PresentationSection,
   PresentationConclusion,
-  PresentationForm,
   CompactCardDocument,
   ReviewCardDocument,
   DiagnosticCardDocument,
   PlanDocument,
   HelpDocument,
   PresentationDocument,
-  PresentationDetailLevel,
   PresentationBuildOptions,
 } from './model.js';
 export { renderMarkdown } from './markdown.js';

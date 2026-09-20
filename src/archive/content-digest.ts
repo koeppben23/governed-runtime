@@ -30,7 +30,6 @@
 
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { hashParts } from '../shared/hashing.js';
-import { PersistenceError } from '../adapters/persistence-core.js';
 
 /**
  * Inputs to the archive content digest.
@@ -61,6 +60,16 @@ export interface ArchiveContentDigestInput {
   discoveryDigest: string | null;
 }
 
+/** Archive-domain error for a missing per-file digest (code preserved). */
+class ArchiveContentDigestError extends Error {
+  readonly code = 'MISSING_FILE_DIGEST';
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'ArchiveContentDigestError';
+  }
+}
+
 /**
  * Compute the deterministic archive content digest.
  *
@@ -73,8 +82,7 @@ export function computeArchiveContentDigest(input: ArchiveContentDigestInput): s
     .map((file) => {
       const digest = input.fileDigests[file];
       if (!digest) {
-        throw new PersistenceError(
-          'MISSING_FILE_DIGEST',
+        throw new ArchiveContentDigestError(
           `Missing file digest for included archive file '${file}'`,
         );
       }

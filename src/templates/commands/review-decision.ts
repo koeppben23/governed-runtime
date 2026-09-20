@@ -1,4 +1,4 @@
-import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
+import { renderCommandGovernanceRules } from '../mandates.js';
 
 export const REVIEW_DECISION_COMMAND = `---
 description: FlowGuard — Submit a human review decision (approve, changes_requested, reject) at a User Gate.

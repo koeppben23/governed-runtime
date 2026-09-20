@@ -1,7 +1,17 @@
 /** Canonical subject-material normalization and digest construction. */
 
-import type { ReviewRepositoryIdentity } from '../state/evidence-review-subject.js';
 import { canonicalJsonStringify } from './canonical-json.js';
+
+/**
+ * Structural port for repository identity values consumed by shared digest
+ * construction. The canonical schema authority stays in state/; shared must not
+ * import state, so this port only mirrors the value shape. The assignability of
+ * the state authority to this port is pinned at compile time outside shared
+ * (`shared/review-subject.test.ts`).
+ */
+export type ReviewRepositoryIdentityValue =
+  | Readonly<{ host: string; owner: string; name: string }>
+  | Readonly<{ kind: 'local'; rootCommitDigest: string }>;
 import { hashText } from './hashing.js';
 
 export function normalizeReviewContent(content: string): string {
@@ -25,8 +35,8 @@ export function hashCanonicalContentSubject(materialDigest: string): string {
 }
 
 export function hashCanonicalRepositorySubject(input: {
-  readonly baseRepository: ReviewRepositoryIdentity;
-  readonly headRepository?: ReviewRepositoryIdentity;
+  readonly baseRepository: ReviewRepositoryIdentityValue;
+  readonly headRepository?: ReviewRepositoryIdentityValue;
   readonly baseSha: string;
   readonly headSha: string;
   readonly changedPaths: readonly string[];

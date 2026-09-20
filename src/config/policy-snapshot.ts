@@ -21,7 +21,7 @@
 
 import type { PolicySnapshot } from '../state/evidence.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
-import { POLICY_DIGEST_PATTERN, POLICY_DIGEST_VERSION } from '../shared/policy-digest.js';
+import { POLICY_DIGEST_PATTERN, POLICY_DIGEST_VERSION } from '../state/evidence-identifiers.js';
 import { PolicyConfigurationError } from './policy-errors.js';
 import type {
   FlowGuardPolicy,

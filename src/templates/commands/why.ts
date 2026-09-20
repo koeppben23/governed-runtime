@@ -1,4 +1,4 @@
-import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
+import { renderCommandGovernanceRules } from '../mandates.js';
 
 export const WHY_COMMAND = `---
 description: FlowGuard — Explain why the current workflow is blocked and how to unblock it.

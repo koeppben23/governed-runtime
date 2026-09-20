@@ -526,7 +526,7 @@ function hydrateCommandAction(
   invocation: string | null;
   description: string;
   visibility: 'recommended' | 'available';
-  intent?: import('../../../presentation/action-intent.js').ActionIntent;
+  intent?: import('../../../shared/presentation-vocabulary.js').ActionIntent;
 } {
   const cmd = getInstalledCommand(invocation);
   if (!cmd) {

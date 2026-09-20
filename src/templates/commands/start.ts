@@ -1,4 +1,4 @@
-import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
+import { renderCommandGovernanceRules } from '../mandates.js';
 
 export const START_COMMAND = `---
 description: FlowGuard — Start a governed session. Run this FIRST before any other FlowGuard command.

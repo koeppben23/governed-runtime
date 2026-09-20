@@ -1,4 +1,4 @@
-import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
+import { renderCommandGovernanceRules } from '../mandates.js';
 
 export const APPROVE_COMMAND = `---
 description: FlowGuard — Approve the currently active review gate (plan, implementation evidence, or architecture).

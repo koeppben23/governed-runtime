@@ -1,4 +1,4 @@
-import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
+import { renderCommandGovernanceRules } from '../mandates.js';
 
 export const RESOLVE_IMPLEMENTATION_CHALLENGE_COMMAND = `---
 description: FlowGuard — Record evidence addressing an implementation review challenge.

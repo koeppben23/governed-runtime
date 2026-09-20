@@ -16,18 +16,9 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import {
-  classifyDiscoveryHealthUnavailable,
-  extractDiscoveryHealth,
-  unavailableDiscoveryHealth,
-} from './discovery-health.js';
-import type {
-  DiscoveryHealthAvailableProjection,
-  DiscoveryHealthUnavailableReason,
-} from './discovery-health.js';
+import { extractDiscoveryHealth, unavailableDiscoveryHealth } from './discovery-health.js';
+import type { DiscoveryHealthAvailableProjection } from './discovery-health.js';
 import type { DiscoveryResult } from './types.js';
-import { PersistenceError } from '../adapters/persistence.js';
-import type { PersistenceErrorCode } from '../adapters/persistence.js';
 
 function makeHealthyResult(overrides?: Partial<DiscoveryResult>): DiscoveryResult {
   return {
@@ -315,41 +306,6 @@ describe('discovery-health', () => {
       expect(health.notVerified).toEqual([
         'Discovery health is unavailable; mark discovery-dependent claims NOT_VERIFIED.',
       ]);
-    });
-  });
-
-  describe('classifyDiscoveryHealthUnavailable', () => {
-    /**
-     * Compile-time exhaustive mapping: adding a `PersistenceErrorCode` without
-     * deciding its health classification fails the typecheck of this record.
-     */
-    const EXPECTED_BY_CODE: Record<PersistenceErrorCode, DiscoveryHealthUnavailableReason> = {
-      PARSE_FAILED: 'corrupt',
-      MISSING_FILE_DIGEST: 'corrupt',
-      SCHEMA_VALIDATION_FAILED: 'schema_invalid',
-      SESSION_STATE_INCOMPATIBLE: 'schema_invalid',
-      READ_FAILED: 'read_failed',
-      WRITE_FAILED: 'read_failed',
-      LOCK_TIMEOUT: 'read_failed',
-      LOCK_TIMEOUT_EXHAUSTED: 'read_failed',
-    };
-
-    it('maps every PersistenceErrorCode to its pinned unavailable reason', () => {
-      for (const [code, expected] of Object.entries(EXPECTED_BY_CODE)) {
-        expect(
-          classifyDiscoveryHealthUnavailable(
-            new PersistenceError(code as PersistenceErrorCode, 'x'),
-          ),
-          code,
-        ).toBe(expected);
-      }
-      expect(Object.keys(EXPECTED_BY_CODE)).toHaveLength(8);
-    });
-
-    it('maps unknown errors and non-errors to read_failed', () => {
-      expect(classifyDiscoveryHealthUnavailable(new Error('boom'))).toBe('read_failed');
-      expect(classifyDiscoveryHealthUnavailable('not an error')).toBe('read_failed');
-      expect(classifyDiscoveryHealthUnavailable(undefined)).toBe('read_failed');
     });
   });
 });

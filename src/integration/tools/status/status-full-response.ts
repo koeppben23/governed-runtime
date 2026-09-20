@@ -19,8 +19,8 @@ import {
   extractDiscoveryHealth,
   isDiscoveryHealthAvailable,
   unavailableDiscoveryHealth,
-  classifyDiscoveryHealthUnavailable,
 } from '../../../discovery/discovery-health.js';
+import { classifyDiscoveryHealthUnavailable } from '../../discovery/discovery-health-loader.js';
 import type { DiscoveryHealthProjection } from '../../../discovery/discovery-health.js';
 import type { DiscoveryResult } from '../../../discovery/types.js';
 import { getAdapterLogger } from '../../../logging/adapter-logger.js';

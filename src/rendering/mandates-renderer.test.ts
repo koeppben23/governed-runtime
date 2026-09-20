@@ -11,6 +11,7 @@ import {
   FLOWGUARD_MANDATES_FULL_BODY,
   FLOWGUARD_MANDATES_KERNEL,
   MANDATES_SECTION_DEFINITIONS,
+  renderCommandGovernanceRules,
 } from '../templates/mandates.js';
 import {
   buildMandatesContent,
@@ -19,7 +20,6 @@ import {
   isManagedArtifact,
   extractManagedBody,
   renderPhaseAwareMandates,
-  renderCommandGovernanceRules,
   renderCompactionMandatesSummary,
   resolveMandatesVerbosity,
 } from './mandates-renderer.js';

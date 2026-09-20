@@ -35,9 +35,9 @@ vi.mock('../adapters/persistence.js', () => ({
   readState: mockReadState,
 }));
 
-vi.mock('../discovery/discovery-health.js', async () => {
-  const actual = await vi.importActual<typeof import('../discovery/discovery-health.js')>(
-    '../discovery/discovery-health.js',
+vi.mock('./discovery/discovery-health-loader.js', async () => {
+  const actual = await vi.importActual<typeof import('./discovery/discovery-health-loader.js')>(
+    './discovery/discovery-health-loader.js',
   );
   return {
     ...actual,

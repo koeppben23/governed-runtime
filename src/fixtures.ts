@@ -36,7 +36,7 @@ import type {
 } from './state/evidence.js';
 import { IMPL_REVIEW_CONVERGED, SELF_REVIEW_CONVERGED } from './state/evidence-test-constants.js';
 import { computeRecordDigest } from './state/evidence-plan.js';
-import { POLICY_DIGEST_VERSION } from './shared/policy-digest.js';
+import { POLICY_DIGEST_VERSION } from './state/evidence-identifiers.js';
 import { canonicalJsonStringify } from './shared/canonical-json.js';
 import { hashText } from './shared/hashing.js';
 

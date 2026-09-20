@@ -10,9 +10,9 @@
  * architectural direction change is therefore always a visible change of both
  * code and this authority in the same pull request.
  *
- * Module-level cycles are NOT governed here: existing cycle debt is frozen in
- * `scripts/module-cycle-baseline.json` and enforced by the cycle ratchet. The
- * policy records the current topology, not a desired acyclic architecture.
+ * Module-level cycles are prohibited outright: the graph MUST contain zero
+ * cyclic edges and zero cyclic strongly connected components. There is no
+ * cycle-debt baseline; the policy records the current acyclic topology.
  *
  * @version v1
  */
@@ -42,7 +42,6 @@ export const MODULE_DEPENDENCY_POLICY: Readonly<
     'identity',
     'logging',
     'machine',
-    'rails',
     'redaction',
     'shared',
     'state',
@@ -68,20 +67,29 @@ export const MODULE_DEPENDENCY_POLICY: Readonly<
   ]),
   config: new Set(['discovery', 'identity', 'logging', 'shared', 'state']),
   audit: new Set(['config', 'identity', 'logging', 'machine', 'shared', 'state']),
-  discovery: new Set(['adapters', 'providers', 'shared', 'state', 'telemetry']),
-  archive: new Set(['adapters', 'shared']),
+  discovery: new Set(['providers', 'shared', 'state', 'telemetry']),
+  archive: new Set(['shared']),
   logging: new Set(['shared']),
-  cli: new Set(['adapters', 'audit', 'config', 'logging', 'shared', 'state', 'templates']),
+  cli: new Set([
+    'adapters',
+    'audit',
+    'config',
+    'logging',
+    'rendering',
+    'shared',
+    'state',
+    'templates',
+  ]),
   identity: new Set(['logging', 'shared']),
-  telemetry: new Set(['logging', 'presentation']),
-  presentation: new Set(['config', 'machine', 'state']),
+  telemetry: new Set(['logging', 'shared']),
+  presentation: new Set(['config', 'machine', 'shared', 'state']),
   diagnostics: new Set(['presentation']),
   hooks: new Set(['adapters', 'integration', 'shared', 'state']),
   'mcp-server': new Set(['adapters', 'integration', 'logging', 'shared']),
-  shared: new Set(['state']),
-  providers: new Set(['state', 'verification']),
+  shared: new Set([]),
+  providers: new Set(['shared', 'state']),
   verification: new Set(['adapters', 'providers', 'shared', 'state']),
   redaction: new Set(['logging', 'shared']),
   rendering: new Set(['shared', 'state', 'templates']),
-  templates: new Set(['rendering', 'shared']),
+  templates: new Set(['shared']),
 };

@@ -1,4 +1,4 @@
-import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
+import { renderCommandGovernanceRules } from '../mandates.js';
 
 export const VALIDATE_COMMAND = `---
 description: FlowGuard — Run verification checks on the approved plan.

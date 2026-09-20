@@ -17,11 +17,9 @@
  *    builtins directly, integration/tools must not import plugin-* modules, and
  *    entry / test-support / unclassified imports stay default-deny.
  *
- * MODULE-LEVEL CYCLE DEBT is frozen separately: `module-graph.ts` detects
- * strongly connected components, `scripts/module-cycle-baseline.json` records
- * every currently cyclic directed edge, and the observed cyclic-edge set must
- * equal the baseline. `scripts/check-module-cycle-lineage.mjs` additionally
- * enforces in CI that the baseline may only shrink relative to the PR base.
+ * MODULE-LEVEL CYCLES are prohibited outright: `module-graph.ts` detects
+ * strongly connected components and cyclic directed edges, and the observed
+ * graph must contain none. There is no debt baseline or lineage grandfathering.
  * FILE-LEVEL cycles remain rejected outright by Rule 8.
  *
  * The regex-based parser may miss dynamically-constructed imports; for those,
@@ -624,7 +622,6 @@ describe('Layer Dependency Rules', () => {
       // normalization/digest authority instead of duplicating it in state.
       '../shared/review-subject.js',
     ]);
-    const forbiddenStateSharedAuthorityImports = new Set(['../shared/policy-digest.js']);
 
     it('keeps identifier authorities separated', async () => {
       const identifiers = await fs.readFile(
@@ -672,16 +669,6 @@ describe('Layer Dependency Rules', () => {
               file: analysis.relativePath,
               rule: 'state-shared-primitive',
               message: `state/ imports an unapproved shared primitive: ${imp.module}`,
-              imports: [imp.module],
-            });
-          }
-        }
-        for (const imp of analysis.imports) {
-          if (forbiddenStateSharedAuthorityImports.has(imp.module)) {
-            stateViolations.push({
-              file: analysis.relativePath,
-              rule: 'state-evidence-discriminator-authority',
-              message: 'state/ imports an evidence discriminator from shared/',
               imports: [imp.module],
             });
           }
@@ -1021,7 +1008,7 @@ describe('Layer Dependency Rules', () => {
     });
   });
 
-  describe('Module graph governance (positive policy + cycle debt)', () => {
+  describe('Module graph governance (positive policy, zero cycles)', () => {
     const governedNames = [...GOVERNED_MODULES];
 
     function observedModuleEdges(): ModuleEdge[] {
@@ -1051,9 +1038,6 @@ describe('Layer Dependency Rules', () => {
       for (const to of targets) policyEdges.push({ from, to });
     }
     const policyEdgeSet = moduleEdgeSet(policyEdges);
-    const cycleBaseline = JSON.parse(
-      readFileSync(path.join(PROJECT_ROOT, 'scripts', 'module-cycle-baseline.json'), 'utf-8'),
-    ) as { version: number; edges: ModuleEdge[] };
 
     function describeEdges(keys: readonly string[]): string {
       return (
@@ -1073,44 +1057,19 @@ describe('Layer Dependency Rules', () => {
       expect(observedEdgeSet.size).toBeLessThanOrEqual(observed.length);
     });
 
-    // Intentional second topology pin beside the edge baseline: name the real
-    // SCC shape explicitly and update both together when a cycle is dissolved
-    // or a module joins an existing SCC. The edge baseline remains the debt
-    // authority; this assertion documents the structure the debt lives in.
-    it('classifies the real module graph as exactly three cyclic SCCs', () => {
+    // The module graph is acyclic by contract. There is deliberately NO debt
+    // baseline: any cyclic SCC or cyclic edge fails closed and must be
+    // dissolved, not grandfathered.
+    it('classifies the real module graph as acyclic (no cyclic SCCs)', () => {
       const sccs = cyclicStronglyConnectedComponents(governedNames, observed);
-      expect(sccs.map((component) => [...component].sort().join(',')).sort()).toEqual([
-        'adapters,archive,audit,config,discovery,presentation,providers,rails,telemetry,verification',
-        'rendering,templates',
-        'shared,state',
-      ]);
+      expect(sccs, `cyclic SCCs: ${JSON.stringify(sccs)}`).toEqual([]);
     });
 
-    it('cyclic module edges equal the committed debt baseline exactly', () => {
+    it('contains no cyclic module edges', () => {
       const cyclic = cycleParticipatingEdges(governedNames, observed);
-      const cyclicSet = moduleEdgeSet(cyclic);
-      const baselineSet = moduleEdgeSet(cycleBaseline.edges);
-      const newDebt = [...cyclicSet].filter((key) => !baselineSet.has(key));
-      const resolvedDebt = [...baselineSet].filter((key) => !cyclicSet.has(key));
-      expect(newDebt, `new cyclic edges: ${describeEdges(newDebt)}`).toEqual([]);
-      expect(
-        resolvedDebt,
-        `resolved cyclic edges must shrink the baseline: ${describeEdges(resolvedDebt)}`,
-      ).toEqual([]);
-    });
-
-    it('the cycle debt baseline is well-formed and contains only cyclic edges', () => {
-      expect(cycleBaseline.version).toBe(1);
-      const cyclicSet = moduleEdgeSet(cycleParticipatingEdges(governedNames, observed));
-      const seen = new Set<string>();
-      for (const baselineEdge of cycleBaseline.edges) {
-        expect(baselineEdge.from).not.toBe(baselineEdge.to);
-        expect(GOVERNED_MODULES.has(baselineEdge.from)).toBe(true);
-        expect(GOVERNED_MODULES.has(baselineEdge.to)).toBe(true);
-        expect(cyclicSet.has(edgeKey(baselineEdge.from, baselineEdge.to))).toBe(true);
-        expect(seen.has(edgeKey(baselineEdge.from, baselineEdge.to))).toBe(false);
-        seen.add(edgeKey(baselineEdge.from, baselineEdge.to));
-      }
+      expect(cyclic, `cyclic module edges: ${describeEdges([...moduleEdgeSet(cyclic)])}`).toEqual(
+        [],
+      );
     });
   });
 
@@ -1176,29 +1135,15 @@ describe('Layer Dependency Rules', () => {
       expect(stale).not.toContain(edgeKey('state', 'shared'));
     });
 
-    it('detects a new cyclic edge against the cycle debt baseline', () => {
-      const baseline = moduleEdgeSet([{ from: 'a', to: 'b' }]);
-      const cyclic = moduleEdgeSet(
-        cycleParticipatingEdges(
-          ['a', 'b'],
-          [
-            { from: 'a', to: 'b' },
-            { from: 'b', to: 'a' },
-          ],
-        ),
-      );
-      const newDebt = [...cyclic].filter((key) => !baseline.has(key));
-      expect(newDebt).toEqual([edgeKey('b', 'a')]);
-    });
-
-    it('detects removed cycle debt until the baseline shrinks', () => {
-      const baseline = moduleEdgeSet([
+    it('detects a cyclic SCC in a synthetic graph (zero-cycle guard fires)', () => {
+      const synthetic: ModuleEdge[] = [
         { from: 'a', to: 'b' },
         { from: 'b', to: 'a' },
-      ]);
-      const cyclic = moduleEdgeSet(cycleParticipatingEdges(['a', 'b'], [{ from: 'a', to: 'b' }]));
-      const resolvedDebt = [...baseline].filter((key) => !cyclic.has(key));
-      expect(resolvedDebt).toContain(edgeKey('b', 'a'));
+      ];
+      expect(cyclicStronglyConnectedComponents(['a', 'b'], synthetic)).toEqual([['a', 'b']]);
+      expect(moduleEdgeSet(cycleParticipatingEdges(['a', 'b'], synthetic))).toEqual(
+        moduleEdgeSet(synthetic),
+      );
     });
 
     it('still rejects unclassified, test-support, and entry imports (default-deny)', () => {
