@@ -163,7 +163,6 @@ export function classifyDiscoveryHealthUnavailable(
   if (error instanceof PersistenceError) {
     switch (error.code) {
       case 'PARSE_FAILED':
-      case 'MISSING_FILE_DIGEST':
         return 'corrupt';
       case 'SCHEMA_VALIDATION_FAILED':
       case 'SESSION_STATE_INCOMPATIBLE':

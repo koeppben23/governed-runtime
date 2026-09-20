@@ -325,7 +325,6 @@ describe('discovery-health', () => {
      */
     const EXPECTED_BY_CODE: Record<PersistenceErrorCode, DiscoveryHealthUnavailableReason> = {
       PARSE_FAILED: 'corrupt',
-      MISSING_FILE_DIGEST: 'corrupt',
       SCHEMA_VALIDATION_FAILED: 'schema_invalid',
       SESSION_STATE_INCOMPATIBLE: 'schema_invalid',
       READ_FAILED: 'read_failed',
@@ -343,7 +342,7 @@ describe('discovery-health', () => {
           code,
         ).toBe(expected);
       }
-      expect(Object.keys(EXPECTED_BY_CODE)).toHaveLength(8);
+      expect(Object.keys(EXPECTED_BY_CODE)).toHaveLength(7);
     });
 
     it('maps unknown errors and non-errors to read_failed', () => {
