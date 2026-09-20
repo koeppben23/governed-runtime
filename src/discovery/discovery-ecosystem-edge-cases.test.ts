@@ -66,6 +66,25 @@ vi.mock('../adapters/git', () => ({
 
 const gitMock = await import('../adapters/git.js');
 
+import type { DiscoveryIoPort } from './io-port.js';
+
+const EMPTY_SIGNALS = {
+  files: [] as string[],
+  packageFiles: [] as string[],
+  configFiles: [] as string[],
+  packageFilePaths: [] as string[],
+  configFilePaths: [] as string[],
+};
+
+const DISCOVERY_IO: DiscoveryIoPort = {
+  readPersistedDiscovery: async () => null,
+  listRepoSignals: async () => EMPTY_SIGNALS,
+  defaultBranch: gitMock.defaultBranch,
+  headCommit: gitMock.headCommit,
+  isClean: gitMock.isClean,
+  remoteOriginUrl: gitMock.remoteOriginUrl,
+};
+
 // ─── Test Fixtures ────────────────────────────────────────────────────────────
 
 const EMPTY_INPUT: CollectorInput = {
@@ -672,7 +691,7 @@ line-length = 100
           packageFiles: ['package.json'],
         },
       );
-      const result = await runDiscovery(input);
+      const result = await runDiscovery(input, DISCOVERY_IO);
       const ds = await extractDetectedStack(result);
       expect(ds).not.toBeNull();
       const pnpmItem = ds!.items.find((i) => i.id === 'pnpm');
@@ -695,7 +714,7 @@ line-length = 100
           packageFiles: ['package.json'],
         },
       );
-      const result = await runDiscovery(input);
+      const result = await runDiscovery(input, DISCOVERY_IO);
       const ds = await extractDetectedStack(result);
       expect(ds).not.toBeNull();
 
@@ -730,7 +749,7 @@ line-length = 100
           configFiles: ['vitest.config.ts', '.eslintrc.json'],
         },
       );
-      const result = await runDiscovery(input);
+      const result = await runDiscovery(input, DISCOVERY_IO);
       const ds = await extractDetectedStack(result);
       expect(ds).not.toBeNull();
 
@@ -755,7 +774,7 @@ line-length = 100
           packageFiles: ['package.json'],
         },
       );
-      const result = await runDiscovery(input);
+      const result = await runDiscovery(input, DISCOVERY_IO);
       const ds = await extractDetectedStack(result);
       expect(ds).not.toBeNull();
 
@@ -780,7 +799,7 @@ line-length = 100
         },
       );
 
-      const result = await runDiscovery(input);
+      const result = await runDiscovery(input, DISCOVERY_IO);
       const ds = await extractDetectedStack(result);
       expect(ds).not.toBeNull();
 
@@ -831,7 +850,7 @@ components = ["clippy", "rustfmt"]
         },
       );
 
-      const result = await runDiscovery(input);
+      const result = await runDiscovery(input, DISCOVERY_IO);
       const ds = await extractDetectedStack(result);
       expect(ds).not.toBeNull();
 

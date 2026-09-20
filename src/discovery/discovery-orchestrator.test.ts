@@ -66,6 +66,25 @@ vi.mock('../adapters/git', () => ({
 
 const gitMock = await import('../adapters/git.js');
 
+import type { DiscoveryIoPort } from './io-port.js';
+
+const EMPTY_SIGNALS = {
+  files: [] as string[],
+  packageFiles: [] as string[],
+  configFiles: [] as string[],
+  packageFilePaths: [] as string[],
+  configFilePaths: [] as string[],
+};
+
+const DISCOVERY_IO: DiscoveryIoPort = {
+  readPersistedDiscovery: async () => null,
+  listRepoSignals: async () => EMPTY_SIGNALS,
+  defaultBranch: gitMock.defaultBranch,
+  headCommit: gitMock.headCommit,
+  isClean: gitMock.isClean,
+  remoteOriginUrl: gitMock.remoteOriginUrl,
+};
+
 // ─── Test Fixtures ────────────────────────────────────────────────────────────
 
 const EMPTY_INPUT: CollectorInput = {
@@ -133,7 +152,7 @@ describe('discovery/orchestrator', () => {
       // Override remoteOriginUrl for this test (default mock returns null)
       vi.mocked(gitMock.remoteOriginUrl).mockResolvedValueOnce('https://github.com/test/repo.git');
 
-      const result = await runDiscovery(TS_PROJECT_INPUT);
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
 
       expect(result.schemaVersion).toBe(DISCOVERY_SCHEMA_VERSION);
       expect(result.collectedAt).toBeDefined();
@@ -155,7 +174,7 @@ describe('discovery/orchestrator', () => {
     });
 
     it('extractDiscoverySummary produces lightweight summary', async () => {
-      const result = await runDiscovery(TS_PROJECT_INPUT);
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
       const summary = extractDiscoverySummary(result);
 
       expect(summary.primaryLanguages).toContain('typescript');
@@ -171,7 +190,7 @@ describe('discovery/orchestrator', () => {
     });
 
     it('computeDiscoveryDigest returns deterministic hash', async () => {
-      const result = await runDiscovery(TS_PROJECT_INPUT);
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
       const digest1 = computeDiscoveryDigest(result);
       const digest2 = computeDiscoveryDigest(result);
 
@@ -181,7 +200,7 @@ describe('discovery/orchestrator', () => {
     });
 
     it('extractDetectedStack returns versioned items sorted by category then id', async () => {
-      const result = await runDiscovery(TS_PROJECT_INPUT);
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
       const ds = await extractDetectedStack(result);
 
       // TS project should have at least typescript with a version
@@ -216,7 +235,7 @@ describe('discovery/orchestrator', () => {
     });
 
     it('extractDetectedStack summary matches items array', async () => {
-      const result = await runDiscovery(TS_PROJECT_INPUT);
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
       const ds = await extractDetectedStack(result);
       if (!ds) return;
 
@@ -231,7 +250,7 @@ describe('discovery/orchestrator', () => {
       vi.mocked(gitMock.defaultBranch).mockResolvedValueOnce(null);
       vi.mocked(gitMock.headCommit).mockResolvedValueOnce(null);
 
-      const result = await runDiscovery(EMPTY_INPUT);
+      const result = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
 
       expect(result.schemaVersion).toBe(DISCOVERY_SCHEMA_VERSION);
       expect(result.stack.languages).toHaveLength(0);
@@ -242,14 +261,14 @@ describe('discovery/orchestrator', () => {
       vi.mocked(gitMock.defaultBranch).mockResolvedValueOnce(null);
       vi.mocked(gitMock.headCommit).mockResolvedValueOnce(null);
 
-      const result = await runDiscovery(EMPTY_INPUT);
+      const result = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
       const ds = await extractDetectedStack(result);
       expect(ds).toBeNull();
     });
 
     it('extractDetectedStack sorts languages before frameworks before runtimes', async () => {
       // Build a synthetic DiscoveryResult with mixed categories
-      const result = await runDiscovery(TS_PROJECT_INPUT);
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
       // Inject synthetic versioned items across categories
       result.stack.runtimes = [
         { id: 'node', confidence: 0.9, classification: 'fact', evidence: [], version: '20.11.0' },
@@ -298,7 +317,7 @@ describe('discovery/orchestrator', () => {
     });
 
     it('extractDetectedStack includes evidence when versionEvidence exists', async () => {
-      const result = await runDiscovery(TS_PROJECT_INPUT);
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
       result.stack.languages = [
         {
           id: 'java',
@@ -322,7 +341,7 @@ describe('discovery/orchestrator', () => {
     });
 
     it('extractDetectedStack omits evidence when versionEvidence is absent', async () => {
-      const result = await runDiscovery(TS_PROJECT_INPUT);
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
       result.stack.languages = [
         { id: 'go', confidence: 0.9, classification: 'fact', evidence: [], version: '1.21' },
       ];
@@ -339,7 +358,7 @@ describe('discovery/orchestrator', () => {
     });
 
     it('extractDetectedStack surfaces versioned and unversioned items in items[]', async () => {
-      const result = await runDiscovery(TS_PROJECT_INPUT);
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
       // Inject a versioned language + unversioned test framework
       result.stack.languages = [
         {
@@ -378,7 +397,7 @@ describe('discovery/orchestrator', () => {
     });
 
     it('extractDetectedStack populates targets[] from compilerTarget', async () => {
-      const result = await runDiscovery(TS_PROJECT_INPUT);
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
       result.stack.languages = [
         {
           id: 'typescript',
@@ -410,7 +429,7 @@ describe('discovery/orchestrator', () => {
     });
 
     it('extractDetectedStack omits targets[] when no compilerTarget exists', async () => {
-      const result = await runDiscovery(TS_PROJECT_INPUT);
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
       result.stack.languages = [
         { id: 'go', confidence: 0.9, classification: 'fact', evidence: [], version: '1.21' },
       ];
@@ -427,7 +446,7 @@ describe('discovery/orchestrator', () => {
     });
 
     it('extractDetectedStack uses evidence[0] when versionEvidence is absent', async () => {
-      const result = await runDiscovery(TS_PROJECT_INPUT);
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
       result.stack.testFrameworks = [
         {
           id: 'vitest',
@@ -452,7 +471,7 @@ describe('discovery/orchestrator', () => {
       vi.mocked(gitMock.defaultBranch).mockResolvedValueOnce(null);
       vi.mocked(gitMock.headCommit).mockResolvedValueOnce(null);
 
-      const result = await runDiscovery(EMPTY_INPUT);
+      const result = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
       // Double-check: all categories are empty
       expect(result.stack.languages).toHaveLength(0);
       expect(result.stack.frameworks).toHaveLength(0);
@@ -463,19 +482,19 @@ describe('discovery/orchestrator', () => {
     });
 
     it('detects TypeScript from tsconfig', async () => {
-      const result = await runDiscovery(TS_PROJECT_INPUT);
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
       expect(result.stack.languages.some((item) => item.id === 'typescript')).toBe(true);
     });
 
     it('detects eslint from eslint config', async () => {
-      const result = await runDiscovery(TS_PROJECT_INPUT);
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
       const eslint = result.stack.qualityTools.find((item) => item.id === 'eslint');
       expect(eslint).toBeDefined();
       expect(eslint?.classification).toBe('fact');
     });
 
     it('monorepo input yields monorepo topology', async () => {
-      const result = await runDiscovery(MONOREPO_INPUT);
+      const result = await runDiscovery(MONOREPO_INPUT, DISCOVERY_IO);
       expect(result.topology.kind).toBe('monorepo');
       expect(result.topology.modules.length).toBeGreaterThanOrEqual(3);
     });
@@ -489,7 +508,7 @@ describe('discovery/orchestrator', () => {
         configFiles: ['jest.config.ts'],
       };
 
-      const result = await runDiscovery(input);
+      const result = await runDiscovery(input, DISCOVERY_IO);
       expect(result.stack.buildTools.some((item) => item.id === 'gradle')).toBe(true);
       expect(result.stack.testFrameworks.some((item) => item.id === 'jest')).toBe(true);
     });
@@ -503,7 +522,7 @@ describe('discovery/orchestrator', () => {
         configFiles: [],
       };
 
-      const result = await runDiscovery(input);
+      const result = await runDiscovery(input, DISCOVERY_IO);
       expect(result.stack.buildTools.map((item) => item.id)).toEqual(
         expect.arrayContaining(['cargo', 'go-modules']),
       );
@@ -518,7 +537,7 @@ describe('discovery/orchestrator', () => {
         configFiles: [],
       };
 
-      const result = await runDiscovery(input);
+      const result = await runDiscovery(input, DISCOVERY_IO);
       expect(result.stack.buildTools.some((item) => item.id === 'maven')).toBe(true);
     });
   });
@@ -549,7 +568,7 @@ describe('discovery/orchestrator', () => {
     it('runDiscovery completes even if one collector throws', async () => {
       // Note: Individual collectors should not throw, but we verify resilience
       // If a collector throws, the orchestrator should handle it
-      const result = await runDiscovery(TS_PROJECT_INPUT);
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
       expect(result.schemaVersion).toBe(DISCOVERY_SCHEMA_VERSION);
     });
   });
@@ -563,7 +582,7 @@ describe('discovery/orchestrator', () => {
       };
 
       const start = Date.now();
-      const result = await runDiscovery(largeInput);
+      const result = await runDiscovery(largeInput, DISCOVERY_IO);
       const elapsed = Date.now() - start;
 
       expect(result.schemaVersion).toBe(DISCOVERY_SCHEMA_VERSION);
@@ -577,7 +596,7 @@ describe('discovery/orchestrator', () => {
         return 'main';
       });
 
-      const result = await runDiscovery(TS_PROJECT_INPUT, 1);
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO, 1);
       const failedCollectors = result.diagnostics.filter(
         (diagnostic) => diagnostic.status === 'failed',
       );
@@ -594,7 +613,7 @@ describe('discovery/orchestrator', () => {
 
       for (let i = 0; i < iterations; i++) {
         const start = Date.now();
-        await runDiscovery(TS_PROJECT_INPUT);
+        await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
         times.push(Date.now() - start);
       }
 
@@ -604,7 +623,7 @@ describe('discovery/orchestrator', () => {
     });
 
     it('computeDiscoveryDigest is fast (< 5ms)', async () => {
-      const result = await runDiscovery(TS_PROJECT_INPUT);
+      const result = await runDiscovery(TS_PROJECT_INPUT, DISCOVERY_IO);
       const start = Date.now();
       computeDiscoveryDigest(result);
       const elapsed = Date.now() - start;

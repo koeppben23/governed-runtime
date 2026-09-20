@@ -12,6 +12,7 @@
  * - Negative paths: timeout, unreadable files, parse failures, budget exhaustion
  */
 
+import type { DiscoveryIoPort as DiscoveryIoType } from './io-port.js';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
@@ -47,6 +48,18 @@ vi.mock('../adapters/persistence-discovery', () => ({
   readDiscovery: vi.fn().mockResolvedValue(null),
 }));
 
+const gitModule = await import('../adapters/git.js');
+const persistenceModule = await import('../adapters/persistence-discovery.js');
+
+const DISCOVERY_IO: DiscoveryIoType = {
+  readPersistedDiscovery: persistenceModule.readDiscovery,
+  listRepoSignals: gitModule.listRepoSignals,
+  defaultBranch: gitModule.defaultBranch,
+  headCommit: gitModule.headCommit,
+  isClean: gitModule.isClean,
+  remoteOriginUrl: gitModule.remoteOriginUrl,
+};
+
 const EMPTY_INPUT: CollectorInput = {
   worktreePath: '/test/repo',
   fingerprint: 'abcdef0123456789abcdef01',
@@ -64,7 +77,7 @@ describe('discovery/diagnostics (#372)', () => {
 
   describe('Phase 1: collector diagnostics', () => {
     it('runDiscovery produces diagnostics array for all 6 collectors', async () => {
-      const result = await runDiscovery(EMPTY_INPUT);
+      const result = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
 
       expect(result.diagnostics).toBeDefined();
       expect(result.diagnostics.length).toBe(6);
@@ -82,7 +95,7 @@ describe('discovery/diagnostics (#372)', () => {
     });
 
     it('diagnostics identify each collector', async () => {
-      const result = await runDiscovery(EMPTY_INPUT);
+      const result = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
 
       for (const diag of result.diagnostics) {
         expect(diag.name).toBeTruthy();
@@ -291,7 +304,7 @@ describe('discovery/diagnostics (#372)', () => {
 
   describe('Phase 5: advisory authority consolidation', () => {
     it('DiscoveryResult has no legacy planning fields', async () => {
-      const result = await runDiscovery(EMPTY_INPUT);
+      const result = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
       expect(result).not.toHaveProperty('collectors');
       expect(result).not.toHaveProperty('validationHints');
     });
@@ -330,7 +343,7 @@ describe('discovery/diagnostics (#372)', () => {
     });
 
     it('requires exactly one diagnostic for every current collector and code surfaces', async () => {
-      const result = await runDiscovery(EMPTY_INPUT);
+      const result = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
       const withoutCodeSurfaces = (({ codeSurfaces: _codeSurfaces, ...rest }) => rest)(result);
 
       expect(DiscoveryResultSchema.safeParse({ ...result, diagnostics: [] }).success).toBe(false);
@@ -368,7 +381,7 @@ describe('discovery/diagnostics (#372)', () => {
     });
 
     it('rejects removed v1 fields instead of stripping them', async () => {
-      const result = await runDiscovery(EMPTY_INPUT);
+      const result = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
       expect(DiscoveryResultSchema.safeParse({ ...result, collectors: {} }).success).toBe(false);
       expect(
         DiscoveryResultSchema.safeParse({
@@ -448,7 +461,7 @@ describe('discovery/diagnostics (#372)', () => {
   describe('Phase 7: stable drift digest', () => {
     it('computeStableDriftDigest returns deterministic hash', async () => {
       const { computeStableDriftDigest } = await import('./discovery-digest.js');
-      const result = await runDiscovery(EMPTY_INPUT);
+      const result = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
       const d1 = computeStableDriftDigest(result);
       const d2 = computeStableDriftDigest(result);
       expect(d1).toBe(d2);
@@ -458,7 +471,7 @@ describe('discovery/diagnostics (#372)', () => {
 
     it('stable digest unchanged when collectedAt differs', async () => {
       const { computeStableDriftDigest } = await import('./discovery-digest.js');
-      const result = await runDiscovery(EMPTY_INPUT);
+      const result = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
       const d1 = computeStableDriftDigest(result);
       const shifted = { ...result, collectedAt: new Date(Date.now() + 86_400_000).toISOString() };
       const d2 = computeStableDriftDigest(shifted);
@@ -467,7 +480,7 @@ describe('discovery/diagnostics (#372)', () => {
 
     it('stable digest unchanged when diagnostics[].durationMs differs', async () => {
       const { computeStableDriftDigest } = await import('./discovery-digest.js');
-      const result = await runDiscovery(EMPTY_INPUT);
+      const result = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
       const d1 = computeStableDriftDigest(result);
       const shifted = {
         ...result,
@@ -479,7 +492,7 @@ describe('discovery/diagnostics (#372)', () => {
 
     it('stable digest unchanged when both volatile fields differ', async () => {
       const { computeStableDriftDigest } = await import('./discovery-digest.js');
-      const result = await runDiscovery(EMPTY_INPUT);
+      const result = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
       const d1 = computeStableDriftDigest(result);
       const shifted = {
         ...result,
@@ -492,7 +505,7 @@ describe('discovery/diagnostics (#372)', () => {
 
     it('stable digest changes when diagnostic status differs', async () => {
       const { computeStableDriftDigest } = await import('./discovery-digest.js');
-      const result = await runDiscovery(EMPTY_INPUT);
+      const result = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
       const d1 = computeStableDriftDigest(result);
       const changed = {
         ...result,
@@ -508,7 +521,7 @@ describe('discovery/diagnostics (#372)', () => {
 
     it('stable digest changes when stack content differs', async () => {
       const { computeStableDriftDigest } = await import('./discovery-digest.js');
-      const result = await runDiscovery(EMPTY_INPUT);
+      const result = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
       const d1 = computeStableDriftDigest(result);
       const changed = {
         ...result,
@@ -530,7 +543,7 @@ describe('discovery/diagnostics (#372)', () => {
 
     it('full digest changes when collectedAt changes, stable digest does not', async () => {
       const { computeStableDriftDigest } = await import('./discovery-digest.js');
-      const result = await runDiscovery(EMPTY_INPUT);
+      const result = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
       const full1 = computeDiscoveryDigest(result);
       const stable1 = computeStableDriftDigest(result);
       const shifted = { ...result, collectedAt: new Date(Date.now() + 86_400_000).toISOString() };
@@ -544,13 +557,16 @@ describe('discovery/diagnostics (#372)', () => {
   describe('Phase 7b: checkDiscoveryDrift behavior', () => {
     it('unchanged repo with different timestamps reports drifted: false', async () => {
       // Use same worktree path so runDiscovery produces consistent metadata
-      const result = await runDiscovery({
-        worktreePath: '/test/repo',
-        fingerprint: 'abcdef0123456789abcdef01',
-        allFiles: [],
-        packageFiles: [],
-        configFiles: [],
-      });
+      const result = await runDiscovery(
+        {
+          worktreePath: '/test/repo',
+          fingerprint: 'abcdef0123456789abcdef01',
+          allFiles: [],
+          packageFiles: [],
+          configFiles: [],
+        },
+        DISCOVERY_IO,
+      );
 
       const { readDiscovery } = await import('../adapters/persistence-discovery.js');
       (readDiscovery as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(result);
@@ -569,13 +585,14 @@ describe('discovery/diagnostics (#372)', () => {
         '/workspace',
         '/test/repo',
         'abcdef0123456789abcdef01',
+        DISCOVERY_IO,
       );
       expect(drift.drifted).toBe(false);
       expect(drift.persistedDigest).toBeTypeOf('string');
     });
 
     it('changed content reports drifted: true without collector status changes', async () => {
-      const persisted = await runDiscovery(EMPTY_INPUT);
+      const persisted = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
 
       const { readDiscovery } = await import('../adapters/persistence-discovery.js');
       (readDiscovery as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(persisted);
@@ -594,6 +611,7 @@ describe('discovery/diagnostics (#372)', () => {
         '/workspace',
         '/test/ts-repo',
         'abcdef0123456789abcdef01',
+        DISCOVERY_IO,
       );
       expect(drift.drifted).toBe(true);
       expect(drift.currentDigest).not.toBe(drift.persistedDigest);
@@ -602,7 +620,7 @@ describe('discovery/diagnostics (#372)', () => {
     });
 
     it('drifted: true attributes a collector when its status changes', async () => {
-      const persisted = await runDiscovery(EMPTY_INPUT);
+      const persisted = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
       // Mutate a collector diagnostic to 'failed'
       const tampered = {
         ...persisted,
@@ -630,6 +648,7 @@ describe('discovery/diagnostics (#372)', () => {
         '/workspace',
         '/test/repo',
         'abcdef0123456789abcdef01',
+        DISCOVERY_IO,
       );
       expect(drift.drifted).toBe(true);
       expect(drift.changedContributors).toContain('stack-detection');

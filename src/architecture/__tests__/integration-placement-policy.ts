@@ -245,6 +245,18 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
     targetZone: 'discovery',
   },
   {
+    file: 'integration/discovery/discovery-health-loader.ts',
+    owner: 'discovery',
+    zone: 'discovery',
+    targetZone: 'discovery',
+  },
+  {
+    file: 'integration/discovery/discovery-io.ts',
+    owner: 'discovery',
+    zone: 'discovery',
+    targetZone: 'discovery',
+  },
+  {
     file: 'integration/discovery/discovery-risk-paths.ts',
     owner: 'discovery',
     zone: 'discovery',

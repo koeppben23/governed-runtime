@@ -66,6 +66,25 @@ vi.mock('../adapters/git', () => ({
 
 const gitMock = await import('../adapters/git.js');
 
+import type { DiscoveryIoPort } from './io-port.js';
+
+const EMPTY_SIGNALS = {
+  files: [] as string[],
+  packageFiles: [] as string[],
+  configFiles: [] as string[],
+  packageFilePaths: [] as string[],
+  configFilePaths: [] as string[],
+};
+
+const DISCOVERY_IO: DiscoveryIoPort = {
+  readPersistedDiscovery: async () => null,
+  listRepoSignals: async () => EMPTY_SIGNALS,
+  defaultBranch: gitMock.defaultBranch,
+  headCommit: gitMock.headCommit,
+  isClean: gitMock.isClean,
+  remoteOriginUrl: gitMock.remoteOriginUrl,
+};
+
 // ─── Test Fixtures ────────────────────────────────────────────────────────────
 
 const EMPTY_INPUT: CollectorInput = {
@@ -734,7 +753,7 @@ describe('discovery/collectors/stack-detection/artifact-detection', () => {
     });
 
     it('extractDetectedStack includes tool, qualityTool, and database categories', async () => {
-      const result = await runDiscovery(EMPTY_INPUT);
+      const result = await runDiscovery(EMPTY_INPUT, DISCOVERY_IO);
       // Inject synthetic items with versions
       result.stack.languages = [
         { id: 'java', confidence: 0.9, classification: 'fact', evidence: [], version: '21' },

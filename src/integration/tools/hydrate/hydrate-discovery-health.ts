@@ -2,7 +2,7 @@
 
 import type { RailResult } from '../../../rails/types.js';
 import type { DiscoveryDriftAssessment } from '../../../state/schema.js';
-import { loadDiscoveryHealthContext } from '../../../discovery/discovery-health.js';
+import { loadDiscoveryHealthContext } from '../../discovery/discovery-health-loader.js';
 import { buildDiscoveryDriftStatus } from '../../discovery/discovery-drift-status.js';
 import { reconcileDiscoveryHealthGate } from '../../discovery/discovery-health-gate.js';
 import { buildDiscoveryHealthGateTransitionDetail } from '../../discovery/discovery-health-audit.js';

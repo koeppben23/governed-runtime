@@ -67,7 +67,7 @@ export const MODULE_DEPENDENCY_POLICY: Readonly<
   ]),
   config: new Set(['discovery', 'identity', 'logging', 'shared', 'state']),
   audit: new Set(['config', 'identity', 'logging', 'machine', 'shared', 'state']),
-  discovery: new Set(['adapters', 'providers', 'shared', 'state', 'telemetry']),
+  discovery: new Set(['providers', 'shared', 'state', 'telemetry']),
   archive: new Set(['shared']),
   logging: new Set(['shared']),
   cli: new Set([

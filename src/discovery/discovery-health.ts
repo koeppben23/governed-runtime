@@ -14,8 +14,6 @@
 
 import type { DiscoveryResult } from './types.js';
 import type { CodeSurfaceStatus } from '../state/discovery-schemas.js';
-import { readDiscovery } from '../adapters/persistence-discovery.js';
-import { PersistenceError } from '../adapters/persistence.js';
 
 export type DiscoveryHealthUnavailableReason =
   'missing' | 'corrupt' | 'schema_invalid' | 'read_failed';
@@ -145,63 +143,9 @@ export function isDiscoveryHealthAvailable(
   return health?.status === 'available';
 }
 
-/**
- * Map a persistence error to a fail-closed unavailable reason.
- *
- * Single source of truth shared by status projection and the #399 health gate
- * so that both surfaces classify read/parse/schema failures identically.
- *
- * Exhaustive over `PersistenceErrorCode`: an artifact from an incompatible
- * state contract is `schema_invalid` (regenerate it), a missing digest marks
- * the artifact itself as `corrupt`, and anything that merely prevented the
- * read (including exhausted lock retries) is `read_failed`. Unknown errors
- * never fabricate a healthy state and fall through to `read_failed`.
- */
-export function classifyDiscoveryHealthUnavailable(
-  error: unknown,
-): DiscoveryHealthUnavailableReason {
-  if (error instanceof PersistenceError) {
-    switch (error.code) {
-      case 'PARSE_FAILED':
-        return 'corrupt';
-      case 'SCHEMA_VALIDATION_FAILED':
-      case 'SESSION_STATE_INCOMPATIBLE':
-        return 'schema_invalid';
-      case 'READ_FAILED':
-      case 'WRITE_FAILED':
-      case 'LOCK_TIMEOUT':
-      case 'LOCK_TIMEOUT_EXHAUSTED':
-        return 'read_failed';
-    }
-  }
-  return 'read_failed';
-}
-
 export interface DiscoveryHealthContext {
   readonly discovery: DiscoveryResult | null;
   readonly discoveryHealth: DiscoveryHealthProjection;
-}
-
-/**
- * Load the persisted DiscoveryResult and derive its advisory health projection.
- *
- * Fail-closed: a missing artifact or any read/parse/schema failure yields an
- * `unavailable` projection rather than a fabricated healthy one. This is the
- * canonical cheap read used by the per-tool #399 health gate and by status.
- */
-export async function loadDiscoveryHealthContext(wsDir: string): Promise<DiscoveryHealthContext> {
-  try {
-    const result = await readDiscovery(wsDir);
-    if (!result) {
-      return { discovery: null, discoveryHealth: unavailableDiscoveryHealth('missing') };
-    }
-    return { discovery: result, discoveryHealth: extractDiscoveryHealth(result) };
-  } catch (error) {
-    return {
-      discovery: null,
-      discoveryHealth: unavailableDiscoveryHealth(classifyDiscoveryHealthUnavailable(error)),
-    };
-  }
 }
 
 function recoveryForReason(reason: DiscoveryHealthUnavailableReason): string {

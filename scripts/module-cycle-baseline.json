@@ -2,32 +2,8 @@
   "version": 1,
   "edges": [
     {
-      "from": "adapters",
-      "to": "audit"
-    },
-    {
-      "from": "adapters",
-      "to": "config"
-    },
-    {
-      "from": "adapters",
-      "to": "discovery"
-    },
-    {
-      "from": "adapters",
-      "to": "telemetry"
-    },
-    {
-      "from": "audit",
-      "to": "config"
-    },
-    {
       "from": "config",
       "to": "discovery"
-    },
-    {
-      "from": "discovery",
-      "to": "adapters"
     },
     {
       "from": "discovery",
