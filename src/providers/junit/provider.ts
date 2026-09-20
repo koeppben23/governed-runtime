@@ -9,11 +9,11 @@
  * @version v1
  */
 
-import { buildJUnitLocalId } from '../../verification/assertion-parsers/junit-xml.js';
-import { junitXmlParser } from '../../verification/assertion-parsers/parsers.js';
+import { buildJUnitLocalId } from '../assertion-parsers/junit-xml.js';
+import { junitXmlParser } from '../assertion-parsers/parsers.js';
 import { ProviderError } from '../errors.js';
 import type { AssertionProviderExtension } from '../contract.js';
-import type { ParsedAssertion } from '../../verification/assertion-parsers/types.js';
+import type { ParsedAssertion } from '../assertion-parsers/types.js';
 import type { ProviderId } from '../../state/assertion-identity.js';
 import type { ReportFormatId } from '../../state/assertion-identity.js';
 import {

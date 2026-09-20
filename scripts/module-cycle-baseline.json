@@ -31,10 +31,6 @@
     },
     {
       "from": "discovery",
-      "to": "providers"
-    },
-    {
-      "from": "discovery",
       "to": "telemetry"
     },
     {
@@ -42,20 +38,8 @@
       "to": "config"
     },
     {
-      "from": "providers",
-      "to": "verification"
-    },
-    {
       "from": "telemetry",
       "to": "presentation"
-    },
-    {
-      "from": "verification",
-      "to": "adapters"
-    },
-    {
-      "from": "verification",
-      "to": "providers"
     }
   ]
 }

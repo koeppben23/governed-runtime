@@ -6,24 +6,23 @@ import type { ProviderId } from '../../state/evidence-validation.js';
 import type { AssertionIdentity } from '../../state/assertion-identity.js';
 import type { ParseContext, ParserResult } from './types.js';
 import { hashText } from '../../shared/hashing.js';
-import { VerificationError } from '../errors.js';
+import { AssertionParseError } from './errors.js';
 
-interface JestAssertionResult {
+interface VitestAssertionResult {
   ancestorTitles?: string[];
   title?: string;
   status?: string;
   duration?: number;
   failureMessages?: string[];
-  location?: string;
 }
 
-interface JestTestResult {
+interface VitestTestResult {
   name?: string;
-  assertionResults?: JestAssertionResult[];
+  assertionResults?: VitestAssertionResult[];
 }
 
-interface JestJsonReport {
-  testResults?: JestTestResult[];
+interface VitestJsonReport {
+  testResults?: VitestTestResult[];
 }
 
 function mapStatus(raw: string): 'passed' | 'failed' | 'skipped' {
@@ -36,7 +35,7 @@ function normalizeFilePath(filePath: string): string {
   return filePath.replace(/\\/g, '/').replace(/^\.\//, '');
 }
 
-export function buildJestLocalId(
+export function buildVitestLocalId(
   filePath: string,
   ancestorTitles: string[],
   title: string,
@@ -49,28 +48,23 @@ export function buildJestLocalId(
   return `${normalized}::${title}`;
 }
 
-function buildJestFailure(msg: string | undefined): StructuredAssertionEvidence['failure'] {
+function buildVitestFailure(msg: string | undefined): StructuredAssertionEvidence['failure'] {
   return {
     message: msg ? msg.split('\n')[0] : undefined,
     detailDigest: msg ? hashText(msg) : undefined,
   };
 }
 
-function buildJestAssertion(
-  ar: JestAssertionResult,
+function buildVitestAssertion(
+  ar: VitestAssertionResult,
   fileName: string,
   providerId: ProviderId,
 ): StructuredAssertionEvidence {
   const ancestors = ar.ancestorTitles ?? [];
   const status = mapStatus(ar.status ?? 'passed');
   const testTitle = ar.title ?? 'unknown';
-  const localId = buildJestLocalId(fileName, ancestors, testTitle);
+  const localId = buildVitestLocalId(fileName, ancestors, testTitle);
   const assertion: AssertionIdentity = { providerId, localId };
-
-  let sourceFile: string | undefined;
-  if (ar.location) {
-    sourceFile = ar.location.replace(/:\d+:\d+$/, '');
-  }
 
   return {
     assertion,
@@ -78,22 +72,21 @@ function buildJestAssertion(
     status,
     suiteName: ancestors.length > 0 ? ancestors.join(' > ') : undefined,
     testName: testTitle,
-    sourceFile,
     durationMs: typeof ar.duration === 'number' ? ar.duration : undefined,
-    failure: status === 'failed' ? buildJestFailure(ar.failureMessages?.[0]) : undefined,
+    failure: status === 'failed' ? buildVitestFailure(ar.failureMessages?.[0]) : undefined,
   };
 }
 
-export function parseJestJson(jsonText: string, context: ParseContext): ParserResult {
+export function parseVitestJson(jsonText: string, context: ParseContext): ParserResult {
   const providerId: ProviderId = context.providerId;
 
-  let report: JestJsonReport;
+  let report: VitestJsonReport;
   try {
-    report = JSON.parse(jsonText) as JestJsonReport;
+    report = JSON.parse(jsonText) as VitestJsonReport;
   } catch {
-    throw new VerificationError(
+    throw new AssertionParseError(
       'VERIFICATION_REPORT_PARSE_FAILED',
-      'jest_json: failed to parse JSON report',
+      'vitest_json: failed to parse JSON report',
     );
   }
 
@@ -110,7 +103,7 @@ export function parseJestJson(jsonText: string, context: ParseContext): ParserRe
     if (!Array.isArray(assertionResults)) continue;
 
     for (const ar of assertionResults) {
-      assertions.push(buildJestAssertion(ar, fileName, providerId));
+      assertions.push(buildVitestAssertion(ar, fileName, providerId));
     }
   }
 

@@ -4,13 +4,10 @@
  * @version v1
  */
 
-import {
-  parseGoTestJson,
-  buildGoLocalId,
-} from '../../verification/assertion-parsers/go-test-json.js';
+import { parseGoTestJson, buildGoLocalId } from '../assertion-parsers/go-test-json.js';
 import type { AssertionProviderExtension } from '../contract.js';
 import { ProviderError } from '../errors.js';
-import type { ParsedAssertion } from '../../verification/assertion-parsers/types.js';
+import type { ParsedAssertion } from '../assertion-parsers/types.js';
 import type { ReportFormatId } from '../../state/assertion-identity.js';
 
 const GO_LOCAL_ID_RE = /^[^:]+::[^:]+$/;

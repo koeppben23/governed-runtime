@@ -1,5 +1,5 @@
 /**
- * @module verification/assertion-parsers/parsers
+ * @module providers/assertion-parsers/parsers
  * @description Canonical parser instances for shared report formats.
  *
  * Formats like junit_xml are supported by multiple providers (JUnit, pytest).

@@ -4,14 +4,11 @@
  * @version v1
  */
 
-import {
-  parsePytestJson,
-  buildPytestLocalId,
-} from '../../verification/assertion-parsers/pytest-json.js';
-import { junitXmlParser } from '../../verification/assertion-parsers/parsers.js';
+import { parsePytestJson, buildPytestLocalId } from '../assertion-parsers/pytest-json.js';
+import { junitXmlParser } from '../assertion-parsers/parsers.js';
 import type { AssertionProviderExtension } from '../contract.js';
 import { ProviderError } from '../errors.js';
-import type { ParsedAssertion } from '../../verification/assertion-parsers/types.js';
+import type { ParsedAssertion } from '../assertion-parsers/types.js';
 import type { ReportFormatId } from '../../state/assertion-identity.js';
 
 const PYTEST_LOCAL_ID_RE = /^[^:]+(::[^:]+)+$/;

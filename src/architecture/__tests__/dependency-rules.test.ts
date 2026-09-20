@@ -1069,7 +1069,7 @@ describe('Layer Dependency Rules', () => {
     it('classifies the real module graph as exactly one cyclic SCC', () => {
       const sccs = cyclicStronglyConnectedComponents(governedNames, observed);
       expect(sccs.map((component) => [...component].sort().join(',')).sort()).toEqual([
-        'adapters,audit,config,discovery,presentation,providers,telemetry,verification',
+        'adapters,audit,config,discovery,presentation,telemetry',
       ]);
     });
 

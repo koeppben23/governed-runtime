@@ -11,10 +11,7 @@
  */
 
 import type { ProviderId, ReportFormatId } from '../state/assertion-identity.js';
-import type {
-  AssertionReportParser,
-  AssertionIdentityCodec,
-} from '../verification/assertion-parsers/types.js';
+import type { AssertionReportParser, AssertionIdentityCodec } from './assertion-parsers/types.js';
 import type {
   AssertionProviderExtension,
   ExecutionProfile,
