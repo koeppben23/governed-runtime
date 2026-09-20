@@ -27,9 +27,9 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { ToolDefinition, ToolResult, WorkspaceToolContext } from './helpers.js';
 import { formatError } from './error-format.js';
+import { formatBlocked } from '../blocked-result.js';
 import {
   withReadOnlySession,
-  formatBlocked,
   formatAutoAdvanceOverflow,
   enrichWithWorkflowDirective,
   getWorktree,

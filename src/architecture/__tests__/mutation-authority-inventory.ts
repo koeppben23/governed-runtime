@@ -782,20 +782,15 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     ['src/integration/tools/review-validation-mode.test.ts'],
     { legacy: true, critical: true },
   ),
-  required(
-    'src/integration/tools/review-validation.ts',
+  deferred(
+    'src/integration/review/review-validation.ts',
     'Review validation aggregation',
-    ['src/integration/tools/review-validation-findings.test.ts'],
-    { legacy: true },
+    'Relocated by #922 placement closure; re-admission requires a base profile full run with per-target evidence (no inherited legacyBaseline).',
   ),
-  required(
-    'src/integration/tools/review-validation-structured-evidence.ts',
+  deferred(
+    'src/integration/review/review-validation-structured-evidence.ts',
     'Structured review validation evidence',
-    [
-      'src/integration/review/challenge-policy-evaluation.test.ts',
-      'src/integration/tools/review-validation-findings.test.ts',
-    ],
-    { legacy: true },
+    'Relocated by #922 placement closure; re-admission requires a base profile full run with per-target evidence (no inherited legacyBaseline).',
   ),
   required(
     'src/integration/plugin-audit-lifecycle-reason.ts',
@@ -878,11 +873,10 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     ['src/integration/review/enforcement/challenge-binding.test.ts'],
     { legacy: true },
   ),
-  required(
-    'src/integration/tools/audit-outbox.ts',
+  deferred(
+    'src/integration/audit-outbox.ts',
     'Audit outbox durable delivery',
-    ['src/integration/tools/audit-outbox.test.ts'],
-    { legacy: true },
+    'Relocated by #922 placement closure; re-admission requires a base profile full run with per-target evidence (no inherited legacyBaseline).',
   ),
   required(
     'src/templates/codex-plugin.ts',

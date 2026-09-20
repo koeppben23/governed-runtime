@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   validateReviewFindings,
   type ReviewFindingsValidationContext,
-} from './review-validation.js';
+} from '../review/review-validation.js';
 import type { ReviewFindings } from '../../state/evidence.js';
 import type { ReviewChallenge } from '../../state/evidence-review.js';
 import {

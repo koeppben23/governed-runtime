@@ -7,7 +7,8 @@
 
 import type { ArchitectureArgs, ArchitectureSession } from './architecture-shared.js';
 import { buildArchitectureReviewInstruction } from './architecture-shared.js';
-import { formatBlocked, enrichWithWorkflowDirective, writeStateWithArtifacts } from './helpers.js';
+import { formatBlocked } from '../blocked-result.js';
+import { enrichWithWorkflowDirective, writeStateWithArtifacts } from './helpers.js';
 import { IntegrationInvariantError } from '../errors.js';
 import type { SessionState } from '../../state/schema.js';
 import { executeArchitecture } from '../../rails/architecture.js';

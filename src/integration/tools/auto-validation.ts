@@ -31,8 +31,8 @@
 import type { Phase, SessionState } from '../../state/schema.js';
 import type { SystemWorkOperation } from '../../state/system-work.js';
 import type { ToolResult, WorkspaceToolContext } from './helpers.js';
+import { formatBlocked } from '../blocked-result.js';
 import {
-  formatBlocked,
   withMutableSessionTransaction,
   withReadOnlySession,
   writeStateWithArtifacts,

@@ -46,7 +46,7 @@ import {
   type ReviewContinuation,
 } from '../review/review-continuation.js';
 import { blockObligation } from '../review/obligation-state.js';
-import { buildInterruptedDispatchRearm } from '../durable-dispatch.js';
+import { buildInterruptedDispatchRearm } from '../review/durable-dispatch.js';
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
 import {
   freezeContextAuthorityAtHead,
@@ -62,7 +62,8 @@ import {
   type ArchitectureArgs,
   type ArchitectureSession,
 } from './architecture-shared.js';
-import { enrichWithWorkflowDirective, formatBlocked, writeStateWithArtifacts } from './helpers.js';
+import { formatBlocked } from '../blocked-result.js';
+import { enrichWithWorkflowDirective, writeStateWithArtifacts } from './helpers.js';
 import { IntegrationInvariantError } from '../errors.js';
 
 export async function routeArchitectureInitialSubmission(

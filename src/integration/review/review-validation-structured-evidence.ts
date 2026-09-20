@@ -28,10 +28,10 @@ import {
 import {
   validateChallengeConsistency,
   type ChallengeConsistencyInput,
-} from '../review/enforcement/challenge-consistency.js';
-import { validateReviewFindingsConsistency } from '../review/enforcement/findings-consistency.js';
-import { hashFindings } from '../review/findings-hash.js';
-import { bindCanonicalEvidenceRefs } from '../review/enforcement/challenge-binding.js';
+} from './enforcement/challenge-consistency.js';
+import { validateReviewFindingsConsistency } from './enforcement/findings-consistency.js';
+import { hashFindings } from './findings-hash.js';
+import { bindCanonicalEvidenceRefs } from './enforcement/challenge-binding.js';
 
 /**
  * Result of resolving review findings from structured invocation evidence.

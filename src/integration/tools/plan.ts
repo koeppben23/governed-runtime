@@ -36,9 +36,9 @@ import { z } from 'zod';
 
 import type { ToolDefinition } from './helpers.js';
 import { formatError } from './error-format.js';
+import { formatBlocked } from '../blocked-result.js';
 import {
   withMutableSessionTransaction,
-  formatBlocked,
   formatAutoAdvanceOverflow,
   enrichWithWorkflowDirective,
   writeStateWithArtifacts,

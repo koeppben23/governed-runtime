@@ -6,7 +6,8 @@
 import { z } from 'zod';
 import type { ToolDefinition } from './helpers.js';
 import { formatError } from './error-format.js';
-import { formatBlocked, withReadOnlySession } from './helpers.js';
+import { formatBlocked } from '../blocked-result.js';
+import { withReadOnlySession } from './helpers.js';
 import { readReport } from '../../adapters/persistence.js';
 import { readConfig } from '../../adapters/persistence-config.js';
 import { buildHelpResult } from '../help/help-projection.js';

@@ -18,7 +18,8 @@ import {
 } from '../../rails/repository-authority.js';
 import { resolveAttemptDiscoveryOrBlock } from '../review/discovery-attempt-context.js';
 import { projectMarkdownHeadings } from '../../shared/markdown-sections.js';
-import { formatBlocked } from './helpers.js';
+import { formatBlocked } from '../blocked-result.js';
+
 import type { SessionState } from '../../state/schema.js';
 import { IntegrationInvariantError } from '../errors.js';
 import { appendReviewObligation, createObligationAndAttempt } from '../review/assurance.js';

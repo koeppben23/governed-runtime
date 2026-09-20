@@ -24,17 +24,14 @@ import {
 } from '../../presentation/index.js';
 import type { ReviewFindings } from '../../state/evidence.js';
 import type { SessionState } from '../../state/schema.js';
-import { buildBlockedPresentation } from './blocked-presentation.js';
+import { buildBlockedPresentation } from '../blocked-result.js';
 import { buildRailConclusion } from './rail-conclusion.js';
 import { projectStatusActionFromCommand } from '../status-conclusion.js';
 import { getReviewLoopProgress } from '../review/review-loop-progress.js';
 import { projectCompletionProofStatus } from '../proofgraph/proof-summary-projectors.js';
 import { emitPresentationTelemetry } from './presentation-telemetry.js';
-import {
-  headlineFields,
-  writeStateWithArtifactsAndAuditOperations,
-  type ToolResult,
-} from './helpers.js';
+import { headlineFields } from '../blocked-result.js';
+import { writeStateWithArtifactsAndAuditOperations, type ToolResult } from './helpers.js';
 
 // ─── Rail-result presentation ─────────────────────────────────────────────────
 

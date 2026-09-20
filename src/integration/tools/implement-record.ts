@@ -49,8 +49,8 @@
  * @version v5
  */
 
+import { formatBlocked } from '../blocked-result.js';
 import {
-  formatBlocked,
   formatAutoAdvanceOverflow,
   enrichWithWorkflowDirective,
   writeStateWithArtifacts,

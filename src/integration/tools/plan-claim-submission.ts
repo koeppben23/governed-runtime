@@ -14,7 +14,8 @@ import {
 } from '../proofgraph/claim-contract.js';
 import { MUTATION_PROFILE_IDS } from '../proofgraph/mutation-provider.js';
 import { STRUCTURAL_SURFACE_IDS } from '../proofgraph/structural-provider.js';
-import { formatBlocked } from './helpers.js';
+import { formatBlocked } from '../blocked-result.js';
+
 import type { PlanArgs, PlanClaimSubmissionDiagnostics } from './plan-types.js';
 
 export type PlanClaimSubmissionClassification =

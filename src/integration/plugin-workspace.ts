@@ -32,7 +32,7 @@ import { recordAssuranceWithAudit } from './review/shared-helpers.js';
 import {
   type SemanticAuditIntent,
   writeStateWithAuditOperationsAlreadyLocked,
-} from './tools/audit-outbox.js';
+} from './audit-outbox.js';
 
 /** Mutable per-session chain state. */
 export type MutableChainState = {

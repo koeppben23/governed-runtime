@@ -14,7 +14,7 @@ import {
   writeStateWithArtifactsAndAuditOperations,
 } from './helpers.js';
 import { persistAndFormat, formatRailResult } from './helpers-rail-presentation.js';
-import type { SemanticAuditIntent } from './audit-outbox.js';
+import type { SemanticAuditIntent } from '../audit-outbox.js';
 import { LOCK_CONTENDED_OUTPUT_FIELD } from '../../shared/flowguard-identifiers.js';
 import { PHASE_LABELS } from '../../presentation/phase-labels.js';
 import { renderMarkdown } from '../../presentation/markdown.js';

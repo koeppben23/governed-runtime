@@ -68,6 +68,11 @@ const mocks = vi.hoisted(() => {
   };
 });
 
+vi.mock('../blocked-result.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../blocked-result.js')>()),
+  formatBlocked: mocks.formatBlocked,
+}));
+
 vi.mock('./helpers.js', () => ({
   withReadOnlySession: vi.fn(async () => mocks.readOnlySession),
   withMutableSession: vi.fn(async (ctx) => {
@@ -104,7 +109,6 @@ vi.mock('./helpers.js', () => ({
   requireStateForMutation: mocks.requireStateForMutation,
   resolvePolicyFromState: mocks.resolvePolicyFromState,
   createPolicyContext: mocks.createPolicyContext,
-  formatBlocked: mocks.formatBlocked,
   enrichWithWorkflowDirective: mocks.enrichWithWorkflowDirective,
   writeStateWithArtifacts: mocks.writeStateWithArtifacts,
 }));

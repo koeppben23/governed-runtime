@@ -7,7 +7,7 @@ import type {
   VerificationCandidateKind,
 } from '../../state/discovery-schemas.js';
 import type { SessionState } from '../../state/schema.js';
-import { formatBlocked } from './helpers.js';
+import { formatBlocked } from '../blocked-result.js';
 
 export type RunCheckGuard = { readonly checkId: string; readonly candidate: VerificationCandidate };
 

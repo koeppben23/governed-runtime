@@ -22,7 +22,8 @@ import {
   projectCompletionProofStatus,
   projectImplementationProofStatus,
 } from '../proofgraph/proof-summary-projectors.js';
-import { formatBlocked } from './helpers.js';
+import { formatBlocked } from '../blocked-result.js';
+
 import { makeState, IMPL_EVIDENCE } from '../../fixtures.js';
 
 function proofGraphState() {

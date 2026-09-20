@@ -4,19 +4,15 @@ import {
   type PendingAuditOperation,
   type Phase,
   type Event,
-} from '../../state/schema.js';
-import { hashText } from '../../shared/hashing.js';
-import { canonicalJsonStringify } from '../../shared/canonical-json.js';
-import { buildStateWriteBody, buildTransitionBody } from '../../audit/types.js';
-import { buildSemanticAuditBody } from '../../audit/semantic-event.js';
-import { computeCanonicalEventDigest } from '../../audit/canonical-digest.js';
-import {
-  PersistenceError,
-  readState,
-  writeStateAlreadyLocked,
-} from '../../adapters/persistence.js';
-import { withSessionWriteLock } from '../../adapters/persistence-lock.js';
-import { refreshProofGraph } from '../proofgraph/refresh.js';
+} from '../state/schema.js';
+import { hashText } from '../shared/hashing.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { buildStateWriteBody, buildTransitionBody } from '../audit/types.js';
+import { buildSemanticAuditBody } from '../audit/semantic-event.js';
+import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
+import { PersistenceError, readState, writeStateAlreadyLocked } from '../adapters/persistence.js';
+import { withSessionWriteLock } from '../adapters/persistence-lock.js';
+import { refreshProofGraph } from './proofgraph/refresh.js';
 
 export type SemanticAuditIntent = Extract<PendingAuditOperation, { kind: 'semantic' }>['semantic'];
 
@@ -94,7 +90,7 @@ async function prepareState(nextState: SessionState): Promise<SessionState> {
     );
   }
   const { finalizeImplementationEntry } =
-    await import('../../adapters/implementation-base-authority.js');
+    await import('../adapters/implementation-base-authority.js');
   const finalized = await finalizeImplementationEntry(result.data);
   const refreshed = SessionState.safeParse({
     ...finalized,

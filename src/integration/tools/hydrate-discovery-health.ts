@@ -6,7 +6,7 @@ import { loadDiscoveryHealthContext } from '../../discovery/discovery-health.js'
 import { buildDiscoveryDriftStatus } from '../discovery-drift-status.js';
 import { reconcileDiscoveryHealthGate } from '../discovery-health-gate.js';
 import { buildDiscoveryHealthGateTransitionDetail } from '../discovery-health-audit.js';
-import type { SemanticAuditIntent } from './audit-outbox.js';
+import type { SemanticAuditIntent } from '../audit-outbox.js';
 export interface ReconcileGateContext {
   readonly sessDir: string;
   readonly workspaceDir: string;

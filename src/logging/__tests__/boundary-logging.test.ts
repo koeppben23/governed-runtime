@@ -125,7 +125,7 @@ describe('boundary-logging', () => {
     it('logs warn with code', async () => {
       const { log, entries } = captureLogger();
       setAdapterLogger(log);
-      const { formatBlocked } = await import('../../integration/tools/helpers.js');
+      const { formatBlocked } = await import('../../integration/blocked-result.js');
 
       const result = formatBlocked('TICKET_REQUIRED');
 
@@ -140,7 +140,7 @@ describe('boundary-logging', () => {
     it('adds trace fields when a trace scope is active', async () => {
       const { log, entries } = captureLogger();
       setAdapterLogger(log);
-      const { formatBlocked } = await import('../../integration/tools/helpers.js');
+      const { formatBlocked } = await import('../../integration/blocked-result.js');
 
       runWithLogContext({ traceId: 'trace-boundary' }, () => {
         formatBlocked('TICKET_REQUIRED');
@@ -170,7 +170,7 @@ describe('boundary-logging', () => {
     });
 
     it('formatBlocked result unchanged when no adapter logger is set', async () => {
-      const { formatBlocked } = await import('../../integration/tools/helpers.js');
+      const { formatBlocked } = await import('../../integration/blocked-result.js');
 
       const result = formatBlocked('TICKET_REQUIRED');
       const parsed = JSON.parse(result);

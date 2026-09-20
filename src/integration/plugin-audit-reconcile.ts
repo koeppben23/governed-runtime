@@ -30,7 +30,7 @@ import type { TimestampAssurancePolicy } from '../config/policy-types.js';
 import type { TimestampAuthorityProvider, TimestampVerifier } from '../audit/tsa-provider.js';
 import { resolveAuditContext, type AuditContext } from './plugin-audit-context.js';
 import { TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
-import { computeStateDigest, writeStateWithAuditOperations } from './tools/audit-outbox.js';
+import { computeStateDigest, writeStateWithAuditOperations } from './audit-outbox.js';
 
 /** Closure dependencies injected from plugin.ts. */
 export interface AuditDeps {

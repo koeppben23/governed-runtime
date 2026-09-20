@@ -16,8 +16,8 @@ import {
   executeRegulatedCompletion,
 } from '../services/regulated-completion.js';
 import { projectLatestReviewExecution } from '../review/review-execution-projection.js';
+import { formatBlocked } from '../blocked-result.js';
 import {
-  formatBlocked,
   withMutableSessionTransaction,
   writeStateWithArtifactsAndAuditOperations,
 } from './helpers.js';

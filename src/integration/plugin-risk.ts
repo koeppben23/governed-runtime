@@ -18,7 +18,7 @@ import {
   type RiskClassificationDecision,
 } from './phase-tool-gate.js';
 import { appendReviewAuditEvent } from './review/audit-events.js';
-import { writeStateWithAuditOperations } from './tools/audit-outbox.js';
+import { writeStateWithAuditOperations } from './audit-outbox.js';
 
 export interface RiskEnforcementDeps {
   getSessionDir(sessionId: string): string | null;

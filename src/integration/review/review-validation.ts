@@ -19,12 +19,9 @@
  */
 
 import type { ReviewFindings } from '../../state/evidence.js';
-import { formatBlocked } from './helpers.js';
-import {
-  findLatestObligation,
-  hashFindings,
-  validateStrictAttestation,
-} from '../review/assurance.js';
+import { formatBlocked } from '../blocked-result.js';
+
+import { findLatestObligation, hashFindings, validateStrictAttestation } from './assurance.js';
 import type {
   ReviewAssuranceState,
   ReviewObligationType,
@@ -44,12 +41,12 @@ import {
 import {
   validateChallengeConsistency,
   type ChallengeConsistencyInput,
-} from '../review/enforcement/challenge-consistency.js';
+} from './enforcement/challenge-consistency.js';
 import {
   validateReviewFindingsConsistency,
   validateReviewFindingsScope,
   type FindingWithRelation,
-} from '../review/enforcement/findings-consistency.js';
+} from './enforcement/findings-consistency.js';
 import { checkRepositoryEvidenceBinding } from './review-validation-evidence.js';
 
 // ─── Validation Context ───────────────────────────────────────────────────────

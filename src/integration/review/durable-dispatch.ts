@@ -1,5 +1,5 @@
 /**
- * @module integration/durable-dispatch
+ * @module integration/review/durable-dispatch
  * @description Transport-neutral durable reviewer dispatch ledger operations.
  *
  * Every reviewer invocation must be recorded durably BEFORE the host releases
@@ -11,17 +11,17 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { buildEnforcementError } from './plugin-helpers.js';
-import { authorizeDispatchRearm } from './review/reissue-authority.js';
-import { createAttemptForExistingObligation } from './review/assurance.js';
+import { buildEnforcementError } from '../plugin-helpers.js';
+import { authorizeDispatchRearm } from './reissue-authority.js';
+import { createAttemptForExistingObligation } from './assurance.js';
 import {
   abandonReviewDispatch,
   appendReviewDispatch,
   ensureReviewAssurance,
   markDispatchOutcomeUnknown,
-} from '../state/review-continuation.js';
-import type { ReviewAttempt, ReviewDispatchRecord } from '../state/evidence-review.js';
-import type { SessionState } from '../state/schema.js';
+} from '../../state/review-continuation.js';
+import type { ReviewAttempt, ReviewDispatchRecord } from '../../state/evidence-review.js';
+import type { SessionState } from '../../state/schema.js';
 
 const REVIEW_DISPATCH_PERSISTENCE_FAILED = 'REVIEW_DISPATCH_PERSISTENCE_FAILED' as const;
 

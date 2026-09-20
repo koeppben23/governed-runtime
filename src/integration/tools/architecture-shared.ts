@@ -5,7 +5,8 @@
  * @version v1
  */
 
-import { formatBlocked } from './helpers.js';
+import { formatBlocked } from '../blocked-result.js';
+
 import type { MutableSession } from './helpers.js';
 import type { SessionState } from '../../state/schema.js';
 import type { LoopVerdict } from '../../state/evidence.js';

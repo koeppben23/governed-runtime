@@ -7,7 +7,8 @@
  */
 
 import type { ReviewObligation, ReviewInvocationEvidence } from '../../state/evidence.js';
-import { formatBlocked } from './helpers.js';
+import { formatBlocked } from '../blocked-result.js';
+
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
 // ─── Acceptance / Rejection Types ─────────────────────────────────────────────

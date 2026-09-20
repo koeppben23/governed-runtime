@@ -23,7 +23,7 @@ import {
   findReviewObligationById,
 } from '../../review/assurance.js';
 import { resolveReviewDispatchAuthority } from '../../review/dispatch-authority.js';
-import { buildInterruptedDispatchRearm } from '../../durable-dispatch.js';
+import { buildInterruptedDispatchRearm } from '../../review/durable-dispatch.js';
 import { resolveReviewContinuation } from '../../../state/review-continuation.js';
 import { resolveReviewAttemptDiscoveryContext } from '../../review/discovery-attempt-context.js';
 import type { ReviewAttemptDiscoveryContext } from '../../../state/evidence.js';
@@ -33,9 +33,10 @@ import {
   repositoryAuthorityFromSubject,
 } from './obligation-format.js';
 import { hasReviewContentInput, validateReviewContentSource } from './review-input.js';
-import { formatBlocked, writeStateWithArtifacts } from '../helpers.js';
+import { formatBlocked } from '../../blocked-result.js';
+import { writeStateWithArtifacts } from '../helpers.js';
 import { IntegrationInvariantError } from '../../errors.js';
-import { resolveChallengeClassificationEvidence } from '../review-obligation-classification.js';
+import { resolveChallengeClassificationEvidence } from '../../review/review-obligation-classification.js';
 import { type ResolvedBranchReviewSource } from '../../../adapters/gh-cli.js';
 import type { ReviewToolArgs } from './types.js';
 

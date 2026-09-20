@@ -18,7 +18,7 @@ import {
   computeStateDigest,
   prepareAuditOperations,
   prepareStateWithAuditOperations,
-} from './audit-outbox.js';
+} from '../audit-outbox.js';
 import { computeCanonicalEventDigest } from '../../audit/canonical-digest.js';
 import { buildStateWriteBody, buildTransitionBody } from '../../audit/types.js';
 import { buildSemanticAuditBody } from '../../audit/semantic-event.js';

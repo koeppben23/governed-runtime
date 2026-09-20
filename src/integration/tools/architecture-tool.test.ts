@@ -46,13 +46,17 @@ const mocks = vi.hoisted(() => {
   };
 });
 
+vi.mock('../blocked-result.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../blocked-result.js')>()),
+  formatBlocked: mocks.formatBlocked,
+}));
+
 vi.mock('./helpers.js', () => ({
   resolveWorkspacePaths: mocks.resolveWorkspacePaths,
   requireStateForMutation: mocks.requireStateForMutation,
   resolvePolicyFromState: mocks.resolvePolicyFromState,
   createPolicyContext: mocks.createPolicyContext,
   formatEval: mocks.formatEval,
-  formatBlocked: mocks.formatBlocked,
   formatError: mocks.formatError,
   enrichWithWorkflowDirective: mocks.enrichWithWorkflowDirective,
   writeStateWithArtifacts: mocks.writeStateWithArtifacts,

@@ -11,7 +11,8 @@
  * @version v1
  */
 
-import { withReadOnlySession, formatBlocked, enrichWithWorkflowDirective } from './helpers.js';
+import { formatBlocked } from '../blocked-result.js';
+import { withReadOnlySession, enrichWithWorkflowDirective } from './helpers.js';
 import { formatError } from './error-format.js';
 import { USER_GATES, TERMINAL } from '../../machine/topology.js';
 import { resolveWorkflowDirective } from '../../machine/workflow-directive.js';

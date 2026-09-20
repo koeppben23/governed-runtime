@@ -14,7 +14,8 @@
 
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
-import { formatBlocked, writeStateWithArtifacts } from './helpers.js';
+import { formatBlocked } from '../blocked-result.js';
+import { writeStateWithArtifacts } from './helpers.js';
 import { withMutableSessionTransaction } from './helpers.js';
 import { formatError } from './error-format.js';
 import type { ToolDefinition } from './helpers.js';

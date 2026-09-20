@@ -11,7 +11,8 @@ import { z } from 'zod';
 
 import type { ToolDefinition } from './helpers.js';
 import { formatError } from './error-format.js';
-import { withMutableSessionTransaction, formatBlocked } from './helpers.js';
+import { formatBlocked } from '../blocked-result.js';
+import { withMutableSessionTransaction } from './helpers.js';
 import type { ToolResult } from './helpers.js';
 import { persistAndFormat } from './helpers-rail-presentation.js';
 import { executeTicket } from '../../rails/ticket.js';

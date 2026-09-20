@@ -25,7 +25,8 @@ import type {
 import type { executeCheck } from '../../verification/executor.js';
 import type { deriveRepairGuidance } from '../../verification/repair-guidance.js';
 import { IntegrationInvariantError } from '../errors.js';
-import { formatBlocked } from './helpers.js';
+import { formatBlocked } from '../blocked-result.js';
+
 import { formatValidationDetail } from './run-check-presentation.js';
 
 export type CheckEvidence = Awaited<ReturnType<typeof executeCheck>>;

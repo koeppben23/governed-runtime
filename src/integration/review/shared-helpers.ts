@@ -9,7 +9,7 @@
  */
 
 import type { SessionState } from '../../state/schema.js';
-import type { SemanticAuditIntent } from '../tools/audit-outbox.js';
+import type { SemanticAuditIntent } from '../audit-outbox.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import { type ReviewVerificationEvidenceItem } from './prompt-builders.js';
 import type { AttestationResult } from './pipeline-types.js';

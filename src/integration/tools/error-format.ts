@@ -10,7 +10,7 @@
  */
 
 import { ZodError } from 'zod';
-import { formatBlocked } from './helpers.js';
+import { formatBlocked } from '../blocked-result.js';
 
 /** Upper bound on issues echoed to the agent, so one bad artifact cannot flood the context. */
 const MAX_REPORTED_ISSUES = 5;

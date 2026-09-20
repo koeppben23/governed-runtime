@@ -14,10 +14,11 @@
  */
 
 import type { ReviewAttempt, ReviewFindings, ReviewObligation } from '../../state/evidence.js';
-import { formatBlocked } from './helpers.js';
-import { resolveEvidenceAuthorizingAttempt } from '../review/assurance.js';
-import type { FindingWithRelation } from '../review/enforcement/findings-consistency.js';
-import { bindRepositoryEvidenceLocations } from '../review/observation-binding.js';
+import { formatBlocked } from '../blocked-result.js';
+
+import { resolveEvidenceAuthorizingAttempt } from './assurance.js';
+import type { FindingWithRelation } from './enforcement/findings-consistency.js';
+import { bindRepositoryEvidenceLocations } from './observation-binding.js';
 
 /**
  * Minimal structural context (deliberately NOT imported from

@@ -42,6 +42,16 @@ vi.mock('../../adapters/workspace/index.js', async (importOriginal) => {
   };
 });
 
+vi.mock('../blocked-result.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../blocked-result.js')>();
+  return {
+    ...original,
+    formatBlocked: vi.fn((code: string, params: Record<string, unknown>) =>
+      JSON.stringify({ error: true, code, ...params }),
+    ),
+  };
+});
+
 vi.mock('./helpers.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('./helpers.js')>();
   return {
@@ -52,9 +62,6 @@ vi.mock('./helpers.js', async (importOriginal) => {
       sessDir: path.join(LEDGER_HOME, 'sessions', 'unused'),
       wsDir: path.join(LEDGER_HOME, 'ws'),
     })),
-    formatBlocked: vi.fn((code: string, params: Record<string, unknown>) =>
-      JSON.stringify({ error: true, code, ...params }),
-    ),
     getWorktree: vi.fn(() => worktree),
   };
 });

@@ -17,7 +17,8 @@ import { z } from 'zod';
 
 import type { ToolDefinition, ToolResult, WorkspaceToolContext } from './helpers.js';
 import { formatError } from './error-format.js';
-import { withMutableSession, withMutableSessionTransaction, formatBlocked } from './helpers.js';
+import { formatBlocked } from '../blocked-result.js';
+import { withMutableSession, withMutableSessionTransaction } from './helpers.js';
 import { persistAndFormat } from './helpers-rail-presentation.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
 import type { ActorInfo, ReviewVerdict } from '../../state/evidence.js';

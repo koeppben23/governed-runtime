@@ -12,8 +12,9 @@
 import type { SessionState } from '../../state/schema.js';
 import type { LoopVerdict, ReviewFindings } from '../../state/evidence.js';
 import { IntegrationInvariantError } from '../errors.js';
-import { formatBlocked } from './helpers.js';
-import { resolveStructuredEffectiveFindings } from './review-validation.js';
+import { formatBlocked } from '../blocked-result.js';
+
+import { resolveStructuredEffectiveFindings } from '../review/review-validation.js';
 import { collectPreviouslyUsedChallengeIds } from '../review/challenge-history.js';
 import {
   consumeReviewObligation,

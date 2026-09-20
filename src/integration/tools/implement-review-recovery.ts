@@ -11,10 +11,11 @@
  *                             review authority from persisted material
  */
 
-import { formatBlocked, enrichWithWorkflowDirective, writeStateWithArtifacts } from './helpers.js';
+import { formatBlocked } from '../blocked-result.js';
+import { enrichWithWorkflowDirective, writeStateWithArtifacts } from './helpers.js';
 import type { SessionState } from '../../state/schema.js';
 import { resolveReviewContinuation } from '../../state/review-continuation.js';
-import { buildInterruptedDispatchRearm } from '../durable-dispatch.js';
+import { buildInterruptedDispatchRearm } from '../review/durable-dispatch.js';
 import {
   resolveReviewDispatchAuthority,
   reviewObligationResponseFields,

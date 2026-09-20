@@ -8,6 +8,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { isTestSourcePath } from './module-classification.js';
 import { repoRelative } from './repo-path.js';
 
 const SRC = join(process.cwd(), 'src');
@@ -19,7 +20,8 @@ function listProductionSources(dir: string): string[] {
     const stat = statSync(full);
     if (stat.isDirectory()) {
       results.push(...listProductionSources(full));
-    } else if (entry.endsWith('.ts') && !entry.endsWith('.test.ts')) {
+    } else if (entry.endsWith('.ts')) {
+      if (isTestSourcePath(repoRelative(SRC, full))) continue;
       results.push(full);
     }
   }
@@ -89,13 +91,12 @@ describe('structured review authority hard cut', () => {
 
   it('projects review dispatch requirements only from the authority-bound instruction builder', () => {
     // `reviewDispatchRequired()` may only be referenced by the dispatch-signal
-    // definition, the authority-bound child-session instruction, and the
-    // explicit test factory. Producers must go through the instruction, which
-    // requires a full ReviewDispatchAuthority.
+    // definition and the authority-bound child-session instruction. Producers
+    // must go through the instruction, which requires a full
+    // ReviewDispatchAuthority.
     const allowed = new Set([
       'integration/review/dispatch-signal.ts',
       'integration/review/child-session-instruction.ts',
-      'integration/plugin-host-task-diagnostics-helpers.ts',
     ]);
     const offenders = listProductionSources(SRC)
       .filter((file) => /\breviewDispatchRequired\b/.test(readFileSync(file, 'utf8')))

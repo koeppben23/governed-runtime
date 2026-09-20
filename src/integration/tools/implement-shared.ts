@@ -6,8 +6,8 @@
  */
 
 import type { ToolContext } from './helpers.js';
+import { formatBlocked } from '../blocked-result.js';
 import {
-  formatBlocked,
   writeStateWithArtifacts,
   writeStateWithArtifactsAndAuditOperationsAlreadyLocked,
 } from './helpers.js';

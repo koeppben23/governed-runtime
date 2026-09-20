@@ -1,5 +1,5 @@
 /**
- * @module integration/plugin-host-task-diagnostics-helpers
+ * @module integration/plugin-host-task-diagnostics-test-helpers
  * @description Shared test factories and constants for plugin-host-task-diagnostics test suites.
  */
 

@@ -20,9 +20,9 @@ import type {
   PlanSubmissionResponseInput,
   ConvergedPlanReviewInput,
 } from './plan-types.js';
+import { formatBlocked } from '../blocked-result.js';
 import {
   formatAutoAdvanceOverflow,
-  formatBlocked,
   enrichWithWorkflowDirective,
   writeStateWithArtifacts,
 } from './helpers.js';

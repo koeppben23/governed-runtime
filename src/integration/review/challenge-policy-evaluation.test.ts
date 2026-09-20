@@ -15,7 +15,7 @@ import { computeFingerprint, sessionDir } from '../../adapters/workspace/index.j
 import { hashCanonicalReviewContent } from '../../shared/review-subject.js';
 import { createTestWorkspace, createToolContext, parseToolResult } from '../test-helpers.js';
 import { resolve_implementation_challenge } from '../tools/challenge-resolution.js';
-import { resolveStructuredFindings } from '../tools/review-validation-structured-evidence.js';
+import { resolveStructuredFindings } from './review-validation-structured-evidence.js';
 import {
   computeTargetedResolutionChallengeIds,
   computeUnaddressedPriorFailIds,

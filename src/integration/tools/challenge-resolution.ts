@@ -7,9 +7,9 @@ import type { SessionState } from '../../state/schema.js';
 import type { ToolDefinition } from './helpers.js';
 import { formatError } from './error-format.js';
 import { isOpenImplementationChallenge } from './implement-review-state.js';
+import { formatBlocked } from '../blocked-result.js';
 import {
   enrichWithWorkflowDirective,
-  formatBlocked,
   withMutableSessionTransaction,
   writeStateWithArtifacts,
 } from './helpers.js';

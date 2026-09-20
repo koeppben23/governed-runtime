@@ -12,11 +12,12 @@
  */
 
 import { IntegrationInvariantError } from '../errors.js';
-import { formatBlocked } from './helpers.js';
+import { formatBlocked } from '../blocked-result.js';
+
 import type { SessionState } from '../../state/schema.js';
 import type { LoopVerdict, RevisionDelta, ReviewFindings } from '../../state/evidence.js';
 import { resolvePlanReviewCompletion } from '../../state/evidence-plan.js';
-import { resolveStructuredEffectiveFindings } from './review-validation.js';
+import { resolveStructuredEffectiveFindings } from '../review/review-validation.js';
 import { collectPreviouslyUsedChallengeIds } from '../review/challenge-history.js';
 import { buildReviewChallengeContract } from '../review/challenge-contract.js';
 import {

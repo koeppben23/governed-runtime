@@ -41,17 +41,17 @@ import { buildReviewerProofContext } from './review/proof-context.js';
 import {
   abandonReviewDispatchByHostCall,
   persistAuthorizedReviewDispatch,
-} from './durable-dispatch.js';
+} from './review/durable-dispatch.js';
 import { reconcilePendingAuditOperations } from './plugin-audit-reconcile.js';
 import { projectReviewExecution } from './review/review-execution-projection.js';
-import type { PersistedState, NativeReviewLineage } from './native-task-review-types.js';
+import type { PersistedState, NativeReviewLineage } from './review/native-task-review-types.js';
 import {
   bindNativeReviewEvidence,
   capturePreparedFindings,
   persistReviewerObservations,
   resolveNativeReviewLineage,
   validateCapturedFindings,
-} from './native-task-review-bindings.js';
+} from './review/native-task-review-bindings.js';
 
 const TASK_TOOL = 'task';
 const TASK_DESCRIPTION = 'FlowGuard independent review';

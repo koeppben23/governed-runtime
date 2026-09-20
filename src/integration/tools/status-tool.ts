@@ -15,10 +15,10 @@ import { z } from 'zod';
 
 import type { ToolDefinition } from './helpers.js';
 import { formatError } from './error-format.js';
+import { formatBlocked } from '../blocked-result.js';
 import {
   resolveWorkspacePaths,
   withReadOnlySession,
-  formatBlocked,
   enrichWithWorkflowDirective,
 } from './helpers.js';
 

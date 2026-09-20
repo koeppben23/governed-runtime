@@ -56,7 +56,8 @@ import { repositoryEvidenceUnavailableField } from '../review/observation-access
 import { hasFrozenRepositoryAuthority } from '../../state/evidence.js';
 import type { ReviewAttemptDiscoveryContext } from '../../state/evidence.js';
 import { IntegrationInvariantError } from '../errors.js';
-import { formatBlocked, enrichWithWorkflowDirective, writeStateWithArtifacts } from './helpers.js';
+import { formatBlocked } from '../blocked-result.js';
+import { enrichWithWorkflowDirective, writeStateWithArtifacts } from './helpers.js';
 import { toPresentationFindingRelation } from './helpers-rail-presentation.js';
 
 // ─── Mode-B Internal Types ────────────────────────────────────────────────

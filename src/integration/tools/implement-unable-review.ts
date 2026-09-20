@@ -8,7 +8,8 @@ import type { SessionState } from '../../state/schema.js';
 import type { ImplementRuntime } from './implement-shared.js';
 import type { ReviewAttempt, ReviewObligation } from '../../state/evidence.js';
 import { IntegrationInvariantError } from '../errors.js';
-import { enrichWithWorkflowDirective, formatBlocked, writeStateWithArtifacts } from './helpers.js';
+import { formatBlocked } from '../blocked-result.js';
+import { enrichWithWorkflowDirective, writeStateWithArtifacts } from './helpers.js';
 
 export async function handleUnableToReview(input: {
   runtime: ImplementRuntime;

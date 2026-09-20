@@ -47,9 +47,9 @@ import { MutationAttempt } from '../../state/evidence-mutation.js';
 import { buildMutationAttempt, loadReportRaw } from '../proofgraph/mutation-provider.js';
 import type { ToolDefinition } from './helpers.js';
 import { formatError } from './error-format.js';
+import { formatBlocked } from '../blocked-result.js';
 import {
   enrichWithWorkflowDirective,
-  formatBlocked,
   getWorktree,
   withMutableSessionTransaction,
   writeStateWithArtifacts,

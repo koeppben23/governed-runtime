@@ -6,7 +6,8 @@
  */
 
 import type { ToolContext } from './helpers.js';
-import { formatBlocked, formatAutoAdvanceOverflow } from './helpers.js';
+import { formatBlocked } from '../blocked-result.js';
+import { formatAutoAdvanceOverflow } from './helpers.js';
 
 import type { SessionState } from '../../state/schema.js';
 import { evaluate } from '../../machine/evaluate.js';
@@ -28,7 +29,7 @@ import {
   findLatestUnconsumedObligation,
 } from '../review/assurance.js';
 
-import { resolveStructuredEffectiveFindings } from './review-validation.js';
+import { resolveStructuredEffectiveFindings } from '../review/review-validation.js';
 import { collectPreviouslyUsedChallengeIds } from '../review/challenge-history.js';
 import { buildReviewChallengeContract } from '../review/challenge-contract.js';
 

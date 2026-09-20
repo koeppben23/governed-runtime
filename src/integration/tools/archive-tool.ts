@@ -16,9 +16,9 @@
 
 import type { ToolDefinition } from './helpers.js';
 import { formatError } from './error-format.js';
+import { formatBlocked } from '../blocked-result.js';
 import {
   resolveWorkspacePaths,
-  formatBlocked,
   enrichWithWorkflowDirective,
   writeStateWithArtifacts,
 } from './helpers.js';

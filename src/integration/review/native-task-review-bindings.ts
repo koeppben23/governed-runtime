@@ -1,5 +1,5 @@
 /**
- * @module integration/native-task-review-bindings
+ * @module integration/review/native-task-review-bindings
  * @description Observation replay, findings validation, and evidence binding for
  * the native reviewer Task transport.
  *
@@ -7,23 +7,36 @@
  * structured output is validated and bound here.
  */
 
-import { readState } from '../adapters/persistence.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
-import { ReviewFindings as ReviewFindingsSchema } from '../state/evidence.js';
-import type { ReviewObligation } from '../state/evidence.js';
-import type { SessionState } from '../state/schema.js';
-import { hashFindings } from './review/assurance.js';
-import { validatePipelineAttestation } from './review/shared-helpers.js';
-import { validateChallengeConsistency } from './review/enforcement/challenge-consistency.js';
-import { collectPreviouslyUsedChallengeIds } from './review/challenge-history.js';
-import { recordEvidenceOrBlockReuse } from './review/reviewer-evidence-recorder.js';
-import { replayAndPersistObservations } from './review/observation-replay-persist.js';
-import { captureStructuredFindingsFromVisibleChild } from './review/structured-followup.js';
-import { prepareReviewerFindingsForValidation } from './review/enforcement/prepare-findings.js';
-import { buildReviewChallengeContract } from './review/challenge-contract.js';
-import type { ReviewerSuccessResult } from './review/types.js';
-import type { FlowGuardPluginRuntime } from './plugin-shared.js';
+import { readState } from '../../adapters/persistence.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
+import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
+import type { ReviewObligation } from '../../state/evidence.js';
+import type { SessionState } from '../../state/schema.js';
+import { hashFindings } from './assurance.js';
+import { validatePipelineAttestation } from './shared-helpers.js';
+import { validateChallengeConsistency } from './enforcement/challenge-consistency.js';
+import { collectPreviouslyUsedChallengeIds } from './challenge-history.js';
+import { recordEvidenceOrBlockReuse } from './reviewer-evidence-recorder.js';
+import { replayAndPersistObservations } from './observation-replay-persist.js';
+import { captureStructuredFindingsFromVisibleChild } from './structured-followup.js';
+import { prepareReviewerFindingsForValidation } from './enforcement/prepare-findings.js';
+import { buildReviewChallengeContract } from './challenge-contract.js';
+import type { ReviewerSuccessResult } from './types.js';
+import type { OrchestratorDeps } from './pipeline-types.js';
+import type { ReplayPersistDeps } from './observation-replay-persist.js';
 import type { NativeReviewLineage, PersistedState } from './native-task-review-types.js';
+
+/**
+ * Structural host-runtime port for the native reviewer Task transport.
+ *
+ * review/ must not import plugin-* (FG-QUAL-002); the host caller passes its
+ * full runtime, which satisfies this subset structurally.
+ */
+export interface NativeReviewRuntimePort {
+  readonly orchestratorDeps: OrchestratorDeps;
+  readonly log: ReplayPersistDeps['log'];
+  readonly logError: ReplayPersistDeps['logError'];
+}
 
 function nativeAuditIntents(input: {
   obligation: ReviewObligation;
@@ -69,7 +82,7 @@ function nativeAuditIntents(input: {
 }
 
 export async function resolveNativeReviewLineage(
-  runtime: FlowGuardPluginRuntime,
+  runtime: NativeReviewRuntimePort,
   sessDir: string,
   callId: string,
 ): Promise<NativeReviewLineage | null> {
@@ -90,7 +103,7 @@ export async function resolveNativeReviewLineage(
 }
 
 export async function persistReviewerObservations(
-  runtime: FlowGuardPluginRuntime,
+  runtime: NativeReviewRuntimePort,
   sessionId: string,
   attemptId: string,
   childSessionId: string,
@@ -108,7 +121,7 @@ export async function persistReviewerObservations(
 }
 
 export async function capturePreparedFindings(
-  runtime: FlowGuardPluginRuntime,
+  runtime: NativeReviewRuntimePort,
   obligation: ReviewObligation,
   childSessionId: string,
 ): Promise<
@@ -195,7 +208,7 @@ export function validateCapturedFindings(
 }
 
 export async function bindNativeReviewEvidence(input: {
-  runtime: FlowGuardPluginRuntime;
+  runtime: NativeReviewRuntimePort;
   sessDir: string;
   sessionId: string;
   callId: string;

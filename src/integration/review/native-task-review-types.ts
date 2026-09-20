@@ -1,11 +1,11 @@
 /**
- * @module integration/native-task-review-types
+ * @module integration/review/native-task-review-types
  * @description Shared persisted-state types for the native reviewer Task transport.
  */
 
-import type { readState } from '../adapters/persistence.js';
-import type { ReviewObligation } from '../state/evidence.js';
-import type { findBindableAttempt } from './review/assurance.js';
+import type { readState } from '../../adapters/persistence.js';
+import type { ReviewObligation } from '../../state/evidence.js';
+import type { findBindableAttempt } from './assurance.js';
 
 export type PersistedState = NonNullable<Awaited<ReturnType<typeof readState>>>;
 

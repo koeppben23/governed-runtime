@@ -21,10 +21,11 @@ import {
 import type { ReviewDispatchAuthority } from '../review/dispatch-authority.js';
 import { resolveReviewContinuation } from '../review/review-continuation.js';
 import { blockObligation } from '../review/obligation-state.js';
-import { buildInterruptedDispatchRearm } from '../durable-dispatch.js';
+import { buildInterruptedDispatchRearm } from '../review/durable-dispatch.js';
 import type { PlanExecutionScope } from './plan-types.js';
 import { buildPlanReviewInstruction } from './plan-response.js';
-import { enrichWithWorkflowDirective, formatBlocked, writeStateWithArtifacts } from './helpers.js';
+import { formatBlocked } from '../blocked-result.js';
+import { enrichWithWorkflowDirective, writeStateWithArtifacts } from './helpers.js';
 import { IntegrationInvariantError } from '../errors.js';
 
 /**
