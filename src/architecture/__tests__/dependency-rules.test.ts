@@ -1066,11 +1066,9 @@ describe('Layer Dependency Rules', () => {
     // SCC shape explicitly and update both together when a cycle is dissolved
     // or a module joins an existing SCC. The edge baseline remains the debt
     // authority; this assertion documents the structure the debt lives in.
-    it('classifies the real module graph as exactly one cyclic SCC', () => {
+    it('classifies the real module graph as acyclic (no cyclic SCCs)', () => {
       const sccs = cyclicStronglyConnectedComponents(governedNames, observed);
-      expect(sccs.map((component) => [...component].sort().join(',')).sort()).toEqual([
-        'config,discovery,presentation,telemetry',
-      ]);
+      expect(sccs).toEqual([]);
     });
 
     it('cyclic module edges equal the committed debt baseline exactly', () => {

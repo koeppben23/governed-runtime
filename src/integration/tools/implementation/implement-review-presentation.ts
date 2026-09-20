@@ -68,7 +68,7 @@ function implReviewAction(directive: DirectiveProjection): {
   invocation: string | null;
   description: string;
   visibility: 'recommended' | 'available';
-  intent?: import('../../../presentation/action-intent.js').ActionIntent;
+  intent?: import('../../../shared/presentation-vocabulary.js').ActionIntent;
 } {
   const invocation = directive.commands[0] ?? null;
   if (!invocation) {

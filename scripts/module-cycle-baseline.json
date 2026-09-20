@@ -1,21 +1,4 @@
 {
   "version": 1,
-  "edges": [
-    {
-      "from": "config",
-      "to": "discovery"
-    },
-    {
-      "from": "discovery",
-      "to": "telemetry"
-    },
-    {
-      "from": "presentation",
-      "to": "config"
-    },
-    {
-      "from": "telemetry",
-      "to": "presentation"
-    }
-  ]
+  "edges": []
 }
