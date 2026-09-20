@@ -1,0 +1,1651 @@
+/**
+ * @module architecture/integration-placement-policy
+ * @description Single positive placement authority for production files under
+ * `src/integration/`.
+ *
+ * DEFAULT-DENY, EXACT PROJECTION: every production `.ts` file under
+ * `src/integration/` has exactly one entry here — its architectural owner, its
+ * current physical zone, and the physical zone it must occupy. A new production
+ * file without an entry fails, an entry without a file fails, an unknown zone or
+ * owner fails, a file whose current zone does not match its physical directory
+ * fails, and an owner whose target zone disagrees with the entry fails.
+ *
+ * PLACEMENT DEBT is a frozen ratchet: `PLACEMENT_DEBT` is exactly the set of
+ * files whose current zone differs from the target zone. New debt fails; debt
+ * may only be removed by the move that resolves it in the same change.
+ *
+ * C1 STATUS: baseline of the pre-move tree (#922). This authority commit moves
+ * no production file; it freezes the exact current placement and the debt set.
+ * `MODULE_DEPENDENCY_POLICY` and `scripts/module-cycle-baseline.json` are
+ * untouched: every entry is a top-level `integration` file, so the module graph
+ * is unchanged by construction.
+ *
+ * @version v1
+ */
+
+export interface IntegrationPlacementZone {
+  /** Physical zone id — the directory path under `src/integration/`, or `root`. */
+  readonly id: string;
+  /** Directory relative to `src/` that owns this zone. */
+  readonly dir: string;
+  readonly description: string;
+}
+
+export interface IntegrationOwner {
+  readonly id: string;
+  /** Physical zone the owner's files must occupy. */
+  readonly targetZone: string;
+  readonly description: string;
+}
+
+export interface IntegrationPlacementEntry {
+  /** File path relative to `src/`, e.g. `integration/tools/plan.ts`. */
+  readonly file: string;
+  readonly owner: string;
+  /** Current physical zone (must equal the file's parent directory zone). */
+  readonly zone: string;
+  /** Required physical zone; differs from `zone` exactly for frozen debt. */
+  readonly targetZone: string;
+}
+
+/** Every physical zone known to this authority (current and target). */
+export const INTEGRATION_PLACEMENT_ZONES: readonly IntegrationPlacementZone[] = [
+  {
+    id: 'root',
+    dir: 'integration',
+    description:
+      'Integration root: plugin composition, host/runtime wiring, integration-level authorities',
+  },
+  { id: 'status', dir: 'integration/status', description: 'Status/finish/why feature projections' },
+  {
+    id: 'discovery',
+    dir: 'integration/discovery',
+    description: 'Discovery health, drift, and risk-path authorities',
+  },
+  { id: 'review', dir: 'integration/review', description: 'Review bounded context' },
+  {
+    id: 'review/enforcement',
+    dir: 'integration/review/enforcement',
+    description: 'Review enforcement subsystem',
+  },
+  {
+    id: 'proofgraph',
+    dir: 'integration/proofgraph',
+    description: 'ProofGraph claim and materialization context',
+  },
+  {
+    id: 'services',
+    dir: 'integration/services',
+    description: 'Integration-level completion services',
+  },
+  { id: 'help', dir: 'integration/help', description: 'Help projection and rendering context' },
+  {
+    id: 'artifacts',
+    dir: 'integration/artifacts',
+    description: 'Integration artifact projections',
+  },
+  { id: 'tools', dir: 'integration/tools', description: 'FlowGuard command surface (tool layer)' },
+  {
+    id: 'tools/review-tool',
+    dir: 'integration/tools/review-tool',
+    description: 'Review command transport',
+  },
+  { id: 'tools/plan', dir: 'integration/tools/plan', description: 'Plan command context' },
+  {
+    id: 'tools/architecture',
+    dir: 'integration/tools/architecture',
+    description: 'Architecture command context',
+  },
+  {
+    id: 'tools/implementation',
+    dir: 'integration/tools/implementation',
+    description: 'Implementation command context',
+  },
+  {
+    id: 'tools/validation',
+    dir: 'integration/tools/validation',
+    description: 'run_check command context',
+  },
+  { id: 'tools/status', dir: 'integration/tools/status', description: 'Status command context' },
+  { id: 'tools/hydrate', dir: 'integration/tools/hydrate', description: 'Hydrate command context' },
+  {
+    id: 'tools/challenge',
+    dir: 'integration/tools/challenge',
+    description: 'Challenge lifecycle command context',
+  },
+  {
+    id: 'tools/decision',
+    dir: 'integration/tools/decision',
+    description: 'Decision command context',
+  },
+  {
+    id: 'tools/simple',
+    dir: 'integration/tools/simple',
+    description: 'Ticket/abort/archive/export/help/continue command context',
+  },
+  {
+    id: 'tools/contract',
+    dir: 'integration/tools/contract',
+    description: 'declare_contract command context',
+  },
+  {
+    id: 'tools/mutation',
+    dir: 'integration/tools/mutation',
+    description: 'Mutation evidence command context',
+  },
+  {
+    id: 'tools/observe',
+    dir: 'integration/tools/observe',
+    description: 'observe_repository command context',
+  },
+];
+
+/** Every architectural owner and the physical zone its files must occupy. */
+export const INTEGRATION_OWNERS: readonly IntegrationOwner[] = [
+  {
+    id: 'root-composition',
+    targetZone: 'root',
+    description: 'Plugin lifecycle entrypoints and the package barrels',
+  },
+  {
+    id: 'root-host-runtime',
+    targetZone: 'root',
+    description: 'Host adapter and runtime composition',
+  },
+  {
+    id: 'root-authority',
+    targetZone: 'root',
+    description: 'Integration-level cross-context authorities',
+  },
+  {
+    id: 'root-test-support',
+    targetZone: 'root',
+    description: 'Test-support file pending reclassification',
+  },
+  { id: 'status', targetZone: 'status', description: 'Status bounded context' },
+  { id: 'discovery', targetZone: 'discovery', description: 'Discovery bounded context' },
+  { id: 'review', targetZone: 'review', description: 'Review bounded context' },
+  {
+    id: 'review-enforcement',
+    targetZone: 'review/enforcement',
+    description: 'Review enforcement subsystem',
+  },
+  { id: 'proofgraph', targetZone: 'proofgraph', description: 'ProofGraph bounded context' },
+  { id: 'services', targetZone: 'services', description: 'Integration services' },
+  { id: 'help', targetZone: 'help', description: 'Help bounded context' },
+  { id: 'artifacts', targetZone: 'artifacts', description: 'Artifact projections' },
+  {
+    id: 'tools-infrastructure',
+    targetZone: 'tools',
+    description: 'Cross-command tool infrastructure',
+  },
+  { id: 'tools-plan', targetZone: 'tools/plan', description: 'Plan command' },
+  {
+    id: 'tools-architecture',
+    targetZone: 'tools/architecture',
+    description: 'Architecture command',
+  },
+  {
+    id: 'tools-implementation',
+    targetZone: 'tools/implementation',
+    description: 'Implementation commands',
+  },
+  { id: 'tools-validation', targetZone: 'tools/validation', description: 'run_check command' },
+  { id: 'tools-status', targetZone: 'tools/status', description: 'Status command' },
+  { id: 'tools-hydrate', targetZone: 'tools/hydrate', description: 'Hydrate command' },
+  {
+    id: 'tools-review-tool',
+    targetZone: 'tools/review-tool',
+    description: 'Review command transport',
+  },
+  { id: 'tools-challenge', targetZone: 'tools/challenge', description: 'Challenge commands' },
+  { id: 'tools-decision', targetZone: 'tools/decision', description: 'Decision command' },
+  { id: 'tools-simple', targetZone: 'tools/simple', description: 'Simple session commands' },
+  { id: 'tools-contract', targetZone: 'tools/contract', description: 'declare_contract command' },
+  { id: 'tools-mutation', targetZone: 'tools/mutation', description: 'Mutation evidence commands' },
+  { id: 'tools-observe', targetZone: 'tools/observe', description: 'observe_repository command' },
+];
+
+/** Exact projection of the production files under `src/integration/`. */
+export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
+  {
+    file: 'integration/archive-preflight.ts',
+    owner: 'root-authority',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/artifacts/madr-writer.ts',
+    owner: 'artifacts',
+    zone: 'artifacts',
+    targetZone: 'artifacts',
+  },
+  {
+    file: 'integration/discovery-drift-status.ts',
+    owner: 'discovery',
+    zone: 'root',
+    targetZone: 'discovery',
+  },
+  {
+    file: 'integration/discovery-health-audit.ts',
+    owner: 'discovery',
+    zone: 'root',
+    targetZone: 'discovery',
+  },
+  {
+    file: 'integration/discovery-health-gate.ts',
+    owner: 'discovery',
+    zone: 'root',
+    targetZone: 'discovery',
+  },
+  {
+    file: 'integration/discovery-risk-paths.ts',
+    owner: 'discovery',
+    zone: 'root',
+    targetZone: 'discovery',
+  },
+  { file: 'integration/durable-dispatch.ts', owner: 'review', zone: 'root', targetZone: 'review' },
+  { file: 'integration/errors.ts', owner: 'root-authority', zone: 'root', targetZone: 'root' },
+  {
+    file: 'integration/finish-presentation.ts',
+    owner: 'status',
+    zone: 'root',
+    targetZone: 'status',
+  },
+  {
+    file: 'integration/git-control-plane.ts',
+    owner: 'root-authority',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  { file: 'integration/help/help-projection.ts', owner: 'help', zone: 'help', targetZone: 'help' },
+  { file: 'integration/help/help-renderer.ts', owner: 'help', zone: 'help', targetZone: 'help' },
+  {
+    file: 'integration/implementation-guidance.ts',
+    owner: 'root-authority',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  { file: 'integration/index.ts', owner: 'root-composition', zone: 'root', targetZone: 'root' },
+  {
+    file: 'integration/installed-commands.ts',
+    owner: 'root-host-runtime',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/native-task-review-bindings.ts',
+    owner: 'review',
+    zone: 'root',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/native-task-review-types.ts',
+    owner: 'review',
+    zone: 'root',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/native-task-review.ts',
+    owner: 'root-host-runtime',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/opencode-host-adapter.ts',
+    owner: 'root-host-runtime',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/phase-tool-gate.ts',
+    owner: 'root-authority',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/plugin-afterhooks.ts',
+    owner: 'root-composition',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/plugin-audit-context.ts',
+    owner: 'root-composition',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/plugin-audit-decisions.ts',
+    owner: 'root-composition',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/plugin-audit-lifecycle-reason.ts',
+    owner: 'root-composition',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/plugin-audit-reconcile.ts',
+    owner: 'root-composition',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/plugin-audit.ts',
+    owner: 'root-composition',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/plugin-beforehooks.ts',
+    owner: 'root-composition',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/plugin-compaction.ts',
+    owner: 'root-composition',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/plugin-discovery-health.ts',
+    owner: 'root-composition',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/plugin-enforcement-tracking.ts',
+    owner: 'root-composition',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/plugin-events.ts',
+    owner: 'root-composition',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/plugin-git-gate.ts',
+    owner: 'root-composition',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/plugin-helpers.ts',
+    owner: 'root-composition',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/plugin-host-task-diagnostics-helpers.ts',
+    owner: 'root-test-support',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/plugin-logging.ts',
+    owner: 'root-composition',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/plugin-mutation-episodes.ts',
+    owner: 'root-composition',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/plugin-orchestrator.ts',
+    owner: 'root-composition',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/plugin-policy.ts',
+    owner: 'root-composition',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/plugin-regulated-recovery.ts',
+    owner: 'root-composition',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/plugin-rework-continuation.ts',
+    owner: 'root-composition',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/plugin-risk.ts',
+    owner: 'root-composition',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/plugin-shared.ts',
+    owner: 'root-composition',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/plugin-workspace.ts',
+    owner: 'root-composition',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  { file: 'integration/plugin.ts', owner: 'root-composition', zone: 'root', targetZone: 'root' },
+  {
+    file: 'integration/proofgraph/approval-projection.ts',
+    owner: 'proofgraph',
+    zone: 'proofgraph',
+    targetZone: 'proofgraph',
+  },
+  {
+    file: 'integration/proofgraph/claim-contract-rules.ts',
+    owner: 'proofgraph',
+    zone: 'proofgraph',
+    targetZone: 'proofgraph',
+  },
+  {
+    file: 'integration/proofgraph/claim-contract.ts',
+    owner: 'proofgraph',
+    zone: 'proofgraph',
+    targetZone: 'proofgraph',
+  },
+  {
+    file: 'integration/proofgraph/claim-resolution-projector.ts',
+    owner: 'proofgraph',
+    zone: 'proofgraph',
+    targetZone: 'proofgraph',
+  },
+  {
+    file: 'integration/proofgraph/config-default-consistency.ts',
+    owner: 'proofgraph',
+    zone: 'proofgraph',
+    targetZone: 'proofgraph',
+  },
+  {
+    file: 'integration/proofgraph/materialize-architecture.ts',
+    owner: 'proofgraph',
+    zone: 'proofgraph',
+    targetZone: 'proofgraph',
+  },
+  {
+    file: 'integration/proofgraph/materialize-contract.ts',
+    owner: 'proofgraph',
+    zone: 'proofgraph',
+    targetZone: 'proofgraph',
+  },
+  {
+    file: 'integration/proofgraph/mutation-provider.ts',
+    owner: 'proofgraph',
+    zone: 'proofgraph',
+    targetZone: 'proofgraph',
+  },
+  {
+    file: 'integration/proofgraph/proof-summary-projectors.ts',
+    owner: 'proofgraph',
+    zone: 'proofgraph',
+    targetZone: 'proofgraph',
+  },
+  {
+    file: 'integration/proofgraph/refresh.ts',
+    owner: 'proofgraph',
+    zone: 'proofgraph',
+    targetZone: 'proofgraph',
+  },
+  {
+    file: 'integration/proofgraph/registration-consistency.ts',
+    owner: 'proofgraph',
+    zone: 'proofgraph',
+    targetZone: 'proofgraph',
+  },
+  {
+    file: 'integration/proofgraph/structural-provider.ts',
+    owner: 'proofgraph',
+    zone: 'proofgraph',
+    targetZone: 'proofgraph',
+  },
+  {
+    file: 'integration/proofgraph/surface-digest.ts',
+    owner: 'proofgraph',
+    zone: 'proofgraph',
+    targetZone: 'proofgraph',
+  },
+  {
+    file: 'integration/provider-capability-resolution.ts',
+    owner: 'root-authority',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/review/agent-resolution.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/anchor-contract-lines.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/assurance.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/attempt-lifecycle.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/audit-events.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/challenge-contract.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/challenge-history.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/child-session-instruction.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/discovery-attempt-context.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/discovery-context-loader.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/discovery-context-prompt.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/dispatch-authority.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/dispatch-signal.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/enforcement/challenge-binding.ts',
+    owner: 'review-enforcement',
+    zone: 'review/enforcement',
+    targetZone: 'review/enforcement',
+  },
+  {
+    file: 'integration/review/enforcement/challenge-consistency.ts',
+    owner: 'review-enforcement',
+    zone: 'review/enforcement',
+    targetZone: 'review/enforcement',
+  },
+  {
+    file: 'integration/review/enforcement/enforcement.ts',
+    owner: 'review-enforcement',
+    zone: 'review/enforcement',
+    targetZone: 'review/enforcement',
+  },
+  {
+    file: 'integration/review/enforcement/findings-consistency.ts',
+    owner: 'review-enforcement',
+    zone: 'review/enforcement',
+    targetZone: 'review/enforcement',
+  },
+  {
+    file: 'integration/review/enforcement/index.ts',
+    owner: 'review-enforcement',
+    zone: 'review/enforcement',
+    targetZone: 'review/enforcement',
+  },
+  {
+    file: 'integration/review/enforcement/normalize.ts',
+    owner: 'review-enforcement',
+    zone: 'review/enforcement',
+    targetZone: 'review/enforcement',
+  },
+  {
+    file: 'integration/review/enforcement/pending-review.ts',
+    owner: 'review-enforcement',
+    zone: 'review/enforcement',
+    targetZone: 'review/enforcement',
+  },
+  {
+    file: 'integration/review/enforcement/prepare-findings.ts',
+    owner: 'review-enforcement',
+    zone: 'review/enforcement',
+    targetZone: 'review/enforcement',
+  },
+  {
+    file: 'integration/review/enforcement/types.ts',
+    owner: 'review-enforcement',
+    zone: 'review/enforcement',
+    targetZone: 'review/enforcement',
+  },
+  {
+    file: 'integration/review/finding-relation-grammar.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/findings-hash.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/findings-schema.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/freeze-coherence.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/frozen-reviewer-context.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/impl-review-prompt.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  { file: 'integration/review/index.ts', owner: 'review', zone: 'review', targetZone: 'review' },
+  {
+    file: 'integration/review/obligation-settlement.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/obligation-state.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/obligation-tools.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/observation-access.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/observation-binding.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/observation-contract-prompt.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/observation-replay-persist.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/observation-replay.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/observation-resolution.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/observation-service.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/orchestration-mode.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/pipeline-types.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/pre-bind-findings.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/prompt-builders.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/prompt-sections.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/proof-context.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/reissue-authority.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/rejected-digests.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/report-coherence.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/review-continuation.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/review-execution-projection.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/review-loop-progress.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/review-provenance.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/reviewed-digest.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/reviewer-context.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/reviewer-contract.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/reviewer-evidence-recorder.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/reviewer-task-type.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/shared-helpers.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/structured-followup.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/review/subject-scope.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
+  },
+  { file: 'integration/review/types.ts', owner: 'review', zone: 'review', targetZone: 'review' },
+  {
+    file: 'integration/runtime-instance.ts',
+    owner: 'root-host-runtime',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/runtime-lease.ts',
+    owner: 'root-host-runtime',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/services/decision-finalization.ts',
+    owner: 'services',
+    zone: 'services',
+    targetZone: 'services',
+  },
+  {
+    file: 'integration/services/regulated-completion.ts',
+    owner: 'services',
+    zone: 'services',
+    targetZone: 'services',
+  },
+  { file: 'integration/status-conclusion.ts', owner: 'status', zone: 'root', targetZone: 'status' },
+  {
+    file: 'integration/status-detail-projections.ts',
+    owner: 'status',
+    zone: 'root',
+    targetZone: 'status',
+  },
+  { file: 'integration/status-finish.ts', owner: 'status', zone: 'root', targetZone: 'status' },
+  {
+    file: 'integration/status-presentation.ts',
+    owner: 'status',
+    zone: 'root',
+    targetZone: 'status',
+  },
+  { file: 'integration/status-types.ts', owner: 'status', zone: 'root', targetZone: 'status' },
+  { file: 'integration/status-why-finish.ts', owner: 'status', zone: 'root', targetZone: 'status' },
+  { file: 'integration/status.ts', owner: 'status', zone: 'root', targetZone: 'status' },
+  {
+    file: 'integration/tool-classification.ts',
+    owner: 'root-authority',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  { file: 'integration/tool-names.ts', owner: 'root-authority', zone: 'root', targetZone: 'root' },
+  {
+    file: 'integration/tools/abort-tool.ts',
+    owner: 'tools-simple',
+    zone: 'tools',
+    targetZone: 'tools/simple',
+  },
+  {
+    file: 'integration/tools/architecture-restart.ts',
+    owner: 'tools-architecture',
+    zone: 'tools',
+    targetZone: 'tools/architecture',
+  },
+  {
+    file: 'integration/tools/architecture-review-response.ts',
+    owner: 'tools-architecture',
+    zone: 'tools',
+    targetZone: 'tools/architecture',
+  },
+  {
+    file: 'integration/tools/architecture-review.ts',
+    owner: 'tools-architecture',
+    zone: 'tools',
+    targetZone: 'tools/architecture',
+  },
+  {
+    file: 'integration/tools/architecture-shared.ts',
+    owner: 'tools-architecture',
+    zone: 'tools',
+    targetZone: 'tools/architecture',
+  },
+  {
+    file: 'integration/tools/architecture-submit.ts',
+    owner: 'tools-architecture',
+    zone: 'tools',
+    targetZone: 'tools/architecture',
+  },
+  {
+    file: 'integration/tools/architecture.ts',
+    owner: 'tools-architecture',
+    zone: 'tools',
+    targetZone: 'tools/architecture',
+  },
+  {
+    file: 'integration/tools/archive-tool.ts',
+    owner: 'tools-simple',
+    zone: 'tools',
+    targetZone: 'tools/simple',
+  },
+  {
+    file: 'integration/tools/audit-outbox.ts',
+    owner: 'root-authority',
+    zone: 'tools',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/tools/auto-validation.ts',
+    owner: 'tools-infrastructure',
+    zone: 'tools',
+    targetZone: 'tools',
+  },
+  {
+    file: 'integration/tools/blocked-presentation.ts',
+    owner: 'root-authority',
+    zone: 'tools',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/tools/challenge-resolution.ts',
+    owner: 'tools-challenge',
+    zone: 'tools',
+    targetZone: 'tools/challenge',
+  },
+  {
+    file: 'integration/tools/continue-tool.ts',
+    owner: 'tools-simple',
+    zone: 'tools',
+    targetZone: 'tools/simple',
+  },
+  {
+    file: 'integration/tools/decision-tool.ts',
+    owner: 'tools-decision',
+    zone: 'tools',
+    targetZone: 'tools/decision',
+  },
+  {
+    file: 'integration/tools/declare-contract.ts',
+    owner: 'tools-contract',
+    zone: 'tools',
+    targetZone: 'tools/contract',
+  },
+  {
+    file: 'integration/tools/error-format.ts',
+    owner: 'tools-infrastructure',
+    zone: 'tools',
+    targetZone: 'tools',
+  },
+  {
+    file: 'integration/tools/execution-subject-input-resolution.ts',
+    owner: 'tools-infrastructure',
+    zone: 'tools',
+    targetZone: 'tools',
+  },
+  {
+    file: 'integration/tools/export-tool.ts',
+    owner: 'tools-simple',
+    zone: 'tools',
+    targetZone: 'tools/simple',
+  },
+  {
+    file: 'integration/tools/help-tool.ts',
+    owner: 'tools-simple',
+    zone: 'tools',
+    targetZone: 'tools/simple',
+  },
+  {
+    file: 'integration/tools/helpers-rail-presentation.ts',
+    owner: 'tools-infrastructure',
+    zone: 'tools',
+    targetZone: 'tools',
+  },
+  {
+    file: 'integration/tools/helpers.ts',
+    owner: 'tools-infrastructure',
+    zone: 'tools',
+    targetZone: 'tools',
+  },
+  {
+    file: 'integration/tools/hydrate-discovery-health.ts',
+    owner: 'tools-hydrate',
+    zone: 'tools',
+    targetZone: 'tools/hydrate',
+  },
+  {
+    file: 'integration/tools/hydrate-discovery.ts',
+    owner: 'tools-hydrate',
+    zone: 'tools',
+    targetZone: 'tools/hydrate',
+  },
+  {
+    file: 'integration/tools/hydrate-errors.ts',
+    owner: 'tools-hydrate',
+    zone: 'tools',
+    targetZone: 'tools/hydrate',
+  },
+  {
+    file: 'integration/tools/hydrate-format.ts',
+    owner: 'tools-hydrate',
+    zone: 'tools',
+    targetZone: 'tools/hydrate',
+  },
+  {
+    file: 'integration/tools/hydrate-policy.ts',
+    owner: 'tools-hydrate',
+    zone: 'tools',
+    targetZone: 'tools/hydrate',
+  },
+  {
+    file: 'integration/tools/hydrate-types.ts',
+    owner: 'tools-hydrate',
+    zone: 'tools',
+    targetZone: 'tools/hydrate',
+  },
+  {
+    file: 'integration/tools/hydrate.ts',
+    owner: 'tools-hydrate',
+    zone: 'tools',
+    targetZone: 'tools/hydrate',
+  },
+  {
+    file: 'integration/tools/implement-diff-artifact.ts',
+    owner: 'tools-implementation',
+    zone: 'tools',
+    targetZone: 'tools/implementation',
+  },
+  {
+    file: 'integration/tools/implement-record.ts',
+    owner: 'tools-implementation',
+    zone: 'tools',
+    targetZone: 'tools/implementation',
+  },
+  {
+    file: 'integration/tools/implement-review-presentation.ts',
+    owner: 'tools-implementation',
+    zone: 'tools',
+    targetZone: 'tools/implementation',
+  },
+  {
+    file: 'integration/tools/implement-review-proof.ts',
+    owner: 'tools-implementation',
+    zone: 'tools',
+    targetZone: 'tools/implementation',
+  },
+  {
+    file: 'integration/tools/implement-review-recovery.ts',
+    owner: 'tools-implementation',
+    zone: 'tools',
+    targetZone: 'tools/implementation',
+  },
+  {
+    file: 'integration/tools/implement-review-state.ts',
+    owner: 'tools-implementation',
+    zone: 'tools',
+    targetZone: 'tools/implementation',
+  },
+  {
+    file: 'integration/tools/implement-review.ts',
+    owner: 'tools-implementation',
+    zone: 'tools',
+    targetZone: 'tools/implementation',
+  },
+  {
+    file: 'integration/tools/implement-shared.ts',
+    owner: 'tools-implementation',
+    zone: 'tools',
+    targetZone: 'tools/implementation',
+  },
+  {
+    file: 'integration/tools/implement-unable-review.ts',
+    owner: 'tools-implementation',
+    zone: 'tools',
+    targetZone: 'tools/implementation',
+  },
+  {
+    file: 'integration/tools/implement.ts',
+    owner: 'tools-implementation',
+    zone: 'tools',
+    targetZone: 'tools/implementation',
+  },
+  {
+    file: 'integration/tools/index.ts',
+    owner: 'tools-infrastructure',
+    zone: 'tools',
+    targetZone: 'tools',
+  },
+  {
+    file: 'integration/tools/observe-repository.ts',
+    owner: 'tools-observe',
+    zone: 'tools',
+    targetZone: 'tools/observe',
+  },
+  {
+    file: 'integration/tools/plan-claim-submission.ts',
+    owner: 'tools-plan',
+    zone: 'tools',
+    targetZone: 'tools/plan',
+  },
+  {
+    file: 'integration/tools/plan-response.ts',
+    owner: 'tools-plan',
+    zone: 'tools',
+    targetZone: 'tools/plan',
+  },
+  {
+    file: 'integration/tools/plan-review-state.ts',
+    owner: 'tools-plan',
+    zone: 'tools',
+    targetZone: 'tools/plan',
+  },
+  {
+    file: 'integration/tools/plan-route.ts',
+    owner: 'tools-plan',
+    zone: 'tools',
+    targetZone: 'tools/plan',
+  },
+  {
+    file: 'integration/tools/plan-submission-state.ts',
+    owner: 'tools-plan',
+    zone: 'tools',
+    targetZone: 'tools/plan',
+  },
+  {
+    file: 'integration/tools/plan-types.ts',
+    owner: 'tools-plan',
+    zone: 'tools',
+    targetZone: 'tools/plan',
+  },
+  {
+    file: 'integration/tools/plan.ts',
+    owner: 'tools-plan',
+    zone: 'tools',
+    targetZone: 'tools/plan',
+  },
+  {
+    file: 'integration/tools/pre-implementation-challenge.ts',
+    owner: 'tools-challenge',
+    zone: 'tools',
+    targetZone: 'tools/challenge',
+  },
+  {
+    file: 'integration/tools/presentation-telemetry.ts',
+    owner: 'tools-infrastructure',
+    zone: 'tools',
+    targetZone: 'tools',
+  },
+  {
+    file: 'integration/tools/rail-conclusion.ts',
+    owner: 'tools-infrastructure',
+    zone: 'tools',
+    targetZone: 'tools',
+  },
+  {
+    file: 'integration/tools/reconcile-mutation-episode.ts',
+    owner: 'tools-mutation',
+    zone: 'tools',
+    targetZone: 'tools/mutation',
+  },
+  {
+    file: 'integration/tools/record-mutation-evidence.ts',
+    owner: 'tools-mutation',
+    zone: 'tools',
+    targetZone: 'tools/mutation',
+  },
+  {
+    file: 'integration/tools/review-obligation-classification.ts',
+    owner: 'review',
+    zone: 'tools',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/tools/review-summary.ts',
+    owner: 'tools-implementation',
+    zone: 'tools',
+    targetZone: 'tools/implementation',
+  },
+  {
+    file: 'integration/tools/review-tool/completion.ts',
+    owner: 'tools-review-tool',
+    zone: 'tools/review-tool',
+    targetZone: 'tools/review-tool',
+  },
+  {
+    file: 'integration/tools/review-tool/continuation-authority.ts',
+    owner: 'tools-review-tool',
+    zone: 'tools/review-tool',
+    targetZone: 'tools/review-tool',
+  },
+  {
+    file: 'integration/tools/review-tool/continuation.ts',
+    owner: 'tools-review-tool',
+    zone: 'tools/review-tool',
+    targetZone: 'tools/review-tool',
+  },
+  {
+    file: 'integration/tools/review-tool/fingerprint.ts',
+    owner: 'tools-review-tool',
+    zone: 'tools/review-tool',
+    targetZone: 'tools/review-tool',
+  },
+  {
+    file: 'integration/tools/review-tool/index.ts',
+    owner: 'tools-review-tool',
+    zone: 'tools/review-tool',
+    targetZone: 'tools/review-tool',
+  },
+  {
+    file: 'integration/tools/review-tool/obligation-creation.ts',
+    owner: 'tools-review-tool',
+    zone: 'tools/review-tool',
+    targetZone: 'tools/review-tool',
+  },
+  {
+    file: 'integration/tools/review-tool/obligation-format.ts',
+    owner: 'tools-review-tool',
+    zone: 'tools/review-tool',
+    targetZone: 'tools/review-tool',
+  },
+  {
+    file: 'integration/tools/review-tool/obligation.ts',
+    owner: 'tools-review-tool',
+    zone: 'tools/review-tool',
+    targetZone: 'tools/review-tool',
+  },
+  {
+    file: 'integration/tools/review-tool/preparation.ts',
+    owner: 'tools-review-tool',
+    zone: 'tools/review-tool',
+    targetZone: 'tools/review-tool',
+  },
+  {
+    file: 'integration/tools/review-tool/review-input.ts',
+    owner: 'tools-review-tool',
+    zone: 'tools/review-tool',
+    targetZone: 'tools/review-tool',
+  },
+  {
+    file: 'integration/tools/review-tool/types.ts',
+    owner: 'tools-review-tool',
+    zone: 'tools/review-tool',
+    targetZone: 'tools/review-tool',
+  },
+  {
+    file: 'integration/tools/review-validation-acceptance.ts',
+    owner: 'review',
+    zone: 'tools',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/tools/review-validation-evidence.ts',
+    owner: 'review',
+    zone: 'tools',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/tools/review-validation-mode.ts',
+    owner: 'tools-infrastructure',
+    zone: 'tools',
+    targetZone: 'tools',
+  },
+  {
+    file: 'integration/tools/review-validation-structured-evidence.ts',
+    owner: 'review',
+    zone: 'tools',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/tools/review-validation.ts',
+    owner: 'review',
+    zone: 'tools',
+    targetZone: 'review',
+  },
+  {
+    file: 'integration/tools/run-check-presentation.ts',
+    owner: 'tools-validation',
+    zone: 'tools',
+    targetZone: 'tools/validation',
+  },
+  {
+    file: 'integration/tools/run-check-request.ts',
+    owner: 'tools-validation',
+    zone: 'tools',
+    targetZone: 'tools/validation',
+  },
+  {
+    file: 'integration/tools/run-check-result.ts',
+    owner: 'tools-validation',
+    zone: 'tools',
+    targetZone: 'tools/validation',
+  },
+  {
+    file: 'integration/tools/run-check-tool.ts',
+    owner: 'tools-validation',
+    zone: 'tools',
+    targetZone: 'tools/validation',
+  },
+  {
+    file: 'integration/tools/simple-tools.ts',
+    owner: 'tools-infrastructure',
+    zone: 'tools',
+    targetZone: 'tools',
+  },
+  {
+    file: 'integration/tools/status-full-response.ts',
+    owner: 'tools-status',
+    zone: 'tools',
+    targetZone: 'tools/status',
+  },
+  {
+    file: 'integration/tools/status-provider-projection.ts',
+    owner: 'tools-status',
+    zone: 'tools',
+    targetZone: 'tools/status',
+  },
+  {
+    file: 'integration/tools/status-summary.ts',
+    owner: 'tools-status',
+    zone: 'tools',
+    targetZone: 'tools/status',
+  },
+  {
+    file: 'integration/tools/status-tool.ts',
+    owner: 'tools-status',
+    zone: 'tools',
+    targetZone: 'tools/status',
+  },
+  {
+    file: 'integration/tools/ticket-tool.ts',
+    owner: 'tools-simple',
+    zone: 'tools',
+    targetZone: 'tools/simple',
+  },
+  { file: 'integration/types.ts', owner: 'root-authority', zone: 'root', targetZone: 'root' },
+  {
+    file: 'integration/user-decision-intent.ts',
+    owner: 'root-authority',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  {
+    file: 'integration/verification-runtime-resolution.ts',
+    owner: 'root-authority',
+    zone: 'root',
+    targetZone: 'root',
+  },
+  { file: 'integration/why-presentation.ts', owner: 'status', zone: 'root', targetZone: 'status' },
+];
+
+/** Frozen placement debt: files that still must move (C1 baseline). */
+export const PLACEMENT_DEBT: readonly string[] = [
+  'integration/discovery-drift-status.ts',
+  'integration/discovery-health-audit.ts',
+  'integration/discovery-health-gate.ts',
+  'integration/discovery-risk-paths.ts',
+  'integration/durable-dispatch.ts',
+  'integration/finish-presentation.ts',
+  'integration/native-task-review-bindings.ts',
+  'integration/native-task-review-types.ts',
+  'integration/status-conclusion.ts',
+  'integration/status-detail-projections.ts',
+  'integration/status-finish.ts',
+  'integration/status-presentation.ts',
+  'integration/status-types.ts',
+  'integration/status-why-finish.ts',
+  'integration/status.ts',
+  'integration/tools/abort-tool.ts',
+  'integration/tools/architecture-restart.ts',
+  'integration/tools/architecture-review-response.ts',
+  'integration/tools/architecture-review.ts',
+  'integration/tools/architecture-shared.ts',
+  'integration/tools/architecture-submit.ts',
+  'integration/tools/architecture.ts',
+  'integration/tools/archive-tool.ts',
+  'integration/tools/audit-outbox.ts',
+  'integration/tools/blocked-presentation.ts',
+  'integration/tools/challenge-resolution.ts',
+  'integration/tools/continue-tool.ts',
+  'integration/tools/decision-tool.ts',
+  'integration/tools/declare-contract.ts',
+  'integration/tools/export-tool.ts',
+  'integration/tools/help-tool.ts',
+  'integration/tools/hydrate-discovery-health.ts',
+  'integration/tools/hydrate-discovery.ts',
+  'integration/tools/hydrate-errors.ts',
+  'integration/tools/hydrate-format.ts',
+  'integration/tools/hydrate-policy.ts',
+  'integration/tools/hydrate-types.ts',
+  'integration/tools/hydrate.ts',
+  'integration/tools/implement-diff-artifact.ts',
+  'integration/tools/implement-record.ts',
+  'integration/tools/implement-review-presentation.ts',
+  'integration/tools/implement-review-proof.ts',
+  'integration/tools/implement-review-recovery.ts',
+  'integration/tools/implement-review-state.ts',
+  'integration/tools/implement-review.ts',
+  'integration/tools/implement-shared.ts',
+  'integration/tools/implement-unable-review.ts',
+  'integration/tools/implement.ts',
+  'integration/tools/observe-repository.ts',
+  'integration/tools/plan-claim-submission.ts',
+  'integration/tools/plan-response.ts',
+  'integration/tools/plan-review-state.ts',
+  'integration/tools/plan-route.ts',
+  'integration/tools/plan-submission-state.ts',
+  'integration/tools/plan-types.ts',
+  'integration/tools/plan.ts',
+  'integration/tools/pre-implementation-challenge.ts',
+  'integration/tools/reconcile-mutation-episode.ts',
+  'integration/tools/record-mutation-evidence.ts',
+  'integration/tools/review-obligation-classification.ts',
+  'integration/tools/review-summary.ts',
+  'integration/tools/review-validation-acceptance.ts',
+  'integration/tools/review-validation-evidence.ts',
+  'integration/tools/review-validation-structured-evidence.ts',
+  'integration/tools/review-validation.ts',
+  'integration/tools/run-check-presentation.ts',
+  'integration/tools/run-check-request.ts',
+  'integration/tools/run-check-result.ts',
+  'integration/tools/run-check-tool.ts',
+  'integration/tools/status-full-response.ts',
+  'integration/tools/status-provider-projection.ts',
+  'integration/tools/status-summary.ts',
+  'integration/tools/status-tool.ts',
+  'integration/tools/ticket-tool.ts',
+  'integration/why-presentation.ts',
+];
+
+export interface IntegrationPlacementViolation {
+  readonly rule: string;
+  readonly file: string;
+  readonly message: string;
+}
+
+export interface IntegrationPlacementAnalysisInput {
+  readonly productionFiles: readonly string[];
+  readonly placement: readonly IntegrationPlacementEntry[];
+  readonly zones: readonly IntegrationPlacementZone[];
+  readonly owners: readonly IntegrationOwner[];
+  readonly debt: readonly string[];
+  readonly isTestFile: (rel: string) => boolean;
+}
+
+export function analyzeIntegrationPlacement(
+  input: IntegrationPlacementAnalysisInput,
+): IntegrationPlacementViolation[] {
+  const violations: IntegrationPlacementViolation[] = [];
+  const production = new Set(input.productionFiles);
+
+  const zoneById = new Map<string, IntegrationPlacementZone>();
+  for (const zone of input.zones) {
+    if (zoneById.has(zone.id)) {
+      violations.push({ rule: 'duplicate-zone-id', file: zone.id, message: 'duplicate zone id' });
+    }
+    zoneById.set(zone.id, zone);
+  }
+
+  const ownerById = new Map<string, IntegrationOwner>();
+  for (const owner of input.owners) {
+    if (ownerById.has(owner.id)) {
+      violations.push({
+        rule: 'duplicate-owner-id',
+        file: owner.id,
+        message: 'duplicate owner id',
+      });
+    }
+    ownerById.set(owner.id, owner);
+  }
+
+  const placementByFile = new Map<string, IntegrationPlacementEntry>();
+  for (const entry of input.placement) {
+    if (placementByFile.has(entry.file)) {
+      violations.push({
+        rule: 'duplicate-placement-entry',
+        file: entry.file,
+        message: 'duplicate placement entry',
+      });
+    }
+    placementByFile.set(entry.file, entry);
+  }
+
+  for (const file of input.productionFiles) {
+    if (!placementByFile.has(file)) {
+      violations.push({
+        rule: 'unclassified-production-file',
+        file,
+        message: 'production file has no placement entry',
+      });
+    }
+  }
+
+  for (const entry of input.placement) {
+    if (!production.has(entry.file)) {
+      violations.push({
+        rule: 'stale-placement-entry',
+        file: entry.file,
+        message: 'placement entry has no production file',
+      });
+    }
+    if (input.isTestFile(entry.file)) {
+      violations.push({
+        rule: 'test-file-in-placement',
+        file: entry.file,
+        message: 'test support must not carry a placement entry',
+      });
+      continue;
+    }
+    const zone = zoneById.get(entry.zone);
+    if (!zone) {
+      violations.push({
+        rule: 'unknown-zone',
+        file: entry.file,
+        message: 'unknown current zone ' + entry.zone,
+      });
+    } else {
+      const parent = entry.file.split('/').slice(0, -1).join('/');
+      if (parent !== zone.dir) {
+        violations.push({
+          rule: 'zone-directory-mismatch',
+          file: entry.file,
+          message: 'zone ' + entry.zone + ' expects directory ' + zone.dir,
+        });
+      }
+    }
+    if (!zoneById.has(entry.targetZone)) {
+      violations.push({
+        rule: 'unknown-zone',
+        file: entry.file,
+        message: 'unknown target zone ' + entry.targetZone,
+      });
+    }
+    const owner = ownerById.get(entry.owner);
+    if (!owner) {
+      violations.push({
+        rule: 'unknown-owner',
+        file: entry.file,
+        message: 'unknown owner ' + entry.owner,
+      });
+    } else if (owner.targetZone !== entry.targetZone) {
+      violations.push({
+        rule: 'owner-target-mismatch',
+        file: entry.file,
+        message: 'owner ' + entry.owner + ' requires target zone ' + owner.targetZone,
+      });
+    }
+  }
+
+  const debtSet = new Set(input.debt);
+  const observedDebt = new Set(
+    input.placement.filter((entry) => entry.zone !== entry.targetZone).map((entry) => entry.file),
+  );
+  for (const file of observedDebt) {
+    if (!debtSet.has(file)) {
+      violations.push({
+        rule: 'new-placement-debt',
+        file,
+        message: 'file left its target zone without a frozen debt entry',
+      });
+    }
+  }
+  for (const file of input.debt) {
+    if (!observedDebt.has(file)) {
+      violations.push({
+        rule: 'stale-placement-debt',
+        file,
+        message: 'debt is resolved and must be removed in the same change',
+      });
+    }
+  }
+
+  return violations;
+}
