@@ -758,20 +758,50 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     ['src/integration/tool-classification.test.ts'],
     { legacy: true },
   ),
-  deferred(
+  required(
     'src/integration/discovery/discovery-risk-paths.ts',
     'Discovery risk path classification',
-    'Relocated by #922 placement closure; re-admission requires a base profile full run with per-target evidence (no inherited legacyBaseline).',
+    ['src/integration/discovery-risk-paths.test.ts'],
+    {
+      admission: {
+        verifiedAt: '2026-09-20',
+        commitSha: '7ff3be443b80380c50b8720595535df35aa29034',
+        scoreAtAdmission: 100,
+        killed: 17,
+        survived: 0,
+        config: 'stryker.conf.json',
+      },
+    },
   ),
-  deferred(
+  required(
     'src/integration/tools/challenge/pre-implementation-challenge.ts',
     'Pre-implementation challenge policy',
-    'Relocated by #922 placement closure; re-admission requires a base profile full run with per-target evidence (no inherited legacyBaseline).',
+    ['src/integration/tools/pre-implementation-challenge.test.ts'],
+    {
+      admission: {
+        verifiedAt: '2026-09-20',
+        commitSha: '7ff3be443b80380c50b8720595535df35aa29034',
+        scoreAtAdmission: 100,
+        killed: 4,
+        survived: 0,
+        config: 'stryker.conf.json',
+      },
+    },
   ),
-  deferred(
+  required(
     'src/integration/tools/architecture/architecture-submit.ts',
     'Architecture evidence submission',
-    'Relocated by #922 placement closure; re-admission requires a base profile full run with per-target evidence (no inherited legacyBaseline).',
+    ['src/integration/tools/architecture-tool.test.ts'],
+    {
+      admission: {
+        verifiedAt: '2026-09-20',
+        commitSha: '7ff3be443b80380c50b8720595535df35aa29034',
+        scoreAtAdmission: 80.95,
+        killed: 17,
+        survived: 4,
+        config: 'stryker.conf.json',
+      },
+    },
   ),
   required(
     'src/integration/tools/review-validation-mode.ts',
@@ -779,15 +809,38 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     ['src/integration/tools/review-validation-mode.test.ts'],
     { legacy: true, critical: true },
   ),
-  deferred(
+  required(
     'src/integration/review/review-validation.ts',
     'Review validation aggregation',
-    'Relocated by #922 placement closure; re-admission requires a base profile full run with per-target evidence (no inherited legacyBaseline).',
+    ['src/integration/tools/review-validation-findings.test.ts'],
+    {
+      admission: {
+        verifiedAt: '2026-09-20',
+        commitSha: '7ff3be443b80380c50b8720595535df35aa29034',
+        scoreAtAdmission: 83.57,
+        killed: 117,
+        survived: 23,
+        config: 'stryker.conf.json',
+      },
+    },
   ),
-  deferred(
+  required(
     'src/integration/review/review-validation-structured-evidence.ts',
     'Structured review validation evidence',
-    'Relocated by #922 placement closure; re-admission requires a base profile full run with per-target evidence (no inherited legacyBaseline).',
+    [
+      'src/integration/review/challenge-policy-evaluation.test.ts',
+      'src/integration/tools/review-validation-findings.test.ts',
+    ],
+    {
+      admission: {
+        verifiedAt: '2026-09-20',
+        commitSha: '7ff3be443b80380c50b8720595535df35aa29034',
+        scoreAtAdmission: 82.93,
+        killed: 68,
+        survived: 14,
+        config: 'stryker.conf.json',
+      },
+    },
   ),
   required(
     'src/integration/plugin-audit-lifecycle-reason.ts',
@@ -870,10 +923,20 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     ['src/integration/review/enforcement/challenge-binding.test.ts'],
     { legacy: true },
   ),
-  deferred(
+  required(
     'src/integration/audit-outbox.ts',
     'Audit outbox durable delivery',
-    'Relocated by #922 placement closure; re-admission requires a base profile full run with per-target evidence (no inherited legacyBaseline).',
+    ['src/integration/tools/audit-outbox.test.ts'],
+    {
+      admission: {
+        verifiedAt: '2026-09-20',
+        commitSha: '7ff3be443b80380c50b8720595535df35aa29034',
+        scoreAtAdmission: 93.02,
+        killed: 40,
+        survived: 3,
+        config: 'stryker.conf.json',
+      },
+    },
   ),
   required(
     'src/templates/codex-plugin.ts',
@@ -1271,10 +1334,20 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
       config: 'stryker.conf.json',
     },
   },
-  deferred(
+  required(
     'src/integration/tools/mutation/record-mutation-evidence.ts',
     'Canonical MutationAttempt evidence producer',
-    'Relocated by #922 placement closure; the historical admission belongs to the pre-move target path and is not transferred. Re-admission requires a base profile full run with per-target evidence.',
+    ['src/integration/tools/record-mutation-evidence.test.ts'],
+    {
+      admission: {
+        verifiedAt: '2026-09-20',
+        commitSha: '7ff3be443b80380c50b8720595535df35aa29034',
+        scoreAtAdmission: 81.25,
+        killed: 13,
+        survived: 3,
+        config: 'stryker.conf.json',
+      },
+    },
   ),
   {
     classification: 'required',
@@ -1293,10 +1366,20 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
       config: 'stryker.conf.json',
     },
   },
-  deferred(
+  required(
     'src/integration/tools/mutation/reconcile-mutation-episode.ts',
     'Unknown-outcome mutation episode resolution',
-    'Relocated by #922 placement closure; the historical admission belongs to the pre-move target path and is not transferred. Re-admission requires a base profile full run with per-target evidence.',
+    ['src/integration/mutation-episode-e2e.test.ts'],
+    {
+      admission: {
+        verifiedAt: '2026-09-20',
+        commitSha: '7ff3be443b80380c50b8720595535df35aa29034',
+        scoreAtAdmission: 93.33,
+        killed: 28,
+        survived: 2,
+        config: 'stryker.conf.json',
+      },
+    },
   ),
   {
     classification: 'required',

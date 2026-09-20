@@ -51,6 +51,16 @@ vi.mock('../blocked-result.js', async (importOriginal) => ({
   formatBlocked: mocks.formatBlocked,
 }));
 
+const discoveryMock = vi.hoisted(() => ({
+  fn: undefined as unknown as (typeof import('../review/discovery-attempt-context.js'))['resolveAttemptDiscoveryOrBlock'],
+}));
+
+vi.mock('../review/discovery-attempt-context.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../review/discovery-attempt-context.js')>();
+  discoveryMock.fn = vi.fn(actual.resolveAttemptDiscoveryOrBlock);
+  return { ...actual, resolveAttemptDiscoveryOrBlock: discoveryMock.fn };
+});
+
 vi.mock('./helpers.js', () => ({
   resolveWorkspacePaths: mocks.resolveWorkspacePaths,
   requireStateForMutation: mocks.requireStateForMutation,
@@ -999,6 +1009,48 @@ describe('integration/tools/architecture (wrapper)', () => {
   // ═══════════════════════════════════════════════════════════════════════════════
   // Tool boundary: the published strict input schema rejects unknown args
   // ═══════════════════════════════════════════════════════════════════════════════
+
+  it('surfaces a structurally blocked reviewer Discovery context with its obligation', async () => {
+    vi.mocked(discoveryMock.fn).mockResolvedValueOnce({
+      kind: 'blocked',
+      reason: 'persisted Discovery basis is unavailable for this repository review',
+      obligationId: 'obligation-x',
+    });
+    const { architecture } = await import('./architecture/architecture.js');
+    const res = await architecture.execute({ title: 'x', adrText: 'y' }, {} as never);
+    const parsed = JSON.parse(String(res)) as Record<string, unknown>;
+    expect(parsed.code).toBe('REVIEWER_CONTEXT_UNAVAILABLE');
+    expect(parsed.obligationId).toBe('obligation-x');
+    expect(parsed.reason).toBe(
+      'persisted Discovery basis is unavailable for this repository review',
+    );
+    const callArgs = vi.mocked(discoveryMock.fn).mock.calls.at(-1)?.[0] as
+      { obligationId?: string } | undefined;
+    expect(callArgs?.obligationId).toBeDefined();
+  });
+
+  it('forwards provided architecture claims into the rails execution', async () => {
+    const { architecture } = await import('./architecture/architecture.js');
+    await architecture.execute(
+      {
+        title: 'x',
+        adrText: 'y',
+        claims: [
+          {
+            statement: 'The decision uses a safe approach.',
+            authoritySectionId: 'sec-1',
+            critical: true,
+            requiredReviewEvidence: ['review-evid-1'],
+          },
+        ],
+      },
+      {} as never,
+    );
+    const call = mocks.executeArchitecture.mock.calls.at(-1) as unknown[] | undefined;
+    expect(call?.[1]).toMatchObject({
+      claims: [expect.objectContaining({ statement: 'The decision uses a safe approach.' })],
+    });
+  });
 
   describe('strict tool input schema', () => {
     it('rejects an unknown reviewFindings argument (no agent findings submission)', async () => {
