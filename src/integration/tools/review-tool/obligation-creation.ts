@@ -22,11 +22,11 @@ import {
   resolveFrozenReviewProfile,
   findLatestPendingReviewObligation,
   findReviewObligationById,
-} from '../../review/assurance.js';
-import { resolveReviewDispatchAuthority } from '../../review/dispatch-authority.js';
-import { buildInterruptedDispatchRearm } from '../../review/durable-dispatch.js';
+} from '../../review/obligations/assurance.js';
+import { resolveReviewDispatchAuthority } from '../../review/dispatch/dispatch-authority.js';
+import { buildInterruptedDispatchRearm } from '../../review/dispatch/durable-dispatch.js';
 import { resolveReviewContinuation } from '../../../state/review-continuation.js';
-import { resolveReviewAttemptDiscoveryContext } from '../../review/discovery-attempt-context.js';
+import { resolveReviewAttemptDiscoveryContext } from '../../review/context/discovery-attempt-context.js';
 import type { ReviewAttemptDiscoveryContext } from '../../../state/evidence.js';
 import { fingerprintReviewInput } from './fingerprint.js';
 import {
@@ -37,7 +37,7 @@ import { hasReviewContentInput, validateReviewContentSource } from './review-inp
 import { formatBlocked } from '../../blocked-result.js';
 import { writeStateWithArtifacts } from '../helpers.js';
 import { IntegrationInvariantError } from '../../errors.js';
-import { resolveChallengeClassificationEvidence } from '../../review/review-obligation-classification.js';
+import { resolveChallengeClassificationEvidence } from '../../review/obligations/review-obligation-classification.js';
 import { type ResolvedBranchReviewSource } from '../../../adapters/gh-cli.js';
 import type { ReviewToolArgs } from './types.js';
 

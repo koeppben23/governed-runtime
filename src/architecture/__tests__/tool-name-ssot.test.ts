@@ -46,7 +46,7 @@ import { join } from 'node:path';
 import * as ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
-import type { ReviewSignalTool } from '../../integration/review/obligation-tools.js';
+import type { ReviewSignalTool } from '../../integration/review/obligations/obligation-tools.js';
 import * as toolNames from '../../integration/tool-names.js';
 import {
   ALL_FLOWGUARD_TOOL_NAMES,

@@ -24,8 +24,8 @@ import { appendAuditEvent } from '../adapters/persistence-audit.js';
 import { createDecisionEvent, GENESIS_HASH } from '../audit/types.js';
 import { makeState } from '../fixtures.js';
 import { createWorkspace } from './plugin-workspace.js';
-import { freezeReviewMaterial } from './review/assurance.js';
-import { blockObligation } from './review/obligation-state.js';
+import { freezeReviewMaterial } from './review/obligations/assurance.js';
+import { blockObligation } from './review/obligations/obligation-state.js';
 import type { SessionState } from '../state/schema.js';
 
 const NOW = '2026-05-15T12:00:00.000Z';

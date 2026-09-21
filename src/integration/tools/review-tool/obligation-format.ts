@@ -5,12 +5,15 @@ import type {
   FrozenReviewSubject,
   ReviewRepositoryIdentity,
 } from '../../../state/evidence.js';
-import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from '../../review/assurance.js';
+import {
+  REVIEW_CRITERIA_VERSION,
+  REVIEW_MANDATE_DIGEST,
+} from '../../review/obligations/assurance.js';
 import {
   reviewObligationResponseFields,
   type ReviewDispatchAuthority,
-} from '../../review/dispatch-authority.js';
-import { buildChildSessionReviewInstruction } from '../../review/child-session-instruction.js';
+} from '../../review/dispatch/dispatch-authority.js';
+import { buildChildSessionReviewInstruction } from '../../review/prompting/child-session-instruction.js';
 
 /**
  * Structural equality for a frozen repository identity.

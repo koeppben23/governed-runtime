@@ -13,7 +13,7 @@ import * as os from 'node:os';
 import { createPluginLogger } from './plugin-logging.js';
 import { parseToolResult, strictBlockedOutput } from './blocked-result.js';
 import { getToolOutput, getToolArgs } from './plugin-helpers.js';
-import { updateObligation, blockObligation } from './review/obligation-state.js';
+import { updateObligation, blockObligation } from './review/obligations/obligation-state.js';
 import { trackFlowGuardEnforcement } from './plugin-enforcement-tracking.js';
 import * as reviewEnforcement from './review/enforcement/enforcement.js';
 import type { SessionEnforcementState } from './review/enforcement/types.js';

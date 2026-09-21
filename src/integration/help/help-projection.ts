@@ -24,7 +24,7 @@ import {
 import {
   resolveCurrentReviewReport,
   type ReviewReportResolution,
-} from '../review/report-coherence.js';
+} from '../review/evidence/report-coherence.js';
 import {
   TOOL_FLOWGUARD_ARCHIVE,
   TOOL_FLOWGUARD_HELP,

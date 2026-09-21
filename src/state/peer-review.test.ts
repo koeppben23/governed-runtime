@@ -10,7 +10,10 @@ import {
 import { deriveProofGraph } from '../audit/proofgraph/derive.js';
 import { assuranceWith, makeState } from '../fixtures.js';
 import { SessionState } from './schema.js';
-import { createReviewObligation, freezeReviewMaterial } from '../integration/review/assurance.js';
+import {
+  createReviewObligation,
+  freezeReviewMaterial,
+} from '../integration/review/obligations/assurance.js';
 import {
   appendCompletedReviewEvidence,
   appendPreparedReviewEvidence,

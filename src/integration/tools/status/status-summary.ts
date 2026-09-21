@@ -18,7 +18,7 @@ import type { ReviewFindings, ReviewObligationType } from '../../../state/eviden
 import {
   resolveReviewedArtifactIdentity,
   reviewedIdentityFields,
-} from '../../review/reviewed-digest.js';
+} from '../../review/evidence/reviewed-digest.js';
 
 export function latestReviewSummary(
   findings: ReadonlyArray<ReviewFindings> | null | undefined,

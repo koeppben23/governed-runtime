@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "profiles": {
+    "base": {
+      "configFile": "stryker.conf.json",
+      "vitestConfigFile": "vitest.stryker.config.ts",
+      "reportPath": "reports/mutation/mutation.json",
+      "manifestPath": "reports/mutation/admission-manifest-base.json"
+    },
+    "event-core": {
+      "configFile": "stryker.event-core.conf.json",
+      "vitestConfigFile": "vitest.stryker-event-core.config.ts",
+      "reportPath": "reports/mutation/event-core/mutation.json",
+      "manifestPath": "reports/mutation/event-core/admission-manifest.json"
+    },
+    "human-projection": {
+      "configFile": "stryker.human-projection.conf.json",
+      "vitestConfigFile": "vitest.stryker-human-projection.config.ts",
+      "reportPath": "reports/mutation/human-projection/mutation.json",
+      "manifestPath": "reports/mutation/human-projection/admission-manifest.json"
+    },
+    "identity-jwks": {
+      "configFile": "stryker.identity-jwks.conf.json",
+      "vitestConfigFile": "vitest.stryker-identity-jwks.config.ts",
+      "reportPath": "reports/mutation/identity-jwks/mutation.json",
+      "manifestPath": "reports/mutation/identity-jwks/admission-manifest.json"
+    },
+    "mandates": {
+      "configFile": "stryker.mandates.conf.json",
+      "vitestConfigFile": "vitest.mandates.config.ts",
+      "reportPath": "reports/mutation/mandates/mutation.json",
+      "manifestPath": "reports/mutation/mandates/admission-manifest.json"
+    },
+    "schemas": {
+      "configFile": "stryker.schemas.conf.json",
+      "vitestConfigFile": "vitest.stryker-schemas.config.ts",
+      "reportPath": "reports/mutation/schemas/mutation.json",
+      "manifestPath": "reports/mutation/schemas/admission-manifest.json"
+    },
+    "topology": {
+      "configFile": "stryker.topology.conf.json",
+      "vitestConfigFile": "vitest.stryker-topology.config.ts",
+      "reportPath": "reports/mutation/topology/mutation.json",
+      "manifestPath": "reports/mutation/topology/admission-manifest.json"
+    }
+  }
+}

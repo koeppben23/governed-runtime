@@ -1259,8 +1259,8 @@ describe('plan', () => {
     const NOW = '2026-01-01T00:00:00.000Z';
 
     async function dependencies() {
-      const assuranceMod = await import('./review/assurance.js');
-      const findingsHashMod = await import('./review/findings-hash.js');
+      const assuranceMod = await import('./review/obligations/assurance.js');
+      const findingsHashMod = await import('./review/evidence/findings-hash.js');
       const planResponseMod = await import('./tools/plan/plan-response.js');
       return {
         artifactReviewSubjectScope: assuranceMod.artifactReviewSubjectScope,

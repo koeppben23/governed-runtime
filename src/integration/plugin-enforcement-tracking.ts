@@ -13,7 +13,7 @@ import { onFlowGuardToolAfter } from './review/enforcement/enforcement.js';
 import { isTerminalPhase } from '../machine/topology.js';
 import type { ReviewTrackingResult } from './review/enforcement/enforcement.js';
 import type { SessionEnforcementState } from './review/enforcement/types.js';
-import type { ReviewSignalTool } from './review/obligation-tools.js';
+import type { ReviewSignalTool } from './review/obligations/obligation-tools.js';
 import { getToolArgs, getToolOutput } from './plugin-helpers.js';
 
 /**

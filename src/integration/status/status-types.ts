@@ -11,7 +11,7 @@ import type { ReviewFindings } from '../../state/evidence.js';
 import type { DecisionIdentity } from '../../state/evidence-identity.js';
 import type { ActorAssurance } from '../../shared/actor-assurance.js';
 import type { ExecutionDisposition, WorkflowDirective } from '../../machine/workflow-directive.js';
-import type { ReviewLoopProgress } from '../review/review-loop-progress.js';
+import type { ReviewLoopProgress } from '../review/obligations/review-loop-progress.js';
 import type { StatusConclusionProjection } from './status-conclusion.js';
 import type { KnownPresentationStatusInput } from '../../presentation/labels.js';
 import type { PersistedProofGraphSummary } from '../../audit/proofgraph/summary.js';

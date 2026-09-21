@@ -53,44 +53,53 @@
  * configured range.
  */
 
+import { readFileSync } from 'node:fs';
+
+import { admissionRecord } from './mutation-admission-records.js';
 import { isTestSourcePath } from './module-classification.js';
 
 export type MutationProfile =
-  'base' | 'event-core' | 'human-projection' | 'identity-jwks' | 'mandates' | 'schemas';
+  | 'base'
+  | 'event-core'
+  | 'human-projection'
+  | 'identity-jwks'
+  | 'mandates'
+  | 'schemas'
+  | 'topology';
 
-export type MutationAuthorityClass = 'required' | 'admission-backlog' | 'not-mutation-suitable';
+export type MutationAuthorityClass =
+  'required' | 'admission-candidate' | 'admission-backlog' | 'not-mutation-suitable';
 
 export interface MutationProfileDefinition {
   readonly configFile: string;
   readonly vitestConfigFile: string;
 }
 
-export const MUTATION_PROFILES: Readonly<Record<MutationProfile, MutationProfileDefinition>> = {
-  base: {
-    configFile: 'stryker.conf.json',
-    vitestConfigFile: 'vitest.stryker.config.ts',
-  },
-  'event-core': {
-    configFile: 'stryker.event-core.conf.json',
-    vitestConfigFile: 'vitest.stryker-event-core.config.ts',
-  },
-  'human-projection': {
-    configFile: 'stryker.human-projection.conf.json',
-    vitestConfigFile: 'vitest.stryker-human-projection.config.ts',
-  },
-  'identity-jwks': {
-    configFile: 'stryker.identity-jwks.conf.json',
-    vitestConfigFile: 'vitest.stryker-identity-jwks.config.ts',
-  },
-  mandates: {
-    configFile: 'stryker.mandates.conf.json',
-    vitestConfigFile: 'vitest.mandates.config.ts',
-  },
-  schemas: {
-    configFile: 'stryker.schemas.conf.json',
-    vitestConfigFile: 'vitest.stryker-schemas.config.ts',
-  },
-};
+interface ProfileRegistry {
+  readonly version: number;
+  readonly profiles: Readonly<
+    Record<string, { readonly configFile: string; readonly vitestConfigFile: string }>
+  >;
+}
+
+/**
+ * Profile metadata is owned by `scripts/mutation-profile-registry.json`.
+ * This projection keeps only the fields the inventory contract needs; the
+ * registry closure guard proves the key sets cannot drift apart.
+ */
+const PROFILE_REGISTRY = JSON.parse(
+  readFileSync(
+    new URL('../../../scripts/mutation-profile-registry.json', import.meta.url),
+    'utf-8',
+  ),
+) as ProfileRegistry;
+
+export const MUTATION_PROFILES = Object.fromEntries(
+  Object.entries(PROFILE_REGISTRY.profiles).map(([profile, entry]) => [
+    profile,
+    { configFile: entry.configFile, vitestConfigFile: entry.vitestConfigFile },
+  ]),
+) as Readonly<Record<MutationProfile, MutationProfileDefinition>>;
 
 export interface AdmissionRecord {
   readonly verifiedAt: string;
@@ -124,6 +133,22 @@ export interface RequiredAuthorityEntry extends AuthorityMetadata {
   readonly legacyBaseline?: LegacyBaseline;
 }
 
+/**
+ * A target staged inside a profile for authoritative admission measurement.
+ * It is mutated by its profile but carries no provenance yet: the full-run
+ * verdict decides whether it becomes `required` (admission) or
+ * `admission-backlog` (below threshold / not admitted).
+ */
+export interface AdmissionCandidateEntry extends AuthorityMetadata {
+  readonly classification: 'admission-candidate';
+  readonly profile: MutationProfile;
+  readonly mutateSelector: string;
+  readonly target: string;
+  readonly coveringSuites: readonly string[];
+  readonly reason: string;
+  readonly critical?: boolean;
+}
+
 export interface DeferredAuthorityEntry extends AuthorityMetadata {
   readonly classification: 'admission-backlog';
   readonly target: string;
@@ -148,6 +173,7 @@ export interface DeferredAuthorityGlobEntry extends AuthorityMetadata {
 
 export type MutationAuthorityEntry =
   | RequiredAuthorityEntry
+  | AdmissionCandidateEntry
   | DeferredAuthorityEntry
   | NotSuitableAuthorityEntry
   | DeferredAuthorityGlobEntry;
@@ -244,6 +270,31 @@ function deferred(
   };
 }
 
+function candidate(
+  target: string,
+  authority: string,
+  profile: MutationProfile,
+  coveringSuites: readonly string[],
+  reason: string,
+  options: {
+    readonly selector?: string;
+    readonly source?: readonly string[];
+    readonly critical?: boolean;
+  } = {},
+): AdmissionCandidateEntry {
+  return {
+    classification: 'admission-candidate',
+    target,
+    authority,
+    source: options.source ?? [SOURCE.scope],
+    reason,
+    profile,
+    mutateSelector: options.selector ?? target,
+    coveringSuites,
+    ...(options.critical === undefined ? {} : { critical: options.critical }),
+  };
+}
+
 function notSuitable(
   target: string,
   authority: string,
@@ -282,6 +333,14 @@ const DEFERRED_REASON =
 
 const DEEP_REASON =
   'Deferred to the deep authority expansion bundle; admission requires a profile full run with per-target evidence.';
+
+/**
+ * Relocated targets whose historical admission is path-bound. The move
+ * changed the target identity, so the old evidence is NOT rebound and no
+ * legacy provenance is synthesized; re-admission requires a fresh full run.
+ */
+const RELOCATED_ADMISSION_REASON =
+  'Previously admitted under the historical path. The bounded-context move changes target identity; historical admission evidence is not rebound to the new path. Re-admission requires a full base-profile run on the new target identity.';
 
 /**
  * Authorities that must never leave the mutation scope. Every root is backed
@@ -381,13 +440,17 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'src/adapters/persistence-lock.ts',
     'Inter-process write lock for persisted state',
     ['src/adapters/__tests__/persistence-lock.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/adapters/persistence-lock.ts'),
+    },
   ),
   required(
     'src/adapters/host-adapter.ts',
     'Host runtime adapter boundary',
     ['src/adapters/host-adapter.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/adapters/host-adapter.ts'),
+    },
   ),
   required(
     'src/adapters/persistence.ts',
@@ -396,13 +459,17 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
       'src/adapters/adapters-atomic-write.test.ts',
       'src/adapters/adapters-persistence-basics.test.ts',
     ],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/adapters/persistence.ts'),
+    },
   ),
   required(
     'src/adapters/persistence-audit.ts',
     'Durable audit JSONL trail adapter',
     ['src/adapters/adapters-schema-audit.test.ts', 'src/adapters/workspace-archive.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/adapters/persistence-audit.ts'),
+    },
   ),
   required(
     'src/adapters/ip-validation.ts',
@@ -414,7 +481,9 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'src/mcp-server/execution-limiter.ts',
     'MCP tool execution rate limiting',
     ['src/mcp-server/mcp-server.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/mcp-server/execution-limiter.ts'),
+    },
   ),
   required(
     'src/mcp-server/session-resolver.ts',
@@ -432,60 +501,58 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'src/archive/content-digest.ts',
     'Archive content digest computation',
     ['src/archive/content-digest.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/archive/content-digest.ts'),
+    },
   ),
   required(
     'src/audit/completeness.ts',
     'Audit event completeness classification',
     ['src/audit/audit-completeness.test.ts'],
-    { legacy: true, critical: true },
+    {
+      critical: true,
+      admission: admissionRecord('src/audit/completeness.ts'),
+    },
   ),
   required(
     'src/audit/integrity.ts',
     'Audit hash-chain integrity verification',
     ['src/audit/audit-integrity.test.ts'],
-    { legacy: true, critical: true },
+    {
+      critical: true,
+      admission: admissionRecord('src/audit/integrity.ts'),
+    },
   ),
   required(
     'src/audit/event-builders.ts',
     'Audit event body builders and factories',
     ['src/audit/audit-types.test.ts', 'src/integration/plugin-audit.test.ts'],
     {
-      admission: {
-        verifiedAt: '2026-09-19',
-        commitSha: '12c8883919649aef24a95cebce78e503e9e3efa4',
-        scoreAtAdmission: 100,
-        killed: 16,
-        survived: 0,
-        config: 'stryker.conf.json',
-      },
+      admission: admissionRecord('src/audit/event-builders.ts'),
     },
   ),
   required(
     'src/audit/ntp-check.ts',
     'NTP clock-skew check for TSA evidence',
     ['src/audit/ntp-check.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/audit/ntp-check.ts'),
+    },
   ),
   required(
     'src/audit/rfc-3161-pkijs-verifier.ts',
     'RFC 3161 timestamp token verification',
     ['src/audit/rfc3161-pkijs-verifier.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/audit/rfc-3161-pkijs-verifier.ts'),
+    },
   ),
   required(
     'src/audit/rfc-3161-token-parse.ts',
     'RFC 3161 token structure parsing',
     ['src/audit/rfc3161-pkijs-verifier.test.ts'],
     {
-      admission: {
-        verifiedAt: '2026-09-19',
-        commitSha: '12c8883919649aef24a95cebce78e503e9e3efa4',
-        scoreAtAdmission: 95.45,
-        killed: 42,
-        survived: 2,
-        config: 'stryker.conf.json',
-      },
+      admission: admissionRecord('src/audit/rfc-3161-token-parse.ts'),
     },
   ),
   required(
@@ -493,27 +560,24 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'RFC 3161 signer certificate verification',
     ['src/audit/rfc3161-pkijs-verifier.test.ts'],
     {
-      admission: {
-        verifiedAt: '2026-09-19',
-        commitSha: '12c8883919649aef24a95cebce78e503e9e3efa4',
-        scoreAtAdmission: 92.45,
-        killed: 49,
-        survived: 4,
-        config: 'stryker.conf.json',
-      },
+      admission: admissionRecord('src/audit/rfc-3161-signer-verification.ts'),
     },
   ),
   required(
     'src/audit/timestamp-verification.ts',
     'Timestamp evidence verification',
     ['src/audit/timestamp-verification.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/audit/timestamp-verification.ts'),
+    },
   ),
   required(
     'src/audit/timestamp-token-verification.ts',
     'Canonical TSA token imprint verification',
     ['src/audit/rfc3161-pkijs-verifier.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/audit/timestamp-token-verification.ts'),
+    },
   ),
   required(
     'src/adapters/workspace/archive.ts',
@@ -525,7 +589,9 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'src/adapters/workspace/archive-publish.ts',
     'Archive publication boundary',
     ['src/adapters/workspace/archive-publish.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/adapters/workspace/archive-publish.ts'),
+    },
   ),
   required(
     'src/adapters/workspace/archive-tar.ts',
@@ -537,13 +603,17 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'src/adapters/workspace/archive-timestamp-verification.ts',
     'Archive TSA verification',
     ['src/adapters/workspace/archive-timestamp-verification.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/adapters/workspace/archive-timestamp-verification.ts'),
+    },
   ),
   required(
     'src/adapters/workspace/archive-verify-manifest.ts',
     'Archive manifest verification',
     ['src/adapters/workspace/archive-verify-manifest.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/adapters/workspace/archive-verify-manifest.ts'),
+    },
   ),
   required(
     'src/adapters/workspace/archive-verify-chain.ts',
@@ -559,14 +629,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
       'src/adapters/workspace/archive-verify-artifact-binding-mutation.test.ts',
     ],
     {
-      admission: {
-        verifiedAt: '2026-09-19',
-        commitSha: 'd29f399371faca9ccafa8be20a0317b533229937',
-        scoreAtAdmission: 100,
-        killed: 28,
-        survived: 0,
-        config: 'stryker.conf.json',
-      },
+      admission: admissionRecord('src/adapters/workspace/archive-verify-artifact-binding.ts'),
     },
   ),
   required(
@@ -577,14 +640,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
       'src/adapters/workspace/archive-verify-audit-chain-mutation.test.ts',
     ],
     {
-      admission: {
-        verifiedAt: '2026-09-19',
-        commitSha: 'd29f399371faca9ccafa8be20a0317b533229937',
-        scoreAtAdmission: 100,
-        killed: 88,
-        survived: 0,
-        config: 'stryker.conf.json',
-      },
+      admission: admissionRecord('src/adapters/workspace/archive-verify-audit-chain.ts'),
     },
   ),
   required(
@@ -595,14 +651,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
       'src/adapters/workspace/archive-verify-checksum-mutation.test.ts',
     ],
     {
-      admission: {
-        verifiedAt: '2026-09-19',
-        commitSha: 'd29f399371faca9ccafa8be20a0317b533229937',
-        scoreAtAdmission: 92.86,
-        killed: 26,
-        survived: 2,
-        config: 'stryker.conf.json',
-      },
+      admission: admissionRecord('src/adapters/workspace/archive-verify-checksum.ts'),
     },
   ),
   required(
@@ -613,102 +662,113 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
       'src/adapters/workspace/archive-verify-integrity-mutation.test.ts',
     ],
     {
-      admission: {
-        verifiedAt: '2026-09-19',
-        commitSha: 'd29f399371faca9ccafa8be20a0317b533229937',
-        scoreAtAdmission: 100,
-        killed: 18,
-        survived: 0,
-        config: 'stryker.conf.json',
-      },
+      admission: admissionRecord('src/adapters/workspace/archive-verify-integrity.ts'),
     },
   ),
   required(
     'src/adapters/workspace/archive-verify-helpers.ts',
     'Archive verification helpers',
     ['src/adapters/workspace/archive-verify-helpers.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/adapters/workspace/archive-verify-helpers.ts'),
+    },
   ),
   required(
     'src/audit/proofgraph/evaluate.ts',
     'ProofGraph evaluation authority',
     ['src/audit/proofgraph/evaluate.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/audit/proofgraph/evaluate.ts'),
+    },
   ),
   required(
     'src/audit/proofgraph/gate.ts',
     'ProofGraph gate decision',
     ['src/audit/proofgraph/gate.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/audit/proofgraph/gate.ts'),
+    },
   ),
   required(
     'src/integration/proofgraph/claim-contract.ts',
     'Proof claim contract materialization',
     ['src/integration/proofgraph/claim-contract.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/integration/proofgraph/claim-contract.ts'),
+    },
   ),
   required(
     'src/integration/proofgraph/claim-contract-rules.ts',
     'Claim declaration contract rules',
     ['src/integration/proofgraph/claim-contract.test.ts'],
     {
-      admission: {
-        verifiedAt: '2026-09-19',
-        commitSha: '12c8883919649aef24a95cebce78e503e9e3efa4',
-        scoreAtAdmission: 90,
-        killed: 108,
-        survived: 12,
-        config: 'stryker.conf.json',
-      },
+      admission: admissionRecord('src/integration/proofgraph/claim-contract-rules.ts'),
     },
   ),
   required(
     'src/integration/proofgraph/materialize-contract.ts',
     'Proof contract evidence binding',
     ['src/integration/proofgraph/materialize-contract.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/integration/proofgraph/materialize-contract.ts'),
+    },
   ),
   required(
     'src/audit/proofgraph/executed-test-binder.ts',
     'Executed-test evidence binding',
     ['src/audit/proofgraph/executed-test-binder.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/audit/proofgraph/executed-test-binder.ts'),
+    },
   ),
   required(
     'src/audit/proofgraph/counterexample-binder.ts',
     'Counterexample evidence binding',
     ['src/audit/proofgraph/counterexample-binder.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/audit/proofgraph/counterexample-binder.ts'),
+    },
   ),
   required(
     'src/audit/proofgraph/assertion-evidence-binding.ts',
     'Assertion evidence binding',
     ['src/audit/proofgraph/assertion-evidence-binding.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/audit/proofgraph/assertion-evidence-binding.ts'),
+    },
   ),
   required(
     'src/audit/proofgraph/enforcement-projection.ts',
     'Enforcement evidence projection',
     ['src/audit/proofgraph/enforcement-projection.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/audit/proofgraph/enforcement-projection.ts'),
+    },
   ),
   required(
     'src/verification/execution-subject.ts',
     'Observed execution subject binding',
     ['src/verification/execution-subject.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/verification/execution-subject.ts'),
+    },
   ),
   required(
     'src/discovery/verification-planner.ts',
     'Verification candidate planning',
     ['src/discovery/verification-planner.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/discovery/verification-planner.ts'),
+    },
   ),
   required(
     'src/config/policy-snapshot.ts',
     'Policy snapshot capture and validation',
     ['src/config/policy-snapshot.test.ts'],
-    { legacy: true, critical: true },
+    {
+      critical: true,
+      admission: admissionRecord('src/config/policy-snapshot.ts'),
+    },
   ),
   required(
     'src/config/reasons.ts',
@@ -720,7 +780,9 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'src/config/profile.ts',
     'Built-in profile registry',
     ['src/config/profile-core.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/config/profile.ts'),
+    },
   ),
   required(
     'src/hooks/http-server.ts',
@@ -738,7 +800,10 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'src/identity/token-verifier.ts',
     'IdP token verification',
     ['src/identity/token-verifier.test.ts'],
-    { legacy: true, critical: true },
+    {
+      critical: true,
+      admission: admissionRecord('src/identity/token-verifier.ts'),
+    },
   ),
   required(
     'src/identity/key-resolver.ts',
@@ -756,21 +821,16 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'src/integration/tool-classification.ts',
     'Tool risk classification',
     ['src/integration/tool-classification.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/integration/tool-classification.ts'),
+    },
   ),
   required(
     'src/integration/discovery/discovery-risk-paths.ts',
     'Discovery risk path classification',
     ['src/integration/discovery-risk-paths.test.ts'],
     {
-      admission: {
-        verifiedAt: '2026-09-20',
-        commitSha: 'd1ef19ebbdda89af96869f7c3659de6a8ea1c8c7',
-        scoreAtAdmission: 100,
-        killed: 17,
-        survived: 0,
-        config: 'stryker.conf.json',
-      },
+      admission: admissionRecord('src/integration/discovery/discovery-risk-paths.ts'),
     },
   ),
   required(
@@ -778,14 +838,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'Pre-implementation challenge policy',
     ['src/integration/tools/pre-implementation-challenge.test.ts'],
     {
-      admission: {
-        verifiedAt: '2026-09-20',
-        commitSha: 'd1ef19ebbdda89af96869f7c3659de6a8ea1c8c7',
-        scoreAtAdmission: 100,
-        killed: 4,
-        survived: 0,
-        config: 'stryker.conf.json',
-      },
+      admission: admissionRecord('src/integration/tools/challenge/pre-implementation-challenge.ts'),
     },
   ),
   required(
@@ -793,60 +846,47 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'Architecture evidence submission',
     ['src/integration/tools/architecture-tool.test.ts'],
     {
-      admission: {
-        verifiedAt: '2026-09-20',
-        commitSha: 'd1ef19ebbdda89af96869f7c3659de6a8ea1c8c7',
-        scoreAtAdmission: 80.95,
-        killed: 17,
-        survived: 4,
-        config: 'stryker.conf.json',
-      },
+      admission: admissionRecord('src/integration/tools/architecture/architecture-submit.ts'),
     },
   ),
   required(
     'src/integration/tools/review-validation-mode.ts',
     'Multi-mode review validation',
     ['src/integration/tools/review-validation-mode.test.ts'],
-    { legacy: true, critical: true },
-  ),
-  required(
-    'src/integration/review/review-validation.ts',
-    'Review validation aggregation',
-    ['src/integration/tools/review-validation-findings.test.ts'],
     {
-      admission: {
-        verifiedAt: '2026-09-20',
-        commitSha: 'd1ef19ebbdda89af96869f7c3659de6a8ea1c8c7',
-        scoreAtAdmission: 83.57,
-        killed: 117,
-        survived: 23,
-        config: 'stryker.conf.json',
-      },
+      critical: true,
+      admission: admissionRecord('src/integration/tools/review-validation-mode.ts'),
     },
   ),
   required(
-    'src/integration/review/review-validation-structured-evidence.ts',
+    'src/integration/review/validation/review-validation.ts',
+    'Review validation aggregation',
+    ['src/integration/tools/review-validation-findings.test.ts'],
+    {
+      admission: admissionRecord('src/integration/review/validation/review-validation.ts'),
+    },
+  ),
+  required(
+    'src/integration/review/validation/review-validation-structured-evidence.ts',
     'Structured review validation evidence',
     [
-      'src/integration/review/challenge-policy-evaluation.test.ts',
+      'src/integration/review/validation/challenge-policy-evaluation.test.ts',
       'src/integration/tools/review-validation-findings.test.ts',
     ],
     {
-      admission: {
-        verifiedAt: '2026-09-20',
-        commitSha: 'd1ef19ebbdda89af96869f7c3659de6a8ea1c8c7',
-        scoreAtAdmission: 82.93,
-        killed: 68,
-        survived: 14,
-        config: 'stryker.conf.json',
-      },
+      admission: admissionRecord(
+        'src/integration/review/validation/review-validation-structured-evidence.ts',
+      ),
     },
   ),
   required(
     'src/integration/plugin-audit-lifecycle-reason.ts',
     'Audit lifecycle reason mapping',
     ['src/integration/plugin-audit-lifecycle-reason.test.ts'],
-    { legacy: true, critical: true },
+    {
+      critical: true,
+      admission: admissionRecord('src/integration/plugin-audit-lifecycle-reason.ts'),
+    },
   ),
   required(
     'src/integration/plugin-audit.ts',
@@ -859,21 +899,16 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'Audit decision receipt authority',
     ['src/integration/plugin-audit.test.ts'],
     {
-      admission: {
-        verifiedAt: '2026-09-19',
-        commitSha: 'd29f399371faca9ccafa8be20a0317b533229937',
-        scoreAtAdmission: 91.67,
-        killed: 55,
-        survived: 5,
-        config: 'stryker.conf.json',
-      },
+      admission: admissionRecord('src/integration/plugin-audit-decisions.ts'),
     },
   ),
   required(
     'src/integration/plugin-audit-reconcile.ts',
     'Durable audit reconciliation authority',
     ['src/integration/plugin-audit.test.ts', 'src/integration/plugin-audit-reconcile.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/integration/plugin-audit-reconcile.ts'),
+    },
   ),
   required(
     'src/integration/plugin-beforehooks.ts',
@@ -885,13 +920,17 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'src/integration/plugin-afterhooks.ts',
     'Host after-hook enforcement tracking',
     ['src/integration/plugin-afterhooks-more.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/integration/plugin-afterhooks.ts'),
+    },
   ),
   required(
     'src/integration/plugin-helpers.ts',
     'Plugin shared helpers',
     ['src/integration/plugin-helpers.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/integration/plugin-helpers.ts'),
+    },
   ),
   required(
     'src/integration/plugin-workspace.ts',
@@ -909,13 +948,17 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'src/integration/runtime-lease.ts',
     'Runtime lease fencing authority',
     ['src/integration/runtime-lease.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/integration/runtime-lease.ts'),
+    },
   ),
   required(
     'src/state/evidence-mutation-episode.ts',
     'Host mutation episode invariants',
     ['src/state/evidence-mutation-episode.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/state/evidence-mutation-episode.ts'),
+    },
   ),
   required(
     'src/integration/review/enforcement/challenge-binding.ts',
@@ -928,27 +971,28 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'Audit outbox durable delivery',
     ['src/integration/tools/audit-outbox.test.ts'],
     {
-      admission: {
-        verifiedAt: '2026-09-20',
-        commitSha: 'd1ef19ebbdda89af96869f7c3659de6a8ea1c8c7',
-        scoreAtAdmission: 93.02,
-        killed: 40,
-        survived: 3,
-        config: 'stryker.conf.json',
-      },
+      admission: admissionRecord('src/integration/audit-outbox.ts'),
     },
   ),
   required(
     'src/templates/codex-plugin.ts',
     'Codex host plugin template',
     ['src/templates/codex-plugin.test.ts'],
-    { legacy: true, critical: true, source: [SOURCE.productMandates] },
+    {
+      critical: true,
+      source: [SOURCE.productMandates],
+      admission: admissionRecord('src/templates/codex-plugin.ts'),
+    },
   ),
   required(
     'src/templates/claude-code-plugin.ts',
     'Claude Code host plugin template',
     ['src/templates/claude-code-plugin.test.ts'],
-    { legacy: true, critical: true, source: [SOURCE.productMandates] },
+    {
+      critical: true,
+      source: [SOURCE.productMandates],
+      admission: admissionRecord('src/templates/claude-code-plugin.ts'),
+    },
   ),
   required(
     'src/integration/review/enforcement/enforcement.ts',
@@ -969,63 +1013,86 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'src/integration/review/enforcement/challenge-consistency.ts',
     'Challenge consistency authority',
     ['src/integration/review/enforcement/challenge-consistency.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/integration/review/enforcement/challenge-consistency.ts'),
+    },
   ),
   required(
-    'src/integration/review/dispatch-signal.ts',
+    'src/integration/review/dispatch/dispatch-signal.ts',
     'Review dispatch signal detection',
-    ['src/integration/review/dispatch-signal.test.ts'],
-    { legacy: true },
+    ['src/integration/review/dispatch/dispatch-signal.test.ts'],
+    {
+      admission: admissionRecord('src/integration/review/dispatch/dispatch-signal.ts'),
+    },
   ),
   required(
-    'src/integration/review/agent-resolution.ts',
+    'src/integration/review/dispatch/agent-resolution.ts',
     'Reviewer agent resolution',
-    ['src/integration/review/agent-resolution.test.ts'],
-    { legacy: true, critical: true },
+    ['src/integration/review/dispatch/agent-resolution.test.ts'],
+    {
+      critical: true,
+      admission: admissionRecord('src/integration/review/dispatch/agent-resolution.ts'),
+    },
   ),
   required(
     'src/shared/canonical-json.ts',
     'Canonical JSON serialization authority',
     ['src/shared/canonical-json.test.ts'],
-    { legacy: true, critical: true },
+    {
+      critical: true,
+      admission: admissionRecord('src/shared/canonical-json.ts'),
+    },
   ),
   required(
     'src/logging/error-serialize.ts',
     'Structured error serialization',
     ['src/logging/error-serialize.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/logging/error-serialize.ts'),
+    },
   ),
   required('src/machine/commands.ts', 'Machine command surface', ['src/machine/commands.test.ts'], {
-    legacy: true,
     source: [SOURCE.machine],
+    admission: admissionRecord('src/machine/commands.ts'),
   }),
   required(
     'src/machine/evaluate.ts',
     'Deterministic state evaluation',
     ['src/machine/evaluate.test.ts'],
-    { legacy: true, source: [SOURCE.machine] },
+    {
+      source: [SOURCE.machine],
+      admission: admissionRecord('src/machine/evaluate.ts'),
+    },
   ),
   required('src/machine/guards.ts', 'Guard evaluation ordering', ['src/machine/guards.test.ts'], {
-    legacy: true,
     source: [SOURCE.machine],
+    admission: admissionRecord('src/machine/guards.ts'),
   }),
   required(
     'src/machine/workflow-directive.ts',
     'Workflow directive authority',
     ['src/machine/workflow-directive.test.ts'],
-    { legacy: true, source: [SOURCE.machine] },
+    {
+      source: [SOURCE.machine],
+      admission: admissionRecord('src/machine/workflow-directive.ts'),
+    },
   ),
   required(
     'src/machine/validation-evidence.ts',
     'Validation evidence authority',
     ['src/machine/validation-evidence.test.ts'],
-    { legacy: true, source: [SOURCE.machine] },
+    {
+      source: [SOURCE.machine],
+      admission: admissionRecord('src/machine/validation-evidence.ts'),
+    },
   ),
   required(
     'src/rails/architecture.ts',
     'Architecture rail executor',
     ['src/rails/architecture.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/rails/architecture.ts'),
+    },
   ),
   required('src/rails/hydrate.ts', 'Hydrate rail executor', ['src/rails/hydrate.test.ts'], {
     legacy: true,
@@ -1034,34 +1101,33 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'src/rails/plan-review-evidence.ts',
     'Plan review evidence projection',
     ['src/rails/plan-review-evidence.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/rails/plan-review-evidence.ts'),
+    },
   ),
   required(
     'src/rails/review-decision.ts',
     'Review decision rail authority',
     ['src/rails/review-decision.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/rails/review-decision.ts'),
+    },
   ),
   required(
     'src/rails/review-decision-gates.ts',
     'Review decision gate evaluation',
     ['src/rails/review-decision.test.ts'],
     {
-      admission: {
-        verifiedAt: '2026-09-19',
-        commitSha: '12c8883919649aef24a95cebce78e503e9e3efa4',
-        scoreAtAdmission: 84.3,
-        killed: 145,
-        survived: 27,
-        config: 'stryker.conf.json',
-      },
+      admission: admissionRecord('src/rails/review-decision-gates.ts'),
     },
   ),
   required(
     'src/rails/review-evidence-resolution.ts',
     'Review evidence resolution',
     ['src/rails/review-evidence-resolution.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/rails/review-evidence-resolution.ts'),
+    },
   ),
   required('src/rails/review.ts', 'Review rail executor', ['src/rails/review.test.ts'], {
     legacy: true,
@@ -1070,22 +1136,28 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'src/rails/review-url.ts',
     'URL review transport boundary',
     ['src/rails/review-url-security.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/rails/review-url.ts'),
+    },
   ),
   required('src/rails/ticket.ts', 'Ticket rail executor', ['src/rails/ticket.test.ts'], {
-    legacy: true,
+    admission: admissionRecord('src/rails/ticket.ts'),
   }),
   required(
     'src/hooks/shared/obligation-tracker.ts',
     'Review obligation tracking',
     ['src/hooks/shared/obligation-tracker.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/hooks/shared/obligation-tracker.ts'),
+    },
   ),
   required(
     'src/hooks/shared/phase-gate.ts',
     'Phase gate hook enforcement',
     ['src/hooks/shared/phase-gate.test.ts'],
-    { legacy: true },
+    {
+      admission: admissionRecord('src/hooks/shared/phase-gate.ts'),
+    },
   ),
 
   // ── Event-core profile: required ──────────────────────────────────────────
@@ -1100,14 +1172,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     {
       profile: 'event-core',
       source: [SOURCE.trustBoundaries],
-      admission: {
-        verifiedAt: '2026-09-19',
-        commitSha: '6d047e6178365fca4b69b30a61cc15969d8fad56',
-        scoreAtAdmission: 100,
-        killed: 6,
-        survived: 0,
-        config: 'stryker.event-core.conf.json',
-      },
+      admission: admissionRecord('src/audit/event-core.ts'),
     },
   ),
 
@@ -1116,31 +1181,46 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'src/presentation/reason-projection.ts',
     'Reason projection authority',
     ['src/presentation/reason-projection.test.ts'],
-    { legacy: true, profile: 'human-projection' },
+    {
+      profile: 'human-projection',
+      admission: admissionRecord('src/presentation/reason-projection.ts'),
+    },
   ),
   required(
     'src/presentation/claim-resolution.ts',
     'Claim resolution projection',
     ['src/presentation/claim-resolution.test.ts'],
-    { legacy: true, profile: 'human-projection' },
+    {
+      profile: 'human-projection',
+      admission: admissionRecord('src/presentation/claim-resolution.ts'),
+    },
   ),
   required(
     'src/presentation/human-verification.ts',
     'Human verification projection',
     ['src/presentation/human-verification.test.ts'],
-    { legacy: true, profile: 'human-projection' },
+    {
+      profile: 'human-projection',
+      admission: admissionRecord('src/presentation/human-verification.ts'),
+    },
   ),
   required(
     'src/presentation/claim-human-projection.ts',
     'Claim human projection',
     ['src/presentation/claim-human-projection.test.ts'],
-    { legacy: true, profile: 'human-projection' },
+    {
+      profile: 'human-projection',
+      admission: admissionRecord('src/presentation/claim-human-projection.ts'),
+    },
   ),
   required(
     'src/presentation/proof-requirement-copy.ts',
     'Proof requirement copy',
     ['src/integration/proofgraph/proof-summary-projectors.test.ts'],
-    { legacy: true, profile: 'human-projection' },
+    {
+      profile: 'human-projection',
+      admission: admissionRecord('src/presentation/proof-requirement-copy.ts'),
+    },
   ),
   required(
     'src/presentation/markdown.ts',
@@ -1154,19 +1234,31 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'src/identity/key-resolver.ts',
     'JWKS redirect policy range',
     ['src/identity/key-resolver.test.ts'],
-    { legacy: true, profile: 'identity-jwks', selector: 'src/identity/key-resolver.ts:270-277' },
+    {
+      profile: 'identity-jwks',
+      selector: 'src/identity/key-resolver.ts:270-277',
+      admission: admissionRecord('src/identity/key-resolver.ts:270-277'),
+    },
   ),
   required(
     'src/identity/key-resolver.ts',
     'JWKS response-size policy range',
     ['src/identity/key-resolver.test.ts'],
-    { legacy: true, profile: 'identity-jwks', selector: 'src/identity/key-resolver.ts:328-334' },
+    {
+      profile: 'identity-jwks',
+      selector: 'src/identity/key-resolver.ts:328-334',
+      admission: admissionRecord('src/identity/key-resolver.ts:328-334'),
+    },
   ),
   required(
     'src/identity/key-resolver.ts',
     'JWKS transport policy range',
     ['src/identity/key-resolver.test.ts'],
-    { legacy: true, profile: 'identity-jwks', selector: 'src/identity/key-resolver.ts:338-350' },
+    {
+      profile: 'identity-jwks',
+      selector: 'src/identity/key-resolver.ts:338-350',
+      admission: admissionRecord('src/identity/key-resolver.ts:338-350'),
+    },
   ),
 
   // ── Mandates profile: required ────────────────────────────────────────────
@@ -1174,19 +1266,31 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'src/templates/mandates.ts',
     'Installed mandate authority (mandates regime)',
     ['src/templates/mandates-contract-mutation.test.ts'],
-    { legacy: true, profile: 'mandates', source: [SOURCE.productMandates] },
+    {
+      source: [SOURCE.productMandates],
+      profile: 'mandates',
+      admission: admissionRecord('src/templates/mandates.ts'),
+    },
   ),
   required(
     'src/templates/commands/plan.ts',
     'Plan command mandate template',
     ['src/templates/commands/discovery-review-parity.test.ts'],
-    { legacy: true, profile: 'mandates', source: [SOURCE.productMandates] },
+    {
+      source: [SOURCE.productMandates],
+      profile: 'mandates',
+      admission: admissionRecord('src/templates/commands/plan.ts'),
+    },
   ),
   required(
     'src/templates/commands/implement.ts',
     'Implement command mandate template',
     ['src/templates/commands/discovery-review-parity.test.ts'],
-    { legacy: true, profile: 'mandates', source: [SOURCE.productMandates] },
+    {
+      source: [SOURCE.productMandates],
+      profile: 'mandates',
+      admission: admissionRecord('src/templates/commands/implement.ts'),
+    },
   ),
 
   // ── Base profile: candidate authorities pending admission ─────────────────
@@ -1198,32 +1302,17 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     authority: 'In-process mutation episode tracking',
     source: [SOURCE.trustBoundaries],
     coveringSuites: ['src/integration/plugin-mutation-episodes.test.ts'],
-    admission: {
-      verifiedAt: '2026-09-17',
-      commitSha: '65b6b0126b5fb5fc77cd31701ac3e37f48356ccf',
-      scoreAtAdmission: 85.85,
-      killed: 91,
-      survived: 15,
-      config: 'stryker.conf.json',
-    },
+    admission: admissionRecord('src/integration/plugin-mutation-episodes.ts'),
   },
-  {
-    classification: 'required',
-    profile: 'base',
-    mutateSelector: 'src/integration/review/reviewed-digest.ts',
-    target: 'src/integration/review/reviewed-digest.ts',
-    authority: 'Review provenance projection',
-    source: [SOURCE.trustBoundaries],
-    coveringSuites: ['src/integration/review/reviewed-digest.test.ts'],
-    admission: {
-      verifiedAt: '2026-09-17',
-      commitSha: '65b6b0126b5fb5fc77cd31701ac3e37f48356ccf',
-      scoreAtAdmission: 93.33,
-      killed: 84,
-      survived: 6,
-      config: 'stryker.conf.json',
+  required(
+    'src/integration/review/evidence/reviewed-digest.ts',
+    'Review provenance projection',
+    ['src/integration/review/evidence/reviewed-digest.test.ts'],
+    {
+      source: [SOURCE.trustBoundaries],
+      admission: admissionRecord('src/integration/review/evidence/reviewed-digest.ts'),
     },
-  },
+  ),
   {
     classification: 'required',
     profile: 'base',
@@ -1232,14 +1321,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     authority: 'Mutation evidence binding',
     source: [SOURCE.trustBoundaries],
     coveringSuites: ['src/audit/proofgraph/mutation-binder.test.ts'],
-    admission: {
-      verifiedAt: '2026-09-17',
-      commitSha: '072936538ad0920300aa000514a7accbd2bfbe6f',
-      scoreAtAdmission: 100,
-      killed: 16,
-      survived: 0,
-      config: 'stryker.conf.json',
-    },
+    admission: admissionRecord('src/audit/proofgraph/mutation-binder.ts'),
   },
   {
     classification: 'required',
@@ -1253,14 +1335,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
       'src/integration/proofgraph/materialize-contract.test.ts',
       'src/integration/proofgraph/mutation-verification.test.ts',
     ],
-    admission: {
-      verifiedAt: '2026-09-17',
-      commitSha: '072936538ad0920300aa000514a7accbd2bfbe6f',
-      scoreAtAdmission: 93.94,
-      killed: 31,
-      survived: 2,
-      config: 'stryker.conf.json',
-    },
+    admission: admissionRecord('src/audit/proofgraph/mutation-report.ts'),
   },
   {
     classification: 'required',
@@ -1270,14 +1345,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     authority: 'Central policy bundle resolution',
     source: [SOURCE.config],
     coveringSuites: ['src/config/policy-central.test.ts', 'src/config/policy-presets.test.ts'],
-    admission: {
-      verifiedAt: '2026-09-17',
-      commitSha: '072936538ad0920300aa000514a7accbd2bfbe6f',
-      scoreAtAdmission: 88.06,
-      killed: 59,
-      survived: 8,
-      config: 'stryker.conf.json',
-    },
+    admission: admissionRecord('src/config/policy-central.ts'),
   },
   {
     classification: 'required',
@@ -1287,14 +1355,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     authority: 'Policy resolution authority',
     source: [SOURCE.config],
     coveringSuites: ['src/config/policy-degradation-regression.test.ts'],
-    admission: {
-      verifiedAt: '2026-09-17',
-      commitSha: '072936538ad0920300aa000514a7accbd2bfbe6f',
-      scoreAtAdmission: 81.4,
-      killed: 35,
-      survived: 8,
-      config: 'stryker.conf.json',
-    },
+    admission: admissionRecord('src/config/policy-resolver.ts'),
   },
   {
     classification: 'required',
@@ -1304,14 +1365,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     authority: 'Config persistence boundary',
     source: [SOURCE.trustBoundaries],
     coveringSuites: ['src/config/flowguard-config-io.test.ts', 'src/integration/plugin.test.ts'],
-    admission: {
-      verifiedAt: '2026-09-17',
-      commitSha: '072936538ad0920300aa000514a7accbd2bfbe6f',
-      scoreAtAdmission: 100,
-      killed: 24,
-      survived: 0,
-      config: 'stryker.conf.json',
-    },
+    admission: admissionRecord('src/adapters/persistence-config.ts'),
   },
   {
     classification: 'required',
@@ -1325,28 +1379,14 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
       'src/adapters/adapters-persistence-basics.test.ts',
       'src/adapters/persistence-more.test.ts',
     ],
-    admission: {
-      verifiedAt: '2026-09-17',
-      commitSha: '072936538ad0920300aa000514a7accbd2bfbe6f',
-      scoreAtAdmission: 100,
-      killed: 9,
-      survived: 0,
-      config: 'stryker.conf.json',
-    },
+    admission: admissionRecord('src/adapters/persistence-core.ts'),
   },
   required(
     'src/integration/tools/mutation/record-mutation-evidence.ts',
     'Canonical MutationAttempt evidence producer',
     ['src/integration/tools/record-mutation-evidence.test.ts'],
     {
-      admission: {
-        verifiedAt: '2026-09-20',
-        commitSha: 'd1ef19ebbdda89af96869f7c3659de6a8ea1c8c7',
-        scoreAtAdmission: 81.25,
-        killed: 13,
-        survived: 3,
-        config: 'stryker.conf.json',
-      },
+      admission: admissionRecord('src/integration/tools/mutation/record-mutation-evidence.ts'),
     },
   ),
   {
@@ -1357,28 +1397,14 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     authority: 'MCP tool registry authority',
     source: [SOURCE.trustBoundaries],
     coveringSuites: ['src/mcp-server/server-registry.test.ts', 'src/mcp-server/mcp-server.test.ts'],
-    admission: {
-      verifiedAt: '2026-09-17',
-      commitSha: 'cc713cb029ad1028793e6a7cdd67381efd33b88f',
-      scoreAtAdmission: 84.62,
-      killed: 11,
-      survived: 2,
-      config: 'stryker.conf.json',
-    },
+    admission: admissionRecord('src/mcp-server/server.ts'),
   },
   required(
     'src/integration/tools/mutation/reconcile-mutation-episode.ts',
     'Unknown-outcome mutation episode resolution',
     ['src/integration/mutation-episode-e2e.test.ts'],
     {
-      admission: {
-        verifiedAt: '2026-09-20',
-        commitSha: 'd1ef19ebbdda89af96869f7c3659de6a8ea1c8c7',
-        scoreAtAdmission: 93.33,
-        killed: 28,
-        survived: 2,
-        config: 'stryker.conf.json',
-      },
+      admission: admissionRecord('src/integration/tools/mutation/reconcile-mutation-episode.ts'),
     },
   ),
   {
@@ -1389,32 +1415,17 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     authority: 'PostToolUse audit hook (informational)',
     source: [SOURCE.trustBoundaries],
     coveringSuites: ['src/hooks/post-tool-use.test.ts'],
-    admission: {
-      verifiedAt: '2026-09-17',
-      commitSha: 'cc713cb029ad1028793e6a7cdd67381efd33b88f',
-      scoreAtAdmission: 100,
-      killed: 27,
-      survived: 0,
-      config: 'stryker.conf.json',
-    },
+    admission: admissionRecord('src/hooks/post-tool-use.ts'),
   },
-  {
-    classification: 'required',
-    profile: 'base',
-    mutateSelector: 'src/integration/review/findings-hash.ts',
-    target: 'src/integration/review/findings-hash.ts',
-    authority: 'Findings hash normalization',
-    source: [SOURCE.trustBoundaries],
-    coveringSuites: ['src/integration/review/findings-hash.test.ts'],
-    admission: {
-      verifiedAt: '2026-09-17',
-      commitSha: 'cc713cb029ad1028793e6a7cdd67381efd33b88f',
-      scoreAtAdmission: 100,
-      killed: 20,
-      survived: 0,
-      config: 'stryker.conf.json',
+  required(
+    'src/integration/review/evidence/findings-hash.ts',
+    'Findings hash normalization',
+    ['src/integration/review/evidence/findings-hash.test.ts'],
+    {
+      source: [SOURCE.trustBoundaries],
+      admission: admissionRecord('src/integration/review/evidence/findings-hash.ts'),
     },
-  },
+  ),
   // ── Base profile: core authorities admitted in the base full run ─────────
   required(
     'src/adapters/implementation-base-authority.ts',
@@ -1422,14 +1433,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     ['src/adapters/implementation-base-authority.test.ts'],
     {
       source: [SOURCE.trustBoundaries],
-      admission: {
-        verifiedAt: '2026-09-17',
-        commitSha: 'a4db80e33bde4b0994fed24eb5c9114dae67bdef',
-        scoreAtAdmission: 100,
-        killed: 8,
-        survived: 0,
-        config: 'stryker.conf.json',
-      },
+      admission: admissionRecord('src/adapters/implementation-base-authority.ts'),
     },
   ),
   required(
@@ -1438,14 +1442,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     ['src/adapters/implementation-base-authority.test.ts'],
     {
       source: [SOURCE.trustBoundaries],
-      admission: {
-        verifiedAt: '2026-09-17',
-        commitSha: 'a4db80e33bde4b0994fed24eb5c9114dae67bdef',
-        scoreAtAdmission: 100,
-        killed: 10,
-        survived: 0,
-        config: 'stryker.conf.json',
-      },
+      admission: admissionRecord('src/adapters/implementation-entry-guard.ts'),
     },
   ),
 
@@ -1480,14 +1477,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     {
       profile: 'schemas',
       source: [SOURCE.config],
-      admission: {
-        verifiedAt: '2026-09-17',
-        commitSha: '77c38580f0eb8c2b2d7a58783b3f55fc22dbb13f',
-        scoreAtAdmission: 91.11,
-        killed: 41,
-        survived: 4,
-        config: 'stryker.schemas.conf.json',
-      },
+      admission: admissionRecord('src/config/flowguard-config.ts'),
     },
   ),
   deferred(
@@ -1498,14 +1488,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
   ),
   required('src/shared/hashing.ts', 'Hash primitives for digests', ['src/shared/hashing.test.ts'], {
     source: [SOURCE.rootAgents],
-    admission: {
-      verifiedAt: '2026-09-17',
-      commitSha: '77c38580f0eb8c2b2d7a58783b3f55fc22dbb13f',
-      scoreAtAdmission: 100,
-      killed: 13,
-      survived: 0,
-      config: 'stryker.conf.json',
-    },
+    admission: admissionRecord('src/shared/hashing.ts'),
   }),
   deferred(
     'src/redaction/export-redaction.ts',
@@ -1673,6 +1656,21 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'Type-only module (PhaseInstructions interface); the base full run produced no valid mutants.',
     'base',
     { source: [SOURCE.config] },
+  ),
+  required(
+    'src/machine/topology.ts',
+    'Formal state transition table',
+    [
+      'src/machine/topology.test.ts',
+      'src/machine/state-machine.fuzz.test.ts',
+      'src/machine/state-machine-invariants.test.ts',
+      'src/architecture/__tests__/topology-authority-ssot.test.ts',
+    ],
+    {
+      profile: 'topology',
+      source: [SOURCE.machine],
+      admission: admissionRecord('src/machine/topology.ts'),
+    },
   ),
   notSuitable(
     'src/machine/topology.ts',

@@ -18,7 +18,7 @@ import {
   type DeniedRiskClassificationDecision,
   type RiskClassificationDecision,
 } from './phase-tool-gate.js';
-import { appendReviewAuditEvent } from './review/audit-events.js';
+import { appendReviewAuditEvent } from './review/evidence/audit-events.js';
 import { writeStateWithAuditOperations } from './audit-outbox.js';
 
 export interface RiskEnforcementDeps {

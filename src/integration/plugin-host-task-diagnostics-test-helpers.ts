@@ -5,7 +5,7 @@
 
 import { createSessionState, onFlowGuardToolAfter } from './review/enforcement/enforcement.js';
 import { isTerminalPhase } from '../machine/topology.js';
-import { reviewDispatchRequired } from './review/dispatch-signal.js';
+import { reviewDispatchRequired } from './review/dispatch/dispatch-signal.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { TOOL_FLOWGUARD_PLAN } from './tool-names.js';
 import {
@@ -14,7 +14,7 @@ import {
   freezeReviewMaterial,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
-} from './review/assurance.js';
+} from './review/obligations/assurance.js';
 import type { ReviewAttempt, ReviewObligation } from '../state/evidence.js';
 
 // ─── Constants ───────────────────────────────────────────────────────────────

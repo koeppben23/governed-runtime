@@ -22,7 +22,7 @@ import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
-import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
+import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/obligations/assurance.js';
 import { makePlanRevision } from '../state/evidence-test-constants.js';
 import { fileURLToPath } from 'node:url';
 

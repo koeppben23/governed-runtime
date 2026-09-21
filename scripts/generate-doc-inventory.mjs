@@ -59,7 +59,7 @@ Verified by \`npm run check:doc-drift\`.
     [
       'Review Loops',
       PRODUCT_INVENTORY.reviewLoops,
-      '`src/integration/review/review-loop-progress.ts`',
+      '`src/integration/review/obligations/review-loop-progress.ts`',
     ],
     [
       'Enforcement Layers',

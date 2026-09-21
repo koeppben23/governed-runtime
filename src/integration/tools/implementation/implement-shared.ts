@@ -29,17 +29,17 @@ import {
   findBindableAttempt,
   resolveFrozenReviewProfile,
   freezeReviewMaterial,
-} from '../../review/assurance.js';
-import type { ReviewDispatchAuthority } from '../../review/dispatch-authority.js';
-import { buildChildSessionReviewInstruction } from '../../review/child-session-instruction.js';
+} from '../../review/obligations/assurance.js';
+import type { ReviewDispatchAuthority } from '../../review/dispatch/dispatch-authority.js';
+import { buildChildSessionReviewInstruction } from '../../review/prompting/child-session-instruction.js';
 import {
   resolveReviewOrchestrationMode,
   resolveRuntimeReviewPlatform,
-} from '../../review/orchestration-mode.js';
+} from '../../review/dispatch/orchestration-mode.js';
 import { classifyToolCallMode } from '../review-validation-mode.js';
 import { freezeCandidatePairAuthority } from '../../../rails/repository-authority.js';
-import { buildFrozenReviewMaterialContent } from '../../review/reviewer-context.js';
-import { resolveAttemptDiscoveryOrBlock } from '../../review/discovery-attempt-context.js';
+import { buildFrozenReviewMaterialContent } from '../../review/context/reviewer-context.js';
+import { resolveAttemptDiscoveryOrBlock } from '../../review/context/discovery-attempt-context.js';
 import { renderPlanClaimDeclarations } from '../../../presentation/index.js';
 import { hasFrozenRepositoryAuthority } from '../../../state/evidence-review.js';
 import { materializeApprovedPlanContractResult } from '../../proofgraph/materialize-contract.js';

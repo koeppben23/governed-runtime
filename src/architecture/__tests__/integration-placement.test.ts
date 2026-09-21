@@ -69,7 +69,7 @@ describe('integration placement authority', () => {
       );
     }
     expect(violations, JSON.stringify(violations)).toEqual([]);
-    expect(files.length).toBe(219);
+    expect(files.length).toBe(218);
     expect(INTEGRATION_PLACEMENT.length).toBe(files.length);
     expect(new Set(INTEGRATION_PLACEMENT.map((entry) => entry.file)).size).toBe(files.length);
   });
@@ -158,8 +158,9 @@ describe('integration placement authority', () => {
         expect(entry.targetZone.startsWith('tools'), entry.file).toBe(true);
       }
       if (entry.owner === 'review') expect(entry.targetZone, entry.file).toBe('review');
-      if (entry.owner === 'review-enforcement')
-        expect(entry.targetZone, entry.file).toBe('review/enforcement');
+      if (entry.owner.startsWith('review-')) {
+        expect(entry.targetZone, entry.file).toBe(`review/${entry.owner.slice('review-'.length)}`);
+      }
       if (entry.owner === 'status') expect(entry.targetZone, entry.file).toBe('status');
       if (entry.owner === 'discovery') expect(entry.targetZone, entry.file).toBe('discovery');
     }
@@ -168,7 +169,9 @@ describe('integration placement authority', () => {
   it('exposes positive placement helpers for the context boundaries', () => {
     expect(placementOwnerOf('integration/plugin.ts')).toBe('root-composition');
     expect(placementOwnerOf('integration/plugin-helpers.ts')).toBe('root-composition');
-    expect(placementOwnerOf('integration/review/native-task-review.ts')).toBe('review');
+    expect(placementOwnerOf('integration/review/dispatch/native-task-review.ts')).toBe(
+      'review-dispatch',
+    );
     expect(placementOwnerOf('integration/rogue.ts')).toBeNull();
 
     expect(isRootCompositionFile('integration/plugin-risk.ts')).toBe(true);
@@ -279,6 +282,35 @@ describe('integration placement negative fixtures', () => {
         placement: [entry('integration/rogue.ts', 'status', 'root', 'status')],
       }),
     ).toEqual(['placement-debt']);
+  });
+
+  it('detects a zone that exceeds its production-file budget (and never counts test files)', () => {
+    const budgetZones: readonly IntegrationPlacementZone[] = FIXTURE_ZONES.map((zone) =>
+      zone.id === 'status' ? { ...zone, maxProductionFiles: 1 } : zone,
+    );
+
+    expect(
+      analyzeFixture({
+        zones: budgetZones,
+        productionFiles: ['integration/status/a.ts', 'integration/status/b.ts'],
+        placement: [
+          entry('integration/status/a.ts', 'status', 'status', 'status'),
+          entry('integration/status/b.ts', 'status', 'status', 'status'),
+        ],
+      }),
+    ).toEqual(['zone-production-budget-exceeded']);
+
+    expect(
+      analyzeFixture({
+        zones: budgetZones,
+        productionFiles: ['integration/status/a.ts', 'integration/status/rogue.test.ts'],
+        placement: [
+          entry('integration/status/a.ts', 'status', 'status', 'status'),
+          entry('integration/status/rogue.test.ts', 'status', 'status', 'status'),
+        ],
+        testFiles: ['integration/status/rogue.test.ts'],
+      }),
+    ).toEqual(['test-file-in-placement']);
   });
 
   it('detects a test file carrying a placement entry', () => {

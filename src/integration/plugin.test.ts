@@ -40,15 +40,15 @@ import {
   freezeReviewMaterial,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
-} from './review/assurance.js';
+} from './review/obligations/assurance.js';
 import { makePlanRevision } from '../state/evidence-test-constants.js';
 import { fileURLToPath } from 'node:url';
 import { clearUserDecisionIntents, consumeUserDecisionIntent } from './user-decision-intent.js';
-import { _resetAgentResolutionCache } from './review/agent-resolution.js';
+import { _resetAgentResolutionCache } from './review/dispatch/agent-resolution.js';
 import {
   resolveReviewDispatchAuthority,
   reviewObligationResponseFields,
-} from './review/dispatch-authority.js';
+} from './review/dispatch/dispatch-authority.js';
 
 const execFileAsync = promisify(execFile);
 

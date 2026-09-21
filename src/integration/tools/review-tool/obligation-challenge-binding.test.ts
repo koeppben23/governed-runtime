@@ -2,7 +2,10 @@ import { describe, it, expect } from 'vitest';
 
 import { makeState } from '../../../fixtures.js';
 import { validateSubmittedReviewFindings } from './obligation.js';
-import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from '../../review/assurance.js';
+import {
+  REVIEW_CRITERIA_VERSION,
+  REVIEW_MANDATE_DIGEST,
+} from '../../review/obligations/assurance.js';
 import type { ReviewObligation } from '../../../state/evidence-review.js';
 import type { ReviewFindings } from '../../../state/evidence.js';
 

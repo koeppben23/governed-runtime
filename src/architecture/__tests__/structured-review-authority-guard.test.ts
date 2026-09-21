@@ -60,7 +60,10 @@ describe('structured review authority hard cut', () => {
   });
 
   it('persists the durable dispatch before host release on the native path', () => {
-    const native = readFileSync(join(SRC, 'integration/review/native-task-review.ts'), 'utf8');
+    const native = readFileSync(
+      join(SRC, 'integration/review/dispatch/native-task-review.ts'),
+      'utf8',
+    );
     const persistIndex = native.indexOf('persistAuthorizedReviewDispatch(');
     const releaseIndex = native.indexOf('mutateNativeTask(hookOutput');
     expect(persistIndex, 'the dispatch must be persisted').toBeGreaterThan(-1);
@@ -95,8 +98,8 @@ describe('structured review authority hard cut', () => {
     // must go through the instruction, which requires a full
     // ReviewDispatchAuthority.
     const allowed = new Set([
-      'integration/review/dispatch-signal.ts',
-      'integration/review/child-session-instruction.ts',
+      'integration/review/dispatch/dispatch-signal.ts',
+      'integration/review/prompting/child-session-instruction.ts',
     ]);
     const offenders = listProductionSources(SRC)
       .filter((file) => /\breviewDispatchRequired\b/.test(readFileSync(file, 'utf8')))

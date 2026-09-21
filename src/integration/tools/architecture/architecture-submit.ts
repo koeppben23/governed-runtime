@@ -20,22 +20,22 @@ import {
   createReviewObligation,
   freezeReviewMaterial,
   resolveFrozenReviewProfile,
-} from '../../review/assurance.js';
+} from '../../review/obligations/assurance.js';
 import {
   resolveReviewDispatchAuthority,
   reviewObligationResponseFields,
-} from '../../review/dispatch-authority.js';
+} from '../../review/dispatch/dispatch-authority.js';
 import { resolvePreImplementationChallengeClassification } from '../challenge/pre-implementation-challenge.js';
 import {
   freezeContextAuthorityAtHead,
   freezeOutcomeRecord,
   frozenAuthorityOrUndefined,
 } from '../../../rails/repository-authority.js';
-import { resolveAttemptDiscoveryOrBlock } from '../../review/discovery-attempt-context.js';
+import { resolveAttemptDiscoveryOrBlock } from '../../review/context/discovery-attempt-context.js';
 import { renderPlanClaimDeclarations } from '../../../presentation/index.js';
-import { repositoryEvidenceUnavailableField } from '../../review/observation-access.js';
+import { repositoryEvidenceUnavailableField } from '../../review/observations/observation-access.js';
 import { hasFrozenRepositoryAuthority } from '../../../state/evidence.js';
-import { buildFrozenReviewMaterialContent } from '../../review/reviewer-context.js';
+import { buildFrozenReviewMaterialContent } from '../../review/context/reviewer-context.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Mode A: ADR Submission

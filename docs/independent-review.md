@@ -139,7 +139,7 @@ The LLM then sees the completed `reviewDispatch` response and submits the verdic
 
 The frozen implementation review material
 (`buildFrozenReviewMaterialContent` in
-`src/integration/review/reviewer-context.ts`) carries a
+`src/integration/review/context/reviewer-context.ts`) carries a
 `Verification Evidence (host-executed)` section built from FlowGuard-executed
 validation attempts, so the reviewer can falsify verification claims against
 runtime ground truth instead of inferring them from the diff. The frozen
@@ -256,7 +256,7 @@ The reviewer subagent returns one of three `overallVerdict` values:
 
 `unable_to_review` is enforced fail-closed at every layer:
 
-- **Tool layer (`src/integration/review/review-validation.ts`):** rejects `findings.overallVerdict='unable_to_review'` regardless of the submitted reviewer verdict.
+- **Tool layer (`src/integration/review/validation/review-validation.ts`):** rejects `findings.overallVerdict='unable_to_review'` regardless of the submitted reviewer verdict.
 - **Orchestrator (`src/integration/review/orchestrator.ts`):** when the deterministic invocation receives `unable_to_review`, it routes BLOCKED instead of completing the review.
 - **Convergence guard (`isConverged`):** returns `false` for `unable_to_review`, preventing any loop convergence path.
 - **Rails layer:** plan/implement/continue rails translate `unable_to_review` into a `BlockedResult` discriminated-union variant.
@@ -289,7 +289,7 @@ commands is preserved.
 
 FlowGuard enforces the subagent requirement at three layers:
 
-**Layer 1 — Structural validation (`src/integration/review/review-validation.ts`):**
+**Layer 1 — Structural validation (`src/integration/review/validation/review-validation.ts`):**
 
 - When the agent tries to approve without `reviewFindings` → BLOCKED
 - Self-review findings are rejected → BLOCKED
@@ -421,7 +421,7 @@ free-text `location` field is not accepted.
 > reviewer child requires that same single field; the host enriches the
 > attested record with `mandateDigest`, `criteriaVersion`, `iteration`,
 > `planVersion`, and `reviewedBy` before binding. `validateStrictAttestation`
-> in `src/integration/review/assurance.ts` is the runtime gate that rejects a
+> in `src/integration/review/obligations/assurance.ts` is the runtime gate that rejects a
 > missing or mismatched strict attestation fail-closed.
 
 ---
@@ -430,7 +430,7 @@ free-text `location` field is not accepted.
 
 All validation is fail-closed. Invalid findings return BLOCKED.
 
-**Structural validation (`src/integration/review/review-validation.ts`):**
+**Structural validation (`src/integration/review/validation/review-validation.ts`):**
 
 | Rule                 | Condition                            | BLOCKED Code                         |
 | -------------------- | ------------------------------------ | ------------------------------------ |
@@ -445,7 +445,7 @@ All validation is fail-closed. Invalid findings return BLOCKED.
 | Strict enforcement   | attestation mismatch                 | `SUBAGENT_MANDATE_MISMATCH`          |
 | Strict enforcement   | invocation evidence already consumed | `SUBAGENT_EVIDENCE_REUSED`           |
 
-Validation logic is implemented once in `src/integration/review/review-validation.ts` and shared by `/plan`, `/architecture`, `/implement`, and `/review` tools. The `obligationType` discriminator (`'plan' | 'architecture' | 'implement' | 'review'`) selects per-obligation criteria. Plan, architecture, and implementation reviews bind iteration/version fields; standalone `/review` additionally binds the obligation to the concrete review input fingerprint and `toolObligationId`.
+Validation logic is implemented once in `src/integration/review/validation/review-validation.ts` and shared by `/plan`, `/architecture`, `/implement`, and `/review` tools. The `obligationType` discriminator (`'plan' | 'architecture' | 'implement' | 'review'`) selects per-obligation criteria. Plan, architecture, and implementation reviews bind iteration/version fields; standalone `/review` additionally binds the obligation to the concrete review input fingerprint and `toolObligationId`.
 
 **Challenge freshness binding (both ingestion routes).** When an obligation
 carries a frozen challenge requirement, challenge `evidenceRefs` are validated

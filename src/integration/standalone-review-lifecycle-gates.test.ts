@@ -11,7 +11,7 @@ import {
   preparePeerReviewEvidence,
 } from './tools/review-tool/preparation.js';
 import { deriveProofGraph } from '../audit/proofgraph/derive.js';
-import { createReviewObligation } from './review/assurance.js';
+import { createReviewObligation } from './review/obligations/assurance.js';
 import { assuranceWith, makeState } from '../fixtures.js';
 import type { ReviewAssuranceState } from '../state/evidence-review.js';
 

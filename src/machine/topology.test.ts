@@ -7,6 +7,7 @@ import {
   TERMINAL,
   isFlowPhase,
   isFlowPhaseAtOrAfter,
+  isTerminalPhase,
   resolveTransition,
 } from '../machine/topology.js';
 import { Event, type Phase, type Event as EventType } from '../state/schema.js';
@@ -394,6 +395,28 @@ describe('topology', () => {
       // required outside the flow must never be satisfied by index arithmetic
       for (const required of ['READY', 'REJECTED', 'ABORTED', 'VALIDATION'] as Phase[]) {
         expect(isFlowPhaseAtOrAfter('architecture', 'ARCHITECTURE', required)).toBe(false);
+      }
+      // both outside the flow: two unknown indexes must not compare as equal
+      expect(isFlowPhaseAtOrAfter('ticket', 'READY', 'READY')).toBe(false);
+      expect(isFlowPhaseAtOrAfter('ticket', 'ARCH_REVIEW', 'ARCH_REVIEW')).toBe(false);
+    });
+
+    it('isFlowPhaseAtOrAfter treats the flow entry milestone as at-or-after itself', () => {
+      expect(isFlowPhaseAtOrAfter('ticket', 'TICKET', 'TICKET')).toBe(true);
+      expect(isFlowPhaseAtOrAfter('ticket', 'PLAN', 'TICKET')).toBe(true);
+      expect(isFlowPhaseAtOrAfter('architecture', 'ARCHITECTURE', 'ARCHITECTURE')).toBe(true);
+    });
+
+    it('resolveTransition is fail-closed for an unknown phase', () => {
+      expect(resolveTransition('UNKNOWN' as Phase, 'ABORT')).toBeUndefined();
+    });
+
+    it('isTerminalPhase is the terminal-membership authority', () => {
+      for (const terminal of TERMINAL) {
+        expect(isTerminalPhase(terminal)).toBe(true);
+      }
+      for (const nonTerminal of ['READY', 'PLAN', 'ARCH_REVIEW', 'IMPL_REVIEW'] as Phase[]) {
+        expect(isTerminalPhase(nonTerminal)).toBe(false);
       }
     });
 

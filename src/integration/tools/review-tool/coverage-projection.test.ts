@@ -11,7 +11,7 @@ import {
   buildInvocationEvidence,
   createReviewObligation,
   freezeReviewMaterial,
-} from '../../review/assurance.js';
+} from '../../review/obligations/assurance.js';
 import {
   PEER_REVIEW_EVIDENCE_SCHEMA_VERSION,
   PeerReviewCoverage,

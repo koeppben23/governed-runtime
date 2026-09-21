@@ -9,7 +9,7 @@
 
 import { formatRailResult } from '../helpers-rail-presentation.js';
 import { startReviewFlow } from '../../../rails/review.js';
-import { findReviewObligationById } from '../../review/assurance.js';
+import { findReviewObligationById } from '../../review/obligations/assurance.js';
 import type { SessionState } from '../../../state/schema.js';
 import type { StartedReviewResult } from './types.js';
 

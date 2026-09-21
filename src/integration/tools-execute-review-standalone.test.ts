@@ -27,9 +27,9 @@ import {
   ensureReviewAssurance,
   fulfillObligation,
   hashFindings,
-} from './review/assurance.js';
+} from './review/obligations/assurance.js';
 import { ReviewAttestation, ReviewInvocationEvidence } from '../state/evidence.js';
-import { findLatestPendingReviewObligation } from './review/assurance.js';
+import { findLatestPendingReviewObligation } from './review/obligations/assurance.js';
 import {
   status,
   hydrate,
@@ -1267,7 +1267,7 @@ describe('review (standalone flow)', () => {
         // Schema is permissive (E1) — but runtime obligation gate must remain strict.
         // validateStrictAttestation compares attestation.toolObligationId against
         // expected.obligationId; undefined !== <real-uuid> -> SUBAGENT_MANDATE_MISMATCH.
-        const { validateStrictAttestation } = await import('./review/assurance.js');
+        const { validateStrictAttestation } = await import('./review/obligations/assurance.js');
         const findings = {
           iteration: 1,
           planVersion: 1,
@@ -1499,7 +1499,7 @@ describe('review (standalone flow)', () => {
 
       it('E3: consumeReviewObligation accepts fulfilled obligation (fulfilled -> consumed transition)', async () => {
         const { consumeReviewObligation, ensureReviewAssurance } =
-          await import('./review/assurance.js');
+          await import('./review/obligations/assurance.js');
         const assurance = ensureReviewAssurance(undefined);
         const obligation = {
           obligationId: '00000000-0000-0000-0000-000000000001',
@@ -1569,7 +1569,7 @@ describe('review (standalone flow)', () => {
       });
 
       it('S3: ReviewInvocationEvidence.parse accepts buildInvocationEvidence output', async () => {
-        const { buildInvocationEvidence } = await import('./review/assurance.js');
+        const { buildInvocationEvidence } = await import('./review/obligations/assurance.js');
         const inv = buildInvocationEvidence({
           obligationId: '11111111-2222-3333-8444-555555555555',
           obligationType: 'review',

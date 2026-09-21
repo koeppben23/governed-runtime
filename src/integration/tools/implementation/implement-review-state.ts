@@ -15,15 +15,15 @@ import type { LoopVerdict, ReviewFindings } from '../../../state/evidence.js';
 import { IntegrationInvariantError } from '../../errors.js';
 import { formatBlocked } from '../../blocked-result.js';
 
-import { resolveStructuredEffectiveFindings } from '../../review/review-validation.js';
-import { collectPreviouslyUsedChallengeIds } from '../../review/challenge-history.js';
+import { resolveStructuredEffectiveFindings } from '../../review/validation/review-validation.js';
+import { collectPreviouslyUsedChallengeIds } from '../../review/obligations/challenge-history.js';
 import {
   consumeReviewObligation,
   ensureReviewAssurance,
   findLatestObligation,
-} from '../../review/assurance.js';
+} from '../../review/obligations/assurance.js';
 import { buildLatestImplementationReviewSummary } from './review-summary.js';
-import { buildReviewChallengeContract } from '../../review/challenge-contract.js';
+import { buildReviewChallengeContract } from '../../review/obligations/challenge-contract.js';
 import { normalizeHostFindings, type ImplementRuntime } from './implement-shared.js';
 import {
   projectOpenImplementationChallengeIds,

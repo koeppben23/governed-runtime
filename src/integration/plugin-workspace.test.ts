@@ -19,7 +19,7 @@ const { mockAppendReviewAudit, mockWithSessionWriteLock, mockReadState } = vi.ho
   mockReadState: vi.fn(),
 }));
 
-vi.mock('./review/audit-events.js', () => ({
+vi.mock('./review/evidence/audit-events.js', () => ({
   appendReviewAuditEvent: mockAppendReviewAudit,
 }));
 

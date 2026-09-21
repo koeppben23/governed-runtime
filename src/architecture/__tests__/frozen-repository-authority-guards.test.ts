@@ -39,7 +39,7 @@ function fileContent(relativePath: string): string {
 
 /** Files sanctioned to mint authoritative RepositoryObservation records. */
 const ALLOWED_OBSERVATION_MINTERS = [
-  'integration/review/observation-replay.ts',
+  'integration/review/observations/observation-replay.ts',
   'state/evidence-review-authority.ts',
 ];
 
@@ -130,13 +130,13 @@ describe('Guard 3: evidence admissibility evaluates observations via the canonic
    * enforced by keeping the binder the single entry point and importing it
    * exclusively from this caller.
    */
-  const ALLOWED_BINDER_CALLERS = ['integration/review/review-validation-evidence.ts'];
+  const ALLOWED_BINDER_CALLERS = ['integration/review/validation/review-validation-evidence.ts'];
 
   it('only the sanctioned bind paths invoke the canonical evidence binder', () => {
     const callers: string[] = [];
     for (const file of listSourceFiles(SRC)) {
       const relative = repoRelative(SRC, file);
-      if (relative === 'integration/review/observation-binding.ts') continue;
+      if (relative === 'integration/review/observations/observation-binding.ts') continue;
       const content = readFileSync(file, 'utf-8');
       if (/bindRepositoryEvidenceLocations\s*\(/.test(content)) {
         callers.push(relative);
@@ -148,7 +148,7 @@ describe('Guard 3: evidence admissibility evaluates observations via the canonic
   });
 
   it('the canonical binder never acquires anything (no adapters/ imports)', () => {
-    const binder = fileContent('integration/review/observation-binding.ts');
+    const binder = fileContent('integration/review/observations/observation-binding.ts');
     expect(binder).not.toMatch(/from ['"](\.\.\/){1,2}adapters\//);
     expect(binder).not.toContain('node:child_process');
     expect(binder).not.toContain('node:fs');

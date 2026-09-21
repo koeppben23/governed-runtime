@@ -34,7 +34,7 @@ import {
   fulfillObligation,
   hashFindings,
   updateAttemptStatus,
-} from '../../review/assurance.js';
+} from '../../review/obligations/assurance.js';
 import { completedDispatchForInvocation } from '../../../state/evidence-test-constants.js';
 import type { ReviewFindings } from '../../../state/evidence.js';
 

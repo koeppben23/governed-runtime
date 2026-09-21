@@ -4,8 +4,8 @@ import {
   resolveStructuredEffectiveFindings,
   validateReviewFindings,
   type ReviewFindingsValidationContext,
-} from '../review/review-validation.js';
-import { resolveStructuredFindings } from '../review/review-validation-structured-evidence.js';
+} from '../review/validation/review-validation.js';
+import { resolveStructuredFindings } from '../review/validation/review-validation-structured-evidence.js';
 
 const testLogger = { warn: () => {} };
 import type { ReviewFindings } from '../../state/evidence.js';
@@ -15,7 +15,7 @@ import {
   hashFindings,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
-} from '../review/assurance.js';
+} from '../review/obligations/assurance.js';
 
 // ─── Test Fixtures ────────────────────────────────────────────────────────────
 

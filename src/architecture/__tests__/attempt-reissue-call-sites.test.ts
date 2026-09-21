@@ -14,7 +14,7 @@ import { repoRelative } from './repo-path.js';
 const SRC = join(process.cwd(), 'src');
 
 /** Production files that may call `createAttemptForExistingObligation(...)`. */
-const ALLOWED_CALLERS = ['integration/review/durable-dispatch.ts'];
+const ALLOWED_CALLERS = ['integration/review/dispatch/durable-dispatch.ts'];
 
 function listSourceFiles(dir: string): string[] {
   const results: string[] = [];
@@ -42,14 +42,17 @@ describe('createAttemptForExistingObligation call-site whitelist', () => {
     const unauthorized = callers.filter(
       (p) =>
         !ALLOWED_CALLERS.includes(p) &&
-        p !== 'integration/review/attempt-lifecycle.ts' && // definition site
-        p !== 'integration/review/assurance.ts', // re-export barrel
+        p !== 'integration/review/obligations/attempt-lifecycle.ts' && // definition site
+        p !== 'integration/review/obligations/assurance.ts', // re-export barrel
     );
     expect(unauthorized).toEqual([]);
   });
 
   it('the durable re-arm site routes through the canonical dispatch-rearm authority', () => {
-    const durableRearm = readFileSync(join(SRC, 'integration/review/durable-dispatch.ts'), 'utf8');
+    const durableRearm = readFileSync(
+      join(SRC, 'integration/review/dispatch/durable-dispatch.ts'),
+      'utf8',
+    );
     expect(durableRearm).toContain('authorizeDispatchRearm');
     expect(durableRearm).not.toContain('authorizeOutputRepairReissue');
     expect(durableRearm).not.toContain('authorizeTaskLifecycleRearm');

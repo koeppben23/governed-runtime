@@ -198,6 +198,13 @@ regime produced the evidence and never excludes a target from other profiles.
 The architecture guard enforces `required ⊆ mutate`, reverse closure per
 profile, and coverage of every production file under an authority root.
 
+Profile metadata is centralized in `scripts/mutation-profile-registry.json`
+(config file, vitest config, report path, manifest path). Each profile writes
+its own JSON/HTML report and manifest under `reports/mutation/<profile>/`;
+`base` keeps the canonical `reports/mutation/mutation.json` that the product
+mutation-evidence tool and ProofGraph ingestion read. A registry closure guard
+proves registry, inventory, and on-disk profiles cannot drift apart.
+
 `StringLiteral`, `ArrayDeclaration`, and `Regex` mutators are excluded globally
 because they produce low-signal literal churn in governance template and schema
 code. Focused boundary profiles may enable a globally excluded mutator where it
@@ -210,27 +217,27 @@ protects a security-relevant literal: `stryker.identity-jwks.conf.json` enables
 core (see `stryker.conf.json` for the canonical list; the authority inventory
 above is the classification authority):
 
-| Area                                                                                                                                                                           | Files   | Representative score            |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- | ------------------------------- |
-| Adapters (`persistence-lock`, `host-adapter`, `persistence`, `persistence-core`, `persistence-config`, `persistence-audit`, `ip-validation`, implementation base freeze/entry) | 9       | see `reports/mutation/`         |
-| Archive (`content-digest`, archive creation, publication, tar/manifest inspection, chain, artifact-binding, audit-chain, checksum, integrity and helper verification)          | 12      | see `reports/mutation/`         |
-| Audit (`integrity`, `completeness`, `ntp-check`, `event-builders`, timestamp and RFC3161 parse/signer verification)                                                            | 9       | see `reports/mutation/`         |
-| Audit ProofGraph (`evaluate`, `gate`, evidence binders, `enforcement-projection`, mutation report/binder)                                                                      | 8       | see `reports/mutation/`         |
-| Integration ProofGraph (`claim-contract`, `claim-contract-rules`, `materialize-contract`)                                                                                      | 3       | see `reports/mutation/`         |
-| Config (`policy-snapshot`, `policy-resolver`, `policy-central`, `reasons`, `profile`)                                                                                          | 5       | see `reports/mutation/`         |
-| MCP (`execution-limiter`, `session-resolver`, `tool-adapter`, `server`)                                                                                                        | 4       | see `reports/mutation/`         |
-| Hooks (`http-server`, `pre-tool-use`, `post-tool-use`, `shared/obligation-tracker`, `shared/phase-gate`)                                                                       | 5       | see `reports/mutation/`         |
-| Identity (`token-verifier`, `key-resolver`)                                                                                                                                    | 2       | see `reports/mutation/`         |
-| Integration (plugin hooks, mutation evidence tools/episodes, `plugin-workspace`, `plugin`, `runtime-lease`)                                                                    | 16      | see `reports/mutation/`         |
-| Integration Review (`enforcement`, `findings-consistency`, `challenge-consistency`, `challenge-binding`, agent resolution, dispatch signal, findings hash, reviewed digest)    | 8       | see `reports/mutation/`         |
-| State (`evidence-mutation-episode`)                                                                                                                                            | 1       | see `reports/mutation/`         |
-| Verification/Discovery (`execution-subject`, `verification-planner`)                                                                                                           | 2       | see `reports/mutation/`         |
-| Templates (`codex-plugin`, `claude-code-plugin`)                                                                                                                               | 2       | see `reports/mutation/`         |
-| Shared (`canonical-json`, `hashing`)                                                                                                                                           | 2       | see `reports/mutation/`         |
-| Logging (`error-serialize`)                                                                                                                                                    | 1       | see `reports/mutation/`         |
-| Machine (`commands`, `evaluate`, `guards`, `workflow-directive`, `validation-evidence`)                                                                                        | 5       | see `reports/mutation/`         |
-| Rails (`architecture`, `hydrate`, `review`, `review-url`, `review-decision`, `review-decision-gates`, `ticket`, plan and review evidence)                                      | 9       | see `reports/mutation/`         |
-| **Total**                                                                                                                                                                      | **109** | uploaded as `reports/mutation/` |
+| Area                                                                                                                                                                                              | Files   | Representative score            |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------------------------------- |
+| Adapters (`persistence-lock`, `host-adapter`, `persistence`, `persistence-core`, `persistence-config`, `persistence-audit`, `ip-validation`, implementation base freeze/entry)                    | 9       | see `reports/mutation/`         |
+| Archive (`content-digest`, archive creation, publication, tar/manifest inspection, chain, artifact-binding, audit-chain, checksum, integrity and helper verification)                             | 12      | see `reports/mutation/`         |
+| Audit (`integrity`, `completeness`, `ntp-check`, `event-builders`, timestamp and RFC3161 parse/signer verification)                                                                               | 9       | see `reports/mutation/`         |
+| Audit ProofGraph (`evaluate`, `gate`, evidence binders, `enforcement-projection`, mutation report/binder)                                                                                         | 8       | see `reports/mutation/`         |
+| Integration ProofGraph (`claim-contract`, `claim-contract-rules`, `materialize-contract`)                                                                                                         | 3       | see `reports/mutation/`         |
+| Config (`policy-snapshot`, `policy-resolver`, `policy-central`, `reasons`, `profile`)                                                                                                             | 5       | see `reports/mutation/`         |
+| MCP (`execution-limiter`, `session-resolver`, `tool-adapter`, `server`)                                                                                                                           | 4       | see `reports/mutation/`         |
+| Hooks (`http-server`, `pre-tool-use`, `post-tool-use`, `shared/obligation-tracker`, `shared/phase-gate`)                                                                                          | 5       | see `reports/mutation/`         |
+| Identity (`token-verifier`, `key-resolver`)                                                                                                                                                       | 2       | see `reports/mutation/`         |
+| Integration (plugin hooks, mutation evidence tools/episodes, `plugin-workspace`, `plugin`, `runtime-lease`)                                                                                       | 16      | see `reports/mutation/`         |
+| Integration Review (`enforcement`, `findings-consistency`, `challenge-consistency`, `challenge-binding`, agent resolution, dispatch signal, review validation x2, findings hash, reviewed digest) | 10      | see `reports/mutation/`         |
+| State (`evidence-mutation-episode`)                                                                                                                                                               | 1       | see `reports/mutation/`         |
+| Verification/Discovery (`execution-subject`, `verification-planner`)                                                                                                                              | 2       | see `reports/mutation/`         |
+| Templates (`codex-plugin`, `claude-code-plugin`)                                                                                                                                                  | 2       | see `reports/mutation/`         |
+| Shared (`canonical-json`, `hashing`)                                                                                                                                                              | 2       | see `reports/mutation/`         |
+| Logging (`error-serialize`)                                                                                                                                                                       | 1       | see `reports/mutation/`         |
+| Machine (`commands`, `evaluate`, `guards`, `workflow-directive`, `validation-evidence`)                                                                                                           | 5       | see `reports/mutation/`         |
+| Rails (`architecture`, `hydrate`, `review`, `review-url`, `review-decision`, `review-decision-gates`, `ticket`, plan and review evidence)                                                         | 9       | see `reports/mutation/`         |
+| **Total**                                                                                                                                                                                         | **109** | uploaded as `reports/mutation/` |
 
 Per-file mutation scores are produced fresh in CI; consult the latest
 `reports/mutation/` artifact for current numbers.
@@ -242,7 +249,11 @@ keeping the security-critical target list and `break: 80` gate intact. The
 ### CI Enforcement
 
 The scheduled/release/manual `mutation` workflow is blocking for that workflow
-run. It is not a pull-request required check. A mutation score below the
+run. It is not a pull-request required check. Focused profiles additionally run
+as path-filtered pull-request gates: `identity-jwks`, `schemas`, `mandates`,
+`event-core`, and `topology`. `human-projection` remains local-only: its full
+run leaves `src/presentation/markdown.ts:264-292` below the per-target gate, so
+it does not yet prove every target. A mutation score below the
 configured `break: 80` threshold (`stryker.conf.json`) fails the mutation job.
 Survivor analysis remains part of normal security-critical test maintenance.
 
@@ -304,6 +315,14 @@ and the remaining operator mutations are rejected by the TypeScript checker.
 The profile is required and must pass its own full run plus
 `verify-mutation-admission.mjs --profile event-core`.
 
+Topology profile (`stryker.topology.conf.json`): focused authority profile for
+`src/machine/topology.ts`, the formal state transition table. It uses
+`coverageAnalysis: "all"`, `ignoreStatic: false`, keeps `StringLiteral`
+enabled, and disables the TypeScript checker because the typed table literals
+are the mutation surface. Admitted 2026-09-21 at 99.32 % on the freeze run
+(df9f8b4d); the base classification `not-mutation-suitable` stays scoped to
+base.
+
 Deferred surfaces (whole roots behind the admission gate):
 `src/config/**`, `src/state/**`, `src/shared/**`, `src/audit/**`,
 `src/adapters/**`, `src/identity/**`, `src/verification/**`, `src/discovery/**`,
@@ -339,6 +358,14 @@ valid mutants), so the catalog carries no admission evidence under the base
 profile. The runtime registry logic in `src/config/reasons.ts` remains a
 required mutation target.
 
+### Admission Candidates
+
+A candidate is staged inside a profile for authoritative admission
+measurement. It is mutated by its profile but carries no provenance yet: only
+a verified profile full run on the freeze commit decides whether it becomes
+`required` (immutable admission) or returns to the admission backlog. The
+2026-09-21 freeze run admitted all five candidates; currently none remain.
+
 ### Running Locally
 
 ```bash
@@ -365,7 +392,7 @@ configuration:
 ```bash
 node scripts/stryker-patch.js && npx stryker run stryker.identity-jwks.conf.json
 node scripts/verify-mutation-admission.mjs --profile identity-jwks \
-  --write-manifest reports/mutation/admission-manifest-identity-jwks.json
+  --write-manifest reports/mutation/identity-jwks/admission-manifest.json
 ```
 
 The mandates profile runs on pull requests that change mandate surfaces:
@@ -373,7 +400,7 @@ The mandates profile runs on pull requests that change mandate surfaces:
 ```bash
 node scripts/stryker-patch.js && npx stryker run stryker.mandates.conf.json
 node scripts/verify-mutation-admission.mjs --profile mandates \
-  --write-manifest reports/mutation/admission-manifest-mandates.json
+  --write-manifest reports/mutation/mandates/admission-manifest.json
 ```
 
 The human-projection profile is reusable locally but has no dedicated CI
@@ -383,5 +410,5 @@ meets the per-target threshold first:
 ```bash
 node scripts/stryker-patch.js && npx stryker run stryker.human-projection.conf.json
 node scripts/verify-mutation-admission.mjs --profile human-projection \
-  --write-manifest reports/mutation/admission-manifest-human-projection.json
+  --write-manifest reports/mutation/human-projection/admission-manifest.json
 ```

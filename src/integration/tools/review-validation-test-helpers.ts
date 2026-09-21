@@ -5,7 +5,7 @@
 
 import { randomUUID } from 'node:crypto';
 import type { ReviewAssuranceState } from '../../state/evidence-review.js';
-import { hashText } from '../review/assurance.js';
+import { hashText } from '../review/obligations/assurance.js';
 
 /**
  * Canonical host-task dispatch fixture for a persisted attempt. Reuses the

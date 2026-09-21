@@ -10,7 +10,7 @@ import {
   consumeReviewObligation,
   validateStrictAttestation,
   ensureReviewAssurance,
-} from '../../review/assurance.js';
+} from '../../review/obligations/assurance.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import { formatSubagentReviewNotInvoked } from './obligation-format.js';
 export {
@@ -22,8 +22,8 @@ import {
   validateReviewFindingsScope,
   type FindingWithRelation,
 } from '../../review/enforcement/findings-consistency.js';
-import { collectPreviouslyUsedChallengeIds } from '../../review/challenge-history.js';
-import { buildReviewChallengeContract } from '../../review/challenge-contract.js';
+import { collectPreviouslyUsedChallengeIds } from '../../review/obligations/challenge-history.js';
+import { buildReviewChallengeContract } from '../../review/obligations/challenge-contract.js';
 import type { StartedReviewResult } from './types.js';
 
 export {
@@ -41,7 +41,7 @@ export {
   getRequiredBranchReviewProvenance,
   type RequiredBranchReviewSource,
   type RequiredBranchReviewProvenance,
-} from '../../review/review-provenance.js';
+} from '../../review/evidence/review-provenance.js';
 
 function validateSubmittedChallengeConsistency(
   state: SessionState,
