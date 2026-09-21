@@ -547,14 +547,18 @@ breakpoint mapping.
 
 1. Install FlowGuard repo-scoped into the playground and enable debug logging
    (sections 11 and 12). Confirm the tested host baseline (`1.18.30`).
-2. Use an OpenCode source checkout (Bun 1.3+) so the host can run under Bun's
-   inspector, per the OpenCode contributor documentation:
+2. Use an OpenCode source checkout pinned to the verified host contract, so the
+   host under debug is the same release that FlowGuard classifies as `verified`:
 
    ```bash
    git clone https://github.com/anomalyco/opencode
    cd opencode
+   git checkout v1.18.30   # tested host contract; the tag uses bun 1.3.14
    bun install
    ```
+
+   A `dev` checkout is a different, `compatible-unverified` host: use it only
+   when the defect is in host development, and record it as such.
 
 3. Start the host against the playground. Upstream notes that `bun dev` runs the
    server in a worker thread where breakpoints may not bind; use the `spawn`
@@ -566,9 +570,27 @@ breakpoint mapping.
    bun dev spawn ~/dev/flowguard-playground
    ```
 
-4. Attach IntelliJ: `Attach to Node.js/Chrome`, host `localhost`, port `6499`.
-   Bun's inspector speaks the Chrome DevTools protocol.
-5. First FlowGuard breakpoints:
+4. Debug the Bun host through Bun's own inspector. Bun speaks the **WebKit
+   Inspector Protocol**, not the Chrome DevTools Protocol, so IntelliJ's
+   `Attach to Node.js/Chrome` does not attach to Bun (JetBrains tracks attaching
+   to an already running Bun process as WEB-68425). `--inspect` prints an
+   inspector banner; open the `debug.bun.sh` URL to set host breakpoints:
+
+   ```text
+   --------------------- Bun Inspector ---------------------
+   Listening:
+     ws://localhost:6499/<token>
+   Inspect in browser:
+     https://debug.bun.sh/#localhost:6499/<token>
+   ----------------------------------------------------------
+   ```
+
+   IntelliJ remains the debugger for the Node boundaries in this guide (Vitest,
+   CLI, MCP). JetBrains' Bun run/debug support applies when the IDE launches the
+   Bun process itself; FlowGuard's verified host workflow follows upstream
+   (`bun dev spawn`) and uses the Bun inspector for that process.
+
+5. First FlowGuard breakpoints (in the `debug.bun.sh` session):
    - `<playground>/.opencode/plugins/flowguard-audit.ts` — the wrapper; proves
      that the host discovered the repo-scoped plugin.
    - `<playground>/.opencode/node_modules/@flowguard/core/dist/integration/plugin.js`
@@ -594,10 +616,10 @@ reproduce it through Vitest first — that is the canonical path.
 ### 16.2 Debugging OpenCode itself
 
 Only for defects inside the host. Follow the upstream OpenCode contributor
-guide: run OpenCode from a source checkout with Bun's inspector and attach to
-it. The commands in 16.1 are the upstream-recommended approaches; the exact
-flags can evolve with the host. FlowGuard deliberately maintains no second host
-debug pipeline.
+guide: run OpenCode from a source checkout with Bun's inspector and debug it via
+the `debug.bun.sh` session. The commands in 16.1 are the upstream-recommended
+approaches; the exact flags can evolve with the host. FlowGuard deliberately
+maintains no second host debug pipeline.
 
 ## 17. Verification checklist
 
