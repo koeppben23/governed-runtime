@@ -97,6 +97,11 @@ function _assertDerivedPolicyTypeContract(
   // @ts-expect-error — nested policy is immutable
   auditPolicy.timestampAssurance.mode = 'ntp_check';
 
+  const replacementTimestampAssurance = auditPolicy.timestampAssurance;
+
+  // @ts-expect-error — nested policy blocks cannot be swapped (no shared aliasing)
+  auditPolicy.timestampAssurance = replacementTimestampAssurance;
+
   // @ts-expect-error — policy arrays are immutable
   auditPolicy.timestampAssurance.criticalEvents.push('decision');
 
