@@ -107,6 +107,55 @@ describe('review zone policy', () => {
     ]);
   });
 
+  it('detects facade imports whose specifier is separated by a comment', () => {
+    expect(
+      analyze(
+        [
+          source('integration/review/dispatch/a.ts', `import { x } from /* c */ '../index.js';`),
+          source('integration/review/dispatch/b.ts', `export { x } from /* c */ '../index.js';`),
+          source('integration/review/dispatch/c.ts', `await import(/* c */ '../index.js');`),
+          source('integration/review/dispatch/d.ts', `const x = require(/* c */ '../index.js');`),
+        ],
+        [],
+      ),
+    ).toEqual([
+      'production-facade-import',
+      'production-facade-import',
+      'production-facade-import',
+      'production-facade-import',
+    ]);
+  });
+
+  it('ignores commented-out imports and import-looking string content', () => {
+    expect(
+      analyze(
+        [
+          source('integration/review/dispatch/a.ts', `// import { x } from '../index.js';`),
+          source(
+            'integration/review/dispatch/b.ts',
+            `const text = "import { x } from '../index.js'";`,
+          ),
+          source('integration/review/dispatch/c.ts', `/* export * from '../evidence/b.js'; */`),
+        ],
+        [],
+      ),
+    ).toEqual([]);
+  });
+
+  it('detects a zone edge whose specifier is separated by a comment', () => {
+    expect(
+      analyze(
+        [
+          source(
+            'integration/review/dispatch/d.ts',
+            `import { x } from /* comment */ '../evidence/b.js';`,
+          ),
+        ],
+        [],
+      ),
+    ).toEqual(['undeclared-zone-edge']);
+  });
+
   it('does not flag a same-named index outside the review facade', () => {
     expect(
       analyze(

@@ -27,6 +27,8 @@
  * @version v1
  */
 
+import * as ts from 'typescript';
+
 import { isTestSourcePath } from './module-classification.js';
 import type { IntegrationPlacementZone } from './integration-placement-policy.js';
 
@@ -125,15 +127,45 @@ function reviewZoneOf(
     : undefined;
 }
 
-const MODULE_SPECIFIER_PATTERN = /(?:from|import)\s*\(?\s*["']([^"']+)["']/g;
-
-/** Relative module specifiers (static import/export and dynamic import). */
-function relativeSpecifiers(content: string): string[] {
+/**
+ * Relative module specifiers from the syntax tree.
+ *
+ * This is deliberately AST-based, not regex-based: comments between `from`/
+ * `import` and the string literal are trivia and cannot hide an edge, while
+ * commented-out imports and import-looking string content cannot fabricate one.
+ * Covered forms: `import ... from`, `export ... from`, dynamic `import()`, and
+ * `require()`.
+ */
+function relativeSpecifiers(sourceText: string): string[] {
+  const sourceFile = ts.createSourceFile(
+    'review-zone.ts',
+    sourceText,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
   const out: string[] = [];
-  for (const match of content.matchAll(MODULE_SPECIFIER_PATTERN)) {
-    const specifier = match[1];
-    if (specifier !== undefined && specifier.startsWith('.')) out.push(specifier);
-  }
+
+  const collect = (specifier: ts.Expression | undefined): void => {
+    if (specifier !== undefined && ts.isStringLiteralLike(specifier)) {
+      if (specifier.text.startsWith('.')) out.push(specifier.text);
+    }
+  };
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+      collect(node.moduleSpecifier);
+    } else if (ts.isCallExpression(node)) {
+      const isDynamicImport = node.expression.kind === ts.SyntaxKind.ImportKeyword;
+      const isRequire = ts.isIdentifier(node.expression) && node.expression.text === 'require';
+      if (isDynamicImport || isRequire) {
+        collect(node.arguments[0]);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
   return out;
 }
 
