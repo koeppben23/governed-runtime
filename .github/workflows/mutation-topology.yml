@@ -1,0 +1,42 @@
+name: Topology Mutation Testing
+
+on:
+  pull_request:
+    paths:
+      - 'src/machine/topology.ts'
+      - 'src/machine/topology.test.ts'
+      - 'src/machine/state-machine.fuzz.test.ts'
+      - 'src/machine/state-machine-invariants.test.ts'
+      - 'src/architecture/__tests__/topology-authority-ssot.test.ts'
+      - 'stryker.topology.conf.json'
+      - 'vitest.stryker-topology.config.ts'
+      - '.github/workflows/mutation-topology.yml'
+      - 'scripts/mutation-profile-registry.json'
+      - 'scripts/stryker-patch.js'
+
+permissions:
+  contents: read
+
+jobs:
+  mutation-topology:
+    name: mutation-topology
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # actions/setup-node v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Run topology mutation tests
+        run: node scripts/stryker-patch.js && npx stryker run stryker.topology.conf.json
+      - name: Verify mutation admission
+        run: >-
+          node scripts/verify-mutation-admission.mjs --profile topology
+          --report reports/mutation/topology/mutation.json
+          --write-manifest reports/mutation/topology/admission-manifest.json

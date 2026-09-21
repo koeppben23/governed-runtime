@@ -249,7 +249,11 @@ keeping the security-critical target list and `break: 80` gate intact. The
 ### CI Enforcement
 
 The scheduled/release/manual `mutation` workflow is blocking for that workflow
-run. It is not a pull-request required check. A mutation score below the
+run. It is not a pull-request required check. Focused profiles additionally run
+as path-filtered pull-request gates: `identity-jwks`, `schemas`, `mandates`,
+`event-core`, and `topology`. `human-projection` remains local-only: its full
+run leaves `src/presentation/markdown.ts:264-292` below the per-target gate, so
+it does not yet prove every target. A mutation score below the
 configured `break: 80` threshold (`stryker.conf.json`) fails the mutation job.
 Survivor analysis remains part of normal security-critical test maintenance.
 
@@ -315,10 +319,9 @@ Topology profile (`stryker.topology.conf.json`): focused authority profile for
 `src/machine/topology.ts`, the formal state transition table. It uses
 `coverageAnalysis: "all"`, `ignoreStatic: false`, keeps `StringLiteral`
 enabled, and disables the TypeScript checker because the typed table literals
-are the mutation surface. The base classification `not-mutation-suitable` stays
-scoped to base; the target is an admission candidate until a full
-topology-profile run proves meaningful valid mutants at or above the
-per-target threshold.
+are the mutation surface. Admitted 2026-09-21 at 99.32 % on the freeze run
+(df9f8b4d); the base classification `not-mutation-suitable` stays scoped to
+base.
 
 Deferred surfaces (whole roots behind the admission gate):
 `src/config/**`, `src/state/**`, `src/shared/**`, `src/audit/**`,
@@ -360,13 +363,8 @@ required mutation target.
 A candidate is staged inside a profile for authoritative admission
 measurement. It is mutated by its profile but carries no provenance yet: only
 a verified profile full run on the freeze commit decides whether it becomes
-`required` (immutable admission) or returns to the admission backlog.
-
-- `src/machine/topology.ts` (topology)
-- `src/integration/review/validation/review-validation.ts` (base)
-- `src/integration/review/validation/review-validation-structured-evidence.ts` (base)
-- `src/integration/review/evidence/reviewed-digest.ts` (base)
-- `src/integration/review/evidence/findings-hash.ts` (base)
+`required` (immutable admission) or returns to the admission backlog. The
+2026-09-21 freeze run admitted all five candidates; currently none remain.
 
 ### Running Locally
 
