@@ -4,13 +4,13 @@
   "testRunner": "vitest",
   "reporters": ["clear-text", "progress", "html", "json"],
   "coverageAnalysis": "all",
-  "checkers": ["typescript"],
+  "checkers": [],
   "tsconfigFile": "tsconfig.json",
   "vitest": {
-    "configFile": "vitest.stryker-event-core.config.ts",
+    "configFile": "vitest.stryker-topology.config.ts",
     "related": false
   },
-  "mutate": ["src/audit/event-core.ts"],
+  "mutate": ["src/machine/topology.ts"],
   "mutator": {
     "excludedMutations": ["ArrayDeclaration", "Regex"]
   },
@@ -20,11 +20,14 @@
     "low": 80,
     "break": 80
   },
-  "tempDirName": ".stryker-tmp-event-core",
+  "timeoutMS": 15000,
+  "timeoutFactor": 2,
+  "concurrency": 2,
+  "tempDirName": ".stryker-tmp-topology",
   "jsonReporter": {
-    "fileName": "reports/mutation/event-core/mutation.json"
+    "fileName": "reports/mutation/topology/mutation.json"
   },
   "htmlReporter": {
-    "fileName": "reports/mutation/event-core/mutation.html"
+    "fileName": "reports/mutation/topology/mutation.html"
   }
 }

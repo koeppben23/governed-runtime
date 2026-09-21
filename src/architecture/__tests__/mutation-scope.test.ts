@@ -12,23 +12,31 @@
  * `mutation-authority-inventory.ts`:
  *
  * A1 well-formedness: unique `(profile, selector)` identities, existing
- *    targets and covering suites, unambiguous selector forms.
- * A2 required ⊆ mutate: every `required` selector is present in its profile.
+ *    targets and covering suites, unambiguous selector forms, and an explicit
+ *    reason for every admission candidate.
+ * A2 mutated ⊆ mutate: every `required` and `admission-candidate` selector is
+ *    present in its profile.
  * A3 reverse closure: every mutate entry of every profile has exactly one
- *    `required` inventory entry with the same identity.
- * A4 no unclassified mutate entry: deferred targets and globs are disjoint
- *    from every mutate list.
+ *    `required` or `admission-candidate` inventory entry with that identity.
+ * A4 no unclassified mutate entry: backlog targets and globs are disjoint
+ *    from every mutate list; `not-mutation-suitable` stays profile-scoped.
  * A5 deferral is explicit: deferred entries carry a reason and a valid root.
  * A6 reachability evidence: covering suites are selected by the profile's
  *    Stryker Vitest config, all explicit include paths exist, include globs
  *    match at least one suite, and include/exclude never contradict.
  * A7 provenance: every `required` entry carries either an immutable admission
  *    record at or above the profile break threshold or a legacy baseline.
+ *    Candidates must NOT carry provenance; the full-run verdict decides.
  * A8 completeness closure: every production source under an authority root is
  *    covered, backlog globs have a non-empty effective set, and no effective
  *    glob file is mutated.
- * A9 count authority: the base required set equals the base mutate list and
- *    the documented `PRODUCT_INVENTORY.mutationFiles` count.
+ * A9 count authority: the base mutated set (required + candidates) equals the
+ *    base mutate list and the documented `PRODUCT_INVENTORY.mutationFiles`
+ *    count.
+ * A10 registry closure: `scripts/mutation-profile-registry.json`, the profile
+ *    union, the on-disk Stryker configs, and the verifier's registry read
+ *    cannot drift; report and manifest paths are unique; every config's JSON
+ *    reporter writes the registry report path.
  *
  * These guards are static. They do not measure a mutation score; admission
  * scores are enforced by `scripts/verify-mutation-admission.mjs` from profile
@@ -44,6 +52,7 @@ import humanProjectionVitest from '../../../vitest.stryker-human-projection.conf
 import identityJwksVitest from '../../../vitest.stryker-identity-jwks.config.js';
 import mandatesVitest from '../../../vitest.mandates.config.js';
 import schemasVitest from '../../../vitest.stryker-schemas.config.js';
+import topologyVitest from '../../../vitest.stryker-topology.config.js';
 import { PRODUCT_INVENTORY } from '../../shared/product-inventory.js';
 import {
   AUTHORITY_ROOTS,
@@ -52,6 +61,7 @@ import {
   assertRequiredProvenance,
   isProductionSource,
   targetOfSelector,
+  type AdmissionCandidateEntry,
   type AdmissionRecord,
   type MutationProfile,
 } from './mutation-authority-inventory.js';
@@ -78,6 +88,7 @@ const PROFILE_VITEST: Readonly<Record<MutationProfile, VitestConfig>> = {
   'identity-jwks': identityJwksVitest,
   mandates: mandatesVitest,
   schemas: schemasVitest,
+  topology: topologyVitest,
 };
 
 function readProfileConfig(profile: MutationProfile): ProfileConfig {
@@ -149,8 +160,14 @@ function expandIncludeGlob(pattern: string): string[] {
 const requiredEntries = MUTATION_AUTHORITY_INVENTORY.filter(
   (entry) => entry.classification === 'required',
 );
+const candidateEntries = MUTATION_AUTHORITY_INVENTORY.filter(
+  (entry): entry is AdmissionCandidateEntry => entry.classification === 'admission-candidate',
+);
+const mutatedAuthorityEntries = [...requiredEntries, ...candidateEntries];
 const deferredEntries = MUTATION_AUTHORITY_INVENTORY.filter(
-  (entry) => entry.classification !== 'required',
+  (entry) =>
+    entry.classification === 'admission-backlog' ||
+    entry.classification === 'not-mutation-suitable',
 );
 
 const exactInventoryTargets = new Set(
@@ -168,19 +185,34 @@ function effectiveGlobFiles(entry: (typeof MUTATION_AUTHORITY_INVENTORY)[number]
 
 describe('mutation scope', () => {
   it('A1: inventory is well-formed and references existing artifacts', () => {
-    const identities = requiredEntries.map((entry) => `${entry.profile}:${entry.mutateSelector}`);
+    const identities = mutatedAuthorityEntries.map(
+      (entry) => `${entry.profile}:${entry.mutateSelector}`,
+    );
     const duplicates = identities.filter(
       (identity, index) => identities.indexOf(identity) !== index,
     );
     expect(duplicates).toEqual([]);
 
-    for (const entry of requiredEntries) {
+    for (const entry of mutatedAuthorityEntries) {
       expect(existsSync(join(ROOT, entry.target)), `${entry.target} missing`).toBe(true);
       expect(targetOfSelector(entry.mutateSelector)).toBe(entry.target);
       expect(entry.coveringSuites.length).toBeGreaterThan(0);
       for (const suite of entry.coveringSuites) {
         expect(existsSync(join(ROOT, suite)), `${suite} missing`).toBe(true);
       }
+    }
+
+    for (const entry of candidateEntries) {
+      expect(entry.reason.trim().length, `${entry.mutateSelector} lacks a reason`).toBeGreaterThan(
+        0,
+      );
+      expect('admission' in entry, `${entry.mutateSelector} candidate carries admission`).toBe(
+        false,
+      );
+      expect(
+        'legacyBaseline' in entry,
+        `${entry.mutateSelector} candidate carries legacy provenance`,
+      ).toBe(false);
     }
   });
 
@@ -208,18 +240,18 @@ describe('mutation scope', () => {
     expect(problems).toEqual([]);
   });
 
-  it('A2: every required selector is in its profile mutate list', () => {
-    const missing = requiredEntries
+  it('A2: every required or candidate selector is in its profile mutate list', () => {
+    const missing = mutatedAuthorityEntries
       .filter((entry) => !mutateSelectors(entry.profile).has(entry.mutateSelector))
       .map((entry) => `${entry.profile}: ${entry.mutateSelector}`);
     expect(missing).toEqual([]);
   });
 
-  it('A3: every mutate entry has exactly one required inventory entry', () => {
+  it('A3: every mutate entry has exactly one required or candidate inventory entry', () => {
     const problems: string[] = [];
     for (const profile of Object.keys(MUTATION_PROFILES) as MutationProfile[]) {
       for (const selector of readProfileConfig(profile).mutate) {
-        const matches = requiredEntries.filter(
+        const matches = mutatedAuthorityEntries.filter(
           (entry) => entry.profile === profile && entry.mutateSelector === selector,
         );
         if (matches.length !== 1) {
@@ -274,7 +306,7 @@ describe('mutation scope', () => {
         }
       }
 
-      for (const entry of requiredEntries.filter((value) => value.profile === profile)) {
+      for (const entry of mutatedAuthorityEntries.filter((value) => value.profile === profile)) {
         for (const suite of entry.coveringSuites) {
           if (!matchesAny(suite, include) || matchesAny(suite, exclude)) {
             problems.push(`${profile}: ${suite} is not selected for ${entry.mutateSelector}`);
@@ -357,10 +389,143 @@ describe('mutation scope', () => {
     expect(emptyGlobs).toEqual([]);
   });
 
-  it('A9: the base required set equals the mutate list and the documented count', () => {
-    const baseRequired = requiredEntries.filter((entry) => entry.profile === 'base');
+  it('A9: the base mutated set equals the mutate list and the documented count', () => {
+    const baseMutated = mutatedAuthorityEntries.filter((entry) => entry.profile === 'base');
     const baseMutate = readProfileConfig('base').mutate;
-    expect(baseRequired.length).toBe(baseMutate.length);
-    expect(baseRequired.length).toBe(PRODUCT_INVENTORY.mutationFiles);
+    expect(baseMutated.length).toBe(baseMutate.length);
+    expect(baseMutated.length).toBe(PRODUCT_INVENTORY.mutationFiles);
+  });
+
+  it('A10: the profile registry closes over inventory, configs, reporters, and the verifier', () => {
+    interface RegistryEntry {
+      readonly configFile: string;
+      readonly vitestConfigFile: string;
+      readonly reportPath: string;
+      readonly manifestPath: string;
+    }
+    const registry = JSON.parse(
+      readFileSync(join(ROOT, 'scripts', 'mutation-profile-registry.json'), 'utf-8'),
+    ) as { readonly version: number; readonly profiles: Readonly<Record<string, RegistryEntry>> };
+
+    const registryIds = Object.keys(registry.profiles).sort();
+    const inventoryIds = (Object.keys(MUTATION_PROFILES) as MutationProfile[]).sort();
+    expect(registryIds, 'registry and inventory profile sets differ').toEqual(inventoryIds);
+    expect(
+      Object.keys(PROFILE_VITEST).sort(),
+      'PROFILE_VITEST does not cover the registry',
+    ).toEqual(registryIds);
+
+    const onDiskConfigs = readdirSync(ROOT)
+      .filter((name) => /^stryker(\..+)?\.conf\.json$/.test(name))
+      .sort();
+    expect(onDiskConfigs, 'orphan or missing Stryker config').toEqual(
+      registryIds.map((id) => registry.profiles[id]?.configFile).sort(),
+    );
+
+    const reportPaths = new Set<string>();
+    const manifestPaths = new Set<string>();
+    for (const id of registryIds) {
+      const entry = registry.profiles[id];
+      expect(entry, id).toBeDefined();
+      if (entry === undefined) continue;
+
+      expect(existsSync(join(ROOT, entry.configFile)), `${id}: missing config`).toBe(true);
+      expect(existsSync(join(ROOT, entry.vitestConfigFile)), `${id}: missing vitest config`).toBe(
+        true,
+      );
+      expect(MUTATION_PROFILES[id as MutationProfile]?.vitestConfigFile, id).toBe(
+        entry.vitestConfigFile,
+      );
+
+      const config = JSON.parse(readFileSync(join(ROOT, entry.configFile), 'utf-8')) as {
+        readonly vitest?: { readonly configFile?: string };
+        readonly jsonReporter?: { readonly fileName?: string };
+        readonly htmlReporter?: { readonly fileName?: string };
+      };
+      expect(config.vitest?.configFile, `${id}: vitest config drift`).toBe(entry.vitestConfigFile);
+      expect(config.jsonReporter?.fileName, `${id}: JSON reporter path drift`).toBe(
+        entry.reportPath,
+      );
+      expect(config.htmlReporter?.fileName, `${id}: HTML reporter path drift`).toBe(
+        entry.reportPath.replace(/\.json$/, '.html'),
+      );
+
+      expect(reportPaths.has(entry.reportPath), `${id}: duplicate report path`).toBe(false);
+      reportPaths.add(entry.reportPath);
+      expect(manifestPaths.has(entry.manifestPath), `${id}: duplicate manifest path`).toBe(false);
+      manifestPaths.add(entry.manifestPath);
+    }
+
+    const verifier = readFileSync(join(ROOT, 'scripts', 'verify-mutation-admission.mjs'), 'utf-8');
+    expect(verifier, 'verifier still owns a private profile map').not.toContain(
+      'PROFILE_CONFIG = {',
+    );
+    expect(verifier, 'verifier does not read the registry').toContain(
+      'mutation-profile-registry.json',
+    );
+    expect(verifier, 'verifier does not consume registry manifest paths').toContain(
+      'PROFILE_MANIFEST_PATH',
+    );
+    expect(verifier, 'verifier duplicates a report or manifest path').not.toContain(
+      'reports/mutation/',
+    );
+
+    const assertSeparateVerifierCommands = (name: string, workflow: string): void => {
+      expect(workflow, `${name}: folded scalar around the verifier invocation`).not.toMatch(
+        /run: >-[\s\S]{0,600}?verify-mutation-admission/,
+      );
+      const commandLines = workflow
+        .split('\n')
+        .filter((line) =>
+          line.trimStart().startsWith('node scripts/verify-mutation-admission.mjs'),
+        );
+      expect(
+        commandLines.some((line) => line.includes('--write-profile-manifest')),
+        `${name}: --write-profile-manifest is not its own command line`,
+      ).toBe(true);
+      expect(
+        commandLines.some((line) => line.includes('--verify-profile-manifest')),
+        `${name}: --verify-profile-manifest is not its own command line`,
+      ).toBe(true);
+      expect(
+        workflow.indexOf('--write-profile-manifest') <
+          workflow.indexOf('--verify-profile-manifest'),
+        `${name}: write must precede re-verify`,
+      ).toBe(true);
+    };
+
+    const focusedWorkflows = [
+      'mutation-event-core.yml',
+      'mutation-topology.yml',
+      'mutation-identity-jwks.yml',
+      'mutation-schemas.yml',
+      'mandates-semantic-mutation.yml',
+    ];
+    for (const name of focusedWorkflows) {
+      const workflow = readFileSync(join(ROOT, '.github', 'workflows', name), 'utf-8');
+      expect(workflow, `${name}: registry manifest write missing`).toContain(
+        '--write-profile-manifest',
+      );
+      expect(workflow, `${name}: registry manifest verify missing`).toContain(
+        '--verify-profile-manifest',
+      );
+      expect(workflow, `${name}: duplicates a report or manifest path`).not.toContain(
+        'reports/mutation/',
+      );
+      expect(workflow, `${name}: verifier missing from path filter`).toContain(
+        "'scripts/verify-mutation-admission.mjs'",
+      );
+      assertSeparateVerifierCommands(name, workflow);
+    }
+    for (const name of ['mutation.yml', 'release.yml']) {
+      const workflow = readFileSync(join(ROOT, '.github', 'workflows', name), 'utf-8');
+      expect(workflow, `${name}: registry manifest write missing`).toContain(
+        '--write-profile-manifest',
+      );
+      expect(workflow, `${name}: registry manifest verify missing`).toContain(
+        '--verify-profile-manifest',
+      );
+      assertSeparateVerifierCommands(name, workflow);
+    }
   });
 });

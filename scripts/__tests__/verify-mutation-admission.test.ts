@@ -89,6 +89,20 @@ function baseReport(): Report {
 
 const KILLED_SET = ['Killed', 'Killed', 'Killed', 'Timeout'];
 
+function topologyReport(): Report {
+  return {
+    schemaVersion: '1.0',
+    thresholds: { high: 95, low: 80, break: 80 },
+    files: {
+      'src/machine/topology.ts': fileEntry(mutants(['Killed', 'Killed', 'Killed', 'Timeout'])),
+    },
+  };
+}
+
+const registry = JSON.parse(
+  readFileSync(join(repoRoot, 'scripts', 'mutation-profile-registry.json'), 'utf8'),
+) as { profiles: Record<string, { manifestPath: string }> };
+
 function jwksReport(
   mutantsByRange: { readonly [range: string]: readonly Mutant[] },
   options: { readonly outsideRange?: boolean } = {},
@@ -515,6 +529,7 @@ describe('verify-mutation-admission', () => {
         scoreAtAdmission: number;
         config: string;
         verifiedAt: string;
+        reportDigest: string;
       };
     }>;
     expect(emitted).toHaveLength(1);
@@ -523,5 +538,67 @@ describe('verify-mutation-admission', () => {
     expect(emitted[0]?.admission.scoreAtAdmission).toBe(emitted[0]?.score);
     expect(emitted[0]?.admission.config).toBe('stryker.conf.json');
     expect(emitted[0]?.admission.verifiedAt).toBe(manifest.generatedAt.slice(0, 10));
+    expect(emitted[0]?.admission.reportDigest).toBe(manifest.reportDigest);
+  });
+
+  it('writes and re-verifies the manifest at the registry profile path', () => {
+    const topologyManifest = registry.profiles.topology?.manifestPath;
+    if (topologyManifest === undefined) {
+      throw new Error('topology profile missing from the mutation profile registry');
+    }
+    const manifestPath = join(repoRoot, topologyManifest);
+    rmSync(manifestPath, { force: true });
+    try {
+      const reportPath = writeReport(topologyReport());
+
+      const written = runVerifier([
+        '--profile',
+        'topology',
+        '--report',
+        reportPath,
+        '--write-profile-manifest',
+      ]);
+      expect(written.status, written.stderr).toBe(0);
+      expect(existsSync(manifestPath)).toBe(true);
+
+      const verified = runVerifier([
+        '--profile',
+        'topology',
+        '--report',
+        reportPath,
+        '--verify-profile-manifest',
+      ]);
+      expect(verified.status, verified.stderr).toBe(0);
+    } finally {
+      rmSync(manifestPath, { force: true });
+    }
+  });
+
+  it('rejects combining a profile-manifest mode with an explicit manifest path', () => {
+    const reportPath = writeReport(topologyReport());
+
+    const writeConflict = runVerifier([
+      '--profile',
+      'topology',
+      '--report',
+      reportPath,
+      '--write-profile-manifest',
+      '--write-manifest',
+      join(emptyTemporaryDirectory(), 'manifest.json'),
+    ]);
+    expect(writeConflict.status).toBe(1);
+    expect(writeConflict.stderr).toContain('mutually exclusive');
+
+    const verifyConflict = runVerifier([
+      '--profile',
+      'topology',
+      '--report',
+      reportPath,
+      '--verify-profile-manifest',
+      '--manifest',
+      join(emptyTemporaryDirectory(), 'manifest.json'),
+    ]);
+    expect(verifyConflict.status).toBe(1);
+    expect(verifyConflict.stderr).toContain('mutually exclusive');
   });
 });

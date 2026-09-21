@@ -13,7 +13,7 @@
   "reporters": ["clear-text", "progress", "html", "json"],
   "coverageAnalysis": "all",
   "timeoutMS": 15000,
-  "timeoutFactor": 2.0,
+  "timeoutFactor": 2,
   "concurrency": 2,
   "checkers": [],
   "tsconfigFile": "tsconfig.json",
@@ -26,5 +26,11 @@
     "break": 80
   },
   "tempDirName": ".stryker-tmp-mandates",
-  "ignoreStatic": false
+  "ignoreStatic": false,
+  "jsonReporter": {
+    "fileName": "reports/mutation/mandates/mutation.json"
+  },
+  "htmlReporter": {
+    "fileName": "reports/mutation/mandates/mutation.html"
+  }
 }
