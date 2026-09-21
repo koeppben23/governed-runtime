@@ -6,23 +6,23 @@ Canonical product counts derived from
 [`src/shared/product-inventory.ts`](../src/shared/product-inventory.ts).
 Verified by `npm run check:doc-drift`.
 
-| Entity                        | Count | Code Authority                                      |
-| ----------------------------- | ----- | --------------------------------------------------- |
-| Machine Commands              | 13    | `src/machine/commands.ts`                           |
-| Integration Tools             | 20    | `src/integration/tools/index.ts`                    |
-| MCP Tools                     | 18    | `src/mcp-server/server.ts`                          |
-| Installed Command Definitions | 27    | `src/integration/installed-commands.ts`             |
-| Phases                        | 18    | `src/state/schema.ts`                               |
-| Policy Modes                  | 4     | `src/state/policy-mode.ts`                          |
-| Profiles                      | 4     | `src/config/profile.ts`                             |
-| Discovery Collectors          | 6     | `src/discovery/orchestrator.ts`                     |
-| Review Loops                  | 3     | `src/integration/review/review-loop-progress.ts`    |
-| Enforcement Layers            | 4     | `src/integration/review/enforcement/enforcement.ts` |
-| Audit Event Kinds             | 7     | `src/audit/types.ts`                                |
-| Archive Finding Codes         | 31    | `src/archive/types.ts`                              |
-| Archive Verify Checks (JSDoc) | 9     | `src/adapters/workspace/archive-verify-chain.ts`    |
-| CLI Bins                      | 7     | `package.json` `bin`                                |
-| Mutation Files                | 109   | `stryker.conf.json` `mutate`                        |
+| Entity                        | Count | Code Authority                                               |
+| ----------------------------- | ----- | ------------------------------------------------------------ |
+| Machine Commands              | 13    | `src/machine/commands.ts`                                    |
+| Integration Tools             | 20    | `src/integration/tools/index.ts`                             |
+| MCP Tools                     | 18    | `src/mcp-server/server.ts`                                   |
+| Installed Command Definitions | 27    | `src/integration/installed-commands.ts`                      |
+| Phases                        | 18    | `src/state/schema.ts`                                        |
+| Policy Modes                  | 4     | `src/state/policy-mode.ts`                                   |
+| Profiles                      | 4     | `src/config/profile.ts`                                      |
+| Discovery Collectors          | 6     | `src/discovery/orchestrator.ts`                              |
+| Review Loops                  | 3     | `src/integration/review/obligations/review-loop-progress.ts` |
+| Enforcement Layers            | 4     | `src/integration/review/enforcement/enforcement.ts`          |
+| Audit Event Kinds             | 7     | `src/audit/types.ts`                                         |
+| Archive Finding Codes         | 31    | `src/archive/types.ts`                                       |
+| Archive Verify Checks (JSDoc) | 9     | `src/adapters/workspace/archive-verify-chain.ts`             |
+| CLI Bins                      | 7     | `package.json` `bin`                                         |
+| Mutation Files                | 105   | `stryker.conf.json` `mutate`                                 |
 
 ---
 
