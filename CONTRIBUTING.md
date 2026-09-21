@@ -17,13 +17,13 @@ integration/  -> rails/  -> machine/  -> state/
 
 ### Key Layers
 
-| Layer          | Purpose                                         | Role                                                          |
-| -------------- | ----------------------------------------------- | ------------------------------------------------------------- |
-| `state/`       | Core domain model (Zod schemas, types)          | Canonical domain primitives                                   |
-| `machine/`     | State machine (topology, guards, evaluation)    | Enforces transitions; no runtime authority of its own         |
-| `rails/`       | Workflow orchestrators (stateless)              | Orchestration; I/O through adapters                           |
-| `adapters/`    | File I/O, git, workspace management             | Host-agnostic I/O boundary                                    |
-| `integration/` | Host integration surfaces and OpenCode bindings | Runtime-facing composition; entry points compose separately   |
+| Layer          | Purpose                                         | Role                                                        |
+| -------------- | ----------------------------------------------- | ----------------------------------------------------------- |
+| `state/`       | Core domain model (Zod schemas, types)          | Canonical domain primitives                                 |
+| `machine/`     | State machine (topology, guards, evaluation)    | Enforces transitions; no runtime authority of its own       |
+| `rails/`       | Workflow orchestrators (stateless)              | Orchestration; I/O through adapters                         |
+| `adapters/`    | File I/O, git, workspace management             | Host-agnostic I/O boundary                                  |
+| `integration/` | Host integration surfaces and OpenCode bindings | Runtime-facing composition; entry points compose separately |
 
 The diagram shows the intended direction for new code, not the enforced set:
 top-level module directions are owned exclusively by `MODULE_DEPENDENCY_POLICY`
@@ -135,6 +135,12 @@ describe('ModuleName / Feature', () => {
 });
 ```
 
+## Debugging
+
+For the canonical macOS + IntelliJ IDEA development and debugging workflow,
+including Vitest, CLI, MCP, OpenCode live debugging, source maps and isolated
+dogfood repositories, see [docs/development/debugging.md](docs/development/debugging.md).
+
 ## Code Style
 
 ### TypeScript
@@ -150,14 +156,14 @@ describe('ModuleName / Feature', () => {
 
 ### Naming Conventions
 
-| Element          | Convention      | Example            |
-| ---------------- | --------------- | ------------------ |
-| Files            | kebab-case      | `session-state.ts` |
-| Functions        | camelCase       | `executeHydrate()` |
-| Classes          | PascalCase      | `PersistenceError` |
+| Element          | Convention           | Example            |
+| ---------------- | -------------------- | ------------------ |
+| Files            | kebab-case           | `session-state.ts` |
+| Functions        | camelCase            | `executeHydrate()` |
+| Classes          | PascalCase           | `PersistenceError` |
 | Constants        | SCREAMING_SNAKE_CASE | `MAX_ITERATIONS`   |
-| Types/Interfaces | PascalCase      | `RailResult`       |
-| Enums            | PascalCase      | `Command.HYDRATE`  |
+| Types/Interfaces | PascalCase           | `RailResult`       |
+| Enums            | PascalCase           | `Command.HYDRATE`  |
 
 ### Import Organization
 
@@ -191,20 +197,20 @@ The **Enforced by** column states how each rule is checked: an automated guard
 (test/lint that fails CI) or human review. Rules with an automated guard cannot
 regress silently; review-enforced rules depend on reviewer diligence.
 
-| Principle                     | Rule                                                                      | Red Flag                                              | Enforced by                                                                                                     |
-| ----------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Principle                     | Rule                                                                      | Red Flag                                              | Enforced by                                                                                                                                                                                          |
+| ----------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Single Responsibility**     | One reason to change per module/file/function                             | God-files; over-long/over-complex functions           | ESLint metrics for every production file: `complexity:12`, `max-lines-per-function:80`, `max-params:5`, enforced by `lint:strict` (`--max-warnings=0`) and pinned by `type-aware-lint-scope.test.ts` |
-| **Layer Isolation**           | Respect `state/` `machine/` `rails/` `adapters/` `integration/`           | Upward imports, layer bypass                          | `module-dependency-policy.ts` + `dependency-rules.test.ts`; module graph must stay acyclic (zero cyclic edges)  |
-| **Extract, Don't Accumulate** | Split files along domain boundaries within the size budget                | Linear growth with every feature                      | `src/architecture/__tests__/file-size.test.ts`                                                                  |
-| **No Duplicate Authority**    | One canonical implementation per concept                                  | Near-identical functions, duplicated pipelines        | SSOT guards: `actor-assurance-ssot`, `canonical-json-ssot`, `digest-authority-ssot`, `policy-mode-ssot`, `review-acceptance-ssot`, `terminal-phase-ssot` |
-| **Content/Logic Separation**  | Template content in content files, assembly in renderer files             | Template strings mixed with business logic            | Review                                                                                                          |
-| **Infrastructure Isolation**  | Locking, atomic I/O, and domain logic in separate modules                 | Concurrency code inside domain persistence files      | Review                                                                                                          |
-| **Import Hygiene**            | Imports proportional to responsibility                                    | 15+ imports from 8+ modules in one file               | Review                                                                                                          |
-| **Testability**               | Every extracted module independently testable                             | Dropped coverage after extraction                     | Review (coverage gate)                                                                                          |
-| **Fail-Closed**               | Errors block; no silent fallback masks a failure                          | Swallowed errors, default-allow on missing evidence   | Review (+ negative-path tests required per AGENTS.md)                                                           |
-| **Typed Errors**              | Throw typed errors with codes, not bare `throw new Error` in control flow | Bare throws in runtime paths                          | Review                                                                                                          |
-| **Determinism**               | Same input → same output for digests/canonicalization/state               | Hidden nondeterminism (time, ordering) in hash inputs | `canonical-json-ssot`, `digest-authority-ssot`, digest byte-identity tests                                      |
-| **API Stability**             | Public surface stays intentional; no test-only utilities leaked           | Test helpers exported from the public barrel          | Review (barrel-export tests)                                                                                    |
+| **Layer Isolation**           | Respect `state/` `machine/` `rails/` `adapters/` `integration/`           | Upward imports, layer bypass                          | `module-dependency-policy.ts` + `dependency-rules.test.ts`; module graph must stay acyclic (zero cyclic edges)                                                                                       |
+| **Extract, Don't Accumulate** | Split files along domain boundaries within the size budget                | Linear growth with every feature                      | `src/architecture/__tests__/file-size.test.ts`                                                                                                                                                       |
+| **No Duplicate Authority**    | One canonical implementation per concept                                  | Near-identical functions, duplicated pipelines        | SSOT guards: `actor-assurance-ssot`, `canonical-json-ssot`, `digest-authority-ssot`, `policy-mode-ssot`, `review-acceptance-ssot`, `terminal-phase-ssot`                                             |
+| **Content/Logic Separation**  | Template content in content files, assembly in renderer files             | Template strings mixed with business logic            | Review                                                                                                                                                                                               |
+| **Infrastructure Isolation**  | Locking, atomic I/O, and domain logic in separate modules                 | Concurrency code inside domain persistence files      | Review                                                                                                                                                                                               |
+| **Import Hygiene**            | Imports proportional to responsibility                                    | 15+ imports from 8+ modules in one file               | Review                                                                                                                                                                                               |
+| **Testability**               | Every extracted module independently testable                             | Dropped coverage after extraction                     | Review (coverage gate)                                                                                                                                                                               |
+| **Fail-Closed**               | Errors block; no silent fallback masks a failure                          | Swallowed errors, default-allow on missing evidence   | Review (+ negative-path tests required per AGENTS.md)                                                                                                                                                |
+| **Typed Errors**              | Throw typed errors with codes, not bare `throw new Error` in control flow | Bare throws in runtime paths                          | Review                                                                                                                                                                                               |
+| **Determinism**               | Same input → same output for digests/canonicalization/state               | Hidden nondeterminism (time, ordering) in hash inputs | `canonical-json-ssot`, `digest-authority-ssot`, digest byte-identity tests                                                                                                                           |
+| **API Stability**             | Public surface stays intentional; no test-only utilities leaked           | Test helpers exported from the public barrel          | Review (barrel-export tests)                                                                                                                                                                         |
 
 Maintainability limits (Single Responsibility):
 
