@@ -8,6 +8,7 @@ on:
       - 'stryker.identity-jwks.conf.json'
       - 'vitest.stryker-identity-jwks.config.ts'
       - '.github/workflows/mutation-identity-jwks.yml'
+      - 'scripts/verify-mutation-admission.mjs'
       - 'scripts/mutation-profile-registry.json'
       - 'scripts/stryker-patch.js'
 
@@ -32,8 +33,7 @@ jobs:
         run: npm ci
       - name: Run JWKS mutation tests
         run: node scripts/stryker-patch.js && npx stryker run stryker.identity-jwks.conf.json
-      - name: Verify mutation admission
-        run: >-
-          node scripts/verify-mutation-admission.mjs --profile identity-jwks
-          --report reports/mutation/identity-jwks/mutation.json
-          --write-manifest reports/mutation/identity-jwks/admission-manifest.json
+      - name: Write and verify mutation admission manifest
+        run: |
+          node scripts/verify-mutation-admission.mjs --profile identity-jwks --write-profile-manifest
+          node scripts/verify-mutation-admission.mjs --profile identity-jwks --verify-profile-manifest

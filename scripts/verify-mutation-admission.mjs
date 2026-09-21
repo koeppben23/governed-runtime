@@ -32,30 +32,32 @@
  *   undetected = Survived + NoCoverage
  *   excluded   = CompileError + RuntimeError + Ignored + Pending
  *
- * Usage:
- *   # verify a full run and persist admission provenance
- *   node scripts/verify-mutation-admission.mjs --profile base \
- *     --write-manifest reports/mutation/admission-manifest.json
+ * Usage (registry-driven; profile, report path, and manifest path all come
+ * from `scripts/mutation-profile-registry.json`):
+ *   # verify a full run and persist admission provenance at the profile path
+ *   node scripts/verify-mutation-admission.mjs --profile base --write-profile-manifest
  *
- *   # verify admission against a persisted manifest
- *   node scripts/verify-mutation-admission.mjs --profile base \
- *     --manifest reports/mutation/admission-manifest.json
+ *   # re-verify admission against the persisted profile manifest
+ *   node scripts/verify-mutation-admission.mjs --profile base --verify-profile-manifest
  *
  *   # require newly admitted selectors to meet the per-target threshold
  *   node scripts/verify-mutation-admission.mjs --profile base \
- *     --manifest reports/mutation/admission-manifest.json \
- *     --require-selectors src/machine/topology.ts
+ *     --verify-profile-manifest --require-selectors src/machine/topology.ts
  *
  *   # emit inventory-compatible admission records (requires a manifest)
  *   node scripts/verify-mutation-admission.mjs --profile base \
- *     --manifest reports/mutation/admission-manifest.json \
- *     --require-selectors src/machine/topology.ts --emit-admission
+ *     --verify-profile-manifest --require-selectors src/machine/topology.ts \
+ *     --emit-admission
+ *
+ * Explicit `--report`, `--manifest`, and `--write-manifest` remain available
+ * for tests and ad-hoc local paths; they are mutually exclusive with the
+ * profile-manifest modes.
  */
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
@@ -74,6 +76,12 @@ const PROFILE_CONFIG = Object.fromEntries(
 );
 const PROFILE_REPORT_PATH = Object.fromEntries(
   Object.entries(PROFILE_REGISTRY.profiles).map(([profile, entry]) => [profile, entry.reportPath]),
+);
+const PROFILE_MANIFEST_PATH = Object.fromEntries(
+  Object.entries(PROFILE_REGISTRY.profiles).map(([profile, entry]) => [
+    profile,
+    entry.manifestPath,
+  ]),
 );
 
 const DETECTED_STATUSES = new Set(['Killed', 'Timeout']);
@@ -99,6 +107,8 @@ function parseArguments(argv) {
     report: undefined,
     manifest: undefined,
     writeManifest: undefined,
+    writeProfileManifest: false,
+    verifyProfileManifest: false,
     emitAdmission: false,
     commit: undefined,
     requiredSelectors: [],
@@ -109,6 +119,8 @@ function parseArguments(argv) {
     else if (argument === '--report') options.report = argv[++index];
     else if (argument === '--manifest') options.manifest = argv[++index];
     else if (argument === '--write-manifest') options.writeManifest = argv[++index];
+    else if (argument === '--write-profile-manifest') options.writeProfileManifest = true;
+    else if (argument === '--verify-profile-manifest') options.verifyProfileManifest = true;
     else if (argument === '--emit-admission') options.emitAdmission = true;
     else if (argument === '--commit') options.commit = argv[++index];
     else if (argument === '--require-selectors') {
@@ -135,6 +147,18 @@ function parseArguments(argv) {
   }
   if (typeof options.report !== 'string' || options.report.length === 0) {
     fail('--report requires a path');
+  }
+  if (options.writeProfileManifest && options.writeManifest !== undefined) {
+    fail('--write-profile-manifest and --write-manifest are mutually exclusive');
+  }
+  if (options.verifyProfileManifest && options.manifest !== undefined) {
+    fail('--verify-profile-manifest and --manifest are mutually exclusive');
+  }
+  if (options.writeProfileManifest) {
+    options.writeManifest = PROFILE_MANIFEST_PATH[options.profile];
+  }
+  if (options.verifyProfileManifest) {
+    options.manifest = PROFILE_MANIFEST_PATH[options.profile];
   }
   if (
     options.commit !== undefined &&
@@ -536,6 +560,7 @@ if (options.manifest !== undefined) {
 
 if (options.writeManifest !== undefined) {
   const manifestPath = resolve(process.cwd(), options.writeManifest);
+  mkdirSync(dirname(manifestPath), { recursive: true });
   writeFileSync(
     manifestPath,
     `${JSON.stringify(

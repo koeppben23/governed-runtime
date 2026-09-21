@@ -463,5 +463,43 @@ describe('mutation scope', () => {
     expect(verifier, 'verifier does not read the registry').toContain(
       'mutation-profile-registry.json',
     );
+    expect(verifier, 'verifier does not consume registry manifest paths').toContain(
+      'PROFILE_MANIFEST_PATH',
+    );
+    expect(verifier, 'verifier duplicates a report or manifest path').not.toContain(
+      'reports/mutation/',
+    );
+
+    const focusedWorkflows = [
+      'mutation-event-core.yml',
+      'mutation-topology.yml',
+      'mutation-identity-jwks.yml',
+      'mutation-schemas.yml',
+      'mandates-semantic-mutation.yml',
+    ];
+    for (const name of focusedWorkflows) {
+      const workflow = readFileSync(join(ROOT, '.github', 'workflows', name), 'utf-8');
+      expect(workflow, `${name}: registry manifest write missing`).toContain(
+        '--write-profile-manifest',
+      );
+      expect(workflow, `${name}: registry manifest verify missing`).toContain(
+        '--verify-profile-manifest',
+      );
+      expect(workflow, `${name}: duplicates a report or manifest path`).not.toContain(
+        'reports/mutation/',
+      );
+      expect(workflow, `${name}: verifier missing from path filter`).toContain(
+        "'scripts/verify-mutation-admission.mjs'",
+      );
+    }
+    for (const name of ['mutation.yml', 'release.yml']) {
+      const workflow = readFileSync(join(ROOT, '.github', 'workflows', name), 'utf-8');
+      expect(workflow, `${name}: registry manifest write missing`).toContain(
+        '--write-profile-manifest',
+      );
+      expect(workflow, `${name}: registry manifest verify missing`).toContain(
+        '--verify-profile-manifest',
+      );
+    }
   });
 });

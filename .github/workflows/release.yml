@@ -210,9 +210,8 @@ jobs:
         run: npm run mutation
       - name: Verify mutation admission
         run: >-
-          node scripts/verify-mutation-admission.mjs --profile base
-          --report reports/mutation/mutation.json
-          --write-manifest reports/mutation/admission-manifest-base.json
+          node scripts/verify-mutation-admission.mjs --profile base --write-profile-manifest
+          node scripts/verify-mutation-admission.mjs --profile base --verify-profile-manifest
 
   release:
     name: release
