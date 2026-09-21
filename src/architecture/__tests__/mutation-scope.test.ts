@@ -470,6 +470,30 @@ describe('mutation scope', () => {
       'reports/mutation/',
     );
 
+    const assertSeparateVerifierCommands = (name: string, workflow: string): void => {
+      expect(workflow, `${name}: folded scalar around the verifier invocation`).not.toMatch(
+        /run: >-[\s\S]{0,600}?verify-mutation-admission/,
+      );
+      const commandLines = workflow
+        .split('\n')
+        .filter((line) =>
+          line.trimStart().startsWith('node scripts/verify-mutation-admission.mjs'),
+        );
+      expect(
+        commandLines.some((line) => line.includes('--write-profile-manifest')),
+        `${name}: --write-profile-manifest is not its own command line`,
+      ).toBe(true);
+      expect(
+        commandLines.some((line) => line.includes('--verify-profile-manifest')),
+        `${name}: --verify-profile-manifest is not its own command line`,
+      ).toBe(true);
+      expect(
+        workflow.indexOf('--write-profile-manifest') <
+          workflow.indexOf('--verify-profile-manifest'),
+        `${name}: write must precede re-verify`,
+      ).toBe(true);
+    };
+
     const focusedWorkflows = [
       'mutation-event-core.yml',
       'mutation-topology.yml',
@@ -491,6 +515,7 @@ describe('mutation scope', () => {
       expect(workflow, `${name}: verifier missing from path filter`).toContain(
         "'scripts/verify-mutation-admission.mjs'",
       );
+      assertSeparateVerifierCommands(name, workflow);
     }
     for (const name of ['mutation.yml', 'release.yml']) {
       const workflow = readFileSync(join(ROOT, '.github', 'workflows', name), 'utf-8');
@@ -500,6 +525,7 @@ describe('mutation scope', () => {
       expect(workflow, `${name}: registry manifest verify missing`).toContain(
         '--verify-profile-manifest',
       );
+      assertSeparateVerifierCommands(name, workflow);
     }
   });
 });
