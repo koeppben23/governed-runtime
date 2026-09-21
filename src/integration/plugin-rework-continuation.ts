@@ -27,25 +27,11 @@ import type { SessionState } from '../state/schema.js';
 import { readState } from '../adapters/persistence.js';
 import { isMutatingHostTool } from './phase-tool-gate.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
-import {
-  TOOL_FLOWGUARD_PLAN,
-  TOOL_FLOWGUARD_IMPLEMENT,
-  TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
-  TOOL_FLOWGUARD_ARCHITECTURE,
-  TOOL_FLOWGUARD_REVIEW,
-  TOOL_FLOWGUARD_RUN_CHECK,
-} from './tool-names.js';
+import { isReviewSignalTool, type ReviewSignalTool } from './review/obligation-tools.js';
+import { TOOL_FLOWGUARD_IMPLEMENT } from './tool-names.js';
 
-export function isReviewableFlowGuardTool(toolName: string): boolean {
-  // Stryker disable next-line ConditionalExpression
-  return [
-    TOOL_FLOWGUARD_PLAN,
-    TOOL_FLOWGUARD_IMPLEMENT,
-    TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
-    TOOL_FLOWGUARD_ARCHITECTURE,
-    TOOL_FLOWGUARD_REVIEW,
-    TOOL_FLOWGUARD_RUN_CHECK,
-  ].includes(toolName);
+export function isReviewableFlowGuardTool(toolName: string): toolName is ReviewSignalTool {
+  return isReviewSignalTool(toolName);
 }
 
 /** Read-only repository investigation tools a repair loop needs to inspect code. */

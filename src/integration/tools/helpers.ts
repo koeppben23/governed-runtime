@@ -90,7 +90,7 @@ export type ToolDefinition = {
   // any is required because OpenCode passes tool args as plain objects
   // and the concrete type depends on each tool's runtime Zod schema,
   // which cannot be known at the ToolDefinition level.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- host-supplied args have no static shape; each tool validates them with its runtime Zod schema
   execute(args: any, context: ToolContext): Promise<ToolResult>;
 };
 

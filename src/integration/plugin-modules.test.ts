@@ -185,7 +185,7 @@ describe('plugin-enforcement-tracking', () => {
     const eState = {} as SessionEnforcementState;
     trackFlowGuardEnforcement(
       eState,
-      'flowguard_status',
+      'flowguard_plan',
       { args: {} },
       { output: '{}' },
       new Date().toISOString(),

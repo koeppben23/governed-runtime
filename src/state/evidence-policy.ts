@@ -12,6 +12,117 @@ import { IdpConfigSchema } from '../shared/policy-idp-config.js';
 import { PolicyModeSchema, CentralMinimumModeSchema } from './policy-mode.js';
 
 /**
+ * Executable policy authorities.
+ *
+ * Each nested policy shape exists exactly once: as a Zod schema here. Runtime
+ * validation parses the schema; TypeScript types are inferred from it; the
+ * config layer re-exports the inferred types as its public surface. There is no
+ * second, hand-written declaration to drift against.
+ */
+
+/** Versioned product decision for evidence-bound review challenges (#747). */
+export const CHALLENGE_POLICY_VERSION = 'challenge-policy.v1' as const;
+
+/**
+ * Versioned review-challenge policy. REQUIRED in the Hard Assurance Epoch:
+ * a snapshot without it would silently disable mandatory challenge coverage
+ * when obligations are minted — absence must fail parsing.
+ */
+export const ChallengePolicySchema = z.object({
+  version: z.literal(CHALLENGE_POLICY_VERSION),
+  counts: z.object({
+    TRIVIAL: z.literal(0),
+    STANDARD: z.literal(1),
+    'HIGH-RISK': z.literal(2),
+  }),
+});
+export type ChallengePolicy = z.infer<typeof ChallengePolicySchema>;
+
+/** Timestamp assurance evidence configuration for audit events. */
+export const TimestampAssurancePolicySchema = z.object({
+  /** Enable timestamp assurance evidence (default: false). */
+  enabled: z.boolean(),
+  /** Assurance mode: local_only, ntp_check, or tsa_critical. */
+  mode: z.enum(['local_only', 'ntp_check', 'tsa_critical']),
+  /**
+   * Strict mode — TSA failure on critical events → session ERROR.
+   * Slice 1 (#269): always false. Inert until a real TSA verifier lands.
+   */
+  strict: z.boolean(),
+  /** Event kinds that require TSA evidence (e.g., decision, lifecycle). */
+  criticalEvents: z.array(z.string()),
+  /** TSA endpoint URL (required in tsa_critical mode). */
+  tsaUrl: z.string().optional(),
+  /** PEM-encoded TSA trust anchor certificates (for Slice 2 verification). */
+  trustAnchors: z.array(z.string()).optional(),
+  /** NTP server hostnames (default: pool.ntp.org). */
+  ntpServers: z.array(z.string()).optional(),
+  /** Max clock drift before warning (ms, default: 30000). */
+  ntpDriftThresholdMs: z.number(),
+  /** TSA request timeout (ms, default: 10000). */
+  tsaTimeoutMs: z.number(),
+});
+export type TimestampAssurancePolicy = z.infer<typeof TimestampAssurancePolicySchema>;
+
+/** Controls which audit events are emitted and how. */
+export const AuditPolicySchema = z.object({
+  /** Emit per-transition audit events (one per state change). */
+  emitTransitions: z.boolean(),
+  /** Emit per-tool-call audit events. */
+  emitToolCalls: z.boolean(),
+  /** Enable SHA-256 hash chain for tamper detection. */
+  enableChainHash: z.boolean(),
+  /** Timestamp assurance evidence configuration. */
+  timestampAssurance: TimestampAssurancePolicySchema,
+});
+export type AuditPolicy = z.infer<typeof AuditPolicySchema>;
+
+/** Canonical iteration budgets for each independent review loop. */
+export const ReviewBudgetSchema = z.object({
+  plan: z.number().int().positive(),
+  architecture: z.number().int().positive(),
+  implementation: z.number().int().positive(),
+});
+export type ReviewBudget = z.infer<typeof ReviewBudgetSchema>;
+
+/**
+ * Policy-gated Discovery health enforcement (#399).
+ *
+ * Two-axis governance:
+ * - enforcement: master switch. 'off' = advisory-only (no new workflow blocks).
+ *   'advisory' = surface warnings/NOT_VERIFIED but never block. 'required' =
+ *   unavailable Discovery ALWAYS blocks; degraded/drift follow the actions.
+ * - onDegraded: action when Discovery is available but degraded or stale.
+ * - onDrift: action when the cached drift verdict is not 'clean'.
+ *
+ * Policy NEVER fabricates Discovery evidence; only governs whether a workflow
+ * may proceed with degraded/unavailable evidence.
+ */
+export const DiscoveryHealthPolicySchema = z.object({
+  enforcement: z.enum(['off', 'advisory', 'required']),
+  onDegraded: z.enum(['allow', 'warn', 'block']),
+  onDrift: z.enum(['allow', 'warn', 'block']),
+});
+export type DiscoveryHealthPolicy = z.infer<typeof DiscoveryHealthPolicySchema>;
+
+/**
+ * Policy-gated validation-evidence enforcement (#400).
+ *
+ * Prevents HIGH-RISK/regulated sessions from passing VALIDATION vacuously when
+ * no Discovery-derived verification commands are available: under 'required',
+ * progression demands at least one applicable active check OR the explicit
+ * policy-backed exception `allowNoCommands`.
+ *
+ * Never fabricates verification evidence and never permits arbitrary fallback
+ * commands; command resolution stays candidate-only.
+ */
+export const ValidationEvidencePolicySchema = z.object({
+  enforcement: z.enum(['off', 'advisory', 'required']),
+  allowNoCommands: z.boolean(),
+});
+export type ValidationEvidencePolicy = z.infer<typeof ValidationEvidencePolicySchema>;
+
+/**
  * Immutable policy snapshot embedded in SessionState.
  *
  * Stores all FlowGuard-critical fields so auditors can verify which rules
@@ -69,11 +180,7 @@ export const PolicySnapshotSchema = z
 
     // ─── Governance-critical fields (frozen copy) ───────────────
     requireHumanGates: z.boolean(),
-    reviewBudget: z.object({
-      plan: z.number().int().positive(),
-      architecture: z.number().int().positive(),
-      implementation: z.number().int().positive(),
-    }),
+    reviewBudget: ReviewBudgetSchema,
     /** Frozen retry budget for F12-incoherent reviewer captures. */
     maxIncoherentReviewerCaptureRetries: z.number().int().nonnegative(),
     /** Frozen obligation-level reviewer-attempt budget. */
@@ -98,14 +205,7 @@ export const PolicySnapshotSchema = z
      * a snapshot without it would silently disable mandatory challenge
      * coverage when obligations are minted — absence must fail parsing.
      */
-    challengePolicy: z.object({
-      version: z.literal('challenge-policy.v1'),
-      counts: z.object({
-        TRIVIAL: z.literal(0),
-        STANDARD: z.literal(1),
-        'HIGH-RISK': z.literal(2),
-      }),
-    }),
+    challengePolicy: ChallengePolicySchema,
     /** Runtime risk-classification enforcement frozen at hydrate time. */
     enforceRiskClassification: z.boolean(),
     /** Structured downgrade override permission. */
@@ -113,32 +213,10 @@ export const PolicySnapshotSchema = z
     /** Reduced ceremony permission. */
     allowReducedCeremony: z.boolean(),
     /** Policy-gated Discovery health enforcement frozen at hydrate time (#399). */
-    discoveryHealth: z.object({
-      enforcement: z.enum(['off', 'advisory', 'required']),
-      onDegraded: z.enum(['allow', 'warn', 'block']),
-      onDrift: z.enum(['allow', 'warn', 'block']),
-    }),
+    discoveryHealth: DiscoveryHealthPolicySchema,
     /** Policy-gated validation-evidence enforcement frozen at hydrate time (#400). */
-    validationEvidence: z.object({
-      enforcement: z.enum(['off', 'advisory', 'required']),
-      allowNoCommands: z.boolean(),
-    }),
-    audit: z.object({
-      emitTransitions: z.boolean(),
-      emitToolCalls: z.boolean(),
-      enableChainHash: z.boolean(),
-      timestampAssurance: z.object({
-        enabled: z.boolean(),
-        mode: z.enum(['local_only', 'ntp_check', 'tsa_critical']),
-        strict: z.boolean(),
-        criticalEvents: z.array(z.string()),
-        tsaUrl: z.string().optional(),
-        trustAnchors: z.array(z.string()).optional(),
-        ntpServers: z.array(z.string()).optional(),
-        ntpDriftThresholdMs: z.number(),
-        tsaTimeoutMs: z.number(),
-      }),
-    }),
+    validationEvidence: ValidationEvidencePolicySchema,
+    audit: AuditPolicySchema,
     /**
      * Actor classification map — frozen copy from policy preset.
      * Maps tool names to actor labels for the audit trail.

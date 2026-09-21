@@ -48,6 +48,7 @@ import {
   resolveReviewObligationTool,
   reviewSignalOwner,
   type ReviewableTool,
+  type ReviewSignalTool,
 } from '../obligation-tools.js';
 import { parseToolResult } from '../../blocked-result.js';
 import type { TerminalPhasePredicate } from './types.js';
@@ -101,7 +102,7 @@ export interface ReviewTrackingDeps {
 
 export function onFlowGuardToolAfter(
   state: SessionEnforcementState,
-  toolName: string,
+  toolName: ReviewSignalTool,
   args: Record<string, unknown>,
   output: string,
   deps: ReviewTrackingDeps,
@@ -116,7 +117,7 @@ export function onFlowGuardToolAfter(
   return trackRequiredReview(state, reviewContext, parsed, deps.now);
 }
 
-function resolveReviewTrackingContext(toolName: string): {
+function resolveReviewTrackingContext(toolName: ReviewSignalTool): {
   obligationTool: ReviewableTool | undefined;
   signalOwner: ReviewableTool | undefined;
 } | null {

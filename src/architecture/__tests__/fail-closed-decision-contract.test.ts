@@ -13,9 +13,10 @@
  *      so `decision['code']!` or `(decision.code)!` cannot bypass it.
  *   F3 The scan is default-wide via `production-source.ts` with no allowlist.
  *
- * Compiler note: with `exactOptionalPropertyTypes` disabled, an allowed decision
- * may still spell `code: undefined`; a concrete denial code is forbidden. When
- * that flag is enabled the contract tightens automatically.
+ * Compiler note: with `exactOptionalPropertyTypes` enabled (`tsconfig.json`),
+ * an allowed decision cannot spell `code: undefined`, and a denied decision
+ * cannot spell `code: undefined` or `reason: undefined`. A concrete denial code
+ * is forbidden on allowed decisions regardless.
  *
  * @version v1
  */
@@ -47,6 +48,20 @@ const _missingCodeMustFail: GateDecision<TestCode> = { allowed: false, reason: '
 
 // @ts-expect-error — denied decisions require a reason
 const _missingReasonMustFail: GateDecision<TestCode> = { allowed: false, code: 'DENIED' };
+
+type Decision = GateDecision<TestCode>;
+
+// @ts-expect-error — denied decisions reject an explicit `code: undefined`
+const _undefinedCodeMustFail: Decision = { allowed: false, code: undefined, reason: 'r' };
+
+// @ts-expect-error — denied decisions reject an explicit `reason: undefined`
+const _undefinedReasonMustFail: Decision = { allowed: false, code: 'DENIED', reason: undefined };
+
+// @ts-expect-error — allowed decisions reject an explicit `code: undefined`
+const _allowedUndefinedCodeMustFail: Decision = { allowed: true, code: undefined };
+
+// @ts-expect-error — allowed decisions reject an explicit `reason: undefined`
+const _allowedUndefinedReasonMustFail: Decision = { allowed: true, reason: undefined };
 
 const pollutedAllowValue = { allowed: true as const, code: 'DENIED', reason: 'reason' };
 

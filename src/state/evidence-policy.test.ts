@@ -5,7 +5,15 @@
  *              hydrate writer persists; incomplete snapshots are rejected.
  */
 import { describe, it, expect } from 'vitest';
-import { PolicySnapshotSchema } from './evidence-policy.js';
+import {
+  AuditPolicySchema,
+  ChallengePolicySchema,
+  DiscoveryHealthPolicySchema,
+  PolicySnapshotSchema,
+  ReviewBudgetSchema,
+  TimestampAssurancePolicySchema,
+  ValidationEvidencePolicySchema,
+} from './evidence-policy.js';
 import { FIXED_TIME } from './evidence-test-constants.js';
 import { POLICY_DIGEST_VERSION } from './evidence-identifiers.js';
 
@@ -200,6 +208,70 @@ describe('evidence-policy', () => {
         enforcement: 'required',
         allowNoCommands: true,
       });
+    });
+  });
+
+  // The nested executable policy shapes are authored once as Zod schemas in
+  // evidence-policy.ts. These fixtures prove each authority rejects foreign
+  // shapes directly, not only through the composed PolicySnapshotSchema.
+  describe('nested policy authorities', () => {
+    it('ChallengePolicySchema rejects a foreign version and a non-matrix count', () => {
+      expect(
+        ChallengePolicySchema.safeParse({
+          version: 'challenge-policy.v2',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        }).success,
+      ).toBe(false);
+      expect(
+        ChallengePolicySchema.safeParse({
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 2, 'HIGH-RISK': 2 },
+        }).success,
+      ).toBe(false);
+    });
+
+    it('TimestampAssurancePolicySchema rejects a non-canonical mode and a missing threshold', () => {
+      const base = CURRENT_SNAPSHOT.audit.timestampAssurance;
+      expect(TimestampAssurancePolicySchema.safeParse({ ...base, mode: 'ntp' }).success).toBe(
+        false,
+      );
+      const { ntpDriftThresholdMs: _threshold, ...withoutThreshold } = base;
+      expect(TimestampAssurancePolicySchema.safeParse(withoutThreshold).success).toBe(false);
+    });
+
+    it('AuditPolicySchema requires timestampAssurance', () => {
+      const { timestampAssurance: _ts, ...audit } = CURRENT_SNAPSHOT.audit;
+      expect(AuditPolicySchema.safeParse(audit).success).toBe(false);
+    });
+
+    it.each([0, -1, 1.5])('ReviewBudgetSchema rejects non-positive-integer budget %p', (plan) => {
+      expect(
+        ReviewBudgetSchema.safeParse({ plan, architecture: 3, implementation: 3 }).success,
+      ).toBe(false);
+    });
+
+    it('DiscoveryHealthPolicySchema rejects unknown enforcement and actions', () => {
+      expect(
+        DiscoveryHealthPolicySchema.safeParse({
+          enforcement: 'sometimes',
+          onDegraded: 'warn',
+          onDrift: 'block',
+        }).success,
+      ).toBe(false);
+      expect(
+        DiscoveryHealthPolicySchema.safeParse({
+          enforcement: 'required',
+          onDegraded: 'maybe',
+          onDrift: 'block',
+        }).success,
+      ).toBe(false);
+    });
+
+    it('ValidationEvidencePolicySchema rejects an unknown enforcement mode', () => {
+      expect(
+        ValidationEvidencePolicySchema.safeParse({ enforcement: 'warn', allowNoCommands: false })
+          .success,
+      ).toBe(false);
     });
   });
 

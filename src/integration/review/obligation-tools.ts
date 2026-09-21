@@ -97,3 +97,22 @@ export function obligationTypeForTool(toolName: string): ReviewObligationType | 
 
 /** Canonical ordered list for tests and docs guards. */
 export const REVIEWABLE_TOOLS = Object.keys(REVIEW_OBLIGATION_BY_TOOL) as ReviewableTool[];
+
+/**
+ * Tools whose responses can carry a review signal tracked by the after-hook:
+ * the obligation-owning reviewable tools plus the verdict/diagnostic emitters
+ * that resolve to an owning obligation.
+ */
+export type ReviewSignalTool =
+  ReviewableTool | typeof TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION | typeof TOOL_FLOWGUARD_RUN_CHECK;
+
+const REVIEW_SIGNAL_TOOL_SET: ReadonlySet<string> = new Set<ReviewSignalTool>([
+  ...REVIEWABLE_TOOLS,
+  TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
+  TOOL_FLOWGUARD_RUN_CHECK,
+]);
+
+/** Type-guard: can this tool's response carry a trackable review signal? */
+export function isReviewSignalTool(toolName: string): toolName is ReviewSignalTool {
+  return REVIEW_SIGNAL_TOOL_SET.has(toolName);
+}

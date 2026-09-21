@@ -7,8 +7,10 @@ This file adds instructions for files in this directory subtree.
 ## Authority
 
 `src/config/` is the canonical authority for FlowGuard configuration schemas,
-reason codes, and policy type definitions. It defines schemas, not runtime
-state.
+reason codes, and the policy API surface. Executable policy shapes are authored
+as Zod schemas in `src/state/evidence-policy.ts` (they are part of
+`PolicySnapshot`); config re-exports their inferred types. It defines schemas,
+not runtime state.
 
 ## Reason Codes
 
@@ -31,7 +33,14 @@ npx vitest run --project unit src/config/reasons-completeness.test.ts
 
 ## Policy Types
 
-- Core policy types are defined in `policy-types.ts`.
+- Executable policy shapes (`AuditPolicy`, `TimestampAssurancePolicy`,
+  `ChallengePolicy`, `ReviewBudget`, `DiscoveryHealthPolicy`,
+  `ValidationEvidencePolicy`) are authored once as Zod schemas in
+  `state/evidence-policy.ts`; `policy-types.ts` re-exports the inferred types
+  and derives the mode vocabularies from them. Do not re-declare a shape here.
+- `CHALLENGE_POLICY_VERSION` is owned by `state/evidence-policy.ts` and
+  re-exported through `policy-types.ts`/`policy.ts`. Do not re-declare the
+  literal.
 - Policy resolution logic is split across `policy-resolver.ts`, `policy-central.ts`,
   `policy-ci.ts`, and `policy-snapshot.ts`.
 - `PolicySnapshot` parity: every executable `FlowGuardPolicy` field must be
