@@ -14,7 +14,7 @@ import {
   renderReviewerCriteria,
   type ReviewerPromptType,
 } from '../../templates/mandates-reviewer-criteria.js';
-import { renderPersistedProofGraphContext } from './proof-context.js';
+import { renderPersistedProofGraphContext } from './context/proof-context.js';
 import { renderFindingRelationGrammar } from './finding-relation-grammar.js';
 import { renderRepositoryObservationContract } from './observation-contract-prompt.js';
 import { CANONICAL_PROMPT_APPEND_MARKER } from './enforcement/types.js';
@@ -27,7 +27,7 @@ import {
   resolveReviewerDiscoverySection,
   CORE_REVIEW_PROFILE_MARKER,
 } from './prompt-sections.js';
-import type { FrozenReviewerContext } from './frozen-reviewer-context.js';
+import type { FrozenReviewerContext } from '../../state/review-continuation.js';
 import type { RepositoryDiscoverySnapshot } from '../../state/evidence.js';
 import {
   renderReviewChallengeContract,

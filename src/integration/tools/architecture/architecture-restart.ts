@@ -40,25 +40,25 @@ import {
 import {
   resolveReviewDispatchAuthority,
   reviewObligationResponseFields,
-} from '../../review/dispatch-authority.js';
-import type { ReviewDispatchAuthority } from '../../review/dispatch-authority.js';
+} from '../../review/dispatch/dispatch-authority.js';
+import type { ReviewDispatchAuthority } from '../../review/dispatch/dispatch-authority.js';
 import {
   resolveReviewContinuation,
   type ReviewContinuation,
 } from '../../review/review-continuation.js';
 import { blockObligation } from '../../review/obligation-state.js';
-import { buildInterruptedDispatchRearm } from '../../review/durable-dispatch.js';
+import { buildInterruptedDispatchRearm } from '../../review/dispatch/durable-dispatch.js';
 import { resolvePreImplementationChallengeClassification } from '../challenge/pre-implementation-challenge.js';
 import {
   freezeContextAuthorityAtHead,
   freezeOutcomeRecord,
   frozenAuthorityOrUndefined,
 } from '../../../rails/repository-authority.js';
-import { resolveAttemptDiscoveryOrBlock } from '../../review/discovery-attempt-context.js';
+import { resolveAttemptDiscoveryOrBlock } from '../../review/context/discovery-attempt-context.js';
 import { renderPlanClaimDeclarations } from '../../../presentation/index.js';
 import { repositoryEvidenceUnavailableField } from '../../review/observation-access.js';
 import { hasFrozenRepositoryAuthority } from '../../../state/evidence.js';
-import { buildFrozenReviewMaterialContent } from '../../review/reviewer-context.js';
+import { buildFrozenReviewMaterialContent } from '../../review/context/reviewer-context.js';
 import {
   buildArchitectureReviewInstruction,
   type ArchitectureArgs,

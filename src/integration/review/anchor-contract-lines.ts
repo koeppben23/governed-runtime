@@ -17,7 +17,7 @@
  */
 
 import type { ReviewObligation } from '../../state/evidence.js';
-import { renderArtifactAnchorContract } from './frozen-reviewer-context.js';
+import { renderArtifactAnchorContract } from './context/frozen-reviewer-context.js';
 import type { RepositoryObservationAccess } from './observation-access.js';
 
 export function buildArtifactAnchorContractLines(

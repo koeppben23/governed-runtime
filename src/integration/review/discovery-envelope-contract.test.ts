@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RepositoryDiscoverySnapshot } from '../../state/evidence.js';
 import { renderReviewerTaskPrompt, buildReviewContentPrompt } from './prompt-builders.js';
-import type { FrozenReviewerContext } from './frozen-reviewer-context.js';
+import type { FrozenReviewerContext } from '../../state/review-continuation.js';
 import { CANONICAL_PROMPT_APPEND_MARKER } from './enforcement/types.js';
 
 const NOW = '2026-01-01T00:00:00.000Z';

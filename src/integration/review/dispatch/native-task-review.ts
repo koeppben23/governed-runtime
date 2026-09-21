@@ -11,35 +11,38 @@
  * native-task-review-bindings.ts.
  */
 
-import { readState } from '../../adapters/persistence.js';
-import { buildEnforcementError, strictBlockedOutput } from '../blocked-result.js';
+import { readState } from '../../../adapters/persistence.js';
+import { buildEnforcementError, strictBlockedOutput } from '../../blocked-result.js';
 
-import type { SessionEnforcementState } from './enforcement/types.js';
-import type { OrchestratorDeps } from './pipeline-types.js';
+import type { SessionEnforcementState } from '../enforcement/types.js';
+import type { OrchestratorDeps } from '../pipeline-types.js';
 import type {
   ToolHookAfterInput,
   ToolHookAfterOutput,
   ToolHookBeforeInput,
   ToolHookBeforeOutput,
-} from '../types.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
-import type { ReviewObligation, ReviewObligationType } from '../../state/evidence.js';
-import { hashText } from '../../shared/hashing.js';
+} from '../../types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
+import type { ReviewObligation, ReviewObligationType } from '../../../state/evidence.js';
+import { hashText } from '../../../shared/hashing.js';
 import {
   ensureReviewAssurance,
   findBindableAttempt,
   isCurrentReviewGeneration,
-} from './assurance.js';
+} from '../assurance.js';
 import {
   hasReleasedDispatch,
   verifyFrozenMaterialForObligation,
-} from '../../state/review-continuation.js';
-import { renderReviewerTaskPrompt } from './prompt-builders.js';
+} from '../../../state/review-continuation.js';
+import { renderReviewerTaskPrompt } from '../prompt-builders.js';
 import { reviewerPromptTypeForTask } from './reviewer-task-type.js';
-import { renderArtifactAnchorContract } from './frozen-reviewer-context.js';
-import { resolveObservationRevisions } from './observation-access.js';
-import { buildReviewChallengeContract } from './challenge-contract.js';
-import { buildReviewerProofContext, type ReviewerProofGraphAuthorities } from './proof-context.js';
+import { renderArtifactAnchorContract } from '../context/frozen-reviewer-context.js';
+import { resolveObservationRevisions } from '../observation-access.js';
+import { buildReviewChallengeContract } from '../challenge-contract.js';
+import {
+  buildReviewerProofContext,
+  type ReviewerProofGraphAuthorities,
+} from '../context/proof-context.js';
 import {
   abandonReviewDispatchByHostCall,
   persistAuthorizedReviewDispatch,

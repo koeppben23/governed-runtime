@@ -7,16 +7,19 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
-import { SessionState } from '../../state/schema.js';
-import { hasReleasedDispatch, resolveReviewContinuation } from '../../state/review-continuation.js';
-import { makeState } from '../../fixtures.js';
+import { SessionState } from '../../../state/schema.js';
+import {
+  hasReleasedDispatch,
+  resolveReviewContinuation,
+} from '../../../state/review-continuation.js';
+import { makeState } from '../../../fixtures.js';
 import {
   abandonReviewDispatchByHostCall,
   buildInterruptedDispatchRearm,
   persistAuthorizedReviewDispatch,
   type DispatchLedgerWriteDeps,
 } from './durable-dispatch.js';
-import { recordEvidenceOrBlockReuse } from './reviewer-evidence-recorder.js';
+import { recordEvidenceOrBlockReuse } from '../reviewer-evidence-recorder.js';
 import {
   artifactReviewSubjectScope,
   appendObligationWithAttempt,
@@ -24,8 +27,8 @@ import {
   ensureReviewAssurance,
   freezeReviewMaterial,
   hashFindings,
-} from './assurance.js';
-import type { ReviewerSuccessResult } from './types.js';
+} from '../assurance.js';
+import type { ReviewerSuccessResult } from '../types.js';
 
 const NOW = '2026-05-10T12:00:00.000Z';
 const CHILD = 'child-session-dispatch-1';

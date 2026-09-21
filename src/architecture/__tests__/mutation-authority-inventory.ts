@@ -972,15 +972,15 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     { legacy: true },
   ),
   required(
-    'src/integration/review/dispatch-signal.ts',
+    'src/integration/review/dispatch/dispatch-signal.ts',
     'Review dispatch signal detection',
-    ['src/integration/review/dispatch-signal.test.ts'],
+    ['src/integration/review/dispatch/dispatch-signal.test.ts'],
     { legacy: true },
   ),
   required(
-    'src/integration/review/agent-resolution.ts',
+    'src/integration/review/dispatch/agent-resolution.ts',
     'Reviewer agent resolution',
-    ['src/integration/review/agent-resolution.test.ts'],
+    ['src/integration/review/dispatch/agent-resolution.test.ts'],
     { legacy: true, critical: true },
   ),
   required(

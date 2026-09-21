@@ -15,7 +15,7 @@ import {
   createSessionCompletionAuditDeps,
   executeRegulatedCompletion,
 } from '../../services/regulated-completion.js';
-import { projectLatestReviewExecution } from '../../review/review-execution-projection.js';
+import { projectLatestReviewExecution } from '../../review/dispatch/review-execution-projection.js';
 import { formatBlocked } from '../../blocked-result.js';
 import {
   withMutableSessionTransaction,

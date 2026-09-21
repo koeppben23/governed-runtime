@@ -13,12 +13,12 @@
  * - declarations are stated intent and are explicitly NOT evidence.
  */
 
-import type { RiskTrigger, SessionState } from '../../state/schema.js';
-import type { ProofGraphProjection } from '../../state/proofgraph.js';
+import type { RiskTrigger, SessionState } from '../../../state/schema.js';
+import type { ProofGraphProjection } from '../../../state/proofgraph.js';
 import {
   authorizedCriticalPlanClaimIds,
   type PlanClaimDeclarations,
-} from '../../state/proofgraph-approval.js';
+} from '../../../state/proofgraph-approval.js';
 
 /**
  * Structural ProofGraph gate port. review/ must not import audit/; the host

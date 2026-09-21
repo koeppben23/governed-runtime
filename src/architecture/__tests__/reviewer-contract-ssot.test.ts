@@ -118,7 +118,7 @@ describe('reviewer contract SSOT guard', () => {
     );
     // Grammar imports REVISION_VALUES and renders them dynamically
     expect(content).toContain('REVISION_VALUES');
-    expect(content).toContain("from './reviewer-contract.js'");
+    expect(content).toContain("from './context/reviewer-contract.js'");
     // The revision rules section still documents the invariant
     expect(content).toContain('revision is a frozen alias');
     expect(content).toContain('never a SHA');
@@ -141,7 +141,7 @@ describe('reviewer contract SSOT guard', () => {
 
   it('findings-schema.ts imports all canonical enum values from reviewer-contract.ts', () => {
     const content = readFileSync(join(SRC_ROOT, 'integration/review/findings-schema.ts'), 'utf8');
-    expect(content).toContain("from './reviewer-contract.js'");
+    expect(content).toContain("from './context/reviewer-contract.js'");
     expect(content).toContain('SEVERITY_VALUES');
     expect(content).toContain('CATEGORY_VALUES');
     expect(content).toContain('REVISION_VALUES');
@@ -158,7 +158,7 @@ describe('reviewer contract SSOT guard', () => {
       join(SRC_ROOT, 'integration/review/finding-relation-grammar.ts'),
       'utf8',
     );
-    expect(content).toContain("from './reviewer-contract.js'");
+    expect(content).toContain("from './context/reviewer-contract.js'");
     expect(content).toContain('SEVERITY_VALUES');
     expect(content).toContain('CATEGORY_VALUES');
     expect(content).toContain('REVISION_VALUES');

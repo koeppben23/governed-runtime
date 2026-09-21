@@ -31,7 +31,7 @@ import { isTestSourcePath } from './module-classification.js';
 import type { IntegrationPlacementZone } from './integration-placement-policy.js';
 
 /** Public facade of the review bounded context. */
-export const REVIEW_FACADE_FILE = 'integration/review/index.ts';
+const REVIEW_FACADE_FILE = 'integration/review/index.ts';
 
 /** Prefix of the review bounded context inside `src/`. */
 const REVIEW_DIR_PREFIX = 'integration/review/';
@@ -83,7 +83,7 @@ function reviewZoneOf(
 const MODULE_SPECIFIER_PATTERN = /(?:from|import)\s*\(?\s*["']([^"']+)["']/g;
 
 /** Relative module specifiers (static import/export and dynamic import). */
-export function relativeSpecifiers(content: string): string[] {
+function relativeSpecifiers(content: string): string[] {
   const out: string[] = [];
   for (const match of content.matchAll(MODULE_SPECIFIER_PATTERN)) {
     const specifier = match[1];

@@ -57,7 +57,7 @@ import {
   resolveChallengeRequirements,
   requireArtifactSubjectScope,
   requireImplementationSubjectScope,
-} from './subject-scope.js';
+} from './context/subject-scope.js';
 
 function resolveSubjectDigest(input: {
   subjectDigest: string;

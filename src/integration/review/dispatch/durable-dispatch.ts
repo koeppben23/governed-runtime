@@ -11,18 +11,18 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { buildEnforcementError } from '../blocked-result.js';
+import { buildEnforcementError } from '../../blocked-result.js';
 
-import { authorizeDispatchRearm } from './reissue-authority.js';
-import { createAttemptForExistingObligation } from './assurance.js';
+import { authorizeDispatchRearm } from '../reissue-authority.js';
+import { createAttemptForExistingObligation } from '../assurance.js';
 import {
   abandonReviewDispatch,
   appendReviewDispatch,
   ensureReviewAssurance,
   markDispatchOutcomeUnknown,
-} from '../../state/review-continuation.js';
-import type { ReviewAttempt, ReviewDispatchRecord } from '../../state/evidence-review.js';
-import type { SessionState } from '../../state/schema.js';
+} from '../../../state/review-continuation.js';
+import type { ReviewAttempt, ReviewDispatchRecord } from '../../../state/evidence-review.js';
+import type { SessionState } from '../../../state/schema.js';
 
 const REVIEW_DISPATCH_PERSISTENCE_FAILED = 'REVIEW_DISPATCH_PERSISTENCE_FAILED' as const;
 

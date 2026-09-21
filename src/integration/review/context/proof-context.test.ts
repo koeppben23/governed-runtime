@@ -8,11 +8,11 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { makeState, PLAN_RECORD, ARCHITECTURE_DECISION } from '../../fixtures.js';
-import type { SessionState } from '../../state/schema.js';
-import type { ProofGraphProjection } from '../../state/proofgraph.js';
-import { evaluateProofGraphGate } from '../../audit/proofgraph/gate.js';
-import { renderPlanClaimDeclarations } from '../../presentation/index.js';
+import { makeState, PLAN_RECORD, ARCHITECTURE_DECISION } from '../../../fixtures.js';
+import type { SessionState } from '../../../state/schema.js';
+import type { ProofGraphProjection } from '../../../state/proofgraph.js';
+import { evaluateProofGraphGate } from '../../../audit/proofgraph/gate.js';
+import { renderPlanClaimDeclarations } from '../../../presentation/index.js';
 import {
   buildReviewerProofContext as rawBuildReviewerProofContext,
   renderCoverageGaps,

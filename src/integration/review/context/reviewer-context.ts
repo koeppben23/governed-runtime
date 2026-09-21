@@ -3,10 +3,10 @@
  * @description Freeze host-owned comparison context into reviewer material.
  */
 
-import type { SessionState } from '../../state/schema.js';
-import type { PlanClaimDeclarations } from '../../state/proofgraph-approval.js';
-import { canonicalJsonStringify } from '../../shared/canonical-json.js';
-import { stateVerificationEvidence } from './shared-helpers.js';
+import type { SessionState } from '../../../state/schema.js';
+import type { PlanClaimDeclarations } from '../../../state/proofgraph-approval.js';
+import { canonicalJsonStringify } from '../../../shared/canonical-json.js';
+import { stateVerificationEvidence } from '../shared-helpers.js';
 
 /**
  * Presentation cleanup (NOT requirement provenance): when no ticket was

@@ -1,7 +1,7 @@
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
-import type { ReviewHostPlatform, ReviewOrchestrationMode } from './orchestration-mode.js';
-import { reviewDispatchRequired } from './dispatch-signal.js';
-import type { ReviewDispatchAuthority } from './dispatch-authority.js';
+import type { ReviewHostPlatform, ReviewOrchestrationMode } from './dispatch/orchestration-mode.js';
+import { reviewDispatchRequired } from './dispatch/dispatch-signal.js';
+import type { ReviewDispatchAuthority } from './dispatch/dispatch-authority.js';
 
 export interface ChildSessionReviewInstructionInput {
   readonly mode: ReviewOrchestrationMode;

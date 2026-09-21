@@ -12,8 +12,8 @@
  * @version v2
  */
 
-import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
-import type { OrchestratorClient } from './types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
+import type { OrchestratorClient } from '../types.js';
 
 /** Primary reviewer agent installed with host-side read-only restrictions. */
 export const REVIEWER_AGENT_PRIMARY = REVIEWER_SUBAGENT_TYPE;

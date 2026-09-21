@@ -19,7 +19,7 @@ import {
   SESSION_ID,
   CHILD_SESSION_ID,
 } from './plugin-host-task-diagnostics-test-helpers.js';
-import { reviewDispatchRequired } from './review/dispatch-signal.js';
+import { reviewDispatchRequired } from './review/dispatch/dispatch-signal.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════

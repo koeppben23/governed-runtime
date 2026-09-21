@@ -2,18 +2,18 @@
  * @module integration/review/discovery-provenance-projection
  * @description Regression coverage for reviewer-visible Discovery provenance.
  */
-import type { DiscoveryDriftStatusProjection } from '../discovery/discovery-drift-status.js';
-import { REVIEW_DISCOVERY_PROVIDER } from '../discovery/review-discovery-provider.js';
+import type { DiscoveryDriftStatusProjection } from '../../discovery/discovery-drift-status.js';
+import { REVIEW_DISCOVERY_PROVIDER } from '../../discovery/review-discovery-provider.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { makeState } from '../../fixtures.js';
-import { RepositoryDiscoverySnapshot } from '../../state/evidence-review-attempt-discovery.js';
+import { makeState } from '../../../fixtures.js';
+import { RepositoryDiscoverySnapshot } from '../../../state/evidence-review-attempt-discovery.js';
 import { buildReviewDiscoveryContext } from './discovery-context-loader.js';
 import {
   buildDiscoveryContextSection,
   buildRepositoryDiscoverySnapshotSection,
   type DiscoveryReviewContext,
-} from './discovery-context-prompt.js';
+} from '../discovery-context-prompt.js';
 import { resolveReviewAttemptDiscoveryContext } from './discovery-attempt-context.js';
 
 vi.mock('./discovery-context-loader.js', () => ({

@@ -7,8 +7,8 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { IMPL_EVIDENCE, VALIDATION_PASSED, makeState } from '../../fixtures.js';
-import { renderPlanClaimDeclarations } from '../../presentation/index.js';
+import { IMPL_EVIDENCE, VALIDATION_PASSED, makeState } from '../../../fixtures.js';
+import { renderPlanClaimDeclarations } from '../../../presentation/index.js';
 import { buildFrozenReviewMaterialContent } from './reviewer-context.js';
 
 const ATTEMPT_ID = '22222222-2222-4222-8222-222222222222';

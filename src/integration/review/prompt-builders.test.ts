@@ -9,10 +9,10 @@ import {
   renderFrozenReviewSubjectEnvelope,
   renderReviewerTaskPrompt,
 } from './prompt-builders.js';
-import { renderPersistedProofGraphContext } from './proof-context.js';
+import { renderPersistedProofGraphContext } from './context/proof-context.js';
 import { renderPlanClaimDeclarations } from '../../presentation/index.js';
-import { buildFrozenReviewMaterialContent } from './reviewer-context.js';
-import type { FrozenReviewerContext } from './frozen-reviewer-context.js';
+import { buildFrozenReviewMaterialContent } from './context/reviewer-context.js';
+import type { FrozenReviewerContext } from '../../state/review-continuation.js';
 
 const BASE_INPUT = {
   iteration: 0,

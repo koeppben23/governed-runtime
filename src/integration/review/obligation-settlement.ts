@@ -30,7 +30,7 @@
 
 import type { SessionState } from '../../state/schema.js';
 import { ensureReviewAssurance, findBindableAttempt } from './assurance.js';
-import { verifyFrozenMaterialForObligation } from './frozen-reviewer-context.js';
+import { verifyFrozenMaterialForObligation } from '../../state/review-continuation.js';
 import { blockObligation } from './obligation-state.js';
 
 /**

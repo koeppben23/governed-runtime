@@ -52,7 +52,7 @@ import { findLatestObligation } from '../../review/assurance.js';
 import {
   resolveReviewDispatchAuthority,
   type ReviewDispatchAuthority,
-} from '../../review/dispatch-authority.js';
+} from '../../review/dispatch/dispatch-authority.js';
 import { resolvePreImplementationChallengeClassification } from '../challenge/pre-implementation-challenge.js';
 import {
   buildPlanEvidence,

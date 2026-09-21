@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 import type { IntegrationPlacementZone } from './integration-placement-policy.js';
 import {
   analyzeReviewZonePolicy,
+  describeZoneEdges,
   resolveSpecifier,
   zoneEdgeKey,
   type ReviewZoneSource,
@@ -38,6 +39,12 @@ function analyze(sources: readonly ReviewZoneSource[], declared: readonly string
 }
 
 describe('review zone policy', () => {
+  it('renders zone edges deterministically for diagnostics', () => {
+    expect(describeZoneEdges(['review/b -> review/c', 'review/a -> review/b'])).toBe(
+      'review/a -> review/b\nreview/b -> review/c',
+    );
+  });
+
   it('resolves relative specifiers including extensionless facade paths', () => {
     expect(resolveSpecifier('integration/review/dispatch/a.ts', '../index.js')).toBe(
       'integration/review/index.ts',

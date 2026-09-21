@@ -10,13 +10,13 @@
  * @version v1
  */
 
-import type { ReviewSubjectScope } from '../../state/evidence-review.js';
-import type { TaskClass } from '../../state/schema.js';
-import { assessMinimumTaskClass, maxTaskClass } from '../phase-tool-gate.js';
-import { challengeKindForObligation, type ChallengeKind } from '../../config/policy-types.js';
-import type { PolicySnapshot } from '../../state/evidence.js';
-import type { ReviewObligationType } from '../../state/evidence.js';
-import { IntegrationInvariantError } from '../errors.js';
+import type { ReviewSubjectScope } from '../../../state/evidence-review.js';
+import type { TaskClass } from '../../../state/schema.js';
+import { assessMinimumTaskClass, maxTaskClass } from '../../phase-tool-gate.js';
+import { challengeKindForObligation, type ChallengeKind } from '../../../config/policy-types.js';
+import type { PolicySnapshot } from '../../../state/evidence.js';
+import type { ReviewObligationType } from '../../../state/evidence.js';
+import { IntegrationInvariantError } from '../../errors.js';
 
 /**
  * Pre-implementation artifact reviews (plan, ADR) MUST mint an explicit

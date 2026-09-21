@@ -17,7 +17,7 @@ import {
   freezeContextAuthorityAtHead,
   frozenAuthorityOrUndefined,
 } from '../../../rails/repository-authority.js';
-import { resolveAttemptDiscoveryOrBlock } from '../../review/discovery-attempt-context.js';
+import { resolveAttemptDiscoveryOrBlock } from '../../review/context/discovery-attempt-context.js';
 import { projectMarkdownHeadings } from '../../../shared/markdown-sections.js';
 import { formatBlocked } from '../../blocked-result.js';
 

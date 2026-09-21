@@ -1,4 +1,4 @@
-import type { ReviewerPromptType } from '../../templates/mandates-reviewer-criteria.js';
+import type { ReviewerPromptType } from '../../../templates/mandates-reviewer-criteria.js';
 
 export type ReviewerTaskKind = 'plan' | 'implementation' | 'architecture' | 'review' | 'implement';
 

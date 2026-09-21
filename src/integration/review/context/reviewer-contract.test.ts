@@ -11,7 +11,7 @@
  * record, which exists only after the host stamps provenance.
  */
 import { describe, expect, it } from 'vitest';
-import { ReviewFindings, ReviewerFindingsInput } from '../../state/evidence.js';
+import { ReviewFindings, ReviewerFindingsInput } from '../../../state/evidence.js';
 import {
   SEVERITY_VALUES,
   CATEGORY_VALUES,

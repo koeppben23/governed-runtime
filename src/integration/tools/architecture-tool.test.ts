@@ -52,11 +52,12 @@ vi.mock('../blocked-result.js', async (importOriginal) => ({
 }));
 
 const discoveryMock = vi.hoisted(() => ({
-  fn: undefined as unknown as (typeof import('../review/discovery-attempt-context.js'))['resolveAttemptDiscoveryOrBlock'],
+  fn: undefined as unknown as (typeof import('../review/context/discovery-attempt-context.js'))['resolveAttemptDiscoveryOrBlock'],
 }));
 
-vi.mock('../review/discovery-attempt-context.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../review/discovery-attempt-context.js')>();
+vi.mock('../review/context/discovery-attempt-context.js', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../review/context/discovery-attempt-context.js')>();
   discoveryMock.fn = vi.fn(actual.resolveAttemptDiscoveryOrBlock);
   return { ...actual, resolveAttemptDiscoveryOrBlock: discoveryMock.fn };
 });

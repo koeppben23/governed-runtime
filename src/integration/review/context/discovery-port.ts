@@ -11,7 +11,7 @@
  * @version v1
  */
 
-import type { CodeSurfaceStatus } from '../../state/discovery-schemas.js';
+import type { CodeSurfaceStatus } from '../../../state/discovery-schemas.js';
 
 export type ReviewDiscoveryDriftStatus =
   'clean' | 'drifted' | 'missing_discovery' | 'unavailable' | 'timeout' | 'not_checked';

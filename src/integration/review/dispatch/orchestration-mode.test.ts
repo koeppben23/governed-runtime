@@ -3,8 +3,8 @@ import {
   resolveReviewOrchestrationMode,
   normalizeReviewHostPlatform,
 } from './orchestration-mode.js';
-import { buildChildSessionReviewInstruction } from './child-session-instruction.js';
-import { artifactReviewSubjectScope, createObligationAndAttempt } from './assurance.js';
+import { buildChildSessionReviewInstruction } from '../child-session-instruction.js';
+import { artifactReviewSubjectScope, createObligationAndAttempt } from '../assurance.js';
 import type { ReviewDispatchAuthority } from './dispatch-authority.js';
 
 describe('review orchestration mode projection', () => {

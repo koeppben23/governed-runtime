@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   hashCanonicalContentSubject,
   hashCanonicalReviewContent,
-} from '../../shared/review-subject.js';
+} from '../../../shared/review-subject.js';
 import {
   verifyFrozenMaterialForObligation,
   verifyFrozenReviewerContext,
-} from './frozen-reviewer-context.js';
-import type { ReviewObligation } from '../../state/evidence.js';
+} from '../../../state/review-continuation.js';
+import type { ReviewObligation } from '../../../state/evidence.js';
 
 const content = 'canonical content\n';
 const materialDigest = hashCanonicalReviewContent(content);

@@ -56,14 +56,14 @@ export type {
 
 // ─── Dispatch Signal ─────────────────────────────────────────────────────────
 
-export type { ReviewDispatchSignal } from './dispatch-signal.js';
+export type { ReviewDispatchSignal } from './dispatch/dispatch-signal.js';
 
 export {
   reviewDispatchCompleted,
   readReviewDispatch,
   isReviewDispatchRequired,
   isReviewDispatchCompleted,
-} from './dispatch-signal.js';
+} from './dispatch/dispatch-signal.js';
 
 // ─── Obligation Tools ────────────────────────────────────────────────────────
 
@@ -104,12 +104,12 @@ export {
 export type {
   ReviewDispatchAuthority,
   ReviewDispatchAuthorityResult,
-} from './dispatch-authority.js';
+} from './dispatch/dispatch-authority.js';
 
 export {
   resolveReviewDispatchAuthority,
   reviewObligationResponseFields,
-} from './dispatch-authority.js';
+} from './dispatch/dispatch-authority.js';
 
 // ─── Reviewer Result DTO ─────────────────────────────────────────────────────
 
@@ -137,7 +137,7 @@ export {
   ReviewerAgentUnavailableError,
   resolveReviewerAgent,
   _resetAgentResolutionCache,
-} from './agent-resolution.js';
+} from './dispatch/agent-resolution.js';
 
 // ─── Findings Schema ─────────────────────────────────────────────────────────
 

@@ -17,11 +17,11 @@ import { ensureReviewAssurance } from '../../review/assurance.js';
 import {
   resolveReviewDispatchAuthority,
   reviewObligationResponseFields,
-} from '../../review/dispatch-authority.js';
-import type { ReviewDispatchAuthority } from '../../review/dispatch-authority.js';
+} from '../../review/dispatch/dispatch-authority.js';
+import type { ReviewDispatchAuthority } from '../../review/dispatch/dispatch-authority.js';
 import { resolveReviewContinuation } from '../../review/review-continuation.js';
 import { blockObligation } from '../../review/obligation-state.js';
-import { buildInterruptedDispatchRearm } from '../../review/durable-dispatch.js';
+import { buildInterruptedDispatchRearm } from '../../review/dispatch/durable-dispatch.js';
 import type { PlanExecutionScope } from './plan-types.js';
 import { buildPlanReviewInstruction } from './plan-response.js';
 import { formatBlocked } from '../../blocked-result.js';

@@ -1,23 +1,11 @@
 /**
  * @module integration/review/frozen-reviewer-context
- * @description Re-export barrel preserving the historical import surface for
- *              frozen-material integrity verification. The canonical authority
- *              lives in `src/state/review-continuation.js` so the machine layer
- *              can consume the same verification without importing this layer.
+ * @description Review-owned frozen-material contract rendering. Frozen-material
+ * integrity verification itself is a state authority
+ * (`src/state/review-continuation.js`); consumers import it there directly.
  */
 
-import type { ReviewSubjectScope } from '../../state/evidence.js';
-
-export {
-  type FrozenArtifactMaterialVerification,
-  type FrozenMaterialVerificationResult,
-  type FrozenReviewerContext,
-  type FrozenReviewerContextResult,
-  type ReviewAnchorContract,
-  verifyFrozenArtifactMaterial,
-  verifyFrozenMaterialForObligation,
-  verifyFrozenReviewerContext,
-} from '../../state/review-continuation.js';
+import type { ReviewSubjectScope } from '../../../state/evidence.js';
 
 /** Material envelope contract — the review material follows this marker verbatim. */
 export const FROZEN_REVIEW_MATERIAL_CONTRACT =

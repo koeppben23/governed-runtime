@@ -48,11 +48,12 @@ vi.mock('../verification/executor', () => ({
 
 const discoveryOriginals = vi.hoisted(() => ({
   resolveAttemptDiscoveryOrBlock:
-    undefined as unknown as (typeof import('./review/discovery-attempt-context.js'))['resolveAttemptDiscoveryOrBlock'],
+    undefined as unknown as (typeof import('./review/context/discovery-attempt-context.js'))['resolveAttemptDiscoveryOrBlock'],
 }));
 
-vi.mock('./review/discovery-attempt-context.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./review/discovery-attempt-context.js')>();
+vi.mock('./review/context/discovery-attempt-context.js', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('./review/context/discovery-attempt-context.js')>();
   discoveryOriginals.resolveAttemptDiscoveryOrBlock = actual.resolveAttemptDiscoveryOrBlock;
   return {
     ...actual,
@@ -84,7 +85,7 @@ import {
   REVIEW_MANDATE_DIGEST,
   hashFindings,
 } from './review/assurance.js';
-import { resolveAttemptDiscoveryOrBlock } from './review/discovery-attempt-context.js';
+import { resolveAttemptDiscoveryOrBlock } from './review/context/discovery-attempt-context.js';
 import { resolveWorkflowDirective } from '../machine/workflow-directive.js';
 import { executeCheck } from '../verification/executor.js';
 

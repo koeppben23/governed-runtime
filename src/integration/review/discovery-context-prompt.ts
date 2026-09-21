@@ -7,7 +7,10 @@
  * the review authority.
  */
 
-import type { ReviewDiscoveryDriftProjection, ReviewDiscoveryHealth } from './discovery-port.js';
+import type {
+  ReviewDiscoveryDriftProjection,
+  ReviewDiscoveryHealth,
+} from './context/discovery-port.js';
 import type {
   ImplementationGuidanceItem,
   ImplementationGuidanceProjection,

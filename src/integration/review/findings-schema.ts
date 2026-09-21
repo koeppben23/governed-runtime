@@ -24,7 +24,7 @@ import {
   OVERALL_VERDICT_VALUES,
   REVISION_VALUES,
   SEVERITY_VALUES,
-} from './reviewer-contract.js';
+} from './context/reviewer-contract.js';
 
 /**
  * RFC 4122 UUID pattern. Single declaration for every UUID-typed field in this

@@ -16,14 +16,14 @@
  * @version v1
  */
 
-import { computeFingerprint } from '../../adapters/workspace/index.js';
-import type { SessionState } from '../../state/schema.js';
+import { computeFingerprint } from '../../../adapters/workspace/index.js';
+import type { SessionState } from '../../../state/schema.js';
 import type {
   RepositoryDiscoverySnapshot,
   ReviewAttemptDiscoveryContext,
-} from '../../state/evidence.js';
+} from '../../../state/evidence.js';
 import { buildReviewDiscoveryContext } from './discovery-context-loader.js';
-import type { DiscoveryReviewContext } from './discovery-context-prompt.js';
+import type { DiscoveryReviewContext } from '../discovery-context-prompt.js';
 import type {
   ReviewDiscoveryDriftProjection,
   ReviewDiscoveryHealth,

@@ -5,7 +5,7 @@
 
 import { createSessionState, onFlowGuardToolAfter } from './review/enforcement/enforcement.js';
 import { isTerminalPhase } from '../machine/topology.js';
-import { reviewDispatchRequired } from './review/dispatch-signal.js';
+import { reviewDispatchRequired } from './review/dispatch/dispatch-signal.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { TOOL_FLOWGUARD_PLAN } from './tool-names.js';
 import {

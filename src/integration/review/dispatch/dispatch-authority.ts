@@ -19,13 +19,13 @@ import type {
   ReviewAssuranceState,
   ReviewAttempt,
   ReviewObligation,
-} from '../../state/evidence.js';
-import { hasReleasedDispatch } from '../../state/review-dispatch.js';
+} from '../../../state/evidence.js';
+import { hasReleasedDispatch } from '../../../state/review-dispatch.js';
 import {
   ensureReviewAssurance,
   findBindableAttempt,
   isCurrentReviewGeneration,
-} from './assurance.js';
+} from '../assurance.js';
 
 /** The exact obligation/attempt pair a review dispatch may be bound to. */
 export interface ReviewDispatchAuthority {

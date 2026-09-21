@@ -9,7 +9,7 @@ import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from '../../review/ass
 import {
   reviewObligationResponseFields,
   type ReviewDispatchAuthority,
-} from '../../review/dispatch-authority.js';
+} from '../../review/dispatch/dispatch-authority.js';
 import { buildChildSessionReviewInstruction } from '../../review/child-session-instruction.js';
 
 /**

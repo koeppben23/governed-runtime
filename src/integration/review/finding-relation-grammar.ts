@@ -12,7 +12,7 @@ import {
   CATEGORY_VALUES,
   REVISION_VALUES,
   ANCHOR_KINDS,
-} from './reviewer-contract.js';
+} from './context/reviewer-contract.js';
 
 export function renderFindingRelationGrammar(): string {
   const severities = SEVERITY_VALUES.map((s) => `"${s}"`).join(' | ');

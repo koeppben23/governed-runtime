@@ -168,7 +168,9 @@ describe('integration placement authority', () => {
   it('exposes positive placement helpers for the context boundaries', () => {
     expect(placementOwnerOf('integration/plugin.ts')).toBe('root-composition');
     expect(placementOwnerOf('integration/plugin-helpers.ts')).toBe('root-composition');
-    expect(placementOwnerOf('integration/review/native-task-review.ts')).toBe('review');
+    expect(placementOwnerOf('integration/review/dispatch/native-task-review.ts')).toBe(
+      'review-dispatch',
+    );
     expect(placementOwnerOf('integration/rogue.ts')).toBeNull();
 
     expect(isRootCompositionFile('integration/plugin-risk.ts')).toBe(true);

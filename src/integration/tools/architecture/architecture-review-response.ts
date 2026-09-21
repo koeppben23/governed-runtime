@@ -30,9 +30,9 @@ import {
 import {
   resolveReviewDispatchAuthority,
   reviewObligationResponseFields,
-} from '../../review/dispatch-authority.js';
-import type { ReviewDispatchAuthority } from '../../review/dispatch-authority.js';
-import { buildFrozenReviewMaterialContent } from '../../review/reviewer-context.js';
+} from '../../review/dispatch/dispatch-authority.js';
+import type { ReviewDispatchAuthority } from '../../review/dispatch/dispatch-authority.js';
+import { buildFrozenReviewMaterialContent } from '../../review/context/reviewer-context.js';
 import {
   PHASE_LABELS,
   buildArchitectureReviewCard,
@@ -56,7 +56,7 @@ import {
   frozenAuthorityOrUndefined,
   type RepositoryAuthorityFreezeResult,
 } from '../../../rails/repository-authority.js';
-import { resolveAttemptDiscoveryOrBlock } from '../../review/discovery-attempt-context.js';
+import { resolveAttemptDiscoveryOrBlock } from '../../review/context/discovery-attempt-context.js';
 import { repositoryEvidenceUnavailableField } from '../../review/observation-access.js';
 import { hasFrozenRepositoryAuthority } from '../../../state/evidence.js';
 import type { ReviewAttemptDiscoveryContext } from '../../../state/evidence.js';

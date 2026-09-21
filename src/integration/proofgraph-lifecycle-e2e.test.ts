@@ -49,7 +49,7 @@ import { materializeApprovedPlanContractResult } from './proofgraph/materialize-
 import { summarizeProofGraph, summarizePersistedProofGraph } from '../audit/proofgraph/summary.js';
 import { evaluateProofGraphGate } from '../audit/proofgraph/gate.js';
 import { buildProofApprovalProjection } from './proofgraph/approval-projection.js';
-import { buildReviewerProofContext } from './review/proof-context.js';
+import { buildReviewerProofContext } from './review/context/proof-context.js';
 import { isRiskAssessmentCurrent } from '../audit/proofgraph/gate.js';
 import {
   makeState,

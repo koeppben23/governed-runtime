@@ -6,8 +6,8 @@
  * remains the single authority; no second review-execution state is stored.
  */
 
-import type { SessionState } from '../../state/schema.js';
-import type { ReviewInvocationEvidence } from '../../state/evidence-review-invocation.js';
+import type { SessionState } from '../../../state/schema.js';
+import type { ReviewInvocationEvidence } from '../../../state/evidence-review-invocation.js';
 
 export interface ReviewExecutionProjection {
   readonly reviewAttemptId: string;

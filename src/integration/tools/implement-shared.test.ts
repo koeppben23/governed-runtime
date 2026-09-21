@@ -297,8 +297,9 @@ vi.mock('../../rails/repository-authority.js', async (importOriginal) => {
   };
 });
 
-vi.mock('../review/discovery-attempt-context.js', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../review/discovery-attempt-context.js')>();
+vi.mock('../review/context/discovery-attempt-context.js', async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import('../review/context/discovery-attempt-context.js')>();
   return {
     ...original,
     resolveAttemptDiscoveryOrBlock: vi.fn(),
@@ -306,7 +307,7 @@ vi.mock('../review/discovery-attempt-context.js', async (importOriginal) => {
 });
 
 import { freezeCandidatePairAuthority } from '../../rails/repository-authority.js';
-import { resolveAttemptDiscoveryOrBlock } from '../review/discovery-attempt-context.js';
+import { resolveAttemptDiscoveryOrBlock } from '../review/context/discovery-attempt-context.js';
 import { activateImplementationReviewObligation } from './implementation/implement-shared.js';
 
 const CANDIDATE_PAIR = {

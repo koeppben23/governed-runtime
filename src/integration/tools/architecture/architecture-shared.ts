@@ -12,12 +12,12 @@ import type { SessionState } from '../../../state/schema.js';
 import type { LoopVerdict } from '../../../state/evidence.js';
 import type { ArchitectureClaimDeclarationInput } from '../../../state/proofgraph-approval.js';
 import { ensureReviewAssurance } from '../../review/assurance.js';
-import type { ReviewDispatchAuthority } from '../../review/dispatch-authority.js';
+import type { ReviewDispatchAuthority } from '../../review/dispatch/dispatch-authority.js';
 import { classifyToolCallMode } from '../review-validation-mode.js';
 import {
   resolveRuntimeReviewPlatform,
   resolveReviewOrchestrationMode,
-} from '../../review/orchestration-mode.js';
+} from '../../review/dispatch/orchestration-mode.js';
 import { buildChildSessionReviewInstruction } from '../../review/child-session-instruction.js';
 
 // ─── Shared Types ─────────────────────────────────────────────────────────

@@ -5,8 +5,8 @@ import {
   ReviewerAgentUnavailableError,
   resolveReviewerAgent,
 } from './agent-resolution.js';
-import type { OrchestratorClient } from './types.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
+import type { OrchestratorClient } from '../types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 
 function makeClient(opts: {
   agents?: Array<Record<string, unknown>>;

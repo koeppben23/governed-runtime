@@ -14,14 +14,14 @@ import {
   FindingCategory,
   FindingSeverity,
   ReviewRevision,
-} from '../../state/evidence-findings.js';
-import { LoopVerdict } from '../../state/evidence-primitives.js';
+} from '../../../state/evidence-findings.js';
+import { LoopVerdict } from '../../../state/evidence-primitives.js';
 import {
   ChallengeResolutionOutcome,
   REVIEW_CHALLENGE_OUTCOMES,
   ReviewerChallengeInput,
-} from '../../state/evidence-review-challenge.js';
-import { ReviewSubjectAnchor } from '../../state/evidence-findings.js';
+} from '../../../state/evidence-review-challenge.js';
+import { ReviewSubjectAnchor } from '../../../state/evidence-findings.js';
 
 export const SEVERITY_VALUES = FindingSeverity.options;
 

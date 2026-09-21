@@ -5,7 +5,7 @@
 
 import type { ProofGraphProjection } from '../../state/proofgraph.js';
 import { renderReviewerCriteria } from '../../templates/mandates-reviewer-criteria.js';
-import { renderPersistedProofGraphContext } from './proof-context.js';
+import { renderPersistedProofGraphContext } from './context/proof-context.js';
 import { renderRepositoryObservationContract } from './observation-contract-prompt.js';
 import {
   buildDiscoveryContextSection,

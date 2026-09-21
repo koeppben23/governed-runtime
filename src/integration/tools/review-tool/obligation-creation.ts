@@ -23,10 +23,10 @@ import {
   findLatestPendingReviewObligation,
   findReviewObligationById,
 } from '../../review/assurance.js';
-import { resolveReviewDispatchAuthority } from '../../review/dispatch-authority.js';
-import { buildInterruptedDispatchRearm } from '../../review/durable-dispatch.js';
+import { resolveReviewDispatchAuthority } from '../../review/dispatch/dispatch-authority.js';
+import { buildInterruptedDispatchRearm } from '../../review/dispatch/durable-dispatch.js';
 import { resolveReviewContinuation } from '../../../state/review-continuation.js';
-import { resolveReviewAttemptDiscoveryContext } from '../../review/discovery-attempt-context.js';
+import { resolveReviewAttemptDiscoveryContext } from '../../review/context/discovery-attempt-context.js';
 import type { ReviewAttemptDiscoveryContext } from '../../../state/evidence.js';
 import { fingerprintReviewInput } from './fingerprint.js';
 import {

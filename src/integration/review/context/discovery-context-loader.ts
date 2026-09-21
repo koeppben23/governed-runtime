@@ -8,12 +8,12 @@
  * pipeline with hidden latency.
  */
 
-import { readDiscovery } from '../../adapters/persistence-discovery.js';
-import { workspaceDir } from '../../adapters/workspace/index.js';
-import { buildImplementationGuidance } from '../implementation-guidance.js';
+import { readDiscovery } from '../../../adapters/persistence-discovery.js';
+import { workspaceDir } from '../../../adapters/workspace/index.js';
+import { buildImplementationGuidance } from '../../implementation-guidance.js';
 import type { ReviewDiscoveryProvider } from './discovery-port.js';
-import type { SessionState } from '../../state/schema.js';
-import type { DiscoveryReviewContext } from './discovery-context-prompt.js';
+import type { SessionState } from '../../../state/schema.js';
+import type { DiscoveryReviewContext } from '../discovery-context-prompt.js';
 
 export interface BuildReviewDiscoveryContextInput {
   readonly sessionState: SessionState;
