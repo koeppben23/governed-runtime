@@ -9,6 +9,7 @@ on:
       - 'stryker.schemas.conf.json'
       - 'vitest.stryker-schemas.config.ts'
       - '.github/workflows/mutation-schemas.yml'
+      - 'scripts/mutation-profile-registry.json'
       - 'scripts/stryker-patch.js'
 
 permissions:
@@ -35,5 +36,5 @@ jobs:
       - name: Verify mutation admission
         run: >-
           node scripts/verify-mutation-admission.mjs --profile schemas
-          --report reports/mutation/mutation.json
-          --write-manifest reports/mutation/admission-manifest-schemas.json
+          --report reports/mutation/schemas/mutation.json
+          --write-manifest reports/mutation/schemas/admission-manifest.json

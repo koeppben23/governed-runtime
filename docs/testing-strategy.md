@@ -198,6 +198,13 @@ regime produced the evidence and never excludes a target from other profiles.
 The architecture guard enforces `required ⊆ mutate`, reverse closure per
 profile, and coverage of every production file under an authority root.
 
+Profile metadata is centralized in `scripts/mutation-profile-registry.json`
+(config file, vitest config, report path, manifest path). Each profile writes
+its own JSON/HTML report and manifest under `reports/mutation/<profile>/`;
+`base` keeps the canonical `reports/mutation/mutation.json` that the product
+mutation-evidence tool and ProofGraph ingestion read. A registry closure guard
+proves registry, inventory, and on-disk profiles cannot drift apart.
+
 `StringLiteral`, `ArrayDeclaration`, and `Regex` mutators are excluded globally
 because they produce low-signal literal churn in governance template and schema
 code. Focused boundary profiles may enable a globally excluded mutator where it
@@ -374,7 +381,7 @@ configuration:
 ```bash
 node scripts/stryker-patch.js && npx stryker run stryker.identity-jwks.conf.json
 node scripts/verify-mutation-admission.mjs --profile identity-jwks \
-  --write-manifest reports/mutation/admission-manifest-identity-jwks.json
+  --write-manifest reports/mutation/identity-jwks/admission-manifest.json
 ```
 
 The mandates profile runs on pull requests that change mandate surfaces:
@@ -382,7 +389,7 @@ The mandates profile runs on pull requests that change mandate surfaces:
 ```bash
 node scripts/stryker-patch.js && npx stryker run stryker.mandates.conf.json
 node scripts/verify-mutation-admission.mjs --profile mandates \
-  --write-manifest reports/mutation/admission-manifest-mandates.json
+  --write-manifest reports/mutation/mandates/admission-manifest.json
 ```
 
 The human-projection profile is reusable locally but has no dedicated CI
@@ -392,5 +399,5 @@ meets the per-target threshold first:
 ```bash
 node scripts/stryker-patch.js && npx stryker run stryker.human-projection.conf.json
 node scripts/verify-mutation-admission.mjs --profile human-projection \
-  --write-manifest reports/mutation/admission-manifest-human-projection.json
+  --write-manifest reports/mutation/human-projection/admission-manifest.json
 ```

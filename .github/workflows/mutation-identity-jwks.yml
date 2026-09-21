@@ -8,6 +8,7 @@ on:
       - 'stryker.identity-jwks.conf.json'
       - 'vitest.stryker-identity-jwks.config.ts'
       - '.github/workflows/mutation-identity-jwks.yml'
+      - 'scripts/mutation-profile-registry.json'
       - 'scripts/stryker-patch.js'
 
 permissions:
@@ -34,5 +35,5 @@ jobs:
       - name: Verify mutation admission
         run: >-
           node scripts/verify-mutation-admission.mjs --profile identity-jwks
-          --report reports/mutation/mutation.json
-          --write-manifest reports/mutation/admission-manifest-identity-jwks.json
+          --report reports/mutation/identity-jwks/mutation.json
+          --write-manifest reports/mutation/identity-jwks/admission-manifest.json

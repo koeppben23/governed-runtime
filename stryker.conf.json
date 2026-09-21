@@ -125,5 +125,11 @@
     "high": 85,
     "low": 80,
     "break": 80
+  },
+  "jsonReporter": {
+    "fileName": "reports/mutation/mutation.json"
+  },
+  "htmlReporter": {
+    "fileName": "reports/mutation/mutation.html"
   }
 }

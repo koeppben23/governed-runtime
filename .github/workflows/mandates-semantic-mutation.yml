@@ -11,6 +11,7 @@ on:
       - 'src/cli/install-ownership.ts'
       - 'src/cli/install-command.ts'
       - 'stryker.mandates.conf.json'
+      - 'scripts/mutation-profile-registry.json'
       - 'scripts/stryker-patch.js'
       - '.github/workflows/mandates-semantic-mutation.yml'
   workflow_dispatch:
@@ -47,5 +48,5 @@ jobs:
       - name: Verify mutation admission
         run: >-
           node scripts/verify-mutation-admission.mjs --profile mandates
-          --report reports/mutation/mutation.json
-          --write-manifest reports/mutation/admission-manifest-mandates.json
+          --report reports/mutation/mandates/mutation.json
+          --write-manifest reports/mutation/mandates/admission-manifest.json

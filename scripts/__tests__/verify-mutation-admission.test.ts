@@ -515,6 +515,7 @@ describe('verify-mutation-admission', () => {
         scoreAtAdmission: number;
         config: string;
         verifiedAt: string;
+        reportDigest: string;
       };
     }>;
     expect(emitted).toHaveLength(1);
@@ -523,5 +524,6 @@ describe('verify-mutation-admission', () => {
     expect(emitted[0]?.admission.scoreAtAdmission).toBe(emitted[0]?.score);
     expect(emitted[0]?.admission.config).toBe('stryker.conf.json');
     expect(emitted[0]?.admission.verifiedAt).toBe(manifest.generatedAt.slice(0, 10));
+    expect(emitted[0]?.admission.reportDigest).toBe(manifest.reportDigest);
   });
 });
