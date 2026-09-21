@@ -25,7 +25,7 @@ import {
   ensureReviewAssurance,
   findBindableAttempt,
   isCurrentReviewGeneration,
-} from '../assurance.js';
+} from '../obligations/assurance.js';
 
 /** The exact obligation/attempt pair a review dispatch may be bound to. */
 export interface ReviewDispatchAuthority {

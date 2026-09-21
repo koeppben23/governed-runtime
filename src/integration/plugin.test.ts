@@ -40,7 +40,7 @@ import {
   freezeReviewMaterial,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
-} from './review/assurance.js';
+} from './review/obligations/assurance.js';
 import { makePlanRevision } from '../state/evidence-test-constants.js';
 import { fileURLToPath } from 'node:url';
 import { clearUserDecisionIntents, consumeUserDecisionIntent } from './user-decision-intent.js';

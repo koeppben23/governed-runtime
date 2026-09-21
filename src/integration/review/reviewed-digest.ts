@@ -26,7 +26,7 @@
  */
 
 import type { ReviewDiagnosticLogger } from './review-logger-port.js';
-import { ensureReviewAssurance } from './assurance.js';
+import { ensureReviewAssurance } from './obligations/assurance.js';
 import type {
   ReviewAssuranceState,
   ReviewFindings,

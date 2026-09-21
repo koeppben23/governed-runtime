@@ -26,7 +26,7 @@ import {
   findLatestUnconsumedObligation,
   freezeReviewMaterial,
   resolveFrozenReviewProfile,
-} from '../../review/assurance.js';
+} from '../../review/obligations/assurance.js';
 import {
   resolveReviewDispatchAuthority,
   reviewObligationResponseFields,
@@ -57,7 +57,7 @@ import {
   type RepositoryAuthorityFreezeResult,
 } from '../../../rails/repository-authority.js';
 import { resolveAttemptDiscoveryOrBlock } from '../../review/context/discovery-attempt-context.js';
-import { repositoryEvidenceUnavailableField } from '../../review/observation-access.js';
+import { repositoryEvidenceUnavailableField } from '../../review/observations/observation-access.js';
 import { hasFrozenRepositoryAuthority } from '../../../state/evidence.js';
 import type { ReviewAttemptDiscoveryContext } from '../../../state/evidence.js';
 import { IntegrationInvariantError } from '../../errors.js';

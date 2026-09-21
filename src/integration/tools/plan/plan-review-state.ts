@@ -19,13 +19,13 @@ import type { SessionState } from '../../../state/schema.js';
 import type { LoopVerdict, RevisionDelta, ReviewFindings } from '../../../state/evidence.js';
 import { resolvePlanReviewCompletion } from '../../../state/evidence-plan.js';
 import { resolveStructuredEffectiveFindings } from '../../review/review-validation.js';
-import { collectPreviouslyUsedChallengeIds } from '../../review/challenge-history.js';
-import { buildReviewChallengeContract } from '../../review/challenge-contract.js';
+import { collectPreviouslyUsedChallengeIds } from '../../review/obligations/challenge-history.js';
+import { buildReviewChallengeContract } from '../../review/obligations/challenge-contract.js';
 import {
   consumeReviewObligation,
   ensureReviewAssurance,
   findLatestObligation,
-} from '../../review/assurance.js';
+} from '../../review/obligations/assurance.js';
 import type { PlanArgs, PlanExecutionScope, PlanRevisionResult } from './plan-types.js';
 import {
   appendClaimSubmissionHistory,

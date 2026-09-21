@@ -32,7 +32,7 @@ import type { RepositoryDiscoverySnapshot } from '../../state/evidence.js';
 import {
   renderReviewChallengeContract,
   type ReviewerChallengePromptContract,
-} from './challenge-contract.js';
+} from './obligations/challenge-contract.js';
 
 // ─── Canonical Review Context Serializer ─────────────────────────────────────
 

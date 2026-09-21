@@ -5,7 +5,10 @@ import type {
   FrozenReviewSubject,
   ReviewRepositoryIdentity,
 } from '../../../state/evidence.js';
-import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from '../../review/assurance.js';
+import {
+  REVIEW_CRITERIA_VERSION,
+  REVIEW_MANDATE_DIGEST,
+} from '../../review/obligations/assurance.js';
 import {
   reviewObligationResponseFields,
   type ReviewDispatchAuthority,

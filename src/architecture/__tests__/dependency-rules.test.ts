@@ -1225,9 +1225,17 @@ describe('Layer Dependency Rules', () => {
     });
 
     it('review/ obligation-state.ts and audit-events.ts exist', () => {
-      const obligationState = path.join(SRC_DIR, 'integration', 'review', 'obligation-state.ts');
+      const obligationState = path.join(
+        SRC_DIR,
+        'integration',
+        'review',
+        'obligations',
+        'obligation-state.ts',
+      );
       const auditEvents = path.join(SRC_DIR, 'integration', 'review', 'audit-events.ts');
-      expect(existsSync(obligationState), 'Expected review/obligation-state.ts').toBe(true);
+      expect(existsSync(obligationState), 'Expected review/obligations/obligation-state.ts').toBe(
+        true,
+      );
       expect(existsSync(auditEvents), 'Expected review/audit-events.ts').toBe(true);
     });
 

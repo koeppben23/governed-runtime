@@ -30,7 +30,7 @@ import {
   updateCheckReworkContinuation,
 } from './plugin-rework-continuation.js';
 import { isReviewDispatchRequired } from './review/dispatch/dispatch-signal.js';
-import { obligationTypeForTool, reviewSignalOwner } from './review/obligation-tools.js';
+import { obligationTypeForTool, reviewSignalOwner } from './review/obligations/obligation-tools.js';
 import { resolveReviewContinuation } from '../state/review-continuation.js';
 export { updateCheckReworkContinuation } from './plugin-rework-continuation.js';
 import {

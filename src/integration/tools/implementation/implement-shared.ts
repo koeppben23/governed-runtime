@@ -29,7 +29,7 @@ import {
   findBindableAttempt,
   resolveFrozenReviewProfile,
   freezeReviewMaterial,
-} from '../../review/assurance.js';
+} from '../../review/obligations/assurance.js';
 import type { ReviewDispatchAuthority } from '../../review/dispatch/dispatch-authority.js';
 import { buildChildSessionReviewInstruction } from '../../review/child-session-instruction.js';
 import {

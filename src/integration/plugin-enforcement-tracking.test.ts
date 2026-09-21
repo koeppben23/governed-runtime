@@ -23,7 +23,7 @@ vi.mock('./review/enforcement/enforcement.js', () => ({
 }));
 
 import { trackFlowGuardEnforcement } from './plugin-enforcement-tracking.js';
-import type { ReviewSignalTool } from './review/obligation-tools.js';
+import type { ReviewSignalTool } from './review/obligations/obligation-tools.js';
 import type {
   SessionEnforcementState,
   PendingReviewTool,

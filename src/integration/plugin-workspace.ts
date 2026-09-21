@@ -22,7 +22,7 @@ import {
 import { GENESIS_HASH, type ChainedAuditEvent } from '../audit/types.js';
 import { decisionReceipts } from '../audit/query.js';
 import { getLastChainHash } from '../audit/integrity.js';
-import { blockObligation } from './review/obligation-state.js';
+import { blockObligation } from './review/obligations/obligation-state.js';
 import type { SessionState } from '../state/schema.js';
 import { strictBlockedOutput } from './blocked-result.js';
 

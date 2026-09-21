@@ -14,7 +14,7 @@ import {
   freezeReviewMaterial,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
-} from './review/assurance.js';
+} from './review/obligations/assurance.js';
 import type { ReviewAttempt, ReviewObligation } from '../state/evidence.js';
 
 // ─── Constants ───────────────────────────────────────────────────────────────

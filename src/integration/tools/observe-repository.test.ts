@@ -10,8 +10,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { createReviewAttempt, createReviewObligation } from '../review/assurance.js';
-import { mintObservationCapability } from '../review/attempt-lifecycle.js';
+import { createReviewAttempt, createReviewObligation } from '../review/obligations/assurance.js';
+import { mintObservationCapability } from '../review/obligations/attempt-lifecycle.js';
 import {
   appendObservationCapture,
   observationCapabilityDigest,
@@ -19,13 +19,13 @@ import {
   observationLedgerRoot,
   readObservationCaptures,
 } from '../../adapters/persistence-observation-ledger.js';
-import { freezeReviewMaterial } from '../review/assurance.js';
+import { freezeReviewMaterial } from '../review/obligations/assurance.js';
 import {
   buildObservationToolResponse,
   contentDigestOf,
   repositoryIdentityDigest,
   responseDigestOf,
-} from '../review/observation-service.js';
+} from '../review/observations/observation-service.js';
 import { makeState } from '../../fixtures.js';
 
 const LEDGER_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'fg-observe-tool-'));

@@ -27,7 +27,7 @@ import {
   ensureReviewAssurance,
   freezeReviewMaterial,
   hashFindings,
-} from '../assurance.js';
+} from '../obligations/assurance.js';
 import type { ReviewerSuccessResult } from '../types.js';
 
 const NOW = '2026-05-10T12:00:00.000Z';

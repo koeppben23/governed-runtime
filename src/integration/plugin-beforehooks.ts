@@ -29,7 +29,7 @@ import { runWithLogContextAsync } from '../logging/log-context.js';
 import type { SessionState } from '../state/schema.js';
 import { enforceRiskClassificationBefore as enforceRiskBefore } from './plugin-risk.js';
 import { enforceDiscoveryHealthBefore } from './plugin-discovery-health.js';
-import { resolveAttemptByCapability } from './review/observation-resolution.js';
+import { resolveAttemptByCapability } from './review/observations/observation-resolution.js';
 import { reconcilePendingAuditOperations } from './plugin-audit-reconcile.js';
 import { auditEnforcementDenied } from './plugin-audit.js';
 import { withSessionWriteLock } from '../adapters/persistence-lock.js';

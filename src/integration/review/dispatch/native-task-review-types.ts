@@ -5,7 +5,7 @@
 
 import type { readState } from '../../../adapters/persistence.js';
 import type { ReviewObligation } from '../../../state/evidence.js';
-import type { findBindableAttempt } from '../assurance.js';
+import type { findBindableAttempt } from '../obligations/assurance.js';
 
 export type PersistedState = NonNullable<Awaited<ReturnType<typeof readState>>>;
 

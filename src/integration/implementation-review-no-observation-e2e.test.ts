@@ -84,7 +84,7 @@ import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
   hashFindings,
-} from './review/assurance.js';
+} from './review/obligations/assurance.js';
 import { resolveAttemptDiscoveryOrBlock } from './review/context/discovery-attempt-context.js';
 import { resolveWorkflowDirective } from '../machine/workflow-directive.js';
 import { executeCheck } from '../verification/executor.js';

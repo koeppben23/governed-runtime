@@ -13,8 +13,8 @@
 import { randomUUID } from 'node:crypto';
 import { buildEnforcementError } from '../../blocked-result.js';
 
-import { authorizeDispatchRearm } from '../reissue-authority.js';
-import { createAttemptForExistingObligation } from '../assurance.js';
+import { authorizeDispatchRearm } from '../obligations/reissue-authority.js';
+import { createAttemptForExistingObligation } from '../obligations/assurance.js';
 import {
   abandonReviewDispatch,
   appendReviewDispatch,

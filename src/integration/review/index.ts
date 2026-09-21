@@ -67,7 +67,11 @@ export {
 
 // ─── Obligation Tools ────────────────────────────────────────────────────────
 
-export { isReviewableTool, obligationTypeForTool, REVIEWABLE_TOOLS } from './obligation-tools.js';
+export {
+  isReviewableTool,
+  obligationTypeForTool,
+  REVIEWABLE_TOOLS,
+} from './obligations/obligation-tools.js';
 
 // ─── Enforcement Logic ───────────────────────────────────────────────────────
 
@@ -97,7 +101,7 @@ export {
   buildInvocationEvidence,
   hasEvidenceReuse,
   appendInvocationEvidence,
-} from './assurance.js';
+} from './obligations/assurance.js';
 
 // ─── Dispatch Authority ──────────────────────────────────────────────────────
 
@@ -145,7 +149,7 @@ export { REVIEW_FINDINGS_JSON_SCHEMA } from './findings-schema.js';
 
 // ─── Obligation State ────────────────────────────────────────────────────────
 
-export { updateObligation, blockObligation } from './obligation-state.js';
+export { updateObligation, blockObligation } from './obligations/obligation-state.js';
 
 // ─── Audit Events ────────────────────────────────────────────────────────────
 

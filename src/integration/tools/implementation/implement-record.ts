@@ -80,7 +80,7 @@ import { writeImplementationDiffArtifact } from './implement-diff-artifact.js';
 
 // Evidence types
 
-import { ensureReviewAssurance } from '../../review/assurance.js';
+import { ensureReviewAssurance } from '../../review/obligations/assurance.js';
 import {
   resolveReviewDispatchAuthority,
   reviewObligationResponseFields,

@@ -25,7 +25,7 @@ import { INSTALLED_COMMANDS } from '../../integration/installed-commands.js';
 import { Command } from '../../machine/commands.js';
 import { AUDIT_EVENT_KINDS } from '../../audit/types.js';
 import { FLOWGUARD_TOOLS } from '../../mcp-server/server.js';
-import { REVIEW_LOOP_PHASES } from '../../integration/review/review-loop-progress.js';
+import { REVIEW_LOOP_PHASES } from '../../integration/review/obligations/review-loop-progress.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, '..', '..', '..');

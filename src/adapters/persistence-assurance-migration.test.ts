@@ -18,7 +18,7 @@ import {
   createReviewObligation,
   createObligationAndAttempt,
   freezeReviewMaterial,
-} from '../integration/review/assurance.js';
+} from '../integration/review/obligations/assurance.js';
 import { makeState } from '../fixtures.js';
 
 let sessDir: string;

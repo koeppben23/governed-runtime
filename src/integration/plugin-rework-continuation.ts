@@ -27,7 +27,10 @@ import type { SessionState } from '../state/schema.js';
 import { readState } from '../adapters/persistence.js';
 import { isMutatingHostTool } from './phase-tool-gate.js';
 import type { FlowGuardPluginRuntime } from './plugin-shared.js';
-import { isReviewSignalTool, type ReviewSignalTool } from './review/obligation-tools.js';
+import {
+  isReviewSignalTool,
+  type ReviewSignalTool,
+} from './review/obligations/obligation-tools.js';
 import { TOOL_FLOWGUARD_IMPLEMENT } from './tool-names.js';
 
 export function isReviewableFlowGuardTool(toolName: string): toolName is ReviewSignalTool {

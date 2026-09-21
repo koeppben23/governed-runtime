@@ -21,7 +21,11 @@
 import type { ReviewFindings } from '../../state/evidence.js';
 import { formatBlocked } from '../blocked-result.js';
 
-import { findLatestObligation, hashFindings, validateStrictAttestation } from './assurance.js';
+import {
+  findLatestObligation,
+  hashFindings,
+  validateStrictAttestation,
+} from './obligations/assurance.js';
 import type {
   ReviewAssuranceState,
   ReviewObligationType,

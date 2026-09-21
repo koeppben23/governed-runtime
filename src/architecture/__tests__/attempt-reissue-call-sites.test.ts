@@ -42,8 +42,8 @@ describe('createAttemptForExistingObligation call-site whitelist', () => {
     const unauthorized = callers.filter(
       (p) =>
         !ALLOWED_CALLERS.includes(p) &&
-        p !== 'integration/review/attempt-lifecycle.ts' && // definition site
-        p !== 'integration/review/assurance.ts', // re-export barrel
+        p !== 'integration/review/obligations/attempt-lifecycle.ts' && // definition site
+        p !== 'integration/review/obligations/assurance.ts', // re-export barrel
     );
     expect(unauthorized).toEqual([]);
   });

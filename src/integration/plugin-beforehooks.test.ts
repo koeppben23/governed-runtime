@@ -27,7 +27,7 @@ import {
 } from '../adapters/workspace/index.js';
 import { createTestWorkspace, repositoryDiscoveryContext } from './test-helpers.js';
 import type { SessionState } from '../state/schema.js';
-import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
+import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/obligations/assurance.js';
 
 // The test workspace carries a fake `.git` marker rather than a real
 // repository; the git prerequisite gate for mutating host tools treats it as a

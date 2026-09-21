@@ -29,7 +29,7 @@ import {
   createReviewObligation,
   freezeReviewMaterial,
   hashFindings,
-} from './assurance.js';
+} from './obligations/assurance.js';
 import {
   completedDispatchForInvocation,
   TEST_EXECUTION_OBSERVATION,

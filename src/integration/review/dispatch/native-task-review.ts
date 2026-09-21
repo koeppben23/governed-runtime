@@ -29,7 +29,7 @@ import {
   ensureReviewAssurance,
   findBindableAttempt,
   isCurrentReviewGeneration,
-} from '../assurance.js';
+} from '../obligations/assurance.js';
 import {
   hasReleasedDispatch,
   verifyFrozenMaterialForObligation,
@@ -37,8 +37,8 @@ import {
 import { renderReviewerTaskPrompt } from '../prompt-builders.js';
 import { reviewerPromptTypeForTask } from './reviewer-task-type.js';
 import { renderArtifactAnchorContract } from '../context/frozen-reviewer-context.js';
-import { resolveObservationRevisions } from '../observation-access.js';
-import { buildReviewChallengeContract } from '../challenge-contract.js';
+import { resolveObservationRevisions } from '../observations/observation-access.js';
+import { buildReviewChallengeContract } from '../obligations/challenge-contract.js';
 import {
   buildReviewerProofContext,
   type ReviewerProofGraphAuthorities,

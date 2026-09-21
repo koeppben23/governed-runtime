@@ -17,7 +17,7 @@ import type { SessionState } from '../../state/schema.js';
 import type { EvalResult } from '../../machine/evaluate.js';
 import { buildRailConclusion } from './rail-conclusion.js';
 import { makeState, makeProgressedState } from '../../fixtures.js';
-import { createReviewObligation } from '../review/assurance.js';
+import { createReviewObligation } from '../review/obligations/assurance.js';
 
 function abortedState(): SessionState {
   return {

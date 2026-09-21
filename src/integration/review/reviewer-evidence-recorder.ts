@@ -17,18 +17,21 @@ import {
   fulfillObligation,
   hasEvidenceReuse,
   updateAttemptStatus,
-} from './assurance.js';
+} from './obligations/assurance.js';
 import {
   completeReviewDispatch,
   rebindReviewDispatchHostCall,
 } from '../../state/review-continuation.js';
 import { hasAuthorizedDispatch } from '../../state/review-dispatch.js';
-import { updateObligation } from './obligation-state.js';
+import { updateObligation } from './obligations/obligation-state.js';
 import type { ReviewerSuccessResult } from './types.js';
 import type { SemanticAuditIntent } from '../audit-outbox.js';
 import type { SessionState } from '../../state/schema.js';
 import type { EvidenceRecordResult, OrchestratorDeps } from './pipeline-types.js';
-import { validatePreBindFindings, type PreBindFindingsResult } from './pre-bind-findings.js';
+import {
+  validatePreBindFindings,
+  type PreBindFindingsResult,
+} from './observations/pre-bind-findings.js';
 
 type AuditableEvidenceRecordResult = Extract<EvidenceRecordResult, 'fulfilled' | 'reused'>;
 

@@ -16,9 +16,9 @@ import {
   ensureReviewAssurance,
   artifactReviewSubjectScope,
   createObligationAndAttempt,
-} from '../assurance.js';
+} from '../obligations/assurance.js';
 import { appendReviewDispatch } from '../../../state/review-dispatch.js';
-import { REVIEW_CRITERIA_VERSION } from '../assurance.js';
+import { REVIEW_CRITERIA_VERSION } from '../obligations/assurance.js';
 import type { ReviewAssuranceState } from '../../../state/evidence.js';
 
 const NOW = '2026-01-01T00:00:00.000Z';

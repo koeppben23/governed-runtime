@@ -16,7 +16,7 @@ import {
   artifactReviewSubjectScope,
   createReviewObligation,
   freezeReviewMaterial,
-} from './assurance.js';
+} from './obligations/assurance.js';
 import { assertRepositoryFreezeCoherence } from './freeze-coherence.js';
 
 const NOW = '2026-08-15T10:00:00.000Z';

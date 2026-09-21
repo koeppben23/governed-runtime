@@ -15,7 +15,7 @@ import { buildStackProfileSection, CORE_REVIEW_PROFILE_MARKER } from './prompt-s
 import {
   renderReviewChallengeContract,
   type ReviewerChallengePromptContract,
-} from './challenge-contract.js';
+} from './obligations/challenge-contract.js';
 
 export interface ImplReviewPromptOpts {
   readonly changedFiles: string[];

@@ -39,7 +39,7 @@ import {
   REVIEW_MANDATE_DIGEST,
   buildInvocationEvidence,
   hashFindings,
-} from './review/assurance.js';
+} from './review/obligations/assurance.js';
 import type { ReviewFindings } from '../state/evidence.js';
 import { executeReviewDecision } from '../rails/review-decision.js';
 import { createTestContext } from '../testing.js';

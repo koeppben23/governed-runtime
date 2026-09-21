@@ -46,7 +46,7 @@ import {
   freezeReviewMaterial,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
-} from './review/assurance.js';
+} from './review/obligations/assurance.js';
 import { hashFindings } from './review/findings-hash.js';
 import { hostTaskDispatchPlan } from './tools/review-validation-test-helpers.js';
 import type { ReviewFindings } from '../state/evidence.js';

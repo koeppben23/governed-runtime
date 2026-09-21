@@ -43,7 +43,7 @@ import {
   buildReviewCompletionResponse,
 } from './completion.js';
 import { prepareReviewContent } from '../../../rails/review.js';
-import { findReviewObligationById } from '../../review/assurance.js';
+import { findReviewObligationById } from '../../review/obligations/assurance.js';
 import { writeStateWithArtifacts } from '../helpers.js';
 import {
   appendCompletedReviewEvidence,

@@ -44,7 +44,7 @@ import {
   createObligationAndAttempt,
   freezeReviewMaterial,
   resolveFrozenReviewProfile,
-} from '../../review/assurance.js';
+} from '../../review/obligations/assurance.js';
 import {
   resolveReviewDispatchAuthority,
   reviewObligationResponseFields,
@@ -52,7 +52,7 @@ import {
 import type { ReviewDispatchAuthority } from '../../review/dispatch/dispatch-authority.js';
 import { buildFrozenReviewMaterialContent } from '../../review/context/reviewer-context.js';
 import { buildChildSessionReviewInstruction } from '../../review/child-session-instruction.js';
-import { repositoryEvidenceUnavailableField } from '../../review/observation-access.js';
+import { repositoryEvidenceUnavailableField } from '../../review/observations/observation-access.js';
 import {
   resolveReviewedArtifactIdentity,
   reviewedIdentityFields,
@@ -548,13 +548,15 @@ export async function persistPlanReview(
   scope: PlanExecutionScope,
   revision: PlanRevisionResult,
   effectiveFindings: ReviewFindings,
-  consumedAssurance: ReturnType<typeof import('../../review/assurance.js').consumeReviewObligation>,
+  consumedAssurance: ReturnType<
+    typeof import('../../review/obligations/assurance.js').consumeReviewObligation
+  >,
   buildReviewedPlanState: (
     scope: PlanExecutionScope,
     revision: PlanRevisionResult,
     effectiveFindings: ReviewFindings,
     consumedAssurance: ReturnType<
-      typeof import('../../review/assurance.js').consumeReviewObligation
+      typeof import('../../review/obligations/assurance.js').consumeReviewObligation
     >,
   ) => SessionState,
 ): Promise<string> {

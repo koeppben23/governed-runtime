@@ -26,7 +26,7 @@ import {
   fulfillObligation,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
-} from './assurance.js';
+} from './obligations/assurance.js';
 import {
   getAdapterLogger,
   runWithAdapterLogger,

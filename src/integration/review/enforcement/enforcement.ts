@@ -49,7 +49,7 @@ import {
   reviewSignalOwner,
   type ReviewableTool,
   type ReviewSignalTool,
-} from '../obligation-tools.js';
+} from '../obligations/obligation-tools.js';
 import { parseToolResult } from '../../blocked-result.js';
 import type { TerminalPhasePredicate } from './types.js';
 

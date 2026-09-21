@@ -12,18 +12,18 @@ import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js
 import { ReviewFindings as ReviewFindingsSchema } from '../../../state/evidence.js';
 import type { ReviewObligation } from '../../../state/evidence.js';
 import type { SessionState } from '../../../state/schema.js';
-import { hashFindings } from '../assurance.js';
+import { hashFindings } from '../obligations/assurance.js';
 import { validatePipelineAttestation } from '../shared-helpers.js';
 import { validateChallengeConsistency } from '../enforcement/challenge-consistency.js';
-import { collectPreviouslyUsedChallengeIds } from '../challenge-history.js';
+import { collectPreviouslyUsedChallengeIds } from '../obligations/challenge-history.js';
 import { recordEvidenceOrBlockReuse } from '../reviewer-evidence-recorder.js';
-import { replayAndPersistObservations } from '../observation-replay-persist.js';
-import { captureStructuredFindingsFromVisibleChild } from '../structured-followup.js';
+import { replayAndPersistObservations } from '../observations/observation-replay-persist.js';
+import { captureStructuredFindingsFromVisibleChild } from '../obligations/structured-followup.js';
 import { prepareReviewerFindingsForValidation } from '../enforcement/prepare-findings.js';
-import { buildReviewChallengeContract } from '../challenge-contract.js';
+import { buildReviewChallengeContract } from '../obligations/challenge-contract.js';
 import type { ReviewerSuccessResult } from '../types.js';
 import type { OrchestratorDeps } from '../pipeline-types.js';
-import type { ReplayPersistDeps } from '../observation-replay-persist.js';
+import type { ReplayPersistDeps } from '../observations/observation-replay-persist.js';
 import type { NativeReviewLineage, PersistedState } from './native-task-review-types.js';
 
 /**
