@@ -560,17 +560,33 @@ breakpoint mapping.
    A `dev` checkout is a different, `compatible-unverified` host: use it only
    when the defect is in host development, and record it as such.
 
-3. Start the host against the playground. Upstream notes that `bun dev` runs the
-   server in a worker thread where breakpoints may not bind; use the `spawn`
-   variant. Pass the playground directory so repository discovery targets it
-   (`bun dev <directory>`):
+3. Start the server from the pinned checkout with the Bun inspector in the first
+   terminal. This split server/TUI path is the canonical FlowGuard workflow: the
+   upstream `bun dev spawn` shorthand cannot be combined with a target directory
+   in `v1.18.30`, because the default command defines only `[project]` and runs
+   under `yargs.strict()` — `spawn` would be resolved as a project directory.
 
    ```bash
-   export BUN_OPTIONS=--inspect=ws://localhost:6499/
-   bun dev spawn ~/dev/flowguard-playground
+   bun run \
+     --inspect=ws://localhost:6499/ \
+     --cwd packages/opencode \
+     ./src/index.ts serve --port 4096
    ```
 
-4. Debug the Bun host through Bun's own inspector. Bun speaks the **WebKit
+4. Start the TUI from the same pinned checkout in a second terminal and point it
+   at the playground through the `attach --dir` option. Server, TUI, and target
+   repository then share one reproducible baseline (pinned `v1.18.30` source,
+   Bun inspector on `:6499`, playground as target):
+
+   ```bash
+   bun run \
+     --cwd packages/opencode \
+     ./src/index.ts attach \
+     http://localhost:4096 \
+     --dir ~/dev/flowguard-playground
+   ```
+
+5. Debug the Bun host through Bun's own inspector. Bun speaks the **WebKit
    Inspector Protocol**, not the Chrome DevTools Protocol, so IntelliJ's
    `Attach to Node.js/Chrome` does not attach to Bun (JetBrains tracks attaching
    to an already running Bun process as WEB-68425). `--inspect` prints an
@@ -587,26 +603,15 @@ breakpoint mapping.
 
    IntelliJ remains the debugger for the Node boundaries in this guide (Vitest,
    CLI, MCP). JetBrains' Bun run/debug support applies when the IDE launches the
-   Bun process itself; FlowGuard's verified host workflow follows upstream
-   (`bun dev spawn`) and uses the Bun inspector for that process.
+   Bun process itself; FlowGuard's verified host workflow starts the host from
+   the pinned source checkout and uses the Bun inspector for that process.
 
-5. First FlowGuard breakpoints (in the `debug.bun.sh` session):
+6. First FlowGuard breakpoints (in the `debug.bun.sh` session):
    - `<playground>/.opencode/plugins/flowguard-audit.ts` — the wrapper; proves
      that the host discovered the repo-scoped plugin.
    - `<playground>/.opencode/node_modules/@flowguard/core/dist/integration/plugin.js`
      — `FlowGuardAuditPlugin` execution.
-6. Trigger `/start` or `/hydrate` in the host TUI.
-7. If `spawn` still does not bind breakpoints, split server and TUI as upstream
-   describes:
-
-   ```bash
-   # server
-   bun run --inspect=ws://localhost:6499/ --cwd packages/opencode ./src/index.ts serve --port 4096
-
-   # second terminal: TUI, started in the playground so the session targets it
-   cd ~/dev/flowguard-playground
-   opencode attach http://localhost:4096
-   ```
+7. Trigger `/start` or `/hydrate` in the host TUI.
 
 FlowGuard TS-level breakpoints are not available for the installed copy: the
 published tarball ships only `dist/` and `VERSION`, so breakpoints bind in the
