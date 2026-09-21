@@ -42,6 +42,51 @@ export interface ReviewZoneSource {
   readonly content: string;
 }
 
+/**
+ * The review zone graph the decomposition requires, measured on the final
+ * tree. This is a set, not a count: a new edge fails until it is declared, and
+ * a declared edge that stops being observed fails as stale. Zone cycles are
+ * part of the frozen contract; changing that is a dependency-design decision,
+ * not a structural move.
+ */
+export const DECLARED_REVIEW_ZONE_EDGES: ReadonlySet<string> = new Set([
+  'review -> review/enforcement',
+  'review -> review/prompting',
+  'review/context -> review',
+  'review/context -> review/prompting',
+  'review/dispatch -> review',
+  'review/dispatch -> review/context',
+  'review/dispatch -> review/enforcement',
+  'review/dispatch -> review/evidence',
+  'review/dispatch -> review/obligations',
+  'review/dispatch -> review/observations',
+  'review/dispatch -> review/prompting',
+  'review/enforcement -> review/dispatch',
+  'review/enforcement -> review/obligations',
+  'review/evidence -> review',
+  'review/evidence -> review/context',
+  'review/evidence -> review/obligations',
+  'review/evidence -> review/observations',
+  'review/obligations -> review',
+  'review/obligations -> review/context',
+  'review/obligations -> review/dispatch',
+  'review/obligations -> review/evidence',
+  'review/obligations -> review/observations',
+  'review/observations -> review/enforcement',
+  'review/observations -> review/obligations',
+  'review/observations -> review/validation',
+  'review/prompting -> review/context',
+  'review/prompting -> review/dispatch',
+  'review/prompting -> review/enforcement',
+  'review/prompting -> review/evidence',
+  'review/prompting -> review/obligations',
+  'review/validation -> review',
+  'review/validation -> review/enforcement',
+  'review/validation -> review/evidence',
+  'review/validation -> review/obligations',
+  'review/validation -> review/observations',
+]);
+
 export interface ReviewZoneViolation {
   readonly rule: string;
   readonly file: string;

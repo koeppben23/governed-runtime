@@ -7,11 +7,18 @@
  * @version v1
  */
 
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
-import type { IntegrationPlacementZone } from './integration-placement-policy.js';
+import {
+  INTEGRATION_PLACEMENT_ZONES,
+  type IntegrationPlacementZone,
+} from './integration-placement-policy.js';
+import { collectProductionSources } from './production-source.js';
 import {
   analyzeReviewZonePolicy,
+  DECLARED_REVIEW_ZONE_EDGES,
   describeZoneEdges,
   resolveSpecifier,
   zoneEdgeKey,
@@ -125,5 +132,45 @@ describe('review zone policy', () => {
         [],
       ),
     ).toEqual([]);
+  });
+});
+
+describe('review zone policy — real tree', () => {
+  const sources = collectProductionSources(join(process.cwd(), 'src'));
+
+  it('keeps the observed zone graph exactly equal to the declared edge set', () => {
+    const violations = analyzeReviewZonePolicy({
+      sources,
+      zones: INTEGRATION_PLACEMENT_ZONES,
+      declaredEdges: DECLARED_REVIEW_ZONE_EDGES,
+    });
+    if (violations.length > 0) {
+      console.error(
+        'review zone violations:\n' +
+          violations.map((violation) => `  - ${violation.file}: ${violation.message}`).join('\n'),
+      );
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('is non-vacuous: the policy declares edges and every review zone is populated and budgeted', () => {
+    expect(DECLARED_REVIEW_ZONE_EDGES.size).toBeGreaterThan(0);
+
+    const reviewZones = INTEGRATION_PLACEMENT_ZONES.filter(
+      (zone) => zone.id === 'review' || zone.id.startsWith('review/'),
+    );
+    expect(reviewZones.length).toBe(9);
+
+    const productionFiles = sources.map((source) => source.rel);
+    for (const zone of reviewZones) {
+      const files = productionFiles.filter(
+        (rel) =>
+          rel.startsWith('integration/review/') &&
+          rel.split('/').slice(0, -1).join('/') === zone.dir,
+      );
+      expect(files.length, zone.id).toBeGreaterThan(0);
+      expect(zone.maxProductionFiles, zone.id).toBeDefined();
+      expect(files.length, zone.id).toBeLessThanOrEqual(zone.maxProductionFiles ?? 0);
+    }
   });
 });

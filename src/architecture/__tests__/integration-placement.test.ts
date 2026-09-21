@@ -158,8 +158,9 @@ describe('integration placement authority', () => {
         expect(entry.targetZone.startsWith('tools'), entry.file).toBe(true);
       }
       if (entry.owner === 'review') expect(entry.targetZone, entry.file).toBe('review');
-      if (entry.owner === 'review-enforcement')
-        expect(entry.targetZone, entry.file).toBe('review/enforcement');
+      if (entry.owner.startsWith('review-')) {
+        expect(entry.targetZone, entry.file).toBe(`review/${entry.owner.slice('review-'.length)}`);
+      }
       if (entry.owner === 'status') expect(entry.targetZone, entry.file).toBe('status');
       if (entry.owner === 'discovery') expect(entry.targetZone, entry.file).toBe('discovery');
     }
