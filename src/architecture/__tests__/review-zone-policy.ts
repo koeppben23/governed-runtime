@@ -133,8 +133,8 @@ function reviewZoneOf(
  * This is deliberately AST-based, not regex-based: comments between `from`/
  * `import` and the string literal are trivia and cannot hide an edge, while
  * commented-out imports and import-looking string content cannot fabricate one.
- * Covered forms: `import ... from`, `export ... from`, dynamic `import()`, and
- * `require()`.
+ * Covered forms: `import ... from`, `export ... from`, `import x = require(...)`,
+ * dynamic `import()`, and `require()`.
  */
 function relativeSpecifiers(sourceText: string): string[] {
   const sourceFile = ts.createSourceFile(
@@ -155,6 +155,11 @@ function relativeSpecifiers(sourceText: string): string[] {
   const visit = (node: ts.Node): void => {
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
       collect(node.moduleSpecifier);
+    } else if (ts.isImportEqualsDeclaration(node)) {
+      const reference = node.moduleReference;
+      if (ts.isExternalModuleReference(reference)) {
+        collect(reference.expression);
+      }
     } else if (ts.isCallExpression(node)) {
       const isDynamicImport = node.expression.kind === ts.SyntaxKind.ImportKeyword;
       const isRequire = ts.isIdentifier(node.expression) && node.expression.text === 'require';

@@ -126,6 +126,27 @@ describe('review zone policy', () => {
     ]);
   });
 
+  it('detects import-equals require references to the facade and other zones', () => {
+    expect(
+      analyze(
+        [source('integration/review/dispatch/a.ts', `import review = require('../index.js');`)],
+        [],
+      ),
+    ).toEqual(['production-facade-import']);
+
+    expect(
+      analyze(
+        [
+          source(
+            'integration/review/dispatch/b.ts',
+            `import evidence = require('../evidence/b.js');`,
+          ),
+        ],
+        [],
+      ),
+    ).toEqual(['undeclared-zone-edge']);
+  });
+
   it('ignores commented-out imports and import-looking string content', () => {
     expect(
       analyze(
