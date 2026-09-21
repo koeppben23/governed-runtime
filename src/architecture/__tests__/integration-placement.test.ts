@@ -281,6 +281,35 @@ describe('integration placement negative fixtures', () => {
     ).toEqual(['placement-debt']);
   });
 
+  it('detects a zone that exceeds its production-file budget (and never counts test files)', () => {
+    const budgetZones: readonly IntegrationPlacementZone[] = FIXTURE_ZONES.map((zone) =>
+      zone.id === 'status' ? { ...zone, maxProductionFiles: 1 } : zone,
+    );
+
+    expect(
+      analyzeFixture({
+        zones: budgetZones,
+        productionFiles: ['integration/status/a.ts', 'integration/status/b.ts'],
+        placement: [
+          entry('integration/status/a.ts', 'status', 'status', 'status'),
+          entry('integration/status/b.ts', 'status', 'status', 'status'),
+        ],
+      }),
+    ).toEqual(['zone-production-budget-exceeded']);
+
+    expect(
+      analyzeFixture({
+        zones: budgetZones,
+        productionFiles: ['integration/status/a.ts', 'integration/status/rogue.test.ts'],
+        placement: [
+          entry('integration/status/a.ts', 'status', 'status', 'status'),
+          entry('integration/status/rogue.test.ts', 'status', 'status', 'status'),
+        ],
+        testFiles: ['integration/status/rogue.test.ts'],
+      }),
+    ).toEqual(['test-file-in-placement']);
+  });
+
   it('detects a test file carrying a placement entry', () => {
     expect(
       analyzeFixture({

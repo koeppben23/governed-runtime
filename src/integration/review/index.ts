@@ -1,10 +1,18 @@
 /**
  * @module integration/review
- * @description Public barrel for the review bounded context.
+ * @description Public bounded-context facade for review.
  *
- * This module exports the symbols consumed by plugin-*, tools/, and
- * integration root files. Internal implementation details are NOT
- * re-exported — consumers must use this barrel as the single entry point.
+ * `review/index.ts` is a composition surface, not an internal hub: it may
+ * compose every review subzone, but it MUST NOT be imported by FlowGuard
+ * production code — internal code imports the concrete authority it needs.
+ * Both properties are enforced by `architecture/__tests__/review-zone-policy`.
+ * Symbols consumed by plugin-*, tools/, and integration root files are exposed
+ * here for those external callers.
+ *
+ * Implementation authorities live in the review subzones (`dispatch/`,
+ * `obligations/`, `context/`, `observations/`, `evidence/`, `validation/`,
+ * `prompting/`, `enforcement/`); the review root keeps only cross-zone
+ * primitives. Subzones do not carry their own barrels.
  *
  * Architecture: review/ is a cohesive bounded context that owns:
  * - Review obligation lifecycle and tool mapping

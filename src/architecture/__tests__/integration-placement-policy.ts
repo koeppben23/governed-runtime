@@ -29,6 +29,12 @@ export interface IntegrationPlacementZone {
   /** Directory relative to `src/` that owns this zone. */
   readonly dir: string;
   readonly description: string;
+  /**
+   * Optional growth-decision budget: the maximum number of production files
+   * this zone may hold. A change beyond the budget must update this authority
+   * in the same diff — it is a visible decision, not a hidden baseline.
+   */
+  readonly maxProductionFiles?: number;
 }
 
 export interface IntegrationOwner {
@@ -62,7 +68,46 @@ export const INTEGRATION_PLACEMENT_ZONES: readonly IntegrationPlacementZone[] = 
     dir: 'integration/discovery',
     description: 'Discovery health, drift, and risk-path authorities',
   },
-  { id: 'review', dir: 'integration/review', description: 'Review bounded context' },
+  {
+    id: 'review',
+    dir: 'integration/review',
+    description: 'Review bounded context facade and cross-zone primitives',
+  },
+  {
+    id: 'review/dispatch',
+    dir: 'integration/review/dispatch',
+    description: 'Reviewer/task resolution, dispatch, and orchestration',
+  },
+  {
+    id: 'review/obligations',
+    dir: 'integration/review/obligations',
+    description: 'Review obligations, attempts, and challenge lifecycle',
+  },
+  {
+    id: 'review/context',
+    dir: 'integration/review/context',
+    description: 'Reviewer, discovery, proof, and subject context',
+  },
+  {
+    id: 'review/observations',
+    dir: 'integration/review/observations',
+    description: 'Observation capture, binding, replay, and resolution',
+  },
+  {
+    id: 'review/evidence',
+    dir: 'integration/review/evidence',
+    description: 'Findings, hashes, provenance, coherence, and review evidence',
+  },
+  {
+    id: 'review/validation',
+    dir: 'integration/review/validation',
+    description: 'Review validation and structured evidence verification',
+  },
+  {
+    id: 'review/prompting',
+    dir: 'integration/review/prompting',
+    description: 'Prompt construction and host/reviewer instructions',
+  },
   {
     id: 'review/enforcement',
     dir: 'integration/review/enforcement',
@@ -159,7 +204,42 @@ export const INTEGRATION_OWNERS: readonly IntegrationOwner[] = [
   },
   { id: 'status', targetZone: 'status', description: 'Status bounded context' },
   { id: 'discovery', targetZone: 'discovery', description: 'Discovery bounded context' },
-  { id: 'review', targetZone: 'review', description: 'Review bounded context' },
+  { id: 'review', targetZone: 'review', description: 'Review bounded context facade' },
+  {
+    id: 'review-dispatch',
+    targetZone: 'review/dispatch',
+    description: 'Review dispatch and orchestration',
+  },
+  {
+    id: 'review-obligations',
+    targetZone: 'review/obligations',
+    description: 'Review obligations and challenge lifecycle',
+  },
+  {
+    id: 'review-context',
+    targetZone: 'review/context',
+    description: 'Review context and subject resolution',
+  },
+  {
+    id: 'review-observations',
+    targetZone: 'review/observations',
+    description: 'Review observations',
+  },
+  {
+    id: 'review-evidence',
+    targetZone: 'review/evidence',
+    description: 'Review evidence and findings',
+  },
+  {
+    id: 'review-validation',
+    targetZone: 'review/validation',
+    description: 'Review validation',
+  },
+  {
+    id: 'review-prompting',
+    targetZone: 'review/prompting',
+    description: 'Review prompting',
+  },
   {
     id: 'review-enforcement',
     targetZone: 'review/enforcement',
@@ -1613,6 +1693,23 @@ export function analyzeIntegrationPlacement(
         rule: 'placement-debt',
         file: entry.file,
         message: 'file is outside its target zone ' + entry.targetZone,
+      });
+    }
+  }
+
+  const zoneFileCount = new Map<string, number>();
+  for (const entry of input.placement) {
+    if (input.isTestFile(entry.file)) continue;
+    zoneFileCount.set(entry.targetZone, (zoneFileCount.get(entry.targetZone) ?? 0) + 1);
+  }
+  for (const zone of input.zones) {
+    if (zone.maxProductionFiles === undefined) continue;
+    const count = zoneFileCount.get(zone.id) ?? 0;
+    if (count > zone.maxProductionFiles) {
+      violations.push({
+        rule: 'zone-production-budget-exceeded',
+        file: zone.id,
+        message: `${count} production files exceed the zone budget of ${zone.maxProductionFiles}`,
       });
     }
   }

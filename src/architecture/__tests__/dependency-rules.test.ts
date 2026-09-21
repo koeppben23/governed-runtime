@@ -411,6 +411,13 @@ function detectToolsCompositionImports(analyses: Map<string, FileAnalysis>): Imp
 /** Integration owners that review/** may consume (positive allowlist). */
 const REVIEW_ALLOWED_INTEGRATION_OWNERS: ReadonlySet<string> = new Set([
   'review',
+  'review-dispatch',
+  'review-obligations',
+  'review-context',
+  'review-observations',
+  'review-evidence',
+  'review-validation',
+  'review-prompting',
   'review-enforcement',
   'root-authority',
 ]);
