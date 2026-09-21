@@ -60,7 +60,7 @@ vi.mock('./discovery/discovery-health-gate.js', async () => {
   };
 });
 
-vi.mock('./review/audit-events.js', () => ({
+vi.mock('./review/evidence/audit-events.js', () => ({
   appendReviewAuditEvent: mockAppendReviewAuditEvent,
 }));
 

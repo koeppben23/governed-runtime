@@ -15,7 +15,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { makeState, FROZEN_IMPLEMENTATION_BASE } from '../fixtures.js';
-import { appendReviewAuditEventForState } from './review/audit-events.js';
+import { appendReviewAuditEventForState } from './review/evidence/audit-events.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
 
 describe('session.error audit envelope', () => {

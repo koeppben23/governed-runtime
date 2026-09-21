@@ -18,7 +18,7 @@ import { formatBlocked } from '../../blocked-result.js';
 import type { SessionState } from '../../../state/schema.js';
 import type { LoopVerdict, RevisionDelta, ReviewFindings } from '../../../state/evidence.js';
 import { resolvePlanReviewCompletion } from '../../../state/evidence-plan.js';
-import { resolveStructuredEffectiveFindings } from '../../review/review-validation.js';
+import { resolveStructuredEffectiveFindings } from '../../review/validation/review-validation.js';
 import { collectPreviouslyUsedChallengeIds } from '../../review/obligations/challenge-history.js';
 import { buildReviewChallengeContract } from '../../review/obligations/challenge-contract.js';
 import {

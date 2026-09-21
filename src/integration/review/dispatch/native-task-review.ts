@@ -34,7 +34,7 @@ import {
   hasReleasedDispatch,
   verifyFrozenMaterialForObligation,
 } from '../../../state/review-continuation.js';
-import { renderReviewerTaskPrompt } from '../prompt-builders.js';
+import { renderReviewerTaskPrompt } from '../prompting/prompt-builders.js';
 import { reviewerPromptTypeForTask } from './reviewer-task-type.js';
 import { renderArtifactAnchorContract } from '../context/frozen-reviewer-context.js';
 import { resolveObservationRevisions } from '../observations/observation-access.js';

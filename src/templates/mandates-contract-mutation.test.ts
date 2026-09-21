@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderReviewerTaskPrompt } from '../integration/review/prompt-builders.js';
+import { renderReviewerTaskPrompt } from '../integration/review/prompting/prompt-builders.js';
 import { FLOWGUARD_MANDATES_KERNEL, REVIEWER_AGENT } from './mandates.js';
 
 interface CriticalContract {

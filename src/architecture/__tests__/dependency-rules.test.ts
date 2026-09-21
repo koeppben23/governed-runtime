@@ -1232,11 +1232,17 @@ describe('Layer Dependency Rules', () => {
         'obligations',
         'obligation-state.ts',
       );
-      const auditEvents = path.join(SRC_DIR, 'integration', 'review', 'audit-events.ts');
+      const auditEvents = path.join(
+        SRC_DIR,
+        'integration',
+        'review',
+        'evidence',
+        'audit-events.ts',
+      );
       expect(existsSync(obligationState), 'Expected review/obligations/obligation-state.ts').toBe(
         true,
       );
-      expect(existsSync(auditEvents), 'Expected review/audit-events.ts').toBe(true);
+      expect(existsSync(auditEvents), 'Expected review/evidence/audit-events.ts').toBe(true);
     });
 
     it('review/ barrel exports updateObligation, blockObligation, and appendReviewAuditEvent', async () => {
@@ -1251,7 +1257,13 @@ describe('Layer Dependency Rules', () => {
       // audit-events.ts imports from adapters/persistence — this is an intentional
       // architectural decision documented in the barrel header. Verify it compiles
       // and the import is to adapters/ only, not to plugin-* or tools/.
-      const auditEventsPath = path.join(SRC_DIR, 'integration', 'review', 'audit-events.ts');
+      const auditEventsPath = path.join(
+        SRC_DIR,
+        'integration',
+        'review',
+        'evidence',
+        'audit-events.ts',
+      );
       const content = await fs.readFile(auditEventsPath, 'utf-8');
       const imports = parseImports(content, path.dirname(auditEventsPath), 'integration');
       const adapterImports = imports.filter((i) => i.module.includes('adapters/'));

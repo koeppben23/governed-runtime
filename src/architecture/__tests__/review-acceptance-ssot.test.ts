@@ -29,6 +29,7 @@ const REVIEW_VALIDATION_PATH = join(
   'src',
   'integration',
   'review',
+  'validation',
   'review-validation.ts',
 );
 

@@ -30,8 +30,8 @@ import {
   resolveObservationRevisions,
   resolveRepositoryObservationAccess,
 } from './observation-access.js';
-import { renderRepositoryObservationContract } from '../observation-contract-prompt.js';
-import { renderReviewerTaskPrompt } from '../prompt-builders.js';
+import { renderRepositoryObservationContract } from '../prompting/observation-contract-prompt.js';
+import { renderReviewerTaskPrompt } from '../prompting/prompt-builders.js';
 import { repositoryDiscoveryContext } from '../../test-helpers.js';
 
 const NOW = '2026-08-15T10:00:00.000Z';

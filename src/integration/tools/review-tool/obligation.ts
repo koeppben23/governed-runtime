@@ -41,7 +41,7 @@ export {
   getRequiredBranchReviewProvenance,
   type RequiredBranchReviewSource,
   type RequiredBranchReviewProvenance,
-} from '../../review/review-provenance.js';
+} from '../../review/evidence/review-provenance.js';
 
 function validateSubmittedChallengeConsistency(
   state: SessionState,

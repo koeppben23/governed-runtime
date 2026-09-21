@@ -19,7 +19,7 @@ import {
   persistAuthorizedReviewDispatch,
   type DispatchLedgerWriteDeps,
 } from './durable-dispatch.js';
-import { recordEvidenceOrBlockReuse } from '../reviewer-evidence-recorder.js';
+import { recordEvidenceOrBlockReuse } from '../evidence/reviewer-evidence-recorder.js';
 import {
   artifactReviewSubjectScope,
   appendObligationWithAttempt,

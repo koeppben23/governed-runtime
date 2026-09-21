@@ -13,7 +13,7 @@ import { workspaceDir } from '../../../adapters/workspace/index.js';
 import { buildImplementationGuidance } from '../../implementation-guidance.js';
 import type { ReviewDiscoveryProvider } from './discovery-port.js';
 import type { SessionState } from '../../../state/schema.js';
-import type { DiscoveryReviewContext } from '../discovery-context-prompt.js';
+import type { DiscoveryReviewContext } from '../prompting/discovery-context-prompt.js';
 
 export interface BuildReviewDiscoveryContextInput {
   readonly sessionState: SessionState;

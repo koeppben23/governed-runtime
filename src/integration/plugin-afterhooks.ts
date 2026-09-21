@@ -22,7 +22,7 @@ import { getToolOutput, getAutoAdvanceOverflow, getSessionLockSignal } from './p
 import { trackFlowGuardEnforcement } from './plugin-enforcement-tracking.js';
 import { runAudit as runAuditModule } from './plugin-audit.js';
 import { handleEvent, type EventHandlerDeps } from './plugin-events.js';
-import { appendReviewAuditEventForState } from './review/audit-events.js';
+import { appendReviewAuditEventForState } from './review/evidence/audit-events.js';
 import { readState } from '../adapters/persistence.js';
 import { buildCompactionContext, type CompactionDeps } from './plugin-compaction.js';
 import {

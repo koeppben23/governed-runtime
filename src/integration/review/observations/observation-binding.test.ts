@@ -28,7 +28,7 @@ import {
 } from '../obligations/assurance.js';
 import { mintObservationCapability } from '../obligations/attempt-lifecycle.js';
 import { completedDispatchForInvocation } from '../../../state/evidence-test-constants.js';
-import { validateReviewFindings } from '../review-validation.js';
+import { validateReviewFindings } from '../validation/review-validation.js';
 import {
   NOW,
   SESSION_ID,

@@ -13,7 +13,7 @@ import {
   buildDiscoveryContextSection,
   buildRepositoryDiscoverySnapshotSection,
   type DiscoveryReviewContext,
-} from '../discovery-context-prompt.js';
+} from '../prompting/discovery-context-prompt.js';
 import { resolveReviewAttemptDiscoveryContext } from './discovery-attempt-context.js';
 
 vi.mock('./discovery-context-loader.js', () => ({

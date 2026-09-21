@@ -36,7 +36,10 @@ describe('enforcement contract invariants', () => {
   });
 
   it('review-validation.ts rejects reviewerUnavailable when invocations exist', () => {
-    const content = readFileSync(join(SRC_ROOT, 'integration/review/review-validation.ts'), 'utf8');
+    const content = readFileSync(
+      join(SRC_ROOT, 'integration/review/validation/review-validation.ts'),
+      'utf8',
+    );
     // Must check for existing invocations before accepting reviewerUnavailable
     expect(content).toContain('checkReviewerUnavailableMisuse');
     expect(content).toContain('INVALID_REVIEW_TOOL_SEQUENCE');

@@ -125,14 +125,14 @@ export type {
   PlanReviewPromptOpts,
   ImplReviewPromptOpts,
   ArchitectureReviewPromptOpts,
-} from './prompt-builders.js';
+} from './prompting/prompt-builders.js';
 
 export {
   buildPlanReviewPrompt,
   buildImplReviewPrompt,
   buildArchitectureReviewPrompt,
   buildReviewContentPrompt,
-} from './prompt-builders.js';
+} from './prompting/prompt-builders.js';
 
 // ─── Agent Resolution ────────────────────────────────────────────────────────
 
@@ -145,7 +145,7 @@ export {
 
 // ─── Findings Schema ─────────────────────────────────────────────────────────
 
-export { REVIEW_FINDINGS_JSON_SCHEMA } from './findings-schema.js';
+export { REVIEW_FINDINGS_JSON_SCHEMA } from './evidence/findings-schema.js';
 
 // ─── Obligation State ────────────────────────────────────────────────────────
 
@@ -153,4 +153,4 @@ export { updateObligation, blockObligation } from './obligations/obligation-stat
 
 // ─── Audit Events ────────────────────────────────────────────────────────────
 
-export { appendReviewAuditEvent } from './audit-events.js';
+export { appendReviewAuditEvent } from './evidence/audit-events.js';

@@ -34,8 +34,8 @@ import {
 import {
   resolveStructuredFindings,
   type StructuredFindingsResolution,
-} from '../../review/review-validation-structured-evidence.js';
-import { formatStructuredResolutionFailure } from '../../review/review-validation.js';
+} from '../../review/validation/review-validation-structured-evidence.js';
+import { formatStructuredResolutionFailure } from '../../review/validation/review-validation.js';
 import {
   buildReviewExecutors,
   formatBlockedReviewReport,

@@ -810,7 +810,7 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     { legacy: true, critical: true },
   ),
   required(
-    'src/integration/review/review-validation.ts',
+    'src/integration/review/validation/review-validation.ts',
     'Review validation aggregation',
     ['src/integration/tools/review-validation-findings.test.ts'],
     {
@@ -825,10 +825,10 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     },
   ),
   required(
-    'src/integration/review/review-validation-structured-evidence.ts',
+    'src/integration/review/validation/review-validation-structured-evidence.ts',
     'Structured review validation evidence',
     [
-      'src/integration/review/challenge-policy-evaluation.test.ts',
+      'src/integration/review/validation/challenge-policy-evaluation.test.ts',
       'src/integration/tools/review-validation-findings.test.ts',
     ],
     {
@@ -1210,11 +1210,11 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
   {
     classification: 'required',
     profile: 'base',
-    mutateSelector: 'src/integration/review/reviewed-digest.ts',
-    target: 'src/integration/review/reviewed-digest.ts',
+    mutateSelector: 'src/integration/review/evidence/reviewed-digest.ts',
+    target: 'src/integration/review/evidence/reviewed-digest.ts',
     authority: 'Review provenance projection',
     source: [SOURCE.trustBoundaries],
-    coveringSuites: ['src/integration/review/reviewed-digest.test.ts'],
+    coveringSuites: ['src/integration/review/evidence/reviewed-digest.test.ts'],
     admission: {
       verifiedAt: '2026-09-17',
       commitSha: '65b6b0126b5fb5fc77cd31701ac3e37f48356ccf',
@@ -1401,11 +1401,11 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
   {
     classification: 'required',
     profile: 'base',
-    mutateSelector: 'src/integration/review/findings-hash.ts',
-    target: 'src/integration/review/findings-hash.ts',
+    mutateSelector: 'src/integration/review/evidence/findings-hash.ts',
+    target: 'src/integration/review/evidence/findings-hash.ts',
     authority: 'Findings hash normalization',
     source: [SOURCE.trustBoundaries],
-    coveringSuites: ['src/integration/review/findings-hash.test.ts'],
+    coveringSuites: ['src/integration/review/evidence/findings-hash.test.ts'],
     admission: {
       verifiedAt: '2026-09-17',
       commitSha: 'cc713cb029ad1028793e6a7cdd67381efd33b88f',

@@ -130,7 +130,7 @@ describe('Guard 3: evidence admissibility evaluates observations via the canonic
    * enforced by keeping the binder the single entry point and importing it
    * exclusively from this caller.
    */
-  const ALLOWED_BINDER_CALLERS = ['integration/review/review-validation-evidence.ts'];
+  const ALLOWED_BINDER_CALLERS = ['integration/review/validation/review-validation-evidence.ts'];
 
   it('only the sanctioned bind paths invoke the canonical evidence binder', () => {
     const callers: string[] = [];

@@ -12,9 +12,9 @@ const SRC_ROOT = join(process.cwd(), 'src');
 
 /** Files that participate in the reviewer contract — they must use canonical types. */
 const REVIEWER_CONTRACT_FILES = [
-  'integration/review/findings-schema.ts',
-  'integration/review/finding-relation-grammar.ts',
-  'integration/review/prompt-builders.ts',
+  'integration/review/evidence/findings-schema.ts',
+  'integration/review/evidence/finding-relation-grammar.ts',
+  'integration/review/prompting/prompt-builders.ts',
   'templates/mandates-reviewer-criteria.ts',
 ] as const;
 
@@ -103,7 +103,7 @@ describe('reviewer contract SSOT guard', () => {
 
   it('finding-relation-grammar.ts documents all four canonical anchor kinds', () => {
     const content = readFileSync(
-      join(SRC_ROOT, 'integration/review/finding-relation-grammar.ts'),
+      join(SRC_ROOT, 'integration/review/evidence/finding-relation-grammar.ts'),
       'utf8',
     );
     for (const kind of CANONICAL_ANCHOR_KINDS) {
@@ -113,12 +113,12 @@ describe('reviewer contract SSOT guard', () => {
 
   it('finding-relation-grammar.ts renders revision aliases from reviewer-contract', () => {
     const content = readFileSync(
-      join(SRC_ROOT, 'integration/review/finding-relation-grammar.ts'),
+      join(SRC_ROOT, 'integration/review/evidence/finding-relation-grammar.ts'),
       'utf8',
     );
     // Grammar imports REVISION_VALUES and renders them dynamically
     expect(content).toContain('REVISION_VALUES');
-    expect(content).toContain("from './context/reviewer-contract.js'");
+    expect(content).toContain("from '../context/reviewer-contract.js'");
     // The revision rules section still documents the invariant
     expect(content).toContain('revision is a frozen alias');
     expect(content).toContain('never a SHA');
@@ -126,7 +126,7 @@ describe('reviewer contract SSOT guard', () => {
 
   it('finding-relation-grammar.ts documents evidenceLocations as optional', () => {
     const content = readFileSync(
-      join(SRC_ROOT, 'integration/review/finding-relation-grammar.ts'),
+      join(SRC_ROOT, 'integration/review/evidence/finding-relation-grammar.ts'),
       'utf8',
     );
     expect(content).toContain('evidenceLocations MAY be empty');
@@ -135,13 +135,19 @@ describe('reviewer contract SSOT guard', () => {
   });
 
   it('prompt-builders.ts imports grammar from finding-relation-grammar.ts', () => {
-    const content = readFileSync(join(SRC_ROOT, 'integration/review/prompt-builders.ts'), 'utf8');
-    expect(content).toContain("from './finding-relation-grammar.js'");
+    const content = readFileSync(
+      join(SRC_ROOT, 'integration/review/prompting/prompt-builders.ts'),
+      'utf8',
+    );
+    expect(content).toContain("from '../evidence/finding-relation-grammar.js'");
   });
 
   it('findings-schema.ts imports all canonical enum values from reviewer-contract.ts', () => {
-    const content = readFileSync(join(SRC_ROOT, 'integration/review/findings-schema.ts'), 'utf8');
-    expect(content).toContain("from './context/reviewer-contract.js'");
+    const content = readFileSync(
+      join(SRC_ROOT, 'integration/review/evidence/findings-schema.ts'),
+      'utf8',
+    );
+    expect(content).toContain("from '../context/reviewer-contract.js'");
     expect(content).toContain('SEVERITY_VALUES');
     expect(content).toContain('CATEGORY_VALUES');
     expect(content).toContain('REVISION_VALUES');
@@ -155,10 +161,10 @@ describe('reviewer contract SSOT guard', () => {
 
   it('finding-relation-grammar.ts imports all canonical values from reviewer-contract.ts', () => {
     const content = readFileSync(
-      join(SRC_ROOT, 'integration/review/finding-relation-grammar.ts'),
+      join(SRC_ROOT, 'integration/review/evidence/finding-relation-grammar.ts'),
       'utf8',
     );
-    expect(content).toContain("from './context/reviewer-contract.js'");
+    expect(content).toContain("from '../context/reviewer-contract.js'");
     expect(content).toContain('SEVERITY_VALUES');
     expect(content).toContain('CATEGORY_VALUES');
     expect(content).toContain('REVISION_VALUES');
@@ -167,7 +173,7 @@ describe('reviewer contract SSOT guard', () => {
 
   it('finding-relation-grammar.ts documents reviewer-contract.ts as authority', () => {
     const content = readFileSync(
-      join(SRC_ROOT, 'integration/review/finding-relation-grammar.ts'),
+      join(SRC_ROOT, 'integration/review/evidence/finding-relation-grammar.ts'),
       'utf8',
     );
     expect(content).toContain('reviewer-contract.ts');

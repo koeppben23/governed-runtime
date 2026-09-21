@@ -16,7 +16,7 @@ import { hashFindings } from '../obligations/assurance.js';
 import { validatePipelineAttestation } from '../shared-helpers.js';
 import { validateChallengeConsistency } from '../enforcement/challenge-consistency.js';
 import { collectPreviouslyUsedChallengeIds } from '../obligations/challenge-history.js';
-import { recordEvidenceOrBlockReuse } from '../reviewer-evidence-recorder.js';
+import { recordEvidenceOrBlockReuse } from '../evidence/reviewer-evidence-recorder.js';
 import { replayAndPersistObservations } from '../observations/observation-replay-persist.js';
 import { captureStructuredFindingsFromVisibleChild } from '../obligations/structured-followup.js';
 import { prepareReviewerFindingsForValidation } from '../enforcement/prepare-findings.js';

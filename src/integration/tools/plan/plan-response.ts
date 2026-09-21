@@ -51,12 +51,12 @@ import {
 } from '../../review/dispatch/dispatch-authority.js';
 import type { ReviewDispatchAuthority } from '../../review/dispatch/dispatch-authority.js';
 import { buildFrozenReviewMaterialContent } from '../../review/context/reviewer-context.js';
-import { buildChildSessionReviewInstruction } from '../../review/child-session-instruction.js';
+import { buildChildSessionReviewInstruction } from '../../review/prompting/child-session-instruction.js';
 import { repositoryEvidenceUnavailableField } from '../../review/observations/observation-access.js';
 import {
   resolveReviewedArtifactIdentity,
   reviewedIdentityFields,
-} from '../../review/reviewed-digest.js';
+} from '../../review/evidence/reviewed-digest.js';
 import { buildHeuristicRiskWarning } from '../../proofgraph/claim-contract.js';
 import { assessMinimumTaskClass } from '../../phase-tool-gate.js';
 import {

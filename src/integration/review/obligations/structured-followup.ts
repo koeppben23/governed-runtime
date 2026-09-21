@@ -15,7 +15,7 @@
 
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import { ReviewerFindingsInput } from '../../../state/evidence-review-input.js';
-import { REVIEW_FINDINGS_JSON_SCHEMA } from '../findings-schema.js';
+import { REVIEW_FINDINGS_JSON_SCHEMA } from '../evidence/findings-schema.js';
 import { resolveReviewerAgent } from '../dispatch/agent-resolution.js';
 import type { OrchestratorClient } from '../types.js';
 

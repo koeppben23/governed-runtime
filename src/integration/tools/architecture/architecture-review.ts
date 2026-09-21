@@ -30,7 +30,7 @@ import {
   findLatestUnconsumedObligation,
 } from '../../review/obligations/assurance.js';
 
-import { resolveStructuredEffectiveFindings } from '../../review/review-validation.js';
+import { resolveStructuredEffectiveFindings } from '../../review/validation/review-validation.js';
 import { collectPreviouslyUsedChallengeIds } from '../../review/obligations/challenge-history.js';
 import { buildReviewChallengeContract } from '../../review/obligations/challenge-contract.js';
 

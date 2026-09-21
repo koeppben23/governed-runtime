@@ -99,7 +99,7 @@ describe('structured review authority hard cut', () => {
     // ReviewDispatchAuthority.
     const allowed = new Set([
       'integration/review/dispatch/dispatch-signal.ts',
-      'integration/review/child-session-instruction.ts',
+      'integration/review/prompting/child-session-instruction.ts',
     ]);
     const offenders = listProductionSources(SRC)
       .filter((file) => /\breviewDispatchRequired\b/.test(readFileSync(file, 'utf8')))
