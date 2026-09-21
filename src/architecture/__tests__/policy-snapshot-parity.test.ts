@@ -3,25 +3,34 @@
  * @description Structural guard: every executable `FlowGuardPolicy` field is
  * frozen into `PolicySnapshot` and reconstructed by `resolvePolicyFromSnapshot`.
  *
- * This guard owns no field list. The compiler computes both field sets from the
- * owning authorities (`policy-types.ts` and `evidence-policy.ts`), and the
- * `Exclude<keyof ..., keyof ...>` assertions below fail compilation when a new
- * executable field (or nested field) is not covered by the snapshot contract.
- * Value/type compatibility is enforced by the typed mappers in
- * `config/policy-snapshot.ts` (`buildAuditSection(): PolicySnapshot['audit']`,
+ * Nested executable policy shapes (`AuditPolicy`, `TimestampAssurancePolicy`,
+ * `ChallengePolicy`, `ReviewBudget`, `DiscoveryHealthPolicy`,
+ * `ValidationEvidencePolicy`) have exactly one authority: the Zod schemas in
+ * `state/evidence-policy.ts`. Their TypeScript types are inferred from those
+ * schemas and re-exported by `config/policy-types.ts`, so nested keys and value
+ * types can no longer drift between two declarations. What remains guarded here
+ * is the top-level executable field set of `FlowGuardPolicy`.
+ *
+ * This guard owns no field list. The compiler computes the remaining field set
+ * from the owning authorities (`policy-types.ts` and `evidence-policy.ts`), and
+ * the `Exclude<keyof ..., keyof ...>` assertion below fails compilation when a
+ * new executable field is not covered by the snapshot contract. Value/type
+ * compatibility is enforced by the typed mappers in `config/policy-snapshot.ts`
+ * (`buildAuditSection(): PolicySnapshot['audit']`,
  * `createPolicySnapshot(): PolicySnapshot`, `resolvePolicyFromSnapshot():
  * FlowGuardPolicy`) and by the strict round-trip contract in
  * `config/policy-snapshot.test.ts`.
  *
  * Invariants:
  *   P1 Top-level coverage: every `keyof FlowGuardPolicy` exists in `PolicySnapshot`.
- *   P2 Nested coverage: every executable nested field exists in the matching
- *      `PolicySnapshot[...]` sub-object.
  *   P3 Negative fixture: a deliberately incomplete snapshot type must fail the
- *      same assertion (proves the detector fires).
+ *      assertion mechanism (proves the detector fires).
  *   P4 Runtime sanity: the canonical preset's executable keys are present in the
  *      snapshot and exactly reproduced by the reconstructed policy, and the
  *      snapshot parses against its own schema.
+ *   P5 Derived-type contract: the schema-inferred policy types stay deeply
+ *      readonly and exact-optional (absence, never explicit `undefined`), so a
+ *      schema-authority refactor cannot silently widen the public policy API.
  *
  * @version v1
  */
@@ -55,51 +64,12 @@ type AssertNever<T extends never> = T;
 type MissingTopLevelPolicyFields = Exclude<keyof FlowGuardPolicy, keyof PolicySnapshot>;
 type _TopLevelPolicyFieldsCovered = AssertNever<MissingTopLevelPolicyFields>;
 
-// ─── P2: nested coverage ──────────────────────────────────────────────────────
-
-type MissingReviewBudgetFields = Exclude<keyof ReviewBudget, keyof PolicySnapshot['reviewBudget']>;
-type _ReviewBudgetFieldsCovered = AssertNever<MissingReviewBudgetFields>;
-
-type MissingAuditFields = Exclude<keyof AuditPolicy, keyof PolicySnapshot['audit']>;
-type _AuditFieldsCovered = AssertNever<MissingAuditFields>;
-
-type MissingTimestampAssuranceFields = Exclude<
-  keyof TimestampAssurancePolicy,
-  keyof PolicySnapshot['audit']['timestampAssurance']
->;
-type _TimestampAssuranceFieldsCovered = AssertNever<MissingTimestampAssuranceFields>;
-
-type MissingChallengePolicyFields = Exclude<
-  keyof ChallengePolicy,
-  keyof PolicySnapshot['challengePolicy']
->;
-type _ChallengePolicyFieldsCovered = AssertNever<MissingChallengePolicyFields>;
-
-// The deepest structured duplication: the count matrix inside challengePolicy.
-type MissingChallengeCountFields = Exclude<
-  keyof ChallengePolicy['counts'],
-  keyof PolicySnapshot['challengePolicy']['counts']
->;
-type _ChallengeCountFieldsCovered = AssertNever<MissingChallengeCountFields>;
-
-type MissingDiscoveryHealthFields = Exclude<
-  keyof DiscoveryHealthPolicy,
-  keyof PolicySnapshot['discoveryHealth']
->;
-type _DiscoveryHealthFieldsCovered = AssertNever<MissingDiscoveryHealthFields>;
-
-type MissingValidationEvidenceFields = Exclude<
-  keyof ValidationEvidencePolicy,
-  keyof PolicySnapshot['validationEvidence']
->;
-type _ValidationEvidenceFieldsCovered = AssertNever<MissingValidationEvidenceFields>;
-
-// ─── P3: negative compile-time fixture ────────────────────────────────────────
+// ─── P3: negative compile-time fixtures ───────────────────────────────────────
 
 type SnapshotMissingAudit = Omit<PolicySnapshot, 'audit'>;
 type MissingAuditFieldsFixture = Exclude<keyof FlowGuardPolicy, keyof SnapshotMissingAudit>;
 
-// @ts-expect-error — proves a missing executable field violates parity.
+// @ts-expect-error — proves a missing executable field violates top-level coverage.
 type _MissingAuditMustFail = AssertNever<MissingAuditFieldsFixture>;
 
 type SnapshotMissingChallengeCount = Omit<PolicySnapshot['challengePolicy']['counts'], 'STANDARD'>;
@@ -108,8 +78,61 @@ type MissingChallengeCountFixture = Exclude<
   keyof SnapshotMissingChallengeCount
 >;
 
-// @ts-expect-error — proves a missing challenge count violates parity.
+// @ts-expect-error — proves the assertion mechanism fires on a missing nested key.
 type _MissingChallengeCountMustFail = AssertNever<MissingChallengeCountFixture>;
+
+// ─── P5: derived-type contract (deep readonly + exact optionals) ──────────────
+// Compile-only probe: never executed, fully checked by `check:tests`.
+
+function _assertDerivedPolicyTypeContract(
+  auditPolicy: AuditPolicy,
+  reviewBudget: ReviewBudget,
+  challengePolicy: ChallengePolicy,
+  discoveryHealth: DiscoveryHealthPolicy,
+  validationEvidence: ValidationEvidencePolicy,
+): void {
+  // @ts-expect-error — executable policy is immutable
+  auditPolicy.emitTransitions = false;
+
+  // @ts-expect-error — nested policy is immutable
+  auditPolicy.timestampAssurance.mode = 'ntp_check';
+
+  const replacementTimestampAssurance = auditPolicy.timestampAssurance;
+
+  // @ts-expect-error — nested policy blocks cannot be reassigned through the readonly contract
+  auditPolicy.timestampAssurance = replacementTimestampAssurance;
+
+  // @ts-expect-error — policy arrays are immutable
+  auditPolicy.timestampAssurance.criticalEvents.push('decision');
+
+  // @ts-expect-error — review budgets are immutable
+  reviewBudget.plan = 999;
+
+  // @ts-expect-error — challenge counts are immutable
+  challengePolicy.counts.STANDARD = 1;
+
+  // @ts-expect-error — discovery health policy is immutable
+  discoveryHealth.enforcement = 'off';
+
+  // @ts-expect-error — validation-evidence policy is immutable
+  validationEvidence.allowNoCommands = true;
+
+  const timestampAssuranceWithExplicitUndefined = {
+    enabled: false,
+    mode: 'local_only' as const,
+    strict: false,
+    criticalEvents: [],
+    ntpDriftThresholdMs: 30_000,
+    tsaTimeoutMs: 10_000,
+    tsaUrl: undefined,
+  };
+
+  // @ts-expect-error — optional policy fields are exact: absence, not explicit undefined
+  const _explicitUndefinedMustFail: TimestampAssurancePolicy =
+    timestampAssuranceWithExplicitUndefined;
+  void _explicitUndefinedMustFail;
+}
+void _assertDerivedPolicyTypeContract;
 
 describe('policy snapshot parity (structural)', () => {
   it('P4: the canonical preset round-trips keys and values through the parsed snapshot', () => {

@@ -23,6 +23,8 @@
  *      reconciliation, before-mutation reconciliation, enforcement tracking,
  *      and logger service labels) never receive a `flowguard_*` literal —
  *      this is what rejects a phantom identity such as `flowguard_reconcile`.
+ *      The position map is curated because identity provenance is not
+ *      type-expressible; narrowed identity types complement it.
  *   D4 Property names matching `flowguard_*` must be canonical members: a
  *      lower-layer data key (policy actor classification) or a lifecycle map
  *      can never silently drift from a renamed tool.
@@ -44,6 +46,7 @@ import { join } from 'node:path';
 import * as ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
+import type { ReviewSignalTool } from '../../integration/review/obligation-tools.js';
 import * as toolNames from '../../integration/tool-names.js';
 import {
   ALL_FLOWGUARD_TOOL_NAMES,
@@ -76,13 +79,31 @@ const PREFIX_LITERALS: ReadonlySet<string> = new Set([
   MCP_FLOWGUARD_TOOL_PREFIX,
 ]);
 
-/** Curated identity-argument positions: callee name → argument index. */
+/**
+ * Curated identity-argument positions: callee name → argument index.
+ *
+ * Parameter typing cannot replace this scan. The audit pair legitimately
+ * receives host tool identities (`task`, `bash`), and at every position a
+ * type-valid but hardcoded canonical literal would still misattribute the
+ * caller (e.g. `onFlowGuardToolAfter(state, 'flowguard_plan', ...)` from the
+ * implement hook). Provenance is not expressible structurally, so any
+ * `flowguard_*` literal at these positions stays a violation. The narrowed
+ * identity types (`ReviewSignalTool`, `MutatingFlowGuardTool`) add
+ * compile-time shape safety for new sinks but do not remove these entries.
+ */
 const IDENTITY_ARG_POSITIONS: ReadonlyMap<string, number> = new Map([
   ['resolveAuditContext', 1],
   ['reconcilePendingAuditOperations', 2],
   ['reconcileBeforeMutation', 2],
   ['onFlowGuardToolAfter', 1],
 ]);
+
+// Identity sinks are compile-time narrow: host tools and phantom identities
+// cannot reach the review-tracking boundary at all.
+// @ts-expect-error — host tools carry no review signal
+const _hostToolIsNotReviewSignal: ReviewSignalTool = 'bash';
+// @ts-expect-error — a phantom identity is not a review-signal tool
+const _phantomIdentityIsNotReviewSignal: ReviewSignalTool = 'flowguard_reconcile';
 
 /** Logger methods whose first argument is the service/tool label. */
 const LOGGER_METHODS: ReadonlySet<string> = new Set(['warn', 'info', 'debug', 'error']);

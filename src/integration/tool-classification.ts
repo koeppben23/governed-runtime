@@ -134,7 +134,14 @@ export function isOperationalTool(toolName: string): boolean {
  * before their first side effect. Read-only projections (status/help) are
  * deliberately absent from this set.
  */
-const MUTATING_OPERATIONAL_TOOLS: ReadonlySet<string> = new Set([
+type MutatingOperationalToolName =
+  | typeof TOOL_FLOWGUARD_ARCHIVE
+  | typeof TOOL_FLOWGUARD_DECLARE_CONTRACT
+  | typeof TOOL_FLOWGUARD_RECORD_MUTATION_EVIDENCE
+  | typeof TOOL_FLOWGUARD_RECONCILE_MUTATION_EPISODE
+  | typeof TOOL_FLOWGUARD_OBSERVE_REPOSITORY;
+
+const MUTATING_OPERATIONAL_TOOLS: ReadonlySet<MutatingOperationalToolName> = new Set([
   TOOL_FLOWGUARD_ARCHIVE,
   TOOL_FLOWGUARD_DECLARE_CONTRACT,
   TOOL_FLOWGUARD_RECORD_MUTATION_EVIDENCE,
@@ -143,12 +150,25 @@ const MUTATING_OPERATIONAL_TOOLS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * FlowGuard tools that persist state, evidence, ledgers, or publishable
+ * artifacts: every workflow tool plus the mutating operational tools.
+ */
+export type MutatingFlowGuardTool = WorkflowToolName | MutatingOperationalToolName;
+
+/**
  * True when the tool can create or change persisted state, evidence, ledger
  * entries, or publishable artifacts — regardless of workflow/operational
  * classification. This is the authority for the audit reconciliation gate.
+ *
+ * The predicate is exact: a `true` result guarantees a canonical FlowGuard
+ * identity. Host tools (which do not satisfy it) are handled separately by the
+ * callers and never narrow into the FlowGuard vocabulary.
  */
-export function isMutatingFlowGuardTool(toolName: string): boolean {
-  return isWorkflowTool(toolName) || MUTATING_OPERATIONAL_TOOLS.has(toolName);
+export function isMutatingFlowGuardTool(toolName: string): toolName is MutatingFlowGuardTool {
+  return (
+    isWorkflowTool(toolName) ||
+    MUTATING_OPERATIONAL_TOOLS.has(toolName as MutatingOperationalToolName)
+  );
 }
 
 /**

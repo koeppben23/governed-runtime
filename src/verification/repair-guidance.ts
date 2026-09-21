@@ -344,7 +344,7 @@ function boundedLines(stream: 'stdout' | 'stderr', output: string): StreamLine[]
 function sanitizeLine(line: string): string {
   return (
     line
-      // eslint-disable-next-line no-control-regex
+      // eslint-disable-next-line no-control-regex -- sanitizes raw CLI output before it becomes review evidence
       .replace(/[\x00-\x1f\x7f]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim()
