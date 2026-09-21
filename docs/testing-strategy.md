@@ -355,6 +355,14 @@ valid mutants), so the catalog carries no admission evidence under the base
 profile. The runtime registry logic in `src/config/reasons.ts` remains a
 required mutation target.
 
+### Admission Candidates
+
+A candidate is staged inside a profile for authoritative admission
+measurement. It is mutated by its profile but carries no provenance yet: only
+a verified profile full run on the freeze commit decides whether it becomes
+`required` (immutable admission) or returns to the admission backlog.
+Currently none.
+
 ### Running Locally
 
 ```bash

@@ -53,44 +53,46 @@
  * configured range.
  */
 
+import { readFileSync } from 'node:fs';
+
 import { isTestSourcePath } from './module-classification.js';
 
 export type MutationProfile =
   'base' | 'event-core' | 'human-projection' | 'identity-jwks' | 'mandates' | 'schemas';
 
-export type MutationAuthorityClass = 'required' | 'admission-backlog' | 'not-mutation-suitable';
+export type MutationAuthorityClass =
+  'required' | 'admission-candidate' | 'admission-backlog' | 'not-mutation-suitable';
 
 export interface MutationProfileDefinition {
   readonly configFile: string;
   readonly vitestConfigFile: string;
 }
 
-export const MUTATION_PROFILES: Readonly<Record<MutationProfile, MutationProfileDefinition>> = {
-  base: {
-    configFile: 'stryker.conf.json',
-    vitestConfigFile: 'vitest.stryker.config.ts',
-  },
-  'event-core': {
-    configFile: 'stryker.event-core.conf.json',
-    vitestConfigFile: 'vitest.stryker-event-core.config.ts',
-  },
-  'human-projection': {
-    configFile: 'stryker.human-projection.conf.json',
-    vitestConfigFile: 'vitest.stryker-human-projection.config.ts',
-  },
-  'identity-jwks': {
-    configFile: 'stryker.identity-jwks.conf.json',
-    vitestConfigFile: 'vitest.stryker-identity-jwks.config.ts',
-  },
-  mandates: {
-    configFile: 'stryker.mandates.conf.json',
-    vitestConfigFile: 'vitest.mandates.config.ts',
-  },
-  schemas: {
-    configFile: 'stryker.schemas.conf.json',
-    vitestConfigFile: 'vitest.stryker-schemas.config.ts',
-  },
-};
+interface ProfileRegistry {
+  readonly version: number;
+  readonly profiles: Readonly<
+    Record<string, { readonly configFile: string; readonly vitestConfigFile: string }>
+  >;
+}
+
+/**
+ * Profile metadata is owned by `scripts/mutation-profile-registry.json`.
+ * This projection keeps only the fields the inventory contract needs; the
+ * registry closure guard proves the key sets cannot drift apart.
+ */
+const PROFILE_REGISTRY = JSON.parse(
+  readFileSync(
+    new URL('../../../scripts/mutation-profile-registry.json', import.meta.url),
+    'utf-8',
+  ),
+) as ProfileRegistry;
+
+export const MUTATION_PROFILES = Object.fromEntries(
+  Object.entries(PROFILE_REGISTRY.profiles).map(([profile, entry]) => [
+    profile,
+    { configFile: entry.configFile, vitestConfigFile: entry.vitestConfigFile },
+  ]),
+) as Readonly<Record<MutationProfile, MutationProfileDefinition>>;
 
 export interface AdmissionRecord {
   readonly verifiedAt: string;
@@ -124,6 +126,22 @@ export interface RequiredAuthorityEntry extends AuthorityMetadata {
   readonly legacyBaseline?: LegacyBaseline;
 }
 
+/**
+ * A target staged inside a profile for authoritative admission measurement.
+ * It is mutated by its profile but carries no provenance yet: the full-run
+ * verdict decides whether it becomes `required` (admission) or
+ * `admission-backlog` (below threshold / not admitted).
+ */
+export interface AdmissionCandidateEntry extends AuthorityMetadata {
+  readonly classification: 'admission-candidate';
+  readonly profile: MutationProfile;
+  readonly mutateSelector: string;
+  readonly target: string;
+  readonly coveringSuites: readonly string[];
+  readonly reason: string;
+  readonly critical?: boolean;
+}
+
 export interface DeferredAuthorityEntry extends AuthorityMetadata {
   readonly classification: 'admission-backlog';
   readonly target: string;
@@ -148,6 +166,7 @@ export interface DeferredAuthorityGlobEntry extends AuthorityMetadata {
 
 export type MutationAuthorityEntry =
   | RequiredAuthorityEntry
+  | AdmissionCandidateEntry
   | DeferredAuthorityEntry
   | NotSuitableAuthorityEntry
   | DeferredAuthorityGlobEntry;
@@ -241,6 +260,31 @@ function deferred(
     source: options.source ?? [SOURCE.scope],
     reason,
     ...(options.profile === undefined ? {} : { profile: options.profile }),
+  };
+}
+
+function candidate(
+  target: string,
+  authority: string,
+  profile: MutationProfile,
+  coveringSuites: readonly string[],
+  reason: string,
+  options: {
+    readonly selector?: string;
+    readonly source?: readonly string[];
+    readonly critical?: boolean;
+  } = {},
+): AdmissionCandidateEntry {
+  return {
+    classification: 'admission-candidate',
+    target,
+    authority,
+    source: options.source ?? [SOURCE.scope],
+    reason,
+    profile,
+    mutateSelector: options.selector ?? target,
+    coveringSuites,
+    ...(options.critical === undefined ? {} : { critical: options.critical }),
   };
 }
 
