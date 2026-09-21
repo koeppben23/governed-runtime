@@ -17,13 +17,16 @@ import {
   freezeContextAuthorityAtHead,
   frozenAuthorityOrUndefined,
 } from '../../../rails/repository-authority.js';
-import { resolveAttemptDiscoveryOrBlock } from '../../review/discovery-attempt-context.js';
+import { resolveAttemptDiscoveryOrBlock } from '../../review/context/discovery-attempt-context.js';
 import { projectMarkdownHeadings } from '../../../shared/markdown-sections.js';
 import { formatBlocked } from '../../blocked-result.js';
 
 import type { SessionState } from '../../../state/schema.js';
 import { IntegrationInvariantError } from '../../errors.js';
-import { appendReviewObligation, createObligationAndAttempt } from '../../review/assurance.js';
+import {
+  appendReviewObligation,
+  createObligationAndAttempt,
+} from '../../review/obligations/assurance.js';
 import type { PlanEvidence } from '../../../state/evidence.js';
 import { computeRecordDigest } from '../../../state/evidence-plan.js';
 import { normalizePlanClaims } from '../../../state/proofgraph-approval.js';

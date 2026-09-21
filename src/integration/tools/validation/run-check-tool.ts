@@ -70,8 +70,8 @@ import { TOOL_FLOWGUARD_RUN_CHECK } from '../../tool-names.js';
 import {
   resolveReviewDispatchAuthority,
   reviewObligationResponseFields,
-} from '../../review/dispatch-authority.js';
-import type { ReviewDispatchAuthority } from '../../review/dispatch-authority.js';
+} from '../../review/dispatch/dispatch-authority.js';
+import type { ReviewDispatchAuthority } from '../../review/dispatch/dispatch-authority.js';
 import {
   activateReviewObligationAndPersist,
   buildImplementationReviewInstruction,

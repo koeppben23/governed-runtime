@@ -16,7 +16,10 @@ import type { PeerReviewPreparedEvidence } from '../../../state/peer-review.js';
 import type { ReviewReferenceInput } from '../../../rails/review.js';
 import { populateRefInput } from './continuation.js';
 import { makeState } from '../../../fixtures.js';
-import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from '../../review/assurance.js';
+import {
+  REVIEW_CRITERIA_VERSION,
+  REVIEW_MANDATE_DIGEST,
+} from '../../review/obligations/assurance.js';
 
 function evidence(args: {
   readonly branch?: string;

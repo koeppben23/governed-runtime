@@ -40,7 +40,7 @@ import {
   type EnforcementResult,
   type PendingReviewTool,
 } from './types.js';
-import { isReviewDispatchRequired } from '../dispatch-signal.js';
+import { isReviewDispatchRequired } from '../dispatch/dispatch-signal.js';
 import { buildPendingReview, type ReviewSignalBinding } from './pending-review.js';
 
 import {
@@ -49,7 +49,7 @@ import {
   reviewSignalOwner,
   type ReviewableTool,
   type ReviewSignalTool,
-} from '../obligation-tools.js';
+} from '../obligations/obligation-tools.js';
 import { parseToolResult } from '../../blocked-result.js';
 import type { TerminalPhasePredicate } from './types.js';
 

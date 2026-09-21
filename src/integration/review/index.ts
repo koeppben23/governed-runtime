@@ -1,10 +1,18 @@
 /**
  * @module integration/review
- * @description Public barrel for the review bounded context.
+ * @description Public bounded-context facade for review.
  *
- * This module exports the symbols consumed by plugin-*, tools/, and
- * integration root files. Internal implementation details are NOT
- * re-exported — consumers must use this barrel as the single entry point.
+ * `review/index.ts` is a composition surface, not an internal hub: it may
+ * compose every review subzone, but it MUST NOT be imported by FlowGuard
+ * production code — internal code imports the concrete authority it needs.
+ * Both properties are enforced by `architecture/__tests__/review-zone-policy`.
+ * Symbols consumed by plugin-*, tools/, and integration root files are exposed
+ * here for those external callers.
+ *
+ * Implementation authorities live in the review subzones (`dispatch/`,
+ * `obligations/`, `context/`, `observations/`, `evidence/`, `validation/`,
+ * `prompting/`, `enforcement/`); the review root keeps only cross-zone
+ * primitives. Subzones do not carry their own barrels.
  *
  * Architecture: review/ is a cohesive bounded context that owns:
  * - Review obligation lifecycle and tool mapping
@@ -48,18 +56,22 @@ export type {
 
 // ─── Dispatch Signal ─────────────────────────────────────────────────────────
 
-export type { ReviewDispatchSignal } from './dispatch-signal.js';
+export type { ReviewDispatchSignal } from './dispatch/dispatch-signal.js';
 
 export {
   reviewDispatchCompleted,
   readReviewDispatch,
   isReviewDispatchRequired,
   isReviewDispatchCompleted,
-} from './dispatch-signal.js';
+} from './dispatch/dispatch-signal.js';
 
 // ─── Obligation Tools ────────────────────────────────────────────────────────
 
-export { isReviewableTool, obligationTypeForTool, REVIEWABLE_TOOLS } from './obligation-tools.js';
+export {
+  isReviewableTool,
+  obligationTypeForTool,
+  REVIEWABLE_TOOLS,
+} from './obligations/obligation-tools.js';
 
 // ─── Enforcement Logic ───────────────────────────────────────────────────────
 
@@ -89,19 +101,19 @@ export {
   buildInvocationEvidence,
   hasEvidenceReuse,
   appendInvocationEvidence,
-} from './assurance.js';
+} from './obligations/assurance.js';
 
 // ─── Dispatch Authority ──────────────────────────────────────────────────────
 
 export type {
   ReviewDispatchAuthority,
   ReviewDispatchAuthorityResult,
-} from './dispatch-authority.js';
+} from './dispatch/dispatch-authority.js';
 
 export {
   resolveReviewDispatchAuthority,
   reviewObligationResponseFields,
-} from './dispatch-authority.js';
+} from './dispatch/dispatch-authority.js';
 
 // ─── Reviewer Result DTO ─────────────────────────────────────────────────────
 
@@ -113,14 +125,14 @@ export type {
   PlanReviewPromptOpts,
   ImplReviewPromptOpts,
   ArchitectureReviewPromptOpts,
-} from './prompt-builders.js';
+} from './prompting/prompt-builders.js';
 
 export {
   buildPlanReviewPrompt,
   buildImplReviewPrompt,
   buildArchitectureReviewPrompt,
   buildReviewContentPrompt,
-} from './prompt-builders.js';
+} from './prompting/prompt-builders.js';
 
 // ─── Agent Resolution ────────────────────────────────────────────────────────
 
@@ -129,16 +141,16 @@ export {
   ReviewerAgentUnavailableError,
   resolveReviewerAgent,
   _resetAgentResolutionCache,
-} from './agent-resolution.js';
+} from './dispatch/agent-resolution.js';
 
 // ─── Findings Schema ─────────────────────────────────────────────────────────
 
-export { REVIEW_FINDINGS_JSON_SCHEMA } from './findings-schema.js';
+export { REVIEW_FINDINGS_JSON_SCHEMA } from './evidence/findings-schema.js';
 
 // ─── Obligation State ────────────────────────────────────────────────────────
 
-export { updateObligation, blockObligation } from './obligation-state.js';
+export { updateObligation, blockObligation } from './obligations/obligation-state.js';
 
 // ─── Audit Events ────────────────────────────────────────────────────────────
 
-export { appendReviewAuditEvent } from './audit-events.js';
+export { appendReviewAuditEvent } from './evidence/audit-events.js';

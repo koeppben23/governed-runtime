@@ -411,6 +411,13 @@ function detectToolsCompositionImports(analyses: Map<string, FileAnalysis>): Imp
 /** Integration owners that review/** may consume (positive allowlist). */
 const REVIEW_ALLOWED_INTEGRATION_OWNERS: ReadonlySet<string> = new Set([
   'review',
+  'review-dispatch',
+  'review-obligations',
+  'review-context',
+  'review-observations',
+  'review-evidence',
+  'review-validation',
+  'review-prompting',
   'review-enforcement',
   'root-authority',
 ]);
@@ -1218,10 +1225,24 @@ describe('Layer Dependency Rules', () => {
     });
 
     it('review/ obligation-state.ts and audit-events.ts exist', () => {
-      const obligationState = path.join(SRC_DIR, 'integration', 'review', 'obligation-state.ts');
-      const auditEvents = path.join(SRC_DIR, 'integration', 'review', 'audit-events.ts');
-      expect(existsSync(obligationState), 'Expected review/obligation-state.ts').toBe(true);
-      expect(existsSync(auditEvents), 'Expected review/audit-events.ts').toBe(true);
+      const obligationState = path.join(
+        SRC_DIR,
+        'integration',
+        'review',
+        'obligations',
+        'obligation-state.ts',
+      );
+      const auditEvents = path.join(
+        SRC_DIR,
+        'integration',
+        'review',
+        'evidence',
+        'audit-events.ts',
+      );
+      expect(existsSync(obligationState), 'Expected review/obligations/obligation-state.ts').toBe(
+        true,
+      );
+      expect(existsSync(auditEvents), 'Expected review/evidence/audit-events.ts').toBe(true);
     });
 
     it('review/ barrel exports updateObligation, blockObligation, and appendReviewAuditEvent', async () => {
@@ -1236,7 +1257,13 @@ describe('Layer Dependency Rules', () => {
       // audit-events.ts imports from adapters/persistence — this is an intentional
       // architectural decision documented in the barrel header. Verify it compiles
       // and the import is to adapters/ only, not to plugin-* or tools/.
-      const auditEventsPath = path.join(SRC_DIR, 'integration', 'review', 'audit-events.ts');
+      const auditEventsPath = path.join(
+        SRC_DIR,
+        'integration',
+        'review',
+        'evidence',
+        'audit-events.ts',
+      );
       const content = await fs.readFile(auditEventsPath, 'utf-8');
       const imports = parseImports(content, path.dirname(auditEventsPath), 'integration');
       const adapterImports = imports.filter((i) => i.module.includes('adapters/'));

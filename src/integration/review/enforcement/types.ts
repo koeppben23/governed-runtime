@@ -15,8 +15,8 @@
  * @version v2
  */
 
-import type { ReviewableTool } from '../obligation-tools.js';
-export type { ReviewableTool } from '../obligation-tools.js';
+import type { ReviewableTool } from '../obligations/obligation-tools.js';
+export type { ReviewableTool } from '../obligations/obligation-tools.js';
 
 export type PendingReviewTool = ReviewableTool;
 

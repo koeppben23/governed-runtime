@@ -35,7 +35,7 @@
  * - **Discovery Collectors** — top-level collector functions wired in the
  *   orchestrator (`src/discovery/orchestrator.ts`)
  * - **Review Loops** — phases with independent subagent review
- *   (`src/integration/review/review-loop-progress.ts`)
+ *   (`src/integration/review/obligations/review-loop-progress.ts`)
  * - **Enforcement Layers** — distinct review enforcement checks L1-L4
  *   (`src/integration/review/enforcement/enforcement.ts`)
  * - **Audit Event Kinds** — members of `AuditEventKind` union
@@ -62,7 +62,7 @@ export const PRODUCT_INVENTORY = {
   archiveFindingCodes: 31,
   archiveVerifyJsdocChecks: 9,
   cliBins: 7,
-  mutationFiles: 109,
+  mutationFiles: 105,
 } as const;
 
 export type ProductInventory = typeof PRODUCT_INVENTORY;

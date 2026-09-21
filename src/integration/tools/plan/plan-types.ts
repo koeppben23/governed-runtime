@@ -78,7 +78,7 @@ export type PlanSubmissionResponseInput = {
   planVersion: number;
   transitions: unknown;
   /** Exact current plan review obligation/attempt authority for the dispatch. */
-  authority: import('../../review/dispatch-authority.js').ReviewDispatchAuthority;
+  authority: import('../../review/dispatch/dispatch-authority.js').ReviewDispatchAuthority;
 };
 
 export type ConvergedPlanReviewInput = {

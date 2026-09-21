@@ -31,7 +31,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { REVIEWER_AGENT } from '../templates/mandates.js';
 import { buildReviewerAgentContent } from './install-helpers.js';
-import { REVIEW_FINDINGS_JSON_SCHEMA } from '../integration/review/findings-schema.js';
+import { REVIEW_FINDINGS_JSON_SCHEMA } from '../integration/review/evidence/findings-schema.js';
 import { ReviewerFindingsInput } from '../state/evidence-review-input.js';
 import { TESTED_OPENCODE_HOST_VERSION } from './opencode-runtime-compat.js';
 import {

@@ -24,7 +24,7 @@ import {
   artifactReviewSubjectScope,
   createReviewObligation,
   freezeReviewMaterial,
-} from './review/assurance.js';
+} from './review/obligations/assurance.js';
 
 const ctx = createTestContext();
 

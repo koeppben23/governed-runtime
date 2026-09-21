@@ -15,12 +15,12 @@ import { formatBlocked } from '../../blocked-result.js';
 import { enrichWithWorkflowDirective, writeStateWithArtifacts } from '../helpers.js';
 import type { SessionState } from '../../../state/schema.js';
 import { resolveReviewContinuation } from '../../../state/review-continuation.js';
-import { buildInterruptedDispatchRearm } from '../../review/durable-dispatch.js';
+import { buildInterruptedDispatchRearm } from '../../review/dispatch/durable-dispatch.js';
 import {
   resolveReviewDispatchAuthority,
   reviewObligationResponseFields,
-} from '../../review/dispatch-authority.js';
-import type { ReviewDispatchAuthority } from '../../review/dispatch-authority.js';
+} from '../../review/dispatch/dispatch-authority.js';
+import type { ReviewDispatchAuthority } from '../../review/dispatch/dispatch-authority.js';
 import { buildImplementationReviewInstruction, type ImplementRuntime } from './implement-shared.js';
 
 function buildImplementationRecoveryResponse(

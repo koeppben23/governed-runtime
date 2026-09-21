@@ -37,7 +37,7 @@ import {
   hashFindings,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
-} from './review/assurance.js';
+} from './review/obligations/assurance.js';
 import {
   makeState,
   TICKET,

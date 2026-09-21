@@ -53,7 +53,7 @@ vi.mock('./phase-tool-gate.js', () => ({
   isRiskClassificationAllowed: mockIsRiskClassificationAllowed,
 }));
 
-vi.mock('./review/audit-events.js', () => ({
+vi.mock('./review/evidence/audit-events.js', () => ({
   appendReviewAuditEvent: mockAppendReviewAuditEvent,
 }));
 

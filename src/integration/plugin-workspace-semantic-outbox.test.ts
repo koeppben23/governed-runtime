@@ -7,8 +7,8 @@ import * as path from 'node:path';
 import { readState, writeState } from '../adapters/persistence.js';
 import { makeState } from '../fixtures.js';
 import { PluginWorkspaceImpl } from './plugin-workspace.js';
-import { freezeReviewMaterial } from './review/assurance.js';
-import { blockObligation } from './review/obligation-state.js';
+import { freezeReviewMaterial } from './review/obligations/assurance.js';
+import { blockObligation } from './review/obligations/obligation-state.js';
 
 const NOW = '2026-05-15T12:00:00.000Z';
 const OBLIGATION_ID = '33333333-3333-4333-8333-333333333333';

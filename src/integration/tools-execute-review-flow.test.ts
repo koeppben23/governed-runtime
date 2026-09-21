@@ -37,7 +37,7 @@ import {
   fulfillObligation,
   hashFindings,
   updateAttemptStatus,
-} from './review/assurance.js';
+} from './review/obligations/assurance.js';
 import {
   status,
   hydrate,

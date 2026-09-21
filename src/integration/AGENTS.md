@@ -61,17 +61,26 @@ API. It must never become a provider of new authorities for lower layers.
   contexts (`status/`, `discovery/`, `proofgraph/`, ...), and other
   top-level layers are enforced violations (`dependency-rules.test.ts`).
   Non-frozen authorities are consumed through injected structural ports:
-  `review/discovery-port.ts` (drift/health), `review/review-logger-port.ts`
-  (diagnostics), the convergence predicate in `review-loop-progress.ts`, and
-  `ReviewerProofGraphAuthorities` in `proof-context.ts` (gate + renderer);
-  `onFlowGuardToolAfter` receives the machine `isTerminalPhase` predicate.
+  `review/context/discovery-port.ts` (drift/health), `review/review-logger-port.ts`
+  (diagnostics), the convergence predicate in
+  `review/obligations/review-loop-progress.ts`, and
+  `ReviewerProofGraphAuthorities` in `review/context/proof-context.ts`
+  (gate + renderer); `onFlowGuardToolAfter` receives the machine
+  `isTerminalPhase` predicate.
+- Review ownership is zoned: `dispatch/`, `obligations/`, `context/`,
+  `observations/`, `evidence/`, `validation/`, `prompting/`, and the existing
+  `enforcement/`. `review/index.ts` is the public facade and is never imported
+  by production code; subzones have no barrels. The placement authority freezes
+  each file's zone and growth budget, and
+  `architecture/__tests__/review-zone-policy.ts` freezes the allowed zone graph
+  (`observed == declared`).
 - Evidence binding, obligation tracking, and findings validation are managed
   by the enforcement subsystem in `src/integration/review/enforcement/`.
 - `plugin-helpers.ts` is plugin composition. The pure blocked/enforcement
   result utilities live in the root authority `blocked-result.ts`; `review/`
   consumes those instead of the plugin boundary.
 - Advisory Discovery input is injected into `review/` through
-  `review/discovery-drift-port.ts`; `review/` never imports a discovery
+  `review/context/discovery-port.ts`; `review/` never imports a discovery
   module.
 
 ## Error Boundaries
@@ -95,8 +104,7 @@ Never use bare `throw new Error(...)` at these boundaries.
 
 - Contract tests: `sdk-contract-*.test.ts`, `cli-contract.test.ts`,
   `runtime-flow-e2e-contract.test.ts`, `review-modeb-contract.test.ts`,
-  `review/orchestrator-dispatch-authorization.test.ts`,
-  `review/durable-dispatch.test.ts`, `review-dispatch-replay-guard.test.ts`,
+  `review/dispatch/durable-dispatch.test.ts`,
   `tools/review-tool/structured-evidence-consumption.test.ts`,
   `policy-matrix.test.ts`.
 - Real host wire contract: `src/cli/opencode-reviewer-structured-live.test.ts`

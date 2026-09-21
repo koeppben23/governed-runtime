@@ -37,7 +37,7 @@ import {
   isNativeReviewerTaskBefore,
   nativeReviewTaskAfter,
   nativeReviewTaskBefore,
-} from './review/native-task-review.js';
+} from './review/dispatch/native-task-review.js';
 import { reconcilePendingAuditOperations } from './plugin-audit-reconcile.js';
 import { evaluateProofGraphGate } from '../audit/proofgraph/gate.js';
 import { renderPlanClaimDeclarations } from '../presentation/index.js';

@@ -39,7 +39,7 @@ import {
   REVIEW_MANDATE_DIGEST,
   buildInvocationEvidence,
   hashFindings,
-} from './review/assurance.js';
+} from './review/obligations/assurance.js';
 import type { ReviewFindings } from '../state/evidence.js';
 import { executeReviewDecision } from '../rails/review-decision.js';
 import { createTestContext } from '../testing.js';
@@ -49,7 +49,7 @@ import { materializeApprovedPlanContractResult } from './proofgraph/materialize-
 import { summarizeProofGraph, summarizePersistedProofGraph } from '../audit/proofgraph/summary.js';
 import { evaluateProofGraphGate } from '../audit/proofgraph/gate.js';
 import { buildProofApprovalProjection } from './proofgraph/approval-projection.js';
-import { buildReviewerProofContext } from './review/proof-context.js';
+import { buildReviewerProofContext } from './review/context/proof-context.js';
 import { isRiskAssessmentCurrent } from '../audit/proofgraph/gate.js';
 import {
   makeState,

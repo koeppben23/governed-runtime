@@ -12,7 +12,7 @@
 
 import type { SessionState } from '../../../state/schema.js';
 import { resolveBranchReviewSource } from '../../../adapters/gh-cli.js';
-import { findReviewObligationById } from '../../review/assurance.js';
+import { findReviewObligationById } from '../../review/obligations/assurance.js';
 import type { ReviewObligation } from '../../../state/evidence.js';
 import { repositoryFromBranchSubject } from './obligation-format.js';
 import type { ReviewExecutionContext } from './types.js';

@@ -38,14 +38,14 @@ import {
 } from '../../../adapters/persistence-observation-ledger.js';
 import { resolveFrozenRevisionTarget } from '../../../state/evidence.js';
 import { classifyRepositoryPath } from '../../../state/repository-path.js';
-import { resolveAttemptByCapability } from '../../review/observation-resolution.js';
+import { resolveAttemptByCapability } from '../../review/observations/observation-resolution.js';
 import {
   buildObservationToolResponse,
   classifyRepresentation,
   contentDigestOf,
   repositoryIdentityDigest,
   responseDigestOf,
-} from '../../review/observation-service.js';
+} from '../../review/observations/observation-service.js';
 
 const ARGS = z
   .object({

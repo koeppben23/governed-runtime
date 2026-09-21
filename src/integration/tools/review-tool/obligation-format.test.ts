@@ -14,7 +14,7 @@ import {
   repositoryFromBranchSubject,
 } from './obligation-format.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
-import type { ReviewDispatchAuthority } from '../../review/dispatch-authority.js';
+import type { ReviewDispatchAuthority } from '../../review/dispatch/dispatch-authority.js';
 
 const OBLIGATION_ID = 'f8163adf-6604-435a-b3ae-bae1b6b3ea08';
 

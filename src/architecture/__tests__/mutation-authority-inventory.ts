@@ -284,6 +284,14 @@ const DEEP_REASON =
   'Deferred to the deep authority expansion bundle; admission requires a profile full run with per-target evidence.';
 
 /**
+ * Relocated targets whose historical admission is path-bound. The move
+ * changed the target identity, so the old evidence is NOT rebound and no
+ * legacy provenance is synthesized; re-admission requires a fresh full run.
+ */
+const RELOCATED_ADMISSION_REASON =
+  'Previously admitted under the historical path. The bounded-context move changes target identity; historical admission evidence is not rebound to the new path. Re-admission requires a full base-profile run on the new target identity.';
+
+/**
  * Authorities that must never leave the mutation scope. Every root is backed
  * by an explicit source; adding a root is a deliberate inventory change.
  */
@@ -809,38 +817,17 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     ['src/integration/tools/review-validation-mode.test.ts'],
     { legacy: true, critical: true },
   ),
-  required(
-    'src/integration/review/review-validation.ts',
+  deferred(
+    'src/integration/review/validation/review-validation.ts',
     'Review validation aggregation',
-    ['src/integration/tools/review-validation-findings.test.ts'],
-    {
-      admission: {
-        verifiedAt: '2026-09-20',
-        commitSha: 'd1ef19ebbdda89af96869f7c3659de6a8ea1c8c7',
-        scoreAtAdmission: 83.57,
-        killed: 117,
-        survived: 23,
-        config: 'stryker.conf.json',
-      },
-    },
+    RELOCATED_ADMISSION_REASON,
+    { profile: 'base' },
   ),
-  required(
-    'src/integration/review/review-validation-structured-evidence.ts',
+  deferred(
+    'src/integration/review/validation/review-validation-structured-evidence.ts',
     'Structured review validation evidence',
-    [
-      'src/integration/review/challenge-policy-evaluation.test.ts',
-      'src/integration/tools/review-validation-findings.test.ts',
-    ],
-    {
-      admission: {
-        verifiedAt: '2026-09-20',
-        commitSha: 'd1ef19ebbdda89af96869f7c3659de6a8ea1c8c7',
-        scoreAtAdmission: 82.93,
-        killed: 68,
-        survived: 14,
-        config: 'stryker.conf.json',
-      },
-    },
+    RELOCATED_ADMISSION_REASON,
+    { profile: 'base' },
   ),
   required(
     'src/integration/plugin-audit-lifecycle-reason.ts',
@@ -972,15 +959,15 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     { legacy: true },
   ),
   required(
-    'src/integration/review/dispatch-signal.ts',
+    'src/integration/review/dispatch/dispatch-signal.ts',
     'Review dispatch signal detection',
-    ['src/integration/review/dispatch-signal.test.ts'],
+    ['src/integration/review/dispatch/dispatch-signal.test.ts'],
     { legacy: true },
   ),
   required(
-    'src/integration/review/agent-resolution.ts',
+    'src/integration/review/dispatch/agent-resolution.ts',
     'Reviewer agent resolution',
-    ['src/integration/review/agent-resolution.test.ts'],
+    ['src/integration/review/dispatch/agent-resolution.test.ts'],
     { legacy: true, critical: true },
   ),
   required(
@@ -1207,23 +1194,12 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
       config: 'stryker.conf.json',
     },
   },
-  {
-    classification: 'required',
-    profile: 'base',
-    mutateSelector: 'src/integration/review/reviewed-digest.ts',
-    target: 'src/integration/review/reviewed-digest.ts',
-    authority: 'Review provenance projection',
-    source: [SOURCE.trustBoundaries],
-    coveringSuites: ['src/integration/review/reviewed-digest.test.ts'],
-    admission: {
-      verifiedAt: '2026-09-17',
-      commitSha: '65b6b0126b5fb5fc77cd31701ac3e37f48356ccf',
-      scoreAtAdmission: 93.33,
-      killed: 84,
-      survived: 6,
-      config: 'stryker.conf.json',
-    },
-  },
+  deferred(
+    'src/integration/review/evidence/reviewed-digest.ts',
+    'Review provenance projection',
+    RELOCATED_ADMISSION_REASON,
+    { profile: 'base', source: [SOURCE.trustBoundaries] },
+  ),
   {
     classification: 'required',
     profile: 'base',
@@ -1398,23 +1374,12 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
       config: 'stryker.conf.json',
     },
   },
-  {
-    classification: 'required',
-    profile: 'base',
-    mutateSelector: 'src/integration/review/findings-hash.ts',
-    target: 'src/integration/review/findings-hash.ts',
-    authority: 'Findings hash normalization',
-    source: [SOURCE.trustBoundaries],
-    coveringSuites: ['src/integration/review/findings-hash.test.ts'],
-    admission: {
-      verifiedAt: '2026-09-17',
-      commitSha: 'cc713cb029ad1028793e6a7cdd67381efd33b88f',
-      scoreAtAdmission: 100,
-      killed: 20,
-      survived: 0,
-      config: 'stryker.conf.json',
-    },
-  },
+  deferred(
+    'src/integration/review/evidence/findings-hash.ts',
+    'Findings hash normalization',
+    RELOCATED_ADMISSION_REASON,
+    { profile: 'base', source: [SOURCE.trustBoundaries] },
+  ),
   // ── Base profile: core authorities admitted in the base full run ─────────
   required(
     'src/adapters/implementation-base-authority.ts',

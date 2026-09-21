@@ -29,9 +29,9 @@ import {
   type TestWorkspace,
   withTestEnv,
 } from './test-helpers.js';
-import { REVIEW_MANDATE_DIGEST, REVIEW_CRITERIA_VERSION } from './review/assurance.js';
+import { REVIEW_MANDATE_DIGEST, REVIEW_CRITERIA_VERSION } from './review/obligations/assurance.js';
 import { ReviewAttestation, ReviewInvocationEvidence } from '../state/evidence.js';
-import { findLatestPendingReviewObligation } from './review/assurance.js';
+import { findLatestPendingReviewObligation } from './review/obligations/assurance.js';
 import {
   status,
   hydrate,

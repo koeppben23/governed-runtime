@@ -28,11 +28,11 @@ import {
   ensureReviewAssurance,
   findLatestObligation,
   findLatestUnconsumedObligation,
-} from '../../review/assurance.js';
+} from '../../review/obligations/assurance.js';
 
-import { resolveStructuredEffectiveFindings } from '../../review/review-validation.js';
-import { collectPreviouslyUsedChallengeIds } from '../../review/challenge-history.js';
-import { buildReviewChallengeContract } from '../../review/challenge-contract.js';
+import { resolveStructuredEffectiveFindings } from '../../review/validation/review-validation.js';
+import { collectPreviouslyUsedChallengeIds } from '../../review/obligations/challenge-history.js';
+import { buildReviewChallengeContract } from '../../review/obligations/challenge-contract.js';
 
 import { normalizeArchitectureClaims } from '../../../state/proofgraph-approval.js';
 

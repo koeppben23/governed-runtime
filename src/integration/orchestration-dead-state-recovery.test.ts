@@ -36,7 +36,7 @@ import {
   artifactReviewSubjectScope,
   createReviewObligation,
   freezeReviewMaterial,
-} from './review/assurance.js';
+} from './review/obligations/assurance.js';
 import type { SessionState } from '../state/schema.js';
 import type { ReviewAttempt, ReviewObligation } from '../state/evidence.js';
 

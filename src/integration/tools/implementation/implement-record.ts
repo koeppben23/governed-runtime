@@ -80,14 +80,14 @@ import { writeImplementationDiffArtifact } from './implement-diff-artifact.js';
 
 // Evidence types
 
-import { ensureReviewAssurance } from '../../review/assurance.js';
+import { ensureReviewAssurance } from '../../review/obligations/assurance.js';
 import {
   resolveReviewDispatchAuthority,
   reviewObligationResponseFields,
-} from '../../review/dispatch-authority.js';
-import type { ReviewDispatchAuthority } from '../../review/dispatch-authority.js';
+} from '../../review/dispatch/dispatch-authority.js';
+import type { ReviewDispatchAuthority } from '../../review/dispatch/dispatch-authority.js';
 import { buildLatestImplementationReviewSummary } from './review-summary.js';
-import { collectHistoricallyRejectedImplementationDigests } from '../../review/rejected-digests.js';
+import { collectHistoricallyRejectedImplementationDigests } from '../../review/evidence/rejected-digests.js';
 import { resolveCeremonyProfile, isNonDomainConfigPath } from '../../phase-tool-gate.js';
 import type { CeremonyProfileDecision } from '../../phase-tool-gate.js';
 import type { ImplementRuntime, ImplementationCeremony } from './implement-shared.js';

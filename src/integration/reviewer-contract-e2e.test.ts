@@ -19,7 +19,7 @@ import { promisify } from 'node:util';
 import { mkdirSync } from 'node:fs';
 
 import { ReviewFindings } from '../state/evidence.js';
-import { renderFindingRelationGrammar } from './review/finding-relation-grammar.js';
+import { renderFindingRelationGrammar } from './review/evidence/finding-relation-grammar.js';
 import { validateReviewFindingsScope } from './review/enforcement/findings-consistency.js';
 
 const execFileAsync = promisify(execFile);

@@ -1,0 +1,474 @@
+/**
+ * @module integration/review/challenge-policy-evaluation.test
+ * @description Controlled #747 lifecycle evaluation using host-captured reviewer findings.
+ */
+
+import { performance } from 'node:perf_hooks';
+import * as crypto from 'node:crypto';
+import * as fs from 'node:fs/promises';
+import { afterEach, describe, expect, it } from 'vitest';
+import { CHALLENGE_POLICY_V1 } from '../../../config/policy-types.js';
+import { makeState } from '../../../fixtures.js';
+import type { ReviewAttempt, ReviewFindings, ReviewObligation } from '../../../state/evidence.js';
+import { readState, writeState } from '../../../adapters/persistence.js';
+import { computeFingerprint, sessionDir } from '../../../adapters/workspace/index.js';
+import { hashCanonicalReviewContent } from '../../../shared/review-subject.js';
+import { createTestWorkspace, createToolContext, parseToolResult } from '../../test-helpers.js';
+import { resolve_implementation_challenge } from '../../tools/challenge/challenge-resolution.js';
+import { resolveStructuredFindings } from './review-validation-structured-evidence.js';
+
+const testLogger = { warn: () => {} };
+import {
+  computeTargetedResolutionChallengeIds,
+  computeUnaddressedPriorFailIds,
+} from '../../tools/implementation/implement-review-state.js';
+import {
+  REVIEW_CRITERIA_VERSION,
+  REVIEW_MANDATE_DIGEST,
+  buildInvocationEvidence,
+  createReviewObligation,
+  freezeReviewMaterial,
+  hashFindings,
+} from '../obligations/assurance.js';
+import {
+  completedDispatchForInvocation,
+  TEST_EXECUTION_OBSERVATION,
+} from '../../../state/evidence-test-constants.js';
+
+type Fixture = {
+  readonly name: string;
+  /** Independently assigned fixture label, never derived from the resolver result. */
+  readonly expectedPolicyBlock: boolean;
+  readonly capture: 'missing_challenge' | 'structurally_valid';
+};
+
+type Metrics = {
+  readonly recall: number;
+  readonly precision: number | null;
+  readonly blockingRate: number;
+  readonly reReviewRate: number;
+  readonly pipelineValidationLatencyMs: number;
+  readonly fixtureReviewerLatencyMs: number;
+};
+
+const REVIEW_MATERIAL_CONTENT = '## Frozen Test Review Material\n\nChallenge policy fixture.\n';
+const REVIEW_MATERIAL_DIGEST = hashCanonicalReviewContent(REVIEW_MATERIAL_CONTENT);
+
+function boundAttempt(
+  obligation: ReviewObligation,
+  childSessionId: string,
+  attemptId: string,
+): ReviewAttempt {
+  return {
+    attemptId,
+    obligationId: obligation.obligationId,
+    obligationType: obligation.obligationType,
+    subjectDigest: obligation.subjectDigest,
+    ordinal: 0,
+    childSessionId,
+    status: 'bound',
+    origin: { kind: 'initial' },
+    repositoryDiscovery: { kind: 'not_applicable' },
+    observations: [],
+    createdAt: '2026-07-26T00:00:00.000Z',
+    completedAt: '2026-07-26T00:00:00.000Z',
+  };
+}
+
+function withReviewMaterial<T extends { readonly subjectDigest: string }>(
+  obligation: T,
+): T & {
+  readonly reviewMaterial: {
+    readonly content: string;
+    readonly materialDigest: string;
+    readonly subjectDigest: string;
+  };
+} {
+  return {
+    ...obligation,
+    reviewMaterial: {
+      content: REVIEW_MATERIAL_CONTENT,
+      materialDigest: REVIEW_MATERIAL_DIGEST,
+      subjectDigest: obligation.subjectDigest,
+    },
+  };
+}
+
+const FIXTURES: readonly Fixture[] = [
+  {
+    name: 'missing-required-challenge',
+    expectedPolicyBlock: true,
+    capture: 'missing_challenge',
+  },
+  {
+    // This label models a semantic defect that structural challenge validation cannot detect.
+    name: 'semantic-challenge-gap',
+    expectedPolicyBlock: true,
+    capture: 'structurally_valid',
+  },
+  {
+    // This deliberately contested label keeps false positives visible in the comparison.
+    name: 'contested-no-challenge-control',
+    expectedPolicyBlock: false,
+    capture: 'missing_challenge',
+  },
+  {
+    name: 'valid-challenge-control',
+    expectedPolicyBlock: false,
+    capture: 'structurally_valid',
+  },
+];
+
+let cleanup: (() => Promise<void>) | null = null;
+
+afterEach(async () => {
+  if (cleanup) await cleanup();
+  cleanup = null;
+});
+
+function capturedFindings(
+  obligationId: string,
+  iteration: number,
+  capture: Fixture['capture'],
+  overrides: Partial<ReviewFindings> = {},
+): ReviewFindings {
+  const challengeId = '11111111-1111-4111-8111-111111111111';
+  return {
+    iteration,
+    planVersion: 1,
+    reviewMode: 'subagent',
+    overallVerdict: 'accept',
+    blockingIssues: [],
+    majorRisks: [],
+    missingVerification: [],
+    scopeCreep: [],
+    unknowns: [],
+    reviewedBy: { sessionId: `captured-reviewer-${iteration}` },
+    reviewedAt: '2026-07-26T00:00:00.000Z',
+    attestation: {
+      mandateDigest: REVIEW_MANDATE_DIGEST,
+      criteriaVersion: REVIEW_CRITERIA_VERSION,
+      toolObligationId: obligationId,
+      iteration,
+      planVersion: 1,
+      reviewedBy: 'flowguard-reviewer',
+    },
+    ...(capture === 'structurally_valid'
+      ? {
+          challenges: [
+            {
+              challengeId,
+              obligationId,
+              kind: 'implementation_challenge' as const,
+              scenario: 'Exercise the changed behavior.',
+              claim: 'The implementation handles the expected input.',
+              locations: ['src/example.ts'],
+              evidenceRefs: [
+                { kind: 'implementation' as const, implementationDigest: 'impl-digest' },
+                {
+                  kind: 'validation_attempt' as const,
+                  attemptId: '33333333-3333-4333-8333-333333333333',
+                },
+              ],
+              outcome: 'pass' as const,
+            },
+          ],
+        }
+      : { challenges: [] }),
+    ...overrides,
+  };
+}
+
+async function fixtureReviewer(
+  artifact: Readonly<{ obligationId: string; iteration: number; capture: Fixture['capture'] }>,
+): Promise<ReviewFindings> {
+  // Deterministic reviewer fixture: deserialize its review artifact before producing findings.
+  const parsed = JSON.parse(JSON.stringify(artifact)) as typeof artifact;
+  return capturedFindings(parsed.obligationId, parsed.iteration, parsed.capture);
+}
+
+async function resolveCapturedFixture(
+  fixture: Fixture,
+): Promise<{ blocked: boolean; reviewerLatencyMs: number }> {
+  const obligation = withReviewMaterial(
+    createReviewObligation({
+      obligationType: 'implement',
+      reviewCycle: 1,
+      iteration: 0,
+      planVersion: 1,
+      now: '2026-07-26T00:00:00.000Z',
+      subjectDigest: 'test',
+      reviewMaterial: freezeReviewMaterial(REVIEW_MATERIAL_CONTENT, 'test'),
+      changedFiles: ['src/example.ts'],
+      reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
+      policySnapshot: { challengePolicy: CHALLENGE_POLICY_V1, maxReviewerAttempts: 1 },
+    }),
+  );
+  const reviewerStartedAt = performance.now();
+  const findings = await fixtureReviewer({
+    obligationId: obligation.obligationId,
+    iteration: 0,
+    capture: fixture.capture,
+  });
+  const reviewerLatencyMs = performance.now() - reviewerStartedAt;
+  const attempt = boundAttempt(
+    obligation,
+    findings.reviewedBy.sessionId,
+    '11111111-1111-4111-8111-111111111112',
+  );
+  const invocation = buildInvocationEvidence({
+    obligationId: obligation.obligationId,
+    obligationType: 'implement',
+    mandateDigest: obligation.mandateDigest,
+    criteriaVersion: obligation.criteriaVersion,
+    parentSessionId: 'evaluation-parent',
+    childSessionId: findings.reviewedBy.sessionId,
+    promptHash: 'a'.repeat(64),
+    findingsHash: hashFindings(findings),
+    invokedAt: '2026-07-26T00:00:00.000Z',
+    capturedRawFindings: findings,
+    attemptId: attempt.attemptId,
+  });
+  const result = resolveStructuredFindings(
+    testLogger,
+    {
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
+      obligations: [obligation],
+      invocations: [invocation],
+      attempts: [attempt],
+      dispatches: [completedDispatchForInvocation(invocation)],
+    },
+    obligation,
+  );
+  return { blocked: result.kind !== 'resolved', reviewerLatencyMs };
+}
+
+async function runResolutionAndIndependentReReview(): Promise<boolean> {
+  const ws = await createTestWorkspace();
+  cleanup = ws.cleanup;
+  const sessionID = `ses_challenge_eval_${crypto.randomUUID().replace(/-/g, '')}`;
+  const context = createToolContext({ worktree: ws.tmpDir, directory: ws.tmpDir, sessionID });
+  const fingerprint = await computeFingerprint(ws.tmpDir);
+  const sessDir = sessionDir(fingerprint.fingerprint, sessionID);
+  await fs.mkdir(sessDir, { recursive: true });
+
+  const firstObligation = withReviewMaterial(
+    createReviewObligation({
+      obligationType: 'implement',
+      reviewCycle: 1,
+      iteration: 0,
+      planVersion: 1,
+      now: '2026-07-26T00:00:00.000Z',
+      subjectDigest: 'test',
+      reviewMaterial: freezeReviewMaterial(REVIEW_MATERIAL_CONTENT, 'test'),
+      changedFiles: ['src/example.ts'],
+      reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
+      policySnapshot: { challengePolicy: CHALLENGE_POLICY_V1, maxReviewerAttempts: 1 },
+    }),
+  );
+  const challengeId = '22222222-2222-4222-8222-222222222222';
+  const firstFindings = capturedFindings(firstObligation.obligationId, 0, 'structurally_valid', {
+    overallVerdict: 'changes_requested',
+    reviewedBy: { sessionId: 'captured-reviewer-first' },
+    challenges: [
+      {
+        challengeId,
+        obligationId: firstObligation.obligationId,
+        kind: 'implementation_challenge',
+        scenario: 'Exercise the changed behavior.',
+        claim: 'The implementation handles the expected input.',
+        locations: ['src/example.ts'],
+        evidenceRefs: [
+          { kind: 'implementation', implementationDigest: 'impl-digest' },
+          { kind: 'validation_attempt', attemptId: '33333333-3333-4333-8333-333333333333' },
+        ],
+        outcome: 'fail',
+      },
+    ],
+  });
+  const firstInvocation = buildInvocationEvidence({
+    obligationId: firstObligation.obligationId,
+    obligationType: 'implement',
+    mandateDigest: firstObligation.mandateDigest,
+    criteriaVersion: firstObligation.criteriaVersion,
+    parentSessionId: sessionID,
+    childSessionId: firstFindings.reviewedBy.sessionId,
+    promptHash: 'a'.repeat(64),
+    findingsHash: hashFindings(firstFindings),
+    invokedAt: '2026-07-26T00:00:00.000Z',
+    capturedRawFindings: firstFindings,
+    attemptId: '33333333-3333-4333-8333-333333333334',
+  });
+  const firstAttempt = boundAttempt(
+    firstObligation,
+    firstFindings.reviewedBy.sessionId,
+    firstInvocation.attemptId,
+  );
+  expect(
+    resolveStructuredFindings(
+      testLogger,
+      {
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        obligations: [firstObligation],
+        invocations: [firstInvocation],
+        attempts: [firstAttempt],
+        dispatches: [completedDispatchForInvocation(firstInvocation)],
+      },
+      firstObligation,
+    ).kind,
+  ).toBe('resolved');
+  const attemptId = '33333333-3333-4333-8333-333333333333';
+  await writeState(
+    sessDir,
+    makeState('IMPL_REVIEW', {
+      implementation: {
+        changedFiles: ['src/example.ts'],
+        domainFiles: ['src/example.ts'],
+        digest: 'impl-digest',
+        executedAt: '2026-07-26T00:00:00.000Z',
+      },
+      implReviewFindings: [firstFindings],
+      reviewAssurance: {
+        assuranceSchemaVersion: 'review-assurance.v6' as const,
+        obligations: [firstObligation],
+        invocations: [firstInvocation],
+        attempts: [firstAttempt],
+        dispatches: [completedDispatchForInvocation(firstInvocation)],
+      },
+      validationAttempts: [
+        {
+          attemptId,
+          scope: 'implementation',
+          implementationDigest: 'impl-digest',
+          executionObservation: TEST_EXECUTION_OBSERVATION,
+          result: {
+            checkId: 'test',
+            passed: true,
+            detail: 'passed',
+            executedAt: '2026-07-26T00:00:00.000Z',
+            kind: 'test',
+            command: 'npm test',
+            exitCode: 0,
+            executionMs: 1,
+            outputDigest: 'a'.repeat(64),
+            timedOut: false,
+            outcome: 'supported' as const,
+          },
+        },
+      ],
+    }),
+  );
+
+  const resolution = parseToolResult(
+    await resolve_implementation_challenge.execute(
+      { challengeId, validationAttemptIds: [attemptId] },
+      context,
+    ),
+  );
+  expect(resolution.error).toBeUndefined();
+  const state = await readState(sessDir);
+  expect(state?.challengeResolutions).toHaveLength(1);
+
+  const secondObligation = withReviewMaterial(
+    createReviewObligation({
+      obligationType: 'implement',
+      reviewCycle: 1,
+      iteration: 1,
+      planVersion: 1,
+      now: '2026-07-26T00:01:00.000Z',
+      subjectDigest: 'test',
+      reviewMaterial: freezeReviewMaterial(REVIEW_MATERIAL_CONTENT, 'test'),
+      changedFiles: ['src/example.ts'],
+      reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
+      policySnapshot: { challengePolicy: CHALLENGE_POLICY_V1, maxReviewerAttempts: 1 },
+    }),
+  );
+  const secondFindings = capturedFindings(secondObligation.obligationId, 1, 'structurally_valid', {
+    reviewedBy: { sessionId: 'captured-reviewer-second' },
+    challengeResolutionVerdicts: [{ challengeId, verdict: 'resolved' }],
+  });
+  const secondInvocation = buildInvocationEvidence({
+    obligationId: secondObligation.obligationId,
+    obligationType: 'implement',
+    mandateDigest: secondObligation.mandateDigest,
+    criteriaVersion: secondObligation.criteriaVersion,
+    parentSessionId: sessionID,
+    childSessionId: secondFindings.reviewedBy.sessionId,
+    promptHash: 'a'.repeat(64),
+    findingsHash: hashFindings(secondFindings),
+    invokedAt: '2026-07-26T00:01:00.000Z',
+    capturedRawFindings: secondFindings,
+    attemptId: '33333333-3333-4333-8333-333333333335',
+  });
+  const secondAttempt = boundAttempt(
+    secondObligation,
+    secondFindings.reviewedBy.sessionId,
+    secondInvocation.attemptId,
+  );
+  const reReview = resolveStructuredFindings(
+    testLogger,
+    {
+      assuranceSchemaVersion: 'review-assurance.v6' as const,
+      obligations: [secondObligation],
+      invocations: [secondInvocation],
+      attempts: [secondAttempt],
+      dispatches: [completedDispatchForInvocation(secondInvocation)],
+    },
+    secondObligation,
+    state ? computeTargetedResolutionChallengeIds(state) : undefined,
+    undefined,
+    state ? computeUnaddressedPriorFailIds(state) : undefined,
+  );
+  return (
+    reReview.kind === 'resolved' &&
+    secondFindings.reviewedBy.sessionId !== firstFindings.reviewedBy.sessionId
+  );
+}
+
+async function evaluateFixtures(): Promise<Metrics> {
+  const pipelineStartedAt = performance.now();
+  let truePositives = 0;
+  let falsePositives = 0;
+  let falseNegatives = 0;
+  let blocked = 0;
+  let reviewerLatencyMs = 0;
+
+  for (const fixture of FIXTURES) {
+    const result = await resolveCapturedFixture(fixture);
+    const isBlocked = result.blocked;
+    reviewerLatencyMs += result.reviewerLatencyMs;
+    if (isBlocked) blocked++;
+    if (isBlocked && fixture.expectedPolicyBlock) truePositives++;
+    if (isBlocked && !fixture.expectedPolicyBlock) falsePositives++;
+    if (!isBlocked && fixture.expectedPolicyBlock) falseNegatives++;
+  }
+
+  const secondReviewOccurred = await runResolutionAndIndependentReReview();
+  const totalFixtures = FIXTURES.length + 1;
+  return {
+    recall: truePositives / (truePositives + falseNegatives),
+    precision:
+      truePositives + falsePositives === 0
+        ? null
+        : truePositives / (truePositives + falsePositives),
+    blockingRate: blocked / totalFixtures,
+    reReviewRate: secondReviewOccurred ? 1 / totalFixtures : 0,
+    pipelineValidationLatencyMs: performance.now() - pipelineStartedAt,
+    fixtureReviewerLatencyMs: reviewerLatencyMs,
+  };
+}
+
+describe('controlled challenge-policy lifecycle evaluation (#747)', () => {
+  it('evaluates the frozen challenge policy against captured findings and an actual re-review', async () => {
+    const withFrozenRequirements = await evaluateFixtures();
+
+    expect(withFrozenRequirements).toMatchObject({
+      recall: 1 / 2,
+      precision: 1 / 2,
+      blockingRate: 2 / 5,
+      reReviewRate: 1 / 5,
+    });
+    expect(withFrozenRequirements.pipelineValidationLatencyMs).toBeGreaterThanOrEqual(0);
+    expect(withFrozenRequirements.fixtureReviewerLatencyMs).toBeGreaterThanOrEqual(0);
+  });
+});

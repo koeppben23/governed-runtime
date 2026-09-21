@@ -4,7 +4,7 @@ import * as crypto from 'node:crypto';
 import { makeProgressedState, makeState, PLAN_EVIDENCE, TICKET } from '../../fixtures.js';
 import { buildHelpResult, finishToReadiness } from './help-projection.js';
 import { buildFinishCard } from '../status/status-finish.js';
-import { resolveCurrentReviewReport } from '../review/report-coherence.js';
+import { resolveCurrentReviewReport } from '../review/evidence/report-coherence.js';
 import type { ReviewReport } from '../../state/evidence.js';
 import { help } from '../tools/simple/help-tool.js';
 import {

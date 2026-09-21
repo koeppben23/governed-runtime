@@ -13,9 +13,9 @@ import {
   buildArchitectureReviewInstruction,
 } from './architecture/architecture-shared.js';
 import type { SessionState, Phase } from '../../state/schema.js';
-import type { ReviewDispatchAuthority } from '../review/dispatch-authority.js';
+import type { ReviewDispatchAuthority } from '../review/dispatch/dispatch-authority.js';
 
-vi.mock('../review/orchestration-mode.js', () => ({
+vi.mock('../review/dispatch/orchestration-mode.js', () => ({
   resolveRuntimeReviewPlatform: vi.fn(() => 'opencode'),
   resolveReviewOrchestrationMode: vi.fn(() => 'host_structured'),
 }));
