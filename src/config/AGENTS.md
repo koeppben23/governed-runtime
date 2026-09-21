@@ -38,6 +38,9 @@ npx vitest run --project unit src/config/reasons-completeness.test.ts
   `ValidationEvidencePolicy`) are authored once as Zod schemas in
   `state/evidence-policy.ts`; `policy-types.ts` re-exports the inferred types
   and derives the mode vocabularies from them. Do not re-declare a shape here.
+  The exported types are the deep-readonly, exact-optional projection of the
+  inferred shapes; do not widen them with casts, and pin the contract in
+  `architecture/__tests__/policy-snapshot-parity.test.ts` (P5).
 - `CHALLENGE_POLICY_VERSION` is owned by `state/evidence-policy.ts` and
   re-exported through `policy-types.ts`/`policy.ts`. Do not re-declare the
   literal.

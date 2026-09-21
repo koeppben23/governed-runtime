@@ -20,6 +20,21 @@ import { PolicyModeSchema, CentralMinimumModeSchema } from './policy-mode.js';
  * second, hand-written declaration to drift against.
  */
 
+/**
+ * Deep-readonly, exact-optional projection of a schema-inferred shape.
+ *
+ * `z.infer` yields mutable properties and admits explicit `undefined` for
+ * optional fields. The exported policy types preserve the pre-existing API
+ * contract instead: deeply readonly, and exact-optional (absence — not
+ * `undefined`) under `exactOptionalPropertyTypes`. Runtime validation remains
+ * with the schemas.
+ */
+type ExactDeepReadonly<T> = T extends readonly (infer U)[]
+  ? readonly ExactDeepReadonly<U>[]
+  : T extends object
+    ? { readonly [K in keyof T]: ExactDeepReadonly<Exclude<T[K], undefined>> }
+    : T;
+
 /** Versioned product decision for evidence-bound review challenges (#747). */
 export const CHALLENGE_POLICY_VERSION = 'challenge-policy.v1' as const;
 
@@ -36,7 +51,7 @@ export const ChallengePolicySchema = z.object({
     'HIGH-RISK': z.literal(2),
   }),
 });
-export type ChallengePolicy = z.infer<typeof ChallengePolicySchema>;
+export type ChallengePolicy = ExactDeepReadonly<z.infer<typeof ChallengePolicySchema>>;
 
 /** Timestamp assurance evidence configuration for audit events. */
 export const TimestampAssurancePolicySchema = z.object({
@@ -62,7 +77,9 @@ export const TimestampAssurancePolicySchema = z.object({
   /** TSA request timeout (ms, default: 10000). */
   tsaTimeoutMs: z.number(),
 });
-export type TimestampAssurancePolicy = z.infer<typeof TimestampAssurancePolicySchema>;
+export type TimestampAssurancePolicy = ExactDeepReadonly<
+  z.infer<typeof TimestampAssurancePolicySchema>
+>;
 
 /** Controls which audit events are emitted and how. */
 export const AuditPolicySchema = z.object({
@@ -75,7 +92,7 @@ export const AuditPolicySchema = z.object({
   /** Timestamp assurance evidence configuration. */
   timestampAssurance: TimestampAssurancePolicySchema,
 });
-export type AuditPolicy = z.infer<typeof AuditPolicySchema>;
+export type AuditPolicy = ExactDeepReadonly<z.infer<typeof AuditPolicySchema>>;
 
 /** Canonical iteration budgets for each independent review loop. */
 export const ReviewBudgetSchema = z.object({
@@ -83,7 +100,7 @@ export const ReviewBudgetSchema = z.object({
   architecture: z.number().int().positive(),
   implementation: z.number().int().positive(),
 });
-export type ReviewBudget = z.infer<typeof ReviewBudgetSchema>;
+export type ReviewBudget = ExactDeepReadonly<z.infer<typeof ReviewBudgetSchema>>;
 
 /**
  * Policy-gated Discovery health enforcement (#399).
@@ -103,7 +120,7 @@ export const DiscoveryHealthPolicySchema = z.object({
   onDegraded: z.enum(['allow', 'warn', 'block']),
   onDrift: z.enum(['allow', 'warn', 'block']),
 });
-export type DiscoveryHealthPolicy = z.infer<typeof DiscoveryHealthPolicySchema>;
+export type DiscoveryHealthPolicy = ExactDeepReadonly<z.infer<typeof DiscoveryHealthPolicySchema>>;
 
 /**
  * Policy-gated validation-evidence enforcement (#400).
@@ -120,7 +137,9 @@ export const ValidationEvidencePolicySchema = z.object({
   enforcement: z.enum(['off', 'advisory', 'required']),
   allowNoCommands: z.boolean(),
 });
-export type ValidationEvidencePolicy = z.infer<typeof ValidationEvidencePolicySchema>;
+export type ValidationEvidencePolicy = ExactDeepReadonly<
+  z.infer<typeof ValidationEvidencePolicySchema>
+>;
 
 /**
  * Immutable policy snapshot embedded in SessionState.

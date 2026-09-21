@@ -28,6 +28,9 @@
  *   P4 Runtime sanity: the canonical preset's executable keys are present in the
  *      snapshot and exactly reproduced by the reconstructed policy, and the
  *      snapshot parses against its own schema.
+ *   P5 Derived-type contract: the schema-inferred policy types stay deeply
+ *      readonly and exact-optional (absence, never explicit `undefined`), so a
+ *      schema-authority refactor cannot silently widen the public policy API.
  *
  * @version v1
  */
@@ -39,7 +42,15 @@ import {
   getPolicyPreset,
   resolvePolicyFromSnapshot,
 } from '../../config/policy.js';
-import type { ChallengePolicy, FlowGuardPolicy } from '../../config/policy-types.js';
+import type {
+  AuditPolicy,
+  ChallengePolicy,
+  DiscoveryHealthPolicy,
+  FlowGuardPolicy,
+  ReviewBudget,
+  TimestampAssurancePolicy,
+  ValidationEvidencePolicy,
+} from '../../config/policy-types.js';
 import { hashText } from '../../shared/hashing.js';
 import { PolicySnapshotSchema, type PolicySnapshot } from '../../state/evidence.js';
 
@@ -69,6 +80,54 @@ type MissingChallengeCountFixture = Exclude<
 
 // @ts-expect-error — proves the assertion mechanism fires on a missing nested key.
 type _MissingChallengeCountMustFail = AssertNever<MissingChallengeCountFixture>;
+
+// ─── P5: derived-type contract (deep readonly + exact optionals) ──────────────
+// Compile-only probe: never executed, fully checked by `check:tests`.
+
+function _assertDerivedPolicyTypeContract(
+  auditPolicy: AuditPolicy,
+  reviewBudget: ReviewBudget,
+  challengePolicy: ChallengePolicy,
+  discoveryHealth: DiscoveryHealthPolicy,
+  validationEvidence: ValidationEvidencePolicy,
+): void {
+  // @ts-expect-error — executable policy is immutable
+  auditPolicy.emitTransitions = false;
+
+  // @ts-expect-error — nested policy is immutable
+  auditPolicy.timestampAssurance.mode = 'ntp_check';
+
+  // @ts-expect-error — policy arrays are immutable
+  auditPolicy.timestampAssurance.criticalEvents.push('decision');
+
+  // @ts-expect-error — review budgets are immutable
+  reviewBudget.plan = 999;
+
+  // @ts-expect-error — challenge counts are immutable
+  challengePolicy.counts.STANDARD = 1;
+
+  // @ts-expect-error — discovery health policy is immutable
+  discoveryHealth.enforcement = 'off';
+
+  // @ts-expect-error — validation-evidence policy is immutable
+  validationEvidence.allowNoCommands = true;
+
+  const timestampAssuranceWithExplicitUndefined = {
+    enabled: false,
+    mode: 'local_only' as const,
+    strict: false,
+    criticalEvents: [],
+    ntpDriftThresholdMs: 30_000,
+    tsaTimeoutMs: 10_000,
+    tsaUrl: undefined,
+  };
+
+  // @ts-expect-error — optional policy fields are exact: absence, not explicit undefined
+  const _explicitUndefinedMustFail: TimestampAssurancePolicy =
+    timestampAssuranceWithExplicitUndefined;
+  void _explicitUndefinedMustFail;
+}
+void _assertDerivedPolicyTypeContract;
 
 describe('policy snapshot parity (structural)', () => {
   it('P4: the canonical preset round-trips keys and values through the parsed snapshot', () => {

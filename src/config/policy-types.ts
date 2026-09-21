@@ -7,6 +7,8 @@
  * `ValidationEvidencePolicy`) have exactly one authority: the Zod schemas in
  * `state/evidence-policy.ts`. This module re-exports their inferred types for
  * config-layer consumers and derives the mode-vocabulary unions from them.
+ * The re-exported types are the deep-readonly, exact-optional projection of
+ * the schemas — the public policy API stays immutable.
  *
  * Extracted from policy.ts.
  *
