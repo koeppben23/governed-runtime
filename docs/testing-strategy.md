@@ -320,6 +320,15 @@ and the remaining operator mutations are rejected by the TypeScript checker.
 The profile is required and must pass its own full run plus
 `verify-mutation-admission.mjs --profile event-core`.
 
+Topology profile (`stryker.topology.conf.json`): focused authority profile for
+`src/machine/topology.ts`, the formal state transition table. It uses
+`coverageAnalysis: "all"`, `ignoreStatic: false`, keeps `StringLiteral`
+enabled, and disables the TypeScript checker because the typed table literals
+are the mutation surface. The base classification `not-mutation-suitable` stays
+scoped to base; the target is an admission candidate until a full
+topology-profile run proves meaningful valid mutants at or above the
+per-target threshold.
+
 Deferred surfaces (whole roots behind the admission gate):
 `src/config/**`, `src/state/**`, `src/shared/**`, `src/audit/**`,
 `src/adapters/**`, `src/identity/**`, `src/verification/**`, `src/discovery/**`,
@@ -361,7 +370,8 @@ A candidate is staged inside a profile for authoritative admission
 measurement. It is mutated by its profile but carries no provenance yet: only
 a verified profile full run on the freeze commit decides whether it becomes
 `required` (immutable admission) or returns to the admission backlog.
-Currently none.
+
+- `src/machine/topology.ts` (topology)
 
 ### Running Locally
 

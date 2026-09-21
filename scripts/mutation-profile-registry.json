@@ -36,6 +36,12 @@
       "vitestConfigFile": "vitest.stryker-schemas.config.ts",
       "reportPath": "reports/mutation/schemas/mutation.json",
       "manifestPath": "reports/mutation/schemas/admission-manifest.json"
+    },
+    "topology": {
+      "configFile": "stryker.topology.conf.json",
+      "vitestConfigFile": "vitest.stryker-topology.config.ts",
+      "reportPath": "reports/mutation/topology/mutation.json",
+      "manifestPath": "reports/mutation/topology/admission-manifest.json"
     }
   }
 }

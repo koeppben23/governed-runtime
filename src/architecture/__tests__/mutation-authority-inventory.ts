@@ -58,7 +58,13 @@ import { readFileSync } from 'node:fs';
 import { isTestSourcePath } from './module-classification.js';
 
 export type MutationProfile =
-  'base' | 'event-core' | 'human-projection' | 'identity-jwks' | 'mandates' | 'schemas';
+  | 'base'
+  | 'event-core'
+  | 'human-projection'
+  | 'identity-jwks'
+  | 'mandates'
+  | 'schemas'
+  | 'topology';
 
 export type MutationAuthorityClass =
   'required' | 'admission-candidate' | 'admission-backlog' | 'not-mutation-suitable';
@@ -1682,6 +1688,19 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'Type-only module (PhaseInstructions interface); the base full run produced no valid mutants.',
     'base',
     { source: [SOURCE.config] },
+  ),
+  candidate(
+    'src/machine/topology.ts',
+    'Formal state transition table',
+    'topology',
+    [
+      'src/machine/topology.test.ts',
+      'src/machine/state-machine.fuzz.test.ts',
+      'src/machine/state-machine-invariants.test.ts',
+      'src/architecture/__tests__/topology-authority-ssot.test.ts',
+    ],
+    'Base regime produced zero valid mutants (module-init transition table under ignoreStatic). Staged for an authoritative topology-profile full run; admission requires meaningful valid mutants and >= 80.',
+    { source: [SOURCE.machine] },
   ),
   notSuitable(
     'src/machine/topology.ts',
