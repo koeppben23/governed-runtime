@@ -23,6 +23,7 @@ vi.mock('./review/enforcement/enforcement.js', () => ({
 }));
 
 import { trackFlowGuardEnforcement } from './plugin-enforcement-tracking.js';
+import type { ReviewSignalTool } from './review/obligation-tools.js';
 import type {
   SessionEnforcementState,
   PendingReviewTool,
@@ -124,17 +125,29 @@ describe('trackFlowGuardEnforcement', () => {
 
   // ─── CORNER ────────────────────────────────────────────────
 
-  it('delegates even when toolName is empty string (enforcement module decides)', () => {
-    const eState = makeEState();
+  it('delegates every review-signal identity unchanged', () => {
+    const reviewSignalTools: readonly ReviewSignalTool[] = [
+      'flowguard_plan',
+      'flowguard_implement',
+      'flowguard_architecture',
+      'flowguard_review',
+      'flowguard_review_implementation',
+      'flowguard_run_check',
+    ];
 
-    trackFlowGuardEnforcement(eState, '', { args: {} }, { output: 'x' }, FIXED_NOW);
+    for (const toolName of reviewSignalTools) {
+      vi.clearAllMocks();
+      const eState = makeEState();
 
-    expect(mockOnFlowGuardToolAfter).toHaveBeenCalledWith(
-      eState,
-      '',
-      expect.any(Object),
-      expect.any(String),
-      { now: FIXED_NOW, isTerminalPhase: expect.any(Function) },
-    );
+      trackFlowGuardEnforcement(eState, toolName, { args: {} }, { output: 'x' }, FIXED_NOW);
+
+      expect(mockOnFlowGuardToolAfter).toHaveBeenCalledWith(
+        eState,
+        toolName,
+        expect.any(Object),
+        expect.any(String),
+        { now: FIXED_NOW, isTerminalPhase: expect.any(Function) },
+      );
+    }
   });
 });

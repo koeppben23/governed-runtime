@@ -2,6 +2,14 @@
  * @module config/policy-types
  * @description Core policy types and interfaces.
  *
+ * Executable policy shapes (`AuditPolicy`, `TimestampAssurancePolicy`,
+ * `ChallengePolicy`, `ReviewBudget`, `DiscoveryHealthPolicy`,
+ * `ValidationEvidencePolicy`) have exactly one authority: the Zod schemas in
+ * `state/evidence-policy.ts`. This module re-exports their inferred types for
+ * config-layer consumers and derives the mode-vocabulary unions from them.
+ * The re-exported types are the deep-readonly, exact-optional projection of
+ * the schemas — the public policy API stays immutable.
+ *
  * Extracted from policy.ts.
  *
  * @version v1
@@ -10,46 +18,25 @@
 import type { ActorAssurance } from '../shared/actor-assurance.js';
 import type { IdpConfig, IdentityProviderMode } from '../shared/policy-idp-config.js';
 import type { PolicyMode, CentralMinimumMode } from '../state/policy-mode.js';
+import {
+  CHALLENGE_POLICY_VERSION,
+  type AuditPolicy,
+  type ChallengePolicy,
+  type DiscoveryHealthPolicy,
+  type ReviewBudget,
+  type TimestampAssurancePolicy,
+  type ValidationEvidencePolicy,
+} from '../state/evidence-policy.js';
 
-// ─── Timestamp Assurance Policy ──────────────────────────────────────────────
-
-/** Timestamp assurance evidence configuration for audit events. */
-export interface TimestampAssurancePolicy {
-  /** Enable timestamp assurance evidence (default: false). */
-  readonly enabled: boolean;
-  /** Assurance mode: local_only, ntp_check, or tsa_critical. */
-  readonly mode: 'local_only' | 'ntp_check' | 'tsa_critical';
-  /** Strict mode — TSA failure on critical events → session ERROR.
-   *  Slice 1 (#269): always false. Inert. Will activate only in follow-up
-   *  ticket when real TSA verifier (pkijs) is available. */
-  readonly strict: boolean;
-  /** Event kinds that require TSA evidence (e.g., decision, lifecycle). */
-  readonly criticalEvents: ReadonlyArray<string>;
-  /** TSA endpoint URL (required in tsa_critical mode). */
-  readonly tsaUrl?: string;
-  /** PEM-encodierte TSA trust anchor certificates (for Slice 2 verification). */
-  readonly trustAnchors?: ReadonlyArray<string>;
-  /** NTP server hostnames (default: pool.ntp.org). */
-  readonly ntpServers?: ReadonlyArray<string>;
-  /** Max clock drift before warning (ms, default: 30000). */
-  readonly ntpDriftThresholdMs: number;
-  /** TSA request timeout (ms, default: 10000). */
-  readonly tsaTimeoutMs: number;
-}
-
-// ─── Audit Policy ─────────────────────────────────────────────────────────────
-
-/** Controls which audit events are emitted and how. */
-export interface AuditPolicy {
-  /** Emit per-transition audit events (one per state change). */
-  readonly emitTransitions: boolean;
-  /** Emit per-tool-call audit events. */
-  readonly emitToolCalls: boolean;
-  /** Enable SHA-256 hash chain for tamper detection. */
-  readonly enableChainHash: boolean;
-  /** Timestamp assurance evidence configuration. */
-  readonly timestampAssurance: TimestampAssurancePolicy;
-}
+export type {
+  AuditPolicy,
+  ChallengePolicy,
+  DiscoveryHealthPolicy,
+  ReviewBudget,
+  TimestampAssurancePolicy,
+  ValidationEvidencePolicy,
+};
+export { CHALLENGE_POLICY_VERSION };
 
 /**
  * Review coverage profile bound to a review obligation.
@@ -65,15 +52,7 @@ export interface AuditPolicy {
  */
 export type ReviewProfile = 'core' | 'full';
 
-/** Versioned product decision for evidence-bound review challenges (#747). */
-export const CHALLENGE_POLICY_VERSION = 'challenge-policy.v1' as const;
-
 export type ChallengeKind = 'design_challenge' | 'implementation_challenge' | 'content_challenge';
-
-export interface ChallengePolicy {
-  readonly version: typeof CHALLENGE_POLICY_VERSION;
-  readonly counts: Readonly<{ TRIVIAL: 0; STANDARD: 1; 'HIGH-RISK': 2 }>;
-}
 
 /** Approved V1 matrix, frozen into every new session policy snapshot. */
 export const CHALLENGE_POLICY_V1: ChallengePolicy = {
@@ -101,38 +80,13 @@ export const DEFAULT_MAX_REVIEWER_ATTEMPTS = 1;
 
 // ─── Discovery Health Policy ──────────────────────────────────────────────────
 
-/** Master switch for policy-gated Discovery health enforcement. */
-export type DiscoveryHealthEnforcement = 'off' | 'advisory' | 'required';
-
 /**
- * Deterministic action for available-but-degraded or stale Discovery.
- * Degraded = failed/partial collectors, budget exhaustion, read failures, or stale ageWarning.
+ * Mode vocabularies derived from the `DiscoveryHealthPolicySchema` authority.
+ * See `state/evidence-policy.ts` for the enforcement/action semantics.
  */
-export type DiscoveryHealthDegradedAction = 'allow' | 'warn' | 'block';
-
-/** Deterministic action for non-clean Discovery drift verdicts. */
-export type DiscoveryHealthDriftAction = 'allow' | 'warn' | 'block';
-
-/**
- * Policy-gated Discovery health enforcement (#399).
- *
- * Two-axis governance:
- * - enforcement: master switch. 'off' = legacy advisory-only behavior (no new
- *   workflow blocks). 'advisory' = surface warnings/NOT_VERIFIED but never block.
- *   'required' = unavailable (missing/corrupt/schema_invalid/read_failed) ALWAYS
- *   blocks; degraded/drift follow onDegraded/onDrift.
- * - onDegraded: action when Discovery is available but degraded or stale.
- * - onDrift: action when the cached drift verdict is not 'clean' (drifted,
- *   missing_discovery, unavailable, timeout, not_checked — all fail-closed-eligible).
- *
- * Policy NEVER fabricates Discovery evidence; it only governs whether a workflow
- * may proceed with degraded/unavailable evidence. DiscoveryResult remains SSOT.
- */
-export interface DiscoveryHealthPolicy {
-  readonly enforcement: DiscoveryHealthEnforcement;
-  readonly onDegraded: DiscoveryHealthDegradedAction;
-  readonly onDrift: DiscoveryHealthDriftAction;
-}
+export type DiscoveryHealthEnforcement = DiscoveryHealthPolicy['enforcement'];
+export type DiscoveryHealthDegradedAction = DiscoveryHealthPolicy['onDegraded'];
+export type DiscoveryHealthDriftAction = DiscoveryHealthPolicy['onDrift'];
 
 /**
  * Mode-keyed default Discovery health policy.
@@ -152,38 +106,10 @@ export function defaultDiscoveryHealthForMode(mode: PolicyMode): DiscoveryHealth
 // ─── Validation Evidence Policy ───────────────────────────────────────────────
 
 /**
- * Master switch for policy-gated validation-evidence enforcement (#400).
- *
- * - 'off'      : legacy behavior. Empty activeChecks vacuously passes VALIDATION.
- * - 'advisory' : never blocks, but surfaces a NOT_VERIFIED warning when VALIDATION
- *                would pass with no verification evidence.
- * - 'required' : VALIDATION must NOT pass vacuously. Empty activeChecks blocks
- *                fail-closed unless an explicit policy-backed exception is set.
+ * Mode vocabulary derived from the `ValidationEvidencePolicySchema` authority.
+ * See `state/evidence-policy.ts` for the enforcement semantics.
  */
-export type ValidationEvidenceEnforcement = 'off' | 'advisory' | 'required';
-
-/**
- * Policy-gated validation-evidence enforcement (#400).
- *
- * Prevents HIGH-RISK/regulated sessions from passing VALIDATION vacuously when no
- * Discovery-derived verification commands are available. Under 'required',
- * progression past VALIDATION demands at least one applicable active check OR an
- * explicit policy-backed exception (`allowNoCommands`).
- *
- * This policy NEVER fabricates verification evidence and NEVER permits arbitrary
- * fallback commands; command resolution stays candidate-only (verificationCandidates
- * remains the source of truth). It only governs whether a workflow may proceed
- * without runtime verification evidence.
- */
-export interface ValidationEvidencePolicy {
-  readonly enforcement: ValidationEvidenceEnforcement;
-  /**
-   * Explicit policy-backed exception: when true, a session with genuinely no
-   * repo-native verification commands may still pass VALIDATION under 'required'.
-   * This is the ONLY sanctioned opt-out; it is recorded in the policy snapshot.
-   */
-  readonly allowNoCommands: boolean;
-}
+export type ValidationEvidenceEnforcement = ValidationEvidencePolicy['enforcement'];
 
 /**
  * Mode-keyed default validation-evidence policy.
@@ -323,13 +249,6 @@ export interface FlowGuardPolicy {
    * commands. Never fabricates evidence; verificationCandidates stays SSOT.
    */
   readonly validationEvidence: ValidationEvidencePolicy;
-}
-
-/** Canonical iteration budgets for each independent review loop. */
-export interface ReviewBudget {
-  readonly plan: number;
-  readonly architecture: number;
-  readonly implementation: number;
 }
 
 /**

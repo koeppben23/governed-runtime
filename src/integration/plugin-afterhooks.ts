@@ -123,8 +123,9 @@ async function trackReviewableEnforcement(
   runtime: FlowGuardPluginRuntime,
   ctx: AfterHookContext,
 ): Promise<void> {
+  const toolName = ctx.toolName;
   // Stryker disable next-line ConditionalExpression
-  if (!isReviewableFlowGuardTool(ctx.toolName)) return;
+  if (!isReviewableFlowGuardTool(toolName)) return;
 
   const parsed = parseToolResult(getToolOutput(ctx.hookOutput));
   if (parsed) {
@@ -138,7 +139,7 @@ async function trackReviewableEnforcement(
   try {
     const tracking = trackFlowGuardEnforcement(
       runtime.ws.getEnforcementState(ctx.sessionId),
-      ctx.toolName,
+      toolName,
       ctx.input,
       ctx.hookOutput,
       ctx.now,

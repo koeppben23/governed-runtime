@@ -7,9 +7,9 @@
  * the compiler — no non-null assertions, no fallback codes. Allowed decisions
  * cannot carry concrete denial metadata.
  *
- * Compiler note: with `exactOptionalPropertyTypes` disabled, an allowed decision
- * can still spell out `code: undefined`; a concrete denial code is forbidden.
- * The contract tightens automatically if that flag is enabled.
+ * Compiler note: with `exactOptionalPropertyTypes` enabled (`tsconfig.json`),
+ * an allowed decision cannot spell out `code: undefined` or `reason: undefined`,
+ * and a concrete denial code is forbidden regardless.
  *
  * Type-only module: no runtime behavior, no validation logic.
  *

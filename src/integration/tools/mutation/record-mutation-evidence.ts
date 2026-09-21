@@ -111,7 +111,7 @@ export const record_mutation_evidence: ToolDefinition = {
       .default('reports/mutation/mutation.json')
       .describe('Repository-relative path to the saved mutation report.'),
   },
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mirrors the untyped host ToolDefinition boundary; args are parsed below, context comes from the host
   async execute(args: any, context: any) {
     try {
       return await withMutableSessionTransaction(context, async ({ sessDir, state }) => {
