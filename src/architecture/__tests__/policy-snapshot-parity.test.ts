@@ -99,7 +99,7 @@ function _assertDerivedPolicyTypeContract(
 
   const replacementTimestampAssurance = auditPolicy.timestampAssurance;
 
-  // @ts-expect-error — nested policy blocks cannot be swapped (no shared aliasing)
+  // @ts-expect-error — nested policy blocks cannot be reassigned through the readonly contract
   auditPolicy.timestampAssurance = replacementTimestampAssurance;
 
   // @ts-expect-error — policy arrays are immutable
