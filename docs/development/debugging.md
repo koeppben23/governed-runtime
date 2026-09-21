@@ -223,9 +223,81 @@ Port: 9231
 The `--inspect-brk` process waits until the debugger attaches. Set breakpoints
 in `src/**/*.ts`; the debugger maps through the published source maps.
 
+The shared `FlowGuard - CLI Doctor` configuration runs from `$PROJECT_DIR$` and
+therefore inspects the source repository itself: a fresh clone has no
+repo-scoped `.opencode/` installation. It exercises the source-repo CLI boundary
+and failure paths (missing install, diagnostics), which is useful on purpose.
+
+For the successful installed-product path, start the doctor from the playground
+and attach:
+
+```bash
+cd ../flowguard-playground
+node --inspect-brk=127.0.0.1:9231 ../governed-runtime/dist/cli/install.js doctor --install-scope repo
+```
+
+or with the packaged CLI:
+
+```bash
+NODE_OPTIONS=--inspect-brk=127.0.0.1:9231 npx --yes \
+  --package "../governed-runtime/$TARBALL" flowguard doctor --install-scope repo
+```
+
+The first command runs against the local build, so breakpoints in `src/**/*.ts`
+bind through the source maps. The packaged invocation runs the installed
+artifact, where breakpoints bind in `dist/` JavaScript (the tarball ships
+`dist/` only). Attach IntelliJ to `127.0.0.1:9231` in both cases.
+
 ## 9. MCP debugging
 
-Build first:
+MCP over stdio is a child-process lifecycle: the MCP client spawns the server and
+owns its stdin/stdout. A separately started FlowGuard process has no stdio
+endpoint that a normal MCP client could attach to later. To debug real
+request/tool handling, let the client launch an inspected server process.
+
+### 9.1 Client-launched inspected server (request/tool debugging)
+
+```bash
+npm run build
+
+npx --yes @modelcontextprotocol/inspector \
+  node --inspect-brk=127.0.0.1:9230 dist/mcp-server/index.js
+```
+
+The official MCP Inspector spawns the command and speaks JSON-RPC over the
+child's stdio. `--inspect-brk` pauses the server until the debugger attaches;
+then trigger `initialize`, `tools/list`, or a tool call from the Inspector UI.
+
+```text
+MCP client / Inspector
+        │ spawn (stdio)
+        ▼
+node --inspect-brk=127.0.0.1:9230 dist/mcp-server/index.js
+        │
+        └──── inspector TCP 9230 ──── IntelliJ
+```
+
+Attach IntelliJ with `Attach to Node.js/Chrome`, host `127.0.0.1`, port `9230`.
+Use `--inspect` instead of `--inspect-brk` when the client handshake must not
+block and you can attach after startup.
+
+Any MCP client can launch the inspected process the same way:
+
+```json
+{
+  "mcpServers": {
+    "flowguard": {
+      "command": "node",
+      "args": [
+        "--inspect=127.0.0.1:9230",
+        "<absolute-path>/dist/mcp-server/index.js"
+      ]
+    }
+  }
+}
+```
+
+### 9.2 Standalone startup inspection
 
 ```bash
 npm run build
@@ -238,20 +310,11 @@ npm run debug:mcp
 node --inspect-brk=127.0.0.1:9230 dist/mcp-server/index.js
 ```
 
-```text
-MCP client
-   │
-   │ stdin/stdout JSON-RPC
-   ▼
-flowguard-mcp Node process
-   │
-   └──── inspector TCP 9230 ──── IntelliJ
-```
-
-The process waits for JSON-RPC input on stdio. Starting it alone is expected to
-sit idle; either drive it from an MCP client or use the shared
-`FlowGuard - MCP Server` run configuration to inspect startup and tool
-registration.
+Nothing connects to this process: it waits in `--inspect-brk` until IntelliJ
+attaches, and then waits for stdin. Use it — or the shared
+`FlowGuard - MCP Server` run configuration — only to inspect startup and tool
+registration. It is not a client attach point, and adding a client later does
+not work through stdio.
 
 > Never use stdout for ad-hoc debugging of `flowguard-mcp`. stdout is part of
 > the MCP protocol transport.
@@ -469,6 +532,73 @@ other version
 → compatible-unverified unless explicitly classified otherwise
 ```
 
+There are two distinct cases; do not mix them:
+
+```text
+A. FlowGuard code loaded by the host   → normal case (section 16.1)
+B. OpenCode itself (host-internal)     → only for host defects (section 16.2)
+```
+
+### 16.1 Debugging FlowGuard code loaded by the host
+
+Use the OpenCode CLI, not the desktop app. The desktop app wraps the same server
+in an Electron shell, which adds another process layer that only obscures
+breakpoint mapping.
+
+1. Install FlowGuard repo-scoped into the playground and enable debug logging
+   (sections 11 and 12). Confirm the tested host baseline (`1.18.30`).
+2. Use an OpenCode source checkout (Bun 1.3+) so the host can run under Bun's
+   inspector, per the OpenCode contributor documentation:
+
+   ```bash
+   git clone https://github.com/anomalyco/opencode
+   cd opencode
+   bun install
+   ```
+
+3. Start the host against the playground. Upstream notes that `bun dev` runs the
+   server in a worker thread where breakpoints may not bind; use the `spawn`
+   variant. Pass the playground directory so repository discovery targets it
+   (`bun dev <directory>`):
+
+   ```bash
+   export BUN_OPTIONS=--inspect=ws://localhost:6499/
+   bun dev spawn ~/dev/flowguard-playground
+   ```
+
+4. Attach IntelliJ: `Attach to Node.js/Chrome`, host `localhost`, port `6499`.
+   Bun's inspector speaks the Chrome DevTools protocol.
+5. First FlowGuard breakpoints:
+   - `<playground>/.opencode/plugins/flowguard-audit.ts` — the wrapper; proves
+     that the host discovered the repo-scoped plugin.
+   - `<playground>/.opencode/node_modules/@flowguard/core/dist/integration/plugin.js`
+     — `FlowGuardAuditPlugin` execution.
+6. Trigger `/start` or `/hydrate` in the host TUI.
+7. If `spawn` still does not bind breakpoints, split server and TUI as upstream
+   describes:
+
+   ```bash
+   # server
+   bun run --inspect=ws://localhost:6499/ --cwd packages/opencode ./src/index.ts serve --port 4096
+
+   # second terminal: TUI, started in the playground so the session targets it
+   cd ~/dev/flowguard-playground
+   opencode attach http://localhost:4096
+   ```
+
+FlowGuard TS-level breakpoints are not available for the installed copy: the
+published tarball ships only `dist/` and `VERSION`, so breakpoints bind in the
+installed dist JavaScript. To debug FlowGuard logic at TypeScript level,
+reproduce it through Vitest first — that is the canonical path.
+
+### 16.2 Debugging OpenCode itself
+
+Only for defects inside the host. Follow the upstream OpenCode contributor
+guide: run OpenCode from a source checkout with Bun's inspector and attach to
+it. The commands in 16.1 are the upstream-recommended approaches; the exact
+flags can evolve with the host. FlowGuard deliberately maintains no second host
+debug pipeline.
+
 ## 17. Verification checklist
 
 Use this checklist when validating a fresh development setup:
@@ -481,13 +611,16 @@ Use this checklist when validating a fresh development setup:
 [ ] FlowGuard - Integration starts
 [ ] TypeScript breakpoint is hit in integration code
 [ ] FlowGuard - Architecture starts
-[ ] FlowGuard - CLI Doctor stops in TypeScript source
-[ ] FlowGuard - MCP Server stops in TypeScript source
+[ ] FlowGuard - CLI Doctor stops in TypeScript source (source-repo failure path)
+[ ] Playground doctor stops in TypeScript source (installed-product path)
+[ ] FlowGuard - MCP Server stops in TypeScript source (startup/registration)
+[ ] Client-launched MCP request breakpoint is hit (Inspector or configured client)
 [ ] Source-map mapping resolves dist/*.js → src/*.ts
 [ ] Dogfood tarball builds
 [ ] Repo-scoped playground install succeeds
 [ ] flowguard doctor succeeds in playground
-[ ] OpenCode loads the repo-scoped FlowGuard installation
+[ ] OpenCode 1.18.30 loads the repo-scoped FlowGuard installation
+[ ] Breakpoint inside FlowGuardAuditPlugin / host boundary is hit
 [ ] /start or /hydrate reaches FlowGuard
 [ ] debug logging appears in the documented location
 ```
