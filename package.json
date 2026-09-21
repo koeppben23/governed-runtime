@@ -40,6 +40,8 @@
   "scripts": {
     "clean": "node scripts/clean-dist.js",
     "build": "npm run clean && npm run sync-version && npm run generate-docs && tsc && npm run generate-doc-inventory && npm run generate-build-info",
+    "debug:cli": "node --inspect-brk=127.0.0.1:9231 dist/cli/install.js",
+    "debug:mcp": "node --inspect-brk=127.0.0.1:9230 dist/mcp-server/index.js",
     "check:esm": "node scripts/check-esm-imports.js",
     "check:agent-instructions": "node scripts/check-agent-instructions.mjs",
     "check:actions-pinned": "node scripts/check-github-actions-pinned.js",
