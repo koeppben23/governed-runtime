@@ -867,17 +867,22 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     ['src/integration/tools/review-validation-mode.test.ts'],
     { legacy: true, critical: true },
   ),
-  deferred(
+  candidate(
     'src/integration/review/validation/review-validation.ts',
     'Review validation aggregation',
+    'base',
+    ['src/integration/tools/review-validation-findings.test.ts'],
     RELOCATED_ADMISSION_REASON,
-    { profile: 'base' },
   ),
-  deferred(
+  candidate(
     'src/integration/review/validation/review-validation-structured-evidence.ts',
     'Structured review validation evidence',
+    'base',
+    [
+      'src/integration/review/validation/challenge-policy-evaluation.test.ts',
+      'src/integration/tools/review-validation-findings.test.ts',
+    ],
     RELOCATED_ADMISSION_REASON,
-    { profile: 'base' },
   ),
   required(
     'src/integration/plugin-audit-lifecycle-reason.ts',
@@ -1244,11 +1249,13 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
       config: 'stryker.conf.json',
     },
   },
-  deferred(
+  candidate(
     'src/integration/review/evidence/reviewed-digest.ts',
     'Review provenance projection',
+    'base',
+    ['src/integration/review/evidence/reviewed-digest.test.ts'],
     RELOCATED_ADMISSION_REASON,
-    { profile: 'base', source: [SOURCE.trustBoundaries] },
+    { source: [SOURCE.trustBoundaries] },
   ),
   {
     classification: 'required',
@@ -1424,11 +1431,13 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
       config: 'stryker.conf.json',
     },
   },
-  deferred(
+  candidate(
     'src/integration/review/evidence/findings-hash.ts',
     'Findings hash normalization',
+    'base',
+    ['src/integration/review/evidence/findings-hash.test.ts'],
     RELOCATED_ADMISSION_REASON,
-    { profile: 'base', source: [SOURCE.trustBoundaries] },
+    { source: [SOURCE.trustBoundaries] },
   ),
   // ── Base profile: core authorities admitted in the base full run ─────────
   required(
