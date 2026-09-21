@@ -1,0 +1,44 @@
+name: Event Core Mutation Testing
+
+on:
+  pull_request:
+    paths:
+      - 'src/audit/event-core.ts'
+      - 'src/audit/audit-integrity.test.ts'
+      - 'src/audit/audit-integrity-timestamps.test.ts'
+      - 'src/audit/audit-types.test.ts'
+      - 'src/audit/canonical-digest.ts'
+      - 'src/audit/canonical-digest.test.ts'
+      - 'src/adapters/workspace/archive-verify-chain.test.ts'
+      - 'stryker.event-core.conf.json'
+      - 'vitest.stryker-event-core.config.ts'
+      - '.github/workflows/mutation-event-core.yml'
+      - 'scripts/verify-mutation-admission.mjs'
+      - 'scripts/mutation-profile-registry.json'
+      - 'scripts/stryker-patch.js'
+
+permissions:
+  contents: read
+
+jobs:
+  mutation-event-core:
+    name: mutation-event-core
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # actions/setup-node v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Run event-core mutation tests
+        run: node scripts/stryker-patch.js && npx stryker run stryker.event-core.conf.json
+      - name: Write and verify mutation admission manifest
+        run: |
+          node scripts/verify-mutation-admission.mjs --profile event-core --write-profile-manifest
+          node scripts/verify-mutation-admission.mjs --profile event-core --verify-profile-manifest

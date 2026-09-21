@@ -9,7 +9,7 @@
   "reporters": ["clear-text", "progress", "html", "json"],
   "coverageAnalysis": "all",
   "timeoutMS": 30000,
-  "timeoutFactor": 2.0,
+  "timeoutFactor": 2,
   "concurrency": 2,
   "checkers": ["typescript"],
   "tsconfigFile": "tsconfig.json",
@@ -22,5 +22,11 @@
     "break": 80
   },
   "tempDirName": ".stryker-tmp-schemas",
-  "ignoreStatic": false
+  "ignoreStatic": false,
+  "jsonReporter": {
+    "fileName": "reports/mutation/schemas/mutation.json"
+  },
+  "htmlReporter": {
+    "fileName": "reports/mutation/schemas/mutation.html"
+  }
 }

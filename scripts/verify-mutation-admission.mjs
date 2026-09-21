@@ -32,42 +32,57 @@
  *   undetected = Survived + NoCoverage
  *   excluded   = CompileError + RuntimeError + Ignored + Pending
  *
- * Usage:
- *   # verify a full run and persist admission provenance
- *   node scripts/verify-mutation-admission.mjs --profile base \
- *     --write-manifest reports/mutation/admission-manifest.json
+ * Usage (registry-driven; profile, report path, and manifest path all come
+ * from `scripts/mutation-profile-registry.json`):
+ *   # verify a full run and persist admission provenance at the profile path
+ *   node scripts/verify-mutation-admission.mjs --profile base --write-profile-manifest
  *
- *   # verify admission against a persisted manifest
- *   node scripts/verify-mutation-admission.mjs --profile base \
- *     --manifest reports/mutation/admission-manifest.json
+ *   # re-verify admission against the persisted profile manifest
+ *   node scripts/verify-mutation-admission.mjs --profile base --verify-profile-manifest
  *
  *   # require newly admitted selectors to meet the per-target threshold
  *   node scripts/verify-mutation-admission.mjs --profile base \
- *     --manifest reports/mutation/admission-manifest.json \
- *     --require-selectors src/machine/topology.ts
+ *     --verify-profile-manifest --require-selectors src/machine/topology.ts
  *
  *   # emit inventory-compatible admission records (requires a manifest)
  *   node scripts/verify-mutation-admission.mjs --profile base \
- *     --manifest reports/mutation/admission-manifest.json \
- *     --require-selectors src/machine/topology.ts --emit-admission
+ *     --verify-profile-manifest --require-selectors src/machine/topology.ts \
+ *     --emit-admission
+ *
+ * Explicit `--report`, `--manifest`, and `--write-manifest` remain available
+ * for tests and ad-hoc local paths; they are mutually exclusive with the
+ * profile-manifest modes.
  */
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 
-const PROFILE_CONFIG = {
-  base: 'stryker.conf.json',
-  'event-core': 'stryker.event-core.conf.json',
-  'human-projection': 'stryker.human-projection.conf.json',
-  'identity-jwks': 'stryker.identity-jwks.conf.json',
-  mandates: 'stryker.mandates.conf.json',
-  schemas: 'stryker.schemas.conf.json',
-};
+/**
+ * Profile metadata authority. This script owns NO profile map of its own: the
+ * registry is the single source for config file, vitest config, report path,
+ * and manifest path. Thresholds stay in the Stryker profile itself.
+ */
+const PROFILE_REGISTRY = JSON.parse(
+  readFileSync(resolve(REPO_ROOT, 'scripts/mutation-profile-registry.json'), 'utf8'),
+);
+const PROFILE_NAMES = Object.keys(PROFILE_REGISTRY.profiles);
+const PROFILE_CONFIG = Object.fromEntries(
+  Object.entries(PROFILE_REGISTRY.profiles).map(([profile, entry]) => [profile, entry.configFile]),
+);
+const PROFILE_REPORT_PATH = Object.fromEntries(
+  Object.entries(PROFILE_REGISTRY.profiles).map(([profile, entry]) => [profile, entry.reportPath]),
+);
+const PROFILE_MANIFEST_PATH = Object.fromEntries(
+  Object.entries(PROFILE_REGISTRY.profiles).map(([profile, entry]) => [
+    profile,
+    entry.manifestPath,
+  ]),
+);
 
 const DETECTED_STATUSES = new Set(['Killed', 'Timeout']);
 const UNDETECTED_STATUSES = new Set(['Survived', 'NoCoverage']);
@@ -80,7 +95,6 @@ const KNOWN_STATUSES = new Set([
 
 const SCHEMA_VERSION_PATTERN = /^([1-2])(\.(([1-9]\d*)|0)){0,2}$/;
 const MANIFEST_VERSION = 1;
-const DEFAULT_REPORT = 'reports/mutation/mutation.json';
 
 function fail(message) {
   console.error(`[verify-mutation-admission] ERROR: ${message}`);
@@ -90,9 +104,11 @@ function fail(message) {
 function parseArguments(argv) {
   const options = {
     profile: undefined,
-    report: DEFAULT_REPORT,
+    report: undefined,
     manifest: undefined,
     writeManifest: undefined,
+    writeProfileManifest: false,
+    verifyProfileManifest: false,
     emitAdmission: false,
     commit: undefined,
     requiredSelectors: [],
@@ -103,6 +119,8 @@ function parseArguments(argv) {
     else if (argument === '--report') options.report = argv[++index];
     else if (argument === '--manifest') options.manifest = argv[++index];
     else if (argument === '--write-manifest') options.writeManifest = argv[++index];
+    else if (argument === '--write-profile-manifest') options.writeProfileManifest = true;
+    else if (argument === '--verify-profile-manifest') options.verifyProfileManifest = true;
     else if (argument === '--emit-admission') options.emitAdmission = true;
     else if (argument === '--commit') options.commit = argv[++index];
     else if (argument === '--require-selectors') {
@@ -119,15 +137,28 @@ function parseArguments(argv) {
     } else fail(`unsupported argument '${argument}'`);
   }
   if (options.profile === undefined) {
-    fail(
-      'missing required --profile <base|event-core|human-projection|identity-jwks|mandates|schemas>',
-    );
+    fail(`missing required --profile <${PROFILE_NAMES.join('|')}>`);
   }
   if (!Object.hasOwn(PROFILE_CONFIG, options.profile)) {
     fail(`unknown profile '${options.profile}'`);
   }
+  if (options.report === undefined) {
+    options.report = PROFILE_REPORT_PATH[options.profile];
+  }
   if (typeof options.report !== 'string' || options.report.length === 0) {
     fail('--report requires a path');
+  }
+  if (options.writeProfileManifest && options.writeManifest !== undefined) {
+    fail('--write-profile-manifest and --write-manifest are mutually exclusive');
+  }
+  if (options.verifyProfileManifest && options.manifest !== undefined) {
+    fail('--verify-profile-manifest and --manifest are mutually exclusive');
+  }
+  if (options.writeProfileManifest) {
+    options.writeManifest = PROFILE_MANIFEST_PATH[options.profile];
+  }
+  if (options.verifyProfileManifest) {
+    options.manifest = PROFILE_MANIFEST_PATH[options.profile];
   }
   if (
     options.commit !== undefined &&
@@ -529,6 +560,7 @@ if (options.manifest !== undefined) {
 
 if (options.writeManifest !== undefined) {
   const manifestPath = resolve(process.cwd(), options.writeManifest);
+  mkdirSync(dirname(manifestPath), { recursive: true });
   writeFileSync(
     manifestPath,
     `${JSON.stringify(
@@ -561,6 +593,7 @@ if (options.emitAdmission) {
         killed: record.killed,
         survived: record.survived,
         config: record.config,
+        reportDigest: manifest.reportDigest,
       },
     }));
   console.log(JSON.stringify(emitted, null, 2));

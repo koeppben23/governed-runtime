@@ -28,8 +28,13 @@ function mutationTargets(): string[] {
 const requiredEntries = MUTATION_AUTHORITY_INVENTORY.filter(
   (entry): entry is RequiredAuthorityEntry => entry.classification === 'required',
 );
+const candidateEntries = MUTATION_AUTHORITY_INVENTORY.filter(
+  (entry) => entry.classification === 'admission-candidate',
+);
 const deferredEntries = MUTATION_AUTHORITY_INVENTORY.filter(
-  (entry) => entry.classification !== 'required',
+  (entry) =>
+    entry.classification === 'admission-backlog' ||
+    entry.classification === 'not-mutation-suitable',
 );
 const baseCriticalTargets = requiredEntries
   .filter((entry) => entry.profile === 'base' && entry.critical === true)
@@ -38,6 +43,16 @@ const baseCriticalTargets = requiredEntries
 function admissionBacklogSection(docs: string): string {
   const start = docs.indexOf('### Admission Backlog');
   expect(start, 'docs/testing-strategy.md lacks the Admission Backlog section').toBeGreaterThan(-1);
+  const rest = docs.slice(start);
+  const nextHeading = rest.indexOf('\n### ', 1);
+  return nextHeading === -1 ? rest : rest.slice(0, nextHeading);
+}
+
+function admissionCandidatesSection(docs: string): string {
+  const start = docs.indexOf('### Admission Candidates');
+  expect(start, 'docs/testing-strategy.md lacks the Admission Candidates section').toBeGreaterThan(
+    -1,
+  );
   const rest = docs.slice(start);
   const nextHeading = rest.indexOf('\n### ', 1);
   return nextHeading === -1 ? rest : rest.slice(0, nextHeading);
@@ -85,6 +100,16 @@ describe('documentation/testing-strategy', () => {
     for (const entry of deferredEntries) {
       const label = 'root' in entry ? `${entry.root}/**` : entry.target;
       expect(backlog, `${label} missing from the Admission Backlog`).toContain(label);
+    }
+  });
+
+  it('HAPPY: every admission candidate is listed in the Admission Candidates section', () => {
+    const section = admissionCandidatesSection(readRepoFile('docs/testing-strategy.md'));
+
+    for (const entry of candidateEntries) {
+      expect(section, `${entry.target} missing from the Admission Candidates section`).toContain(
+        entry.target,
+      );
     }
   });
 
