@@ -1,13 +1,19 @@
 /**
  * @module integration/services/regulated-completion-decision
- * @description Terminal decision authority and ordering for the regulated
- * completion chain.
+ * @description Terminal decision authority, ordering, and outbox correlation
+ *              recovery for the regulated completion chain.
  *
  * The decision receipt must precede the export transition in the audit trail.
  * Recovery commits the receipt before any reconciliation drains the export
  * and serializes the durability decision with concurrent audit appenders via
  * the audit write lock; once the export transition is durable, no late
  * receipt is fabricated.
+ *
+ * A crash between the successful append and the state commit leaves the
+ * receipt durable while its outbox operation is missing. Recovery reconstructs
+ * the exact operation from the durable event — accepted only when the rebuilt
+ * canonical event digest reproduces the persisted `semanticEventDigest`, so
+ * provenance is never invented from an unverifiable event.
  *
  * @version v1
  */
@@ -26,8 +32,9 @@ import { finalizeWithTimestampEvidence } from '../../audit/types.js';
 import type { TimestampAssurancePolicy } from '../../config/policy-types.js';
 import { resolvePolicyFromSnapshot } from '../../config/policy.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
+import type { AuditEvent } from '../../state/evidence.js';
 import { DecisionIdentity } from '../../state/evidence-identity.js';
-import type { PendingAuditOperation, SessionState } from '../../state/schema.js';
+import { Phase, type PendingAuditOperation, type SessionState } from '../../state/schema.js';
 import { prepareAuditOperations } from '../audit-outbox.js';
 import type { AuditDeps } from '../plugin-audit.js';
 import { TOOL_FLOWGUARD_DECISION } from '../tool-names.js';
@@ -115,12 +122,6 @@ function isTerminalDecisionDetail(detail: Record<string, unknown>, state: Sessio
   );
 }
 
-async function hasTerminalDecisionEvidence(sessDir: string, state: SessionState): Promise<boolean> {
-  return (await readAuditTrail(sessDir)).some((event) =>
-    isTerminalDecisionDetail(event.detail, state),
-  );
-}
-
 function hasPendingTerminalDecision(state: SessionState): boolean {
   return state.pendingAuditOperations.some(
     (operation) =>
@@ -130,11 +131,151 @@ function hasPendingTerminalDecision(state: SessionState): boolean {
   );
 }
 
-async function hasTerminalDecisionAuthority(
+type DecisionOperation = Extract<PendingAuditOperation, { kind: 'semantic' }>;
+
+type DurableDecisionReceipt =
+  | { readonly kind: 'no-receipt' }
+  | { readonly kind: 'correlated' }
+  | { readonly kind: 'repaired'; readonly state: SessionState };
+
+/**
+ * Resolve the durable terminal decision receipt against the state outbox.
+ *
+ * The receipt event is durable authority even when its outbox operation is
+ * not: a crash between the append and the state commit leaves the event
+ * durable without provenance. Recovery reconstructs the exact operation from
+ * the event — accepted only when the rebuilt canonical event digest
+ * reproduces the persisted `semanticEventDigest` and the operation identity
+ * matches the event id. An unverifiable receipt fails closed instead of
+ * fabricating correlation evidence.
+ */
+async function resolveDurableDecisionReceipt(
   sessDir: string,
   state: SessionState,
-): Promise<boolean> {
-  return (await hasTerminalDecisionEvidence(sessDir, state)) || hasPendingTerminalDecision(state);
+): Promise<DurableDecisionReceipt> {
+  const receipts = (await readAuditTrail(sessDir)).filter((event) =>
+    isTerminalDecisionDetail(event.detail, state),
+  );
+  const [receipt] = receipts;
+  if (receipt === undefined) return { kind: 'no-receipt' };
+  if (receipts.length > 1) {
+    throw new PersistenceError(
+      'WRITE_FAILED',
+      'Multiple durable terminal decision receipts exist for one decision authority; refusing to continue',
+    );
+  }
+  if (state.pendingAuditOperations.some((operation) => operation.operationId === receipt.id)) {
+    return { kind: 'correlated' };
+  }
+  const operation = reconstructDecisionOperation(state, receipt);
+  if (operation === null) {
+    throw new PersistenceError(
+      'WRITE_FAILED',
+      'Durable terminal decision receipt cannot be verified against its outbox correlation; refusing to fabricate provenance',
+    );
+  }
+  return { kind: 'repaired', state: insertDecisionOperation(state, operation) };
+}
+
+/**
+ * Rebuild the outbox operation a durable receipt event was appended from.
+ * The semantic detail, digests, and identity all travel in the event; the
+ * rebuilt body must reproduce the event digest exactly, so this is
+ * verification, not synthesis.
+ */
+function reconstructDecisionOperation(
+  state: SessionState,
+  event: AuditEvent,
+): DecisionOperation | null {
+  const detail = event.detail;
+  const operationId = detail.operationId;
+  const preStateDigest = detail.preStateDigest;
+  const mutationDigest = detail.mutationDigest;
+  const postStateDigest = detail.postStateDigest;
+  if (
+    typeof operationId !== 'string' ||
+    operationId !== event.id ||
+    typeof preStateDigest !== 'string' ||
+    typeof mutationDigest !== 'string' ||
+    typeof postStateDigest !== 'string'
+  ) {
+    return null;
+  }
+  const phase = Phase.safeParse(event.phase);
+  if (!phase.success) return null;
+  const semanticDetail = { ...detail };
+  delete semanticDetail.operationId;
+  delete semanticDetail.preStateDigest;
+  delete semanticDetail.mutationDigest;
+  delete semanticDetail.postStateDigest;
+  const body = buildSemanticAuditBody({
+    flowguardSessionId: state.flowguardSessionId,
+    hostSessionId: state.binding.hostSessionId,
+    phase: phase.data,
+    detail: semanticDetail,
+    event: event.event,
+    occurredAt: event.occurredAt,
+    prevHash: event.prevHash,
+    operationId,
+    preStateDigest,
+    mutationDigest,
+    postStateDigest,
+    actor: event.actor,
+    ...(event.actorInfo !== undefined ? { actorInfo: event.actorInfo } : {}),
+  });
+  const auditEventDigest = computeCanonicalEventDigest(body);
+  if (auditEventDigest !== event.semanticEventDigest) return null;
+  return {
+    kind: 'semantic',
+    operationId,
+    preStateDigest,
+    mutationDigest,
+    postStateDigest,
+    auditEventDigest,
+    semantic: {
+      phase: phase.data,
+      event: event.event,
+      occurredAt: event.occurredAt,
+      actor: event.actor,
+      ...(event.actorInfo !== undefined ? { actorInfo: event.actorInfo } : {}),
+      detail: semanticDetail,
+    },
+    status: 'reconciled',
+  };
+}
+
+function findExportOperationIndex(state: SessionState): number {
+  const transition = state.transition;
+  if (!transition) return -1;
+  return state.pendingAuditOperations.findIndex(
+    (operation) =>
+      operation.kind === 'transition' &&
+      operation.transition.from === transition.from &&
+      operation.transition.to === transition.to &&
+      operation.transition.event === transition.event,
+  );
+}
+
+/**
+ * Insert the recovered receipt operation ahead of the export transition so
+ * the outbox order mirrors the required audit order. A same-id operation is
+ * replaced rather than duplicated.
+ */
+function insertDecisionOperation(state: SessionState, operation: DecisionOperation): SessionState {
+  const exportOperationIndex = findExportOperationIndex(state);
+  const index =
+    exportOperationIndex === -1 ? state.pendingAuditOperations.length : exportOperationIndex;
+  const withoutDuplicate = state.pendingAuditOperations.filter(
+    (candidate) => candidate.operationId !== operation.operationId,
+  );
+  return {
+    ...state,
+    pendingAuditOperations: [
+      ...withoutDuplicate.slice(0, index),
+      operation,
+      ...withoutDuplicate.slice(index),
+    ],
+  };
 }
 
 /**
@@ -168,7 +309,15 @@ export async function commitTerminalDecision(
   await withSessionWriteTransaction(sessDir, async () => {
     const fresh = await readState(sessDir);
     const authority = fresh && isRegulatedTicketCompletion(fresh) ? fresh : state;
-    if (await hasTerminalDecisionAuthority(sessDir, authority)) return;
+    const receipt = await resolveDurableDecisionReceipt(sessDir, authority);
+    if (receipt.kind === 'repaired') {
+      await writeStateWithArtifactsAndAuditOperations(sessDir, receipt.state);
+      return;
+    }
+    if (receipt.kind === 'correlated') return;
+    // A committed intent whose event is not durable yet is drained by the
+    // outbox in array order — ahead of the export transition it precedes.
+    if (hasPendingTerminalDecision(authority)) return;
     const transition = findApprovalTransition(authority);
     const decision = authority.reviewDecision;
     if (!transition || !decision) {
@@ -185,15 +334,7 @@ export async function commitTerminalDecision(
     // the decision order: fail closed instead of fabricating evidence.
     // Recovery never attributes the receipt to a session actor; the deciding
     // identity is the persisted decisionIdentity.
-    const terminalTransition = authority.transition;
-    const exportOperationIndex = authority.pendingAuditOperations.findIndex(
-      (operation) =>
-        terminalTransition !== null &&
-        operation.kind === 'transition' &&
-        operation.transition.from === terminalTransition.from &&
-        operation.transition.to === terminalTransition.to &&
-        operation.transition.event === terminalTransition.event,
-    );
+    const exportOperationIndex = findExportOperationIndex(authority);
     if (exportOperationIndex === -1) {
       throw lateReceiptError();
     }
@@ -207,7 +348,6 @@ export async function commitTerminalDecision(
       authority,
       transition,
       decision,
-      exportOperationIndex,
       auditDeps,
     });
     if (recovered === null) {
@@ -235,11 +375,9 @@ async function recoverOrderedDecision(input: {
   readonly authority: SessionState;
   readonly transition: NonNullable<SessionState['transition']>;
   readonly decision: NonNullable<SessionState['reviewDecision']>;
-  readonly exportOperationIndex: number;
   readonly auditDeps: AuditDeps;
 }): Promise<SessionState | null> {
-  const { sessDir, sessionID, authority, transition, decision, exportOperationIndex, auditDeps } =
-    input;
+  const { sessDir, sessionID, authority, transition, decision, auditDeps } = input;
   const decisionSequence = await auditDeps.nextDecisionSequence(sessDir, sessionID);
   const actor =
     resolvePolicyFromSnapshot(authority.policySnapshot).actorClassification[
@@ -265,14 +403,13 @@ async function recoverOrderedDecision(input: {
       );
     }
     await appendDecisionEventUnderAuditLock(sessDir, decisionOperation, authority, auditDeps);
-    return {
-      ...prepared,
-      pendingAuditOperations: [
-        ...prepared.pendingAuditOperations.slice(0, exportOperationIndex),
-        { ...decisionOperation, status: 'reconciled' as const },
-        ...authority.pendingAuditOperations.slice(exportOperationIndex),
-      ],
-    };
+    // The append succeeded, so its operation is reconciled; persist it ahead
+    // of the export operation. A crash between the append and this write is
+    // repaired from the durable event on the next recovery.
+    return insertDecisionOperation(prepared, {
+      ...decisionOperation,
+      status: 'reconciled' as const,
+    });
   });
 }
 
@@ -286,7 +423,9 @@ function lateReceiptError(): PersistenceError {
 /**
  * Append the recovered decision event under the caller-held audit lock. The
  * event is idempotent by operation id, so a re-delivery after a crash between
- * append and state commit is recognized instead of duplicated.
+ * append and state commit is recognized instead of duplicated. A crash that
+ * loses the operation entirely is repaired from the durable event on the next
+ * recovery (see resolveDurableDecisionReceipt).
  */
 async function appendDecisionEventUnderAuditLock(
   sessDir: string,
