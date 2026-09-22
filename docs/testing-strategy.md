@@ -368,10 +368,10 @@ A candidate is staged inside a profile for authoritative admission
 measurement. It is mutated by its profile but carries no provenance yet: only
 a verified profile full run on the freeze commit decides whether it becomes
 `required` (immutable admission) or returns to the admission backlog. The
-2026-09-21 freeze run admitted five candidates. The durable human-decision
-audit intent authority (`src/integration/services/decision-audit-intent.ts`)
-is staged inside the base profile; its admission verdict comes from the next
-profile full run.
+2026-09-21 freeze run admitted five candidates. The 2026-09-22 base profile
+run admitted the durable human-decision audit intent authority
+(`src/integration/services/decision-audit-intent.ts`) with a 100 % per-target
+score (33 killed, 0 survived); currently none remain staged.
 
 ### Running Locally
 

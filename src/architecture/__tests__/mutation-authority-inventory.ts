@@ -894,16 +894,17 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     ['src/integration/plugin-audit.test.ts'],
     { legacy: true },
   ),
-  candidate(
+  required(
     'src/integration/services/decision-audit-intent.ts',
     'Durable human-decision audit intent authority',
-    'base',
     [
       'src/integration/services/decision-audit-intent.test.ts',
       'src/integration/plugin-audit-reconcile.test.ts',
       'src/integration/plugin-workspace-composition.test.ts',
     ],
-    'Authority extracted from plugin-audit-decisions.ts; staged for authoritative admission measurement on the next profile full run.',
+    {
+      admission: admissionRecord('src/integration/services/decision-audit-intent.ts'),
+    },
   ),
   required(
     'src/integration/plugin-audit-reconcile.ts',
