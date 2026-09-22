@@ -405,12 +405,6 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
     targetZone: 'root',
   },
   {
-    file: 'integration/plugin-audit-decisions.ts',
-    owner: 'root-composition',
-    zone: 'root',
-    targetZone: 'root',
-  },
-  {
     file: 'integration/plugin-audit-lifecycle-reason.ts',
     owner: 'root-composition',
     zone: 'root',
@@ -1036,6 +1030,12 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
     owner: 'root-host-runtime',
     zone: 'root',
     targetZone: 'root',
+  },
+  {
+    file: 'integration/services/decision-audit-intent.ts',
+    owner: 'services',
+    zone: 'services',
+    targetZone: 'services',
   },
   {
     file: 'integration/services/decision-finalization.ts',

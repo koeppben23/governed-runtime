@@ -75,6 +75,7 @@ export default defineConfig({
       'src/integration/plugin-audit-lifecycle-reason.test.ts',
       'src/integration/plugin-audit-reconcile.test.ts',
       'src/integration/plugin-audit.test.ts',
+      'src/integration/services/decision-audit-intent.test.ts',
       'src/integration/plugin-afterhooks.test.ts',
       'src/integration/plugin-afterhooks-more.test.ts',
       'src/integration/plugin-beforehooks.test.ts',

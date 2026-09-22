@@ -80,7 +80,7 @@ audit (integrity + completeness + NTP + event builders + RFC3161 parse/signer ve
 config (policy snapshot/resolver/central + reasons + profile), hooks (HTTP hook server + command pre-tool-use + shared obligation-tracker +
 phase-gate), identity (token-verifier + key-resolver), integration
 (installed-commands, tool-classification, discovery-risk-paths, pre-implementation challenge, architecture submit, review-validation-mode,
-plugin-audit, plugin-audit-decisions, plugin-audit-reconcile, plugin-beforehooks, plugin-afterhooks, plugin-helpers, audit-outbox, plugin-audit-lifecycle-reason, review enforcement,
+plugin-audit, services/decision-audit-intent, plugin-audit-reconcile, plugin-beforehooks, plugin-afterhooks, plugin-helpers, audit-outbox, plugin-audit-lifecycle-reason, review enforcement,
 dispatch signal, and agent resolution), logging (error-serialize),
 templates (codex-plugin, claude-code-plugin, mandates),
 shared canonical JSON and hashing, machine (commands, evaluate, guards, workflow-directive, validation-evidence), and
@@ -368,7 +368,10 @@ A candidate is staged inside a profile for authoritative admission
 measurement. It is mutated by its profile but carries no provenance yet: only
 a verified profile full run on the freeze commit decides whether it becomes
 `required` (immutable admission) or returns to the admission backlog. The
-2026-09-21 freeze run admitted all five candidates; currently none remain.
+2026-09-21 freeze run admitted five candidates. The durable human-decision
+audit intent authority (`src/integration/services/decision-audit-intent.ts`)
+is staged inside the base profile; its admission verdict comes from the next
+profile full run.
 
 ### Running Locally
 

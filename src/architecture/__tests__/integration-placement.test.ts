@@ -131,14 +131,14 @@ describe('integration placement authority', () => {
     }
   });
 
-  it('freezes the agreed root matrix exactly (24 + 4 + 13 = 41)', () => {
+  it('freezes the agreed root matrix exactly (23 + 4 + 13 = 40)', () => {
     const rootFiles = INTEGRATION_PLACEMENT.filter((entry) => entry.zone === 'root');
     const byOwner = (owner: string) => rootFiles.filter((entry) => entry.owner === owner);
 
-    expect(byOwner('root-composition').length).toBe(24);
+    expect(byOwner('root-composition').length).toBe(23);
     expect(byOwner('root-host-runtime').length).toBe(4);
     expect(byOwner('root-authority').length).toBe(13);
-    expect(rootFiles.length).toBe(41);
+    expect(rootFiles.length).toBe(40);
 
     expect(
       byOwner('root-host-runtime')

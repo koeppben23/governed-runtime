@@ -65,7 +65,7 @@
     "src/integration/installed-commands.ts",
     "src/integration/plugin-afterhooks.ts",
     "src/integration/plugin-audit-lifecycle-reason.ts",
-    "src/integration/plugin-audit-decisions.ts",
+    "src/integration/services/decision-audit-intent.ts",
     "src/integration/plugin-audit-reconcile.ts",
     "src/integration/plugin-audit.ts",
     "src/integration/plugin-beforehooks.ts",
