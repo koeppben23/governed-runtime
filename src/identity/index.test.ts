@@ -226,8 +226,10 @@ describe('identity resolveIdpToken (P35b1)', () => {
       cacheTtlSeconds: 1,
     });
 
+    const now = 1_700_000_000_000;
+    vi.spyOn(Date, 'now').mockReturnValue(now);
     await resolveIdpToken(tokenPath, config);
-    await new Promise((resolve) => setTimeout(resolve, 1200));
+    vi.mocked(Date.now).mockReturnValue(now + 1_001);
 
     await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject({
       code: 'IDP_JWKS_FETCH_FAILED',

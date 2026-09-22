@@ -299,13 +299,4 @@ describe('hydrate rail', () => {
       }
     });
   });
-
-  // ─── PERF ──────────────────────────────────────────────────
-  describe('PERF', () => {
-    it('hydrate is fast (smoke test)', () => {
-      const start = performance.now();
-      executeHydrate(null, HYDRATE_INPUT, ctx);
-      expect(performance.now() - start).toBeLessThan(50);
-    });
-  });
 });

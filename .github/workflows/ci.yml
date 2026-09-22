@@ -35,6 +35,10 @@ jobs:
         run: npm run test:scripts
         env:
           FORCE_COLOR: 0
+      - name: Run assertion conformance
+        run: npm run test:assertion-conformance
+        env:
+          FORCE_COLOR: 0
 
   known-issues-note:
     name: known-issues-note

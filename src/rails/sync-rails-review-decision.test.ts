@@ -837,23 +837,6 @@ describe('review-decision rail', () => {
       if (result.kind === 'blocked') expect(result.code).toBe('FOUR_EYES_ACTOR_MATCH');
     });
   });
-
-  // ─── PERF ──────────────────────────────────────────────────
-  describe('PERF', () => {
-    it('review-decision execution is fast (smoke test)', () => {
-      const start = performance.now();
-      executeReviewDecision(
-        makeProgressedState('PLAN_REVIEW'),
-        {
-          verdict: 'approve',
-          rationale: 'ok',
-          decisionIdentity: DECISION_IDENTITY_REVIEWER,
-        },
-        ctx,
-      );
-      expect(performance.now() - start).toBeLessThan(50);
-    });
-  });
 });
 
 describe('MUTATION: review-decision blocked reason detail', () => {

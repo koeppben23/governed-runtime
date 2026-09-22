@@ -161,16 +161,6 @@ describe('plan rail', () => {
       expect(r2.kind).toBe('ok');
     });
   });
-
-  // ─── PERF ──────────────────────────────────────────────────
-  describe('PERF', () => {
-    it('plan execution with instant executors is fast', async () => {
-      const state = makeState('TICKET', { ticket: TICKET });
-      const start = performance.now();
-      await executePlan(state, { text: 'Plan' }, ctx, planExecutors);
-      expect(performance.now() - start).toBeLessThan(100);
-    });
-  });
 });
 
 describe('validate rail', () => {
@@ -273,16 +263,6 @@ describe('validate rail', () => {
       expect(order).toEqual(['test', 'lint']);
     });
   });
-
-  // ─── PERF ──────────────────────────────────────────────────
-  describe('PERF', () => {
-    it('validate with instant executors is fast', async () => {
-      const state = makeProgressedState('VALIDATION');
-      const start = performance.now();
-      await executeValidate(state, ctx, validateExecutors);
-      expect(performance.now() - start).toBeLessThan(100);
-    });
-  });
 });
 
 describe('implement rail', () => {
@@ -370,16 +350,6 @@ describe('implement rail', () => {
       if (result.kind === 'ok') {
         expect(result.transitions.length).toBeGreaterThanOrEqual(2);
       }
-    });
-  });
-
-  // ─── PERF ──────────────────────────────────────────────────
-  describe('PERF', () => {
-    it('implement with instant executors is fast', async () => {
-      const state = makeProgressedState('IMPLEMENTATION');
-      const start = performance.now();
-      await executeImplement(state, ctx, implExecutors);
-      expect(performance.now() - start).toBeLessThan(100);
     });
   });
 });
@@ -707,15 +677,6 @@ describe('continue rail', () => {
       if (result.kind === 'ok') {
         expect(result.state.architecture!.adrText).toBe(ARCHITECTURE_DECISION.adrText);
       }
-    });
-  });
-
-  // ─── PERF ──────────────────────────────────────────────────
-  describe('PERF', () => {
-    it('continue at TICKET is fast', async () => {
-      const start = performance.now();
-      await executeContinue(makeState('TICKET'), ctx, continueExecutors);
-      expect(performance.now() - start).toBeLessThan(100);
     });
   });
 });

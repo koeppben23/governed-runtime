@@ -543,14 +543,14 @@ export function validate(input: unknown): RailResult {
 
 - Profile operations should complete in < 10ms for simple operations
 - Heavy operations should complete in < 100ms
-- Use `performance.now()` for benchmarks in tests
+- Define explicit performance contracts with `PERF_BUDGETS` and benchmark helpers where applicable
+- Do not use arbitrary single-invocation wall-clock smoke thresholds as correctness-test gates
 
 ```typescript
 describe('Performance', () => {
-  it('should complete in < 10ms', () => {
-    const start = performance.now();
-    doOperation();
-    expect(performance.now() - start).toBeLessThan(10);
+  it(`should complete within the declared p99 budget`, () => {
+    const { p99Ms } = benchmarkSync(doOperation, 100, 10);
+    expect(p99Ms).toBeLessThan(PERF_BUDGETS.operationMs);
   });
 });
 ```

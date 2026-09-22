@@ -1,22 +1,25 @@
 # Testing Strategy
 
 FlowGuard uses a structured, multi-layer test strategy.
-Every test suite declares its coverage categories in a `@test-policy` doc comment.
+Every test suite declares its applicable coverage categories in a `@test-policy` doc comment.
 
 ## Test Categories
 
-Every test file should cover five categories where applicable:
+Every test suite should cover the applicable correctness categories:
 
-| Category   | Purpose                                   | Example                                       |
-| ---------- | ----------------------------------------- | --------------------------------------------- |
-| **HAPPY**  | Correct input produces correct output     | Hydrate creates session with READY phase      |
-| **BAD**    | Invalid/malicious input is rejected       | Missing ticket throws, corrupt state blocked  |
-| **CORNER** | Boundary conditions, edge of valid domain | Empty plan sections, max-length strings       |
-| **EDGE**   | Environmental or timing-dependent         | No git remote, concurrent sessions, disk full |
-| **PERF**   | Performance stays within budget           | State I/O round-trip < 50 ms, evaluate < 1 ms |
+| Category   | Purpose                                           | Example                                       |
+| ---------- | ------------------------------------------------- | --------------------------------------------- |
+| **HAPPY**  | Correct input produces correct output             | Hydrate creates session with READY phase      |
+| **BAD**    | Invalid/malicious input is rejected               | Missing ticket throws, corrupt state blocked  |
+| **CORNER** | Boundary conditions, edge of valid domain         | Empty plan sections, max-length strings       |
+| **EDGE**   | Environmental or timing-dependent                 | No git remote, concurrent sessions, disk full |
+| **PERF**   | Explicit performance contract stays within budget | State I/O round-trip < 50 ms, evaluate < 1 ms |
 
-Performance budgets are defined in `src/test-policy.ts` with CI-aware multipliers
-(2x compute, 3x I/O-bound) to account for shared runner variability.
+`PERF` applies only when the unit has an explicit performance contract. Those tests SHOULD
+use the `PERF_BUDGETS` authority with `benchmarkSync` or `benchmarkAsync` where applicable.
+Ad-hoc single-invocation wall-clock smoke thresholds without an explicit performance
+contract must not act as test gates. Performance budgets use CI-aware multipliers (2x
+compute, 3x I/O-bound) to account for shared runner variability.
 
 ## Test Tiers (T1–T5)
 
@@ -37,16 +40,17 @@ enforcement chain (actor resolution, assurance tiers, policy snapshot flow-throu
 
 Each CI job maps to its npm script(s) for clear diagnosis:
 
-| CI Job               | npm Script                      | Scope                                                                                                | Requires Build |
-| -------------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------- | -------------- |
-| **unit**             | `npm run test:unit`             | All `*.test.ts` outside `integration/`, including T1 and T2                                          | No             |
-| **unit (scripts)**   | `npm run test:scripts`          | Repository-internal script tests (`scripts/**/*.test.ts`), run as a second step of the `unit` CI job | No             |
-| **coverage**         | `npm run test:coverage:ci`      | Unit + integration under v8 coverage; enforces aggregate 80% threshold                               | No             |
-| **integration-perf** | `npm run test:integration:perf` | All integration PERF tests without v8 instrumentation                                                | No             |
-| **smoke**            | `npm run test:smoke`            | Built CLI contract smoke and ACP smoke                                                               | Yes            |
-| **install-verify**   | `npm run test:install-verify`   | Tarball pack/install/doctor verification                                                             | Yes            |
-| **mutation**         | `npm run mutation`              | StrykerJS mutation testing for security-critical paths on weekly/release/manual cadence              | No             |
-| **actions-pinning**  | `npm run check:actions-pinned`  | Workflow and local-action `uses:` refs are immutable SHAs or Docker digests                          | No             |
+| CI Job                | npm Script                           | Scope                                                                                                | Requires Build |
+| --------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------- | -------------- |
+| **unit**              | `npm run test:unit`                  | All `*.test.ts` outside `integration/`, including T1 and T2                                          | No             |
+| **unit (scripts)**    | `npm run test:scripts`               | Repository-internal script tests (`scripts/**/*.test.ts`), run as a second step of the `unit` CI job | No             |
+| **unit (assertions)** | `npm run test:assertion-conformance` | Golden assertion-parser conformance, run as a third step of the `unit` CI job                        | No             |
+| **coverage**          | `npm run test:coverage:ci`           | Unit + integration under v8 coverage; enforces aggregate 80% threshold                               | No             |
+| **integration-perf**  | `npm run test:integration:perf`      | All integration PERF tests without v8 instrumentation                                                | No             |
+| **smoke**             | `npm run test:smoke`                 | Built CLI contract smoke and ACP smoke                                                               | Yes            |
+| **install-verify**    | `npm run test:install-verify`        | Tarball pack/install/doctor verification                                                             | Yes            |
+| **mutation**          | `npm run mutation`                   | StrykerJS mutation testing for security-critical paths on weekly/release/manual cadence              | No             |
+| **actions-pinning**   | `npm run check:actions-pinned`       | Workflow and local-action `uses:` refs are immutable SHAs or Docker digests                          | No             |
 
 The `smoke` job also requires the OpenCode CLI (`opencode-ai`) for ACP tests.
 The `install-verify` job runs cross-platform (Linux, macOS, Windows).
