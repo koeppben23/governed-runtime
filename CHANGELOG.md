@@ -426,6 +426,14 @@ true })` returns the evaluated projection. Key invariants:
 
 ### Changed
 
+- **MADR artifact envelope v2 (`madr-artifact.v2`).** The artifact written on
+  `ARCH_COMPLETE` now labels its metadata as FlowGuard's own:
+  `FlowGuard Decision Status` carries the FlowGuard decision status and
+  `Reviewed ADR digest` identifies the exact independently reviewed ADR text.
+  The ambiguous `- Status:` / `- Digest:` envelope labels are removed. The
+  submitted `adrText` is embedded byte-identically and is never rewritten —
+  including any `## Status` section or `- Status:` line it carries.
+
 - **Default-wide maintainability metrics with recalibrated ceilings.** The
   `complexity`, `max-params`, and `max-lines-per-function` rules now apply to
   every production file under `src/` (test suites remain the only excluded file

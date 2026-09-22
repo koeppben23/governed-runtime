@@ -74,9 +74,9 @@ cd demos/java-task-manager
 
 ### Step A5 — Approve the ADR
 
-| Action     | Phase                       | What I Say                                                                                                                                                                                    |
-| ---------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/approve` | ARCH_REVIEW → ARCH_COMPLETE | "Ich genehmige die ADR. FlowGuard setzt den Status auf `accepted` und schreibt das MADR-Artefakt. ARCH_COMPLETE ist ein eigener Terminal-State — getrennt vom COMPLETE des Development Flow." |
+| Action     | Phase                       | What I Say                                                                                                                                                                                                                                                                                                                  |
+| ---------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/approve` | ARCH_REVIEW → ARCH_COMPLETE | "Ich genehmige die ADR. FlowGuard schreibt das MADR-Artefakt mit `FlowGuard Decision Status: accepted` im Header und dem Digest des gepruften ADR-Textes (`Reviewed ADR digest`); der eingereichte ADR-Text bleibt unverandert. ARCH_COMPLETE ist ein eigener Terminal-State — getrennt vom COMPLETE des Development Flow." |
 
 ### Step A6 — Optional: Archive the Session
 
