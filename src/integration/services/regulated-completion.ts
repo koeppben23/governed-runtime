@@ -397,6 +397,27 @@ async function hasTerminalDecisionAuthority(
   return (await hasTerminalDecisionEvidence(sessDir, state)) || hasPendingTerminalDecision(state);
 }
 
+/**
+ * Whether the session's terminal transition is already durable audit
+ * evidence. An operation whose append succeeded but whose acknowledgement was
+ * lost is durable even though its outbox status is not yet `reconciled`.
+ */
+async function hasTerminalTransitionEvidence(
+  sessDir: string,
+  state: SessionState,
+): Promise<boolean> {
+  const transition = state.transition;
+  if (!transition) return false;
+  return (await readAuditTrail(sessDir)).some(
+    (event) =>
+      event.detail.kind === 'transition' &&
+      event.detail.from === transition.from &&
+      event.detail.to === transition.to &&
+      event.detail.event === transition.event &&
+      event.occurredAt === transition.at,
+  );
+}
+
 /** Atomic check-and-commit: exactly one terminal decision intent, even under concurrent recovery. */
 async function commitTerminalDecision(
   sessDir: string,
@@ -419,10 +440,11 @@ async function commitTerminalDecision(
     // The decision receipt must precede the export transition in the audit
     // trail. While that transition is only committed (not yet durably
     // audited), the receipt can be ordered before it. Once the export
-    // transition is durable, a late receipt would falsify the decision order:
-    // fail closed instead of fabricating evidence. Recovery never attributes
-    // the receipt to a session actor; the deciding identity is the persisted
-    // decisionIdentity.
+    // transition is durable — including a reconciled outbox entry or an
+    // append whose acknowledgement was lost — a late receipt would falsify
+    // the decision order: fail closed instead of fabricating evidence.
+    // Recovery never attributes the receipt to a session actor; the deciding
+    // identity is the persisted decisionIdentity.
     const terminalTransition = authority.transition;
     const exportOperationIndex = authority.pendingAuditOperations.findIndex(
       (operation) =>
@@ -433,6 +455,16 @@ async function commitTerminalDecision(
         operation.transition.event === terminalTransition.event,
     );
     if (exportOperationIndex === -1) {
+      throw new PersistenceError(
+        'WRITE_FAILED',
+        'Regulated completion terminal decision authority is missing after the export transition was durably audited; refusing to fabricate a late decision receipt',
+      );
+    }
+    const exportOperation = authority.pendingAuditOperations[exportOperationIndex];
+    const exportDurable =
+      (exportOperation !== undefined && exportOperation.status === 'reconciled') ||
+      (await hasTerminalTransitionEvidence(sessDir, authority));
+    if (exportDurable) {
       throw new PersistenceError(
         'WRITE_FAILED',
         'Regulated completion terminal decision authority is missing after the export transition was durably audited; refusing to fabricate a late decision receipt',

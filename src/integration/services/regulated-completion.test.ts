@@ -82,8 +82,10 @@ function approvalTransitionOperation() {
   };
 }
 
-/** Durable export transition outbox record still pending reconciliation. */
-function exportTransitionOperation() {
+/** Export transition outbox record in the requested durability status. */
+function exportTransitionOperation(
+  status: 'state_committed' | 'audit_committed' | 'reconciled' = 'state_committed',
+) {
   return {
     kind: 'transition' as const,
     operationId: '00000000-0000-4000-8000-000000000011',
@@ -99,7 +101,7 @@ function exportTransitionOperation() {
       chainIndex: 1,
       autoAdvanced: false,
     },
-    status: 'state_committed' as const,
+    status,
   };
 }
 
@@ -278,6 +280,43 @@ describe('executeRegulatedCompletion', () => {
     expect(result.regulatedArchiveStatus).toBe('failed');
     expect(decisionWrites()).toHaveLength(0);
     expect(lifecycleWrites()).toHaveLength(0);
+    expect(archiveRegulatedEvidence).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      label: 'the export operation is already reconciled',
+      status: 'reconciled' as const,
+    },
+    {
+      label: 'the export append succeeded but its acknowledgement was lost',
+      status: 'state_committed' as const,
+    },
+  ])('refuses a late receipt when $label and the export event is durable', async ({ status }) => {
+    const persisted: SessionState = {
+      ...reviewState('COMPLETE'),
+      pendingAuditOperations: [approvalTransitionOperation(), exportTransitionOperation(status)],
+    };
+    trackPersistedState(persisted);
+    vi.mocked(readAuditTrail).mockResolvedValue([
+      approvalTransitionEvent(),
+      exportTransitionEvent(),
+      sessionCreatedEvent(),
+    ] as never);
+    vi.mocked(reconcilePendingAuditOperations).mockResolvedValue(undefined);
+    vi.mocked(archiveRegulatedEvidence).mockResolvedValue('/archive.tar.gz');
+    vi.mocked(verifyRegulatedArchive).mockResolvedValue({ passed: true } as never);
+
+    const result = await executeRegulatedCompletion(
+      '/sess',
+      'fp',
+      'sid',
+      persisted,
+      completionDeps(),
+    );
+
+    expect(result.regulatedArchiveStatus).toBe('failed');
+    expect(decisionWrites()).toHaveLength(0);
     expect(archiveRegulatedEvidence).not.toHaveBeenCalled();
   });
 
