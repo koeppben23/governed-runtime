@@ -8,6 +8,7 @@
 import { REVIEW_DISCOVERY_PROVIDER } from '../../discovery/review-discovery-provider.js';
 import type { SessionState } from '../../../state/schema.js';
 import type { PlanEvidence, ReviewFindings, ReviewObligation } from '../../../state/evidence.js';
+import type { PlanClaimDeclarations } from '../../../state/proofgraph-approval.js';
 import {
   freezeContextAuthorityAtHead,
   freezeOutcomeRecord,
@@ -69,6 +70,11 @@ import { canonicalJsonStringify } from '../../../shared/canonical-json.js';
 import { hashText } from '../../../shared/hashing.js';
 import { IntegrationInvariantError } from '../../errors.js';
 
+export type LegacyEmptyPlanClaimDeclarations = {
+  readonly flow: 'plan';
+  readonly claims: readonly [];
+};
+
 function findPriorPlanTargetPaths(
   assurance: import('../../../state/schema.js').SessionState['reviewAssurance'],
 ): string[] | undefined {
@@ -99,58 +105,61 @@ export function firstLine(text: string | undefined): string | undefined {
  * repository authority (freeze-time resolution) is carried here so absence of
  * authority makes repository evidence unavailable.
  */
-export function buildPlanReviewObligationInput(
-  scope: PlanExecutionScope,
-  planEvidence: PlanEvidence,
-  planVersion: number,
-  classificationFiles: readonly string[] | undefined,
-  options: {
-    freeze: RepositoryAuthorityFreezeResult;
-    planClaimDeclarations?:
-      import('../../../state/proofgraph-approval.js').PlanClaimDeclarations | undefined;
-  },
-): Parameters<typeof createObligationAndAttempt>[1] {
+export function buildPlanReviewObligationInput(input: {
+  state: SessionState;
+  now: string;
+  planEvidence: PlanEvidence;
+  iteration: number;
+  planVersion: number;
+  classificationFiles: readonly string[] | undefined;
+  freeze: RepositoryAuthorityFreezeResult;
+  planClaimDeclarations: PlanClaimDeclarations | LegacyEmptyPlanClaimDeclarations;
+}): Parameters<typeof createObligationAndAttempt>[1] {
+  const {
+    state,
+    now,
+    planEvidence,
+    iteration,
+    planVersion,
+    classificationFiles,
+    freeze,
+    planClaimDeclarations,
+  } = input;
   const metadata: Record<string, unknown> = {};
   if (classificationFiles && classificationFiles.length > 0) {
     metadata.targetPaths = [...classificationFiles];
   }
-  const effectiveClaimDeclarations = options.planClaimDeclarations ??
-    scope.state.plan?.claimDeclarations ?? {
-      flow: 'plan' as const,
-      version: 'v2' as const,
-      claims: [],
-    };
   return {
     obligationType: 'plan',
-    iteration: 0,
-    reviewCycle: scope.state.reviewCycles.plan,
+    iteration,
+    reviewCycle: state.reviewCycles.plan,
     planVersion,
-    now: scope.ctx.now(),
+    now,
     subjectDigest: planEvidence.digest,
-    claimDeclarationsDigest: hashText(canonicalJsonStringify(effectiveClaimDeclarations)),
+    claimDeclarationsDigest: hashText(canonicalJsonStringify(planClaimDeclarations)),
     // Frozen review material: the exact plan artifact plus originating
     // ticket context, canonicalized and digest-bound at creation time.
     reviewMaterial: freezeReviewMaterial(
       buildFrozenReviewMaterialContent({
         obligationType: 'plan',
-        state: scope.state,
+        state,
         artifact: planEvidence.body,
-        planClaimDeclarations: effectiveClaimDeclarations,
+        ...('version' in planClaimDeclarations ? { planClaimDeclarations } : {}),
         renderPlanClaimDeclarations,
       }),
       planEvidence.digest,
     ),
     reviewSubjectScope: artifactReviewSubjectScope('plan', planEvidence.body, planEvidence.digest),
-    reviewProfile: resolveFrozenReviewProfile(scope.state.policySnapshot),
+    reviewProfile: resolveFrozenReviewProfile(state.policySnapshot),
     profileSource: 'policy_default',
-    policySnapshot: scope.state.policySnapshot,
+    policySnapshot: state.policySnapshot,
     changedFiles: classificationFiles,
-    claimedTaskClass: scope.state.claimedTaskClass,
+    claimedTaskClass: state.claimedTaskClass,
     metadata,
-    repositoryAuthority: frozenAuthorityOrUndefined(options.freeze),
+    repositoryAuthority: frozenAuthorityOrUndefined(freeze),
     // Durable freeze outcome: continuations and forensics render the exact
     // degradation cause from persisted state.
-    repositoryEvidenceFreeze: freezeOutcomeRecord(options.freeze),
+    repositoryEvidenceFreeze: freezeOutcomeRecord(freeze),
   };
 }
 
@@ -386,10 +395,6 @@ export async function persistNonConvergedPlanReview(
     classification.kind === 'available'
       ? [...classification.changedFiles]
       : ([] as readonly string[]);
-  const metadata: Record<string, unknown> = {};
-  if (resolvedTargetPaths && resolvedTargetPaths.length > 0) {
-    metadata.targetPaths = resolvedTargetPaths;
-  }
   const mint = await mintPlanRevisionAttempt({
     scope,
     finalState,
@@ -397,7 +402,6 @@ export async function persistNonConvergedPlanReview(
     iteration,
     nextPlanVersion,
     resolvedTargetPaths,
-    metadata,
   });
   if (mint.kind === 'blocked') return mint.message;
   const attemptResult = mint.attemptResult;
@@ -437,13 +441,11 @@ async function mintPlanRevisionAttempt(input: {
   iteration: number;
   nextPlanVersion: number;
   resolvedTargetPaths: readonly string[];
-  metadata: Record<string, unknown>;
 }): Promise<
   | { kind: 'ok'; attemptResult: ReturnType<typeof createObligationAndAttempt> | null }
   | { kind: 'blocked'; message: string }
 > {
-  const { scope, finalState, revision, iteration, nextPlanVersion, resolvedTargetPaths, metadata } =
-    input;
+  const { scope, finalState, revision, iteration, nextPlanVersion, resolvedTargetPaths } = input;
   const freeze = await freezeContextAuthorityAtHead(scope.worktree);
   const authority = frozenAuthorityOrUndefined(freeze);
   const discovery = await resolveAttemptDiscoveryOrBlock({
@@ -463,43 +465,18 @@ async function mintPlanRevisionAttempt(input: {
   }
   const attemptResult = createObligationAndAttempt(
     finalState.reviewAssurance,
-    {
-      obligationType: 'plan',
-      iteration,
-      reviewCycle: finalState.reviewCycles.plan,
-      planVersion: nextPlanVersion,
+    buildPlanReviewObligationInput({
+      state: finalState,
       now: scope.ctx.now(),
-      subjectDigest: revision.currentPlan.digest,
-      claimDeclarationsDigest: hashText(
-        canonicalJsonStringify(finalState.plan?.claimDeclarations ?? { flow: 'plan', claims: [] }),
-      ),
-      // Frozen review material: the exact (possibly revised) plan artifact
-      // plus originating ticket context, digest-bound at creation time.
-      reviewMaterial: freezeReviewMaterial(
-        buildFrozenReviewMaterialContent({
-          obligationType: 'plan',
-          state: finalState,
-          artifact: revision.currentPlan.body,
-          renderPlanClaimDeclarations,
-        }),
-        revision.currentPlan.digest,
-      ),
-      // The (possibly revised) plan artifact is the review SUBJECT; changedFiles
-      // below stay challenge-classification and repository-evidence context only.
-      reviewSubjectScope: artifactReviewSubjectScope(
-        'plan',
-        revision.currentPlan.body,
-        revision.currentPlan.digest,
-      ),
-      reviewProfile: resolveFrozenReviewProfile(finalState.policySnapshot),
-      profileSource: 'policy_default',
-      policySnapshot: finalState.policySnapshot,
-      changedFiles: resolvedTargetPaths,
-      claimedTaskClass: finalState.claimedTaskClass,
-      metadata,
-      repositoryAuthority: authority,
-      repositoryEvidenceFreeze: freezeOutcomeRecord(freeze),
-    },
+      planEvidence: revision.currentPlan,
+      iteration,
+      planVersion: nextPlanVersion,
+      classificationFiles: resolvedTargetPaths,
+      freeze,
+      planClaimDeclarations:
+        finalState.plan?.claimDeclarations ??
+        ({ flow: 'plan', claims: [] } as unknown as PlanClaimDeclarations),
+    }),
     scope.ctx.now(),
     discovery.context,
   );

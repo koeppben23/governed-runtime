@@ -1286,6 +1286,12 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
     targetZone: 'tools/implementation',
   },
   {
+    file: 'integration/tools/implementation-review-activation.ts',
+    owner: 'tools-infrastructure',
+    zone: 'tools',
+    targetZone: 'tools',
+  },
+  {
     file: 'integration/tools/implementation/implement-unable-review.ts',
     owner: 'tools-implementation',
     zone: 'tools/implementation',

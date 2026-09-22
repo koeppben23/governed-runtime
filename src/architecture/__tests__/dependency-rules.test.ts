@@ -985,7 +985,7 @@ describe('Layer Dependency Rules', () => {
           new Map([['integration/review/probe.ts', probe]]),
         ).map((violation) => violation.rule);
       };
-      expect(rulesFor('../tools/implementation/implement-shared.js')).toEqual(['review-boundary']);
+      expect(rulesFor('../tools/implementation-review-activation.js')).toEqual(['review-boundary']);
       expect(rulesFor('../plugin-risk.js')).toEqual(['review-boundary']);
       expect(rulesFor('../runtime-lease.js')).toEqual(['review-boundary']);
       expect(rulesFor('../discovery/discovery-drift-status.js')).toEqual(['review-boundary']);

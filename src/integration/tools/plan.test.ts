@@ -1,8 +1,63 @@
 import { describe, it, expect, vi } from 'vitest';
 import { POLICY_DIGEST_VERSION } from '../../state/evidence-identifiers.js';
 import { makePlanRevision, makePlanRevisionAfter } from '../../state/evidence-test-constants.js';
+import { makeState } from '../../fixtures.js';
+import { canonicalJsonStringify } from '../../shared/canonical-json.js';
+import {
+  buildPlanReviewObligationInput,
+  type LegacyEmptyPlanClaimDeclarations,
+} from './plan/plan-response.js';
 
 const POLICY_DIGEST = 'a'.repeat(64);
+
+const PLAN_EVIDENCE = {
+  body: '# Plan\n\nImplement the bounded change.\n',
+  digest: 'plan-digest',
+  sections: ['Plan'],
+  createdAt: '2026-01-01T00:00:00.000Z',
+  revisionId: '00000000-0000-4000-8000-000000000001',
+  recordDigest: 'plan-record-digest',
+  planVersion: 1,
+  supersedesRecordDigest: null,
+  originatingReviewObligationId: null,
+  revisionReason: null,
+  lineageStatus: 'verified' as const,
+};
+
+const UNAVAILABLE_FREEZE = { kind: 'unavailable', reason: 'repository_unavailable' } as const;
+
+describe('plan review obligation characterization', () => {
+  it('preserves canonical initial-plan authority bytes', () => {
+    const actual = buildPlanReviewObligationInput({
+      state: makeState('PLAN'),
+      now: '2026-01-01T00:00:00.000Z',
+      planEvidence: PLAN_EVIDENCE,
+      iteration: 0,
+      planVersion: 1,
+      classificationFiles: ['src/example.ts'],
+      freeze: UNAVAILABLE_FREEZE,
+      planClaimDeclarations: { flow: 'plan', version: 'v2', claims: [] },
+    });
+    expect(canonicalJsonStringify(actual)).toMatchSnapshot();
+  });
+
+  it('preserves canonical revision authority bytes without claim version', () => {
+    const actual = buildPlanReviewObligationInput({
+      state: makeState('PLAN'),
+      now: '2026-01-01T00:00:00.000Z',
+      planEvidence: { ...PLAN_EVIDENCE, planVersion: 2 },
+      iteration: 1,
+      planVersion: 2,
+      classificationFiles: [],
+      freeze: UNAVAILABLE_FREEZE,
+      planClaimDeclarations: {
+        flow: 'plan',
+        claims: [],
+      } satisfies LegacyEmptyPlanClaimDeclarations,
+    });
+    expect(canonicalJsonStringify(actual)).toMatchSnapshot();
+  });
+});
 
 describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
   describe('Schema', () => {

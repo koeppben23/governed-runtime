@@ -90,8 +90,8 @@ import type { ImplementRuntime } from './implement-shared.js';
 import {
   activateImplementationReviewObligation,
   nextImplementationReviewIteration,
-  unknownOutcomeRevalidationBlock,
-} from './implement-shared.js';
+} from '../implementation-review-activation.js';
+import { unknownOutcomeRevalidationBlock } from './implement-shared.js';
 import { handleTransportRecovery } from './implement-review-recovery.js';
 import { latestUnknownOutcomeResolvedAt } from '../../../state/evidence-mutation-episode.js';
 import { handleUnableToReview } from './implement-unable-review.js';

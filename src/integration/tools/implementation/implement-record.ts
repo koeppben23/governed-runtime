@@ -100,7 +100,7 @@ import {
   buildImplementationReviewInstruction,
   materializeImplReviewContract,
   nextImplementationReviewIteration,
-} from './implement-shared.js';
+} from '../implementation-review-activation.js';
 import { IntegrationInvariantError } from '../../errors.js';
 
 /**

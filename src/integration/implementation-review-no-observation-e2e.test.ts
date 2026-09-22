@@ -377,7 +377,7 @@ async function prepareBoundUnableReview(se: SE, implementationDigest: string) {
   await writeStateWithArtifacts(se.sDir, base);
   const firstState = await readState(se.sDir);
   const activated = await (
-    await import('./tools/implementation/implement-shared.js')
+    await import('./tools/implementation-review-activation.js')
   ).activateImplementationReviewObligation(firstState!, {
     iteration: 1,
     planVersion: 1,

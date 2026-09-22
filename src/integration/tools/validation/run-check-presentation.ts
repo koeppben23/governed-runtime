@@ -1,7 +1,29 @@
 import type {
   AssertionExtractionResult,
+  ValidationExecutionObservation,
   ValidationOutcome,
+  ValidationResult,
 } from '../../../state/evidence-validation.js';
+import { deriveRepairGuidance } from '../../../verification/repair-guidance.js';
+import type { ToolResult } from '../helpers.js';
+import { enrichWithWorkflowDirective } from '../helpers.js';
+import type { SessionState } from '../../../state/schema.js';
+import type { FlowGuardPolicy } from '../../../config/policy.js';
+import { autoAdvance } from '../../../rails/types.js';
+import { canonicalJsonStringify } from '../../../shared/canonical-json.js';
+import { hashText } from '../../../shared/hashing.js';
+import { reviewObligationResponseFields } from '../../review/dispatch/dispatch-authority.js';
+import type { ReviewDispatchAuthority } from '../../review/dispatch/dispatch-authority.js';
+import { buildImplementationReviewInstruction } from '../implementation-review-activation.js';
+interface CheckEvidencePresentation {
+  readonly kind: string;
+  readonly command: string;
+  readonly exitCode: number;
+  readonly passed: boolean;
+  readonly executionMs: number;
+  readonly outputDigest: string;
+  readonly timedOut: boolean;
+}
 
 export interface RunCheckExecutionPresentation {
   readonly passed: boolean;
@@ -59,4 +81,60 @@ export function formatRunCheckStatus(
   if (evidence.timedOut) return `Check '${kind}' timed out.`;
   if (evidence.passed) return `Check '${kind}' ${result.outcome}.`;
   return `Check '${kind}' failed (exit ${evidence.exitCode}).`;
+}
+
+export function formatRunCheckResponse(input: {
+  kind: string;
+  candidateId?: string | undefined;
+  evidence: CheckEvidencePresentation;
+  validationResult: ValidationResult;
+  derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance> | undefined;
+  originalState: SessionState;
+  executionObservation: ValidationExecutionObservation;
+  advanced: Exclude<ReturnType<typeof autoAdvance>, { kind: 'overflow' }>;
+  finalState: SessionState;
+  authority: ReviewDispatchAuthority | null;
+  policy: FlowGuardPolicy;
+}): ToolResult {
+  const finalValidation =
+    input.originalState.phase === 'IMPL_VALIDATION'
+      ? input.finalState.implValidation
+      : input.finalState.validation;
+  const remainingChecks = input.finalState.activeChecks.filter(
+    (checkId) => !finalValidation.some((result) => result.checkId === checkId && result.passed),
+  );
+  const reviewInstruction = input.authority
+    ? buildImplementationReviewInstruction(input.authority)
+    : null;
+  return JSON.stringify(
+    enrichWithWorkflowDirective(
+      {
+        phase: input.finalState.phase,
+        status: formatRunCheckStatus(input.kind, input.validationResult, input.evidence),
+        evidence: {
+          kind: input.evidence.kind,
+          ...(input.candidateId ? { candidateId: input.candidateId } : {}),
+          command: input.evidence.command,
+          exitCode: input.evidence.exitCode,
+          passed: input.evidence.passed,
+          executionMs: input.evidence.executionMs,
+          outputDigest: input.evidence.outputDigest,
+          timedOut: input.evidence.timedOut,
+        },
+        executionObservedStateDigest: input.executionObservation.executionObservedStateDigest,
+        preCommitStateDigest: input.executionObservation.preCommitStateDigest,
+        committedStateDigest: hashText(canonicalJsonStringify(input.finalState)),
+        stateChangedDuringExecution:
+          input.executionObservation.executionObservedStateDigest !==
+          input.executionObservation.preCommitStateDigest,
+        derivedRepairGuidance: input.derivedRepairGuidance,
+        remainingChecks,
+        ...(input.authority ? reviewObligationResponseFields(input.authority) : {}),
+        ...(reviewInstruction ? { reviewDispatch: reviewInstruction.reviewDispatch } : {}),
+        ...(reviewInstruction ? { reviewInvocation: reviewInstruction } : {}),
+        _audit: { transitions: input.advanced.transitions },
+      },
+      input.finalState,
+    ),
+  );
 }
