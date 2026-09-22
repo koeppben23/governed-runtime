@@ -125,6 +125,17 @@ node demos/java-task-manager/verify-evidence-package.mjs \
   --expect-phase EXPORT_READY
 ```
 
+For the full reference evidence set, copy `evidence-manifest.example.json` and
+fill in the three flows (architecture, development, peer-review) with the
+session ids and the SHA-256 of each artifact — the FlowGuard package and the
+host chat export. The host chat exports are supplementary evidence, never
+FlowGuard authority; the manifest check also fails when two flows share
+byte-identical artifacts (the "copied chat export" defect). Then run:
+
+```bash
+node demos/java-task-manager/verify-evidence-package.mjs --manifest evidence-manifest.json
+```
+
 ---
 
 ## Live Setup — Tab Groups

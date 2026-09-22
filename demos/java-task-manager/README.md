@@ -145,9 +145,20 @@ node demos/java-task-manager/verify-evidence-package.mjs <package.tar.gz> \
 ```
 
 It exits non-zero on any tamper or session misassignment and refuses to present
-a redacted sharing archive as fully verifiable raw evidence (exit code 3). What
-it proves — and the offline, TSA, publication-binding, and authenticity limits
-it cannot cover — is documented in `EVIDENCE_PACKAGE.md`.
+a redacted sharing archive as fully verifiable raw evidence (exit code 3). The
+three demo sessions (architecture, development, peer-review) and their external
+host chat exports are bound by a small evidence manifest template
+(`evidence-manifest.example.json`), verified with:
+
+```bash
+node demos/java-task-manager/verify-evidence-package.mjs --manifest evidence-manifest.json
+```
+
+The manifest check also fails when two flows share byte-identical artifacts —
+the "peer-review chat export is a copy of the architecture export" defect.
+Host chat exports are supplementary evidence, never FlowGuard authority. What
+the verifier proves — and the offline, TSA, publication-binding, and
+authenticity limits it cannot cover — is documented in `EVIDENCE_PACKAGE.md`.
 
 ## Assurance Boundaries
 
@@ -168,6 +179,7 @@ demos/java-task-manager/
 ├── DEMO_SCRIPT.md               ← Live presentation script with talking points
 ├── RESET.md                     ← How to reset for a fresh demo
 ├── EVIDENCE_PACKAGE.md          ← Evidence-package verification scope and limits
+├── evidence-manifest.example.json ← Template binding the three sessions to their artifacts
 ├── run-demo-setup.sh            ← Prepare or prepare+install the demo project
 ├── run-demo-preflight.sh        ← Pre-flight checks before a live pitch
 ├── verify-evidence-package.mjs  ← Standalone offline package verifier

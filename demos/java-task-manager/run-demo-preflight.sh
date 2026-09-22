@@ -369,6 +369,23 @@ for marker in 'verify-evidence-package.mjs' 'HOST_CAPABILITY_UNVERIFIED' 'HOST_T
     fi
 done
 
+# Evidence manifest template: present, valid JSON, all three canonical flows.
+EVIDENCE_MANIFEST_EXAMPLE="$DEMO_DIR/evidence-manifest.example.json"
+if [[ -f "$EVIDENCE_MANIFEST_EXAMPLE" ]] \
+    && node -e "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8'))" "$EVIDENCE_MANIFEST_EXAMPLE" >/dev/null 2>&1; then
+    check "evidence manifest example parses" 0
+else
+    echo "  Missing or invalid evidence-manifest.example.json." >&2
+    check "evidence manifest example parses" 1
+fi
+
+if grep -qF -- '--manifest' "$EVIDENCE_DOC" 2>/dev/null; then
+    check "docs document the evidence manifest mode" 0
+else
+    echo "  Missing --manifest documentation in EVIDENCE_PACKAGE.md." >&2
+    check "docs document the evidence manifest mode" 1
+fi
+
 # ─── Summary ───────────────────────────────────────────────────────────────────
 
 echo ""

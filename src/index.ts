@@ -311,5 +311,14 @@ export {
   type ArchiveContentDigestInput,
 } from './archive/content-digest.js';
 
+/**
+ * Canonical regulated-completion evidence validator. Exported so an offline
+ * verifier can validate the admissible ARCHIVED evidence (terminal transition,
+ * reconciled outbox, ordered decision/export/lifecycle audit trail) instead of
+ * assuming the live post-verification `regulatedArchiveStatus`. Ownership stays
+ * in `src/adapters/workspace/archive-verify-regulated.ts` — re-export only.
+ */
+export { verifyRegulatedCompletionCompleteness } from './adapters/workspace/archive-verify-regulated.js';
+
 /** @public */
 export { verifyArchive } from './adapters/workspace/index.js';

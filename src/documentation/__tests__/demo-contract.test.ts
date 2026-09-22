@@ -180,19 +180,39 @@ describe('java demo workflow contract', () => {
     expect(evidenceDoc).toContain('Authenticity');
     expect(evidenceDoc).toContain('archive publication binding');
     expect(evidenceDoc).toContain('not fully verifiable raw evidence');
+    // The archived regulated snapshot precedes the live verification status.
+    expect(evidenceDoc).toContain('regulatedArchiveStatus: pending');
 
     // The verifier uses the canonical primitives and rejects misassignment.
     expect(verifier).toContain("import('@flowguard/core')");
     expect(verifier).toContain('computeArchiveContentDigest');
+    expect(verifier).toContain('SessionState.safeParse');
+    expect(verifier).toContain('verifyRegulatedCompletionCompleteness');
+    expect(verifier).toContain('snapshotPackage');
     expect(verifier).toContain('session_identity_mismatch');
     expect(verifier).toContain('sharing_archive_not_verifiable');
+    expect(verifier).toContain('cross_session_artifact_duplicate');
 
-    // The smoke contract runs the real verifier against a real export package.
+    // The manifest template declares exactly the three canonical flows.
+    const manifestExample = JSON.parse(
+      readFileSync(join(DEMO_DIR, 'evidence-manifest.example.json'), 'utf8'),
+    ) as { schemaVersion?: string; sessions?: Array<{ flow?: string }> };
+    expect(manifestExample.schemaVersion).toBe('demo-evidence-manifest.v1');
+    expect(manifestExample.sessions?.map((session) => session.flow)).toEqual([
+      'architecture',
+      'development',
+      'peer-review',
+    ]);
+
+    // The smoke contract runs the real verifier against real archive paths.
     expect(smokeTest).toContain('verify-evidence-package.mjs');
     expect(smokeTest).toContain('archiveCompletionExport');
+    expect(smokeTest).toContain('archiveRegulatedEvidence');
+    expect(smokeTest).toContain('makeTarSpy');
 
     // Preflight and demo script carry the package and boundary claims.
     expect(PREFLIGHT_SCRIPT).toContain('verify-evidence-package.mjs');
+    expect(PREFLIGHT_SCRIPT).toContain('evidence-manifest.example.json');
     expect(PREFLIGHT_SCRIPT).toContain('HOST_CAPABILITY_UNVERIFIED');
     expect(DEMO_SCRIPT).toContain('HOST_TOOL_PHASE_DENIED');
     expect(DEMO_SCRIPT).toContain('enforcement:denied');

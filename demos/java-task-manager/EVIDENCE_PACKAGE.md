@@ -31,25 +31,48 @@ and `/archive` are not synonyms.
 ## What the verifier checks
 
 `verify-evidence-package.mjs` in this directory is a standalone offline
-verifier. It extracts the package into a temporary directory and checks:
+verifier. It snapshots the package into a private copy (so byte changes to the
+original file after the run starts cannot mix versions) and checks:
 
-| Check              | Detail                                                                                                                                                                                                                                                                                                                                             |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Tarball checksum   | Recomputed SHA-256 of the package file against the `.sha256` sidecar (exactly one digest)                                                                                                                                                                                                                                                          |
-| Session assignment | Package identity (tarball prefix and `manifest.sessionId`) against `--expect-session`; a valid package of a different session fails even when all internal hashes match                                                                                                                                                                            |
-| Manifest schema    | Canonical `archive-manifest.v3` validation via the exported `ArchiveManifestSchema`                                                                                                                                                                                                                                                                |
-| Member inventory   | Every manifest-listed file is present, no undeclared or duplicate members, no unsafe paths, regular files only                                                                                                                                                                                                                                     |
-| File digests       | Recomputed SHA-256 of every listed file against `manifest.fileDigests`                                                                                                                                                                                                                                                                             |
-| Content digest     | Recomputed with the canonical `computeArchiveContentDigest` over the manifest's integrity header and sorted file digests                                                                                                                                                                                                                           |
-| State identity     | `state.binding.hostSessionId` and `state.binding.fingerprint` against the manifest; `state.policySnapshot.mode` against `manifest.policyMode`                                                                                                                                                                                                      |
-| Flow and phase     | The flow's allowed terminal/export phase (development `EXPORT_READY`/`COMPLETE`, architecture `ARCH_COMPLETE`, peer review `PEER_REVIEW_COMPLETE`, regulated `COMPLETE` with `regulatedArchiveStatus: verified`) and the phase transition shape; `COMPLETE` additionally requires the `EXPORT_READY → COMPLETE` (`EXPORT_MATERIALIZED`) transition |
-| Audit chain        | `verifyChain` over the archived `audit/audit.jsonl` (offline), the manifest's `auditChainHead` / `auditEventCount` truncation anchor, and the event identity against the archived state                                                                                                                                                            |
+| Check               | Detail                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tarball checksum    | SHA-256 of the private snapshot against the `.sha256` sidecar (exactly one digest)                                                                                                                                                                                                                                                                                                                                                                               |
+| Pre-extraction gate | An unsafe session prefix, unsafe member path, non-regular entry, or duplicate member never reaches `tar -xzf`; the verifier does not rely on `tar` itself rejecting traversal paths                                                                                                                                                                                                                                                                              |
+| Session assignment  | Package identity (tarball prefix and `manifest.sessionId`) against `--expect-session`; a valid package of a different session fails even when all internal hashes match                                                                                                                                                                                                                                                                                          |
+| Manifest schema     | Canonical `archive-manifest.v3` validation via the exported `ArchiveManifestSchema`                                                                                                                                                                                                                                                                                                                                                                              |
+| Member inventory    | Every manifest-listed file is present, no undeclared or duplicate members, no unsafe paths, regular files only                                                                                                                                                                                                                                                                                                                                                   |
+| File digests        | Recomputed SHA-256 of every listed file against `manifest.fileDigests`                                                                                                                                                                                                                                                                                                                                                                                           |
+| Content digest      | Recomputed with the canonical `computeArchiveContentDigest` over the manifest's integrity header and sorted file digests                                                                                                                                                                                                                                                                                                                                         |
+| State schema        | The archived `state/session-state.json` is parsed with the canonical exported `SessionState` schema, not bare JSON                                                                                                                                                                                                                                                                                                                                               |
+| State identity      | `state.binding.hostSessionId` and `state.binding.fingerprint` against the manifest; `state.policySnapshot.mode` against `manifest.policyMode`                                                                                                                                                                                                                                                                                                                    |
+| Flow and phase      | The flow's allowed terminal/export phase (development `EXPORT_READY`/`COMPLETE`, architecture `ARCH_COMPLETE`, peer review `PEER_REVIEW_COMPLETE`, regulated `COMPLETE`) and the phase transition shape; `COMPLETE` additionally requires the `EXPORT_READY -> COMPLETE` (`EXPORT_MATERIALIZED`) transition                                                                                                                                                      |
+| Audit chain         | `verifyChain` over the archived `audit/audit.jsonl` (offline), the manifest's `auditChainHead` / `auditEventCount` truncation anchor, and the event identity against the archived state                                                                                                                                                                                                                                                                          |
+| Regulated evidence  | For regulated packages, the canonical `verifyRegulatedCompletionCompleteness` validates the **archived** completion evidence (terminal transition, reconciled outbox, ordered approval/decision/export/lifecycle trail). The mandatory `regulated-<sessionId>.tar.gz` necessarily snapshots `regulatedArchiveStatus: pending` — the live status only becomes `verified` after the archive exists — so the offline verifier never requires the later live status. |
+
+## Evidence manifest
+
+The three demo sessions are bound together by a small, standalone evidence
+manifest (`evidence-manifest.example.json` is the checked-in template). It
+lists, per flow (`architecture`, `development`, `peer-review`), the session id
+and the session's artifacts with their file name and SHA-256:
+
+- `flowguard-package` — a FlowGuard archive, verified with the full checks
+  above using the manifest's session/flow assignment.
+- `host-chat-export` — the external host chat export. It is **supplementary
+  evidence, never FlowGuard authority**: only its bytes and its session
+  assignment are checked. A byte-identical chat export bound to a different
+  session/flow fails (`cross_session_artifact_duplicate`), which is exactly the
+  defect where the peer-review export was a copy of the architecture export.
+
+```bash
+node demos/java-task-manager/verify-evidence-package.mjs --manifest evidence-manifest.json
+```
 
 ## Requirements
 
 - Node.js 22+ and the `tar` executable.
-- The verifier imports the canonical archive primitives (`ArchiveManifestSchema`, `computeArchiveContentDigest`, `verifyChain`, `getLastChainHash`) from `@flowguard/core`. Run it from the governed-runtime checkout of the **same version/build that produced the package**, with `dist/` built (`npm run build`), or from an installation of that package.
-- The package file plus its `.sha256` sidecar.
+- The verifier imports the canonical primitives (`ArchiveManifestSchema`, `computeArchiveContentDigest`, `verifyChain`, `getLastChainHash`, `SessionState`, `verifyRegulatedCompletionCompleteness`) from `@flowguard/core`. Run it from the governed-runtime checkout of the **same version/build that produced the package**, with `dist/` built (`npm run build`), or from an installation of that package.
+- The package file plus its `.sha256` sidecar (and, for manifest mode, the evidence manifest plus every declared artifact).
 
 ## Usage
 
@@ -61,7 +84,7 @@ node demos/java-task-manager/verify-evidence-package.mjs \
   --expect-phase EXPORT_READY
 ```
 
-Options:
+Options (package mode):
 
 - `--expect-session <id>` (required): the OpenCode session id the package must belong to.
 - `--expect-flow development|architecture|peer-review|regulated`: validate the phase against the flow's allowed export/terminal phases.
@@ -69,14 +92,18 @@ Options:
 - `--expect-sharing`: accept a redacted sharing archive for the limited structural checks; it is still labelled `integrityCapability: not_verifiable`.
 - `--json`: machine-readable result.
 
+Options (manifest mode):
+
+- `--manifest <evidence-manifest.json>`: verify the three-session evidence manifest instead of a single package. Package expectation flags cannot be combined with `--manifest`.
+
 Exit codes:
 
-| Code | Meaning                                                                                               |
-| ---- | ----------------------------------------------------------------------------------------------------- |
-| `0`  | Package verified (raw) — or structural checks passed for a deliberately expected sharing archive      |
-| `1`  | Verification failed (tamper, identity, digest, inventory, or chain finding)                           |
-| `2`  | Usage or runtime error (missing package, missing/incompatible `@flowguard/core`, missing expectation) |
-| `3`  | The package is a redacted sharing archive and is not fully verifiable raw evidence                    |
+| Code | Meaning                                                                                                     |
+| ---- | ----------------------------------------------------------------------------------------------------------- |
+| `0`  | Package verified (raw) — or structural checks passed for a deliberately expected sharing archive            |
+| `1`  | Verification failed (tamper, identity, digest, inventory, or chain finding); also any manifest-mode failure |
+| `2`  | Usage or runtime error (missing package, missing/incompatible `@flowguard/core`, missing expectation)       |
+| `3`  | The package is a redacted sharing archive and is not fully verifiable raw evidence                          |
 
 A sharing archive never exits `0` without `--expect-sharing`, and its output
 always states `NOT FULLY VERIFIABLE (sharing archive)`.

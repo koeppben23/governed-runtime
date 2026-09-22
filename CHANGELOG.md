@@ -10,19 +10,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Standalone evidence-package verification.** `computeArchiveContentDigest`
-  and its input type are now exported from `@flowguard/core` (re-export of the
-  canonical formula — no algorithm change), so an offline verifier can
-  recompute the archive content digest from a received package. The Java demo
-  ships `demos/java-task-manager/verify-evidence-package.mjs` plus
-  `EVIDENCE_PACKAGE.md`: it checks the package checksum, member inventory, file
-  digests, canonical content digest, expected session assignment, flow/phase,
-  and the archived audit chain; it distinguishes raw evidence from redacted
-  sharing archives and documents the offline, TSA, publication-binding, and
-  authenticity limits. A smoke-project contract builds a real `/export`
-  package and proves valid, file-byte, manifest-metadata, and session-swap
-  cases. The demo docs also document the `HOST_CAPABILITY_UNVERIFIED`
-  contract-attested host-capability boundary and add an optional adversarial
-  host-tool denial step (`HOST_TOOL_PHASE_DENIED` / `enforcement:denied`).
+  (with its input type) and `verifyRegulatedCompletionCompleteness` are now
+  exported from `@flowguard/core` as re-exports of the canonical authorities —
+  no algorithm change. The Java demo ships
+  `demos/java-task-manager/verify-evidence-package.mjs` plus
+  `EVIDENCE_PACKAGE.md`: it snapshots the package into a private copy, rejects
+  unsafe prefixes, unsafe member paths, non-regular entries, and duplicate
+  members before any extraction starts, validates the archived state with the
+  canonical `SessionState` schema, and checks the checksum, member inventory,
+  file digests, canonical content digest, expected session assignment,
+  flow/phase, and the archived audit chain. Regulated packages are validated
+  against the archived completion evidence (the mandatory archive necessarily
+  snapshots `regulatedArchiveStatus: pending`) instead of the later live
+  verification status. A small `evidence-manifest.example.json` binds the three
+  demo sessions to their FlowGuard packages and external host chat exports
+  (supplementary evidence, never authority) and fails on byte-identical
+  artifacts across flows — the "peer-review export is a copy of the
+  architecture export" defect. Redacted sharing archives are never presented
+  as fully verifiable raw evidence, and the offline, TSA,
+  publication-binding, and authenticity limits are documented. A smoke-project
+  contract builds real `/export` and `archiveRegulatedEvidence` packages and
+  proves valid (including the `EXPORT_READY` snapshot), file-byte,
+  manifest-metadata, session-swap, unsafe-prefix, duplicate-member, and
+  manifest-copy cases. The demo docs also document the
+  `HOST_CAPABILITY_UNVERIFIED` contract-attested host-capability boundary and
+  add an optional adversarial host-tool denial step (`HOST_TOOL_PHASE_DENIED` /
+  `enforcement:denied`).
 
 - **Reviewer execution-continuity provenance (state schema v6).** Every
   runtime-executed validation attempt now persists the host-observed execution
