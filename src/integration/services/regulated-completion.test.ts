@@ -35,6 +35,8 @@ vi.mock('../../adapters/persistence-lock.js', () => ({
 vi.mock('../../adapters/persistence-audit.js', () => ({
   readAuditTrail: vi.fn().mockResolvedValue([]),
   appendAuditEvent: vi.fn(),
+  withAuditTrailLock: vi.fn(async (_dir: string, fn: () => Promise<unknown>) => fn()),
+  appendAuditEventAlreadyLocked: vi.fn(),
 }));
 vi.mock('../../adapters/workspace/archive.js', () => ({ archiveRegulatedEvidence: vi.fn() }));
 vi.mock('../../adapters/workspace/archive-verify-chain.js', () => ({
@@ -50,7 +52,11 @@ vi.mock('../tools/helpers.js', () => ({
 
 import { PersistenceError, readState } from '../../adapters/persistence.js';
 import { acquireNamedWriteLock } from '../../adapters/persistence-lock.js';
-import { readAuditTrail } from '../../adapters/persistence-audit.js';
+import {
+  appendAuditEventAlreadyLocked,
+  readAuditTrail,
+  withAuditTrailLock,
+} from '../../adapters/persistence-audit.js';
 import { archiveRegulatedEvidence } from '../../adapters/workspace/archive.js';
 import { verifyRegulatedArchive } from '../../adapters/workspace/archive-verify-chain.js';
 import { reconcilePendingAuditOperations } from '../plugin-audit.js';
@@ -463,6 +469,24 @@ describe('executeRegulatedCompletion', () => {
       }
       return undefined;
     });
+    // The recovery decision append must happen under the audit lock, so no
+    // competing export append can interleave between the trail check and the
+    // durable decision event.
+    let auditLockHeld = false;
+    const appendLockStates: boolean[] = [];
+    vi.mocked(withAuditTrailLock).mockImplementation(async (_dir, fn) => {
+      auditLockHeld = true;
+      try {
+        return await fn();
+      } finally {
+        auditLockHeld = false;
+      }
+    });
+    vi.mocked(appendAuditEventAlreadyLocked).mockImplementation(async (_dir, event) => {
+      appendLockStates.push(auditLockHeld);
+      trail.push(event as unknown as ChainedAuditEvent);
+      return event as never;
+    });
     vi.mocked(readAuditTrail).mockImplementation(async () => [...trail]);
     vi.mocked(archiveRegulatedEvidence).mockResolvedValue('/archive.tar.gz');
     vi.mocked(verifyRegulatedArchive).mockResolvedValue({ passed: true } as never);
@@ -476,6 +500,7 @@ describe('executeRegulatedCompletion', () => {
     );
 
     expect(result.regulatedArchiveStatus).toBe('verified');
+    expect(appendLockStates).toEqual([true]);
     const decisionIndex = trail.findIndex((event) => event.detail.kind === 'decision');
     const exportIndex = trail.findIndex(
       (event) => event.detail.kind === 'transition' && event.detail.to === 'COMPLETE',

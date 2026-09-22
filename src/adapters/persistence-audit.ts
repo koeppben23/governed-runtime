@@ -50,7 +50,7 @@ const AUDIT_LOCK_TIMEOUT_MS = 10_000;
  * - Zod-validates the semantic body before appending (fail-closed)
  * - Single-line JSON (no pretty-print -- JSONL format)
  * - Trailing newline ensures clean append semantics
- * - Takes the session write lock to serialize concurrent appenders
+ * - Takes the audit write lock to serialize concurrent appenders
  * - Rewrites via temp file + fsync + atomic rename to avoid partial trailing JSON
  * - The append authority stamps every positional/authority field under the
  *   lock: auditFormatVersion, auditSequence, recordedAt, semanticEventDigest,
@@ -65,6 +65,28 @@ export async function appendAuditEvent(
   sessionDir: string,
   event: AuditEventBody,
 ): Promise<AuditEvent> {
+  return appendAuditEventWithLock(sessionDir, event, true);
+}
+
+/**
+ * Append under a caller-held {@link withAuditTrailLock}.
+ *
+ * Callers that must make a durability decision and append atomically with
+ * respect to other appenders hold the lock and use this entry point; the
+ * lock is never acquired here.
+ */
+export async function appendAuditEventAlreadyLocked(
+  sessionDir: string,
+  event: AuditEventBody,
+): Promise<AuditEvent> {
+  return appendAuditEventWithLock(sessionDir, event, false);
+}
+
+async function appendAuditEventWithLock(
+  sessionDir: string,
+  event: AuditEventBody,
+  acquireLock: boolean,
+): Promise<AuditEvent> {
   const result = AuditEventBodySchema.safeParse(event);
   if (!result.success) {
     throw new PersistenceError(
@@ -74,7 +96,9 @@ export async function appendAuditEvent(
   }
 
   try {
-    return await appendAuditLineAtomically(sessionDir, result.data);
+    return acquireLock
+      ? await appendAuditLineAtomically(sessionDir, result.data)
+      : await appendAuditLineCore(sessionDir, result.data);
   } catch (err: unknown) {
     getAdapterLogger().error('persistence-audit', 'Failed to append audit event', {
       sessionDir,
@@ -118,74 +142,76 @@ async function appendAuditLineAtomically(
   sessionDir: string,
   event: AuditEventBody,
 ): Promise<AuditEvent> {
-  return await withAuditWriteLock(sessionDir, async () => {
-    await ensureDir(sessionDir);
-    const filePath = auditPath(sessionDir);
-    let existing = '';
+  return await withAuditWriteLock(sessionDir, () => appendAuditLineCore(sessionDir, event));
+}
 
-    try {
-      existing = await fs.readFile(filePath, 'utf-8');
-    } catch (err) {
-      if (!isEnoent(err)) throw err;
+async function appendAuditLineCore(sessionDir: string, event: AuditEventBody): Promise<AuditEvent> {
+  await ensureDir(sessionDir);
+  const filePath = auditPath(sessionDir);
+  let existing = '';
+
+  try {
+    existing = await fs.readFile(filePath, 'utf-8');
+  } catch (err) {
+    if (!isEnoent(err)) throw err;
+  }
+  const existingEvents = parseAuditTrail(existing);
+
+  // Exactly-once under the audit write lock: an event id is a commit
+  // identity. A crash between append and acknowledgement may re-deliver the
+  // SAME event — return the persisted record instead of appending a
+  // duplicate. The same id with different content is a chain violation and
+  // fails closed.
+  const sameId = existingEvents.find((candidate) => candidate.id === event.id);
+  if (sameId) {
+    if (
+      computeCanonicalEventDigest(normalizeCurrentAuditBody(sameId)) ===
+      computeCanonicalEventDigest(normalizeCurrentAuditBody(event))
+    ) {
+      return sameId;
     }
-    const existingEvents = parseAuditTrail(existing);
+    throw new PersistenceError(
+      'SCHEMA_VALIDATION_FAILED',
+      `Refusing to append audit event with duplicate id ${event.id} and different content`,
+    );
+  }
 
-    // Exactly-once under the audit write lock: an event id is a commit
-    // identity. A crash between append and acknowledgement may re-deliver the
-    // SAME event — return the persisted record instead of appending a
-    // duplicate. The same id with different content is a chain violation and
-    // fails closed.
-    const sameId = existingEvents.find((candidate) => candidate.id === event.id);
-    if (sameId) {
-      if (
-        computeCanonicalEventDigest(normalizeCurrentAuditBody(sameId)) ===
-        computeCanonicalEventDigest(normalizeCurrentAuditBody(event))
-      ) {
-        return sameId;
-      }
-      throw new PersistenceError(
-        'SCHEMA_VALIDATION_FAILED',
-        `Refusing to append audit event with duplicate id ${event.id} and different content`,
-      );
-    }
+  // Stamp the positional/authority fields. Producers cannot influence
+  // chain position, sequence authority, or record time — any
+  // producer-supplied positional/hash value is dropped before stamping so
+  // it can never leak into a computed digest.
+  const bodyWithPosition: Omit<ChainedAuditEvent, 'chainHash'> = {
+    ...normalizeCurrentAuditBody(event),
+    auditSequence: existingEvents.length + 1,
+    recordedAt: new Date().toISOString(),
+    prevHash: getLastChainHash(existingEvents),
+  } as unknown as Omit<ChainedAuditEvent, 'chainHash'>;
+  const semanticEventDigest = computeCanonicalEventDigest(bodyWithPosition);
+  const finalized: Omit<ChainedAuditEvent, 'chainHash'> = {
+    ...bodyWithPosition,
+    semanticEventDigest,
+  };
+  const chained = {
+    ...finalized,
+    chainHash: computeChainHash(finalized.prevHash, finalized),
+  };
+  const chainedResult = AuditEvent.safeParse(chained);
+  if (!chainedResult.success) {
+    throw new PersistenceError(
+      'SCHEMA_VALIDATION_FAILED',
+      `Refusing to append invalid chained audit event: ${chainedResult.error.message}`,
+    );
+  }
+  const line = JSON.stringify(chainedResult.data) + '\n';
 
-    // Stamp the positional/authority fields. Producers cannot influence
-    // chain position, sequence authority, or record time — any
-    // producer-supplied positional/hash value is dropped before stamping so
-    // it can never leak into a computed digest.
-    const bodyWithPosition: Omit<ChainedAuditEvent, 'chainHash'> = {
-      ...normalizeCurrentAuditBody(event),
-      auditSequence: existingEvents.length + 1,
-      recordedAt: new Date().toISOString(),
-      prevHash: getLastChainHash(existingEvents),
-    } as unknown as Omit<ChainedAuditEvent, 'chainHash'>;
-    const semanticEventDigest = computeCanonicalEventDigest(bodyWithPosition);
-    const finalized: Omit<ChainedAuditEvent, 'chainHash'> = {
-      ...bodyWithPosition,
-      semanticEventDigest,
-    };
-    const chained = {
-      ...finalized,
-      chainHash: computeChainHash(finalized.prevHash, finalized),
-    };
-    const chainedResult = AuditEvent.safeParse(chained);
-    if (!chainedResult.success) {
-      throw new PersistenceError(
-        'SCHEMA_VALIDATION_FAILED',
-        `Refusing to append invalid chained audit event: ${chainedResult.error.message}`,
-      );
-    }
-    const line = JSON.stringify(chainedResult.data) + '\n';
-
-    // Durability is delegated to the canonical writer: it fsyncs the file AND
-    // the parent directory, so a crash after the rename cannot resurrect the
-    // pre-append trail. A hand-rolled temp+sync+rename here previously omitted
-    // the directory fsync, which silently dropped the whole batch of appends
-    // since the last directory sync while leaving a chain-valid prefix that
-    // verifyChain still reports as valid.
-    await durableAtomicWrite(filePath, existing + line);
-    return chainedResult.data;
-  });
+  // Durability is delegated to the canonical writer: it fsyncs the file AND
+  // the parent directory, so a crash after the rename cannot resurrect the
+  // pre-append trail. A hand-rolled temp+sync+rename here previously omitted
+  // the directory fsync, which silently dropped the whole batch of appends
+  // since the last directory sync while leaving a chain-valid prefix that
+  // verifyChain still reports as valid.
+  await durableAtomicWrite(filePath, existing + line);
+  return chainedResult.data;
 }
 
 function parseAuditTrail(raw: string): AuditEvent[] {
@@ -218,6 +244,18 @@ function parseAuditTrail(raw: string): AuditEvent[] {
   }
 
   return events;
+}
+
+/**
+ * Run a function under the canonical audit write lock.
+ *
+ * This is the explicit serialization point for callers that must make a
+ * durability decision and append atomically with respect to every other
+ * appender: hold this lock, re-check the trail, then append via
+ * {@link appendAuditEventAlreadyLocked}.
+ */
+export async function withAuditTrailLock<T>(sessionDir: string, fn: () => Promise<T>): Promise<T> {
+  return withAuditWriteLock(sessionDir, fn);
 }
 
 async function withAuditWriteLock<T>(sessionDir: string, fn: () => Promise<T>): Promise<T> {

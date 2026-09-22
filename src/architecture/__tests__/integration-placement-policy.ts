@@ -1044,6 +1044,12 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
     targetZone: 'services',
   },
   {
+    file: 'integration/services/regulated-completion-decision.ts',
+    owner: 'services',
+    zone: 'services',
+    targetZone: 'services',
+  },
+  {
     file: 'integration/services/regulated-completion.ts',
     owner: 'services',
     zone: 'services',
