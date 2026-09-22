@@ -50,7 +50,10 @@ describe('plan review obligation characterization', () => {
       planVersion: 2,
       classificationFiles: [],
       freeze: UNAVAILABLE_FREEZE,
-      planClaimDeclarations: { flow: 'plan', claims: [] } satisfies LegacyEmptyPlanClaimDeclarations,
+      planClaimDeclarations: {
+        flow: 'plan',
+        claims: [],
+      } satisfies LegacyEmptyPlanClaimDeclarations,
     });
     expect(canonicalJsonStringify(actual)).toMatchSnapshot();
   });
