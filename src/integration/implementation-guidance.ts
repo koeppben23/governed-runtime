@@ -170,11 +170,10 @@ function buildGuidanceSections(
     relevantFiles: buildRelevantFileItems(state, discovery, discoveryHealth, taskTerms),
     modules: buildModuleItems(discovery, discoveryHealth, taskTerms),
     surfaces: buildSurfaceGuidanceItems(discovery, discoveryHealth, taskTerms),
-    tests: rankItems(
-      buildTestItems(state, taskTerms, discoveryHealth),
-      LIMITS.maxTests,
-      discoveryHealth,
-    ),
+    tests: buildRankedSection(buildTestItems(state, taskTerms, discoveryHealth), {
+      limit: LIMITS.maxTests,
+      health: discoveryHealth,
+    }),
     contracts: buildContractItems(discovery, discoveryHealth, taskTerms),
     riskHotspots: buildRiskHotspotItems(state, discovery, discoveryHealth, taskTerms),
   };
@@ -186,7 +185,7 @@ function buildRelevantFileItems(
   discoveryHealth: DiscoveryHealthProjection | null,
   taskTerms: readonly string[],
 ): ImplementationGuidanceItem[] {
-  const relevantFiles = rankItems(
+  return buildRankedSection(
     [
       ...implementationFileItems(state, taskTerms),
       ...codeSurfaceItems(discovery.codeSurfaces?.endpoints ?? [], taskTerms),
@@ -197,10 +196,8 @@ function buildRelevantFileItems(
       ...surfaceEvidenceItems(discovery.surfaces.persistence, taskTerms),
       ...surfaceEvidenceItems(discovery.surfaces.security, taskTerms),
     ],
-    LIMITS.maxRelevantFiles,
-    discoveryHealth,
+    { limit: LIMITS.maxRelevantFiles, health: discoveryHealth, corroboratedOnly: true },
   );
-  return onlyCorroborated(relevantFiles);
 }
 
 function buildModuleItems(
@@ -208,7 +205,7 @@ function buildModuleItems(
   discoveryHealth: DiscoveryHealthProjection | null,
   taskTerms: readonly string[],
 ): ImplementationGuidanceItem[] {
-  const modules = rankItems(
+  return buildRankedSection(
     discovery.topology.modules.map((module) =>
       makeItem(
         module.name || module.path,
@@ -218,10 +215,8 @@ function buildModuleItems(
         'persisted_discovery_result',
       ),
     ),
-    LIMITS.maxModules,
-    discoveryHealth,
+    { limit: LIMITS.maxModules, health: discoveryHealth, corroboratedOnly: true },
   );
-  return onlyCorroborated(modules);
 }
 
 function buildSurfaceGuidanceItems(
@@ -229,7 +224,7 @@ function buildSurfaceGuidanceItems(
   discoveryHealth: DiscoveryHealthProjection | null,
   taskTerms: readonly string[],
 ): ImplementationGuidanceItem[] {
-  const surfaces = rankItems(
+  return buildRankedSection(
     [
       ...surfaceItems(discovery.surfaces.api, taskTerms),
       ...surfaceItems(discovery.surfaces.persistence, taskTerms),
@@ -237,10 +232,8 @@ function buildSurfaceGuidanceItems(
       ...surfaceItems(discovery.surfaces.cicd, taskTerms),
       ...codeSurfaceItems(discovery.codeSurfaces?.endpoints ?? [], taskTerms),
     ],
-    LIMITS.maxSurfaces,
-    discoveryHealth,
+    { limit: LIMITS.maxSurfaces, health: discoveryHealth, corroboratedOnly: true },
   );
-  return onlyCorroborated(surfaces);
 }
 
 function buildContractItems(
@@ -248,17 +241,15 @@ function buildContractItems(
   discoveryHealth: DiscoveryHealthProjection | null,
   taskTerms: readonly string[],
 ): ImplementationGuidanceItem[] {
-  const contracts = rankItems(
+  return buildRankedSection(
     [
       ...discovery.topology.rootConfigs.map((config) =>
         makeItem(config, config, [config], taskTerms, 'persisted_discovery_result'),
       ),
       ...surfaceItems(discovery.surfaces.api, taskTerms),
     ],
-    LIMITS.maxContracts,
-    discoveryHealth,
+    { limit: LIMITS.maxContracts, health: discoveryHealth, corroboratedOnly: true },
   );
-  return onlyCorroborated(contracts);
 }
 
 function buildRiskHotspotItems(
@@ -267,7 +258,7 @@ function buildRiskHotspotItems(
   discoveryHealth: DiscoveryHealthProjection | null,
   taskTerms: readonly string[],
 ): ImplementationGuidanceItem[] {
-  const riskHotspots = rankItems(
+  return buildRankedSection(
     [
       ...buildStateRiskHotspots(state),
       ...surfaceItems(discovery.surfaces.security, taskTerms),
@@ -275,10 +266,8 @@ function buildRiskHotspotItems(
       ...codeSurfaceItems(discovery.codeSurfaces?.authBoundaries ?? [], taskTerms),
       ...codeSurfaceItems(discovery.codeSurfaces?.dataAccess ?? [], taskTerms),
     ],
-    LIMITS.maxRiskHotspots,
-    discoveryHealth,
+    { limit: LIMITS.maxRiskHotspots, health: discoveryHealth },
   );
-  return riskHotspots;
 }
 
 function buildProjection(context: ProjectionContext): ImplementationGuidanceProjection {
@@ -539,6 +528,18 @@ function onlyCorroborated(
       item.source === 'task_text_and_discovery' ||
       item.source === 'session_implementation_evidence',
   );
+}
+
+function buildRankedSection(
+  items: readonly ImplementationGuidanceItem[],
+  options: {
+    readonly limit: number;
+    readonly health: DiscoveryHealthProjection | null;
+    readonly corroboratedOnly?: boolean;
+  },
+): ImplementationGuidanceItem[] {
+  const ranked = rankItems(items, options.limit, options.health);
+  return options.corroboratedOnly ? onlyCorroborated(ranked) : ranked;
 }
 
 function hasNoImplementationDirection(sections: GuidanceSections): boolean {
