@@ -55,6 +55,9 @@ import { archiveRegulatedEvidence } from '../../adapters/workspace/archive.js';
 import { verifyRegulatedArchive } from '../../adapters/workspace/archive-verify-chain.js';
 import { reconcilePendingAuditOperations } from '../plugin-audit.js';
 import { writeStateWithArtifactsAndAuditOperations } from '../tools/helpers.js';
+import { verifyRegulatedCompletionCompleteness } from '../../adapters/workspace/archive-verify-regulated.js';
+import type { ArchiveFinding } from '../../archive/types.js';
+import type { SemanticAuditIntent } from '../audit-outbox.js';
 
 const AT = '2026-01-01T00:00:00.000Z';
 
@@ -77,6 +80,55 @@ function approvalTransitionOperation() {
     },
     status: 'reconciled' as const,
   };
+}
+
+/** Durable export transition outbox record still pending reconciliation. */
+function exportTransitionOperation() {
+  return {
+    kind: 'transition' as const,
+    operationId: '00000000-0000-4000-8000-000000000011',
+    preStateDigest: 'a'.repeat(64),
+    mutationDigest: 'b'.repeat(64),
+    postStateDigest: 'c'.repeat(64),
+    auditEventDigest: 'd'.repeat(64),
+    transition: {
+      from: 'EXPORT_READY' as const,
+      to: 'COMPLETE' as const,
+      event: 'EXPORT_MATERIALIZED' as const,
+      at: AT,
+      chainIndex: 1,
+      autoAdvanced: false,
+    },
+    status: 'state_committed' as const,
+  };
+}
+
+/** The approval transition as already-durable audit evidence. */
+function approvalTransitionEvent(): ChainedAuditEvent {
+  return {
+    detail: {
+      kind: 'transition',
+      from: 'EVIDENCE_REVIEW',
+      to: 'EXPORT_READY',
+      event: 'APPROVE',
+    },
+    event: 'transition:APPROVE',
+    occurredAt: AT,
+  } as unknown as ChainedAuditEvent;
+}
+
+/** The export transition as already-durable audit evidence. */
+function exportTransitionEvent(): ChainedAuditEvent {
+  return {
+    detail: {
+      kind: 'transition',
+      from: 'EXPORT_READY',
+      to: 'COMPLETE',
+      event: 'EXPORT_MATERIALIZED',
+    },
+    event: 'transition:EXPORT_MATERIALIZED',
+    occurredAt: AT,
+  } as unknown as ChainedAuditEvent;
 }
 
 function reviewState(phase: 'EVIDENCE_REVIEW' | 'COMPLETE') {
@@ -199,12 +251,15 @@ function lifecycleWrites(): unknown[] {
 afterEach(() => vi.clearAllMocks());
 
 describe('executeRegulatedCompletion', () => {
-  it('commits the terminal decision even when earlier decisions and lifecycles exist', async () => {
-    // P0 guard: PLAN_REVIEW decisions and session_created must never suppress
-    // the terminal completion evidence.
+  it('fails closed instead of fabricating a late receipt when the export transition is durable', async () => {
+    // Earlier PLAN_REVIEW decisions and session_created lifecycles are never
+    // terminal authority, and the export transition is already in the audit
+    // trail: the terminal decision receipt can no longer be ordered before it.
     const { persisted, complete } = reviewEntryPath();
     trackPersistedState(persisted);
     vi.mocked(readAuditTrail).mockResolvedValue([
+      approvalTransitionEvent(),
+      exportTransitionEvent(),
       planDecisionEvent(),
       sessionCreatedEvent(),
     ] as never);
@@ -220,19 +275,10 @@ describe('executeRegulatedCompletion', () => {
       completionDeps(),
     );
 
-    expect(result.regulatedArchiveStatus).toBe('verified');
-    expect(decisionWrites()).toHaveLength(1);
-    expect(lifecycleWrites()).toHaveLength(1);
-    expect(writeStateWithArtifactsAndAuditOperations).toHaveBeenNthCalledWith(
-      1,
-      '/sess',
-      complete,
-      undefined,
-      expect.arrayContaining([
-        expect.objectContaining({ event: expect.stringMatching(/^decision:DEC-/) }),
-      ]),
-    );
-    expect(archiveRegulatedEvidence).toHaveBeenCalledWith('fp', 'sid');
+    expect(result.regulatedArchiveStatus).toBe('failed');
+    expect(decisionWrites()).toHaveLength(0);
+    expect(lifecycleWrites()).toHaveLength(0);
+    expect(archiveRegulatedEvidence).not.toHaveBeenCalled();
   });
 
   it('fails closed and persists failure when reconciliation fails', async () => {
@@ -290,6 +336,8 @@ describe('executeRegulatedCompletion', () => {
     const persisted = reviewState('COMPLETE');
     trackPersistedState(persisted);
     vi.mocked(readAuditTrail).mockResolvedValue([
+      approvalTransitionEvent(),
+      exportTransitionEvent(),
       planDecisionEvent(),
       sessionCreatedEvent(),
     ] as never);
@@ -297,64 +345,109 @@ describe('executeRegulatedCompletion', () => {
     vi.mocked(archiveRegulatedEvidence).mockResolvedValue('/archive.tar.gz');
     vi.mocked(verifyRegulatedArchive).mockResolvedValue({ passed: true } as never);
 
-    await executeRegulatedCompletion('/sess', 'fp', 'sid', persisted, completionDeps());
+    const result = await executeRegulatedCompletion(
+      '/sess',
+      'fp',
+      'sid',
+      persisted,
+      completionDeps(),
+    );
 
-    expect(decisionWrites()).toHaveLength(1);
-    expect(lifecycleWrites()).toHaveLength(1);
+    expect(result.regulatedArchiveStatus).toBe('failed');
+    expect(decisionWrites()).toHaveLength(0);
+    expect(lifecycleWrites()).toHaveLength(0);
   });
 
-  it('does not attribute the recovery receipt to a session actor who did not decide', async () => {
-    const persisted = {
+  it('orders a recovered terminal decision before a pending export transition and passes the real order check', async () => {
+    const persisted: SessionState = {
       ...reviewState('COMPLETE'),
-      actorInfo: {
-        id: 'initiator-1',
-        email: 'initiator@test.com',
-        displayName: null,
-        source: 'env' as const,
-        assurance: 'best_effort' as const,
+      pendingAuditOperations: [approvalTransitionOperation(), exportTransitionOperation()],
+    };
+    // The approval transition is already durable; only the export transition
+    // is still pending when recovery starts. The drain is simulated in
+    // outbox-array order so the emitted trail reflects the real sequence.
+    const trail: ChainedAuditEvent[] = [approvalTransitionEvent()];
+    let latest: SessionState = persisted;
+    vi.mocked(readState).mockImplementation(async () => latest);
+    vi.mocked(writeStateWithArtifactsAndAuditOperations).mockImplementation(
+      async (_dir: string, state: unknown, _transitions: unknown, intents: unknown) => {
+        const base = state as SessionState;
+        const appended: SessionState['pendingAuditOperations'] = (
+          (intents as readonly SemanticAuditIntent[] | undefined) ?? []
+        ).map((semantic, index) => ({
+          kind: 'semantic' as const,
+          operationId: `00000000-0000-4000-8000-${String(100 + index).padStart(12, '0')}`,
+          preStateDigest: 'a'.repeat(64),
+          mutationDigest: 'b'.repeat(64),
+          postStateDigest: 'c'.repeat(64),
+          auditEventDigest: 'd'.repeat(64),
+          status: 'state_committed' as const,
+          semantic,
+        }));
+        latest = {
+          ...base,
+          pendingAuditOperations: [...base.pendingAuditOperations, ...appended],
+        };
+        return latest;
       },
-    };
-    trackPersistedState(persisted);
-    vi.mocked(readAuditTrail).mockResolvedValue([sessionCreatedEvent()] as never);
-    vi.mocked(reconcilePendingAuditOperations).mockResolvedValue(undefined);
+    );
+    vi.mocked(reconcilePendingAuditOperations).mockImplementation(async () => {
+      for (const operation of [...latest.pendingAuditOperations]) {
+        if (operation.status === 'reconciled') continue;
+        if (operation.kind === 'transition') {
+          trail.push({
+            detail: {
+              kind: 'transition',
+              from: operation.transition.from,
+              to: operation.transition.to,
+              event: operation.transition.event,
+            },
+            event: `transition:${operation.transition.event}`,
+            occurredAt: operation.transition.at,
+          } as unknown as ChainedAuditEvent);
+        } else if (operation.kind === 'semantic') {
+          trail.push({
+            detail: operation.semantic.detail,
+            event: operation.semantic.event,
+            occurredAt: operation.semantic.occurredAt,
+            actor: operation.semantic.actor,
+          } as unknown as ChainedAuditEvent);
+        }
+        latest = {
+          ...latest,
+          pendingAuditOperations: latest.pendingAuditOperations.map((item) =>
+            item.operationId === operation.operationId
+              ? { ...item, status: 'reconciled' as const }
+              : item,
+          ),
+        };
+      }
+      return undefined;
+    });
+    vi.mocked(readAuditTrail).mockImplementation(async () => [...trail]);
     vi.mocked(archiveRegulatedEvidence).mockResolvedValue('/archive.tar.gz');
     vi.mocked(verifyRegulatedArchive).mockResolvedValue({ passed: true } as never);
 
-    await executeRegulatedCompletion('/sess', 'fp', 'sid', persisted, completionDeps());
+    const result = await executeRegulatedCompletion(
+      '/sess',
+      'fp',
+      'sid',
+      persisted,
+      completionDeps(),
+    );
 
-    const writes = decisionWrites();
-    expect(writes).toHaveLength(1);
-    const intents = (writes[0] as unknown[])[3] as Array<Record<string, unknown>>;
-    const [intent] = intents;
-    expect(intent).toBeDefined();
-    expect(intent).not.toHaveProperty('actorInfo');
-  });
+    expect(result.regulatedArchiveStatus).toBe('verified');
+    const decisionIndex = trail.findIndex((event) => event.detail.kind === 'decision');
+    const exportIndex = trail.findIndex(
+      (event) => event.detail.kind === 'transition' && event.detail.to === 'COMPLETE',
+    );
+    expect(decisionIndex).toBeGreaterThan(-1);
+    expect(exportIndex).toBeGreaterThan(-1);
+    expect(decisionIndex).toBeLessThan(exportIndex);
 
-  it('attributes the recovery receipt to the actorInfo that matches the persisted identity', async () => {
-    const matchingActorInfo = {
-      id: REVIEW_APPROVE.decisionIdentity.actorId,
-      email: REVIEW_APPROVE.decisionIdentity.actorEmail,
-      displayName: null,
-      source: REVIEW_APPROVE.decisionIdentity.actorSource,
-      assurance: REVIEW_APPROVE.decisionIdentity.actorAssurance,
-    };
-    const persisted = {
-      ...reviewState('COMPLETE'),
-      actorInfo: matchingActorInfo,
-    };
-    trackPersistedState(persisted);
-    vi.mocked(readAuditTrail).mockResolvedValue([sessionCreatedEvent()] as never);
-    vi.mocked(reconcilePendingAuditOperations).mockResolvedValue(undefined);
-    vi.mocked(archiveRegulatedEvidence).mockResolvedValue('/archive.tar.gz');
-    vi.mocked(verifyRegulatedArchive).mockResolvedValue({ passed: true } as never);
-
-    await executeRegulatedCompletion('/sess', 'fp', 'sid', persisted, completionDeps());
-
-    const writes = decisionWrites();
-    expect(writes).toHaveLength(1);
-    const intents = (writes[0] as unknown[])[3] as Array<Record<string, unknown>>;
-    const [intent] = intents;
-    expect(intent).toMatchObject({ actorInfo: matchingActorInfo });
+    const findings: ArchiveFinding[] = [];
+    verifyRegulatedCompletionCompleteness(latest, trail, findings);
+    expect(findings).toEqual([]);
   });
 
   it('drains a durable terminal-decision outbox checkpoint before deciding a new intent is needed', async () => {

@@ -17,11 +17,7 @@ import type { ChainedAuditEvent } from '../../audit/types.js';
 import type { ReviewDecision } from '../../state/evidence.js';
 import type { PendingAuditOperation } from '../../state/schema.js';
 import type { TransitionRecord } from '../../rails/types.js';
-import {
-  actorInfoMatchesDecisionIdentity,
-  buildDecisionAuditIntent,
-  resolveDecisionSequence,
-} from './decision-audit-intent.js';
+import { buildDecisionAuditIntent, resolveDecisionSequence } from './decision-audit-intent.js';
 
 const NOW = '2026-01-01T00:00:00.000Z';
 
@@ -171,30 +167,6 @@ describe('buildDecisionAuditIntent', () => {
     });
 
     expect('actorInfo' in intent).toBe(false);
-  });
-});
-
-describe('actorInfoMatchesDecisionIdentity', () => {
-  const actorInfo = {
-    id: 'reviewer-42',
-    email: 'reviewer@example.com',
-    displayName: null,
-    source: 'env' as const,
-    assurance: 'best_effort' as const,
-  };
-
-  it('HAPPY: matches when every identity field agrees', () => {
-    expect(actorInfoMatchesDecisionIdentity(actorInfo, DECISION.decisionIdentity)).toBe(true);
-  });
-
-  it.each([
-    ['id', { ...actorInfo, id: 'other-actor' }],
-    ['email', { ...actorInfo, email: null }],
-    ['displayName', { ...actorInfo, displayName: 'Other Reviewer' }],
-    ['source', { ...actorInfo, source: 'git' as const }],
-    ['assurance', { ...actorInfo, assurance: 'claim_validated' as const }],
-  ])('BAD: rejects a differing %s', (_label, candidate) => {
-    expect(actorInfoMatchesDecisionIdentity(candidate, DECISION.decisionIdentity)).toBe(false);
   });
 });
 

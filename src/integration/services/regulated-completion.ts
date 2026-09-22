@@ -29,13 +29,9 @@ import {
   writeStateWithArtifactsAndAuditOperations,
   withSessionWriteTransaction,
 } from '../tools/helpers.js';
-import type { SemanticAuditIntent } from '../audit-outbox.js';
+import { prepareAuditOperations, type SemanticAuditIntent } from '../audit-outbox.js';
 import { reconcilePendingAuditOperations, type AuditDeps } from '../plugin-audit.js';
-import {
-  actorInfoMatchesDecisionIdentity,
-  buildDecisionAuditIntent,
-  resolveDecisionSequence,
-} from './decision-audit-intent.js';
+import { buildDecisionAuditIntent, resolveDecisionSequence } from './decision-audit-intent.js';
 import { TOOL_FLOWGUARD_DECISION } from '../tool-names.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import { serializeError } from '../../logging/error-serialize.js';
@@ -188,21 +184,17 @@ export async function executeRegulatedCompletion(
     fingerprint,
   });
   // A prior attempt may have committed terminal authority before crashing.
-  // The durable outbox checkpoint is the recovery authority: reconcile it
-  // FIRST, then decide from exact terminal audit evidence whether a new
-  // intent is required. Kind-only trail inspection would treat earlier
-  // PLAN_REVIEW decisions or session_created lifecycles as terminal evidence.
+  // The durable outbox checkpoint is the recovery authority: the terminal
+  // decision check and its state-owned commit are one atomic locked
+  // transaction that runs BEFORE any reconciliation, because the archive
+  // order contract requires the decision receipt to precede the export
+  // transition. Kind-only trail inspection would treat earlier PLAN_REVIEW
+  // decisions or session_created lifecycles as terminal evidence.
   const persisted = await readState(sessDir);
   const resuming = persisted !== null && isRegulatedTicketCompletion(persisted);
   let current = resuming ? persisted : resultState;
   let finalState: SessionState;
   try {
-    if (resuming) {
-      current = await reconcileCompletionAuditOperations(sessDir, sessionID, current, auditDeps);
-    }
-    // The terminal decision check and its state-owned commit are one atomic
-    // locked transaction: a concurrent recovery must not both observe the
-    // evidence gap and each create a second terminal intent.
     current = await commitTerminalDecision(sessDir, sessionID, current, auditDeps);
     current = await reconcileCompletionAuditOperations(sessDir, sessionID, current, auditDeps);
 
@@ -424,29 +416,52 @@ async function commitTerminalDecision(
         'Regulated completion requires terminal approval transition and decision authority',
       );
     }
+    // The decision receipt must precede the export transition in the audit
+    // trail. While that transition is only committed (not yet durably
+    // audited), the receipt can be ordered before it. Once the export
+    // transition is durable, a late receipt would falsify the decision order:
+    // fail closed instead of fabricating evidence. Recovery never attributes
+    // the receipt to a session actor; the deciding identity is the persisted
+    // decisionIdentity.
+    const terminalTransition = authority.transition;
+    const exportOperationIndex = authority.pendingAuditOperations.findIndex(
+      (operation) =>
+        terminalTransition !== null &&
+        operation.kind === 'transition' &&
+        operation.transition.from === terminalTransition.from &&
+        operation.transition.to === terminalTransition.to &&
+        operation.transition.event === terminalTransition.event,
+    );
+    if (exportOperationIndex === -1) {
+      throw new PersistenceError(
+        'WRITE_FAILED',
+        'Regulated completion terminal decision authority is missing after the export transition was durably audited; refusing to fabricate a late decision receipt',
+      );
+    }
     const decisionSequence = await auditDeps.nextDecisionSequence(sessDir, sessionID);
     const actor =
       resolvePolicyFromSnapshot(authority.policySnapshot).actorClassification[
         TOOL_FLOWGUARD_DECISION
       ] ?? 'system';
-    // The recovery path may only attribute the receipt to an ActorInfo that
-    // provably belongs to the persisted deciding identity. A session actor is
-    // never the recipient of a decision they did not make.
-    const receiptActorInfo =
-      authority.actorInfo !== undefined &&
-      actorInfoMatchesDecisionIdentity(authority.actorInfo, decision.decisionIdentity)
-        ? authority.actorInfo
-        : undefined;
-    await writeStateWithArtifactsAndAuditOperations(sessDir, authority, undefined, [
+    const prepared = prepareAuditOperations(authority, authority, undefined, [
       buildDecisionAuditIntent({
         transition,
         decision,
         policyMode: authority.policySnapshot.mode,
         decisionSequence,
         actor,
-        ...(receiptActorInfo !== undefined ? { actorInfo: receiptActorInfo } : {}),
       }),
     ]);
+    const appended = prepared.pendingAuditOperations.slice(authority.pendingAuditOperations.length);
+    const reordered: SessionState = {
+      ...prepared,
+      pendingAuditOperations: [
+        ...prepared.pendingAuditOperations.slice(0, exportOperationIndex),
+        ...appended,
+        ...authority.pendingAuditOperations.slice(exportOperationIndex),
+      ],
+    };
+    await writeStateWithArtifactsAndAuditOperations(sessDir, reordered);
   });
   return (await readState(sessDir)) ?? state;
 }
