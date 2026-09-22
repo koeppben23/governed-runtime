@@ -255,6 +255,41 @@ describe('verifyRegulatedCompletionCompleteness', () => {
     expect(codes).toContain('regulated_terminal_decision_invalid');
   });
 
+  it('accepts the system fallback when the policy omits the decision tool', () => {
+    const base = regulatedCompleteState();
+    const withoutClassification = {
+      ...base,
+      policySnapshot: { ...base.policySnapshot, actorClassification: {} },
+    };
+    const events = boundCompletionEvents();
+    events[1] = { ...events[1]!, actor: 'system' };
+    const { codes } = run(withoutClassification, events);
+    expect(codes).toEqual([]);
+  });
+
+  it('rejects an unknown actor when the policy omits the decision tool', () => {
+    const base = regulatedCompleteState();
+    const withoutClassification = {
+      ...base,
+      policySnapshot: { ...base.policySnapshot, actorClassification: {} },
+    };
+    const events = boundCompletionEvents();
+    events[1] = { ...events[1]!, actor: 'impostor' };
+    const { codes } = run(withoutClassification, events);
+    expect(codes).toContain('regulated_terminal_decision_invalid');
+  });
+
+  it('rejects a decision receipt recorded after the export transition', () => {
+    const events = [
+      approvalTransitionEvent(),
+      exportTransitionEvent(),
+      decisionEvent(),
+      lifecycleEvent(),
+    ];
+    const { codes } = run(regulatedCompleteState(), events);
+    expect(codes).toContain('regulated_completion_order_invalid');
+  });
+
   it('accepts a governance-override approval for a regulated completion', () => {
     const state = regulatedCompleteState({
       ...REVIEW_APPROVE,

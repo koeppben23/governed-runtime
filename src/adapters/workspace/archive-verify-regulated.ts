@@ -130,7 +130,8 @@ function hasValidCompletionOrder(evidence: CompletionEvidence): boolean {
     approvalTransitionIndex < decisionEntry.index &&
     decisionEntry.index < lifecycleEntry.index &&
     approvalTransitionIndex < exportTransitionIndex &&
-    exportTransitionIndex < lifecycleEntry.index
+    exportTransitionIndex < lifecycleEntry.index &&
+    decisionEntry.index < exportTransitionIndex
   );
 }
 
@@ -208,7 +209,9 @@ function addDecisionBindingFindings(
  * The receipt actor must be either the frozen policy classification for the
  * decision tool (current receipts) or the deciding actor id (archives created
  * before the classification contract). Every other value is a contradiction
- * inside the audit envelope and fails closed.
+ * inside the audit envelope and fails closed. The producer falls back to
+ * `system` when the classification map omits the decision tool, so the
+ * verifier applies the same fallback.
  */
 function addDecisionActorBindingFindings(
   findings: ArchiveFinding[],
@@ -216,10 +219,9 @@ function addDecisionActorBindingFindings(
   decision: NonNullable<SessionState['reviewDecision']>,
   actorClassification: Readonly<Record<string, string>>,
 ): void {
-  const frozenClassification = actorClassification['flowguard_decision'];
+  const frozenClassification = actorClassification['flowguard_decision'] ?? 'system';
   const matchesLegacyActorId = event.actor === decision.decisionIdentity.actorId;
-  const matchesFrozenClassification =
-    frozenClassification !== undefined && event.actor === frozenClassification;
+  const matchesFrozenClassification = event.actor === frozenClassification;
   if (!matchesLegacyActorId && !matchesFrozenClassification) {
     findings.push({
       code: 'regulated_terminal_decision_invalid',
