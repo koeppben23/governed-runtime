@@ -79,13 +79,4 @@ describe('abort rail', () => {
       }
     });
   });
-
-  // ─── PERF ──────────────────────────────────────────────────
-  describe('PERF', () => {
-    it('abort execution is fast (smoke test)', () => {
-      const start = performance.now();
-      executeAbort(makeState('PLAN'), { reason: 'stop', actor: 'user' }, ctx);
-      expect(performance.now() - start).toBeLessThan(50);
-    });
-  });
 });

@@ -142,6 +142,20 @@ describe('documentation/testing-strategy', () => {
     expect(docs).toContain('aggregate');
   });
 
+  it('HAPPY: keeps PERF coverage limited to explicit performance contracts', () => {
+    const docs = readRepoFile('docs/testing-strategy.md');
+    const policy = readRepoFile('src/test-policy.ts');
+
+    expect(docs).toContain(
+      '`PERF` applies only when the unit has an explicit performance contract',
+    );
+    expect(docs).toContain('do not use ad-hoc single-call wall-clock thresholds');
+    expect(policy).toMatch(
+      /PERF coverage is required only for an explicit performance\s+\* contract/,
+    );
+    expect(policy).toMatch(/MUST NOT use ad-hoc single-call\s+\* performance\.now\(\) thresholds/);
+  });
+
   it('HAPPY: documents threshold and admission rule rationale', () => {
     const docs = readRepoFile('docs/testing-strategy.md');
 

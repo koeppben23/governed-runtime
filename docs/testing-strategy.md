@@ -1,22 +1,24 @@
 # Testing Strategy
 
 FlowGuard uses a structured, multi-layer test strategy.
-Every test suite declares its coverage categories in a `@test-policy` doc comment.
+Every test suite declares its applicable coverage categories in a `@test-policy` doc comment.
 
 ## Test Categories
 
-Every test file should cover five categories where applicable:
+Every test suite should cover the applicable correctness categories:
 
-| Category   | Purpose                                   | Example                                       |
-| ---------- | ----------------------------------------- | --------------------------------------------- |
-| **HAPPY**  | Correct input produces correct output     | Hydrate creates session with READY phase      |
-| **BAD**    | Invalid/malicious input is rejected       | Missing ticket throws, corrupt state blocked  |
-| **CORNER** | Boundary conditions, edge of valid domain | Empty plan sections, max-length strings       |
-| **EDGE**   | Environmental or timing-dependent         | No git remote, concurrent sessions, disk full |
-| **PERF**   | Performance stays within budget           | State I/O round-trip < 50 ms, evaluate < 1 ms |
+| Category   | Purpose                                           | Example                                       |
+| ---------- | ------------------------------------------------- | --------------------------------------------- |
+| **HAPPY**  | Correct input produces correct output             | Hydrate creates session with READY phase      |
+| **BAD**    | Invalid/malicious input is rejected               | Missing ticket throws, corrupt state blocked  |
+| **CORNER** | Boundary conditions, edge of valid domain         | Empty plan sections, max-length strings       |
+| **EDGE**   | Environmental or timing-dependent                 | No git remote, concurrent sessions, disk full |
+| **PERF**   | Explicit performance contract stays within budget | State I/O round-trip < 50 ms, evaluate < 1 ms |
 
-Performance budgets are defined in `src/test-policy.ts` with CI-aware multipliers
-(2x compute, 3x I/O-bound) to account for shared runner variability.
+`PERF` applies only when the unit has an explicit performance contract. Those tests use
+the `PERF_BUDGETS` authority with `benchmarkSync` or `benchmarkAsync`; correctness tests
+do not use ad-hoc single-call wall-clock thresholds. Performance budgets use CI-aware
+multipliers (2x compute, 3x I/O-bound) to account for shared runner variability.
 
 ## Test Tiers (T1–T5)
 

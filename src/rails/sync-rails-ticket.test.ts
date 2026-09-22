@@ -227,34 +227,6 @@ describe('ticket rail', () => {
       }
     });
   });
-
-  // ─── PERF ──────────────────────────────────────────────────
-  describe('PERF', () => {
-    it('ticket execution is fast (smoke test)', () => {
-      const start = performance.now();
-      executeTicket(makeState('TICKET'), { text: 'task', source: 'user' }, ctx);
-      expect(performance.now() - start).toBeLessThan(50);
-    });
-
-    it('ticket with references is fast (smoke test)', () => {
-      const start = performance.now();
-      executeTicket(
-        makeState('TICKET'),
-        {
-          text: 'task',
-          source: 'external',
-          inputOrigin: 'external_reference',
-          references: [
-            { ref: 'https://jira.example.com/PROJ-1', type: 'ticket' as const },
-            { ref: 'https://github.com/org/repo/issues/2', type: 'issue' as const },
-            { ref: 'https://confluence.example.com/pages/3', type: 'doc' as const },
-          ],
-        },
-        ctx,
-      );
-      expect(performance.now() - start).toBeLessThan(50);
-    });
-  });
 });
 
 // ─── MUTATION KILL: blocked detail interpolation ─────────────────────────────
