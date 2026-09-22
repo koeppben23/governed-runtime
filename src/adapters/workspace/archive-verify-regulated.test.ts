@@ -238,25 +238,26 @@ describe('verifyRegulatedCompletionCompleteness', () => {
     );
   });
 
-  it('binds the receipt actor to the deciding authority', () => {
+  it.each([
+    { actor: 'reviewer-1', label: 'the legacy deciding-authority actor field' },
+    { actor: 'human', label: 'the policy classification actor field' },
+  ])('accepts $label while binding identity via decisionIdentity ($actor)', ({ actor }) => {
+    const events = boundCompletionEvents();
+    events[1] = { ...events[1]!, actor };
+    const { codes } = run(regulatedCompleteState(), events);
+    expect(codes).toEqual([]);
+  });
+
+  it('accepts a governance-override approval for a regulated completion', () => {
     const state = regulatedCompleteState({
       ...REVIEW_APPROVE,
-      decisionIdentity: {
-        actorId: 'reviewer-1',
-        actorEmail: null,
-        actorSource: 'env' as const,
-        actorAssurance: 'best_effort' as const,
-      },
+      verdict: 'approve_with_governance_override',
     });
-    const events = boundCompletionEvents();
-    events[1] = { ...events[1]!, actor: 'machine' };
-    const { findings } = run(state, events);
-    expect(findings).toContainEqual(
-      expect.objectContaining({
-        code: 'regulated_terminal_decision_invalid',
-        message: expect.stringContaining('actor'),
-      }),
+    const { codes } = run(
+      state,
+      boundCompletionEvents({ verdict: 'approve_with_governance_override' }),
     );
+    expect(codes).toEqual([]);
   });
 
   it('binds every decisionIdentity field to the persisted identity', () => {

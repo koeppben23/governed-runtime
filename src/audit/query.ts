@@ -15,6 +15,7 @@
  */
 
 import type { AuditEvent } from '../state/evidence.js';
+import { ReviewVerdict } from '../state/evidence.js';
 import type { DecisionIdentity } from '../state/evidence-identity.js';
 import { DecisionIdentity as DecisionIdentitySchema } from '../state/evidence-identity.js';
 import type { AuditEventKind } from './types.js';
@@ -26,7 +27,7 @@ export interface DecisionReceipt {
   readonly decisionId: string;
   readonly decisionSequence: number;
   readonly gatePhase: string;
-  readonly verdict: 'approve' | 'changes_requested' | 'reject';
+  readonly verdict: ReviewVerdict;
   readonly rationale: string;
   readonly decisionIdentity: DecisionIdentity;
   readonly decidedAt: string;
@@ -198,10 +199,8 @@ export function decisionEvents(events: AuditEvent[]): AuditEvent[] {
  */
 function toDecisionReceipt(event: AuditEvent): DecisionReceipt {
   const detail = event.detail;
-  const verdict = detail.verdict;
-  if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') {
-    throw invalidDecisionReceipt(event, 'verdict');
-  }
+  const verdict = ReviewVerdict.safeParse(detail.verdict);
+  if (!verdict.success) throw invalidDecisionReceipt(event, 'verdict');
 
   const stringFields = [
     'decisionId',
@@ -225,7 +224,7 @@ function toDecisionReceipt(event: AuditEvent): DecisionReceipt {
     decisionId: detail.decisionId as string,
     decisionSequence: detail.decisionSequence,
     gatePhase: detail.gatePhase as string,
-    verdict,
+    verdict: verdict.data,
     rationale: detail.rationale as string,
     decisionIdentity: decisionIdentity.data,
     decidedAt: detail.decidedAt as string,

@@ -41,6 +41,14 @@ export const ReviewVerdict = z.enum([
 ]);
 export type ReviewVerdict = z.infer<typeof ReviewVerdict>;
 
+/**
+ * Whether a human verdict is an approval (plain or governance override).
+ * Single authority for the approval subset of {@link ReviewVerdict}.
+ */
+export function isApprovalVerdict(verdict: ReviewVerdict): boolean {
+  return verdict === 'approve' || verdict === 'approve_with_governance_override';
+}
+
 /** Revision delta between iterations (digest comparison result). */
 export const RevisionDelta = z.enum(['none', 'minor', 'major']);
 export type RevisionDelta = z.infer<typeof RevisionDelta>;

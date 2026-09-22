@@ -421,12 +421,17 @@ async function commitTerminalDecision(
       );
     }
     const decisionSequence = await auditDeps.nextDecisionSequence(sessDir, sessionID);
+    const actor =
+      resolvePolicyFromSnapshot(authority.policySnapshot).actorClassification[
+        TOOL_FLOWGUARD_DECISION
+      ] ?? 'system';
     await writeStateWithArtifactsAndAuditOperations(sessDir, authority, undefined, [
       buildDecisionAuditIntent({
         transition,
         decision,
         policyMode: authority.policySnapshot.mode,
         decisionSequence,
+        actor,
         ...(authority.actorInfo !== undefined ? { actorInfo: authority.actorInfo } : {}),
       }),
     ]);

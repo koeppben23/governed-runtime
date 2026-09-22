@@ -372,6 +372,7 @@ describe('persistAndFormat — semantic intent plumbing', () => {
           decision,
           policyMode: 'team',
           decisionSequence: 1,
+          actor: 'human',
         }),
       ],
     });

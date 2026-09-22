@@ -223,6 +223,7 @@ describe('createWorkspace composition contract', () => {
           decision: { ...REVIEW_APPROVE, decidedAt: NOW },
           policyMode: 'team',
           decisionSequence: 12,
+          actor: 'human',
         }),
       ]);
       await writeState(sessDir, prepared);

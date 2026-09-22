@@ -23,6 +23,11 @@ export interface BuildDecisionAuditIntentInput {
   readonly decision: ReviewDecision;
   readonly policyMode: string;
   readonly decisionSequence: number;
+  /**
+   * Frozen policy classification of the deciding tool (`human`, `machine`,
+   * `system`). The concrete identity travels in `decisionIdentity`/`actorInfo`.
+   */
+  readonly actor: string;
   readonly actorInfo?: ActorInfo;
 }
 
@@ -50,7 +55,7 @@ export function buildDecisionAuditIntent(
       transitionEvent: transition.event,
       policyMode,
     },
-    actor: decision.decisionIdentity.actorId,
+    actor: input.actor,
     ...(input.actorInfo !== undefined ? { actorInfo: input.actorInfo } : {}),
   };
 }

@@ -2,6 +2,7 @@ import { isTerminalPhase } from '../../machine/topology.js';
 import type { ArchiveFinding } from '../../archive/types.js';
 import type { ChainedAuditEvent } from '../../audit/types.js';
 import type { SessionState } from '../../state/schema.js';
+import { isApprovalVerdict } from '../../state/evidence.js';
 import type { DecisionIdentity } from '../../state/evidence-identity.js';
 
 function isRegulatedCompletionArchive(state: SessionState | null): state is SessionState {
@@ -87,7 +88,7 @@ export function verifyRegulatedCompletionCompleteness(
     return;
   }
   const decision = state.reviewDecision;
-  if (!decision || decision.verdict !== 'approve') {
+  if (!decision || !isApprovalVerdict(decision.verdict)) {
     findings.push({
       code: 'regulated_terminal_decision_invalid',
       severity: 'error',
@@ -192,14 +193,6 @@ function addDecisionBindingFindings(
     });
   }
   addDecisionIdentityBindingFindings(findings, detail, decision.decisionIdentity);
-  if (event.actor !== decision.decisionIdentity.actorId) {
-    findings.push({
-      code: 'regulated_terminal_decision_invalid',
-      severity: 'error',
-      message: 'Regulated completion decision receipt actor does not match the deciding authority',
-      file: 'audit/audit.jsonl',
-    });
-  }
 }
 
 function addDecisionIdentityBindingFindings(

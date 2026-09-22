@@ -100,6 +100,7 @@ describe('buildDecisionAuditIntent', () => {
       decision: DECISION,
       policyMode: 'team',
       decisionSequence: 7,
+      actor: 'human',
     });
 
     expect(intent).toEqual({
@@ -120,7 +121,7 @@ describe('buildDecisionAuditIntent', () => {
         transitionEvent: 'APPROVE',
         policyMode: 'team',
       },
-      actor: 'reviewer-42',
+      actor: 'human',
     });
   });
 
@@ -130,6 +131,7 @@ describe('buildDecisionAuditIntent', () => {
       decision: { ...DECISION, verdict: 'approve_with_governance_override' },
       policyMode: 'regulated',
       decisionSequence: 2,
+      actor: 'human',
     });
 
     expect(intent.detail.verdict).toBe('approve_with_governance_override');
@@ -148,6 +150,7 @@ describe('buildDecisionAuditIntent', () => {
       decision: DECISION,
       policyMode: 'team',
       decisionSequence: 1,
+      actor: 'human',
       actorInfo,
     });
 
@@ -160,6 +163,7 @@ describe('buildDecisionAuditIntent', () => {
       decision: DECISION,
       policyMode: 'team',
       decisionSequence: 1,
+      actor: 'human',
     });
 
     expect('actorInfo' in intent).toBe(false);

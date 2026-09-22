@@ -262,6 +262,7 @@ describe('reconcilePendingAuditOperations', () => {
             decision,
             policyMode: 'regulated',
             decisionSequence: 4,
+            actor: 'human',
           }),
         ]);
         await writeState(sessDir, committed);
@@ -291,6 +292,9 @@ describe('reconcilePendingAuditOperations', () => {
         expect(decisions[0]!.detail.decisionIdentity).toEqual(decision.decisionIdentity);
         expect(decisions[0]!.detail.gatePhase).toBe('PLAN_REVIEW');
         expect(decisions[0]!.hostSessionId).toBe(BINDING.hostSessionId);
+        // `actor` is the policy classification; the identity lives in
+        // decisionIdentity.
+        expect(decisions[0]!.actor).toBe('human');
 
         // Crash point: the append succeeded but the acknowledgement was lost.
         const afterFirstDrain = await readState(sessDir);
