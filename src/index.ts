@@ -300,5 +300,16 @@ export {
   ARCHIVE_MANIFEST_SCHEMA_VERSION,
 } from './archive/types.js';
 
+/**
+ * Canonical archive content-digest primitive. Exported so an offline verifier
+ * can recompute the digest from a received package without a live session;
+ * the formula and its covered field set remain owned by
+ * `src/archive/content-digest.ts` — this is a re-export, not a second authority.
+ */
+export {
+  computeArchiveContentDigest,
+  type ArchiveContentDigestInput,
+} from './archive/content-digest.js';
+
 /** @public */
 export { verifyArchive } from './adapters/workspace/index.js';

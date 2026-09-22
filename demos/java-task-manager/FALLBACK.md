@@ -49,6 +49,9 @@ Capture: OpenCode window + terminal side-by-side. The recording should show:
 - `/task` recording TICKET.md
 - `/implement` blocker (`COMMAND_NOT_ALLOWED`, directive `PLAN_REQUIRED`,
   "Plan required" in TICKET)
+- Optional: a direct host-tool mutation attempt in TICKET, denied with
+  `HOST_TOOL_PHASE_DENIED` and recorded as `enforcement:denied` in the audit
+  trail (Step 2b in `DEMO_SCRIPT.md`)
 - Plan Review Card at PLAN_REVIEW, then `/approve` → VALIDATION
 - Automatic validation executed in-flow via `flowguard_run_check` (no user
   command), then `/implement` → IMPLEMENTATION
@@ -97,6 +100,29 @@ test -d /tmp/flowguard-java-demo
 # Locate session archives in the OpenCode workspace state.
 # The exact archive path is emitted by the /archive command response.
 find ~/.config/opencode/workspaces -path '*/archive/*.tar.gz' -type f -print
+```
+
+Record the reference-run values next to the package; without them the package
+assignment cannot be re-verified later:
+
+| Value                    | Where it comes from                                                                                                   |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| Session id               | `/start` output (the archive file name)                                                                               |
+| Flow / phase             | `development` / `EXPORT_READY` for the `/export` package; `COMPLETE` for a raw terminal archive                       |
+| Runtime version + commit | The FlowGuard tarball used for the run (`flowguard --version`, `git rev-parse HEAD` of the checkout that produced it) |
+| Package + sidecar        | `<sessionId>.tar.gz` and `<sessionId>.tar.gz.sha256`                                                                  |
+
+Re-verify the frozen package before the pitch (and after copying it between
+machines) with the standalone verifier — scope, limits, and exit codes are
+documented in `EVIDENCE_PACKAGE.md`:
+
+```bash
+# Run from the governed-runtime checkout of the same version that produced the package.
+node demos/java-task-manager/verify-evidence-package.mjs \
+  ~/.config/opencode/workspaces/<fingerprint>/sessions/archive/<sessionId>.tar.gz \
+  --expect-session <session-id> \
+  --expect-flow development \
+  --expect-phase EXPORT_READY
 ```
 
 ---

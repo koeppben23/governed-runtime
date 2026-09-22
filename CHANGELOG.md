@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Standalone evidence-package verification.** `computeArchiveContentDigest`
+  and its input type are now exported from `@flowguard/core` (re-export of the
+  canonical formula — no algorithm change), so an offline verifier can
+  recompute the archive content digest from a received package. The Java demo
+  ships `demos/java-task-manager/verify-evidence-package.mjs` plus
+  `EVIDENCE_PACKAGE.md`: it checks the package checksum, member inventory, file
+  digests, canonical content digest, expected session assignment, flow/phase,
+  and the archived audit chain; it distinguishes raw evidence from redacted
+  sharing archives and documents the offline, TSA, publication-binding, and
+  authenticity limits. A smoke-project contract builds a real `/export`
+  package and proves valid, file-byte, manifest-metadata, and session-swap
+  cases. The demo docs also document the `HOST_CAPABILITY_UNVERIFIED`
+  contract-attested host-capability boundary and add an optional adversarial
+  host-tool denial step (`HOST_TOOL_PHASE_DENIED` / `enforcement:denied`).
+
 - **Reviewer execution-continuity provenance (state schema v6).** Every
   runtime-executed validation attempt now persists the host-observed execution
   continuity (`executionObservedStateDigest`, `preCommitStateDigest`), and the
@@ -564,6 +579,15 @@ true })` returns the evaluated projection. Key invariants:
   consolidated into single canonical implementations.
 
 ### Fixed
+
+- **Archive verification documentation matched to the real API.** The
+  `docs/archive.md` example called `verifyArchive('/path/to/archive.tar.gz')`,
+  but the public function signature is `verifyArchive(fingerprint, sessionId)`
+  and resolves the package from the workspace archive directory; the example
+  and the verification section now state the real contract and point package-
+  only recipients to the standalone offline verifier. The
+  `docs/bsi-c5-mapping.md` reference now names
+  `src/adapters/workspace/archive-verify-chain.ts` as the owning module.
 
 - **Discovery health classifies every persistence error code.** The advisory
   discovery-health projection previously routed `SESSION_STATE_INCOMPATIBLE`,

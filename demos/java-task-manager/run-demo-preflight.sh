@@ -342,6 +342,33 @@ else
     check "no manual reviewFindings submission in the peer review" 0
 fi
 
+# Evidence-package verification and assurance-boundary claims must ship with
+# the executable artifacts they describe.
+EVIDENCE_DOC="$DEMO_DIR/EVIDENCE_PACKAGE.md"
+if [[ -f "$EVIDENCE_DOC" && -f "$DEMO_DIR/verify-evidence-package.mjs" ]]; then
+    check "evidence package verifier and doc present" 0
+else
+    echo "  Missing EVIDENCE_PACKAGE.md or verify-evidence-package.mjs." >&2
+    check "evidence package verifier and doc present" 1
+fi
+
+if [[ -f "$DEMO_DIR/verify-evidence-package.mjs" ]] \
+    && node --check "$DEMO_DIR/verify-evidence-package.mjs" >/dev/null 2>&1; then
+    check "evidence package verifier parses" 0
+else
+    echo "  verify-evidence-package.mjs is missing or does not parse." >&2
+    check "evidence package verifier parses" 1
+fi
+
+for marker in 'verify-evidence-package.mjs' 'HOST_CAPABILITY_UNVERIFIED' 'HOST_TOOL_PHASE_DENIED' 'enforcement:denied'; do
+    if grep -qF "$marker" "${CONTRACT_DOCS[@]}" "$EVIDENCE_DOC" 2>/dev/null; then
+        check "docs mention $marker" 0
+    else
+        echo "  Missing $marker in the demo docs." >&2
+        check "docs mention $marker" 1
+    fi
+done
+
 # ─── Summary ───────────────────────────────────────────────────────────────────
 
 echo ""
