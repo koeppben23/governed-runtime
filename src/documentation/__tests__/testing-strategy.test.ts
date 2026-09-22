@@ -145,15 +145,19 @@ describe('documentation/testing-strategy', () => {
   it('HAPPY: keeps PERF coverage limited to explicit performance contracts', () => {
     const docs = readRepoFile('docs/testing-strategy.md');
     const policy = readRepoFile('src/test-policy.ts');
+    const contributing = readRepoFile('CONTRIBUTING.md');
 
     expect(docs).toContain(
       '`PERF` applies only when the unit has an explicit performance contract',
     );
-    expect(docs).toContain('do not use ad-hoc single-call wall-clock thresholds');
+    expect(docs).toContain('Ad-hoc single-invocation wall-clock smoke thresholds');
     expect(policy).toMatch(
       /PERF coverage is required only for an explicit performance\s+\* contract/,
     );
-    expect(policy).toMatch(/MUST NOT use ad-hoc single-call\s+\* performance\.now\(\) thresholds/);
+    expect(policy).toMatch(/SHOULD use PERF_BUDGETS with benchmarkSync or\s+\* benchmarkAsync/);
+    expect(policy).toContain('MUST NOT act as test gates');
+    expect(contributing).toContain('Do not use arbitrary single-invocation wall-clock smoke');
+    expect(contributing).toContain('benchmarkSync(doOperation, 100, 10)');
   });
 
   it('HAPPY: documents threshold and admission rule rationale', () => {

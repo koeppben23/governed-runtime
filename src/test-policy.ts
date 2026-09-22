@@ -4,8 +4,9 @@
  *
  * Every test suite MUST cover the correctness categories applicable to its
  * behavior. PERF coverage is required only for an explicit performance
- * contract. This policy is enforced by test naming conventions and review
- * mandates in flowguard-mandates.md.
+ * contract. Arbitrary single-invocation wall-clock smoke thresholds are not
+ * performance contracts. This policy is enforced by test naming conventions
+ * and review mandates in flowguard-mandates.md.
  *
  * Categories:
  * 1. HAPPY  — Normal, expected successful flows
@@ -23,9 +24,9 @@
  *     describe("PERF", () => { ... }); // only for an explicit performance contract
  *   });
  *
- * Explicit performance contracts use PERF_BUDGETS with benchmarkSync or
- * benchmarkAsync. Correctness tests MUST NOT use ad-hoc single-call
- * performance.now() thresholds.
+ * Explicit performance contracts SHOULD use PERF_BUDGETS with benchmarkSync or
+ * benchmarkAsync where applicable. Ad-hoc single-invocation wall-clock smoke
+ * thresholds without an explicit performance contract MUST NOT act as test gates.
  *
  * Performance thresholds (enforced in PERF tests):
  * - State evaluation: < 1ms for single evaluate() call
