@@ -18,11 +18,12 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { readState, writeState } from '../adapters/persistence.js';
 import { appendAuditEvent, readAuditTrail } from '../adapters/persistence-audit.js';
-import { makeState } from '../fixtures.js';
+import { makeState, REVIEW_APPROVE } from '../fixtures.js';
 import { reconcilePendingAuditOperations, type AuditDeps } from './plugin-audit.js';
 import { TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
 import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
 import { prepareAuditOperations } from './audit-outbox.js';
+import { buildDecisionAuditIntent } from './services/decision-audit-intent.js';
 
 const SESSION_ID = 'aaaaaaaa-0000-4000-8000-000000000001';
 const FIXED_DECISION_AT = '2026-05-15T12:00:00.000Z';
@@ -236,6 +237,73 @@ describe('reconcilePendingAuditOperations', () => {
             (item) => item.operationId === semantic.operationId,
           )!.status,
         ).toBe('reconciled');
+      } finally {
+        await fs.rm(sessDir, { recursive: true, force: true });
+      }
+    });
+
+    it('drains a committed decision intent exactly once with the exact human verdict', async () => {
+      const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-decision-intent-'));
+      try {
+        const previous = makeState('PLAN_REVIEW', { id: SESSION_ID });
+        const decision = {
+          ...REVIEW_APPROVE,
+          verdict: 'approve_with_governance_override' as const,
+          decidedAt: FIXED_DECISION_AT,
+        };
+        const committed = prepareAuditOperations(previous, { ...previous }, undefined, [
+          buildDecisionAuditIntent({
+            transition: {
+              from: 'PLAN_REVIEW',
+              to: 'VALIDATION',
+              event: 'APPROVE',
+              at: FIXED_DECISION_AT,
+            },
+            decision,
+            policyMode: 'regulated',
+            decisionSequence: 4,
+          }),
+        ]);
+        await writeState(sessDir, committed);
+        const deps = makeDeps({
+          getSessionDir: vi.fn().mockReturnValue(sessDir),
+          resolveSessionPolicy: vi.fn().mockResolvedValue({
+            policy: {
+              audit: { emitToolCalls: false, emitTransitions: true, enableChainHash: true },
+              actorClassification: {},
+              mode: 'team',
+              requireHumanGates: false,
+            },
+            state: committed,
+          }),
+          appendAndTrack: vi.fn(async (event) => {
+            await appendAuditEvent(sessDir, event as Parameters<typeof appendAuditEvent>[1]);
+          }),
+        });
+
+        await reconcilePendingAuditOperations(deps, SESSION_ID, 'flowguard_decision');
+        const decisions = (await readAuditTrail(sessDir)).filter(
+          (event) => event.detail.kind === 'decision',
+        );
+        expect(decisions).toHaveLength(1);
+        expect(decisions[0]!.event).toBe('decision:DEC-004');
+        expect(decisions[0]!.detail.verdict).toBe('approve_with_governance_override');
+        expect(decisions[0]!.detail.decisionIdentity).toEqual(decision.decisionIdentity);
+        expect(decisions[0]!.detail.gatePhase).toBe('PLAN_REVIEW');
+
+        // Crash point: the append succeeded but the acknowledgement was lost.
+        const afterFirstDrain = await readState(sessDir);
+        await writeState(sessDir, {
+          ...afterFirstDrain!,
+          pendingAuditOperations: afterFirstDrain!.pendingAuditOperations.map((item) => ({
+            ...item,
+            status: 'state_committed' as const,
+          })),
+        });
+        await reconcilePendingAuditOperations(deps, SESSION_ID, 'flowguard_decision');
+        expect(
+          (await readAuditTrail(sessDir)).filter((event) => event.detail.kind === 'decision'),
+        ).toHaveLength(1);
       } finally {
         await fs.rm(sessDir, { recursive: true, force: true });
       }

@@ -230,5 +230,11 @@ export function executeReviewDecision(
   // 8. Re-evaluate at new phase to get the eval result for the caller (policy-aware)
   const evalResult = evaluate(finalState, ctx.policy);
 
-  return { kind: 'ok', state: finalState, evalResult, transitions: [transition] };
+  return {
+    kind: 'ok',
+    state: finalState,
+    evalResult,
+    transitions: [transition],
+    decisionEvidence: decision,
+  };
 }

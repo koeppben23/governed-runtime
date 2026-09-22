@@ -27,8 +27,7 @@ import {
 } from '../audit/types.js';
 import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
 import { resolveTimestampEvidence } from '../audit/timestamp-resolution.js';
-import { resolveAuditContext, type AuditContext } from './plugin-audit-context.js';
-import { auditIdentity, emitDecisionReceipt } from './plugin-audit-decisions.js';
+import { auditIdentity, resolveAuditContext, type AuditContext } from './plugin-audit-context.js';
 import { getToolMetadata } from './plugin-helpers.js';
 import { buildLifecycleDetail } from './plugin-audit-lifecycle-reason.js';
 import { TOOL_FLOWGUARD_ABORT, TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
@@ -425,25 +424,16 @@ export async function runAudit(
       timestampTracker,
     });
 
-    // ── 2. Emit transition events ───────────────────────────────────────
+    // ── 2. Emit transition events and committed semantic operations ─────
+    // Human decision receipts are committed by the decision tool as durable
+    // semantic operations in the decision's own state write; this drain is
+    // the single emission authority for them.
     await emitTransitionAudits({ deps, ctx, sessionId, timestampTracker });
 
-    // ── 3. Emit decision receipt ────────────────────────────────────────
-    ctx.prevHash = await emitDecisionReceipt({
-      deps,
-      ctx,
-      toolName,
-      input,
-      sessionId,
-      policyMode: state?.policySnapshot.mode ?? effectiveMode,
-      state,
-      recordTimestampFailure: timestampTracker.record,
-    });
-
-    // ── 4. Emit lifecycle events ────────────────────────────────────────
+    // ── 3. Emit lifecycle events ────────────────────────────────────────
     await emitLifecycleAudit({ deps, ctx, toolName, sessionId, state, policy, timestampTracker });
 
-    // ── 5. Detect session completion + solo auto-archive ─────────────────
+    // ── 4. Detect session completion + solo auto-archive ─────────────────
     ctx.prevHash = await maybeCompleteAndArchive(deps, ctx, {
       toolName,
       sessionId,
@@ -451,7 +441,7 @@ export async function runAudit(
       recordTimestampFailure: timestampTracker.record,
     });
 
-    // ── 6. Emit error event ─────────────────────────────────────────────
+    // ── 5. Emit error event ─────────────────────────────────────────────
     await emitToolErrorAudit({ deps, ctx, toolName, sessionId, state, timestampTracker });
 
     return await finalizeStrictTimestampFailure(ctx, timestampTracker.failure);

@@ -43,6 +43,24 @@ interface AuditContextDeps {
 
 // ─── Internal types ───────────────────────────────────────────────────────────
 
+/**
+ * Resolve the explicit audit identity pair. Audit events never carry a
+ * polymorphic sessionId: `flowguardSessionId` is the SAME FlowGuard UUID on
+ * every event class, and `hostSessionId` is bound separately where host
+ * context exists. Returns null when the FlowGuard identity is unavailable —
+ * the caller must skip the event instead of approximating an identity.
+ */
+export function auditIdentity(state: SessionState | null): {
+  flowguardSessionId: string;
+  hostSessionId?: string;
+} | null {
+  if (!state) return null;
+  return {
+    flowguardSessionId: state.flowguardSessionId,
+    hostSessionId: state.binding.hostSessionId,
+  };
+}
+
 export interface AuditContext {
   sessDir: string;
   emitToolCalls: boolean;

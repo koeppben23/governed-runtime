@@ -31,6 +31,7 @@ import {
 } from '../tools/helpers.js';
 import type { SemanticAuditIntent } from '../audit-outbox.js';
 import { reconcilePendingAuditOperations, type AuditDeps } from '../plugin-audit.js';
+import { buildDecisionAuditIntent, resolveDecisionSequence } from './decision-audit-intent.js';
 import { TOOL_FLOWGUARD_DECISION } from '../tool-names.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import { serializeError } from '../../logging/error-serialize.js';
@@ -75,14 +76,11 @@ export function createSessionCompletionAuditDeps(input: {
       );
       event.chainHash = appended.chainHash;
     },
-    nextDecisionSequence: async () =>
-      (await readAuditTrail(sessDir)).reduce((max, event) => {
-        const sequence =
-          event.detail.kind === 'decision' && typeof event.detail.decisionSequence === 'number'
-            ? event.detail.decisionSequence
-            : 0;
-        return Math.max(max, sequence);
-      }, 0) + 1,
+    nextDecisionSequence: async () => {
+      const events = await readAuditTrail(sessDir);
+      const current = await readState(sessDir);
+      return resolveDecisionSequence(events, current?.pendingAuditOperations ?? []);
+    },
     log: {
       debug: () => undefined,
       info: (service, message, extra) => getAdapterLogger().info(service, message, extra),
@@ -414,8 +412,23 @@ async function commitTerminalDecision(
     const fresh = await readState(sessDir);
     const authority = fresh && isRegulatedTicketCompletion(fresh) ? fresh : state;
     if (await hasTerminalDecisionAuthority(sessDir, authority)) return;
+    const transition = findApprovalTransition(authority);
+    const decision = authority.reviewDecision;
+    if (!transition || !decision) {
+      throw new PersistenceError(
+        'SCHEMA_VALIDATION_FAILED',
+        'Regulated completion requires terminal approval transition and decision authority',
+      );
+    }
+    const decisionSequence = await auditDeps.nextDecisionSequence(sessDir, sessionID);
     await writeStateWithArtifactsAndAuditOperations(sessDir, authority, undefined, [
-      await decisionIntent(sessDir, authority, auditDeps, sessionID),
+      buildDecisionAuditIntent({
+        transition,
+        decision,
+        policyMode: authority.policySnapshot.mode,
+        decisionSequence,
+        ...(authority.actorInfo !== undefined ? { actorInfo: authority.actorInfo } : {}),
+      }),
     ]);
   });
   return (await readState(sessDir)) ?? state;
@@ -475,45 +488,6 @@ async function commitCompletionLifecycle(
     );
   });
   return (await readState(sessDir)) ?? state;
-}
-
-async function decisionIntent(
-  sessDir: string,
-  state: SessionState,
-  auditDeps: AuditDeps,
-  sessionID: string,
-): Promise<SemanticAuditIntent> {
-  const transition = findApprovalTransition(state);
-  const decision = state.reviewDecision;
-  if (!transition || !decision) {
-    throw new PersistenceError(
-      'SCHEMA_VALIDATION_FAILED',
-      'Regulated completion requires terminal approval transition and decision authority',
-    );
-  }
-  const decisionSequence = await auditDeps.nextDecisionSequence(sessDir, sessionID);
-  const decisionId = `DEC-${String(decisionSequence).padStart(3, '0')}`;
-  return {
-    phase: transition.from,
-    event: `decision:${decisionId}`,
-    occurredAt: decision.decidedAt,
-    detail: {
-      kind: 'decision',
-      gatePhase: transition.from,
-      decisionId,
-      decisionSequence,
-      verdict: decision.verdict,
-      rationale: decision.rationale,
-      decisionIdentity: decision.decisionIdentity,
-      decidedAt: decision.decidedAt,
-      fromPhase: transition.from,
-      toPhase: transition.to,
-      transitionEvent: transition.event,
-      policyMode: state.policySnapshot.mode,
-    },
-    actor: decision.decisionIdentity.actorId,
-    ...(state.actorInfo ? { actorInfo: state.actorInfo } : {}),
-  };
 }
 
 function lifecycleIntent(): SemanticAuditIntent {

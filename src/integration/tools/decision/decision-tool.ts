@@ -22,6 +22,8 @@ import { withMutableSession, withMutableSessionTransaction } from '../helpers.js
 import { persistAndFormat } from '../helpers-rail-presentation.js';
 import { getAdapterLogger, getLogTraceFields } from '../../../logging/adapter-logger.js';
 import type { ActorInfo, ReviewVerdict } from '../../../state/evidence.js';
+import type { RailResult } from '../../../rails/types.js';
+import type { SemanticAuditIntent } from '../../audit-outbox.js';
 
 // Rails
 import { executeReviewDecision } from '../../../rails/review-decision.js';
@@ -32,6 +34,7 @@ import { ActorIdentityError } from '../../../adapters/actor.js';
 
 // Finalization service
 import { finalizeDecision } from '../../services/decision-finalization.js';
+import { buildDecisionAuditIntent } from '../../services/decision-audit-intent.js';
 import { createSessionCompletionAuditDeps } from '../../services/regulated-completion.js';
 import { consumeUserDecisionIntent, peekUserDecisionIntent } from '../../user-decision-intent.js';
 
@@ -70,6 +73,42 @@ interface PersistedDecision {
   readonly finalResult: DecisionFinalization;
 }
 
+/**
+ * Build the durable decision receipt for a successful decision.
+ *
+ * The sequence is reserved under the already-held session write lock from
+ * persisted receipts plus committed-but-unreconciled semantic operations; the
+ * builder only formats it. The intent is committed atomically with the
+ * decision, BEFORE any automatic validation runs in the same tool call.
+ */
+async function decisionReceiptIntents(input: {
+  readonly sessDir: string;
+  readonly sessionID: string;
+  readonly finalResult: RailResult;
+  readonly auditDeps: { nextDecisionSequence(sessDir: string, sessionId: string): Promise<number> };
+}): Promise<readonly SemanticAuditIntent[]> {
+  const { finalResult } = input;
+  if (finalResult.kind !== 'ok') return [];
+  const decision = finalResult.decisionEvidence;
+  const transition = finalResult.transitions[0];
+  if (decision === undefined || transition === undefined) return [];
+  const decisionSequence = await input.auditDeps.nextDecisionSequence(
+    input.sessDir,
+    input.sessionID,
+  );
+  return [
+    buildDecisionAuditIntent({
+      transition,
+      decision,
+      policyMode: finalResult.state.policySnapshot.mode,
+      decisionSequence,
+      ...(finalResult.state.actorInfo !== undefined
+        ? { actorInfo: finalResult.state.actorInfo }
+        : {}),
+    }),
+  ];
+}
+
 async function persistHumanDecision(
   context: WorkspaceToolContext,
   args: { readonly verdict: ReviewVerdict; readonly rationale: string },
@@ -102,6 +141,13 @@ async function persistHumanDecision(
       ctx,
     );
 
+    const auditDeps = createSessionCompletionAuditDeps({
+      sessDir,
+      sessionID: context.sessionID,
+      fingerprint,
+      state,
+    });
+
     // Approval now stops at EXPORT_READY. Completion side effects belong
     // exclusively to flowguard_export after package verification.
     const finalResult = await finalizeDecision({
@@ -111,18 +157,21 @@ async function persistHumanDecision(
       priorPhase: state.phase,
       verdict: args.verdict,
       result,
-      auditDeps: createSessionCompletionAuditDeps({
-        sessDir,
-        sessionID: context.sessionID,
-        fingerprint,
-        state,
-      }),
+      auditDeps,
+    });
+
+    const semanticIntents = await decisionReceiptIntents({
+      sessDir,
+      sessionID: context.sessionID,
+      finalResult,
+      auditDeps,
     });
 
     const persisted = await persistAndFormat(sessDir, finalResult, {
       evidenceApprovalCompletion:
         state.phase === 'EVIDENCE_REVIEW' &&
         (args.verdict === 'approve' || args.verdict === 'approve_with_governance_override'),
+      semanticIntents,
     });
 
     return { output: persisted, finalResult };

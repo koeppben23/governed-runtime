@@ -31,6 +31,12 @@ import {
   withMutableSessionTransaction,
   writeStateWithArtifacts,
 } from './helpers.js';
+import { persistAndFormat } from './helpers-rail-presentation.js';
+import { buildDecisionAuditIntent } from '../services/decision-audit-intent.js';
+import { evaluate } from '../../machine/evaluate.js';
+import { TEAM_POLICY } from '../../config/policy.js';
+import type { RailOk } from '../../rails/types.js';
+import type { ReviewDecision } from '../../state/evidence.js';
 import { readState, statePath, atomicWrite } from '../../adapters/persistence.js';
 import { makeState, makeProgressedState } from '../../fixtures.js';
 import { CURRENT_SESSION_STATE_SCHEMA_VERSION } from '../../state/schema.js';
@@ -314,5 +320,68 @@ describe('writeStateWithArtifacts — artifacts-first ordering', () => {
       const read2 = await readState(tmpDir);
       expect(read2!.phase).toBe('TICKET');
     });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// persistAndFormat — semantic intent plumbing
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('persistAndFormat — semantic intent plumbing', () => {
+  beforeEach(async () => {
+    tmpDir = await createTmpDir();
+  });
+
+  afterEach(async () => {
+    await cleanup(tmpDir);
+  });
+
+  it('commits caller-supplied decision intents atomically with the rail result', async () => {
+    const state = makeState('PLAN_REVIEW');
+    await writeStateWithArtifacts(tmpDir, state);
+    const transition = {
+      from: 'PLAN_REVIEW' as const,
+      to: 'VALIDATION' as const,
+      event: 'APPROVE' as const,
+      at: '2026-01-01T00:00:00.000Z',
+    };
+    const next = { ...state, phase: 'VALIDATION' as const, transition };
+    const decision: ReviewDecision = {
+      verdict: 'approve',
+      rationale: 'ok',
+      decidedAt: transition.at,
+      decisionIdentity: {
+        actorId: 'reviewer-1',
+        actorEmail: null,
+        actorSource: 'env',
+        actorAssurance: 'best_effort',
+      },
+    };
+    const result: RailOk = {
+      kind: 'ok',
+      state: next,
+      evalResult: evaluate(next, TEAM_POLICY),
+      transitions: [transition],
+      decisionEvidence: decision,
+    };
+
+    await persistAndFormat(tmpDir, result, {
+      semanticIntents: [
+        buildDecisionAuditIntent({
+          transition,
+          decision,
+          policyMode: 'team',
+          decisionSequence: 1,
+        }),
+      ],
+    });
+
+    const persisted = await readState(tmpDir);
+    const semantic = persisted!.pendingAuditOperations.filter(
+      (operation) => operation.kind === 'semantic',
+    );
+    expect(semantic).toHaveLength(1);
+    expect(semantic[0]!.semantic.event).toBe('decision:DEC-001');
+    expect(semantic[0]!.semantic.detail.verdict).toBe('approve');
   });
 });

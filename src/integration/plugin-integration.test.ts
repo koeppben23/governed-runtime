@@ -386,59 +386,6 @@ describe('plugin-integration', () => {
       expect(toolCall!.actor).toBe('human');
     });
 
-    it('emits decision receipt with DEC-001 format', async () => {
-      const transitions = [
-        {
-          from: 'PLAN_REVIEW',
-          to: 'VALIDATION',
-          event: 'APPROVE',
-          at: new Date().toISOString(),
-        },
-      ];
-
-      await persistTransition(transitions[0]!, makeProgressedState('VALIDATION'));
-
-      await handler(
-        {
-          tool: 'flowguard_decision',
-          sessionID: sessionId,
-          args: { verdict: 'approve', rationale: 'Looks good' },
-        },
-        {
-          title: 'decision',
-          output: makeToolOutput({
-            phase: 'VALIDATION',
-            reviewDecision: {
-              verdict: 'approve',
-              rationale: 'Looks good',
-              decisionIdentity: {
-                actorId: 'reviewer-42',
-                actorEmail: null,
-                actorSource: 'unknown',
-                actorAssurance: 'best_effort',
-              },
-              decidedAt: transitions[0]!.at,
-            },
-          }),
-          metadata: {},
-        },
-      );
-
-      const events = await getEvents();
-      const decision = events.find((e) => eventKind(e) === 'decision');
-      expect(decision).toBeDefined();
-      expect(decision!.event).toBe('decision:DEC-001');
-      expect(decision!.detail.decisionSequence).toBe(1);
-      expect(decision!.detail.verdict).toBe('approve');
-      expect(decision!.detail.rationale).toBe('Looks good');
-      expect(decision!.detail.decisionIdentity).toEqual({
-        actorId: 'reviewer-42',
-        actorEmail: null,
-        actorSource: 'unknown',
-        actorAssurance: 'best_effort',
-      });
-    });
-
     it('session_created lifecycle reason includes policy resolution fields', async () => {
       await handler(
         { tool: 'flowguard_hydrate', sessionID: sessionId },
@@ -514,72 +461,6 @@ describe('plugin-integration', () => {
         { tool: 'flowguard_status', sessionID: 'fake' },
         { title: 'status', output: '{}', metadata: {} },
       );
-    });
-
-    it('does not emit decision receipt when decision call fails', async () => {
-      await handler(
-        {
-          tool: 'flowguard_decision',
-          sessionID: sessionId,
-          args: { verdict: 'approve', rationale: 'x' },
-        },
-        {
-          title: 'decision',
-          output: makeToolOutput({
-            phase: 'PLAN_REVIEW',
-            error: true,
-            errorMessage: 'blocked',
-          }),
-          metadata: {},
-        },
-      );
-
-      const events = await getEvents();
-      const decisions = events.filter((e) => eventKind(e) === 'decision');
-      expect(decisions).toHaveLength(0);
-      expect(events.some((e) => eventKind(e) === 'tool_call')).toBe(true);
-      expect(events.some((e) => eventKind(e) === 'error')).toBe(true);
-    });
-
-    it('skips decision receipt and emits explicit error when decisionIdentity is missing', async () => {
-      const transitions = [
-        {
-          from: 'PLAN_REVIEW',
-          to: 'VALIDATION',
-          event: 'APPROVE',
-          at: new Date().toISOString(),
-        },
-      ];
-
-      await persistTransition(transitions[0]!);
-
-      await handler(
-        {
-          tool: 'flowguard_decision',
-          sessionID: sessionId,
-          args: { verdict: 'approve', rationale: 'Missing actor test' },
-        },
-        {
-          title: 'decision',
-          output: makeToolOutput({
-            phase: 'VALIDATION',
-            reviewDecision: {
-              verdict: 'approve',
-              rationale: 'Missing actor test',
-              decidedAt: transitions[0]!.at,
-            },
-          }),
-          metadata: {},
-        },
-      );
-
-      const events = await getEvents();
-      const decisions = events.filter((e) => eventKind(e) === 'decision');
-      expect(decisions).toHaveLength(0);
-      const missingActorErr = events.find(
-        (e) => eventKind(e) === 'error' && e.event === 'error:DECISION_RECEIPT_ACTOR_MISSING',
-      );
-      expect(missingActorErr).toBeDefined();
     });
   });
 
@@ -741,74 +622,6 @@ describe('plugin-integration', () => {
       const trans = events.filter((e) => eventKind(e) === 'transition');
       expect(toolCalls.length).toBe(0);
       expect(trans.length).toBe(1);
-    });
-
-    it('decision IDs remain unique under parallel calls in one session', async () => {
-      const transitions = [
-        {
-          from: 'PLAN_REVIEW',
-          to: 'VALIDATION',
-          event: 'APPROVE',
-          at: new Date().toISOString(),
-        },
-      ];
-
-      await persistTransition(transitions[0]!, makeProgressedState('VALIDATION'));
-
-      await Promise.all([
-        handler(
-          { tool: 'flowguard_decision', sessionID: sessionId, args: { rationale: 'r1' } },
-          {
-            title: 'decision',
-            output: makeToolOutput({
-              phase: 'VALIDATION',
-              reviewDecision: {
-                verdict: 'approve',
-                rationale: 'r1',
-                decisionIdentity: {
-                  actorId: 'reviewer-1',
-                  actorEmail: null,
-                  actorSource: 'unknown',
-                  actorAssurance: 'best_effort',
-                },
-                decidedAt: transitions[0]!.at,
-              },
-            }),
-            metadata: {},
-          },
-        ),
-        handler(
-          { tool: 'flowguard_decision', sessionID: sessionId, args: { rationale: 'r2' } },
-          {
-            title: 'decision',
-            output: makeToolOutput({
-              phase: 'VALIDATION',
-              reviewDecision: {
-                verdict: 'approve',
-                rationale: 'r2',
-                decisionIdentity: {
-                  actorId: 'reviewer-2',
-                  actorEmail: null,
-                  actorSource: 'unknown',
-                  actorAssurance: 'best_effort',
-                },
-                decidedAt: transitions[0]!.at,
-              },
-            }),
-            metadata: {},
-          },
-        ),
-      ]);
-
-      const events = await getEvents();
-      const decisions = events.filter((e) => eventKind(e) === 'decision');
-      expect(decisions).toHaveLength(2);
-      const ids = decisions.map((d) => d.event).sort();
-      expect(ids).toEqual(['decision:DEC-001', 'decision:DEC-002']);
-      const actors = decisions
-        .map((d) => (d.detail.decisionIdentity as { actorId: string }).actorId)
-        .sort();
-      expect(actors).toEqual(['reviewer-1', 'reviewer-2']);
     });
   });
 
