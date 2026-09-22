@@ -18,7 +18,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { readState, writeState } from '../adapters/persistence.js';
 import { appendAuditEvent, readAuditTrail } from '../adapters/persistence-audit.js';
-import { makeState, REVIEW_APPROVE } from '../fixtures.js';
+import { BINDING, makeState, REVIEW_APPROVE } from '../fixtures.js';
 import { reconcilePendingAuditOperations, type AuditDeps } from './plugin-audit.js';
 import { TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
 import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
@@ -290,6 +290,7 @@ describe('reconcilePendingAuditOperations', () => {
         expect(decisions[0]!.detail.verdict).toBe('approve_with_governance_override');
         expect(decisions[0]!.detail.decisionIdentity).toEqual(decision.decisionIdentity);
         expect(decisions[0]!.detail.gatePhase).toBe('PLAN_REVIEW');
+        expect(decisions[0]!.hostSessionId).toBe(BINDING.hostSessionId);
 
         // Crash point: the append succeeded but the acknowledgement was lost.
         const afterFirstDrain = await readState(sessDir);
