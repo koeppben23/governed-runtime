@@ -394,7 +394,9 @@ async function writeFile(dir: string, name: string, content: string): Promise<st
  * Assemble the reference evidence directory: the development package and one
  * host chat export per flow. Returns the manifest path.
  */
-async function buildEvidenceDirectory(options: { copyPeerReviewChat?: boolean } = {}): Promise<{
+async function buildEvidenceDirectory(
+  options: { copyPeerReviewChat?: boolean; reuseSessionId?: boolean } = {},
+): Promise<{
   manifestPath: string;
 }> {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-demo-evidence-package-'));
@@ -445,7 +447,7 @@ async function buildEvidenceDirectory(options: { copyPeerReviewChat?: boolean } 
       },
       {
         flow: 'peer-review',
-        sessionId: '550e8400-e29b-41d4-a716-4466554400d2',
+        sessionId: options.reuseSessionId ? SESSION_A : '550e8400-e29b-41d4-a716-4466554400d2',
         artifacts: [
           { kind: 'host-chat-export', file: 'chat-peer-review.md', sha256: peerReviewHash },
         ],
@@ -624,6 +626,44 @@ describe('demo evidence package verifier', () => {
       expect(calls).not.toContain('-xzf');
     });
 
+    it('rejects an unsafe manifest path without opening any payload file', async () => {
+      // Only the manifest is malicious; the tar members stay safe and present.
+      const packagePath = await buildCompleteExportPackage();
+      await repack(packagePath, SESSION_A, async (sessionRoot) => {
+        const manifestPath = path.join(sessionRoot, 'archive-manifest.json');
+        const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8')) as Record<
+          string,
+          unknown
+        >;
+        manifest.includedFiles = ['../../../etc/passwd'];
+        manifest.fileDigests = { '../../../etc/passwd': 'a'.repeat(64) };
+        await fs.writeFile(manifestPath, JSON.stringify(manifest), 'utf-8');
+      });
+
+      const result = await runVerifier([packagePath, '--expect-session', SESSION_A]);
+
+      expect(result.code).toBe(1);
+      expect(result.stdout).toContain('unsafe_manifest_path');
+      // No payload read was attempted, so no file-digest finding for the
+      // traversal path (or any other manifest-listed file) can appear.
+      expect(result.stdout).not.toContain('file_digest_mismatch');
+    });
+
+    it('rejects a team archive claimed as a regulated flow', async () => {
+      const packagePath = await buildCompleteExportPackage();
+
+      const result = await runVerifier([
+        packagePath,
+        '--expect-session',
+        SESSION_A,
+        '--expect-flow',
+        'regulated',
+      ]);
+
+      expect(result.code).toBe(1);
+      expect(result.stdout).toContain("requires policy mode 'regulated'");
+    });
+
     it('rejects a chat export that is a byte-identical copy from another flow', async () => {
       // The original evidence defect: the peer-review chat export was a copy
       // of the architecture export. Both declared hashes are correct — only
@@ -634,6 +674,15 @@ describe('demo evidence package verifier', () => {
 
       expect(result.code).toBe(1);
       expect(result.stdout).toContain('cross_session_artifact_duplicate');
+    });
+
+    it('rejects a manifest that reuses one session id across flows', async () => {
+      const { manifestPath } = await buildEvidenceDirectory({ reuseSessionId: true });
+
+      const result = await runVerifier(['--manifest', manifestPath]);
+
+      expect(result.code).toBe(1);
+      expect(result.stdout).toContain('duplicate_session_id');
     });
 
     it('rejects a manifest artifact with a wrong declared digest', async () => {

@@ -189,9 +189,13 @@ describe('java demo workflow contract', () => {
     expect(verifier).toContain('SessionState.safeParse');
     expect(verifier).toContain('verifyRegulatedCompletionCompleteness');
     expect(verifier).toContain('snapshotPackage');
+    expect(verifier).toContain('unsafe_manifest_path');
     expect(verifier).toContain('session_identity_mismatch');
     expect(verifier).toContain('sharing_archive_not_verifiable');
     expect(verifier).toContain('cross_session_artifact_duplicate');
+    expect(verifier).toContain('duplicate_session_id');
+    expect(verifier).toContain("requires policy mode 'regulated'");
+    expect(evidenceDoc).toContain('manually assigned');
 
     // The manifest template declares exactly the three canonical flows.
     const manifestExample = JSON.parse(

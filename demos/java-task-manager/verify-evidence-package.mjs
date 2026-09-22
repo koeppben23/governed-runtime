@@ -323,8 +323,66 @@ function checkMemberInventory(members, includedFiles, sessionPrefix, findings) {
   }
 }
 
+/**
+ * Validate the manifest's own file inventory before any payload is opened.
+ * The canonical manifest schema only requires strings; a manipulated manifest
+ * could otherwise point a read at a path outside the extraction root.
+ * Returns false when the inventory must not be used for file access.
+ */
+function validateManifestInventory(manifest, findings) {
+  let valid = true;
+  const seen = new Set();
+  for (const relativePath of manifest.includedFiles) {
+    if (typeof relativePath !== 'string' || !isSafeRelativePath(relativePath)) {
+      finding(
+        findings,
+        'unsafe_manifest_path',
+        `Manifest included-file path is unsafe: ${String(relativePath)}`,
+        MANIFEST_FILE,
+      );
+      valid = false;
+      continue;
+    }
+    if (seen.has(relativePath)) {
+      finding(
+        findings,
+        'unsafe_manifest_path',
+        `Manifest lists a duplicate included file: ${relativePath}`,
+        MANIFEST_FILE,
+      );
+      valid = false;
+    }
+    seen.add(relativePath);
+    const digest = manifest.fileDigests[relativePath];
+    if (typeof digest !== 'string' || !SHA256_HEX.test(digest)) {
+      finding(
+        findings,
+        'unsafe_manifest_path',
+        `Manifest file digest for '${relativePath}' is missing or malformed`,
+        MANIFEST_FILE,
+      );
+      valid = false;
+    }
+  }
+  for (const key of Object.keys(manifest.fileDigests)) {
+    if (!seen.has(key)) {
+      finding(
+        findings,
+        'unsafe_manifest_path',
+        `Manifest declares a digest for a file that is not listed: ${key}`,
+        MANIFEST_FILE,
+      );
+      valid = false;
+    }
+  }
+  return valid;
+}
+
 async function verifyRawPayloads(extractedRoot, manifest, findings) {
   for (const relativePath of manifest.includedFiles) {
+    // Defense in depth: the caller only invokes this for a valid inventory,
+    // but never join an unvalidated path.
+    if (!isSafeRelativePath(relativePath)) continue;
     const fullPath = path.join(extractedRoot, relativePath);
     let content;
     try {
@@ -463,6 +521,17 @@ function verifyFlowAndPhase(expectations, state, findings) {
       findings,
       'flow_mismatch',
       `Package phase '${phase}' is not valid for flow '${flow}' (allowed: ${FLOW_ALLOWED_PHASES[flow].join(', ')})`,
+      STATE_FILE,
+    );
+  }
+  // A COMPLETE package can be a team/solo development archive; the canonical
+  // regulated-evidence validator returns silently for non-regulated sessions,
+  // so the flow expectation must verify the governed policy mode itself.
+  if (flow === 'regulated' && state?.policySnapshot?.mode !== 'regulated') {
+    finding(
+      findings,
+      'flow_mismatch',
+      `--expect-flow regulated requires policy mode 'regulated', found '${String(state?.policySnapshot?.mode)}'`,
       STATE_FILE,
     );
   }
@@ -702,6 +771,7 @@ async function verifyPackage(packagePath, expectations, core) {
     let phase = null;
     let classification = 'raw';
     if (manifest !== null && sessionRoot !== null) {
+      const inventoryValid = validateManifestInventory(manifest, findings);
       checkMemberInventory(members, manifest.includedFiles, sessionPrefix, findings);
       const rawIncluded = manifest.rawIncluded === true;
       const hasState = members.includes(`${sessionPrefix}/${STATE_FILE}`);
@@ -709,7 +779,8 @@ async function verifyPackage(packagePath, expectations, core) {
       classification = rawIncluded && hasState && hasAudit ? 'raw' : 'sharing';
 
       if (classification === 'raw') {
-        await verifyRawPayloads(sessionRoot, manifest, findings);
+        // An invalid manifest inventory must never lead to a payload file read.
+        if (inventoryValid) await verifyRawPayloads(sessionRoot, manifest, findings);
         verifyContentDigest(core, manifest, findings);
         const state = await readArchivedState(core, sessionRoot, findings);
         verifyIdentity(expectations, manifest, state, findings);
@@ -760,6 +831,7 @@ function validateEvidenceManifest(raw, findings) {
     return null;
   }
   const byFlow = new Map();
+  const sessionIds = new Map();
   for (const session of raw.sessions) {
     const flow = session?.flow;
     if (!EVIDENCE_MANIFEST_FLOWS.includes(flow)) {
@@ -782,6 +854,18 @@ function validateEvidenceManifest(raw, findings) {
       );
       continue;
     }
+    // The three demo flows are independent sessions; reusing one session id
+    // across flows would let a single session masquerade as three.
+    const previousFlow = sessionIds.get(session.sessionId);
+    if (previousFlow !== undefined) {
+      finding(
+        findings,
+        'duplicate_session_id',
+        `Evidence manifest declares sessionId '${session.sessionId}' for both '${previousFlow}' and '${flow}'`,
+      );
+      continue;
+    }
+    sessionIds.set(session.sessionId, flow);
     if (!Array.isArray(session.artifacts) || session.artifacts.length === 0) {
       finding(
         findings,

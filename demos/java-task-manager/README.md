@@ -155,8 +155,11 @@ node demos/java-task-manager/verify-evidence-package.mjs --manifest evidence-man
 ```
 
 The manifest check also fails when two flows share byte-identical artifacts —
-the "peer-review chat export is a copy of the architecture export" defect.
-Host chat exports are supplementary evidence, never FlowGuard authority. What
+the "peer-review chat export is a copy of the architecture export" defect — and
+when one session id is declared for more than one flow. Host chat exports are
+manually assigned, hash-secured supplementary evidence, never FlowGuard
+authority: the manifest proves their bytes, not an independently observed
+chat-session binding. What
 the verifier proves — and the offline, TSA, publication-binding, and
 authenticity limits it cannot cover — is documented in `EVIDENCE_PACKAGE.md`.
 
