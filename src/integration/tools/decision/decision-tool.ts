@@ -88,6 +88,8 @@ async function decisionReceiptIntents(input: {
   readonly finalResult: RailResult;
   readonly auditDeps: { nextDecisionSequence(sessDir: string, sessionId: string): Promise<number> };
   readonly actor: string;
+  /** The actor that actually decided — never the session initiator's ActorInfo. */
+  readonly actorInfo: ActorInfo;
 }): Promise<readonly SemanticAuditIntent[]> {
   const { finalResult } = input;
   if (finalResult.kind !== 'ok') return [];
@@ -105,9 +107,7 @@ async function decisionReceiptIntents(input: {
       policyMode: finalResult.state.policySnapshot.mode,
       decisionSequence,
       actor: input.actor,
-      ...(finalResult.state.actorInfo !== undefined
-        ? { actorInfo: finalResult.state.actorInfo }
-        : {}),
+      actorInfo: input.actorInfo,
     }),
   ];
 }
@@ -172,6 +172,7 @@ async function persistHumanDecision(
         finalResult,
         auditDeps,
         actor,
+        actorInfo,
       });
 
       const persisted = await persistAndFormat(sessDir, finalResult, {

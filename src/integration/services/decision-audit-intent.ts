@@ -14,6 +14,7 @@
  */
 
 import type { ActorInfo, AuditEvent, ReviewDecision } from '../../state/evidence.js';
+import type { DecisionIdentity } from '../../state/evidence-identity.js';
 import type { PendingAuditOperation } from '../../state/schema.js';
 import type { TransitionRecord } from '../../rails/types.js';
 import type { SemanticAuditIntent } from '../audit-outbox.js';
@@ -58,6 +59,24 @@ export function buildDecisionAuditIntent(
     actor: input.actor,
     ...(input.actorInfo !== undefined ? { actorInfo: input.actorInfo } : {}),
   };
+}
+
+/**
+ * Whether an ActorInfo provably describes the same actor as a persisted
+ * DecisionIdentity. Recovery paths must never attach a session actor as the
+ * deciding authority of a receipt they did not originate.
+ */
+export function actorInfoMatchesDecisionIdentity(
+  actorInfo: ActorInfo,
+  decisionIdentity: DecisionIdentity,
+): boolean {
+  return (
+    actorInfo.id === decisionIdentity.actorId &&
+    actorInfo.email === decisionIdentity.actorEmail &&
+    (actorInfo.displayName ?? null) === (decisionIdentity.actorDisplayName ?? null) &&
+    actorInfo.source === decisionIdentity.actorSource &&
+    actorInfo.assurance === decisionIdentity.actorAssurance
+  );
 }
 
 function decisionSequenceOf(detail: Record<string, unknown>): number {

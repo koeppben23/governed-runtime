@@ -248,6 +248,13 @@ describe('verifyRegulatedCompletionCompleteness', () => {
     expect(codes).toEqual([]);
   });
 
+  it('rejects a receipt actor that is neither the classification nor the deciding authority', () => {
+    const events = boundCompletionEvents();
+    events[1] = { ...events[1]!, actor: 'machine' };
+    const { codes } = run(regulatedCompleteState(), events);
+    expect(codes).toContain('regulated_terminal_decision_invalid');
+  });
+
   it('accepts a governance-override approval for a regulated completion', () => {
     const state = regulatedCompleteState({
       ...REVIEW_APPROVE,

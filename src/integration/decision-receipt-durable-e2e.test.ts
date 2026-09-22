@@ -78,6 +78,22 @@ vi.mock('../verification/executor', () => ({
   })),
 }));
 
+const INITIATOR_ACTOR = {
+  id: 'alice-initiator',
+  email: 'alice@example.com',
+  displayName: 'Alice Initiator',
+  source: 'env' as const,
+  assurance: 'best_effort' as const,
+};
+
+const REVIEWER_ACTOR = {
+  id: 'bob-reviewer',
+  email: 'bob@example.com',
+  displayName: 'Bob Reviewer',
+  source: 'env' as const,
+  assurance: 'best_effort' as const,
+};
+
 const actorOriginal = vi.hoisted(() => ({
   resolveActor: null as unknown as (typeof import('../adapters/actor.js'))['resolveActor'],
 }));
@@ -88,14 +104,16 @@ vi.mock('../adapters/actor', async (importOriginal) => {
   return {
     ...original,
     resolveActor: vi.fn().mockResolvedValue({
-      id: 'test-operator',
-      email: 'test@flowguard.dev',
-      displayName: null,
+      id: 'alice-initiator',
+      email: 'alice@example.com',
+      displayName: 'Alice Initiator',
       source: 'env',
       assurance: 'best_effort',
     }),
   };
 });
+
+const actorMock = await import('../adapters/actor.js');
 
 let ws: TestWorkspace;
 let ctx: TestToolContext;
@@ -177,6 +195,8 @@ describe('durable decision receipt e2e', () => {
     const sessDir = await resolveSessionDir();
     await seedActiveCheck(sessDir);
 
+    // The session was initiated by Alice; the plan is approved by Bob.
+    vi.mocked(actorMock.resolveActor).mockResolvedValue(REVIEWER_ACTOR);
     recordUserDecisionIntent({
       sessionId: ctx.sessionID,
       command: '/review-decision',
@@ -193,6 +213,9 @@ describe('durable decision receipt e2e', () => {
     expect(afterDecision).not.toBeNull();
     expect(afterDecision!.phase).toBe('IMPLEMENTATION');
     expect(afterDecision!.reviewDecision?.verdict).toBe('approve');
+    // Session and reviewer identities are distinct in this scenario.
+    expect(afterDecision!.actorInfo?.id).toBe(INITIATOR_ACTOR.id);
+    expect(afterDecision!.reviewDecision?.decisionIdentity.actorId).toBe(REVIEWER_ACTOR.id);
 
     const decisionIntents = afterDecision!.pendingAuditOperations.filter(
       (operation): operation is Extract<PendingAuditOperation, { kind: 'semantic' }> =>
@@ -204,6 +227,11 @@ describe('durable decision receipt e2e', () => {
     expect(decisionIntents[0]!.semantic.detail.verdict).toBe('approve');
     // `actor` is the frozen policy classification, not the deciding identity.
     expect(decisionIntents[0]!.semantic.actor).toBe('human');
+    // The concrete identity is Bob's, never the session initiator's.
+    expect(decisionIntents[0]!.semantic.actorInfo).toEqual(REVIEWER_ACTOR);
+    expect(decisionIntents[0]!.semantic.detail).toMatchObject({
+      decisionIdentity: { actorId: REVIEWER_ACTOR.id },
+    });
 
     const { fingerprint } = await computeFingerprint(ws.tmpDir);
     const auditDeps = createSessionCompletionAuditDeps({
@@ -225,5 +253,7 @@ describe('durable decision receipt e2e', () => {
     );
     expect(decisionEvents).toHaveLength(1);
     expect(decisionEvents[0]!.actor).toBe('human');
+    expect(decisionEvents[0]!.actorInfo).toEqual(REVIEWER_ACTOR);
+    expect(decisionEvents[0]!.detail.decisionIdentity).toMatchObject({ actorId: 'bob-reviewer' });
   });
 });

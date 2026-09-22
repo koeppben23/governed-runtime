@@ -303,6 +303,60 @@ describe('executeRegulatedCompletion', () => {
     expect(lifecycleWrites()).toHaveLength(1);
   });
 
+  it('does not attribute the recovery receipt to a session actor who did not decide', async () => {
+    const persisted = {
+      ...reviewState('COMPLETE'),
+      actorInfo: {
+        id: 'initiator-1',
+        email: 'initiator@test.com',
+        displayName: null,
+        source: 'env' as const,
+        assurance: 'best_effort' as const,
+      },
+    };
+    trackPersistedState(persisted);
+    vi.mocked(readAuditTrail).mockResolvedValue([sessionCreatedEvent()] as never);
+    vi.mocked(reconcilePendingAuditOperations).mockResolvedValue(undefined);
+    vi.mocked(archiveRegulatedEvidence).mockResolvedValue('/archive.tar.gz');
+    vi.mocked(verifyRegulatedArchive).mockResolvedValue({ passed: true } as never);
+
+    await executeRegulatedCompletion('/sess', 'fp', 'sid', persisted, completionDeps());
+
+    const writes = decisionWrites();
+    expect(writes).toHaveLength(1);
+    const intents = (writes[0] as unknown[])[3] as Array<Record<string, unknown>>;
+    const [intent] = intents;
+    expect(intent).toBeDefined();
+    expect(intent).not.toHaveProperty('actorInfo');
+  });
+
+  it('attributes the recovery receipt to the actorInfo that matches the persisted identity', async () => {
+    const matchingActorInfo = {
+      id: REVIEW_APPROVE.decisionIdentity.actorId,
+      email: REVIEW_APPROVE.decisionIdentity.actorEmail,
+      displayName: null,
+      source: REVIEW_APPROVE.decisionIdentity.actorSource,
+      assurance: REVIEW_APPROVE.decisionIdentity.actorAssurance,
+    };
+    const persisted = {
+      ...reviewState('COMPLETE'),
+      actorInfo: matchingActorInfo,
+    };
+    trackPersistedState(persisted);
+    vi.mocked(readAuditTrail).mockResolvedValue([sessionCreatedEvent()] as never);
+    vi.mocked(reconcilePendingAuditOperations).mockResolvedValue(undefined);
+    vi.mocked(archiveRegulatedEvidence).mockResolvedValue('/archive.tar.gz');
+    vi.mocked(verifyRegulatedArchive).mockResolvedValue({ passed: true } as never);
+
+    await executeRegulatedCompletion('/sess', 'fp', 'sid', persisted, completionDeps());
+
+    const writes = decisionWrites();
+    expect(writes).toHaveLength(1);
+    const intents = (writes[0] as unknown[])[3] as Array<Record<string, unknown>>;
+    const [intent] = intents;
+    expect(intent).toMatchObject({ actorInfo: matchingActorInfo });
+  });
+
   it('drains a durable terminal-decision outbox checkpoint before deciding a new intent is needed', async () => {
     // Crash window: COMPLETE + terminal decision op persisted in the outbox,
     // but the audit trail does not yet contain the reconciled event.

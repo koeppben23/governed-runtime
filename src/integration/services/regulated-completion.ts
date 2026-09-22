@@ -31,7 +31,11 @@ import {
 } from '../tools/helpers.js';
 import type { SemanticAuditIntent } from '../audit-outbox.js';
 import { reconcilePendingAuditOperations, type AuditDeps } from '../plugin-audit.js';
-import { buildDecisionAuditIntent, resolveDecisionSequence } from './decision-audit-intent.js';
+import {
+  actorInfoMatchesDecisionIdentity,
+  buildDecisionAuditIntent,
+  resolveDecisionSequence,
+} from './decision-audit-intent.js';
 import { TOOL_FLOWGUARD_DECISION } from '../tool-names.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import { serializeError } from '../../logging/error-serialize.js';
@@ -425,6 +429,14 @@ async function commitTerminalDecision(
       resolvePolicyFromSnapshot(authority.policySnapshot).actorClassification[
         TOOL_FLOWGUARD_DECISION
       ] ?? 'system';
+    // The recovery path may only attribute the receipt to an ActorInfo that
+    // provably belongs to the persisted deciding identity. A session actor is
+    // never the recipient of a decision they did not make.
+    const receiptActorInfo =
+      authority.actorInfo !== undefined &&
+      actorInfoMatchesDecisionIdentity(authority.actorInfo, decision.decisionIdentity)
+        ? authority.actorInfo
+        : undefined;
     await writeStateWithArtifactsAndAuditOperations(sessDir, authority, undefined, [
       buildDecisionAuditIntent({
         transition,
@@ -432,7 +444,7 @@ async function commitTerminalDecision(
         policyMode: authority.policySnapshot.mode,
         decisionSequence,
         actor,
-        ...(authority.actorInfo !== undefined ? { actorInfo: authority.actorInfo } : {}),
+        ...(receiptActorInfo !== undefined ? { actorInfo: receiptActorInfo } : {}),
       }),
     ]);
   });
