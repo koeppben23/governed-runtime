@@ -183,7 +183,7 @@ function terminalDecisionOperation() {
       phase: 'EVIDENCE_REVIEW' as const,
       event: 'decision:DEC-001',
       occurredAt: AT,
-      detail: decisionEvent().detail,
+      detail: decisionEvent().detail as Record<string, unknown>,
     },
     status: 'reconciled' as const,
   };
