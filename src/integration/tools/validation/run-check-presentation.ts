@@ -12,11 +12,7 @@ import type { FlowGuardPolicy } from '../../../config/policy.js';
 import { autoAdvance } from '../../../rails/types.js';
 import { canonicalJsonStringify } from '../../../shared/canonical-json.js';
 import { hashText } from '../../../shared/hashing.js';
-import { formatBlocked } from '../../blocked-result.js';
-import {
-  resolveReviewDispatchAuthority,
-  reviewObligationResponseFields,
-} from '../../review/dispatch/dispatch-authority.js';
+import { reviewObligationResponseFields } from '../../review/dispatch/dispatch-authority.js';
 import type { ReviewDispatchAuthority } from '../../review/dispatch/dispatch-authority.js';
 import { buildImplementationReviewInstruction } from '../implementation-review-activation.js';
 interface CheckEvidencePresentation {
@@ -85,20 +81,6 @@ export function formatRunCheckStatus(
   if (evidence.timedOut) return `Check '${kind}' timed out.`;
   if (evidence.passed) return `Check '${kind}' ${result.outcome}.`;
   return `Check '${kind}' failed (exit ${evidence.exitCode}).`;
-}
-
-export function resolveRunCheckDispatchAuthority(
-  activated: { obligation: { obligationId: string } | null },
-  persisted: SessionState,
-): ReviewDispatchAuthority | null | string {
-  if (!activated.obligation) return null;
-  const authority = resolveReviewDispatchAuthority(
-    persisted.reviewAssurance,
-    activated.obligation.obligationId,
-  );
-  return authority.kind === 'blocked'
-    ? formatBlocked(authority.code, { reason: authority.reason })
-    : authority.authority;
 }
 
 export function formatRunCheckResponse(input: {

@@ -66,6 +66,7 @@ import { withSessionWriteLockRetry, PersistenceError } from '../../../adapters/l
 import { REASON_LOCK_TIMEOUT_EXHAUSTED } from '../../../shared/flowguard-identifiers.js';
 import { getAdapterLogger, getLogTraceFields } from '../../../logging/adapter-logger.js';
 import { TOOL_FLOWGUARD_RUN_CHECK } from '../../tool-names.js';
+import { resolveReviewDispatchAuthority } from '../../review/dispatch/dispatch-authority.js';
 import {
   activateReviewObligationAndPersist,
   materializeImplReviewContract,
@@ -81,10 +82,7 @@ import { canonicalJsonStringify } from '../../../shared/canonical-json.js';
 import { hashText } from '../../../shared/hashing.js';
 import { validateRunCheckRequest } from './run-check-request.js';
 import { resolveExecutionSubjectInputs } from '../execution-subject-input-resolution.js';
-import {
-  formatRunCheckResponse,
-  resolveRunCheckDispatchAuthority,
-} from './run-check-presentation.js';
+import { formatRunCheckResponse } from './run-check-presentation.js';
 import {
   buildNextValidationState,
   buildValidationAttempt,
@@ -509,6 +507,23 @@ async function finalizeCheckUnderLock(input: {
     authority: authorityResult ?? null,
     policy: freshPolicy,
   });
+}
+
+function resolveRunCheckDispatchAuthority(
+  activated: Extract<
+    Awaited<ReturnType<typeof activateReviewObligationAndPersist>>,
+    { activated: unknown }
+  >['activated'],
+  persisted: SessionState,
+) {
+  if (!activated.obligation) return null;
+  const authority = resolveReviewDispatchAuthority(
+    persisted.reviewAssurance,
+    activated.obligation.obligationId,
+  );
+  return authority.kind === 'blocked'
+    ? formatBlocked(authority.code, { reason: authority.reason })
+    : authority.authority;
 }
 
 async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<ToolResult> {

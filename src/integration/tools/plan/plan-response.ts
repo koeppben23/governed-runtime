@@ -390,10 +390,6 @@ export async function persistNonConvergedPlanReview(
     classification.kind === 'available'
       ? [...classification.changedFiles]
       : ([] as readonly string[]);
-  const metadata: Record<string, unknown> = {};
-  if (resolvedTargetPaths && resolvedTargetPaths.length > 0) {
-    metadata.targetPaths = resolvedTargetPaths;
-  }
   const mint = await mintPlanRevisionAttempt({
     scope,
     finalState,
@@ -401,7 +397,6 @@ export async function persistNonConvergedPlanReview(
     iteration,
     nextPlanVersion,
     resolvedTargetPaths,
-    metadata,
   });
   if (mint.kind === 'blocked') return mint.message;
   const attemptResult = mint.attemptResult;
@@ -441,7 +436,6 @@ async function mintPlanRevisionAttempt(input: {
   iteration: number;
   nextPlanVersion: number;
   resolvedTargetPaths: readonly string[];
-  metadata: Record<string, unknown>;
 }): Promise<
   | { kind: 'ok'; attemptResult: ReturnType<typeof createObligationAndAttempt> | null }
   | { kind: 'blocked'; message: string }
