@@ -15,6 +15,7 @@ import {
   emptyReviewAssurance,
   ensureReviewAssurance,
   createReviewObligation,
+  createObligationAndAttempt,
   appendReviewObligation,
   findLatestObligation,
   consumeReviewObligation,
@@ -41,6 +42,7 @@ import type {
 } from '../../../state/evidence.js';
 import type { ReviewAttempt } from '../../../state/evidence-review.js';
 import { ReviewInvocationEvidence as ReviewInvocationEvidenceSchema } from '../../../state/evidence.js';
+import { canonicalJsonStringify } from '../../../shared/canonical-json.js';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -144,6 +146,31 @@ describe('integration/review-assurance', () => {
       expect(result.obligations).toEqual([]);
       expect(result.invocations).toEqual([]);
     });
+  });
+
+  it('characterizes the initial obligation and attempt authority projection', () => {
+    const result = createObligationAndAttempt(
+      undefined,
+      {
+        obligationType: 'plan',
+        iteration: 0,
+        reviewCycle: 1,
+        planVersion: 1,
+        now: NOW,
+        subjectDigest: 'subject-digest',
+        reviewMaterial: freezeReviewMaterial('# Plan\nBody', 'subject-digest'),
+        reviewSubjectScope: artifactReviewSubjectScope('plan', '# Plan\nBody', 'subject-digest'),
+        repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+      },
+      NOW,
+    );
+    const canonical = canonicalJsonStringify({
+      obligation: { ...result.obligation, obligationId: '<generated>' },
+      attempt: { ...result.attempt, attemptId: '<generated>' },
+    });
+    expect(canonical).toContain('"ordinal":1');
+    expect(canonical).toContain('"origin":{"kind":"initial"}');
+    expect(canonical).toContain('"subjectDigest":"subject-digest"');
   });
 
   describe('peer review material', () => {

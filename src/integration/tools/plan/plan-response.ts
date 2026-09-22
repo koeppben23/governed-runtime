@@ -70,6 +70,11 @@ import { canonicalJsonStringify } from '../../../shared/canonical-json.js';
 import { hashText } from '../../../shared/hashing.js';
 import { IntegrationInvariantError } from '../../errors.js';
 
+export type LegacyEmptyPlanClaimDeclarations = {
+  readonly flow: 'plan';
+  readonly claims: readonly [];
+};
+
 function findPriorPlanTargetPaths(
   assurance: import('../../../state/schema.js').SessionState['reviewAssurance'],
 ): string[] | undefined {
@@ -108,7 +113,7 @@ export function buildPlanReviewObligationInput(input: {
   planVersion: number;
   classificationFiles: readonly string[] | undefined;
   freeze: RepositoryAuthorityFreezeResult;
-  planClaimDeclarations: PlanClaimDeclarations;
+  planClaimDeclarations: PlanClaimDeclarations | LegacyEmptyPlanClaimDeclarations;
 }): Parameters<typeof createObligationAndAttempt>[1] {
   const {
     state,
@@ -139,7 +144,7 @@ export function buildPlanReviewObligationInput(input: {
         obligationType: 'plan',
         state,
         artifact: planEvidence.body,
-        planClaimDeclarations,
+        ...('version' in planClaimDeclarations ? { planClaimDeclarations } : {}),
         renderPlanClaimDeclarations,
       }),
       planEvidence.digest,
