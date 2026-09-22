@@ -21,7 +21,8 @@ import {
   reviewObligationResponseFields,
 } from '../../review/dispatch/dispatch-authority.js';
 import type { ReviewDispatchAuthority } from '../../review/dispatch/dispatch-authority.js';
-import { buildImplementationReviewInstruction, type ImplementRuntime } from './implement-shared.js';
+import type { ImplementRuntime } from './implement-shared.js';
+import { buildImplementationReviewInstruction } from '../implementation-review-activation.js';
 
 function buildImplementationRecoveryResponse(
   runtime: ImplementRuntime,

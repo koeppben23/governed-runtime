@@ -8,13 +8,13 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
-  nextImplementationReviewIteration,
   buildImplementRuntime,
   validateImplementSequence,
   normalizeHostFindings,
   type ImplementArgs,
   type ImplementRuntime,
 } from './implementation/implement-shared.js';
+import { nextImplementationReviewIteration } from './implementation-review-activation.js';
 import type { SessionState, Phase } from '../../state/schema.js';
 import type { ReviewFindings } from '../../state/evidence.js';
 
@@ -308,7 +308,7 @@ vi.mock('../review/context/discovery-attempt-context.js', async (importOriginal)
 
 import { freezeCandidatePairAuthority } from '../../rails/repository-authority.js';
 import { resolveAttemptDiscoveryOrBlock } from '../review/context/discovery-attempt-context.js';
-import { activateImplementationReviewObligation } from './implementation/implement-shared.js';
+import { activateImplementationReviewObligation } from './implementation-review-activation.js';
 
 const CANDIDATE_PAIR = {
   kind: 'candidate_pair' as const,

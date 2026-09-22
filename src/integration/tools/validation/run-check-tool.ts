@@ -31,7 +31,6 @@ import { formatBlocked } from '../../blocked-result.js';
 import {
   withReadOnlySession,
   formatAutoAdvanceOverflow,
-  enrichWithWorkflowDirective,
   getWorktree,
   writeStateWithArtifactsAndAuditOperationsAlreadyLocked,
   requireStateForMutation,
@@ -68,16 +67,10 @@ import { REASON_LOCK_TIMEOUT_EXHAUSTED } from '../../../shared/flowguard-identif
 import { getAdapterLogger, getLogTraceFields } from '../../../logging/adapter-logger.js';
 import { TOOL_FLOWGUARD_RUN_CHECK } from '../../tool-names.js';
 import {
-  resolveReviewDispatchAuthority,
-  reviewObligationResponseFields,
-} from '../../review/dispatch/dispatch-authority.js';
-import type { ReviewDispatchAuthority } from '../../review/dispatch/dispatch-authority.js';
-import {
   activateReviewObligationAndPersist,
-  buildImplementationReviewInstruction,
   materializeImplReviewContract,
   nextImplementationReviewIteration,
-} from '../implementation/implement-shared.js';
+} from '../implementation-review-activation.js';
 import {
   attestExecutionSubject,
   reattestExecutionSubject,
@@ -88,7 +81,10 @@ import { canonicalJsonStringify } from '../../../shared/canonical-json.js';
 import { hashText } from '../../../shared/hashing.js';
 import { validateRunCheckRequest } from './run-check-request.js';
 import { resolveExecutionSubjectInputs } from '../execution-subject-input-resolution.js';
-import { formatRunCheckStatus } from './run-check-presentation.js';
+import {
+  formatRunCheckResponse,
+  resolveRunCheckDispatchAuthority,
+} from './run-check-presentation.js';
 import {
   buildNextValidationState,
   buildValidationAttempt,
@@ -97,7 +93,6 @@ import {
   freezeValidationSubject,
   mergeValidationResult,
   validationSubjectBlock,
-  type CheckEvidence,
   type ValidationSubject,
 } from './run-check-result.js';
 const RUN_CHECK_RETRY_DELAYS_MS = [100, 200, 400] as const;
@@ -491,7 +486,7 @@ async function finalizeCheckUnderLock(input: {
     activated.state,
     advanced.transitions,
   );
-  const authorityResult = checkDispatchAuthority(activated, persisted);
+  const authorityResult = resolveRunCheckDispatchAuthority(activated, persisted);
   if (typeof authorityResult === 'string') return authorityResult;
   input.logger.info('tool', 'check_persisted', {
     sessionId: input.sessionId,
@@ -511,7 +506,7 @@ async function finalizeCheckUnderLock(input: {
     executionObservation,
     advanced,
     finalState: persisted,
-    authority: authorityResult?.authority ?? null,
+    authority: authorityResult ?? null,
     policy: freshPolicy,
   });
 }
@@ -557,90 +552,5 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
         });
       },
     },
-  );
-}
-
-// ─── Response Formatting ──────────────────────────────────────────────────────
-
-function buildRunCheckReviewInstruction(authority: ReviewDispatchAuthority | null) {
-  return authority ? buildImplementationReviewInstruction(authority) : null;
-}
-
-function checkDispatchAuthority(
-  activated: Extract<
-    Awaited<ReturnType<typeof activateReviewObligationAndPersist>>,
-    { activated: unknown }
-  >['activated'],
-  persisted: SessionState,
-) {
-  if (!activated.obligation) return null;
-  const authority = resolveReviewDispatchAuthority(
-    persisted.reviewAssurance,
-    activated.obligation.obligationId,
-  );
-  if (authority.kind === 'blocked') {
-    return formatBlocked(authority.code, { reason: authority.reason });
-  }
-  return authority;
-}
-
-function formatRunCheckResponse(input: {
-  kind: string;
-  candidateId?: string | undefined;
-  evidence: CheckEvidence;
-  validationResult: ValidationResult;
-  derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance> | undefined;
-  originalState: SessionState;
-  executionObservation: ValidationExecutionObservation;
-  advanced: Exclude<ReturnType<typeof autoAdvance>, { kind: 'overflow' }>;
-  finalState: SessionState;
-  authority: ReviewDispatchAuthority | null;
-  policy: FlowGuardPolicy;
-}): ToolResult {
-  const {
-    evidence,
-    derivedRepairGuidance,
-    originalState,
-    executionObservation,
-    advanced,
-    finalState,
-  } = input;
-  const { transitions } = advanced;
-  const finalValidation =
-    originalState.phase === 'IMPL_VALIDATION' ? finalState.implValidation : finalState.validation;
-  const remainingChecks = finalState.activeChecks.filter(
-    (checkId) => !finalValidation.some((result) => result.checkId === checkId && result.passed),
-  );
-  const reviewInstruction = buildRunCheckReviewInstruction(input.authority);
-  return JSON.stringify(
-    enrichWithWorkflowDirective(
-      {
-        phase: finalState.phase,
-        status: formatRunCheckStatus(input.kind, input.validationResult, evidence),
-        evidence: {
-          kind: evidence.kind,
-          ...(input.candidateId ? { candidateId: input.candidateId } : {}),
-          command: evidence.command,
-          exitCode: evidence.exitCode,
-          passed: evidence.passed,
-          executionMs: evidence.executionMs,
-          outputDigest: evidence.outputDigest,
-          timedOut: evidence.timedOut,
-        },
-        executionObservedStateDigest: executionObservation.executionObservedStateDigest,
-        preCommitStateDigest: executionObservation.preCommitStateDigest,
-        committedStateDigest: hashText(canonicalJsonStringify(finalState)),
-        stateChangedDuringExecution:
-          executionObservation.executionObservedStateDigest !==
-          executionObservation.preCommitStateDigest,
-        derivedRepairGuidance,
-        remainingChecks,
-        ...(input.authority ? reviewObligationResponseFields(input.authority) : {}),
-        ...(reviewInstruction ? { reviewDispatch: reviewInstruction.reviewDispatch } : {}),
-        ...(reviewInstruction ? { reviewInvocation: reviewInstruction } : {}),
-        _audit: { transitions },
-      },
-      finalState,
-    ),
   );
 }

@@ -62,7 +62,7 @@ describe('Guard 2: no mutable revision resolution in review-authority constructi
   const OBLIGATION_CREATION_FILES = [
     'integration/tools/plan/plan.ts',
     'integration/tools/plan/plan-response.ts',
-    'integration/tools/implementation/implement-shared.ts',
+    'integration/tools/implementation-review-activation.ts',
     'integration/tools/architecture/architecture-review.ts',
     'integration/tools/architecture/architecture-submit.ts',
     'integration/tools/review-tool/obligation-creation.ts',
@@ -96,7 +96,7 @@ describe('Guard 2: no mutable revision resolution in review-authority constructi
       if (
         [
           'integration/tools/plan/plan-response.ts',
-          'integration/tools/implementation/implement-shared.ts',
+          'integration/tools/implementation-review-activation.ts',
         ].includes(relative) &&
         !content.includes('repositoryAuthority')
       ) {

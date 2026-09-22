@@ -29,7 +29,10 @@ import {
 } from '../../review/obligations/assurance.js';
 import type { PlanEvidence } from '../../../state/evidence.js';
 import { computeRecordDigest } from '../../../state/evidence-plan.js';
-import { normalizePlanClaims } from '../../../state/proofgraph-approval.js';
+import {
+  normalizePlanClaims,
+  type PlanClaimDeclarations,
+} from '../../../state/proofgraph-approval.js';
 import type { PlanExecutionScope } from './plan-types.js';
 import { buildPlanReviewObligationInput } from './plan-response.js';
 
@@ -107,9 +110,18 @@ export async function createPlanReviewAttempt(
   }
   const attemptResult = createObligationAndAttempt(
     scope.state.reviewAssurance,
-    buildPlanReviewObligationInput(scope, planEvidence, planVersion, classificationFiles, {
+    buildPlanReviewObligationInput({
+      state: scope.state,
+      now: scope.ctx.now(),
+      planEvidence,
+      iteration: 0,
+      planVersion,
+      classificationFiles,
       freeze,
-      planClaimDeclarations: submittedPlanClaimDeclarations(scope),
+      planClaimDeclarations:
+        submittedPlanClaimDeclarations(scope) ??
+        scope.state.plan?.claimDeclarations ??
+        ({ flow: 'plan', version: 'v2', claims: [] } satisfies PlanClaimDeclarations),
     }),
     scope.ctx.now(),
     discovery.context,

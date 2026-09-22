@@ -402,13 +402,12 @@ export function findAcceptedInvocationForFindings(
   );
 }
 
-export function createObligationAndAttempt(
+function appendObligationAndInitialAttempt(
   assurance: ReviewAssuranceState | undefined,
-  obligationInput: Parameters<typeof createReviewObligation>[0],
+  obligation: ReviewObligation,
   now: string,
-  repositoryDiscovery: ReviewAttemptDiscoveryContext = { kind: 'not_applicable' },
+  repositoryDiscovery: ReviewAttemptDiscoveryContext,
 ): { assurance: ReviewAssuranceState; obligation: ReviewObligation; attempt: ReviewAttempt } {
-  const obligation = createReviewObligation(obligationInput);
   const ordinal =
     (ensureReviewAssurance(assurance).attempts?.filter(
       (a) => a.obligationId === obligation.obligationId,
@@ -416,7 +415,7 @@ export function createObligationAndAttempt(
   const attempt = createReviewAttempt({
     obligationId: obligation.obligationId,
     obligationType: obligation.obligationType,
-    subjectDigest: obligationInput.subjectDigest,
+    subjectDigest: obligation.subjectDigest,
     ordinal,
     origin: { kind: 'initial' },
     repositoryDiscovery,
@@ -434,35 +433,30 @@ export function createObligationAndAttempt(
   return { assurance: deduped, obligation, attempt };
 }
 
+export function createObligationAndAttempt(
+  assurance: ReviewAssuranceState | undefined,
+  obligationInput: Parameters<typeof createReviewObligation>[0],
+  now: string,
+  repositoryDiscovery: ReviewAttemptDiscoveryContext = { kind: 'not_applicable' },
+): { assurance: ReviewAssuranceState; obligation: ReviewObligation; attempt: ReviewAttempt } {
+  return appendObligationAndInitialAttempt(
+    assurance,
+    createReviewObligation(obligationInput),
+    now,
+    repositoryDiscovery,
+  );
+}
+
 export function appendObligationWithAttempt(
   assurance: ReviewAssuranceState | undefined,
   obligation: ReviewObligation,
   now: string,
   repositoryDiscovery: ReviewAttemptDiscoveryContext = { kind: 'not_applicable' },
 ): { assurance: ReviewAssuranceState; attemptId: string } {
-  const base = ensureReviewAssurance(assurance);
-  const ordinal =
-    (base.attempts?.filter((a) => a.obligationId === obligation.obligationId).length ?? 0) + 1;
-  const attempt = createReviewAttempt({
-    obligationId: obligation.obligationId,
-    obligationType: obligation.obligationType,
-    subjectDigest: obligation.subjectDigest,
-    ordinal,
-    origin: { kind: 'initial' },
-    repositoryDiscovery,
-    observationCapability: mintObservationCapabilityIfResolvable(obligation),
-    now,
-  });
-  const withObligation = { ...base, obligations: [...base.obligations, obligation] };
-  const withAttempt = appendReviewAttempt(withObligation, attempt);
+  const result = appendObligationAndInitialAttempt(assurance, obligation, now, repositoryDiscovery);
   return {
-    assurance: staleObligationAttempts(
-      withAttempt,
-      obligation.obligationId,
-      attempt.attemptId,
-      now,
-    ),
-    attemptId: attempt.attemptId,
+    assurance: result.assurance,
+    attemptId: result.attempt.attemptId,
   };
 }
 
