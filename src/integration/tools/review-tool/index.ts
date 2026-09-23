@@ -40,6 +40,7 @@ import {
   logStructuredResolutionDiagnostics,
   structuredResolutionFailure,
 } from '../../review/validation/review-validation-failure.js';
+import type { StructuredResolutionDiagnostics } from '../../review/validation/review-validation-structured-evidence.js';
 import {
   buildReviewExecutors,
   formatBlockedReviewReport,
@@ -172,6 +173,18 @@ interface StructuredPreparationInput {
  * No bound findings means the pending obligation must project its canonical
  * native dispatch authority, not a second evidence-missing transport.
  */
+/**
+ * Missing-evidence fallback: the parent proceeds without structured findings,
+ * but diagnostics collected from discarded captures (for example an unusable
+ * capture superseded by a terminal `invalid` resolution) stay operator-visible.
+ */
+export function fallbackMissingStructuredEvidence(
+  diagnostics: readonly StructuredResolutionDiagnostics[],
+): null {
+  logStructuredResolutionDiagnostics(getAdapterLogger(), diagnostics);
+  return null;
+}
+
 function isMissingStructuredEvidenceResolution(resolution: StructuredFindingsResolution): boolean {
   return (
     resolution.kind === 'not_found' ||
@@ -225,7 +238,9 @@ function prepareStructuredEvidenceSubmission(
     undefined,
     exec.context.sessionID,
   );
-  if (isMissingStructuredEvidenceResolution(resolution)) return null;
+  if (isMissingStructuredEvidenceResolution(resolution)) {
+    return fallbackMissingStructuredEvidence(diagnostics);
+  }
   if (resolution.kind !== 'resolved') {
     return formatReviewValidationFailure(
       getAdapterLogger(),

@@ -71,6 +71,7 @@ describe('review validation byte-exact envelopes (base 1c4485e8)', () => {
       );
       expect(failure).not.toBeNull();
       if (failure === null) return;
+      expect(failure.code, `${scenario.id} reaches its intended path`).toBe(scenario.expectedCode);
       expect(formatReviewValidationFailure(logger, failure)).toBe(fixture.validation[scenario.id]);
     });
   }
@@ -82,9 +83,9 @@ describe('review validation byte-exact envelopes (base 1c4485e8)', () => {
         { kind: 'resolved' }
       >;
       const diagnostics = scenario.diagnostics as unknown as StructuredResolutionDiagnostics[];
-      expect(
-        formatReviewValidationFailure(logger, structuredResolutionFailure(resolution, diagnostics)),
-      ).toBe(fixture.resolution[scenario.id]);
+      const failure = structuredResolutionFailure(resolution, diagnostics);
+      expect(failure.code, `${scenario.id} maps to its intended code`).toBe(scenario.expectedCode);
+      expect(formatReviewValidationFailure(logger, failure)).toBe(fixture.resolution[scenario.id]);
     });
   }
 
@@ -95,6 +96,9 @@ describe('review validation byte-exact envelopes (base 1c4485e8)', () => {
       );
       expect(result.kind).toBe('blocked');
       if (result.kind !== 'blocked') return;
+      expect(result.failure.code, `${scenario.id} maps to its intended code`).toBe(
+        scenario.expectedCode,
+      );
       expect(formatReviewValidationFailure(logger, result.failure)).toBe(
         fixture.effective[scenario.id],
       );

@@ -15,6 +15,7 @@ import { describe, expect, it } from 'vitest';
 
 import type {
   RepositoryObservation,
+  ReviewAssuranceState,
   ReviewAttempt,
   ReviewFindings,
   ReviewObligation,
@@ -32,8 +33,8 @@ import { evaluateRepositoryEvidenceBinding } from './review-validation-evidence.
 
 const NOW_ISO = '2026-05-10T12:00:00.000Z';
 const CHILD_SESSION_ID = 'ses_child_direct';
-const UPSTREAM = { host: 'github.com', owner: 'upstream', name: 'repo' };
-const FORK = { host: 'github.com', owner: 'contributor', name: 'fork' };
+/** candidate_pair requires ONE repository identity for both revisions. */
+const REPOSITORY = { host: 'github.com', owner: 'flowguard', name: 'governed-runtime' };
 const BASE_SHA = 'b'.repeat(40);
 const HEAD_SHA = 'c'.repeat(40);
 
@@ -50,8 +51,8 @@ function candidateObligation(): ReviewObligation {
     changedFiles: ['docs/test.md'],
     repositoryAuthority: {
       kind: 'candidate_pair',
-      base: { kind: 'commit', repositoryIdentity: UPSTREAM, objectSha: BASE_SHA },
-      head: { kind: 'commit', repositoryIdentity: FORK, objectSha: HEAD_SHA },
+      base: { kind: 'commit', repositoryIdentity: REPOSITORY, objectSha: BASE_SHA },
+      head: { kind: 'commit', repositoryIdentity: REPOSITORY, objectSha: HEAD_SHA },
     },
   });
 }
@@ -123,7 +124,7 @@ function observation(
     observedBySessionId: CHILD_SESSION_ID,
     path,
     revision: 'head',
-    repositoryIdentity: FORK,
+    repositoryIdentity: REPOSITORY,
     resolvedObjectSha: HEAD_SHA,
     resolvedObjectKind: 'commit',
     contentDigest: 'sha256:' + 'a'.repeat(64),
@@ -153,6 +154,24 @@ describe('evaluateRepositoryEvidenceBinding', () => {
         candidateAttempt: { ...attempt, observations: [observation(obligation, attempt)] },
       }),
     ).toEqual({ ok: true });
+  });
+
+  it('HAPPY: the ordinary assurance lookup path authorizes a bound observation', () => {
+    const obligation = candidateObligation();
+    const attempt = boundAttempt(obligation);
+    const findings = findingsWithLocations(obligation.obligationId, [
+      { path: 'src/foo.ts', revision: 'head' },
+    ]);
+    const assurance: ReviewAssuranceState = {
+      assuranceSchemaVersion: 'review-assurance.v6',
+      obligations: [obligation],
+      invocations: [],
+      attempts: [{ ...attempt, observations: [observation(obligation, attempt)] }],
+      dispatches: [],
+    };
+    expect(evaluateRepositoryEvidenceBinding(findings, obligation, { assurance })).toEqual({
+      ok: true,
+    });
   });
 
   it('BAD: no obligation resolves for the evidence-bearing findings', () => {

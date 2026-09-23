@@ -23,6 +23,7 @@ import {
   withTestEnv,
 } from '../../test-helpers.js';
 import { review, hydrate } from '../index.js';
+import { fallbackMissingStructuredEvidence } from './index.js';
 import { readState } from '../../../adapters/persistence.js';
 import { writeStateWithArtifacts } from '../helpers.js';
 import {
@@ -36,6 +37,7 @@ import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
 import { hashFindings } from '../../review/findings-hash.js';
 import { updateAttemptStatus } from '../../review/obligations/attempt-lifecycle.js';
 import { completedDispatchForInvocation } from '../../../state/evidence-test-constants.js';
+import { runWithAdapterLogger, type AdapterLogger } from '../../../logging/adapter-logger.js';
 import type { ReviewFindings } from '../../../state/evidence.js';
 
 vi.mock('../../../adapters/git', async (importOriginal) => {
@@ -244,5 +246,35 @@ describe('verdict-only structured evidence consumption', () => {
       (item) => item.obligationId === obligationId,
     );
     expect(obligation?.status).not.toBe('consumed');
+  });
+
+  it('REGRESSION: the missing-evidence fallback logs collected diagnostics before returning', () => {
+    const warnings: Array<{ service: string; message: string; extra?: Record<string, unknown> }> =
+      [];
+    const logger: AdapterLogger = {
+      info: () => {},
+      warn: (service, message, extra) => {
+        warnings.push(extra === undefined ? { service, message } : { service, message, extra });
+      },
+      error: () => {},
+    };
+    const diagnostic = {
+      obligationId: 'obligation-1',
+      invocationId: 'invocation-1',
+      issues: ['findings.overallVerdict: Required'],
+    };
+
+    const result = runWithAdapterLogger(logger, () =>
+      fallbackMissingStructuredEvidence([diagnostic]),
+    );
+
+    expect(result).toBeNull();
+    expect(warnings).toEqual([
+      {
+        service: 'flowguard_review',
+        message: 'structured captured findings present but unparseable; treated as unparseable',
+        extra: diagnostic,
+      },
+    ]);
   });
 });

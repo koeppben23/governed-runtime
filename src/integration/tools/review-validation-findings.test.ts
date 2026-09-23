@@ -1514,4 +1514,35 @@ describe('resolveStructuredFindings — diagnostics and deferral merges', () => 
     expect(diagnostics[0]?.invocationId).toBe(unusable.invocationId);
     expect(diagnostics[0]?.issues.length).toBeGreaterThan(0);
   });
+
+  it('keeps the unparseable warning when a later capture terminates invalid', () => {
+    const captured = findings();
+    const first = assuranceFor(captured).invocations[0]!;
+    const unusable = {
+      ...first,
+      invocationId: '44444444-4444-4444-8444-444444444444',
+      capturedRawFindings: { nonsense: true } as unknown as Record<string, unknown>,
+      findingsHash: 'unusable-capture',
+    };
+    const conflicting = {
+      ...captured,
+      reviewedBy: { sessionId: 'ses_other_reviewer' },
+    };
+    const invalid = {
+      ...first,
+      invocationId: '66666666-6666-4666-8666-666666666666',
+      capturedRawFindings: conflicting as unknown as Record<string, unknown>,
+      findingsHash: hashFindings(conflicting),
+    };
+    const { resolution, diagnostics } = resolveWith(captured, (assurance) => {
+      assurance.invocations.unshift(invalid);
+      assurance.invocations.unshift(unusable);
+    });
+
+    expect(resolution.kind).toBe('invalid');
+    if (resolution.kind !== 'invalid') return;
+    expect(resolution.code).toBe('SUBAGENT_EVIDENCE_MISSING');
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]?.invocationId).toBe(unusable.invocationId);
+  });
 });

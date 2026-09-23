@@ -40,18 +40,22 @@ export type HashFindings = (findings: Record<string, unknown>) => string;
 
 export interface ByteValidationScenario {
   readonly id: string;
+  /** Expected final blocked code — proves the scenario reaches its intended path. */
+  readonly expectedCode: string;
   readonly findings: ReviewFindings;
   readonly ctx: unknown;
 }
 
 export interface ByteResolutionScenario {
   readonly id: string;
+  readonly expectedCode: string;
   readonly resolution: Record<string, unknown>;
   readonly diagnostics: readonly Record<string, unknown>[];
 }
 
 export interface ByteEffectiveScenario {
   readonly id: string;
+  readonly expectedCode: string;
   readonly ctx: Record<string, unknown>;
 }
 
@@ -217,16 +221,19 @@ export function buildByteCorpus(hashFindings: HashFindings): ByteCorpus {
 
   validation.push({
     id: 'validation.mode-self',
+    expectedCode: 'REVIEW_MODE_SELF_NOT_ALLOWED',
     findings: buildBaseFindings({ reviewMode: 'self' }),
     ctx: {},
   });
   validation.push({
     id: 'validation.unable-to-review',
+    expectedCode: 'SUBAGENT_UNABLE_TO_REVIEW',
     findings: buildBaseFindings({ overallVerdict: 'unable_to_review' }),
     ctx: {},
   });
   validation.push({
     id: 'validation.verdict-blocking-incoherent',
+    expectedCode: 'SUBAGENT_VERDICT_FINDINGS_INCOHERENT',
     findings: buildBaseFindings({
       overallVerdict: 'accept',
       blockingIssues: [
@@ -242,21 +249,25 @@ export function buildByteCorpus(hashFindings: HashFindings): ByteCorpus {
   });
   validation.push({
     id: 'validation.plan-version-mismatch',
+    expectedCode: 'REVIEW_PLAN_VERSION_MISMATCH',
     findings: buildBaseFindings({ planVersion: 7 }),
     ctx: {},
   });
   validation.push({
     id: 'validation.iteration-mismatch',
+    expectedCode: 'REVIEW_ITERATION_MISMATCH',
     findings: buildBaseFindings({ iteration: 9 }),
-    ctx: {},
+    ctx: { expectedPlanVersion: 1, expectedIteration: 0 },
   });
   validation.push({
     id: 'validation.strict-assurance-missing',
+    expectedCode: 'PLUGIN_ENFORCEMENT_UNAVAILABLE',
     findings: buildBaseFindings(),
-    ctx: {},
+    ctx: { expectedPlanVersion: 1, expectedIteration: 0 },
   });
   validation.push({
     id: 'validation.strict-obligation-missing',
+    expectedCode: 'PLUGIN_ENFORCEMENT_UNAVAILABLE',
     findings: buildBaseFindings(),
     ctx: {
       expectedPlanVersion: 1,
@@ -273,6 +284,7 @@ export function buildByteCorpus(hashFindings: HashFindings): ByteCorpus {
   });
   validation.push({
     id: 'validation.scope-unavailable',
+    expectedCode: 'REVIEW_SUBJECT_SCOPE_UNAVAILABLE',
     findings: buildBaseFindings({
       blockingIssues: [
         {
@@ -283,10 +295,11 @@ export function buildByteCorpus(hashFindings: HashFindings): ByteCorpus {
         },
       ],
     }),
-    ctx: {},
+    ctx: { expectedPlanVersion: 1, expectedIteration: 0 },
   });
   validation.push({
     id: 'validation.evidence-not-observed',
+    expectedCode: 'REVIEW_EVIDENCE_NOT_OBSERVED',
     findings: buildBaseFindings({
       blockingIssues: [
         {
@@ -301,6 +314,7 @@ export function buildByteCorpus(hashFindings: HashFindings): ByteCorpus {
   });
   validation.push({
     id: 'validation.strict-invocation-missing',
+    expectedCode: 'SUBAGENT_EVIDENCE_MISSING',
     findings: buildBaseFindings(),
     ctx: buildStrictFixture(hashFindings, ({ invocation }) => {
       invocation.invocationId = '33333333-3333-4333-8333-333333333333';
@@ -308,6 +322,7 @@ export function buildByteCorpus(hashFindings: HashFindings): ByteCorpus {
   });
   validation.push({
     id: 'validation.strict-self-approval',
+    expectedCode: 'REVIEW_SELF_APPROVAL_DENIED',
     findings: buildBaseFindings(),
     ctx: {
       ...(buildStrictFixture(hashFindings).ctx as Record<string, unknown>),
@@ -316,11 +331,13 @@ export function buildByteCorpus(hashFindings: HashFindings): ByteCorpus {
   });
   validation.push({
     id: 'validation.strict-session-mismatch',
+    expectedCode: 'REVIEW_FINDINGS_SESSION_MISMATCH',
     findings: buildBaseFindings({ reviewedBy: { sessionId: 'ses_other' } }),
     ctx: buildStrictFixture(hashFindings).ctx,
   });
   validation.push({
     id: 'validation.strict-hash-mismatch',
+    expectedCode: 'REVIEW_FINDINGS_HASH_MISMATCH',
     findings: buildBaseFindings(),
     ctx: buildStrictFixture(hashFindings, ({ invocation }) => {
       invocation.findingsHash = 'not-the-findings-hash';
@@ -328,11 +345,13 @@ export function buildByteCorpus(hashFindings: HashFindings): ByteCorpus {
   });
   validation.push({
     id: 'validation.strict-attestation-missing',
+    expectedCode: 'SUBAGENT_MANDATE_MISSING',
     findings: buildBaseFindings({ attestation: undefined }),
     ctx: buildStrictFixture(hashFindings).ctx,
   });
   validation.push({
     id: 'validation.strict-attestation-mismatch',
+    expectedCode: 'SUBAGENT_MANDATE_MISMATCH',
     findings: buildBaseFindings({
       attestation: {
         mandateDigest: 'other-mandate',
@@ -347,6 +366,7 @@ export function buildByteCorpus(hashFindings: HashFindings): ByteCorpus {
   });
   validation.push({
     id: 'validation.strict-contract-missing',
+    expectedCode: 'SUBAGENT_EVIDENCE_MISSING',
     findings: buildBaseFindings(),
     ctx: buildStrictFixture(hashFindings, ({ invocation }) => {
       (invocation as unknown as Record<string, unknown>).hostVisible = false;
@@ -356,6 +376,7 @@ export function buildByteCorpus(hashFindings: HashFindings): ByteCorpus {
   const resolution: ByteResolutionScenario[] = [
     {
       id: 'resolution.rejected-blocked',
+      expectedCode: 'STRICT_REVIEW_ORCHESTRATION_FAILED',
       resolution: {
         kind: 'rejected',
         rejection: {
@@ -369,6 +390,7 @@ export function buildByteCorpus(hashFindings: HashFindings): ByteCorpus {
     },
     {
       id: 'resolution.rejected-consumed',
+      expectedCode: 'SUBAGENT_EVIDENCE_REUSED',
       resolution: {
         kind: 'rejected',
         rejection: {
@@ -381,6 +403,7 @@ export function buildByteCorpus(hashFindings: HashFindings): ByteCorpus {
     },
     {
       id: 'resolution.rejected-invocation-consumed',
+      expectedCode: 'SUBAGENT_EVIDENCE_REUSED',
       resolution: {
         kind: 'rejected',
         rejection: {
@@ -394,6 +417,7 @@ export function buildByteCorpus(hashFindings: HashFindings): ByteCorpus {
     },
     {
       id: 'resolution.incoherent-verdict',
+      expectedCode: 'SUBAGENT_VERDICT_FINDINGS_INCOHERENT',
       resolution: {
         kind: 'incoherent',
         code: 'SUBAGENT_VERDICT_FINDINGS_INCOHERENT',
@@ -406,6 +430,7 @@ export function buildByteCorpus(hashFindings: HashFindings): ByteCorpus {
     },
     {
       id: 'resolution.incoherent-challenge',
+      expectedCode: 'SUBAGENT_CHALLENGE_COUNT_INCOHERENT',
       resolution: {
         kind: 'incoherent',
         code: 'SUBAGENT_CHALLENGE_COUNT_INCOHERENT',
@@ -417,6 +442,7 @@ export function buildByteCorpus(hashFindings: HashFindings): ByteCorpus {
     },
     {
       id: 'resolution.attempt-lineage-unavailable',
+      expectedCode: 'REVIEW_ATTEMPT_LINEAGE_UNAVAILABLE',
       resolution: {
         kind: 'attempt_lineage_unavailable',
         invocationId: INVOCATION_ID,
@@ -426,6 +452,7 @@ export function buildByteCorpus(hashFindings: HashFindings): ByteCorpus {
     },
     {
       id: 'resolution.unparseable',
+      expectedCode: 'SUBAGENT_EVIDENCE_MISSING',
       resolution: {
         kind: 'unparseable',
         detail: 'findings.overallVerdict: Required; findings.iteration: Expected number',
@@ -445,11 +472,13 @@ export function buildByteCorpus(hashFindings: HashFindings): ByteCorpus {
     },
     {
       id: 'resolution.not-found',
+      expectedCode: 'SUBAGENT_EVIDENCE_MISSING',
       resolution: { kind: 'not_found' },
       diagnostics: [],
     },
     {
       id: 'resolution.invalid-hash-mismatch',
+      expectedCode: 'REVIEW_FINDINGS_HASH_MISMATCH',
       resolution: {
         kind: 'invalid',
         code: 'REVIEW_FINDINGS_HASH_MISMATCH',
@@ -459,6 +488,7 @@ export function buildByteCorpus(hashFindings: HashFindings): ByteCorpus {
     },
     {
       id: 'resolution.invalid-evidence-missing',
+      expectedCode: 'SUBAGENT_EVIDENCE_MISSING',
       resolution: {
         kind: 'invalid',
         code: 'SUBAGENT_EVIDENCE_MISSING',
@@ -472,6 +502,7 @@ export function buildByteCorpus(hashFindings: HashFindings): ByteCorpus {
   const effective: ByteEffectiveScenario[] = [
     {
       id: 'effective.reviewer-unavailable-misuse',
+      expectedCode: 'INVALID_REVIEW_TOOL_SEQUENCE',
       ctx: {
         pendingObligation: withInvocations,
         expected: { obligationType: 'plan', iteration: 0, planVersion: 1 },
@@ -505,6 +536,7 @@ export function buildByteCorpus(hashFindings: HashFindings): ByteCorpus {
     },
     {
       id: 'effective.reviewer-unavailable-strict',
+      expectedCode: 'REVIEWER_UNAVAILABLE_STRICT',
       ctx: {
         pendingObligation: structuredObligation(),
         expected: { obligationType: 'plan', iteration: 0, planVersion: 1 },
