@@ -20,7 +20,10 @@ import {
   analyzeReviewZonePolicy,
   DECLARED_REVIEW_ZONE_EDGES,
   describeZoneEdges,
+  mutualZonePairs,
   resolveSpecifier,
+  reviewZoneCycles,
+  reviewZoneEdges,
   zoneEdgeKey,
   type ReviewZoneSource,
 } from './review-zone-policy.js';
@@ -203,6 +206,34 @@ describe('review zone policy', () => {
       ),
     ).toEqual([]);
   });
+
+  it('detects a direct mutual zone pair from both observed directions', () => {
+    expect(
+      mutualZonePairs([
+        zoneEdgeKey('review/dispatch', 'review/evidence'),
+        zoneEdgeKey('review/evidence', 'review/dispatch'),
+      ]),
+    ).toEqual(['review/dispatch <-> review/evidence']);
+  });
+
+  it('reports no mutual pair for a purely directed chain', () => {
+    expect(
+      mutualZonePairs([
+        zoneEdgeKey('review/context', 'review/prompting'),
+        zoneEdgeKey('review/prompting', 'review/obligations'),
+      ]),
+    ).toEqual([]);
+  });
+
+  it('reports remaining longer cycles as a deterministic metric', () => {
+    const cycles = reviewZoneCycles([
+      zoneEdgeKey('review/a', 'review/b'),
+      zoneEdgeKey('review/b', 'review/c'),
+      zoneEdgeKey('review/c', 'review/a'),
+      zoneEdgeKey('review/dispatch', 'review/evidence'),
+    ]);
+    expect(cycles).toEqual([['review/a', 'review/b', 'review/c']]);
+  });
 });
 
 describe('review zone policy — real tree', () => {
@@ -221,6 +252,25 @@ describe('review zone policy — real tree', () => {
       );
     }
     expect(violations).toEqual([]);
+  });
+
+  it('holds zero direct mutual zone pairs, and reports the remaining longer cycles', () => {
+    const observed = reviewZoneEdges({
+      sources,
+      zones: INTEGRATION_PLACEMENT_ZONES,
+    });
+
+    expect(mutualZonePairs(DECLARED_REVIEW_ZONE_EDGES)).toEqual([]);
+    expect(mutualZonePairs(observed)).toEqual([]);
+
+    const cycles = reviewZoneCycles(observed);
+    console.info(
+      `review zone metric: ${cycles.length} remaining cycle(s) of length >= 3:\n` +
+        cycles.map((component) => `  - ${component.join(' -> ')}`).join('\n'),
+    );
+    // The metric is reported, not gated: a fully acyclic review zone graph is a
+    // separate architecture goal. Direct mutual pairs stay hard-enforced above.
+    expect(cycles.every((component) => component.length >= 3)).toBe(true);
   });
 
   it('is non-vacuous: the policy declares edges and every review zone is populated and budgeted', () => {

@@ -98,8 +98,8 @@ describe('structured review authority hard cut', () => {
     // must go through the instruction, which requires a full
     // ReviewDispatchAuthority.
     const allowed = new Set([
-      'integration/review/dispatch/dispatch-signal.ts',
-      'integration/review/prompting/child-session-instruction.ts',
+      'integration/review/enforcement/dispatch-signal.ts',
+      'integration/review/dispatch/child-session-instruction.ts',
     ]);
     const offenders = listProductionSources(SRC)
       .filter((file) => /\breviewDispatchRequired\b/.test(readFileSync(file, 'utf8')))

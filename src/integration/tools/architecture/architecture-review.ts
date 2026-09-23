@@ -22,15 +22,15 @@ import type {
   ReviewFindings,
 } from '../../../state/evidence.js';
 import { validateAdrSections } from '../../../state/evidence.js';
-
 import {
   consumeReviewObligation,
-  ensureReviewAssurance,
   findLatestObligation,
   findLatestUnconsumedObligation,
 } from '../../review/obligations/assurance.js';
+import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
 
 import { resolveStructuredEffectiveFindings } from '../../review/validation/review-validation.js';
+import { formatStructuredResolutionFailure } from '../../review/validation/review-validation-failure.js';
 import { collectPreviouslyUsedChallengeIds } from '../../review/obligations/challenge-history.js';
 import { buildReviewChallengeContract } from '../../review/obligations/challenge-contract.js';
 
@@ -91,7 +91,6 @@ function resolveArchitectureReview(
   );
   const resolved = resolveStructuredEffectiveFindings({
     pendingObligation,
-    logger: getAdapterLogger(),
     expected: {
       obligationType: 'architecture',
       iteration: expectedIteration,
@@ -112,7 +111,9 @@ function resolveArchitectureReview(
     },
   });
 
-  if (resolved.kind === 'blocked') return resolved.blocked;
+  if (resolved.kind === 'blocked') {
+    return formatStructuredResolutionFailure(getAdapterLogger(), resolved.failure);
+  }
 
   const findingsBlocked = validateResolvedFindings(
     resolved.effectiveFindings,

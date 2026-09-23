@@ -17,7 +17,6 @@ import { createTestWorkspace, createToolContext, parseToolResult } from '../../t
 import { resolve_implementation_challenge } from '../../tools/challenge/challenge-resolution.js';
 import { resolveStructuredFindings } from './review-validation-structured-evidence.js';
 
-const testLogger = { warn: () => {} };
 import {
   computeTargetedResolutionChallengeIds,
   computeUnaddressedPriorFailIds,
@@ -28,8 +27,8 @@ import {
   buildInvocationEvidence,
   createReviewObligation,
   freezeReviewMaterial,
-  hashFindings,
 } from '../obligations/assurance.js';
+import { hashFindings } from '../findings-hash.js';
 import {
   completedDispatchForInvocation,
   TEST_EXECUTION_OBSERVATION,
@@ -230,7 +229,6 @@ async function resolveCapturedFixture(
     attemptId: attempt.attemptId,
   });
   const result = resolveStructuredFindings(
-    testLogger,
     {
       assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [obligation],
@@ -306,7 +304,6 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
   );
   expect(
     resolveStructuredFindings(
-      testLogger,
       {
         assuranceSchemaVersion: 'review-assurance.v6' as const,
         obligations: [firstObligation],
@@ -406,7 +403,6 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
     secondInvocation.attemptId,
   );
   const reReview = resolveStructuredFindings(
-    testLogger,
     {
       assuranceSchemaVersion: 'review-assurance.v6' as const,
       obligations: [secondObligation],

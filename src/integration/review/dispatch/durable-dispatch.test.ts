@@ -24,10 +24,10 @@ import {
   artifactReviewSubjectScope,
   appendObligationWithAttempt,
   createReviewObligation,
-  ensureReviewAssurance,
   freezeReviewMaterial,
-  hashFindings,
 } from '../obligations/assurance.js';
+import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
+import { hashFindings } from '../findings-hash.js';
 import type { ReviewerSuccessResult } from '../types.js';
 
 const NOW = '2026-05-10T12:00:00.000Z';

@@ -1,5 +1,5 @@
 /**
- * @module integration/review/freeze-coherence
+ * @module integration/review/obligations/freeze-coherence
  * @description Creation-time coherence guard for the durable repository
  *              evidence freeze record.
  *

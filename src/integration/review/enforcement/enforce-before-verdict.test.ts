@@ -11,13 +11,11 @@ import {
   enforceBeforeVerdict,
   onFlowGuardToolAfter as rawOnFlowGuardToolAfter,
 } from './enforcement.js';
-import { reviewDispatchRequired } from '../dispatch/dispatch-signal.js';
+import { reviewDispatchRequired } from './dispatch-signal.js';
 import { NOW } from './test-helpers.js';
-import {
-  buildInvocationEvidence,
-  ensureReviewAssurance,
-  hashText,
-} from '../obligations/assurance.js';
+import { buildInvocationEvidence } from '../obligations/assurance.js';
+import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
+import { hashText } from '../../../shared/hashing.js';
 import { makeState } from '../../../fixtures.js';
 import type { ReviewInvocationEvidence } from '../../../state/evidence.js';
 

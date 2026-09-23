@@ -8,50 +8,14 @@
  */
 
 import type {
+  DiscoveryContextLimits,
+  DiscoveryReviewContext,
   ReviewDiscoveryDriftProjection,
   ReviewDiscoveryHealth,
 } from '../context/discovery-port.js';
-import type {
-  ImplementationGuidanceItem,
-  ImplementationGuidanceProjection,
-} from '../../implementation-guidance.js';
+import type { ImplementationGuidanceItem } from '../../implementation-guidance.js';
 import type { DetectedStack, VerificationCandidates } from '../../../state/discovery-schemas.js';
 import type { RepositoryDiscoverySnapshot } from '../../../state/evidence.js';
-
-export interface DiscoveryContextLimits {
-  readonly stackItems: number;
-  readonly verificationCandidates: number;
-  readonly relevantFiles: number;
-  readonly surfaces: number;
-  readonly modules: number;
-  readonly contracts: number;
-  readonly riskHotspots: number;
-  readonly tests: number;
-  readonly warnings: number;
-  readonly notVerified: number;
-  readonly changedContributors: number;
-}
-
-export interface DiscoveryReviewContext {
-  readonly health?: ReviewDiscoveryHealth | null;
-  readonly drift?: ReviewDiscoveryDriftProjection | null;
-  readonly detectedStack?: DetectedStack | null;
-  readonly verificationCandidates?: VerificationCandidates;
-  readonly implementationGuidance?: Pick<
-    ImplementationGuidanceProjection,
-    | 'confidence'
-    | 'warnings'
-    | 'notVerified'
-    | 'relevantFiles'
-    | 'surfaces'
-    | 'modules'
-    | 'contracts'
-    | 'riskHotspots'
-    | 'tests'
-  > | null;
-  readonly notVerified?: readonly string[];
-  readonly limits?: Partial<DiscoveryContextLimits>;
-}
 
 const DEFAULT_LIMITS: DiscoveryContextLimits = {
   stackItems: 8,

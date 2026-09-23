@@ -9,8 +9,8 @@ import type { ReviewFindings, ReviewObligation } from '../../../state/evidence.j
 import {
   consumeReviewObligation,
   validateStrictAttestation,
-  ensureReviewAssurance,
 } from '../../review/obligations/assurance.js';
+import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import { formatSubagentReviewNotInvoked } from './obligation-format.js';
 export {

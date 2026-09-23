@@ -56,14 +56,14 @@ export type {
 
 // ─── Dispatch Signal ─────────────────────────────────────────────────────────
 
-export type { ReviewDispatchSignal } from './dispatch/dispatch-signal.js';
+export type { ReviewDispatchSignal } from './enforcement/dispatch-signal.js';
 
 export {
   reviewDispatchCompleted,
   readReviewDispatch,
   isReviewDispatchRequired,
   isReviewDispatchCompleted,
-} from './dispatch/dispatch-signal.js';
+} from './enforcement/dispatch-signal.js';
 
 // ─── Obligation Tools ────────────────────────────────────────────────────────
 
@@ -83,12 +83,13 @@ export {
 
 // ─── Assurance ───────────────────────────────────────────────────────────────
 
+export { hashText } from '../../shared/hashing.js';
+export { emptyReviewAssurance, ensureReviewAssurance } from '../../state/review-dispatch.js';
+export { hashFindings } from './findings-hash.js';
+
 export {
-  hashText,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
-  emptyReviewAssurance,
-  ensureReviewAssurance,
   createReviewObligation,
   appendReviewObligation,
   findLatestObligation,
@@ -97,7 +98,6 @@ export {
   findLatestUnconsumedObligation,
   consumeReviewObligation,
   findAcceptedInvocationForFindings,
-  hashFindings,
   buildInvocationEvidence,
   hasEvidenceReuse,
   appendInvocationEvidence,

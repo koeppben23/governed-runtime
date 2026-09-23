@@ -72,13 +72,13 @@ export const INTEGRATION_PLACEMENT_ZONES: readonly IntegrationPlacementZone[] = 
     id: 'review',
     dir: 'integration/review',
     description: 'Review bounded context facade and cross-zone primitives',
-    maxProductionFiles: 5,
+    maxProductionFiles: 6,
   },
   {
     id: 'review/dispatch',
     dir: 'integration/review/dispatch',
     description: 'Reviewer/task resolution, dispatch, and orchestration',
-    maxProductionFiles: 10,
+    maxProductionFiles: 11,
   },
   {
     id: 'review/obligations',
@@ -96,13 +96,13 @@ export const INTEGRATION_PLACEMENT_ZONES: readonly IntegrationPlacementZone[] = 
     id: 'review/observations',
     dir: 'integration/review/observations',
     description: 'Observation capture, binding, replay, and resolution',
-    maxProductionFiles: 7,
+    maxProductionFiles: 8,
   },
   {
     id: 'review/evidence',
     dir: 'integration/review/evidence',
     description: 'Findings, hashes, provenance, coherence, and review evidence',
-    maxProductionFiles: 11,
+    maxProductionFiles: 9,
   },
   {
     id: 'review/validation',
@@ -114,13 +114,13 @@ export const INTEGRATION_PLACEMENT_ZONES: readonly IntegrationPlacementZone[] = 
     id: 'review/prompting',
     dir: 'integration/review/prompting',
     description: 'Prompt construction and host/reviewer instructions',
-    maxProductionFiles: 6,
+    maxProductionFiles: 5,
   },
   {
     id: 'review/enforcement',
     dir: 'integration/review/enforcement',
     description: 'Review enforcement subsystem',
-    maxProductionFiles: 9,
+    maxProductionFiles: 10,
   },
   {
     id: 'proofgraph',
@@ -646,10 +646,10 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
     targetZone: 'review/obligations',
   },
   {
-    file: 'integration/review/prompting/child-session-instruction.ts',
-    owner: 'review-prompting',
-    zone: 'review/prompting',
-    targetZone: 'review/prompting',
+    file: 'integration/review/dispatch/child-session-instruction.ts',
+    owner: 'review-dispatch',
+    zone: 'review/dispatch',
+    targetZone: 'review/dispatch',
   },
   {
     file: 'integration/review/context/discovery-attempt-context.ts',
@@ -682,10 +682,10 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
     targetZone: 'review/dispatch',
   },
   {
-    file: 'integration/review/dispatch/dispatch-signal.ts',
-    owner: 'review-dispatch',
-    zone: 'review/dispatch',
-    targetZone: 'review/dispatch',
+    file: 'integration/review/enforcement/dispatch-signal.ts',
+    owner: 'review-enforcement',
+    zone: 'review/enforcement',
+    targetZone: 'review/enforcement',
   },
   {
     file: 'integration/review/dispatch/durable-dispatch.ts',
@@ -754,10 +754,10 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
     targetZone: 'review/evidence',
   },
   {
-    file: 'integration/review/evidence/findings-hash.ts',
-    owner: 'review-evidence',
-    zone: 'review/evidence',
-    targetZone: 'review/evidence',
+    file: 'integration/review/findings-hash.ts',
+    owner: 'review',
+    zone: 'review',
+    targetZone: 'review',
   },
   {
     file: 'integration/review/evidence/findings-schema.ts',
@@ -766,10 +766,10 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
     targetZone: 'review/evidence',
   },
   {
-    file: 'integration/review/evidence/freeze-coherence.ts',
-    owner: 'review-evidence',
-    zone: 'review/evidence',
-    targetZone: 'review/evidence',
+    file: 'integration/review/obligations/freeze-coherence.ts',
+    owner: 'review-obligations',
+    zone: 'review/obligations',
+    targetZone: 'review/obligations',
   },
   {
     file: 'integration/review/context/frozen-reviewer-context.ts',
@@ -953,10 +953,16 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
     targetZone: 'review/validation',
   },
   {
-    file: 'integration/review/validation/review-validation-evidence.ts',
+    file: 'integration/review/validation/review-validation-failure.ts',
     owner: 'review-validation',
     zone: 'review/validation',
     targetZone: 'review/validation',
+  },
+  {
+    file: 'integration/review/observations/review-validation-evidence.ts',
+    owner: 'review-observations',
+    zone: 'review/observations',
+    targetZone: 'review/observations',
   },
   {
     file: 'integration/review/validation/review-validation-structured-evidence.ts',
@@ -1007,10 +1013,10 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
     targetZone: 'review',
   },
   {
-    file: 'integration/review/obligations/structured-followup.ts',
-    owner: 'review-obligations',
-    zone: 'review/obligations',
-    targetZone: 'review/obligations',
+    file: 'integration/review/dispatch/structured-followup.ts',
+    owner: 'review-dispatch',
+    zone: 'review/dispatch',
+    targetZone: 'review/dispatch',
   },
   {
     file: 'integration/review/context/subject-scope.ts',

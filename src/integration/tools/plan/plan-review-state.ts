@@ -11,7 +11,6 @@
  * @version v1
  */
 
-import { getAdapterLogger } from '../../../logging/adapter-logger.js';
 import { IntegrationInvariantError } from '../../errors.js';
 import { formatBlocked } from '../../blocked-result.js';
 
@@ -23,9 +22,9 @@ import { collectPreviouslyUsedChallengeIds } from '../../review/obligations/chal
 import { buildReviewChallengeContract } from '../../review/obligations/challenge-contract.js';
 import {
   consumeReviewObligation,
-  ensureReviewAssurance,
   findLatestObligation,
 } from '../../review/obligations/assurance.js';
+import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
 import type { PlanArgs, PlanExecutionScope, PlanRevisionResult } from './plan-types.js';
 import {
   appendClaimSubmissionHistory,
@@ -59,7 +58,6 @@ export function resolveEffectivePlanFindings(scope: PlanExecutionScope) {
   const expectedPlanVersion = pendingObligation?.planVersion ?? plan.history.length + 1;
   const resolved = resolveStructuredEffectiveFindings({
     pendingObligation: pendingObligation ?? null,
-    logger: getAdapterLogger(),
     expected: {
       obligationType: 'plan',
       iteration: expectedIteration,

@@ -1022,11 +1022,11 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     },
   ),
   required(
-    'src/integration/review/dispatch/dispatch-signal.ts',
+    'src/integration/review/enforcement/dispatch-signal.ts',
     'Review dispatch signal detection',
-    ['src/integration/review/dispatch/dispatch-signal.test.ts'],
+    ['src/integration/review/enforcement/dispatch-signal.test.ts'],
     {
-      admission: admissionRecord('src/integration/review/dispatch/dispatch-signal.ts'),
+      admission: admissionRecord('src/integration/review/enforcement/dispatch-signal.ts'),
     },
   ),
   required(
@@ -1422,12 +1422,12 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     admission: admissionRecord('src/hooks/post-tool-use.ts'),
   },
   required(
-    'src/integration/review/evidence/findings-hash.ts',
+    'src/integration/review/findings-hash.ts',
     'Findings hash normalization',
-    ['src/integration/review/evidence/findings-hash.test.ts'],
+    ['src/integration/review/findings-hash.test.ts'],
     {
       source: [SOURCE.trustBoundaries],
-      admission: admissionRecord('src/integration/review/evidence/findings-hash.ts'),
+      admission: admissionRecord('src/integration/review/findings-hash.ts'),
     },
   ),
   // ── Base profile: core authorities admitted in the base full run ─────────

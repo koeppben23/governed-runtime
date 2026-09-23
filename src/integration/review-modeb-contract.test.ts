@@ -34,10 +34,10 @@ import {
   createReviewObligation,
   appendReviewObligation,
   appendInvocationEvidence,
-  hashFindings,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './review/obligations/assurance.js';
+import { hashFindings } from './review/findings-hash.js';
 import {
   makeState,
   TICKET,

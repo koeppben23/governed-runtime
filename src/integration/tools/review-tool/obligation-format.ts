@@ -13,7 +13,7 @@ import {
   reviewObligationResponseFields,
   type ReviewDispatchAuthority,
 } from '../../review/dispatch/dispatch-authority.js';
-import { buildChildSessionReviewInstruction } from '../../review/prompting/child-session-instruction.js';
+import { buildChildSessionReviewInstruction } from '../../review/dispatch/child-session-instruction.js';
 
 /**
  * Structural equality for a frozen repository identity.

@@ -13,11 +13,11 @@ import {
   appendInvocationEvidence,
   consumeReviewObligation,
   buildInvocationEvidence,
-  ensureReviewAssurance,
   fulfillObligation,
   hasEvidenceReuse,
-  updateAttemptStatus,
 } from '../obligations/assurance.js';
+import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
+import { updateAttemptStatus } from '../obligations/attempt-lifecycle.js';
 import {
   completeReviewDispatch,
   rebindReviewDispatchHostCall,

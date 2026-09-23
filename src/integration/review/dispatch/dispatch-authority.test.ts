@@ -12,8 +12,8 @@ import {
   resolveReviewDispatchAuthority,
   reviewObligationResponseFields,
 } from './dispatch-authority.js';
+import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
 import {
-  ensureReviewAssurance,
   artifactReviewSubjectScope,
   createObligationAndAttempt,
 } from '../obligations/assurance.js';

@@ -24,10 +24,10 @@ import {
   REVIEW_CRITERIA_VERSION,
   appendInvocationEvidence,
   buildInvocationEvidence,
-  ensureReviewAssurance,
   fulfillObligation,
-  hashFindings,
 } from './review/obligations/assurance.js';
+import { ensureReviewAssurance } from '../state/review-dispatch.js';
+import { hashFindings } from './review/findings-hash.js';
 import { ReviewAttestation, ReviewInvocationEvidence } from '../state/evidence.js';
 import { findLatestPendingReviewObligation } from './review/obligations/assurance.js';
 import {
@@ -1498,8 +1498,8 @@ describe('review (standalone flow)', () => {
       });
 
       it('E3: consumeReviewObligation accepts fulfilled obligation (fulfilled -> consumed transition)', async () => {
-        const { consumeReviewObligation, ensureReviewAssurance } =
-          await import('./review/obligations/assurance.js');
+        const { consumeReviewObligation } = await import('./review/obligations/assurance.js');
+        const { ensureReviewAssurance } = await import('../state/review-dispatch.js');
         const assurance = ensureReviewAssurance(undefined);
         const obligation = {
           obligationId: '00000000-0000-0000-0000-000000000001',

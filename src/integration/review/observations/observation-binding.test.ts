@@ -18,14 +18,14 @@ import {
 } from './observation-binding.js';
 import {
   artifactReviewSubjectScope,
-  createReviewAttempt,
   createReviewObligation,
-  ensureReviewAssurance,
   freezeReviewMaterial,
-  hashFindings,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from '../obligations/assurance.js';
+import { createReviewAttempt } from '../obligations/attempt-lifecycle.js';
+import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
+import { hashFindings } from '../findings-hash.js';
 import { mintObservationCapability } from '../obligations/attempt-lifecycle.js';
 import { completedDispatchForInvocation } from '../../../state/evidence-test-constants.js';
 import { validateReviewFindings } from '../validation/review-validation.js';

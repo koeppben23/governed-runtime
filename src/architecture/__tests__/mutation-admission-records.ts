@@ -527,7 +527,7 @@ const RECORDS: Readonly<Record<string, AdmissionRecord>> = {
     config: 'stryker.conf.json',
     reportDigest: '8c78efc0b3f916f8d4d46330cbd371e14c4d5eb9637ce839cabe0fd6bd04bf68',
   },
-  'src/integration/review/dispatch/dispatch-signal.ts': {
+  'src/integration/review/enforcement/dispatch-signal.ts': {
     verifiedAt: '2026-09-21',
     commitSha: 'df9f8b4dcdab11dd554e4d048ea8cb0784671f2b',
     scoreAtAdmission: 100,
@@ -545,7 +545,7 @@ const RECORDS: Readonly<Record<string, AdmissionRecord>> = {
     config: 'stryker.conf.json',
     reportDigest: '8c78efc0b3f916f8d4d46330cbd371e14c4d5eb9637ce839cabe0fd6bd04bf68',
   },
-  'src/integration/review/evidence/findings-hash.ts': {
+  'src/integration/review/findings-hash.ts': {
     verifiedAt: '2026-09-21',
     commitSha: 'df9f8b4dcdab11dd554e4d048ea8cb0784671f2b',
     scoreAtAdmission: 100,

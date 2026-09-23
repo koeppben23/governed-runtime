@@ -17,19 +17,17 @@ import type { ReviewObligation, ReviewAttempt } from '../../../state/evidence.js
 import {
   appendObligationWithAttempt,
   artifactReviewSubjectScope,
-  createAttemptForExistingObligation,
   createObligationAndAttempt,
   createReviewObligation,
   freezeReviewMaterial,
 } from '../obligations/assurance.js';
+import { createAttemptForExistingObligation } from '../obligations/attempt-lifecycle.js';
 import {
   createReviewAttempt,
   mintObservationCapability,
 } from '../obligations/attempt-lifecycle.js';
-import {
-  resolveObservationRevisions,
-  resolveRepositoryObservationAccess,
-} from './observation-access.js';
+import { resolveObservationRevisions } from '../../../state/evidence-review-authority.js';
+import { resolveRepositoryObservationAccess } from './observation-access.js';
 import { renderRepositoryObservationContract } from '../prompting/observation-contract-prompt.js';
 import { renderReviewerTaskPrompt } from '../prompting/prompt-builders.js';
 import { repositoryDiscoveryContext } from '../../test-helpers.js';

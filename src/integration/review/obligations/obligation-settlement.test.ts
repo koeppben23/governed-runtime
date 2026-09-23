@@ -13,12 +13,11 @@ import { describe, expect, it } from 'vitest';
 import { settleReviewObligationAfterAttempt } from './obligation-settlement.js';
 import {
   artifactReviewSubjectScope,
-  createReviewAttempt,
   createReviewObligation,
-  ensureReviewAssurance,
   freezeReviewMaterial,
-  updateAttemptStatus,
 } from './assurance.js';
+import { createReviewAttempt, updateAttemptStatus } from './attempt-lifecycle.js';
+import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
 import type { ReviewAttempt, ReviewObligation } from '../../../state/evidence.js';
 import type { SessionState } from '../../../state/schema.js';
 

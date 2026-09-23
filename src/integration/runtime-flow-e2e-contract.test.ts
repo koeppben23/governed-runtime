@@ -37,11 +37,8 @@ import { run_check } from './tools/validation/run-check-tool.js';
 import { archive } from './tools/simple/archive-tool.js';
 import type { ToolContext } from './tools/helpers.js';
 import type { ReviewFindings, ReviewObligation } from '../state/evidence.js';
-import {
-  hashFindings,
-  REVIEW_CRITERIA_VERSION,
-  REVIEW_MANDATE_DIGEST,
-} from './review/obligations/assurance.js';
+import { hashFindings } from './review/findings-hash.js';
+import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/obligations/assurance.js';
 import { makeState, TICKET, FROZEN_IMPLEMENTATION_BASE } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
 import {

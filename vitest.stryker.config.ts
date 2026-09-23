@@ -50,7 +50,7 @@ export default defineConfig({
       'src/verification/**/*.test.ts',
       'src/integration/review/dispatch/agent-resolution.test.ts',
       'src/integration/review/validation/challenge-policy-evaluation.test.ts',
-      'src/integration/review/dispatch/dispatch-signal.test.ts',
+      'src/integration/review/enforcement/dispatch-signal.test.ts',
       'src/integration/review/enforcement/enforce-before-verdict.test.ts',
       'src/integration/review/enforcement/retry-signal.test.ts',
       'src/integration/review/enforcement/findings-consistency.test.ts',
@@ -67,7 +67,7 @@ export default defineConfig({
 
       'src/integration/mutation-episode-e2e.test.ts',
       'src/integration/review/evidence/reviewed-digest.test.ts',
-      'src/integration/review/evidence/findings-hash.test.ts',
+      'src/integration/review/findings-hash.test.ts',
       'src/hooks/**/*.test.ts',
       'src/mcp-server/**/*.test.ts',
       'src/templates/**/*.test.ts',

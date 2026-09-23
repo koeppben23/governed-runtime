@@ -12,8 +12,8 @@ import { buildReviewDiscoveryContext } from './discovery-context-loader.js';
 import {
   buildDiscoveryContextSection,
   buildRepositoryDiscoverySnapshotSection,
-  type DiscoveryReviewContext,
 } from '../prompting/discovery-context-prompt.js';
+import type { DiscoveryReviewContext } from './discovery-port.js';
 import { resolveReviewAttemptDiscoveryContext } from './discovery-attempt-context.js';
 
 vi.mock('./discovery-context-loader.js', () => ({

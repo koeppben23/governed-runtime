@@ -1,14 +1,12 @@
 /**
- * @module integration/review-assurance
+ * @module integration/review/obligations/assurance
  * @description SSOT helpers for strict independent-review obligations and evidence.
  */
 
 import { randomUUID } from 'node:crypto';
 import { hashText } from '../../../shared/hashing.js';
 import { IntegrationInvariantError } from '../../errors.js';
-export { hashText };
-export { hashFindings } from '../evidence/findings-hash.js';
-import { hashFindings } from '../evidence/findings-hash.js';
+import { hashFindings } from '../findings-hash.js';
 
 import type {
   ReviewAssuranceState,
@@ -40,7 +38,7 @@ import {
 import type { TaskClass } from '../../../state/schema.js';
 import type { ReviewSubjectScope } from '../../../state/evidence-review.js';
 import type { RepositoryEvidenceFreeze } from '../../../state/evidence-review-freeze.js';
-import { assertRepositoryFreezeCoherence } from '../evidence/freeze-coherence.js';
+import { assertRepositoryFreezeCoherence } from './freeze-coherence.js';
 // Static import - mandate content is a constant in ESM
 import { REVIEWER_AGENT } from '../../../templates/mandates.js';
 export const REVIEW_CRITERIA_VERSION = 'p42-v1';
@@ -98,20 +96,8 @@ export function artifactReviewSubjectScope(
   };
 }
 
-export {
-  emptyReviewAssurance,
-  ensureReviewAssurance,
-  createReviewAttempt,
-  createAttemptForExistingObligation,
-  appendReviewAttempt,
-  resolveAttempt,
-  resolveEvidenceAuthorizingAttempt,
-  EVIDENCE_AUTHORIZING_ATTEMPT_STATUSES,
-  findBindableAttempt,
-  updateAttemptStatus,
-} from './attempt-lifecycle.js';
+import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
 import {
-  ensureReviewAssurance,
   createReviewAttempt,
   appendReviewAttempt,
   staleObligationAttempts,

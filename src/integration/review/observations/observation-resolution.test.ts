@@ -4,11 +4,8 @@ import * as path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeState } from '../../../fixtures.js';
 import { readState } from '../../../adapters/persistence.js';
-import {
-  createReviewAttempt,
-  createReviewObligation,
-  freezeReviewMaterial,
-} from '../obligations/assurance.js';
+import { createReviewAttempt } from '../obligations/attempt-lifecycle.js';
+import { createReviewObligation, freezeReviewMaterial } from '../obligations/assurance.js';
 import { mintObservationCapability } from '../obligations/attempt-lifecycle.js';
 import { repositoryDiscoveryContext } from '../../test-helpers.js';
 

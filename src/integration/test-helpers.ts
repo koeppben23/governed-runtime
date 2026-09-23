@@ -29,9 +29,9 @@ import {
   REVIEW_MANDATE_DIGEST,
   buildInvocationEvidence,
   findLatestObligation,
-  hashFindings,
-  hashText,
 } from './review/obligations/assurance.js';
+import { hashFindings } from './review/findings-hash.js';
+import { hashText } from '../shared/hashing.js';
 import { mintObservationCapabilityIfResolvable } from './review/obligations/attempt-lifecycle.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { completedDispatchForInvocation } from '../state/evidence-test-constants.js';

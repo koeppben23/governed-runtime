@@ -11,10 +11,12 @@
  *
  * Both directions are enforced: an undeclared edge (new coupling) and a stale
  * declared edge (obsolete coupling) fail. There is no debt baseline and no
- * cycle carve-out — the declared set IS the contract, including the zone cycles
- * that the bounded context legitimately contains today. Reducing those cycles
- * through dependency inversion is a deliberate follow-up, not an implicit
- * cleanup of a structural move.
+ * cycle carve-out — the declared set IS the contract.
+ *
+ * Graph shape: direct mutual zone pairs are a hard gate (`mutualZonePairs`
+ * must be empty). Longer cycles (length >= 3) remain permitted and are
+ * reported as a metric (`reviewZoneCycles`); a fully acyclic review zone graph
+ * is a separate architecture goal, not an implicit requirement of this policy.
  *
  * Facade contract: `integration/review/index.ts` is the public composition
  * surface. Its outgoing edges are excluded from the zone graph (it composes
@@ -31,6 +33,7 @@ import * as ts from 'typescript';
 
 import { isTestSourcePath } from './module-classification.js';
 import type { IntegrationPlacementZone } from './integration-placement-policy.js';
+import { stronglyConnectedComponents, type ModuleEdge } from './module-graph.js';
 
 /** Public facade of the review bounded context. */
 const REVIEW_FACADE_FILE = 'integration/review/index.ts';
@@ -55,7 +58,6 @@ export const DECLARED_REVIEW_ZONE_EDGES: ReadonlySet<string> = new Set([
   'review -> review/enforcement',
   'review -> review/prompting',
   'review/context -> review',
-  'review/context -> review/prompting',
   'review/dispatch -> review',
   'review/dispatch -> review/context',
   'review/dispatch -> review/enforcement',
@@ -63,7 +65,6 @@ export const DECLARED_REVIEW_ZONE_EDGES: ReadonlySet<string> = new Set([
   'review/dispatch -> review/obligations',
   'review/dispatch -> review/observations',
   'review/dispatch -> review/prompting',
-  'review/enforcement -> review/dispatch',
   'review/enforcement -> review/obligations',
   'review/evidence -> review',
   'review/evidence -> review/context',
@@ -71,20 +72,14 @@ export const DECLARED_REVIEW_ZONE_EDGES: ReadonlySet<string> = new Set([
   'review/evidence -> review/observations',
   'review/obligations -> review',
   'review/obligations -> review/context',
-  'review/obligations -> review/dispatch',
-  'review/obligations -> review/evidence',
-  'review/obligations -> review/observations',
   'review/observations -> review/enforcement',
   'review/observations -> review/obligations',
-  'review/observations -> review/validation',
   'review/prompting -> review/context',
-  'review/prompting -> review/dispatch',
   'review/prompting -> review/enforcement',
   'review/prompting -> review/evidence',
   'review/prompting -> review/obligations',
   'review/validation -> review',
   'review/validation -> review/enforcement',
-  'review/validation -> review/evidence',
   'review/validation -> review/obligations',
   'review/validation -> review/observations',
 ]);
@@ -190,8 +185,13 @@ export function resolveSpecifier(importerRel: string, specifier: string): string
   return `${joined}.ts`;
 }
 
-export function analyzeReviewZonePolicy(input: ReviewZoneAnalysisInput): ReviewZoneViolation[] {
-  const violations: ReviewZoneViolation[] = [];
+interface ReviewZoneObservation {
+  readonly facadeViolations: readonly ReviewZoneViolation[];
+  readonly observedEdges: ReadonlySet<string>;
+}
+
+function observeReviewZones(input: ReviewZoneAnalysisInput): ReviewZoneObservation {
+  const facadeViolations: ReviewZoneViolation[] = [];
   const zoneByDir = new Map(input.zones.map((zone) => [zone.dir, zone]));
   const observed = new Set<string>();
 
@@ -200,7 +200,7 @@ export function analyzeReviewZonePolicy(input: ReviewZoneAnalysisInput): ReviewZ
     for (const specifier of relativeSpecifiers(source.content)) {
       const target = resolveSpecifier(source.rel, specifier);
       if (target === REVIEW_FACADE_FILE) {
-        violations.push({
+        facadeViolations.push({
           rule: 'production-facade-import',
           file: source.rel,
           message: `production code must not import the review facade (${specifier})`,
@@ -216,7 +216,58 @@ export function analyzeReviewZonePolicy(input: ReviewZoneAnalysisInput): ReviewZ
     }
   }
 
-  for (const edge of observed) {
+  return { facadeViolations, observedEdges: observed };
+}
+
+/** The observed review zone edge set, exposed for graph-shape assertions. */
+export function reviewZoneEdges(
+  input: Pick<ReviewZoneAnalysisInput, 'sources' | 'zones'>,
+): ReadonlySet<string> {
+  return observeReviewZones({ ...input, declaredEdges: new Set() }).observedEdges;
+}
+
+/** Every zone pair that observes BOTH directions, rendered as `a <-> b`. */
+export function mutualZonePairs(edges: Iterable<string>): readonly string[] {
+  const directed = new Set(edges);
+  const pairs: string[] = [];
+  for (const edge of directed) {
+    const [from, to] = edge.split(' -> ');
+    if (from === undefined || to === undefined) continue;
+    const reverse = zoneEdgeKey(to, from);
+    if (!directed.has(reverse)) continue;
+    const [left, right] = [from, to].sort();
+    const canonical = `${left} <-> ${right}`;
+    if (!pairs.includes(canonical)) pairs.push(canonical);
+  }
+  return pairs.sort();
+}
+
+/**
+ * Remaining review zone cycles (length ≥ 3 — direct mutual pairs are excluded
+ * by the hard gate) as a deterministic metric. This is reported, not gated:
+ * a fully acyclic review zone graph is a separate architecture goal.
+ */
+export function reviewZoneCycles(edges: Iterable<string>): readonly (readonly string[])[] {
+  const edgeList: ModuleEdge[] = [];
+  const zones = new Set<string>();
+  for (const edge of edges) {
+    const [from, to] = edge.split(' -> ');
+    if (from === undefined || to === undefined) continue;
+    zones.add(from);
+    zones.add(to);
+    edgeList.push({ from, to });
+  }
+  return stronglyConnectedComponents([...zones], edgeList).filter(
+    (component) => component.length >= 2,
+  );
+}
+
+export function analyzeReviewZonePolicy(input: ReviewZoneAnalysisInput): ReviewZoneViolation[] {
+  const violations: ReviewZoneViolation[] = [];
+  const { facadeViolations, observedEdges } = observeReviewZones(input);
+  violations.push(...facadeViolations);
+
+  for (const edge of observedEdges) {
     if (!input.declaredEdges.has(edge)) {
       violations.push({
         rule: 'undeclared-zone-edge',
@@ -226,7 +277,7 @@ export function analyzeReviewZonePolicy(input: ReviewZoneAnalysisInput): ReviewZ
     }
   }
   for (const edge of input.declaredEdges) {
-    if (!observed.has(edge)) {
+    if (!observedEdges.has(edge)) {
       violations.push({
         rule: 'stale-zone-edge',
         file: edge,

@@ -14,9 +14,9 @@ import {
   appendObligationWithAttempt,
   artifactReviewSubjectScope,
   createReviewObligation,
-  ensureReviewAssurance,
   freezeReviewMaterial,
 } from '../obligations/assurance.js';
+import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
 import { validatePreBindFindings } from './pre-bind-findings.js';
 import type { ReviewAttempt, ReviewObligation } from '../../../state/evidence.js';
 

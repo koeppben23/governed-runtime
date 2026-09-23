@@ -1,5 +1,5 @@
 /**
- * @module integration/review/dispatch-signal
+ * @module integration/review/enforcement/dispatch-signal
  * @description Typed review-dispatch signal carried on FlowGuard tool responses.
  *
  * This module owns the single structured contract that replaced the overloaded

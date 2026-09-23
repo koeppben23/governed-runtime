@@ -13,7 +13,7 @@
 
 import { readState } from '../../../adapters/persistence.js';
 import type { SessionState } from '../../../state/schema.js';
-import { ensureReviewAssurance } from '../../review/obligations/assurance.js';
+import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
 import {
   resolveReviewDispatchAuthority,
   reviewObligationResponseFields,

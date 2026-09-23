@@ -11,7 +11,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createReviewAttempt, createReviewObligation } from '../obligations/assurance.js';
+import { createReviewAttempt } from '../obligations/attempt-lifecycle.js';
+import { createReviewObligation } from '../obligations/assurance.js';
 import { mintObservationCapability } from '../obligations/attempt-lifecycle.js';
 import type { SessionState } from '../../../state/schema.js';
 import {
@@ -241,7 +242,7 @@ describe('replayObservationCaptures', () => {
 
   it('CORNER: attempt without capability mints nothing', async () => {
     const { replayObservationCaptures } = await import('./observation-replay.js');
-    const { createReviewAttempt } = await import('../obligations/assurance.js');
+    const { createReviewAttempt } = await import('../obligations/attempt-lifecycle.js');
     const attempt = createReviewAttempt({
       obligationId: state.reviewAssurance!.obligations[0]!.obligationId,
       obligationType: 'implement',

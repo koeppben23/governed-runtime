@@ -30,11 +30,11 @@ import {
   REVIEW_MANDATE_DIGEST,
   appendInvocationEvidence,
   buildInvocationEvidence,
-  ensureReviewAssurance,
   fulfillObligation,
-  hashFindings,
-  updateAttemptStatus,
 } from '../../review/obligations/assurance.js';
+import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
+import { hashFindings } from '../../review/findings-hash.js';
+import { updateAttemptStatus } from '../../review/obligations/attempt-lifecycle.js';
 import { completedDispatchForInvocation } from '../../../state/evidence-test-constants.js';
 import type { ReviewFindings } from '../../../state/evidence.js';
 

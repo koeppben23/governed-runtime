@@ -11,14 +11,14 @@ import type { MutableSession } from '../helpers.js';
 import type { SessionState } from '../../../state/schema.js';
 import type { LoopVerdict } from '../../../state/evidence.js';
 import type { ArchitectureClaimDeclarationInput } from '../../../state/proofgraph-approval.js';
-import { ensureReviewAssurance } from '../../review/obligations/assurance.js';
+import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
 import type { ReviewDispatchAuthority } from '../../review/dispatch/dispatch-authority.js';
 import { classifyToolCallMode } from '../review-validation-mode.js';
 import {
   resolveRuntimeReviewPlatform,
   resolveReviewOrchestrationMode,
 } from '../../review/dispatch/orchestration-mode.js';
-import { buildChildSessionReviewInstruction } from '../../review/prompting/child-session-instruction.js';
+import { buildChildSessionReviewInstruction } from '../../review/dispatch/child-session-instruction.js';
 
 // ─── Shared Types ─────────────────────────────────────────────────────────
 

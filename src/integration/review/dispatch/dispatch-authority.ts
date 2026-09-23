@@ -21,11 +21,9 @@ import type {
   ReviewObligation,
 } from '../../../state/evidence.js';
 import { hasReleasedDispatch } from '../../../state/review-dispatch.js';
-import {
-  ensureReviewAssurance,
-  findBindableAttempt,
-  isCurrentReviewGeneration,
-} from '../obligations/assurance.js';
+import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
+import { findBindableAttempt } from '../../../state/review-continuation.js';
+import { isCurrentReviewGeneration } from '../obligations/assurance.js';
 
 /** The exact obligation/attempt pair a review dispatch may be bound to. */
 export interface ReviewDispatchAuthority {

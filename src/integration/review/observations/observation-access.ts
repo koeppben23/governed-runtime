@@ -23,19 +23,8 @@
  */
 
 import type { ReviewAttempt, ReviewObligation } from '../../../state/evidence.js';
-import { resolveFrozenRevisionTarget } from '../../../state/evidence-review-authority.js';
+import { resolveObservationRevisions } from '../../../state/evidence-review-authority.js';
 import type { RepositoryEvidenceFreeze } from '../../../state/evidence-review-freeze.js';
-
-/** The exact frozen revisions an obligation can actually back with evidence. */
-export function resolveObservationRevisions(
-  obligation: ReviewObligation,
-): readonly ('base' | 'head')[] {
-  const revisions: ('base' | 'head')[] = [];
-  for (const revision of ['base', 'head'] as const) {
-    if (resolveFrozenRevisionTarget(obligation, revision)) revisions.push(revision);
-  }
-  return revisions;
-}
 
 export type RepositoryObservationAccessUnavailableReason = 'no_frozen_authority';
 

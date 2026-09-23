@@ -279,9 +279,9 @@ export function verifyFrozenMaterialForObligation(
 }
 
 // ─── Assurance container primitives ──────────────────────────────────────────
-// `emptyReviewAssurance` / `ensureReviewAssurance` and the durable dispatch
-// ledger helpers live in `state/review-dispatch.ts`; imported here for local
-// use and re-exported for the historical import surface.
+// `ensureReviewAssurance` and the durable dispatch ledger helpers live in
+// `state/review-dispatch.ts`; imported here for local use and re-exported for
+// the continuation callers that need the dispatch ledger alongside it.
 
 import { ensureReviewAssurance, hasReleasedDispatch } from './review-dispatch.js';
 
@@ -289,7 +289,6 @@ export {
   abandonReviewDispatch,
   appendReviewDispatch,
   completeReviewDispatch,
-  emptyReviewAssurance,
   ensureReviewAssurance,
   hasReleasedDispatch,
   markDispatchOutcomeUnknown,

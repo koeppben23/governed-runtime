@@ -25,11 +25,9 @@ import type {
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import type { ReviewObligation, ReviewObligationType } from '../../../state/evidence.js';
 import { hashText } from '../../../shared/hashing.js';
-import {
-  ensureReviewAssurance,
-  findBindableAttempt,
-  isCurrentReviewGeneration,
-} from '../obligations/assurance.js';
+import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
+import { findBindableAttempt } from '../../../state/review-continuation.js';
+import { isCurrentReviewGeneration } from '../obligations/assurance.js';
 import {
   hasReleasedDispatch,
   verifyFrozenMaterialForObligation,
@@ -37,7 +35,7 @@ import {
 import { renderReviewerTaskPrompt } from '../prompting/prompt-builders.js';
 import { reviewerPromptTypeForTask } from './reviewer-task-type.js';
 import { renderArtifactAnchorContract } from '../context/frozen-reviewer-context.js';
-import { resolveObservationRevisions } from '../observations/observation-access.js';
+import { resolveObservationRevisions } from '../../../state/evidence-review-authority.js';
 import { buildReviewChallengeContract } from '../obligations/challenge-contract.js';
 import {
   buildReviewerProofContext,

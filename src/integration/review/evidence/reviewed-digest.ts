@@ -26,7 +26,7 @@
  */
 
 import type { ReviewDiagnosticLogger } from '../review-logger-port.js';
-import { ensureReviewAssurance } from '../obligations/assurance.js';
+import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
 import type {
   ReviewAssuranceState,
   ReviewFindings,
@@ -34,7 +34,7 @@ import type {
   ReviewObligation,
   ReviewObligationType,
 } from '../../../state/evidence.js';
-import { hashFindings } from './findings-hash.js';
+import { hashFindings } from '../findings-hash.js';
 
 /** Full review identity of the findings displayed at a review gate. */
 export interface ReviewedArtifactIdentity {

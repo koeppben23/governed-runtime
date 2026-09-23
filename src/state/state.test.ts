@@ -38,9 +38,9 @@ import {
 import {
   artifactReviewSubjectScope,
   createReviewObligation,
-  ensureReviewAssurance,
   freezeReviewMaterial,
 } from '../integration/review/obligations/assurance.js';
+import { ensureReviewAssurance } from './review-dispatch.js';
 import { makeState, FIXED_TIME, FIXED_UUID, FIXED_SESSION_UUID } from '../fixtures.js';
 import { makePlanRevision } from './evidence-test-constants.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';

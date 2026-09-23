@@ -11,29 +11,27 @@
 
 import { describe, it, expect } from 'vitest';
 import { PERF_ENABLED } from '../../../test-policy.js';
+import { emptyReviewAssurance, ensureReviewAssurance } from '../../../state/review-dispatch.js';
 import {
-  emptyReviewAssurance,
-  ensureReviewAssurance,
   createReviewObligation,
   createObligationAndAttempt,
   appendReviewObligation,
   findLatestObligation,
   consumeReviewObligation,
-  hashText,
-  hashFindings,
   buildInvocationEvidence,
   hasEvidenceReuse,
   findAcceptedInvocationForFindings,
   validateStrictAttestation,
-  findBindableAttempt,
-  createReviewAttempt,
   appendObligationWithAttempt,
-  createAttemptForExistingObligation,
   artifactReviewSubjectScope,
   freezeReviewMaterial,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './assurance.js';
+import { hashText } from '../../../shared/hashing.js';
+import { hashFindings } from '../findings-hash.js';
+import { findBindableAttempt } from '../../../state/review-continuation.js';
+import { createReviewAttempt, createAttemptForExistingObligation } from './attempt-lifecycle.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import type {
   ReviewObligation,

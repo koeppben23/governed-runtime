@@ -14,7 +14,7 @@ import {
   validateReviewFindingsScope,
   type FindingWithRelation,
 } from '../enforcement/findings-consistency.js';
-import { evaluateRepositoryEvidenceBinding } from '../validation/review-validation-evidence.js';
+import { evaluateRepositoryEvidenceBinding } from './review-validation-evidence.js';
 
 export type PreBindFindingsResult =
   | { readonly ok: true }

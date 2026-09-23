@@ -23,8 +23,8 @@ import type {
   ReviewAttemptDiscoveryContext,
 } from '../../../state/evidence.js';
 import { buildReviewDiscoveryContext } from './discovery-context-loader.js';
-import type { DiscoveryReviewContext } from '../prompting/discovery-context-prompt.js';
 import type {
+  DiscoveryReviewContext,
   ReviewDiscoveryDriftProjection,
   ReviewDiscoveryHealth,
   ReviewDiscoveryProvider,

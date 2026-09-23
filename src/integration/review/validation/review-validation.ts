@@ -1,5 +1,5 @@
 /**
- * @module integration/tools/review-validation
+ * @module integration/review/validation/review-validation
  * @description Shared validation logic for independent review findings.
  *
  * Single authority for all review-findings validation rules shared by the
@@ -20,12 +20,8 @@
 
 import type { ReviewFindings } from '../../../state/evidence.js';
 import { formatBlocked } from '../../blocked-result.js';
-
-import {
-  findLatestObligation,
-  hashFindings,
-  validateStrictAttestation,
-} from '../obligations/assurance.js';
+import { findLatestObligation, validateStrictAttestation } from '../obligations/assurance.js';
+import { hashFindings } from '../findings-hash.js';
 import type {
   ReviewAssuranceState,
   ReviewObligationType,
@@ -34,14 +30,15 @@ import type {
 } from '../../../state/evidence.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import {
+  acceptanceRejectionVars,
   getReviewFindingsAcceptanceRejection,
   hasValidStructuredInvocationContract,
-  formatAcceptanceRejection,
 } from './review-validation-acceptance.js';
+import { resolveStructuredFindings } from './review-validation-structured-evidence.js';
 import {
-  resolveStructuredFindings,
-  type StructuredFindingsResolution,
-} from './review-validation-structured-evidence.js';
+  structuredResolutionFailure,
+  type ReviewValidationFailure,
+} from './review-validation-failure.js';
 import {
   validateChallengeConsistency,
   type ChallengeConsistencyInput,
@@ -51,8 +48,7 @@ import {
   validateReviewFindingsScope,
   type FindingWithRelation,
 } from '../enforcement/findings-consistency.js';
-import { checkRepositoryEvidenceBinding } from './review-validation-evidence.js';
-import type { ReviewDiagnosticLogger } from '../review-logger-port.js';
+import { checkRepositoryEvidenceBinding } from '../observations/review-validation-evidence.js';
 
 // ─── Validation Context ───────────────────────────────────────────────────────
 
@@ -364,12 +360,16 @@ function validateStrictReviewRejections(binding: StrictReviewBinding): string | 
   const obligationRejection = getReviewFindingsAcceptanceRejection({
     obligation: binding.obligation,
   });
-  if (obligationRejection) return formatAcceptanceRejection(obligationRejection);
+  if (obligationRejection) {
+    return formatBlocked(obligationRejection.reason, acceptanceRejectionVars(obligationRejection));
+  }
   const invocationRejection = getReviewFindingsAcceptanceRejection({
     obligation: binding.obligation,
     invocation: binding.invocation,
   });
-  return invocationRejection ? formatAcceptanceRejection(invocationRejection) : null;
+  return invocationRejection
+    ? formatBlocked(invocationRejection.reason, acceptanceRejectionVars(invocationRejection))
+    : null;
 }
 
 function validateStrictReviewIdentity(
@@ -480,8 +480,6 @@ interface StructuredResolutionContext {
     readonly reviewerUnavailable?: boolean | undefined;
     readonly verdict?: string | undefined;
   };
-  /** Injected diagnostic logger (review/ must not import logging/). */
-  readonly logger: ReviewDiagnosticLogger;
   readonly state: {
     readonly assurance?: ReviewAssuranceState | undefined;
     readonly sessionId: string;
@@ -496,24 +494,32 @@ interface StructuredResolutionContext {
  * Check whether reviewerUnavailable is a misuse: the reviewer WAS spawned
  * (invocations exist) but the parent is signalling unavailability.
  */
-function checkReviewerUnavailableMisuse(ctx: StructuredResolutionContext): string | null {
+function checkReviewerUnavailableMisuse(
+  ctx: StructuredResolutionContext,
+): ReviewValidationFailure | null {
   if (ctx.input.reviewerUnavailable !== true) return null;
   const existingInvs =
     ctx.state.assurance?.invocations.filter(
       (inv) => inv.obligationId === ctx.pendingObligation?.obligationId,
     ) ?? [];
   if (existingInvs.length > 0) {
-    return formatBlocked('INVALID_REVIEW_TOOL_SEQUENCE', {
-      obligationId: ctx.pendingObligation?.obligationId ?? 'unknown',
-      reason:
-        'reviewerUnavailable submitted but a host-structured reviewer invocation already exists for this obligation. Use its bound reviewVerdict instead.',
-    });
+    return {
+      code: 'INVALID_REVIEW_TOOL_SEQUENCE',
+      vars: {
+        obligationId: ctx.pendingObligation?.obligationId ?? 'unknown',
+        reason:
+          'reviewerUnavailable submitted but a host-structured reviewer invocation already exists for this obligation. Use its bound reviewVerdict instead.',
+      },
+    };
   }
-  return formatBlocked('REVIEWER_UNAVAILABLE_STRICT', {
-    reason: 'reviewer unavailable; independent host-captured reviewer evidence remains required',
-    recovery:
-      'Invoke the structured reviewer transport; the host captures its findings bound to the active obligation. flowguard_decision does not replace review evidence.',
-  });
+  return {
+    code: 'REVIEWER_UNAVAILABLE_STRICT',
+    vars: {
+      reason: 'reviewer unavailable; independent host-captured reviewer evidence remains required',
+      recovery:
+        'Invoke the structured reviewer transport; the host captures its findings bound to the active obligation. flowguard_decision does not replace review evidence.',
+    },
+  };
 }
 
 /**
@@ -524,7 +530,7 @@ function checkReviewerUnavailableMisuse(ctx: StructuredResolutionContext): strin
 export type StructuredResolutionResult =
   | {
       readonly kind: 'blocked';
-      readonly blocked: ReturnType<typeof formatBlocked>;
+      readonly failure: ReviewValidationFailure;
     }
   | {
       readonly kind: 'resolved';
@@ -537,7 +543,7 @@ export function resolveStructuredEffectiveFindings(
 ): StructuredResolutionResult {
   if (ctx.input.reviewerUnavailable === true) {
     const misuse = checkReviewerUnavailableMisuse(ctx);
-    if (misuse) return { kind: 'blocked', blocked: misuse };
+    if (misuse) return { kind: 'blocked', failure: misuse };
   }
   return resolveCapturedEvidenceFindings(ctx);
 }
@@ -551,7 +557,6 @@ function resolveCapturedEvidenceFindings(
   ctx: StructuredResolutionContext,
 ): StructuredResolutionResult {
   const resolution = resolveStructuredFindings(
-    ctx.logger,
     ctx.state.assurance,
     ctx.pendingObligation,
     ctx.state.unresolvedImplementationChallengeIds,
@@ -567,33 +572,5 @@ function resolveCapturedEvidenceFindings(
       evidenceInvocationId: resolution.invocationId,
     };
   }
-  return { kind: 'blocked', blocked: formatStructuredResolutionFailure(resolution) };
-}
-
-/** Single formatting authority for structured-evidence resolution failures. */
-export function formatStructuredResolutionFailure(
-  resolution: Exclude<StructuredFindingsResolution, { kind: 'resolved' }>,
-): string {
-  if (resolution.kind === 'rejected') return formatAcceptanceRejection(resolution.rejection);
-  if (resolution.kind === 'incoherent') {
-    return formatBlocked(
-      resolution.code,
-      Object.fromEntries(
-        Object.entries(resolution.details).map(([key, value]) => [key, String(value)]),
-      ),
-    );
-  }
-  if (resolution.kind === 'attempt_lineage_unavailable') {
-    return formatBlocked('REVIEW_ATTEMPT_LINEAGE_UNAVAILABLE', {
-      invocationId: resolution.invocationId,
-      obligationId: resolution.obligationId,
-    });
-  }
-  if (resolution.kind === 'unparseable') {
-    return formatBlocked('SUBAGENT_EVIDENCE_MISSING', { reason: resolution.detail });
-  }
-  if (resolution.kind === 'not_found') {
-    return formatBlocked('SUBAGENT_EVIDENCE_MISSING', { reason: 'no matching structured capture' });
-  }
-  return formatBlocked(resolution.code, { obligationId: resolution.obligationId });
+  return { kind: 'blocked', failure: structuredResolutionFailure(resolution) };
 }

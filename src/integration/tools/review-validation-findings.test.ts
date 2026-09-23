@@ -1,10 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import {
-  formatStructuredResolutionFailure,
   resolveStructuredEffectiveFindings,
   validateReviewFindings,
   type ReviewFindingsValidationContext,
 } from '../review/validation/review-validation.js';
+import {
+  formatStructuredResolutionFailure,
+  structuredResolutionFailure,
+} from '../review/validation/review-validation-failure.js';
 import { resolveStructuredFindings } from '../review/validation/review-validation-structured-evidence.js';
 
 const testLogger = { warn: () => {} };
@@ -12,10 +15,10 @@ import type { ReviewFindings } from '../../state/evidence.js';
 import type { ReviewChallenge } from '../../state/evidence-review.js';
 import {
   freezeReviewMaterial,
-  hashFindings,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from '../review/obligations/assurance.js';
+import { hashFindings } from '../review/findings-hash.js';
 
 // ─── Test Fixtures ────────────────────────────────────────────────────────────
 
@@ -1079,14 +1082,14 @@ describe('validateReviewFindings — branch and payload contracts', () => {
     const findings = strictFindings();
     const assurance = strictAssuranceFixture(findings);
     const resolved = resolveStructuredEffectiveFindings({
-      logger: testLogger,
       pendingObligation: assurance.obligations[0]!,
       expected: { obligationType: 'plan', iteration: 0, planVersion: 1 },
       input: { reviewerUnavailable: true },
       state: { assurance, sessionId: 'ses_parent' },
     });
     expect(resolved.kind).toBe('blocked');
-    const parsed = blockedPayload((resolved as { blocked: string }).blocked);
+    if (resolved.kind !== 'blocked') throw new Error('expected blocked resolution');
+    const parsed = blockedPayload(formatStructuredResolutionFailure(testLogger, resolved.failure));
     expect(parsed.code).toBe('INVALID_REVIEW_TOOL_SEQUENCE');
     expect(String(parsed.message)).toContain(OBLIGATION_ID);
     expect(String(parsed.message)).toContain('reviewerUnavailable submitted');
@@ -1097,14 +1100,14 @@ describe('validateReviewFindings — branch and payload contracts', () => {
     const assurance = strictAssuranceFixture(findings);
     assurance.invocations.splice(0);
     const resolved = resolveStructuredEffectiveFindings({
-      logger: testLogger,
       pendingObligation: assurance.obligations[0]!,
       expected: { obligationType: 'plan', iteration: 0, planVersion: 1 },
       input: { reviewerUnavailable: true },
       state: { assurance, sessionId: 'ses_parent' },
     });
     expect(resolved.kind).toBe('blocked');
-    const parsed = blockedPayload((resolved as { blocked: string }).blocked);
+    if (resolved.kind !== 'blocked') throw new Error('expected blocked resolution');
+    const parsed = blockedPayload(formatStructuredResolutionFailure(testLogger, resolved.failure));
     expect(parsed.code).toBe('REVIEWER_UNAVAILABLE_STRICT');
     expect(String(parsed.message)).toContain('reviewer unavailable');
     expect(String(parsed.recovery)).toContain('structured reviewer transport');
@@ -1115,7 +1118,6 @@ describe('validateReviewFindings — branch and payload contracts', () => {
     const assurance = strictAssuranceFixture(findings);
     assurance.attempts[0] = { ...assurance.attempts[0]!, childSessionId: 'ses_child' };
     const resolved = resolveStructuredEffectiveFindings({
-      logger: testLogger,
       pendingObligation: assurance.obligations[0]!,
       expected: { obligationType: 'plan', iteration: 0, planVersion: 1 },
       input: {},
@@ -1127,10 +1129,13 @@ describe('validateReviewFindings — branch and payload contracts', () => {
 
   it('formats rejected structured resolutions through the acceptance authority', () => {
     const parsed = blockedPayload(
-      formatStructuredResolutionFailure({
-        kind: 'rejected',
-        rejection: { reason: 'SUBAGENT_EVIDENCE_REUSED', status: 'invocation_consumed' },
-      }),
+      formatStructuredResolutionFailure(
+        testLogger,
+        structuredResolutionFailure({
+          kind: 'rejected',
+          rejection: { reason: 'SUBAGENT_EVIDENCE_REUSED', status: 'invocation_consumed' },
+        }),
+      ),
     );
     expect(parsed.error).toBe(true);
     expect(parsed.code).toBe('SUBAGENT_EVIDENCE_REUSED');
@@ -1138,40 +1143,79 @@ describe('validateReviewFindings — branch and payload contracts', () => {
 
   it('formats incoherent structured resolutions with stringified details', () => {
     const parsed = blockedPayload(
-      formatStructuredResolutionFailure({
-        kind: 'incoherent',
-        code: 'REVIEW_FINDINGS_INCOHERENT',
-        details: { index: 1, flag: true },
-        invocationId: INVOCATION_ID,
-        attemptId: '55555555-5555-4555-8555-555555555555',
-      }),
+      formatStructuredResolutionFailure(
+        testLogger,
+        structuredResolutionFailure({
+          kind: 'incoherent',
+          code: 'SUBAGENT_VERDICT_FINDINGS_INCOHERENT',
+          details: { index: 1, flag: true },
+          invocationId: INVOCATION_ID,
+          attemptId: '55555555-5555-4555-8555-555555555555',
+        }),
+      ),
     );
-    expect(parsed.code).toBe('REVIEW_FINDINGS_INCOHERENT');
+    expect(parsed.code).toBe('SUBAGENT_VERDICT_FINDINGS_INCOHERENT');
   });
 
   it('formats attempt-lineage-unavailable structured resolutions', () => {
     const parsed = blockedPayload(
-      formatStructuredResolutionFailure({
-        kind: 'attempt_lineage_unavailable',
-        invocationId: INVOCATION_ID,
-        obligationId: OBLIGATION_ID,
-      }),
+      formatStructuredResolutionFailure(
+        testLogger,
+        structuredResolutionFailure({
+          kind: 'attempt_lineage_unavailable',
+          invocationId: INVOCATION_ID,
+          obligationId: OBLIGATION_ID,
+        }),
+      ),
     );
     expect(parsed.code).toBe('REVIEW_ATTEMPT_LINEAGE_UNAVAILABLE');
     expect(String(parsed.message)).toContain(INVOCATION_ID);
     expect(String(parsed.message)).toContain(OBLIGATION_ID);
   });
 
-  it('formats unparseable structured resolutions', () => {
-    const parsed = blockedPayload(
-      formatStructuredResolutionFailure({ kind: 'unparseable', detail: 'invalid JSON at 3' }),
-    );
+  it('formats unparseable structured resolutions and keeps diagnostics out of the envelope', () => {
+    const logged: Array<{ service: string; message: string; extra?: Record<string, unknown> }> = [];
+    const logger = {
+      warn: (service: string, message: string, extra?: Record<string, unknown>) => {
+        logged.push(extra === undefined ? { service, message } : { service, message, extra });
+      },
+    };
+    const failure = structuredResolutionFailure({
+      kind: 'unparseable',
+      detail: 'invalid JSON at 3',
+      diagnostics: {
+        obligationId: OBLIGATION_ID,
+        invocationId: INVOCATION_ID,
+        issues: ['findings.0.overallVerdict: Required'],
+      },
+    });
+    const raw = formatStructuredResolutionFailure(logger, failure);
+    const parsed = blockedPayload(raw);
     expect(parsed.code).toBe('SUBAGENT_EVIDENCE_MISSING');
     expect(parsed.error).toBe(true);
+    expect(raw).not.toContain(OBLIGATION_ID);
+    expect(raw).not.toContain(INVOCATION_ID);
+    expect(raw).not.toContain('findings.0.overallVerdict');
+    expect(logged).toEqual([
+      {
+        service: 'flowguard_review',
+        message: 'structured captured findings present but unparseable; treated as unparseable',
+        extra: {
+          obligationId: OBLIGATION_ID,
+          invocationId: INVOCATION_ID,
+          issues: ['findings.0.overallVerdict: Required'],
+        },
+      },
+    ]);
   });
 
   it('formats not-found structured resolutions', () => {
-    const parsed = blockedPayload(formatStructuredResolutionFailure({ kind: 'not_found' }));
+    const parsed = blockedPayload(
+      formatStructuredResolutionFailure(
+        testLogger,
+        structuredResolutionFailure({ kind: 'not_found' }),
+      ),
+    );
     expect(parsed.code).toBe('SUBAGENT_EVIDENCE_MISSING');
     expect(parsed.error).toBe(true);
   });
@@ -1202,11 +1246,14 @@ describe('validateReviewFindings — branch and payload contracts', () => {
 
   it('formats invalid structured resolutions with the obligation id', () => {
     const parsed = blockedPayload(
-      formatStructuredResolutionFailure({
-        kind: 'invalid',
-        code: 'REVIEW_FINDINGS_HASH_MISMATCH',
-        obligationId: OBLIGATION_ID,
-      }),
+      formatStructuredResolutionFailure(
+        testLogger,
+        structuredResolutionFailure({
+          kind: 'invalid',
+          code: 'REVIEW_FINDINGS_HASH_MISMATCH',
+          obligationId: OBLIGATION_ID,
+        }),
+      ),
     );
     expect(parsed.code).toBe('REVIEW_FINDINGS_HASH_MISMATCH');
     expect(String(parsed.message)).toContain(OBLIGATION_ID);
@@ -1319,7 +1366,6 @@ describe('resolveStructuredFindings — diagnostics and deferral merges', () => 
     const assurance = assuranceFor(captured);
     mutate(assurance);
     return resolveStructuredFindings(
-      testLogger,
       assurance,
       assurance.obligations[0]!,
       undefined,
@@ -1333,7 +1379,6 @@ describe('resolveStructuredFindings — diagnostics and deferral merges', () => 
   it('returns not_found when obligation or assurance is missing', () => {
     expect(
       resolveStructuredFindings(
-        testLogger,
         undefined,
         null,
         undefined,
