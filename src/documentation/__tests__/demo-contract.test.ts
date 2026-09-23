@@ -167,6 +167,64 @@ describe('java demo workflow contract', () => {
     }
   });
 
+  it('binds the evidence-package verification claim to its executable artifacts', () => {
+    const evidenceDoc = readFileSync(join(DEMO_DIR, 'EVIDENCE_PACKAGE.md'), 'utf8');
+    const verifier = readFileSync(join(DEMO_DIR, 'verify-evidence-package.mjs'), 'utf8');
+    const smokeTest = readFileSync(
+      join(process.cwd(), 'src', 'cli', 'demo-evidence-verify.test.ts'),
+      'utf8',
+    );
+
+    // Scope and limits are stated explicitly, not implied.
+    expect(evidenceDoc).toContain('Explicit limits');
+    expect(evidenceDoc).toContain('Authenticity');
+    expect(evidenceDoc).toContain('archive publication binding');
+    expect(evidenceDoc).toContain('not fully verifiable raw evidence');
+    // The archived regulated snapshot precedes the live verification status.
+    expect(evidenceDoc).toContain('regulatedArchiveStatus: pending');
+
+    // The verifier uses the canonical primitives and rejects misassignment.
+    expect(verifier).toContain("import('@flowguard/core')");
+    expect(verifier).toContain('computeArchiveContentDigest');
+    expect(verifier).toContain('SessionState.safeParse');
+    expect(verifier).toContain('verifyRegulatedCompletionCompleteness');
+    expect(verifier).toContain('snapshotPackage');
+    expect(verifier).toContain('unsafe_manifest_path');
+    expect(verifier).toContain('session_identity_mismatch');
+    expect(verifier).toContain('sharing_archive_not_verifiable');
+    expect(verifier).toContain('cross_session_artifact_duplicate');
+    expect(verifier).toContain('duplicate_session_id');
+    expect(verifier).toContain("requires policy mode 'regulated'");
+    expect(verifier).toContain('regulated_archive_status_invalid');
+    expect(verifier).toContain('exactly one flowguard-package');
+    expect(evidenceDoc).toContain('manually assigned');
+    expect(evidenceDoc).toContain('exactly one `flowguard-package`');
+
+    // The manifest template declares exactly the three canonical flows.
+    const manifestExample = JSON.parse(
+      readFileSync(join(DEMO_DIR, 'evidence-manifest.example.json'), 'utf8'),
+    ) as { schemaVersion?: string; sessions?: Array<{ flow?: string }> };
+    expect(manifestExample.schemaVersion).toBe('demo-evidence-manifest.v1');
+    expect(manifestExample.sessions?.map((session) => session.flow)).toEqual([
+      'architecture',
+      'development',
+      'peer-review',
+    ]);
+
+    // The smoke contract runs the real verifier against real archive paths.
+    expect(smokeTest).toContain('verify-evidence-package.mjs');
+    expect(smokeTest).toContain('archiveCompletionExport');
+    expect(smokeTest).toContain('archiveRegulatedEvidence');
+    expect(smokeTest).toContain('makeTarSpy');
+
+    // Preflight and demo script carry the package and boundary claims.
+    expect(PREFLIGHT_SCRIPT).toContain('verify-evidence-package.mjs');
+    expect(PREFLIGHT_SCRIPT).toContain('evidence-manifest.example.json');
+    expect(PREFLIGHT_SCRIPT).toContain('HOST_CAPABILITY_UNVERIFIED');
+    expect(DEMO_SCRIPT).toContain('HOST_TOOL_PHASE_DENIED');
+    expect(DEMO_SCRIPT).toContain('enforcement:denied');
+  });
+
   it('states that live execution is not in CI but the contract is', () => {
     expect(README).toMatch(/not wired into CI/i);
   });

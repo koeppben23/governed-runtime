@@ -15,8 +15,6 @@
 
 import type { SessionState } from '../../state/schema.js';
 import { resolvePolicyFromSnapshot } from '../../config/policy.js';
-import { DecisionIdentity } from '../../state/evidence-identity.js';
-import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { archiveRegulatedEvidence } from '../../adapters/workspace/archive.js';
 import { verifyRegulatedArchive } from '../../adapters/workspace/archive-verify-chain.js';
 import { readState, PersistenceError } from '../../adapters/persistence.js';
@@ -32,8 +30,15 @@ import {
 import type { SemanticAuditIntent } from '../audit-outbox.js';
 import { reconcilePendingAuditOperations, type AuditDeps } from '../plugin-audit.js';
 import { TOOL_FLOWGUARD_DECISION } from '../tool-names.js';
+import { resolveDecisionSequence } from './decision-audit-intent.js';
+import {
+  commitTerminalDecision,
+  isRegulatedTicketCompletion,
+} from './regulated-completion-decision.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import { serializeError } from '../../logging/error-serialize.js';
+
+export { isRegulatedTicketCompletion };
 
 /**
  * Session-scoped audit dependencies for completion paths that run outside the
@@ -75,14 +80,11 @@ export function createSessionCompletionAuditDeps(input: {
       );
       event.chainHash = appended.chainHash;
     },
-    nextDecisionSequence: async () =>
-      (await readAuditTrail(sessDir)).reduce((max, event) => {
-        const sequence =
-          event.detail.kind === 'decision' && typeof event.detail.decisionSequence === 'number'
-            ? event.detail.decisionSequence
-            : 0;
-        return Math.max(max, sequence);
-      }, 0) + 1,
+    nextDecisionSequence: async () => {
+      const events = await readAuditTrail(sessDir);
+      const current = await readState(sessDir);
+      return resolveDecisionSequence(events, current?.pendingAuditOperations ?? []);
+    },
     log: {
       debug: () => undefined,
       info: (service, message, extra) => getAdapterLogger().info(service, message, extra),
@@ -95,58 +97,6 @@ export function createSessionCompletionAuditDeps(input: {
     tsaProvider: new HttpTimestampAuthorityProvider(),
     timestampVerifier: new PkijsTimestampVerifier(),
   };
-}
-
-/**
- * The exact P26 regulated ticket-completion contract. Recovery, resume, and
- * the completion chain itself must never touch other terminal flows: a
- * regulated ARCH_COMPLETE or REVIEW_COMPLETE session is not a ticket-flow
- * completion and its state must remain byte-semantically untouched.
- */
-export function isRegulatedTicketCompletion(state: SessionState): boolean {
-  return (
-    state.phase === 'COMPLETE' &&
-    state.transition?.to === 'COMPLETE' &&
-    state.transition?.from === 'EXPORT_READY' &&
-    state.transition?.event === 'EXPORT_MATERIALIZED' &&
-    state.policySnapshot.mode === 'regulated' &&
-    !state.error
-  );
-}
-
-/**
- * The approval transition that authorized the export. The terminal state only
- * retains the export transition, so the approval authority is recovered from
- * the durable transition outbox (reconciled or not — operations are retained
- * as correlation evidence).
- */
-function findApprovalTransition(
-  state: SessionState,
-): NonNullable<SessionState['transition']> | null {
-  for (const operation of state.pendingAuditOperations) {
-    if (
-      operation.kind === 'transition' &&
-      operation.transition.from === 'EVIDENCE_REVIEW' &&
-      operation.transition.to === 'EXPORT_READY' &&
-      operation.transition.event === 'APPROVE'
-    ) {
-      return {
-        from: operation.transition.from,
-        to: operation.transition.to,
-        event: operation.transition.event,
-        at: operation.transition.at,
-      };
-    }
-  }
-  const transition = state.transition;
-  if (
-    transition?.from === 'EVIDENCE_REVIEW' &&
-    transition.to === 'EXPORT_READY' &&
-    transition.event === 'APPROVE'
-  ) {
-    return transition;
-  }
-  return null;
 }
 
 /**
@@ -186,21 +136,17 @@ export async function executeRegulatedCompletion(
     fingerprint,
   });
   // A prior attempt may have committed terminal authority before crashing.
-  // The durable outbox checkpoint is the recovery authority: reconcile it
-  // FIRST, then decide from exact terminal audit evidence whether a new
-  // intent is required. Kind-only trail inspection would treat earlier
-  // PLAN_REVIEW decisions or session_created lifecycles as terminal evidence.
+  // The durable outbox checkpoint is the recovery authority: the terminal
+  // decision check and its state-owned commit are one atomic locked
+  // transaction that runs BEFORE any reconciliation, because the archive
+  // order contract requires the decision receipt to precede the export
+  // transition. Kind-only trail inspection would treat earlier PLAN_REVIEW
+  // decisions or session_created lifecycles as terminal evidence.
   const persisted = await readState(sessDir);
   const resuming = persisted !== null && isRegulatedTicketCompletion(persisted);
   let current = resuming ? persisted : resultState;
   let finalState: SessionState;
   try {
-    if (resuming) {
-      current = await reconcileCompletionAuditOperations(sessDir, sessionID, current, auditDeps);
-    }
-    // The terminal decision check and its state-owned commit are one atomic
-    // locked transaction: a concurrent recovery must not both observe the
-    // evidence gap and each create a second terminal intent.
     current = await commitTerminalDecision(sessDir, sessionID, current, auditDeps);
     current = await reconcileCompletionAuditOperations(sessDir, sessionID, current, auditDeps);
 
@@ -355,72 +301,6 @@ export async function resumeRegulatedCompletion(
   return executeRegulatedCompletion(sessDir, fingerprint, sessionID, state, auditDeps);
 }
 
-function isSameDecisionIdentity(detail: Record<string, unknown>, state: SessionState): boolean {
-  const decision = state.reviewDecision;
-  if (!decision) return false;
-  const parsed = DecisionIdentity.safeParse(detail.decisionIdentity);
-  return (
-    parsed.success &&
-    canonicalJsonStringify(parsed.data) === canonicalJsonStringify(decision.decisionIdentity)
-  );
-}
-
-function isTerminalDecisionDetail(detail: Record<string, unknown>, state: SessionState): boolean {
-  const transition = findApprovalTransition(state);
-  const decision = state.reviewDecision;
-  if (!transition || !decision) return false;
-  return (
-    detail.kind === 'decision' &&
-    detail.fromPhase === transition.from &&
-    detail.toPhase === transition.to &&
-    detail.transitionEvent === transition.event &&
-    detail.verdict === decision.verdict &&
-    detail.rationale === decision.rationale &&
-    isSameDecisionIdentity(detail, state) &&
-    detail.decidedAt === decision.decidedAt
-  );
-}
-
-async function hasTerminalDecisionEvidence(sessDir: string, state: SessionState): Promise<boolean> {
-  return (await readAuditTrail(sessDir)).some((event) =>
-    isTerminalDecisionDetail(event.detail, state),
-  );
-}
-
-function hasPendingTerminalDecision(state: SessionState): boolean {
-  return state.pendingAuditOperations.some(
-    (operation) =>
-      operation.kind === 'semantic' &&
-      operation.status !== 'reconciled' &&
-      isTerminalDecisionDetail(operation.semantic.detail, state),
-  );
-}
-
-async function hasTerminalDecisionAuthority(
-  sessDir: string,
-  state: SessionState,
-): Promise<boolean> {
-  return (await hasTerminalDecisionEvidence(sessDir, state)) || hasPendingTerminalDecision(state);
-}
-
-/** Atomic check-and-commit: exactly one terminal decision intent, even under concurrent recovery. */
-async function commitTerminalDecision(
-  sessDir: string,
-  sessionID: string,
-  state: SessionState,
-  auditDeps: AuditDeps,
-): Promise<SessionState> {
-  await withSessionWriteTransaction(sessDir, async () => {
-    const fresh = await readState(sessDir);
-    const authority = fresh && isRegulatedTicketCompletion(fresh) ? fresh : state;
-    if (await hasTerminalDecisionAuthority(sessDir, authority)) return;
-    await writeStateWithArtifactsAndAuditOperations(sessDir, authority, undefined, [
-      await decisionIntent(sessDir, authority, auditDeps, sessionID),
-    ]);
-  });
-  return (await readState(sessDir)) ?? state;
-}
-
 function isTerminalLifecycleDetail(detail: Record<string, unknown>, state: SessionState): boolean {
   return (
     detail.action === 'session_completed' &&
@@ -475,45 +355,6 @@ async function commitCompletionLifecycle(
     );
   });
   return (await readState(sessDir)) ?? state;
-}
-
-async function decisionIntent(
-  sessDir: string,
-  state: SessionState,
-  auditDeps: AuditDeps,
-  sessionID: string,
-): Promise<SemanticAuditIntent> {
-  const transition = findApprovalTransition(state);
-  const decision = state.reviewDecision;
-  if (!transition || !decision) {
-    throw new PersistenceError(
-      'SCHEMA_VALIDATION_FAILED',
-      'Regulated completion requires terminal approval transition and decision authority',
-    );
-  }
-  const decisionSequence = await auditDeps.nextDecisionSequence(sessDir, sessionID);
-  const decisionId = `DEC-${String(decisionSequence).padStart(3, '0')}`;
-  return {
-    phase: transition.from,
-    event: `decision:${decisionId}`,
-    occurredAt: decision.decidedAt,
-    detail: {
-      kind: 'decision',
-      gatePhase: transition.from,
-      decisionId,
-      decisionSequence,
-      verdict: decision.verdict,
-      rationale: decision.rationale,
-      decisionIdentity: decision.decisionIdentity,
-      decidedAt: decision.decidedAt,
-      fromPhase: transition.from,
-      toPhase: transition.to,
-      transitionEvent: transition.event,
-      policyMode: state.policySnapshot.mode,
-    },
-    actor: decision.decisionIdentity.actorId,
-    ...(state.actorInfo ? { actorInfo: state.actorInfo } : {}),
-  };
 }
 
 function lifecycleIntent(): SemanticAuditIntent {

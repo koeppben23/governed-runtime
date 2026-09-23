@@ -47,7 +47,7 @@ Each CI job maps to its npm script(s) for clear diagnosis:
 | **unit (assertions)** | `npm run test:assertion-conformance` | Golden assertion-parser conformance, run as a third step of the `unit` CI job                        | No             |
 | **coverage**          | `npm run test:coverage:ci`           | Unit + integration under v8 coverage; enforces aggregate 80% threshold                               | No             |
 | **integration-perf**  | `npm run test:integration:perf`      | All integration PERF tests without v8 instrumentation                                                | No             |
-| **smoke**             | `npm run test:smoke`                 | Built CLI contract smoke and ACP smoke                                                               | Yes            |
+| **smoke**             | `npm run test:smoke`                 | Built CLI contract smoke, demo evidence-package verifier contract, and ACP smoke                     | Yes            |
 | **install-verify**    | `npm run test:install-verify`        | Tarball pack/install/doctor verification                                                             | Yes            |
 | **mutation**          | `npm run mutation`                   | StrykerJS mutation testing for security-critical paths on weekly/release/manual cadence              | No             |
 | **actions-pinning**   | `npm run check:actions-pinned`       | Workflow and local-action `uses:` refs are immutable SHAs or Docker digests                          | No             |
@@ -80,7 +80,7 @@ audit (integrity + completeness + NTP + event builders + RFC3161 parse/signer ve
 config (policy snapshot/resolver/central + reasons + profile), hooks (HTTP hook server + command pre-tool-use + shared obligation-tracker +
 phase-gate), identity (token-verifier + key-resolver), integration
 (installed-commands, tool-classification, discovery-risk-paths, pre-implementation challenge, architecture submit, review-validation-mode,
-plugin-audit, plugin-audit-decisions, plugin-audit-reconcile, plugin-beforehooks, plugin-afterhooks, plugin-helpers, audit-outbox, plugin-audit-lifecycle-reason, review enforcement,
+plugin-audit, services/decision-audit-intent, plugin-audit-reconcile, plugin-beforehooks, plugin-afterhooks, plugin-helpers, audit-outbox, plugin-audit-lifecycle-reason, review enforcement,
 dispatch signal, and agent resolution), logging (error-serialize),
 templates (codex-plugin, claude-code-plugin, mandates),
 shared canonical JSON and hashing, machine (commands, evaluate, guards, workflow-directive, validation-evidence), and
@@ -368,7 +368,10 @@ A candidate is staged inside a profile for authoritative admission
 measurement. It is mutated by its profile but carries no provenance yet: only
 a verified profile full run on the freeze commit decides whether it becomes
 `required` (immutable admission) or returns to the admission backlog. The
-2026-09-21 freeze run admitted all five candidates; currently none remain.
+2026-09-21 freeze run admitted five candidates. The 2026-09-22 base profile
+run admitted the durable human-decision audit intent authority
+(`src/integration/services/decision-audit-intent.ts`) with a 100 % per-target
+score (33 killed, 0 survived); currently none remain staged.
 
 ### Running Locally
 

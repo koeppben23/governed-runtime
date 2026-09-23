@@ -448,13 +448,14 @@ const RECORDS: Readonly<Record<string, AdmissionRecord>> = {
     config: 'stryker.conf.json',
     reportDigest: '8c78efc0b3f916f8d4d46330cbd371e14c4d5eb9637ce839cabe0fd6bd04bf68',
   },
-  'src/integration/plugin-audit-decisions.ts': {
-    verifiedAt: '2026-09-19',
-    commitSha: 'd29f399371faca9ccafa8be20a0317b533229937',
-    scoreAtAdmission: 91.67,
-    killed: 55,
-    survived: 5,
+  'src/integration/services/decision-audit-intent.ts': {
+    verifiedAt: '2026-09-22',
+    commitSha: 'bb9f02c2e62b7df065c4008c56e06a1929cca1f6',
+    scoreAtAdmission: 100,
+    killed: 33,
+    survived: 0,
     config: 'stryker.conf.json',
+    reportDigest: 'b040582bd9aa9c866ef2f2ce932991e1c6f5b1d1e161f0e3f43261bfcb1e8dbc',
   },
   'src/integration/plugin-audit-lifecycle-reason.ts': {
     verifiedAt: '2026-09-21',

@@ -33,6 +33,7 @@ import { projectCompletionProofStatus } from '../proofgraph/proof-summary-projec
 import { emitPresentationTelemetry } from './presentation-telemetry.js';
 import { headlineFields } from '../blocked-result.js';
 import { writeStateWithArtifactsAndAuditOperations, type ToolResult } from './helpers.js';
+import type { SemanticAuditIntent } from '../audit-outbox.js';
 
 // ─── Rail-result presentation ─────────────────────────────────────────────────
 
@@ -73,6 +74,8 @@ function presentationFormForConclusion(
 
 export interface RailPresentationOptions {
   readonly evidenceApprovalCompletion?: boolean;
+  /** Semantic audit intents committed atomically with this rail result. */
+  readonly semanticIntents?: readonly SemanticAuditIntent[];
 }
 
 /** Format a RailResult for LLM consumption. Audit transitions in metadata channel. */
@@ -231,7 +234,12 @@ export async function persistAndFormat(
         ...getLogTraceFields(),
       });
     }
-    await writeStateWithArtifactsAndAuditOperations(sessDir, result.state, result.transitions);
+    await writeStateWithArtifactsAndAuditOperations(
+      sessDir,
+      result.state,
+      result.transitions,
+      options.semanticIntents,
+    );
     logPersistedLifecycle(result);
   }
   return formatRailResult(result, options);

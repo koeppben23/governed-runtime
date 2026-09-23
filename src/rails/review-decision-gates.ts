@@ -25,6 +25,7 @@ import { resolveWorkflowDirective } from '../machine/workflow-directive.js';
 import type { RailBlocked, RailContext } from './types.js';
 import { blocked } from '../config/reasons.js';
 import { compareActorIdentity } from '../identity/actor-info.js';
+import { isApprovalVerdict } from '../state/evidence.js';
 import { isAssuranceAtLeast } from '../shared/actor-assurance.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { digestToId } from '../shared/hashing.js';
@@ -56,11 +57,6 @@ export interface ReviewDecisionInput {
   readonly verdict: ReviewVerdict;
   readonly rationale: string;
   readonly decisionIdentity: DecisionIdentity;
-}
-
-/** Both approval verdicts authorize the approval preconditions and certificates. */
-export function isApprovalVerdict(verdict: ReviewVerdict): boolean {
-  return verdict === 'approve' || verdict === 'approve_with_governance_override';
 }
 
 /**

@@ -39,6 +39,7 @@
 
 import type { SessionState, Event } from '../state/schema.js';
 import type { ReviewDecision, ReviewVerdict } from '../state/evidence.js';
+import { isApprovalVerdict } from '../state/evidence.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import { evaluate, evaluateWithEvent } from '../machine/evaluate.js';
 import type { RailResult, RailContext, TransitionRecord } from './types.js';
@@ -49,7 +50,6 @@ import {
   enforceApprovalPreconditions,
   enforceImplementationReviewSubject,
   enforceOverrideAgreement,
-  isApprovalVerdict,
   type ReviewDecisionInput,
 } from './review-decision-gates.js';
 
@@ -230,5 +230,11 @@ export function executeReviewDecision(
   // 8. Re-evaluate at new phase to get the eval result for the caller (policy-aware)
   const evalResult = evaluate(finalState, ctx.policy);
 
-  return { kind: 'ok', state: finalState, evalResult, transitions: [transition] };
+  return {
+    kind: 'ok',
+    state: finalState,
+    evalResult,
+    transitions: [transition],
+    decisionEvidence: decision,
+  };
 }

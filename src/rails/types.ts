@@ -13,7 +13,12 @@
  */
 
 import type { SessionState, Phase, Event } from '../state/schema.js';
-import type { LoopVerdict, RevisionDelta, SelfReviewLoop } from '../state/evidence.js';
+import type {
+  LoopVerdict,
+  ReviewDecision,
+  RevisionDelta,
+  SelfReviewLoop,
+} from '../state/evidence.js';
 import { evaluate } from '../machine/evaluate.js';
 import type { EvalResult } from '../machine/evaluate.js';
 import { resolveTransition } from '../machine/topology.js';
@@ -91,6 +96,12 @@ export interface RailOk {
    * The audit plugin reads this to emit per-transition audit events.
    */
   readonly transitions: readonly TransitionRecord[];
+  /**
+   * Exact human-decision evidence captured before any verdict-specific state
+   * clearing. Consumed by the tool layer to commit the durable decision
+   * receipt; never persisted as state and never serialized into tool output.
+   */
+  readonly decisionEvidence?: ReviewDecision;
 }
 
 /** Rail was blocked — precondition failed, state is UNCHANGED. */

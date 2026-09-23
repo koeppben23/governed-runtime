@@ -22,8 +22,10 @@ import * as path from 'node:path';
 import { readState, writeState } from '../adapters/persistence.js';
 import { appendAuditEvent } from '../adapters/persistence-audit.js';
 import { createDecisionEvent, GENESIS_HASH } from '../audit/types.js';
-import { makeState } from '../fixtures.js';
+import { makeState, REVIEW_APPROVE } from '../fixtures.js';
 import { createWorkspace } from './plugin-workspace.js';
+import { prepareAuditOperations } from './audit-outbox.js';
+import { buildDecisionAuditIntent } from './services/decision-audit-intent.js';
 import { freezeReviewMaterial } from './review/obligations/assurance.js';
 import { blockObligation } from './review/obligations/obligation-state.js';
 import type { SessionState } from '../state/schema.js';
@@ -203,10 +205,35 @@ describe('createWorkspace composition contract', () => {
 
       const ws = createWorkspace({ auditWorktree: undefined });
       expect(await ws.nextDecisionSequence(sessDir, FLOWGUARD_SESSION_ID)).toBe(9);
-      // Once allocated, the value belongs to this session even if the durable
-      // trail contains receipts for a different identity with higher numbers.
-      await appendAuditEvent(sessDir, decisionReceipt(OTHER_SESSION_ID, 'different-host', 100));
-      expect(await ws.nextDecisionSequence(sessDir, FLOWGUARD_SESSION_ID)).toBe(10);
+      // Reservation is idempotent until a decision is persisted: repeating the
+      // call must not burn a sequence that was never committed.
+      expect(await ws.nextDecisionSequence(sessDir, FLOWGUARD_SESSION_ID)).toBe(9);
+      // A receipt bound to this session's host identity advances it.
+      await appendAuditEvent(sessDir, decisionReceipt(OTHER_SESSION_ID, FLOWGUARD_SESSION_ID, 100));
+      expect(await ws.nextDecisionSequence(sessDir, FLOWGUARD_SESSION_ID)).toBe(101);
+    });
+  });
+
+  it('counts committed-but-unreconciled decision intents (crash window)', async () => {
+    await withSessionDir(async (sessDir) => {
+      const base = stateWithBlockedCode('REVIEWER_OUTPUT_INVALID');
+      const prepared = prepareAuditOperations(base, base, undefined, [
+        buildDecisionAuditIntent({
+          transition: { from: 'PLAN_REVIEW', to: 'VALIDATION', event: 'APPROVE', at: NOW },
+          decision: { ...REVIEW_APPROVE, decidedAt: NOW },
+          policyMode: 'team',
+          decisionSequence: 12,
+          actor: 'human',
+        }),
+      ]);
+      await writeState(sessDir, prepared);
+
+      const ws = createWorkspace({ auditWorktree: undefined });
+      // The intent is committed with the state but absent from the audit trail
+      // (crash before reconciliation); the reservation must still see it.
+      expect(await ws.nextDecisionSequence(sessDir, FLOWGUARD_SESSION_ID)).toBe(13);
+      await appendAuditEvent(sessDir, decisionReceipt(FLOWGUARD_SESSION_ID, undefined, 13));
+      expect(await ws.nextDecisionSequence(sessDir, FLOWGUARD_SESSION_ID)).toBe(14);
     });
   });
 });

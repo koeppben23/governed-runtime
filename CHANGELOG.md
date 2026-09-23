@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Standalone evidence-package verification.** `computeArchiveContentDigest`
+  (with its input type) and `verifyRegulatedCompletionCompleteness` are now
+  exported from `@flowguard/core` as re-exports of the canonical authorities —
+  no algorithm change. The Java demo ships
+  `demos/java-task-manager/verify-evidence-package.mjs` plus
+  `EVIDENCE_PACKAGE.md`: it snapshots the package into a private copy, rejects
+  unsafe prefixes, unsafe member paths, non-regular entries, and duplicate
+  members before any extraction starts, validates the archived state with the
+  canonical `SessionState` schema, and checks the checksum, member inventory,
+  file digests, canonical content digest, expected session assignment,
+  flow/phase, and the archived audit chain. Every `includedFiles` path is
+  validated before any payload is opened, and an invalid inventory fails closed
+  without a single payload read. Regulated packages must carry policy mode
+  `regulated` and an admissible archive-time lifecycle status (`pending` or
+  `created`; missing/`null` fails closed before the canonical validator could
+  silently skip), and are validated against the archived completion evidence
+  (the mandatory archive necessarily snapshots `regulatedArchiveStatus:
+  pending`) instead of the later live verification status. A small
+  `evidence-manifest.example.json` binds the three demo sessions to their
+  FlowGuard packages and external host chat exports (manually assigned,
+  hash-secured supplementary evidence, never authority), enforces distinct
+  session ids, requires exactly one `flowguard-package` for the development
+  flow, and fails on byte-identical artifacts across flows — the "peer-review
+  export is a copy of the architecture export" defect. Redacted sharing
+  archives are never presented as fully verifiable raw evidence, and the
+  offline, TSA, publication-binding, and authenticity limits are documented. A smoke-project
+  contract builds real `/export` and `archiveRegulatedEvidence` packages and
+  proves valid (including the `EXPORT_READY` snapshot), file-byte,
+  manifest-metadata, session-swap, unsafe-prefix, duplicate-member, and
+  manifest-copy cases. The demo docs also document the
+  `HOST_CAPABILITY_UNVERIFIED` contract-attested host-capability boundary and
+  add an optional adversarial host-tool denial step (`HOST_TOOL_PHASE_DENIED` /
+  `enforcement:denied`).
+
 - **Reviewer execution-continuity provenance (state schema v6).** Every
   runtime-executed validation attempt now persists the host-observed execution
   continuity (`executionObservedStateDigest`, `preCommitStateDigest`), and the
@@ -426,6 +460,14 @@ true })` returns the evaluated projection. Key invariants:
 
 ### Changed
 
+- **MADR artifact envelope v2 (`madr-artifact.v2`).** The artifact written on
+  `ARCH_COMPLETE` now labels its metadata as FlowGuard's own:
+  `FlowGuard Decision Status` carries the FlowGuard decision status and
+  `Reviewed ADR digest` identifies the exact independently reviewed ADR text.
+  The ambiguous `- Status:` / `- Digest:` envelope labels are removed. The
+  submitted `adrText` is embedded byte-identically and is never rewritten —
+  including any `## Status` section or `- Status:` line it carries.
+
 - **Default-wide maintainability metrics with recalibrated ceilings.** The
   `complexity`, `max-params`, and `max-lines-per-function` rules now apply to
   every production file under `src/` (test suites remain the only excluded file
@@ -556,6 +598,15 @@ true })` returns the evaluated projection. Key invariants:
   consolidated into single canonical implementations.
 
 ### Fixed
+
+- **Archive verification documentation matched to the real API.** The
+  `docs/archive.md` example called `verifyArchive('/path/to/archive.tar.gz')`,
+  but the public function signature is `verifyArchive(fingerprint, sessionId)`
+  and resolves the package from the workspace archive directory; the example
+  and the verification section now state the real contract and point package-
+  only recipients to the standalone offline verifier. The
+  `docs/bsi-c5-mapping.md` reference now names
+  `src/adapters/workspace/archive-verify-chain.ts` as the owning module.
 
 - **Discovery health classifies every persistence error code.** The advisory
   discovery-health projection previously routed `SESSION_STATE_INCOMPATIBLE`,

@@ -2,6 +2,7 @@ import { isTerminalPhase } from '../../machine/topology.js';
 import type { ArchiveFinding } from '../../archive/types.js';
 import type { ChainedAuditEvent } from '../../audit/types.js';
 import type { SessionState } from '../../state/schema.js';
+import { isApprovalVerdict } from '../../state/evidence.js';
 import type { DecisionIdentity } from '../../state/evidence-identity.js';
 
 function isRegulatedCompletionArchive(state: SessionState | null): state is SessionState {
@@ -36,6 +37,7 @@ function addCompletionEvidenceFindings(
   events: readonly ChainedAuditEvent[],
   transition: NonNullable<SessionState['transition']>,
   decision: NonNullable<SessionState['reviewDecision']>,
+  actorClassification: Readonly<Record<string, string>>,
   findings: ArchiveFinding[],
 ): void {
   const completionEvidence = locateCompletionEvidence(events, transition);
@@ -58,7 +60,7 @@ function addCompletionEvidenceFindings(
     });
   }
   if (decisions.length === 1 && decisionEntry !== undefined) {
-    addDecisionBindingFindings(findings, decisionEntry.event, decision);
+    addDecisionBindingFindings(findings, decisionEntry.event, decision, actorClassification);
   }
 }
 
@@ -87,7 +89,7 @@ export function verifyRegulatedCompletionCompleteness(
     return;
   }
   const decision = state.reviewDecision;
-  if (!decision || decision.verdict !== 'approve') {
+  if (!decision || !isApprovalVerdict(decision.verdict)) {
     findings.push({
       code: 'regulated_terminal_decision_invalid',
       severity: 'error',
@@ -97,7 +99,13 @@ export function verifyRegulatedCompletionCompleteness(
     });
     return;
   }
-  addCompletionEvidenceFindings(events, transition, decision, findings);
+  addCompletionEvidenceFindings(
+    events,
+    transition,
+    decision,
+    state.policySnapshot.actorClassification,
+    findings,
+  );
 }
 
 /**
@@ -122,7 +130,8 @@ function hasValidCompletionOrder(evidence: CompletionEvidence): boolean {
     approvalTransitionIndex < decisionEntry.index &&
     decisionEntry.index < lifecycleEntry.index &&
     approvalTransitionIndex < exportTransitionIndex &&
-    exportTransitionIndex < lifecycleEntry.index
+    exportTransitionIndex < lifecycleEntry.index &&
+    decisionEntry.index < exportTransitionIndex
   );
 }
 
@@ -176,6 +185,7 @@ function addDecisionBindingFindings(
   findings: ArchiveFinding[],
   event: ChainedAuditEvent,
   decision: NonNullable<SessionState['reviewDecision']>,
+  actorClassification: Readonly<Record<string, string>>,
 ): void {
   const { detail } = event;
   if (
@@ -192,11 +202,32 @@ function addDecisionBindingFindings(
     });
   }
   addDecisionIdentityBindingFindings(findings, detail, decision.decisionIdentity);
-  if (event.actor !== decision.decisionIdentity.actorId) {
+  addDecisionActorBindingFindings(findings, event, decision, actorClassification);
+}
+
+/**
+ * The receipt actor must be either the frozen policy classification for the
+ * decision tool (current receipts) or the deciding actor id (archives created
+ * before the classification contract). Every other value is a contradiction
+ * inside the audit envelope and fails closed. The producer falls back to
+ * `system` when the classification map omits the decision tool, so the
+ * verifier applies the same fallback.
+ */
+function addDecisionActorBindingFindings(
+  findings: ArchiveFinding[],
+  event: ChainedAuditEvent,
+  decision: NonNullable<SessionState['reviewDecision']>,
+  actorClassification: Readonly<Record<string, string>>,
+): void {
+  const frozenClassification = actorClassification['flowguard_decision'] ?? 'system';
+  const matchesLegacyActorId = event.actor === decision.decisionIdentity.actorId;
+  const matchesFrozenClassification = event.actor === frozenClassification;
+  if (!matchesLegacyActorId && !matchesFrozenClassification) {
     findings.push({
       code: 'regulated_terminal_decision_invalid',
       severity: 'error',
-      message: 'Regulated completion decision receipt actor does not match the deciding authority',
+      message:
+        'Regulated completion decision receipt actor is neither the frozen policy classification nor the deciding authority',
       file: 'audit/audit.jsonl',
     });
   }

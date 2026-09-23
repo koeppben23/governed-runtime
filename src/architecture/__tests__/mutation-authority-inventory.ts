@@ -895,11 +895,15 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     { legacy: true },
   ),
   required(
-    'src/integration/plugin-audit-decisions.ts',
-    'Audit decision receipt authority',
-    ['src/integration/plugin-audit.test.ts'],
+    'src/integration/services/decision-audit-intent.ts',
+    'Durable human-decision audit intent authority',
+    [
+      'src/integration/services/decision-audit-intent.test.ts',
+      'src/integration/plugin-audit-reconcile.test.ts',
+      'src/integration/plugin-workspace-composition.test.ts',
+    ],
     {
-      admission: admissionRecord('src/integration/plugin-audit-decisions.ts'),
+      admission: admissionRecord('src/integration/services/decision-audit-intent.ts'),
     },
   ),
   required(

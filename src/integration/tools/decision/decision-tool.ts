@@ -22,6 +22,9 @@ import { withMutableSession, withMutableSessionTransaction } from '../helpers.js
 import { persistAndFormat } from '../helpers-rail-presentation.js';
 import { getAdapterLogger, getLogTraceFields } from '../../../logging/adapter-logger.js';
 import type { ActorInfo, ReviewVerdict } from '../../../state/evidence.js';
+import type { RailResult } from '../../../rails/types.js';
+import type { SemanticAuditIntent } from '../../audit-outbox.js';
+import { TOOL_FLOWGUARD_DECISION } from '../../tool-names.js';
 
 // Rails
 import { executeReviewDecision } from '../../../rails/review-decision.js';
@@ -32,6 +35,7 @@ import { ActorIdentityError } from '../../../adapters/actor.js';
 
 // Finalization service
 import { finalizeDecision } from '../../services/decision-finalization.js';
+import { buildDecisionAuditIntent } from '../../services/decision-audit-intent.js';
 import { createSessionCompletionAuditDeps } from '../../services/regulated-completion.js';
 import { consumeUserDecisionIntent, peekUserDecisionIntent } from '../../user-decision-intent.js';
 
@@ -70,63 +74,117 @@ interface PersistedDecision {
   readonly finalResult: DecisionFinalization;
 }
 
+/**
+ * Build the durable decision receipt for a successful decision.
+ *
+ * The sequence is reserved under the already-held session write lock from
+ * persisted receipts plus committed-but-unreconciled semantic operations; the
+ * builder only formats it. The intent is committed atomically with the
+ * decision, BEFORE any automatic validation runs in the same tool call.
+ */
+async function decisionReceiptIntents(input: {
+  readonly sessDir: string;
+  readonly sessionID: string;
+  readonly finalResult: RailResult;
+  readonly auditDeps: { nextDecisionSequence(sessDir: string, sessionId: string): Promise<number> };
+  readonly actor: string;
+  /** The actor that actually decided — never the session initiator's ActorInfo. */
+  readonly actorInfo: ActorInfo;
+}): Promise<readonly SemanticAuditIntent[]> {
+  const { finalResult } = input;
+  if (finalResult.kind !== 'ok') return [];
+  const decision = finalResult.decisionEvidence;
+  const transition = finalResult.transitions[0];
+  if (decision === undefined || transition === undefined) return [];
+  const decisionSequence = await input.auditDeps.nextDecisionSequence(
+    input.sessDir,
+    input.sessionID,
+  );
+  return [
+    buildDecisionAuditIntent({
+      transition,
+      decision,
+      policyMode: finalResult.state.policySnapshot.mode,
+      decisionSequence,
+      actor: input.actor,
+      actorInfo: input.actorInfo,
+    }),
+  ];
+}
+
 async function persistHumanDecision(
   context: WorkspaceToolContext,
   args: { readonly verdict: ReviewVerdict; readonly rationale: string },
   actorInfo: ActorInfo,
 ): Promise<PersistedDecision> {
-  return withMutableSessionTransaction(context, async ({ fingerprint, sessDir, state, ctx }) => {
-    // P30/P34: Build structured decision identity directly from resolved actor info
-    // actorAssurance comes from the canonical ActorInfo — not re-derived from source
-    const decisionIdentity = {
-      actorId: actorInfo.id,
-      actorEmail: actorInfo.email,
-      actorDisplayName: actorInfo.displayName,
-      actorSource: actorInfo.source,
-      actorAssurance: actorInfo.assurance,
-    };
+  return withMutableSessionTransaction(
+    context,
+    async ({ fingerprint, sessDir, state, policy, ctx }) => {
+      // P30/P34: Build structured decision identity directly from resolved actor info
+      // actorAssurance comes from the canonical ActorInfo — not re-derived from source
+      const decisionIdentity = {
+        actorId: actorInfo.id,
+        actorEmail: actorInfo.email,
+        actorDisplayName: actorInfo.displayName,
+        actorSource: actorInfo.source,
+        actorAssurance: actorInfo.assurance,
+      };
+      const actor = policy.actorClassification[TOOL_FLOWGUARD_DECISION] ?? 'system';
 
-    const result = executeReviewDecision(
-      state,
-      {
-        verdict: args.verdict,
-        // Fall back to an empty string here rather than relying on the Zod
-        // `.default('')`: the MCP boundary strips null-valued args (some
-        // models inject `rationale: null`), which removes the key entirely
-        // and leaves the value undefined by the time it reaches state
-        // serialization. Without this guard SessionState.safeParse rejects
-        // the decision with SCHEMA_VALIDATION_FAILED.
-        rationale: args.rationale ?? '',
-        decisionIdentity,
-      },
-      ctx,
-    );
+      const result = executeReviewDecision(
+        state,
+        {
+          verdict: args.verdict,
+          // Fall back to an empty string here rather than relying on the Zod
+          // `.default('')`: the MCP boundary strips null-valued args (some
+          // models inject `rationale: null`), which removes the key entirely
+          // and leaves the value undefined by the time it reaches state
+          // serialization. Without this guard SessionState.safeParse rejects
+          // the decision with SCHEMA_VALIDATION_FAILED.
+          rationale: args.rationale ?? '',
+          decisionIdentity,
+        },
+        ctx,
+      );
 
-    // Approval now stops at EXPORT_READY. Completion side effects belong
-    // exclusively to flowguard_export after package verification.
-    const finalResult = await finalizeDecision({
-      sessDir,
-      fingerprint,
-      sessionID: context.sessionID,
-      priorPhase: state.phase,
-      verdict: args.verdict,
-      result,
-      auditDeps: createSessionCompletionAuditDeps({
+      const auditDeps = createSessionCompletionAuditDeps({
         sessDir,
         sessionID: context.sessionID,
         fingerprint,
         state,
-      }),
-    });
+      });
 
-    const persisted = await persistAndFormat(sessDir, finalResult, {
-      evidenceApprovalCompletion:
-        state.phase === 'EVIDENCE_REVIEW' &&
-        (args.verdict === 'approve' || args.verdict === 'approve_with_governance_override'),
-    });
+      // Approval now stops at EXPORT_READY. Completion side effects belong
+      // exclusively to flowguard_export after package verification.
+      const finalResult = await finalizeDecision({
+        sessDir,
+        fingerprint,
+        sessionID: context.sessionID,
+        priorPhase: state.phase,
+        verdict: args.verdict,
+        result,
+        auditDeps,
+      });
 
-    return { output: persisted, finalResult };
-  });
+      const semanticIntents = await decisionReceiptIntents({
+        sessDir,
+        sessionID: context.sessionID,
+        finalResult,
+        auditDeps,
+        actor,
+        actorInfo,
+      });
+
+      const persisted = await persistAndFormat(sessDir, finalResult, {
+        evidenceApprovalCompletion:
+          state.phase === 'EVIDENCE_REVIEW' &&
+          (args.verdict === 'approve' || args.verdict === 'approve_with_governance_override'),
+        semanticIntents,
+      });
+
+      return { output: persisted, finalResult };
+    },
+  );
 }
 
 export const decision: ToolDefinition = {

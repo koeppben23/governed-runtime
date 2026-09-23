@@ -164,6 +164,41 @@ describe('audit query', () => {
       expect(receipts[0]!.policyMode).toBe('team');
     });
 
+    it('decisionReceipts parses a governance-override approval verdict', () => {
+      const overrideReceipt = makeAuditEvent({
+        id: 'override-decision',
+        hostSessionId: 'sess-a',
+        phase: 'EVIDENCE_REVIEW',
+        event: 'decision:DEC-002',
+        occurredAt: TS3,
+        actor: 'human',
+        detail: {
+          kind: 'decision',
+          decisionId: 'DEC-002',
+          decisionSequence: 2,
+          gatePhase: 'EVIDENCE_REVIEW',
+          verdict: 'approve_with_governance_override',
+          rationale: 'exhausted review accepted by the operator',
+          decisionIdentity: {
+            actorId: 'reviewer-1',
+            actorEmail: null,
+            actorSource: 'env',
+            actorAssurance: 'best_effort',
+          },
+          decidedAt: TS3,
+          fromPhase: 'EVIDENCE_REVIEW',
+          toPhase: 'EXPORT_READY',
+          transitionEvent: 'APPROVE',
+          policyMode: 'regulated',
+        },
+      });
+
+      const receipts = decisionReceipts([overrideReceipt]);
+      expect(receipts).toHaveLength(1);
+      expect(receipts[0]!.verdict).toBe('approve_with_governance_override');
+      expect(receipts[0]!.policyMode).toBe('regulated');
+    });
+
     it('distinctSessions returns unique FlowGuard session IDs', () => {
       const ids = distinctSessions(events);
       expect(ids).toHaveLength(1);
@@ -281,6 +316,38 @@ describe('audit query', () => {
       try {
         decisionReceipts([...events, malformed]);
         expect.unreachable('malformed decision payloads must fail closed');
+      } catch (err) {
+        expect(err).toMatchObject({ code: 'AUDIT_DECISION_RECEIPT_INVALID' });
+      }
+    });
+
+    it('decisionReceipts rejects a verdict outside the canonical vocabulary', () => {
+      const foreignVerdict = makeAuditEvent({
+        id: 'foreign-verdict',
+        event: 'decision:DEC-998',
+        detail: {
+          kind: 'decision',
+          decisionId: 'DEC-998',
+          decisionSequence: 9,
+          gatePhase: 'PLAN_REVIEW',
+          verdict: 'deferred',
+          rationale: 'not a canonical verdict',
+          decisionIdentity: {
+            actorId: 'reviewer-1',
+            actorEmail: null,
+            actorSource: 'env',
+            actorAssurance: 'best_effort',
+          },
+          decidedAt: TS3,
+          fromPhase: 'PLAN_REVIEW',
+          toPhase: 'VALIDATION',
+          transitionEvent: 'APPROVE',
+          policyMode: 'team',
+        },
+      });
+      try {
+        decisionReceipts([foreignVerdict]);
+        expect.unreachable('a non-canonical verdict must fail closed');
       } catch (err) {
         expect(err).toMatchObject({ code: 'AUDIT_DECISION_RECEIPT_INVALID' });
       }

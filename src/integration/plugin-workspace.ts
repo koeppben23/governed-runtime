@@ -20,8 +20,8 @@ import {
   workspaceDir as resolveWorkspaceDir,
 } from '../adapters/workspace/index.js';
 import { GENESIS_HASH, type ChainedAuditEvent } from '../audit/types.js';
-import { decisionReceipts } from '../audit/query.js';
 import { getLastChainHash } from '../audit/integrity.js';
+import { resolveDecisionSequence } from './services/decision-audit-intent.js';
 import { blockObligation } from './review/obligations/obligation-state.js';
 import type { SessionState } from '../state/schema.js';
 import { strictBlockedOutput } from './blocked-result.js';
@@ -98,7 +98,6 @@ export class PluginWorkspaceImpl implements PluginWorkspace {
   private _cachedWsDir: string | null = null;
   private readonly _chainStates = new Map<string, MutableChainState>();
   private readonly _sessionQueues = new Map<string, Promise<void>>();
-  private readonly _decisionSequenceCache = new Map<string, number>();
   private readonly _enforcementStates = new Map<string, SessionEnforcementState>();
 
   constructor(private readonly _deps: WorkspaceDeps) {}
@@ -237,20 +236,14 @@ export class PluginWorkspaceImpl implements PluginWorkspace {
   // ── Session helpers ─────────────────────────────────────────────────────
 
   async nextDecisionSequence(sessDir: string, sessionId: string): Promise<number> {
-    const cached = this._decisionSequenceCache.get(sessionId);
-    if (cached !== undefined) {
-      const next = cached + 1;
-      this._decisionSequenceCache.set(sessionId, next);
-      return next;
-    }
     const events = await readAuditTrail(sessDir);
-    const receipts = decisionReceipts(events).filter(
-      (r) => r.hostSessionId === sessionId || r.flowguardSessionId === sessionId,
+    const state = await readState(sessDir);
+    return resolveDecisionSequence(
+      events.filter(
+        (event) => event.hostSessionId === sessionId || event.flowguardSessionId === sessionId,
+      ),
+      state?.pendingAuditOperations ?? [],
     );
-    const maxSequence = receipts.reduce((max, r) => Math.max(max, r.decisionSequence), 0);
-    const next = maxSequence + 1;
-    this._decisionSequenceCache.set(sessionId, next);
-    return next;
   }
 
   async runSerializedForSession(sessionId: string, task: () => Promise<void>): Promise<void> {

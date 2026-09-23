@@ -588,6 +588,11 @@ WRITE_FAILED
 WRONG_PHASE
 ```
 
+`DECISION_RECEIPT_ACTOR_MISSING` remains a pinned deny code but has no current
+producer: the decision tool resolves the actor identity fail-closed before the
+rail, and the receipt is committed as a durable semantic operation with the
+decision itself. The code stays registered for adapter compatibility.
+
 ## Migrated Reason Codes (Human Projection)
 
 The following reason codes are "migrated" onto the Human Projection. They are the

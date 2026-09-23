@@ -22,8 +22,16 @@ import {
 } from '../fixtures.js';
 import { initWorkspace } from '../adapters/workspace/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
-import { readAuditTrail } from '../adapters/persistence-audit.js';
+import {
+  appendAuditEventAlreadyLocked,
+  readAuditTrail,
+  withAuditTrailLock,
+} from '../adapters/persistence-audit.js';
+import { getLastChainHash } from '../audit/integrity.js';
+import { buildTransitionBody, finalizeWithTimestampEvidence } from '../audit/types.js';
+import { buildSemanticAuditBody } from '../audit/semantic-event.js';
 import { createTestWorkspace, withTestEnv, type TestWorkspace } from './test-helpers.js';
+import { prepareAuditOperations } from './audit-outbox.js';
 import { reconcilePendingAuditOperations } from './plugin-audit.js';
 import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
 import { createSessionCompletionAuditDeps } from './services/regulated-completion.js';
@@ -220,6 +228,146 @@ describe('recoverRegulatedCompletion', () => {
       ),
     ).toHaveLength(1);
     expect(events.filter((event) => event.event === 'lifecycle:session_completed')).toHaveLength(1);
+    expect(archiveRegulatedEvidence).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails closed when a competing append makes the export transition durable first', async () => {
+    const { fingerprint, sessDir } = await seedSession(reviewState('EVIDENCE_REVIEW'));
+    // COMPLETE checkpoint without the terminal decision intent: the approval
+    // and export transitions are durable outbox operations, no receipt exists.
+    const exportReady = makeState('EXPORT_READY', {
+      ticket: TICKET,
+      plan: PLAN_RECORD,
+      selfReview: SELF_REVIEW_CONVERGED,
+      reviewDecision: REVIEW_APPROVE,
+      validation: VALIDATION_PASSED,
+      implementation: IMPL_EVIDENCE,
+      implReview: IMPL_REVIEW_CONVERGED,
+      policySnapshot: REGULATED_POLICY_SNAPSHOT,
+      transition: approvalTransition(),
+    });
+    await writeStateWithArtifactsAndAuditOperations(sessDir, exportReady);
+    const persisted = await readState(sessDir);
+    const complete = {
+      ...reviewState('COMPLETE'),
+      pendingAuditOperations: persisted!.pendingAuditOperations,
+    };
+    await writeStateWithArtifactsAndAuditOperations(sessDir, complete);
+
+    // A competing appender writes the export transition durably before
+    // recovery reaches its audit-lock critical section.
+    await withAuditTrailLock(sessDir, async () => {
+      const prevHash = getLastChainHash(await readAuditTrail(sessDir));
+      const body = buildTransitionBody({
+        flowguardSessionId: complete.flowguardSessionId,
+        hostSessionId: complete.binding.hostSessionId,
+        phase: 'COMPLETE',
+        detail: {
+          from: 'EXPORT_READY',
+          to: 'COMPLETE',
+          event: 'EXPORT_MATERIALIZED',
+          autoAdvanced: false,
+          chainIndex: 1,
+        },
+        occurredAt: AT,
+        prevHash,
+      });
+      await appendAuditEventAlreadyLocked(sessDir, finalizeWithTimestampEvidence(body, prevHash));
+    });
+
+    await recoverRegulatedCompletion(
+      recoveryRuntime(sessDir, fingerprint, (await readState(sessDir))!),
+      SESSION_ID,
+    );
+
+    const finalState = await readState(sessDir);
+    expect(finalState?.regulatedArchiveStatus).toBe('failed');
+    expect(
+      (await auditEvents(sessDir)).filter((event) => event.detail.kind === 'decision'),
+    ).toHaveLength(0);
+  });
+
+  it('recovers the outbox correlation from a durable receipt after a crash between append and state write', async () => {
+    const { fingerprint, sessDir } = await seedSession(reviewState('EVIDENCE_REVIEW'));
+    // COMPLETE checkpoint without the terminal decision intent.
+    const exportReady = makeState('EXPORT_READY', {
+      ticket: TICKET,
+      plan: PLAN_RECORD,
+      selfReview: SELF_REVIEW_CONVERGED,
+      reviewDecision: REVIEW_APPROVE,
+      validation: VALIDATION_PASSED,
+      implementation: IMPL_EVIDENCE,
+      implReview: IMPL_REVIEW_CONVERGED,
+      policySnapshot: REGULATED_POLICY_SNAPSHOT,
+      transition: approvalTransition(),
+    });
+    await writeStateWithArtifactsAndAuditOperations(sessDir, exportReady);
+    const persisted = await readState(sessDir);
+    const complete = {
+      ...reviewState('COMPLETE'),
+      pendingAuditOperations: persisted!.pendingAuditOperations,
+    };
+    await writeStateWithArtifactsAndAuditOperations(sessDir, complete);
+
+    // Fault injection: the exact committed decision event is appended
+    // durably, then the process dies before the state commit that would have
+    // persisted its outbox operation.
+    const withDecision = prepareAuditOperations(complete, complete, undefined, [
+      terminalDecisionIntent(),
+    ]);
+    const operation = withDecision.pendingAuditOperations.at(-1);
+    if (!operation || operation.kind !== 'semantic') {
+      throw new Error('expected a committed decision operation');
+    }
+    await withAuditTrailLock(sessDir, async () => {
+      const prevHash = getLastChainHash(await readAuditTrail(sessDir));
+      const body = buildSemanticAuditBody({
+        flowguardSessionId: complete.flowguardSessionId,
+        hostSessionId: complete.binding.hostSessionId,
+        phase: operation.semantic.phase,
+        detail: operation.semantic.detail,
+        event: operation.semantic.event,
+        occurredAt: operation.semantic.occurredAt,
+        prevHash,
+        operationId: operation.operationId,
+        preStateDigest: operation.preStateDigest,
+        mutationDigest: operation.mutationDigest,
+        postStateDigest: operation.postStateDigest,
+      });
+      await appendAuditEventAlreadyLocked(sessDir, finalizeWithTimestampEvidence(body, prevHash));
+    });
+    const crashedState = await readState(sessDir);
+    expect(
+      crashedState?.pendingAuditOperations.some(
+        (candidate) => candidate.operationId === operation.operationId,
+      ),
+    ).toBe(false);
+
+    await recoverRegulatedCompletion(
+      recoveryRuntime(sessDir, fingerprint, (await readState(sessDir))!),
+      SESSION_ID,
+    );
+
+    const finalState = await readState(sessDir);
+    expect(finalState?.regulatedArchiveStatus).toBe('verified');
+    const events = await auditEvents(sessDir);
+    const decisions = events.filter((event) => event.detail.kind === 'decision');
+    expect(decisions).toHaveLength(1);
+    expect(decisions[0]!.id).toBe(operation.operationId);
+    const repaired = finalState?.pendingAuditOperations.find(
+      (candidate) => candidate.operationId === operation.operationId,
+    );
+    expect(repaired?.status).toBe('reconciled');
+    const decisionIndex = events.findIndex((event) => event.detail.kind === 'decision');
+    const exportIndex = events.findIndex(
+      (event) =>
+        event.detail.kind === 'transition' &&
+        event.detail.from === 'EXPORT_READY' &&
+        event.detail.to === 'COMPLETE',
+    );
+    expect(decisionIndex).toBeGreaterThan(-1);
+    expect(exportIndex).toBeGreaterThan(-1);
+    expect(decisionIndex).toBeLessThan(exportIndex);
     expect(archiveRegulatedEvidence).toHaveBeenCalledTimes(1);
   });
 

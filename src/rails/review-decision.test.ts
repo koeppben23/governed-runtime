@@ -154,6 +154,67 @@ const ARCHITECTURE_CLAIM = {
 };
 
 describe('review-decision rail', () => {
+  it('carries the exact decision evidence for a plan approval', () => {
+    const state = makeState('PLAN_REVIEW', {
+      plan: {
+        current: PLAN_RECORD.current,
+        history: PLAN_RECORD.history,
+        claimDeclarations: { flow: 'plan', version: 'v2', claims: [PLAN_CLAIM] },
+        reviewCompletion: 'reviewer_accepted',
+      },
+      reviewAssurance: planAssurance({
+        subjectDigest: PLAN_RECORD.current.digest,
+        status: 'consumed',
+        capturedVerdict: 'accept',
+        claimDeclarationsDigest: hashText(
+          canonicalJsonStringify({ flow: 'plan', version: 'v2', claims: [PLAN_CLAIM] }),
+        ),
+      }),
+    });
+    const result = executeReviewDecision(
+      state,
+      { verdict: 'approve', rationale: 'approved', decisionIdentity: reviewerIdentity },
+      baseCtx,
+    );
+    expect(result.kind).toBe('ok');
+    if (result.kind === 'ok') {
+      expect(result.decisionEvidence).toEqual({
+        verdict: 'approve',
+        rationale: 'approved',
+        decidedAt: FIXED_TIME,
+        decisionIdentity: reviewerIdentity,
+      });
+    }
+  });
+
+  it('preserves the decision evidence when changes_requested clears the persisted decision', () => {
+    const state = makeState('PLAN_REVIEW', {
+      plan: {
+        current: PLAN_RECORD.current,
+        history: PLAN_RECORD.history,
+        claimDeclarations: emptyClaimDeclarations('plan'),
+        reviewCompletion: 'reviewer_accepted',
+      },
+    });
+
+    const result = executeReviewDecision(
+      state,
+      { verdict: 'changes_requested', rationale: 'needs work', decisionIdentity: reviewerIdentity },
+      baseCtx,
+    );
+
+    expect(result.kind).toBe('ok');
+    if (result.kind === 'ok') {
+      expect(result.state.reviewDecision).toBeNull();
+      expect(result.decisionEvidence).toEqual({
+        verdict: 'changes_requested',
+        rationale: 'needs work',
+        decidedAt: FIXED_TIME,
+        decisionIdentity: reviewerIdentity,
+      });
+    }
+  });
+
   it('creates an immutable certificate for the approved plan claims', () => {
     const state = makeState('PLAN_REVIEW', {
       plan: {
