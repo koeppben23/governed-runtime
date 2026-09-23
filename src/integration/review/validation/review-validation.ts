@@ -3,8 +3,9 @@
  * @description Shared validation logic for independent review findings.
  *
  * Single authority for all review-findings validation rules shared by the
- * governed tools. Fail-closed: returns a formatBlocked string on any policy or
- * binding violation, or null when valid.
+ * governed tools. Fail-closed: returns a domain failure on any policy or
+ * binding violation, or null when valid. Serialization happens only at the
+ * adapter boundary (`review-validation-failure.ts`).
  *
  * Findings are never accepted from the agent: `resolveStructuredEffectiveFindings`
  * always resolves the host-captured structured evidence bound to the active
@@ -19,7 +20,6 @@
  */
 
 import type { ReviewFindings } from '../../../state/evidence.js';
-import { formatBlocked } from '../../blocked-result.js';
 import { findLatestObligation, validateStrictAttestation } from '../obligations/assurance.js';
 import { hashFindings } from '../findings-hash.js';
 import type {
@@ -34,7 +34,10 @@ import {
   getReviewFindingsAcceptanceRejection,
   hasValidStructuredInvocationContract,
 } from './review-validation-acceptance.js';
-import { resolveStructuredFindings } from './review-validation-structured-evidence.js';
+import {
+  resolveStructuredFindings,
+  type StructuredResolutionDiagnostics,
+} from './review-validation-structured-evidence.js';
 import {
   structuredResolutionFailure,
   type ReviewValidationFailure,
@@ -48,7 +51,7 @@ import {
   validateReviewFindingsScope,
   type FindingWithRelation,
 } from '../enforcement/findings-consistency.js';
-import { checkRepositoryEvidenceBinding } from '../observations/review-validation-evidence.js';
+import { evaluateRepositoryEvidenceBinding } from '../observations/review-validation-evidence.js';
 
 // ─── Validation Context ───────────────────────────────────────────────────────
 
@@ -96,12 +99,12 @@ export interface ReviewFindingsValidationContext {
 /**
  * Validate review findings against policy and binding constraints.
  *
- * @returns formatBlocked string if validation fails, null if valid.
+ * @returns domain failure if validation fails, null if valid.
  */
 export function validateReviewFindings(
   findings: ReviewFindings,
   ctx: ReviewFindingsValidationContext,
-): string | null {
+): ReviewValidationFailure | null {
   const modeBlock = checkReviewMode(findings);
   if (modeBlock) return modeBlock;
 
@@ -155,51 +158,62 @@ export function validateReviewFindings(
   return validateStrictReviewFindings(findings, ctx);
 }
 
-function checkReviewMode(findings: ReviewFindings): string | null {
+function checkReviewMode(findings: ReviewFindings): ReviewValidationFailure | null {
   const reviewMode = (findings as { reviewMode?: unknown }).reviewMode;
   if (reviewMode === 'subagent') return null;
-  return formatBlocked('REVIEW_MODE_SELF_NOT_ALLOWED', {
-    action: 'submit non-subagent review findings',
-    policyHint: `mandatory ${REVIEWER_SUBAGENT_TYPE} subagent review required`,
-  });
+  return {
+    code: 'REVIEW_MODE_SELF_NOT_ALLOWED',
+    vars: {
+      action: 'submit non-subagent review findings',
+      policyHint: `mandatory ${REVIEWER_SUBAGENT_TYPE} subagent review required`,
+    },
+  };
 }
 
 function checkUnreviewableVerdict(
   findings: ReviewFindings,
   ctx: ReviewFindingsValidationContext,
-): string | null {
+): ReviewValidationFailure | null {
   if ((findings as { overallVerdict?: unknown }).overallVerdict !== 'unable_to_review') return null;
-  return formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', {
-    obligationId: ctx.obligationType ?? 'review',
-  });
+  return {
+    code: 'SUBAGENT_UNABLE_TO_REVIEW',
+    vars: { obligationId: ctx.obligationType ?? 'review' },
+  };
 }
 
-function checkFindingsConsistency(findings: ReviewFindings): string | null {
+function checkFindingsConsistency(findings: ReviewFindings): ReviewValidationFailure | null {
   const consistency = validateReviewFindingsConsistency({
     overallVerdict: findings.overallVerdict,
     blockingIssueCount: findings.blockingIssues.length,
   });
   if (consistency.ok) return null;
-  return formatBlocked(consistency.code, {
-    count: String(consistency.details.blockingIssueCount),
-  });
+  return {
+    code: consistency.code,
+    vars: { count: String(consistency.details.blockingIssueCount) },
+  };
 }
 
 function checkFindingsVersionBinding(
   findings: ReviewFindings,
   ctx: ReviewFindingsValidationContext,
-): string | null {
+): ReviewValidationFailure | null {
   if (findings.planVersion !== ctx.expectedPlanVersion) {
-    return formatBlocked('REVIEW_PLAN_VERSION_MISMATCH', {
-      provided: String(findings.planVersion),
-      expected: String(ctx.expectedPlanVersion),
-    });
+    return {
+      code: 'REVIEW_PLAN_VERSION_MISMATCH',
+      vars: {
+        provided: String(findings.planVersion),
+        expected: String(ctx.expectedPlanVersion),
+      },
+    };
   }
   if (findings.iteration !== ctx.expectedIteration) {
-    return formatBlocked('REVIEW_ITERATION_MISMATCH', {
-      provided: String(findings.iteration),
-      expected: String(ctx.expectedIteration),
-    });
+    return {
+      code: 'REVIEW_ITERATION_MISMATCH',
+      vars: {
+        provided: String(findings.iteration),
+        expected: String(ctx.expectedIteration),
+      },
+    };
   }
   return null;
 }
@@ -247,31 +261,31 @@ function checkChallengeConsistency(
   findings: ReviewFindings,
   ctx: ReviewFindingsValidationContext,
   obligation: ReviewObligation | null,
-): string | null {
+): ReviewValidationFailure | null {
   const expectedObligationId = ctx.expectedObligationId ?? obligation?.obligationId;
   const challengeConsistency = validateChallengeConsistency(
     buildChallengeConsistencyInput(findings, ctx, obligation, expectedObligationId),
   );
   if (challengeConsistency.ok) return null;
-  return formatBlocked(
-    challengeConsistency.code,
-    Object.fromEntries(
+  return {
+    code: challengeConsistency.code,
+    vars: Object.fromEntries(
       Object.entries(challengeConsistency.details).map(([key, value]) => [key, String(value)]),
     ),
-  );
+  };
 }
 
 function checkReviewFindingsScope(
   findings: ReviewFindings,
   obligation: ReviewObligation | null,
-): string | null {
+): ReviewValidationFailure | null {
   const scopeRelations: FindingWithRelation[] = [];
   [...(findings.blockingIssues ?? []), ...(findings.majorRisks ?? [])].forEach((item) => {
     if (item && typeof item === 'object') scopeRelations.push(item);
   });
   if (scopeRelations.length === 0) return null;
   if (!obligation) {
-    return formatBlocked('REVIEW_SUBJECT_SCOPE_UNAVAILABLE', { obligationId: 'unresolved' });
+    return { code: 'REVIEW_SUBJECT_SCOPE_UNAVAILABLE', vars: { obligationId: 'unresolved' } };
   }
   const scopeResult = validateReviewFindingsScope({
     findings: scopeRelations,
@@ -280,12 +294,32 @@ function checkReviewFindingsScope(
       ? { repositoryRevisionProvenance: obligation.repositoryRevisionProvenance }
       : {}),
   });
-  if (!scopeResult.ok)
-    return formatBlocked(scopeResult.code, {
-      findingIndex: scopeResult.details.outOfScopeFindingIndexes.join(', '),
-      obligationId: obligation.obligationId,
-    });
+  if (!scopeResult.ok) {
+    return {
+      code: scopeResult.code,
+      vars: {
+        findingIndex: scopeResult.details.outOfScopeFindingIndexes.join(', '),
+        obligationId: obligation.obligationId,
+      },
+    };
+  }
   return null;
+}
+
+function checkRepositoryEvidenceBinding(
+  findings: ReviewFindings,
+  obligation: ReviewObligation | null,
+  ctx: ReviewFindingsValidationContext,
+): ReviewValidationFailure | null {
+  const binding = evaluateRepositoryEvidenceBinding(findings, obligation, ctx);
+  return binding.ok
+    ? null
+    : {
+        code: binding.code,
+        vars: Object.fromEntries(
+          Object.entries(binding.details).map(([key, value]) => [key, String(value)]),
+        ),
+      };
 }
 
 interface StrictReviewBinding {
@@ -297,9 +331,9 @@ interface StrictReviewBinding {
 function validateStrictReviewFindings(
   findings: ReviewFindings,
   ctx: ReviewFindingsValidationContext,
-): string | null {
+): ReviewValidationFailure | null {
   const binding = resolveStrictReviewBinding(findings, ctx);
-  if (typeof binding === 'string') return binding;
+  if (!('obligation' in binding)) return binding;
   return (
     validateStrictReviewRejections(binding) ??
     validateStrictReviewIdentity(findings, ctx, binding) ??
@@ -312,11 +346,12 @@ function validateStrictReviewFindings(
 function resolveStrictReviewBinding(
   findings: ReviewFindings,
   ctx: ReviewFindingsValidationContext,
-): StrictReviewBinding | string {
+): StrictReviewBinding | ReviewValidationFailure {
   if (!ctx.assurance || !ctx.obligationType) {
-    return formatBlocked('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
-      required: 'strict review assurance state',
-    });
+    return {
+      code: 'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+      vars: { required: 'strict review assurance state' },
+    };
   }
   const obligation = findLatestObligation(
     ctx.assurance.obligations,
@@ -328,17 +363,23 @@ function resolveStrictReviewBinding(
   const submittedFindingsHash = hashFindings(findings);
   const invocation = findStrictInvocation(ctx, obligation, findings, submittedFindingsHash);
   if (!invocation) {
-    return formatBlocked('SUBAGENT_EVIDENCE_MISSING', { obligationId: obligation.obligationId });
+    return {
+      code: 'SUBAGENT_EVIDENCE_MISSING',
+      vars: { obligationId: obligation.obligationId },
+    };
   }
   return { obligation, invocation, submittedFindingsHash };
 }
 
-function missingStrictObligation(ctx: ReviewFindingsValidationContext): string {
-  return formatBlocked('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
-    obligationType: ctx.obligationType ?? 'review',
-    iteration: String(ctx.expectedIteration),
-    planVersion: String(ctx.expectedPlanVersion),
-  });
+function missingStrictObligation(ctx: ReviewFindingsValidationContext): ReviewValidationFailure {
+  return {
+    code: 'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+    vars: {
+      obligationType: ctx.obligationType ?? 'review',
+      iteration: String(ctx.expectedIteration),
+      planVersion: String(ctx.expectedPlanVersion),
+    },
+  };
 }
 
 function findStrictInvocation(
@@ -356,19 +397,24 @@ function findStrictInvocation(
   );
 }
 
-function validateStrictReviewRejections(binding: StrictReviewBinding): string | null {
+function validateStrictReviewRejections(
+  binding: StrictReviewBinding,
+): ReviewValidationFailure | null {
   const obligationRejection = getReviewFindingsAcceptanceRejection({
     obligation: binding.obligation,
   });
   if (obligationRejection) {
-    return formatBlocked(obligationRejection.reason, acceptanceRejectionVars(obligationRejection));
+    return {
+      code: obligationRejection.reason,
+      vars: acceptanceRejectionVars(obligationRejection),
+    };
   }
   const invocationRejection = getReviewFindingsAcceptanceRejection({
     obligation: binding.obligation,
     invocation: binding.invocation,
   });
   return invocationRejection
-    ? formatBlocked(invocationRejection.reason, acceptanceRejectionVars(invocationRejection))
+    ? { code: invocationRejection.reason, vars: acceptanceRejectionVars(invocationRejection) }
     : null;
 }
 
@@ -376,35 +422,43 @@ function validateStrictReviewIdentity(
   findings: ReviewFindings,
   ctx: ReviewFindingsValidationContext,
   binding: StrictReviewBinding,
-): string | null {
+): ReviewValidationFailure | null {
   const { obligation, invocation } = binding;
   const selfSession =
     invocation.childSessionId === ctx.reviewParentSessionId ||
     findings.reviewedBy.sessionId === ctx.reviewParentSessionId;
   return selfSession
-    ? formatBlocked('REVIEW_SELF_APPROVAL_DENIED', { obligationId: obligation.obligationId })
+    ? {
+        code: 'REVIEW_SELF_APPROVAL_DENIED',
+        vars: { obligationId: obligation.obligationId },
+      }
     : null;
 }
 
-function validateStrictReviewAcceptance(binding: StrictReviewBinding): string | null {
+function validateStrictReviewAcceptance(
+  binding: StrictReviewBinding,
+): ReviewValidationFailure | null {
   const { obligation } = binding;
   return obligation.status === 'fulfilled'
     ? null
-    : formatBlocked('SUBAGENT_EVIDENCE_MISSING', { obligationId: obligation.obligationId });
+    : {
+        code: 'SUBAGENT_EVIDENCE_MISSING',
+        vars: { obligationId: obligation.obligationId },
+      };
 }
 
 function validateStrictReviewAttestation(
   findings: ReviewFindings,
   ctx: ReviewFindingsValidationContext,
   obligation: ReviewObligation,
-): string | null {
+): ReviewValidationFailure | null {
   const attestationError = validateStrictAttestation(findings, {
     obligationId: obligation.obligationId,
     iteration: ctx.expectedIteration,
     planVersion: ctx.expectedPlanVersion,
   });
   return attestationError
-    ? formatBlocked(attestationError, { obligationId: obligation.obligationId })
+    ? { code: attestationError, vars: { obligationId: obligation.obligationId } }
     : null;
 }
 
@@ -412,7 +466,7 @@ function validateStrictReviewInvocationBinding(
   findings: ReviewFindings,
   ctx: ReviewFindingsValidationContext,
   binding: StrictReviewBinding,
-): string | null {
+): ReviewValidationFailure | null {
   return (
     validateInvocationObligationId(binding) ??
     validateInvocationSessionId(findings, binding) ??
@@ -421,38 +475,46 @@ function validateStrictReviewInvocationBinding(
   );
 }
 
-function validateInvocationObligationId(binding: StrictReviewBinding): string | null {
+function validateInvocationObligationId(
+  binding: StrictReviewBinding,
+): ReviewValidationFailure | null {
   const { obligation, invocation } = binding;
   return invocation.obligationId !== obligation.obligationId
-    ? formatBlocked('SUBAGENT_MANDATE_MISMATCH', { obligationId: obligation.obligationId })
+    ? { code: 'SUBAGENT_MANDATE_MISMATCH', vars: { obligationId: obligation.obligationId } }
     : null;
 }
 
 function validateInvocationSessionId(
   findings: ReviewFindings,
   binding: StrictReviewBinding,
-): string | null {
+): ReviewValidationFailure | null {
   if (findings.reviewedBy.sessionId === binding.invocation.childSessionId) return null;
-  return formatBlocked('REVIEW_FINDINGS_SESSION_MISMATCH', {
-    provided: findings.reviewedBy.sessionId,
-    expected: binding.invocation.childSessionId,
-  });
+  return {
+    code: 'REVIEW_FINDINGS_SESSION_MISMATCH',
+    vars: {
+      provided: findings.reviewedBy.sessionId,
+      expected: binding.invocation.childSessionId,
+    },
+  };
 }
 
 function validateInvocationFindingsHash(
   findings: ReviewFindings,
   binding: StrictReviewBinding,
-): string | null {
+): ReviewValidationFailure | null {
   const { obligation, invocation, submittedFindingsHash } = binding;
   return submittedFindingsHash === invocation.findingsHash
     ? null
-    : formatBlocked('REVIEW_FINDINGS_HASH_MISMATCH', { obligationId: obligation.obligationId });
+    : {
+        code: 'REVIEW_FINDINGS_HASH_MISMATCH',
+        vars: { obligationId: obligation.obligationId },
+      };
 }
 
 function validateStructuredInvocationContract(
   ctx: ReviewFindingsValidationContext,
   binding: StrictReviewBinding,
-): string | null {
+): ReviewValidationFailure | null {
   return hasValidStructuredInvocationContract({
     obligation: binding.obligation,
     invocation: binding.invocation,
@@ -461,10 +523,13 @@ function validateStructuredInvocationContract(
       : {}),
   })
     ? null
-    : formatBlocked('SUBAGENT_EVIDENCE_MISSING', {
-        obligationId: binding.obligation.obligationId,
-        reason: `expected structured ${REVIEWER_SUBAGENT_TYPE} evidence bound to the active session, mandate, criteria, child session, and findings hash`,
-      });
+    : {
+        code: 'SUBAGENT_EVIDENCE_MISSING',
+        vars: {
+          obligationId: binding.obligation.obligationId,
+          reason: `expected structured ${REVIEWER_SUBAGENT_TYPE} evidence bound to the active session, mandate, criteria, child session, and findings hash`,
+        },
+      };
 }
 
 // ─── Structured Findings Resolution ───────────────────────────────────────────
@@ -536,6 +601,12 @@ export type StructuredResolutionResult =
       readonly kind: 'resolved';
       readonly effectiveFindings: ReviewFindings;
       readonly evidenceInvocationId: string;
+      /**
+       * Warnings collected from discarded unusable captures. Adapters replay
+       * them even on the resolved path — a bad capture before a good retry is
+       * still operator-relevant.
+       */
+      readonly diagnostics: readonly StructuredResolutionDiagnostics[];
     };
 
 export function resolveStructuredEffectiveFindings(
@@ -556,7 +627,7 @@ export function resolveStructuredEffectiveFindings(
 function resolveCapturedEvidenceFindings(
   ctx: StructuredResolutionContext,
 ): StructuredResolutionResult {
-  const resolution = resolveStructuredFindings(
+  const { resolution, diagnostics } = resolveStructuredFindings(
     ctx.state.assurance,
     ctx.pendingObligation,
     ctx.state.unresolvedImplementationChallengeIds,
@@ -570,7 +641,8 @@ function resolveCapturedEvidenceFindings(
       kind: 'resolved',
       effectiveFindings: resolution.findings,
       evidenceInvocationId: resolution.invocationId,
+      diagnostics,
     };
   }
-  return { kind: 'blocked', failure: structuredResolutionFailure(resolution) };
+  return { kind: 'blocked', failure: structuredResolutionFailure(resolution, diagnostics) };
 }

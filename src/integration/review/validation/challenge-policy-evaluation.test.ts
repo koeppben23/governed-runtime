@@ -238,7 +238,7 @@ async function resolveCapturedFixture(
     },
     obligation,
   );
-  return { blocked: result.kind !== 'resolved', reviewerLatencyMs };
+  return { blocked: result.resolution.kind !== 'resolved', reviewerLatencyMs };
 }
 
 async function runResolutionAndIndependentReReview(): Promise<boolean> {
@@ -312,7 +312,7 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
         dispatches: [completedDispatchForInvocation(firstInvocation)],
       },
       firstObligation,
-    ).kind,
+    ).resolution.kind,
   ).toBe('resolved');
   const attemptId = '33333333-3333-4333-8333-333333333333';
   await writeState(
@@ -416,7 +416,7 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
     state ? computeUnaddressedPriorFailIds(state) : undefined,
   );
   return (
-    reReview.kind === 'resolved' &&
+    reReview.resolution.kind === 'resolved' &&
     secondFindings.reviewedBy.sessionId !== firstFindings.reviewedBy.sessionId
   );
 }

@@ -30,7 +30,10 @@ import {
 import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
 
 import { resolveStructuredEffectiveFindings } from '../../review/validation/review-validation.js';
-import { formatStructuredResolutionFailure } from '../../review/validation/review-validation-failure.js';
+import {
+  formatReviewValidationFailure,
+  logStructuredResolutionDiagnostics,
+} from '../../review/validation/review-validation-failure.js';
 import { collectPreviouslyUsedChallengeIds } from '../../review/obligations/challenge-history.js';
 import { buildReviewChallengeContract } from '../../review/obligations/challenge-contract.js';
 
@@ -112,8 +115,9 @@ function resolveArchitectureReview(
   });
 
   if (resolved.kind === 'blocked') {
-    return formatStructuredResolutionFailure(getAdapterLogger(), resolved.failure);
+    return formatReviewValidationFailure(getAdapterLogger(), resolved.failure);
   }
+  logStructuredResolutionDiagnostics(getAdapterLogger(), resolved.diagnostics);
 
   const findingsBlocked = validateResolvedFindings(
     resolved.effectiveFindings,

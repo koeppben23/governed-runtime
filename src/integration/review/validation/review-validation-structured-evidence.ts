@@ -117,9 +117,20 @@ interface DeferredUnparseableDiagnostic {
 }
 
 interface DeferredStructuredDiagnostics {
-  readonly unparseable: DeferredUnparseableDiagnostic | null;
+  /**
+   * Every unusable capture encountered so far, in encounter order. The last
+   * entry feeds the `unparseable` resolution variant; the whole list feeds the
+   * operator diagnostics that travel independently of the final result.
+   */
+  readonly unparseables: readonly DeferredUnparseableDiagnostic[];
   readonly incoherent: IncoherentStructuredDiagnostic | null;
   readonly unavailableLineage: UnavailableLineageDiagnostic | null;
+}
+
+/** Resolution plus the operator diagnostics collected while resolving it. */
+export interface StructuredFindingsResolutionResult {
+  readonly resolution: StructuredFindingsResolution;
+  readonly diagnostics: readonly StructuredResolutionDiagnostics[];
 }
 
 type DeferredStructuredDiagnostic =
@@ -163,12 +174,14 @@ export function resolveStructuredFindings(
     (readonly string[] | undefined)?,
     (string | undefined)?,
   ]
-): StructuredFindingsResolution {
-  if (!obligation || !assurance) return { kind: 'not_found' };
+): StructuredFindingsResolutionResult {
+  if (!obligation || !assurance) {
+    return { resolution: { kind: 'not_found' }, diagnostics: [] };
+  }
 
   const obligationRejection = getReviewFindingsAcceptanceRejection({ obligation });
   if (obligationRejection) {
-    return { kind: 'rejected', rejection: obligationRejection };
+    return { resolution: { kind: 'rejected', rejection: obligationRejection }, diagnostics: [] };
   }
 
   const context: StructuredFindingsEvaluationContext = {
@@ -197,19 +210,30 @@ export function resolveStructuredFindings(
 function resolveFromStructuredInvocations(
   context: StructuredFindingsEvaluationContext,
   matchingInvocations: readonly ReviewInvocationEvidence[],
-): StructuredFindingsResolution {
+): StructuredFindingsResolutionResult {
   let deferred = emptyDeferredDiagnostics();
   for (const invocation of matchingInvocations) {
     const evaluation = evaluateStructuredInvocation(context, invocation);
     if (evaluation.kind === 'skip') continue;
-    if (evaluation.kind === 'terminal') return evaluation.resolution;
+    if (evaluation.kind === 'terminal') {
+      // A resolved retry supersedes the unusable capture for the RESOLUTION,
+      // but the warnings collected from earlier captures still reach the
+      // adapter boundary.
+      return { resolution: evaluation.resolution, diagnostics: deferredDiagnostics(deferred) };
+    }
     deferred = mergeDeferredDiagnostics(deferred, evaluation.diagnostic);
   }
   return finalizeStructuredResolution(context, matchingInvocations, deferred);
 }
 
+function deferredDiagnostics(
+  deferred: DeferredStructuredDiagnostics,
+): readonly StructuredResolutionDiagnostics[] {
+  return deferred.unparseables.map((item) => item.diagnostics);
+}
+
 function emptyDeferredDiagnostics(): DeferredStructuredDiagnostics {
-  return { unparseable: null, incoherent: null, unavailableLineage: null };
+  return { unparseables: [], incoherent: null, unavailableLineage: null };
 }
 
 function mergeDeferredDiagnostics(
@@ -236,7 +260,7 @@ function mergeDeferredDiagnostics(
   }
   return {
     ...current,
-    unparseable: { detail: incoming.detail, diagnostics: incoming.diagnostics },
+    unparseables: [...current.unparseables, incoming],
   };
 }
 
@@ -244,41 +268,55 @@ function finalizeStructuredResolution(
   context: StructuredFindingsEvaluationContext,
   matchingInvocations: readonly ReviewInvocationEvidence[],
   deferred: DeferredStructuredDiagnostics,
-): StructuredFindingsResolution {
+): StructuredFindingsResolutionResult {
+  const diagnostics = deferredDiagnostics(deferred);
+  const lastUnparseable = deferred.unparseables.at(-1) ?? null;
   if (deferred.unavailableLineage !== null) {
     return {
-      kind: 'attempt_lineage_unavailable',
-      invocationId: deferred.unavailableLineage.invocationId,
-      obligationId: deferred.unavailableLineage.obligationId,
+      resolution: {
+        kind: 'attempt_lineage_unavailable',
+        invocationId: deferred.unavailableLineage.invocationId,
+        obligationId: deferred.unavailableLineage.obligationId,
+      },
+      diagnostics,
     };
   }
   if (deferred.incoherent !== null) {
     return {
-      kind: 'incoherent',
-      code: deferred.incoherent.code,
-      details: deferred.incoherent.details,
-      invocationId: deferred.incoherent.invocationId,
-      attemptId: deferred.incoherent.attemptId,
-      ...(typeof deferred.incoherent.details.blockingIssueCount === 'number'
-        ? { blockingIssueCount: deferred.incoherent.details.blockingIssueCount }
-        : {}),
+      resolution: {
+        kind: 'incoherent',
+        code: deferred.incoherent.code,
+        details: deferred.incoherent.details,
+        invocationId: deferred.incoherent.invocationId,
+        attemptId: deferred.incoherent.attemptId,
+        ...(typeof deferred.incoherent.details.blockingIssueCount === 'number'
+          ? { blockingIssueCount: deferred.incoherent.details.blockingIssueCount }
+          : {}),
+      },
+      diagnostics,
     };
   }
-  if (deferred.unparseable !== null) {
+  if (lastUnparseable !== null) {
     return {
-      kind: 'unparseable',
-      detail: deferred.unparseable.detail,
-      diagnostics: deferred.unparseable.diagnostics,
+      resolution: {
+        kind: 'unparseable',
+        detail: lastUnparseable.detail,
+        diagnostics: lastUnparseable.diagnostics,
+      },
+      diagnostics,
     };
   }
   if (matchingInvocations.length > 0) {
     return {
-      kind: 'invalid',
-      code: 'SUBAGENT_EVIDENCE_MISSING',
-      obligationId: context.obligation.obligationId,
+      resolution: {
+        kind: 'invalid',
+        code: 'SUBAGENT_EVIDENCE_MISSING',
+        obligationId: context.obligation.obligationId,
+      },
+      diagnostics,
     };
   }
-  return { kind: 'not_found' };
+  return { resolution: { kind: 'not_found' }, diagnostics };
 }
 
 function evaluateStructuredInvocation(

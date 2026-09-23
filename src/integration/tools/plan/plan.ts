@@ -38,7 +38,10 @@ import type { ToolDefinition } from '../helpers.js';
 import { formatError } from '../error-format.js';
 import { formatBlocked } from '../../blocked-result.js';
 import { getAdapterLogger } from '../../../logging/adapter-logger.js';
-import { formatStructuredResolutionFailure } from '../../review/validation/review-validation-failure.js';
+import {
+  formatReviewValidationFailure,
+  logStructuredResolutionDiagnostics,
+} from '../../review/validation/review-validation-failure.js';
 import {
   withMutableSessionTransaction,
   formatAutoAdvanceOverflow,
@@ -243,8 +246,9 @@ async function handlePlanReview(scope: PlanExecutionScope): Promise<string> {
 
   const lookup = resolveEffectivePlanFindings(scope);
   if (lookup.resolved.kind === 'blocked') {
-    return formatStructuredResolutionFailure(getAdapterLogger(), lookup.resolved.failure);
+    return formatReviewValidationFailure(getAdapterLogger(), lookup.resolved.failure);
   }
+  logStructuredResolutionDiagnostics(getAdapterLogger(), lookup.resolved.diagnostics);
   const effectiveFindings = lookup.resolved.effectiveFindings;
   const blocked = blockedInvalidPlanFindings(
     scope.args,

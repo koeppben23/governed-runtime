@@ -36,7 +36,8 @@ import {
   type StructuredFindingsResolution,
 } from '../../review/validation/review-validation-structured-evidence.js';
 import {
-  formatStructuredResolutionFailure,
+  formatReviewValidationFailure,
+  logStructuredResolutionDiagnostics,
   structuredResolutionFailure,
 } from '../../review/validation/review-validation-failure.js';
 import {
@@ -215,7 +216,7 @@ function prepareStructuredEvidenceSubmission(
       obligationId: exec.args.reviewObligationId,
     });
   }
-  const resolution = resolveStructuredFindings(
+  const { resolution, diagnostics } = resolveStructuredFindings(
     state.reviewAssurance,
     obligation,
     undefined,
@@ -226,11 +227,12 @@ function prepareStructuredEvidenceSubmission(
   );
   if (isMissingStructuredEvidenceResolution(resolution)) return null;
   if (resolution.kind !== 'resolved') {
-    return formatStructuredResolutionFailure(
+    return formatReviewValidationFailure(
       getAdapterLogger(),
-      structuredResolutionFailure(resolution),
+      structuredResolutionFailure(resolution, diagnostics),
     );
   }
+  logStructuredResolutionDiagnostics(getAdapterLogger(), diagnostics);
   const validation = validateSubmittedReviewFindings(state, resolution.findings, obligation);
   if (validation) return validation;
   return buildStructuredPreparation({

@@ -5,12 +5,24 @@ import {
   type ReviewFindingsValidationContext,
 } from '../review/validation/review-validation.js';
 import {
-  formatStructuredResolutionFailure,
+  formatReviewValidationFailure,
   structuredResolutionFailure,
 } from '../review/validation/review-validation-failure.js';
 import { resolveStructuredFindings } from '../review/validation/review-validation-structured-evidence.js';
 
 const testLogger = { warn: () => {} };
+
+/**
+ * Adapter-boundary characterization: the domain validation returns a failure
+ * verdict, the serializer renders the envelope under test.
+ */
+function serializedValidation(
+  findings: ReviewFindings,
+  ctx: ReviewFindingsValidationContext,
+): string | null {
+  const failure = validateReviewFindings(findings, ctx);
+  return failure === null ? null : formatReviewValidationFailure(testLogger, failure);
+}
 import type { ReviewFindings } from '../../state/evidence.js';
 import type { ReviewChallenge } from '../../state/evidence-review.js';
 import {
@@ -186,7 +198,7 @@ describe('validateReviewFindings', () => {
   describe('happy path', () => {
     it('returns null for valid subagent findings (subagent enabled)', () => {
       const findings = strictFindings();
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         findings,
         makeCtx({ assurance: strictAssuranceFixture(findings), obligationType: 'plan' }),
       );
@@ -195,7 +207,7 @@ describe('validateReviewFindings', () => {
 
     it('returns null for iteration > 0 when expected', () => {
       const findings = strictFindings({ iteration: 3 });
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         findings,
         makeCtx({
           expectedIteration: 3,
@@ -208,7 +220,7 @@ describe('validateReviewFindings', () => {
 
     it('returns null for planVersion > 1 when expected', () => {
       const findings = strictFindings({ planVersion: 5 });
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         findings,
         makeCtx({
           expectedPlanVersion: 5,
@@ -243,7 +255,7 @@ describe('validateReviewFindings', () => {
     };
 
     it('blocks accept with a critical blocking issue', () => {
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         makeFindings({ overallVerdict: 'accept', blockingIssues: [criticalIssue] }),
         makeCtx(),
       );
@@ -252,7 +264,7 @@ describe('validateReviewFindings', () => {
     });
 
     it('blocks accept with a major blocking issue', () => {
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         makeFindings({ overallVerdict: 'accept', blockingIssues: [majorIssue] }),
         makeCtx(),
       );
@@ -260,7 +272,7 @@ describe('validateReviewFindings', () => {
     });
 
     it('blocks accept with a MINOR blocking issue (strict emptiness — field name is the contract)', () => {
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         makeFindings({ overallVerdict: 'accept', blockingIssues: [minorIssue] }),
         makeCtx(),
       );
@@ -269,7 +281,7 @@ describe('validateReviewFindings', () => {
 
     it('allows accept with empty blockingIssues', () => {
       const findings = strictFindings({ overallVerdict: 'accept', blockingIssues: [] });
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         findings,
         makeCtx({ assurance: strictAssuranceFixture(findings), obligationType: 'plan' }),
       );
@@ -281,7 +293,7 @@ describe('validateReviewFindings', () => {
         overallVerdict: 'changes_requested',
         blockingIssues: [criticalIssue],
       });
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         findings,
         makeCtx({ assurance: strictAssuranceFixture(findings), obligationType: 'plan' }),
       );
@@ -290,7 +302,7 @@ describe('validateReviewFindings', () => {
 
     it('allows changes_requested with empty blockingIssues', () => {
       const findings = strictFindings({ overallVerdict: 'changes_requested', blockingIssues: [] });
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         findings,
         makeCtx({ assurance: strictAssuranceFixture(findings), obligationType: 'plan' }),
       );
@@ -304,7 +316,7 @@ describe('validateReviewFindings', () => {
         majorRisks: [majorIssue],
         missingVerification: ['no integration test for the new path'],
       });
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         findings,
         makeCtx({ assurance: strictAssuranceFixture(findings), obligationType: 'plan' }),
       );
@@ -312,7 +324,7 @@ describe('validateReviewFindings', () => {
     });
 
     it('blocks material findings without a resolved review obligation scope', () => {
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         makeFindings({ overallVerdict: 'changes_requested', blockingIssues: [majorIssue] }),
         makeCtx(),
       );
@@ -332,7 +344,7 @@ describe('validateReviewFindings', () => {
           evidenceLocations: [],
         },
       };
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         makeFindings({ overallVerdict: 'accept', majorRisks: [outOfScopeRisk] }),
         makeCtx({ assurance: strictAssuranceFixture(), obligationType: 'plan' }),
       );
@@ -345,7 +357,7 @@ describe('validateReviewFindings', () => {
     });
 
     it('reports unable_to_review via its own SSOT path, not the coherence rule', () => {
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         makeFindings({ overallVerdict: 'unable_to_review', blockingIssues: [] }),
         makeCtx(),
       );
@@ -357,7 +369,7 @@ describe('validateReviewFindings', () => {
 
   describe('Rule 1: mandatory subagent mode', () => {
     it('rejects self-review findings with the independent-review recovery message', () => {
-      const result = validateReviewFindings(makeFindings({ reviewMode: 'self' }), makeCtx());
+      const result = serializedValidation(makeFindings({ reviewMode: 'self' }), makeCtx());
 
       expect(result).not.toBeNull();
       const blocked = parseBlocked(result!);
@@ -371,7 +383,7 @@ describe('validateReviewFindings', () => {
 
   describe('Rule 3: planVersion binding', () => {
     it('blocks when planVersion too high', () => {
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         makeFindings({ planVersion: 99 }),
         makeCtx({ expectedPlanVersion: 1 }),
       );
@@ -381,7 +393,7 @@ describe('validateReviewFindings', () => {
     });
 
     it('blocks when planVersion too low', () => {
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         makeFindings({ planVersion: 1 }),
         makeCtx({ expectedPlanVersion: 3 }),
       );
@@ -391,7 +403,7 @@ describe('validateReviewFindings', () => {
 
     it('accepts exact planVersion match', () => {
       const findings = strictFindings({ planVersion: 3 });
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         findings,
         makeCtx({
           expectedPlanVersion: 3,
@@ -407,7 +419,7 @@ describe('validateReviewFindings', () => {
 
   describe('Rule 4: iteration binding', () => {
     it('blocks when iteration too high', () => {
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         makeFindings({ iteration: 5 }),
         makeCtx({ expectedIteration: 0 }),
       );
@@ -416,7 +428,7 @@ describe('validateReviewFindings', () => {
     });
 
     it('blocks when iteration too low', () => {
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         makeFindings({ iteration: 0 }),
         makeCtx({ expectedIteration: 2 }),
       );
@@ -426,7 +438,7 @@ describe('validateReviewFindings', () => {
 
     it('accepts exact iteration match', () => {
       const findings = strictFindings({ iteration: 2 });
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         findings,
         makeCtx({
           expectedIteration: 2,
@@ -443,7 +455,7 @@ describe('validateReviewFindings', () => {
   describe('edge cases', () => {
     it('blocks on first failing rule (subagent before planVersion)', () => {
       // Legacy subagent-disabled is ignored; planVersion binding remains authoritative.
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         makeFindings({ reviewMode: 'subagent', planVersion: 99 }),
         makeCtx({ expectedPlanVersion: 1 }),
       );
@@ -453,7 +465,7 @@ describe('validateReviewFindings', () => {
 
     it('checks planVersion before iteration (rule order)', () => {
       // planVersion wrong AND iteration wrong — should hit Rule 3 (planVersion) first
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         makeFindings({ planVersion: 99, iteration: 99 }),
         makeCtx({ expectedPlanVersion: 1, expectedIteration: 0 }),
       );
@@ -462,7 +474,7 @@ describe('validateReviewFindings', () => {
     });
 
     it('returns structured JSON with error=true on any block', () => {
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         makeFindings({ planVersion: 99 }),
         makeCtx({ expectedPlanVersion: 1 }),
       );
@@ -474,7 +486,7 @@ describe('validateReviewFindings', () => {
 
     it('planVersion=0 never matches (positive integer required by schema)', () => {
       // Even if expectedPlanVersion=0 (shouldn't happen), validation checks equality
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         makeFindings({ planVersion: 1 }),
         makeCtx({ expectedPlanVersion: 0 }),
       );
@@ -485,7 +497,7 @@ describe('validateReviewFindings', () => {
 
   describe('strict assurance', () => {
     it('reports unavailable plugin enforcement when the strict assurance state is absent', () => {
-      const result = validateReviewFindings(strictFindings(), makeCtx({ obligationType: 'plan' }));
+      const result = serializedValidation(strictFindings(), makeCtx({ obligationType: 'plan' }));
 
       expect(result).not.toBeNull();
       const blocked = parseBlocked(result!);
@@ -495,7 +507,7 @@ describe('validateReviewFindings', () => {
 
     it('accepts when strict evidence and attestation match', () => {
       const findings = strictFindings();
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         findings,
         makeCtx({
           assurance: strictAssuranceFixture(findings),
@@ -507,7 +519,7 @@ describe('validateReviewFindings', () => {
 
     it('blocks when strict attestation is missing', () => {
       const findings = makeFindings({ reviewMode: 'subagent' });
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         findings,
         makeCtx({
           assurance: strictAssuranceFixture(),
@@ -523,7 +535,7 @@ describe('validateReviewFindings', () => {
       assurance.obligations[0]!.status = 'blocked';
       assurance.obligations[0]!.blockedCode = 'STRICT_REVIEW_ORCHESTRATION_FAILED';
       const findings = strictFindings();
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         findings,
         makeCtx({
           assurance,
@@ -536,7 +548,7 @@ describe('validateReviewFindings', () => {
 
     it('blocks stale findings before selecting a matching stale obligation', () => {
       const findings = strictFindings({ iteration: 1 });
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         findings,
         makeCtx({
           expectedIteration: 0,
@@ -551,7 +563,7 @@ describe('validateReviewFindings', () => {
     it('blocks when submitted findings content differs from invocation hash', () => {
       const original = strictFindings();
       const tampered = { ...original, overallVerdict: 'changes_requested' as const };
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         tampered,
         makeCtx({
           assurance: strictAssuranceFixture(original),
@@ -564,7 +576,7 @@ describe('validateReviewFindings', () => {
 
     it('blocks when submitted findings session differs from invocation child session', () => {
       const findings = strictFindings({ reviewedBy: { sessionId: 'ses_other' } });
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         findings,
         makeCtx({
           assurance: strictAssuranceFixture(strictFindings()),
@@ -585,7 +597,7 @@ describe('validateReviewFindings', () => {
       // routing BLOCKED before tools see findings; this tool-layer
       // guard catches the residual non-strict / submit-driven path.
       const findings = makeFindings({ overallVerdict: 'unable_to_review' });
-      const result = validateReviewFindings(findings, makeCtx());
+      const result = serializedValidation(findings, makeCtx());
       expect(result).not.toBeNull();
       expect(parseBlocked(result!).code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
     });
@@ -600,7 +612,7 @@ describe('validateReviewFindings', () => {
         planVersion: 999, // would otherwise trigger REVIEW_PLAN_VERSION_MISMATCH
         iteration: 999, // would otherwise trigger REVIEW_ITERATION_MISMATCH
       });
-      const result = validateReviewFindings(findings, makeCtx());
+      const result = serializedValidation(findings, makeCtx());
       expect(result).not.toBeNull();
       expect(parseBlocked(result!).code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
     });
@@ -610,7 +622,7 @@ describe('validateReviewFindings', () => {
       // mandate state. Even if assurance is missing/inconsistent,
       // the unreviewable verdict is the dominant signal.
       const findings = makeFindings({ overallVerdict: 'unable_to_review' });
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         findings,
         makeCtx({
           assurance: undefined, // would otherwise trigger PLUGIN_ENFORCEMENT_UNAVAILABLE
@@ -626,7 +638,7 @@ describe('validateReviewFindings', () => {
       // validation proceeds to existing rules; on a fully-valid
       // findings + ctx the result is null (validation pass).
       const findings = strictFindings({ overallVerdict: 'accept' });
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         findings,
         makeCtx({ assurance: strictAssuranceFixture(findings), obligationType: 'plan' }),
       );
@@ -636,7 +648,7 @@ describe('validateReviewFindings', () => {
     it('does NOT block when overallVerdict=changes_requested (HAPPY: regression guard)', () => {
       // Symmetric guard for the second 2-valued LoopVerdict.
       const findings = strictFindings({ overallVerdict: 'changes_requested' });
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         findings,
         makeCtx({ assurance: strictAssuranceFixture(findings), obligationType: 'plan' }),
       );
@@ -648,7 +660,7 @@ describe('validateReviewFindings', () => {
   describe('F13 architecture obligationType', () => {
     it("third-verdict precedence still wins for obligationType: 'architecture'", () => {
       const findings = makeFindings({ overallVerdict: 'unable_to_review' });
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         findings,
         makeCtx({
           obligationType: 'architecture',
@@ -672,7 +684,7 @@ describe('validateReviewFindings', () => {
           obligationType: 'architecture' as const,
         })),
       };
-      const result = validateReviewFindings(
+      const result = serializedValidation(
         findings,
         makeCtx({
           assurance: archAssurance,
@@ -788,7 +800,7 @@ describe('validateReviewFindings — implementation challenge freshness', () => 
       challenges: [implChallenge([IMPL_REF, FRESH_ATTEMPT_REF])],
     });
 
-    expect(validateReviewFindings(findings, strictChallengeCtx(findings))).toBeNull();
+    expect(serializedValidation(findings, strictChallengeCtx(findings))).toBeNull();
   });
 
   it('rejects a challenge citing a validation attempt outside the allowed (fresh) set', () => {
@@ -799,7 +811,7 @@ describe('validateReviewFindings — implementation challenge freshness', () => 
       kind: 'validation_attempt',
       attemptId: '99999999-9999-4999-8999-999999999999',
     };
-    const result = validateReviewFindings(
+    const result = serializedValidation(
       makeFindings({ challenges: [implChallenge([IMPL_REF, staleRef])] }),
       challengeCtx(),
     );
@@ -808,7 +820,7 @@ describe('validateReviewFindings — implementation challenge freshness', () => 
   });
 
   it('rejects a challenge whose obligationId does not match the active obligation', () => {
-    const result = validateReviewFindings(
+    const result = serializedValidation(
       makeFindings({
         challenges: [
           {
@@ -826,7 +838,7 @@ describe('validateReviewFindings — implementation challenge freshness', () => 
   it('falls back to the resolved obligation id when expectedObligationId is not supplied', () => {
     // Even without an explicit expectedObligationId in ctx, the resolved
     // obligation binds the challenge — a foreign obligationId still fails.
-    const result = validateReviewFindings(
+    const result = serializedValidation(
       makeFindings({
         challenges: [
           {
@@ -842,7 +854,7 @@ describe('validateReviewFindings — implementation challenge freshness', () => 
   });
 
   it('blocks an accept verdict while prior failing challenges are unaddressed', () => {
-    const result = validateReviewFindings(
+    const result = serializedValidation(
       makeFindings({ challenges: [implChallenge([IMPL_REF, FRESH_ATTEMPT_REF])] }),
       challengeCtx({
         unaddressedPriorFailIds: ['00000000-0000-4000-8000-000000000001'],
@@ -854,7 +866,7 @@ describe('validateReviewFindings — implementation challenge freshness', () => 
 
   it('gates supplied resolution verdicts through the unresolved challenge ids', () => {
     const openId = '00000000-0000-4000-8000-000000000001';
-    const result = validateReviewFindings(
+    const result = serializedValidation(
       makeFindings({
         overallVerdict: 'changes_requested',
         challenges: [implChallenge([IMPL_REF, FRESH_ATTEMPT_REF])],
@@ -870,7 +882,7 @@ describe('validateReviewFindings — implementation challenge freshness', () => 
 
   it('passes previously used challenge ids into distinctness validation', () => {
     const challenge = implChallenge([IMPL_REF, FRESH_ATTEMPT_REF]);
-    const result = validateReviewFindings(
+    const result = serializedValidation(
       makeFindings({ challenges: [challenge] }),
       challengeCtx({ previouslyUsedChallengeIds: [challenge.challengeId] }),
     );
@@ -908,7 +920,7 @@ describe('validateReviewFindings — branch and payload contracts', () => {
 
   it('blocks self-review with the independent-review contract', () => {
     const parsed = blockedPayload(
-      validateReviewFindings(makeFindings({ reviewMode: 'self' }), makeCtx())!,
+      serializedValidation(makeFindings({ reviewMode: 'self' }), makeCtx())!,
     );
     expect(parsed.code).toBe('REVIEW_MODE_SELF_NOT_ALLOWED');
     expect(String(parsed.message)).toContain('reviewMode=self');
@@ -916,7 +928,7 @@ describe('validateReviewFindings — branch and payload contracts', () => {
 
   it('interpolates the unable_to_review obligation context', () => {
     const parsed = blockedPayload(
-      validateReviewFindings(
+      serializedValidation(
         makeFindings({ overallVerdict: 'unable_to_review' }),
         makeCtx({ obligationType: 'architecture' }),
       )!,
@@ -927,7 +939,7 @@ describe('validateReviewFindings — branch and payload contracts', () => {
 
   it('interpolates the coherence block count', () => {
     const parsed = blockedPayload(
-      validateReviewFindings(
+      serializedValidation(
         makeFindings({ overallVerdict: 'accept', blockingIssues: [issue()] }),
         makeCtx(),
       )!,
@@ -938,7 +950,7 @@ describe('validateReviewFindings — branch and payload contracts', () => {
 
   it('interpolates the planVersion mismatch payload', () => {
     const parsed = blockedPayload(
-      validateReviewFindings(makeFindings({ planVersion: 7 }), makeCtx())!,
+      serializedValidation(makeFindings({ planVersion: 7 }), makeCtx())!,
     );
     expect(parsed.code).toBe('REVIEW_PLAN_VERSION_MISMATCH');
     expect(String(parsed.message)).toContain('plan version 7');
@@ -946,9 +958,7 @@ describe('validateReviewFindings — branch and payload contracts', () => {
   });
 
   it('interpolates the iteration mismatch payload', () => {
-    const parsed = blockedPayload(
-      validateReviewFindings(makeFindings({ iteration: 9 }), makeCtx())!,
-    );
+    const parsed = blockedPayload(serializedValidation(makeFindings({ iteration: 9 }), makeCtx())!);
     expect(parsed.code).toBe('REVIEW_ITERATION_MISMATCH');
     expect(String(parsed.message)).toContain('iteration 9');
     expect(String(parsed.message)).toContain('iteration 0');
@@ -956,7 +966,7 @@ describe('validateReviewFindings — branch and payload contracts', () => {
 
   it('interpolates the unresolvable scope payload', () => {
     const parsed = blockedPayload(
-      validateReviewFindings(
+      serializedValidation(
         makeFindings({ overallVerdict: 'changes_requested', blockingIssues: [issue()] }),
         makeCtx(),
       )!,
@@ -967,7 +977,7 @@ describe('validateReviewFindings — branch and payload contracts', () => {
 
   it('blocks without strict assurance state', () => {
     const parsed = blockedPayload(
-      validateReviewFindings(strictFindings(), makeCtx({ obligationType: 'plan' }))!,
+      serializedValidation(strictFindings(), makeCtx({ obligationType: 'plan' }))!,
     );
     expect(parsed.code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
     expect(parsed.error).toBe(true);
@@ -978,7 +988,7 @@ describe('validateReviewFindings — branch and payload contracts', () => {
     const assurance = strictAssuranceFixture(findings);
     assurance.obligations.splice(0);
     const parsed = blockedPayload(
-      validateReviewFindings(findings, makeCtx({ assurance, obligationType: 'plan' }))!,
+      serializedValidation(findings, makeCtx({ assurance, obligationType: 'plan' }))!,
     );
     expect(parsed.code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
     expect(parsed.error).toBe(true);
@@ -989,7 +999,7 @@ describe('validateReviewFindings — branch and payload contracts', () => {
     const assurance = strictAssuranceFixture(findings);
     assurance.obligations[0] = { ...assurance.obligations[0]!, invocationId: null };
     expect(
-      validateReviewFindings(findings, makeCtx({ assurance, obligationType: 'plan' })),
+      serializedValidation(findings, makeCtx({ assurance, obligationType: 'plan' })),
     ).toBeNull();
   });
 
@@ -999,7 +1009,7 @@ describe('validateReviewFindings — branch and payload contracts', () => {
     assurance.obligations[0] = { ...assurance.obligations[0]!, invocationId: null };
     assurance.invocations.splice(0);
     const parsed = blockedPayload(
-      validateReviewFindings(findings, makeCtx({ assurance, obligationType: 'plan' }))!,
+      serializedValidation(findings, makeCtx({ assurance, obligationType: 'plan' }))!,
     );
     expect(parsed.code).toBe('SUBAGENT_EVIDENCE_MISSING');
     expect(String(parsed.message)).toContain(OBLIGATION_ID);
@@ -1009,7 +1019,7 @@ describe('validateReviewFindings — branch and payload contracts', () => {
     const findings = strictFindings({ reviewedBy: { sessionId: 'ses_parent' } });
     const assurance = strictAssuranceFixture(findings);
     const parsed = blockedPayload(
-      validateReviewFindings(
+      serializedValidation(
         findings,
         makeCtx({ assurance, obligationType: 'plan', reviewParentSessionId: 'ses_parent' }),
       )!,
@@ -1023,7 +1033,7 @@ describe('validateReviewFindings — branch and payload contracts', () => {
     delete (findings as { attestation?: unknown }).attestation;
     const assurance = strictAssuranceFixture(findings);
     const parsed = blockedPayload(
-      validateReviewFindings(findings, makeCtx({ assurance, obligationType: 'plan' }))!,
+      serializedValidation(findings, makeCtx({ assurance, obligationType: 'plan' }))!,
     );
     expect(parsed.error).toBe(true);
     expect(parsed.code).toBeTruthy();
@@ -1037,7 +1047,7 @@ describe('validateReviewFindings — branch and payload contracts', () => {
       obligationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
     };
     const parsed = blockedPayload(
-      validateReviewFindings(findings, makeCtx({ assurance, obligationType: 'plan' }))!,
+      serializedValidation(findings, makeCtx({ assurance, obligationType: 'plan' }))!,
     );
     expect(parsed.code).toBe('SUBAGENT_MANDATE_MISMATCH');
     expect(String(parsed.message)).toContain(OBLIGATION_ID);
@@ -1047,7 +1057,7 @@ describe('validateReviewFindings — branch and payload contracts', () => {
     const findings = strictFindings({ reviewedBy: { sessionId: 'ses_other' } });
     const assurance = strictAssuranceFixture(findings);
     const parsed = blockedPayload(
-      validateReviewFindings(findings, makeCtx({ assurance, obligationType: 'plan' }))!,
+      serializedValidation(findings, makeCtx({ assurance, obligationType: 'plan' }))!,
     );
     expect(parsed.code).toBe('REVIEW_FINDINGS_SESSION_MISMATCH');
     expect(String(parsed.message)).toContain('ses_other');
@@ -1059,7 +1069,7 @@ describe('validateReviewFindings — branch and payload contracts', () => {
     const assurance = strictAssuranceFixture(findings);
     assurance.invocations[0] = { ...assurance.invocations[0]!, findingsHash: 'deadbeef' };
     const parsed = blockedPayload(
-      validateReviewFindings(findings, makeCtx({ assurance, obligationType: 'plan' }))!,
+      serializedValidation(findings, makeCtx({ assurance, obligationType: 'plan' }))!,
     );
     expect(parsed.code).toBe('REVIEW_FINDINGS_HASH_MISMATCH');
     expect(String(parsed.message)).toContain(OBLIGATION_ID);
@@ -1069,7 +1079,7 @@ describe('validateReviewFindings — branch and payload contracts', () => {
     const findings = strictFindings();
     const assurance = strictAssuranceFixture(findings);
     const parsed = blockedPayload(
-      validateReviewFindings(
+      serializedValidation(
         findings,
         makeCtx({ assurance, obligationType: 'plan', reviewParentSessionId: 'ses_elsewhere' }),
       )!,
@@ -1089,7 +1099,7 @@ describe('validateReviewFindings — branch and payload contracts', () => {
     });
     expect(resolved.kind).toBe('blocked');
     if (resolved.kind !== 'blocked') throw new Error('expected blocked resolution');
-    const parsed = blockedPayload(formatStructuredResolutionFailure(testLogger, resolved.failure));
+    const parsed = blockedPayload(formatReviewValidationFailure(testLogger, resolved.failure));
     expect(parsed.code).toBe('INVALID_REVIEW_TOOL_SEQUENCE');
     expect(String(parsed.message)).toContain(OBLIGATION_ID);
     expect(String(parsed.message)).toContain('reviewerUnavailable submitted');
@@ -1107,7 +1117,7 @@ describe('validateReviewFindings — branch and payload contracts', () => {
     });
     expect(resolved.kind).toBe('blocked');
     if (resolved.kind !== 'blocked') throw new Error('expected blocked resolution');
-    const parsed = blockedPayload(formatStructuredResolutionFailure(testLogger, resolved.failure));
+    const parsed = blockedPayload(formatReviewValidationFailure(testLogger, resolved.failure));
     expect(parsed.code).toBe('REVIEWER_UNAVAILABLE_STRICT');
     expect(String(parsed.message)).toContain('reviewer unavailable');
     expect(String(parsed.recovery)).toContain('structured reviewer transport');
@@ -1129,7 +1139,7 @@ describe('validateReviewFindings — branch and payload contracts', () => {
 
   it('formats rejected structured resolutions through the acceptance authority', () => {
     const parsed = blockedPayload(
-      formatStructuredResolutionFailure(
+      formatReviewValidationFailure(
         testLogger,
         structuredResolutionFailure({
           kind: 'rejected',
@@ -1143,7 +1153,7 @@ describe('validateReviewFindings — branch and payload contracts', () => {
 
   it('formats incoherent structured resolutions with stringified details', () => {
     const parsed = blockedPayload(
-      formatStructuredResolutionFailure(
+      formatReviewValidationFailure(
         testLogger,
         structuredResolutionFailure({
           kind: 'incoherent',
@@ -1159,7 +1169,7 @@ describe('validateReviewFindings — branch and payload contracts', () => {
 
   it('formats attempt-lineage-unavailable structured resolutions', () => {
     const parsed = blockedPayload(
-      formatStructuredResolutionFailure(
+      formatReviewValidationFailure(
         testLogger,
         structuredResolutionFailure({
           kind: 'attempt_lineage_unavailable',
@@ -1189,7 +1199,7 @@ describe('validateReviewFindings — branch and payload contracts', () => {
         issues: ['findings.0.overallVerdict: Required'],
       },
     });
-    const raw = formatStructuredResolutionFailure(logger, failure);
+    const raw = formatReviewValidationFailure(logger, failure);
     const parsed = blockedPayload(raw);
     expect(parsed.code).toBe('SUBAGENT_EVIDENCE_MISSING');
     expect(parsed.error).toBe(true);
@@ -1211,10 +1221,7 @@ describe('validateReviewFindings — branch and payload contracts', () => {
 
   it('formats not-found structured resolutions', () => {
     const parsed = blockedPayload(
-      formatStructuredResolutionFailure(
-        testLogger,
-        structuredResolutionFailure({ kind: 'not_found' }),
-      ),
+      formatReviewValidationFailure(testLogger, structuredResolutionFailure({ kind: 'not_found' })),
     );
     expect(parsed.code).toBe('SUBAGENT_EVIDENCE_MISSING');
     expect(parsed.error).toBe(true);
@@ -1226,7 +1233,7 @@ describe('validateReviewFindings — branch and payload contracts', () => {
     assurance.obligations[0] = { ...assurance.obligations[0]!, invocationId: null };
     assurance.invocations[0] = { ...assurance.invocations[0]!, childSessionId: 'ses_other' };
     const parsed = blockedPayload(
-      validateReviewFindings(findings, makeCtx({ assurance, obligationType: 'plan' }))!,
+      serializedValidation(findings, makeCtx({ assurance, obligationType: 'plan' }))!,
     );
     expect(parsed.code).toBe('SUBAGENT_EVIDENCE_MISSING');
     expect(String(parsed.message)).toContain(OBLIGATION_ID);
@@ -1238,7 +1245,7 @@ describe('validateReviewFindings — branch and payload contracts', () => {
     assurance.obligations[0] = { ...assurance.obligations[0]!, invocationId: null };
     assurance.invocations[0] = { ...assurance.invocations[0]!, findingsHash: 'not-the-hash' };
     const parsed = blockedPayload(
-      validateReviewFindings(findings, makeCtx({ assurance, obligationType: 'plan' }))!,
+      serializedValidation(findings, makeCtx({ assurance, obligationType: 'plan' }))!,
     );
     expect(parsed.code).toBe('SUBAGENT_EVIDENCE_MISSING');
     expect(String(parsed.message)).toContain(OBLIGATION_ID);
@@ -1246,7 +1253,7 @@ describe('validateReviewFindings — branch and payload contracts', () => {
 
   it('formats invalid structured resolutions with the obligation id', () => {
     const parsed = blockedPayload(
-      formatStructuredResolutionFailure(
+      formatReviewValidationFailure(
         testLogger,
         structuredResolutionFailure({
           kind: 'invalid',
@@ -1387,12 +1394,12 @@ describe('resolveStructuredFindings — diagnostics and deferral merges', () => 
         undefined,
         undefined,
       ),
-    ).toEqual({ kind: 'not_found' });
+    ).toEqual({ resolution: { kind: 'not_found' }, diagnostics: [] });
   });
 
   it('reports attempt_lineage_unavailable when no exact bound attempt exists', () => {
     const captured = findings();
-    const resolution = resolveWith(captured, (assurance) => {
+    const { resolution } = resolveWith(captured, (assurance) => {
       assurance.attempts[0] = { ...assurance.attempts[0]!, childSessionId: 'ses_elsewhere' };
     });
     expect(resolution.kind).toBe('attempt_lineage_unavailable');
@@ -1402,7 +1409,7 @@ describe('resolveStructuredFindings — diagnostics and deferral merges', () => 
   });
 
   it('reports unparseable when captured findings fail schema validation', () => {
-    const resolution = resolveWith({ nonsense: true } as unknown as ReviewFindings);
+    const { resolution } = resolveWith({ nonsense: true } as unknown as ReviewFindings);
     expect(resolution.kind).toBe('unparseable');
     if (resolution.kind !== 'unparseable') return;
     expect(resolution.detail).not.toBe('unknown schema validation failure');
@@ -1422,7 +1429,7 @@ describe('resolveStructuredFindings — diagnostics and deferral merges', () => 
         },
       ],
     });
-    const resolution = resolveWith(captured);
+    const { resolution } = resolveWith(captured);
     expect(resolution.kind).toBe('incoherent');
     if (resolution.kind !== 'incoherent') return;
     expect(resolution.code).toBe('SUBAGENT_VERDICT_FINDINGS_INCOHERENT');
@@ -1431,7 +1438,7 @@ describe('resolveStructuredFindings — diagnostics and deferral merges', () => 
 
   it('reports invalid when every matching invocation is skipped', () => {
     const captured = findings();
-    const resolution = resolveWith(captured, (assurance) => {
+    const { resolution } = resolveWith(captured, (assurance) => {
       assurance.invocations[0] = { ...assurance.invocations[0]!, parentSessionId: 'ses_other' };
     });
     expect(resolution.kind).toBe('invalid');
@@ -1442,7 +1449,7 @@ describe('resolveStructuredFindings — diagnostics and deferral merges', () => 
 
   it('reports invalid on a captured findings hash mismatch', () => {
     const captured = findings();
-    const resolution = resolveWith(captured, (assurance) => {
+    const { resolution } = resolveWith(captured, (assurance) => {
       assurance.invocations[0] = { ...assurance.invocations[0]!, findingsHash: 'not-the-hash' };
     });
     expect(resolution.kind).toBe('invalid');
@@ -1452,7 +1459,7 @@ describe('resolveStructuredFindings — diagnostics and deferral merges', () => 
 
   it('prefers the lineage diagnostic when deferred diagnostics are merged', () => {
     const captured = findings();
-    const resolution = resolveWith(captured, (assurance) => {
+    const { resolution } = resolveWith(captured, (assurance) => {
       const first = assurance.invocations[0]!;
       assurance.invocations.push({
         ...first,
@@ -1487,5 +1494,24 @@ describe('resolveStructuredFindings — diagnostics and deferral merges', () => 
       assurance.attempts[0] = { ...assurance.attempts[0]!, childSessionId: 'ses_elsewhere' };
     });
     expect(resolution.kind).toBe('attempt_lineage_unavailable');
+  });
+
+  it('keeps the unparseable warning when a later capture resolves', () => {
+    const captured = findings();
+    const first = assuranceFor(captured).invocations[0]!;
+    const unusable = {
+      ...first,
+      invocationId: '44444444-4444-4444-8444-444444444444',
+      capturedRawFindings: { nonsense: true } as unknown as Record<string, unknown>,
+      findingsHash: 'unusable-capture',
+    };
+    const { resolution, diagnostics } = resolveWith(captured, (assurance) => {
+      assurance.invocations.unshift(unusable);
+    });
+
+    expect(resolution.kind).toBe('resolved');
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]?.invocationId).toBe(unusable.invocationId);
+    expect(diagnostics[0]?.issues.length).toBeGreaterThan(0);
   });
 });

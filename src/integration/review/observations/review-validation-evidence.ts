@@ -14,7 +14,6 @@
  */
 
 import type { ReviewAttempt, ReviewFindings, ReviewObligation } from '../../../state/evidence.js';
-import { formatBlocked } from '../../blocked-result.js';
 import { resolveEvidenceAuthorizingAttempt } from '../obligations/attempt-lifecycle.js';
 import type { FindingWithRelation } from '../enforcement/findings-consistency.js';
 import { bindRepositoryEvidenceLocations } from './observation-binding.js';
@@ -120,20 +119,4 @@ export function evaluateRepositoryEvidenceBinding(
       reason: binding.reasons.join('; '),
     },
   };
-}
-
-export function checkRepositoryEvidenceBinding(
-  findings: ReviewFindings,
-  obligation: ReviewObligation | null,
-  ctx: EvidenceValidationContext,
-): string | null {
-  const result = evaluateRepositoryEvidenceBinding(findings, obligation, ctx);
-  return result.ok
-    ? null
-    : formatBlocked(
-        result.code,
-        Object.fromEntries(
-          Object.entries(result.details).map(([key, value]) => [key, String(value)]),
-        ),
-      );
 }

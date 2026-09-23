@@ -50,7 +50,10 @@
 
 import { formatBlocked } from '../../blocked-result.js';
 import { getAdapterLogger } from '../../../logging/adapter-logger.js';
-import { formatStructuredResolutionFailure } from '../../review/validation/review-validation-failure.js';
+import {
+  formatReviewValidationFailure,
+  logStructuredResolutionDiagnostics,
+} from '../../review/validation/review-validation-failure.js';
 import {
   formatAutoAdvanceOverflow,
   enrichWithWorkflowDirective,
@@ -359,8 +362,9 @@ async function handleSubmittedImplementationReview(input: {
     planVersion,
   );
   if (resolved.kind === 'blocked') {
-    return formatStructuredResolutionFailure(getAdapterLogger(), resolved.failure);
+    return formatReviewValidationFailure(getAdapterLogger(), resolved.failure);
   }
+  logStructuredResolutionDiagnostics(getAdapterLogger(), resolved.diagnostics);
 
   if (resolved.effectiveFindings.overallVerdict === 'unable_to_review') {
     return handleUnableToReviewSubmission({
