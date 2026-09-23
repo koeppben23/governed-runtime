@@ -38,7 +38,7 @@ enforcement chain (actor resolution, assurance tiers, policy snapshot flow-throu
 
 ## CI Job Mapping
 
-Each CI job maps to its npm script(s) for clear diagnosis:
+Each test and check job maps to its npm script(s) for clear diagnosis:
 
 | CI Job                   | npm Script                                                      | Scope                                                                                                        | Requires Build |
 | ------------------------ | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | -------------- |
@@ -57,7 +57,8 @@ Each CI job maps to its npm script(s) for clear diagnosis:
 The `smoke` job also requires the OpenCode CLI (`opencode-ai`) for ACP tests.
 The `install-verify` job runs cross-platform (Linux, macOS, Windows).
 
-The technical source of this table is `.github/workflows/ci.yml`.
+The technical sources are the workflow files: `.github/workflows/ci.yml` for the
+PR-CI jobs and `.github/workflows/mutation.yml` for mutation testing.
 
 Additional CI jobs from `.github/workflows/ci.yml` (not test-focused):
 `typecheck`, `lint`, `format`, `build`, `actionlint`, `actions-pinning`,

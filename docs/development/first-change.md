@@ -35,8 +35,9 @@ last one):
         remainingCheckCount: remainingChecks.length,
 ```
 
-The tool entry (`run-check-tool.ts`) only calls `formatRunCheckResponse` and
-serializes its result, so no adapter change is required.
+The tool entry (`run-check-tool.ts`) calls `formatRunCheckResponse` and returns
+its value; the function serializes the response itself, so no adapter change is
+required.
 
 ## 3. Know what you are and are not changing
 
@@ -78,6 +79,10 @@ it('returns the remaining checks and their count', async () => {
         reason: 'first-change tutorial fixture',
       },
     ],
+    executionSubjectInputsByCandidateId: {
+      ...(state!.executionSubjectInputsByCandidateId ?? {}),
+      vc_lint_first_change: [{ kind: 'implementation' as const }],
+    },
   });
 
   const result = parseToolResult<RunCheckResult>(

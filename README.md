@@ -213,12 +213,16 @@ The required `ci-gate` check aggregates the merge-blocking jobs: `unit` (unit,
 scripts, and assertion-conformance tests), `coverage`, `integration-perf`,
 `provider-conformance`, and `regulated-e2e`. Branch protection additionally
 requires `typecheck`, `lint`, `format`, `architecture`, `build`, `build-clean`,
-`actionlint`, `secrets-scan`, `security-policy`, `independent-review-e2e`, and
-the cross-platform `install-verify` jobs.
+`actionlint`, `secrets-scan`, `security-policy`, `independent-review-e2e`, the
+cross-platform `install-verify` jobs, `Validate Commit Messages`
+(`.github/workflows/conventional-commits.yml`), and `audit` and `codeql-sast`
+(`.github/workflows/security.yml`).
 
-The authoritative job-to-script table lives in
-[Testing Strategy](./docs/testing-strategy.md); the workflow definition is
-[`.github/workflows/ci.yml`](./.github/workflows/ci.yml).
+The test-focused job-to-script table lives in
+[Testing Strategy](./docs/testing-strategy.md); the PR-CI workflow definition is
+[`.github/workflows/ci.yml`](./.github/workflows/ci.yml), and the full
+required-check contract is
+[`.github/BRANCH-PROTECTION.md`](./.github/BRANCH-PROTECTION.md).
 
 ### Releases
 
