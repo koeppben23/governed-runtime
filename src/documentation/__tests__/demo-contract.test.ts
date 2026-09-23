@@ -195,7 +195,10 @@ describe('java demo workflow contract', () => {
     expect(verifier).toContain('cross_session_artifact_duplicate');
     expect(verifier).toContain('duplicate_session_id');
     expect(verifier).toContain("requires policy mode 'regulated'");
+    expect(verifier).toContain('regulated_archive_status_invalid');
+    expect(verifier).toContain('exactly one flowguard-package');
     expect(evidenceDoc).toContain('manually assigned');
+    expect(evidenceDoc).toContain('exactly one `flowguard-package`');
 
     // The manifest template declares exactly the three canonical flows.
     const manifestExample = JSON.parse(

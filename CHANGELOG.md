@@ -22,17 +22,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   flow/phase, and the archived audit chain. Every `includedFiles` path is
   validated before any payload is opened, and an invalid inventory fails closed
   without a single payload read. Regulated packages must carry policy mode
-  `regulated` and are validated against the archived completion evidence (the
-  mandatory archive necessarily snapshots `regulatedArchiveStatus: pending`)
-  instead of the later live verification status. A small
+  `regulated` and an admissible archive-time lifecycle status (`pending` or
+  `created`; missing/`null` fails closed before the canonical validator could
+  silently skip), and are validated against the archived completion evidence
+  (the mandatory archive necessarily snapshots `regulatedArchiveStatus:
+  pending`) instead of the later live verification status. A small
   `evidence-manifest.example.json` binds the three demo sessions to their
   FlowGuard packages and external host chat exports (manually assigned,
   hash-secured supplementary evidence, never authority), enforces distinct
-  session ids, and fails on byte-identical artifacts across flows — the
-  "peer-review export is a copy of the architecture export" defect. Redacted
-  sharing archives are never presented as fully verifiable raw evidence, and
-  the offline, TSA, publication-binding, and authenticity limits are
-  documented. A smoke-project
+  session ids, requires exactly one `flowguard-package` for the development
+  flow, and fails on byte-identical artifacts across flows — the "peer-review
+  export is a copy of the architecture export" defect. Redacted sharing
+  archives are never presented as fully verifiable raw evidence, and the
+  offline, TSA, publication-binding, and authenticity limits are documented. A smoke-project
   contract builds real `/export` and `archiveRegulatedEvidence` packages and
   proves valid (including the `EXPORT_READY` snapshot), file-byte,
   manifest-metadata, session-swap, unsafe-prefix, duplicate-member, and

@@ -653,6 +653,16 @@ function verifyAuditChain(core, manifest, state, events, findings) {
   }
 }
 
+/**
+ * The archived regulated-completion snapshot must carry an archive-time
+ * lifecycle status. `pending` is the producer contract (the archive is created
+ * before verification completes); `created` is tolerated for a re-archive
+ * before verification. A missing status, `verified`, or `failed` is rejected —
+ * and in particular the canonical validator must never be reached with a
+ * status it silently skips.
+ */
+const ADMISSIBLE_REGULATED_ARCHIVE_STATUS = ['pending', 'created'];
+
 function verifyRegulatedCompletionEvidence(core, state, events, findings) {
   if (typeof core.verifyRegulatedCompletionCompleteness !== 'function') {
     finding(
@@ -663,7 +673,24 @@ function verifyRegulatedCompletionEvidence(core, state, events, findings) {
     );
     return;
   }
+  if (state === null) return;
+  const isRegulatedCompletion =
+    state.policySnapshot?.mode === 'regulated' && state.phase === 'COMPLETE';
+  if (isRegulatedCompletion) {
+    const status = state.regulatedArchiveStatus;
+    if (!ADMISSIBLE_REGULATED_ARCHIVE_STATUS.includes(status)) {
+      finding(
+        findings,
+        'regulated_archive_status_invalid',
+        `Regulated completion archive requires archive-time regulatedArchiveStatus 'pending' or 'created', found '${String(status)}'`,
+        STATE_FILE,
+      );
+      return;
+    }
+  }
   if (events === null) return;
+  // The canonical validator self-gates on a present lifecycle status; the
+  // admissibility gate above is what makes reaching it meaningful.
   core.verifyRegulatedCompletionCompleteness(state, events, findings);
 }
 
@@ -880,6 +907,17 @@ function validateEvidenceManifest(raw, findings) {
         findings,
         'manifest_parse_error',
         `Evidence manifest flow '${flow}' must declare exactly one host-chat-export; found ${chatExports.length}`,
+      );
+    }
+    // The development flow's mandatory `/export` package must always be part of
+    // the reference evidence set; architecture and peer-review archives stay
+    // optional per the demo contract.
+    const packages = session.artifacts.filter((a) => a?.kind === 'flowguard-package');
+    if (flow === 'development' && packages.length !== 1) {
+      finding(
+        findings,
+        'manifest_parse_error',
+        `Evidence manifest development flow must declare exactly one flowguard-package; found ${packages.length}`,
       );
     }
     byFlow.set(flow, session);

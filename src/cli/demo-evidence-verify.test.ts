@@ -174,7 +174,9 @@ async function buildExportReadyPackage(): Promise<string> {
  * `verified` after the archive exists — so the offline verifier must validate
  * the archived completion evidence, not the later live status.
  */
-async function buildRegulatedPackage(): Promise<string> {
+async function buildRegulatedPackage(
+  archiveStatus: 'pending' | 'created' | null = 'pending',
+): Promise<string> {
   const { fingerprint, sessionDir } = await initSession(SESSION_A, FLOWGUARD_A);
   await writeState(
     sessionDir,
@@ -184,7 +186,7 @@ async function buildRegulatedPackage(): Promise<string> {
       binding: bindingFor(SESSION_A, fingerprint),
       policySnapshot: REGULATED_POLICY_SNAPSHOT,
       reviewDecision: REVIEW_APPROVE,
-      regulatedArchiveStatus: 'pending',
+      regulatedArchiveStatus: archiveStatus,
       transition: {
         from: 'EXPORT_READY',
         to: 'COMPLETE',
@@ -395,7 +397,11 @@ async function writeFile(dir: string, name: string, content: string): Promise<st
  * host chat export per flow. Returns the manifest path.
  */
 async function buildEvidenceDirectory(
-  options: { copyPeerReviewChat?: boolean; reuseSessionId?: boolean } = {},
+  options: {
+    copyPeerReviewChat?: boolean;
+    reuseSessionId?: boolean;
+    omitDevelopmentPackage?: boolean;
+  } = {},
 ): Promise<{
   manifestPath: string;
 }> {
@@ -441,7 +447,9 @@ async function buildEvidenceDirectory(
         flow: 'development',
         sessionId: SESSION_A,
         artifacts: [
-          { kind: 'flowguard-package', file: packageName, sha256: packageHash },
+          ...(options.omitDevelopmentPackage
+            ? []
+            : [{ kind: 'flowguard-package', file: packageName, sha256: packageHash }]),
           { kind: 'host-chat-export', file: 'chat-development.md', sha256: developmentHash },
         ],
       },
@@ -649,6 +657,24 @@ describe('demo evidence package verifier', () => {
       expect(result.stdout).not.toContain('file_digest_mismatch');
     });
 
+    it('rejects a regulated completion without an admissible archive lifecycle status', async () => {
+      // `regulatedArchiveStatus: null` is schema-valid but means the canonical
+      // completeness validator would silently skip; the verifier must fail
+      // before that silent no-op can stand in for validation.
+      const packagePath = await buildRegulatedPackage(null);
+
+      const result = await runVerifier([
+        packagePath,
+        '--expect-session',
+        SESSION_A,
+        '--expect-flow',
+        'regulated',
+      ]);
+
+      expect(result.code).toBe(1);
+      expect(result.stdout).toContain('regulated_archive_status_invalid');
+    });
+
     it('rejects a team archive claimed as a regulated flow', async () => {
       const packagePath = await buildCompleteExportPackage();
 
@@ -674,6 +700,15 @@ describe('demo evidence package verifier', () => {
 
       expect(result.code).toBe(1);
       expect(result.stdout).toContain('cross_session_artifact_duplicate');
+    });
+
+    it('rejects a manifest without the mandatory development package', async () => {
+      const { manifestPath } = await buildEvidenceDirectory({ omitDevelopmentPackage: true });
+
+      const result = await runVerifier(['--manifest', manifestPath]);
+
+      expect(result.code).toBe(1);
+      expect(result.stdout).toContain('exactly one flowguard-package');
     });
 
     it('rejects a manifest that reuses one session id across flows', async () => {
