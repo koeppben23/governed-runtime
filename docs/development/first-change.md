@@ -124,8 +124,10 @@ npm run lint:strict
 - The field is genuinely additive and derived — no schema, state, audit, or
   digest authority changed.
 - The test asserts an exact expected value, not a conditional one.
-- The response change is documented in the PR's Touched Surface section (tool
-  output) without claiming a state-model change.
+- The response change is described in the PR summary (or as a free-text note
+  under Touched Surface) without claiming a state-model change. The template has
+  no dedicated tool-output checkbox — do not check `CLI or installer` for a
+  response-field-only change.
 
 See the [Developer Architecture Map](./architecture-map.md) for where larger
 changes belong, and [CONTRIBUTING.md](../../CONTRIBUTING.md) for the PR contract.
