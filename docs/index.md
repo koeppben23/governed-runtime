@@ -24,7 +24,7 @@ Reference for all FlowGuard commands.
 
 ### [Phases](./phases.md)
 
-Understanding the 15 workflow phases across 3 flows.
+Understanding the 18 workflow phases across 3 flows.
 
 ### [Policies](./policies.md)
 
@@ -101,6 +101,10 @@ Responsibilities, contact channels, and expectations.
 ### [Development and Debugging](./development/debugging.md)
 
 Canonical developer workflow for debugging FlowGuard across Vitest, CLI, MCP and live OpenCode host boundaries.
+
+### [Developer Architecture Map](./development/architecture-map.md)
+
+Where a change belongs, which authority owns it, and which architecture tests and checks must be updated.
 
 ## Additional Resources
 

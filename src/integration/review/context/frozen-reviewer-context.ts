@@ -2,7 +2,7 @@
  * @module integration/review/frozen-reviewer-context
  * @description Review-owned frozen-material contract rendering. Frozen-material
  * integrity verification itself is a state authority
- * (`src/state/review-continuation.js`); consumers import it there directly.
+ * (`src/state/review-continuation.ts`); consumers import it there directly.
  */
 
 import type { ReviewSubjectScope } from '../../../state/evidence.js';
