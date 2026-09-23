@@ -119,6 +119,14 @@ function setupNodeConfig(block) {
   };
 }
 
+/**
+ * Repository-relative paths are compared with `/` separators regardless of the
+ * platform; `path.relative()` yields backslashes on Windows.
+ */
+function normalizeRel(rel) {
+  return rel.replaceAll('\\', '/');
+}
+
 /** Repository-relative directory of a `./` local action reference, or null. */
 function localActionDir(uses) {
   if (typeof uses !== 'string') return null;
@@ -129,7 +137,7 @@ function localActionDir(uses) {
 
 /** Directory key of a local action metadata file, e.g. `.github/actions/x`. */
 export function actionDirectory(rel) {
-  return rel.split('/').slice(0, -1).join('/');
+  return normalizeRel(rel).split('/').slice(0, -1).join('/');
 }
 
 function localActionProof(dir, actionByDir, visited) {
@@ -178,7 +186,7 @@ export function analyzeNodeToolchain(input) {
   }
 
   for (const workflow of input.workflows) {
-    const fileName = basename(workflow.file);
+    const fileName = basename(normalizeRel(workflow.file));
     if (MATRIX_ALLOW_LIST.has(fileName)) {
       if (fileName === 'release.yml' && !/node-version-file:/.test(workflow.content)) {
         errors.push('release.yml: missing node-version-file for build job');
@@ -228,7 +236,7 @@ function readYamlFiles(dir, predicate) {
     if (entry.isDirectory()) results.push(...readYamlFiles(path, predicate));
     else if (predicate(entry.name)) {
       results.push({
-        file: relative(REPO_ROOT, path),
+        file: normalizeRel(relative(REPO_ROOT, path)),
         content: readFileSync(path, 'utf-8'),
       });
     }

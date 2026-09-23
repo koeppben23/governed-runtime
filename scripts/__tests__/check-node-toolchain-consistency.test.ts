@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { analyzeNodeToolchain } from '../check-node-toolchain-consistency.mjs';
+import { actionDirectory, analyzeNodeToolchain } from '../check-node-toolchain-consistency.mjs';
 
 const setupWithFile = `      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
@@ -145,5 +145,39 @@ describe('analyzeNodeToolchain', () => {
         actions: [],
       }),
     ).toEqual(['empty.yml: no node-version-file reference']);
+  });
+
+  it('normalizes Windows path separators for action directories', () => {
+    expect(actionDirectory('.github\\actions\\prepare-node\\action.yml')).toBe(
+      '.github/actions/prepare-node',
+    );
+    expect(actionDirectory('.github/actions/prepare-node/action.yml')).toBe(
+      '.github/actions/prepare-node',
+    );
+  });
+
+  it('resolves the indirect proof for a Windows-style action file path', () => {
+    expect(
+      analyzeNodeToolchain({
+        workflows: [workflow('sdk-compat.yml', localRef)],
+        actions: [
+          action('.github\\actions\\prepare-node\\action.yml', setupWithFile + installWithBash),
+        ],
+      }),
+    ).toEqual([]);
+  });
+
+  it('matches the allow-list for a Windows-style workflow file path', () => {
+    expect(
+      analyzeNodeToolchain({
+        workflows: [
+          {
+            file: '.github\\workflows\\node-compat.yml',
+            content: workflow('node-compat.yml', setupWithStaticVersion).content,
+          },
+        ],
+        actions: [],
+      }),
+    ).toEqual([]);
   });
 });
