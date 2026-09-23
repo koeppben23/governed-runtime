@@ -7,10 +7,8 @@ import type { ProofGraphProjection } from '../../../state/proofgraph.js';
 import { renderReviewerCriteria } from '../../../templates/mandates-reviewer-criteria.js';
 import { renderPersistedProofGraphContext } from '../context/proof-context.js';
 import { renderRepositoryObservationContract } from './observation-contract-prompt.js';
-import {
-  buildDiscoveryContextSection,
-  type DiscoveryReviewContext,
-} from './discovery-context-prompt.js';
+import { buildDiscoveryContextSection } from './discovery-context-prompt.js';
+import type { DiscoveryReviewContext } from '../context/discovery-port.js';
 import { buildStackProfileSection, CORE_REVIEW_PROFILE_MARKER } from './prompt-sections.js';
 import {
   renderReviewChallengeContract,

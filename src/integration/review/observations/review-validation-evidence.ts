@@ -1,5 +1,5 @@
 /**
- * @module integration/tools/review-validation-evidence
+ * @module integration/review/observations/review-validation-evidence
  * @description Canonical repository evidence authorization for DIRECTLY
  *              submitted findings (manual/SDK transports).
  *
@@ -14,11 +14,9 @@
  */
 
 import type { ReviewAttempt, ReviewFindings, ReviewObligation } from '../../../state/evidence.js';
-import { formatBlocked } from '../../blocked-result.js';
-
-import { resolveEvidenceAuthorizingAttempt } from '../obligations/assurance.js';
+import { resolveEvidenceAuthorizingAttempt } from '../obligations/attempt-lifecycle.js';
 import type { FindingWithRelation } from '../enforcement/findings-consistency.js';
-import { bindRepositoryEvidenceLocations } from '../observations/observation-binding.js';
+import { bindRepositoryEvidenceLocations } from './observation-binding.js';
 
 /**
  * Minimal structural context (deliberately NOT imported from
@@ -121,20 +119,4 @@ export function evaluateRepositoryEvidenceBinding(
       reason: binding.reasons.join('; '),
     },
   };
-}
-
-export function checkRepositoryEvidenceBinding(
-  findings: ReviewFindings,
-  obligation: ReviewObligation | null,
-  ctx: EvidenceValidationContext,
-): string | null {
-  const result = evaluateRepositoryEvidenceBinding(findings, obligation, ctx);
-  return result.ok
-    ? null
-    : formatBlocked(
-        result.code,
-        Object.fromEntries(
-          Object.entries(result.details).map(([key, value]) => [key, String(value)]),
-        ),
-      );
 }

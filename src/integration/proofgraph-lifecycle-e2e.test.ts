@@ -38,8 +38,8 @@ import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
   buildInvocationEvidence,
-  hashFindings,
 } from './review/obligations/assurance.js';
+import { hashFindings } from './review/findings-hash.js';
 import type { ReviewFindings } from '../state/evidence.js';
 import { executeReviewDecision } from '../rails/review-decision.js';
 import { createTestContext } from '../testing.js';

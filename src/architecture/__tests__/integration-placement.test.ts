@@ -3,16 +3,17 @@
  * @description Enforcement for the positive integration placement authority.
  *
  * The authority (`integration-placement-policy.ts`) is the exact projection of
- * every production file under `src/integration/`: owner, current zone, and
- * target zone. This suite proves the projection in BOTH directions against the
+ * every production file under `src/integration/` with its architectural owner.
+ * Zone and target zone are derived (parent directory / owner target) and MUST
+ * be equal. This suite proves the projection in BOTH directions against the
  * real tree (no unclassified file, no stale entry), checks the zone/owner
  * registries, classifies test support separately, and fails closed on ANY
- * placement debt: a file whose current zone differs from its target zone.
+ * owner-vs-directory mismatch.
  *
  * Negative fixtures drive the pure analyzer with synthetic inputs so the guard
  * is proven to fire, not merely to accept today's tree.
  *
- * @version v2
+ * @version v3
  */
 
 import { existsSync } from 'node:fs';
@@ -40,6 +41,12 @@ import { collectProductionSources } from './production-source.js';
 const SRC = join(process.cwd(), 'src');
 
 const ROOT_OWNERS = new Set(['root-composition', 'root-host-runtime', 'root-authority']);
+
+const OWNER_TARGET_ZONE = new Map(INTEGRATION_OWNERS.map((owner) => [owner.id, owner.targetZone]));
+
+function targetZoneOf(entry: IntegrationPlacementEntry): string | undefined {
+  return OWNER_TARGET_ZONE.get(entry.owner);
+}
 
 function integrationProductionFiles(): string[] {
   return collectProductionSources(SRC)
@@ -69,16 +76,9 @@ describe('integration placement authority', () => {
       );
     }
     expect(violations, JSON.stringify(violations)).toEqual([]);
-    expect(files.length).toBe(220);
+    expect(files.length).toBe(221);
     expect(INTEGRATION_PLACEMENT.length).toBe(files.length);
     expect(new Set(INTEGRATION_PLACEMENT.map((entry) => entry.file)).size).toBe(files.length);
-  });
-
-  it('holds the zero-debt contract: every file is at its target zone', () => {
-    const debt = INTEGRATION_PLACEMENT.filter((entry) => entry.zone !== entry.targetZone).map(
-      (entry) => entry.file,
-    );
-    expect(debt, debt.join('\n')).toEqual([]);
   });
 
   it('classifies test support separately and keeps it out of the placement authority', () => {
@@ -106,6 +106,9 @@ describe('integration placement authority', () => {
     expect(new Set(zoneIds).size).toBe(zoneIds.length);
     expect(zoneIds).toContain('root');
 
+    const zoneDirs = INTEGRATION_PLACEMENT_ZONES.map((zone) => zone.dir);
+    expect(new Set(zoneDirs).size).toBe(zoneDirs.length);
+
     const ownerIds = INTEGRATION_OWNERS.map((owner) => owner.id);
     expect(new Set(ownerIds).size).toBe(ownerIds.length);
 
@@ -118,7 +121,7 @@ describe('integration placement authority', () => {
   });
 
   it('admits only composition, host/runtime wiring, and authorities at the root', () => {
-    const rootFiles = INTEGRATION_PLACEMENT.filter((entry) => entry.zone === 'root');
+    const rootFiles = INTEGRATION_PLACEMENT.filter((entry) => targetZoneOf(entry) === 'root');
     expect(rootFiles.length).toBeGreaterThan(0);
     for (const entry of rootFiles) {
       expect(ROOT_OWNERS.has(entry.owner), entry.file).toBe(true);
@@ -132,7 +135,7 @@ describe('integration placement authority', () => {
   });
 
   it('freezes the agreed root matrix exactly (23 + 4 + 13 = 40)', () => {
-    const rootFiles = INTEGRATION_PLACEMENT.filter((entry) => entry.zone === 'root');
+    const rootFiles = INTEGRATION_PLACEMENT.filter((entry) => targetZoneOf(entry) === 'root');
     const byOwner = (owner: string) => rootFiles.filter((entry) => entry.owner === owner);
 
     expect(byOwner('root-composition').length).toBe(23);
@@ -150,20 +153,6 @@ describe('integration placement authority', () => {
       'integration/runtime-instance.ts',
       'integration/runtime-lease.ts',
     ]);
-  });
-
-  it('ties every context owner to its target zone', () => {
-    for (const entry of INTEGRATION_PLACEMENT) {
-      if (entry.owner.startsWith('tools-')) {
-        expect(entry.targetZone.startsWith('tools'), entry.file).toBe(true);
-      }
-      if (entry.owner === 'review') expect(entry.targetZone, entry.file).toBe('review');
-      if (entry.owner.startsWith('review-')) {
-        expect(entry.targetZone, entry.file).toBe(`review/${entry.owner.slice('review-'.length)}`);
-      }
-      if (entry.owner === 'status') expect(entry.targetZone, entry.file).toBe('status');
-      if (entry.owner === 'discovery') expect(entry.targetZone, entry.file).toBe('discovery');
-    }
   });
 
   it('exposes positive placement helpers for the context boundaries', () => {
@@ -198,13 +187,8 @@ const FIXTURE_OWNERS: readonly IntegrationOwner[] = [
   { id: 'status', targetZone: 'status', description: 'fixture status context' },
 ];
 
-function entry(
-  file: string,
-  owner: string,
-  zone: string,
-  targetZone: string,
-): IntegrationPlacementEntry {
-  return { file, owner, zone, targetZone };
+function entry(file: string, owner: string): IntegrationPlacementEntry {
+  return { file, owner };
 }
 
 function analyzeFixture(input: {
@@ -234,54 +218,49 @@ describe('integration placement negative fixtures', () => {
   it('detects a stale placement entry', () => {
     expect(
       analyzeFixture({
-        placement: [entry('integration/gone.ts', 'root-authority', 'root', 'root')],
+        placement: [entry('integration/gone.ts', 'root-authority')],
       }),
     ).toEqual(['stale-placement-entry']);
   });
 
-  it('detects an unknown zone', () => {
+  it('detects a file whose directory is not a known zone', () => {
     expect(
       analyzeFixture({
-        productionFiles: ['integration/rogue.ts'],
-        placement: [entry('integration/rogue.ts', 'root-authority', 'nowhere', 'root')],
+        productionFiles: ['integration/rogue/x.ts'],
+        placement: [entry('integration/rogue/x.ts', 'root-authority')],
       }),
-    ).toContain('unknown-zone');
+    ).toEqual(['unknown-zone']);
   });
 
   it('detects an unknown owner', () => {
     expect(
       analyzeFixture({
         productionFiles: ['integration/rogue.ts'],
-        placement: [entry('integration/rogue.ts', 'ghost', 'root', 'root')],
+        placement: [entry('integration/rogue.ts', 'ghost')],
       }),
     ).toEqual(['unknown-owner']);
   });
 
-  it('detects an owner target zone mismatch', () => {
+  it('detects an owner whose target zone is not a known zone', () => {
     expect(
       analyzeFixture({
         productionFiles: ['integration/rogue.ts'],
-        placement: [entry('integration/rogue.ts', 'status', 'root', 'root')],
+        placement: [entry('integration/rogue.ts', 'ghost-zone')],
+        owners: [
+          ...FIXTURE_OWNERS,
+          { id: 'ghost-zone', targetZone: 'nowhere', description: 'fixture ghost zone' },
+        ],
       }),
-    ).toEqual(['owner-target-mismatch']);
+    ).toEqual(['unknown-zone']);
   });
 
-  it('detects a zone that does not match the physical directory', () => {
+  it('detects a file whose directory zone differs from its owner target zone', () => {
     expect(
       analyzeFixture({
-        productionFiles: ['integration/rogue.ts'],
-        placement: [entry('integration/rogue.ts', 'root-authority', 'status', 'status')],
+        productionFiles: ['integration/status/moved.ts'],
+        placement: [entry('integration/status/moved.ts', 'root-authority')],
       }),
-    ).toContain('zone-directory-mismatch');
-  });
-
-  it('detects any placement debt', () => {
-    expect(
-      analyzeFixture({
-        productionFiles: ['integration/rogue.ts'],
-        placement: [entry('integration/rogue.ts', 'status', 'root', 'status')],
-      }),
-    ).toEqual(['placement-debt']);
+    ).toEqual(['zone-owner-mismatch']);
   });
 
   it('detects a zone that exceeds its production-file budget (and never counts test files)', () => {
@@ -294,8 +273,8 @@ describe('integration placement negative fixtures', () => {
         zones: budgetZones,
         productionFiles: ['integration/status/a.ts', 'integration/status/b.ts'],
         placement: [
-          entry('integration/status/a.ts', 'status', 'status', 'status'),
-          entry('integration/status/b.ts', 'status', 'status', 'status'),
+          entry('integration/status/a.ts', 'status'),
+          entry('integration/status/b.ts', 'status'),
         ],
       }),
     ).toEqual(['zone-production-budget-exceeded']);
@@ -305,8 +284,8 @@ describe('integration placement negative fixtures', () => {
         zones: budgetZones,
         productionFiles: ['integration/status/a.ts', 'integration/status/rogue.test.ts'],
         placement: [
-          entry('integration/status/a.ts', 'status', 'status', 'status'),
-          entry('integration/status/rogue.test.ts', 'status', 'status', 'status'),
+          entry('integration/status/a.ts', 'status'),
+          entry('integration/status/rogue.test.ts', 'status'),
         ],
         testFiles: ['integration/status/rogue.test.ts'],
       }),
@@ -317,19 +296,19 @@ describe('integration placement negative fixtures', () => {
     expect(
       analyzeFixture({
         productionFiles: ['integration/rogue.test.ts'],
-        placement: [entry('integration/rogue.test.ts', 'root-authority', 'root', 'root')],
+        placement: [entry('integration/rogue.test.ts', 'root-authority')],
         testFiles: ['integration/rogue.test.ts'],
       }),
     ).toEqual(['test-file-in-placement']);
   });
 
-  it('detects duplicate placement entries, zone ids, and owner ids', () => {
+  it('detects duplicate placement entries, zone ids, zone dirs, and owner ids', () => {
     expect(
       analyzeFixture({
         productionFiles: ['integration/rogue.ts'],
         placement: [
-          entry('integration/rogue.ts', 'root-authority', 'root', 'root'),
-          entry('integration/rogue.ts', 'root-authority', 'root', 'root'),
+          entry('integration/rogue.ts', 'root-authority'),
+          entry('integration/rogue.ts', 'root-authority'),
         ],
       }),
     ).toContain('duplicate-placement-entry');
@@ -339,6 +318,15 @@ describe('integration placement negative fixtures', () => {
         zones: [...FIXTURE_ZONES, { id: 'root', dir: 'integration', description: 'duplicate' }],
       }),
     ).toContain('duplicate-zone-id');
+
+    expect(
+      analyzeFixture({
+        zones: [
+          ...FIXTURE_ZONES,
+          { id: 'status-mirror', dir: 'integration/status', description: 'duplicate dir' },
+        ],
+      }),
+    ).toContain('duplicate-zone-dir');
 
     expect(
       analyzeFixture({
@@ -355,8 +343,8 @@ describe('integration placement negative fixtures', () => {
       analyzeFixture({
         productionFiles: ['integration/rogue.ts', 'integration/status/kept.ts'],
         placement: [
-          entry('integration/rogue.ts', 'root-authority', 'root', 'root'),
-          entry('integration/status/kept.ts', 'status', 'status', 'status'),
+          entry('integration/rogue.ts', 'root-authority'),
+          entry('integration/status/kept.ts', 'status'),
         ],
       }),
     ).toEqual([]);

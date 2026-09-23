@@ -18,17 +18,18 @@ import {
 } from './observation-binding.js';
 import {
   artifactReviewSubjectScope,
-  createReviewAttempt,
   createReviewObligation,
-  ensureReviewAssurance,
   freezeReviewMaterial,
-  hashFindings,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from '../obligations/assurance.js';
+import { createReviewAttempt } from '../obligations/attempt-lifecycle.js';
+import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
+import { hashFindings } from '../findings-hash.js';
 import { mintObservationCapability } from '../obligations/attempt-lifecycle.js';
 import { completedDispatchForInvocation } from '../../../state/evidence-test-constants.js';
 import { validateReviewFindings } from '../validation/review-validation.js';
+import { formatReviewValidationFailure } from '../validation/review-validation-failure.js';
 import {
   NOW,
   SESSION_ID,
@@ -43,6 +44,20 @@ import type {
   ReviewObligation,
 } from '../../../state/evidence.js';
 import type { ReviewFindings } from '../../../state/evidence.js';
+
+const testLogger = { warn: () => {} };
+
+/**
+ * Adapter-boundary characterization for the direct/submitted validator path:
+ * the domain validation returns a failure verdict, the serializer renders it.
+ */
+function serializedValidation(
+  findings: ReviewFindings,
+  ctx: Parameters<typeof validateReviewFindings>[1],
+): string | null {
+  const failure = validateReviewFindings(findings, ctx);
+  return failure === null ? null : formatReviewValidationFailure(testLogger, failure);
+}
 
 const UPSTREAM = { host: 'github.com', owner: 'upstream', name: 'repo' };
 const FORK = { host: 'github.com', owner: 'contributor', name: 'fork' };
@@ -495,7 +510,7 @@ describe('direct/submitted validator path', () => {
     const findings = directFindings(obligation.obligationId, [
       { path: 'src/foo.ts', revision: 'head' },
     ]);
-    const result = validateReviewFindings(
+    const result = serializedValidation(
       findings,
       directCtx(directAssurance(obligation, [attempt], findings), obligation),
     );
@@ -516,7 +531,7 @@ describe('direct/submitted validator path', () => {
     ]);
 
     expect(
-      validateReviewFindings(
+      serializedValidation(
         findings,
         directCtx(directAssurance(obligation, [attempt], findings), obligation),
       ),
@@ -544,7 +559,7 @@ describe('direct/submitted validator path', () => {
       { path: 'src/old.ts', revision: 'head' },
     ]);
     expect(
-      validateReviewFindings(
+      serializedValidation(
         staleFindings,
         directCtx(directAssurance(obligation, [rejected, bound], staleFindings), obligation),
       ),
@@ -554,7 +569,7 @@ describe('direct/submitted validator path', () => {
       { path: 'src/current.ts', revision: 'head' },
     ]);
     expect(
-      validateReviewFindings(
+      serializedValidation(
         freshFindings,
         directCtx(directAssurance(obligation, [rejected, bound], freshFindings), obligation),
       ),
@@ -568,7 +583,7 @@ describe('direct/submitted validator path', () => {
     const findings = directFindings(obligation.obligationId, [
       { path: 'src/foo.ts', revision: 'head' },
     ]);
-    const result = validateReviewFindings(
+    const result = serializedValidation(
       findings,
       directCtx(directAssurance(obligation, [attempt], findings), obligation),
     );

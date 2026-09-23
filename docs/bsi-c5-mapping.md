@@ -39,7 +39,7 @@ Relevance levels:
 | HR        | Human Resources                      | Not Applicable | —                                                                                          |
 | AM        | Asset Management                     | Partial        | Release artifact checksums, SBOM, narrow supply chain                                      |
 | PS        | Physical Security                    | Not Applicable | —                                                                                          |
-| RB        | Operational Procedures               | **Direct**     | 15-phase governed workflow, evidence gates, audit trail                                    |
+| RB        | Operational Procedures               | **Direct**     | Governed workflow with 18 phases, evidence gates, audit trail                              |
 | IDM       | Identity and Access Management       | **Direct**     | Four-eyes principle, role separation (initiator vs. reviewer)                              |
 | CRY       | Cryptography and Key Management      | Partial        | SHA-256 hash chain, checksums on release artifacts                                         |
 | KOS       | Communications Security              | Not Applicable | No network communication (self-hosted)                                                     |

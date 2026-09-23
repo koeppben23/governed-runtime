@@ -66,9 +66,28 @@ export interface ChallengeConsistencyInput {
   }[];
 }
 
+/** Every blocked code this authority can emit. */
+export type ChallengeConsistencyCode =
+  | 'SUBAGENT_CHALLENGE_CONTRADICTED'
+  | 'SUBAGENT_CHALLENGE_COUNT_INCOHERENT'
+  | 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING'
+  | 'SUBAGENT_CHALLENGE_INSUBSTANTIAL'
+  | 'SUBAGENT_CHALLENGE_KIND_INCOHERENT'
+  | 'SUBAGENT_CHALLENGE_NOT_DISTINCT'
+  | 'SUBAGENT_IMPLEMENTATION_CHALLENGE_UNRESOLVED'
+  | 'SUBAGENT_PRIOR_CHALLENGE_UNRESOLVED'
+  | 'SUBAGENT_RESOLUTION_VERDICT_DUPLICATE'
+  | 'SUBAGENT_RESOLUTION_VERDICT_INCOHERENT'
+  | 'SUBAGENT_RESOLUTION_VERDICT_UNEXPECTED'
+  | 'SUBAGENT_RESOLUTION_VERDICT_UNKNOWN';
+
 export type ChallengeConsistencyResult =
   | { readonly ok: true }
-  | { readonly ok: false; readonly code: string; readonly details: Record<string, unknown> };
+  | {
+      readonly ok: false;
+      readonly code: ChallengeConsistencyCode;
+      readonly details: Record<string, unknown>;
+    };
 
 type Challenge = NonNullable<ChallengeConsistencyInput['challenges']>[number];
 

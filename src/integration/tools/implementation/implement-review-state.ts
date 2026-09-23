@@ -9,7 +9,6 @@
  * @version v1
  */
 
-import { getAdapterLogger } from '../../../logging/adapter-logger.js';
 import type { SessionState } from '../../../state/schema.js';
 import type { LoopVerdict, ReviewFindings } from '../../../state/evidence.js';
 import { IntegrationInvariantError } from '../../errors.js';
@@ -19,9 +18,9 @@ import { resolveStructuredEffectiveFindings } from '../../review/validation/revi
 import { collectPreviouslyUsedChallengeIds } from '../../review/obligations/challenge-history.js';
 import {
   consumeReviewObligation,
-  ensureReviewAssurance,
   findLatestObligation,
 } from '../../review/obligations/assurance.js';
+import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
 import { buildLatestImplementationReviewSummary } from './review-summary.js';
 import { buildReviewChallengeContract } from '../../review/obligations/challenge-contract.js';
 import { normalizeHostFindings, type ImplementRuntime } from './implement-shared.js';
@@ -104,7 +103,6 @@ export function resolveImplementationFindings(
   const challengeContract = buildReviewChallengeContract(input.state, pendingObligation);
   const resolved = resolveStructuredEffectiveFindings({
     pendingObligation,
-    logger: getAdapterLogger(),
     expected: { obligationType: 'implement', iteration, planVersion },
     input: {
       reviewerUnavailable: input.args.reviewerUnavailable,

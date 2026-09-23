@@ -1,5 +1,15 @@
-import { canonicalJsonStringify } from '../../../shared/canonical-json.js';
-import { hashText } from '../../../shared/hashing.js';
+/**
+ * @module integration/review/findings-hash
+ * @description Canonical review-findings digest.
+ *
+ * Cross-zone primitive of the review bounded context: obligations, evidence,
+ * validation, and dispatch all compare the exact same canonical findings hash.
+ * The digest routes SHA-2 through `shared/hashing.ts` and serializes the
+ * normalized finding arrays with `shared/canonical-json.ts`.
+ */
+
+import { canonicalJsonStringify } from '../../shared/canonical-json.js';
+import { hashText } from '../../shared/hashing.js';
 
 export function hashFindings(findings: Record<string, unknown>): string {
   const normalizeFinding = (value: unknown): unknown => {

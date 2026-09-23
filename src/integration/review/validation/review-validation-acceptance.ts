@@ -1,5 +1,5 @@
 /**
- * @module integration/tools/review-validation-acceptance
+ * @module integration/review/validation/review-validation-acceptance
  * @description Shared acceptance/rejection types and helpers for review
  *              findings validation. Used by both core and host-task modules.
  *
@@ -7,13 +7,12 @@
  */
 
 import type { ReviewObligation, ReviewInvocationEvidence } from '../../../state/evidence.js';
-import { formatBlocked } from '../../blocked-result.js';
 
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 
 // ─── Acceptance / Rejection Types ─────────────────────────────────────────────
 
-type ReviewFindingsAcceptanceRejectionReason =
+export type ReviewFindingsAcceptanceRejectionReason =
   'STRICT_REVIEW_ORCHESTRATION_FAILED' | 'SUBAGENT_EVIDENCE_REUSED';
 
 type ReviewFindingsAcceptanceRejectionStatus = ReviewObligation['status'] | 'invocation_consumed';
@@ -88,7 +87,8 @@ export function hasValidStructuredInvocationContract(input: {
   );
 }
 
-function acceptanceRejectionFormatVars(
+/** Domain rendering variables for an acceptance rejection envelope. */
+export function acceptanceRejectionVars(
   rejection: ReviewFindingsAcceptanceRejection,
 ): Record<string, string> {
   if (rejection.reason === 'STRICT_REVIEW_ORCHESTRATION_FAILED') {
@@ -101,8 +101,4 @@ function acceptanceRejectionFormatVars(
     };
   }
   return { obligationId: rejection.obligationId ?? 'unknown' };
-}
-
-export function formatAcceptanceRejection(rejection: ReviewFindingsAcceptanceRejection): string {
-  return formatBlocked(rejection.reason, acceptanceRejectionFormatVars(rejection));
 }

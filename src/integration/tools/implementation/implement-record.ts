@@ -77,10 +77,7 @@ import {
 import { computeGitControlPlaneMarker } from '../../git-control-plane.js';
 import type { FlowGuardPolicy } from '../../../config/policy.js';
 import { writeImplementationDiffArtifact } from './implement-diff-artifact.js';
-
-// Evidence types
-
-import { ensureReviewAssurance } from '../../review/obligations/assurance.js';
+import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
 import {
   resolveReviewDispatchAuthority,
   reviewObligationResponseFields,

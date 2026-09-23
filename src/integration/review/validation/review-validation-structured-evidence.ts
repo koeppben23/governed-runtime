@@ -1,5 +1,5 @@
 /**
- * @module integration/tools/review-validation-structured-evidence
+ * @module integration/review/validation/review-validation-structured-evidence
  * @description Structured review findings resolution from native Task invocation evidence.
  *
  * Extracted from review-validation.ts. The final acceptance/rejection
@@ -12,8 +12,6 @@
 import type { ZodIssue } from 'zod';
 import type { ReviewFindings } from '../../../state/evidence.js';
 import { ReviewFindings as ReviewFindingsSchema } from '../../../state/evidence.js';
-import type { ReviewDiagnosticLogger } from '../review-logger-port.js';
-import { TOOL_FLOWGUARD_REVIEW } from '../../tool-names.js';
 import type {
   ReviewAssuranceState,
   ReviewAttempt,
@@ -27,10 +25,11 @@ import {
 } from './review-validation-acceptance.js';
 import {
   validateChallengeConsistency,
+  type ChallengeConsistencyCode,
   type ChallengeConsistencyInput,
 } from '../enforcement/challenge-consistency.js';
 import { validateReviewFindingsConsistency } from '../enforcement/findings-consistency.js';
-import { hashFindings } from '../evidence/findings-hash.js';
+import { hashFindings } from '../findings-hash.js';
 import { bindCanonicalEvidenceRefs } from '../enforcement/challenge-binding.js';
 
 /**
@@ -45,13 +44,33 @@ export interface ResolvedStructuredFindings {
   readonly invocationId: string;
 }
 
+/**
+ * Structured diagnostic data for an unparseable host capture. Never rendered
+ * into the blocked envelope: adapters replay it into the diagnostic logger so
+ * the operator sees the obligation/invocation identity and the exact schema
+ * issues that failed.
+ */
+export interface StructuredResolutionDiagnostics {
+  readonly obligationId: string;
+  readonly invocationId: string;
+  readonly issues: readonly string[];
+}
+
+/** Incoherence code emitted by the findings-consistency or challenge authority. */
+export type StructuredIncoherenceCode =
+  'SUBAGENT_VERDICT_FINDINGS_INCOHERENT' | ChallengeConsistencyCode;
+
 export type StructuredFindingsResolution =
   | ({ readonly kind: 'resolved' } & ResolvedStructuredFindings)
   | { readonly kind: 'rejected'; readonly rejection: ReviewFindingsAcceptanceRejection }
-  | { readonly kind: 'unparseable'; readonly detail: string }
+  | {
+      readonly kind: 'unparseable';
+      readonly detail: string;
+      readonly diagnostics: StructuredResolutionDiagnostics;
+    }
   | {
       readonly kind: 'incoherent';
-      readonly code: string;
+      readonly code: StructuredIncoherenceCode;
       readonly details: Record<string, unknown>;
       readonly invocationId: string;
       readonly attemptId: string;
@@ -71,7 +90,6 @@ export type StructuredFindingsResolution =
   | { readonly kind: 'not_found' };
 
 interface StructuredFindingsEvaluationContext {
-  readonly logger: ReviewDiagnosticLogger;
   readonly assurance: ReviewAssuranceState;
   readonly obligation: ReviewObligation;
   readonly parentSessionId: string | undefined;
@@ -87,22 +105,38 @@ interface UnavailableLineageDiagnostic {
 }
 
 interface IncoherentStructuredDiagnostic {
-  readonly code: string;
+  readonly code: StructuredIncoherenceCode;
   readonly details: Record<string, unknown>;
   readonly invocationId: string;
   readonly attemptId: string;
 }
 
+interface DeferredUnparseableDiagnostic {
+  readonly detail: string;
+  readonly diagnostics: StructuredResolutionDiagnostics;
+}
+
 interface DeferredStructuredDiagnostics {
-  readonly unparseableDetail: string | null;
+  /**
+   * Every unusable capture encountered so far, in encounter order. The last
+   * entry feeds the `unparseable` resolution variant; the whole list feeds the
+   * operator diagnostics that travel independently of the final result.
+   */
+  readonly unparseables: readonly DeferredUnparseableDiagnostic[];
   readonly incoherent: IncoherentStructuredDiagnostic | null;
   readonly unavailableLineage: UnavailableLineageDiagnostic | null;
+}
+
+/** Resolution plus the operator diagnostics collected while resolving it. */
+export interface StructuredFindingsResolutionResult {
+  readonly resolution: StructuredFindingsResolution;
+  readonly diagnostics: readonly StructuredResolutionDiagnostics[];
 }
 
 type DeferredStructuredDiagnostic =
   | { readonly kind: 'unusable_lineage'; readonly lineage: UnavailableLineageDiagnostic }
   | ({ readonly kind: 'incoherent' } & IncoherentStructuredDiagnostic)
-  | { readonly kind: 'unparseable'; readonly detail: string };
+  | ({ readonly kind: 'unparseable' } & DeferredUnparseableDiagnostic);
 
 type StructuredInvocationEvaluation =
   | { readonly kind: 'skip' }
@@ -125,7 +159,6 @@ type StructuredInvocationEvaluation =
  * @returns Parsed findings + invocationId, or null if evidence is unavailable
  */
 export function resolveStructuredFindings(
-  logger: ReviewDiagnosticLogger,
   assurance: ReviewAssuranceState | undefined,
   obligation: ReviewObligation | null,
   ...[
@@ -141,16 +174,17 @@ export function resolveStructuredFindings(
     (readonly string[] | undefined)?,
     (string | undefined)?,
   ]
-): StructuredFindingsResolution {
-  if (!obligation || !assurance) return { kind: 'not_found' };
+): StructuredFindingsResolutionResult {
+  if (!obligation || !assurance) {
+    return { resolution: { kind: 'not_found' }, diagnostics: [] };
+  }
 
   const obligationRejection = getReviewFindingsAcceptanceRejection({ obligation });
   if (obligationRejection) {
-    return { kind: 'rejected', rejection: obligationRejection };
+    return { resolution: { kind: 'rejected', rejection: obligationRejection }, diagnostics: [] };
   }
 
   const context: StructuredFindingsEvaluationContext = {
-    logger,
     assurance,
     obligation,
     parentSessionId,
@@ -176,19 +210,30 @@ export function resolveStructuredFindings(
 function resolveFromStructuredInvocations(
   context: StructuredFindingsEvaluationContext,
   matchingInvocations: readonly ReviewInvocationEvidence[],
-): StructuredFindingsResolution {
+): StructuredFindingsResolutionResult {
   let deferred = emptyDeferredDiagnostics();
   for (const invocation of matchingInvocations) {
     const evaluation = evaluateStructuredInvocation(context, invocation);
     if (evaluation.kind === 'skip') continue;
-    if (evaluation.kind === 'terminal') return evaluation.resolution;
+    if (evaluation.kind === 'terminal') {
+      // A resolved retry supersedes the unusable capture for the RESOLUTION,
+      // but the warnings collected from earlier captures still reach the
+      // adapter boundary.
+      return { resolution: evaluation.resolution, diagnostics: deferredDiagnostics(deferred) };
+    }
     deferred = mergeDeferredDiagnostics(deferred, evaluation.diagnostic);
   }
   return finalizeStructuredResolution(context, matchingInvocations, deferred);
 }
 
+function deferredDiagnostics(
+  deferred: DeferredStructuredDiagnostics,
+): readonly StructuredResolutionDiagnostics[] {
+  return deferred.unparseables.map((item) => item.diagnostics);
+}
+
 function emptyDeferredDiagnostics(): DeferredStructuredDiagnostics {
-  return { unparseableDetail: null, incoherent: null, unavailableLineage: null };
+  return { unparseables: [], incoherent: null, unavailableLineage: null };
 }
 
 function mergeDeferredDiagnostics(
@@ -213,44 +258,65 @@ function mergeDeferredDiagnostics(
         }
       : current;
   }
-  return { ...current, unparseableDetail: incoming.detail };
+  return {
+    ...current,
+    unparseables: [...current.unparseables, incoming],
+  };
 }
 
 function finalizeStructuredResolution(
   context: StructuredFindingsEvaluationContext,
   matchingInvocations: readonly ReviewInvocationEvidence[],
   deferred: DeferredStructuredDiagnostics,
-): StructuredFindingsResolution {
+): StructuredFindingsResolutionResult {
+  const diagnostics = deferredDiagnostics(deferred);
+  const lastUnparseable = deferred.unparseables.at(-1) ?? null;
   if (deferred.unavailableLineage !== null) {
     return {
-      kind: 'attempt_lineage_unavailable',
-      invocationId: deferred.unavailableLineage.invocationId,
-      obligationId: deferred.unavailableLineage.obligationId,
+      resolution: {
+        kind: 'attempt_lineage_unavailable',
+        invocationId: deferred.unavailableLineage.invocationId,
+        obligationId: deferred.unavailableLineage.obligationId,
+      },
+      diagnostics,
     };
   }
   if (deferred.incoherent !== null) {
     return {
-      kind: 'incoherent',
-      code: deferred.incoherent.code,
-      details: deferred.incoherent.details,
-      invocationId: deferred.incoherent.invocationId,
-      attemptId: deferred.incoherent.attemptId,
-      ...(typeof deferred.incoherent.details.blockingIssueCount === 'number'
-        ? { blockingIssueCount: deferred.incoherent.details.blockingIssueCount }
-        : {}),
+      resolution: {
+        kind: 'incoherent',
+        code: deferred.incoherent.code,
+        details: deferred.incoherent.details,
+        invocationId: deferred.incoherent.invocationId,
+        attemptId: deferred.incoherent.attemptId,
+        ...(typeof deferred.incoherent.details.blockingIssueCount === 'number'
+          ? { blockingIssueCount: deferred.incoherent.details.blockingIssueCount }
+          : {}),
+      },
+      diagnostics,
     };
   }
-  if (deferred.unparseableDetail !== null) {
-    return { kind: 'unparseable', detail: deferred.unparseableDetail };
+  if (lastUnparseable !== null) {
+    return {
+      resolution: {
+        kind: 'unparseable',
+        detail: lastUnparseable.detail,
+        diagnostics: lastUnparseable.diagnostics,
+      },
+      diagnostics,
+    };
   }
   if (matchingInvocations.length > 0) {
     return {
-      kind: 'invalid',
-      code: 'SUBAGENT_EVIDENCE_MISSING',
-      obligationId: context.obligation.obligationId,
+      resolution: {
+        kind: 'invalid',
+        code: 'SUBAGENT_EVIDENCE_MISSING',
+        obligationId: context.obligation.obligationId,
+      },
+      diagnostics,
     };
   }
-  return { kind: 'not_found' };
+  return { resolution: { kind: 'not_found' }, diagnostics };
 }
 
 function evaluateStructuredInvocation(
@@ -306,12 +372,7 @@ function evaluateStructuredInvocation(
       kind: 'deferred',
       diagnostic: {
         kind: 'unparseable',
-        detail: describeUnparseableFindings(
-          context.obligation,
-          invocation,
-          parsed.error.issues,
-          context.logger,
-        ),
+        ...describeUnparseableFindings(context.obligation, invocation, parsed.error.issues),
       },
     };
   }
@@ -395,7 +456,7 @@ function invalidFindingsEvaluation(
 
 function incoherentFindingsEvaluation(
   invocation: ReviewInvocationEvidence,
-  code: string,
+  code: StructuredIncoherenceCode,
   details: Record<string, unknown>,
 ): StructuredInvocationEvaluation {
   return {
@@ -460,26 +521,25 @@ function buildChallengeConsistencyInput(
 /**
  * Diagnostic for error analysis: captured findings are PRESENT (the invocation
  * filter requires capturedRawFindings != null) but FAIL schema validation.
+ * Pure: the schema issues travel as diagnostic data; the adapter boundary
+ * replays them into the diagnostic logger.
  */
 function describeUnparseableFindings(
   obligation: ReviewObligation,
   invocation: ReviewInvocationEvidence,
   issues: readonly ZodIssue[],
-  logger: ReviewDiagnosticLogger,
-): string {
+): DeferredUnparseableDiagnostic {
   const formattedIssues = issues
     .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
     .slice(0, 8);
-  logger.warn(
-    TOOL_FLOWGUARD_REVIEW,
-    'structured captured findings present but unparseable; treated as unparseable',
-    {
+  return {
+    detail: formattedIssues.join('; ') || 'unknown schema validation failure',
+    diagnostics: {
       obligationId: obligation.obligationId,
       invocationId: invocation.invocationId,
       issues: formattedIssues,
     },
-  );
-  return formattedIssues.join('; ') || 'unknown schema validation failure';
+  };
 }
 
 /**

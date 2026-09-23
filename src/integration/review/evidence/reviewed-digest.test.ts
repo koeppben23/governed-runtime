@@ -32,7 +32,7 @@ import {
   runWithAdapterLogger,
   type AdapterLogger,
 } from '../../../logging/adapter-logger.js';
-import { hashFindings } from './findings-hash.js';
+import { hashFindings } from '../findings-hash.js';
 import { completedDispatchForInvocation } from '../../../state/evidence-test-constants.js';
 import type { ReviewDiagnosticLogger } from '../review-logger-port.js';
 import {

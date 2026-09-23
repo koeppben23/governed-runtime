@@ -29,7 +29,7 @@ import { materializeReviewCardArtifact } from '../../../adapters/workspace/index
 import { readConfig } from '../../../adapters/persistence-config.js';
 import { writeReport, reportPath } from '../../../adapters/persistence.js';
 import { writeStateWithArtifacts, enrichWithWorkflowDirective } from '../helpers.js';
-import { ensureReviewAssurance } from '../../review/obligations/assurance.js';
+import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
 import { resolveWorkflowDirective } from '../../../machine/workflow-directive.js';
 import { projectStatusActionFromCommand } from '../../status/status-conclusion.js';
 import { projectCompletionProofStatus } from '../../proofgraph/proof-summary-projectors.js';

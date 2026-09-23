@@ -37,6 +37,11 @@ import { z } from 'zod';
 import type { ToolDefinition } from '../helpers.js';
 import { formatError } from '../error-format.js';
 import { formatBlocked } from '../../blocked-result.js';
+import { getAdapterLogger } from '../../../logging/adapter-logger.js';
+import {
+  formatReviewValidationFailure,
+  logStructuredResolutionDiagnostics,
+} from '../../review/validation/review-validation-failure.js';
 import {
   withMutableSessionTransaction,
   formatAutoAdvanceOverflow,
@@ -240,7 +245,10 @@ async function handlePlanReview(scope: PlanExecutionScope): Promise<string> {
   if (!scope.state.plan) return formatBlocked('NO_PLAN');
 
   const lookup = resolveEffectivePlanFindings(scope);
-  if (lookup.resolved.kind === 'blocked') return lookup.resolved.blocked;
+  if (lookup.resolved.kind === 'blocked') {
+    return formatReviewValidationFailure(getAdapterLogger(), lookup.resolved.failure);
+  }
+  logStructuredResolutionDiagnostics(getAdapterLogger(), lookup.resolved.diagnostics);
   const effectiveFindings = lookup.resolved.effectiveFindings;
   const blocked = blockedInvalidPlanFindings(
     scope.args,

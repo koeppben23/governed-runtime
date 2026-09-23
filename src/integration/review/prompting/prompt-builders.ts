@@ -18,10 +18,8 @@ import { renderPersistedProofGraphContext } from '../context/proof-context.js';
 import { renderFindingRelationGrammar } from '../evidence/finding-relation-grammar.js';
 import { renderRepositoryObservationContract } from './observation-contract-prompt.js';
 import { CANONICAL_PROMPT_APPEND_MARKER } from '../enforcement/types.js';
-import {
-  buildDiscoveryContextSection,
-  type DiscoveryReviewContext,
-} from './discovery-context-prompt.js';
+import { buildDiscoveryContextSection } from './discovery-context-prompt.js';
+import type { DiscoveryReviewContext } from '../context/discovery-port.js';
 import {
   buildStackProfileSection,
   resolveReviewerDiscoverySection,

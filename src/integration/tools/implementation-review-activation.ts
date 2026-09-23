@@ -18,12 +18,12 @@ import type {
 import {
   appendObligationWithAttempt,
   createReviewObligation,
-  findBindableAttempt,
   freezeReviewMaterial,
   resolveFrozenReviewProfile,
 } from '../review/obligations/assurance.js';
+import { findBindableAttempt } from '../../state/review-continuation.js';
 import type { ReviewDispatchAuthority } from '../review/dispatch/dispatch-authority.js';
-import { buildChildSessionReviewInstruction } from '../review/prompting/child-session-instruction.js';
+import { buildChildSessionReviewInstruction } from '../review/dispatch/child-session-instruction.js';
 import {
   resolveReviewOrchestrationMode,
   resolveRuntimeReviewPlatform,

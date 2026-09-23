@@ -6,7 +6,8 @@
  *
  * Extracted from assurance.ts along the attempt-lifecycle boundary. This module
  * is the single authority for how an attempt becomes (or stops being) bindable;
- * assurance.ts re-exports it so consumers keep one import surface.
+ * callers import it directly, and the assurance container primitives come from
+ * `state/review-dispatch.ts` / `state/review-continuation.ts`.
  *
  * @version v1
  */
@@ -21,14 +22,8 @@ import type {
   ReviewObligation,
   ReviewObligationType,
 } from '../../../state/evidence.js';
-import { ensureReviewAssurance } from '../../../state/review-continuation.js';
-import { resolveObservationRevisions } from '../observations/observation-access.js';
-
-export {
-  emptyReviewAssurance,
-  ensureReviewAssurance,
-  findBindableAttempt,
-} from '../../../state/review-continuation.js';
+import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
+import { resolveObservationRevisions } from '../../../state/evidence-review-authority.js';
 
 /**
  * Mint an opaque, attempt-bound observation capability. Cryptographically

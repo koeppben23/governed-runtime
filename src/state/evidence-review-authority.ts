@@ -240,6 +240,22 @@ export function resolveFrozenRevisionTarget(
 }
 
 /**
+ * The exact frozen revisions an obligation can actually back with evidence.
+ * Derived purely from the carrier's frozen repository authority through
+ * `resolveFrozenRevisionTarget`; an authority-less carrier resolves to no
+ * revisions and therefore supports no observation contract.
+ */
+export function resolveObservationRevisions(
+  carrier: RepositoryAuthorityCarrier,
+): readonly ('base' | 'head')[] {
+  const revisions: ('base' | 'head')[] = [];
+  for (const revision of ['base', 'head'] as const) {
+    if (resolveFrozenRevisionTarget(carrier, revision)) revisions.push(revision);
+  }
+  return revisions;
+}
+
+/**
  * Canonical derivation of the revision-provenance projection from frozen
  * authority. Provenance is a pure projection — never read from mutable runtime
  * state. When no frozen authority exists the derivation is

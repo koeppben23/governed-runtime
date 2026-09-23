@@ -35,7 +35,12 @@ import {
   resolveStructuredFindings,
   type StructuredFindingsResolution,
 } from '../../review/validation/review-validation-structured-evidence.js';
-import { formatStructuredResolutionFailure } from '../../review/validation/review-validation.js';
+import {
+  formatReviewValidationFailure,
+  logStructuredResolutionDiagnostics,
+  structuredResolutionFailure,
+} from '../../review/validation/review-validation-failure.js';
+import type { StructuredResolutionDiagnostics } from '../../review/validation/review-validation-structured-evidence.js';
 import {
   buildReviewExecutors,
   formatBlockedReviewReport,
@@ -168,6 +173,18 @@ interface StructuredPreparationInput {
  * No bound findings means the pending obligation must project its canonical
  * native dispatch authority, not a second evidence-missing transport.
  */
+/**
+ * Missing-evidence fallback: the parent proceeds without structured findings,
+ * but diagnostics collected from discarded captures (for example an unusable
+ * capture superseded by a terminal `invalid` resolution) stay operator-visible.
+ */
+export function fallbackMissingStructuredEvidence(
+  diagnostics: readonly StructuredResolutionDiagnostics[],
+): null {
+  logStructuredResolutionDiagnostics(getAdapterLogger(), diagnostics);
+  return null;
+}
+
 function isMissingStructuredEvidenceResolution(resolution: StructuredFindingsResolution): boolean {
   return (
     resolution.kind === 'not_found' ||
@@ -212,8 +229,7 @@ function prepareStructuredEvidenceSubmission(
       obligationId: exec.args.reviewObligationId,
     });
   }
-  const resolution = resolveStructuredFindings(
-    getAdapterLogger(),
+  const { resolution, diagnostics } = resolveStructuredFindings(
     state.reviewAssurance,
     obligation,
     undefined,
@@ -222,8 +238,16 @@ function prepareStructuredEvidenceSubmission(
     undefined,
     exec.context.sessionID,
   );
-  if (isMissingStructuredEvidenceResolution(resolution)) return null;
-  if (resolution.kind !== 'resolved') return formatStructuredResolutionFailure(resolution);
+  if (isMissingStructuredEvidenceResolution(resolution)) {
+    return fallbackMissingStructuredEvidence(diagnostics);
+  }
+  if (resolution.kind !== 'resolved') {
+    return formatReviewValidationFailure(
+      getAdapterLogger(),
+      structuredResolutionFailure(resolution, diagnostics),
+    );
+  }
+  logStructuredResolutionDiagnostics(getAdapterLogger(), diagnostics);
   const validation = validateSubmittedReviewFindings(state, resolution.findings, obligation);
   if (validation) return validation;
   return buildStructuredPreparation({

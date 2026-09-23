@@ -13,7 +13,7 @@
 
 import type { SessionState } from '../../../state/schema.js';
 import type { SemanticAuditIntent } from '../../audit-outbox.js';
-import { ensureReviewAssurance } from '../obligations/assurance.js';
+import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
 import { replayObservationCaptures, type ObservationReplayResult } from './observation-replay.js';
 
 export interface ReplayPersistDeps {

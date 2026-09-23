@@ -20,10 +20,8 @@ import {
   buildPlanReviewPrompt,
   buildReviewContentPrompt,
 } from './prompt-builders.js';
-import {
-  buildDiscoveryContextSection,
-  type DiscoveryReviewContext,
-} from './discovery-context-prompt.js';
+import { buildDiscoveryContextSection } from './discovery-context-prompt.js';
+import type { DiscoveryReviewContext } from '../context/discovery-port.js';
 import type { ImplementationGuidanceItem } from '../../implementation-guidance.js';
 
 const BASE_CONTEXT = {

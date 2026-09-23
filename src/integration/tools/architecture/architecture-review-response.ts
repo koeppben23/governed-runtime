@@ -22,11 +22,11 @@ import {
   appendObligationWithAttempt,
   artifactReviewSubjectScope,
   createReviewObligation,
-  ensureReviewAssurance,
   findLatestUnconsumedObligation,
   freezeReviewMaterial,
   resolveFrozenReviewProfile,
 } from '../../review/obligations/assurance.js';
+import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
 import {
   resolveReviewDispatchAuthority,
   reviewObligationResponseFields,

@@ -12,13 +12,13 @@ import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js
 import { ReviewFindings as ReviewFindingsSchema } from '../../../state/evidence.js';
 import type { ReviewObligation } from '../../../state/evidence.js';
 import type { SessionState } from '../../../state/schema.js';
-import { hashFindings } from '../obligations/assurance.js';
+import { hashFindings } from '../findings-hash.js';
 import { validatePipelineAttestation } from '../shared-helpers.js';
 import { validateChallengeConsistency } from '../enforcement/challenge-consistency.js';
 import { collectPreviouslyUsedChallengeIds } from '../obligations/challenge-history.js';
 import { recordEvidenceOrBlockReuse } from '../evidence/reviewer-evidence-recorder.js';
 import { replayAndPersistObservations } from '../observations/observation-replay-persist.js';
-import { captureStructuredFindingsFromVisibleChild } from '../obligations/structured-followup.js';
+import { captureStructuredFindingsFromVisibleChild } from './structured-followup.js';
 import { prepareReviewerFindingsForValidation } from '../enforcement/prepare-findings.js';
 import { buildReviewChallengeContract } from '../obligations/challenge-contract.js';
 import type { ReviewerSuccessResult } from '../types.js';

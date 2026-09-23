@@ -1260,7 +1260,7 @@ describe('plan', () => {
 
     async function dependencies() {
       const assuranceMod = await import('./review/obligations/assurance.js');
-      const findingsHashMod = await import('./review/evidence/findings-hash.js');
+      const findingsHashMod = await import('./review/findings-hash.js');
       const planResponseMod = await import('./tools/plan/plan-response.js');
       return {
         artifactReviewSubjectScope: assuranceMod.artifactReviewSubjectScope,

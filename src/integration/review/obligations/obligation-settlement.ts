@@ -29,7 +29,8 @@
  */
 
 import type { SessionState } from '../../../state/schema.js';
-import { ensureReviewAssurance, findBindableAttempt } from './assurance.js';
+import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
+import { findBindableAttempt } from '../../../state/review-continuation.js';
 import { verifyFrozenMaterialForObligation } from '../../../state/review-continuation.js';
 import { blockObligation } from './obligation-state.js';
 
