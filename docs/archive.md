@@ -119,7 +119,20 @@ v2; v2 archives fail closed instead of being silently re-interpreted.
 
 ## Verification
 
-FlowGuard provides `verifyArchive()` to validate archive integrity.
+FlowGuard provides `verifyArchive(fingerprint, sessionId)` to validate the
+archive of a **known, resolvable session** — it resolves the package from the
+workspace archive directory and cross-checks the external archive publication
+binding against the originating session. It does not accept a package path.
+
+An auditor who received only the package and has no access to the originating
+workspace uses the standalone offline verifier shipped with the Java demo
+(`demos/java-task-manager/verify-evidence-package.mjs`): it validates the
+embedded `archive-manifest.v3`, recomputes file and content digests with the
+canonical primitives, verifies the archived audit chain, and checks the
+expected session assignment. It cannot reproduce the external publication
+binding and does not cryptographically validate TSA tokens offline; its exact
+scope, limits, and exit codes are documented in
+`demos/java-task-manager/EVIDENCE_PACKAGE.md`.
 
 ### Finding Codes
 
@@ -147,7 +160,7 @@ FlowGuard provides `verifyArchive()` to validate archive integrity.
 // Available after installation (see docs/installation.md)
 import { verifyArchive } from '@flowguard/core';
 
-const result = await verifyArchive('/path/to/archive.tar.gz');
+const result = await verifyArchive(fingerprint, sessionId);
 
 if (result.passed) {
   console.log('Archive is valid');
@@ -155,6 +168,9 @@ if (result.passed) {
   console.log('Findings:', result.findings);
 }
 ```
+
+For a standalone package without session authority, use the offline verifier
+documented in `demos/java-task-manager/EVIDENCE_PACKAGE.md`.
 
 ## Regulated Archive Completion Semantics
 

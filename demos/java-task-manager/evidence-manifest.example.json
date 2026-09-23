@@ -1,0 +1,43 @@
+{
+  "schemaVersion": "demo-evidence-manifest.v1",
+  "sessions": [
+    {
+      "flow": "architecture",
+      "sessionId": "REPLACE_WITH_ARCHITECTURE_SESSION_ID",
+      "artifacts": [
+        {
+          "kind": "host-chat-export",
+          "file": "chat-architecture.md",
+          "sha256": "REPLACE_WITH_SHA256"
+        }
+      ]
+    },
+    {
+      "flow": "development",
+      "sessionId": "REPLACE_WITH_DEVELOPMENT_SESSION_ID",
+      "artifacts": [
+        {
+          "kind": "flowguard-package",
+          "file": "<sessionId>.tar.gz",
+          "sha256": "REPLACE_WITH_SHA256"
+        },
+        {
+          "kind": "host-chat-export",
+          "file": "chat-development.md",
+          "sha256": "REPLACE_WITH_SHA256"
+        }
+      ]
+    },
+    {
+      "flow": "peer-review",
+      "sessionId": "REPLACE_WITH_PEER_REVIEW_SESSION_ID",
+      "artifacts": [
+        {
+          "kind": "host-chat-export",
+          "file": "chat-peer-review.md",
+          "sha256": "REPLACE_WITH_SHA256"
+        }
+      ]
+    }
+  ]
+}
