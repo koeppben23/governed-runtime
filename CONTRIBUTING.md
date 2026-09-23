@@ -27,8 +27,9 @@ integration/  -> rails/  -> machine/  -> state/
 
 The diagram shows the intended direction for new code, not the enforced set:
 top-level module directions are owned exclusively by `MODULE_DEPENDENCY_POLICY`
-(`src/architecture/__tests__/module-dependency-policy.ts`), and existing cyclic
-directions are frozen debt (see [Architecture Rules](#architecture-rules)).
+(`src/architecture/__tests__/module-dependency-policy.ts`), and the observed
+module graph must match that policy exactly — including zero module cycles (see
+[Architecture Rules](#architecture-rules)).
 
 ## Development Setup
 
