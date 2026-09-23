@@ -133,19 +133,63 @@ The retired form /export redactionMode=none includeRaw=true is not accepted:
 `/export` takes no arguments and is the development completion step, not an
 archive alias.
 
+## Verify the Evidence Package
+
+The `/export` package is a raw, offline-verifiable evidence package. A
+standalone verifier recomputes its checksum, member inventory, file digests,
+canonical content digest, session identity, and archived audit chain:
+
+```bash
+node demos/java-task-manager/verify-evidence-package.mjs <package.tar.gz> \
+  --expect-session <session-id> --expect-flow development --expect-phase EXPORT_READY
+```
+
+It exits non-zero on any tamper or session misassignment and refuses to present
+a redacted sharing archive as fully verifiable raw evidence (exit code 3). The
+three demo sessions (architecture, development, peer-review) and their external
+host chat exports are bound by a small evidence manifest template
+(`evidence-manifest.example.json`), verified with:
+
+```bash
+node demos/java-task-manager/verify-evidence-package.mjs --manifest evidence-manifest.json
+```
+
+The manifest check also fails when two flows share byte-identical artifacts —
+the "peer-review chat export is a copy of the architecture export" defect — and
+when one session id is declared for more than one flow. Host chat exports are
+manually assigned, hash-secured supplementary evidence, never FlowGuard
+authority: the manifest proves their bytes, not an independently observed
+chat-session binding. What
+the verifier proves — and the offline, TSA, publication-binding, and
+authenticity limits it cannot cover — is documented in `EVIDENCE_PACKAGE.md`.
+
+## Assurance Boundaries
+
+FlowGuard validates the host adapter against its host contract at boot, but the
+advertised host capabilities are **contract-attested, not runtime-verified**:
+the plugin logs `HOST_CAPABILITY_UNVERIFIED` as a diagnostic warning (it never
+blocks a governance path), and the reviewer capability is verified lazily on
+the real invocation path. This boundary is documented in
+`docs/opencode-host-boundary-attack-matrix.md` (PL-03, F-04). Cross-check the
+claim before presenting: a capability claim is only as strong as the adapter
+contract it was validated against.
+
 ## Directory Structure
 
 ```text
 demos/java-task-manager/
-├── README.md              ← You are here
-├── DEMO_SCRIPT.md         ← Live presentation script with talking points
-├── RESET.md               ← How to reset for a fresh demo
-├── run-demo-setup.sh      ← Prepare or prepare+install the demo project
-├── run-demo-preflight.sh  ← Pre-flight checks before a live pitch
-├── snapshot-demo.sh       ← Workspace checkpoint save/restore (visual only)
-├── FALLBACK.md            ← Pre-recorded fallback strategy for live presentations
-├── review-fixtures/       ← Files copied by setup to create the optional /review branch
-└── seed/                  ← The buggy starting state (a standalone Maven project)
+├── README.md                    ← You are here
+├── DEMO_SCRIPT.md               ← Live presentation script with talking points
+├── RESET.md                     ← How to reset for a fresh demo
+├── EVIDENCE_PACKAGE.md          ← Evidence-package verification scope and limits
+├── evidence-manifest.example.json ← Template binding the three sessions to their artifacts
+├── run-demo-setup.sh            ← Prepare or prepare+install the demo project
+├── run-demo-preflight.sh        ← Pre-flight checks before a live pitch
+├── verify-evidence-package.mjs  ← Standalone offline package verifier
+├── snapshot-demo.sh             ← Workspace checkpoint save/restore (visual only)
+├── FALLBACK.md                  ← Pre-recorded fallback strategy for live presentations
+├── review-fixtures/             ← Files copied by setup to create the optional /review branch
+└── seed/                        ← The buggy starting state (a standalone Maven project)
     ├── .gitignore
     ├── pom.xml
     ├── TICKET.md

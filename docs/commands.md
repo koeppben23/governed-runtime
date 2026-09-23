@@ -321,6 +321,8 @@ Two modes:
 
 ADR must include `## Context`, `## Decision`, and `## Consequences` sections (MADR format).
 
+On approval (`ARCH_COMPLETE`), FlowGuard writes the MADR artifact with its own metadata envelope: `FlowGuard Decision Status` records the FlowGuard decision, and `Reviewed ADR digest` identifies the exact ADR text that was independently reviewed. The submitted `adrText` is embedded byte-identically — including any `## Status` section or `- Status:` line it carries — and is never rewritten; the envelope is FlowGuard metadata, not ADR content.
+
 ADR review is **subagent-driven by default** in solo, team, and regulated profiles, parity with `/plan` and `/implement`. The plugin invokes the reviewer deterministically; manual self-review is rejected in strict mode (fail-closed). The reviewer applies ADR-specific criteria (Context completeness, Decision concreteness, Consequences honesty, MADR structure) defined in the `flowguard-reviewer` agent body.
 
 **Allowed in:** READY (starts flow), ARCHITECTURE (revise after changes_requested)

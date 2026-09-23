@@ -47,7 +47,7 @@ Each CI job maps to its npm script(s) for clear diagnosis:
 | **unit (assertions)** | `npm run test:assertion-conformance` | Golden assertion-parser conformance, run as a third step of the `unit` CI job                        | No             |
 | **coverage**          | `npm run test:coverage:ci`           | Unit + integration under v8 coverage; enforces aggregate 80% threshold                               | No             |
 | **integration-perf**  | `npm run test:integration:perf`      | All integration PERF tests without v8 instrumentation                                                | No             |
-| **smoke**             | `npm run test:smoke`                 | Built CLI contract smoke and ACP smoke                                                               | Yes            |
+| **smoke**             | `npm run test:smoke`                 | Built CLI contract smoke, demo evidence-package verifier contract, and ACP smoke                     | Yes            |
 | **install-verify**    | `npm run test:install-verify`        | Tarball pack/install/doctor verification                                                             | Yes            |
 | **mutation**          | `npm run mutation`                   | StrykerJS mutation testing for security-critical paths on weekly/release/manual cadence              | No             |
 | **actions-pinning**   | `npm run check:actions-pinned`       | Workflow and local-action `uses:` refs are immutable SHAs or Docker digests                          | No             |

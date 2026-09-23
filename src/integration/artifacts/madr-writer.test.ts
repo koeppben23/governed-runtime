@@ -15,6 +15,17 @@ import { benchmarkSync } from '../../test-policy.js';
 
 // ─── Test Setup ───────────────────────────────────────────────────────────────
 
+/**
+ * Split the artifact into its generated FlowGuard envelope and the embedded
+ * ADR body. Header assertions must never inspect the body: the submitted ADR
+ * text may legitimately contain `- Status:`/`- Digest:` lines of its own.
+ */
+function splitMadrArtifact(content: string, adrText: string): { header: string; body: string } {
+  const bodyStart = content.indexOf(adrText);
+  expect(bodyStart).toBeGreaterThan(-1);
+  return { header: content.slice(0, bodyStart), body: content.slice(bodyStart) };
+}
+
 let tmpDir: string;
 
 beforeEach(async () => {
@@ -45,14 +56,20 @@ describe('madr-writer', () => {
       expect(content).toContain('## Consequences');
     });
 
-    it('includes metadata header (status, date, digest)', async () => {
+    it('includes the FlowGuard metadata envelope (decision status, reviewed digest, date, schema)', async () => {
       const filePath = await writeMadrArtifact(tmpDir, ARCHITECTURE_DECISION);
       const content = await fs.readFile(filePath, 'utf-8');
+      const { header, body } = splitMadrArtifact(content, ARCHITECTURE_DECISION.adrText);
 
-      expect(content).toContain('- Status: proposed');
-      expect(content).toContain(`- Date: ${FIXED_TIME}`);
-      expect(content).toContain('- Digest: digest-of-adr');
-      expect(content).toContain('- Schema: madr-artifact.v1');
+      expect(header).toContain('- FlowGuard Decision Status: proposed');
+      expect(header).toContain('- Reviewed ADR digest: digest-of-adr');
+      expect(header).toContain(`- Date: ${FIXED_TIME}`);
+      expect(header).toContain('- Schema: madr-artifact.v2');
+      // The ambiguous legacy envelope labels are gone from the header.
+      expect(header).not.toContain('- Status:');
+      expect(header).not.toContain('- Digest:');
+      // The ADR body is embedded byte-identically.
+      expect(body).toBe(`${ARCHITECTURE_DECISION.adrText}\n`);
     });
 
     it('returns the absolute file path', async () => {
@@ -95,7 +112,9 @@ describe('madr-writer', () => {
       };
       const filePath = await writeMadrArtifact(tmpDir, updatedAdr);
       const content = await fs.readFile(filePath, 'utf-8');
-      expect(content).toContain('- Status: accepted');
+      const { header } = splitMadrArtifact(content, updatedAdr.adrText);
+      expect(header).toContain('- FlowGuard Decision Status: accepted');
+      expect(header).not.toContain('- Status:');
     });
 
     it('handles ADR IDs with large numbers', async () => {
@@ -128,6 +147,28 @@ describe('madr-writer', () => {
       const content = formatMadrContent(ARCHITECTURE_DECISION);
       const firstLine = content.split('\n')[0];
       expect(firstLine).toBe('# ADR-1: Use PostgreSQL for primary storage');
+    });
+
+    it('keeps an ADR-authored status section and status line byte-identical', () => {
+      // Regression: the generated envelope must never be confused with the
+      // ADR's own status. Same-looking content inside the submitted text is
+      // embedded untouched while the old envelope labels disappear.
+      const adr = {
+        ...ARCHITECTURE_DECISION,
+        adrText:
+          '## Context\nWe need a database.\n\n## Status\nProposed\n\n' +
+          '- Status: Proposed\n\n## Decision\nUse PostgreSQL.\n\n## Consequences\nMust maintain DB infra.',
+      };
+      const content = formatMadrContent(adr);
+      const { header, body } = splitMadrArtifact(content, adr.adrText);
+
+      expect(body).toBe(`${adr.adrText}\n`);
+      expect(body).toContain('## Status\nProposed');
+      expect(body).toContain('- Status: Proposed');
+      expect(header).not.toContain('- Status:');
+      expect(header).not.toContain('- Digest:');
+      expect(header).toContain('- FlowGuard Decision Status: proposed');
+      expect(header).toContain('- Reviewed ADR digest: digest-of-adr');
     });
   });
 

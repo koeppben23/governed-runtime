@@ -185,7 +185,7 @@ The COM domain covers compliance documentation, evidence retention, and audit su
 - Zod-validated evidence schemas (defined across `src/state/evidence-*.ts`) ensure structural correctness
 - Compliance summary generation: automated compliance assessment from session audit trail (see `src/audit/summary.ts`)
 - Session archives: `.tar.gz` with structured manifest, file inventory, per-file SHA-256 digests, and content digest
-- Archive verification (`verifyArchive()` in `src/adapters/workspace/archive.ts`) validates manifest presence, file completeness, digest integrity, audit chain, archive checksum sidecar, TSA timestamps (when enabled), and per-artifact evidence binding. The enum of finding codes is in `src/archive/types.ts`.
+- Archive verification (`verifyArchive()` in `src/adapters/workspace/archive-verify-chain.ts`) validates manifest presence, file completeness, digest integrity, audit chain, archive checksum sidecar, TSA timestamps (when enabled), and per-artifact evidence binding. The enum of finding codes is in `src/archive/types.ts`.
 
 **Audit Support:**
 
