@@ -151,21 +151,22 @@ subagent attestation, and the `/review` evidence model.
 
 ## Documentation
 
-| Document                                                        | Description                                                            |
-| --------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| [Installation](./docs/installation.md)                          | Install and configure FlowGuard                                        |
-| [Commands](./docs/commands.md)                                  | Command reference                                                      |
-| [Phases](./docs/phases.md)                                      | Workflow phases and gates                                              |
-| [Policies](./docs/policies.md)                                  | Solo, Team, Team-CI, Regulated modes                                   |
-| [Independent Review](./docs/independent-review.md)              | Review obligations, subagent attestation, and `/review` evidence model |
-| [Profiles](./docs/profiles.md)                                  | Tech stack profiles                                                    |
-| [Archive](./docs/archive.md)                                    | Session archiving                                                      |
-| [Enterprise Readiness](./docs/enterprise-readiness.md)          | Consolidated threat model and control boundaries                       |
-| [Configuration](./docs/configuration.md)                        | Configuration reference                                                |
-| [Troubleshooting](./docs/troubleshooting.md)                    | FAQ and error handling                                                 |
-| [Architecture](./docs/architecture/architecture-diagram.md)     | Architecture layers, three governed flows, SSOT, proof surfaces        |
-| [Testing Strategy](./docs/testing-strategy.md)                  | Test tiers, CI jobs, performance budgets                               |
-| [API Reference](https://koeppben23.github.io/governed-runtime/) | TypeScript API reference (TypeDoc, GitHub Pages)                       |
+| Document                                                             | Description                                                            |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| [Installation](./docs/installation.md)                               | Install and configure FlowGuard                                        |
+| [Commands](./docs/commands.md)                                       | Command reference                                                      |
+| [Phases](./docs/phases.md)                                           | Workflow phases and gates                                              |
+| [Policies](./docs/policies.md)                                       | Solo, Team, Team-CI, Regulated modes                                   |
+| [Independent Review](./docs/independent-review.md)                   | Review obligations, subagent attestation, and `/review` evidence model |
+| [Profiles](./docs/profiles.md)                                       | Tech stack profiles                                                    |
+| [Archive](./docs/archive.md)                                         | Session archiving                                                      |
+| [Enterprise Readiness](./docs/enterprise-readiness.md)               | Consolidated threat model and control boundaries                       |
+| [Configuration](./docs/configuration.md)                             | Configuration reference                                                |
+| [Troubleshooting](./docs/troubleshooting.md)                         | FAQ and error handling                                                 |
+| [Architecture](./docs/architecture/architecture-diagram.md)          | Architecture layers, three governed flows, SSOT, proof surfaces        |
+| [Developer Architecture Map](./docs/development/architecture-map.md) | Where a change belongs, owning modules, and enforced checks            |
+| [Testing Strategy](./docs/testing-strategy.md)                       | Test tiers, CI jobs, performance budgets                               |
+| [API Reference](https://koeppben23.github.io/governed-runtime/)      | TypeScript API reference (TypeDoc, GitHub Pages)                       |
 
 ---
 
@@ -179,6 +180,12 @@ subagent attestation, and the `/review` evidence model.
 ---
 
 ## Development
+
+New to the codebase? Start with the
+[Developer Architecture Map](./docs/development/architecture-map.md) — it maps
+change types to their owning modules, the architecture rules that apply, and the
+checks you need to run. [Your First Change](./docs/development/first-change.md)
+walks one additive tool-response change end to end.
 
 ```bash
 # Install dependencies
@@ -202,32 +209,20 @@ npm run build
 
 ### CI Jobs
 
-| Job                        | Script                                         | What It Proves                                         |
-| -------------------------- | ---------------------------------------------- | ------------------------------------------------------ |
-| **unit**                   | `npm run test:unit`                            | Pure logic correctness                                 |
-| **test**                   | needs: [unit, integration]                     | Aggregated branch-protection check                     |
-| **integration**            | `npm run test:integration`                     | Governance chain fidelity                              |
-| **architecture**           | `npm run test:architecture`                    | Dependency rules, file sizes                           |
-| **typecheck**              | `npm run check`                                | TypeScript compilation                                 |
-| **sdk-baseline**           | `node scripts/sdk-type-snapshot.mjs`           | SDK contract surface stability                         |
-| **lint**                   | `npm run lint:strict`                          | ESLint with --max-warnings=0                           |
-| **unused-dependencies**    | `npm run check:unused-dependencies`            | Knip — no stale imports or modules                     |
-| **format**                 | `npm run check:format`                         | Prettier formatting                                    |
-| **fuzz**                   | `npm run test:fuzz`                            | Fast-check property-based test coverage                |
-| **actions-pinning**        | `npm run check:actions-pinned`                 | GitHub Actions pinned to immutable refs                |
-| **build**                  | `npm run build`                                | Successful compilation to dist/                        |
-| **install-verify**         | `npm run build && npm run test:install-verify` | Tarball install + doctor (cross-platform)              |
-| **smoke**                  | `npm run build && npm run test:smoke`          | Built CLI starts, ACP works                            |
-| **independent-review-e2e** | `npm run test:independent-review-e2e`          | Peer reviewer session contract                   |
-| **actionlint**             | —                                              | GitHub Actions workflow linting (docker)               |
-| **secrets-scan**           | —                                              | GitGuardian or Gitleaks secret detection               |
-| **security-policy**        | —                                              | OSV/GHAS vulnerability scan                            |
-| **dependency-review**      | —                                              | Dependency review (software supply-chain)              |
-| **install**                | `npm run build` (implicit)                     | Cross-platform install (ubuntu, macos, windows)        |
-| **ci-runtime-report**      | —                                              | CI execution time summary                              |
-| **mutation**               | `npm run mutation`                             | StrykerJS mutation testing for security-critical paths |
+The required `ci-gate` check aggregates the merge-blocking jobs: `unit` (unit,
+scripts, and assertion-conformance tests), `coverage`, `integration-perf`,
+`provider-conformance`, and `regulated-e2e`. Branch protection additionally
+requires `typecheck`, `lint`, `format`, `architecture`, `build`, `build-clean`,
+`actionlint`, `secrets-scan`, `security-policy`, `independent-review-e2e`, the
+cross-platform `install-verify` jobs, `Validate Commit Messages`
+(`.github/workflows/conventional-commits.yml`), and `audit` and `codeql-sast`
+(`.github/workflows/security.yml`).
 
-See [docs/testing-strategy.md](./docs/testing-strategy.md) for the full test tier system.
+The test-focused job-to-script table lives in
+[Testing Strategy](./docs/testing-strategy.md); the PR-CI workflow definition is
+[`.github/workflows/ci.yml`](./.github/workflows/ci.yml), and the full
+required-check contract is
+[`.github/BRANCH-PROTECTION.md`](./.github/BRANCH-PROTECTION.md).
 
 ### Releases
 

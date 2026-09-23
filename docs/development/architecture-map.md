@@ -4,7 +4,8 @@ Where a change belongs, which authority owns it, and which enforced checks must
 be updated in the same change. Process rules live in
 [CONTRIBUTING.md](../../CONTRIBUTING.md); the test layers are described in
 [Testing Strategy](../testing-strategy.md); each layer adds local rules in its
-nested `AGENTS.md`.
+nested `AGENTS.md`. For a worked example, see
+[Your First Change](./first-change.md).
 
 ## Layer entry points
 

@@ -38,26 +38,33 @@ enforcement chain (actor resolution, assurance tiers, policy snapshot flow-throu
 
 ## CI Job Mapping
 
-Each CI job maps to its npm script(s) for clear diagnosis:
+Each test and check job maps to its npm script(s) for clear diagnosis:
 
-| CI Job                | npm Script                           | Scope                                                                                                | Requires Build |
-| --------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------- | -------------- |
-| **unit**              | `npm run test:unit`                  | All `*.test.ts` outside `integration/`, including T1 and T2                                          | No             |
-| **unit (scripts)**    | `npm run test:scripts`               | Repository-internal script tests (`scripts/**/*.test.ts`), run as a second step of the `unit` CI job | No             |
-| **unit (assertions)** | `npm run test:assertion-conformance` | Golden assertion-parser conformance, run as a third step of the `unit` CI job                        | No             |
-| **coverage**          | `npm run test:coverage:ci`           | Unit + integration under v8 coverage; enforces aggregate 80% threshold                               | No             |
-| **integration-perf**  | `npm run test:integration:perf`      | All integration PERF tests without v8 instrumentation                                                | No             |
-| **smoke**             | `npm run test:smoke`                 | Built CLI contract smoke, demo evidence-package verifier contract, and ACP smoke                     | Yes            |
-| **install-verify**    | `npm run test:install-verify`        | Tarball pack/install/doctor verification                                                             | Yes            |
-| **mutation**          | `npm run mutation`                   | StrykerJS mutation testing for security-critical paths on weekly/release/manual cadence              | No             |
-| **actions-pinning**   | `npm run check:actions-pinned`       | Workflow and local-action `uses:` refs are immutable SHAs or Docker digests                          | No             |
+| CI Job                   | npm Script                                                      | Scope                                                                                                        | Requires Build |
+| ------------------------ | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | -------------- |
+| **unit**                 | `npm run test:unit`                                             | All `*.test.ts` outside `integration/`, including T1 and T2                                                  | No             |
+| **unit (scripts)**       | `npm run test:scripts`                                          | Repository-internal script tests (`scripts/**/*.test.ts`), run as a second step of the `unit` CI job         | No             |
+| **unit (assertions)**    | `npm run test:assertion-conformance`                            | Golden assertion-parser conformance, run as a third step of the `unit` CI job                                | No             |
+| **coverage**             | `npm run test:coverage:ci`                                      | Unit + integration under v8 coverage; enforces aggregate 80% threshold                                       | No             |
+| **integration-perf**     | `npm run test:integration:perf`                                 | All integration PERF tests without v8 instrumentation                                                        | No             |
+| **provider-conformance** | `npm run test:provider-conformance`                             | Provider runtime conformance on golden fixtures (vitest, jest, pytest, go); CI installs Java, Python, and Go | No             |
+| **regulated-e2e**        | `npx vitest run --project integration` (three regulated suites) | Regulated completion gate, regulated recovery, and the audit/archive tamper matrix                           | No             |
+| **smoke**                | `npm run test:smoke`                                            | Built CLI contract smoke, demo evidence-package verifier contract, and ACP smoke                             | Yes            |
+| **install-verify**       | `npm run test:install-verify`                                   | Tarball pack/install/doctor verification                                                                     | Yes            |
+| **mutation**             | `npm run mutation`                                              | StrykerJS mutation testing for security-critical paths on weekly/release/manual cadence                      | No             |
+| **actions-pinning**      | `npm run check:actions-pinned`                                  | Workflow and local-action `uses:` refs are immutable SHAs or Docker digests                                  | No             |
 
 The `smoke` job also requires the OpenCode CLI (`opencode-ai`) for ACP tests.
 The `install-verify` job runs cross-platform (Linux, macOS, Windows).
 
-Additional CI jobs (not test-focused): `typecheck`, `lint`, `format`, `build`,
-`audit`, `actionlint`, `actions-pinning`, `secrets-scan`, `codeql-sast`,
-`security-policy`, `install`.
+The technical sources are the workflow files: `.github/workflows/ci.yml` for the
+PR-CI jobs and `.github/workflows/mutation.yml` for mutation testing.
+
+Additional CI jobs from `.github/workflows/ci.yml` (not test-focused):
+`typecheck`, `lint`, `format`, `build`, `actionlint`, `actions-pinning`,
+`secrets-scan`, `security-policy`, `install`. Security jobs (`audit`,
+`codeql-sast`) run in `.github/workflows/security.yml` and are listed in
+`.github/BRANCH-PROTECTION.md`.
 
 The `typecheck` job runs `npm run check`, which executes both `check:prod` and
 `check:tests`. `check:prod` compiles production sources through `tsconfig.json`.
