@@ -1,5 +1,5 @@
 /**
- * @module integration/review/challenge-policy-evaluation.test
+ * @module integration/review/validation/challenge-policy-evaluation.test
  * @description Controlled #747 lifecycle evaluation using host-captured reviewer findings.
  */
 

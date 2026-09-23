@@ -161,12 +161,12 @@ High-risk work must include:
 
 ## Branch And PR Contract
 
-- Start from current `main`
+- Start from current `develop` for normal work (`main` only for releases/hotfixes)
 - Create a clean conventional branch before making changes
-- Do not work directly on `main`
+- Do not work directly on `main` or `develop`
 - Keep the change scoped to the ticket
 - Use a conventional commit and PR title
-- Open a PR to `main`
+- Open a PR to `develop` (see [CONTRIBUTING.md](../CONTRIBUTING.md) for the default target and release branches)
 - Merge only after required checks pass
 
 Branch examples:

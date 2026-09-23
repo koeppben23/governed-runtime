@@ -532,12 +532,16 @@ export function validate(input: unknown): RailResult {
 2. Add JSDoc comments to new functions
 3. Add tests for new functionality
 4. Update `PRODUCT_IDENTITY.md` if product facts change
+5. Follow the layer entry points and checklists in the
+   [Developer Architecture Map](./docs/development/architecture-map.md)
 
 ### When Changing Architecture
 
 1. Update `AGENTS.md` if developer mandates change
 2. Update architecture comments in relevant files
 3. Update or add architecture tests
+4. Update the placement/zone authorities when files move or are added
+   (see the [Developer Architecture Map](./docs/development/architecture-map.md))
 
 ## Performance Guidelines
 

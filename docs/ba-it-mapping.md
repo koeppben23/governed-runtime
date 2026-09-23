@@ -237,7 +237,7 @@ FlowGuard integrates with BAIT compliance programs through:
 | § 10(3) Risk documentation  | Ticket + Plan evidence                       |
 | § 11(2) Authorization       | Four-eyes principle (regulated mode)         |
 | § 11(5) Dual control        | Review decisions with human gates            |
-| § 14(2) Development process | Structured 15-phase governed workflow        |
+| § 14(2) Development process | Structured governed workflow with 18 phases  |
 | § 14(3) Testing             | Validation phase (test quality)              |
 | § 14(4) Changes             | Versioned plan history, backward transitions |
 | § 14(5) Approval            | Decision receipts                            |

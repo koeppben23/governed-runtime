@@ -60,7 +60,7 @@ The profile is advisory context and provenance only. It does not transition stat
 
 ### Controlled Challenge Fixture Evaluation (#747)
 
-`src/integration/review/challenge-policy-evaluation.test.ts` runs controlled,
+`src/integration/review/validation/challenge-policy-evaluation.test.ts` runs controlled,
 deterministic implementation-review fixtures twice: once with a legacy-shaped
 obligation that has no frozen challenge requirements, and once with requirements
 frozen from `challenge-policy.v1`. It resolves host-task-captured reviewer
@@ -257,7 +257,7 @@ The reviewer subagent returns one of three `overallVerdict` values:
 `unable_to_review` is enforced fail-closed at every layer:
 
 - **Tool layer (`src/integration/review/validation/review-validation.ts`):** rejects `findings.overallVerdict='unable_to_review'` regardless of the submitted reviewer verdict.
-- **Orchestrator (`src/integration/review/orchestrator.ts`):** when the deterministic invocation receives `unable_to_review`, it routes BLOCKED instead of completing the review.
+- **Native Task transport (`src/integration/review/dispatch/native-task-review.ts`):** when the host-captured reviewer findings declare `unable_to_review`, it routes BLOCKED (code `SUBAGENT_UNABLE_TO_REVIEW`) instead of completing the review.
 - **Convergence guard (`isConverged`):** returns `false` for `unable_to_review`, preventing any loop convergence path.
 - **Rails layer:** plan/implement/continue rails translate `unable_to_review` into a `BlockedResult` discriminated-union variant.
 
@@ -295,7 +295,7 @@ FlowGuard enforces the subagent requirement at three layers:
 - Self-review findings are rejected → BLOCKED
 - Plan-version binding, iteration binding, and mandatory-findings checks
 
-**Layer 2 — Deterministic invocation (`src/integration/review/orchestrator.ts` via `src/integration/plugin.ts`):**
+**Layer 2 — Native Task transport (`src/integration/review/dispatch/native-task-review.ts` via `src/integration/plugin.ts`):**
 
 The plugin programmatically invokes the reviewer subagent via the OpenCode SDK client when it detects the review-dispatch-required signal in a tool response. This ensures invocation happens by code, not by LLM decision.
 
