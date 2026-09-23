@@ -5,11 +5,14 @@
  * node-version-file usage (direct setup-node calls AND local composite actions),
  * devEngines consistency, and package engines policy.
  *
- * The workflow/action analysis is a pure function over parsed YAML so it can be
- * unit-tested with fixtures. Every non-allow-listed workflow must prove a
- * node-version-file reference either directly on a setup-node step or through a
- * local composite action whose metadata (recursively) configures one; local
- * actions that install Node without a node-version-file fail closed.
+ * DELIBERATELY DEPENDENCY-FREE: the CI `node-toolchain` job runs this script
+ * without installing project dependencies, so the workflow/action analysis uses
+ * a small line-based YAML scanner instead of a parser dependency.
+ *
+ * Every non-allow-listed workflow must prove a node-version-file reference
+ * either directly on a setup-node step or through a local composite action
+ * whose metadata (recursively) configures one; local actions that install Node
+ * without a node-version-file fail closed.
  *
  * @version v2
  */
@@ -18,8 +21,6 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, dirname, basename, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { parse } from 'yaml';
-
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, '..');
 const WORKFLOW_DIR = join(REPO_ROOT, '.github', 'workflows');
@@ -27,44 +28,94 @@ const ACTIONS_DIR = join(REPO_ROOT, '.github', 'actions');
 
 const MATRIX_ALLOW_LIST = new Set(['node-compat.yml', 'release.yml']);
 
-// ─── Pure analysis ──────────────────────────────────────────────────────────
+// ─── Line-based YAML scanning (no parser dependency) ────────────────────────
 
-function parseDocument(content) {
-  try {
-    return parse(content);
-  } catch {
-    return null;
-  }
-}
-
-function collectWorkflowSteps(doc) {
-  const steps = [];
-  if (!doc || typeof doc !== 'object' || !doc.jobs || typeof doc.jobs !== 'object') return steps;
-  for (const job of Object.values(doc.jobs)) {
-    if (!job || typeof job !== 'object' || !Array.isArray(job.steps)) continue;
-    for (const step of job.steps) {
-      if (step && typeof step === 'object') steps.push(step);
+/**
+ * Split a document into step blocks, one per `steps:` section (workflow job or
+ * action metadata). The step-item indentation is discovered from the section
+ * itself, so formatting differences between files are irrelevant. Nested list
+ * items inside a step (for example a script block) are never mistaken for new
+ * steps because they sit deeper than the section's item indent.
+ *
+ * @returns {Array<{ lines: string[], itemIndent: number }>}
+ */
+function splitStepBlocks(content) {
+  const lines = content.split('\n');
+  const blocks = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const stepsMatch = /^(\s*)steps:\s*$/.exec(lines[index]);
+    if (!stepsMatch) continue;
+    const stepsIndent = stepsMatch[1].length;
+    let itemIndent = null;
+    let current = null;
+    for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
+      const line = lines[cursor];
+      if (line.trim() === '') {
+        if (current !== null) current.push(line);
+        continue;
+      }
+      const indent = /^\s*/.exec(line)[0].length;
+      if (indent <= stepsIndent) {
+        if (current !== null) blocks.push({ lines: current, itemIndent });
+        current = null;
+        break;
+      }
+      if (/^\s*-\s+/.test(line)) {
+        if (itemIndent === null) itemIndent = indent;
+        if (indent === itemIndent) {
+          if (current !== null) blocks.push({ lines: current, itemIndent });
+          current = [line];
+          continue;
+        }
+      }
+      if (current !== null) current.push(line);
     }
+    if (current !== null) blocks.push({ lines: current, itemIndent });
   }
-  return steps;
+  return blocks;
 }
 
-function collectActionSteps(doc) {
-  const steps = doc?.runs?.steps;
-  return Array.isArray(steps) ? steps.filter((step) => step && typeof step === 'object') : [];
+/** Value of a step key at the item-key indentation, supporting `- key: value`. */
+function stepKeyValue(stepLines, key, keyIndent) {
+  for (let index = 0; index < stepLines.length; index += 1) {
+    const line = stepLines[index];
+    if (index === 0) {
+      const inline = new RegExp(`^\\s*-\\s+${key}:\\s*(.*)$`).exec(line);
+      if (inline) return inline[1].trim();
+      continue;
+    }
+    const match = new RegExp(`^\\s{${keyIndent}}${key}:\\s*(.*)$`).exec(line);
+    if (match) return match[1].trim();
+  }
+  return undefined;
+}
+
+/** Keys of the step's `with:` block (children indented below `with:`). */
+function stepWithKeys(stepLines, keyIndent) {
+  const keys = new Map();
+  const withIndex = stepLines.findIndex((line) =>
+    new RegExp(`^\\s{${keyIndent}}with:\\s*$`).test(line),
+  );
+  if (withIndex < 0) return keys;
+  for (const line of stepLines.slice(withIndex + 1)) {
+    const match = /^(\s+)([A-Za-z0-9_-]+):\s*(.*)$/.exec(line);
+    if (!match) continue;
+    if (match[1].length <= keyIndent) break;
+    keys.set(match[2], match[3].trim());
+  }
+  return keys;
 }
 
 /** Setup-node configuration of a step, or null when the step is not setup-node. */
-function setupNodeConfig(step) {
-  const uses = typeof step.uses === 'string' ? step.uses.trim() : '';
-  if (!uses.startsWith('actions/setup-node')) return null;
-  const withBlock = step.with && typeof step.with === 'object' ? step.with : {};
-  const staticVersion =
-    withBlock['node-version'] !== undefined &&
-    (typeof withBlock['node-version'] !== 'string' || !withBlock['node-version'].includes('${{'));
+function setupNodeConfig(block) {
+  const keyIndent = block.itemIndent + 2;
+  const uses = stepKeyValue(block.lines, 'uses', keyIndent);
+  if (typeof uses !== 'string' || !uses.startsWith('actions/setup-node')) return null;
+  const withKeys = stepWithKeys(block.lines, keyIndent);
+  const nodeVersion = withKeys.get('node-version');
   return {
-    hasNodeVersionFile: withBlock['node-version-file'] !== undefined,
-    staticVersion,
+    hasNodeVersionFile: withKeys.has('node-version-file'),
+    staticVersion: nodeVersion !== undefined && !nodeVersion.includes('${{'),
   };
 }
 
@@ -87,17 +138,17 @@ function localActionProof(dir, actionByDir, visited) {
   const entry = actionByDir.get(dir);
   if (!entry) return { found: false, proof: false };
   let proof = false;
-  for (const step of collectActionSteps(entry.doc)) {
-    const config = setupNodeConfig(step);
+  for (const block of entry.steps) {
+    const config = setupNodeConfig(block);
     if (config?.hasNodeVersionFile) proof = true;
-    const nested = localActionDir(step.uses);
+    const nested = localActionDir(stepKeyValue(block.lines, 'uses', block.itemIndent + 2));
     if (nested !== null && localActionProof(nested, actionByDir, visited).proof) proof = true;
   }
   return { found: true, proof };
 }
 
 /**
- * Pure node-toolchain analysis over workflow and local-action YAML.
+ * Pure node-toolchain analysis over workflow and local-action YAML text.
  *
  * @param {{ workflows: ReadonlyArray<{file: string, content: string}>,
  *           actions: ReadonlyArray<{file: string, content: string}> }} input
@@ -109,17 +160,13 @@ export function analyzeNodeToolchain(input) {
   for (const action of input.actions) {
     actionByDir.set(actionDirectory(action.file), {
       ...action,
-      doc: parseDocument(action.content),
+      steps: splitStepBlocks(action.content),
     });
   }
 
   for (const entry of actionByDir.values()) {
-    if (entry.doc === null) {
-      errors.push(`${entry.file}: invalid YAML`);
-      continue;
-    }
-    for (const step of collectActionSteps(entry.doc)) {
-      const config = setupNodeConfig(step);
+    for (const block of entry.steps) {
+      const config = setupNodeConfig(block);
       if (!config) continue;
       if (!config.hasNodeVersionFile) {
         errors.push(`${entry.file}: setup-node step without node-version-file`);
@@ -139,12 +186,6 @@ export function analyzeNodeToolchain(input) {
       continue;
     }
 
-    const doc = parseDocument(workflow.content);
-    if (doc === null) {
-      errors.push(`${fileName}: invalid YAML`);
-      continue;
-    }
-
     const staticNodeVersion = workflow.content.match(/node-version:\s*['"][^$]*['"]/g);
     if (staticNodeVersion) {
       for (const match of staticNodeVersion) {
@@ -156,8 +197,8 @@ export function analyzeNodeToolchain(input) {
 
     let directProof = false;
     let indirectProof = false;
-    for (const step of collectWorkflowSteps(doc)) {
-      const config = setupNodeConfig(step);
+    for (const block of splitStepBlocks(workflow.content)) {
+      const config = setupNodeConfig(block);
       if (config) {
         if (config.hasNodeVersionFile) directProof = true;
         else errors.push(`${fileName}: setup-node step without node-version-file`);
@@ -165,7 +206,7 @@ export function analyzeNodeToolchain(input) {
           errors.push(`${fileName}: static node-version outside allow-listed matrix workflow`);
         }
       }
-      const ref = localActionDir(step.uses);
+      const ref = localActionDir(stepKeyValue(block.lines, 'uses', block.itemIndent + 2));
       if (ref !== null && localActionProof(ref, actionByDir, new Set()).proof) indirectProof = true;
     }
 

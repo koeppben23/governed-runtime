@@ -129,12 +129,21 @@ describe('analyzeNodeToolchain', () => {
     ).toEqual([]);
   });
 
-  it('fails closed on invalid YAML', () => {
+  it('fails closed when a workflow provides no recognizable node setup', () => {
     expect(
       analyzeNodeToolchain({
         workflows: [{ file: 'broken.yml', content: 'jobs: [' }],
         actions: [],
       }),
-    ).toEqual(['broken.yml: invalid YAML']);
+    ).toEqual(['broken.yml: no node-version-file reference']);
+  });
+
+  it('fails closed for an empty workflow file', () => {
+    expect(
+      analyzeNodeToolchain({
+        workflows: [{ file: 'empty.yml', content: '' }],
+        actions: [],
+      }),
+    ).toEqual(['empty.yml: no node-version-file reference']);
   });
 });
