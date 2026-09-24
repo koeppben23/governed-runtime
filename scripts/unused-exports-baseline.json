@@ -266,7 +266,6 @@
   "writeRequiredDiscovery@src/integration/tools/hydrate/hydrate-discovery.ts",
   "writeRequiredDiscoverySnapshot@src/integration/tools/hydrate/hydrate-discovery.ts",
   "writeRequiredProfileResolution@src/integration/tools/hydrate/hydrate-discovery.ts",
-  "writeRequiredProfileSnapshot@src/integration/tools/hydrate/hydrate-discovery.ts",
-  "writeStateWithArtifactsAlreadyLocked@src/integration/tools/helpers.ts"
+  "writeRequiredProfileSnapshot@src/integration/tools/hydrate/hydrate-discovery.ts"
  ]
 }

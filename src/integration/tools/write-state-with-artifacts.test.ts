@@ -36,6 +36,17 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   };
 });
 
+vi.mock('../../adapters/implementation-base-authority.js', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../../adapters/implementation-base-authority.js')>();
+  return { ...actual, finalizeImplementationEntry: vi.fn(actual.finalizeImplementationEntry) };
+});
+
+vi.mock('../proofgraph/refresh.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../proofgraph/refresh.js')>();
+  return { ...actual, refreshProofGraph: vi.fn(actual.refreshProofGraph) };
+});
+
 import {
   resolveWorkspacePaths,
   withMutableSessionTransaction,
@@ -54,6 +65,9 @@ import { computeStateDigest } from '../audit-outbox.js';
 import { reconcilePendingAuditOperations } from '../plugin-audit.js';
 import { makeDeps } from '../plugin-audit-test-helpers.js';
 import { verifyEvidenceArtifacts } from '../../adapters/workspace/evidence-artifacts.js';
+import { acquireSessionWriteLock } from '../../adapters/persistence-lock.js';
+import { finalizeImplementationEntry } from '../../adapters/implementation-base-authority.js';
+import { refreshProofGraph } from '../proofgraph/refresh.js';
 import { buildStateWriteBody, buildTransitionBody } from '../../audit/types.js';
 import { buildSemanticAuditBody } from '../../audit/semantic-event.js';
 import { computeCanonicalEventDigest } from '../../audit/canonical-digest.js';
@@ -509,6 +523,23 @@ describe('shared state write — durable preparation and recovery', () => {
     }
   });
 
+  it('finalizes and refreshes exactly once for a claim-bearing write', async () => {
+    const previous = makeState('TICKET', { id: sessionId });
+    await writeState(sessDir, previous);
+    vi.mocked(finalizeImplementationEntry).mockClear();
+    vi.mocked(refreshProofGraph).mockClear();
+
+    const persisted = await writeStateWithArtifactsAndAuditOperations(
+      sessDir,
+      claimState(previous),
+      transitions,
+    );
+
+    expect(vi.mocked(finalizeImplementationEntry)).toHaveBeenCalledOnce();
+    expect(vi.mocked(refreshProofGraph)).toHaveBeenCalledOnce();
+    expect(persisted.proofGraph?.claims[0]?.verificationState).toBe('PROVEN');
+  });
+
   it('binds only the new state-write and semantic operations after an earlier write', async () => {
     const initial = makeState('TICKET', { id: sessionId });
     await writeState(sessDir, initial);
@@ -667,6 +698,31 @@ describe('shared state write — durable preparation and recovery', () => {
       (await readAuditTrail(sessDir)).filter((event) => event.id === added[0]?.operationId),
     ).toHaveLength(1);
     expect((await readState(sessDir))?.pendingAuditOperations.at(-1)?.status).toBe('reconciled');
+  });
+
+  it('waits for an existing session lock before an external state write', async () => {
+    const previous = makeState('TICKET', { id: sessionId });
+    await writeState(sessDir, previous);
+    const lock = await acquireSessionWriteLock(sessDir);
+    let settled = false;
+    const pending = writeStateWithArtifacts(sessDir, { ...previous, activeChecks: ['lint'] });
+    void pending.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      expect(settled).toBe(false);
+      expect((await readState(sessDir))?.activeChecks).toEqual(previous.activeChecks);
+    } finally {
+      await lock.release();
+    }
+    await pending;
+    expect((await readState(sessDir))?.activeChecks).toEqual(['lint']);
   });
 });
 
