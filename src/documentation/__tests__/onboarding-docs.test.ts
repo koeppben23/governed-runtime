@@ -42,10 +42,26 @@ describe('developer onboarding documentation contract', () => {
       'plugin-regulated-recovery.ts',
       'regulated-completion.test.ts',
       'plugin-regulated-recovery.test.ts',
+      'helpers.ts',
+      'audit-outbox.ts',
+      'plugin-audit-reconcile.ts',
+      'write-state-with-artifacts.test.ts',
     ]) {
       expect(guide).toContain(path);
     }
+    for (const functionName of [
+      'persistAndFormat',
+      'writeStateWithArtifactsAndAuditOperations',
+      'prepareStateWithAuditOperations',
+      'writeStateWithArtifactsAlreadyLocked',
+    ]) {
+      expect(guide).toContain(functionName);
+    }
     expect(guide).toContain('EXPORT_READY');
     expect(guide).toContain('COMPLETE');
+    expect(guide).toContain('approval transition and its associated decision receipt');
+    expect(guide).toContain(
+      'the export transition and then the `session_completed` lifecycle event',
+    );
   });
 });

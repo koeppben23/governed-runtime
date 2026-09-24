@@ -51,7 +51,54 @@ that materialized and persisted the export has released its session lock. It
 then invokes the regulated completion chain. This separation avoids running
 the later chain while holding the non-reentrant state-write lock.
 
-## 3. Regulated completion orders audit, lifecycle, archive, and verification
+## 3. The shared write path commits state, outbox, and derived artifacts
+
+The decision path calls `persistAndFormat`, which sends a successful rail
+result to `writeStateWithArtifactsAndAuditOperations`. Export calls that same
+writer directly after its rail succeeds. The shared path then runs:
+
+`persistAndFormat` → `writeStateWithArtifactsAndAuditOperations` →
+`prepareStateWithAuditOperations` → `writeStateWithArtifactsAlreadyLocked`.
+
+The writer acquires the session write lock unless the current call already
+holds it. Under that lock it reads the previous state and prepares the next
+state with audit operations. Preparation validates the state, finalizes
+implementation-entry authority, refreshes the ProofGraph, and then creates
+transition-specific operations, state-write operations, and supplied semantic
+intents as applicable. The outbox operations bind pre-state, mutation, and
+post-state digests; the audit event is not appended to the trail at this stage.
+
+The current implementation then passes that prepared state to
+`writeStateWithArtifactsAlreadyLocked`, which validates it again and performs
+implementation-entry finalization and ProofGraph refresh again before
+materializing artifacts. Thus this path currently prepares/finalizes and
+refreshes the ProofGraph twice. This describes the current write path; it does
+not imply a behavior change or a performance finding.
+
+After the second validation and ProofGraph refresh, the writer computes the
+serialized-state hash, materializes evidence artifacts against that refreshed
+state and hash, and only then writes the state file. If artifact materialization
+fails, the state change is not persisted. If the state write fails after
+artifact materialization, orphan artifacts may remain, but the state file has
+not advanced. This artifacts-first ordering prevents persisted state from
+referencing artifacts that were never written.
+
+Later, [`plugin-audit-reconcile.ts`](../../src/integration/plugin-audit-reconcile.ts)
+drains committed outbox operations: it verifies the operation digest against
+the current state, appends the corresponding audit event when it is not already
+present, then acknowledges the operation as reconciled. Regulated completion
+invokes this reconciliation at defined points in its chain; writing an outbox
+operation and reconciling it into the audit trail are separate steps.
+
+Implementation: [`helpers.ts`](../../src/integration/tools/helpers.ts#L212-L299),
+[`audit-outbox.ts`](../../src/integration/audit-outbox.ts), and
+[`plugin-audit-reconcile.ts`](../../src/integration/plugin-audit-reconcile.ts).
+The artifact/state write ordering is covered by
+[`write-state-with-artifacts.test.ts`](../../src/integration/tools/write-state-with-artifacts.test.ts);
+outbox digest preparation is covered by
+[`audit-outbox.test.ts`](../../src/integration/tools/audit-outbox.test.ts).
+
+## 4. Regulated completion orders audit, lifecycle, archive, and verification
 
 The chain is owned by
 [`regulated-completion.ts`](../../src/integration/services/regulated-completion.ts)
@@ -85,9 +132,10 @@ retry.
 
 The audit sequence is therefore not a cosmetic rendering detail. State-owned
 outbox operations and the audit trail jointly preserve the authority and order
-of approval, export transition, terminal decision, and completion lifecycle.
+of the approval transition and its associated decision receipt, followed by
+the export transition and then the `session_completed` lifecycle event.
 
-## 4. Recovery resumes an incomplete durable completion
+## 5. Recovery resumes an incomplete durable completion
 
 The plugin before-hook calls
 [`recoverRegulatedCompletion`](../../src/integration/plugin-regulated-recovery.ts)
@@ -111,7 +159,7 @@ chain. The chain takes its own locks for state writes, audit reconciliation, and
 archive publication. Holding the session lock across resume would deadlock when
 the chain attempts its own lock acquisition.
 
-## 5. Tests and what they establish
+## 6. Tests and what they establish
 
 [`regulated-completion.test.ts`](../../src/integration/services/regulated-completion.test.ts)
 tests service ordering and failure behavior with mocked audit-reconciliation
