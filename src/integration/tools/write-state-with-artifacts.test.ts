@@ -47,6 +47,22 @@ vi.mock('../proofgraph/refresh.js', async (importOriginal) => {
   return { ...actual, refreshProofGraph: vi.fn(actual.refreshProofGraph) };
 });
 
+vi.mock('../../adapters/git.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../adapters/git.js')>();
+  return { ...actual, headCommitFull: vi.fn().mockResolvedValue('d'.repeat(40)) };
+});
+
+vi.mock('../../adapters/frozen-repository.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../adapters/frozen-repository.js')>();
+  return {
+    ...actual,
+    freezeRepositoryIdentity: vi.fn(() => ({
+      kind: 'local' as const,
+      rootCommitDigest: `sha256:${'b'.repeat(64)}`,
+    })),
+  };
+});
+
 import {
   resolveWorkspacePaths,
   withMutableSessionTransaction,
@@ -67,6 +83,7 @@ import { makeDeps } from '../plugin-audit-test-helpers.js';
 import { verifyEvidenceArtifacts } from '../../adapters/workspace/evidence-artifacts.js';
 import { acquireSessionWriteLock } from '../../adapters/persistence-lock.js';
 import { finalizeImplementationEntry } from '../../adapters/implementation-base-authority.js';
+import { headCommitFull } from '../../adapters/git.js';
 import { refreshProofGraph } from '../proofgraph/refresh.js';
 import { buildStateWriteBody, buildTransitionBody } from '../../audit/types.js';
 import { buildSemanticAuditBody } from '../../audit/semantic-event.js';
@@ -538,6 +555,70 @@ describe('shared state write — durable preparation and recovery', () => {
     expect(vi.mocked(finalizeImplementationEntry)).toHaveBeenCalledOnce();
     expect(vi.mocked(refreshProofGraph)).toHaveBeenCalledOnce();
     expect(persisted.proofGraph?.claims[0]?.verificationState).toBe('PROVEN');
+  });
+
+  it('freezes an absent implementation base once before binding a claim-bearing write to audit', async () => {
+    const previous = makeState('VALIDATION', { id: sessionId });
+    await writeState(sessDir, previous);
+    const entry = {
+      from: 'VALIDATION',
+      to: 'IMPLEMENTATION',
+      event: 'ALL_PASSED',
+      at,
+    } as const;
+    const next: SessionState = {
+      ...claimState(previous),
+      phase: 'IMPLEMENTATION',
+      transition: entry,
+    };
+    expect(next.implementationBaseAuthority).toBeUndefined();
+    vi.mocked(headCommitFull).mockClear();
+    vi.mocked(finalizeImplementationEntry).mockClear();
+    vi.mocked(refreshProofGraph).mockClear();
+
+    const returned = await writeStateWithArtifactsAndAuditOperations(sessDir, next, [entry]);
+    const persisted = await readState(sessDir);
+    expect(persisted).toEqual(returned);
+    expect(vi.mocked(finalizeImplementationEntry)).toHaveBeenCalledOnce();
+    expect(vi.mocked(refreshProofGraph)).toHaveBeenCalledOnce();
+    expect(vi.mocked(headCommitFull)).toHaveBeenCalledExactlyOnceWith(next.binding.worktree);
+    expect(persisted!.implementationBaseAuthority).toMatchObject({
+      kind: 'commit',
+      objectSha: 'd'.repeat(40),
+      repositoryIdentity: { kind: 'local', rootCommitDigest: `sha256:${'b'.repeat(64)}` },
+    });
+    expect(persisted!.proofGraph?.claims[0]?.verificationState).toBe('PROVEN');
+
+    const added = persisted!.pendingAuditOperations.slice(previous.pendingAuditOperations.length);
+    expect(added).toHaveLength(1);
+    const operation = added[0];
+    expect(operation?.kind).toBe('transition');
+    if (operation?.kind !== 'transition') return;
+    expect(operation.preStateDigest).toBe(computeStateDigest(previous));
+    expect(operation.postStateDigest).toBe(computeStateDigest(persisted!));
+    expect(operation.mutationDigest).toBe(hashText(canonicalJsonStringify([entry])));
+    expect(operation.auditEventDigest).toBe(
+      computeCanonicalEventDigest(
+        buildTransitionBody({
+          flowguardSessionId: persisted!.flowguardSessionId,
+          hostSessionId: persisted!.binding.hostSessionId,
+          phase: operation.transition.to,
+          detail: {
+            operationId: operation.operationId,
+            preStateDigest: operation.preStateDigest,
+            mutationDigest: operation.mutationDigest,
+            postStateDigest: operation.postStateDigest,
+            from: operation.transition.from,
+            to: operation.transition.to,
+            event: operation.transition.event,
+            autoAdvanced: operation.transition.autoAdvanced,
+            chainIndex: operation.transition.chainIndex,
+          },
+          occurredAt: operation.transition.at,
+          prevHash: 'genesis',
+        }),
+      ),
+    );
   });
 
   it('binds only the new state-write and semantic operations after an earlier write', async () => {

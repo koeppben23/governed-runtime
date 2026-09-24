@@ -40,7 +40,7 @@ const GOVERNED_PERSIST_PATH = 'integration/tools/helpers.ts';
 const AUDIT_PREPARATION = 'integration/audit-outbox.ts';
 
 function read(rel: string): string {
-  return readFileSync(join(SRC_ROOT, rel), 'utf-8');
+  return readFileSync(join(SRC_ROOT, rel), 'utf-8').replace(/\r\n/g, '\n');
 }
 
 function sourceFilePaths(): string[] {
