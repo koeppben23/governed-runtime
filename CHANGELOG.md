@@ -460,6 +460,12 @@ true })` returns the evaluated projection. Key invariants:
 
 ### Changed
 
+- **Shared state-write preparation and recovery regression coverage.** Governed
+  writes now finalize the Implementation Base and refresh the ProofGraph once
+  before binding outbox digests and materializing artifacts. Tests pin the
+  persisted state, audit and artifact bindings, and recovery after failures on
+  either side of the atomic state rename; existing error codes remain unchanged.
+
 - **MADR artifact envelope v2 (`madr-artifact.v2`).** The artifact written on
   `ARCH_COMPLETE` now labels its metadata as FlowGuard's own:
   `FlowGuard Decision Status` carries the FlowGuard decision status and

@@ -54,7 +54,7 @@ describe('developer onboarding documentation contract', () => {
       'persistAndFormat',
       'writeStateWithArtifactsAndAuditOperations',
       'prepareStateWithAuditOperations',
-      'writeStateWithArtifactsAlreadyLocked',
+      'commitPreparedStateWithArtifactsAlreadyLocked',
     ]) {
       expect(guide).toContain(functionName);
     }
@@ -66,5 +66,7 @@ describe('developer onboarding documentation contract', () => {
     );
     expect(guide).toContain('postStateDigest` of the latest open operation');
     expect(guide).toContain("each operation's canonical");
+    expect(guide).toContain('directory fsync fails **after** the rename');
+    expect(guide).not.toContain('refreshes the ProofGraph twice');
   });
 });

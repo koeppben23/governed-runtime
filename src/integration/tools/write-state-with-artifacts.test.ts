@@ -26,10 +26,48 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  (globalThis as Record<string, unknown>).__writeStateFsActual = actual;
+  return {
+    ...actual,
+    open: vi.fn((...args: Parameters<typeof actual.open>) => actual.open(...args)),
+    rename: vi.fn((...args: Parameters<typeof actual.rename>) => actual.rename(...args)),
+  };
+});
+
+vi.mock('../../adapters/implementation-base-authority.js', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../../adapters/implementation-base-authority.js')>();
+  return { ...actual, finalizeImplementationEntry: vi.fn(actual.finalizeImplementationEntry) };
+});
+
+vi.mock('../proofgraph/refresh.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../proofgraph/refresh.js')>();
+  return { ...actual, refreshProofGraph: vi.fn(actual.refreshProofGraph) };
+});
+
+vi.mock('../../adapters/git.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../adapters/git.js')>();
+  return { ...actual, headCommitFull: vi.fn().mockResolvedValue('d'.repeat(40)) };
+});
+
+vi.mock('../../adapters/frozen-repository.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../adapters/frozen-repository.js')>();
+  return {
+    ...actual,
+    freezeRepositoryIdentity: vi.fn(() => ({
+      kind: 'local' as const,
+      rootCommitDigest: `sha256:${'b'.repeat(64)}`,
+    })),
+  };
+});
+
 import {
   resolveWorkspacePaths,
   withMutableSessionTransaction,
   writeStateWithArtifacts,
+  writeStateWithArtifactsAndAuditOperations,
 } from './helpers.js';
 import { persistAndFormat } from './helpers-rail-presentation.js';
 import { buildDecisionAuditIntent } from '../services/decision-audit-intent.js';
@@ -37,9 +75,23 @@ import { evaluate } from '../../machine/evaluate.js';
 import { TEAM_POLICY } from '../../config/policy.js';
 import type { RailOk } from '../../rails/types.js';
 import type { ReviewDecision } from '../../state/evidence.js';
-import { readState, statePath, atomicWrite } from '../../adapters/persistence.js';
+import { readState, statePath, atomicWrite, writeState } from '../../adapters/persistence.js';
+import { appendAuditEvent, readAuditTrail } from '../../adapters/persistence-audit.js';
+import { computeStateDigest } from '../audit-outbox.js';
+import { reconcilePendingAuditOperations } from '../plugin-audit.js';
+import { makeDeps } from '../plugin-audit-test-helpers.js';
+import { verifyEvidenceArtifacts } from '../../adapters/workspace/evidence-artifacts.js';
+import { acquireSessionWriteLock } from '../../adapters/persistence-lock.js';
+import { finalizeImplementationEntry } from '../../adapters/implementation-base-authority.js';
+import { headCommitFull } from '../../adapters/git.js';
+import { refreshProofGraph } from '../proofgraph/refresh.js';
+import { buildStateWriteBody, buildTransitionBody } from '../../audit/types.js';
+import { buildSemanticAuditBody } from '../../audit/semantic-event.js';
+import { computeCanonicalEventDigest } from '../../audit/canonical-digest.js';
+import { canonicalJsonStringify } from '../../shared/canonical-json.js';
+import { hashText } from '../../shared/hashing.js';
 import { makeState, makeProgressedState } from '../../fixtures.js';
-import { CURRENT_SESSION_STATE_SCHEMA_VERSION } from '../../state/schema.js';
+import { CURRENT_SESSION_STATE_SCHEMA_VERSION, type SessionState } from '../../state/schema.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
@@ -386,3 +438,375 @@ describe('persistAndFormat — semantic intent plumbing', () => {
     expect(semantic[0]!.semantic.detail.verdict).toBe('approve');
   });
 });
+
+describe('shared state write — durable preparation and recovery', () => {
+  const sessionId = 'aaaaaaaa-0000-4000-8000-000000000001';
+  const at = '2026-05-15T12:00:00.000Z';
+  const transitions = [
+    { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', at },
+    { from: 'PLAN', to: 'PLAN_REVIEW', event: 'SELF_REVIEW_PENDING', at },
+  ] as const;
+  const claimId = '10000000-0000-4000-8000-00000000000a';
+
+  let sessDir: string;
+  beforeEach(async () => {
+    sessDir = await createTmpDir();
+  });
+  afterEach(async () => {
+    vi.mocked(fs.open).mockRestore();
+    vi.mocked(fs.rename).mockRestore();
+    await cleanup(sessDir);
+  });
+
+  function claimState(previous: SessionState): SessionState {
+    return {
+      ...previous,
+      phase: 'PLAN_REVIEW',
+      transition: transitions[1],
+      proofContract: {
+        version: 'contract.v2',
+        claims: [
+          {
+            claimId,
+            statement: 'the command registry is consistent',
+            signalClass: 'fact',
+            critical: false,
+            provenance: { kind: 'canonical_authority', authorityId: 'ticket', digest: 'authority' },
+            evidenceRefs: [{ kind: 'structural_surface', surfaceId: 'command-registration' }],
+            counterexampleRefs: [],
+          },
+        ],
+      },
+    };
+  }
+
+  it('binds only new transition operations to the refreshed claim graph and persisted artifacts', async () => {
+    const previous = makeProgressedState('PLAN');
+    await writeState(sessDir, previous);
+    const persistedBefore = await readState(sessDir);
+    expect(persistedBefore).not.toBeNull();
+    const next = claimState(persistedBefore!);
+    const result = await writeStateWithArtifactsAndAuditOperations(sessDir, next, transitions);
+    const persisted = await readState(sessDir);
+    expect(persisted).toEqual(result);
+    expect(persisted!.proofGraph?.claims).toHaveLength(1);
+    expect(persisted!.proofGraph?.claims[0]?.claimId).toBe(claimId);
+    expect(persisted!.proofGraph?.claims[0]?.verificationState).toBe('PROVEN');
+    await verifyEvidenceArtifacts(sessDir, persisted!);
+    const stateBytes = await fs.readFile(statePath(sessDir), 'utf-8');
+    const files = await fs.readdir(path.join(sessDir, 'artifacts'));
+    const metadata = files.filter((file) => file.endsWith('.json'));
+    expect(metadata.length).toBeGreaterThan(0);
+    for (const file of metadata) {
+      const artifact = JSON.parse(
+        await fs.readFile(path.join(sessDir, 'artifacts', file), 'utf-8'),
+      ) as { sourceStateHash: string };
+      expect(artifact.sourceStateHash).toBe(hashFileBytes(stateBytes));
+    }
+
+    const added = persisted!.pendingAuditOperations.slice(
+      persistedBefore!.pendingAuditOperations.length,
+    );
+    expect(added).toHaveLength(2);
+    for (const [index, operation] of added.entries()) {
+      expect(operation.kind).toBe('transition');
+      if (operation.kind !== 'transition') continue;
+      expect(operation.preStateDigest).toBe(computeStateDigest(persistedBefore!));
+      expect(operation.postStateDigest).toBe(computeStateDigest(persisted!));
+      expect(operation.mutationDigest).toBe(hashText(canonicalJsonStringify(transitions)));
+      expect(operation.transition.chainIndex).toBe(index);
+      expect(operation.auditEventDigest).toBe(
+        computeCanonicalEventDigest(
+          buildTransitionBody({
+            flowguardSessionId: persisted!.flowguardSessionId,
+            hostSessionId: persisted!.binding.hostSessionId,
+            phase: operation.transition.to,
+            detail: {
+              operationId: operation.operationId,
+              preStateDigest: operation.preStateDigest,
+              mutationDigest: operation.mutationDigest,
+              postStateDigest: operation.postStateDigest,
+              from: operation.transition.from,
+              to: operation.transition.to,
+              event: operation.transition.event,
+              autoAdvanced: operation.transition.autoAdvanced,
+              chainIndex: operation.transition.chainIndex,
+            },
+            occurredAt: operation.transition.at,
+            prevHash: 'genesis',
+          }),
+        ),
+      );
+    }
+  });
+
+  it('finalizes and refreshes exactly once for a claim-bearing write', async () => {
+    const previous = makeState('TICKET', { id: sessionId });
+    await writeState(sessDir, previous);
+    vi.mocked(finalizeImplementationEntry).mockClear();
+    vi.mocked(refreshProofGraph).mockClear();
+
+    const persisted = await writeStateWithArtifactsAndAuditOperations(
+      sessDir,
+      claimState(previous),
+      transitions,
+    );
+
+    expect(vi.mocked(finalizeImplementationEntry)).toHaveBeenCalledOnce();
+    expect(vi.mocked(refreshProofGraph)).toHaveBeenCalledOnce();
+    expect(persisted.proofGraph?.claims[0]?.verificationState).toBe('PROVEN');
+  });
+
+  it('freezes an absent implementation base once before binding a claim-bearing write to audit', async () => {
+    const previous = makeState('VALIDATION', { id: sessionId });
+    await writeState(sessDir, previous);
+    const entry = {
+      from: 'VALIDATION',
+      to: 'IMPLEMENTATION',
+      event: 'ALL_PASSED',
+      at,
+    } as const;
+    const next: SessionState = {
+      ...claimState(previous),
+      phase: 'IMPLEMENTATION',
+      transition: entry,
+    };
+    expect(next.implementationBaseAuthority).toBeUndefined();
+    vi.mocked(headCommitFull).mockClear();
+    vi.mocked(finalizeImplementationEntry).mockClear();
+    vi.mocked(refreshProofGraph).mockClear();
+
+    const returned = await writeStateWithArtifactsAndAuditOperations(sessDir, next, [entry]);
+    const persisted = await readState(sessDir);
+    expect(persisted).toEqual(returned);
+    expect(vi.mocked(finalizeImplementationEntry)).toHaveBeenCalledOnce();
+    expect(vi.mocked(refreshProofGraph)).toHaveBeenCalledOnce();
+    expect(vi.mocked(headCommitFull)).toHaveBeenCalledExactlyOnceWith(next.binding.worktree);
+    expect(persisted!.implementationBaseAuthority).toMatchObject({
+      kind: 'commit',
+      objectSha: 'd'.repeat(40),
+      repositoryIdentity: { kind: 'local', rootCommitDigest: `sha256:${'b'.repeat(64)}` },
+    });
+    expect(persisted!.proofGraph?.claims[0]?.verificationState).toBe('PROVEN');
+
+    const added = persisted!.pendingAuditOperations.slice(previous.pendingAuditOperations.length);
+    expect(added).toHaveLength(1);
+    const operation = added[0];
+    expect(operation?.kind).toBe('transition');
+    if (operation?.kind !== 'transition') return;
+    expect(operation.preStateDigest).toBe(computeStateDigest(previous));
+    expect(operation.postStateDigest).toBe(computeStateDigest(persisted!));
+    expect(operation.mutationDigest).toBe(hashText(canonicalJsonStringify([entry])));
+    expect(operation.auditEventDigest).toBe(
+      computeCanonicalEventDigest(
+        buildTransitionBody({
+          flowguardSessionId: persisted!.flowguardSessionId,
+          hostSessionId: persisted!.binding.hostSessionId,
+          phase: operation.transition.to,
+          detail: {
+            operationId: operation.operationId,
+            preStateDigest: operation.preStateDigest,
+            mutationDigest: operation.mutationDigest,
+            postStateDigest: operation.postStateDigest,
+            from: operation.transition.from,
+            to: operation.transition.to,
+            event: operation.transition.event,
+            autoAdvanced: operation.transition.autoAdvanced,
+            chainIndex: operation.transition.chainIndex,
+          },
+          occurredAt: operation.transition.at,
+          prevHash: 'genesis',
+        }),
+      ),
+    );
+  });
+
+  it('binds only the new state-write and semantic operations after an earlier write', async () => {
+    const initial = makeState('TICKET', { id: sessionId });
+    await writeState(sessDir, initial);
+    await writeStateWithArtifactsAndAuditOperations(sessDir, {
+      ...initial,
+      activeChecks: ['lint'],
+    });
+    const previous = await readState(sessDir);
+    expect(previous?.pendingAuditOperations).toHaveLength(1);
+    const intent = {
+      phase: 'TICKET' as const,
+      event: 'review:obligation_blocked',
+      occurredAt: at,
+      detail: { obligationId: 'obl-1', code: 'REVIEWER_INVOCATION_EXHAUSTED' },
+    };
+    const persisted = await writeStateWithArtifactsAndAuditOperations(
+      sessDir,
+      { ...previous!, activeChecks: ['lint', 'test'] },
+      undefined,
+      [intent],
+    );
+    const read = await readState(sessDir);
+    expect(read).toEqual(persisted);
+    expect(read!.pendingAuditOperations[0]!.postStateDigest).toBe(computeStateDigest(previous!));
+    const added = read!.pendingAuditOperations.slice(previous!.pendingAuditOperations.length);
+    expect(added.map((operation) => operation.kind)).toEqual(['state_write', 'semantic']);
+    for (const operation of added) {
+      expect(operation.preStateDigest).toBe(computeStateDigest(previous!));
+      expect(operation.postStateDigest).toBe(computeStateDigest(read!));
+      if (operation.kind === 'state_write') {
+        const { pendingAuditOperations: _before, ...before } = previous!;
+        const { pendingAuditOperations: _after, ...after } = read!;
+        expect(operation.mutationDigest).toBe(
+          hashText(
+            canonicalJsonStringify({
+              kind: 'state_write',
+              before,
+              after,
+            }),
+          ),
+        );
+        expect(operation.auditEventDigest).toBe(
+          computeCanonicalEventDigest(
+            buildStateWriteBody({
+              flowguardSessionId: read!.flowguardSessionId,
+              hostSessionId: read!.binding.hostSessionId,
+              phase: operation.stateWrite.phase,
+              detail: {
+                operationId: operation.operationId,
+                preStateDigest: operation.preStateDigest,
+                mutationDigest: operation.mutationDigest,
+                postStateDigest: operation.postStateDigest,
+              },
+              occurredAt: operation.stateWrite.at,
+              prevHash: 'genesis',
+            }),
+          ),
+        );
+      } else if (operation.kind === 'semantic') {
+        const { pendingAuditOperations: _before, ...before } = previous!;
+        const { pendingAuditOperations: _after, ...after } = read!;
+        expect(operation.mutationDigest).toBe(
+          hashText(
+            canonicalJsonStringify({
+              kind: 'semantic',
+              before,
+              after,
+              semantic: intent,
+            }),
+          ),
+        );
+        expect(operation.auditEventDigest).toBe(
+          computeCanonicalEventDigest(
+            buildSemanticAuditBody({
+              flowguardSessionId: read!.flowguardSessionId,
+              hostSessionId: read!.binding.hostSessionId,
+              phase: intent.phase,
+              detail: intent.detail,
+              event: intent.event,
+              occurredAt: intent.occurredAt,
+              prevHash: 'genesis',
+              operationId: operation.operationId,
+              preStateDigest: operation.preStateDigest,
+              mutationDigest: operation.mutationDigest,
+              postStateDigest: operation.postStateDigest,
+            }),
+          ),
+        );
+      }
+    }
+  });
+
+  it('retains the old state on failure before the state rename', async () => {
+    const previous = makeProgressedState('PLAN');
+    await writeState(sessDir, previous);
+    const before = await fs.readFile(statePath(sessDir), 'utf-8');
+    const actualRename = ((globalThis as Record<string, unknown>).__writeStateFsActual as typeof fs)
+      .rename;
+    vi.mocked(fs.rename).mockImplementation(async (from, to) => {
+      if (to === statePath(sessDir))
+        throw Object.assign(new Error('rename fault'), { code: 'EXDEV' });
+      return actualRename(from, to);
+    });
+    await expect(
+      writeStateWithArtifacts(sessDir, { ...previous, activeChecks: ['lint'] }),
+    ).rejects.toMatchObject({ code: 'WRITE_FAILED' });
+    expect(await fs.readFile(statePath(sessDir), 'utf-8')).toBe(before);
+    expect((await readState(sessDir))?.activeChecks).toEqual(previous.activeChecks);
+    await verifyEvidenceArtifacts(sessDir, previous);
+  });
+
+  it('reads the committed outbox after a post-rename fsync failure and reconciles it once', async () => {
+    const previous = makeState('TICKET', { id: sessionId });
+    await writeState(sessDir, previous);
+    const actualOpen = ((globalThis as Record<string, unknown>).__writeStateFsActual as typeof fs)
+      .open;
+    vi.mocked(fs.open).mockImplementation(async (...args) => {
+      if (args[0] === sessDir && args[1] === 'r') {
+        throw Object.assign(new Error('directory sync fault'), { code: 'EIO' });
+      }
+      return actualOpen(...args);
+    });
+    const next = makeState('PLAN', { id: sessionId, transition: transitions[0] });
+    await expect(
+      writeStateWithArtifactsAndAuditOperations(sessDir, next, [transitions[0]]),
+    ).rejects.toMatchObject({ code: 'WRITE_FAILED' });
+    vi.mocked(fs.open).mockRestore();
+
+    const recovered = await readState(sessDir);
+    expect(recovered?.phase).toBe('PLAN');
+    const added = recovered!.pendingAuditOperations.slice(previous.pendingAuditOperations.length);
+    expect(added).toHaveLength(1);
+    expect(added[0]?.postStateDigest).toBe(computeStateDigest(recovered!));
+    const deps = makeDeps({
+      getSessionDir: vi.fn().mockReturnValue(sessDir),
+      resolveSessionPolicy: vi.fn().mockResolvedValue({
+        policy: {
+          audit: { emitToolCalls: false, emitTransitions: true, enableChainHash: true },
+          actorClassification: {},
+          mode: 'regulated',
+          requireHumanGates: true,
+        },
+        state: recovered,
+      }),
+      appendAndTrack: vi.fn(async (event) => {
+        await appendAuditEvent(sessDir, event);
+      }),
+    });
+    await expect(
+      reconcilePendingAuditOperations(deps, sessionId, 'flowguard_plan'),
+    ).resolves.toBeUndefined();
+    await expect(
+      reconcilePendingAuditOperations(deps, sessionId, 'flowguard_plan'),
+    ).resolves.toBeUndefined();
+    expect(
+      (await readAuditTrail(sessDir)).filter((event) => event.id === added[0]?.operationId),
+    ).toHaveLength(1);
+    expect((await readState(sessDir))?.pendingAuditOperations.at(-1)?.status).toBe('reconciled');
+  });
+
+  it('waits for an existing session lock before an external state write', async () => {
+    const previous = makeState('TICKET', { id: sessionId });
+    await writeState(sessDir, previous);
+    const lock = await acquireSessionWriteLock(sessDir);
+    let settled = false;
+    const pending = writeStateWithArtifacts(sessDir, { ...previous, activeChecks: ['lint'] });
+    void pending.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      expect(settled).toBe(false);
+      expect((await readState(sessDir))?.activeChecks).toEqual(previous.activeChecks);
+    } finally {
+      await lock.release();
+    }
+    await pending;
+    expect((await readState(sessDir))?.activeChecks).toEqual(['lint']);
+  });
+});
+
+function hashFileBytes(content: string): string {
+  return crypto.createHash('sha256').update(content, 'utf-8').digest('hex');
+}

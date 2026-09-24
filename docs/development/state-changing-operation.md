@@ -60,7 +60,7 @@ which sends a successful rail result to
 directly after its rail succeeds. The shared path then runs:
 
 `persistAndFormat` → `writeStateWithArtifactsAndAuditOperations` →
-`prepareStateWithAuditOperations` → `writeStateWithArtifactsAlreadyLocked`.
+`prepareStateWithAuditOperations` → `commitPreparedStateWithArtifactsAlreadyLocked`.
 
 The writer acquires the session write lock unless the current call already
 holds it. Under that lock it reads the previous state and prepares the next
@@ -70,20 +70,18 @@ transition-specific operations, state-write operations, and supplied semantic
 intents as applicable. The outbox operations bind pre-state, mutation, and
 post-state digests; the audit event is not appended to the trail at this stage.
 
-The current implementation then passes that prepared state to
-`writeStateWithArtifactsAlreadyLocked`, which validates it again and performs
-implementation-entry finalization and ProofGraph refresh again before
-materializing artifacts. Thus this path currently prepares/finalizes and
-refreshes the ProofGraph twice. This describes the current write path; it does
-not imply a behavior change or a performance finding.
-
-After the second validation and ProofGraph refresh, the writer computes the
-serialized-state hash, materializes evidence artifacts against that refreshed
-state and hash, and only then writes the state file. If artifact materialization
-fails, the state change is not persisted. If the state write fails after
-artifact materialization, orphan artifacts may remain, but the state file has
-not advanced. This artifacts-first ordering prevents persisted state from
-referencing artifacts that were never written.
+The prepared state is validated again without repeating implementation-entry
+finalization or ProofGraph refresh. The writer computes the serialized-state
+hash from that exact prepared state, materializes evidence artifacts against it,
+and only then writes the state and its outbox together to `session-state.json`.
+If artifact materialization fails, the state change is not persisted. If the
+state write fails **before** the atomic rename, the previous state remains and
+orphan artifacts may remain. If the directory fsync fails **after** the rename,
+the write still reports `WRITE_FAILED`, but the new state may already be visible.
+Recovery must read the actual state and reconcile its committed outbox rather
+than assume either outcome or append a duplicate audit event. Artifacts-first
+ordering prevents persisted state from referencing artifacts that were never
+written; it does not make the files and audit trail one atomic transaction.
 
 Later, [`plugin-audit-reconcile.ts`](../../src/integration/plugin-audit-reconcile.ts)
 drains committed outbox operations in two distinct integrity checks. First, it
@@ -96,7 +94,7 @@ in its chain; writing an outbox operation and reconciling it into the audit
 trail are separate steps.
 
 Implementation: [`helpers-rail-presentation.ts`](../../src/integration/tools/helpers-rail-presentation.ts#L222-L246),
-[`helpers.ts`](../../src/integration/tools/helpers.ts#L212-L299),
+[`helpers.ts`](../../src/integration/tools/helpers.ts),
 [`audit-outbox.ts`](../../src/integration/audit-outbox.ts), and
 [`plugin-audit-reconcile.ts`](../../src/integration/plugin-audit-reconcile.ts).
 The artifact/state write ordering is covered by

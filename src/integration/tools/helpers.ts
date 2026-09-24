@@ -13,7 +13,6 @@ import {
   readState,
   writeStateAlreadyLocked,
 } from '../../adapters/persistence.js';
-import { finalizeImplementationEntry } from '../../adapters/implementation-base-authority.js';
 import { prepareStateWithAuditOperations, type SemanticAuditIntent } from '../audit-outbox.js';
 import { acquireSessionWriteLock, withSessionWriteLock } from '../../adapters/persistence-lock.js';
 import { createRailContext } from '../../adapters/context.js';
@@ -30,7 +29,6 @@ import { resolvePolicyFromSnapshot } from '../../config/policy.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import { defaultReasonRegistry } from '../../config/reasons.js';
 import { PHASE_LABELS } from '../../presentation/index.js';
-import { refreshProofGraph } from '../proofgraph/refresh.js';
 import { IntegrationInvariantError } from '../errors.js';
 const lockedSessionDir = new AsyncLocalStorage<string>();
 
@@ -181,7 +179,7 @@ export async function requireStateForMutation(sessDir: string): Promise<SessionS
 }
 
 /**
- * Persist state and materialize derived evidence artifacts.
+ * Commit an already prepared state and materialize derived evidence artifacts.
  *
  * Ordering: artifacts-first, state-last.
  *
@@ -194,7 +192,7 @@ export async function requireStateForMutation(sessDir: string): Promise<SessionS
  *   verification only checks state→artifacts direction).
  * - Crash after state → both exist, consistent.
  *
- * The sourceStateHash is pre-computed from the serialized nextState so that
+ * The sourceStateHash is pre-computed from the serialized prepared state so that
  * materializeEvidenceArtifacts does not need to read state from disk.
  *
  * The session write lock is acquired over both artifact materialization and
@@ -207,14 +205,16 @@ export async function requireStateForMutation(sessDir: string): Promise<SessionS
  * Failure semantics:
  * - If validation fails: nothing written.
  * - If artifact materialization fails: no state change persisted.
- * - If state write fails after artifacts: orphan artifacts only (benign).
+ * - If the state rename fails: the old state remains and orphan artifacts may remain.
+ * - If directory fsync fails after rename: WRITE_FAILED is surfaced, but the
+ *   persisted outcome is uncertain; recovery must re-read state and its outbox.
  */
-export async function writeStateWithArtifactsAlreadyLocked(
+async function commitPreparedStateWithArtifactsAlreadyLocked(
   sessDir: string,
-  nextState: SessionState,
+  preparedState: SessionState,
 ): Promise<SessionState> {
   // 1. Validate BEFORE any I/O — fail-closed
-  const result = SessionState.safeParse(nextState);
+  const result = SessionState.safeParse(preparedState);
   if (!result.success) {
     throw new PersistenceError(
       'SCHEMA_VALIDATION_FAILED',
@@ -222,36 +222,16 @@ export async function writeStateWithArtifactsAlreadyLocked(
     );
   }
 
-  // 2. Single transition finalizer: entering IMPLEMENTATION freezes the
-  // pre-mutation implementation base BEFORE any derived artifact (ProofGraph,
-  // evidence artifacts) is computed, so the persisted state, its hashes, and
-  // its artifacts always include the frozen authority. Fail-closed: a freeze
-  // failure throws the canonical code and NOTHING is written.
-  const finalized = await finalizeImplementationEntry(result.data);
-
-  // 3. Persist a graph for every flow. This only evaluates explicitly declared,
-  // structured claims; an absent contract therefore remains an empty projection.
-  const stateWithProofGraph = {
-    ...finalized,
-    proofGraph: await refreshProofGraph(finalized, finalized.transition?.at ?? finalized.createdAt),
-  };
-  const refreshed = SessionState.safeParse(stateWithProofGraph);
-  if (!refreshed.success) {
-    throw new PersistenceError(
-      'SCHEMA_VALIDATION_FAILED',
-      `Refusing to persist invalid ProofGraph: ${refreshed.error.message}`,
-    );
-  }
-
-  // 3. Pre-compute serialized form and hash (identical to what writeState would produce)
-  const serialized = JSON.stringify(refreshed.data, null, 2) + '\n';
+  // Preparation (implementation base, ProofGraph, audit operations) has already
+  // completed under the session lock. Nothing here may change the authority
+  // state after the audit operation's postStateDigest was computed.
+  const serialized = JSON.stringify(result.data, null, 2) + '\n';
   const preComputedStateHash = hashText(serialized);
 
-  await materializeEvidenceArtifacts(sessDir, refreshed.data, preComputedStateHash);
-  await writeStateAlreadyLocked(sessDir, refreshed.data);
-  // Return the persisted state so callers render the REFRESHED ProofGraph rather
-  // than the pre-write projection they passed in (#762).
-  return refreshed.data;
+  await materializeEvidenceArtifacts(sessDir, result.data, preComputedStateHash);
+  await writeStateAlreadyLocked(sessDir, result.data);
+  // Return the persisted state so callers render the prepared ProofGraph.
+  return result.data;
 }
 
 export async function writeStateWithArtifacts(
@@ -295,7 +275,7 @@ export async function writeStateWithArtifactsAndAuditOperationsAlreadyLocked(
     transitions,
     semanticIntents,
   );
-  return writeStateWithArtifactsAlreadyLocked(sessDir, stateWithOperations);
+  return commitPreparedStateWithArtifactsAlreadyLocked(sessDir, stateWithOperations);
 }
 
 export interface SessionWriteTransaction {

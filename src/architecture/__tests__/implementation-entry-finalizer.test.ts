@@ -8,8 +8,8 @@
  * Constructive enforcement lives at the single persistence boundary, not per
  * rail: `adapters/persistence.ts` refuses to write an IMPLEMENTATION-phase
  * state without a frozen base (pure guard, covers every direct writer), and
- * the governed tool persistence path (`integration/tools/helpers.ts`)
- * performs the freeze via the single transition finalizer
+ * the governed tool persistence path (`integration/tools/helpers.ts` via
+ * `integration/audit-outbox.ts`) performs the freeze via the single transition finalizer
  * `adapters/implementation-base-authority.ts#finalizeImplementationEntry`
  * BEFORE any derived artifact is computed.
  *
@@ -37,9 +37,10 @@ const SRC_ROOT = join(process.cwd(), 'src');
 const FINALIZER_AUTHORITY = 'adapters/implementation-base-authority.ts';
 const PERSISTENCE_BOUNDARY = 'adapters/persistence.ts';
 const GOVERNED_PERSIST_PATH = 'integration/tools/helpers.ts';
+const AUDIT_PREPARATION = 'integration/audit-outbox.ts';
 
 function read(rel: string): string {
-  return readFileSync(join(SRC_ROOT, rel), 'utf-8');
+  return readFileSync(join(SRC_ROOT, rel), 'utf-8').replace(/\r\n/g, '\n');
 }
 
 function sourceFilePaths(): string[] {
@@ -66,14 +67,28 @@ describe('implementation-entry invariant (persistence boundary + single finalize
     expect(read(PERSISTENCE_BOUNDARY)).toContain('assertImplementationEntryFrozen(');
   });
 
-  it('the governed persistence path invokes the transition finalizer before derived artifacts', () => {
+  it('prepares the implementation base and ProofGraph once before audit binding and artifacts', () => {
     const helpers = read(GOVERNED_PERSIST_PATH);
-    expect(helpers).toContain('finalizeImplementationEntry(');
-    // The finalize step must run BEFORE the ProofGraph refresh so the
-    // persisted state, its hashes, and its artifacts include the frozen base.
-    expect(helpers.indexOf('finalizeImplementationEntry(')).toBeLessThan(
-      helpers.indexOf('refreshProofGraph('),
+    const preparation = read(AUDIT_PREPARATION);
+    expect(preparation).toContain('finalizeImplementationEntry(result.data)');
+    expect(preparation).toContain('refreshProofGraph(finalized,');
+    expect(preparation).toContain('prepareState(nextState)');
+    expect(preparation).toContain('prepareAuditOperations(previous, prepared,');
+    expect(helpers).toContain('prepareStateWithAuditOperations(\n');
+    const commitCall =
+      /commitPreparedStateWithArtifactsAlreadyLocked\(sessDir,\s*stateWithOperations\)/;
+    expect(helpers).toMatch(commitCall);
+    expect(preparation.indexOf('finalizeImplementationEntry(result.data)')).toBeLessThan(
+      preparation.indexOf('refreshProofGraph(finalized,'),
     );
+    expect(preparation.indexOf('prepareState(nextState)')).toBeLessThan(
+      preparation.indexOf('prepareAuditOperations(previous, prepared,'),
+    );
+    expect(helpers.indexOf('prepareStateWithAuditOperations(\n')).toBeLessThan(
+      helpers.search(commitCall),
+    );
+    expect(helpers).not.toContain('finalizeImplementationEntry(');
+    expect(helpers).not.toContain('refreshProofGraph(');
   });
 
   it('the freeze authority is defined only in the adapter-layer finalizer module', () => {
