@@ -104,9 +104,10 @@ deterministic one).
 - No new file is added, so **no placement entry** is required. The file is owned
   by `tools-validation` in
   [`src/architecture/__tests__/integration-placement-policy.ts`](../../src/architecture/__tests__/integration-placement-policy.ts).
-- No new import crosses a module boundary, so `npm run test:architecture` is not
-  required for this change. Run it if you move files, add imports across
-  contexts, or change review zones.
+- The change stays in `src/integration/`, so
+  [`src/integration/AGENTS.md`](../../src/integration/AGENTS.md) requires
+  `npm run test:architecture` for the subtree regardless of whether an import
+  crosses a module boundary. Run it in addition to the checks below.
 - The tool name and registration surface (`src/integration/tool-names.ts`,
   `src/integration/tools/index.ts`) stay untouched.
 
@@ -117,6 +118,7 @@ npx vitest run --project integration src/integration/tools/run-check-tool.test.t
 npm run check:format
 npm run check
 npm run lint:strict
+npm run test:architecture
 ```
 
 ## 7. What a reviewer looks for

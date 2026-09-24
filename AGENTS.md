@@ -92,7 +92,7 @@ Use these markers in contributor output:
   boundaries. Use typed errors with a `code` field (`PersistenceError`,
   `GitError`, `IdpError`).
 - For blocked tool results, use the discriminated union pattern:
-  `{ kind: 'blocked', code: string, reason: string, recovery?: string }`.
+  `{ kind: 'blocked', code: string, reason: string, recovery?: readonly string[] }`.
 
 ### No Legacy Compatibility in FlowGuard Source
 

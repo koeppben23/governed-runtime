@@ -95,7 +95,7 @@ errors with a `code` field:
 For blocked tool results, use the discriminated union pattern:
 
 ```ts
-{ kind: 'blocked', code: string, reason: string, recovery?: string }
+{ kind: 'blocked', code: string, reason: string, recovery?: readonly string[] }
 ```
 
 Never use bare `throw new Error(...)` at these boundaries.

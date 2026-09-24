@@ -49,7 +49,7 @@ export interface ReviewZoneSource {
 /**
  * The review zone graph the decomposition requires, measured on the final
  * tree. This is a set, not a count: a new edge fails until it is declared, and
- * a declared edge that stops being observed fails as stale. Zone cycles are
+ * a declared edge that stops being observed fails as stale. Zone acyclicity is
  * part of the frozen contract; changing that is a dependency-design decision,
  * not a structural move.
  */
