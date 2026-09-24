@@ -6,8 +6,10 @@
  * - Admission evidence is a profile full run. The profile-wide aggregate must
  *   meet the break threshold; targets named via `--require-selectors` (new
  *   admissions, typically a newly added mutate selector or range) must
- *   additionally meet the per-target break threshold. Legacy targets below the
- *   per-target threshold are reported as a note.
+ *   additionally meet the per-target break threshold. `--require-admitted`
+ *   extends that per-target gate to every selector the profile registry lists
+ *   as admitted. Targets without an admission record below the per-target
+ *   threshold are reported as a note.
  * - Every configured selector must appear in the report as its target file with
  *   at least one valid mutant. A configured selector with no report entry (for
  *   example a file that became a pure re-export facade) is a violation, never a
@@ -43,6 +45,10 @@
  *   # require newly admitted selectors to meet the per-target threshold
  *   node scripts/verify-mutation-admission.mjs --profile base \
  *     --verify-profile-manifest --require-selectors src/machine/topology.ts
+ *
+ *   # require every registry-admitted selector to meet the per-target threshold
+ *   node scripts/verify-mutation-admission.mjs --profile base \
+ *     --verify-profile-manifest --require-admitted
  *
  *   # emit inventory-compatible admission records (requires a manifest)
  *   node scripts/verify-mutation-admission.mjs --profile base \
@@ -110,6 +116,7 @@ function parseArguments(argv) {
     writeProfileManifest: false,
     verifyProfileManifest: false,
     emitAdmission: false,
+    requireAdmitted: false,
     commit: undefined,
     requiredSelectors: [],
   };
@@ -122,6 +129,7 @@ function parseArguments(argv) {
     else if (argument === '--write-profile-manifest') options.writeProfileManifest = true;
     else if (argument === '--verify-profile-manifest') options.verifyProfileManifest = true;
     else if (argument === '--emit-admission') options.emitAdmission = true;
+    else if (argument === '--require-admitted') options.requireAdmitted = true;
     else if (argument === '--commit') options.commit = argv[++index];
     else if (argument === '--require-selectors') {
       const value = argv[++index];
@@ -184,6 +192,12 @@ function parseArguments(argv) {
   if (options.emitAdmission && options.requiredSelectors.length === 0) {
     fail(
       '--emit-admission requires --require-selectors (only newly admitted targets get a record)',
+    );
+  }
+  if (options.emitAdmission && options.requireAdmitted) {
+    fail(
+      '--emit-admission and --require-admitted are mutually exclusive ' +
+        '(admission records are emitted only for newly required selectors)',
     );
   }
   return options;
@@ -426,6 +440,25 @@ if (unknownRequired.length > 0) {
 }
 const requiredSelectors = new Set(options.requiredSelectors);
 
+if (options.requireAdmitted) {
+  const admitted = PROFILE_REGISTRY.profiles[options.profile].admittedSelectors;
+  if (!Array.isArray(admitted) || admitted.length === 0) {
+    fail(
+      `profile '${options.profile}' declares no admittedSelectors in ` +
+        'scripts/mutation-profile-registry.json; refusing --require-admitted',
+    );
+  }
+  const unknownAdmitted = admitted.filter((selector) => !knownSelectors.has(selector));
+  if (unknownAdmitted.length > 0) {
+    fail(
+      `registry admittedSelectors for '${options.profile}' are not in ` +
+        `${PROFILE_CONFIG[options.profile]}: ` +
+        unknownAdmitted.join(', '),
+    );
+  }
+  for (const selector of admitted) requiredSelectors.add(selector);
+}
+
 const reportFiles = new Map(Object.entries(report.files));
 const violations = [];
 const belowThreshold = [];
@@ -531,8 +564,8 @@ if (aggregateScore === null) {
 
 if (belowThreshold.length > 0) {
   console.log(
-    `[verify-mutation-admission] note: ${belowThreshold.length} legacy target(s) below the ` +
-      `per-target threshold but within the aggregate gate (not required per-target):`,
+    `[verify-mutation-admission] note: ${belowThreshold.length} target(s) without an admission ` +
+      `record below the per-target threshold but within the aggregate gate:`,
   );
   for (const entry of belowThreshold) {
     console.log(

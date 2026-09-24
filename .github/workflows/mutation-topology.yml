@@ -39,4 +39,4 @@ jobs:
       - name: Write and verify mutation admission manifest
         run: |
           node scripts/verify-mutation-admission.mjs --profile topology --write-profile-manifest
-          node scripts/verify-mutation-admission.mjs --profile topology --verify-profile-manifest
+          node scripts/verify-mutation-admission.mjs --profile topology --verify-profile-manifest --require-admitted

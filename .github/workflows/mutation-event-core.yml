@@ -41,4 +41,4 @@ jobs:
       - name: Write and verify mutation admission manifest
         run: |
           node scripts/verify-mutation-admission.mjs --profile event-core --write-profile-manifest
-          node scripts/verify-mutation-admission.mjs --profile event-core --verify-profile-manifest
+          node scripts/verify-mutation-admission.mjs --profile event-core --verify-profile-manifest --require-admitted

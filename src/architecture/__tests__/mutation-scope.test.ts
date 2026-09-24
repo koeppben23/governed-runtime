@@ -36,7 +36,12 @@
  * A10 registry closure: `scripts/mutation-profile-registry.json`, the profile
  *    union, the on-disk Stryker configs, and the verifier's registry read
  *    cannot drift; report and manifest paths are unique; every config's JSON
- *    reporter writes the registry report path.
+ *    reporter writes the registry report path; every admission workflow
+ *    enforces the admitted per-target gate.
+ * A11 admission reconciliation: the immutable admission records, the active
+ *    admission-bearing required entries, and the registry's admitted selector
+ *    projection close in both directions; every admitted selector is in its
+ *    profile mutate list. Orphaned records or registry drift fail closed.
  *
  * These guards are static. They do not measure a mutation score; admission
  * scores are enforced by `scripts/verify-mutation-admission.mjs` from profile
@@ -65,9 +70,29 @@ import {
   type AdmissionRecord,
   type MutationProfile,
 } from './mutation-authority-inventory.js';
+import { admissionRecord, admissionRecordSelectors } from './mutation-admission-records.js';
 import { repoRelative } from './repo-path.js';
 
 const ROOT = resolve(__dirname, '..', '..', '..');
+
+interface MutationProfileRegistryEntry {
+  readonly configFile: string;
+  readonly vitestConfigFile: string;
+  readonly reportPath: string;
+  readonly manifestPath: string;
+  readonly admittedSelectors?: readonly string[];
+}
+
+interface MutationProfileRegistry {
+  readonly version: number;
+  readonly profiles: Readonly<Record<string, MutationProfileRegistryEntry>>;
+}
+
+function readRegistry(): MutationProfileRegistry {
+  return JSON.parse(
+    readFileSync(join(ROOT, 'scripts', 'mutation-profile-registry.json'), 'utf-8'),
+  ) as MutationProfileRegistry;
+}
 
 interface ProfileConfig {
   readonly mutate: readonly string[];
@@ -397,15 +422,7 @@ describe('mutation scope', () => {
   });
 
   it('A10: the profile registry closes over inventory, configs, reporters, and the verifier', () => {
-    interface RegistryEntry {
-      readonly configFile: string;
-      readonly vitestConfigFile: string;
-      readonly reportPath: string;
-      readonly manifestPath: string;
-    }
-    const registry = JSON.parse(
-      readFileSync(join(ROOT, 'scripts', 'mutation-profile-registry.json'), 'utf-8'),
-    ) as { readonly version: number; readonly profiles: Readonly<Record<string, RegistryEntry>> };
+    const registry = readRegistry();
 
     const registryIds = Object.keys(registry.profiles).sort();
     const inventoryIds = (Object.keys(MUTATION_PROFILES) as MutationProfile[]).sort();
@@ -469,6 +486,12 @@ describe('mutation scope', () => {
     expect(verifier, 'verifier duplicates a report or manifest path').not.toContain(
       'reports/mutation/',
     );
+    expect(verifier, 'verifier does not implement --require-admitted').toContain(
+      '--require-admitted',
+    );
+    expect(verifier, 'verifier does not read registry admitted selectors').toContain(
+      'admittedSelectors',
+    );
 
     const assertSeparateVerifierCommands = (name: string, workflow: string): void => {
       expect(workflow, `${name}: folded scalar around the verifier invocation`).not.toMatch(
@@ -488,6 +511,13 @@ describe('mutation scope', () => {
         `${name}: --verify-profile-manifest is not its own command line`,
       ).toBe(true);
       expect(
+        commandLines.some(
+          (line) =>
+            line.includes('--verify-profile-manifest') && line.includes('--require-admitted'),
+        ),
+        `${name}: admitted per-target gate missing (--require-admitted)`,
+      ).toBe(true);
+      expect(
         workflow.indexOf('--write-profile-manifest') <
           workflow.indexOf('--verify-profile-manifest'),
         `${name}: write must precede re-verify`,
@@ -496,6 +526,7 @@ describe('mutation scope', () => {
 
     const focusedWorkflows = [
       'mutation-event-core.yml',
+      'mutation-human-projection.yml',
       'mutation-topology.yml',
       'mutation-identity-jwks.yml',
       'mutation-schemas.yml',
@@ -527,5 +558,67 @@ describe('mutation scope', () => {
       );
       assertSeparateVerifierCommands(name, workflow);
     }
+  });
+
+  it('A11: admission records, active admissions, and the registry close in both directions', () => {
+    const registry = readRegistry();
+    const problems: string[] = [];
+
+    const admissionEntries = requiredEntries.filter((entry) => entry.admission !== undefined);
+    const referenced = admissionEntries.map((entry) => entry.mutateSelector).sort();
+    const recorded = [...admissionRecordSelectors()].sort();
+
+    if (referenced.length !== recorded.length) {
+      problems.push(
+        `${recorded.length} immutable record(s) vs ${referenced.length} active admission(s)`,
+      );
+    }
+    const recordedSet = new Set(recorded);
+    for (const selector of referenced) {
+      if (!recordedSet.has(selector)) {
+        problems.push(`${selector}: active admission without an immutable record`);
+      }
+    }
+    const referencedSet = new Set(referenced);
+    for (const selector of recorded) {
+      if (!referencedSet.has(selector)) {
+        problems.push(`${selector}: immutable record without an active admission`);
+      }
+    }
+
+    for (const profile of Object.keys(MUTATION_PROFILES) as MutationProfile[]) {
+      const declared = registry.profiles[profile]?.admittedSelectors;
+      if (declared === undefined) {
+        problems.push(`${profile}: registry declares no admittedSelectors`);
+        continue;
+      }
+      if (new Set(declared).size !== declared.length) {
+        problems.push(`${profile}: admittedSelectors contains duplicates`);
+      }
+      const expected = admissionEntries
+        .filter((entry) => entry.profile === profile)
+        .map((entry) => {
+          const recordConfig = admissionRecord(entry.mutateSelector).config;
+          if (recordConfig !== MUTATION_PROFILES[profile].configFile) {
+            problems.push(
+              `${entry.mutateSelector}: record config ${recordConfig} != ${MUTATION_PROFILES[profile].configFile}`,
+            );
+          }
+          return entry.mutateSelector;
+        })
+        .sort();
+      if ([...declared].sort().join('\n') !== expected.join('\n')) {
+        problems.push(`${profile}: registry admittedSelectors drift from active admissions`);
+      }
+      for (const selector of declared) {
+        if (!mutateSelectors(profile).has(selector)) {
+          problems.push(
+            `${profile}: admitted selector not in the profile mutate list: ${selector}`,
+          );
+        }
+      }
+    }
+
+    expect(problems).toEqual([]);
   });
 });

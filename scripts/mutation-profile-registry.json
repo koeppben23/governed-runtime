@@ -5,43 +5,160 @@
       "configFile": "stryker.conf.json",
       "vitestConfigFile": "vitest.stryker.config.ts",
       "reportPath": "reports/mutation/mutation.json",
-      "manifestPath": "reports/mutation/admission-manifest-base.json"
+      "manifestPath": "reports/mutation/admission-manifest-base.json",
+      "admittedSelectors": [
+        "src/adapters/host-adapter.ts",
+        "src/adapters/implementation-base-authority.ts",
+        "src/adapters/implementation-entry-guard.ts",
+        "src/adapters/persistence-audit.ts",
+        "src/adapters/persistence-config.ts",
+        "src/adapters/persistence-core.ts",
+        "src/adapters/persistence-lock.ts",
+        "src/adapters/persistence.ts",
+        "src/adapters/workspace/archive-publish.ts",
+        "src/adapters/workspace/archive-timestamp-verification.ts",
+        "src/adapters/workspace/archive-verify-artifact-binding.ts",
+        "src/adapters/workspace/archive-verify-audit-chain.ts",
+        "src/adapters/workspace/archive-verify-checksum.ts",
+        "src/adapters/workspace/archive-verify-helpers.ts",
+        "src/adapters/workspace/archive-verify-integrity.ts",
+        "src/adapters/workspace/archive-verify-manifest.ts",
+        "src/archive/content-digest.ts",
+        "src/audit/completeness.ts",
+        "src/audit/event-builders.ts",
+        "src/audit/integrity.ts",
+        "src/audit/ntp-check.ts",
+        "src/audit/proofgraph/assertion-evidence-binding.ts",
+        "src/audit/proofgraph/counterexample-binder.ts",
+        "src/audit/proofgraph/enforcement-projection.ts",
+        "src/audit/proofgraph/evaluate.ts",
+        "src/audit/proofgraph/executed-test-binder.ts",
+        "src/audit/proofgraph/gate.ts",
+        "src/audit/proofgraph/mutation-binder.ts",
+        "src/audit/proofgraph/mutation-report.ts",
+        "src/audit/rfc-3161-pkijs-verifier.ts",
+        "src/audit/rfc-3161-signer-verification.ts",
+        "src/audit/rfc-3161-token-parse.ts",
+        "src/audit/timestamp-token-verification.ts",
+        "src/audit/timestamp-verification.ts",
+        "src/config/policy-central.ts",
+        "src/config/policy-resolver.ts",
+        "src/config/policy-snapshot.ts",
+        "src/config/profile.ts",
+        "src/discovery/verification-planner.ts",
+        "src/hooks/post-tool-use.ts",
+        "src/hooks/shared/obligation-tracker.ts",
+        "src/hooks/shared/phase-gate.ts",
+        "src/identity/token-verifier.ts",
+        "src/integration/audit-outbox.ts",
+        "src/integration/discovery/discovery-risk-paths.ts",
+        "src/integration/plugin-afterhooks.ts",
+        "src/integration/plugin-audit-lifecycle-reason.ts",
+        "src/integration/plugin-audit-reconcile.ts",
+        "src/integration/plugin-helpers.ts",
+        "src/integration/plugin-mutation-episodes.ts",
+        "src/integration/proofgraph/claim-contract-rules.ts",
+        "src/integration/proofgraph/claim-contract.ts",
+        "src/integration/proofgraph/materialize-contract.ts",
+        "src/integration/review/dispatch/agent-resolution.ts",
+        "src/integration/review/enforcement/challenge-consistency.ts",
+        "src/integration/review/enforcement/dispatch-signal.ts",
+        "src/integration/review/evidence/reviewed-digest.ts",
+        "src/integration/review/findings-hash.ts",
+        "src/integration/review/validation/review-validation-structured-evidence.ts",
+        "src/integration/review/validation/review-validation.ts",
+        "src/integration/runtime-lease.ts",
+        "src/integration/services/decision-audit-intent.ts",
+        "src/integration/tool-classification.ts",
+        "src/integration/tools/architecture/architecture-submit.ts",
+        "src/integration/tools/challenge/pre-implementation-challenge.ts",
+        "src/integration/tools/mutation/reconcile-mutation-episode.ts",
+        "src/integration/tools/mutation/record-mutation-evidence.ts",
+        "src/integration/tools/review-validation-mode.ts",
+        "src/logging/error-serialize.ts",
+        "src/machine/commands.ts",
+        "src/machine/evaluate.ts",
+        "src/machine/guards.ts",
+        "src/machine/validation-evidence.ts",
+        "src/machine/workflow-directive.ts",
+        "src/mcp-server/execution-limiter.ts",
+        "src/mcp-server/server.ts",
+        "src/rails/architecture.ts",
+        "src/rails/plan-review-evidence.ts",
+        "src/rails/review-decision-gates.ts",
+        "src/rails/review-decision.ts",
+        "src/rails/review-evidence-resolution.ts",
+        "src/rails/review-url.ts",
+        "src/rails/ticket.ts",
+        "src/shared/canonical-json.ts",
+        "src/shared/hashing.ts",
+        "src/state/evidence-mutation-episode.ts",
+        "src/templates/claude-code-plugin.ts",
+        "src/templates/codex-plugin.ts",
+        "src/verification/execution-subject.ts"
+      ]
     },
     "event-core": {
       "configFile": "stryker.event-core.conf.json",
       "vitestConfigFile": "vitest.stryker-event-core.config.ts",
       "reportPath": "reports/mutation/event-core/mutation.json",
-      "manifestPath": "reports/mutation/event-core/admission-manifest.json"
+      "manifestPath": "reports/mutation/event-core/admission-manifest.json",
+      "admittedSelectors": [
+        "src/audit/event-core.ts"
+      ]
     },
     "human-projection": {
       "configFile": "stryker.human-projection.conf.json",
       "vitestConfigFile": "vitest.stryker-human-projection.config.ts",
       "reportPath": "reports/mutation/human-projection/mutation.json",
-      "manifestPath": "reports/mutation/human-projection/admission-manifest.json"
+      "manifestPath": "reports/mutation/human-projection/admission-manifest.json",
+      "admittedSelectors": [
+        "src/presentation/claim-human-projection.ts",
+        "src/presentation/claim-resolution.ts",
+        "src/presentation/human-verification.ts",
+        "src/presentation/proof-requirement-copy.ts",
+        "src/presentation/reason-projection.ts"
+      ]
     },
     "identity-jwks": {
       "configFile": "stryker.identity-jwks.conf.json",
       "vitestConfigFile": "vitest.stryker-identity-jwks.config.ts",
       "reportPath": "reports/mutation/identity-jwks/mutation.json",
-      "manifestPath": "reports/mutation/identity-jwks/admission-manifest.json"
+      "manifestPath": "reports/mutation/identity-jwks/admission-manifest.json",
+      "admittedSelectors": [
+        "src/identity/key-resolver.ts:270-277",
+        "src/identity/key-resolver.ts:328-334",
+        "src/identity/key-resolver.ts:338-350"
+      ]
     },
     "mandates": {
       "configFile": "stryker.mandates.conf.json",
       "vitestConfigFile": "vitest.mandates.config.ts",
       "reportPath": "reports/mutation/mandates/mutation.json",
-      "manifestPath": "reports/mutation/mandates/admission-manifest.json"
+      "manifestPath": "reports/mutation/mandates/admission-manifest.json",
+      "admittedSelectors": [
+        "src/templates/commands/implement.ts",
+        "src/templates/commands/plan.ts",
+        "src/templates/mandates.ts"
+      ]
     },
     "schemas": {
       "configFile": "stryker.schemas.conf.json",
       "vitestConfigFile": "vitest.stryker-schemas.config.ts",
       "reportPath": "reports/mutation/schemas/mutation.json",
-      "manifestPath": "reports/mutation/schemas/admission-manifest.json"
+      "manifestPath": "reports/mutation/schemas/admission-manifest.json",
+      "admittedSelectors": [
+        "src/config/flowguard-config.ts"
+      ]
     },
     "topology": {
       "configFile": "stryker.topology.conf.json",
       "vitestConfigFile": "vitest.stryker-topology.config.ts",
       "reportPath": "reports/mutation/topology/mutation.json",
-      "manifestPath": "reports/mutation/topology/admission-manifest.json"
+      "manifestPath": "reports/mutation/topology/admission-manifest.json",
+      "admittedSelectors": [
+        "src/machine/topology.ts"
+      ]
     }
   }
 }
