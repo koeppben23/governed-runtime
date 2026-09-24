@@ -1,11 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  buildImplReviewPrompt,
-  renderVerificationEvidence,
-  type ReviewVerificationEvidenceItem,
-} from './prompt-builders.js';
+import { buildImplReviewPrompt, renderVerificationEvidence } from './prompt-builders.js';
 import type { DiscoveryReviewContext } from '../context/discovery-port.js';
+import type { ReviewVerificationEvidenceItem } from '../types.js';
 import { TEST_EXECUTION_OBSERVATION } from '../../../state/evidence-test-constants.js';
 
 // Slice 1 (evidence-grounded review): the implementation reviewer prompt must

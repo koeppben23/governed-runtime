@@ -35,11 +35,13 @@
  */
 
 import type { SessionState } from '../../../state/schema.js';
-import {
-  type SessionEnforcementState,
-  type EnforcementResult,
-  type PendingReviewTool,
-} from './types.js';
+import type { EnforcementResult } from './types.js';
+import type {
+  PendingReviewTool,
+  ReviewableTool,
+  SessionEnforcementState,
+  TerminalPhasePredicate,
+} from '../types.js';
 import { isReviewDispatchRequired } from './dispatch-signal.js';
 import { buildPendingReview, type ReviewSignalBinding } from './pending-review.js';
 
@@ -47,11 +49,9 @@ import {
   obligationTypeForTool,
   resolveReviewObligationTool,
   reviewSignalOwner,
-  type ReviewableTool,
   type ReviewSignalTool,
 } from '../obligations/obligation-tools.js';
 import { parseToolResult } from '../../blocked-result.js';
-import type { TerminalPhasePredicate } from './types.js';
 
 import { TOOL_FLOWGUARD_REVIEW } from '../../tool-names.js';
 

@@ -14,7 +14,7 @@
 import { readState } from '../../../adapters/persistence.js';
 import { buildEnforcementError, strictBlockedOutput } from '../../blocked-result.js';
 
-import type { SessionEnforcementState } from '../enforcement/types.js';
+import type { SessionEnforcementState } from '../types.js';
 import type { OrchestratorDeps } from '../pipeline-types.js';
 import type {
   ToolHookAfterInput,

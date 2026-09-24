@@ -24,11 +24,7 @@ vi.mock('./review/enforcement/enforcement.js', () => ({
 
 import { trackFlowGuardEnforcement } from './plugin-enforcement-tracking.js';
 import type { ReviewSignalTool } from './review/obligations/obligation-tools.js';
-import type {
-  SessionEnforcementState,
-  PendingReviewTool,
-  PendingReview,
-} from './review/enforcement/types.js';
+import type { PendingReview, PendingReviewTool, SessionEnforcementState } from './review/types.js';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 

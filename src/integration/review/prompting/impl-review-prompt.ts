@@ -9,6 +9,7 @@ import { renderPersistedProofGraphContext } from '../context/proof-context.js';
 import { renderRepositoryObservationContract } from './observation-contract-prompt.js';
 import { buildDiscoveryContextSection } from './discovery-context-prompt.js';
 import type { DiscoveryReviewContext } from '../context/discovery-port.js';
+import type { ReviewVerificationEvidenceItem } from '../types.js';
 import { buildStackProfileSection, CORE_REVIEW_PROFILE_MARKER } from './prompt-sections.js';
 import {
   renderReviewChallengeContract,
@@ -39,42 +40,6 @@ export interface ImplReviewPromptOpts {
   readonly observationRevisions?: readonly ('base' | 'head')[];
   readonly implementationDigest?: string;
   readonly challengeContract?: ReviewerChallengePromptContract;
-}
-
-export interface ReviewClaimAssertionEvidence {
-  readonly checkId: string;
-  readonly providerId: string;
-  readonly localId: string;
-  readonly status: 'passed' | 'failed' | 'errored' | 'skipped';
-  readonly suiteName?: string;
-  readonly testName: string;
-  readonly sourceFile?: string;
-  readonly durationMs?: number;
-}
-
-export interface ReviewClaimAssertionEvidenceSet {
-  readonly reportDigests: readonly string[];
-  readonly assertions: readonly ReviewClaimAssertionEvidence[];
-}
-
-export interface ReviewVerificationEvidenceItem {
-  readonly attemptId: string;
-  readonly kind: string;
-  readonly command: string;
-  readonly passed: boolean;
-  readonly exitCode: number;
-  readonly timedOut: boolean;
-  readonly executionMs: number;
-  readonly outputDigest: string;
-  readonly detail: string;
-  readonly executedAt: string;
-  /** Session-state digest observed when the execution surface was frozen. */
-  readonly executionObservedStateDigest: string;
-  /** State digest re-read under the session write lock before persistence. */
-  readonly preCommitStateDigest: string;
-  /** Derived projection of the two observed digests; never persisted itself. */
-  readonly stateChangedDuringExecution: boolean;
-  readonly claimAssertionEvidence?: ReviewClaimAssertionEvidenceSet;
 }
 
 export function renderVerificationEvidence(

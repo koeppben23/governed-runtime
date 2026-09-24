@@ -10,6 +10,7 @@
  */
 
 import type { ReviewObligationType } from '../../../state/evidence.js';
+import type { ReviewableTool } from '../types.js';
 import {
   TOOL_FLOWGUARD_ARCHITECTURE,
   TOOL_FLOWGUARD_IMPLEMENT,
@@ -29,12 +30,6 @@ import {
  * the owning `flowguard_implement` obligation via
  * {@link resolveReviewObligationTool}.
  */
-export type ReviewableTool =
-  | typeof TOOL_FLOWGUARD_PLAN
-  | typeof TOOL_FLOWGUARD_IMPLEMENT
-  | typeof TOOL_FLOWGUARD_ARCHITECTURE
-  | typeof TOOL_FLOWGUARD_REVIEW;
-
 const REVIEW_OBLIGATION_BY_TOOL = {
   [TOOL_FLOWGUARD_PLAN]: 'plan',
   [TOOL_FLOWGUARD_IMPLEMENT]: 'implement',

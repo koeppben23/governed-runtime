@@ -16,7 +16,7 @@ import { getToolOutput, getToolArgs } from './plugin-helpers.js';
 import { updateObligation, blockObligation } from './review/obligations/obligation-state.js';
 import { trackFlowGuardEnforcement } from './plugin-enforcement-tracking.js';
 import * as reviewEnforcement from './review/enforcement/enforcement.js';
-import type { SessionEnforcementState } from './review/enforcement/types.js';
+import type { SessionEnforcementState } from './review/types.js';
 
 vi.mock('./review/enforcement/enforcement.js', () => ({
   onFlowGuardToolAfter: vi.fn(),

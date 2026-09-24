@@ -1,4 +1,4 @@
-import type { PendingReview, PendingReviewTool } from './types.js';
+import type { PendingReview, PendingReviewTool } from '../types.js';
 
 /** Host identifiers published by the tool that emitted a review signal. */
 export type ReviewSignalBinding = {

@@ -15,32 +15,6 @@
  * @version v2
  */
 
-import type { ReviewableTool } from '../obligations/obligation-tools.js';
-export type { ReviewableTool } from '../obligations/obligation-tools.js';
-
-export type PendingReviewTool = ReviewableTool;
-
-/** Per-tool pending review state. */
-export interface PendingReview {
-  /** Which tool signaled the review requirement. */
-  readonly tool: PendingReviewTool;
-  /** ISO 8601 timestamp when the requirement was signaled. */
-  readonly requestedAt: string;
-  /** The host-authoritative attempt ID created alongside the obligation. */
-  attemptId: string | null;
-  /** The obligation ID the attempt was created for. */
-  obligationId: string | null;
-}
-
-/** Session-level enforcement state. */
-/** Injected machine terminal-phase predicate (review/ must not import machine/). */
-export type TerminalPhasePredicate = (phase: string) => boolean;
-
-export interface SessionEnforcementState {
-  /** Pending reviews keyed by tool name. */
-  readonly pendingReviews: Map<PendingReviewTool, PendingReview>;
-}
-
 /** Result of an enforcement check. */
 export type EnforcementResult =
   | { readonly allowed: true }

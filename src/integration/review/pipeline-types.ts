@@ -8,8 +8,7 @@
  * @version v3 — removed the deleted SDK pipeline context types
  */
 
-import type { SessionEnforcementState } from './enforcement/types.js';
-import type { OrchestratorClient } from './types.js';
+import type { OrchestratorClient, SessionEnforcementState } from './types.js';
 import type { SessionState } from '../../state/schema.js';
 import type { SemanticAuditIntent } from '../audit-outbox.js';
 

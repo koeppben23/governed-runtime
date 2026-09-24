@@ -8,12 +8,6 @@
  * @version v2
  */
 
-export type {
-  ReviewableTool,
-  PendingReviewTool,
-  PendingReview,
-  SessionEnforcementState,
-  EnforcementResult,
-} from './types.js';
+export type { EnforcementResult } from './types.js';
 
 export { createSessionState, onFlowGuardToolAfter, enforceBeforeVerdict } from './enforcement.js';

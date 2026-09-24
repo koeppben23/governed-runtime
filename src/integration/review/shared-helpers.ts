@@ -11,7 +11,7 @@
 import type { SessionState } from '../../state/schema.js';
 import type { SemanticAuditIntent } from '../audit-outbox.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
-import { type ReviewVerificationEvidenceItem } from './prompting/prompt-builders.js';
+import type { ReviewVerificationEvidenceItem } from './types.js';
 import type { AttestationResult } from './pipeline-types.js';
 
 // ─── Reason Constants ────────────────────────────────────────────────────────
