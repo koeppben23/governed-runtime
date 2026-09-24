@@ -102,6 +102,34 @@ The artifact/state write ordering is covered by
 outbox digest preparation is covered by
 [`audit-outbox.test.ts`](../../src/integration/tools/audit-outbox.test.ts).
 
+### 3.1 Direct metadata writers and their channel contract
+
+Not every persisted change goes through preparation. The direct channel exists
+for runtime and audit metadata that does not feed the ProofGraph derivation or
+the implementation-base authority. It never finalizes the implementation entry
+and never refreshes the projection, so it fails closed on any write that would
+change a derivation input.
+
+| Channel                                                                      | Callers                                                                                                                                                                     | Allowed mutations                                                                                                                                                                       |
+| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `writeStateWithAuditOperationsAlreadyLocked` (caller holds the session lock) | `plugin-beforehooks.ts` (`recordMutationDispatch`), `plugin-workspace.ts` (`updateReviewAssurance`), `plugin-mutation-episodes.ts` (`recordMutationCompletion`)             | `runtimeLease`, `mutationEpisodes`, review-assurance ledger (dispatches, attempts, obligation status)                                                                                   |
+| `writeStateWithAuditOperations` (locking wrapper)                            | `plugin-risk.ts` (`persistRiskDecisionBlock`), `plugin-discovery-health.ts` (`persistDiscoveryHealthBlock`), `plugin-audit-reconcile.ts` (`finalizeStrictTimestampFailure`) | `riskGate`, `discoveryHealthGate`, `error`                                                                                                                                              |
+| `writeStateAlreadyLocked` (low-level)                                        | `plugin-audit-reconcile.ts` (`acknowledgeAuditOperation`)                                                                                                                   | `pendingAuditOperations[].status` only; creates no outbox operation                                                                                                                     |
+| `writeStateWithArtifactsAndAuditOperations` (full prepare)                   | `tools/helpers.ts` and every tool/rail caller                                                                                                                               | everything; the only channel that may change `plan`, `implementation`, `validationAttempts`, `mutationAttempts`, `proofContract`, `peerReviewEvidence`, or review-obligation membership |
+
+The direct channel rejects a changed derivation input with
+`DIRECT_WRITE_REQUIRES_PREPARE` (`audit-outbox.ts`). The contract is exercised by
+[`plugin-direct-writer-proofgraph.test.ts`](../../src/integration/plugin-direct-writer-proofgraph.test.ts):
+the projection and the frozen base survive metadata writes, each write binds the
+state it actually persisted, the entry freeze still fails closed without the
+base, and a derivation-input change through the direct channel is rejected
+before persistence.
+
+The `riskGate` and `discoveryHealthGate` writers build their next state from a
+snapshot read before the write lock; a concurrent commit between that read and
+the lock is not re-applied under the lock. That read-modify-write window is
+tracked separately and is not a preparation-path defect.
+
 ## 4. Regulated completion orders audit, lifecycle, archive, and verification
 
 The chain is owned by

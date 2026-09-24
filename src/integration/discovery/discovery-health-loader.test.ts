@@ -20,6 +20,7 @@ describe('discovery-health-loader', () => {
       SESSION_STATE_INCOMPATIBLE: 'schema_invalid',
       READ_FAILED: 'read_failed',
       WRITE_FAILED: 'read_failed',
+      DIRECT_WRITE_REQUIRES_PREPARE: 'read_failed',
       LOCK_TIMEOUT: 'read_failed',
       LOCK_TIMEOUT_EXHAUSTED: 'read_failed',
     };
@@ -33,7 +34,7 @@ describe('discovery-health-loader', () => {
           code,
         ).toBe(expected);
       }
-      expect(Object.keys(EXPECTED_BY_CODE)).toHaveLength(7);
+      expect(Object.keys(EXPECTED_BY_CODE)).toHaveLength(8);
     });
 
     it('maps unknown errors and non-errors to read_failed', () => {

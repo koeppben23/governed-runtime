@@ -17,6 +17,35 @@ import { refreshProofGraph } from './proofgraph/refresh.js';
 export type SemanticAuditIntent = Extract<PendingAuditOperation, { kind: 'semantic' }>['semantic'];
 
 /**
+ * State fields that feed the ProofGraph derivation and the implementation-base
+ * authority. They may only change through `prepareStateWithAuditOperations`,
+ * which finalizes the implementation entry and refreshes the projection once.
+ * The direct metadata channel must inherit them unchanged: the persisted
+ * projection is what the evidence gate consumes, so a silent change here would
+ * let the projection contradict the authority state it documents.
+ */
+const DIRECT_WRITE_DERIVE_INPUTS = [
+  'plan',
+  'implementation',
+  'validationAttempts',
+  'mutationAttempts',
+  'proofContract',
+  'peerReviewEvidence',
+] as const;
+
+function deriveInputDigest(state: SessionState): string {
+  const obligationIdentity = (state.reviewAssurance?.obligations ?? []).map((obligation) => [
+    obligation.obligationId,
+    obligation.obligationType,
+    obligation.reviewCycle,
+    obligation.subjectDigest,
+  ]);
+  const projection: Record<string, unknown> = { obligationIdentity };
+  for (const field of DIRECT_WRITE_DERIVE_INPUTS) projection[field] = state[field];
+  return hashText(`derive-inputs.v1:${canonicalJsonStringify(projection)}`);
+}
+
+/**
  * Prepare the next state together with its durable authority-write operations.
  *
  * The state and its outbox commit are persisted atomically by the caller
@@ -61,6 +90,14 @@ export async function writeStateWithAuditOperationsAlreadyLocked(
   semanticIntents: readonly SemanticAuditIntent[] = [],
 ): Promise<SessionState> {
   const previous = await readState(sessDir);
+  if (previous != null && deriveInputDigest(previous) !== deriveInputDigest(nextState)) {
+    throw new PersistenceError(
+      'DIRECT_WRITE_REQUIRES_PREPARE',
+      'Refusing a direct metadata write that changes ProofGraph derive inputs; use ' +
+        'writeStateWithArtifactsAndAuditOperations so implementation-entry finalization ' +
+        'and ProofGraph refresh run exactly once.',
+    );
+  }
   const stateWithOperations = prepareAuditOperations(
     previous,
     nextState,
