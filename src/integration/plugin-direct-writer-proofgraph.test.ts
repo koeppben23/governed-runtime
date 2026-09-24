@@ -20,18 +20,21 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { readState, writeState } from '../adapters/persistence.js';
-import { makeProgressedState } from '../fixtures.js';
+import { readState, writeStateAlreadyLocked } from '../adapters/persistence.js';
+import { makeProgressedState, makeState } from '../fixtures.js';
 import { buildStateWriteBody } from '../audit/types.js';
 import { buildSemanticAuditBody } from '../audit/semantic-event.js';
 import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
 import { computeStateDigest, writeStateWithAuditOperations } from './audit-outbox.js';
 import { recordMutationCompletion } from './plugin-mutation-episodes.js';
+import { persistRiskDecisionBlock } from './plugin-risk.js';
+import { enforceDiscoveryHealthAfterBash } from './plugin-discovery-health.js';
 import { PluginWorkspaceImpl } from './plugin-workspace.js';
 import { freezeReviewMaterial } from './review/obligations/assurance.js';
 import { blockObligation } from './review/obligations/obligation-state.js';
 import { writeStateWithArtifacts } from './tools/helpers.js';
 import type { SessionState } from '../state/schema.js';
+import type { DeniedRiskClassificationDecision } from './phase-tool-gate.js';
 
 const CLAIM_ID = '10000000-0000-4000-8000-00000000000a';
 const OBLIGATION_ID = '33333333-3333-4333-8333-333333333333';
@@ -129,6 +132,7 @@ async function seedClaimState(
   overrides: {
     readonly mutationEpisodes?: SessionState['mutationEpisodes'];
     readonly reviewAssurance?: SessionState['reviewAssurance'];
+    readonly policySnapshot?: SessionState['policySnapshot'];
   } = {},
 ): Promise<SessionState> {
   const state: SessionState = {
@@ -139,6 +143,7 @@ async function seedClaimState(
     ...(overrides.reviewAssurance === undefined
       ? {}
       : { reviewAssurance: overrides.reviewAssurance }),
+    ...(overrides.policySnapshot === undefined ? {} : { policySnapshot: overrides.policySnapshot }),
   };
   const seeded = await writeStateWithArtifacts(sessDir, state);
   expect(seeded.proofGraph?.claims[0]?.verificationState).toBe('PROVEN');
@@ -255,22 +260,43 @@ describe('direct metadata write channel', () => {
     }
   });
 
-  it('fails closed when a direct write enters IMPLEMENTATION without a frozen base', async () => {
-    const previous = makeProgressedState('VALIDATION');
-    await writeState(sessDir, previous);
-    const next: SessionState = {
-      ...previous,
-      phase: 'IMPLEMENTATION',
-      implementationBaseAuthority: undefined,
-    };
-
-    await expect(writeStateWithAuditOperations(sessDir, next)).rejects.toThrow(
+  it('fails closed at the persistence boundary for a raw IMPLEMENTATION write without a base', async () => {
+    await expect(writeStateAlreadyLocked(sessDir, makeState('IMPLEMENTATION'))).rejects.toThrow(
       /without a frozen implementation base authority/,
     );
 
-    const persisted = await readState(sessDir);
-    expect(persisted?.phase).toBe('VALIDATION');
+    expect(await readState(sessDir)).toBeNull();
   });
+
+  it.each([
+    ['phase', (state: SessionState): SessionState => ({ ...state, phase: 'IMPL_VALIDATION' })],
+    [
+      'implementationBaseAuthority',
+      (state: SessionState): SessionState => ({
+        ...state,
+        implementationBaseAuthority: undefined,
+      }),
+    ],
+    [
+      'proofGraph',
+      (state: SessionState): SessionState => ({
+        ...state,
+        proofGraph: { ...state.proofGraph!, evaluatedAt: '2026-02-01T00:00:00.000Z' },
+      }),
+    ],
+  ] as const)(
+    'rejects a protected authority change (%s) through the direct channel',
+    async (_field, mutate) => {
+      const seeded = await seedClaimState('IMPLEMENTATION');
+      const before = await readState(sessDir);
+
+      await expect(writeStateWithAuditOperations(sessDir, mutate(seeded))).rejects.toMatchObject({
+        code: 'DIRECT_WRITE_REQUIRES_PREPARE',
+      });
+
+      expect(await readState(sessDir)).toEqual(before);
+    },
+  );
 
   it('rejects a derivation-input change through the direct channel before persistence', async () => {
     const seeded = await seedClaimState('IMPL_VALIDATION');
@@ -337,5 +363,85 @@ describe('direct metadata write channel', () => {
     await expect(writeStateWithAuditOperations(sessDir, next)).rejects.toMatchObject({
       code: 'DIRECT_WRITE_REQUIRES_PREPARE',
     });
+  });
+
+  it('keeps authority committed after the decision read when a risk block persists', async () => {
+    const seeded = await seedClaimState('IMPLEMENTATION');
+    const intervening = await writeStateWithAuditOperations(sessDir, seeded, [
+      {
+        phase: seeded.phase,
+        event: 'review:obligation_blocked',
+        occurredAt: NOW,
+        detail: { obligationId: OBLIGATION_ID, code: 'INTERVENING_AUTHORITY' },
+      },
+    ]);
+    const interveningOperationId = intervening.pendingAuditOperations.at(-1)!.operationId;
+
+    const decision: DeniedRiskClassificationDecision = {
+      allowed: false,
+      code: 'RISK_CLASSIFICATION_MISMATCH',
+      reason: 'blocked',
+      decisionId: 'd-1',
+      claimedTaskClass: 'STANDARD',
+      minimumTaskClass: 'HIGH-RISK',
+      touchedSurfaces: ['src/foo.ts'],
+      riskTriggers: ['ceremony_only'],
+      changedFiles: ['src/foo.ts'],
+    };
+    await persistRiskDecisionBlock(sessDir, decision, 'RISK_CLASSIFICATION_MISMATCH', 'blocked');
+
+    const persisted = await readState(sessDir);
+    expect(persisted?.riskGate).toMatchObject({
+      status: 'blocked',
+      code: 'RISK_CLASSIFICATION_MISMATCH',
+    });
+    expect(persisted?.pendingAuditOperations.map((operation) => operation.operationId)).toContain(
+      interveningOperationId,
+    );
+    expect(persisted?.proofGraph).toEqual(seeded.proofGraph);
+    expect(persisted?.implementationBaseAuthority).toEqual(seeded.implementationBaseAuthority);
+  });
+
+  it('keeps authority committed after the decision read when a discovery block persists', async () => {
+    const base = makeProgressedState('IMPLEMENTATION');
+    const seeded = await seedClaimState('IMPLEMENTATION', {
+      policySnapshot: {
+        ...base.policySnapshot,
+        discoveryHealth: { enforcement: 'required', onDegraded: 'block', onDrift: 'block' },
+      },
+    });
+    const intervening = await writeStateWithAuditOperations(sessDir, seeded, [
+      {
+        phase: seeded.phase,
+        event: 'review:obligation_blocked',
+        occurredAt: NOW,
+        detail: { obligationId: OBLIGATION_ID, code: 'INTERVENING_AUTHORITY' },
+      },
+    ]);
+    const interveningOperationId = intervening.pendingAuditOperations.at(-1)!.operationId;
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-direct-writer-ws-'));
+    const output: { output?: unknown } = {};
+
+    try {
+      await enforceDiscoveryHealthAfterBash(
+        { getSessionDir: () => sessDir, getWorkspaceDir: () => workspaceDir },
+        seeded.flowguardSessionId,
+        output,
+      );
+    } finally {
+      await fs.rm(workspaceDir, { recursive: true, force: true });
+    }
+
+    expect(output.output).toBeDefined();
+    const persisted = await readState(sessDir);
+    expect(persisted?.discoveryHealthGate).toMatchObject({
+      status: 'blocked',
+      code: 'DISCOVERY_HEALTH_UNAVAILABLE',
+    });
+    expect(persisted?.pendingAuditOperations.map((operation) => operation.operationId)).toContain(
+      interveningOperationId,
+    );
+    expect(persisted?.proofGraph).toEqual(seeded.proofGraph);
+    expect(persisted?.implementationBaseAuthority).toEqual(seeded.implementationBaseAuthority);
   });
 });

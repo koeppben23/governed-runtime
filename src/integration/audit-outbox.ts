@@ -17,23 +17,26 @@ import { refreshProofGraph } from './proofgraph/refresh.js';
 export type SemanticAuditIntent = Extract<PendingAuditOperation, { kind: 'semantic' }>['semantic'];
 
 /**
- * State fields that feed the ProofGraph derivation and the implementation-base
- * authority. They may only change through `prepareStateWithAuditOperations`,
- * which finalizes the implementation entry and refreshes the projection once.
- * The direct metadata channel must inherit them unchanged: the persisted
- * projection is what the evidence gate consumes, so a silent change here would
- * let the projection contradict the authority state it documents.
+ * Authority state that only the full prepare path may change: the phase, the
+ * frozen implementation base, the ProofGraph projection itself, and every
+ * input the projection derivation reads. The direct metadata channel must
+ * inherit all of them unchanged — the persisted projection is what the
+ * evidence gate consumes, so a silent change here would let the projection
+ * contradict the authority state it documents.
  */
-const DIRECT_WRITE_DERIVE_INPUTS = [
+const DIRECT_WRITE_PROTECTED_FIELDS = [
+  'phase',
   'plan',
   'implementation',
+  'implementationBaseAuthority',
+  'proofGraph',
   'validationAttempts',
   'mutationAttempts',
   'proofContract',
   'peerReviewEvidence',
 ] as const;
 
-function deriveInputDigest(state: SessionState): string {
+function protectedAuthorityDigest(state: SessionState): string {
   const obligationIdentity = (state.reviewAssurance?.obligations ?? []).map((obligation) => [
     obligation.obligationId,
     obligation.obligationType,
@@ -41,8 +44,8 @@ function deriveInputDigest(state: SessionState): string {
     obligation.subjectDigest,
   ]);
   const projection: Record<string, unknown> = { obligationIdentity };
-  for (const field of DIRECT_WRITE_DERIVE_INPUTS) projection[field] = state[field];
-  return hashText(`derive-inputs.v1:${canonicalJsonStringify(projection)}`);
+  for (const field of DIRECT_WRITE_PROTECTED_FIELDS) projection[field] = state[field];
+  return hashText(`direct-write-authority.v1:${canonicalJsonStringify(projection)}`);
 }
 
 /**
@@ -90,10 +93,14 @@ export async function writeStateWithAuditOperationsAlreadyLocked(
   semanticIntents: readonly SemanticAuditIntent[] = [],
 ): Promise<SessionState> {
   const previous = await readState(sessDir);
-  if (previous != null && deriveInputDigest(previous) !== deriveInputDigest(nextState)) {
+  if (
+    previous != null &&
+    protectedAuthorityDigest(previous) !== protectedAuthorityDigest(nextState)
+  ) {
     throw new PersistenceError(
       'DIRECT_WRITE_REQUIRES_PREPARE',
-      'Refusing a direct metadata write that changes ProofGraph derive inputs; use ' +
+      'Refusing a direct metadata write that changes protected authority state (phase, ' +
+        'implementation base, ProofGraph projection, or derivation inputs); use ' +
         'writeStateWithArtifactsAndAuditOperations so implementation-entry finalization ' +
         'and ProofGraph refresh run exactly once.',
     );
@@ -116,6 +123,30 @@ export async function writeStateWithAuditOperations(
   return withSessionWriteLock(sessDir, () =>
     writeStateWithAuditOperationsAlreadyLocked(sessDir, nextState, semanticIntents),
   );
+}
+
+/**
+ * Apply a mutation to the freshly read state under the session write lock.
+ *
+ * Callers that decided from an earlier read must persist through this helper:
+ * writing a pre-built snapshot would overwrite authority (mutation episodes,
+ * pending audit operations, runtime lease) committed between that read and the
+ * lock. The mutation receives the current state and returns the next state plus
+ * optional semantic audit intents. Returns null when no state exists.
+ */
+export async function mutateStateWithAuditOperations(
+  sessDir: string,
+  mutate: (state: SessionState) => {
+    readonly next: SessionState;
+    readonly semanticIntents?: readonly SemanticAuditIntent[];
+  },
+): Promise<SessionState | null> {
+  return withSessionWriteLock(sessDir, async () => {
+    const current = await readState(sessDir);
+    if (current === null) return null;
+    const { next, semanticIntents = [] } = mutate(current);
+    return writeStateWithAuditOperationsAlreadyLocked(sessDir, next, semanticIntents);
+  });
 }
 
 async function prepareState(nextState: SessionState): Promise<SessionState> {

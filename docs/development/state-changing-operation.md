@@ -117,18 +117,22 @@ change a derivation input.
 | `writeStateAlreadyLocked` (low-level)                                        | `plugin-audit-reconcile.ts` (`acknowledgeAuditOperation`)                                                                                                                   | `pendingAuditOperations[].status` only; creates no outbox operation                                                                                                                     |
 | `writeStateWithArtifactsAndAuditOperations` (full prepare)                   | `tools/helpers.ts` and every tool/rail caller                                                                                                                               | everything; the only channel that may change `plan`, `implementation`, `validationAttempts`, `mutationAttempts`, `proofContract`, `peerReviewEvidence`, or review-obligation membership |
 
-The direct channel rejects a changed derivation input with
+The direct channel rejects a change to protected authority state — phase, the
+frozen implementation base, the ProofGraph projection, `plan`,
+`implementation`, `validationAttempts`, `mutationAttempts`, `proofContract`,
+`peerReviewEvidence`, or review-obligation identity — with
 `DIRECT_WRITE_REQUIRES_PREPARE` (`audit-outbox.ts`). The contract is exercised by
 [`plugin-direct-writer-proofgraph.test.ts`](../../src/integration/plugin-direct-writer-proofgraph.test.ts):
 the projection and the frozen base survive metadata writes, each write binds the
-state it actually persisted, the entry freeze still fails closed without the
-base, and a derivation-input change through the direct channel is rejected
-before persistence.
+state it actually persisted, the raw persistence boundary still fails closed
+without the base, and protected-state changes are rejected before persistence.
 
-The `riskGate` and `discoveryHealthGate` writers build their next state from a
-snapshot read before the write lock; a concurrent commit between that read and
-the lock is not re-applied under the lock. That read-modify-write window is
-tracked separately and is not a preparation-path defect.
+Writers that persist a decision computed from an earlier read must not send a
+pre-built snapshot. They use `mutateStateWithAuditOperations`, which re-reads the
+state under the session write lock and re-applies the mutation, so authority
+committed in between (mutation episodes, pending audit operations, runtime
+lease) cannot be overwritten. `plugin-risk.ts` and `plugin-discovery-health.ts`
+use this helper for their gate writes.
 
 ## 4. Regulated completion orders audit, lifecycle, archive, and verification
 
