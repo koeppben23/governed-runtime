@@ -271,6 +271,30 @@ describe('direct metadata write channel', () => {
   it.each([
     ['phase', (state: SessionState): SessionState => ({ ...state, phase: 'IMPL_VALIDATION' })],
     [
+      'binding',
+      (state: SessionState): SessionState => ({
+        ...state,
+        binding: { ...state.binding, worktree: '/tmp/other-worktree' },
+      }),
+    ],
+    [
+      'transition',
+      (state: SessionState): SessionState => ({
+        ...state,
+        transition: { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', at: NOW },
+      }),
+    ],
+    [
+      'policySnapshot',
+      (state: SessionState): SessionState => ({
+        ...state,
+        policySnapshot: {
+          ...state.policySnapshot,
+          enforceRiskClassification: state.policySnapshot.enforceRiskClassification !== true,
+        },
+      }),
+    ],
+    [
       'implementationBaseAuthority',
       (state: SessionState): SessionState => ({
         ...state,

@@ -18,6 +18,7 @@ export type SemanticAuditIntent = Extract<PendingAuditOperation, { kind: 'semant
 
 /**
  * Authority state that only the full prepare path may change: the phase, the
+ * session binding, the lifecycle transition, the frozen policy snapshot, the
  * frozen implementation base, the ProofGraph projection itself, and every
  * input the projection derivation reads. The direct metadata channel must
  * inherit all of them unchanged — the persisted projection is what the
@@ -26,6 +27,9 @@ export type SemanticAuditIntent = Extract<PendingAuditOperation, { kind: 'semant
  */
 const DIRECT_WRITE_PROTECTED_FIELDS = [
   'phase',
+  'binding',
+  'transition',
+  'policySnapshot',
   'plan',
   'implementation',
   'implementationBaseAuthority',
