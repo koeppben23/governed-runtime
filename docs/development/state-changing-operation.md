@@ -118,16 +118,19 @@ change protected authority state.
 | `writeStateAlreadyLocked` (low-level)                                        | `plugin-audit-reconcile.ts` (`acknowledgeAuditOperation`)                                                                                                       | `pendingAuditOperations[].status` only; creates no outbox operation                                          |
 | `writeStateWithArtifactsAndAuditOperations` (full prepare)                   | `tools/helpers.ts` and every tool/rail caller                                                                                                                   | everything; the only channel that may change protected authority state                                       |
 
-The direct channel rejects a change to protected authority state — phase,
-`binding` (including the bound worktree the mutation-report verification reads),
-`transition`, `policySnapshot`, the frozen implementation base, the ProofGraph
-projection, `plan`, `implementation`, `validationAttempts`, `mutationAttempts`,
-`proofContract`, `peerReviewEvidence`, or review-obligation identity — with
-`DIRECT_WRITE_REQUIRES_PREPARE` (`audit-outbox.ts`). The contract is exercised by
+The direct channel is allowlisted, not denylisted: `audit-outbox.ts` permits
+only `runtimeLease`, `mutationEpisodes`, `reviewAssurance` (ledger and status
+updates; obligation identity is protected separately), `riskGate`,
+`discoveryHealthGate`, and `error` to change. Any other field — including
+`phase`, `binding`, `transition`, `policySnapshot`, the implementation base,
+the ProofGraph projection, evidence ledgers, and any field added to the schema
+later — fails closed with `DIRECT_WRITE_REQUIRES_PREPARE`. The contract is
+exercised by
 [`plugin-direct-writer-proofgraph.test.ts`](../../src/integration/plugin-direct-writer-proofgraph.test.ts):
 the projection and the frozen base survive metadata writes, each write binds the
 state it actually persisted, the raw persistence boundary still fails closed
-without the base, and protected-state changes are rejected before persistence.
+without the base, and unauthorized field changes are rejected before
+persistence.
 
 Writers that persist a decision computed from an earlier read must not send a
 pre-built snapshot. They use `mutateStateWithAuditOperations`, which re-reads the

@@ -27,6 +27,7 @@ import { buildSemanticAuditBody } from '../audit/semantic-event.js';
 import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
 import { computeStateDigest, writeStateWithAuditOperations } from './audit-outbox.js';
 import { recordMutationCompletion } from './plugin-mutation-episodes.js';
+import { finalizeStrictTimestampFailure } from './plugin-audit-reconcile.js';
 import { persistRiskDecisionBlock } from './plugin-risk.js';
 import { enforceDiscoveryHealthAfterBash } from './plugin-discovery-health.js';
 import { PluginWorkspaceImpl } from './plugin-workspace.js';
@@ -35,6 +36,7 @@ import { blockObligation } from './review/obligations/obligation-state.js';
 import { writeStateWithArtifacts } from './tools/helpers.js';
 import type { SessionState } from '../state/schema.js';
 import type { DeniedRiskClassificationDecision } from './phase-tool-gate.js';
+import type { AuditContext } from './plugin-audit-context.js';
 
 const CLAIM_ID = '10000000-0000-4000-8000-00000000000a';
 const OBLIGATION_ID = '33333333-3333-4333-8333-333333333333';
@@ -308,6 +310,47 @@ describe('direct metadata write channel', () => {
         proofGraph: { ...state.proofGraph!, evaluatedAt: '2026-02-01T00:00:00.000Z' },
       }),
     ],
+    [
+      'activeChecks',
+      (state: SessionState): SessionState => ({
+        ...state,
+        activeChecks: [...state.activeChecks, 'extra-check'],
+      }),
+    ],
+    [
+      'session identity',
+      (state: SessionState): SessionState => {
+        const id = '99999999-9999-4999-8999-999999999999';
+        return { ...state, id, flowguardSessionId: id };
+      },
+    ],
+    [
+      'reducedCeremony',
+      (state: SessionState): SessionState => ({
+        ...state,
+        reducedCeremony: {
+          profile: 'reduced',
+          reason: 'direct-write test',
+          claimedTaskClass: 'TRIVIAL',
+          computedMinimumTaskClass: 'TRIVIAL',
+          touchedSurfaces: [],
+          decidedAt: NOW,
+        },
+      }),
+    ],
+    [
+      'implementationRiskAssessment',
+      (state: SessionState): SessionState => ({
+        ...state,
+        implementationRiskAssessment: {
+          computedMinimumTaskClass: 'TRIVIAL',
+          touchedSurfaces: [],
+          assessedFrom: 'implementation_changed_files',
+          assessedFileCount: 0,
+          implementationDigest: 'direct-write-test-digest',
+        },
+      }),
+    ],
   ] as const)(
     'rejects a protected authority change (%s) through the direct channel',
     async (_field, mutate) => {
@@ -321,6 +364,17 @@ describe('direct metadata write channel', () => {
       expect(await readState(sessDir)).toEqual(before);
     },
   );
+
+  it('reports changed authority fields in sorted order', async () => {
+    const seeded = await seedClaimState('IMPLEMENTATION');
+    const id = '99999999-9999-4999-8999-999999999999';
+
+    await expect(
+      writeStateWithAuditOperations(sessDir, { ...seeded, id, flowguardSessionId: id }),
+    ).rejects.toThrow('flowguardSessionId, id');
+
+    expect(await readState(sessDir)).toEqual(seeded);
+  });
 
   it('rejects a derivation-input change through the direct channel before persistence', async () => {
     const seeded = await seedClaimState('IMPL_VALIDATION');
@@ -462,6 +516,37 @@ describe('direct metadata write channel', () => {
       status: 'blocked',
       code: 'DISCOVERY_HEALTH_UNAVAILABLE',
     });
+    expect(persisted?.pendingAuditOperations.map((operation) => operation.operationId)).toContain(
+      interveningOperationId,
+    );
+    expect(persisted?.proofGraph).toEqual(seeded.proofGraph);
+    expect(persisted?.implementationBaseAuthority).toEqual(seeded.implementationBaseAuthority);
+  });
+
+  it('keeps authority committed after the decision read when a TSA failure persists', async () => {
+    const seeded = await seedClaimState('IMPLEMENTATION');
+    const intervening = await writeStateWithAuditOperations(sessDir, seeded, [
+      {
+        phase: seeded.phase,
+        event: 'review:obligation_blocked',
+        occurredAt: NOW,
+        detail: { obligationId: OBLIGATION_ID, code: 'INTERVENING_AUTHORITY' },
+      },
+    ]);
+    const interveningOperationId = intervening.pendingAuditOperations.at(-1)!.operationId;
+
+    const outcome = await finalizeStrictTimestampFailure(
+      { sessDir, now: NOW } as AuditContext,
+      () => ({ eventKind: 'tool:write', reason: 'timestamp authority unavailable' }),
+    );
+
+    expect(outcome).toMatchObject({
+      auditOk: false,
+      block: true,
+      code: 'TSA_TIMESTAMP_ASSURANCE_FAILED',
+    });
+    const persisted = await readState(sessDir);
+    expect(persisted?.error).toMatchObject({ code: 'TSA_TIMESTAMP_ASSURANCE_FAILED' });
     expect(persisted?.pendingAuditOperations.map((operation) => operation.operationId)).toContain(
       interveningOperationId,
     );

@@ -17,39 +17,51 @@ import { refreshProofGraph } from './proofgraph/refresh.js';
 export type SemanticAuditIntent = Extract<PendingAuditOperation, { kind: 'semantic' }>['semantic'];
 
 /**
- * Authority state that only the full prepare path may change: the phase, the
- * session binding, the lifecycle transition, the frozen policy snapshot, the
- * frozen implementation base, the ProofGraph projection itself, and every
- * input the projection derivation reads. The direct metadata channel must
- * inherit all of them unchanged — the persisted projection is what the
- * evidence gate consumes, so a silent change here would let the projection
- * contradict the authority state it documents.
+ * The only top-level state fields the direct metadata channel may change.
+ * Everything else is protected authority state by default: a field added to
+ * the schema later cannot silently become mutable through this channel.
+ * `reviewAssurance` is mutable as a whole so ledger and status updates stay
+ * possible; its obligation identity is protected separately.
  */
-const DIRECT_WRITE_PROTECTED_FIELDS = [
-  'phase',
-  'binding',
-  'transition',
-  'policySnapshot',
-  'plan',
-  'implementation',
-  'implementationBaseAuthority',
-  'proofGraph',
-  'validationAttempts',
-  'mutationAttempts',
-  'proofContract',
-  'peerReviewEvidence',
-] as const;
+const DIRECT_WRITE_MUTABLE_FIELDS: ReadonlySet<string> = new Set([
+  'runtimeLease',
+  'mutationEpisodes',
+  'reviewAssurance',
+  'riskGate',
+  'discoveryHealthGate',
+  'error',
+]);
 
-function protectedAuthorityDigest(state: SessionState): string {
-  const obligationIdentity = (state.reviewAssurance?.obligations ?? []).map((obligation) => [
-    obligation.obligationId,
-    obligation.obligationType,
-    obligation.reviewCycle,
-    obligation.subjectDigest,
-  ]);
-  const projection: Record<string, unknown> = { obligationIdentity };
-  for (const field of DIRECT_WRITE_PROTECTED_FIELDS) projection[field] = state[field];
-  return hashText(`direct-write-authority.v1:${canonicalJsonStringify(projection)}`);
+function reviewObligationIdentity(state: SessionState): string {
+  return canonicalJsonStringify(
+    (state.reviewAssurance?.obligations ?? []).map((obligation) => [
+      obligation.obligationId,
+      obligation.obligationType,
+      obligation.reviewCycle,
+      obligation.subjectDigest,
+    ]),
+  );
+}
+
+/**
+ * Names of authority fields a direct write would change without
+ * authorization. Every field outside {@link DIRECT_WRITE_MUTABLE_FIELDS} is
+ * compared, so the contract fails closed for fields it does not know.
+ */
+function unauthorizedDirectWriteChanges(previous: SessionState, next: SessionState): string[] {
+  const before = previous as unknown as Record<string, unknown>;
+  const after = next as unknown as Record<string, unknown>;
+  const changed: string[] = [];
+  for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+    if (DIRECT_WRITE_MUTABLE_FIELDS.has(key)) continue;
+    if (canonicalJsonStringify(before[key]) !== canonicalJsonStringify(after[key])) {
+      changed.push(key);
+    }
+  }
+  if (reviewObligationIdentity(previous) !== reviewObligationIdentity(next)) {
+    changed.push('reviewAssurance.obligations.identity');
+  }
+  return changed.sort();
 }
 
 /**
@@ -97,17 +109,18 @@ export async function writeStateWithAuditOperationsAlreadyLocked(
   semanticIntents: readonly SemanticAuditIntent[] = [],
 ): Promise<SessionState> {
   const previous = await readState(sessDir);
-  if (
-    previous != null &&
-    protectedAuthorityDigest(previous) !== protectedAuthorityDigest(nextState)
-  ) {
-    throw new PersistenceError(
-      'DIRECT_WRITE_REQUIRES_PREPARE',
-      'Refusing a direct metadata write that changes protected authority state (phase, ' +
-        'implementation base, ProofGraph projection, or derivation inputs); use ' +
-        'writeStateWithArtifactsAndAuditOperations so implementation-entry finalization ' +
-        'and ProofGraph refresh run exactly once.',
-    );
+  if (previous != null) {
+    const changed = unauthorizedDirectWriteChanges(previous, nextState);
+    if (changed.length > 0) {
+      throw new PersistenceError(
+        'DIRECT_WRITE_REQUIRES_PREPARE',
+        `Refusing a direct metadata write that changes protected authority state ` +
+          `(${changed.join(', ')}); the direct channel may only change ` +
+          `${[...DIRECT_WRITE_MUTABLE_FIELDS].join(', ')}. Use ` +
+          'writeStateWithArtifactsAndAuditOperations so implementation-entry finalization ' +
+          'and ProofGraph refresh run exactly once.',
+      );
+    }
   }
   const stateWithOperations = prepareAuditOperations(
     previous,
