@@ -394,8 +394,15 @@ describe('direct metadata write channel', () => {
     ['obligationId', { obligationId: '44444444-4444-4444-8444-444444444444' }],
     ['subjectDigest', { subjectDigest: 'changed-subject-digest' }],
     ['reviewCycle', { reviewCycle: 2 }],
+    [
+      'reviewMaterial',
+      { reviewMaterial: freezeReviewMaterial('tampered material', 'tampered-digest') },
+    ],
+    ['reviewProfile', { reviewProfile: 'full' }],
+    ['requiredChallengeCount', { requiredChallengeCount: 1 }],
+    ['maxReviewerAttempts', { maxReviewerAttempts: 5 }],
   ] as const)(
-    'rejects a review-obligation identity change (%s) through the direct channel',
+    'rejects a frozen review-obligation attribute change (%s) through the direct channel',
     async (_field, patch) => {
       const seeded = await seedClaimState('IMPLEMENTATION', {
         reviewAssurance: blockedObligation('REVIEWER_INVOCATION_EXHAUSTED'),

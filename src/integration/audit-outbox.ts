@@ -21,7 +21,8 @@ export type SemanticAuditIntent = Extract<PendingAuditOperation, { kind: 'semant
  * Everything else is protected authority state by default: a field added to
  * the schema later cannot silently become mutable through this channel.
  * `reviewAssurance` is mutable as a whole so ledger and status updates stay
- * possible; its obligation identity is protected separately.
+ * possible; its obligation attributes are protected separately through
+ * {@link REVIEW_OBLIGATION_MUTABLE_FIELDS}.
  */
 const DIRECT_WRITE_MUTABLE_FIELDS: ReadonlySet<string> = new Set([
   'runtimeLease',
@@ -32,15 +33,54 @@ const DIRECT_WRITE_MUTABLE_FIELDS: ReadonlySet<string> = new Set([
   'error',
 ]);
 
-function reviewObligationIdentity(state: SessionState): string {
-  return canonicalJsonStringify(
-    (state.reviewAssurance?.obligations ?? []).map((obligation) => [
+/**
+ * Review-obligation fields the direct channel may change: lifecycle state and
+ * attempt linkage only. Every other obligation field is frozen at mint and is
+ * compared field by field, so review material, profile, challenge policy, and
+ * future obligation attributes stay protected by default.
+ */
+const REVIEW_OBLIGATION_MUTABLE_FIELDS: ReadonlySet<string> = new Set([
+  'status',
+  'blockedCode',
+  'invocationId',
+  'fulfilledAt',
+  'consumedAt',
+  'pluginHandshakeAt',
+]);
+
+function unauthorizedObligationChanges(previous: SessionState, next: SessionState): string[] {
+  const before = new Map(
+    (previous.reviewAssurance?.obligations ?? []).map((obligation) => [
       obligation.obligationId,
-      obligation.obligationType,
-      obligation.reviewCycle,
-      obligation.subjectDigest,
+      obligation,
     ]),
   );
+  const after = new Map(
+    (next.reviewAssurance?.obligations ?? []).map((obligation) => [
+      obligation.obligationId,
+      obligation,
+    ]),
+  );
+  const changed: string[] = [];
+  for (const id of before.keys()) {
+    if (!after.has(id)) changed.push(`reviewAssurance.obligation[${id}]`);
+  }
+  for (const [id, obligation] of after) {
+    const prior = before.get(id);
+    if (!prior) {
+      changed.push(`reviewAssurance.obligation[${id}]`);
+      continue;
+    }
+    const priorRecord = prior as unknown as Record<string, unknown>;
+    const nextRecord = obligation as unknown as Record<string, unknown>;
+    for (const key of new Set([...Object.keys(priorRecord), ...Object.keys(nextRecord)])) {
+      if (REVIEW_OBLIGATION_MUTABLE_FIELDS.has(key)) continue;
+      if (canonicalJsonStringify(priorRecord[key]) !== canonicalJsonStringify(nextRecord[key])) {
+        changed.push(`reviewAssurance.obligation[${id}].${key}`);
+      }
+    }
+  }
+  return changed;
 }
 
 /**
@@ -58,9 +98,7 @@ function unauthorizedDirectWriteChanges(previous: SessionState, next: SessionSta
       changed.push(key);
     }
   }
-  if (reviewObligationIdentity(previous) !== reviewObligationIdentity(next)) {
-    changed.push('reviewAssurance.obligations.identity');
-  }
+  changed.push(...unauthorizedObligationChanges(previous, next));
   return changed.sort();
 }
 

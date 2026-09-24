@@ -110,21 +110,21 @@ the implementation-base authority. It never finalizes the implementation entry
 and never refreshes the projection, so it fails closed on any write that would
 change protected authority state.
 
-| Channel                                                                      | Callers                                                                                                                                                         | Allowed mutations                                                                                            |
-| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `writeStateWithAuditOperationsAlreadyLocked` (caller holds the session lock) | `plugin-beforehooks.ts` (`recordMutationDispatch`), `plugin-workspace.ts` (`updateReviewAssurance`), `plugin-mutation-episodes.ts` (`recordMutationCompletion`) | `runtimeLease`, `mutationEpisodes`, review-assurance ledger (dispatches, attempts, obligation status)        |
-| `mutateStateWithAuditOperations` (re-reads and re-applies under the lock)    | `plugin-risk.ts` (`persistRiskDecisionBlock`), `plugin-discovery-health.ts` (`persistDiscoveryHealthBlock`)                                                     | `riskGate`, `discoveryHealthGate`; prevents overwriting authority committed after the caller's decision read |
-| `writeStateWithAuditOperations` (locking wrapper)                            | `plugin-audit-reconcile.ts` (`finalizeStrictTimestampFailure`)                                                                                                  | `error`                                                                                                      |
-| `writeStateAlreadyLocked` (low-level)                                        | `plugin-audit-reconcile.ts` (`acknowledgeAuditOperation`)                                                                                                       | `pendingAuditOperations[].status` only; creates no outbox operation                                          |
-| `writeStateWithArtifactsAndAuditOperations` (full prepare)                   | `tools/helpers.ts` and every tool/rail caller                                                                                                                   | everything; the only channel that may change protected authority state                                       |
+| Channel                                                                      | Callers                                                                                                                                                                     | Allowed mutations                                                                                                     |
+| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `writeStateWithAuditOperationsAlreadyLocked` (caller holds the session lock) | `plugin-beforehooks.ts` (`recordMutationDispatch`), `plugin-workspace.ts` (`updateReviewAssurance`), `plugin-mutation-episodes.ts` (`recordMutationCompletion`)             | `runtimeLease`, `mutationEpisodes`, review-assurance ledger (dispatches, attempts, obligation lifecycle/status)       |
+| `mutateStateWithAuditOperations` (re-reads and re-applies under the lock)    | `plugin-risk.ts` (`persistRiskDecisionBlock`), `plugin-discovery-health.ts` (`persistDiscoveryHealthBlock`), `plugin-audit-reconcile.ts` (`finalizeStrictTimestampFailure`) | `riskGate`, `discoveryHealthGate`, `error`; prevents overwriting authority committed after the caller's decision read |
+| `writeStateAlreadyLocked` (low-level)                                        | `plugin-audit-reconcile.ts` (`acknowledgeAuditOperation`)                                                                                                                   | `pendingAuditOperations[].status` only; creates no outbox operation                                                   |
+| `writeStateWithArtifactsAndAuditOperations` (full prepare)                   | `tools/helpers.ts` and every tool/rail caller                                                                                                                               | everything; the only channel that may change protected authority state                                                |
 
 The direct channel is allowlisted, not denylisted: `audit-outbox.ts` permits
-only `runtimeLease`, `mutationEpisodes`, `reviewAssurance` (ledger and status
-updates; obligation identity is protected separately), `riskGate`,
-`discoveryHealthGate`, and `error` to change. Any other field — including
-`phase`, `binding`, `transition`, `policySnapshot`, the implementation base,
-the ProofGraph projection, evidence ledgers, and any field added to the schema
-later — fails closed with `DIRECT_WRITE_REQUIRES_PREPARE`. The contract is
+only `runtimeLease`, `mutationEpisodes`, `reviewAssurance` (ledger, status, and
+attempt-linkage updates; every other obligation attribute stays frozen at
+mint), `riskGate`, `discoveryHealthGate`, and `error` to change. Any other
+field — including `phase`, `binding`, `transition`, `policySnapshot`, the
+implementation base, the ProofGraph projection, evidence ledgers, and any field
+added to the schema later — fails closed with `DIRECT_WRITE_REQUIRES_PREPARE`.
+The contract is
 exercised by
 [`plugin-direct-writer-proofgraph.test.ts`](../../src/integration/plugin-direct-writer-proofgraph.test.ts):
 the projection and the frozen base survive metadata writes, each write binds the

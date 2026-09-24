@@ -336,7 +336,11 @@ export async function freezeRepositoryReviewObligation(
 ): Promise<void> {
   const state = await readState(sessDir);
   if (!state) throw new Error('No test session state found');
-  await writeStateWithAuditOperations(sessDir, {
+  // Frozen obligation attributes are authority state: use the full prepare
+  // path, not the metadata-only direct channel. The dynamic import keeps the
+  // workspace/artifact module graph out of this helper's static imports.
+  const { writeStateWithArtifactsAndAuditOperations } = await import('./tools/helpers.js');
+  await writeStateWithArtifactsAndAuditOperations(sessDir, {
     ...state,
     reviewAssurance: {
       ...state.reviewAssurance!,
