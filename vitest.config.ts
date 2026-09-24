@@ -30,7 +30,6 @@ export default defineConfig({
         // Test infrastructure (helpers/fixtures), not product code.
         'src/integration/test-helpers.ts',
         'src/integration/*-test-helpers.ts',
-        'src/integration/*-helpers.ts',
       ],
       thresholds: {
         branches: 80,
