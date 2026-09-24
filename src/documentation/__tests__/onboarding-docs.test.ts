@@ -42,6 +42,7 @@ describe('developer onboarding documentation contract', () => {
       'plugin-regulated-recovery.ts',
       'regulated-completion.test.ts',
       'plugin-regulated-recovery.test.ts',
+      'helpers-rail-presentation.ts',
       'helpers.ts',
       'audit-outbox.ts',
       'plugin-audit-reconcile.ts',
@@ -63,5 +64,7 @@ describe('developer onboarding documentation contract', () => {
     expect(guide).toContain(
       'the export transition and then the `session_completed` lifecycle event',
     );
+    expect(guide).toContain('postStateDigest` of the latest open operation');
+    expect(guide).toContain("each operation's canonical");
   });
 });

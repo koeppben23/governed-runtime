@@ -53,9 +53,11 @@ the later chain while holding the non-reentrant state-write lock.
 
 ## 3. The shared write path commits state, outbox, and derived artifacts
 
-The decision path calls `persistAndFormat`, which sends a successful rail
-result to `writeStateWithArtifactsAndAuditOperations`. Export calls that same
-writer directly after its rail succeeds. The shared path then runs:
+The decision path calls
+[`persistAndFormat`](../../src/integration/tools/helpers-rail-presentation.ts#L222-L246),
+which sends a successful rail result to
+`writeStateWithArtifactsAndAuditOperations`. Export calls that same writer
+directly after its rail succeeds. The shared path then runs:
 
 `persistAndFormat` → `writeStateWithArtifactsAndAuditOperations` →
 `prepareStateWithAuditOperations` → `writeStateWithArtifactsAlreadyLocked`.
@@ -84,13 +86,17 @@ not advanced. This artifacts-first ordering prevents persisted state from
 referencing artifacts that were never written.
 
 Later, [`plugin-audit-reconcile.ts`](../../src/integration/plugin-audit-reconcile.ts)
-drains committed outbox operations: it verifies the operation digest against
-the current state, appends the corresponding audit event when it is not already
-present, then acknowledges the operation as reconciled. Regulated completion
-invokes this reconciliation at defined points in its chain; writing an outbox
-operation and reconciling it into the audit trail are separate steps.
+drains committed outbox operations in two distinct integrity checks. First, it
+compares the `postStateDigest` of the latest open operation with the digest of
+the current authoritative state. It then rebuilds each operation's canonical
+audit event body and validates that operation's event digest. If the event is
+not already present, it appends it and then acknowledges the operation as
+reconciled. Regulated completion invokes this reconciliation at defined points
+in its chain; writing an outbox operation and reconciling it into the audit
+trail are separate steps.
 
-Implementation: [`helpers.ts`](../../src/integration/tools/helpers.ts#L212-L299),
+Implementation: [`helpers-rail-presentation.ts`](../../src/integration/tools/helpers-rail-presentation.ts#L222-L246),
+[`helpers.ts`](../../src/integration/tools/helpers.ts#L212-L299),
 [`audit-outbox.ts`](../../src/integration/audit-outbox.ts), and
 [`plugin-audit-reconcile.ts`](../../src/integration/plugin-audit-reconcile.ts).
 The artifact/state write ordering is covered by
