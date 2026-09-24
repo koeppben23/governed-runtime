@@ -9,6 +9,72 @@
  * @version v2 — removed the SDK child-session creation/cancellation surface
  */
 
+import type {
+  TOOL_FLOWGUARD_ARCHITECTURE,
+  TOOL_FLOWGUARD_IMPLEMENT,
+  TOOL_FLOWGUARD_PLAN,
+  TOOL_FLOWGUARD_REVIEW,
+} from '../tool-names.js';
+
+/** Tools that own a review obligation and its pending-review key. */
+export type ReviewableTool =
+  | typeof TOOL_FLOWGUARD_PLAN
+  | typeof TOOL_FLOWGUARD_IMPLEMENT
+  | typeof TOOL_FLOWGUARD_ARCHITECTURE
+  | typeof TOOL_FLOWGUARD_REVIEW;
+
+/** Per-tool pending review state. */
+export type PendingReviewTool = ReviewableTool;
+
+export interface PendingReview {
+  readonly tool: PendingReviewTool;
+  readonly requestedAt: string;
+  attemptId: string | null;
+  obligationId: string | null;
+}
+
+/** Session-level review-enforcement state. */
+export interface SessionEnforcementState {
+  readonly pendingReviews: Map<PendingReviewTool, PendingReview>;
+}
+
+/** Injected machine terminal-phase predicate. */
+export type TerminalPhasePredicate = (phase: string) => boolean;
+
+export interface ReviewClaimAssertionEvidence {
+  readonly checkId: string;
+  readonly providerId: string;
+  readonly localId: string;
+  readonly status: 'passed' | 'failed' | 'errored' | 'skipped';
+  readonly suiteName?: string;
+  readonly testName: string;
+  readonly sourceFile?: string;
+  readonly durationMs?: number;
+}
+
+export interface ReviewClaimAssertionEvidenceSet {
+  readonly reportDigests: readonly string[];
+  readonly assertions: readonly ReviewClaimAssertionEvidence[];
+}
+
+/** Shared verification-evidence DTO for state projection and prompt rendering. */
+export interface ReviewVerificationEvidenceItem {
+  readonly attemptId: string;
+  readonly kind: string;
+  readonly command: string;
+  readonly passed: boolean;
+  readonly exitCode: number;
+  readonly timedOut: boolean;
+  readonly executionMs: number;
+  readonly outputDigest: string;
+  readonly detail: string;
+  readonly executedAt: string;
+  readonly executionObservedStateDigest: string;
+  readonly preCommitStateDigest: string;
+  readonly stateChangedDuringExecution: boolean;
+  readonly claimAssertionEvidence?: ReviewClaimAssertionEvidenceSet;
+}
+
 /**
  * Minimal SDK client interface for the review orchestrator.
  *

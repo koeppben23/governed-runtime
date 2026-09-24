@@ -44,9 +44,9 @@ nested `AGENTS.md`. For a worked example, see
   must never be imported by production code.
 - The allowed zone graph is frozen in
   `src/architecture/__tests__/review-zone-policy.ts` (`observed == declared`).
-  Direct mutual zone pairs are a hard failure; longer cycles are reported as a
-  metric. Moving a file requires updating the declared edges and the zone
-  budgets in the placement authority in the same change.
+  The complete zone graph is acyclic. Moving a file requires updating the
+  declared edges and the zone budgets in the placement authority in the same
+  change.
 - Validation returns domain failures (`ReviewValidationFailure`); serialization
   happens only in `review/validation/review-validation-failure.ts`, invoked by
   the tool adapters.

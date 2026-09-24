@@ -254,7 +254,7 @@ describe('review zone policy — real tree', () => {
     expect(violations).toEqual([]);
   });
 
-  it('holds zero direct mutual zone pairs, and reports the remaining longer cycles', () => {
+  it('holds a fully acyclic review zone graph', () => {
     const observed = reviewZoneEdges({
       sources,
       zones: INTEGRATION_PLACEMENT_ZONES,
@@ -263,14 +263,7 @@ describe('review zone policy — real tree', () => {
     expect(mutualZonePairs(DECLARED_REVIEW_ZONE_EDGES)).toEqual([]);
     expect(mutualZonePairs(observed)).toEqual([]);
 
-    const cycles = reviewZoneCycles(observed);
-    console.info(
-      `review zone metric: ${cycles.length} remaining cycle(s) of length >= 3:\n` +
-        cycles.map((component) => `  - ${component.join(' -> ')}`).join('\n'),
-    );
-    // The metric is reported, not gated: a fully acyclic review zone graph is a
-    // separate architecture goal. Direct mutual pairs stay hard-enforced above.
-    expect(cycles.every((component) => component.length >= 3)).toBe(true);
+    expect(reviewZoneCycles(observed)).toEqual([]);
   });
 
   it('is non-vacuous: the policy declares edges and every review zone is populated and budgeted', () => {

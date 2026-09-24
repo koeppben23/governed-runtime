@@ -42,17 +42,18 @@
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type { OrchestratorClient } from './types.js';
+export type {
+  OrchestratorClient,
+  PendingReview,
+  PendingReviewTool,
+  ReviewVerificationEvidenceItem,
+  ReviewableTool,
+  SessionEnforcementState,
+} from './types.js';
 
 // ─── Enforcement Types ───────────────────────────────────────────────────────
 
-export type {
-  ReviewableTool,
-  PendingReviewTool,
-  PendingReview,
-  SessionEnforcementState,
-  EnforcementResult,
-} from './enforcement/types.js';
+export type { EnforcementResult } from './enforcement/types.js';
 
 // ─── Dispatch Signal ─────────────────────────────────────────────────────────
 

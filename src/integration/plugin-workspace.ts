@@ -27,7 +27,7 @@ import type { SessionState } from '../state/schema.js';
 import { strictBlockedOutput } from './blocked-result.js';
 
 import { createSessionState as createEnforcementState } from './review/enforcement/enforcement.js';
-import type { SessionEnforcementState } from './review/enforcement/types.js';
+import type { SessionEnforcementState } from './review/types.js';
 import type { ReviewSessionContext } from './review/pipeline-types.js';
 import { recordAssuranceWithAudit } from './review/shared-helpers.js';
 import {

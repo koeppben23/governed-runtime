@@ -13,10 +13,9 @@
  * declared edge (obsolete coupling) fail. There is no debt baseline and no
  * cycle carve-out — the declared set IS the contract.
  *
- * Graph shape: direct mutual zone pairs are a hard gate (`mutualZonePairs`
- * must be empty). Longer cycles (length >= 3) remain permitted and are
- * reported as a metric (`reviewZoneCycles`); a fully acyclic review zone graph
- * is a separate architecture goal, not an implicit requirement of this policy.
+ * Graph shape: the review zone graph must be fully acyclic. Direct mutual zone
+ * pairs and longer strongly connected components are both rejected by the
+ * real-tree policy test through `reviewZoneCycles`.
  *
  * Facade contract: `integration/review/index.ts` is the public composition
  * surface. Its outgoing edges are excluded from the zone graph (it composes
@@ -55,8 +54,6 @@ export interface ReviewZoneSource {
  * not a structural move.
  */
 export const DECLARED_REVIEW_ZONE_EDGES: ReadonlySet<string> = new Set([
-  'review -> review/enforcement',
-  'review -> review/prompting',
   'review/context -> review',
   'review/dispatch -> review',
   'review/dispatch -> review/context',
@@ -65,6 +62,7 @@ export const DECLARED_REVIEW_ZONE_EDGES: ReadonlySet<string> = new Set([
   'review/dispatch -> review/obligations',
   'review/dispatch -> review/observations',
   'review/dispatch -> review/prompting',
+  'review/enforcement -> review',
   'review/enforcement -> review/obligations',
   'review/evidence -> review',
   'review/evidence -> review/context',
@@ -78,6 +76,7 @@ export const DECLARED_REVIEW_ZONE_EDGES: ReadonlySet<string> = new Set([
   'review/prompting -> review/enforcement',
   'review/prompting -> review/evidence',
   'review/prompting -> review/obligations',
+  'review/prompting -> review',
   'review/validation -> review',
   'review/validation -> review/enforcement',
   'review/validation -> review/obligations',
@@ -243,9 +242,8 @@ export function mutualZonePairs(edges: Iterable<string>): readonly string[] {
 }
 
 /**
- * Remaining review zone cycles (length ≥ 3 — direct mutual pairs are excluded
- * by the hard gate) as a deterministic metric. This is reported, not gated:
- * a fully acyclic review zone graph is a separate architecture goal.
+ * Review zone cycles as deterministic strongly connected components. The
+ * real-tree policy test requires this projection to be empty.
  */
 export function reviewZoneCycles(edges: Iterable<string>): readonly (readonly string[])[] {
   const edgeList: ModuleEdge[] = [];

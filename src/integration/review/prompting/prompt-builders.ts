@@ -36,11 +36,7 @@ import {
 
 export { renderReviewContext } from './prompt-sections.js';
 export { renderVerificationEvidence } from './impl-review-prompt.js';
-export {
-  buildImplReviewPrompt,
-  type ImplReviewPromptOpts,
-  type ReviewVerificationEvidenceItem,
-} from './impl-review-prompt.js';
+export { buildImplReviewPrompt, type ImplReviewPromptOpts } from './impl-review-prompt.js';
 import { renderReviewContext } from './prompt-sections.js';
 
 /** Serialize the integrity-verified review subject identically for every transport. */
