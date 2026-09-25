@@ -430,6 +430,16 @@ export const AUTHORITY_ROOTS: readonly AuthorityRoot[] = [
     source: [SOURCE.trustBoundaries],
   },
   {
+    root: 'src/rails',
+    authority: 'Host-facing rail executors and repository evidence authorities',
+    source: [SOURCE.trustBoundaries],
+  },
+  {
+    root: 'src/archive',
+    authority: 'Archive manifest and content-digest contracts',
+    source: [SOURCE.trustBoundaries],
+  },
+  {
     root: 'src/integration',
     authority: 'Runtime composition and review pipeline',
     source: [SOURCE.integration],
@@ -1786,6 +1796,20 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'Integration surface beyond the required composition and review authorities',
     DEFERRED_REASON,
     [SOURCE.integration],
+  ),
+
+  // ── Expansion roots (inventoried, behind the admission gate) ─────────────
+  deferredGlob(
+    'src/rails',
+    'Rails surface beyond the mutated rail and repository authorities',
+    DEFERRED_REASON,
+    [SOURCE.trustBoundaries],
+  ),
+  deferred(
+    'src/archive/types.ts',
+    'Archive manifest and policy-mode contracts',
+    'Manifest and policy-mode constants; admission requires a dedicated profile full run with per-target evidence.',
+    { source: [SOURCE.trustBoundaries] },
   ),
 ];
 

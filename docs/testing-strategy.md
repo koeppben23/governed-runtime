@@ -313,6 +313,7 @@ Deep authority expansion bundle:
 
 - `src/config/policy-ci.ts` — 100 % on five valid mutants; density too low (thin evidence).
 - `src/config/policy-types.ts` — 20 % on five valid mutants; evidence too weak.
+- `src/archive/types.ts` — archive manifest and policy-mode constants; admission requires a dedicated profile full run with per-target evidence.
 
 Mandates profile: `src/rendering/mandates-renderer.ts` — focused contract pass reached 72.40 % (below the per-target gate); dedicated mandates hardening pass required before admission.
 
@@ -350,7 +351,7 @@ Deferred surfaces (whole roots behind the admission gate):
 `src/config/**`, `src/state/**`, `src/shared/**`, `src/audit/**`,
 `src/adapters/**`, `src/identity/**`, `src/verification/**`, `src/discovery/**`,
 `src/logging/**`, `src/hooks/**`, `src/mcp-server/**`, `src/templates/**`,
-`src/presentation/**`, `src/integration/**`.
+`src/presentation/**`, `src/integration/**`, `src/rails/**`.
 
 Explicitly not mutation-suitable **for the named profile** (the exclusion is
 scoped; a target may still be a valid mutation target in another profile):
