@@ -597,6 +597,8 @@ export interface IntegrationPlacementViolation {
   readonly rule: string;
   readonly file: string;
   readonly message: string;
+  /** Concrete repair step for this rule. */
+  readonly hint?: string;
 }
 
 export interface IntegrationPlacementAnalysisInput {
@@ -617,7 +619,12 @@ export function analyzeIntegrationPlacement(
   const zoneByDir = new Map<string, IntegrationPlacementZone>();
   for (const zone of input.zones) {
     if (zoneById.has(zone.id)) {
-      violations.push({ rule: 'duplicate-zone-id', file: zone.id, message: 'duplicate zone id' });
+      violations.push({
+        rule: 'duplicate-zone-id',
+        file: zone.id,
+        message: 'duplicate zone id',
+        hint: `Keep exactly one INTEGRATION_PLACEMENT_ZONES entry for zone id '${zone.id}'.`,
+      });
     }
     zoneById.set(zone.id, zone);
     if (zoneByDir.has(zone.dir)) {
@@ -625,6 +632,7 @@ export function analyzeIntegrationPlacement(
         rule: 'duplicate-zone-dir',
         file: zone.dir,
         message: 'duplicate zone directory',
+        hint: `Give every zone a unique physical dir; '${zone.dir}' is registered twice in INTEGRATION_PLACEMENT_ZONES.`,
       });
     }
     zoneByDir.set(zone.dir, zone);
@@ -637,6 +645,7 @@ export function analyzeIntegrationPlacement(
         rule: 'duplicate-owner-id',
         file: owner.id,
         message: 'duplicate owner id',
+        hint: `Keep exactly one INTEGRATION_OWNERS entry for owner '${owner.id}'.`,
       });
     }
     ownerById.set(owner.id, owner);
@@ -649,6 +658,7 @@ export function analyzeIntegrationPlacement(
         rule: 'duplicate-placement-entry',
         file: entry.file,
         message: 'duplicate placement entry',
+        hint: `Keep exactly one { file, owner } INTEGRATION_PLACEMENT entry for '${entry.file}'.`,
       });
     }
     placementByFile.set(entry.file, entry);
@@ -660,6 +670,9 @@ export function analyzeIntegrationPlacement(
         rule: 'unclassified-production-file',
         file,
         message: 'production file has no placement entry',
+        hint:
+          `Add { file: '${file}', owner: '<owner>' } to INTEGRATION_PLACEMENT; ` +
+          "the owner's targetZone must match the physical directory.",
       });
     }
   }
@@ -670,6 +683,7 @@ export function analyzeIntegrationPlacement(
         rule: 'stale-placement-entry',
         file: entry.file,
         message: 'placement entry has no production file',
+        hint: `Remove the INTEGRATION_PLACEMENT entry for '${entry.file}' or restore the file at that path.`,
       });
     }
     if (input.isTestFile(entry.file)) {
@@ -677,6 +691,7 @@ export function analyzeIntegrationPlacement(
         rule: 'test-file-in-placement',
         file: entry.file,
         message: 'test support must not carry a placement entry',
+        hint: 'Remove the placement entry; test support is classified in module-classification.ts, not in the placement authority.',
       });
       continue;
     }
@@ -686,6 +701,7 @@ export function analyzeIntegrationPlacement(
         rule: 'unknown-owner',
         file: entry.file,
         message: 'unknown owner ' + entry.owner,
+        hint: `Use an id from INTEGRATION_OWNERS or register owner '${entry.owner}' there with a registered targetZone.`,
       });
       continue;
     }
@@ -695,6 +711,7 @@ export function analyzeIntegrationPlacement(
         rule: 'unknown-zone',
         file: entry.file,
         message: 'unknown target zone ' + owner.targetZone,
+        hint: `Point owner '${entry.owner}' at a registered zone in INTEGRATION_PLACEMENT_ZONES.`,
       });
       continue;
     }
@@ -705,6 +722,7 @@ export function analyzeIntegrationPlacement(
         rule: 'unknown-zone',
         file: entry.file,
         message: 'directory ' + parent + ' is not a known zone',
+        hint: `Register zone '${parent}' in INTEGRATION_PLACEMENT_ZONES or move the file into a registered zone directory.`,
       });
       continue;
     }
@@ -719,6 +737,7 @@ export function analyzeIntegrationPlacement(
           requiredZone.id +
           ', but the file is in ' +
           physicalZone.id,
+        hint: `Move the file into '${requiredZone.dir}' (the owner's targetZone) or change the owner's targetZone deliberately.`,
       });
     }
   }
@@ -738,6 +757,7 @@ export function analyzeIntegrationPlacement(
         rule: 'zone-production-budget-exceeded',
         file: zone.id,
         message: `${count} production files exceed the zone budget of ${zone.maxProductionFiles}`,
+        hint: `Move or remove a file, or raise maxProductionFiles for zone '${zone.id}' in INTEGRATION_PLACEMENT_ZONES as a deliberate architecture decision.`,
       });
     }
   }

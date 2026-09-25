@@ -87,6 +87,8 @@ export interface ReviewZoneViolation {
   readonly rule: string;
   readonly file: string;
   readonly message: string;
+  /** Concrete repair step for this rule. */
+  readonly hint?: string;
 }
 
 export interface ReviewZoneAnalysisInput {
@@ -203,6 +205,7 @@ function observeReviewZones(input: ReviewZoneAnalysisInput): ReviewZoneObservati
           rule: 'production-facade-import',
           file: source.rel,
           message: `production code must not import the review facade (${specifier})`,
+          hint: 'Import the concrete review subzone authority instead of integration/review/index.ts; the facade has no production importers.',
         });
         continue;
       }
@@ -271,6 +274,7 @@ export function analyzeReviewZonePolicy(input: ReviewZoneAnalysisInput): ReviewZ
         rule: 'undeclared-zone-edge',
         file: edge,
         message: 'observed review zone edge is not declared in the zone policy',
+        hint: `Add '${edge}' to DECLARED_REVIEW_ZONE_EDGES as a dependency-design decision; the zone graph must stay acyclic.`,
       });
     }
   }
@@ -280,6 +284,7 @@ export function analyzeReviewZonePolicy(input: ReviewZoneAnalysisInput): ReviewZ
         rule: 'stale-zone-edge',
         file: edge,
         message: 'declared review zone edge is no longer observed',
+        hint: `Remove '${edge}' from DECLARED_REVIEW_ZONE_EDGES; the import no longer exists.`,
       });
     }
   }

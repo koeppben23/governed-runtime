@@ -43,6 +43,7 @@ import {
   isRootHostRuntimeFile,
   isToolCommandContextFile,
   placementOwnerOf,
+  INTEGRATION_OWNERS,
 } from './integration-placement-policy.js';
 import { MODULE_DEPENDENCY_POLICY } from './module-dependency-policy.js';
 import {
@@ -173,6 +174,15 @@ interface ImportViolation {
   rule: string;
   message: string;
   imports?: string[];
+  /** Concrete repair step for this rule. */
+  hint?: string;
+}
+
+function formatViolation(violation: ImportViolation): string {
+  return (
+    `  - ${violation.file}: ${violation.message}` +
+    (violation.hint ? `\n      fix: ${violation.hint}` : '')
+  );
 }
 
 function mockImport(module: string): ImportInfo {
@@ -336,6 +346,7 @@ function detectViolations(analyses: Map<string, FileAnalysis>): ImportViolation[
           file: analysis.relativePath,
           rule: 'unclassified-import-target',
           message: `${label} — does not resolve to a source under src/`,
+          hint: 'Fix the relative specifier or add the target file under src/ so the import resolves.',
         });
         continue;
       }
@@ -344,6 +355,7 @@ function detectViolations(analyses: Map<string, FileAnalysis>): ImportViolation[
           file: analysis.relativePath,
           rule: 'unclassified-module',
           message: `${label} — '${imp.targetModule}' is not a classified top-level module`,
+          hint: `Add '${imp.targetModule}' to MODULE_CLASSIFICATION (module-classification.ts) and declare its direction in MODULE_DEPENDENCY_POLICY.`,
         });
         continue;
       }
@@ -352,6 +364,7 @@ function detectViolations(analyses: Map<string, FileAnalysis>): ImportViolation[
           file: analysis.relativePath,
           rule: 'test-support-import',
           message: `${label} — production code must not import test-support entry '${imp.targetModule}'`,
+          hint: 'Import the production authority instead of a test-support entry.',
         });
         continue;
       }
@@ -363,6 +376,7 @@ function detectViolations(analyses: Map<string, FileAnalysis>): ImportViolation[
           file: analysis.relativePath,
           rule: 'entry-import',
           message: `${label} — governed modules must not import entry point '${imp.targetModule}'; entry points are outbound-only`,
+          hint: 'Import the concrete governed module, not the entry-point barrel.',
         });
       }
     }
@@ -401,6 +415,7 @@ function detectToolsCompositionImports(analyses: Map<string, FileAnalysis>): Imp
           rule: 'tools-no-composition',
           message: `integration/tools/ imports integration composition (bridge bypass): ${target}`,
           imports: [imp.module],
+          hint: 'Import the concrete plugin authority instead of plugin composition from integration/tools/.',
         });
       }
     }
@@ -408,17 +423,17 @@ function detectToolsCompositionImports(analyses: Map<string, FileAnalysis>): Imp
   return violations;
 }
 
-/** Integration owners that review/** may consume (positive allowlist). */
+/**
+ * Integration owners that review/** may consume: every review owner projected
+ * from the placement authority (targetZone `review` or `review/**`), plus the
+ * explicit external grant for integration root authorities. Deriving the
+ * review-owned subset keeps the boundary aligned with the placement authority
+ * instead of maintaining a second owner list.
+ */
 const REVIEW_ALLOWED_INTEGRATION_OWNERS: ReadonlySet<string> = new Set([
-  'review',
-  'review-dispatch',
-  'review-obligations',
-  'review-context',
-  'review-observations',
-  'review-evidence',
-  'review-validation',
-  'review-prompting',
-  'review-enforcement',
+  ...INTEGRATION_OWNERS.filter(
+    (owner) => owner.targetZone === 'review' || owner.targetZone.startsWith('review/'),
+  ).map((owner) => owner.id),
   'root-authority',
 ]);
 
@@ -435,11 +450,11 @@ const REVIEW_LOWER_LAYERS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * #922 boundary (default-deny): review/** may import ONLY review/** (owner
- * review or review-enforcement), integration root authorities, and the
- * explicit lower layers. Plugin composition, host/runtime wiring, tools/**,
- * and every sibling integration context (status, discovery, proofgraph, ...)
- * are violations.
+ * #922 boundary (default-deny): review/** may import ONLY review-owned
+ * integration targets (derived from the placement authority), integration root
+ * authorities, and the explicit lower layers. Plugin composition, host/runtime
+ * wiring, tools/**, and every sibling integration context (status, discovery,
+ * proofgraph, ...) are violations.
  */
 function detectReviewBoundaryViolations(analyses: Map<string, FileAnalysis>): ImportViolation[] {
   const violations: ImportViolation[] = [];
@@ -457,6 +472,7 @@ function detectReviewBoundaryViolations(analyses: Map<string, FileAnalysis>): Im
           rule: 'review-boundary',
           message: `review/ imports integration target outside its contract: '${target}' (owner ${owner ?? 'unclassified'})`,
           imports: [imp.module],
+          hint: 'Allowed are review-owned integration targets, integration root authorities, and the explicit lower layers (review-zone-policy.ts and REVIEW_LOWER_LAYERS).',
         });
         continue;
       }
@@ -467,6 +483,7 @@ function detectReviewBoundaryViolations(analyses: Map<string, FileAnalysis>): Im
           rule: 'review-boundary',
           message: `review/ imports non-lower-layer target '${target}'`,
           imports: [imp.module],
+          hint: 'Allowed lower layers: adapters, config, shared, state, templates (REVIEW_LOWER_LAYERS); route anything else through injected ports.',
         });
       }
     }
@@ -492,6 +509,7 @@ function detectExternalToolContextImports(analyses: Map<string, FileAnalysis>): 
           rule: 'external-tool-context-import',
           message: `deep import into a tool command context: ${target}`,
           imports: [imp.module],
+          hint: 'Import from integration/tools/index.ts (the single tool-layer entry), not a command context.',
         });
       }
     }
@@ -692,10 +710,7 @@ describe('Layer Dependency Rules', () => {
 
     it('should have no violations', () => {
       if (stateViolations.length > 0) {
-        console.error(
-          '\nstate/ violations:\n' +
-            stateViolations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
-        );
+        console.error('\nstate/ violations:\n' + stateViolations.map(formatViolation).join('\n'));
       }
       expect(stateViolations).toHaveLength(0);
     });
@@ -741,10 +756,7 @@ describe('Layer Dependency Rules', () => {
 
     it('should have no violations', () => {
       if (violations.length > 0) {
-        console.error(
-          '\narchive/types violations:\n' +
-            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
-        );
+        console.error('\narchive/types violations:\n' + violations.map(formatViolation).join('\n'));
       }
       expect(violations).toHaveLength(0);
     });
@@ -794,8 +806,7 @@ describe('Layer Dependency Rules', () => {
     it('should have no violations', () => {
       if (violations.length > 0) {
         console.error(
-          '\ndiscovery/types violations:\n' +
-            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
+          '\ndiscovery/types violations:\n' + violations.map(formatViolation).join('\n'),
         );
       }
       expect(violations).toHaveLength(0);
@@ -860,8 +871,7 @@ describe('Layer Dependency Rules', () => {
     it('should have no rails -> Node builtin imports', () => {
       if (violations.length > 0) {
         console.error(
-          '\nrails/ -> Node builtin violations:\n' +
-            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
+          '\nrails/ -> Node builtin violations:\n' + violations.map(formatViolation).join('\n'),
         );
       }
       expect(violations).toHaveLength(0);
@@ -886,7 +896,7 @@ describe('Layer Dependency Rules', () => {
       if (violations.length > 0) {
         console.error(
           '\nintegration/tools/ -> composition violations:\n' +
-            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
+            violations.map(formatViolation).join('\n'),
         );
       }
       expect(violations).toHaveLength(0);
@@ -922,8 +932,7 @@ describe('Layer Dependency Rules', () => {
       const violations = detectExternalToolContextImports(analyses);
       if (violations.length > 0) {
         console.error(
-          '\nexternal tool-context deep imports:\n' +
-            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
+          '\nexternal tool-context deep imports:\n' + violations.map(formatViolation).join('\n'),
         );
       }
       expect(violations).toEqual([]);
@@ -994,6 +1003,94 @@ describe('Layer Dependency Rules', () => {
       expect(rulesFor('../tool-names.js')).toEqual([]);
       expect(rulesFor('../../state/evidence.js')).toEqual([]);
       expect(rulesFor('../../discovery/discovery-health.js')).toEqual(['review-boundary']);
+    });
+
+    it('gives every instrumented import violation a concrete repair hint', () => {
+      const probe = (relativePath: string, imports: ImportInfo[]): FileAnalysis => ({
+        filePath: normalizeRepoPath(path.join(SRC_DIR, relativePath)),
+        relativePath,
+        imports,
+      });
+      const resolvedImport = (module: string, targetModule: string): ImportInfo => ({
+        ...mockImport(module),
+        targetModule,
+        targetResolved: true,
+      });
+
+      const violations: ImportViolation[] = [
+        ...detectViolations(
+          new Map([
+            [
+              'state/probe-a.ts',
+              probe('state/probe-a.ts', [
+                { ...mockImport('../../scripts/not-a-module.js'), targetModule: null },
+              ]),
+            ],
+            [
+              'state/probe-b.ts',
+              probe('state/probe-b.ts', [
+                resolvedImport('../../scripts/not-a-module.js', 'not-a-module'),
+              ]),
+            ],
+            [
+              'state/probe-c.ts',
+              probe('state/probe-c.ts', [resolvedImport('../../fixtures.js', 'fixtures')]),
+            ],
+            [
+              'state/probe-d.ts',
+              probe('state/probe-d.ts', [resolvedImport('../../index.js', 'index.ts')]),
+            ],
+          ]),
+        ),
+        ...detectToolsCompositionImports(
+          new Map([
+            [
+              'integration/tools/plan/probe.ts',
+              probe('integration/tools/plan/probe.ts', [mockImport('../../plugin-risk.js')]),
+            ],
+          ]),
+        ),
+        ...detectExternalToolContextImports(
+          new Map([
+            [
+              'integration/plugin-probe.ts',
+              probe('integration/plugin-probe.ts', [mockImport('./tools/plan/plan.js')]),
+            ],
+          ]),
+        ),
+        ...detectReviewBoundaryViolations(
+          new Map([
+            [
+              'integration/review/probe-a.ts',
+              probe('integration/review/probe-a.ts', [mockImport('../plugin-risk.js')]),
+            ],
+            [
+              'integration/review/probe-b.ts',
+              probe('integration/review/probe-b.ts', [
+                mockImport('../../discovery/discovery-health.js'),
+              ]),
+            ],
+          ]),
+        ),
+      ];
+
+      expect(new Set(violations.map((violation) => violation.rule))).toEqual(
+        new Set([
+          'unclassified-import-target',
+          'unclassified-module',
+          'test-support-import',
+          'entry-import',
+          'tools-no-composition',
+          'external-tool-context-import',
+          'review-boundary',
+        ]),
+      );
+      for (const violation of violations) {
+        expect(
+          (violation.hint ?? '').length,
+          `${violation.rule}: ${violation.file}`,
+        ).toBeGreaterThan(0);
+      }
     });
   });
 
@@ -1199,8 +1296,7 @@ describe('Layer Dependency Rules', () => {
       const violations = detectReviewBoundaryViolations(analyses);
       if (violations.length > 0) {
         console.error(
-          '\nreview/ boundary violations:\n' +
-            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
+          '\nreview/ boundary violations:\n' + violations.map(formatViolation).join('\n'),
         );
       }
       expect(violations).toEqual([]);
@@ -1408,7 +1504,7 @@ describe('Layer Dependency Rules', () => {
       const violations = detectViolations(analyses);
 
       if (violations.length > 0) {
-        const summary = violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n');
+        const summary = violations.map(formatViolation).join('\n');
         console.error('\nCritical architecture violations:\n' + summary);
       }
 
