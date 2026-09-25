@@ -351,13 +351,24 @@ Deferred surfaces (whole roots behind the admission gate):
 `src/config/**`, `src/state/**`, `src/shared/**`, `src/audit/**`,
 `src/adapters/**`, `src/identity/**`, `src/verification/**`, `src/discovery/**`,
 `src/logging/**`, `src/hooks/**`, `src/mcp-server/**`, `src/templates/**`,
-`src/presentation/**`, `src/integration/**`, `src/rails/**`.
+`src/presentation/**`, `src/integration/**`, `src/rails/**`, `src/cli/**`,
+`src/providers/**`.
+
+Assessed during the 2026-09-25 authority-root expansion and deliberately not
+declared as roots: `src/diagnostics/**` (export and troubleshooting
+projections) and `src/telemetry/**` (advisory metric emission) carry no
+trust-boundary authority; they stay outside the mutation authority scope until
+a concrete authority dependency is proven.
 
 Explicitly not mutation-suitable **for the named profile** (the exclusion is
 scoped; a target may still be a valid mutation target in another profile):
 
 - `src/config/reasons-types.ts` — type-only module (base).
 - `src/machine/command-help.ts` — static help text projection (base).
+- `src/cli/run-types.ts` — type-only module (base).
+- `src/cli/install-mutation-types.ts` — type-only module (base).
+- `src/cli/parse-result.ts` — type-only module (base).
+- `src/providers/assertion-parsers/types.ts` — type-only module (base).
 - `src/config/profile-types.ts` — type-only module (base).
 - `src/machine/topology.ts` — module-init transition table, ignored under `ignoreStatic` (base).
 - `src/state/policy-mode.ts` — const tuple/enum only (base).
