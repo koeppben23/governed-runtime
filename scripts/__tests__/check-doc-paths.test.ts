@@ -1,8 +1,9 @@
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   collectScopeDocuments,
   extractPathReferences,
@@ -12,6 +13,14 @@ import {
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const fixtureDir = join(repoRoot, 'scripts', '__tests__', 'fixtures', 'doc-paths');
+
+const temporaryDirectories: string[] = [];
+
+afterEach(() => {
+  for (const directory of temporaryDirectories.splice(0)) {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
 
 function fixture(name: string): string {
   return readFileSync(join(fixtureDir, name), 'utf8');
@@ -80,6 +89,51 @@ describe('check-doc-paths', () => {
     expect(extractPathReferences(fixture('fenced.md')).map((ref) => ref.path)).toEqual([
       'src/index.ts',
     ]);
+  });
+
+  it('rejects traversal references even when an external file would exist', () => {
+    const missing = findMissingPathReferences({
+      docs: [{ path: 'fixtures/traversal.md', content: fixture('traversal.md') }],
+      repoRoot,
+      exists: () => true,
+    });
+
+    expect(missing.map((entry) => ({ path: entry.path, reason: entry.reason }))).toEqual([
+      { path: 'src/../../../../etc/passwd', reason: 'traversal' },
+      { path: 'docs/../outside-repo.ts', reason: 'traversal' },
+    ]);
+  });
+
+  it('collects markdown from nested docs/development subdirectories', () => {
+    const root = mkdtempSync(join(tmpdir(), 'check-doc-paths-'));
+    temporaryDirectories.push(root);
+    mkdirSync(join(root, 'docs', 'development', 'nested'), { recursive: true });
+    writeFileSync(join(root, 'AGENTS.md'), '`src/index.ts`\n', 'utf8');
+    writeFileSync(join(root, 'CONTRIBUTING.md'), 'No paths here.\n', 'utf8');
+    writeFileSync(join(root, 'docs', 'testing-strategy.md'), 'No paths here.\n', 'utf8');
+    writeFileSync(
+      join(root, 'docs', 'development', 'nested', 'guide.md'),
+      'Missing `src/nested-missing.ts`.\n',
+      'utf8',
+    );
+
+    const documents = collectScopeDocuments({ repoRoot: root });
+    const missing = findMissingPathReferences({
+      docs: documents,
+      repoRoot: root,
+      exists: () => false,
+    });
+
+    expect(documents.map((doc) => doc.path)).toContain('docs/development/nested/guide.md');
+    expect(missing).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          doc: 'docs/development/nested/guide.md',
+          path: 'src/nested-missing.ts',
+          reason: 'missing',
+        }),
+      ]),
+    );
   });
 
   it('normalizes range and symbol suffixes to the file path', () => {

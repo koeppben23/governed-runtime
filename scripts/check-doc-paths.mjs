@@ -22,7 +22,7 @@
  */
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const REPO_ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
@@ -88,6 +88,20 @@ export function extractPathReferences(markdown) {
   return references;
 }
 
+/**
+ * Classify a path reference: `null` when it resolves inside the repository and
+ * exists, otherwise the violation reason. Traversal segments and paths that
+ * resolve outside the repository are invalid references, never accepted just
+ * because a same-named file exists outside the tree.
+ */
+function referenceProblem(referencePath, repoRoot, exists) {
+  if (referencePath.split('/').includes('..')) return 'traversal';
+  const resolved = resolve(repoRoot, referencePath);
+  const relativePath = relative(repoRoot, resolved);
+  if (relativePath.startsWith('..') || isAbsolute(relativePath)) return 'outside-repository';
+  return exists(resolved) ? null : 'missing';
+}
+
 /** Report every inline-code path reference that does not exist. */
 export function findMissingPathReferences({
   docs,
@@ -97,8 +111,9 @@ export function findMissingPathReferences({
   const missing = [];
   for (const doc of docs) {
     for (const reference of extractPathReferences(doc.content)) {
-      if (!exists(resolve(repoRoot, reference.path))) {
-        missing.push({ doc: doc.path, ...reference });
+      const reason = referenceProblem(reference.path, repoRoot, exists);
+      if (reason !== null) {
+        missing.push({ doc: doc.path, ...reference, reason });
       }
     }
   }
@@ -108,6 +123,8 @@ export function findMissingPathReferences({
 function walkMarkdownFiles(root, directory, documents, read, list) {
   const absolute = join(root, directory);
   if (!existsSync(absolute)) return;
+  const inDevelopmentDocs =
+    directory === 'docs/development' || directory.startsWith('docs/development/');
   for (const entry of list(absolute, { withFileTypes: true })) {
     const relativePath = `${directory}/${entry.name}`;
     if (entry.isDirectory()) {
@@ -115,10 +132,7 @@ function walkMarkdownFiles(root, directory, documents, read, list) {
       walkMarkdownFiles(root, relativePath, documents, read, list);
       continue;
     }
-    if (
-      entry.name === 'AGENTS.md' ||
-      (directory === 'docs/development' && entry.name.endsWith('.md'))
-    ) {
+    if (entry.name === 'AGENTS.md' || (inDevelopmentDocs && entry.name.endsWith('.md'))) {
       documents.push({ path: relativePath, content: read(join(root, relativePath), 'utf8') });
     }
   }
@@ -144,9 +158,9 @@ export function runCli({ repoRoot = REPO_ROOT, log = console.log, error = consol
   const documents = collectScopeDocuments({ repoRoot });
   const missing = findMissingPathReferences({ docs: documents, repoRoot });
   if (missing.length > 0) {
-    error(`[check-doc-paths] ${missing.length} documented path(s) do not exist:`);
+    error(`[check-doc-paths] ${missing.length} invalid documented path reference(s):`);
     for (const entry of missing) {
-      error(`  - ${entry.doc}:${entry.line}: '${entry.token}' (${entry.path})`);
+      error(`  - ${entry.doc}:${entry.line}: '${entry.token}' (${entry.reason})`);
     }
     return 1;
   }
