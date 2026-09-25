@@ -22,12 +22,14 @@ API. It must never become a provider of new authorities for lower layers.
 
 ## Plugin Lifecycle
 
-- Plugin entrypoints live in `plugin.ts` and `plugin-*.ts`. These wire the
-  runtime hooks (beforehooks, afterhooks, audit, compaction, discovery-health,
-  enforcement-tracking, events, host-task-diagnostics, logging, modules,
-  orchestrator, policy, risk, workspace).
-- When adding a new hook, register it in the plugin orchestrator and add
-  corresponding contract tests.
+- Plugin entrypoints live in `plugin.ts` and `plugin-*.ts`. `plugin.ts` owns the
+  composition (`createFlowGuardPluginHooks`) and registers the runtime hooks
+  (beforehooks, afterhooks, audit, compaction, discovery-health,
+  enforcement-tracking, events, host-task-diagnostics, logging, modules, policy,
+  risk, workspace). `plugin-orchestrator.ts` is only the shared
+  `OrchestratorDeps` type surface and registers nothing.
+- When adding a new hook, wire it in `plugin.ts` (`createFlowGuardPluginHooks`)
+  and add corresponding contract tests.
 
 ## Tools
 

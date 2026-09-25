@@ -29,10 +29,10 @@
  * thresholds without an explicit performance contract MUST NOT act as test gates.
  *
  * Performance thresholds (enforced in PERF tests):
- * - State evaluation: < 1ms for single evaluate() call
- * - Guard evaluation: < 0.1ms per guard predicate
- * - Audit chain verification: < 100ms for 1000 events
- * - State serialization: < 5ms for full SessionState
+ * - State evaluation: `evaluateSingleMs` (1.5 ms × CI multiplier)
+ * - Guard evaluation: `guardPredicateMs` (3 ms × CI multiplier × `PERF_BUDGET_FACTOR`)
+ * - Audit chain verification: `auditChainVerify1000Ms` (100 ms × CI multiplier)
+ * - State serialization: `stateSerializeMs` (5 ms × CI multiplier × `PERF_BUDGET_FACTOR`)
  *
  * @version v1
  */

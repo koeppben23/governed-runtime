@@ -153,13 +153,13 @@ runs apply a per-environment multiplier (`CI_MULTIPLIER` for compute,
 `PERF_BUDGET_FACTOR` for I/O-bound paths) to reduce flakiness on shared
 runners. Representative budgets at local-development baseline:
 
-| Operation                              | Local budget (see `src/test-policy.ts`)       |
-| -------------------------------------- | --------------------------------------------- |
-| `evaluate()` call (`evaluateSingleMs`) | 1.5 ms × `CI_MULTIPLIER`                      |
-| Guard predicate (`guardPredicateMs`)   | 3 ms × `CI_MULTIPLIER` × `PERF_BUDGET_FACTOR` |
-| State serialize/deserialize            | ~5 ms (see `serializeRoundtripMs`)            |
-| State I/O round-trip                   | ~50 ms (see `stateIoRoundtripMs`)             |
-| Audit chain verify (1000 events)       | ~100 ms (see `auditChainVerifyMs`)            |
+| Operation                              | Budget (base value; scaling in `src/test-policy.ts`) |
+| -------------------------------------- | ---------------------------------------------------- |
+| `evaluate()` call (`evaluateSingleMs`) | 1.5 ms × `CI_MULTIPLIER`                             |
+| Guard predicate (`guardPredicateMs`)   | 3 ms × `CI_MULTIPLIER` × `PERF_BUDGET_FACTOR`        |
+| State serialize/deserialize            | ~5 ms (see `stateSerializeMs`)                       |
+| State I/O round-trip                   | ~50 ms (see `stateIoRoundTripMs`)                    |
+| Audit chain verify (1000 events)       | ~100 ms (see `auditChainVerify1000Ms`)               |
 
 `initWorkspace()` and `runDiscovery()` do not have declared budgets in
 `PERF_BUDGETS` at this revision; treat their cost as advisory rather than
