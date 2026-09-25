@@ -117,9 +117,12 @@ mutation scope only to mutation-suitable authorities.
    record** in `mutation-admission-records.ts`, and add the selector to the
    `admittedSelectors` projection in `scripts/mutation-profile-registry.json`.
    The record is the authority; the mutation reconciliation guard (A11)
-   requires active admissions, records, and the registry to match exactly. A
-   candidate below the per-target threshold stays `admission-backlog` or is
-   hardened — never backfill a record.
+   requires active admissions, records, and the registry to match exactly.
+4. A candidate below the per-target threshold is downgraded instead: remove its
+   `mutate` selector from the Stryker config and reclassify the inventory entry
+   as `admission-backlog` (A3 requires every `mutate` selector to be `required`
+   or `admission-candidate`, and backlog targets must not overlap the mutate
+   lists). Harden the target instead of backfilling a record.
 
 **Move**
 
@@ -139,9 +142,12 @@ mutation scope only to mutation-suitable authorities.
   disappears, and run the checks.
 - `src/integration/**`: remove the **placement entry**;
   `src/integration/review/**` also removes the declared zone edges.
-- Non-admitted mutation scope (`admission-backlog`, `not-mutation-suitable`,
-  legacy): remove the entry, its Stryker selector, and its covering-suite
-  reference.
+- Non-admitted mutation scope:
+  - `admission-backlog` and `not-mutation-suitable` entries carry no
+    `mutateSelector` and no `coveringSuites`: remove the inventory entry.
+  - `required` with `legacyBaseline` is in the mutate list with its selector
+    and covering suites: remove the entry, its Stryker selector, and its
+    covering-suite reference.
 - Mutation-admitted target (`required` with an **admission record**): do not
   silently delete. Admission records are historical and immutable, and the
   mutation reconciliation guard requires active admissions, records, and
