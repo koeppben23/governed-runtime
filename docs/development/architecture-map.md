@@ -9,6 +9,11 @@ nested `AGENTS.md`. For a worked example, see
 
 ## Layer entry points
 
+The canonical authority list lives in
+[`AGENTS.md` § Canonical Authorities](../../AGENTS.md#canonical-authorities).
+The table below names entry points for each change type and is a projection of
+that list, not a second authority list.
+
 | You are changing...                         | Start here                                      | Owning authority                                                     |
 | ------------------------------------------- | ----------------------------------------------- | -------------------------------------------------------------------- |
 | Workflow/state transitions, guards          | `src/machine/`                                  | `src/machine/evaluate.ts`, `src/machine/guards.ts`                   |
@@ -17,7 +22,7 @@ nested `AGENTS.md`. For a worked example, see
 | Commands/tools exposed to the host agent    | `src/integration/tools/`                        | `src/integration/tools/index.ts`, `src/integration/tool-names.ts`    |
 | Independent review pipeline                 | `src/integration/review/`                       | review zones + `src/architecture/__tests__/review-zone-policy.ts`    |
 | Audit event kinds and outbox                | `src/audit/`, `src/integration/audit-outbox.ts` | `src/audit/event-core.ts`, `src/audit/types.ts`                      |
-| Blocked reason codes/copy                   | `src/config/reasons*.ts`                        | `src/config/reasons.ts`                                              |
+| Blocked reason codes/copy                   | `src/config/reasons*.ts`                        | `src/config/reasons.ts` (barrel) + category modules                  |
 | Installed mandates/commands                 | `src/templates/`                                | `src/templates/mandates.ts`, `src/integration/installed-commands.ts` |
 | Hashing/canonical serialization             | `src/shared/`                                   | `src/shared/hashing.ts`, `src/shared/canonical-json.ts`              |
 

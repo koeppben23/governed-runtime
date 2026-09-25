@@ -16,13 +16,27 @@ not runtime state.
 
 - Reason codes are the canonical structured error catalog. Each code has a
   `messageTemplate`, `recoverySteps`, and optional `quickFixCommand`.
-- New reason codes are added in category files (`reasons-precondition.ts`,
-  `reasons-validation.ts`, `reasons-infra.ts`, `reasons-validation-review.ts`).
-- All codes are re-exported through the barrel at `reasons.ts`.
-- After adding or removing a reason code, run the completeness test:
+- Reason codes are declared in twelve reason modules and registered through the
+  barrel `reasons.ts` (it registers the aggregate arrays; it does not re-export
+  the code values):
+  - six aggregate arrays imported directly by `reasons.ts`:
+    `reasons-precondition.ts`, `reasons-architecture.ts`,
+    `reasons-validation.ts`, `reasons-infra.ts`, `reasons-proofgraph.ts`,
+    `reasons-mutation.ts`;
+  - six nested category modules included through those aggregates:
+    `reasons-envelope.ts` and `reasons-precondition-challenges.ts` (via
+    precondition), `reasons-validation-review.ts` and
+    `reasons-validation-review-findings.ts`, `reasons-validation-observation.ts`,
+    and `reasons-validation-structured.ts` (via validation).
+    `reasons-types.ts` owns the `BlockedReason`/`FormattedBlock` contracts;
+    `BlockedCategory` (`admissibility`, `precondition`, `input`, `identity`,
+    `adapter`, `state`, `config`) is a separate classification of codes, not a
+    grouping of the reason modules.
+- After adding or removing a reason code, run the completeness and
+  documentation-drift tests:
 
 ```sh
-npx vitest run --project unit src/config/reasons-completeness.test.ts
+npx vitest run --project unit src/config/reasons-completeness.test.ts src/documentation/__tests__/reasons-doc-drift.test.ts
 ```
 
 ## Config Schema

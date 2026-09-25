@@ -447,9 +447,9 @@ All validation is fail-closed. Invalid findings return BLOCKED.
 
 Validation logic is implemented once in `src/integration/review/validation/review-validation.ts` and shared by `/plan`, `/architecture`, `/implement`, and `/review` tools. The `obligationType` discriminator (`'plan' | 'architecture' | 'implement' | 'review'`) selects per-obligation criteria. Plan, architecture, and implementation reviews bind iteration/version fields; standalone `/review` additionally binds the obligation to the concrete review input fingerprint and `toolObligationId`.
 
-**Challenge freshness binding (both ingestion routes).** When an obligation
-carries a frozen challenge requirement, challenge `evidenceRefs` are validated
-against the obligation's `allowedEvidenceRefs`, and each challenge's
+**Challenge freshness binding (host-captured structured resolution).** When an
+obligation carries a frozen challenge requirement, challenge `evidenceRefs` are
+validated against the obligation's `allowedEvidenceRefs`, and each challenge's
 `obligationId` must equal the active obligation (`expectedObligationId`). This
 obligation-scoping applies to **every** challenge-bearing obligation type —
 plan/architecture `design_challenge`, implement `implementation_challenge`, and
@@ -457,11 +457,17 @@ peer review `content_challenge` — not to implementation alone. For
 implementation challenges the allowed set additionally binds an `outcome='pass'`
 challenge to a validation attempt for the **current** implementation digest — a
 stale, failed, foreign, or wrong-obligation reference is rejected with
-`SUBAGENT_CHALLENGE_EVIDENCE_MISSING`. Both ingestion routes pass this binding
-context identically: the host-captured path (`resolveHostTaskFindings`) and the
-directly-submitted path
-(`resolveHostTaskEffectiveFindings` → `validateReviewFindings`). Neither route can
-accept a challenge whose evidence is outside the frozen allowed set.
+`SUBAGENT_CHALLENGE_EVIDENCE_MISSING`. The binding is resolved from the persisted
+assurance state by `resolveStructuredFindings`
+(`src/integration/review/validation/review-validation-structured-evidence.ts`,
+which applies `validateChallengeConsistency`); the `/plan`, `/architecture`, and
+`/implement` tool adapters reach it through `resolveStructuredEffectiveFindings`
+(`review-validation.ts`). The native Task evidence path
+(`recordEvidenceOrBlockReuse` → `validatePreBindFindings`) independently
+pre-binds captured findings to the frozen review-subject scope and repository
+evidence before the invocation is recorded. `validateReviewFindings` remains an
+internal validator in `review-validation.ts`; it is not the entry point of a
+second ingestion path.
 
 **Plugin-level enforcement (`src/integration/review/enforcement/enforcement.ts`):**
 

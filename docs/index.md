@@ -120,7 +120,7 @@ Trace human approval, export, regulated completion, audit processing, and recove
 - [Contributing](../CONTRIBUTING.md) — How to contribute to FlowGuard
 - [Project Governance](./project-governance.md) — Ticket readiness, PR contract, docs/changelog rules, and project fields
 - [Product Identity](../PRODUCT_IDENTITY.md) — Product overview and architecture details
-- [AGENTS.md](../AGENTS.md) — FlowGuard mandates for AI-assisted development (used by the development repo; end users receive `flowguard-mandates.md` via the installer)
+- [AGENTS.md](../AGENTS.md) — Local contributor guidance for AI-assisted development in this repository (not the installed mandate text; end users receive `flowguard-mandates.md` via the installer)
 - [Agent Implementation Guidance](./agent-guidance/implementation.md) — Extended implementation rules
 - [Agent Review Guidance](./agent-guidance/review.md) — Extended review rules
 - [Agent High-Risk Guidance](./agent-guidance/high-risk.md) — High-risk safeguards
