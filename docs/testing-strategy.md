@@ -313,6 +313,7 @@ Deep authority expansion bundle:
 
 - `src/config/policy-ci.ts` — 100 % on five valid mutants; density too low (thin evidence).
 - `src/config/policy-types.ts` — 20 % on five valid mutants; evidence too weak.
+- `src/archive/types.ts` — archive manifest and policy-mode constants; admission requires a dedicated profile full run with per-target evidence.
 
 Mandates profile: `src/rendering/mandates-renderer.ts` — focused contract pass reached 72.40 % (below the per-target gate); dedicated mandates hardening pass required before admission.
 
@@ -335,23 +336,39 @@ The profile is required and must pass its own full run plus
 
 Topology profile (`stryker.topology.conf.json`): focused authority profile for
 `src/machine/topology.ts`, the formal state transition table. It uses
-`coverageAnalysis: "all"`, `ignoreStatic: false`, keeps `StringLiteral`
-enabled, and disables the TypeScript checker because the typed table literals
-are the mutation surface. Admitted 2026-09-21 at 99.32 % on the freeze run
-(df9f8b4d); the base classification `not-mutation-suitable` stays scoped to
-base.
+`coverageAnalysis: "all"`, `ignoreStatic: false`, keeps `StringLiteral` and
+`ArrayDeclaration` enabled, and disables the TypeScript checker because the
+typed table literals are the mutation surface. `ArrayDeclaration` was enabled
+on 2026-09-25 after a diagnostic run (230 of 231 mutants killed, 99.57 %); the
+single surviving conditional-expression mutant at `topology.ts:341` is an
+equivalent variant — with `requiredIndex >= 0`, the return comparison
+`currentIndex >= requiredIndex` already excludes a negative `currentIndex`, so
+the `currentIndex < 0` clause is redundant and the mutator configuration stays
+enabled. Admitted 2026-09-21 at 99.32 % on the freeze run (df9f8b4d); the base
+classification `not-mutation-suitable` stays scoped to base.
 
 Deferred surfaces (whole roots behind the admission gate):
 `src/config/**`, `src/state/**`, `src/shared/**`, `src/audit/**`,
 `src/adapters/**`, `src/identity/**`, `src/verification/**`, `src/discovery/**`,
 `src/logging/**`, `src/hooks/**`, `src/mcp-server/**`, `src/templates/**`,
-`src/presentation/**`, `src/integration/**`.
+`src/presentation/**`, `src/integration/**`, `src/rails/**`, `src/cli/**`,
+`src/providers/**`.
+
+Assessed during the 2026-09-25 authority-root expansion and deliberately not
+declared as roots: `src/diagnostics/**` (export and troubleshooting
+projections) and `src/telemetry/**` (advisory metric emission) carry no
+trust-boundary authority; they stay outside the mutation authority scope until
+a concrete authority dependency is proven.
 
 Explicitly not mutation-suitable **for the named profile** (the exclusion is
 scoped; a target may still be a valid mutation target in another profile):
 
 - `src/config/reasons-types.ts` — type-only module (base).
 - `src/machine/command-help.ts` — static help text projection (base).
+- `src/cli/run-types.ts` — type-only module (base).
+- `src/cli/install-mutation-types.ts` — type-only module (base).
+- `src/cli/parse-result.ts` — type-only module (base).
+- `src/providers/assertion-parsers/types.ts` — type-only module (base).
 - `src/config/profile-types.ts` — type-only module (base).
 - `src/machine/topology.ts` — module-init transition table, ignored under `ignoreStatic` (base).
 - `src/state/policy-mode.ts` — const tuple/enum only (base).

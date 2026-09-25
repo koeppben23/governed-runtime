@@ -6,7 +6,7 @@ import { CHALLENGE_POLICY_V1 } from '../../config/policy-types.js';
 import type { SessionState } from '../../state/schema.js';
 import type { DiscoveryResult } from '../../discovery/types.js';
 import { discoveryRiskPaths } from '../discovery/discovery-risk-paths.js';
-import { assessMinimumTaskClass, maxTaskClass } from '../phase-tool-gate.js';
+import { assessMinimumTaskClass } from '../phase-tool-gate.js';
 
 const originalFlowguardHostPlatform = process.env.FLOWGUARD_HOST_PLATFORM;
 
@@ -324,10 +324,11 @@ describe('integration/tools/architecture (wrapper)', () => {
     } as unknown as DiscoveryResult;
 
     const expectedPaths = discoveryRiskPaths(discovery);
-    const expectedClass = maxTaskClass(
-      assessMinimumTaskClass(expectedPaths).minimumTaskClass,
-      'TRIVIAL',
-    );
+    // Explicit oracle: a persistence surface floor is STANDARD. Do not derive
+    // the expectation from maxTaskClass(); that would let ordinal mutants mask
+    // themselves.
+    const expectedClass = 'STANDARD';
+    expect(assessMinimumTaskClass(expectedPaths).minimumTaskClass).toBe(expectedClass);
     const expectedCount = CHALLENGE_POLICY_V1.counts[expectedClass];
     // Guard: the fixture must exercise a non-trivial floor, else the test proves nothing.
     expect(expectedPaths.length).toBeGreaterThan(0);
@@ -396,15 +397,15 @@ describe('integration/tools/architecture (wrapper)', () => {
     const authorPaths = ['src/migrations/001-add-table.ts'];
     const discoveryPaths = discoveryRiskPaths(discovery);
     const expectedUnion = [...new Set([...authorPaths, ...discoveryPaths])];
-    const expectedClass = maxTaskClass(
-      assessMinimumTaskClass(expectedUnion).minimumTaskClass,
-      'TRIVIAL',
-    );
+    // Explicit oracles: discovery-only floors at STANDARD, the migration path
+    // raises the union to HIGH-RISK. Decoupled from maxTaskClass() so ordinal
+    // mutants cannot mask themselves through the expectation.
+    const discoveryClass = 'STANDARD';
+    const expectedClass = 'HIGH-RISK';
+    expect(assessMinimumTaskClass(discoveryPaths).minimumTaskClass).toBe(discoveryClass);
+    expect(assessMinimumTaskClass(expectedUnion).minimumTaskClass).toBe(expectedClass);
     const expectedCount = CHALLENGE_POLICY_V1.counts[expectedClass];
-    const discoveryOnlyCount =
-      CHALLENGE_POLICY_V1.counts[
-        maxTaskClass(assessMinimumTaskClass(discoveryPaths).minimumTaskClass, 'TRIVIAL')
-      ];
+    const discoveryOnlyCount = CHALLENGE_POLICY_V1.counts[discoveryClass];
     // Guard: the author path must strictly RAISE the count above discovery-only.
     expect(expectedCount).toBeGreaterThan(discoveryOnlyCount);
 

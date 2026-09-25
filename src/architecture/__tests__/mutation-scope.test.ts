@@ -42,6 +42,11 @@
  *    admission-bearing required entries, and the registry's admitted selector
  *    projection close in both directions; every admitted selector is in its
  *    profile mutate list. Orphaned records or registry drift fail closed.
+ * A12 legacy ratchet: the active legacy exceptions equal the frozen baseline
+ *    in `scripts/mutation-legacy-baseline.json` exactly. The list may shrink
+ *    when a target is admitted, but a new exception must not exist without a
+ *    baseline change; `scripts/check-legacy-ratchet.mjs` additionally proves
+ *    against the PR base that the baseline only shrinks.
  *
  * These guards are static. They do not measure a mutation score; admission
  * scores are enforced by `scripts/verify-mutation-admission.mjs` from profile
@@ -92,6 +97,22 @@ function readRegistry(): MutationProfileRegistry {
   return JSON.parse(
     readFileSync(join(ROOT, 'scripts', 'mutation-profile-registry.json'), 'utf-8'),
   ) as MutationProfileRegistry;
+}
+
+interface MutationLegacyBaselineEntry {
+  readonly profile: MutationProfile;
+  readonly mutateSelector: string;
+}
+
+interface MutationLegacyBaseline {
+  readonly version: number;
+  readonly legacySelectors: readonly MutationLegacyBaselineEntry[];
+}
+
+function readLegacyBaseline(): MutationLegacyBaseline {
+  return JSON.parse(
+    readFileSync(join(ROOT, 'scripts', 'mutation-legacy-baseline.json'), 'utf-8'),
+  ) as MutationLegacyBaseline;
 }
 
 interface ProfileConfig {
@@ -616,6 +637,48 @@ describe('mutation scope', () => {
             `${profile}: admitted selector not in the profile mutate list: ${selector}`,
           );
         }
+      }
+    }
+
+    expect(problems).toEqual([]);
+  });
+
+  it('A12: legacy exceptions match the frozen baseline exactly', () => {
+    const baseline = readLegacyBaseline();
+    const problems: string[] = [];
+    const baselineKeys = new Set<string>();
+
+    expect(baseline.version).toBe(1);
+    for (const entry of baseline.legacySelectors) {
+      if (!Object.hasOwn(MUTATION_PROFILES, entry.profile)) {
+        problems.push(`unknown profile '${entry.profile}'`);
+      }
+      const key = `${entry.profile}\n${entry.mutateSelector}`;
+      if (baselineKeys.has(key)) {
+        problems.push(`duplicate baseline entry: ${entry.profile}: ${entry.mutateSelector}`);
+      }
+      baselineKeys.add(key);
+    }
+
+    const activeLegacy = requiredEntries.filter((entry) => entry.legacyBaseline !== undefined);
+    const activeKeys = new Set(
+      activeLegacy.map((entry) => `${entry.profile}\n${entry.mutateSelector}`),
+    );
+
+    for (const entry of activeLegacy) {
+      const key = `${entry.profile}\n${entry.mutateSelector}`;
+      if (!baselineKeys.has(key)) {
+        problems.push(
+          `${entry.profile}: ${entry.mutateSelector} is a new legacy exception; admit the target or change the baseline deliberately`,
+        );
+      }
+    }
+    for (const key of baselineKeys) {
+      if (!activeKeys.has(key)) {
+        const [profile, selector] = key.split('\n');
+        problems.push(
+          `${profile}: ${selector} is in the baseline but no longer a legacy exception; remove it from scripts/mutation-legacy-baseline.json in the same change`,
+        );
       }
     }
 
