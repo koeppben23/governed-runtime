@@ -30,6 +30,24 @@ describe('developer onboarding documentation contract', () => {
     expect(ciSection).not.toContain('needs: [unit, integration]');
   });
 
+  it('documents the production-file change checklist and links it from the entry points', () => {
+    const map = read('docs/development/architecture-map.md');
+
+    expect(map).toContain('Add, move, or delete a production file');
+    for (const phrase of [
+      'placement entry',
+      'zone budget',
+      'module classification',
+      'mutation inventory',
+      'admission record',
+    ]) {
+      expect(map, phrase).toContain(phrase);
+    }
+
+    expect(read('docs/development/first-change.md')).toContain('architecture-map.md');
+    expect(read('CONTRIBUTING.md')).toContain('architecture-map.md');
+  });
+
   it('documents the separate approval, export, regulated completion, and recovery stages', () => {
     const guide = read('docs/development/state-changing-operation.md');
 

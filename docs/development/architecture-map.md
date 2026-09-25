@@ -73,12 +73,53 @@ nested `AGENTS.md`. For a worked example, see
 - Audit-affecting changes run `src/architecture/__tests__/audit-authority-guard.test.ts`
   and the archive/tamper suites.
 
-### New production file anywhere
+### Add, move, or delete a production file
 
-1. Add the placement entry (integration subtree) and, for review zones, respect
-   the zone budget.
-2. Keep files within the size budgets (`650` production / `2000` test LOC).
-3. Run `npm run test:architecture`, `npm run check`, `npm run lint:strict`.
+**Add**
+
+1. Add exactly one `{ file, owner }` **placement entry** to
+   `INTEGRATION_PLACEMENT`
+   (`src/architecture/__tests__/integration-placement-policy.ts`). A new
+   directory needs a zone in `INTEGRATION_PLACEMENT_ZONES` and an owner in
+   `INTEGRATION_OWNERS`; the physical directory must equal the owner's
+   `targetZone`.
+2. Review zones carry a **zone budget** (`maxProductionFiles`): raising it is a
+   deliberate architecture decision; otherwise decompose the zone.
+3. A new top-level module needs a **module classification** entry in
+   `src/architecture/__tests__/module-classification.ts` and a direction in
+   `MODULE_DEPENDENCY_POLICY`
+   (`src/architecture/__tests__/module-dependency-policy.ts`).
+4. Review imports declare their zone edge in `DECLARED_REVIEW_ZONE_EDGES`
+   (`review-zone-policy.ts`); the zone graph must stay acyclic.
+5. The **mutation inventory** grows with every new mutated authority:
+   `src/architecture/__tests__/mutation-authority-inventory.ts`,
+   `stryker*.conf.json`, the covering suite in `vitest.stryker*.config.ts`, and
+   the admitted-selector projection in `scripts/mutation-profile-registry.json`.
+6. Keep files within the size budgets (`650` production / `2000` test LOC).
+7. Run `npm run test:architecture`, `npm run check`, `npm run lint:strict`.
+
+**Move**
+
+- Update the placement entry, the physical directory (must equal the owner's
+  `targetZone`), declared review zone edges, and the mutation
+  inventory/configs when the file is a mutated target. Admission records are
+  keyed by the exact mutate selector: a renamed selector makes the mutation
+  reconciliation guard fail closed and needs a dedicated decision.
+
+**Delete**
+
+- Regular file: remove the placement entry, declared review zone edges, and
+  any backlog or legacy mutation-inventory entry with its Stryker selector and
+  covering-suite reference.
+- Mutation-admitted target (`required` with an **admission record**): do not
+  silently delete. Admission records are historical and immutable, and the
+  mutation reconciliation guard requires active admissions, records, and
+  `scripts/mutation-profile-registry.json` to match exactly. Choose
+  deliberately: keep the file as a mutation target, or make a dedicated
+  authority change across `mutation-authority-inventory.ts`,
+  `mutation-admission-records.ts`, and
+  `scripts/mutation-profile-registry.json`, including the archival decision
+  for the historical record.
 
 ## Commands
 
