@@ -100,6 +100,7 @@ export default defineConfig({
       'src/integration/plugin-workspace.test.ts',
       'src/integration/plugin-workspace-composition.test.ts',
       'src/integration/plugin-workspace-semantic-outbox.test.ts',
+      'src/integration/plugin-direct-writer-proofgraph.test.ts',
       'src/integration/plugin-audit-session-authority.test.ts',
       'src/architecture/__tests__/workspace-factory-parity.test.ts',
       // Added with the trust-boundary scope extension: these suites are the

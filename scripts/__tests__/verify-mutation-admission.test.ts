@@ -166,8 +166,109 @@ describe('verify-mutation-admission', () => {
     const result = runVerifier(['--profile', 'base', '--report', reportPath]);
 
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain('1 legacy target(s) below the per-target threshold');
+    expect(result.stdout).toContain('1 target(s) without an admission record below the per-target');
     expect(result.stdout).toContain('src/adapters/ip-validation.ts');
+  });
+
+  it('rejects an admitted selector below the per-target threshold (--require-admitted)', () => {
+    const report: Report = {
+      schemaVersion: '1.0',
+      thresholds: { high: 95, low: 80, break: 80 },
+      files: {
+        'src/audit/event-core.ts': fileEntry(mutants(['Killed', 'Survived', 'Survived'])),
+      },
+    };
+    const reportPath = writeReport(report);
+
+    const result = runVerifier([
+      '--profile',
+      'event-core',
+      '--report',
+      reportPath,
+      '--require-admitted',
+    ]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('src/audit/event-core.ts');
+    expect(result.stderr).toContain('(required per-target)');
+  });
+
+  it('accepts a full run where every admitted selector meets the threshold', () => {
+    const report: Report = {
+      schemaVersion: '1.0',
+      thresholds: { high: 95, low: 80, break: 80 },
+      files: {
+        'src/audit/event-core.ts': fileEntry(mutants(['Killed', 'Killed', 'Killed', 'Timeout'])),
+      },
+    };
+    const reportPath = writeReport(report);
+
+    const result = runVerifier([
+      '--profile',
+      'event-core',
+      '--report',
+      reportPath,
+      '--require-admitted',
+    ]);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('OK');
+  });
+
+  it('turns a below-threshold admitted target into a violation under --require-admitted', () => {
+    const report = baseReport();
+    report.files['src/adapters/host-adapter.ts'] = fileEntry(
+      mutants(['Killed', 'Survived', 'Survived', 'Survived']),
+    );
+    const reportPath = writeReport(report);
+
+    const noteResult = runVerifier(['--profile', 'base', '--report', reportPath]);
+    expect(noteResult.status).toBe(0);
+    expect(noteResult.stdout).toContain('without an admission record');
+
+    const gatedResult = runVerifier([
+      '--profile',
+      'base',
+      '--report',
+      reportPath,
+      '--require-admitted',
+    ]);
+    expect(gatedResult.status).toBe(1);
+    expect(gatedResult.stderr).toContain('src/adapters/host-adapter.ts');
+    expect(gatedResult.stderr).toContain('(required per-target)');
+  });
+
+  it('keeps targets without an admission record as a note under --require-admitted', () => {
+    const report = baseReport();
+    report.files['src/adapters/ip-validation.ts'] = fileEntry(mutants(['Killed', 'Survived']));
+    const reportPath = writeReport(report);
+
+    const result = runVerifier(['--profile', 'base', '--report', reportPath, '--require-admitted']);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('1 target(s) without an admission record below the per-target');
+    expect(result.stdout).toContain('src/adapters/ip-validation.ts');
+  });
+
+  it('rejects --emit-admission combined with --require-admitted', () => {
+    const reportPath = writeReport(baseReport());
+    const manifestPath = join(emptyTemporaryDirectory(), 'manifest.json');
+
+    const result = runVerifier([
+      '--profile',
+      'base',
+      '--report',
+      reportPath,
+      '--manifest',
+      manifestPath,
+      '--require-selectors',
+      'src/adapters/host-adapter.ts',
+      '--require-admitted',
+      '--emit-admission',
+    ]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('mutually exclusive');
   });
 
   it('rejects a selector that is not part of the profile', () => {

@@ -31,7 +31,8 @@
  * - `admission` records are historical and immutable: they capture the first
  *   full-run admission of a target (commit SHA, score, killed/survived,
  *   config). Later runs never rewrite them; the verifier enforces the current
- *   per-target threshold.
+ *   per-target threshold for every admitted selector (`--require-admitted`,
+ *   sourced from the drift-guarded registry projection).
  * - Targets that predate this inventory carry `legacyBaseline` instead of a
  *   reconstructed per-file score. Backfilling invented numbers is forbidden.
  * - Provenance is explicit and exclusive: every `required()` entry must provide
@@ -45,8 +46,9 @@
  *
  * Admission policy: a targeted run is diagnostic only. Admission evidence is
  * the profile full run. The profile-wide aggregate must meet the break
- * threshold; targets named via `--require-selectors` (new admissions) must
- * additionally meet the per-target break threshold. Legacy targets below the
+ * threshold; targets named via `--require-selectors` (new admissions) and every
+ * registry-admitted selector under `--require-admitted` must additionally meet
+ * the per-target break threshold. Targets without an admission record below the
  * per-target threshold are reported as a diagnostic note and remain tracked
  * for test hardening; range selectors are scored only over mutants inside the
  * declared range, and every mutant of a range-profile file must map to a
@@ -973,7 +975,10 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
   required(
     'src/integration/audit-outbox.ts',
     'Audit outbox durable delivery',
-    ['src/integration/tools/audit-outbox.test.ts'],
+    [
+      'src/integration/tools/audit-outbox.test.ts',
+      'src/integration/plugin-direct-writer-proofgraph.test.ts',
+    ],
     {
       admission: admissionRecord('src/integration/audit-outbox.ts'),
     },

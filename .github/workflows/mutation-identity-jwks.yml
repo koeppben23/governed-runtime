@@ -36,4 +36,4 @@ jobs:
       - name: Write and verify mutation admission manifest
         run: |
           node scripts/verify-mutation-admission.mjs --profile identity-jwks --write-profile-manifest
-          node scripts/verify-mutation-admission.mjs --profile identity-jwks --verify-profile-manifest
+          node scripts/verify-mutation-admission.mjs --profile identity-jwks --verify-profile-manifest --require-admitted

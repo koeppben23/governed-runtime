@@ -102,6 +102,43 @@ The artifact/state write ordering is covered by
 outbox digest preparation is covered by
 [`audit-outbox.test.ts`](../../src/integration/tools/audit-outbox.test.ts).
 
+### 3.1 Direct metadata writers and their channel contract
+
+Not every persisted change goes through preparation. The direct channel exists
+for runtime and audit metadata that does not feed the ProofGraph derivation or
+the implementation-base authority. It never finalizes the implementation entry
+and never refreshes the projection, so it fails closed on any write that would
+change protected authority state.
+
+| Channel                                                                      | Callers                                                                                                                                                                     | Allowed mutations                                                                                                     |
+| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `writeStateWithAuditOperationsAlreadyLocked` (caller holds the session lock) | `plugin-beforehooks.ts` (`recordMutationDispatch`), `plugin-workspace.ts` (`updateReviewAssurance`), `plugin-mutation-episodes.ts` (`recordMutationCompletion`)             | `runtimeLease`, `mutationEpisodes`, review-assurance ledger (dispatches, attempts, obligation lifecycle/status)       |
+| `mutateStateWithAuditOperations` (re-reads and re-applies under the lock)    | `plugin-risk.ts` (`persistRiskDecisionBlock`), `plugin-discovery-health.ts` (`persistDiscoveryHealthBlock`), `plugin-audit-reconcile.ts` (`finalizeStrictTimestampFailure`) | `riskGate`, `discoveryHealthGate`, `error`; prevents overwriting authority committed after the caller's decision read |
+| `writeStateAlreadyLocked` (low-level)                                        | `plugin-audit-reconcile.ts` (`acknowledgeAuditOperation`)                                                                                                                   | `pendingAuditOperations[].status` only; creates no outbox operation                                                   |
+| `writeStateWithArtifactsAndAuditOperations` (full prepare)                   | `tools/helpers.ts` and every tool/rail caller                                                                                                                               | everything; the only channel that may change protected authority state                                                |
+
+The direct channel is allowlisted, not denylisted: `audit-outbox.ts` permits
+only `runtimeLease`, `mutationEpisodes`, `reviewAssurance` (ledger, status, and
+attempt-linkage updates; every other obligation attribute stays frozen at
+mint), `riskGate`, `discoveryHealthGate`, and `error` to change. Any other
+field — including `phase`, `binding`, `transition`, `policySnapshot`, the
+implementation base, the ProofGraph projection, evidence ledgers, and any field
+added to the schema later — fails closed with `DIRECT_WRITE_REQUIRES_PREPARE`.
+The contract is
+exercised by
+[`plugin-direct-writer-proofgraph.test.ts`](../../src/integration/plugin-direct-writer-proofgraph.test.ts):
+the projection and the frozen base survive metadata writes, each write binds the
+state it actually persisted, the raw persistence boundary still fails closed
+without the base, and unauthorized field changes are rejected before
+persistence.
+
+Writers that persist a decision computed from an earlier read must not send a
+pre-built snapshot. They use `mutateStateWithAuditOperations`, which re-reads the
+state under the session write lock and re-applies the mutation, so authority
+committed in between (mutation episodes, pending audit operations, runtime
+lease) cannot be overwritten. `plugin-risk.ts` and `plugin-discovery-health.ts`
+use this helper for their gate writes.
+
 ## 4. Regulated completion orders audit, lifecycle, archive, and verification
 
 The chain is owned by

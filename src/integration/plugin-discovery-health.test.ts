@@ -149,9 +149,11 @@ describe('enforceDiscoveryHealthBefore', () => {
       message: 'Discovery unavailable',
       driftStatus: 'unavailable',
     });
-    await expect(
-      enforceDiscoveryHealthBefore(mockDeps(), sessDir, requiredState(), 'write'),
-    ).rejects.toThrow('DISCOVERY_HEALTH_UNAVAILABLE');
+    const state = requiredState();
+    mockReadState.mockResolvedValue(state);
+    await expect(enforceDiscoveryHealthBefore(mockDeps(), sessDir, state, 'write')).rejects.toThrow(
+      'DISCOVERY_HEALTH_UNAVAILABLE',
+    );
 
     expect(mockWriteState).toHaveBeenCalledTimes(1);
     const written = mockWriteState.mock.calls[0]![1] as SessionState;
@@ -193,10 +195,12 @@ describe('enforceDiscoveryHealthBefore', () => {
       code: 'DISCOVERY_DRIFT_BLOCKED',
       message: 'drift',
     });
+    const state = requiredState();
+    mockReadState.mockResolvedValue(state);
     mockWriteState.mockRejectedValue(new Error('disk full'));
-    await expect(
-      enforceDiscoveryHealthBefore(mockDeps(), sessDir, requiredState(), 'write'),
-    ).rejects.toThrow('AUDIT_PERSISTENCE_FAILED');
+    await expect(enforceDiscoveryHealthBefore(mockDeps(), sessDir, state, 'write')).rejects.toThrow(
+      'AUDIT_PERSISTENCE_FAILED',
+    );
   });
 });
 

@@ -558,7 +558,8 @@ describe('persistRiskDecisionBlock', () => {
 
   describe('GOOD', () => {
     it('commits the risk audit intent with the blocked state', async () => {
-      await persistRiskDecisionBlock('/tmp/sess', state, decision, 'RISK_X', 'reason text');
+      mockReadState.mockResolvedValue(state);
+      await persistRiskDecisionBlock('/tmp/sess', decision, 'RISK_X', 'reason text');
 
       expect(mockWriteState).toHaveBeenCalledTimes(1);
       const writtenState = mockWriteState.mock.calls[0]![1] as SessionState;
@@ -585,9 +586,10 @@ describe('persistRiskDecisionBlock', () => {
 
   describe('BAD', () => {
     it('propagates writeState persistence failure', async () => {
+      mockReadState.mockResolvedValue(state);
       mockWriteState.mockRejectedValue(new Error('disk full'));
       await expect(
-        persistRiskDecisionBlock('/tmp/sess', state, decision, 'RISK_X', 'msg'),
+        persistRiskDecisionBlock('/tmp/sess', decision, 'RISK_X', 'msg'),
       ).rejects.toThrow('disk full');
     });
   });
@@ -673,6 +675,7 @@ describe('enforceRiskClassificationBefore', () => {
     it('throws when changedFiles evidence is unavailable and riskGate not already blocked', async () => {
       const state = makeRiskState();
       const deps = mockDeps();
+      mockReadState.mockResolvedValue(state);
       mockChangedFiles.mockRejectedValue(new Error('git error'));
       mockBuildEnforcementError.mockReturnValue(
         new Error('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE: git error'),
@@ -709,6 +712,7 @@ describe('enforceRiskClassificationBefore', () => {
     it('throws with decision code when risk classification blocks', async () => {
       const state = makeRiskState();
       const deps = mockDeps();
+      mockReadState.mockResolvedValue(state);
       mockIsRiskClassificationAllowed.mockReturnValue({
         allowed: false,
         code: 'RISK_HIGH',

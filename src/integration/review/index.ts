@@ -6,8 +6,9 @@
  * compose every review subzone, but it MUST NOT be imported by FlowGuard
  * production code — internal code imports the concrete authority it needs.
  * Both properties are enforced by `architecture/__tests__/review-zone-policy`.
- * Symbols consumed by plugin-*, tools/, and integration root files are exposed
- * here for those external callers.
+ * The facade stays the single public surface for external consumers of the
+ * bounded context; production code under `src/` must import the concrete
+ * subzone authority instead of this file.
  *
  * Implementation authorities live in the review subzones (`dispatch/`,
  * `obligations/`, `context/`, `observations/`, `evidence/`, `validation/`,

@@ -189,8 +189,13 @@ Admission evidence is the profile full run. In that run the aggregate score
 must meet the break threshold. Newly admitted targets — named explicitly via
 `--require-selectors` — must additionally meet the per-target break threshold;
 range selectors are scored only over mutants whose `location` lies inside the
-declared range. Legacy targets below the per-target threshold are reported as
-a note and remain tracked for test hardening. `scripts/verify-mutation-admission.mjs`
+declared range. Every selector listed as admitted in
+`scripts/mutation-profile-registry.json` is enforced per-target on each profile
+full run via `--require-admitted`; the admitted selector list is a
+drift-guarded projection of the immutable admission records (guard A11 in
+`mutation-scope.test.ts`). Targets without an admission record below the
+per-target threshold are reported as a note and remain tracked for test
+hardening. `scripts/verify-mutation-admission.mjs`
 validates the report against the mutation-testing-elements structure, requires
 the report's file set to match the profile's selectors exactly, and fails
 closed on missing targets, invalid mutant shapes, unknown statuses, or
@@ -262,9 +267,11 @@ keeping the security-critical target list and `break: 80` gate intact. The
 The scheduled/release/manual `mutation` workflow is blocking for that workflow
 run. It is not a pull-request required check. Focused profiles additionally run
 as path-filtered pull-request gates: `identity-jwks`, `schemas`, `mandates`,
-`event-core`, and `topology`. `human-projection` remains local-only: its full
-run leaves `src/presentation/markdown.ts:264-292` below the per-target gate, so
-it does not yet prove every target. A mutation score below the
+`event-core`, `topology`, and `human-projection`. Every focused workflow and
+the `base` workflow enforce the admitted per-target gate via
+`--require-admitted`; `src/presentation/markdown.ts:264-292` is a legacy
+selector without an admission record, so it stays a diagnostic note until its
+hardening run admits it. A mutation score below the
 configured `break: 80` threshold (`stryker.conf.json`) fails the mutation job.
 Survivor analysis remains part of normal security-critical test maintenance.
 
@@ -417,9 +424,11 @@ node scripts/verify-mutation-admission.mjs --profile mandates \
   --write-manifest reports/mutation/mandates/admission-manifest.json
 ```
 
-The human-projection profile is reusable locally but has no dedicated CI
-workflow yet; adding one requires a full-profile run that proves every target
-meets the per-target threshold first:
+The human-projection profile runs on pull requests that change its projection
+surfaces. Its admitted selectors must meet the per-target threshold via
+`--require-admitted`; `src/presentation/markdown.ts:264-292` is a legacy
+selector without an admission record and stays a diagnostic note until it is
+admitted:
 
 ```bash
 node scripts/stryker-patch.js && npx stryker run stryker.human-projection.conf.json

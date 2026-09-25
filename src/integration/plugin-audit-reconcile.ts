@@ -30,7 +30,7 @@ import type { TimestampAssurancePolicy } from '../config/policy-types.js';
 import type { TimestampAuthorityProvider, TimestampVerifier } from '../audit/tsa-provider.js';
 import { resolveAuditContext, type AuditContext } from './plugin-audit-context.js';
 import { TOOL_FLOWGUARD_HYDRATE } from './tool-names.js';
-import { computeStateDigest, writeStateWithAuditOperations } from './audit-outbox.js';
+import { computeStateDigest, mutateStateWithAuditOperations } from './audit-outbox.js';
 
 /** Closure dependencies injected from plugin.ts. */
 export interface AuditDeps {
@@ -397,10 +397,9 @@ export async function finalizeStrictTimestampFailure(
 ): Promise<AuditRunOutcome> {
   const failure = getFailure();
   if (!failure) return undefined;
-  const currentState = await readState(ctx.sessDir);
-  if (currentState) {
-    await writeStateWithAuditOperations(ctx.sessDir, {
-      ...currentState,
+  await mutateStateWithAuditOperations(ctx.sessDir, (current) => ({
+    next: {
+      ...current,
       error: {
         code: 'TSA_TIMESTAMP_ASSURANCE_FAILED',
         message: `Strict timestamp assurance failed for ${failure.eventKind}: ${failure.reason}`,
@@ -408,8 +407,8 @@ export async function finalizeStrictTimestampFailure(
           'Fix TSA connectivity, trust anchors, or timestamp token validity; or disable audit.timestampAssurance.strict to recover to Slice 1 behavior.',
         occurredAt: ctx.now,
       },
-    });
-  }
+    },
+  }));
   return {
     auditOk: false,
     block: true,

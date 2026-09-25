@@ -36,6 +36,7 @@ describe('error code type safety — HAPPY', () => {
       'WRITE_FAILED',
       'PARSE_FAILED',
       'SCHEMA_VALIDATION_FAILED',
+      'DIRECT_WRITE_REQUIRES_PREPARE',
       'LOCK_TIMEOUT',
       'LOCK_TIMEOUT_EXHAUSTED',
     ];
@@ -315,6 +316,7 @@ describe('error code type safety — SMOKE', () => {
         case 'PARSE_FAILED':
         case 'SCHEMA_VALIDATION_FAILED':
         case 'SESSION_STATE_INCOMPATIBLE':
+        case 'DIRECT_WRITE_REQUIRES_PREPARE':
         case 'LOCK_TIMEOUT':
         case 'LOCK_TIMEOUT_EXHAUSTED':
           matched = true;

@@ -40,7 +40,9 @@ import { collectProductionSources } from './production-source.js';
 
 const SRC = join(process.cwd(), 'src');
 
-const ROOT_OWNERS = new Set(['root-composition', 'root-host-runtime', 'root-authority']);
+const ROOT_OWNERS = new Set(
+  INTEGRATION_OWNERS.filter((owner) => owner.targetZone === 'root').map((owner) => owner.id),
+);
 
 const OWNER_TARGET_ZONE = new Map(INTEGRATION_OWNERS.map((owner) => [owner.id, owner.targetZone]));
 
@@ -72,11 +74,16 @@ describe('integration placement authority', () => {
     if (violations.length > 0) {
       console.error(
         '\nintegration placement violations:\n' +
-          violations.map((violation) => `  - ${violation.file}: ${violation.message}`).join('\n'),
+          violations
+            .map(
+              (violation) =>
+                `  - ${violation.file}: ${violation.message}` +
+                (violation.hint ? `\n      fix: ${violation.hint}` : ''),
+            )
+            .join('\n'),
       );
     }
     expect(violations, JSON.stringify(violations)).toEqual([]);
-    expect(files.length).toBe(221);
     expect(INTEGRATION_PLACEMENT.length).toBe(files.length);
     expect(new Set(INTEGRATION_PLACEMENT.map((entry) => entry.file)).size).toBe(files.length);
   });
@@ -191,13 +198,13 @@ function entry(file: string, owner: string): IntegrationPlacementEntry {
   return { file, owner };
 }
 
-function analyzeFixture(input: {
+function analyzeFixtureViolations(input: {
   readonly productionFiles?: readonly string[];
   readonly placement?: readonly IntegrationPlacementEntry[];
   readonly zones?: readonly IntegrationPlacementZone[];
   readonly owners?: readonly IntegrationOwner[];
   readonly testFiles?: readonly string[];
-}): string[] {
+}): IntegrationPlacementViolation[] {
   const testFiles = new Set(input.testFiles ?? []);
   return analyzeIntegrationPlacement({
     productionFiles: input.productionFiles ?? [],
@@ -205,7 +212,17 @@ function analyzeFixture(input: {
     zones: input.zones ?? FIXTURE_ZONES,
     owners: input.owners ?? FIXTURE_OWNERS,
     isTestFile: (rel) => testFiles.has(rel),
-  }).map((violation) => violation.rule);
+  });
+}
+
+function analyzeFixture(input: {
+  readonly productionFiles?: readonly string[];
+  readonly placement?: readonly IntegrationPlacementEntry[];
+  readonly zones?: readonly IntegrationPlacementZone[];
+  readonly owners?: readonly IntegrationOwner[];
+  readonly testFiles?: readonly string[];
+}): string[] {
+  return analyzeFixtureViolations(input).map((violation) => violation.rule);
 }
 
 describe('integration placement negative fixtures', () => {
@@ -336,6 +353,118 @@ describe('integration placement negative fixtures', () => {
         ],
       }),
     ).toContain('duplicate-owner-id');
+  });
+
+  it('gives every violation a concrete repair hint', () => {
+    const budgetZones: readonly IntegrationPlacementZone[] = FIXTURE_ZONES.map((zone) =>
+      zone.id === 'status' ? { ...zone, maxProductionFiles: 1 } : zone,
+    );
+    const cases: readonly (readonly [string, IntegrationPlacementViolation[]])[] = [
+      [
+        'unclassified-production-file',
+        analyzeFixtureViolations({ productionFiles: ['integration/rogue.ts'] }),
+      ],
+      [
+        'stale-placement-entry',
+        analyzeFixtureViolations({ placement: [entry('integration/gone.ts', 'root-authority')] }),
+      ],
+      [
+        'unknown-zone',
+        analyzeFixtureViolations({
+          productionFiles: ['integration/rogue/x.ts'],
+          placement: [entry('integration/rogue/x.ts', 'root-authority')],
+        }),
+      ],
+      [
+        'unknown-zone',
+        analyzeFixtureViolations({
+          productionFiles: ['integration/rogue.ts'],
+          placement: [entry('integration/rogue.ts', 'ghost-zone')],
+          owners: [
+            ...FIXTURE_OWNERS,
+            { id: 'ghost-zone', targetZone: 'nowhere', description: 'fixture ghost zone' },
+          ],
+        }),
+      ],
+      [
+        'unknown-owner',
+        analyzeFixtureViolations({
+          productionFiles: ['integration/rogue.ts'],
+          placement: [entry('integration/rogue.ts', 'ghost')],
+        }),
+      ],
+      [
+        'zone-owner-mismatch',
+        analyzeFixtureViolations({
+          productionFiles: ['integration/status/moved.ts'],
+          placement: [entry('integration/status/moved.ts', 'root-authority')],
+        }),
+      ],
+      [
+        'zone-production-budget-exceeded',
+        analyzeFixtureViolations({
+          zones: budgetZones,
+          productionFiles: ['integration/status/a.ts', 'integration/status/b.ts'],
+          placement: [
+            entry('integration/status/a.ts', 'status'),
+            entry('integration/status/b.ts', 'status'),
+          ],
+        }),
+      ],
+      [
+        'test-file-in-placement',
+        analyzeFixtureViolations({
+          productionFiles: ['integration/rogue.test.ts'],
+          placement: [entry('integration/rogue.test.ts', 'root-authority')],
+          testFiles: ['integration/rogue.test.ts'],
+        }),
+      ],
+      [
+        'duplicate-placement-entry',
+        analyzeFixtureViolations({
+          productionFiles: ['integration/rogue.ts'],
+          placement: [
+            entry('integration/rogue.ts', 'root-authority'),
+            entry('integration/rogue.ts', 'root-authority'),
+          ],
+        }),
+      ],
+      [
+        'duplicate-zone-id',
+        analyzeFixtureViolations({
+          zones: [...FIXTURE_ZONES, { id: 'root', dir: 'integration', description: 'duplicate' }],
+        }),
+      ],
+      [
+        'duplicate-zone-dir',
+        analyzeFixtureViolations({
+          zones: [
+            ...FIXTURE_ZONES,
+            { id: 'status-mirror', dir: 'integration/status', description: 'duplicate dir' },
+          ],
+        }),
+      ],
+      [
+        'duplicate-owner-id',
+        analyzeFixtureViolations({
+          owners: [
+            ...FIXTURE_OWNERS,
+            { id: 'status', targetZone: 'status', description: 'duplicate' },
+          ],
+        }),
+      ],
+    ];
+
+    for (const [rule, violations] of cases) {
+      const matching = violations.filter((violation) => violation.rule === rule);
+      expect(matching.length, rule).toBeGreaterThan(0);
+      for (const violation of matching) {
+        expect(
+          (violation.hint ?? '').length,
+          `${rule}: ${violation.file} has no repair hint`,
+        ).toBeGreaterThan(0);
+      }
+    }
   });
 
   it('accepts a classified, correctly placed fixture file', () => {

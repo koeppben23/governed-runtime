@@ -921,3 +921,12 @@ export function admissionRecord(selector: string): AdmissionRecord {
   }
   return record;
 }
+
+/**
+ * Every selector that carries an immutable admission record, sorted. The
+ * mutation-scope guard uses this projection to prove that the record set and
+ * the active required-entry admissions cannot drift apart in either direction.
+ */
+export function admissionRecordSelectors(): readonly string[] {
+  return Object.keys(RECORDS).sort();
+}

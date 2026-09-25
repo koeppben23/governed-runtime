@@ -9,7 +9,7 @@ import * as path from 'node:path';
 import { existsSync } from 'node:fs';
 
 import type { SessionState } from '../state/schema.js';
-import { readState } from '../adapters/persistence.js';
+import { PersistenceError, readState } from '../adapters/persistence.js';
 import { changedFiles } from '../adapters/git.js';
 import { strictBlockedOutput, buildEnforcementError } from './blocked-result.js';
 
@@ -19,7 +19,7 @@ import {
   type RiskClassificationDecision,
 } from './phase-tool-gate.js';
 import { appendReviewAuditEvent } from './review/evidence/audit-events.js';
-import { writeStateWithAuditOperations } from './audit-outbox.js';
+import { mutateStateWithAuditOperations } from './audit-outbox.js';
 
 export interface RiskEnforcementDeps {
   getSessionDir(sessionId: string): string | null;
@@ -205,30 +205,38 @@ export function evidenceUnavailableRiskDecision(
 
 export async function persistRiskDecisionBlock(
   sessDir: string,
-  state: SessionState,
   decision: DeniedRiskClassificationDecision,
   code: string,
   message: string,
 ): Promise<void> {
   const blockedAt = new Date().toISOString();
-  const nextState: SessionState = {
-    ...state,
-    riskGate: {
-      status: 'blocked',
-      code,
-      message,
-      blockedAt,
-      lastDecisionId: decision.decisionId,
-    },
-  };
-  await writeStateWithAuditOperations(sessDir, nextState, [
-    {
-      phase: nextState.phase,
-      event: 'risk:classification_checked',
-      occurredAt: blockedAt,
-      detail: riskDecisionAuditDetail(nextState, decision, 'blocked', code),
-    },
-  ]);
+  const updated = await mutateStateWithAuditOperations(sessDir, (current) => {
+    if (current.riskGate?.status === 'blocked') return { next: current };
+    const next: SessionState = {
+      ...current,
+      riskGate: {
+        status: 'blocked',
+        code,
+        message,
+        blockedAt,
+        lastDecisionId: decision.decisionId,
+      },
+    };
+    return {
+      next,
+      semanticIntents: [
+        {
+          phase: next.phase,
+          event: 'risk:classification_checked',
+          occurredAt: blockedAt,
+          detail: riskDecisionAuditDetail(next, decision, 'blocked', code),
+        },
+      ],
+    };
+  });
+  if (updated === null) {
+    throw new PersistenceError('READ_FAILED', `no persisted session state at ${sessDir}`);
+  }
 }
 
 export async function appendRiskDecisionAudit(
@@ -293,7 +301,7 @@ async function persistAndThrowRiskBlock(
   const { code, reason } = decision;
   if (state.riskGate?.status !== 'blocked') {
     try {
-      await persistRiskDecisionBlock(sessDir, state, decision, code, reason);
+      await persistRiskDecisionBlock(sessDir, decision, code, reason);
     } catch (err) {
       throw buildEnforcementError(
         'AUDIT_PERSISTENCE_FAILED',
@@ -322,7 +330,6 @@ export async function enforceRiskClassificationBefore(
       try {
         await persistRiskDecisionBlock(
           sessDir,
-          state,
           decision,
           'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
           reason,
@@ -373,7 +380,6 @@ async function handleEvidenceUnavailableBash(
     if (state.riskGate?.status !== 'blocked') {
       await persistRiskDecisionBlock(
         sessDir,
-        state,
         decision,
         'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
         reason,
@@ -496,7 +502,7 @@ async function blockRiskDecisionAfterBash(
   const { code, reason } = decision;
   try {
     if (state.riskGate?.status !== 'blocked')
-      await persistRiskDecisionBlock(sessDir, state, decision, code, reason);
+      await persistRiskDecisionBlock(sessDir, decision, code, reason);
     output.output = strictBlockedOutput(code, {
       reason,
       sessionId,

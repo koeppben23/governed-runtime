@@ -17,6 +17,118 @@ import { refreshProofGraph } from './proofgraph/refresh.js';
 export type SemanticAuditIntent = Extract<PendingAuditOperation, { kind: 'semantic' }>['semantic'];
 
 /**
+ * The only top-level state fields the direct metadata channel may change.
+ * Everything else is protected authority state by default: a field added to
+ * the schema later cannot silently become mutable through this channel.
+ * `reviewAssurance` is mutable as a whole so ledger and status updates stay
+ * possible; its obligation attributes are protected separately through
+ * {@link REVIEW_OBLIGATION_MUTABLE_FIELDS}.
+ */
+const DIRECT_WRITE_MUTABLE_FIELDS: ReadonlySet<string> = new Set([
+  'runtimeLease',
+  'mutationEpisodes',
+  'reviewAssurance',
+  'riskGate',
+  'discoveryHealthGate',
+  'error',
+]);
+
+/**
+ * Review-obligation fields the direct channel may change: lifecycle state and
+ * attempt linkage only. Every other obligation field is frozen at mint and is
+ * compared field by field, so review material, profile, challenge policy, and
+ * future obligation attributes stay protected by default.
+ */
+const REVIEW_OBLIGATION_MUTABLE_FIELDS: ReadonlySet<string> = new Set([
+  'status',
+  'blockedCode',
+  'invocationId',
+  'fulfilledAt',
+  'consumedAt',
+  'pluginHandshakeAt',
+]);
+
+function obligationOrderChanges(previous: SessionState, next: SessionState): string[] {
+  const beforeOrder = (previous.reviewAssurance?.obligations ?? []).map(
+    (obligation) => obligation.obligationId,
+  );
+  const afterOrder = (next.reviewAssurance?.obligations ?? []).map(
+    (obligation) => obligation.obligationId,
+  );
+  const sameOrder =
+    beforeOrder.length === afterOrder.length &&
+    beforeOrder.every((id, index) => id === afterOrder[index]);
+  // The sequence is semantic: `findLatestObligation()` scans backwards and
+  // returns the last matching entry, so a reorder changes which obligation a
+  // lookup selects.
+  return sameOrder ? [] : ['reviewAssurance.obligation-order'];
+}
+
+type ReviewObligation = NonNullable<SessionState['reviewAssurance']>['obligations'][number];
+
+function obligationAttributeChanges(
+  prior: ReviewObligation,
+  obligation: ReviewObligation,
+): string[] {
+  const priorRecord = prior as unknown as Record<string, unknown>;
+  const nextRecord = obligation as unknown as Record<string, unknown>;
+  const changed: string[] = [];
+  for (const key of new Set([...Object.keys(priorRecord), ...Object.keys(nextRecord)])) {
+    if (REVIEW_OBLIGATION_MUTABLE_FIELDS.has(key)) continue;
+    if (canonicalJsonStringify(priorRecord[key]) !== canonicalJsonStringify(nextRecord[key])) {
+      changed.push(key);
+    }
+  }
+  return changed;
+}
+
+function unauthorizedObligationChanges(previous: SessionState, next: SessionState): string[] {
+  const beforeObligations = previous.reviewAssurance?.obligations ?? [];
+  const afterObligations = next.reviewAssurance?.obligations ?? [];
+  const before = new Map(
+    beforeObligations.map((obligation) => [obligation.obligationId, obligation]),
+  );
+  const after = new Map(
+    afterObligations.map((obligation) => [obligation.obligationId, obligation]),
+  );
+  const changed: string[] = [...obligationOrderChanges(previous, next)];
+
+  for (const id of before.keys()) {
+    if (!after.has(id)) changed.push(`reviewAssurance.obligation[${id}]`);
+  }
+  for (const [id, obligation] of after) {
+    const prior = before.get(id);
+    if (!prior) {
+      changed.push(`reviewAssurance.obligation[${id}]`);
+      continue;
+    }
+    for (const attribute of obligationAttributeChanges(prior, obligation)) {
+      changed.push(`reviewAssurance.obligation[${id}].${attribute}`);
+    }
+  }
+  return changed;
+}
+
+/**
+ * Names of authority fields a direct write would change without
+ * authorization. Every field outside {@link DIRECT_WRITE_MUTABLE_FIELDS} is
+ * compared, so the contract fails closed for fields it does not know.
+ */
+function unauthorizedDirectWriteChanges(previous: SessionState, next: SessionState): string[] {
+  const before = previous as unknown as Record<string, unknown>;
+  const after = next as unknown as Record<string, unknown>;
+  const changed: string[] = [];
+  for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+    if (DIRECT_WRITE_MUTABLE_FIELDS.has(key)) continue;
+    if (canonicalJsonStringify(before[key]) !== canonicalJsonStringify(after[key])) {
+      changed.push(key);
+    }
+  }
+  changed.push(...unauthorizedObligationChanges(previous, next));
+  return changed.sort();
+}
+
+/**
  * Prepare the next state together with its durable authority-write operations.
  *
  * The state and its outbox commit are persisted atomically by the caller
@@ -61,6 +173,19 @@ export async function writeStateWithAuditOperationsAlreadyLocked(
   semanticIntents: readonly SemanticAuditIntent[] = [],
 ): Promise<SessionState> {
   const previous = await readState(sessDir);
+  if (previous != null) {
+    const changed = unauthorizedDirectWriteChanges(previous, nextState);
+    if (changed.length > 0) {
+      throw new PersistenceError(
+        'DIRECT_WRITE_REQUIRES_PREPARE',
+        `Refusing a direct metadata write that changes protected authority state ` +
+          `(${changed.join(', ')}); the direct channel may only change ` +
+          `${[...DIRECT_WRITE_MUTABLE_FIELDS].join(', ')}. Use ` +
+          'writeStateWithArtifactsAndAuditOperations so implementation-entry finalization ' +
+          'and ProofGraph refresh run exactly once.',
+      );
+    }
+  }
   const stateWithOperations = prepareAuditOperations(
     previous,
     nextState,
@@ -79,6 +204,30 @@ export async function writeStateWithAuditOperations(
   return withSessionWriteLock(sessDir, () =>
     writeStateWithAuditOperationsAlreadyLocked(sessDir, nextState, semanticIntents),
   );
+}
+
+/**
+ * Apply a mutation to the freshly read state under the session write lock.
+ *
+ * Callers that decided from an earlier read must persist through this helper:
+ * writing a pre-built snapshot would overwrite authority (mutation episodes,
+ * pending audit operations, runtime lease) committed between that read and the
+ * lock. The mutation receives the current state and returns the next state plus
+ * optional semantic audit intents. Returns null when no state exists.
+ */
+export async function mutateStateWithAuditOperations(
+  sessDir: string,
+  mutate: (state: SessionState) => {
+    readonly next: SessionState;
+    readonly semanticIntents?: readonly SemanticAuditIntent[];
+  },
+): Promise<SessionState | null> {
+  return withSessionWriteLock(sessDir, async () => {
+    const current = await readState(sessDir);
+    if (current === null) return null;
+    const { next, semanticIntents = [] } = mutate(current);
+    return writeStateWithAuditOperationsAlreadyLocked(sessDir, next, semanticIntents);
+  });
 }
 
 async function prepareState(nextState: SessionState): Promise<SessionState> {
