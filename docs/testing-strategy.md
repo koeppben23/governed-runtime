@@ -335,11 +335,16 @@ The profile is required and must pass its own full run plus
 
 Topology profile (`stryker.topology.conf.json`): focused authority profile for
 `src/machine/topology.ts`, the formal state transition table. It uses
-`coverageAnalysis: "all"`, `ignoreStatic: false`, keeps `StringLiteral`
-enabled, and disables the TypeScript checker because the typed table literals
-are the mutation surface. Admitted 2026-09-21 at 99.32 % on the freeze run
-(df9f8b4d); the base classification `not-mutation-suitable` stays scoped to
-base.
+`coverageAnalysis: "all"`, `ignoreStatic: false`, keeps `StringLiteral` and
+`ArrayDeclaration` enabled, and disables the TypeScript checker because the
+typed table literals are the mutation surface. `ArrayDeclaration` was enabled
+on 2026-09-25 after a diagnostic run (230 of 231 mutants killed, 99.57 %); the
+single surviving conditional-expression mutant at `topology.ts:341` is an
+equivalent variant — with `requiredIndex >= 0`, the return comparison
+`currentIndex >= requiredIndex` already excludes a negative `currentIndex`, so
+the `currentIndex < 0` clause is redundant and the mutator configuration stays
+enabled. Admitted 2026-09-21 at 99.32 % on the freeze run (df9f8b4d); the base
+classification `not-mutation-suitable` stays scoped to base.
 
 Deferred surfaces (whole roots behind the admission gate):
 `src/config/**`, `src/state/**`, `src/shared/**`, `src/audit/**`,

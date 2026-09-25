@@ -12,7 +12,7 @@
   },
   "mutate": ["src/machine/topology.ts"],
   "mutator": {
-    "excludedMutations": ["ArrayDeclaration", "Regex"]
+    "excludedMutations": ["Regex"]
   },
   "ignoreStatic": false,
   "thresholds": {
