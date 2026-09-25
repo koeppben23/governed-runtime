@@ -32,8 +32,12 @@ describe('developer onboarding documentation contract', () => {
 
   it('documents the production-file change checklist and links it from the entry points', () => {
     const map = read('docs/development/architecture-map.md');
+    const checklistAnchor = 'architecture-map.md#add-move-or-delete-a-production-file';
 
     expect(map).toContain('Add, move, or delete a production file');
+    for (const phase of ['**Add**', '**Move**', '**Delete**']) {
+      expect(map, phase).toContain(phase);
+    }
     for (const phrase of [
       'placement entry',
       'zone budget',
@@ -44,8 +48,8 @@ describe('developer onboarding documentation contract', () => {
       expect(map, phrase).toContain(phrase);
     }
 
-    expect(read('docs/development/first-change.md')).toContain('architecture-map.md');
-    expect(read('CONTRIBUTING.md')).toContain('architecture-map.md');
+    expect(read('docs/development/first-change.md')).toContain(checklistAnchor);
+    expect(read('CONTRIBUTING.md')).toContain(checklistAnchor);
   });
 
   it('documents the separate approval, export, regulated completion, and recovery stages', () => {
