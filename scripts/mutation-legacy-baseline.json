@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "legacySelectors": [
+    {
+      "profile": "base",
+      "mutateSelector": "src/adapters/ip-validation.ts"
+    },
+    {
+      "profile": "base",
+      "mutateSelector": "src/adapters/workspace/archive-tar.ts"
+    },
+    {
+      "profile": "base",
+      "mutateSelector": "src/adapters/workspace/archive-verify-chain.ts"
+    },
+    {
+      "profile": "base",
+      "mutateSelector": "src/adapters/workspace/archive.ts"
+    },
+    {
+      "profile": "base",
+      "mutateSelector": "src/config/reasons.ts"
+    },
+    {
+      "profile": "base",
+      "mutateSelector": "src/hooks/http-server.ts"
+    },
+    {
+      "profile": "base",
+      "mutateSelector": "src/hooks/pre-tool-use.ts"
+    },
+    {
+      "profile": "base",
+      "mutateSelector": "src/identity/key-resolver.ts"
+    },
+    {
+      "profile": "base",
+      "mutateSelector": "src/integration/installed-commands.ts"
+    },
+    {
+      "profile": "base",
+      "mutateSelector": "src/integration/plugin-audit.ts"
+    },
+    {
+      "profile": "base",
+      "mutateSelector": "src/integration/plugin-beforehooks.ts"
+    },
+    {
+      "profile": "base",
+      "mutateSelector": "src/integration/plugin-workspace.ts"
+    },
+    {
+      "profile": "base",
+      "mutateSelector": "src/integration/plugin.ts"
+    },
+    {
+      "profile": "base",
+      "mutateSelector": "src/integration/review/enforcement/challenge-binding.ts"
+    },
+    {
+      "profile": "base",
+      "mutateSelector": "src/integration/review/enforcement/enforcement.ts"
+    },
+    {
+      "profile": "base",
+      "mutateSelector": "src/integration/review/enforcement/findings-consistency.ts"
+    },
+    {
+      "profile": "base",
+      "mutateSelector": "src/mcp-server/session-resolver.ts"
+    },
+    {
+      "profile": "base",
+      "mutateSelector": "src/mcp-server/tool-adapter.ts"
+    },
+    {
+      "profile": "base",
+      "mutateSelector": "src/rails/hydrate.ts"
+    },
+    {
+      "profile": "base",
+      "mutateSelector": "src/rails/review.ts"
+    },
+    {
+      "profile": "human-projection",
+      "mutateSelector": "src/presentation/markdown.ts:264-292"
+    }
+  ]
+}

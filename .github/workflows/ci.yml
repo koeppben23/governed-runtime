@@ -232,6 +232,14 @@ jobs:
         env:
           FORCE_COLOR: 0
 
+      - name: Check legacy mutation ratchet against the PR base
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+          node scripts/check-legacy-ratchet.mjs --base "origin/${{ github.base_ref }}"
+        env:
+          FORCE_COLOR: 0
+
   architecture-windows:
     name: architecture-windows
     runs-on: windows-latest
