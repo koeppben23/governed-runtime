@@ -48,20 +48,51 @@ const REVIEW_OBLIGATION_MUTABLE_FIELDS: ReadonlySet<string> = new Set([
   'pluginHandshakeAt',
 ]);
 
+function obligationOrderChanges(previous: SessionState, next: SessionState): string[] {
+  const beforeOrder = (previous.reviewAssurance?.obligations ?? []).map(
+    (obligation) => obligation.obligationId,
+  );
+  const afterOrder = (next.reviewAssurance?.obligations ?? []).map(
+    (obligation) => obligation.obligationId,
+  );
+  const sameOrder =
+    beforeOrder.length === afterOrder.length &&
+    beforeOrder.every((id, index) => id === afterOrder[index]);
+  // The sequence is semantic: `findLatestObligation()` scans backwards and
+  // returns the last matching entry, so a reorder changes which obligation a
+  // lookup selects.
+  return sameOrder ? [] : ['reviewAssurance.obligation-order'];
+}
+
+type ReviewObligation = NonNullable<SessionState['reviewAssurance']>['obligations'][number];
+
+function obligationAttributeChanges(
+  prior: ReviewObligation,
+  obligation: ReviewObligation,
+): string[] {
+  const priorRecord = prior as unknown as Record<string, unknown>;
+  const nextRecord = obligation as unknown as Record<string, unknown>;
+  const changed: string[] = [];
+  for (const key of new Set([...Object.keys(priorRecord), ...Object.keys(nextRecord)])) {
+    if (REVIEW_OBLIGATION_MUTABLE_FIELDS.has(key)) continue;
+    if (canonicalJsonStringify(priorRecord[key]) !== canonicalJsonStringify(nextRecord[key])) {
+      changed.push(key);
+    }
+  }
+  return changed;
+}
+
 function unauthorizedObligationChanges(previous: SessionState, next: SessionState): string[] {
+  const beforeObligations = previous.reviewAssurance?.obligations ?? [];
+  const afterObligations = next.reviewAssurance?.obligations ?? [];
   const before = new Map(
-    (previous.reviewAssurance?.obligations ?? []).map((obligation) => [
-      obligation.obligationId,
-      obligation,
-    ]),
+    beforeObligations.map((obligation) => [obligation.obligationId, obligation]),
   );
   const after = new Map(
-    (next.reviewAssurance?.obligations ?? []).map((obligation) => [
-      obligation.obligationId,
-      obligation,
-    ]),
+    afterObligations.map((obligation) => [obligation.obligationId, obligation]),
   );
-  const changed: string[] = [];
+  const changed: string[] = [...obligationOrderChanges(previous, next)];
+
   for (const id of before.keys()) {
     if (!after.has(id)) changed.push(`reviewAssurance.obligation[${id}]`);
   }
@@ -71,13 +102,8 @@ function unauthorizedObligationChanges(previous: SessionState, next: SessionStat
       changed.push(`reviewAssurance.obligation[${id}]`);
       continue;
     }
-    const priorRecord = prior as unknown as Record<string, unknown>;
-    const nextRecord = obligation as unknown as Record<string, unknown>;
-    for (const key of new Set([...Object.keys(priorRecord), ...Object.keys(nextRecord)])) {
-      if (REVIEW_OBLIGATION_MUTABLE_FIELDS.has(key)) continue;
-      if (canonicalJsonStringify(priorRecord[key]) !== canonicalJsonStringify(nextRecord[key])) {
-        changed.push(`reviewAssurance.obligation[${id}].${key}`);
-      }
+    for (const attribute of obligationAttributeChanges(prior, obligation)) {
+      changed.push(`reviewAssurance.obligation[${id}].${attribute}`);
     }
   }
   return changed;

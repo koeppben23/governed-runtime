@@ -450,6 +450,33 @@ describe('direct metadata write channel', () => {
     });
   });
 
+  it('rejects a review-obligation reorder through the direct channel', async () => {
+    const assurance = blockedObligation('REVIEWER_INVOCATION_EXHAUSTED');
+    const [first] = assurance.obligations;
+    expect(first).not.toBeUndefined();
+    const second = { ...first!, obligationId: '66666666-6666-4666-8666-666666666666' };
+    const seeded = await seedClaimState('IMPLEMENTATION', {
+      reviewAssurance: { ...assurance, obligations: [first!, second] },
+    });
+    const current = seeded.reviewAssurance;
+    expect(current?.obligations).toHaveLength(2);
+
+    const next: SessionState = {
+      ...seeded,
+      reviewAssurance: {
+        ...current!,
+        obligations: [current!.obligations[1]!, current!.obligations[0]!],
+      },
+    };
+
+    await expect(writeStateWithAuditOperations(sessDir, next)).rejects.toMatchObject({
+      code: 'DIRECT_WRITE_REQUIRES_PREPARE',
+    });
+
+    const persisted = await readState(sessDir);
+    expect(persisted?.reviewAssurance).toEqual(seeded.reviewAssurance);
+  });
+
   it('keeps authority committed after the decision read when a risk block persists', async () => {
     const seeded = await seedClaimState('IMPLEMENTATION');
     const intervening = await writeStateWithAuditOperations(sessDir, seeded, [
