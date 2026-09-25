@@ -12,6 +12,7 @@ import {
   isHostToolAllowedInPhase,
   assessMinimumTaskClass,
   isRiskClassificationAllowed,
+  maxTaskClass,
   resolveCeremonyProfile,
   MUTATING_HOST_TOOLS,
   HOST_MUTATION_PHASE,
@@ -732,5 +733,43 @@ describe('phase-tool-gate', () => {
       expect(result.profile).toBe('full');
       expect(result.reason).toBe('RISK_GATE_BLOCKED');
     });
+  });
+});
+
+describe('task class ordering', () => {
+  const CLASSES = ['TRIVIAL', 'STANDARD', 'HIGH-RISK'] as const;
+
+  it('pins the full order and tie behaviour of maxTaskClass', () => {
+    expect(maxTaskClass('TRIVIAL', 'STANDARD')).toBe('STANDARD');
+    expect(maxTaskClass('STANDARD', 'TRIVIAL')).toBe('STANDARD');
+    expect(maxTaskClass('STANDARD', 'HIGH-RISK')).toBe('HIGH-RISK');
+    expect(maxTaskClass('HIGH-RISK', 'STANDARD')).toBe('HIGH-RISK');
+    expect(maxTaskClass('TRIVIAL', 'HIGH-RISK')).toBe('HIGH-RISK');
+    expect(maxTaskClass('HIGH-RISK', 'TRIVIAL')).toBe('HIGH-RISK');
+
+    for (const taskClass of CLASSES) {
+      expect(maxTaskClass(taskClass, taskClass), taskClass).toBe(taskClass);
+    }
+  });
+
+  it('is commutative and idempotent for every pair', () => {
+    for (const first of CLASSES) {
+      for (const second of CLASSES) {
+        const maximum = maxTaskClass(first, second);
+        expect(maximum, `${first} vs ${second}`).toBe(maxTaskClass(second, first));
+        expect(maxTaskClass(maximum, second), `${first} vs ${second}`).toBe(maximum);
+        expect(maxTaskClass(first, first)).toBe(first);
+      }
+    }
+  });
+
+  it('never lowers an assessed minimum when combined with a claim', () => {
+    const minimum = assessMinimumTaskClass(['src/state/schema.ts']).minimumTaskClass;
+    expect(minimum).toBe('HIGH-RISK');
+
+    for (const claimed of CLASSES) {
+      expect(maxTaskClass(minimum, claimed), claimed).toBe('HIGH-RISK');
+      expect(maxTaskClass(claimed, minimum), claimed).toBe('HIGH-RISK');
+    }
   });
 });
