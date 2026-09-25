@@ -110,6 +110,9 @@ deterministic one).
   crosses a module boundary. Run it in addition to the checks below.
 - The tool name and registration surface (`src/integration/tool-names.ts`,
   `src/integration/tools/index.ts`) stay untouched.
+- If you do add, move, or delete a production file, follow the
+  [file-change checklist](./architecture-map.md#add-move-or-delete-a-production-file)
+  instead of this section.
 
 ## 6. Run the checks
 

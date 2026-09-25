@@ -531,6 +531,8 @@ export function validate(input: unknown): RailResult {
 3. Update or add architecture tests
 4. Update the placement/zone authorities when files move or are added
    (see the [Developer Architecture Map](./docs/development/architecture-map.md))
+5. Follow the add/move/delete checklist for production files in the
+   [Developer Architecture Map](./docs/development/architecture-map.md#add-move-or-delete-a-production-file)
 
 ## Performance Guidelines
 

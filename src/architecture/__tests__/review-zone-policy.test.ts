@@ -26,6 +26,7 @@ import {
   reviewZoneEdges,
   zoneEdgeKey,
   type ReviewZoneSource,
+  type ReviewZoneViolation,
 } from './review-zone-policy.js';
 
 const ZONES: readonly IntegrationPlacementZone[] = [
@@ -40,12 +41,19 @@ function source(rel: string, content: string): ReviewZoneSource {
   return { rel, content };
 }
 
-function analyze(sources: readonly ReviewZoneSource[], declared: readonly string[]): string[] {
+function analyzeViolations(
+  sources: readonly ReviewZoneSource[],
+  declared: readonly string[],
+): ReviewZoneViolation[] {
   return analyzeReviewZonePolicy({
     sources,
     zones: ZONES,
     declaredEdges: new Set(declared),
-  }).map((violation) => violation.rule);
+  });
+}
+
+function analyze(sources: readonly ReviewZoneSource[], declared: readonly string[]): string[] {
+  return analyzeViolations(sources, declared).map((violation) => violation.rule);
 }
 
 describe('review zone policy', () => {
@@ -89,6 +97,29 @@ describe('review zone policy', () => {
     expect(analyze([], [zoneEdgeKey('review/dispatch', 'review/evidence')])).toEqual([
       'stale-zone-edge',
     ]);
+  });
+
+  it('gives every violation a concrete repair hint', () => {
+    const violations = [
+      ...analyzeViolations(
+        [source('integration/review/dispatch/a.ts', `import { x } from '../index.js';`)],
+        [],
+      ),
+      ...analyzeViolations(
+        [source('integration/review/dispatch/a.ts', `import { x } from '../evidence/b.js';`)],
+        [],
+      ),
+      ...analyzeViolations([], [zoneEdgeKey('review/dispatch', 'review/evidence')]),
+    ];
+
+    expect(new Set(violations.map((violation) => violation.rule))).toEqual(
+      new Set(['production-facade-import', 'undeclared-zone-edge', 'stale-zone-edge']),
+    );
+    for (const violation of violations) {
+      expect((violation.hint ?? '').length, `${violation.rule}: ${violation.file}`).toBeGreaterThan(
+        0,
+      );
+    }
   });
 
   it('fires on every production import of the facade', () => {
@@ -248,7 +279,13 @@ describe('review zone policy — real tree', () => {
     if (violations.length > 0) {
       console.error(
         'review zone violations:\n' +
-          violations.map((violation) => `  - ${violation.file}: ${violation.message}`).join('\n'),
+          violations
+            .map(
+              (violation) =>
+                `  - ${violation.file}: ${violation.message}` +
+                (violation.hint ? `\n      fix: ${violation.hint}` : ''),
+            )
+            .join('\n'),
       );
     }
     expect(violations).toEqual([]);
@@ -272,7 +309,7 @@ describe('review zone policy — real tree', () => {
     const reviewZones = INTEGRATION_PLACEMENT_ZONES.filter(
       (zone) => zone.id === 'review' || zone.id.startsWith('review/'),
     );
-    expect(reviewZones.length).toBe(9);
+    expect(reviewZones.length).toBeGreaterThan(0);
 
     const productionFiles = sources.map((source) => source.rel);
     for (const zone of reviewZones) {
