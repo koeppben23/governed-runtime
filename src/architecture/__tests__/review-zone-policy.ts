@@ -28,9 +28,8 @@
  * @version v2
  */
 
-import * as ts from 'typescript';
-
 import { isTestSourcePath } from './module-classification.js';
+import { collectImportSpecifiers } from './import-specifiers.js';
 import type { IntegrationPlacementZone } from './integration-placement-policy.js';
 import { stronglyConnectedComponents, type ModuleEdge } from './module-graph.js';
 
@@ -121,50 +120,15 @@ function reviewZoneOf(
 }
 
 /**
- * Relative module specifiers from the syntax tree.
- *
- * This is deliberately AST-based, not regex-based: comments between `from`/
- * `import` and the string literal are trivia and cannot hide an edge, while
- * commented-out imports and import-looking string content cannot fabricate one.
- * Covered forms: `import ... from`, `export ... from`, `import x = require(...)`,
- * dynamic `import()`, and `require()`.
+ * Relative module specifiers from the shared AST collector
+ * (`import-specifiers.ts`). Comments between `from`/`import` and the string
+ * literal are trivia and cannot hide an edge, while commented-out imports and
+ * import-looking string content cannot fabricate one.
  */
 function relativeSpecifiers(sourceText: string): string[] {
-  const sourceFile = ts.createSourceFile(
-    'review-zone.ts',
-    sourceText,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TS,
-  );
-  const out: string[] = [];
-
-  const collect = (specifier: ts.Expression | undefined): void => {
-    if (specifier !== undefined && ts.isStringLiteralLike(specifier)) {
-      if (specifier.text.startsWith('.')) out.push(specifier.text);
-    }
-  };
-
-  const visit = (node: ts.Node): void => {
-    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
-      collect(node.moduleSpecifier);
-    } else if (ts.isImportEqualsDeclaration(node)) {
-      const reference = node.moduleReference;
-      if (ts.isExternalModuleReference(reference)) {
-        collect(reference.expression);
-      }
-    } else if (ts.isCallExpression(node)) {
-      const isDynamicImport = node.expression.kind === ts.SyntaxKind.ImportKeyword;
-      const isRequire = ts.isIdentifier(node.expression) && node.expression.text === 'require';
-      if (isDynamicImport || isRequire) {
-        collect(node.arguments[0]);
-      }
-    }
-    ts.forEachChild(node, visit);
-  };
-
-  visit(sourceFile);
-  return out;
+  return collectImportSpecifiers(sourceText)
+    .map((specifier) => specifier.module)
+    .filter((module) => module.startsWith('.'));
 }
 
 /** Resolve a relative specifier against an importer to a `src/`-relative `.ts`. */
