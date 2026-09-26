@@ -373,7 +373,7 @@ aid; scripts, tests, CI, and `AGENTS.md` remain the enforcement authorities.
 | TypeScript source or tests | `npm run check`, `npm run lint:strict` |
 | Imports, exports, placement, or layer boundaries | `npm run test:architecture` |
 | Runtime configuration, installed commands, or templates | Owning contract and install tests; `npm run build` for distribution changes |
-| State, policy, audit, guards, or security boundaries | Meaningful negative paths and `npm run mutation` |
+| State, policy, audit, guards, or security boundaries | Meaningful negative paths and `npm run mutation`; verify the changed selector is admitted by `stryker.conf.json` and `scripts/mutation-profile-registry.json` |
 | Dependencies or module surface | `npm run check:unused-dependencies` |
 
 ## Pull Request Process

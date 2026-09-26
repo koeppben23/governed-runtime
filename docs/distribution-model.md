@@ -110,10 +110,11 @@ OPENCODE_SERVER_PASSWORD=secret opencode serve --port 4096
 Create a session and send a governed message through the API:
 
 ```bash
-curl -X POST http://localhost:4096/session -H "Content-Type: application/json" \
+curl -u opencode:secret -X POST http://localhost:4096/session \
+  -H "Content-Type: application/json" \
   -d '{"title": "flowguard-session"}'
 
-curl -X POST http://localhost:4096/session/{sessionId}/message \
+curl -u opencode:secret -X POST http://localhost:4096/session/{sessionId}/message \
   -H "Content-Type: application/json" \
   -d '{"parts": [{"type": "text", "text": "/hydrate policyMode=team-ci"}]}'
 ```

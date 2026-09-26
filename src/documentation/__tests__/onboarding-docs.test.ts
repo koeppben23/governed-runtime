@@ -99,6 +99,13 @@ describe('developer onboarding documentation contract', () => {
     expect(read('CONTRIBUTING.md')).toContain('docs/development/index.md');
   });
 
+  it('keeps password-protected HTTP API examples authenticated', () => {
+    const distribution = read('docs/distribution-model.md');
+
+    expect(distribution).toContain('OPENCODE_SERVER_PASSWORD=secret');
+    expect(distribution.match(/curl -u opencode:secret/g)).toHaveLength(2);
+  });
+
   it('documents the automatic-validation happy path without a manual check', () => {
     const diagram = read('docs/architecture/architecture-diagram.md');
 
