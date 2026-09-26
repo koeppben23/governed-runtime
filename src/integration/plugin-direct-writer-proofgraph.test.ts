@@ -270,6 +270,20 @@ describe('direct metadata write channel', () => {
     expect(await readState(sessDir)).toBeNull();
   });
 
+  it('rejects a direct metadata write without existing state before any persistence or audit operation', async () => {
+    await expect(writeStateWithAuditOperations(sessDir, makeState('TICKET'))).rejects.toMatchObject(
+      {
+        code: 'DIRECT_WRITE_REQUIRES_PREPARE',
+      },
+    );
+
+    // Nothing was persisted: no state file, no outbox operation, and no lock
+    // residue. The rejection must precede both prepareAuditOperations and
+    // writeStateAlreadyLocked.
+    expect(await readState(sessDir)).toBeNull();
+    expect(await fs.readdir(sessDir)).toEqual([]);
+  });
+
   it.each([
     ['phase', (state: SessionState): SessionState => ({ ...state, phase: 'IMPL_VALIDATION' })],
     [

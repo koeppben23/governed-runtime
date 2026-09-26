@@ -538,8 +538,12 @@ function buildRankedSection(
     readonly corroboratedOnly?: boolean;
   },
 ): ImplementationGuidanceItem[] {
-  const ranked = rankItems(items, options.limit, options.health);
-  return options.corroboratedOnly ? onlyCorroborated(ranked) : ranked;
+  // Corroboration is a selection contract, not a post-filter: filtering after
+  // the truncation lets uncorroborated discovery items consume the limit and
+  // silently drops corroborated items (session-owned changed files) that still
+  // have room.
+  const candidates = options.corroboratedOnly ? onlyCorroborated(items) : items;
+  return rankItems(candidates, options.limit, options.health);
 }
 
 function hasNoImplementationDirection(sections: GuidanceSections): boolean {

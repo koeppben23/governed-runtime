@@ -9,8 +9,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const CANONICAL_SCOPE = 'This file adds instructions for files in this directory subtree.';
-const CANONICAL_VERIFICATION =
-  'Apply the repository-wide verification rules first. In addition:';
+const CANONICAL_VERIFICATION = 'Apply the repository-wide verification rules first. In addition:';
 
 const ALLOWED_DUPLICATE = new Set([
   normalizeParagraph(CANONICAL_SCOPE),
@@ -18,7 +17,9 @@ const ALLOWED_DUPLICATE = new Set([
 ]);
 
 function readFile(root, path) {
-  return readFileSync(join(root, path), 'utf8');
+  // Paragraph splitting and canonical section comparison assume LF; normalize
+  // CRLF from Windows checkouts so the checks are line-ending agnostic.
+  return readFileSync(join(root, path), 'utf8').replace(/\r\n/g, '\n');
 }
 
 // ── Fenced code block masking ────────────────────────────────────────
@@ -83,14 +84,9 @@ export function extractMarkdownSection(content, heading, level) {
   const stopRe = new RegExp(`^#{1,${level}}\\s+`, 'm');
   const stopMatch = stopRe.exec(maskedRest);
 
-  const bodyEnd = stopMatch
-    ? bodyStart + stopMatch.index
-    : content.length;
+  const bodyEnd = stopMatch ? bodyStart + stopMatch.index : content.length;
 
-  return content
-    .slice(bodyStart, bodyEnd)
-    .replace(/^\n+/, '')
-    .trimEnd();
+  return content.slice(bodyStart, bodyEnd).replace(/^\n+/, '').trimEnd();
 }
 
 // ── Check 9: Canonical Scope section ──────────────────────────────────
@@ -128,8 +124,7 @@ export function checkAdditiveVerification(root, nested, diagnostics) {
       diagnostics.push({
         file,
         kind: 'error',
-        message:
-          'Additional Verification section must start with canonical additive rule',
+        message: 'Additional Verification section must start with canonical additive rule',
       });
     }
   }

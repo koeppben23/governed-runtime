@@ -55,9 +55,11 @@ that list, not a second authority list.
 - Validation returns domain failures (`ReviewValidationFailure`); serialization
   happens only in `review/validation/review-validation-failure.ts`, invoked by
   the tool adapters.
-- Critical components are mutation-admitted:
-  `src/architecture/__tests__/mutation-authority-inventory.ts` (owner tests) and
-  `stryker.conf.json`. Update both when a target moves.
+- Critical components are mutation-admitted: follow the add/move/delete and
+  admission procedure under "Add, move, or delete a production file" below —
+  the mutation inventory, Stryker selector, covering suite, admission record,
+  and registry projection move together. Do not update only the inventory and
+  `stryker.conf.json`.
 - Run `npm run test:architecture` and the review contract tests
   (`test:review-host-contract`, `test:review-modeb-contract`).
 

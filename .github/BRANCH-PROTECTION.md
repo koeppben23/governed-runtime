@@ -32,7 +32,7 @@ names exactly in the `Protect main and develop` ruleset.
 
 From `.github/workflows/ci.yml`:
 
-- `ci-gate` (aggregates `unit` + `coverage` + `integration-perf` + `provider-conformance` + `regulated-e2e`)
+- `ci-gate` (aggregates `unit` + `scripts-windows` + `coverage` + `integration-perf` + `provider-conformance` + `regulated-e2e`)
 - `typecheck`
 - `lint`
 - `format`
@@ -51,6 +51,10 @@ From `.github/workflows/ci.yml`:
 architecture workers (`architecture-linux`, `architecture-windows`). The
 platform workers are implementation details and are not configured
 individually as branch-protection contexts.
+
+`scripts-windows` runs the repository script tests on Windows and is
+merge-blocking through the required `ci-gate` aggregator; the Ubuntu `unit` job
+runs the same suite as its second step.
 
 The `format` check is the merge-blocking Prettier gate for both protected
 branches. Mutation testing is deliberately NOT a PR gate: it runs on the

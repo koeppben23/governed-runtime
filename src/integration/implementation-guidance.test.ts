@@ -106,6 +106,44 @@ describe('buildImplementationGuidance', () => {
     expect(guidance.notVerified.join('\n')).toContain('No matching');
   });
 
+  it('keeps corroborated changed files when uncorroborated surfaces would fill the limit', () => {
+    const discovery = makeDiscoveryResult({
+      surfaces: {
+        ...makeDiscoveryResult().surfaces,
+        api: ['a1', 'a2', 'a3', 'a4', 'a5', 'a6'].map((label) => ({
+          id: label,
+          label,
+          classification: 'fact' as const,
+          evidence: [`lib/${label}.ts`],
+        })),
+      },
+    });
+    const state = makeState('IMPLEMENTATION', {
+      ticket: { ...TICKET, text: 'Quieten frobnicator output' },
+      implementation: {
+        ...IMPL_EVIDENCE,
+        changedFiles: ['zz/impl.ts'],
+        domainFiles: ['zz/impl.ts'],
+      },
+    });
+
+    const guidance = buildImplementationGuidance({
+      state,
+      discovery,
+      discoveryHealth: extractDiscoveryHealth(discovery),
+    });
+
+    // `corroboratedOnly` promises corroborated guidance up to the limit. The
+    // session-owned changed file is corroborated even though it does not match
+    // the task text, so the corroboration filter must run before truncation —
+    // otherwise six discovery-only surfaces consume every slot and the changed
+    // file disappears.
+    expect(guidance.relevantFiles.map((item) => item.path)).toEqual(['zz/impl.ts']);
+    expect(guidance.relevantFiles[0]).toMatchObject({
+      source: 'session_implementation_evidence',
+    });
+  });
+
   it('surfaces high-risk surface warnings and risk hotspots', () => {
     const discovery = makeDiscoveryResult({
       surfaces: {
@@ -346,7 +384,7 @@ function makeCharacterizationCases(): GuidanceCharacterizationCase[] {
       }),
     ],
   });
-  const limitBeforeFilterDiscovery = makeDiscoveryResult({
+  const corroborationBeforeLimitDiscovery = makeDiscoveryResult({
     surfaces: {
       ...makeDiscoveryResult().surfaces,
       api: ['a1', 'a2', 'a3', 'a4', 'a5', 'a6'].map((label) => ({
@@ -357,7 +395,7 @@ function makeCharacterizationCases(): GuidanceCharacterizationCase[] {
       })),
     },
   });
-  const limitBeforeFilterState = makeState('IMPLEMENTATION', {
+  const corroborationBeforeLimitState = makeState('IMPLEMENTATION', {
     ticket: { ...TICKET, text: 'Quieten frobnicator output' },
     implementation: {
       ...IMPL_EVIDENCE,
@@ -428,9 +466,9 @@ function makeCharacterizationCases(): GuidanceCharacterizationCase[] {
       health: 'extract',
     },
     {
-      name: 'limit truncation precedes corroboration filtering',
-      state: limitBeforeFilterState,
-      discovery: limitBeforeFilterDiscovery,
+      name: 'corroboration filtering precedes the limit truncation',
+      state: corroborationBeforeLimitState,
+      discovery: corroborationBeforeLimitDiscovery,
       health: 'extract',
     },
   ];

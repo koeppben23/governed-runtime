@@ -41,14 +41,13 @@ function repoRel(root, filePath) {
 
 function countLines(root, filePath) {
   const raw = readFileSync(join(root, filePath), 'utf8');
-  return raw
-    .replace(/\r\n/g, '\n')
-    .replace(/\n$/, '')
-    .split('\n').length;
+  return raw.replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n').length;
 }
 
 function readFile(root, path) {
-  return readFileSync(join(root, path), 'utf8');
+  // Instruction checks compare canonical LF text; a Windows checkout with
+  // autocrlf converts the fixtures to CRLF and must not change the result.
+  return readFileSync(join(root, path), 'utf8').replace(/\r\n/g, '\n');
 }
 
 function isIgnored(relativePath, ignoredPaths) {
@@ -56,8 +55,7 @@ function isIgnored(relativePath, ignoredPaths) {
   return ignoredPaths.some((ignoredPath) => {
     const normalizedIgnored = normalizeRepoPath(ignoredPath);
     return (
-      normalizedPath === normalizedIgnored ||
-      normalizedPath.startsWith(`${normalizedIgnored}/`)
+      normalizedPath === normalizedIgnored || normalizedPath.startsWith(`${normalizedIgnored}/`)
     );
   });
 }
@@ -99,17 +97,13 @@ function walkDir(root, relativeDir, result, targetName) {
 function allAgentsMd(root, ignoredPaths) {
   const files = [];
   walkDir(root, '.', files, 'AGENTS.md');
-  return files
-    .map((f) => repoRel(root, f))
-    .filter((f) => !isIgnored(f, ignoredPaths));
+  return files.map((f) => repoRel(root, f)).filter((f) => !isIgnored(f, ignoredPaths));
 }
 
 function allClaudeMd(root, ignoredPaths) {
   const files = [];
   walkDir(root, '.', files, 'CLAUDE.md');
-  return files
-    .map((f) => repoRel(root, f))
-    .filter((f) => !isIgnored(f, ignoredPaths));
+  return files.map((f) => repoRel(root, f)).filter((f) => !isIgnored(f, ignoredPaths));
 }
 
 function nestedAgentsMd(root, ignoredPaths) {
