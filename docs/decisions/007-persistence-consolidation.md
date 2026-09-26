@@ -43,7 +43,8 @@ tracing the concrete call paths including lock and audit handling. No
 
 - **Pros:** Each contract (state, lock, audit ledger, observation ledger,
   discovery, errors) stays explicit; the hardened boundaries remain untouched.
-- **Cons:** Seven entry points require discipline and documentation.
+- **Cons:** Seven modules with multiple writer entry points (nine counted by
+  the original review) require discipline and documentation.
 
 ### Option B: Consolidate behind a single facade
 

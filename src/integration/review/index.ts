@@ -6,9 +6,9 @@
  * compose every review subzone, but it MUST NOT be imported by FlowGuard
  * production code — internal code imports the concrete authority it needs.
  * Both properties are enforced by `architecture/__tests__/review-zone-policy`.
- * The facade stays the single public surface for external consumers of the
- * bounded context; production code under `src/` must import the concrete
- * subzone authority instead of this file.
+ * The facade is the frozen composition surface of the bounded context; it is
+ * not reachable through the package exports, and production code under `src/`
+ * imports the concrete subzone authority instead of this file.
  *
  * Implementation authorities live in the review subzones (`dispatch/`,
  * `obligations/`, `context/`, `observations/`, `evidence/`, `validation/`,
