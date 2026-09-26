@@ -79,7 +79,15 @@ describe('developer onboarding documentation contract', () => {
       ],
       [
         'docs/commands.md',
-        ['command-surface', 'workflow-commands-advancedcanonical', 'operational-tools'],
+        [
+          'command-surface',
+          'daily-workflow',
+          'diagnose',
+          'recovery',
+          'advanced',
+          'workflow-commands-advancedcanonical',
+          'operational-tools',
+        ],
       ],
       ['docs/release-policy.md', ['release-process', 'protected-main-release-flow']],
     ];
@@ -104,6 +112,14 @@ describe('developer onboarding documentation contract', () => {
 
     expect(distribution).toContain('OPENCODE_SERVER_PASSWORD=secret');
     expect(distribution.match(/curl -u opencode:secret/g)).toHaveLength(2);
+  });
+
+  it('keeps command details canonical and installation focused on the happy path', () => {
+    const installation = read('docs/installation.md');
+
+    expect(installation).toContain('[Commands](./commands.md)');
+    expect(installation).not.toContain('**Canonical commands (15):**');
+    expect(installation).not.toContain('### Internal Tool Bindings');
   });
 
   it('documents the automatic-validation happy path without a manual check', () => {

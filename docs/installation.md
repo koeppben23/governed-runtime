@@ -167,68 +167,12 @@ Headless host selection, wrapper status, and direct-host operation are owned by
 
 ## How It Works
 
-FlowGuard integrates with OpenCode via a two-level command surface:
+In OpenCode chat, use the normal product sequence `/start`, `/task`, `/plan`,
+`/approve`, `/implement`, and `/export`. FlowGuard runs validation automatically;
+use `/check` only for manual recovery or explicit evidence recording.
 
-### User-Facing Commands (OpenCode Workflow)
-
-Use these commands in OpenCode chat to drive workflows:
-
-**Canonical commands (15):**
-
-| Command                                           | Description                           |
-| ------------------------------------------------- | ------------------------------------- |
-| `/hydrate`                                        | Bootstrap session                     |
-| `/status`                                         | Read session view                     |
-| `/ticket <text>`                                  | Record task                           |
-| `/plan`                                           | Generate plan                         |
-| `/continue`                                       | Compatibility routing (auto-advance)  |
-| `/validate`                                       | Run checks (compatibility surface)    |
-| `/implement`                                      | Execute plan                          |
-| `/review-decision <verdict>`                      | Human approval                        |
-| `/override-approve`                               | Governance override at exhausted gate |
-| `/resolve-implementation-challenge <challengeId>` | Record advisory challenge resolution  |
-| `/review`                                         | Generate peer review report           |
-| `/architecture`                                   | Create/revise ADR                     |
-| `/export`                                         | Materialize verifiable export         |
-| `/abort`                                          | Terminate session                     |
-| `/archive`                                        | Archive session                       |
-
-`<verdict>` accepts `approve`, `changes_requested`, or `reject`.
-
-**Product aliases (7):**
-
-| Alias              | Routes to                            |
-| ------------------ | ------------------------------------ |
-| `/start`           | `/hydrate`                           |
-| `/task`            | `/ticket`                            |
-| `/approve`         | `/review-decision approve`           |
-| `/request-changes` | `/review-decision changes_requested` |
-| `/reject`          | `/review-decision reject`            |
-| `/check`           | `/validate`                          |
-| `/why`             | `/status --why-blocked`              |
-
-Aliases inherit the canonical command's allowed-phase policy and gate identically;
-see `docs/commands.md` for the full mapping.
-
-### Internal Tool Bindings (OpenCode Infrastructure)
-
-These are the underlying tool names that FlowGuard installs into OpenCode:
-
-| Tool Name                         | Purpose                                                                                                                                               |
-| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `flowguard_status`                | Check session state                                                                                                                                   |
-| `flowguard_hydrate`               | Session bootstrap                                                                                                                                     |
-| `flowguard_ticket`                | Task recording                                                                                                                                        |
-| `flowguard_plan`                  | Plan generation                                                                                                                                       |
-| `flowguard_decision`              | Record review verdict                                                                                                                                 |
-| `flowguard_run_check`             | Validation runner (executes the discovered verification commands and records pass/fail evidence; bound to `/validate` and the `/check` product alias) |
-| `flowguard_implement`             | Record implementation evidence                                                                                                                        |
-| `flowguard_review_implementation` | Submit implementation review verdict                                                                                                                  |
-| `flowguard_review`                | Generate peer review report                                                                                                                           |
-| `flowguard_architecture`          | ADR authoring + review loop                                                                                                                           |
-| `flowguard_abort_session`         | Session termination                                                                                                                                   |
-| `flowguard_archive`               | Session archival                                                                                                                                      |
-| `flowguard_continue`              | Deterministic next-action                                                                                                                             |
+The complete user-command, compatibility, and internal-tool reference is
+[Commands](./commands.md). It is the canonical command surface.
 
 ## Uninstall
 

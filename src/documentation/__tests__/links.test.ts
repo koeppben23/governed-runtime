@@ -151,11 +151,12 @@ describe('Documentation Links', () => {
       expect(content).not.toContain('npm install -g @flowguard/core');
     });
 
-    it('should document commands correctly', async () => {
+    it('should link to the canonical command reference', async () => {
       const content = await fs.readFile(INSTALLATION_PATH, 'utf-8');
-      expect(content).toContain('/hydrate');
-      expect(content).toContain('/ticket');
-      expect(content).toContain('/plan');
+      expect(content).toContain('[Commands](./commands.md)');
+      expect(content).toContain('/start`');
+      expect(content).toContain('/task`');
+      expect(content).not.toContain('**Canonical commands (15):**');
     });
 
     it('routes local source checkout installs to the dogfood guide', async () => {
