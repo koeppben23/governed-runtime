@@ -22,8 +22,9 @@
  * graph must contain none. There is no debt baseline or lineage grandfathering.
  * FILE-LEVEL cycles remain rejected outright by Rule 8.
  *
- * The regex-based parser may miss dynamically-constructed imports; for those,
- * an explicit exception comment is required.
+ * Module specifiers are extracted by the shared AST collector
+ * (`import-specifiers.ts`). Computed module paths are not statically
+ * resolvable; for those, an explicit exception comment is required.
  *
  * @version v2
  */
@@ -46,6 +47,7 @@ import {
   INTEGRATION_OWNERS,
 } from './integration-placement-policy.js';
 import { MODULE_DEPENDENCY_POLICY } from './module-dependency-policy.js';
+import { collectImportSpecifiers } from './import-specifiers.js';
 import {
   cycleParticipatingEdges,
   cyclicStronglyConnectedComponents,
@@ -255,24 +257,8 @@ function parseImports(
     };
   };
 
-  const importRegex =
-    /^import\s+(?:(?:type\s+)?(?:\{[^}]*\}|[^;{}]+)\s+from\s+)?['"]([^'"]+)['"]|^import\s+['"]([^'"]+)['"]|^export\s+(?:\{[^}]*\}|[^;{}]+)\s+from\s+['"]([^'"]+)['"]|^export\s+from\s+['"]([^'"]+)['"]|^export\s+\*\s+as\s+\w+\s+from\s+['"]([^'"]+)['"]|^require\s*\(['"]([^'"]+)['"]\)/gm;
-
-  let match;
-  while ((match = importRegex.exec(fileContent)) !== null) {
-    const module = match[1] || match[2] || match[3] || match[4] || match[5] || match[6];
-    if (!module) continue;
-
-    imports.push(toImportInfo(module, match[0]));
-  }
-
-  // Dynamic imports: await import('./foo.js'), import('./foo.js')
-  const dynamicImportRegex = /(?:await\s+)?import\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
-  while ((match = dynamicImportRegex.exec(fileContent)) !== null) {
-    const module = match[1];
-    if (!module) continue;
-
-    imports.push(toImportInfo(module, match[0]));
+  for (const specifier of collectImportSpecifiers(fileContent)) {
+    imports.push(toImportInfo(specifier.module, specifier.raw));
   }
 
   return imports;
@@ -1178,6 +1164,27 @@ describe('Layer Dependency Rules', () => {
   });
 
   describe('Edge Cases', () => {
+    it('detects comment-separated imports and ignores commented-out pseudo imports', () => {
+      const commentSeparated = parseImports(
+        `import { x } from /* c */ '../state/schema.js';\n`,
+        path.join(SRC_DIR, 'rails'),
+        'rails',
+      );
+      expect(commentSeparated.map((imp) => imp.module)).toEqual(['../state/schema.js']);
+      expect(commentSeparated[0]?.targetModule).toBe('state');
+
+      const commentedOut = parseImports(
+        [
+          `// import { x } from '../state/schema.js';`,
+          `/* export * from '../state/evidence.js'; */`,
+          `const text = "import { y } from '../machine/commands.js'";`,
+        ].join('\n'),
+        path.join(SRC_DIR, 'rails'),
+        'rails',
+      );
+      expect(commentedOut).toEqual([]);
+    });
+
     it('should handle files with no imports', () => {
       const noImportFiles = Array.from(analyses.values()).filter((a) => a.imports.length === 0);
 
