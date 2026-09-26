@@ -11,7 +11,8 @@ Install the approved local artifact with the Claude Code target:
 ```bash
 npx --package ./flowguard-core-{version}.tgz flowguard install \
   --host claude-code \
-  --core-tarball ./flowguard-core-{version}.tgz
+  --core-tarball ./flowguard-core-{version}.tgz \
+  --install-scope repo
 ```
 
 The plugin is installed at `.claude/flowguard-plugin/` for repository scope or
@@ -40,7 +41,8 @@ Install and register the local Codex plugin:
 ```bash
 npx --package ./flowguard-core-{version}.tgz flowguard install \
   --host codex \
-  --core-tarball ./flowguard-core-{version}.tgz
+  --core-tarball ./flowguard-core-{version}.tgz \
+  --install-scope repo
 ```
 
 Repository scope writes `.agents/plugins/marketplace.json` and
@@ -68,8 +70,8 @@ requires local plugin files, local MCP execution, and local hook trust.
 Use `doctor` for the installed host:
 
 ```bash
-npx --package ./flowguard-core-{version}.tgz flowguard doctor --host claude-code
-npx --package ./flowguard-core-{version}.tgz flowguard doctor --host codex
+npx --package ./flowguard-core-{version}.tgz flowguard doctor --host claude-code --install-scope repo
+npx --package ./flowguard-core-{version}.tgz flowguard doctor --host codex --install-scope repo
 ```
 
 The report proves installed files and projects host capability/trust status; it
@@ -84,6 +86,10 @@ Uninstall removes only FlowGuard-owned plugin and registration surfaces:
 npx --package ./flowguard-core-{version}.tgz flowguard uninstall --host claude-code --install-scope repo
 npx --package ./flowguard-core-{version}.tgz flowguard uninstall --host codex --install-scope repo
 ```
+
+For a global installation, pass `--install-scope global` consistently to
+`install`, `doctor`, and `uninstall`. The Claude plugin then lives under
+`~/.claude/flowguard-plugin/`; Codex uses the global paths described above.
 
 See [Platform Limitations](./platform-limitations.md) for the host enforcement
 model and residual risks.

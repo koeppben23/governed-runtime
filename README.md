@@ -27,50 +27,10 @@ See [docs/installation.md](./docs/installation.md) for full instructions.
 
 ### Developer / Dogfood Install from Source
 
-Use this path when testing FlowGuard from a local repository checkout without publishing a package. This exercises the same `npm pack → vendor/ → install` pipeline as the release path.
-
-```bash
-cd ~/work/governed-runtime
-
-npm ci
-npm run build
-
-npm run pack:checksums
-TARBALL="flowguard-core-$(node -p 'require("./package.json").version').tgz"
-
-npx --yes --package "./$TARBALL" flowguard install \
-  --core-tarball "./$TARBALL" \
-  --checksums-file ./checksums.sha256 \
-  --install-scope global \
-  --force
-
-npx --yes --package "./$TARBALL" flowguard doctor \
-  --install-scope global
-```
-
-After installation, restart OpenCode so the FlowGuard plugin is loaded from `~/.config/opencode/plugins`.
-
-Expected global installation location:
-
-```
-~/.config/opencode/
-  flowguard.json
-  opencode.json            # default; opencode.jsonc is preferred when present
-  plugins/flowguard-audit.ts
-  commands/
-  agents/
-  tools/
-  vendor/
-  node_modules/
-```
-
-If plugin review orchestration fails after installation, run:
-
-```bash
-npx --yes --package "./$TARBALL" flowguard doctor --install-scope global
-```
-
-and restart OpenCode again.
+For a local checkout, use the release-equivalent package path in the canonical
+[Dogfood Installation Guide](./docs/development/debugging.md).
+It uses an isolated playground and `--install-scope repo`, rather than changing
+the developer's global host configuration.
 
 In headless/non-interactive execution, FlowGuard does not rely on follow-up questions: missing safety-critical inputs fail closed with explicit blocked reasons.
 
@@ -189,8 +149,8 @@ change types to owning modules and checks, and to
 [Your First Change](./docs/development/first-change.md), an additive walkthrough.
 
 ```bash
-# Install dependencies
-npm install
+# Install exactly from the committed lockfile
+npm ci
 
 # Type check
 npm run check

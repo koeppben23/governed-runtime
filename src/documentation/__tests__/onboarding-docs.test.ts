@@ -85,6 +85,14 @@ describe('developer onboarding documentation contract', () => {
     }
   });
 
+  it('documents the automatic-validation happy path without a manual check', () => {
+    const diagram = read('docs/architecture/architecture-diagram.md');
+
+    expect(diagram).toContain('/plan` → `/approve` → `/implement`');
+    expect(diagram).toContain('/check` is a manual compatibility and recovery command');
+    expect(diagram).not.toContain('/approve` → `/check` → `/implement`');
+  });
+
   it('uses the canonical peer-review terminal phase in the quick reference', () => {
     const index = read('docs/index.md');
     const quickReference = index.split('## Quick Reference')[1] ?? '';

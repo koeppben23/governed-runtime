@@ -45,8 +45,8 @@ module graph must match that policy exactly — including zero module cycles (se
 ### Installation
 
 ```bash
-# Install dependencies
-npm install
+# Install exactly from the committed lockfile
+npm ci
 
 # Type check
 npm run check
@@ -276,10 +276,19 @@ following hold:
 ### Release Branches
 
 Release work follows the same protected-`main` PR model as all other changes.
-Start release branches from current `main`, integrate the release candidate from
-`develop`, prepare release files on `release/vX.Y.Z`, open a PR to `main`, wait
-for required checks, and squash-merge. Create and push the `vX.Y.Z` tag only after
-local `main` has been fast-forwarded to the merged `origin/main` commit.
+Run this protected-main release procedure:
+
+1. Start from current `main`: `git switch main && git pull --ff-only origin main`.
+2. Create `release/vX.Y.Z` and integrate the release candidate from `develop`.
+3. Prepare files without committing or tagging: `npm run release:prepare -- X.Y.Z`.
+4. Update release-pinned documentation tests when the changelog cut moves entries out of `[Unreleased]`.
+5. Run `npm run release:verify` and the required contributor checks.
+6. Commit with hooks enabled: `git commit -m "chore(release): cut vX.Y.Z"`.
+7. Open a PR to `main`, wait for required checks, and squash-merge it.
+8. Refresh local `main`: `git switch main && git pull --ff-only origin main`.
+9. Prove tag safety: `npm run release:assert-main-tag -- vX.Y.Z`.
+10. Create and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+11. Verify the GitHub Release, checksums, SBOM, and provenance artifacts.
 
 Use `npm run release:prepare -- X.Y.Z` to update release files. Do not use
 `npm version` for FlowGuard releases because it creates local commit/tag state
@@ -287,6 +296,11 @@ before branch protection and required checks have accepted the release. Before
 tagging, run `npm run release:assert-main-tag -- vX.Y.Z` to fail closed unless
 the checkout is clean, on `main`, equal to `origin/main`, version-consistent, and
 untagged.
+
+If a release tag is pushed before the release commit is merged to `main`, stop
+and treat the release as inconsistent. Do not overwrite or force-push the tag.
+Either merge the exact tagged commit through the protected PR path or publish a
+new patch/prerelease tag from the corrected `main` commit.
 
 `npm run release:verify` is the package-defined local release verification
 script. It runs `npm run lint`; required CI and contributor linting use

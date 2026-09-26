@@ -52,9 +52,13 @@ describe('documentation/release-process', () => {
     it('contributing guidance owns the PR-first, tag-after-merge ordering', () => {
       const contributing = readRepoFile('CONTRIBUTING.md');
 
-      expect(contributing).toContain('Create and push the `vX.Y.Z` tag only after');
+      expect(contributing).toContain('Create and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`');
       expect(contributing).toContain('npm run release:assert-main-tag -- vX.Y.Z');
       expect(contributing).toContain('`npm version` for FlowGuard releases');
+      expect(contributing).toContain(
+        'If a release tag is pushed before the release commit is merged',
+      );
+      expect(contributing).toContain('Do not overwrite or force-push the tag');
     });
 
     it('README delegates the release process instead of duplicating the checklist', () => {
@@ -71,7 +75,7 @@ describe('documentation/release-process', () => {
       expect(policy).toContain(
         'A `v*` tag\nmust point at a commit already contained in `origin/main`',
       );
-      expect(policy).toContain('do not overwrite or force-push a tag');
+      expect(policy).toContain('recovery procedure for a tag published before merge');
     });
   });
 
@@ -104,7 +108,7 @@ describe('documentation/release-process', () => {
 
       expect(contributing).toContain('release/vX.Y.Z');
       expect(contributing).toContain('npm run release:assert-main-tag -- vX.Y.Z');
-      expect(contributing).toContain('Create and push the `vX.Y.Z` tag only after');
+      expect(contributing).toContain('Create and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`');
     });
   });
 });

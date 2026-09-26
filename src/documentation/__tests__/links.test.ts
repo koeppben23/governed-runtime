@@ -92,9 +92,18 @@ describe('Documentation Links', () => {
       expect(content).toContain('./docs/commands.md');
     });
 
-    it('routes dogfood source installs to the development guide', async () => {
+    it('routes dogfood source installs to the canonical development guide', async () => {
       const content = await fs.readFile(README_PATH, 'utf-8');
-      expect(content).toContain('./docs/development/index.md');
+      expect(content).toContain(
+        './docs/development/debugging.md',
+      );
+      const dogfood = await fs.readFile(
+        path.join(PROJECT_ROOT, 'docs/development/debugging.md'),
+        'utf-8',
+      );
+      expect(dogfood).toContain('npm run pack:checksums');
+      expect(dogfood).toContain('--checksums-file "../governed-runtime/checksums.sha256"');
+      expect(dogfood).toContain('## 10. Dogfood installation from source');
     });
 
     it('should have link to PRODUCT_IDENTITY.md', async () => {

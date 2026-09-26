@@ -56,7 +56,8 @@ The following are considered breaking governance semantics changes (major versio
 `main` is the canonical release authority and is protected by repository rules.
 Contributor release steps, including the PR-first, tag-after-merge ordering,
 are owned by [CONTRIBUTING.md](../CONTRIBUTING.md#release-branches). A `v*` tag
-must point at a commit already contained in `origin/main`. Do not use `npm
+must point at a commit already contained in `origin/main`. That guide also owns
+the recovery procedure for a tag published before merge. Do not use `npm
 version` for FlowGuard releases, and do not overwrite or force-push a tag.
 
 ### Artifact Creation
