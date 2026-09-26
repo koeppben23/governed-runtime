@@ -45,8 +45,9 @@ that list, not a second authority list.
 ### Review change (`src/integration/review/`)
 
 - Zones: `dispatch/`, `obligations/`, `context/`, `observations/`, `evidence/`,
-  `validation/`, `prompting/`, `enforcement/`. `review/index.ts` is the facade and
-  must never be imported by production code.
+  `validation/`, `prompting/`, `enforcement/`. The review bounded context has no
+  barrel facade; production code imports the concrete subzone authority. The
+  removed `review/index.ts` is guarded against reintroduction.
 - The allowed zone graph is frozen in
   `src/architecture/__tests__/review-zone-policy.ts` (`observed == declared`).
   The complete zone graph is acyclic. Moving a file requires updating the

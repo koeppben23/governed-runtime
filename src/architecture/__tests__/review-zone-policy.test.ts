@@ -63,12 +63,12 @@ describe('review zone policy', () => {
     );
   });
 
-  it('resolves relative specifiers including extensionless facade paths', () => {
-    expect(resolveSpecifier('integration/review/dispatch/a.ts', '../index.js')).toBe(
-      'integration/review/index.ts',
+  it('resolves relative specifiers including extensionless paths', () => {
+    expect(resolveSpecifier('integration/review/dispatch/a.ts', '../evidence/b.js')).toBe(
+      'integration/review/evidence/b.ts',
     );
-    expect(resolveSpecifier('integration/tools/plan/x.ts', '../../review/index')).toBe(
-      'integration/review/index.ts',
+    expect(resolveSpecifier('integration/review/dispatch/a.ts', '../context/c')).toBe(
+      'integration/review/context/c.ts',
     );
     expect(resolveSpecifier('integration/tools/z.ts', './index.js')).toBe(
       'integration/tools/index.ts',
@@ -102,10 +102,6 @@ describe('review zone policy', () => {
   it('gives every violation a concrete repair hint', () => {
     const violations = [
       ...analyzeViolations(
-        [source('integration/review/dispatch/a.ts', `import { x } from '../index.js';`)],
-        [],
-      ),
-      ...analyzeViolations(
         [source('integration/review/dispatch/a.ts', `import { x } from '../evidence/b.js';`)],
         [],
       ),
@@ -113,7 +109,7 @@ describe('review zone policy', () => {
     ];
 
     expect(new Set(violations.map((violation) => violation.rule))).toEqual(
-      new Set(['production-facade-import', 'undeclared-zone-edge', 'stale-zone-edge']),
+      new Set(['undeclared-zone-edge', 'stale-zone-edge']),
     );
     for (const violation of violations) {
       expect((violation.hint ?? '').length, `${violation.rule}: ${violation.file}`).toBeGreaterThan(
@@ -122,73 +118,31 @@ describe('review zone policy', () => {
     }
   });
 
-  it('fires on every production import of the facade', () => {
-    expect(
-      analyze(
-        [
-          source('integration/review/dispatch/a.ts', `import { x } from '../index.js';`),
-          source('integration/review/b.ts', `import { x } from './index.js';`),
-          source('integration/tools/plan/x.ts', `import { x } from '../../review/index.js';`),
-          source('integration/tools/plan/y.ts', `import { x } from '../../review/index';`),
-        ],
-        [],
-      ),
-    ).toEqual([
-      'production-facade-import',
-      'production-facade-import',
-      'production-facade-import',
-      'production-facade-import',
-    ]);
-  });
-
-  it('detects facade imports whose specifier is separated by a comment', () => {
-    expect(
-      analyze(
-        [
-          source('integration/review/dispatch/a.ts', `import { x } from /* c */ '../index.js';`),
-          source('integration/review/dispatch/b.ts', `export { x } from /* c */ '../index.js';`),
-          source('integration/review/dispatch/c.ts', `await import(/* c */ '../index.js');`),
-          source('integration/review/dispatch/d.ts', `const x = require(/* c */ '../index.js');`),
-        ],
-        [],
-      ),
-    ).toEqual([
-      'production-facade-import',
-      'production-facade-import',
-      'production-facade-import',
-      'production-facade-import',
-    ]);
-  });
-
-  it('detects import-equals require references to the facade and other zones', () => {
-    expect(
-      analyze(
-        [source('integration/review/dispatch/a.ts', `import review = require('../index.js');`)],
-        [],
-      ),
-    ).toEqual(['production-facade-import']);
-
-    expect(
-      analyze(
-        [
-          source(
-            'integration/review/dispatch/b.ts',
-            `import evidence = require('../evidence/b.js');`,
-          ),
-        ],
-        [],
-      ),
-    ).toEqual(['undeclared-zone-edge']);
+  it('parses every comment-separated import form into the same zone edge', () => {
+    const forms = [
+      `import { x } from /* c */ '../evidence/b.js';`,
+      `export { x } from /* c */ '../evidence/b.js';`,
+      `await import(/* c */ '../evidence/b.js');`,
+      `const x = require(/* c */ '../evidence/b.js');`,
+      `import evidence = require('../evidence/b.js');`,
+    ];
+    for (const form of forms) {
+      const edges = reviewZoneEdges({
+        sources: [source('integration/review/dispatch/a.ts', form)],
+        zones: ZONES,
+      });
+      expect([...edges], form).toEqual([zoneEdgeKey('review/dispatch', 'review/evidence')]);
+    }
   });
 
   it('ignores commented-out imports and import-looking string content', () => {
     expect(
       analyze(
         [
-          source('integration/review/dispatch/a.ts', `// import { x } from '../index.js';`),
+          source('integration/review/dispatch/a.ts', `// import { x } from '../evidence/b.js';`),
           source(
             'integration/review/dispatch/b.ts',
-            `const text = "import { x } from '../index.js'";`,
+            `const text = "import { x } from '../evidence/b.js'";`,
           ),
           source('integration/review/dispatch/c.ts', `/* export * from '../evidence/b.js'; */`),
         ],
@@ -211,7 +165,7 @@ describe('review zone policy', () => {
     ).toEqual(['undeclared-zone-edge']);
   });
 
-  it('does not flag a same-named index outside the review facade', () => {
+  it('does not flag a same-named index outside the reviewed zones', () => {
     expect(
       analyze(
         [
@@ -220,12 +174,6 @@ describe('review zone policy', () => {
         ],
         [],
       ),
-    ).toEqual([]);
-  });
-
-  it('excludes the facade outgoing edges from the zone graph', () => {
-    expect(
-      analyze([source('integration/review/index.ts', `export * from './evidence/b.js';`)], []),
     ).toEqual([]);
   });
 

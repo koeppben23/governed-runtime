@@ -1287,9 +1287,9 @@ describe('Layer Dependency Rules', () => {
       ).toBe(true);
     });
 
-    it('review/ has a barrel index.ts', () => {
+    it('review/ has no barrel index.ts (ADR-005 removal guard)', () => {
       const barrel = path.join(SRC_DIR, 'integration', 'review', 'index.ts');
-      expect(existsSync(barrel), 'Expected integration/review/index.ts barrel').toBe(true);
+      expect(existsSync(barrel), 'integration/review/index.ts must stay removed').toBe(false);
     });
 
     it('review/ imports stay inside the review boundary', () => {
@@ -1341,12 +1341,18 @@ describe('Layer Dependency Rules', () => {
       expect(existsSync(auditEvents), 'Expected review/evidence/audit-events.ts').toBe(true);
     });
 
-    it('review/ barrel exports updateObligation, blockObligation, and appendReviewAuditEvent', async () => {
-      const barrelPath = path.join(SRC_DIR, 'integration', 'review', 'index.ts');
-      const content = await fs.readFile(barrelPath, 'utf-8');
-      expect(content).toContain('updateObligation');
-      expect(content).toContain('blockObligation');
-      expect(content).toContain('appendReviewAuditEvent');
+    it('review subzone authorities still export the obligation and audit entry points', async () => {
+      const obligationState = await fs.readFile(
+        path.join(SRC_DIR, 'integration', 'review', 'obligations', 'obligation-state.ts'),
+        'utf-8',
+      );
+      const auditEvents = await fs.readFile(
+        path.join(SRC_DIR, 'integration', 'review', 'evidence', 'audit-events.ts'),
+        'utf-8',
+      );
+      expect(obligationState).toContain('updateObligation');
+      expect(obligationState).toContain('blockObligation');
+      expect(auditEvents).toContain('appendReviewAuditEvent');
     });
 
     it('review/ adapters/persistence dependency is allowed (audit trail I/O)', async () => {
