@@ -99,6 +99,28 @@ codex --non-interactive --prompt "Run /status"
 
 **Headless ambiguity handling:** In non-interactive automation (`flowguard run`, `flowguard serve`, `opencode run`, API-driven execution), operators must provide all required inputs up front. Missing safety-critical input returns `BLOCKED`; there is no follow-up question loop in headless mode.
 
+### HTTP API Mode (opencode serve)
+
+Start the OpenCode HTTP server for API access, optionally with basic auth:
+
+```bash
+OPENCODE_SERVER_PASSWORD=secret opencode serve --port 4096
+```
+
+Create a session and send a governed message through the API:
+
+```bash
+curl -X POST http://localhost:4096/session -H "Content-Type: application/json" \
+  -d '{"title": "flowguard-session"}'
+
+curl -X POST http://localhost:4096/session/{sessionId}/message \
+  -H "Content-Type: application/json" \
+  -d '{"parts": [{"type": "text", "text": "/hydrate policyMode=team-ci"}]}'
+```
+
+See the [OpenCode Server Documentation](https://opencode.ai/docs/server/) for
+the full API reference.
+
 ### ACP Mode (Experimental)
 
 The Agent Client Protocol (ACP) provides STDIN/STDOUT-based communication:

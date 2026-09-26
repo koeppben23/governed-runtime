@@ -66,7 +66,17 @@ describe('developer onboarding documentation contract', () => {
 
   it('preserves critical installation, command, and release anchors without duplicates', () => {
     const targets: Array<[string, readonly string[]]> = [
-      ['docs/installation.md', ['installation-steps', 'host-selection-matrix', 'uninstall']],
+      [
+        'docs/installation.md',
+        [
+          'installation-steps',
+          'host-selection-matrix',
+          'non-interactive-mode-opencode-run',
+          'http-api-mode-opencode-serve',
+          'acp-mode-experimental',
+          'uninstall',
+        ],
+      ],
       [
         'docs/commands.md',
         ['command-surface', 'workflow-commands-advancedcanonical', 'operational-tools'],
@@ -83,6 +93,10 @@ describe('developer onboarding documentation contract', () => {
         ).toHaveLength(1);
       }
     }
+  });
+
+  it('links the contributor entry point from CONTRIBUTING.md', () => {
+    expect(read('CONTRIBUTING.md')).toContain('docs/development/index.md');
   });
 
   it('documents the automatic-validation happy path without a manual check', () => {

@@ -139,6 +139,9 @@ describe('ModuleName / Feature', () => {
 
 ## Debugging
 
+The [Development Guide](docs/development/index.md) is the contributor
+navigation entry point for setup, architecture, debugging, and dogfooding.
+
 For the canonical macOS + IntelliJ IDEA development and debugging workflow,
 including Vitest, CLI, MCP, OpenCode live debugging, source maps and isolated
 dogfood repositories, see [docs/development/debugging.md](docs/development/debugging.md).

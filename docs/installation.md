@@ -249,6 +249,21 @@ Headless operation is available through the selected host's native CLI. The
 complete OpenCode, Claude Code, Codex, wrapper, and ACP guidance is in
 [Distribution Model](./distribution-model.md#headless-operation).
 
+### Non-Interactive Mode (opencode run)
+
+Use the [central headless guide](./distribution-model.md#headless-operation)
+for the supported host CLI commands and their fail-closed input behavior.
+
+### HTTP API Mode (opencode serve)
+
+Use the [central headless guide](./distribution-model.md#http-api-mode-opencode-serve)
+for OpenCode server authentication, session creation, and message examples.
+
+### ACP Mode (Experimental)
+
+Use the [central headless guide](./distribution-model.md#acp-mode-experimental)
+for ACP's experimental STDIN/STDOUT integration path.
+
 ## Troubleshooting
 
 ### --core-tarball required

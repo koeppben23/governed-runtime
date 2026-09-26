@@ -10,9 +10,10 @@ command sections below define their exact routing and phase behavior.
 
 ## Diagnose
 
-Use `/status`, `/finish`, `/help`, and `/commands` to inspect a session without
-changing it. `flowguard_status` and `flowguard inspect` provide equivalent
-operational views for scripts and compliance reporting.
+Use `/status`, `/finish`, `/help`, and `/commands` to inspect the current
+session without changing it. `flowguard_status` provides that session view to
+scripts; `flowguard inspect` instead reports workspace sessions and their
+audit/compliance data.
 
 ## Recovery
 
