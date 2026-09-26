@@ -31,11 +31,32 @@ it counted nine writer entry points, one parallel write path that bypassed
 `prepareState`, and repeated `SessionState.safeParse` calls on the write path
 (claimed five per write). The parallel path is closed: the direct channel is
 allowlisted and rejects missing state, and the gate writers re-read and
-re-apply under the session lock. The per-write validation count is **not
-established**: counting `safeParse` call sites in the write modules says
-nothing about how many validations a single write traverses, which requires
-tracing the concrete call paths including lock and audit handling. No
-`PERF_BUDGETS` measurement was captured for these writes.
+re-apply under the session lock.
+
+The validation count is now traced (R5 evidence, pinned by
+`src/integration/governed-write-path-evidence.test.ts`) instead of estimated:
+
+- full-prepare update of an existing session: **6** `SessionState.safeParse`
+  executions — the read boundary, the prepare input, the ProofGraph-refreshed
+  output, the audit-operation preparation, the prepared-artifact commit, and
+  the raw persistence boundary;
+- direct metadata write: **3** (read, audit preparation, raw write boundary);
+- `mutateStateWithAuditOperations` and `updateReviewAssurance`: **4** each,
+  because both read the state and then re-read it under the session lock (the
+  direct-write guard and the mutation need the post-lock authority).
+
+Each call is a fail-closed boundary with a distinct guard role: the raw
+`writeStateAlreadyLocked` check never lets invalid state reach disk,
+`prepareAuditOperations` is a public entry that can be called with unprepared
+state (regulated completion), `prepareState` validates both input and the
+refreshed projection, and the commit helper validates the prepared payload
+before I/O. The duplicated reads are the cost of applying a decision to the
+state read under the lock. Measured on 2026-09-26 with
+`PERF_BUDGETS.stateGovernedWriteMs` (200 iterations after warm-up): p99
+15.86 ms, p95 13.60 ms, median 11.74 ms against the 150 ms local budget
+(≈9x headroom). **Disposition: no consolidation**. The count is a consequence
+of layered fail-closed boundaries, not a defect, and the measured path is far
+inside budget.
 
 ## Options
 
@@ -66,7 +87,8 @@ for revisiting:
 
 1. a complete writer inventory by **entry point** (the channel inventory is
    documented in `state-changing-operation.md` §3.1),
-2. measurable performance baselines from `PERF_BUDGETS`,
+2. measured baselines for the affected channels (the governed full-prepare
+   write is gated by `stateGovernedWriteMs`; further channels need their own),
 3. regression tests for audit atomicity, lock ordering, and ProofGraph
    consistency across the affected channels.
 
