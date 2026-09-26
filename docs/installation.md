@@ -174,6 +174,16 @@ use `/check` only for manual recovery or explicit evidence recording.
 The complete user-command, compatibility, and internal-tool reference is
 [Commands](./commands.md). It is the canonical command surface.
 
+### User-Facing Commands (OpenCode Workflow)
+
+See [Commands](./commands.md#daily-workflow) for the normal workflow and its
+complete product-command reference.
+
+### Internal Tool Bindings (OpenCode Infrastructure)
+
+See [Command Surface](./commands.md#command-surface) for the installed internal
+tool bindings.
+
 ## Uninstall
 
 ```bash

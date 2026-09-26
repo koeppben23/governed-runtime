@@ -74,6 +74,8 @@ describe('developer onboarding documentation contract', () => {
           'non-interactive-mode-opencode-run',
           'http-api-mode-opencode-serve',
           'acp-mode-experimental',
+          'user-facing-commands-opencode-workflow',
+          'internal-tool-bindings-opencode-infrastructure',
           'uninstall',
         ],
       ],
@@ -119,7 +121,23 @@ describe('developer onboarding documentation contract', () => {
 
     expect(installation).toContain('[Commands](./commands.md)');
     expect(installation).not.toContain('**Canonical commands (15):**');
-    expect(installation).not.toContain('### Internal Tool Bindings');
+    expect(installation).toContain('[Command Surface](./commands.md#command-surface)');
+  });
+
+  it('places regular and recovery commands under their intended navigation sections', () => {
+    const commands = read('docs/commands.md');
+    const daily = commands.slice(
+      commands.indexOf('## Daily Workflow\n'),
+      commands.indexOf('## Advanced\n'),
+    );
+    const recovery = commands.slice(
+      commands.indexOf('## Recovery\n'),
+      commands.indexOf('## Operational Tools\n'),
+    );
+
+    expect(daily).toContain('### /export');
+    expect(recovery).toContain('### /validate');
+    expect(recovery).toContain('### /continue');
   });
 
   it('documents the automatic-validation happy path without a manual check', () => {

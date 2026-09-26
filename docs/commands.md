@@ -279,18 +279,6 @@ Every successful `/review-decision` emits a decision receipt in the audit trail
 (`decision:DEC-xxx`). Archive Layout v2 writes the raw companion projection as
 `audit/decision-receipts.v1.json`.
 
-### /validate
-
-Run validation checks against the approved plan. This is a compatibility surface:
-FlowGuard records validation automatically when the phase is entered, and
-`/validate` (or `/check`) remains available to record results explicitly.
-
-**Allowed in:** VALIDATION
-**Checks:** Derived from `verificationCandidates` (refer to `docs/configuration.md#profileactivechecks`)
-**ALL_PASSED** → advance to IMPLEMENTATION
-
-When `flowguard_run_check` executes, a failed or timed-out check includes an advisory `derivedRepairGuidance` projection parsed from stdout/stderr. Guidance is bounded (excerpts, locations, categories) and labelled `NOT_VERIFIED`. It never determines pass/fail — the `exitCode`, `passed`, `timedOut`, and `outputDigest` remain the authoritative execution evidence. Unknown or unparseable failures return `status: "unavailable"` without fabricated advice. Passing checks surface no repair guidance. Guidance is persisted only so `/status` can surface it later; raw subprocess output is never persisted.
-
 ### /implement
 
 Execute the implementation plan.
@@ -317,6 +305,18 @@ Record advisory `NOT_VERIFIED` evidence that a prior implementation challenge wa
 Provide the challenge ID from the prior implementation review and one or more passing
 post-implementation validation attempt IDs for the current implementation digest. This
 does not accept the review, resolve the challenge by itself, or bypass EVIDENCE_REVIEW.
+
+### /export
+
+Materialize the required verifiable export and complete the ticket flow. This is
+a canonical workflow command (tool binding `flowguard_export`), not an archive
+alias: the session advances to COMPLETE only after the export rail materializes
+a verifiable package and persists completion evidence.
+
+**Allowed in:** EXPORT_READY
+
+On success the workflow reaches COMPLETE. If the tool is blocked or fails, the
+session remains in EXPORT_READY and must not be described as complete.
 
 ## Advanced
 
@@ -396,6 +396,22 @@ Start the peer review flow: review a foreign PR, branch, commit, diff, or text a
 - External references (if provided)
 - `flowguard-review-report.v1` artifact
 
+## Recovery
+
+Use these commands only for an explicit recovery action or a terminal operation.
+
+### /validate
+
+Run validation checks against the approved plan. This is a compatibility surface:
+FlowGuard records validation automatically when the phase is entered, and
+`/validate` (or `/check`) remains available to record results explicitly.
+
+**Allowed in:** VALIDATION
+**Checks:** Derived from `verificationCandidates` (refer to `docs/configuration.md#profileactivechecks`)
+**ALL_PASSED** → advance to IMPLEMENTATION
+
+When `flowguard_run_check` executes, a failed or timed-out check includes an advisory `derivedRepairGuidance` projection parsed from stdout/stderr. Guidance is bounded (excerpts, locations, categories) and labelled `NOT_VERIFIED`. It never determines pass/fail — the `exitCode`, `passed`, `timedOut`, and `outputDigest` remain the authoritative execution evidence. Unknown or unparseable failures return `status: "unavailable"` without fabricated advice. Passing checks surface no repair guidance. Guidance is persisted only so `/status` can surface it later; raw subprocess output is never persisted.
+
 ### /continue
 
 Compatibility routing surface. The canonical runtime directive is the next-action
@@ -408,22 +424,6 @@ action only when explicitly requested.
 - At IMPL_REVIEW: runs one independent implementation review iteration
 - At VALIDATION: runs all validation checks
 - At other phases: evaluates and auto-advances if evidence is present
-
-## Recovery
-
-Use these commands only for an explicit recovery action or a terminal operation.
-
-### /export
-
-Materialize the required verifiable export and complete the ticket flow. This is
-a canonical workflow command (tool binding `flowguard_export`), not an archive
-alias: the session advances to COMPLETE only after the export rail materializes
-a verifiable package and persists completion evidence.
-
-**Allowed in:** EXPORT_READY
-
-On success the workflow reaches COMPLETE. If the tool is blocked or fails, the
-session remains in EXPORT_READY and must not be described as complete.
 
 ### /abort
 
