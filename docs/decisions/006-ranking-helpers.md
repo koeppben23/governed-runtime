@@ -8,14 +8,20 @@
 
 Implementation guidance ranks candidate items before presentation:
 `rankItems` (`src/integration/implementation-guidance.ts`) deduplicates by
-identity, caps confidence against Discovery health, and sorts by
-`confidenceRank`. The forensic review suspected an old duplicate ranking
-structure that could be reduced.
+identity, caps confidence against Discovery health, sorts by `confidenceRank`,
+and truncates to the section limit. `buildRankedSection` composes it with
+`onlyCorroborated`, controlled by `corroboratedOnly?: boolean` (four production
+call sites: relevant files, modules, surfaces, contracts).
 
-The suspicion is not yet backed by an inventory: a repository-wide search finds
-a single `rankItems` implementation and no second ranking authority. Any
-consolidation therefore risks changing presentation order — a behavior change
-without a proven defect.
+A repository-wide search finds a single `rankItems` implementation and no second
+ranking authority. The forensic finding is not a duplicate ranking structure:
+it is the options object around that single implementation and the order in
+which corroboration filtering and truncation were applied. That order was
+reproduced: because `rankItems` truncated before `onlyCorroborated` ran,
+uncorroborated discovery-only items could consume the limit and a corroborated
+session-owned changed file with room left was dropped. The fix filters
+corroborated candidates before the limit; consolidation of the helpers
+themselves is still not established.
 
 ## Options
 
@@ -36,16 +42,22 @@ without a proven defect.
 
 - Merge helpers immediately, optionally with an options flag.
 - **Pros:** Fast.
-- **Cons:** Rejected: risks order changes, and new boolean options are exactly
-  the pattern this repository avoids.
+- **Cons:** Rejected: risks order changes without an inventory, and does not
+  address the actual finding (the existing `corroboratedOnly` flag and the
+  filter/limit order). Newly introduced boolean options remain a pattern this
+  repository avoids.
 
 ## Decision
 
-**Defer.** Require the inventory from Option B before any consolidation. If the
-inventory shows no genuine duplicate, close the topic as a non-finding.
+**Defer** for consolidation. The reproduced ordering defect was fixed by
+filtering corroborated candidates before the limit (behavior tests, including
+the renamed characterization case, pin the result). Any further consolidation
+still requires the inventory from Option B; if it shows no genuine duplicate,
+close the consolidation topic as a non-finding.
 
 ## Consequences
 
-- Guidance ordering remains stable in the meantime.
-- A follow-up change, if any, must include golden-order tests and no new
-  boolean options.
+- Corroboration now selects before truncation, so corroborated session evidence
+  is not displaced by uncorroborated discovery items.
+- A follow-up consolidation, if any, must include golden-order tests and no
+  newly introduced boolean options.
