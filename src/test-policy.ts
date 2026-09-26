@@ -265,6 +265,11 @@ export function benchmarkSync<T>(
  * Run an async function N times and return p95/p99 execution time.
  * First `warmup` iterations are discarded.
  *
+ * `reset`, when provided, runs before every invocation (warm-up and measured)
+ * and is excluded from the timing window. It exists for I/O benchmarks whose
+ * fixture must be restored between iterations so every sample starts from a
+ * comparable state (for example a bounded audit backlog).
+ *
  * When PERF enforcement is disabled (coverage runs), the function is executed
  * once (for coverage) and a zero result is returned so budget assertions pass.
  */
@@ -272,18 +277,22 @@ export async function benchmarkAsync<T>(
   fn: () => Promise<T>,
   iterations: number = 20,
   warmup: number = 3,
+  reset?: () => Promise<void>,
 ): Promise<{ p99Ms: number; p95Ms: number; medianMs: number; meanMs: number }> {
   if (!PERF_ENABLED) {
+    if (reset !== undefined) await reset();
     await fn();
     return { ...ZERO_BENCH };
   }
   const times: number[] = [];
 
   for (let i = 0; i < warmup; i++) {
+    if (reset !== undefined) await reset();
     await fn();
   }
 
   for (let i = 0; i < iterations; i++) {
+    if (reset !== undefined) await reset();
     const start = performance.now();
     await fn();
     times.push(performance.now() - start);

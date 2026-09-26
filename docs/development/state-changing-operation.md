@@ -71,6 +71,14 @@ transition-specific operations, state-write operations, and supplied semantic
 intents as applicable. The outbox operations bind pre-state, mutation, and
 post-state digests; the audit event is not appended to the trail at this stage.
 
+A prepared state whose `pendingAuditOperations` predate an intervening commit
+is reconciled with the current authority: the writer carries forward every
+operation of the persisted state that the prepared state does not contain
+(persisted status wins on id collision, missing operations are appended in
+order). A stale caller snapshot can therefore never drop committed, possibly
+unreconciled audit evidence. The outbox is excluded from the state digest, so
+this carry-forward does not change authority digests.
+
 The prepared state is validated again without repeating implementation-entry
 finalization or ProofGraph refresh. The writer computes the serialized-state
 hash from that exact prepared state, materializes evidence artifacts against it,
