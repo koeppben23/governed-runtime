@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   collectScopeDocuments,
@@ -155,13 +155,10 @@ describe('check-doc-paths', () => {
   });
 
   it('does not execute the CLI when it is imported', () => {
+    const moduleUrl = pathToFileURL(join(repoRoot, 'scripts', 'check-doc-paths.mjs')).href;
     const result = spawnSync(
       process.execPath,
-      [
-        '--input-type=module',
-        '-e',
-        `await import(${JSON.stringify(join(repoRoot, 'scripts', 'check-doc-paths.mjs'))})`,
-      ],
+      ['--input-type=module', '-e', `await import(${JSON.stringify(moduleUrl)})`],
       { cwd: repoRoot, encoding: 'utf8' },
     );
 
