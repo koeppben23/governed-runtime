@@ -65,6 +65,16 @@ and advisory Discovery input is injected via a structural drift provider.
 Mutation targets at relocated paths moved to the admission backlog instead of
 inheriting `legacyBaseline`; no new findings were recorded.
 
+A 2026-09-26 forensic re-triage against `develop@155ed452` confirmed that
+G27 is fixed by merged #866: configured JWKS fetches reject redirects and
+enforce a bounded response body. DNS/private-IP validation and connection
+pinning remain separate, unverified transport boundaries. It also confirmed
+that HA1 is fixed: the HAI no longer claims boot-time capability matching.
+HA2 is fixed by renaming the matrix scenario; HA3 and HA4 remain open. The
+re-triage corrected the AR5 package status, superseded the pre-#831 CE1–CE3
+snapshot, namespaced the ProofGraph local IDs to avoid collisions with mandate
+findings, and refreshed the two recorded file-size measurements.
+
 ## Status Legend
 
 | Status                 | Meaning                                                   |
@@ -135,7 +145,7 @@ disproven, update the status and link the evidence."
 | ------- | -------- | --------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A       | P1       | Partially Fixed | G1, G2, G24, G25, G26                           | Four-eyes and identity normalization/reporting. G1/G2/G24/G25 fixed; G26 remains open.                                                                                                    |
 | B       | P1       | Fixed           | AC1, AC2, AC3, AC4, AC5, TSA1, TSA2, TSA3, TSA4 | Hash-chain, canonical digest, TSA, and NTP hardening. #832/#833 fix TSA1–TSA4 with a strict RFC 3161 verifier contract, including ESS signer-certificate binding.                         |
-| C       | P1       | Partially Fixed | AR1, AR2, AR3, AR4, AR5, AUD1, AUD2, AUD3, AUD4 | Archive integrity and audit write-lock recovery. AR1 and AUD2 fixed (#670); AR2 fixed by trusted-policy severity derivation; AR3/AR4/AUD1/AUD3/AUD4 fixed (#837); AR5 is tracked in #836. |
+| C       | P1       | Fixed           | AR1, AR2, AR3, AR4, AR5, AUD1, AUD2, AUD3, AUD4 | Archive integrity and audit write-lock recovery. AR1 and AUD2 fixed (#670); AR2 fixed by trusted-policy severity derivation; AR3/AR4/AUD1/AUD3/AUD4 fixed (#837); AR5 fixed by #838.             |
 | D       | P1       | Fixed           | R1, R2, R3, R4, R5, AC3                         | Secret-leak, redaction, logging, telemetry boundaries. R3, R5 fixed (#585); R1, R2, R4, AC3 fixed (redaction fail-closed).                                                                |
 | E       | P1       | Partially Fixed | H1, H2, H4, C1, C2, C3, C4, C5, M1, M2, M3, I4  | Hook, CLI, MCP, installer, and integration fail-closed hardening. H1, H2, H4, M1, M3 and C2–C5 fixed (#645, #646, #667); M2 fixed by #848; I4 is partially fixed; C1 remains open.        |
 | F       | P2       | Partially Fixed | G3, G4, G7, G9, G15, AC6, AC7, G12, G13         | State-machine correctness and audit completeness. G3/G9 pre-existing, G7 #421, AC7 #678; G4/AC6 fixed in this PR; G15 and G12–G13 remain open.                                            |
@@ -185,7 +195,7 @@ disproven, update the status and link the evidence."
 | G15  | MEDIUM      | Open            | Transition records lack actor identity.                                                                                                                                                                                  |
 | G22  | MEDIUM      | Open            | Hydrate risk-class recovery behavior and documentation diverge.                                                                                                                                                          |
 | G26  | MEDIUM      | Open            | IdP token subject/email persistence normalization remains open.                                                                                                                                                          |
-| G27  | MEDIUM      | Tracked         | #866 rejects remote-JWKS redirects and bounds response bodies; DNS/private-IP validation and connection pinning remain separately unverified.                                                                            |
+| G27  | MEDIUM      | Fixed           | #866 rejects remote-JWKS redirects and bounds response bodies. DNS/private-IP validation and connection pinning remain separately unverified transport boundaries.                                                         |
 | H5   | MEDIUM      | Open            | Stop hook should flush logger sinks before process exit.                                                                                                                                                                 |
 | H6   | MEDIUM      | Open            | Pre-tool fatal path exit-code behavior needs fail-closed coverage. `TESTED_BUG_BEHAVIOR`.                                                                                                                                |
 | H7   | MEDIUM      | Open            | Command hook stdin needs a byte cap.                                                                                                                                                                                     |
@@ -258,8 +268,8 @@ disproven, update the status and link the evidence."
 | V3   | LOW        | Open         | Repair-guidance regex risk remains bounded by sanitization.                                                                                                                                                                                  |
 | EA1  | LOW        | Open         | Artifact-type validation should match declared artifact union.                                                                                                                                                                               |
 | EA2  | LOW        | Open         | Review-card metadata needs schema coverage.                                                                                                                                                                                                  |
-| SZ1  | LOW-MEDIUM | Open         | Prod file near the 650-LOC blocker: `src/integration/review/validation/review-validation.ts` (649 LOC, guard metric). Old findings resolved: `evidence-artifacts.ts` 209, `plugin-audit.ts` 461; `policy-snapshot-normalize.ts` was removed. |
-| SZ2  | LOW        | Open         | `dependency-rules.test.ts` (1664 LOC) exceeds the 1500 advisory; split without breaking the cycle-detection logic when it next grows.                                                                                                        |
+| SZ1  | LOW-MEDIUM | Open         | Prod file near the 650-LOC blocker: `src/integration/review/validation/review-validation.ts` (648 LOC, guard metric). Old findings resolved: `evidence-artifacts.ts` 209, `plugin-audit.ts` 461; `policy-snapshot-normalize.ts` was removed. |
+| SZ2  | LOW        | Open         | `dependency-rules.test.ts` (1670 LOC) exceeds the 1500 advisory; split without breaking the cycle-detection logic when it next grows.                                                                                                        |
 | CMP1 | SEE ALSO   | Open         | Compliance mapping overlaps AC6, AC7, AC8, and G2.                                                                                                                                                                                           |
 
 ## Cross-Cutting Risks
@@ -352,11 +362,14 @@ tracked separately. (Merged via #585.)
 
 | ID     | Severity | Title                                                           | Status     |
 | ------ | -------- | --------------------------------------------------------------- | ---------- |
-| **T1** | **P1**   | **Mutation evidence is externally self-reported**               | **Closed** |
-| **T2** | **P1**   | **Execution subject surface attestation incomplete**            | **Closed** |
-| **T3** | **P1**   | **mutationProfile creates structurally unsatisfiable contract** | **Closed** |
+| **PG-T1** | **P1** | **Mutation evidence is externally self-reported**               | **Closed** |
+| **PG-T2** | **P1** | **Execution subject surface attestation incomplete**            | **Closed** |
+| **PG-T3** | **P1** | **mutationProfile creates structurally unsatisfiable contract** | **Closed** |
 
-**T1 — Mutation evidence is externally self-reported (Closed).**
+The `PG-` prefix distinguishes these ProofGraph-local identifiers from the
+mandate findings T1–T4 above.
+
+**PG-T1 — Mutation evidence is externally self-reported (Closed).**
 `record_mutation_evidence` accepts caller-supplied `command`, `startedAt`,
 `completedAt`, and `exitCode`. FlowGuard reads and digest-verifies the output
 report but does not execute or observe the process. As of the ProofGraph
@@ -367,7 +380,7 @@ FlowGuard-executed mutation provider is added. The evidence remains visible
 and auditable. See `src/state/proofgraph.ts` `EvidenceAttestation` and
 `src/audit/proofgraph/evaluate.ts` `deriveFromRequiredEvidence`.
 
-**T2 — Execution subject surface attestation incomplete (Closed).**
+**PG-T2 — Execution subject surface attestation incomplete (Closed).**
 Execution Subject Attestation (`src/verification/execution-subject.ts`) now
 includes provider-declared verification-semantic surfaces via
 `ExecutionProfile.resolveExecutionSubjectInputs()`. Vitest and pytest
@@ -382,7 +395,7 @@ Scope: surfaces covered are those discoverable through the current
 and multi-module discovery are explicitly scoped separately. Provider-owned
 via `ExecutionProfile` — no provider-specific logic in ProofGraph core.
 
-**T3 — mutationProfile creates structurally unsatisfiable contract (Closed).**
+**PG-T3 — mutationProfile creates structurally unsatisfiable contract (Closed).**
 A `mutationProfile` declaration adds `fault_injection` to the positive proof
 requirements. All current mutation evidence carries
 `attestation: 'external_self_reported'`, which the evaluator filters from
@@ -406,18 +419,15 @@ guard (`ARCHITECTURE_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION`) so bound evidence
 that contradicts the recorded review completion blocks approval.
 
 CEF1/CEF2 close the two review findings on the certificate trust chain (merged
-via #816, squash-merge commit `e29c50ca`); CE1–CE3 are resolved by the
-certificate evidence trust hardening (2026-08-17 section): canonical-only
-linkage, explicit verdict requirement, and negative-path coherence proofs at
-the tool and authority layers.
+via #816, squash-merge commit `e29c50ca`). The CE1–CE3 follow-ups recorded in
+the original #816 snapshot are superseded by the canonical-only, verdict-strict
+contract merged in #831; their current descriptions are in the 2026-08-17
+section below.
 
 | ID   | Severity   | Status | Tracking | Summary                                                                                                                                                                                                                                                                                                                              |
 | ---- | ---------- | ------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | CEF1 | HIGH       | Fixed  | #816     | Certificate binding provenance: required `reviewBinding`, exact-subject evidence, no cross-digest fallback, binding co-signs `certificateId`, gate/mint single resolution.                                                                                                                                                           |
 | CEF2 | MEDIUM     | Fixed  | #816     | Verdict coherence at the certificate authority boundary: rejecting evidence cannot co-sign `current_review`; `accept` evidence contradicts `review_exhausted` and blocks via `ARCHITECTURE_REVIEW_EVIDENCE_CONTRADICTS_COMPLETION`.                                                                                                  |
-| CE1  | MEDIUM     | Fixed  | #816     | `current_review` tolerates evidence WITHOUT `capturedVerdict` (SDK attestations without `overallVerdict`, legacy captures); only a contradicting verdict blocks. Hardening: require `capturedVerdict` on new-generation evidence once legacy states are out of scope.                                                                |
-| CE2  | LOW-MEDIUM | Fixed  | #816     | Non-canonical linkage fallback: without `obligation.invocationId` and without a `consumedByObligationId`-marked invocation, the resolver binds the NEWEST findingsHash-bearing invocation of the same `obligationId` — weaker than canonical linkage. Production plugin hooks set `invocationId`; direct host-task captures may not. |
-| CE3  | LOW        | Fixed  | #816     | No normal production transition path is proven to produce `reviewCompletion` ↔ `capturedVerdict` contradictions; the coherence guard is source-level defense-in-depth, pinned by negative-path tests.                                                                                                                                |
 
 ## 2026-08-17 — Certificate Evidence Trust Hardening (CE1–CE5)
 
@@ -525,28 +535,21 @@ aligned with what the implementation actually proves.
 
 | ID  | Severity | Status | Summary                                                                                                                                                                              |
 | --- | -------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| HA1 | P3       | Open   | HAI `validateCapabilities()` docs still say "match advertised capabilities"; the OpenCode adapter classifies all six as `contractAttested` and performs no runtime validation.       |
-| HA2 | P3       | Open   | Attack-matrix scenario PL-02 is still named "Capability mismatch at boot" after the boot probe was removed; the expected-behavior text is correct.                                   |
-| HA3 | P2       | Open   | Human-projection telemetry sink is process-global and can be overwritten across plugin instances; matrix CI-02 "No shared mutable state" is too absolute. Pre-existing on `develop`. |
+| HA1 | P3       | Fixed  | HAI no longer claims that `validateCapabilities()` matches advertised capabilities at boot; OpenCode reports all six as `contractAttested` without runtime validation.                  |
+| HA2 | P3       | Fixed  | Attack-matrix PL-02 now describes boot capability assurance without host I/O; the expected behavior remains unchanged.                                                               |
+| HA3 | P2       | Open   | Human-projection telemetry sink is process-global and can be overwritten across plugin instances. CI-02 now documents this diagnostic exception. Pre-existing on `develop`.            |
 | HA4 | P3/P2    | Open   | `enforcementLevel: 'synchronous'` is a host-contract property, not a live-proven guarantee; the F-08 model-dispatch proof is still `NOT_VERIFIED`.                                   |
 
-**HA1 — HAI capability wording drifts from the OpenCode implementation (P3, Open).**
-`src/adapters/host-adapter.ts:248` documents `validateCapabilities()` as
-"Validate that actual host capabilities match advertised capabilities. Called
-at boot time — fail-closed on mismatch." `src/integration/opencode-host-adapter.ts`
-deliberately performs no host call at boot and returns `runtimeVerified: []`
-with all six capabilities in `contractAttested`. The implementation is the more
-honest of the two. Remediation: reword the contract to "classify capability
-assurance and report observed mismatches", align the `CapabilityValidationResult`
-docs, and update `.sdk-baselines/governance/host-adapter-interface.json` plus
-`src/integration/sdk-contract-governance.test.ts` in the same change.
+**HA1 — HAI capability wording aligned with the OpenCode implementation (P3, Fixed).**
+`CapabilityValidationResult` now exposes assurance classifications without a
+claim that `validateCapabilities()` performs boot-time capability matching.
+The OpenCode adapter performs no host call at boot and returns
+`runtimeVerified: []` with all six capabilities in `contractAttested`.
 
-**HA2 — Matrix PL-02 scenario name predates the no-boot-probe design (P3, Open).**
-`docs/opencode-host-boundary-attack-matrix.md` PL-02 is titled "Capability
-mismatch at boot". After F-01/F-04 there is no boot probe, so a boot-time
-capability mismatch cannot be observed; the row's expected behavior (no unproven
-boot claims, lazy fail-closed reviewer verification) is correct. Remediation:
-rename the scenario to "Boot capability assurance without host I/O".
+**HA2 — Matrix PL-02 name aligned with the no-boot-probe design (P3, Fixed).**
+PL-02 is now titled "Boot capability assurance without host I/O." There is no
+boot probe; the expected behavior remains no unproven boot claims and lazy,
+fail-closed reviewer verification on the invocation path.
 
 **HA3 — Human-projection telemetry sink is process-global (P2, Open, pre-existing).**
 `initHumanProjectionTelemetrySink()` writes a module-global `currentSink`
@@ -554,11 +557,11 @@ rename the scenario to "Boot capability assurance without host I/O".
 it per instance at boot (`src/integration/plugin.ts:73`). Multiple plugin
 instances can overwrite each other's setting. The sink is explicitly
 non-authoritative, carries limited telemetry, and is currently console/no-op
-only, so this is diagnostic. It does mean matrix CI-02 "No shared mutable
-state" is too absolute as written. Remediation: scope the sink to the plugin
-runtime instance (inject through deps), or document it as an explicitly
-process-global diagnostic and soften CI-02. The finding predates PR #880 and is
-intentionally not fixed there.
+only, so this is diagnostic. CI-02 documents this explicitly: authoritative
+chain state is instance-local, while the diagnostic telemetry sink is
+process-global. Scoping the sink to the plugin runtime instance remains an open
+hardening option. The finding predates PR #880 and is intentionally not fixed
+there.
 
 **HA4 — `enforcementLevel` mixes contract property and assurance level (P3/P2, Open).**
 `src/adapters/host-adapter.ts:27` describes `synchronous` as a "guaranteed
