@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import * as ts from 'typescript';
 import { describe, expect, it } from 'vitest';
+import { INSTALLED_COMMANDS } from '../../integration/installed-commands.js';
 
 const ROOT = process.cwd();
 const read = (path: string): string => readFileSync(join(ROOT, path), 'utf8');
@@ -114,6 +115,25 @@ describe('developer onboarding documentation contract', () => {
 
     expect(distribution).toContain('OPENCODE_SERVER_PASSWORD=secret');
     expect(distribution.match(/curl -u opencode:secret/g)).toHaveLength(2);
+  });
+
+  it('documents every installed command whose tool binding is not a direct name mapping', () => {
+    const commands = read('docs/commands.md');
+    const exceptions = INSTALLED_COMMANDS.filter((definition) => {
+      const directToolName = `flowguard_${definition.invocation
+        .slice(1)
+        .replace(/\s+--.*/, '')
+        .replace(/-/g, '_')}`;
+
+      return (
+        definition.target.toolName !== directToolName || definition.target.fixedArgs !== undefined
+      );
+    });
+
+    for (const definition of exceptions) {
+      expect(commands, definition.invocation).toContain(`\`${definition.invocation}\``);
+      expect(commands, definition.target.toolName).toContain(`\`${definition.target.toolName}\``);
+    }
   });
 
   it('keeps command details canonical and installation focused on the happy path', () => {

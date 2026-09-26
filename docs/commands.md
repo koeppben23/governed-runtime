@@ -43,14 +43,17 @@ The `/<command>` syntax invokes the corresponding `flowguard_<tool-name>` tool i
 
 | Slash command                                                  | Tool binding              | Reason                                                                                                         |
 | -------------------------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `/start`                                                       | `flowguard_hydrate`       | Product name for session bootstrap                                                                             |
+| `/task`                                                        | `flowguard_ticket`        | Product naming; the canonical tool keeps the historical `ticket` name                                          |
 | `/approve`, `/override-approve`, `/request-changes`, `/reject` | `flowguard_decision`      | One decision tool; the product commands carry the verdict intent                                               |
 | `/abort`                                                       | `flowguard_abort_session` | Tool name disambiguates `abort` from `serve`/`run`                                                             |
-| `/task`                                                        | `flowguard_ticket`        | Product naming; the canonical tool keeps the historical `ticket` name                                          |
 | `/review-decision` (compatibility)                             | `flowguard_decision`      | Verdict-routing surface, kept for scripts; the product variants above are the recommended interface            |
 | `/validate`, `/check` (compatibility)                          | `flowguard_run_check`     | Validation runs automatically; the explicit compatibility surfaces remain for scripts and manual evidence runs |
+| `/why`, `/finish`                                              | `flowguard_status`        | Readiness and blocker views supply fixed status arguments                                                      |
+| `/help`, `/commands`, `/commands --all`                        | `flowguard_help`          | Contextual help and command-list views supply fixed help arguments                                             |
 
-For all other commands, slash and tool names match `1:1` (`/plan` →
-`flowguard_plan`, `/architecture` → `flowguard_architecture`, etc.).
+All other commands map directly after replacing command hyphens with underscores
+(`/plan` → `flowguard_plan`, `/architecture` → `flowguard_architecture`).
 
 ### Interactive vs Non-Interactive Execution
 
