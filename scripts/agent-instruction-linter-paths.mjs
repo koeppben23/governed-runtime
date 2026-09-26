@@ -22,10 +22,7 @@ const CHAIN_MAX_BYTES = 20 * 1024;
 // ── Path normalization ───────────────────────────────────────────────
 
 export function normalizeRepoPath(filePath) {
-  return filePath
-    .replace(/^\.\//, '')
-    .replace(/^\.\\/, '')
-    .replace(/\\/g, '/');
+  return filePath.replace(/^\.\//, '').replace(/^\.\\/, '').replace(/\\/g, '/');
 }
 
 export function isRootAgentFile(relativePath) {
@@ -66,7 +63,9 @@ function ancestorsUpTo(file) {
 // ── Helpers ───────────────────────────────────────────────────────────
 
 function readFile(root, path) {
-  return readFileSync(join(root, path), 'utf8');
+  // Path-reference scanning works on masked line structure; normalize CRLF so
+  // Windows checkouts produce the same references as LF working trees.
+  return readFileSync(join(root, path), 'utf8').replace(/\r\n/g, '\n');
 }
 
 function fileBytes(root, path) {

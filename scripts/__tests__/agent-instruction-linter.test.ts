@@ -1,5 +1,15 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
 import { spawnSync } from 'node:child_process';
+import {
+  cpSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import {
   DEFAULT_IGNORED_PATHS,
   lintAgentInstructions,
@@ -16,6 +26,7 @@ import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
+const cliPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'check-agent-instructions.mjs');
 
 interface LintDiagnostic {
   file?: string;
@@ -250,12 +261,6 @@ describe('formatDiagnostics', () => {
 });
 
 describe('CLI wrapper', () => {
-  const cliPath = join(
-    dirname(fileURLToPath(import.meta.url)),
-    '..',
-    'check-agent-instructions.mjs',
-  );
-
   it('exits 0 for valid fixture directory', () => {
     const result = spawnSync(process.execPath, [cliPath, join(FIXTURES, 'valid')], {
       encoding: 'utf8',
@@ -483,5 +488,65 @@ describe('Check 12 — duplicate paragraphs (advisory)', () => {
     );
     expect(dupDiag).toBeUndefined();
     expect(result.ok).toBe(true);
+  });
+});
+
+// ── CRLF tolerance ───────────────────────────────────────────────────
+// A Windows checkout converts the fixtures to CRLF. The linter and the CLI
+// must produce the same result as for an LF working tree.
+
+const temporaryDirectories: string[] = [];
+
+afterEach(() => {
+  for (const directory of temporaryDirectories.splice(0)) {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+function crlfFixtureCopy(name: string): string {
+  const destination = mkdtempSync(join(tmpdir(), `fg-agent-lint-${name}-`));
+  temporaryDirectories.push(destination);
+  cpSync(join(FIXTURES, name), destination, { recursive: true });
+  const convert = (directory: string): void => {
+    for (const entry of readdirSync(directory)) {
+      const full = join(directory, entry);
+      if (statSync(full).isDirectory()) {
+        convert(full);
+        continue;
+      }
+      writeFileSync(full, readFileSync(full, 'utf8').replace(/\r?\n/g, '\r\n'));
+    }
+  };
+  convert(destination);
+  return destination;
+}
+
+describe('CRLF tolerance', () => {
+  it('lints a CRLF checkout exactly like an LF checkout', () => {
+    const crlfRoot = crlfFixtureCopy('valid');
+    expect(lintAgentInstructions({ root: crlfRoot })).toEqual(
+      lintAgentInstructions({ root: join(FIXTURES, 'valid') }),
+    );
+  });
+
+  it('still detects duplicated paragraphs in CRLF files', () => {
+    const crlfRoot = crlfFixtureCopy('duplicate-paragraphs');
+    const crlfResult = lintAgentInstructions({ root: crlfRoot });
+    expect(crlfResult).toEqual(
+      lintAgentInstructions({ root: join(FIXTURES, 'duplicate-paragraphs') }),
+    );
+    expect(crlfResult.diagnostics).toContainEqual(
+      expect.objectContaining({
+        kind: 'warn',
+        message: expect.stringContaining('duplicated instruction paragraph'),
+      }),
+    );
+  });
+
+  it('exits 0 through the CLI for a CRLF checkout', () => {
+    const crlfRoot = crlfFixtureCopy('valid');
+    const result = spawnSync(process.execPath, [cliPath, crlfRoot], { encoding: 'utf8' });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('All checks passed');
   });
 });

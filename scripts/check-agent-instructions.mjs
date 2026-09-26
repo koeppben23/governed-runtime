@@ -35,9 +35,13 @@ const bridgeDiagnostics = [];
 
 function readBridge(path) {
   try {
-    return readFileSync(join(root, path), 'utf8');
-  } catch (error) {
-    bridgeDiagnostics.push(`${path}: required coding-agent instruction bridge is missing or unreadable`);
+    // Bridge comparisons use canonical LF literals; Windows checkouts deliver
+    // CRLF and must not turn a valid bridge into a failure.
+    return readFileSync(join(root, path), 'utf8').replace(/\r\n/g, '\n');
+  } catch {
+    bridgeDiagnostics.push(
+      `${path}: required coding-agent instruction bridge is missing or unreadable`,
+    );
     return null;
   }
 }
@@ -48,7 +52,10 @@ if (claudeBridge !== null && claudeBridge.trim() !== '@AGENTS.md') {
 }
 
 const geminiBridge = readBridge('GEMINI.md');
-if (geminiBridge !== null && geminiBridge.trim() !== '# Gemini CLI Repository Instructions\n\n@./AGENTS.md') {
+if (
+  geminiBridge !== null &&
+  geminiBridge.trim() !== '# Gemini CLI Repository Instructions\n\n@./AGENTS.md'
+) {
   bridgeDiagnostics.push('GEMINI.md: must remain a thin import of `@./AGENTS.md`');
 }
 
