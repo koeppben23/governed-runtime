@@ -23,6 +23,12 @@ function headingSlugs(markdown: string): Set<string> {
   return slugs;
 }
 
+function headingSlugList(markdown: string): string[] {
+  return Array.from(markdown.matchAll(/^#{1,6}\s+(.+)$/gm)).map((match) =>
+    slugifyHeading(match[1] ?? ''),
+  );
+}
+
 function declaresFunction(relativePath: string, name: string): boolean {
   const source = ts.createSourceFile(
     relativePath,
@@ -54,6 +60,29 @@ describe('developer onboarding documentation contract', () => {
     expect(index).toContain('./development/state-changing-operation.md');
     expect(existsSync(join(ROOT, 'docs/development/first-change.md'))).toBe(true);
     expect(existsSync(join(ROOT, 'docs/development/state-changing-operation.md'))).toBe(true);
+    expect(index).toContain('./development/index.md');
+    expect(existsSync(join(ROOT, 'docs/development/index.md'))).toBe(true);
+  });
+
+  it('preserves critical installation, command, and release anchors without duplicates', () => {
+    const targets: Array<[string, readonly string[]]> = [
+      ['docs/installation.md', ['installation-steps', 'host-selection-matrix', 'uninstall']],
+      [
+        'docs/commands.md',
+        ['command-surface', 'workflow-commands-advancedcanonical', 'operational-tools'],
+      ],
+      ['docs/release-policy.md', ['release-process', 'protected-main-release-flow']],
+    ];
+
+    for (const [path, anchors] of targets) {
+      const slugs = headingSlugList(read(path));
+      for (const anchor of anchors) {
+        expect(
+          slugs.filter((slug) => slug === anchor),
+          `${path}#${anchor}`,
+        ).toHaveLength(1);
+      }
+    }
   });
 
   it('uses the canonical peer-review terminal phase in the quick reference', () => {

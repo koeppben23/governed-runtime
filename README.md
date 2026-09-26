@@ -164,6 +164,7 @@ subagent attestation, and the `/review` evidence model.
 | [Configuration](./docs/configuration.md)                             | Configuration reference                                                |
 | [Troubleshooting](./docs/troubleshooting.md)                         | FAQ and error handling                                                 |
 | [Architecture](./docs/architecture/architecture-diagram.md)          | Architecture layers, three governed flows, SSOT, proof surfaces        |
+| [Development Guide](./docs/development/index.md)                     | Contributor navigation, setup, debugging, and architecture guidance    |
 | [Developer Architecture Map](./docs/development/architecture-map.md) | Where a change belongs, owning modules, and enforced checks            |
 | [Testing Strategy](./docs/testing-strategy.md)                       | Test tiers, CI jobs, performance budgets                               |
 | [API Reference](https://koeppben23.github.io/governed-runtime/)      | TypeScript API reference (TypeDoc, GitHub Pages)                       |
@@ -182,10 +183,10 @@ subagent attestation, and the `/review` evidence model.
 ## Development
 
 New to the codebase? Start with the
-[Developer Architecture Map](./docs/development/architecture-map.md) — it maps
-change types to their owning modules, the architecture rules that apply, and the
-checks you need to run. [Your First Change](./docs/development/first-change.md)
-walks one additive tool-response change end to end.
+[Development Guide](./docs/development/index.md). It routes to the
+[Developer Architecture Map](./docs/development/architecture-map.md), which maps
+change types to owning modules and checks, and to
+[Your First Change](./docs/development/first-change.md), an additive walkthrough.
 
 ```bash
 # Install dependencies

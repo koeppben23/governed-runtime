@@ -264,10 +264,12 @@ following hold:
 - All changes must go through Pull Requests.
 - Default PR target is `develop` for normal feature, fix, docs, refactor, test, and chore work.
 - PRs to `main` are reserved for release branches, urgent hotfixes, or repository-governance changes that must apply immediately.
-- Branch naming convention:
+- Branch naming is canonical here. Use one of:
   - `feat/<description>` — new features
   - `fix/<description>` — bug fixes
   - `docs/<description>` — documentation updates
+  - `test/<description>` — test-only changes
+  - `refactor/<description>` — behavior-preserving refactors
   - `chore/<description>` — maintenance tasks
   - `release/vX.Y.Z` — release preparation branches
 
@@ -285,6 +287,11 @@ before branch protection and required checks have accepted the release. Before
 tagging, run `npm run release:assert-main-tag -- vX.Y.Z` to fail closed unless
 the checkout is clean, on `main`, equal to `origin/main`, version-consistent, and
 untagged.
+
+`npm run release:verify` is the package-defined local release verification
+script. It runs `npm run lint`; required CI and contributor linting use
+`npm run lint:strict` and remain separate checks. The release script definition
+in `package.json` is authoritative for its exact command set.
 
 ### Conventional Commits
 
@@ -336,6 +343,21 @@ The CI job definitions, including the `ci-gate` aggregator and its dependencies,
 are maintained in [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Update
 those canonical sources when check names or branch-protection requirements
 change; do not maintain a second check list here.
+
+### Change Verification Matrix
+
+Run the baseline checks required by [AGENTS.md](AGENTS.md#verification), then
+add the narrowest checks that cover the changed surface. This table is a routing
+aid; scripts, tests, CI, and `AGENTS.md` remain the enforcement authorities.
+
+| Changed surface | Additional verification |
+| --- | --- |
+| Documentation or Markdown links | Relevant `src/documentation/__tests__` files and `full-repo-links.test.ts` |
+| TypeScript source or tests | `npm run check`, `npm run lint:strict` |
+| Imports, exports, placement, or layer boundaries | `npm run test:architecture` |
+| Runtime configuration, installed commands, or templates | Owning contract and install tests; `npm run build` for distribution changes |
+| State, policy, audit, guards, or security boundaries | Meaningful negative paths and `npm run mutation` |
+| Dependencies or module surface | `npm run check:unused-dependencies` |
 
 ## Pull Request Process
 

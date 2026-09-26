@@ -167,7 +167,7 @@ blockers. Omit empty categories.
 
 ## Git Conventions
 
-- Branches: `fix/<name>`, `feat/<name>`, `chore/<name>`.
+- Branch naming and targets are owned by `CONTRIBUTING.md`.
 - Commits: conventional commit format (`feat`, `fix`, `docs`, `test`, `refactor`, `chore`, `perf`, `ci`).
 - Never commit unless explicitly asked. Never force-push without explicit
   instruction. Use `--force-with-lease`, never `--force`.

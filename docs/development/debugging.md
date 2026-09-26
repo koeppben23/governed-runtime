@@ -126,6 +126,11 @@ npm test
 npm run build
 ```
 
+`npm ci` is the reproducible checkout command: it installs exactly from the
+committed lockfile. Use `npm install` only when intentionally changing
+dependencies, because it is the repository's required command for updating the
+lockfile.
+
 `dist/` is the compiled artifact used by the CLI, MCP, and install paths. Tests
 run from TypeScript sources via Vitest and do not need a build.
 

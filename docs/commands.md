@@ -2,6 +2,31 @@
 
 FlowGuard distinguishes between **Workflow Commands** (drive session state) and **Operational Tools** (operate on session artifacts).
 
+## Daily Workflow
+
+Use the product commands in the normal sequence: `/start`, `/task`, `/plan`,
+`/approve`, `/implement`, and `/export`. The command-surface, flow, and product
+command sections below define their exact routing and phase behavior.
+
+## Diagnose
+
+Use `/status`, `/finish`, `/help`, and `/commands` to inspect a session without
+changing it. `flowguard_status` and `flowguard inspect` provide equivalent
+operational views for scripts and compliance reporting.
+
+## Recovery
+
+Use `/check` or `/validate` only when a validation run must be continued or
+recorded manually, `/continue` for explicit deterministic routing, and `/abort`
+for irreversible emergency termination. Missing safety-critical headless input
+returns `BLOCKED`; see [Distribution Model](./distribution-model.md).
+
+## Advanced
+
+Canonical workflow commands and operational tools remain available for scripts,
+CI, and manual recovery. They are documented under their existing headings
+below to preserve stable links.
+
 ## Command Surface
 
 FlowGuard uses a two-level command surface:
