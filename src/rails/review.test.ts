@@ -1,7 +1,7 @@
 /**
  * @module review.test
- * @description Tests for the /review rail core — executeReview, executeReviewFlow,
- *              and startReviewFlow behavior. Content-aware, URL-security, and
+ * @description Tests for the /review rail core — executeReview and
+ *              startReviewFlow behavior. Content-aware, URL-security, and
  *              schema-validation tests live in sibling files.
  *
  * @test-policy HAPPY, BAD, CORNER, EDGE, PERF — all five categories present.
@@ -10,7 +10,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   executeReview as executeReviewUnsafe,
-  executeReviewFlow,
   startReviewFlow,
   type ReviewExecutors,
   type ReviewReferenceInput,
@@ -528,42 +527,6 @@ describe('review rail', () => {
     });
   });
 
-  // ─── MUTATION KILL: executeReviewFlow ───────────────────────
-  describe('MUTATION: executeReviewFlow', () => {
-    const ctx = createTestContext();
-
-    it('HAPPY: transitions from READY to REVIEW_COMPLETE', () => {
-      const state = makeState('READY', { reviewReportPath: '/tmp/report.json' });
-      const result = executeReviewFlow(state, ctx);
-      expect(result.kind).toBe('ok');
-      if (result.kind === 'ok') {
-        expect(result.state.phase).toBe('PEER_REVIEW_COMPLETE');
-        expect(result.transitions.length).toBeGreaterThanOrEqual(1);
-      }
-    });
-
-    it('BAD: blocks at non-READY phase with command and phase in reason', () => {
-      const state = makeState('TICKET');
-      const result = executeReviewFlow(state, ctx);
-      expect(result.kind).toBe('blocked');
-      if (result.kind === 'blocked') {
-        expect(result.code).toBe('COMMAND_NOT_ALLOWED');
-        expect(result.reason).toContain('/review');
-        expect(result.reason).toContain('TICKET');
-      }
-    });
-
-    it('BAD: blocks at COMPLETE phase', () => {
-      const state = makeState('COMPLETE');
-      const result = executeReviewFlow(state, ctx);
-      expect(result.kind).toBe('blocked');
-      if (result.kind === 'blocked') {
-        expect(result.code).toBe('COMMAND_NOT_ALLOWED');
-        expect(result.reason).toContain('/review');
-      }
-    });
-  });
-
   // ─── P8b: startReviewFlow (test: writeReport throws → no REVIEW_COMPLETE) ──
   describe('P8b: startReviewFlow', () => {
     const ctx = createTestContext();
@@ -579,6 +542,27 @@ describe('review rail', () => {
       if (result.kind === 'ok') {
         expect(result.state.phase).toBe('PEER_REVIEW');
         expect(result.state.reviewReportPath).toBeFalsy();
+      }
+    });
+
+    it('BAD: blocks at non-READY phase with command and phase in reason', () => {
+      const state = makeState('TICKET');
+      const result = startReviewFlow(state, ctx);
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') {
+        expect(result.code).toBe('COMMAND_NOT_ALLOWED');
+        expect(result.reason).toContain('/review');
+        expect(result.reason).toContain('TICKET');
+      }
+    });
+
+    it('BAD: blocks at COMPLETE phase', () => {
+      const state = makeState('COMPLETE');
+      const result = startReviewFlow(state, ctx);
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') {
+        expect(result.code).toBe('COMMAND_NOT_ALLOWED');
+        expect(result.reason).toContain('/review');
       }
     });
   });
