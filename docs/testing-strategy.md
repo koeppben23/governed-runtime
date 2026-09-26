@@ -192,9 +192,12 @@ must meet the break threshold. Newly admitted targets — named explicitly via
 range selectors are scored only over mutants whose `location` lies inside the
 declared range. Every selector listed as admitted in
 `scripts/mutation-profile-registry.json` is enforced per-target on each profile
-full run via `--require-admitted`; the admitted selector list is a
-drift-guarded projection of the immutable admission records (guard A11 in
-`mutation-scope.test.ts`). Targets without an admission record below the
+full run via `--require-admitted`; the admitted selector list is generated from
+the immutable admission records by `scripts/generate-mutation-registry.mjs`
+(`npm run generate:mutation-registry`, drift gate `check:mutation-registry` in
+the `check` chain) and independently guarded against the active inventory and
+the records by A11 in `mutation-scope.test.ts`. Targets without an admission
+record below the
 per-target threshold are reported as a note and remain tracked for test
 hardening. `scripts/verify-mutation-admission.mjs`
 validates the report against the mutation-testing-elements structure, requires

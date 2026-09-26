@@ -87,9 +87,7 @@ const DOC_FILES = [
 
 // Docs that are explicit design proposals describing FUTURE deliverables.
 // Refs to not-yet-existing files / codes / envs are intentional in these.
-const DESIGN_PROPOSAL_DOCS = new Set([
-  'docs/architecture/schema-migration.md',
-]);
+const DESIGN_PROPOSAL_DOCS = new Set(['docs/architecture/schema-migration.md']);
 
 const SRC_FILES = walk(SRC_DIR, (p) => p.endsWith('.ts'));
 const NON_TEST_SRC = SRC_FILES.filter((p) => !p.endsWith('.test.ts'));
@@ -262,13 +260,7 @@ function checkEnvVars(doc, lines) {
       // explanatory sentence often runs onto the next paragraph line).
       // Strip Markdown emphasis (`*`, `_`) before matching so phrases like
       // `is **not** consumed` still resolve to `is not consumed`.
-      const context = (
-        line +
-        ' ' +
-        (lines[idx + 1] ?? '') +
-        ' ' +
-        (lines[idx + 2] ?? '')
-      )
+      const context = (line + ' ' + (lines[idx + 1] ?? '') + ' ' + (lines[idx + 2] ?? ''))
         .toLowerCase()
         .replace(/[*_`]/g, '');
       if (negationMarkers.some((needle) => context.includes(needle))) {
@@ -386,14 +378,7 @@ function checkBinEntries(doc, lines) {
     while ((m = re.exec(line)) !== null) {
       const name = m[1];
       if (PACKAGE_BIN_NAMES.has(name)) passed('bin', name);
-      else
-        record(
-          doc,
-          idx + 1,
-          'bin',
-          name,
-          `bin '${name}' not declared in package.json "bin"`,
-        );
+      else record(doc, idx + 1, 'bin', name, `bin '${name}' not declared in package.json "bin"`);
     }
   });
 }
