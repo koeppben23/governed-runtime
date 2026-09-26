@@ -78,9 +78,9 @@ findings, and refreshed the two recorded file-size measurements.
 A 2026-09-26 persistence re-triage found that #950 preserved missing committed
 outbox operations but could move one after a later operation when a stale
 prepared state omitted an operation inserted between two IDs it retained. AUD5
-tracks the stable rebase: persisted order is authoritative, a prepared-only
+is fixed by merged #953: persisted order is authoritative, a prepared-only
 operation needs an unambiguous adjacent-ID position, and the reconciled audit
-trail must retain that exact order.
+trail retains that exact order.
 
 ## Status Legend
 
@@ -172,17 +172,17 @@ disproven, update the status and link the evidence."
 | M1   | HIGH     | Fixed           | MCP tool execution uses server-scoped response deadlines and admission limits (#645).                                                                                     |
 | M2   | HIGH     | Fixed           | #848 binds MCP roots to canonical Git worktrees; project/session environment hints can only select authorized roots and sessions.                                         |
 | M3   | HIGH     | Fixed           | MCP errors use trusted boundary codes and do not reflect arbitrary executor messages (#645).                                                                              |
-| C1   | HIGH     | Open            | Non-OpenCode config install skip/error handling needs explicit surfacing.                                                                                                 |
+| C1   | HIGH     | Open            | Non-OpenCode config install skip/error handling needs explicit surfacing. Tracked by #956.                                                                                |
 | C2   | HIGH     | Fixed           | Exclusive install lock, preflight, and existing-install protection implemented by #667.                                                                                   |
 | C3   | HIGH     | Fixed           | Install mutations use top-level rollback plus crash-recoverable dependency transactions in #667.                                                                          |
 | C4   | HIGH     | Fixed           | Codex marketplace install and uninstall use locked atomic read-modify-write in #667.                                                                                      |
 | C5   | HIGH     | Fixed           | Snapshot and rollback paths reject symlinks and use TOCTOU-hardened operations in #667.                                                                                   |
-| I4   | HIGH     | Partially Fixed | #844 blocks mutating host tools when the authoritative session-directory mapping is missing. Audit-context resolution remains a separate open authority concern.          |
+| I4   | HIGH     | Partially Fixed | #844 blocks mutating host tools when the authoritative session-directory mapping is missing. Audit-context resolution remains a separate open authority concern, tracked by #957. |
 | R1   | HIGH     | Fixed           | Export redaction uses a default-deny deep walk; #844 adds final sharing-archive byte coverage (R14).                                                                      |
 | R2   | HIGH     | Fixed           | Archive pipeline produces redacted files alongside raw, controlled by mandatory tool parameters; #844 verifies final sharing-archive composition (R14).                   |
 | R4   | HIGH     | Fixed           | Telemetry error/status export needs scrubbing.                                                                                                                            |
 | AUD2 | HIGH     | Fixed           | Audit write lock safely recovers dead-process stale locks while failing closed for unsafe lock states (#670).                                                             |
-| AUD5 | HIGH     | Tracked         | #952: stale prepared writes can reorder pending audit operations. Persisted order must win; ambiguous prepared-only insertion must fail closed.                              |
+| AUD5 | HIGH     | Fixed           | #952, #953: stale prepared writes could reorder pending audit operations; persisted order is now authoritative and ambiguous prepared-only insertion fails closed.          |
 | LK1  | LOW      | Mitigated       | Stale-lock recovery re-verifies content before unlink to avoid deleting a foreign fresh lock; a residual sub-`unlink` OS race remains without an atomic primitive (#673). |
 
 ## Medium-Priority Findings
