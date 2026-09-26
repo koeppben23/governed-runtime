@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { z } from 'zod';
 // State & Machine
-import { SessionState } from '../../state/schema.js';
+import { SessionState, type PendingAuditOperation } from '../../state/schema.js';
 import { hashText } from '../../shared/hashing.js';
 import { resolveWorkflowDirective } from '../../machine/workflow-directive.js';
 // Rail helpers
@@ -264,37 +264,138 @@ export async function writeStateWithArtifactsAndAuditOperations(
 
 /**
  * Carry forward every audit operation of the current authority that the
- * caller's prepared state does not contain.
+ * caller's prepared state does not contain while preserving the persisted
+ * operation order.
  *
  * A caller that held a snapshot from before an intervening writer committed an
  * operation would otherwise drop committed, possibly unreconciled evidence when
  * persisting its next state. The persisted authority list wins on id collision
- * (its status is the durable one), and missing operations are appended at the
- * end so chronological order is preserved and the newly prepared operation
- * remains the latest. Authority digests are unaffected: the outbox is excluded
- * from `computeStateDigest`.
+ * (its status is the durable one). A new operation may be inserted only at one
+ * unambiguous position between common neighbor IDs; conflicting placement fails
+ * closed. Authority digests are unaffected: the outbox is excluded from
+ * `computeStateDigest`.
  */
 function withCarriedAuditOperations(previous: SessionState, next: SessionState): SessionState {
-  const previousById = new Map(
-    previous.pendingAuditOperations.map((operation) => [operation.operationId, operation]),
+  const persisted = previous.pendingAuditOperations;
+  if (persisted.length === 0) return next;
+
+  const persistedById = new Map(persisted.map((operation) => [operation.operationId, operation]));
+  assertPreparedOrderMatchesPersisted(next.pendingAuditOperations, persisted, persistedById);
+  const insertions = collectPreparedInsertions(
+    next.pendingAuditOperations,
+    persisted,
+    persistedById,
   );
-  let changed = false;
-  const merged = next.pendingAuditOperations.map((operation) => {
-    const authoritative = previousById.get(operation.operationId);
-    if (authoritative !== undefined && authoritative !== operation) {
-      changed = true;
-      return authoritative;
-    }
-    return operation;
-  });
-  const mergedIds = new Set(merged.map((operation) => operation.operationId));
-  for (const operation of previous.pendingAuditOperations) {
-    if (!mergedIds.has(operation.operationId)) {
-      merged.push(operation);
-      changed = true;
-    }
+  return { ...next, pendingAuditOperations: applyPreparedInsertions(persisted, insertions) };
+}
+
+function assertPreparedOrderMatchesPersisted(
+  prepared: readonly PendingAuditOperation[],
+  persisted: readonly PendingAuditOperation[],
+  persistedById: ReadonlyMap<string, PendingAuditOperation>,
+): void {
+  const commonIds = prepared
+    .map((operation) => operation.operationId)
+    .filter((id) => persistedById.has(id));
+  const persistedCommonIds = persisted
+    .map((operation) => operation.operationId)
+    .filter((id) => commonIds.includes(id));
+  if (!sameOrder(commonIds, persistedCommonIds)) {
+    throw new PersistenceError(
+      'OUTBOX_ORDER_CONFLICT',
+      'Refusing prepared state that reorders persisted pending audit operations',
+    );
   }
-  return changed ? { ...next, pendingAuditOperations: merged } : next;
+}
+
+function collectPreparedInsertions(
+  prepared: readonly PendingAuditOperation[],
+  persisted: readonly PendingAuditOperation[],
+  persistedById: ReadonlyMap<string, PendingAuditOperation>,
+): ReadonlyMap<string, PendingAuditOperation> {
+  const persistedIndexById = new Map(
+    persisted.map((operation, index) => [operation.operationId, index]),
+  );
+  const insertions = new Map<string, PendingAuditOperation>();
+  for (let index = 0; index < prepared.length; index++) {
+    const operation = prepared[index];
+    if (operation === undefined) continue;
+    if (persistedById.has(operation.operationId)) continue;
+    const before = nearestPersistedId(prepared, index, -1, persistedById);
+    const after = nearestPersistedId(prepared, index, 1, persistedById);
+    if (before === undefined && after === undefined) {
+      throw new PersistenceError(
+        'OUTBOX_ORDER_CONFLICT',
+        'Refusing prepared audit operation without persisted ordering neighbors',
+      );
+    }
+    if (!areAdjacentAnchors(before, after, persisted, persistedIndexById)) {
+      throw new PersistenceError(
+        'OUTBOX_ORDER_CONFLICT',
+        'Refusing prepared audit operation without an unambiguous persisted position',
+      );
+    }
+    const anchor = `${before ?? ''}:${after ?? ''}`;
+    if (insertions.has(anchor)) {
+      throw new PersistenceError(
+        'OUTBOX_ORDER_CONFLICT',
+        'Refusing ambiguous prepared audit operations with identical ordering neighbors',
+      );
+    }
+    insertions.set(anchor, operation);
+  }
+  return insertions;
+}
+
+function applyPreparedInsertions(
+  persisted: readonly PendingAuditOperation[],
+  insertions: ReadonlyMap<string, PendingAuditOperation>,
+): PendingAuditOperation[] {
+  const merged: PendingAuditOperation[] = [];
+  const firstOperation = persisted[0];
+  if (firstOperation === undefined) return merged;
+  const firstInsertion = insertions.get(`:${firstOperation.operationId}`);
+  if (firstInsertion !== undefined) merged.push(firstInsertion);
+  for (let index = 0; index < persisted.length; index++) {
+    const operation = persisted[index];
+    if (operation === undefined) continue;
+    merged.push(operation);
+    const afterOperation = insertions.get(
+      `${operation.operationId}:${persisted[index + 1]?.operationId ?? ''}`,
+    );
+    if (afterOperation !== undefined) merged.push(afterOperation);
+  }
+  return merged;
+}
+
+function areAdjacentAnchors(
+  before: string | undefined,
+  after: string | undefined,
+  persisted: readonly PendingAuditOperation[],
+  persistedIndexById: ReadonlyMap<string, number>,
+): boolean {
+  if (before === undefined) return after === persisted[0]?.operationId;
+  if (after === undefined) return before === persisted.at(-1)?.operationId;
+  const beforeIndex = persistedIndexById.get(before);
+  const afterIndex = persistedIndexById.get(after);
+  return beforeIndex !== undefined && afterIndex === beforeIndex + 1;
+}
+
+function sameOrder(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((id, index) => id === right[index]);
+}
+
+function nearestPersistedId(
+  operations: readonly PendingAuditOperation[],
+  start: number,
+  direction: -1 | 1,
+  persistedById: ReadonlyMap<string, PendingAuditOperation>,
+): string | undefined {
+  for (let index = start + direction; index >= 0 && index < operations.length; index += direction) {
+    const operation = operations[index];
+    if (operation && persistedById.has(operation.operationId)) return operation.operationId;
+  }
+  return undefined;
 }
 
 export async function writeStateWithArtifactsAndAuditOperationsAlreadyLocked(

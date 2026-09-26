@@ -317,6 +317,7 @@ describe('error code type safety — SMOKE', () => {
         case 'SCHEMA_VALIDATION_FAILED':
         case 'SESSION_STATE_INCOMPATIBLE':
         case 'DIRECT_WRITE_REQUIRES_PREPARE':
+        case 'OUTBOX_ORDER_CONFLICT':
         case 'LOCK_TIMEOUT':
         case 'LOCK_TIMEOUT_EXHAUSTED':
           matched = true;

@@ -75,6 +75,13 @@ re-triage corrected the AR5 package status, superseded the pre-#831 CE1–CE3
 snapshot, namespaced the ProofGraph local IDs to avoid collisions with mandate
 findings, and refreshed the two recorded file-size measurements.
 
+A 2026-09-26 persistence re-triage found that #950 preserved missing committed
+outbox operations but could move one after a later operation when a stale
+prepared state omitted an operation inserted between two IDs it retained. AUD5
+tracks the stable rebase: persisted order is authoritative, a prepared-only
+operation needs an unambiguous adjacent-ID position, and the reconciled audit
+trail must retain that exact order.
+
 ## Status Legend
 
 | Status                 | Meaning                                                   |
@@ -175,6 +182,7 @@ disproven, update the status and link the evidence."
 | R2   | HIGH     | Fixed           | Archive pipeline produces redacted files alongside raw, controlled by mandatory tool parameters; #844 verifies final sharing-archive composition (R14).                   |
 | R4   | HIGH     | Fixed           | Telemetry error/status export needs scrubbing.                                                                                                                            |
 | AUD2 | HIGH     | Fixed           | Audit write lock safely recovers dead-process stale locks while failing closed for unsafe lock states (#670).                                                             |
+| AUD5 | HIGH     | Tracked         | #952: stale prepared writes can reorder pending audit operations. Persisted order must win; ambiguous prepared-only insertion must fail closed.                              |
 | LK1  | LOW      | Mitigated       | Stale-lock recovery re-verifies content before unlink to avoid deleting a foreign fresh lock; a residual sub-`unlink` OS race remains without an atomic primitive (#673). |
 
 ## Medium-Priority Findings

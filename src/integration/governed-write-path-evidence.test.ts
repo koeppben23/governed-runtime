@@ -10,10 +10,9 @@
  * state under the lock. This suite is the executable trace; the disposition
  * (layered fail-closed boundaries, no consolidation) is recorded in ADR-007.
  *
- * Stale-snapshot protection: the full-prepare writer refuses a prepared state
- * that would drop an open (non-reconciled) audit operation of the current
- * authority. The regression test drives an intervening write and proves the
- * rejection leaves the committed operation in place.
+ * Stale-snapshot protection: the full-prepare writer carries forward every
+ * committed operation in its persisted order. A prepared state that presents
+ * conflicting or ambiguous new-operation placement fails closed.
  *
  * The PERF block gates a state-changing full-prepare update against
  * `PERF_BUDGETS.stateGovernedWriteMs` with the shared benchmark methodology
@@ -33,11 +32,16 @@ import * as path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { readState, writeStateAlreadyLocked } from '../adapters/persistence.js';
+import { readState, writeState, writeStateAlreadyLocked } from '../adapters/persistence.js';
 import { makeProgressedState } from '../fixtures.js';
-import { SessionState } from '../state/schema.js';
+import { SessionState, type PendingAuditOperation } from '../state/schema.js';
 import { benchmarkAsync, PERF_BUDGETS } from '../test-policy.js';
-import { mutateStateWithAuditOperations, writeStateWithAuditOperations } from './audit-outbox.js';
+import {
+  mutateStateWithAuditOperations,
+  prepareAuditOperations,
+  writeStateWithAuditOperations,
+} from './audit-outbox.js';
+import { reconcilePendingAuditOperations, type AuditDeps } from './plugin-audit.js';
 import { PluginWorkspaceImpl } from './plugin-workspace.js';
 import {
   writeStateWithArtifacts,
@@ -100,6 +104,50 @@ function changedState(base: SessionState, iteration: number): SessionState {
       recoveryHint: 'test-only probe error state',
       occurredAt: '2026-01-01T00:00:00.000Z',
     },
+  };
+}
+
+function semanticOperation(state: SessionState, event: string): PendingAuditOperation {
+  const prepared = prepareAuditOperations(state, state, undefined, [
+    {
+      phase: state.phase,
+      event,
+      occurredAt: '2026-01-01T00:00:00.000Z',
+      detail: { event },
+    },
+  ]);
+  const operation = prepared.pendingAuditOperations.at(-1);
+  if (operation === undefined) throw new Error('Expected semantic audit operation');
+  return operation;
+}
+
+function pendingIds(state: SessionState): string[] {
+  return state.pendingAuditOperations.map((operation) => operation.operationId);
+}
+
+function reconcileDeps(sessDir: string, state: SessionState): AuditDeps {
+  return {
+    resolveFingerprint: vi.fn().mockResolvedValue('fp-governed-write'),
+    getSessionDir: vi.fn().mockReturnValue(sessDir),
+    resolveSessionPolicy: vi.fn().mockResolvedValue({
+      policy: {
+        audit: { emitToolCalls: false, emitTransitions: true, enableChainHash: true },
+        actorClassification: {},
+        mode: 'regulated',
+        requireHumanGates: true,
+      },
+      state,
+    }),
+    initChain: vi.fn().mockResolvedValue('genesis'),
+    invalidateChainState: vi.fn(),
+    appendAndTrack: vi.fn(async (event: Record<string, unknown>) => {
+      event.chainHash = `chain-${event.id as string}`;
+    }),
+    nextDecisionSequence: vi.fn().mockResolvedValue(1),
+    log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
+    logError: vi.fn(),
+    cachedFingerprint: 'fp-governed-write',
+    mode: 'regulated',
   };
 }
 
@@ -208,6 +256,113 @@ describe('R5 persistence evidence: audit-operation preservation', () => {
     ).toBe(true);
     expect(persisted.pendingAuditOperations.at(-1)?.kind).toBe('state_write');
     expect(persisted.error).toMatchObject({ code: 'R5_PERF_PROBE' });
+  });
+
+  it('preserves persisted outbox order and reconciles that same order into the audit trail', async () => {
+    const base = await seedSession();
+    const approval = semanticOperation(base, 'approval:accepted');
+    const decision = semanticOperation(base, 'decision:DEC-001');
+    const exportOperation = semanticOperation(base, 'export:published');
+    const stale = {
+      ...base,
+      pendingAuditOperations: [approval, exportOperation],
+    };
+    await writeState(sessDir, {
+      ...base,
+      pendingAuditOperations: [approval, decision, exportOperation],
+    });
+
+    const persisted = await writeStateWithArtifactsAndAuditOperations(
+      sessDir,
+      changedState(stale, 0),
+    );
+    const expectedBeforeStateWrite = [
+      approval.operationId,
+      decision.operationId,
+      exportOperation.operationId,
+    ];
+    expect(pendingIds(persisted).slice(0, -1)).toEqual(expectedBeforeStateWrite);
+    expect(persisted.pendingAuditOperations.at(-1)?.kind).toBe('state_write');
+
+    const deps = reconcileDeps(sessDir, persisted);
+    await expect(
+      reconcilePendingAuditOperations(deps, persisted.binding.hostSessionId, 'flowguard_export'),
+    ).resolves.toBeUndefined();
+    const emittedIds = vi
+      .mocked(deps.appendAndTrack)
+      .mock.calls.map(([event]) => (event as { id: string }).id);
+    expect(emittedIds).toEqual(pendingIds(persisted));
+  });
+
+  it('inserts one prepared-only decision between its persisted neighbor operations', async () => {
+    const base = await seedSession();
+    const approval = semanticOperation(base, 'approval:accepted');
+    const decision = semanticOperation(base, 'decision:DEC-001');
+    const exportOperation = semanticOperation(base, 'export:published');
+    await writeState(sessDir, { ...base, pendingAuditOperations: [approval, exportOperation] });
+
+    const persisted = await writeStateWithArtifactsAndAuditOperations(
+      sessDir,
+      changedState({ ...base, pendingAuditOperations: [approval, decision, exportOperation] }, 1),
+    );
+
+    expect(pendingIds(persisted).slice(0, -1)).toEqual([
+      approval.operationId,
+      decision.operationId,
+      exportOperation.operationId,
+    ]);
+  });
+
+  it('rejects ambiguous concurrent insertions between the same persisted operations', async () => {
+    const base = await seedSession();
+    const approval = semanticOperation(base, 'approval:accepted');
+    const decisionA = semanticOperation(base, 'decision:DEC-001');
+    const decisionB = semanticOperation(base, 'decision:DEC-002');
+    const exportOperation = semanticOperation(base, 'export:published');
+    await writeState(sessDir, { ...base, pendingAuditOperations: [approval, exportOperation] });
+
+    await expect(
+      writeStateWithArtifactsAndAuditOperations(sessDir, {
+        ...base,
+        pendingAuditOperations: [approval, decisionA, decisionB, exportOperation],
+      }),
+    ).rejects.toMatchObject({ code: 'OUTBOX_ORDER_CONFLICT' });
+  });
+
+  it('rejects a prepared snapshot that reorders persisted operations', async () => {
+    const base = await seedSession();
+    const approval = semanticOperation(base, 'approval:accepted');
+    const decision = semanticOperation(base, 'decision:DEC-001');
+    const exportOperation = semanticOperation(base, 'export:published');
+    await writeState(sessDir, {
+      ...base,
+      pendingAuditOperations: [approval, decision, exportOperation],
+    });
+
+    await expect(
+      writeStateWithArtifactsAndAuditOperations(sessDir, {
+        ...base,
+        pendingAuditOperations: [exportOperation, approval, decision],
+      }),
+    ).rejects.toMatchObject({ code: 'OUTBOX_ORDER_CONFLICT' });
+  });
+
+  it('retains the persisted status when a stale snapshot carries the same operation id', async () => {
+    const base = await seedSession();
+    const approval = semanticOperation(base, 'approval:accepted');
+    const staleApproval = { ...approval, status: 'state_committed' as const };
+    const persistedApproval = { ...approval, status: 'reconciled' as const };
+    await writeState(sessDir, { ...base, pendingAuditOperations: [persistedApproval] });
+
+    const persisted = await writeStateWithArtifactsAndAuditOperations(sessDir, {
+      ...base,
+      pendingAuditOperations: [staleApproval],
+    });
+
+    expect(persisted.pendingAuditOperations[0]).toMatchObject({
+      operationId: approval.operationId,
+      status: 'reconciled',
+    });
   });
 });
 
