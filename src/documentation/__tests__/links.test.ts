@@ -94,9 +94,7 @@ describe('Documentation Links', () => {
 
     it('routes dogfood source installs to the canonical development guide', async () => {
       const content = await fs.readFile(README_PATH, 'utf-8');
-      expect(content).toContain(
-        './docs/development/debugging.md',
-      );
+      expect(content).toContain('./docs/development/debugging.md');
       const dogfood = await fs.readFile(
         path.join(PROJECT_ROOT, 'docs/development/debugging.md'),
         'utf-8',

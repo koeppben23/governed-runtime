@@ -52,7 +52,9 @@ describe('documentation/release-process', () => {
     it('contributing guidance owns the PR-first, tag-after-merge ordering', () => {
       const contributing = readRepoFile('CONTRIBUTING.md');
 
-      expect(contributing).toContain('Create and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`');
+      expect(contributing).toContain(
+        'Create and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`',
+      );
       expect(contributing).toContain('npm run release:assert-main-tag -- vX.Y.Z');
       expect(contributing).toContain('`npm version` for FlowGuard releases');
       expect(contributing).toContain(
@@ -108,7 +110,9 @@ describe('documentation/release-process', () => {
 
       expect(contributing).toContain('release/vX.Y.Z');
       expect(contributing).toContain('npm run release:assert-main-tag -- vX.Y.Z');
-      expect(contributing).toContain('Create and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`');
+      expect(contributing).toContain(
+        'Create and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`',
+      );
     });
   });
 });
