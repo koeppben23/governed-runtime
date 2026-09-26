@@ -60,13 +60,31 @@ function parseFindingIds(content: string): string[] {
   return Array.from(content.matchAll(/^### (F-\d{2}) — /gm), (match) => match[1] ?? '');
 }
 
-function parseRepoArtifactRefs(content: string): string[] {
-  const refs = new Set<string>();
+interface ArtifactRef {
+  readonly path: string;
+  readonly startLine?: number;
+  readonly endLine?: number;
+}
+
+function parseRepoArtifactRefs(content: string): ArtifactRef[] {
+  const refs = new Map<string, ArtifactRef>();
   for (const match of content.matchAll(/`((?:src|scripts|docs|\.sdk-baselines)\/[^`]+)`/g)) {
     const raw = match[1] ?? '';
-    refs.add(raw.replace(/:\d+(?:-\d+)?$/, ''));
+    const lineMatch = /:(\d+)(?:-(\d+))?$/.exec(raw);
+    const path = raw.replace(/:\d+(?:-\d+)?$/, '');
+    if (lineMatch === null) {
+      refs.set(path, { path });
+      continue;
+    }
+    const startLine = Number(lineMatch[1]);
+    const endLine = lineMatch[2] === undefined ? startLine : Number(lineMatch[2]);
+    refs.set(`${path}:${startLine}-${endLine}`, { path, startLine, endLine });
   }
-  return [...refs];
+  return [...refs.values()];
+}
+
+function lineCount(path: string): number {
+  return readFileSync(path, 'utf-8').replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n').length;
 }
 
 describe('documentation/opencode-host-boundary-attack-matrix', () => {
@@ -117,8 +135,21 @@ describe('documentation/opencode-host-boundary-attack-matrix', () => {
       const refs = parseRepoArtifactRefs(content);
       expect(refs.length).toBeGreaterThan(10);
       for (const ref of refs) {
-        expect(existsSync(join(REPO_ROOT, ref)), `missing artifact ${ref}`).toBe(true);
+        expect(existsSync(join(REPO_ROOT, ref.path)), `missing artifact ${ref.path}`).toBe(true);
       }
+    });
+
+    it('keeps every line citation inside the cited file', () => {
+      const stale = parseRepoArtifactRefs(content)
+        .filter((ref) => ref.startLine !== undefined)
+        .filter((ref) => {
+          const total = lineCount(join(REPO_ROOT, ref.path));
+          const end = ref.endLine ?? ref.startLine ?? 0;
+          return (ref.startLine ?? 0) < 1 || end < (ref.startLine ?? 0) || end > total;
+        })
+        .map((ref) => `${ref.path}:${ref.startLine}-${ref.endLine}`);
+
+      expect(stale).toEqual([]);
     });
 
     it('is linked from docs/index.md', () => {

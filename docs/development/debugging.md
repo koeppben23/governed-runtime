@@ -26,7 +26,7 @@ not mix them.
 | `devEngines` node | `>=22.22.2` (`onFail: error`) |
 | `devEngines` npm  | `>=10.9.2` (`onFail: warn`)   |
 
-**Product runtime support** (authority: `package.json#engines`):
+**Product runtime support** (authority: `package.json`, field `engines`):
 
 | Contract | Value                               |
 | -------- | ----------------------------------- |

@@ -91,6 +91,67 @@ describe('check-doc-paths', () => {
     ]);
   });
 
+  it('masks tilde and four-backtick fences through the stateful parser', () => {
+    expect(missingFor('fences-extended.md')).toEqual([]);
+    expect(extractPathReferences(fixture('fences-extended.md')).map((ref) => ref.path)).toEqual([
+      'src/index.ts',
+    ]);
+  });
+
+  it('rejects a missing symbol, an invalid range, and unsupported citation forms', () => {
+    const invalid = missingFor('citations.md');
+    const byToken = new Map(invalid.map((entry) => [entry.token, entry]));
+
+    expect(byToken.has('src/integration/audit-outbox.ts:prepareStateWithAuditOperations()')).toBe(
+      false,
+    );
+    expect(byToken.has('src/integration/audit-outbox.ts:10-20')).toBe(false);
+    expect(byToken.has('src/integration/audit-outbox.ts#L10-L20')).toBe(false);
+
+    expect(byToken.get('src/integration/audit-outbox.ts:definitelyNotASymbol()')).toMatchObject({
+      path: 'src/integration/audit-outbox.ts',
+      reason: 'missing-symbol',
+    });
+    expect(byToken.get('src/integration/audit-outbox.ts:99999')).toMatchObject({
+      path: 'src/integration/audit-outbox.ts',
+      reason: 'invalid-line-range',
+    });
+    expect(byToken.get('src/integration/audit-outbox.ts#L99999')).toMatchObject({
+      path: 'src/integration/audit-outbox.ts',
+      reason: 'invalid-line-range',
+    });
+    expect(byToken.get('src/integration/audit-outbox.ts:SomeClass.method()')).toMatchObject({
+      path: 'src/integration/audit-outbox.ts',
+      reason: 'unsupported-reference-form',
+    });
+    expect(byToken.get('src/integration/audit-outbox.ts:noParens')).toMatchObject({
+      path: 'src/integration/audit-outbox.ts',
+      reason: 'unsupported-reference-form',
+    });
+    expect(byToken.get('docs/testing-strategy.md:someSymbol()')).toMatchObject({
+      path: 'docs/testing-strategy.md',
+      reason: 'unsupported-reference-form',
+    });
+    expect(byToken.get('src/integration:12')).toMatchObject({
+      path: 'src/integration',
+      reason: 'unsupported-reference-form',
+    });
+  });
+
+  it('reports an unsupported anchor fragment instead of ignoring it', () => {
+    const invalid = findMissingPathReferences({
+      docs: [{ path: 'doc.md', content: 'See `src/index.ts#canonical-authorities`.' }],
+      repoRoot,
+    });
+
+    expect(invalid).toEqual([
+      expect.objectContaining({
+        path: 'src/index.ts',
+        reason: 'unsupported-reference-form',
+      }),
+    ]);
+  });
+
   it('rejects traversal references even when an external file would exist', () => {
     const missing = findMissingPathReferences({
       docs: [{ path: 'fixtures/traversal.md', content: fixture('traversal.md') }],
@@ -136,10 +197,11 @@ describe('check-doc-paths', () => {
     );
   });
 
-  it('normalizes range and symbol suffixes to the file path', () => {
+  it('normalizes range, symbol, and L-anchor suffixes to the file path', () => {
     expect(normalizeReferencePath('src/a.ts:12-20')).toBe('src/a.ts');
     expect(normalizeReferencePath('src/a.ts:264-292')).toBe('src/a.ts');
     expect(normalizeReferencePath('src/a.ts:fn()')).toBe('src/a.ts');
+    expect(normalizeReferencePath('src/a.ts#L12-L20')).toBe('src/a.ts');
     expect(normalizeReferencePath('src/a.ts')).toBe('src/a.ts');
   });
 
