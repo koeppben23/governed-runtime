@@ -24,7 +24,12 @@ function read(relativePath: string): string {
 describe('developer documentation symbols', () => {
   it('names the real PERF_BUDGETS keys in the testing strategy', () => {
     const docs = read('docs/testing-strategy.md');
-    const keys = ['stateSerializeMs', 'stateIoRoundTripMs', 'auditChainVerify1000Ms'];
+    const keys = [
+      'stateSerializeMs',
+      'stateIoRoundTripMs',
+      'stateGovernedWriteMs',
+      'auditChainVerify1000Ms',
+    ];
 
     for (const key of keys) {
       expect(Object.hasOwn(PERF_BUDGETS, key), key).toBe(true);

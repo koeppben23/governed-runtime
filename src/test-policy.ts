@@ -102,6 +102,15 @@ export const PERF_BUDGETS = {
    */
   stateIoRoundTripMs: 50 * (process.env.CI ? 3 : 1) * PERF_BUDGET_FACTOR,
 
+  /**
+   * Governed full-prepare update of an existing session: read, implementation
+   * finalization, ProofGraph refresh, durable audit preparation, and the atomic
+   * state + artifact commit (filesystem I/O).
+   * CI adjustment: 3x multiplier for noisy VMs with unpredictable I/O.
+   * Local: 150ms budget.
+   */
+  stateGovernedWriteMs: 150 * (process.env.CI ? 3 : 1) * PERF_BUDGET_FACTOR,
+
   /** Completeness matrix evaluation. */
   completenessEvalMs: 2 * CI_MULTIPLIER * PERF_BUDGET_FACTOR,
 
