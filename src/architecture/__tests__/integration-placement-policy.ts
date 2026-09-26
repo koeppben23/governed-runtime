@@ -378,7 +378,6 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/review/obligations/freeze-coherence.ts', owner: 'review-obligations' },
   { file: 'integration/review/context/frozen-reviewer-context.ts', owner: 'review-context' },
   { file: 'integration/review/prompting/impl-review-prompt.ts', owner: 'review-prompting' },
-  { file: 'integration/review/index.ts', owner: 'review' },
   { file: 'integration/review/dispatch/native-task-review-bindings.ts', owner: 'review-dispatch' },
   { file: 'integration/review/dispatch/native-task-review-types.ts', owner: 'review-dispatch' },
   { file: 'integration/review/dispatch/native-task-review.ts', owner: 'review-dispatch' },

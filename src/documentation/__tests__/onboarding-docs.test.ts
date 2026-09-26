@@ -1,9 +1,50 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import * as ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 const ROOT = process.cwd();
 const read = (path: string): string => readFileSync(join(ROOT, path), 'utf8');
+
+/** GitHub-style heading slug used by in-repo cross-document anchors. */
+function slugifyHeading(heading: string): string {
+  return heading
+    .trim()
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/\s+/g, '-');
+}
+
+function headingSlugs(markdown: string): Set<string> {
+  const slugs = new Set<string>();
+  for (const match of markdown.matchAll(/^#{1,6}\s+(.+)$/gm)) {
+    slugs.add(slugifyHeading(match[1] ?? ''));
+  }
+  return slugs;
+}
+
+function declaresFunction(relativePath: string, name: string): boolean {
+  const source = ts.createSourceFile(
+    relativePath,
+    read(relativePath),
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  let found = false;
+  const visit = (node: ts.Node): void => {
+    if (
+      ((ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node)) &&
+        node.name?.text === name) ||
+      (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === name)
+    ) {
+      found = true;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return found;
+}
 
 describe('developer onboarding documentation contract', () => {
   it('links both developer walkthroughs from the documentation index', () => {
@@ -11,6 +52,8 @@ describe('developer onboarding documentation contract', () => {
 
     expect(index).toContain('./development/first-change.md');
     expect(index).toContain('./development/state-changing-operation.md');
+    expect(existsSync(join(ROOT, 'docs/development/first-change.md'))).toBe(true);
+    expect(existsSync(join(ROOT, 'docs/development/state-changing-operation.md'))).toBe(true);
   });
 
   it('uses the canonical peer-review terminal phase in the quick reference', () => {
@@ -50,6 +93,59 @@ describe('developer onboarding documentation contract', () => {
 
     expect(read('docs/development/first-change.md')).toContain(checklistAnchor);
     expect(read('CONTRIBUTING.md')).toContain(checklistAnchor);
+    expect(
+      headingSlugs(map).has('add-move-or-delete-a-production-file'),
+      'architecture-map.md heading anchor does not resolve',
+    ).toBe(true);
+  });
+
+  it('cites files and functions in the state-changing guide that actually exist', () => {
+    const guide = read('docs/development/state-changing-operation.md');
+    const citedTargets = [
+      '../../src/integration/tools/decision/decision-tool.ts',
+      '../../src/integration/tools/simple/export-tool.ts',
+      '../../src/rails/export.ts',
+      '../../src/integration/services/regulated-completion.ts',
+      '../../src/integration/services/regulated-completion-decision.ts',
+      '../../src/integration/plugin-regulated-recovery.ts',
+      '../../src/integration/services/regulated-completion.test.ts',
+      '../../src/integration/plugin-regulated-recovery.test.ts',
+      '../../src/integration/tools/helpers-rail-presentation.ts',
+      '../../src/integration/tools/helpers.ts',
+      '../../src/integration/audit-outbox.ts',
+      '../../src/integration/plugin-audit-reconcile.ts',
+      '../../src/integration/tools/write-state-with-artifacts.test.ts',
+    ];
+    const guideDirectory = join(ROOT, 'docs', 'development');
+
+    for (const target of citedTargets) {
+      // The exact relative link must exist verbatim (fragments may follow the
+      // path) and must resolve from the guide's directory. Basename-only checks
+      // would miss a moved `src/rails/export.ts` shadowed by another export.ts.
+      expect(guide, target).toContain(`](${target}`);
+      expect(existsSync(resolve(guideDirectory, target)), `${target} does not resolve`).toBe(true);
+    }
+
+    // Every relative Markdown link in the guide resolves to a real file.
+    for (const match of guide.matchAll(/\]\(([^)\s]+)\)/g)) {
+      const target = match[1] ?? '';
+      if (!target.startsWith('.')) continue;
+      const pathPart = target.split('#')[0] ?? '';
+      expect(existsSync(resolve(guideDirectory, pathPart)), `${target} does not resolve`).toBe(
+        true,
+      );
+    }
+
+    const declarations: Array<[string, string]> = [
+      ['src/integration/tools/helpers-rail-presentation.ts', 'persistAndFormat'],
+      ['src/integration/tools/helpers.ts', 'writeStateWithArtifactsAndAuditOperations'],
+      ['src/integration/audit-outbox.ts', 'prepareStateWithAuditOperations'],
+      ['src/integration/tools/helpers.ts', 'commitPreparedStateWithArtifactsAlreadyLocked'],
+    ];
+    for (const [path, name] of declarations) {
+      expect(guide).toContain(name);
+      expect(declaresFunction(path, name), `${name} is not declared in ${path}`).toBe(true);
+    }
   });
 
   it('documents the separate approval, export, regulated completion, and recovery stages', () => {

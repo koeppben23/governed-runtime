@@ -262,6 +262,41 @@ export async function writeStateWithArtifactsAndAuditOperations(
   return withSessionWriteLock(sessDir, async () => lockedSessionDir.run(sessDir, persist));
 }
 
+/**
+ * Carry forward every audit operation of the current authority that the
+ * caller's prepared state does not contain.
+ *
+ * A caller that held a snapshot from before an intervening writer committed an
+ * operation would otherwise drop committed, possibly unreconciled evidence when
+ * persisting its next state. The persisted authority list wins on id collision
+ * (its status is the durable one), and missing operations are appended at the
+ * end so chronological order is preserved and the newly prepared operation
+ * remains the latest. Authority digests are unaffected: the outbox is excluded
+ * from `computeStateDigest`.
+ */
+function withCarriedAuditOperations(previous: SessionState, next: SessionState): SessionState {
+  const previousById = new Map(
+    previous.pendingAuditOperations.map((operation) => [operation.operationId, operation]),
+  );
+  let changed = false;
+  const merged = next.pendingAuditOperations.map((operation) => {
+    const authoritative = previousById.get(operation.operationId);
+    if (authoritative !== undefined && authoritative !== operation) {
+      changed = true;
+      return authoritative;
+    }
+    return operation;
+  });
+  const mergedIds = new Set(merged.map((operation) => operation.operationId));
+  for (const operation of previous.pendingAuditOperations) {
+    if (!mergedIds.has(operation.operationId)) {
+      merged.push(operation);
+      changed = true;
+    }
+  }
+  return changed ? { ...next, pendingAuditOperations: merged } : next;
+}
+
 export async function writeStateWithArtifactsAndAuditOperationsAlreadyLocked(
   sessDir: string,
   nextState: SessionState,
@@ -269,9 +304,11 @@ export async function writeStateWithArtifactsAndAuditOperationsAlreadyLocked(
   semanticIntents: readonly SemanticAuditIntent[] = [],
 ): Promise<SessionState> {
   const previous = await readState(sessDir);
+  const preparedNext =
+    previous === null ? nextState : withCarriedAuditOperations(previous, nextState);
   const stateWithOperations = await prepareStateWithAuditOperations(
     previous,
-    nextState,
+    preparedNext,
     transitions,
     semanticIntents,
   );

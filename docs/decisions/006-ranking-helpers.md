@@ -9,9 +9,11 @@
 Implementation guidance ranks candidate items before presentation:
 `rankItems` (`src/integration/implementation-guidance.ts`) deduplicates by
 identity, caps confidence against Discovery health, sorts by `confidenceRank`,
-and truncates to the section limit. `buildRankedSection` composes it with
-`onlyCorroborated`, controlled by `corroboratedOnly?: boolean` (four production
-call sites: relevant files, modules, surfaces, contracts).
+and truncates to the section limit. The R5 cleanup replaced the former
+`buildRankedSection(..., { corroboratedOnly })` option object with two named
+compositions: `rankSection` (unfiltered; used by tests and risk hotspots) and
+`rankCorroboratedSection` (filters through `onlyCorroborated` first; used by
+relevant files, modules, surfaces, and contracts).
 
 A repository-wide search finds a single `rankItems` implementation and no second
 ranking authority. The forensic finding is not a duplicate ranking structure:
@@ -43,17 +45,18 @@ themselves is still not established.
 - Merge helpers immediately, optionally with an options flag.
 - **Pros:** Fast.
 - **Cons:** Rejected: risks order changes without an inventory, and does not
-  address the actual finding (the existing `corroboratedOnly` flag and the
-  filter/limit order). Newly introduced boolean options remain a pattern this
-  repository avoids.
+  address the actual finding (the former boolean option and the filter/limit
+  order). Newly introduced boolean options remain a pattern this repository
+  avoids.
 
 ## Decision
 
 **Defer** for consolidation. The reproduced ordering defect was fixed by
 filtering corroborated candidates before the limit (behavior tests, including
-the renamed characterization case, pin the result). Any further consolidation
-still requires the inventory from Option B; if it shows no genuine duplicate,
-close the consolidation topic as a non-finding.
+the renamed characterization case, pin the result), and the boolean option was
+replaced by explicit function composition. Any further consolidation still
+requires the inventory from Option B; if it shows no genuine duplicate, close
+the consolidation topic as a non-finding.
 
 ## Consequences
 

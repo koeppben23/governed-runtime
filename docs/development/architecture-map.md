@@ -45,8 +45,9 @@ that list, not a second authority list.
 ### Review change (`src/integration/review/`)
 
 - Zones: `dispatch/`, `obligations/`, `context/`, `observations/`, `evidence/`,
-  `validation/`, `prompting/`, `enforcement/`. `review/index.ts` is the facade and
-  must never be imported by production code.
+  `validation/`, `prompting/`, `enforcement/`. The review bounded context has no
+  barrel facade; production code imports the concrete subzone authority. The
+  removed `review/index.ts` is guarded against reintroduction.
 - The allowed zone graph is frozen in
   `src/architecture/__tests__/review-zone-policy.ts` (`observed == declared`).
   The complete zone graph is acyclic. Moving a file requires updating the
@@ -121,10 +122,15 @@ mutation scope only to mutation-suitable authorities.
    `--require-selectors`; `--emit-admission` emits the record from the verified
    run.
 3. Move the inventory entry to `required` with the immutable **admission
-   record** in `mutation-admission-records.ts`, and add the selector to the
-   `admittedSelectors` projection in `scripts/mutation-profile-registry.json`.
-   The record is the authority; the mutation reconciliation guard (A11)
-   requires active admissions, records, and the registry to match exactly.
+   record** in `mutation-admission-records.ts`, then regenerate the
+   `admittedSelectors` projection with `npm run generate:mutation-registry` —
+   never by hand. `npm run check:mutation-registry` (part of the `check`
+   chain) detects projection drift. The record remains the authority, and the
+   mutation reconciliation guard (A11) independently requires active
+   admissions, records, and the registry to match exactly.
+   The generator is a development tool for the pinned toolchain
+   (`.node-version`, Node >= 22.22.2, TypeScript type stripping); the published
+   `engines` range is the consumer contract, not the dev contract.
 4. A candidate below the per-target threshold is downgraded instead: remove its
    `mutate` selector from the Stryker config and reclassify the inventory entry
    as `admission-backlog` (A3 requires every `mutate` selector to be `required`

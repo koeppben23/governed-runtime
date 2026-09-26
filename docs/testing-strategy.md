@@ -160,6 +160,7 @@ runners. Representative budgets at local-development baseline:
 | Guard predicate (`guardPredicateMs`)   | 3 ms × `CI_MULTIPLIER` × `PERF_BUDGET_FACTOR`        |
 | State serialize/deserialize            | ~5 ms (see `stateSerializeMs`)                       |
 | State I/O round-trip                   | ~50 ms (see `stateIoRoundTripMs`)                    |
+| Governed full-prepare write            | ~200 ms (see `stateGovernedWriteMs`)                 |
 | Audit chain verify (1000 events)       | ~100 ms (see `auditChainVerify1000Ms`)               |
 
 `initWorkspace()` and `runDiscovery()` do not have declared budgets in
@@ -192,9 +193,12 @@ must meet the break threshold. Newly admitted targets — named explicitly via
 range selectors are scored only over mutants whose `location` lies inside the
 declared range. Every selector listed as admitted in
 `scripts/mutation-profile-registry.json` is enforced per-target on each profile
-full run via `--require-admitted`; the admitted selector list is a
-drift-guarded projection of the immutable admission records (guard A11 in
-`mutation-scope.test.ts`). Targets without an admission record below the
+full run via `--require-admitted`; the admitted selector list is generated from
+the immutable admission records by `scripts/generate-mutation-registry.mjs`
+(`npm run generate:mutation-registry`, drift gate `check:mutation-registry` in
+the `check` chain) and independently guarded against the active inventory and
+the records by A11 in `mutation-scope.test.ts`. Targets without an admission
+record below the
 per-target threshold are reported as a note and remain tracked for test
 hardening. `scripts/verify-mutation-admission.mjs`
 validates the report against the mutation-testing-elements structure, requires
@@ -355,11 +359,25 @@ Deferred surfaces (whole roots behind the admission gate):
 `src/presentation/**`, `src/integration/**`, `src/rails/**`, `src/cli/**`,
 `src/providers/**`.
 
-Assessed during the 2026-09-25 authority-root expansion and deliberately not
-declared as roots: `src/diagnostics/**` (export and troubleshooting
-projections) and `src/telemetry/**` (advisory metric emission) carry no
-trust-boundary authority; they stay outside the mutation authority scope until
-a concrete authority dependency is proven.
+Declared during the 2026-09-26 authority-root expansion: `src/diagnostics/**`
+and `src/telemetry/**` now carry roots because both have concrete
+trust-boundary consumers — `src/integration/blocked-result.ts` builds every
+blocked tool result from the diagnostics builders, and the archive integrity
+paths (`src/adapters/workspace/archive.ts`, `archive-verify-chain.ts`) plus the
+plugin composition consume the telemetry span/sink surface. Every production
+file is classified individually below; no blanket glob is used.
+
+Diagnostics and telemetry roots (per-file deferral, no measured admission yet):
+
+- `src/diagnostics/builders.ts` — runtime diagnostics construction; admission requires a profile full run with per-target evidence.
+- `src/diagnostics/format-card.ts` — blocked-diagnostics card rendering; admission requires a profile full run with per-target evidence.
+- `src/telemetry/index.ts` — tracer bootstrap, span wrapping, and resource attributes; admission requires a profile full run with per-target evidence.
+- `src/telemetry/human-projection/emitter.ts` — telemetry emission over the sink port; admission requires a profile full run with per-target evidence.
+- `src/telemetry/human-projection/sink.ts` — process-global sink selection; admission requires a profile full run with per-target evidence.
+
+Type-only/barrel modules (`src/diagnostics/index.ts`,
+`src/diagnostics/types.ts`, `src/telemetry/human-projection/events.ts`) are
+classified `not-mutation-suitable` for the base profile.
 
 Explicitly not mutation-suitable **for the named profile** (the exclusion is
 scoped; a target may still be a valid mutation target in another profile):

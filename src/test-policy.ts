@@ -102,6 +102,17 @@ export const PERF_BUDGETS = {
    */
   stateIoRoundTripMs: 50 * (process.env.CI ? 3 : 1) * PERF_BUDGET_FACTOR,
 
+  /**
+   * Governed full-prepare update of an existing session: read, implementation
+   * finalization, ProofGraph refresh, durable audit preparation, and the atomic
+   * state + artifact commit (filesystem I/O). Calibrated on a state-changing
+   * workload (alternating authority per iteration): local p99 41-58ms, median
+   * ~13ms, budget keeps >3x headroom against the worst observed spike.
+   * CI adjustment: 3x multiplier for noisy VMs with unpredictable I/O.
+   * Local: 200ms budget.
+   */
+  stateGovernedWriteMs: 200 * (process.env.CI ? 3 : 1) * PERF_BUDGET_FACTOR,
+
   /** Completeness matrix evaluation. */
   completenessEvalMs: 2 * CI_MULTIPLIER * PERF_BUDGET_FACTOR,
 
@@ -254,6 +265,11 @@ export function benchmarkSync<T>(
  * Run an async function N times and return p95/p99 execution time.
  * First `warmup` iterations are discarded.
  *
+ * `reset`, when provided, runs before every invocation (warm-up and measured)
+ * and is excluded from the timing window. It exists for I/O benchmarks whose
+ * fixture must be restored between iterations so every sample starts from a
+ * comparable state (for example a bounded audit backlog).
+ *
  * When PERF enforcement is disabled (coverage runs), the function is executed
  * once (for coverage) and a zero result is returned so budget assertions pass.
  */
@@ -261,18 +277,22 @@ export async function benchmarkAsync<T>(
   fn: () => Promise<T>,
   iterations: number = 20,
   warmup: number = 3,
+  reset?: () => Promise<void>,
 ): Promise<{ p99Ms: number; p95Ms: number; medianMs: number; meanMs: number }> {
   if (!PERF_ENABLED) {
+    if (reset !== undefined) await reset();
     await fn();
     return { ...ZERO_BENCH };
   }
   const times: number[] = [];
 
   for (let i = 0; i < warmup; i++) {
+    if (reset !== undefined) await reset();
     await fn();
   }
 
   for (let i = 0; i < iterations; i++) {
+    if (reset !== undefined) await reset();
     const start = performance.now();
     await fn();
     times.push(performance.now() - start);

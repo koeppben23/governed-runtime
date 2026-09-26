@@ -40,6 +40,7 @@ module graph must match that policy exactly — including zero module cycles (se
   - `fnm use "$(cat .node-version)"`
 - npm (bundled with the Node version)
 - The package runtime support claim is `^20.0.0 || ^22.0.0 || ^24.0.0` (see `engines` in `package.json`); CI verifies the packed artifact on each supported major separately from the dev toolchain.
+- Dev-only tooling (for example `scripts/generate-mutation-registry.mjs`, which imports TypeScript through Node type stripping) may require the pinned `.node-version` runtime; that is a development contract and does not widen the published `engines` range.
 
 ### Installation
 

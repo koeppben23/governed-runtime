@@ -71,8 +71,9 @@ API. It must never become a provider of new authorities for lower layers.
   `isTerminalPhase` predicate.
 - Review ownership is zoned: `dispatch/`, `obligations/`, `context/`,
   `observations/`, `evidence/`, `validation/`, `prompting/`, and the existing
-  `enforcement/`. `review/index.ts` is the public facade and is never imported
-  by production code; subzones have no barrels. The placement authority freezes
+  `enforcement/`. There is no `review/index.ts` facade (removed as redundant in
+  ADR-005; `dependency-rules.test.ts` guards against reintroduction), and
+  subzones have no barrels. The placement authority freezes
   each file's zone and growth budget, and
   `architecture/__tests__/review-zone-policy.ts` freezes the allowed zone graph
   (`observed == declared`).

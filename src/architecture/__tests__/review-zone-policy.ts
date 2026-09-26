@@ -4,7 +4,7 @@
  *
  * The review bounded context is decomposed into physical zones (dispatch,
  * obligations, context, observations, evidence, validation, prompting, and the
- * review root facade). This authority freezes the directed zone graph that the
+ * review root). This authority freezes the directed zone graph that the
  * implementation actually requires:
  *
  *   observed zone edges === declared zone edges
@@ -17,15 +17,15 @@
  * pairs and longer strongly connected components are both rejected by the
  * real-tree policy test through `reviewZoneCycles`.
  *
- * Facade contract: `integration/review/index.ts` is the public composition
- * surface. Its outgoing edges are excluded from the zone graph (it composes
- * every zone), and production code anywhere under `src/` must never import it —
- * internal code imports the concrete authority it needs.
+ * No-barrel contract: the bounded context has no `review/index.ts` facade
+ * (removed as redundant in ADR-005); the review root keeps only cross-zone
+ * primitives, and subzones carry no barrels. The `dependency-rules.test.ts`
+ * guard fails if a barrel reappears.
  *
  * The analyzer is pure: callers provide production sources, zones, and the
  * declared edge set. Test files are outside this policy.
  *
- * @version v1
+ * @version v2
  */
 
 import * as ts from 'typescript';
@@ -33,9 +33,6 @@ import * as ts from 'typescript';
 import { isTestSourcePath } from './module-classification.js';
 import type { IntegrationPlacementZone } from './integration-placement-policy.js';
 import { stronglyConnectedComponents, type ModuleEdge } from './module-graph.js';
-
-/** Public facade of the review bounded context. */
-const REVIEW_FACADE_FILE = 'integration/review/index.ts';
 
 /** Prefix of the review bounded context inside `src/`. */
 const REVIEW_DIR_PREFIX = 'integration/review/';
@@ -187,12 +184,12 @@ export function resolveSpecifier(importerRel: string, specifier: string): string
 }
 
 interface ReviewZoneObservation {
-  readonly facadeViolations: readonly ReviewZoneViolation[];
   readonly observedEdges: ReadonlySet<string>;
 }
 
-function observeReviewZones(input: ReviewZoneAnalysisInput): ReviewZoneObservation {
-  const facadeViolations: ReviewZoneViolation[] = [];
+function observeReviewZones(
+  input: Pick<ReviewZoneAnalysisInput, 'sources' | 'zones'>,
+): ReviewZoneObservation {
   const zoneByDir = new Map(input.zones.map((zone) => [zone.dir, zone]));
   const observed = new Set<string>();
 
@@ -200,17 +197,7 @@ function observeReviewZones(input: ReviewZoneAnalysisInput): ReviewZoneObservati
     if (isTestSourcePath(source.rel)) continue;
     for (const specifier of relativeSpecifiers(source.content)) {
       const target = resolveSpecifier(source.rel, specifier);
-      if (target === REVIEW_FACADE_FILE) {
-        facadeViolations.push({
-          rule: 'production-facade-import',
-          file: source.rel,
-          message: `production code must not import the review facade (${specifier})`,
-          hint: 'Import the concrete review subzone authority instead of integration/review/index.ts; the facade has no production importers.',
-        });
-        continue;
-      }
-      if (!target.startsWith(REVIEW_DIR_PREFIX) && target !== REVIEW_FACADE_FILE) continue;
-      if (source.rel === REVIEW_FACADE_FILE) continue;
+      if (!target.startsWith(REVIEW_DIR_PREFIX)) continue;
       const fromZone = reviewZoneOf(source.rel, zoneByDir);
       const toZone = reviewZoneOf(target, zoneByDir);
       if (fromZone === undefined || toZone === undefined || fromZone === toZone) continue;
@@ -218,14 +205,14 @@ function observeReviewZones(input: ReviewZoneAnalysisInput): ReviewZoneObservati
     }
   }
 
-  return { facadeViolations, observedEdges: observed };
+  return { observedEdges: observed };
 }
 
 /** The observed review zone edge set, exposed for graph-shape assertions. */
 export function reviewZoneEdges(
   input: Pick<ReviewZoneAnalysisInput, 'sources' | 'zones'>,
 ): ReadonlySet<string> {
-  return observeReviewZones({ ...input, declaredEdges: new Set() }).observedEdges;
+  return observeReviewZones(input).observedEdges;
 }
 
 /** Every zone pair that observes BOTH directions, rendered as `a <-> b`. */
@@ -265,8 +252,7 @@ export function reviewZoneCycles(edges: Iterable<string>): readonly (readonly st
 
 export function analyzeReviewZonePolicy(input: ReviewZoneAnalysisInput): ReviewZoneViolation[] {
   const violations: ReviewZoneViolation[] = [];
-  const { facadeViolations, observedEdges } = observeReviewZones(input);
-  violations.push(...facadeViolations);
+  const { observedEdges } = observeReviewZones(input);
 
   for (const edge of observedEdges) {
     if (!input.declaredEdges.has(edge)) {

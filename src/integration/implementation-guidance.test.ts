@@ -133,7 +133,7 @@ describe('buildImplementationGuidance', () => {
       discoveryHealth: extractDiscoveryHealth(discovery),
     });
 
-    // `corroboratedOnly` promises corroborated guidance up to the limit. The
+    // Corroborated sections promise corroborated guidance up to the limit. The
     // session-owned changed file is corroborated even though it does not match
     // the task text, so the corroboration filter must run before truncation —
     // otherwise six discovery-only surfaces consume every slot and the changed

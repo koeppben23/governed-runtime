@@ -60,6 +60,7 @@ which sends a successful rail result to
 directly after its rail succeeds. The shared path then runs:
 
 `persistAndFormat` → `writeStateWithArtifactsAndAuditOperations` →
+`writeStateWithArtifactsAndAuditOperationsAlreadyLocked` →
 `prepareStateWithAuditOperations` → `commitPreparedStateWithArtifactsAlreadyLocked`.
 
 The writer acquires the session write lock unless the current call already
@@ -69,6 +70,14 @@ implementation-entry authority, refreshes the ProofGraph, and then creates
 transition-specific operations, state-write operations, and supplied semantic
 intents as applicable. The outbox operations bind pre-state, mutation, and
 post-state digests; the audit event is not appended to the trail at this stage.
+
+A prepared state whose `pendingAuditOperations` predate an intervening commit
+is reconciled with the current authority: the writer carries forward every
+operation of the persisted state that the prepared state does not contain
+(persisted status wins on id collision, missing operations are appended in
+order). A stale caller snapshot can therefore never drop committed, possibly
+unreconciled audit evidence. The outbox is excluded from the state digest, so
+this carry-forward does not change authority digests.
 
 The prepared state is validated again without repeating implementation-entry
 finalization or ProofGraph refresh. The writer computes the serialized-state
@@ -110,12 +119,13 @@ the implementation-base authority. It never finalizes the implementation entry
 and never refreshes the projection, so it fails closed on any write that would
 change protected authority state.
 
-| Channel                                                                      | Callers                                                                                                                                                                     | Allowed mutations                                                                                                     |
-| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `writeStateWithAuditOperationsAlreadyLocked` (caller holds the session lock) | `plugin-beforehooks.ts` (`recordMutationDispatch`), `plugin-workspace.ts` (`updateReviewAssurance`), `plugin-mutation-episodes.ts` (`recordMutationCompletion`)             | `runtimeLease`, `mutationEpisodes`, review-assurance ledger (dispatches, attempts, obligation lifecycle/status)       |
-| `mutateStateWithAuditOperations` (re-reads and re-applies under the lock)    | `plugin-risk.ts` (`persistRiskDecisionBlock`), `plugin-discovery-health.ts` (`persistDiscoveryHealthBlock`), `plugin-audit-reconcile.ts` (`finalizeStrictTimestampFailure`) | `riskGate`, `discoveryHealthGate`, `error`; prevents overwriting authority committed after the caller's decision read |
-| `writeStateAlreadyLocked` (low-level)                                        | `plugin-audit-reconcile.ts` (`acknowledgeAuditOperation`)                                                                                                                   | `pendingAuditOperations[].status` only; creates no outbox operation                                                   |
-| `writeStateWithArtifactsAndAuditOperations` (full prepare)                   | `tools/helpers.ts` and every tool/rail caller                                                                                                                               | everything; the only channel that may change protected authority state                                                |
+| Channel                                                                                   | Callers                                                                                                                                                                                                                                                          | Allowed mutations                                                                                                                   |
+| ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `writeStateWithAuditOperationsAlreadyLocked` (caller holds the session lock)              | `plugin-beforehooks.ts` (`recordMutationDispatch`), `plugin-workspace.ts` (`updateReviewAssurance`), `plugin-mutation-episodes.ts` (`recordMutationCompletion`)                                                                                                  | `runtimeLease`, `mutationEpisodes`, review-assurance ledger (dispatches, attempts, obligation lifecycle/status)                     |
+| `mutateStateWithAuditOperations` (re-reads and re-applies under the lock)                 | `plugin-risk.ts` (`persistRiskDecisionBlock`), `plugin-discovery-health.ts` (`persistDiscoveryHealthBlock`), `plugin-audit-reconcile.ts` (`finalizeStrictTimestampFailure`)                                                                                      | `riskGate`, `discoveryHealthGate`, `error`; prevents overwriting authority committed after the caller's decision read               |
+| `writeStateAlreadyLocked` (low-level)                                                     | `plugin-audit-reconcile.ts` (`acknowledgeAuditOperation`), `tools/helpers.ts` (`commitPreparedStateWithArtifactsAlreadyLocked`), `audit-outbox.ts` (direct channel raw write)                                                                                    | `pendingAuditOperations[].status` when used for acknowledgement; otherwise the caller's prepared state; creates no outbox operation |
+| `writeStateWithArtifactsAndAuditOperationsAlreadyLocked` (full prepare under a held lock) | `tools/validation/run-check-tool.ts`, `tools/implementation-review-activation.ts`                                                                                                                                                                                | everything; the only channel that may change protected authority state (caller holds the session lock)                              |
+| `writeStateWithArtifactsAndAuditOperations` (full prepare)                                | `tools/helpers-rail-presentation.ts` (`persistAndFormat`), `tools/hydrate/hydrate-format.ts`, `tools/simple/export-tool.ts`, `services/regulated-completion.ts`, `services/regulated-completion-decision.ts`; the `writeStateWithArtifacts` alias delegates here | everything; the only channel that may change protected authority state                                                              |
 
 The direct channel is allowlisted, not denylisted: `audit-outbox.ts` permits
 only `runtimeLease`, `mutationEpisodes`, `reviewAssurance` (ledger, status, and
