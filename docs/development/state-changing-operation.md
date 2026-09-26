@@ -73,11 +73,14 @@ post-state digests; the audit event is not appended to the trail at this stage.
 
 A prepared state whose `pendingAuditOperations` predate an intervening commit
 is reconciled with the current authority: the writer carries forward every
-operation of the persisted state that the prepared state does not contain
-(persisted status wins on id collision, missing operations are appended in
-order). A stale caller snapshot can therefore never drop committed, possibly
-unreconciled audit evidence. The outbox is excluded from the state digest, so
-this carry-forward does not change authority digests.
+persisted operation in its authoritative order, and persisted status wins on
+an ID collision. A prepared-only operation may be inserted only at one
+unambiguous position between adjacent persisted operation IDs; prepared state
+that reorders persisted operations or supplies ambiguous concurrent insertions
+fails closed with `OUTBOX_ORDER_CONFLICT`. A stale caller snapshot can therefore
+neither drop committed evidence nor alter its audit order. The outbox is
+excluded from the state digest, so this rebase does not change authority
+digests.
 
 The prepared state is validated again without repeating implementation-entry
 finalization or ProofGraph refresh. The writer computes the serialized-state
@@ -109,7 +112,9 @@ Implementation: [`helpers-rail-presentation.ts`](../../src/integration/tools/hel
 The artifact/state write ordering is covered by
 [`write-state-with-artifacts.test.ts`](../../src/integration/tools/write-state-with-artifacts.test.ts);
 outbox digest preparation is covered by
-[`audit-outbox.test.ts`](../../src/integration/tools/audit-outbox.test.ts).
+[`audit-outbox.test.ts`](../../src/integration/tools/audit-outbox.test.ts). The
+stale-write rebase and its resulting audit emission order are covered by
+[`governed-write-path-evidence.test.ts`](../../src/integration/governed-write-path-evidence.test.ts).
 
 ### 3.1 Direct metadata writers and their channel contract
 
