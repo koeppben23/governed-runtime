@@ -10,10 +10,12 @@
  * state under the lock. This suite is the executable trace; the disposition
  * (layered fail-closed boundaries, no consolidation) is recorded in ADR-007.
  *
- * The PERF block gates the full-prepare update against
+ * The PERF block gates a state-changing full-prepare update against
  * `PERF_BUDGETS.stateGovernedWriteMs` with the shared benchmark methodology
- * (>=100 measured iterations after warm-up; the initial state is rebuilt for
- * every iteration so the pending-operation shape stays constant).
+ * (>=100 measured iterations after warm-up). Every iteration toggles the
+ * persisted `error` authority and therefore creates one new `state_write`
+ * audit operation; a separate test proves that state change and the operation
+ * creation explicitly.
  *
  * @test-policy HAPPY, PERF
  */
@@ -50,6 +52,25 @@ async function seedSession() {
   return writeStateWithArtifacts(sessDir, makeProgressedState('IMPLEMENTATION'));
 }
 
+/**
+ * A comparable authority change for every iteration: toggle the persisted
+ * `error` field, so each full-prepare write changes state authority and must
+ * create one new `state_write` audit operation (never a no-op projection).
+ */
+function toggledState(seeded: SessionState, iteration: number): SessionState {
+  return iteration % 2 === 0
+    ? {
+        ...seeded,
+        error: {
+          code: 'R5_PERF_PROBE',
+          message: 'governed write evidence probe',
+          recoveryHint: 'test-only probe error state',
+          occurredAt: '2026-01-01T00:00:00.000Z',
+        },
+      }
+    : { ...seeded, error: null };
+}
+
 describe('R5 persistence evidence: validation counts per write scenario', () => {
   it('counts SessionState.safeParse executions per concrete write', async () => {
     await seedSession();
@@ -81,17 +102,38 @@ describe('R5 persistence evidence: validation counts per write scenario', () => 
     // same double-read shape as mutateStateWithAuditOperations.
     expect(spy.mock.calls.length, 'updateReviewAssurance').toBe(4);
   });
+
+  it('changes authority and creates one state_write operation per iteration', async () => {
+    const seeded = await seedSession();
+    const operationIds = new Set<string>();
+
+    for (let iteration = 0; iteration < 4; iteration++) {
+      await writeStateWithArtifactsAndAuditOperations(sessDir, toggledState(seeded, iteration));
+
+      const persisted = await readState(sessDir);
+      expect(persisted).not.toBeNull();
+      const lastOperation = persisted!.pendingAuditOperations.at(-1);
+      expect(lastOperation?.kind, `iteration ${iteration}`).toBe('state_write');
+      expect(operationIds.has(lastOperation!.operationId), `iteration ${iteration}`).toBe(false);
+      operationIds.add(lastOperation!.operationId);
+      expect(persisted!.error === null, `iteration ${iteration}`).toBe(iteration % 2 !== 0);
+    }
+  });
 });
 
 describe('PERF governed state write path', () => {
-  it('keeps the full-prepare update inside the governed write budget', async () => {
+  it('keeps a state-changing full-prepare update inside the governed write budget', async () => {
     const seeded = await seedSession();
+    let iteration = 0;
 
     const measurement = await benchmarkAsync(
-      () => writeStateWithArtifactsAndAuditOperations(sessDir, { ...seeded }),
+      () => writeStateWithArtifactsAndAuditOperations(sessDir, toggledState(seeded, iteration++)),
       200,
       10,
     );
+
+    const persisted = await readState(sessDir);
+    expect(persisted?.pendingAuditOperations.at(-1)?.kind).toBe('state_write');
 
     expect(
       measurement.p99Ms,

@@ -160,7 +160,7 @@ runners. Representative budgets at local-development baseline:
 | Guard predicate (`guardPredicateMs`)   | 3 ms × `CI_MULTIPLIER` × `PERF_BUDGET_FACTOR`        |
 | State serialize/deserialize            | ~5 ms (see `stateSerializeMs`)                       |
 | State I/O round-trip                   | ~50 ms (see `stateIoRoundTripMs`)                    |
-| Governed full-prepare write            | ~150 ms (see `stateGovernedWriteMs`)                 |
+| Governed full-prepare write            | ~200 ms (see `stateGovernedWriteMs`)                 |
 | Audit chain verify (1000 events)       | ~100 ms (see `auditChainVerify1000Ms`)               |
 
 `initWorkspace()` and `runDiscovery()` do not have declared budgets in

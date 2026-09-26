@@ -105,11 +105,13 @@ export const PERF_BUDGETS = {
   /**
    * Governed full-prepare update of an existing session: read, implementation
    * finalization, ProofGraph refresh, durable audit preparation, and the atomic
-   * state + artifact commit (filesystem I/O).
+   * state + artifact commit (filesystem I/O). Calibrated on a state-changing
+   * workload (alternating authority per iteration): local p99 41-58ms, median
+   * ~13ms, budget keeps >3x headroom against the worst observed spike.
    * CI adjustment: 3x multiplier for noisy VMs with unpredictable I/O.
-   * Local: 150ms budget.
+   * Local: 200ms budget.
    */
-  stateGovernedWriteMs: 150 * (process.env.CI ? 3 : 1) * PERF_BUDGET_FACTOR,
+  stateGovernedWriteMs: 200 * (process.env.CI ? 3 : 1) * PERF_BUDGET_FACTOR,
 
   /** Completeness matrix evaluation. */
   completenessEvalMs: 2 * CI_MULTIPLIER * PERF_BUDGET_FACTOR,

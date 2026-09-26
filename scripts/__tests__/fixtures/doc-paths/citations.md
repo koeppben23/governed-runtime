@@ -6,6 +6,7 @@
 - invalid range `src/integration/audit-outbox.ts:99999`
 - valid anchor `src/integration/audit-outbox.ts#L10-L20`
 - invalid anchor `src/integration/audit-outbox.ts#L99999`
+- unsupported double anchor `src/integration/audit-outbox.ts#invalid#L10`
 - unsupported method `src/integration/audit-outbox.ts:SomeClass.method()`
 - unsupported bare `src/integration/audit-outbox.ts:noParens`
 - unsupported symbol on markdown `docs/testing-strategy.md:someSymbol()`

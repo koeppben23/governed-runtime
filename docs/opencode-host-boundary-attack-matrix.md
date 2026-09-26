@@ -70,8 +70,9 @@ Each row states:
 
 Referenced repository artifacts are CI-checked for existence by
 `src/documentation/__tests__/opencode-host-boundary-attack-matrix.test.ts`.
-Line numbers are review aids only and are not CI-validated; they may drift as
-files evolve.
+Line citations are CI-checked for bounds (a range must lie inside the cited
+file); the content of a specific line is not validated, so a citation may still
+point at the wrong line inside a valid range as files evolve.
 
 ---
 

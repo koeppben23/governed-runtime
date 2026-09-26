@@ -53,7 +53,7 @@ const LINE_SUFFIX = /:(\d+)(?:-(\d+))?$/;
 const SYMBOL_SUFFIX = /:([A-Za-z_$][\w$]*)\(\)$/;
 const UNSUPPORTED_CALL_SUFFIX = /:([A-Za-z_$][\w$.]*)\(\)$/;
 const BARE_SUFFIX = /:([A-Za-z_$][\w$.]*)$/;
-const ANCHOR_SUFFIX = /#L(\d+)(?:-L(\d+))?$/i;
+const ANCHOR_SUFFIX = /^#L(\d+)(?:-L(\d+))?$/i;
 const INLINE_CODE = /`([^`\n]+)`/g;
 
 const TYPESCRIPT_EXTENSIONS = new Map([

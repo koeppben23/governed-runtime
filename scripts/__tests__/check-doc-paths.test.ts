@@ -120,6 +120,10 @@ describe('check-doc-paths', () => {
       path: 'src/integration/audit-outbox.ts',
       reason: 'invalid-line-range',
     });
+    expect(byToken.get('src/integration/audit-outbox.ts#invalid#L10')).toMatchObject({
+      path: 'src/integration/audit-outbox.ts',
+      reason: 'unsupported-reference-form',
+    });
     expect(byToken.get('src/integration/audit-outbox.ts:SomeClass.method()')).toMatchObject({
       path: 'src/integration/audit-outbox.ts',
       reason: 'unsupported-reference-form',

@@ -52,11 +52,14 @@ state (regulated completion), `prepareState` validates both input and the
 refreshed projection, and the commit helper validates the prepared payload
 before I/O. The duplicated reads are the cost of applying a decision to the
 state read under the lock. Measured on 2026-09-26 with
-`PERF_BUDGETS.stateGovernedWriteMs` (200 iterations after warm-up): p99
-15.86 ms, p95 13.60 ms, median 11.74 ms against the 150 ms local budget
-(≈9x headroom). **Disposition: no consolidation**. The count is a consequence
-of layered fail-closed boundaries, not a defect, and the measured path is far
-inside budget.
+`PERF_BUDGETS.stateGovernedWriteMs` (200 iterations after warm-up) on a
+state-changing workload — each iteration toggles the persisted `error`
+authority and creates one new `state_write` operation, verified by the
+evidence test — p99 41-58 ms across three runs, p95 34.36 ms, median 13.05 ms
+against the 200 ms local budget (>3x headroom against the worst observed
+spike, ~15x the median). **Disposition: no consolidation**. The count is a
+consequence of layered fail-closed boundaries, not a defect, and the measured
+path stays inside budget.
 
 ## Options
 

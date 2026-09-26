@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import * as ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
@@ -21,20 +21,6 @@ function headingSlugs(markdown: string): Set<string> {
     slugs.add(slugifyHeading(match[1] ?? ''));
   }
   return slugs;
-}
-
-function productionFileNames(): Set<string> {
-  const names = new Set<string>();
-  const walk = (directory: string): void => {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      if (entry.name === 'node_modules' || entry.name === 'dist') continue;
-      const full = join(directory, entry.name);
-      if (entry.isDirectory()) walk(full);
-      else if (entry.isFile()) names.add(entry.name);
-    }
-  };
-  walk(join(ROOT, 'src'));
-  return names;
 }
 
 function declaresFunction(relativePath: string, name: string): boolean {
@@ -115,27 +101,39 @@ describe('developer onboarding documentation contract', () => {
 
   it('cites files and functions in the state-changing guide that actually exist', () => {
     const guide = read('docs/development/state-changing-operation.md');
-    const citedFiles = [
-      'decision-tool.ts',
-      'export-tool.ts',
-      'rails/export.ts',
-      'regulated-completion.ts',
-      'regulated-completion-decision.ts',
-      'plugin-regulated-recovery.ts',
-      'regulated-completion.test.ts',
-      'plugin-regulated-recovery.test.ts',
-      'helpers-rail-presentation.ts',
-      'helpers.ts',
-      'audit-outbox.ts',
-      'plugin-audit-reconcile.ts',
-      'write-state-with-artifacts.test.ts',
+    const citedTargets = [
+      '../../src/integration/tools/decision/decision-tool.ts',
+      '../../src/integration/tools/simple/export-tool.ts',
+      '../../src/rails/export.ts',
+      '../../src/integration/services/regulated-completion.ts',
+      '../../src/integration/services/regulated-completion-decision.ts',
+      '../../src/integration/plugin-regulated-recovery.ts',
+      '../../src/integration/services/regulated-completion.test.ts',
+      '../../src/integration/plugin-regulated-recovery.test.ts',
+      '../../src/integration/tools/helpers-rail-presentation.ts',
+      '../../src/integration/tools/helpers.ts',
+      '../../src/integration/audit-outbox.ts',
+      '../../src/integration/plugin-audit-reconcile.ts',
+      '../../src/integration/tools/write-state-with-artifacts.test.ts',
     ];
-    const basenames = productionFileNames();
+    const guideDirectory = join(ROOT, 'docs', 'development');
 
-    for (const cited of citedFiles) {
-      const basename = cited.slice(cited.lastIndexOf('/') + 1);
-      expect(guide, cited).toContain(cited);
-      expect(basenames.has(basename), `no source file named ${basename}`).toBe(true);
+    for (const target of citedTargets) {
+      // The exact relative link must exist verbatim (fragments may follow the
+      // path) and must resolve from the guide's directory. Basename-only checks
+      // would miss a moved `src/rails/export.ts` shadowed by another export.ts.
+      expect(guide, target).toContain(`](${target}`);
+      expect(existsSync(resolve(guideDirectory, target)), `${target} does not resolve`).toBe(true);
+    }
+
+    // Every relative Markdown link in the guide resolves to a real file.
+    for (const match of guide.matchAll(/\]\(([^)\s]+)\)/g)) {
+      const target = match[1] ?? '';
+      if (!target.startsWith('.')) continue;
+      const pathPart = target.split('#')[0] ?? '';
+      expect(existsSync(resolve(guideDirectory, pathPart)), `${target} does not resolve`).toBe(
+        true,
+      );
     }
 
     const declarations: Array<[string, string]> = [
