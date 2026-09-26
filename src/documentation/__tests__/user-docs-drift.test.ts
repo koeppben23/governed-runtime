@@ -146,20 +146,12 @@ describe('documentation/user-docs-drift', () => {
     });
   });
 
-  describe('HAPPY — docs/installation.md alias table matches canonical targets', () => {
-    it('product aliases map to their canonical commands, not /ticket + /plan', () => {
+  describe('HAPPY — installation links to the canonical command reference', () => {
+    it('does not duplicate product alias mappings', () => {
       const content = readDoc('docs/installation.md');
-      const rows = extractProductCommandRows(content);
 
-      for (const definition of productAliasDefinitions) {
-        const documentedTarget = rows.get(definition.invocation);
-        expect(
-          documentedTarget,
-          `docs/installation.md must document ${definition.invocation}`,
-        ).toBeTruthy();
-        expect(documentedTarget).toContain(canonicalTargetFor(definition));
-      }
-
+      expect(content).toContain('[Commands](./commands.md)');
+      expect(content).not.toContain('**Product aliases');
       expect(content).not.toContain('`/ticket` + `/plan`');
     });
   });

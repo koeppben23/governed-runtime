@@ -92,12 +92,16 @@ describe('Documentation Links', () => {
       expect(content).toContain('./docs/commands.md');
     });
 
-    it('documents checksum generation for dogfood source installs', async () => {
+    it('routes dogfood source installs to the canonical development guide', async () => {
       const content = await fs.readFile(README_PATH, 'utf-8');
-      const localSection = content.split('### Developer / Dogfood Install from Source')[1] ?? '';
-      expect(localSection).toContain('npm run pack:checksums');
-      expect(localSection).toContain('--checksums-file ./checksums.sha256');
-      expect(localSection).not.toContain('TARBALL="$(npm pack --silent | tail -n 1)"');
+      expect(content).toContain('./docs/development/debugging.md');
+      const dogfood = await fs.readFile(
+        path.join(PROJECT_ROOT, 'docs/development/debugging.md'),
+        'utf-8',
+      );
+      expect(dogfood).toContain('npm run pack:checksums');
+      expect(dogfood).toContain('--checksums-file "../governed-runtime/checksums.sha256"');
+      expect(dogfood).toContain('## 10. Dogfood installation from source');
     });
 
     it('should have link to PRODUCT_IDENTITY.md', async () => {
@@ -147,19 +151,20 @@ describe('Documentation Links', () => {
       expect(content).not.toContain('npm install -g @flowguard/core');
     });
 
-    it('should document commands correctly', async () => {
+    it('should link to the canonical command reference', async () => {
       const content = await fs.readFile(INSTALLATION_PATH, 'utf-8');
-      expect(content).toContain('/hydrate');
-      expect(content).toContain('/ticket');
-      expect(content).toContain('/plan');
+      expect(content).toContain('[Commands](./commands.md)');
+      expect(content).toContain('/start`');
+      expect(content).toContain('/task`');
+      expect(content).not.toContain('**Canonical commands (15):**');
     });
 
-    it('documents checksum generation for local source checkout installs', async () => {
+    it('routes local source checkout installs to the dogfood guide', async () => {
       const content = await fs.readFile(INSTALLATION_PATH, 'utf-8');
       const localSection = content.split('## Install from Local Source Checkout')[1] ?? '';
-      expect(localSection).toContain('npm run pack:checksums');
-      expect(localSection).toContain('--checksums-file ./checksums.sha256');
-      expect(localSection).not.toContain('TARBALL="$(npm pack --silent | tail -n 1)"');
+      expect(localSection).toContain(
+        './development/debugging.md#10-dogfood-installation-from-source',
+      );
     });
   });
 

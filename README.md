@@ -27,50 +27,10 @@ See [docs/installation.md](./docs/installation.md) for full instructions.
 
 ### Developer / Dogfood Install from Source
 
-Use this path when testing FlowGuard from a local repository checkout without publishing a package. This exercises the same `npm pack → vendor/ → install` pipeline as the release path.
-
-```bash
-cd ~/work/governed-runtime
-
-npm ci
-npm run build
-
-npm run pack:checksums
-TARBALL="flowguard-core-$(node -p 'require("./package.json").version').tgz"
-
-npx --yes --package "./$TARBALL" flowguard install \
-  --core-tarball "./$TARBALL" \
-  --checksums-file ./checksums.sha256 \
-  --install-scope global \
-  --force
-
-npx --yes --package "./$TARBALL" flowguard doctor \
-  --install-scope global
-```
-
-After installation, restart OpenCode so the FlowGuard plugin is loaded from `~/.config/opencode/plugins`.
-
-Expected global installation location:
-
-```
-~/.config/opencode/
-  flowguard.json
-  opencode.json            # default; opencode.jsonc is preferred when present
-  plugins/flowguard-audit.ts
-  commands/
-  agents/
-  tools/
-  vendor/
-  node_modules/
-```
-
-If plugin review orchestration fails after installation, run:
-
-```bash
-npx --yes --package "./$TARBALL" flowguard doctor --install-scope global
-```
-
-and restart OpenCode again.
+For a local checkout, use the release-equivalent package path in the canonical
+[Dogfood Installation Guide](./docs/development/debugging.md).
+It uses an isolated playground and `--install-scope repo`, rather than changing
+the developer's global host configuration.
 
 In headless/non-interactive execution, FlowGuard does not rely on follow-up questions: missing safety-critical inputs fail closed with explicit blocked reasons.
 
@@ -164,6 +124,7 @@ subagent attestation, and the `/review` evidence model.
 | [Configuration](./docs/configuration.md)                             | Configuration reference                                                |
 | [Troubleshooting](./docs/troubleshooting.md)                         | FAQ and error handling                                                 |
 | [Architecture](./docs/architecture/architecture-diagram.md)          | Architecture layers, three governed flows, SSOT, proof surfaces        |
+| [Development Guide](./docs/development/index.md)                     | Contributor navigation, setup, debugging, and architecture guidance    |
 | [Developer Architecture Map](./docs/development/architecture-map.md) | Where a change belongs, owning modules, and enforced checks            |
 | [Testing Strategy](./docs/testing-strategy.md)                       | Test tiers, CI jobs, performance budgets                               |
 | [API Reference](https://koeppben23.github.io/governed-runtime/)      | TypeScript API reference (TypeDoc, GitHub Pages)                       |
@@ -182,14 +143,14 @@ subagent attestation, and the `/review` evidence model.
 ## Development
 
 New to the codebase? Start with the
-[Developer Architecture Map](./docs/development/architecture-map.md) — it maps
-change types to their owning modules, the architecture rules that apply, and the
-checks you need to run. [Your First Change](./docs/development/first-change.md)
-walks one additive tool-response change end to end.
+[Development Guide](./docs/development/index.md). It routes to the
+[Developer Architecture Map](./docs/development/architecture-map.md), which maps
+change types to owning modules and checks, and to
+[Your First Change](./docs/development/first-change.md), an additive walkthrough.
 
 ```bash
-# Install dependencies
-npm install
+# Install exactly from the committed lockfile
+npm ci
 
 # Type check
 npm run check

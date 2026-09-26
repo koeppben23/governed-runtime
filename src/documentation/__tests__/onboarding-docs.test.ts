@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import * as ts from 'typescript';
 import { describe, expect, it } from 'vitest';
+import { INSTALLED_COMMANDS } from '../../integration/installed-commands.js';
 
 const ROOT = process.cwd();
 const read = (path: string): string => readFileSync(join(ROOT, path), 'utf8');
@@ -21,6 +22,12 @@ function headingSlugs(markdown: string): Set<string> {
     slugs.add(slugifyHeading(match[1] ?? ''));
   }
   return slugs;
+}
+
+function headingSlugList(markdown: string): string[] {
+  return Array.from(markdown.matchAll(/^#{1,6}\s+(.+)$/gm)).map((match) =>
+    slugifyHeading(match[1] ?? ''),
+  );
 }
 
 function declaresFunction(relativePath: string, name: string): boolean {
@@ -54,6 +61,111 @@ describe('developer onboarding documentation contract', () => {
     expect(index).toContain('./development/state-changing-operation.md');
     expect(existsSync(join(ROOT, 'docs/development/first-change.md'))).toBe(true);
     expect(existsSync(join(ROOT, 'docs/development/state-changing-operation.md'))).toBe(true);
+    expect(index).toContain('./development/index.md');
+    expect(existsSync(join(ROOT, 'docs/development/index.md'))).toBe(true);
+  });
+
+  it('preserves critical installation, command, and release anchors without duplicates', () => {
+    const targets: Array<[string, readonly string[]]> = [
+      [
+        'docs/installation.md',
+        [
+          'installation-steps',
+          'host-selection-matrix',
+          'non-interactive-mode-opencode-run',
+          'http-api-mode-opencode-serve',
+          'acp-mode-experimental',
+          'user-facing-commands-opencode-workflow',
+          'internal-tool-bindings-opencode-infrastructure',
+          'uninstall',
+        ],
+      ],
+      [
+        'docs/commands.md',
+        [
+          'command-surface',
+          'daily-workflow',
+          'diagnose',
+          'recovery',
+          'advanced',
+          'workflow-commands-advancedcanonical',
+          'operational-tools',
+        ],
+      ],
+      ['docs/release-policy.md', ['release-process', 'protected-main-release-flow']],
+    ];
+
+    for (const [path, anchors] of targets) {
+      const slugs = headingSlugList(read(path));
+      for (const anchor of anchors) {
+        expect(
+          slugs.filter((slug) => slug === anchor),
+          `${path}#${anchor}`,
+        ).toHaveLength(1);
+      }
+    }
+  });
+
+  it('links the contributor entry point from CONTRIBUTING.md', () => {
+    expect(read('CONTRIBUTING.md')).toContain('docs/development/index.md');
+  });
+
+  it('keeps password-protected HTTP API examples authenticated', () => {
+    const distribution = read('docs/distribution-model.md');
+
+    expect(distribution).toContain('OPENCODE_SERVER_PASSWORD=secret');
+    expect(distribution.match(/curl -u opencode:secret/g)).toHaveLength(2);
+  });
+
+  it('documents every installed command whose tool binding is not a direct name mapping', () => {
+    const commands = read('docs/commands.md');
+    const exceptions = INSTALLED_COMMANDS.filter((definition) => {
+      const directToolName = `flowguard_${definition.invocation
+        .slice(1)
+        .replace(/\s+--.*/, '')
+        .replace(/-/g, '_')}`;
+
+      return (
+        definition.target.toolName !== directToolName || definition.target.fixedArgs !== undefined
+      );
+    });
+
+    for (const definition of exceptions) {
+      expect(commands, definition.invocation).toContain(`\`${definition.invocation}\``);
+      expect(commands, definition.target.toolName).toContain(`\`${definition.target.toolName}\``);
+    }
+  });
+
+  it('keeps command details canonical and installation focused on the happy path', () => {
+    const installation = read('docs/installation.md');
+
+    expect(installation).toContain('[Commands](./commands.md)');
+    expect(installation).not.toContain('**Canonical commands (15):**');
+    expect(installation).toContain('[Command Surface](./commands.md#command-surface)');
+  });
+
+  it('places regular and recovery commands under their intended navigation sections', () => {
+    const commands = read('docs/commands.md');
+    const daily = commands.slice(
+      commands.indexOf('## Daily Workflow\n'),
+      commands.indexOf('## Advanced\n'),
+    );
+    const recovery = commands.slice(
+      commands.indexOf('## Recovery\n'),
+      commands.indexOf('## Operational Tools\n'),
+    );
+
+    expect(daily).toContain('### /export');
+    expect(recovery).toContain('### /validate');
+    expect(recovery).toContain('### /continue');
+  });
+
+  it('documents the automatic-validation happy path without a manual check', () => {
+    const diagram = read('docs/architecture/architecture-diagram.md');
+
+    expect(diagram).toContain('/plan` → `/approve` → `/implement`');
+    expect(diagram).toContain('/check` is a manual compatibility and recovery command');
+    expect(diagram).not.toContain('/approve` → `/check` → `/implement`');
   });
 
   it('uses the canonical peer-review terminal phase in the quick reference', () => {

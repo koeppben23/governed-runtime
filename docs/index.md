@@ -98,6 +98,11 @@ Responsibilities, contact channels, and expectations.
 
 ## Development
 
+### [Development Guide](./development/index.md)
+
+Start here for contributor navigation, local setup, debugging, architecture, and
+state-changing-operation guidance.
+
 ### [Development and Debugging](./development/debugging.md)
 
 Canonical developer workflow for debugging FlowGuard across Vitest, CLI, MCP and live OpenCode host boundaries.

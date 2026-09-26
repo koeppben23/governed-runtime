@@ -73,82 +73,8 @@ npx --package ./flowguard-core-{version}.tgz flowguard doctor
 
 ### 2b. Initialize Claude Code Or Codex Plugin
 
-Claude Code and Codex use native FlowGuard plugin packages. Host plugin artifacts are packaging, instruction, MCP, hook, and transport surfaces only; neither host artifact becomes review-governance authority. Review completion still requires validated, obligation-bound `ReviewFindings`.
-
-For Claude Code:
-
-```bash
-npx --package ./flowguard-core-{version}.tgz flowguard install \
-  --host claude-code \
-  --core-tarball ./flowguard-core-{version}.tgz
-```
-
-This installs a complete Claude Code plugin under:
-
-```text
-# repo scope
-.claude/flowguard-plugin/
-
-# global scope
-~/.claude/flowguard-plugin/
-```
-
-Load it in Claude Code with the command printed by the installer, for example:
-
-```bash
-claude --plugin-dir .claude/flowguard-plugin
-```
-
-The plugin contains `.claude-plugin/plugin.json`, `hooks/hooks.json`, `.mcp.json`, workflow skills, hook wrappers, the FlowGuard MCP server wrapper, and `agents/flowguard-reviewer.md`. MCP tools, hooks, state, policy, and validated review evidence remain the runtime authorities.
-
-If the Claude Code CLI is available, optional plugin validation is:
-
-```bash
-claude plugin validate .claude/flowguard-plugin --strict
-```
-
-If the Claude Code CLI is not installed in the verification environment, record this check as `NOT_VERIFIED` in the PR.
-
-For Codex:
-
-```bash
-npx --package ./flowguard-core-{version}.tgz flowguard install \
-  --platform codex \
-  --core-tarball ./flowguard-core-{version}.tgz
-```
-
-This installs and registers a Codex plugin through the Codex marketplace resolver contract:
-
-```text
-# repo scope
-.agents/plugins/marketplace.json      # source.source: local, source.path: ./plugins/flowguard (repo-root-relative)
-plugins/flowguard/
-
-# global scope
-~/.agents/plugins/marketplace.json    # source.source: local, source.path: ./.codex/plugins/flowguard (home-root-relative)
-~/.codex/plugins/flowguard/
-```
-
-The marketplace entry contains only `name`, `source`, `policy`, and `category`. The plugin contains `.codex-plugin/plugin.json`, `hooks/hooks.json`, `.mcp.json`, workflow skills, hook wrappers, the FlowGuard MCP server wrapper, `AGENTS.md`, and `subagents/flowguard-reviewer.md`. FlowGuard MCP tools, hooks, state, policy, audit, and validated review evidence remain the runtime authorities.
-
-Codex hook enforcement requires explicit native trust configuration outside the installer:
-
-```text
-[features]
-plugin_hooks = true
-```
-
-After enabling plugin hooks, review Codex `/hooks` trust prompts for the FlowGuard plugin. `PreToolUse` is a guardrail for `Bash` and `apply_patch`, not a complete security boundary. `PostToolUse` audits and contextualizes after execution; it does not prevent mutations or roll them back.
-
-Installer status meanings:
-
-- `INSTALLED_AND_REGISTERED`: the plugin tree exists and the FlowGuard-owned marketplace entry was written.
-- `INSTALLED_NOT_ACTIVATED`: the plugin tree or marketplace registration is missing.
-- `NOT_VERIFIED_NATIVE_LOAD`: Codex native plugin load was not verified by the installer.
-
-Codex cloud-only operation is out of scope for this installer because local plugin files, local MCP execution, and local hook trust are required.
-
-Set `FLOWGUARD_HOST_PLATFORM=claude-code` or `FLOWGUARD_HOST_PLATFORM=codex` for MCP/tool execution so FlowGuard emits the correct `external_instruction_pending` guidance. Independent review requires a host-observed structured child-session invocation; on hosts that cannot provide one, FlowGuard fails closed.
+For detailed Claude Code and Codex installation, activation, trust, verification,
+and uninstall guidance, see [Host Installation](./host-installation.md).
 
 ### 3. Verify Installation
 
@@ -190,65 +116,10 @@ Expected output:
 
 ## Install from Local Source Checkout
 
-Use this path when testing FlowGuard from a local repository checkout without publishing a package. The `npm pack → vendor/` pipeline is the same one used by the release path, which means you test the real installer, rollback, and vendor ownership behaviour — not a symlink-based `npm link`.
-
-```bash
-cd ~/work/governed-runtime
-
-npm ci
-npm run build
-
-npm run pack:checksums
-TARBALL="flowguard-core-$(node -p 'require("./package.json").version').tgz"
-
-npx --yes --package "./$TARBALL" flowguard install \
-  --core-tarball "./$TARBALL" \
-  --checksums-file ./checksums.sha256 \
-  --install-scope global \
-  --force
-
-npx --yes --package "./$TARBALL" flowguard doctor \
-  --install-scope global
-```
-
-After installation, restart OpenCode so the FlowGuard plugin is loaded from `~/.config/opencode/plugins`.
-
-Expected global installation location:
-
-```
-~/.config/opencode/
-  flowguard.json
-  opencode.json            # default; opencode.jsonc is preferred when both exist
-  plugins/flowguard-audit.ts
-  commands/
-  agents/
-  tools/
-  vendor/
-  node_modules/
-```
-
-The OpenCode config loader resolves `opencode.jsonc` first and falls back to
-`opencode.json`. Fresh installs write `opencode.json`; pre-existing
-`opencode.jsonc` files are preserved and used in place. Either filename is a
-valid passing state for `flowguard doctor`.
-
-If plugin review orchestration fails after installation, run:
-
-```bash
-npx --yes --package "./$TARBALL" flowguard doctor --install-scope global
-```
-
-and restart OpenCode again.
-
-For Claude Code or Codex plugin installs, uninstall uses the selected host and removes only FlowGuard-owned plugin/registration surfaces:
-
-```bash
-npx --yes --package "./$TARBALL" flowguard uninstall --host claude-code --install-scope repo
-npx --yes --package "./$TARBALL" flowguard uninstall --host codex --install-scope repo
-```
-
-Codex uninstall removes the FlowGuard plugin tree and only the FlowGuard-owned marketplace entry, preserving foreign marketplace plugins.
-Uninstall proves ownership per file against the templates embedded in the executing FlowGuard version and preserves modified files. If uninstalling with a different FlowGuard version than the installer used, historical template bytes are unavailable; review any preserved FlowGuard files manually before removing them.
+Dogfood installation from a source checkout is owned by the
+[Development and Debugging guide](./development/debugging.md#10-dogfood-installation-from-source).
+Use `npm ci` there for reproducible installation from the committed lockfile;
+use `npm install` only when intentionally changing dependencies.
 
 ## Project-Bound Installation (Recommended for Teams)
 
@@ -291,88 +162,27 @@ Inspect the backup, repair the malformed JSON if needed, then rerun `flowguard i
 
 ## Headless Runtime Host Selection
 
-`flowguard run` supports all configured hosts:
-
-```bash
-flowguard run --host opencode -- "Run /hydrate policyMode=team-ci"
-flowguard run --host claude-code -- "Run /validate"
-flowguard run --host codex -- "Run /status"
-```
-
-Host resolution is strict: CLI `--host` > `.opencode/flowguard.json` `host.defaultHost` > built-in `opencode`. Invalid config and missing host binaries fail explicitly without fallback.
-
-`flowguard serve` currently supports only OpenCode's verified native server mode:
-
-```bash
-flowguard serve --host opencode --port 4096
-```
-
-`flowguard serve --host claude-code` and `flowguard serve --host codex` fail closed with `HOST_SERVE_UNSUPPORTED` until a verified native long-running serve/session mode exists. Selecting Codex or Claude Code for `flowguard run` does not prove plugin load, hook trust, MCP activation, or governance enforcement unless those checks are verified separately.
+Headless host selection, wrapper status, and direct-host operation are owned by
+[Distribution Model](./distribution-model.md#headless-operation).
 
 ## How It Works
 
-FlowGuard integrates with OpenCode via a two-level command surface:
+In OpenCode chat, use the normal product sequence `/start`, `/task`, `/plan`,
+`/approve`, `/implement`, and `/export`. FlowGuard runs validation automatically;
+use `/check` only for manual recovery or explicit evidence recording.
+
+The complete user-command, compatibility, and internal-tool reference is
+[Commands](./commands.md). It is the canonical command surface.
 
 ### User-Facing Commands (OpenCode Workflow)
 
-Use these commands in OpenCode chat to drive workflows:
-
-**Canonical commands (15):**
-
-| Command                                           | Description                           |
-| ------------------------------------------------- | ------------------------------------- |
-| `/hydrate`                                        | Bootstrap session                     |
-| `/status`                                         | Read session view                     |
-| `/ticket <text>`                                  | Record task                           |
-| `/plan`                                           | Generate plan                         |
-| `/continue`                                       | Compatibility routing (auto-advance)  |
-| `/validate`                                       | Run checks (compatibility surface)    |
-| `/implement`                                      | Execute plan                          |
-| `/review-decision <verdict>`                      | Human approval                        |
-| `/override-approve`                               | Governance override at exhausted gate |
-| `/resolve-implementation-challenge <challengeId>` | Record advisory challenge resolution  |
-| `/review`                                         | Generate peer review report           |
-| `/architecture`                                   | Create/revise ADR                     |
-| `/export`                                         | Materialize verifiable export         |
-| `/abort`                                          | Terminate session                     |
-| `/archive`                                        | Archive session                       |
-
-`<verdict>` accepts `approve`, `changes_requested`, or `reject`.
-
-**Product aliases (7):**
-
-| Alias              | Routes to                            |
-| ------------------ | ------------------------------------ |
-| `/start`           | `/hydrate`                           |
-| `/task`            | `/ticket`                            |
-| `/approve`         | `/review-decision approve`           |
-| `/request-changes` | `/review-decision changes_requested` |
-| `/reject`          | `/review-decision reject`            |
-| `/check`           | `/validate`                          |
-| `/why`             | `/status --why-blocked`              |
-
-Aliases inherit the canonical command's allowed-phase policy and gate identically;
-see `docs/commands.md` for the full mapping.
+See [Commands](./commands.md#daily-workflow) for the normal workflow and its
+complete product-command reference.
 
 ### Internal Tool Bindings (OpenCode Infrastructure)
 
-These are the underlying tool names that FlowGuard installs into OpenCode:
-
-| Tool Name                         | Purpose                                                                                                                                               |
-| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `flowguard_status`                | Check session state                                                                                                                                   |
-| `flowguard_hydrate`               | Session bootstrap                                                                                                                                     |
-| `flowguard_ticket`                | Task recording                                                                                                                                        |
-| `flowguard_plan`                  | Plan generation                                                                                                                                       |
-| `flowguard_decision`              | Record review verdict                                                                                                                                 |
-| `flowguard_run_check`             | Validation runner (executes the discovered verification commands and records pass/fail evidence; bound to `/validate` and the `/check` product alias) |
-| `flowguard_implement`             | Record implementation evidence                                                                                                                        |
-| `flowguard_review_implementation` | Submit implementation review verdict                                                                                                                  |
-| `flowguard_review`                | Generate peer review report                                                                                                                           |
-| `flowguard_architecture`          | ADR authoring + review loop                                                                                                                           |
-| `flowguard_abort_session`         | Session termination                                                                                                                                   |
-| `flowguard_archive`               | Session archival                                                                                                                                      |
-| `flowguard_continue`              | Deterministic next-action                                                                                                                             |
+See [Command Surface](./commands.md#command-surface) for the installed internal
+tool bindings.
 
 ## Uninstall
 
@@ -382,84 +192,31 @@ npx --package ./flowguard-core-{version}.tgz flowguard uninstall
 
 ## Local Development
 
-For development on FlowGuard itself:
-
-```bash
-# Clone repository
-git clone https://github.com/koeppben23/governed-runtime.git
-cd governed-runtime
-
-# Install dependencies
-npm install
-
-# Build
-npm run build
-
-# Run tests
-npm test
-
-# Type check
-npm run check
-```
+Use the [Development Guide](./development/index.md) for contributor setup,
+debugging, and dogfooding. `npm ci` installs exactly from the lockfile for a
+reproducible checkout. Use `npm install` when deliberately changing
+dependencies; it is the repository's required lockfile update command.
 
 ## Headless Operation
 
-FlowGuard runs within the OpenCode host runtime. Headless operation is achieved by using OpenCode's headless modes.
+Headless operation is available through the selected host's native CLI. The
+complete OpenCode, Claude Code, Codex, wrapper, and ACP guidance is in
+[Distribution Model](./distribution-model.md#headless-operation).
 
 ### Non-Interactive Mode (opencode run)
 
-For scripting and automation without the TUI:
-
-```bash
-# Start a headless server (avoids MCP cold boot on each run)
-opencode serve &
-SERVER_PID=$!
-
-# Run FlowGuard commands via the API
-opencode run "Run /hydrate with policyMode=team-ci"
-
-# Or use the HTTP API directly
-curl -X POST http://localhost:4096/session/{sessionId}/message \
-  -H "Content-Type: application/json" \
-  -d '{"parts": [{"type": "text", "text": "/validate"}]}'
-
-# Stop the server
-kill $SERVER_PID
-```
+Use the [central headless guide](./distribution-model.md#headless-operation)
+for the supported host CLI commands and their fail-closed input behavior.
 
 ### HTTP API Mode (opencode serve)
 
-Start the OpenCode HTTP server for API access:
-
-```bash
-# With optional basic auth
-OPENCODE_SERVER_PASSWORD=secret opencode serve --port 4096
-```
-
-Then use the REST API directly:
-
-```bash
-# Create session
-curl -X POST http://localhost:4096/session -H "Content-Type: application/json" \
-  -d '{"title": "flowguard-session"}'
-
-# Send message
-curl -X POST http://localhost:4096/session/{sessionId}/message \
-  -H "Content-Type: application/json" \
-  -d '{"parts": [{"type": "text", "text": "/hydrate policyMode=team-ci"}]}'
-```
-
-See the [OpenCode Server Documentation](https://opencode.ai/docs/server/) for the full API reference.
+Use the [central headless guide](./distribution-model.md#http-api-mode-opencode-serve)
+for OpenCode server authentication, session creation, and message examples.
 
 ### ACP Mode (Experimental)
 
-For STDIN/STDOUT-based integration:
-
-```bash
-opencode acp
-```
-
-This uses nd-JSON for communication via stdin/stdout.
+Use the [central headless guide](./distribution-model.md#acp-mode-experimental)
+for ACP's experimental STDIN/STDOUT integration path.
 
 ## Troubleshooting
 

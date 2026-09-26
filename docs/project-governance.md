@@ -81,7 +81,7 @@ Definition Of "100% Clean Code" checklist in CONTRIBUTING.md.
 
 ## Definition Of Done
 
-- Clean conventional branch created from current `main`
+- Clean conventional branch created according to [CONTRIBUTING.md](../CONTRIBUTING.md#branch-model)
 - Change is scoped to the ticket
 - Conventional commit and PR title used
 - Tests added or updated where needed
@@ -161,20 +161,7 @@ High-risk work must include:
 
 ## Branch And PR Contract
 
-- Start from current `develop` for normal work (`main` only for releases/hotfixes)
-- Create a clean conventional branch before making changes
-- Do not work directly on `main` or `develop`
-- Keep the change scoped to the ticket
-- Use a conventional commit and PR title
-- Open a PR to `develop` (see [CONTRIBUTING.md](../CONTRIBUTING.md) for the default target and release branches)
-- Merge only after required checks pass
-
-Branch examples:
-
-- `fix/<short-description>`
-- `feat/<short-description>`
-- `test/<short-description>`
-- `refactor/<short-description>`
-- `docs/<short-description>`
-- `chore/<short-description>`
-- `release/vX.Y.Z`
+Branch names, base branches, PR targets, merge requirements, and release
+exceptions are owned by [CONTRIBUTING.md](../CONTRIBUTING.md#branch-model).
+Create a clean conventional branch before making changes, keep the change scoped
+to the ticket, and record the required verification in the PR.

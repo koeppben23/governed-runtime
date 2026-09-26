@@ -45,8 +45,8 @@ module graph must match that policy exactly — including zero module cycles (se
 ### Installation
 
 ```bash
-# Install dependencies
-npm install
+# Install exactly from the committed lockfile
+npm ci
 
 # Type check
 npm run check
@@ -138,6 +138,9 @@ describe('ModuleName / Feature', () => {
 ```
 
 ## Debugging
+
+The [Development Guide](docs/development/index.md) is the contributor
+navigation entry point for setup, architecture, debugging, and dogfooding.
 
 For the canonical macOS + IntelliJ IDEA development and debugging workflow,
 including Vitest, CLI, MCP, OpenCode live debugging, source maps and isolated
@@ -264,20 +267,31 @@ following hold:
 - All changes must go through Pull Requests.
 - Default PR target is `develop` for normal feature, fix, docs, refactor, test, and chore work.
 - PRs to `main` are reserved for release branches, urgent hotfixes, or repository-governance changes that must apply immediately.
-- Branch naming convention:
+- Branch naming is canonical here. Use one of:
   - `feat/<description>` — new features
   - `fix/<description>` — bug fixes
   - `docs/<description>` — documentation updates
+  - `test/<description>` — test-only changes
+  - `refactor/<description>` — behavior-preserving refactors
   - `chore/<description>` — maintenance tasks
   - `release/vX.Y.Z` — release preparation branches
 
 ### Release Branches
 
 Release work follows the same protected-`main` PR model as all other changes.
-Start release branches from current `main`, integrate the release candidate from
-`develop`, prepare release files on `release/vX.Y.Z`, open a PR to `main`, wait
-for required checks, and squash-merge. Create and push the `vX.Y.Z` tag only after
-local `main` has been fast-forwarded to the merged `origin/main` commit.
+Run this protected-main release procedure:
+
+1. Start from current `main`: `git switch main && git pull --ff-only origin main`.
+2. Create `release/vX.Y.Z` and integrate the release candidate from `develop`.
+3. Prepare files without committing or tagging: `npm run release:prepare -- X.Y.Z`.
+4. Update release-pinned documentation tests when the changelog cut moves entries out of `[Unreleased]`.
+5. Run `npm run release:verify` and the required contributor checks.
+6. Commit with hooks enabled: `git commit -m "chore(release): cut vX.Y.Z"`.
+7. Open a PR to `main`, wait for required checks, and squash-merge it.
+8. Refresh local `main`: `git switch main && git pull --ff-only origin main`.
+9. Prove tag safety: `npm run release:assert-main-tag -- vX.Y.Z`.
+10. Create and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+11. Verify the GitHub Release, checksums, SBOM, and provenance artifacts.
 
 Use `npm run release:prepare -- X.Y.Z` to update release files. Do not use
 `npm version` for FlowGuard releases because it creates local commit/tag state
@@ -285,6 +299,16 @@ before branch protection and required checks have accepted the release. Before
 tagging, run `npm run release:assert-main-tag -- vX.Y.Z` to fail closed unless
 the checkout is clean, on `main`, equal to `origin/main`, version-consistent, and
 untagged.
+
+If a release tag is pushed before the release commit is merged to `main`, stop
+and treat the release as inconsistent. Do not overwrite or force-push the tag.
+Either merge the exact tagged commit through the protected PR path or publish a
+new patch/prerelease tag from the corrected `main` commit.
+
+`npm run release:verify` is the package-defined local release verification
+script. It runs `npm run lint`; required CI and contributor linting use
+`npm run lint:strict` and remain separate checks. The release script definition
+in `package.json` is authoritative for its exact command set.
 
 ### Conventional Commits
 
@@ -336,6 +360,21 @@ The CI job definitions, including the `ci-gate` aggregator and its dependencies,
 are maintained in [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Update
 those canonical sources when check names or branch-protection requirements
 change; do not maintain a second check list here.
+
+### Change Verification Matrix
+
+Run the baseline checks required by [AGENTS.md](AGENTS.md#verification), then
+add the narrowest checks that cover the changed surface. This table is a routing
+aid; scripts, tests, CI, and `AGENTS.md` remain the enforcement authorities.
+
+| Changed surface | Additional verification |
+| --- | --- |
+| Documentation or Markdown links | Relevant `src/documentation/__tests__` files and `full-repo-links.test.ts` |
+| TypeScript source or tests | `npm run check`, `npm run lint:strict` |
+| Imports, exports, placement, or layer boundaries | `npm run test:architecture` |
+| Runtime configuration, installed commands, or templates | Owning contract and install tests; `npm run build` for distribution changes |
+| State, policy, audit, guards, or security boundaries | Meaningful negative paths and `npm run mutation`; verify the changed selector is admitted by `stryker.conf.json` and `scripts/mutation-profile-registry.json` |
+| Dependencies or module surface | `npm run check:unused-dependencies` |
 
 ## Pull Request Process
 

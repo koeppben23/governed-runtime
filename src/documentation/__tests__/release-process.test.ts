@@ -49,14 +49,18 @@ describe('documentation/release-process', () => {
   });
 
   describe('CORNER — docs require PR before tag', () => {
-    it('release policy owns the PR-first, tag-after-merge ordering', () => {
-      const policy = readRepoFile('docs/release-policy.md');
+    it('contributing guidance owns the PR-first, tag-after-merge ordering', () => {
+      const contributing = readRepoFile('CONTRIBUTING.md');
 
-      expect(policy).toContain(
-        'Release changes must be merged through a pull request before a release tag is',
+      expect(contributing).toContain(
+        'Create and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`',
       );
-      expect(policy).toContain('Squash-merge the pull request');
-      expect(policy).toContain('git tag vX.Y.Z && git push origin vX.Y.Z');
+      expect(contributing).toContain('npm run release:assert-main-tag -- vX.Y.Z');
+      expect(contributing).toContain('`npm version` for FlowGuard releases');
+      expect(contributing).toContain(
+        'If a release tag is pushed before the release commit is merged',
+      );
+      expect(contributing).toContain('Do not overwrite or force-push the tag');
     });
 
     it('README delegates the release process instead of duplicating the checklist', () => {
@@ -71,10 +75,9 @@ describe('documentation/release-process', () => {
       const policy = readRepoFile('docs/release-policy.md');
 
       expect(policy).toContain(
-        'A `v*` tag must point at a commit already contained in `origin/main`',
+        'A `v*` tag\nmust point at a commit already contained in `origin/main`',
       );
-      expect(policy).toContain('Do not use `npm version` for FlowGuard releases');
-      expect(policy).toContain('Do not overwrite or force-push the tag');
+      expect(policy).toContain('recovery procedure for a tag published before merge');
     });
   });
 
@@ -107,7 +110,9 @@ describe('documentation/release-process', () => {
 
       expect(contributing).toContain('release/vX.Y.Z');
       expect(contributing).toContain('npm run release:assert-main-tag -- vX.Y.Z');
-      expect(contributing).toContain('Create and push the `vX.Y.Z` tag only after');
+      expect(contributing).toContain(
+        'Create and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`',
+      );
     });
   });
 });

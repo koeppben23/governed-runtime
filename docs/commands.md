@@ -2,6 +2,32 @@
 
 FlowGuard distinguishes between **Workflow Commands** (drive session state) and **Operational Tools** (operate on session artifacts).
 
+## Daily Workflow Summary
+
+Use the product commands in the normal sequence: `/start`, `/task`, `/plan`,
+`/approve`, `/implement`, and `/export`. The command-surface, flow, and product
+command sections below define their exact routing and phase behavior.
+
+## Diagnose Summary
+
+Use `/status`, `/finish`, `/help`, and `/commands` to inspect the current
+session without changing it. `flowguard_status` provides that session view to
+scripts; `flowguard inspect` instead reports workspace sessions and their
+audit/compliance data.
+
+## Recovery Summary
+
+Use `/check` or `/validate` only when a validation run must be continued or
+recorded manually, `/continue` for explicit deterministic routing, and `/abort`
+for irreversible emergency termination. Missing safety-critical headless input
+returns `BLOCKED`; see [Distribution Model](./distribution-model.md).
+
+## Advanced Summary
+
+Canonical workflow commands and operational tools remain available for scripts,
+CI, and manual recovery. They are documented under their existing headings
+below to preserve stable links.
+
 ## Command Surface
 
 FlowGuard uses a two-level command surface:
@@ -17,14 +43,17 @@ The `/<command>` syntax invokes the corresponding `flowguard_<tool-name>` tool i
 
 | Slash command                                                  | Tool binding              | Reason                                                                                                         |
 | -------------------------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `/start`                                                       | `flowguard_hydrate`       | Product name for session bootstrap                                                                             |
+| `/task`                                                        | `flowguard_ticket`        | Product naming; the canonical tool keeps the historical `ticket` name                                          |
 | `/approve`, `/override-approve`, `/request-changes`, `/reject` | `flowguard_decision`      | One decision tool; the product commands carry the verdict intent                                               |
 | `/abort`                                                       | `flowguard_abort_session` | Tool name disambiguates `abort` from `serve`/`run`                                                             |
-| `/task`                                                        | `flowguard_ticket`        | Product naming; the canonical tool keeps the historical `ticket` name                                          |
 | `/review-decision` (compatibility)                             | `flowguard_decision`      | Verdict-routing surface, kept for scripts; the product variants above are the recommended interface            |
 | `/validate`, `/check` (compatibility)                          | `flowguard_run_check`     | Validation runs automatically; the explicit compatibility surfaces remain for scripts and manual evidence runs |
+| `/why`, `/finish`                                              | `flowguard_status`        | Readiness and blocker views supply fixed status arguments                                                      |
+| `/help`, `/commands`, `/commands --all`                        | `flowguard_help`          | Contextual help and command-list views supply fixed help arguments                                             |
 
-For all other commands, slash and tool names match `1:1` (`/plan` →
-`flowguard_plan`, `/architecture` → `flowguard_architecture`, etc.).
+All other commands map directly after replacing command hyphens with underscores
+(`/plan` → `flowguard_plan`, `/architecture` → `flowguard_architecture`).
 
 ### Interactive vs Non-Interactive Execution
 
@@ -71,9 +100,9 @@ recovery, but they are never recommended by the runtime directive and are not
 part of the happy path. The runtime directive resolved from persisted state is
 the single authority for what to do next.
 
-## Workflow Commands (Advanced/Canonical)
+## Diagnose
 
-These are the canonical commands that drive the session through the workflow phases. All governance assertions, audit records, and reason codes use canonical command names.
+Use these read-only commands to understand the active session before taking the next action.
 
 ### /status
 
@@ -133,6 +162,11 @@ preflight reasons, or canonical aliases are needed.
 Read-only command listing for the current session. `/commands` shows currently
 relevant commands. `/commands --all` shows the complete installed command
 reference, including visible compatibility invocations.
+
+## Daily Workflow
+
+These commands drive a normal governed task. All governance assertions, audit
+records, and reason codes use canonical command names.
 
 ### /hydrate
 
@@ -248,18 +282,6 @@ Every successful `/review-decision` emits a decision receipt in the audit trail
 (`decision:DEC-xxx`). Archive Layout v2 writes the raw companion projection as
 `audit/decision-receipts.v1.json`.
 
-### /validate
-
-Run validation checks against the approved plan. This is a compatibility surface:
-FlowGuard records validation automatically when the phase is entered, and
-`/validate` (or `/check`) remains available to record results explicitly.
-
-**Allowed in:** VALIDATION
-**Checks:** Derived from `verificationCandidates` (refer to `docs/configuration.md#profileactivechecks`)
-**ALL_PASSED** → advance to IMPLEMENTATION
-
-When `flowguard_run_check` executes, a failed or timed-out check includes an advisory `derivedRepairGuidance` projection parsed from stdout/stderr. Guidance is bounded (excerpts, locations, categories) and labelled `NOT_VERIFIED`. It never determines pass/fail — the `exitCode`, `passed`, `timedOut`, and `outputDigest` remain the authoritative execution evidence. Unknown or unparseable failures return `status: "unavailable"` without fabricated advice. Passing checks surface no repair guidance. Guidance is persisted only so `/status` can surface it later; raw subprocess output is never persisted.
-
 ### /implement
 
 Execute the implementation plan.
@@ -286,6 +308,25 @@ Record advisory `NOT_VERIFIED` evidence that a prior implementation challenge wa
 Provide the challenge ID from the prior implementation review and one or more passing
 post-implementation validation attempt IDs for the current implementation digest. This
 does not accept the review, resolve the challenge by itself, or bypass EVIDENCE_REVIEW.
+
+### /export
+
+Materialize the required verifiable export and complete the ticket flow. This is
+a canonical workflow command (tool binding `flowguard_export`), not an archive
+alias: the session advances to COMPLETE only after the export rail materializes
+a verifiable package and persists completion evidence.
+
+**Allowed in:** EXPORT_READY
+
+On success the workflow reaches COMPLETE. If the tool is blocked or fails, the
+session remains in EXPORT_READY and must not be described as complete.
+
+## Advanced
+
+### Workflow Commands (Advanced/Canonical)
+
+Use these specialized workflow surfaces for governance overrides, recovery of
+unobservable host mutations, architecture work, or standalone peer review.
 
 ### /override-approve
 
@@ -358,6 +399,22 @@ Start the peer review flow: review a foreign PR, branch, commit, diff, or text a
 - External references (if provided)
 - `flowguard-review-report.v1` artifact
 
+## Recovery
+
+Use these commands only for an explicit recovery action or a terminal operation.
+
+### /validate
+
+Run validation checks against the approved plan. This is a compatibility surface:
+FlowGuard records validation automatically when the phase is entered, and
+`/validate` (or `/check`) remains available to record results explicitly.
+
+**Allowed in:** VALIDATION
+**Checks:** Derived from `verificationCandidates` (refer to `docs/configuration.md#profileactivechecks`)
+**ALL_PASSED** → advance to IMPLEMENTATION
+
+When `flowguard_run_check` executes, a failed or timed-out check includes an advisory `derivedRepairGuidance` projection parsed from stdout/stderr. Guidance is bounded (excerpts, locations, categories) and labelled `NOT_VERIFIED`. It never determines pass/fail — the `exitCode`, `passed`, `timedOut`, and `outputDigest` remain the authoritative execution evidence. Unknown or unparseable failures return `status: "unavailable"` without fabricated advice. Passing checks surface no repair guidance. Guidance is persisted only so `/status` can surface it later; raw subprocess output is never persisted.
+
 ### /continue
 
 Compatibility routing surface. The canonical runtime directive is the next-action
@@ -370,18 +427,6 @@ action only when explicitly requested.
 - At IMPL_REVIEW: runs one independent implementation review iteration
 - At VALIDATION: runs all validation checks
 - At other phases: evaluates and auto-advances if evidence is present
-
-### /export
-
-Materialize the required verifiable export and complete the ticket flow. This is
-a canonical workflow command (tool binding `flowguard_export`), not an archive
-alias: the session advances to COMPLETE only after the export rail materializes
-a verifiable package and persists completion evidence.
-
-**Allowed in:** EXPORT_READY
-
-On success the workflow reaches COMPLETE. If the tool is blocked or fails, the
-session remains in EXPORT_READY and must not be described as complete.
 
 ### /abort
 
