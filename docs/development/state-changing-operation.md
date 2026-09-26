@@ -132,6 +132,11 @@ state it actually persisted, the raw persistence boundary still fails closed
 without the base, and unauthorized field changes are rejected before
 persistence.
 
+The direct wrappers also require an already-persisted state: a write against a
+missing `session-state.json` fails closed with `DIRECT_WRITE_REQUIRES_PREPARE`
+before any state or audit operation is prepared. Bootstrapping a new session is
+owned by the hydrate/full-prepare path, never by the metadata channel.
+
 Writers that persist a decision computed from an earlier read must not send a
 pre-built snapshot. They use `mutateStateWithAuditOperations`, which re-reads the
 state under the session write lock and re-applies the mutation, so authority

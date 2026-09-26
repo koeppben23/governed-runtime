@@ -173,18 +173,29 @@ export async function writeStateWithAuditOperationsAlreadyLocked(
   semanticIntents: readonly SemanticAuditIntent[] = [],
 ): Promise<SessionState> {
   const previous = await readState(sessDir);
-  if (previous != null) {
-    const changed = unauthorizedDirectWriteChanges(previous, nextState);
-    if (changed.length > 0) {
-      throw new PersistenceError(
-        'DIRECT_WRITE_REQUIRES_PREPARE',
-        `Refusing a direct metadata write that changes protected authority state ` +
-          `(${changed.join(', ')}); the direct channel may only change ` +
-          `${[...DIRECT_WRITE_MUTABLE_FIELDS].join(', ')}. Use ` +
-          'writeStateWithArtifactsAndAuditOperations so implementation-entry finalization ' +
-          'and ProofGraph refresh run exactly once.',
-      );
-    }
+  if (previous === null) {
+    // The direct channel only updates an already-persisted state. A missing
+    // state is a bootstrap, and bootstraps belong to the full prepare path
+    // (hydrate), which owns lifecycle evidence and the implementation base.
+    // Failing closed here prevents a future caller from silently minting a
+    // session — and an audit operation history — through the metadata channel.
+    throw new PersistenceError(
+      'DIRECT_WRITE_REQUIRES_PREPARE',
+      'Refusing a direct metadata write without existing session state. The direct ' +
+        'channel only updates a persisted state; bootstrap a session through the ' +
+        'hydrate/full-prepare path (prepareStateWithAuditOperations) instead.',
+    );
+  }
+  const changed = unauthorizedDirectWriteChanges(previous, nextState);
+  if (changed.length > 0) {
+    throw new PersistenceError(
+      'DIRECT_WRITE_REQUIRES_PREPARE',
+      `Refusing a direct metadata write that changes protected authority state ` +
+        `(${changed.join(', ')}); the direct channel may only change ` +
+        `${[...DIRECT_WRITE_MUTABLE_FIELDS].join(', ')}. Use ` +
+        'writeStateWithArtifactsAndAuditOperations so implementation-entry finalization ' +
+        'and ProofGraph refresh run exactly once.',
+    );
   }
   const stateWithOperations = prepareAuditOperations(
     previous,
