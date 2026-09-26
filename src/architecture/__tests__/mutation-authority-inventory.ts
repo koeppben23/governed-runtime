@@ -450,6 +450,16 @@ export const AUTHORITY_ROOTS: readonly AuthorityRoot[] = [
     source: [SOURCE.trustBoundaries],
   },
   {
+    root: 'src/diagnostics',
+    authority: 'Runtime diagnostics construction and blocked-result projections',
+    source: [SOURCE.scope],
+  },
+  {
+    root: 'src/telemetry',
+    authority: 'OpenTelemetry span boundary and Human Projection telemetry ports',
+    source: [SOURCE.scope],
+  },
+  {
     root: 'src/integration',
     authority: 'Runtime composition and review pipeline',
     source: [SOURCE.integration],
@@ -1860,6 +1870,59 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
     'Provider registry and assertion parser surface beyond the classified type modules',
     DEFERRED_REASON,
     [SOURCE.trustBoundaries],
+  ),
+
+  // ── Diagnostics and telemetry roots (per-file, behind the gate) ───────────
+  deferred(
+    'src/diagnostics/builders.ts',
+    'Runtime diagnostics construction',
+    'Diagnostic builders feed every blocked tool result; admission requires a profile full run with per-target evidence.',
+    { source: [SOURCE.scope] },
+  ),
+  deferred(
+    'src/diagnostics/format-card.ts',
+    'Blocked-diagnostics card rendering',
+    'Diagnostic card formatting and document projection; admission requires a profile full run with per-target evidence.',
+    { source: [SOURCE.scope] },
+  ),
+  notSuitable(
+    'src/diagnostics/index.ts',
+    'Diagnostics presentation barrel',
+    'Barrel re-exports only; no runtime logic of its own.',
+    'base',
+    { source: [SOURCE.scope] },
+  ),
+  notSuitable(
+    'src/diagnostics/types.ts',
+    'Diagnostic severity and runtime diagnostics contracts',
+    'Type-only module; no runtime mutants exist in the base regime.',
+    'base',
+    { source: [SOURCE.scope] },
+  ),
+  deferred(
+    'src/telemetry/index.ts',
+    'OpenTelemetry span boundary and SDK lifecycle',
+    'Tracer bootstrap, span wrapping, and resource attributes on trust-boundary paths; admission requires a profile full run with per-target evidence.',
+    { source: [SOURCE.scope] },
+  ),
+  deferred(
+    'src/telemetry/human-projection/emitter.ts',
+    'Human Projection telemetry emission',
+    'Event emission over the sink port; admission requires a profile full run with per-target evidence.',
+    { source: [SOURCE.scope] },
+  ),
+  deferred(
+    'src/telemetry/human-projection/sink.ts',
+    'Human Projection telemetry sink registry',
+    'Process-global sink selection wired by the plugin composition; admission requires a profile full run with per-target evidence.',
+    { source: [SOURCE.scope] },
+  ),
+  notSuitable(
+    'src/telemetry/human-projection/events.ts',
+    'Human Projection telemetry event contracts',
+    'Type-only module; no runtime mutants exist in the base regime.',
+    'base',
+    { source: [SOURCE.scope] },
   ),
 ];
 

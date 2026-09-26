@@ -358,11 +358,25 @@ Deferred surfaces (whole roots behind the admission gate):
 `src/presentation/**`, `src/integration/**`, `src/rails/**`, `src/cli/**`,
 `src/providers/**`.
 
-Assessed during the 2026-09-25 authority-root expansion and deliberately not
-declared as roots: `src/diagnostics/**` (export and troubleshooting
-projections) and `src/telemetry/**` (advisory metric emission) carry no
-trust-boundary authority; they stay outside the mutation authority scope until
-a concrete authority dependency is proven.
+Declared during the 2026-09-26 authority-root expansion: `src/diagnostics/**`
+and `src/telemetry/**` now carry roots because both have concrete
+trust-boundary consumers — `src/integration/blocked-result.ts` builds every
+blocked tool result from the diagnostics builders, and the archive integrity
+paths (`src/adapters/workspace/archive.ts`, `archive-verify-chain.ts`) plus the
+plugin composition consume the telemetry span/sink surface. Every production
+file is classified individually below; no blanket glob is used.
+
+Diagnostics and telemetry roots (per-file deferral, no measured admission yet):
+
+- `src/diagnostics/builders.ts` — runtime diagnostics construction; admission requires a profile full run with per-target evidence.
+- `src/diagnostics/format-card.ts` — blocked-diagnostics card rendering; admission requires a profile full run with per-target evidence.
+- `src/telemetry/index.ts` — tracer bootstrap, span wrapping, and resource attributes; admission requires a profile full run with per-target evidence.
+- `src/telemetry/human-projection/emitter.ts` — telemetry emission over the sink port; admission requires a profile full run with per-target evidence.
+- `src/telemetry/human-projection/sink.ts` — process-global sink selection; admission requires a profile full run with per-target evidence.
+
+Type-only/barrel modules (`src/diagnostics/index.ts`,
+`src/diagnostics/types.ts`, `src/telemetry/human-projection/events.ts`) are
+classified `not-mutation-suitable` for the base profile.
 
 Explicitly not mutation-suitable **for the named profile** (the exclusion is
 scoped; a target may still be a valid mutation target in another profile):
