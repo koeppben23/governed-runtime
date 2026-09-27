@@ -25,6 +25,29 @@ import { formatRailResult } from '../helpers-rail-presentation.js';
 import { attestReducedCeremonySubject } from '../reduced-ceremony-attestation.js';
 import { reducedCeremonyReady } from '../../../machine/guards.js';
 
+/** Fail-closed export gate for reduced-ceremony sessions (null = admissible). */
+async function reducedCeremonyExportBlock(input: {
+  readonly state: SessionState;
+  readonly worktree: string;
+  readonly digest: (text: string) => string;
+}): Promise<ToolResult | null> {
+  const attestation = await attestReducedCeremonySubject(input);
+  if (attestation === null) return null;
+  if (!reducedCeremonyReady(input.state)) {
+    return formatBlocked('IMPLEMENTATION_REVIEW_EVIDENCE_REQUIRED', {
+      reason:
+        'the exported session carries no accepted implementation review and no currently valid reduced-ceremony decision',
+    });
+  }
+  if (attestation.kind !== 'ok') {
+    return formatBlocked('IMPLEMENTATION_REVIEW_SUBJECT_MISMATCH', {
+      reviewedDigest: attestation.expected,
+      currentDigest: attestation.actual,
+    });
+  }
+  return null;
+}
+
 type CompletedExport = Readonly<{
   kind: 'completed';
   fingerprint: string;
@@ -48,34 +71,12 @@ async function materializeExport(context: ToolContext): Promise<ExportOutcome> {
           }),
         };
       }
-      // Export must never accept a stale or detached reduced-ceremony waiver:
-      // re-attest the frozen worktree bytes at this integration boundary before
-      // materializing anything.
-      const waiverAttestation = await attestReducedCeremonySubject({
+      const waiverBlock = await reducedCeremonyExportBlock({
         state,
         worktree: context.worktree,
         digest: ctx.digest,
       });
-      if (waiverAttestation !== null) {
-        if (!reducedCeremonyReady(state)) {
-          return {
-            kind: 'blocked',
-            output: formatBlocked('IMPLEMENTATION_REVIEW_EVIDENCE_REQUIRED', {
-              reason:
-                'the exported session carries no accepted implementation review and no currently valid reduced-ceremony decision',
-            }),
-          };
-        }
-        if (waiverAttestation.kind !== 'ok') {
-          return {
-            kind: 'blocked',
-            output: formatBlocked('IMPLEMENTATION_REVIEW_SUBJECT_MISMATCH', {
-              reviewedDigest: waiverAttestation.expected,
-              currentDigest: waiverAttestation.actual,
-            }),
-          };
-        }
-      }
+      if (waiverBlock !== null) return { kind: 'blocked', output: waiverBlock };
       const archivePath = await archiveCompletionExport(fingerprint, context.sessionID);
       const verification = await verifyArchive(fingerprint, context.sessionID);
       if (!verification.passed) {

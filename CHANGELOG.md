@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `created`; missing/`null` fails closed before the canonical validator could
   silently skip), and are validated against the archived completion evidence
   (the mandatory archive necessarily snapshots `regulatedArchiveStatus:
-  pending`) instead of the later live verification status. A small
+pending`) instead of the later live verification status. A small
   `evidence-manifest.example.json` binds the three demo sessions to their
   FlowGuard packages and external host chat exports (manually assigned,
   hash-secured supplementary evidence, never authority), enforces distinct
@@ -63,24 +63,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   archive assurance when every part of the chain is independently validated:
   - **TSA signer contract (TSA1/TSA3):** the pinned signer certificate MUST
     carry a critical extendedKeyUsage with id-kp-timeStamping and no other key
-     purposes and exactly one EKU extension (`missing_tsa_eku` /
-     `duplicate_tsa_eku` / `non_exclusive_tsa_eku`); unknown critical
+    purposes and exactly one EKU extension (`missing_tsa_eku` /
+    `duplicate_tsa_eku` / `non_exclusive_tsa_eku`); unknown critical
     extensions reject (`unhandled_critical_extension`), unknown non-critical
     ones are tolerated per RFC 5280.
-   - **Algorithm allowlists (TSA2):** message-imprint and CMS signature hashes
-     are independently allowlisted to SHA-256/384/512. CMS digest and signature
-     algorithm remain internally coherent (RFC 8933 §3.5), but need not equal
-     the message-imprint algorithm. RSASSA-PSS is accepted
+  - **Algorithm allowlists (TSA2):** message-imprint and CMS signature hashes
+    are independently allowlisted to SHA-256/384/512. CMS digest and signature
+    algorithm remain internally coherent (RFC 8933 §3.5), but need not equal
+    the message-imprint algorithm. RSASSA-PSS is accepted
     only against the explicit profile (MGF1 with a matching hash,
     trailerField 1, saltLength within 8..digest byte length). Divergences fail
-     closed with `unsafe_digest_algorithm` / `unsafe_signature_algorithm` plus
+    closed with `unsafe_digest_algorithm` / `unsafe_signature_algorithm` plus
     structured diagnostics. The verifier interface now receives the full
     admissible digest family (`expectedDigests`), computed canonically in
     `computeCanonicalEventDigests`; stamp-time verification only ever accepts
-     the SHA-256 imprint the request used.
-   - **Signer certificate binding:** each token requires a signed
-     `SigningCertificate`/`ESSCertID` or `SigningCertificateV2`/`ESSCertIDv2`
-     binding that matches the embedded, pinned signer certificate.
+    the SHA-256 imprint the request used.
+  - **Signer certificate binding:** each token requires a signed
+    `SigningCertificate`/`ESSCertID` or `SigningCertificateV2`/`ESSCertIDv2`
+    binding that matches the embedded, pinned signer certificate.
   - **Constant-time imprints (TSA4):** all imprint comparisons use
     `constantTimeBytesEqual` (`src/audit/constant-time.ts`).
   - **No downgrade trust (AC2):** stronger TSA evidence — a token, an imprint,
@@ -459,6 +459,19 @@ true })` returns the evaluated projection. Key invariants:
   (`knip --exports`). Both jobs always exit 0 and are not part of the CI gate.
 
 ### Changed
+
+- **BREAKING — reduced ceremony is now post-verification and digest-bound (#819).**
+  The persisted session schema is `v7`: `ImplEvidence` and implementation-scope
+  `ValidationAttempt` carry a required `implementationId`, and
+  `ReducedCeremonyDecision` requires the implementation digest, the frozen
+  policy digest and the exact check/attempt basis. `v6` and earlier snapshots
+  fail closed with `SESSION_STATE_INCOMPATIBLE`; there is no migration or dual
+  reader. Reduced ceremony exists only as `IMPL_VALIDATION → EVIDENCE_REVIEW`
+  after every active check re-ran against the frozen governed bytes and the
+  worktree re-attests to the frozen implementation digest. The human evidence
+  gate always remains, `implReview` is reported as an explicit `waived` status
+  instead of fabricated evidence, and approval/export re-attest the frozen
+  bytes before proceeding.
 
 - **Shared state-write preparation and recovery regression coverage.** Governed
   writes now finalize the Implementation Base and refresh the ProofGraph once

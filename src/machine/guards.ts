@@ -182,27 +182,25 @@ export const implCheckErrored: GuardFn = (s) => s.implValidation.some(isTechnica
 /** Implementation evidence is present. */
 export const implComplete: GuardFn = (s) => s.implementation !== null;
 
-/**
- * Implementation evidence has a reduced-ceremony decision that is fully bound
- * to the current implementation generation, the frozen policy and the canonical
- * post-implementation evidence. A decision by itself is never transition
- * authority.
- */
-export const reducedCeremonyReady: GuardFn = (s) => {
-  const decision = s.reducedCeremony;
+function ceremonyBindingMatches(
+  s: SessionState,
+  decision: NonNullable<SessionState['reducedCeremony']>,
+): boolean {
   const implementation = s.implementation;
-  if (decision === null || implementation === null) return false;
+  if (implementation === null) return false;
   if (s.policySnapshot.allowReducedCeremony !== true) return false;
   if (s.policySnapshot.requireHumanGates !== true) return false;
   if (decision.policyDigest !== s.policySnapshot.hash) return false;
   if (decision.implementationId !== implementation.implementationId) return false;
   if (decision.implementationDigest !== implementation.digest) return false;
   if (s.implementationRiskAssessment?.implementationDigest !== implementation.digest) return false;
-  if (hasOutstandingReviewObligation(s.reviewAssurance)) return false;
+  return !hasOutstandingReviewObligation(s.reviewAssurance);
+}
 
-  const evidence = evaluateImplValidationEvidence(s);
-  if (!evidence.satisfied) return false;
-
+function ceremonyBasisMatches(
+  decision: NonNullable<SessionState['reducedCeremony']>,
+  evidence: ReturnType<typeof evaluateImplValidationEvidence>,
+): boolean {
   const decidedCheckIds = [...decision.verificationBasis.checkIds].sort();
   const activeCheckIds = [...evidence.activeChecks].sort();
   if (decidedCheckIds.length !== activeCheckIds.length) return false;
@@ -216,12 +214,22 @@ export const reducedCeremonyReady: GuardFn = (s) => {
     .sort();
   if (decidedAttempts.length !== currentAttempts.length) return false;
   return decidedAttempts.every((entry, index) => entry === currentAttempts[index]);
-};
+}
 
 /**
- * Implementation review loop converged.
- * Same convergence logic as self-review (digest-stop).
+ * Implementation evidence has a reduced-ceremony decision that is fully bound
+ * to the current implementation generation, the frozen policy and the canonical
+ * post-implementation evidence. A decision by itself is never transition
+ * authority.
  */
+export const reducedCeremonyReady: GuardFn = (s) => {
+  const decision = s.reducedCeremony;
+  if (decision === null || !ceremonyBindingMatches(s, decision)) return false;
+  const evidence = evaluateImplValidationEvidence(s);
+  if (!evidence.satisfied) return false;
+  return ceremonyBasisMatches(decision, evidence);
+};
+
 export const implReviewMet: GuardFn = (s) => {
   if (s.implReview === null) return false;
   return isConverged(s.implReview);

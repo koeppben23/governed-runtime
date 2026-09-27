@@ -61,19 +61,13 @@ import { randomUUID } from 'node:crypto';
 import { evaluate } from '../../../machine/evaluate.js';
 import { autoAdvance } from '../../../rails/types.js';
 import type { ReviewFindings, ImplEvidence } from '../../../state/evidence.js';
-import type { SessionState, TaskClass } from '../../../state/schema.js';
+import type { SessionState } from '../../../state/schema.js';
 import { isCommandAllowed, Command } from '../../../machine/commands.js';
 
 // Rail helpers
 
 // Adapters
-import {
-  changedFiles,
-  GitError,
-  hashWorktreeFiles,
-  isGitRepoStrict,
-  worktreeDiff,
-} from '../../../adapters/git.js';
+import { changedFiles, GitError, isGitRepoStrict, worktreeDiff } from '../../../adapters/git.js';
 import { computeGitControlPlaneMarker } from '../../git-control-plane.js';
 import type { FlowGuardPolicy } from '../../../config/policy.js';
 import { writeImplementationDiffArtifact } from './implement-diff-artifact.js';

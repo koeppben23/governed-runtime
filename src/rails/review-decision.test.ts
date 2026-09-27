@@ -6,6 +6,8 @@ import {
   IMPL_EVIDENCE,
   PLAN_RECORD,
   FIXED_TIME,
+  APPROVED_IMPL_REVIEW,
+  REDUCED_CEREMONY_DECISION,
 } from '../fixtures.js';
 import { TEAM_POLICY } from '../config/policy.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
@@ -24,20 +26,6 @@ const baseCtx = {
   now: () => FIXED_TIME,
   digest: (text: string) => `sha256:${text.length}`,
   policy: TEAM_POLICY,
-};
-
-/** Bound reduced-ceremony decision shared by the EVIDENCE_REVIEW rail tests. */
-const REDUCED_CEREMONY_DECISION = {
-  profile: 'reduced' as const,
-  reason: 'Trivial fix',
-  claimedTaskClass: 'TRIVIAL' as const,
-  computedMinimumTaskClass: 'TRIVIAL' as const,
-  touchedSurfaces: [],
-  implementationId: '00000000-0000-4000-8000-0000000000aa',
-  implementationDigest: 'digest-of-impl',
-  policyDigest: 'a'.repeat(64),
-  verificationBasis: { checkIds: ['test', 'lint'], attempts: [] },
-  decidedAt: FIXED_TIME,
 };
 
 /**
@@ -1162,6 +1150,7 @@ describe('review-decision rail', () => {
     it('P34: minimumActorAssuranceForApproval=claim_validated blocks best_effort actor', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: IMPL_EVIDENCE,
+        implReview: APPROVED_IMPL_REVIEW,
         plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         initiatedBy: 'initiator',
         initiatedByIdentity: initiatorIdentity,
@@ -1189,6 +1178,7 @@ describe('review-decision rail', () => {
     it('P34: minimumActorAssuranceForApproval=idp_verified blocks claim_validated actor', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: IMPL_EVIDENCE,
+        implReview: APPROVED_IMPL_REVIEW,
         plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         initiatedBy: 'initiator',
         initiatedByIdentity: initiatorIdentity,
@@ -1216,6 +1206,7 @@ describe('review-decision rail', () => {
     it('P34: minimumActorAssuranceForApproval=claim_validated allows claim_validated actor (>= threshold)', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: IMPL_EVIDENCE,
+        implReview: APPROVED_IMPL_REVIEW,
         plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         initiatedBy: 'initiator',
         initiatedByIdentity: initiatorIdentity,
@@ -1240,6 +1231,7 @@ describe('review-decision rail', () => {
     it('blocks final approval for a completed mutation episode not bound to implementation evidence', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: IMPL_EVIDENCE,
+        implReview: APPROVED_IMPL_REVIEW,
         plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         mutationEpisodes: [
           {
@@ -1274,6 +1266,7 @@ describe('review-decision rail', () => {
     it('blocks final approval for a host mutation dispatched without a completion outcome', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: IMPL_EVIDENCE,
+        implReview: APPROVED_IMPL_REVIEW,
         plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         mutationEpisodes: [
           {
@@ -1308,6 +1301,7 @@ describe('review-decision rail', () => {
     it('allows final approval after a fenced unknown-outcome resolution and fresh review evidence', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: { ...IMPL_EVIDENCE, executedAt: '2026-02-01T00:00:00.000Z' },
+        implReview: APPROVED_IMPL_REVIEW,
         plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         mutationEpisodes: [
           {
@@ -1354,6 +1348,7 @@ describe('review-decision rail', () => {
     it('does not block final approval for a historical episode bound stale by a later implementation', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: IMPL_EVIDENCE,
+        implReview: APPROVED_IMPL_REVIEW,
         plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         mutationEpisodes: [
           {
@@ -1388,6 +1383,7 @@ describe('review-decision rail', () => {
     it('P34: minimumActorAssuranceForApproval=idp_verified allows idp_verified actor', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: IMPL_EVIDENCE,
+        implReview: APPROVED_IMPL_REVIEW,
         plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         initiatedBy: 'initiator',
         initiatedByIdentity: initiatorIdentity,
@@ -1412,6 +1408,7 @@ describe('review-decision rail', () => {
     it('P34: minimumActorAssuranceForApproval absent → no assurance check (else-if gate)', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: IMPL_EVIDENCE,
+        implReview: APPROVED_IMPL_REVIEW,
         plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         initiatedBy: 'initiator',
         initiatedByIdentity: initiatorIdentity,

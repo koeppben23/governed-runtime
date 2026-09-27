@@ -264,6 +264,24 @@ function enforceMutationEpisodeEvidenceApproval(
  * that a review result exists at all; a normal approval only has to agree
  * with a recorded review when one exists (reduced ceremony records none).
  */
+function enforceReducedCeremonyWaiver(
+  state: SessionState,
+  input: ReviewDecisionInput,
+): RailBlocked | null {
+  if (!reducedCeremonyReady(state)) {
+    return blocked('IMPLEMENTATION_REVIEW_EVIDENCE_REQUIRED');
+  }
+  const current = state.implementation?.digest;
+  const attestation = input.subjectAttestation;
+  if (attestation === undefined || attestation.kind !== 'ok' || attestation.digest !== current) {
+    return blocked('IMPLEMENTATION_REVIEW_SUBJECT_MISMATCH', {
+      reviewedDigest: attestation?.kind === 'ok' ? attestation.digest : 'unattested',
+      currentDigest: current ?? 'missing',
+    });
+  }
+  return null;
+}
+
 export function enforceImplementationReviewSubject(
   state: SessionState,
   input: ReviewDecisionInput,
@@ -278,18 +296,7 @@ export function enforceImplementationReviewSubject(
     }
     // A normal approval without a review is admissible only as a currently
     // valid reduced-ceremony waiver backed by the machine authority.
-    if (!reducedCeremonyReady(state)) {
-      return blocked('IMPLEMENTATION_REVIEW_EVIDENCE_REQUIRED');
-    }
-    const current = state.implementation?.digest;
-    const attestation = input.subjectAttestation;
-    if (attestation === undefined || attestation.kind !== 'ok' || attestation.digest !== current) {
-      return blocked('IMPLEMENTATION_REVIEW_SUBJECT_MISMATCH', {
-        reviewedDigest: attestation?.kind === 'ok' ? attestation.digest : 'unattested',
-        currentDigest: current ?? 'missing',
-      });
-    }
-    return null;
+    return enforceReducedCeremonyWaiver(state, input);
   }
   const current = state.implementation?.digest;
   if (!current || reviewed.currDigest !== current) {

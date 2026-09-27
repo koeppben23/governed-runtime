@@ -13,6 +13,7 @@ import {
   CURRENT_STATE_DIGEST_FORMAT,
   type SessionState,
   type Phase,
+  type ReducedCeremonyDecision,
 } from './state/schema.js';
 import {
   REVIEW_ASSURANCE_SCHEMA_VERSION,
@@ -524,6 +525,32 @@ export const IMPL_EVIDENCE: ImplEvidence = {
   domainFiles: ['src/auth.ts'],
   digest: 'digest-of-impl',
   executedAt: FIXED_TIME,
+};
+
+/** Converged implementation review bound to the current implementation digest. */
+export const APPROVED_IMPL_REVIEW: ImplReviewResult = {
+  iteration: 1,
+  reviewCycle: 1,
+  maxIterations: 3,
+  prevDigest: null,
+  currDigest: IMPL_EVIDENCE.digest,
+  revisionDelta: 'none',
+  verdict: 'accept',
+  executedAt: FIXED_TIME,
+};
+
+/** Bound reduced-ceremony decision shared by EVIDENCE_REVIEW rail tests. */
+export const REDUCED_CEREMONY_DECISION: ReducedCeremonyDecision = {
+  profile: 'reduced',
+  reason: 'Trivial fix',
+  claimedTaskClass: 'TRIVIAL',
+  computedMinimumTaskClass: 'TRIVIAL',
+  touchedSurfaces: [],
+  implementationId: IMPL_EVIDENCE.implementationId,
+  implementationDigest: IMPL_EVIDENCE.digest,
+  policyDigest: 'a'.repeat(64),
+  verificationBasis: { checkIds: ['test', 'lint'], attempts: [] },
+  decidedAt: FIXED_TIME,
 };
 
 export const REVIEW_APPROVE: ReviewDecision = {
