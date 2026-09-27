@@ -23,6 +23,11 @@ import type {
   SessionState,
 } from '../state/schema.js';
 import { TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
+import { hashText } from '../shared/hashing.js';
+import {
+  parseTicketRiskDeclaration,
+  type TicketRiskDeclaration,
+} from '../state/risk-declaration.js';
 import { reducedCeremonyReady } from './guards.js';
 
 const DOC_IMPL = {
@@ -48,6 +53,10 @@ function attempt(checkId: string) {
 
 const RISK_ASSESSMENT: ImplementationRiskAssessment = {
   computedMinimumTaskClass: 'TRIVIAL',
+  effectiveTaskClass: 'TRIVIAL',
+  declaredTaskClass: null,
+  declarationKind: 'absent' as const,
+  ticketDigest: null,
   touchedSurfaces: [],
   riskTriggers: [],
   assessedFrom: 'implementation_changed_files',
@@ -65,7 +74,10 @@ const POLICY = {
 const DECISION: ReducedCeremonyDecision = {
   profile: 'reduced',
   reason: 'POST_IMPL_VERIFIED_TRIVIAL',
-  claimedTaskClass: 'TRIVIAL',
+  effectiveTaskClass: 'TRIVIAL',
+  declaredTaskClass: null,
+  declarationKind: 'absent' as const,
+  ticketDigest: null,
   computedMinimumTaskClass: 'TRIVIAL',
   touchedSurfaces: [],
   implementationId: DOC_IMPL.implementationId,
@@ -83,7 +95,6 @@ const DECISION: ReducedCeremonyDecision = {
 
 function boundState(overrides: Partial<SessionState> = {}): SessionState {
   return makeState('IMPL_VALIDATION', {
-    claimedTaskClass: 'TRIVIAL',
     verificationCandidates: VERIFICATION_CANDIDATES,
     implementation: DOC_IMPL,
     implementationRiskAssessment: RISK_ASSESSMENT,
@@ -94,6 +105,32 @@ function boundState(overrides: Partial<SessionState> = {}): SessionState {
     reducedCeremony: DECISION,
     ...overrides,
   });
+}
+
+function ticketFor(text: string): NonNullable<SessionState['ticket']> {
+  return {
+    text,
+    digest: hashText(text),
+    source: 'user',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    riskDeclaration: parseTicketRiskDeclaration(text),
+  };
+}
+
+function decisionFor(
+  ticket: NonNullable<SessionState['ticket']>,
+  declaration: TicketRiskDeclaration,
+  overrides: Partial<ReducedCeremonyDecision> = {},
+): ReducedCeremonyDecision {
+  const declaredTaskClass = declaration.kind === 'declared' ? declaration.taskClass : null;
+  return {
+    ...DECISION,
+    effectiveTaskClass: declaredTaskClass ?? 'TRIVIAL',
+    declaredTaskClass,
+    declarationKind: declaration.kind,
+    ticketDigest: ticket.digest,
+    ...overrides,
+  };
 }
 
 describe('reducedCeremonyReady binding invariants', () => {
@@ -140,7 +177,7 @@ describe('reducedCeremonyReady binding invariants', () => {
   });
 
   it('BAD: a decision claimed as STANDARD rejects', () => {
-    const state = boundState({ reducedCeremony: { ...DECISION, claimedTaskClass: 'STANDARD' } });
+    const state = boundState({ reducedCeremony: { ...DECISION, effectiveTaskClass: 'STANDARD' } });
     expect(reducedCeremonyReady(state)).toBe(false);
   });
 
@@ -201,5 +238,61 @@ describe('reducedCeremonyReady binding invariants', () => {
       reducedCeremony: { ...DECISION, touchedSurfaces: ['config'] },
     });
     expect(reducedCeremonyReady(matching)).toBe(true);
+  });
+  it('HAPPY: a ticket-declared TRIVIAL bound to its digest is accepted', () => {
+    const ticket = ticketFor('Risk: TRIVIAL\n\nDocs only.');
+    const state = boundState({
+      ticket,
+      reducedCeremony: decisionFor(ticket, ticket.riskDeclaration),
+    });
+    expect(reducedCeremonyReady(state)).toBe(true);
+  });
+
+  it('BAD: a ticket-declared STANDARD rejects even for a docs-only change', () => {
+    const ticket = ticketFor('Risk: STANDARD\n\nDocs only.');
+    const state = boundState({
+      ticket,
+      reducedCeremony: decisionFor(ticket, ticket.riskDeclaration),
+    });
+    expect(reducedCeremonyReady(state)).toBe(false);
+  });
+
+  it('BAD: a decision claiming TRIVIAL while the ticket declares STANDARD rejects', () => {
+    const ticket = ticketFor('Risk: STANDARD\n\nDocs only.');
+    const state = boundState({
+      ticket,
+      implementationRiskAssessment: { ...RISK_ASSESSMENT, effectiveTaskClass: 'STANDARD' },
+      reducedCeremony: decisionFor(ticket, { kind: 'declared', taskClass: 'TRIVIAL' }),
+    });
+    expect(reducedCeremonyReady(state)).toBe(false);
+  });
+
+  it('BAD: conflict and invalid ticket declarations reject', () => {
+    const conflict = ticketFor('Risk: TRIVIAL\nRisk: HIGH-RISK');
+    expect(reducedCeremonyReady(boundState({ ticket: conflict }))).toBe(false);
+    const invalid = ticketFor('Risk: HIGH');
+    expect(reducedCeremonyReady(boundState({ ticket: invalid }))).toBe(false);
+  });
+
+  it('BAD: a stale ticket digest on the decision rejects', () => {
+    const ticket = ticketFor('Risk: TRIVIAL');
+    const stale: SessionState['ticket'] = { ...ticket, digest: 'stale-digest' };
+    const state = boundState({
+      ticket,
+      reducedCeremony: decisionFor(stale, ticket.riskDeclaration),
+    });
+    expect(reducedCeremonyReady(state)).toBe(false);
+  });
+
+  it('BAD: a manipulated declaration that no longer matches the ticket text rejects', () => {
+    const ticket = {
+      ...ticketFor('Risk: TRIVIAL'),
+      riskDeclaration: { kind: 'declared', taskClass: 'STANDARD' } as const,
+    };
+    const state = boundState({
+      ticket,
+      reducedCeremony: decisionFor(ticketFor('Risk: TRIVIAL'), ticket.riskDeclaration),
+    });
+    expect(reducedCeremonyReady(state)).toBe(false);
   });
 });

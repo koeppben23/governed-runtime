@@ -5,6 +5,7 @@
  * @version v1
  */
 
+import { declaredTaskClassFor } from '../../phase-tool-gate.js';
 import { REVIEW_DISCOVERY_PROVIDER } from '../../discovery/review-discovery-provider.js';
 import type { ArchitectureArgs, ArchitectureSession } from './architecture-shared.js';
 import { buildArchitectureReviewInstruction } from './architecture-shared.js';
@@ -152,7 +153,8 @@ async function mintArchSubmissionObligation(
     profileSource: 'policy_default',
     policySnapshot: ctx.policySnapshot,
     changedFiles: resolvedTargetPaths,
-    claimedTaskClass: ctx.state.claimedTaskClass,
+    declaredTaskClass: declaredTaskClassFor(ctx.state),
+    escalatedTaskClass: ctx.state.claimedTaskClass,
     metadata,
     // Frozen repository context (freeze-time resolution): architecture
     // reviews may cite repository evidence only against this context.

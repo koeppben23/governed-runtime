@@ -7,7 +7,7 @@
  *
  * Behavior:
  * 1. If state already exists → return it unchanged except explicit risk-class
- *    recovery may update claimedTaskClass (a blocked riskGate is NOT cleared)
+ *    recovery may update claimedTaskClass as a raise-only escalation (a blocked riskGate is NOT cleared)
  * 2. If state is null → create a new SessionState:
  *    - Generate UUID
  *    - Resolve binding from OpenCode tool context (sessionId, worktree)
@@ -19,7 +19,7 @@
  * 3. Evaluate the new state (returns "pending" at READY — waiting for flow selection)
  *
  * Idempotent: calling /hydrate on an existing session is a no-op unless
- * claimedTaskClass is provided to record an explicit risk-class claim. That
+ * claimedTaskClass is provided to record an explicit raise-only risk escalation. That
  * recovery may only update claimedTaskClass; it must not rebind the session or
  * rewrite the policy snapshot. A blocked riskGate is fail-closed and is NOT
  * cleared by hydrate — recovering from a blocked risk gate requires a fresh
@@ -123,7 +123,6 @@ export interface HydratePolicyInput {
   readonly identityProviderMode?: IdentityProviderMode;
   readonly minimumActorAssuranceForApproval?: ActorAssurance;
   readonly enforceRiskClassification?: boolean;
-  readonly allowRiskDowngradeOverride?: boolean;
   readonly allowReducedCeremony?: boolean;
   readonly policyResolution?: HydratePolicyResolution;
 }
@@ -185,9 +184,6 @@ export function applyHydrateOverrides(
       : {}),
     ...(p.enforceRiskClassification !== undefined
       ? { enforceRiskClassification: p.enforceRiskClassification }
-      : {}),
-    ...(p.allowRiskDowngradeOverride !== undefined
-      ? { allowRiskDowngradeOverride: p.allowRiskDowngradeOverride }
       : {}),
     ...(p.allowReducedCeremony !== undefined
       ? { allowReducedCeremony: p.allowReducedCeremony }

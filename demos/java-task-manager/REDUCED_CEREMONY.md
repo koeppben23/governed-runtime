@@ -13,8 +13,8 @@ documentation task for both runs — the only difference is the frozen policy:
 | **C** (`reduced-off`)  | `docs/usage-notes.md`         | team, `allowReducedCeremony: false` | complete post-impl checks → full independent review → human gate |
 
 B and C are a controlled comparison: same seed commit, same team policy, same
-active checks (`build`, `test`), same TRIVIAL risk claim, same task. Only
-`policy.allowReducedCeremony` differs.
+active checks (`build`, `test`), same ticket (`TICKET_DOCS.md`), no manual risk
+claim in either run. Only `policy.allowReducedCeremony` differs.
 
 > Reduced ceremony (#819, PR #963) never skips post-implementation validation.
 > `IMPL_VALIDATION` always runs every active check. Only the **independent
@@ -23,6 +23,12 @@ active checks (`build`, `test`), same TRIVIAL risk claim, same task. Only
 > `EVIDENCE_REVIEW` gate and the `/export` completion commit remain mandatory.
 > See `docs/configuration.md` (`policy.allowReducedCeremony`) for the exact
 > conditions.
+>
+> The effective risk class is resolved automatically: the runtime computes the
+> minimum class from the actual change and only ever raises it through a
+> ticket-declared risk floor (or an explicit escalation claim). No manual claim
+> is required — `/task --file TICKET_DOCS.md` adopts the ticket content, and a
+> missing declaration never blocks.
 
 ---
 
@@ -101,29 +107,24 @@ setup script proves the static preconditions; this read-only check proves both
 the actually selected checks **and** the actually frozen policy snapshot
 (mode, human gate, effective gate behavior, reduced flag) in the running
 session. The printed `hostSessionId` is the authoritative archive identity used
-in Step B8 — it is the OpenCode host session id, not the FlowGuard session
+in Step B7 — it is the OpenCode host session id, not the FlowGuard session
 UUID from `/status`.
 
-### Step B3 — Declare the Risk Claim
+### Step B3 — Record the Docs Task with Ticket Content
 
-Reduced ceremony requires an explicit `claimedTaskClass: "TRIVIAL"`; the
-runtime still computes the minimum class independently and never lets the
-claim choose pipeline depth by itself.
+| Action                        | Phase  | What I Say                                                                                                                                                                                                                                                                                                                                  |
+| ----------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/task --file TICKET_DOCS.md` | TICKET | "Der Task ist bewusst nicht-trivialem Code entgegengesetzt: nur eine neue `docs/usage-notes.md`, keine Java-Quelle, keine Tests. Mit `--file` adoptiert FlowGuard den Ticket-Inhalt kanonisch und bindet die Risikodeklaration an den Digest — der Klassifikator berechnet die effektive Klasse unabhängig aus der tatsächlichen Änderung." |
 
-| Action                                                    | Phase | What I Say                                                                                                                                                                                                                          |
-| --------------------------------------------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Call `flowguard_hydrate({ claimedTaskClass: "TRIVIAL" })` | READY | "Ich melde die Risikoklasse explizit als TRIVIAL — Voraussetzung für die reduzierte Ceremony. FlowGuard übernimmt den Claim nicht blind: Der Runtime-Risikoclassifier berechnet das Minimum unabhängig aus den geänderten Dateien." |
+There is **no manual risk claim**: `TICKET_DOCS.md` contains no `Risk:` line,
+so the declaration is absent and the effective class is exactly the computed
+minimum (`TRIVIAL` for a docs-only change). A ticket that declares `Risk:` /
+`Risikoklasse:` raises the floor; an invalid declaration blocks pre-execution
+with `TICKET_RISK_DECLARATION_INVALID` until corrected. Referencing the ticket
+file without content (a bare path in the text, no `--file`, no inline ticket)
+is blocked with `TICKET_REFERENCE_WITHOUT_CONTENT`.
 
-A follow-up hydrate call on an existing session may only update
-`claimedTaskClass` — the frozen policy from `/start` is not re-resolved.
-
-### Step B4 — Record the Docs Task
-
-| Action                                                           | Phase  | What I Say                                                                                                                                                                                     |
-| ---------------------------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/task Read TICKET_DOCS.md and create the requested usage notes` | TICKET | "Der Task ist bewusst nicht-trivialem Code entgegengesetzt: nur eine neue `docs/usage-notes.md`, keine Java-Quelle, keine Tests. Die Akzeptanzkriterien kommen explizit aus `TICKET_DOCS.md`." |
-
-### Step B5 — Plan, Plan Review, Approval, Baseline Checks
+### Step B4 — Plan, Plan Review, Approval, Baseline Checks
 
 | Action                            | Phase                                     | What I Say                                                                                                                                                                        |
 | --------------------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -131,7 +132,7 @@ A follow-up hydrate call on an existing session may only update
 | Automatic independent plan review | PLAN_REVIEW                               | "Der Plan-Review läuft **immer** — Reduced Ceremony betrifft nur den Implementierungs-Review."                                                                                    |
 | `/approve`                        | PLAN_REVIEW → VALIDATION → IMPLEMENTATION | "Mit der Plan-Freigabe führt FlowGuard die aktiven Checks automatisch gegen den Baseline-Stand aus: `./mvnw verify` (build) und `./mvnw test` (test). Kein Code wurde angerührt." |
 
-### Step B6 — Implement the Docs Change
+### Step B5 — Implement the Docs Change
 
 | Action       | Phase          | What I Say                                                                                                                                                         |
 | ------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -143,7 +144,7 @@ runtime evaluates the reduced-ceremony decision, re-attests the frozen bytes and
 advances via the explicit `REDUCED_CEREMONY` transition directly to the human
 `EVIDENCE_REVIEW` gate.
 
-### Step B7 — The Four Proofs
+### Step B6 — The Four Proofs
 
 > The `/status` slash command renders the presentation card only (phase,
 > readiness, policy, evidence counts); it does **not** render
@@ -184,7 +185,7 @@ review verdict.
 | `/approve` | EVIDENCE_REVIEW → EXPORT_READY | "Der Waiver ersetzt nur den unabhängigen Implementierungs-Review. Das menschliche Evidence-Gate bleibt Pflicht — hier genehmige ich explizit."                    |
 | `/export`  | EXPORT_READY → COMPLETE        | "Erst `/export` materialisiert und verifiziert das Paket und persistiert `ExportCompletionEvidence`. Reduced Ceremony verkürzt den Review, nicht die Completion." |
 
-### Step B8 — Proof 4: Durable Audit Event
+### Step B7 — Proof 4: Durable Audit Event
 
 After `/export`, the canonical audit trail in the export package contains
 `reduced_ceremony_applied`. Locate the actual archive in the session workspace
@@ -220,19 +221,18 @@ Result of scenario B:
 
 ## Scenario C — Reduced Ceremony Disabled
 
-Identical until the post-implementation checks; the claim is also `TRIVIAL`, so
-the only difference is the frozen policy value.
+Identical until the post-implementation checks; the task and ticket are also
+identical (no manual claim), so the only difference is the frozen policy value.
 
-### Step C1 — Start + Claim
+### Step C1 — Start
 
-| Action                                               | Phase | What I Say                                                                                                                               |
-| ---------------------------------------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `/start`                                             | READY | "Dieser Workspace hat `allowReducedCeremony: false` — explizit gesetzt, damit der Vergleich nicht von späteren Preset-Defaults abhängt." |
-| `flowguard_hydrate({ claimedTaskClass: "TRIVIAL" })` | READY | "Derselbe TRIVIAL-Claim wie in Lauf B. Die Policy verbietet die Reduktion trotzdem — genau das ist der Vergleichspunkt."                 |
+| Action   | Phase | What I Say                                                                                                                               |
+| -------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `/start` | READY | "Dieser Workspace hat `allowReducedCeremony: false` — explizit gesetzt, damit der Vergleich nicht von späteren Preset-Defaults abhängt." |
 
 ### Step C2 — Same Task, Same Checks
 
-`/task Read TICKET_DOCS.md and create the requested usage notes`, `/plan`,
+`/task --file TICKET_DOCS.md`, `/plan`,
 `/approve`, automatic baseline checks — identisch zu B.
 
 ### Step C3 — Flag-Off Proof and Full Implementation Review
@@ -298,9 +298,12 @@ or the export commit. The Java bugfix in scenario A keeps the full review.
 - The plan review is never waived; only the implementation review can be.
 - The prose of `docs/usage-notes.md` varies per model run; the governance
   outcomes (classification, checks, decision, gates) are deterministic.
-- Without the explicit TRIVIAL claim, reduction is denied with
-  `TASK_CLASS_CLAIM_MISSING` — the claim is a visible operator statement, not an
-  implicit assumption.
+- Risk resolution is automatic: absent declaration plus docs-only change yields
+  effective `TRIVIAL`; a ticket-declared floor can only raise the class. An
+  invalid declaration blocks with `TICKET_RISK_DECLARATION_INVALID`, a conflict
+  with `TICKET_RISK_DECLARATION_CONFLICT` (highest value becomes the floor), and
+  a referenced-but-not-adopted ticket file with
+  `TICKET_REFERENCE_WITHOUT_CONTENT`.
 - The setup script verifies the static preconditions and the parity of both
   workspaces; `--verify-session` verifies the runtime `activeChecks` selection
   and the frozen policy snapshot (`mode`, `requireHumanGates`,

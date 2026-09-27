@@ -545,7 +545,10 @@ describe('implement', () => {
       expect(finalState?.reducedCeremony).toMatchObject({
         profile: 'reduced',
         reason: 'POST_IMPL_VERIFIED_TRIVIAL',
-        claimedTaskClass: 'TRIVIAL',
+        effectiveTaskClass: 'TRIVIAL',
+        escalatedTaskClass: 'TRIVIAL',
+        declaredTaskClass: null,
+        declarationKind: 'absent',
         computedMinimumTaskClass: 'TRIVIAL',
         implementationId: finalState?.implementation?.implementationId,
         implementationDigest: finalState?.implementation?.digest,

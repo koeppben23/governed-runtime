@@ -251,13 +251,15 @@ approver's resolved assurance tier must be `>=` this value, otherwise
 **Type:** `boolean`
 **Default:** `false`
 
-Permits reduced implementation-review ceremony only after FlowGuard has **post-implementation** runtime evidence that the delivered change is low risk. This setting is fail-closed and does not let `claimedTaskClass` choose pipeline depth. `policy.requireHumanGates` must also be `true`: reduction never removes the human evidence gate.
+Permits reduced implementation-review ceremony only after FlowGuard has **post-implementation** runtime evidence that the delivered change is low risk. FlowGuard resolves one effective risk class as `max(runtime-computed minimum, ticket-declared floor, optional escalation claim)`; no manual claim is required. `policy.requireHumanGates` must also be `true`: reduction never removes the human evidence gate.
 
 Reduced ceremony can apply only when all of these are true:
 
 - `policy.allowReducedCeremony` is `true` and `policy.requireHumanGates` is `true` in the frozen policy snapshot.
-- `claimedTaskClass` is present and exactly `TRIVIAL`.
-- Runtime-computed minimum task class is `TRIVIAL`.
+- The **effective risk class** is exactly `TRIVIAL`. It is resolved as `max(runtime-computed minimum, ticket-declared floor, optional escalation claim)`:
+  - the ticket may bind a minimum class with an explicit `Risk:` / `Risikoklasse:` / `Risk Class:` line in its canonical content; contradictory valid declarations apply the highest declared class as conservative floor and deny reduction,
+  - an invalid declaration denies reduction and blocks risk-relevant mutations at the pre-tool gate until the ticket is corrected,
+  - `claimedTaskClass` is an optional, raise-only escalation; it can never lower a ticket declaration and is never required.
 - `riskGate` is clear or absent.
 - Changed-file evidence is available and touches no instruction, permission, governance, security, policy, state, audit, archive, release, installer, CI, persistence, migration, or trust-boundary surface (root and nested `AGENTS.md`/`CLAUDE.md`/`GEMINI.md`, `.claude/**`, `.gemini/**`, `.opencode/**`, copilot instructions, and root tool configs are always excluded).
 - **Every** active check was re-run after `/implement`: each has a latest decisive PASS plus a passing implementation-scoped attempt bound to the current `implementationId`. No active checks means no reduction.

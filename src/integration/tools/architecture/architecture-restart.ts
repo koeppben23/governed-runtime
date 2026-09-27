@@ -24,6 +24,7 @@
  * @version v1
  */
 
+import { declaredTaskClassFor } from '../../phase-tool-gate.js';
 import { REVIEW_DISCOVERY_PROVIDER } from '../../discovery/review-discovery-provider.js';
 import { readState } from '../../../adapters/persistence.js';
 import { validateAdrSections } from '../../../state/evidence.js';
@@ -295,7 +296,8 @@ async function mintRestartObligation(
     profileSource: 'policy_default',
     policySnapshot: session.state.policySnapshot,
     changedFiles: resolvedTargetPaths,
-    claimedTaskClass: session.state.claimedTaskClass,
+    declaredTaskClass: declaredTaskClassFor(session.state),
+    escalatedTaskClass: session.state.claimedTaskClass,
     metadata,
     repositoryAuthority: frozenAuthorityOrUndefined(freeze),
     // Durable freeze outcome: continuations, restarts, and re-emits render

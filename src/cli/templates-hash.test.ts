@@ -320,8 +320,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // returned /check phase (IMPL_REVIEW or the reduced-ceremony EVIDENCE_REVIEW)
     // and the Done-when accepts a valid reduced-ceremony waiver as the
     // alternative to a converged independent review.
+    // Refreshed for the effective-risk-class contract: /task and /ticket now
+    // adopt exactly one canonical content source (ticketSource for repository
+    // files, explicit text otherwise) instead of passing a bare reference.
     expect(sha256(commandsJson)).toBe(
-      '26784c276c6eef905d85b535352839b18cc9965d07b88bd8ad3fc1e9893817d8',
+      '79e7386aeb07177e14691db73e1a1c01f13eaaa73a862dd2512521d0605d3dee',
     );
   });
 

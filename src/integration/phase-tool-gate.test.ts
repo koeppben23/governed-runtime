@@ -397,7 +397,15 @@ describe('phase-tool-gate', () => {
     });
 
     it('DENY results always carry string code and reason (risk gate)', () => {
-      const state = makeState('IMPLEMENTATION', { claimedTaskClass: 'TRIVIAL' });
+      const state = makeState('IMPLEMENTATION', {
+        riskGate: {
+          status: 'blocked',
+          code: 'RISK_GATE_BLOCKED',
+          message: 'blocked',
+          blockedAt: '2026-01-01T00:00:00.000Z',
+          lastDecisionId: 'RISK-1',
+        },
+      });
       const result = isRiskClassificationAllowed({
         state,
         changedFiles: ['src/state/schema.ts'],
@@ -411,7 +419,7 @@ describe('phase-tool-gate', () => {
   });
 
   describe('risk classification gate', () => {
-    it('BAD — TRIVIAL claim on src/state change is blocked', () => {
+    it('HAPPY — an escalation claim can never lower the computed class', () => {
       const state = makeState('IMPLEMENTATION', { claimedTaskClass: 'TRIVIAL' });
       const result = isRiskClassificationAllowed({
         state,
@@ -419,12 +427,12 @@ describe('phase-tool-gate', () => {
         now: '2026-01-01T00:00:00.000Z',
       });
 
-      expect(result.allowed).toBe(false);
-      expect(result.code).toBe('RISK_CLASSIFICATION_MISMATCH');
+      expect(result.allowed).toBe(true);
       expect(result.minimumTaskClass).toBe('HIGH-RISK');
+      expect(result.effectiveTaskClass).toBe('HIGH-RISK');
     });
 
-    it('BAD — missing claim is blocked under enforced gate checks', () => {
+    it('HAPPY — a missing claim never blocks; the computed class governs', () => {
       const state = makeState('IMPLEMENTATION');
       const result = isRiskClassificationAllowed({
         state,
@@ -432,8 +440,9 @@ describe('phase-tool-gate', () => {
         now: '2026-01-01T00:00:00.000Z',
       });
 
-      expect(result.allowed).toBe(false);
-      expect(result.code).toBe('RISK_CLASSIFICATION_REQUIRED');
+      expect(result.allowed).toBe(true);
+      expect(result.effectiveTaskClass).toBe('TRIVIAL');
+      expect(result.declaredTaskClass).toBeNull();
     });
 
     it('HAPPY — HIGH-RISK claim on sensitive change is allowed', () => {
@@ -559,25 +568,16 @@ describe('phase-tool-gate', () => {
       ).toBe('TRIVIAL');
     });
 
-    it('BAD — downgrade override flag is denied rather than accepted', () => {
-      const base = makeState('IMPLEMENTATION', { claimedTaskClass: 'TRIVIAL' });
-      const state = {
-        ...base,
-        policySnapshot: {
-          ...base.policySnapshot,
-          allowRiskDowngradeOverride: true,
-        },
-      };
-
+    it('EDGE — there is no downgrade path: the effective class escalates conservatively', () => {
+      const state = makeState('IMPLEMENTATION', { claimedTaskClass: 'TRIVIAL' });
       const result = isRiskClassificationAllowed({
         state,
         changedFiles: ['src/identity/actor-info.ts'],
         now: '2026-01-01T00:00:00.000Z',
       });
 
-      expect(result.allowed).toBe(false);
-      expect(result.code).toBe('RISK_DOWNGRADE_OVERRIDE_DENIED');
-      expect(result.minimumTaskClass).toBe('HIGH-RISK');
+      expect(result.allowed).toBe(true);
+      expect(result.effectiveTaskClass).toBe('HIGH-RISK');
     });
 
     it('BAD — existing persistent riskGate block stops subsequent mutating paths', () => {
@@ -585,7 +585,7 @@ describe('phase-tool-gate', () => {
         claimedTaskClass: 'HIGH-RISK',
         riskGate: {
           status: 'blocked',
-          code: 'RISK_CLASSIFICATION_MISMATCH',
+          code: 'RISK_GATE_BLOCKED',
           message: 'previous block',
           blockedAt: '2026-01-01T00:00:00.000Z',
           lastDecisionId: 'RISK-1',
@@ -674,7 +674,7 @@ describe('phase-tool-gate', () => {
       }
     });
 
-    it('BAD — missing task class claim keeps full ceremony', () => {
+    it('HAPPY — a missing task class claim no longer keeps full ceremony', () => {
       const base = makeState('IMPLEMENTATION', {
         validation: [validationResult('test_quality'), validationResult('rollback_safety')],
       });
@@ -683,10 +683,9 @@ describe('phase-tool-gate', () => {
         policySnapshot: { ...base.policySnapshot, allowReducedCeremony: true },
       };
 
-      const result = resolveCeremonyProfile({ state, changedFiles: ['docs/usage-notes.md'] });
-
-      expect(result.profile).toBe('full');
-      expect(result.reason).toBe('TASK_CLASS_CLAIM_MISSING');
+      expect(
+        projectCeremonyEligibility({ state, changedFiles: ['docs/usage-notes.md'] }).status,
+      ).toBe('pending_post_implementation_verification');
     });
 
     it('BAD — non-TRIVIAL task class claim keeps full ceremony', () => {
@@ -702,7 +701,8 @@ describe('phase-tool-gate', () => {
       const result = resolveCeremonyProfile({ state, changedFiles: ['docs/usage-notes.md'] });
 
       expect(result.profile).toBe('full');
-      expect(result.reason).toBe('CLAIMED_CLASS_NOT_TRIVIAL');
+      expect(result.reason).toBe('RESOLVED_RISK_NOT_TRIVIAL');
+      expect(result.effectiveTaskClass).toBe('STANDARD');
     });
 
     it('BAD — an outstanding review obligation keeps full ceremony', () => {
@@ -760,7 +760,7 @@ describe('phase-tool-gate', () => {
       const result = resolveCeremonyProfile({ state, changedFiles: ['src/security/policy.ts'] });
 
       expect(result.profile).toBe('full');
-      expect(result.reason).toBe('COMPUTED_MINIMUM_NOT_TRIVIAL');
+      expect(result.reason).toBe('RESOLVED_RISK_NOT_TRIVIAL');
       expect(result.computedMinimumTaskClass).toBe('HIGH-RISK');
     });
 
@@ -769,7 +769,7 @@ describe('phase-tool-gate', () => {
         claimedTaskClass: 'TRIVIAL',
         riskGate: {
           status: 'blocked',
-          code: 'RISK_CLASSIFICATION_MISMATCH',
+          code: 'RISK_GATE_BLOCKED',
           message: 'blocked',
           blockedAt: '2026-01-01T00:00:00.000Z',
           lastDecisionId: 'RISK-1',

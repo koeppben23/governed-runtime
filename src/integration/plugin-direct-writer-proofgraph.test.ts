@@ -345,8 +345,11 @@ describe('direct metadata write channel', () => {
         reducedCeremony: {
           profile: 'reduced',
           reason: 'direct-write test',
-          claimedTaskClass: 'TRIVIAL',
+          effectiveTaskClass: 'TRIVIAL',
           computedMinimumTaskClass: 'TRIVIAL',
+          declaredTaskClass: null,
+          declarationKind: 'absent' as const,
+          ticketDigest: null,
           touchedSurfaces: [],
           implementationId: '00000000-0000-4000-8000-0000000000aa',
           implementationDigest: 'digest-of-impl',
@@ -362,6 +365,10 @@ describe('direct metadata write channel', () => {
         ...state,
         implementationRiskAssessment: {
           computedMinimumTaskClass: 'TRIVIAL',
+          effectiveTaskClass: 'TRIVIAL',
+          declaredTaskClass: null,
+          declarationKind: 'absent' as const,
+          ticketDigest: null,
           touchedSurfaces: [],
           assessedFrom: 'implementation_changed_files',
           assessedFileCount: 0,
@@ -509,21 +516,27 @@ describe('direct metadata write channel', () => {
 
     const decision: DeniedRiskClassificationDecision = {
       allowed: false,
-      code: 'RISK_CLASSIFICATION_MISMATCH',
+      code: 'RISK_GATE_BLOCKED',
       reason: 'blocked',
       decisionId: 'd-1',
-      claimedTaskClass: 'STANDARD',
       minimumTaskClass: 'HIGH-RISK',
+      effectiveTaskClass: 'HIGH-RISK',
+      declaredTaskClass: null,
+      declarationKind: 'absent',
+      ticketDigest: null,
+      escalatedTaskClass: 'STANDARD',
+      provisional: false,
+      unknownScope: false,
       touchedSurfaces: ['src/foo.ts'],
       riskTriggers: ['ceremony_only'],
       changedFiles: ['src/foo.ts'],
     };
-    await persistRiskDecisionBlock(sessDir, decision, 'RISK_CLASSIFICATION_MISMATCH', 'blocked');
+    await persistRiskDecisionBlock(sessDir, decision, 'RISK_GATE_BLOCKED', 'blocked');
 
     const persisted = await readState(sessDir);
     expect(persisted?.riskGate).toMatchObject({
       status: 'blocked',
-      code: 'RISK_CLASSIFICATION_MISMATCH',
+      code: 'RISK_GATE_BLOCKED',
     });
     expect(persisted?.pendingAuditOperations.map((operation) => operation.operationId)).toContain(
       interveningOperationId,

@@ -30,6 +30,7 @@ import { readState } from '../adapters/persistence.js';
 import { sessionDir, verifyArchive } from '../adapters/workspace/index.js';
 import { computeFingerprint } from '../adapters/workspace/fingerprint.js';
 import { hashText } from '../shared/hashing.js';
+import { parseTicketRiskDeclaration } from '../state/risk-declaration.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
 import { deriveVerificationCandidateId } from '../state/candidate-identity.js';
 import { computeImplementationDigest } from '../verification/implementation-subject.js';
@@ -198,6 +199,7 @@ async function subjectState(
   reduced: boolean,
   policySnapshot?: SessionState['policySnapshot'],
   identityBase?: SessionState,
+  claimedTaskClass: 'TRIVIAL' | null = 'TRIVIAL',
 ): Promise<{
   state: SessionState;
   digest: string;
@@ -225,7 +227,7 @@ async function subjectState(
         }
       : { binding: { ...base.binding, worktree: se.worktree } }),
     implementationBaseAuthority: undefined,
-    claimedTaskClass: 'TRIVIAL' as const,
+    ...(claimedTaskClass !== null ? { claimedTaskClass } : {}),
     implementation: {
       implementationId,
       changedFiles: [DOC_PATH],
@@ -235,6 +237,10 @@ async function subjectState(
     },
     implementationRiskAssessment: {
       computedMinimumTaskClass: 'TRIVIAL' as const,
+      effectiveTaskClass: 'TRIVIAL' as const,
+      declaredTaskClass: null,
+      declarationKind: 'absent' as const,
+      ticketDigest: null,
       touchedSurfaces: [DOC_PATH],
       riskTriggers: [],
       assessedFrom: 'implementation_changed_files' as const,
@@ -556,5 +562,56 @@ describe('team opt-in completion (real git)', () => {
     // (src/cli/demo-evidence-verify.test.ts).
     const verification = await verifyArchive(se.fingerprint, se.sId);
     expect(verification.passed).toBe(true);
+  });
+});
+
+describe('effective risk class (real git)', () => {
+  it('HAPPY: team opt-in authorizes reduction without any manual claim', async () => {
+    s = await boot({ policyMode: 'team', allowReducedCeremony: true });
+    const se = s;
+    const hydrated = await readState(se.sDir);
+    expect(hydrated!.claimedTaskClass).toBeUndefined();
+
+    await subjectState(se, false, hydrated!.policySnapshot, hydrated!, null);
+    executorWritesReport();
+    const result = await run_check.execute(RUN, se.tc);
+    expect(String(result)).not.toContain('"error":true');
+
+    const state = await readState(se.sDir);
+    expect(state!.phase).toBe('EVIDENCE_REVIEW');
+    expect(state!.reducedCeremony).toMatchObject({
+      profile: 'reduced',
+      effectiveTaskClass: 'TRIVIAL',
+      declaredTaskClass: null,
+      declarationKind: 'absent',
+    });
+  });
+
+  it('BAD: a ticket-declared STANDARD floor denies reduction for the same docs change', async () => {
+    s = await boot({ policyMode: 'team', allowReducedCeremony: true });
+    const se = s;
+    const hydrated = await readState(se.sDir);
+    await subjectState(se, false, hydrated!.policySnapshot, hydrated!, null);
+
+    const text = 'Risk: STANDARD\n\nDocs only, but the ticket declares a process floor.';
+    const withTicket = await readState(se.sDir);
+    await writeStateWithArtifacts(se.sDir, {
+      ...withTicket!,
+      ticket: {
+        text,
+        digest: hashText(text),
+        source: 'user',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        riskDeclaration: parseTicketRiskDeclaration(text),
+      },
+    });
+
+    executorWritesReport();
+    const result = await run_check.execute(RUN, se.tc);
+    expect(String(result)).not.toContain('"error":true');
+
+    const state = await readState(se.sDir);
+    expect(state!.phase).toBe('IMPL_REVIEW');
+    expect(state!.reducedCeremony).toBeNull();
   });
 });

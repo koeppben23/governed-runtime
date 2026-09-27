@@ -7,6 +7,7 @@ import * as crypto from 'node:crypto';
 import { FlowGuardAuditPlugin, isUsableWorktree } from './plugin.js';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
 import { makeState, FROZEN_IMPLEMENTATION_BASE } from '../fixtures.js';
+import { hashText } from '../shared/hashing.js';
 import type { PolicyMode } from '../config/policy.js';
 import * as barrel from './index.js';
 import * as fs from 'node:fs/promises';
@@ -72,6 +73,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
         digest: 'ticket-digest',
         source: 'user',
         createdAt: now,
+        riskDeclaration: { kind: 'absent' },
       },
       plan: {
         current: planCurrent,
@@ -805,7 +807,7 @@ describe('plugin bootstrap fail-closed', () => {
       }
     });
 
-    it('BAD — TRIVIAL classification on src/state write is blocked and persisted', async () => {
+    it('BAD — an invalid ticket declaration blocks pre-execution without latching riskGate', async () => {
       const ws = await createTestWorkspace();
       try {
         await initGitRepo(ws.tmpDir);
@@ -813,11 +815,18 @@ describe('plugin bootstrap fail-closed', () => {
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
         await fs.mkdir(sessDir, { recursive: true });
+        const ticketText = 'Risk: HIGH';
         await writeState(
           sessDir,
           makeState('IMPLEMENTATION', {
             implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
-            claimedTaskClass: 'TRIVIAL',
+            ticket: {
+              text: ticketText,
+              digest: hashText(ticketText),
+              source: 'user',
+              createdAt: '2026-01-01T00:00:00.000Z',
+              riskDeclaration: { kind: 'invalid', raw: 'HIGH' },
+            },
             policySnapshot: {
               ...makeState('IMPLEMENTATION', {
                 implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
@@ -838,16 +847,17 @@ describe('plugin bootstrap fail-closed', () => {
           args: { filePath: path.join(ws.tmpDir, 'src/state/schema.ts'), content: 'x' },
         };
 
-        await expect(beforeHook(input, output)).rejects.toThrow('RISK_CLASSIFICATION_MISMATCH');
+        await expect(beforeHook(input, output)).rejects.toThrow('TICKET_RISK_DECLARATION_INVALID');
         const state = await readState(sessDir);
-        expect(state?.riskGate?.status).toBe('blocked');
-        expect(state?.riskGate?.lastDecisionId).toMatch(/^RISK-/);
+        // The ticket-derived block is bound to the ticket digest and must not
+        // latch the independent riskGate (re-/task clears it).
+        expect(state?.riskGate?.status).not.toBe('blocked');
       } finally {
         await ws.cleanup();
       }
     });
 
-    it('BAD — missing classification in regulated enforcement is not warning-only', async () => {
+    it('HAPPY — a missing classification is resolved automatically under enforced policy', async () => {
       const ws = await createTestWorkspace();
       try {
         await initGitRepo(ws.tmpDir);
@@ -877,7 +887,9 @@ describe('plugin bootstrap fail-closed', () => {
         const input = { tool: 'write', sessionID, callID: 'c1' };
         const output = { args: { filePath: path.join(ws.tmpDir, 'README.md'), content: 'x' } };
 
-        await expect(beforeHook(input, output)).rejects.toThrow('RISK_CLASSIFICATION_REQUIRED');
+        await expect(beforeHook(input, output)).resolves.toBeUndefined();
+        const state = await readState(sessDir);
+        expect(state?.riskGate?.status).not.toBe('blocked');
       } finally {
         await ws.cleanup();
       }
@@ -935,56 +947,6 @@ describe('plugin bootstrap fail-closed', () => {
               operation.semantic.event === 'risk:classification_checked',
           ),
         ).toBe(true);
-      } finally {
-        await ws.cleanup();
-      }
-    });
-
-    it('BAD — bash after-hook mismatch hard-blocks output and next mutating tool', async () => {
-      const ws = await createTestWorkspace();
-      try {
-        await initGitRepo(ws.tmpDir);
-        const sessionID = crypto.randomUUID();
-        const fp = await computeFingerprint(ws.tmpDir);
-        const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
-        await fs.mkdir(sessDir, { recursive: true });
-        await writeState(
-          sessDir,
-          makeState('IMPLEMENTATION', {
-            implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
-            claimedTaskClass: 'TRIVIAL',
-            policySnapshot: {
-              ...makeState('IMPLEMENTATION', {
-                implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
-              }).policySnapshot,
-              mode: 'regulated',
-              requestedMode: 'regulated',
-              enforceRiskClassification: true,
-            },
-          }),
-        );
-
-        const hooks = await FlowGuardAuditPlugin(
-          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
-        );
-        const afterHook = hooks['tool.execute.after']!;
-        await fs.mkdir(path.join(ws.tmpDir, 'src/state'), { recursive: true });
-        await fs.writeFile(path.join(ws.tmpDir, 'src/state/risk-new.ts'), 'export const x = 1;');
-
-        const output = { title: 'bash', output: 'bash ok', metadata: {} };
-        await afterHook({ tool: 'bash', sessionID, callID: 'c1', args: {} }, output);
-        expect(output.output).toContain('RISK_CLASSIFICATION_MISMATCH');
-
-        const state = await readState(sessDir);
-        expect(state?.riskGate?.status).toBe('blocked');
-
-        const beforeHook = hooks['tool.execute.before']!;
-        await expect(
-          beforeHook(
-            { tool: 'write', sessionID, callID: 'c2' },
-            { args: { filePath: path.join(ws.tmpDir, 'README.md'), content: 'x' } },
-          ),
-        ).rejects.toThrow('RISK_GATE_BLOCKED');
       } finally {
         await ws.cleanup();
       }

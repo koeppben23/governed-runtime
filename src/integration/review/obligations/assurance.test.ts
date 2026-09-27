@@ -382,7 +382,7 @@ describe('integration/review-assurance', () => {
           reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           changedFiles: ['docs/x.md'],
           reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
-          claimedTaskClass: 'HIGH-RISK',
+          declaredTaskClass: 'HIGH-RISK',
           policySnapshot,
         });
         expect(result.requiredChallengeCount).toBe(2);
@@ -399,7 +399,7 @@ describe('integration/review-assurance', () => {
           reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           changedFiles: ['src/state/schema.ts'],
           reviewSubjectScope: { kind: 'implementation', implementationDigest: 'test' },
-          claimedTaskClass: 'TRIVIAL',
+          escalatedTaskClass: 'TRIVIAL',
           policySnapshot,
         });
         expect(result.requiredChallengeCount).toBe(2);
@@ -417,7 +417,7 @@ describe('integration/review-assurance', () => {
           reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
           changedFiles: ['docs/x.md'],
           reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
-          claimedTaskClass: 'STANDARD',
+          escalatedTaskClass: 'STANDARD',
           policySnapshot,
         });
         expect(result.requiredChallengeCount).toBe(1);

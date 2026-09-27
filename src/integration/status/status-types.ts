@@ -10,6 +10,7 @@
 import type { ReviewFindings } from '../../state/evidence.js';
 import type { DecisionIdentity } from '../../state/evidence-identity.js';
 import type { ActorAssurance } from '../../shared/actor-assurance.js';
+import type { TaskClass } from '../../state/task-class.js';
 import type { ExecutionDisposition, WorkflowDirective } from '../../machine/workflow-directive.js';
 import type { ReviewLoopProgress } from '../review/obligations/review-loop-progress.js';
 import type { StatusConclusionProjection } from './status-conclusion.js';
@@ -92,6 +93,17 @@ export interface StatusProjection {
       | 'not_applicable';
     reason: string | null;
   };
+  /**
+   * Ticket risk declaration projection: the deterministic parse of the
+   * canonical ticket content, bound to the ticket digest. Conflict/invalid
+   * declarations deny reduction (invalid additionally blocks risk-relevant
+   * mutations at the pre-tool gate).
+   */
+  ticketRisk: {
+    declarationKind: 'absent' | 'declared' | 'conflict' | 'invalid';
+    declaredTaskClass: TaskClass | null;
+    ticketDigest: string | null;
+  } | null;
   proofGraph: PersistedProofGraphSummary;
   /** Mandatory compact ProofGraph presentation for every resolved session. */
   proofSummary: CompactProofPresentation;

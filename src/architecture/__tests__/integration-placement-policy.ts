@@ -312,6 +312,7 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/installed-commands.ts', owner: 'root-host-runtime' },
   { file: 'integration/opencode-host-adapter.ts', owner: 'root-host-runtime' },
   { file: 'integration/phase-tool-gate.ts', owner: 'root-authority' },
+  { file: 'integration/risk-path-classifier.ts', owner: 'root-authority' },
   { file: 'integration/plugin-afterhooks.ts', owner: 'root-composition' },
   { file: 'integration/plugin-audit-context.ts', owner: 'root-composition' },
   { file: 'integration/plugin-audit-lifecycle-reason.ts', owner: 'root-composition' },

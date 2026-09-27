@@ -56,6 +56,10 @@ function reducedState(): SessionState {
     implementation: DOC_IMPL,
     implementationRiskAssessment: {
       computedMinimumTaskClass: 'TRIVIAL',
+      effectiveTaskClass: 'TRIVIAL',
+      declaredTaskClass: null,
+      declarationKind: 'absent' as const,
+      ticketDigest: null,
       touchedSurfaces: [],
       assessedFrom: 'implementation_changed_files',
       assessedFileCount: 1,
@@ -68,7 +72,10 @@ function reducedState(): SessionState {
     reducedCeremony: {
       profile: 'reduced',
       reason: 'POST_IMPL_VERIFIED_TRIVIAL',
-      claimedTaskClass: 'TRIVIAL',
+      effectiveTaskClass: 'TRIVIAL',
+      declaredTaskClass: null,
+      declarationKind: 'absent' as const,
+      ticketDigest: null,
       computedMinimumTaskClass: 'TRIVIAL',
       touchedSurfaces: [],
       implementationId: DOC_IMPL.implementationId,

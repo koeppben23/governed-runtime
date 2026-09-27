@@ -16,5 +16,5 @@ Workflow complete.
   - `/finish` — Show completion readiness without changing the workflow.
 
 **Session artifacts:**
-  ticket: available "Fix the auth bug in login.ts" (digest: digest-o...)
+  ticket: available "Fix the auth bug in login.ts" (digest: 36f24774...)
   current plan v1: available "## Plan" (digest: ccdbbfa3...)

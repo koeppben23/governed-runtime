@@ -19,13 +19,67 @@ import type {
   ReducedCeremonyVerificationBasis,
   RiskTrigger,
   SessionState,
-  TaskClass,
 } from '../state/schema.js';
 import { randomUUID } from 'node:crypto';
 import { hasOutstandingReviewObligation } from '../state/review-dispatch.js';
+import {
+  resolveEffectiveTaskClass,
+  ticketRiskDeclarationFloor,
+  verifyTicketRiskDeclarationIntegrity,
+  type TicketRiskDeclaration,
+} from '../state/risk-declaration.js';
+import { maxTaskClass, type TaskClass } from '../state/task-class.js';
+import {
+  assessMinimumTaskClass,
+  normalizePathForRisk,
+  reducedCeremonyEligible,
+} from './risk-path-classifier.js';
 import { evaluateImplValidationEvidence } from '../machine/impl-validation-evidence.js';
 import type { GateDecision } from '../shared/gate-decision.js';
 import { FLOWGUARD_TOOL_PREFIX, MCP_FLOWGUARD_TOOL_PREFIX } from './tool-names.js';
+import { buildEnforcementError } from './blocked-result.js';
+import { appendReviewAuditEvent } from './review/evidence/audit-events.js';
+
+function riskClassificationFacts(input: {
+  readonly state: SessionState;
+  readonly decisionId: string;
+  readonly computedMinimumTaskClass: TaskClass;
+  readonly provisional: boolean;
+  readonly unknownScope: boolean;
+  readonly touchedSurfaces: readonly string[];
+  readonly riskTriggers: readonly RiskTrigger[];
+  readonly changedFiles: readonly string[];
+}): RiskClassificationFacts {
+  const ticket = input.state.ticket;
+  const declaration: TicketRiskDeclaration = ticket?.riskDeclaration ?? { kind: 'absent' };
+  const escalatedTaskClass = input.state.claimedTaskClass;
+  const effectiveTaskClass = resolveEffectiveTaskClass({
+    computed: input.computedMinimumTaskClass,
+    declaration,
+    escalated: escalatedTaskClass,
+  });
+  return {
+    decisionId: input.decisionId,
+    minimumTaskClass: input.computedMinimumTaskClass,
+    effectiveTaskClass,
+    declaredTaskClass: ticketRiskDeclarationFloor(declaration),
+    declarationKind: declaration.kind,
+    ticketDigest: ticket?.digest ?? null,
+    ...(escalatedTaskClass !== undefined ? { escalatedTaskClass } : {}),
+    provisional: input.provisional,
+    unknownScope: input.unknownScope,
+    touchedSurfaces: input.touchedSurfaces,
+    riskTriggers: input.riskTriggers,
+    changedFiles: input.changedFiles,
+  };
+}
+
+export { maxTaskClass } from '../state/task-class.js';
+export {
+  assessMinimumTaskClass,
+  isNonDomainConfigPath,
+  reducedCeremonyEligible,
+} from './risk-path-classifier.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -87,16 +141,25 @@ export type PhaseGateResult = GateDecision<HostPhaseGateCode>;
 /** Denial codes emitted by risk classification. */
 export type RiskClassificationCode =
   | 'RISK_GATE_BLOCKED'
-  | 'RISK_CLASSIFICATION_REQUIRED'
-  | 'RISK_DOWNGRADE_OVERRIDE_DENIED'
-  | 'RISK_CLASSIFICATION_MISMATCH'
+  | 'TICKET_RISK_DECLARATION_INVALID'
+  | 'TICKET_RISK_DECLARATION_INCONSISTENT'
   | 'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE';
 
 /** Risk classification facts carried by both allow and deny outcomes. */
 export interface RiskClassificationFacts {
   readonly decisionId: string;
-  readonly claimedTaskClass?: TaskClass;
+  /** Runtime-computed minimum over the known file set. */
   readonly minimumTaskClass: TaskClass;
+  /** Conservative effective class: max(computed, ticket floor, escalation). */
+  readonly effectiveTaskClass: TaskClass;
+  readonly declaredTaskClass: TaskClass | null;
+  readonly declarationKind: TicketRiskDeclaration['kind'];
+  readonly ticketDigest: string | null;
+  readonly escalatedTaskClass?: TaskClass;
+  /** Provisional (pre-implementation) vs final (actual changed files). */
+  readonly provisional: boolean;
+  /** True when the known scope is incomplete (unknown target paths). */
+  readonly unknownScope: boolean;
   readonly touchedSurfaces: readonly string[];
   readonly riskTriggers: readonly RiskTrigger[];
   readonly changedFiles: readonly string[];
@@ -115,6 +178,14 @@ export interface RiskClassificationInput {
   readonly state: SessionState;
   readonly changedFiles: readonly string[];
   readonly targetPaths?: readonly string[];
+  /**
+   * `provisional` runs before implementation: plan scope and observed targets
+   * only, with unknown scope never treated as TRIVIAL. `final` runs over the
+   * complete actual file set and is the only class that may justify reduction.
+   */
+  readonly mode?: 'provisional' | 'final';
+  /** Set by the caller when target paths cannot be resolved (e.g. bash). */
+  readonly unknownScope?: boolean;
   readonly now: string;
 }
 
@@ -122,8 +193,14 @@ export type CeremonyProfile = 'full' | 'reduced';
 
 interface CeremonyProfileFacts {
   readonly reason: string;
-  readonly claimedTaskClass?: TaskClass;
+  /** Runtime-computed minimum over the complete actual file set. */
   readonly computedMinimumTaskClass: TaskClass;
+  /** Conservative effective class: max(computed, ticket floor, escalation). */
+  readonly effectiveTaskClass: TaskClass;
+  readonly declaredTaskClass: TaskClass | null;
+  readonly declarationKind: TicketRiskDeclaration['kind'];
+  readonly ticketDigest: string | null;
+  readonly escalatedTaskClass?: TaskClass;
   readonly touchedSurfaces: readonly string[];
   readonly riskTriggers: readonly RiskTrigger[];
 }
@@ -159,264 +236,103 @@ export interface CeremonyProfileInput {
   readonly changedFiles: readonly string[];
 }
 
-const TASK_CLASS_ORDER: Readonly<Record<TaskClass, number>> = {
-  TRIVIAL: 0,
-  STANDARD: 1,
-  'HIGH-RISK': 2,
-};
+/**
+ * Ticket-declaration gate projection: derived purely from the persisted ticket
+ * (never an independent authority) and bound to the ticket digest. An invalid
+ * declaration or a declaration/text inconsistency blocks risk-relevant
+ * mutations before execution, independent of `enforceRiskClassification`.
+ * Re-capturing the ticket via `/task` replaces the ticket and thereby clears
+ * exactly a ticket-derived block; an independent `riskGate` block is never
+ * touched.
+ */
+export type TicketDeclarationGate =
+  | { readonly status: 'clear' }
+  | {
+      readonly status: 'blocked';
+      readonly code: 'TICKET_RISK_DECLARATION_INVALID' | 'TICKET_RISK_DECLARATION_INCONSISTENT';
+      readonly reason: string;
+    };
 
-const HIGH_RISK_PREFIXES = [
-  'src/state/',
-  'src/machine/',
-  'src/audit/',
-  'src/archive/',
-  'src/config/',
-  'src/evidence/',
-  'src/identity/',
-  'src/security/',
-  'src/adapters/persistence',
-  'src/adapters/persistence-lock',
-  'src/adapters/persistence-audit',
-  'src/adapters/persistence-config',
-  'src/adapters/persistence-discovery',
-  'src/cli/uninstall',
-  'src/integration/review/',
-  'src/integration/plugin',
-  'src/integration/phase-tool-gate',
-  'src/rails/review',
-  'src/templates/commands/',
-  'scripts/release',
-  'scripts/install',
-  'scripts/uninstall',
-  '.github/',
-  '.opencode/',
-] as const;
-
-const HIGH_RISK_EXACT = new Set([
-  'AGENTS.md',
-  'CLAUDE.md',
-  'GEMINI.md',
-  'docs/admin-model.md',
-  'docs/commands.md',
-  'docs/configuration.md',
-  'docs/data-classification.md',
-  'docs/phases.md',
-  'docs/policies.md',
-  'docs/profiles.md',
-  'docs/retention-recovery.md',
-  'docs/release-policy.md',
-  'docs/security-hardening.md',
-  'docs/trust-boundaries.md',
-  'docs/upgrade-rollback.md',
-  'package.json',
-  'package-lock.json',
-  'npm-shrinkwrap.json',
-  'pnpm-lock.yaml',
-  'yarn.lock',
-  'bun.lockb',
-  'src/templates/mandates.ts',
-  'src/rendering/mandates-renderer.ts',
-  'src/templates/mandates-reviewer-criteria.ts',
-]);
-
-const HIGH_RISK_RE = [
-  /^docs\/agent-guidance\/.*(mandate|guidance|high-risk|review)/,
-  /^docs\/.*(mandates?|governance|mapping)\.md$/,
-  /^src\/cli\/(install|uninstall|doctor|release)/,
-  /^src\/config\/policy/,
-  /^src\/integration\/(phase-tool-gate|plugin|review|.*policy)/,
-  /^src\/migration(s)?\//,
-  /^src\/rails\/(review|review-decision)/,
-  /^src\/templates\/commands\//,
-  /(^|\/)release(\/|[-_].*)/,
-  /(^|\/)installer?(\/|[-_].*)/,
-  /(^|\/)migration(s)?(\/|[-_].*)/,
-  // Instruction-surface parity: nested agent instructions and their directories
-  // steer agents/permissions and must never classify as TRIVIAL.
-  /(^|\/)(AGENTS|CLAUDE|GEMINI)\.md$/,
-  /(^|\/)copilot-instructions\.md$/,
-  /(^|\/)\.(claude|gemini|opencode)(\/|$)/,
-] as const;
-
-const GOVERNANCE_DOC_RE =
-  /(^|\/)(architecture|security|compliance|release|governance|policy)(\/|[-_].*\.md$|\.md$)/;
-
-function normalizePathForRisk(filePath: string): string {
-  return filePath.replace(/\\/g, '/').replace(/^\.\//, '');
+/** Ticket-declared floor for obligation/challenge classification. */
+export function declaredTaskClassFor(state: SessionState): TaskClass | null {
+  return ticketRiskDeclarationFloor(state.ticket?.riskDeclaration ?? { kind: 'absent' });
 }
 
 /**
- * Repo-root tool/editor configuration files that are NOT a governed domain
- * surface and must not, on their own, raise the risk floor or count as
- * implementation domain files.
- *
- * Deliberately narrow and explicit (not a blanket `*.json`): only well-known
- * tooling config at the repository ROOT. High-risk config — `package.json`,
- * lockfiles, anything under `.opencode/` — is NOT listed here and is classified
- * by the HIGH_RISK_* sets BEFORE this predicate is consulted, so it stays
- * HIGH-RISK. A project-level config that carries real behavior (e.g. an app
- * `config.json` nested in source) is also excluded because this matches only
- * exact root basenames.
- */
-const NON_DOMAIN_CONFIG_BASENAMES = new Set([
-  'opencode.json',
-  'opencode.jsonc',
-  'tsconfig.json',
-  'tsconfig.base.json',
-  'vitest.config.ts',
-  'vitest.config.js',
-  'vitest.config.mts',
-  'eslint.config.js',
-  'eslint.config.mjs',
-  '.eslintrc',
-  '.eslintrc.js',
-  '.eslintrc.cjs',
-  '.eslintrc.json',
-  '.prettierrc',
-  '.prettierrc.json',
-  '.prettierrc.js',
-  '.editorconfig',
-  '.gitignore',
-  '.gitattributes',
-  '.npmrc',
-  '.nvmrc',
-]);
 
 /**
- * True for a repo-root tool/editor config file that is not a governed domain
- * surface. Matches only ROOT-level paths (no `/` after normalization) against
- * an explicit allowlist. Never matches high-risk config (package.json,
- * lockfiles, `.opencode/`), which the HIGH_RISK_* sets own.
+ * Pre-execution enforcement of the ticket-declaration gate: an invalid or
+ * inconsistent declaration blocks risk-relevant mutations independently of
+ * `enforceRiskClassification`. The block is audited WITHOUT latching the
+ * independent `riskGate`, so re-capturing the ticket via `/task` clears it.
  */
-export function isNonDomainConfigPath(filePath: string): boolean {
-  const p = normalizePathForRisk(filePath);
-  if (p.includes('/')) return false; // root-level only
-  return NON_DOMAIN_CONFIG_BASENAMES.has(p);
-}
-
-/** Agent/user instruction basenames that never qualify for reduced ceremony. */
-const INSTRUCTION_BASENAMES = new Set([
-  'AGENTS.md',
-  'CLAUDE.md',
-  'GEMINI.md',
-  'copilot-instructions.md',
-]);
-
-/** Instruction or control-plane directories that never qualify, at any depth. */
-const INSTRUCTION_DIR_NAMES = new Set(['.claude', '.gemini', '.opencode']);
-
-/**
- * Ceremony-specific eligibility boundary. Separate from the general task-class
- * taxonomy: a file may be TRIVIAL in the general model and still be excluded
- * from ceremony reduction because it steers agents, permissions or the
- * control plane. Normalized match on every path.
- */
-export function reducedCeremonyEligible(changedFiles: readonly string[]): boolean {
-  if (changedFiles.length === 0) return false;
-  return changedFiles.every((filePath) => {
-    const normalized = normalizePathForRisk(filePath);
-    const segments = normalized.split('/');
-    const basename = segments[segments.length - 1] ?? '';
-    if (INSTRUCTION_BASENAMES.has(basename)) return false;
-    if (segments.some((segment) => INSTRUCTION_DIR_NAMES.has(segment))) return false;
-    if (isNonDomainConfigPath(normalized)) return false;
-    return true;
+export async function enforceTicketDeclarationGate(
+  sessDir: string,
+  state: SessionState,
+  toolName: string,
+): Promise<void> {
+  const gate = ticketDeclarationGate(state);
+  if (gate.status !== 'blocked') return;
+  try {
+    await appendReviewAuditEvent(
+      sessDir,
+      state.binding.hostSessionId,
+      state.phase,
+      'risk:classification_checked',
+      ticketBlockAuditDetail(state, gate),
+    );
+  } catch (err) {
+    throw buildEnforcementError(
+      'AUDIT_PERSISTENCE_FAILED',
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+  throw buildEnforcementError(gate.code, gate.reason, {
+    sessionId: state.binding.hostSessionId,
+    tool: toolName,
+    declarationKind: state.ticket?.riskDeclaration.kind ?? 'absent',
+    ticketDigest: state.ticket?.digest ?? 'none',
   });
 }
 
-export function maxTaskClass(a: TaskClass, b: TaskClass): TaskClass {
-  return TASK_CLASS_ORDER[a] >= TASK_CLASS_ORDER[b] ? a : b;
-}
-
-const RISK_TRIGGER_RULES: ReadonlyArray<{
-  readonly trigger: Exclude<RiskTrigger, 'ceremony_only'>;
-  readonly pattern: RegExp;
-}> = [
-  { trigger: 'state_integrity', pattern: /^src\/(state|machine)\// },
-  { trigger: 'audit_authority', pattern: /^src\/(audit\/|adapters\/persistence-audit)/ },
-  { trigger: 'identity_boundary', pattern: /^src\/(identity|security)\// },
-  { trigger: 'approval_authority', pattern: /^src\/(integration\/review\/|rails\/review)/ },
-  {
-    trigger: 'policy_authority',
-    pattern: /^src\/config\/(.*(policy|schema|resolver|preset|default).*|flowguard-config\.ts)$/,
-  },
-  { trigger: 'migration', pattern: /(^|\/)migration(s)?(\/|[-_].*)/ },
-  {
-    trigger: 'distribution_integrity',
-    pattern:
-      /^(package(-lock)?\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb|scripts\/(release|install|uninstall)|src\/cli\/(install|uninstall|release))|(^|\/)(release|installer?)(\/|[-_].*)/,
-  },
-  {
-    trigger: 'command_contract',
-    pattern:
-      /^src\/(templates\/commands\/|templates\/mandates\.ts|rendering\/mandates-renderer\.ts|templates\/mandates-reviewer-criteria\.ts)/,
-  },
-];
-
-function riskTriggersForPath(p: string): readonly Exclude<RiskTrigger, 'ceremony_only'>[] {
-  return RISK_TRIGGER_RULES.filter((rule) => rule.pattern.test(p))
-    .map((rule) => rule.trigger)
-    .sort();
-}
-
-function classifyPath(filePath: string): {
-  minimumTaskClass: TaskClass;
-  surface: string;
-  riskTriggers: readonly Exclude<RiskTrigger, 'ceremony_only'>[];
-} {
-  const p = normalizePathForRisk(filePath);
-  if (
-    HIGH_RISK_EXACT.has(p) ||
-    HIGH_RISK_PREFIXES.some((prefix) => p.startsWith(prefix)) ||
-    HIGH_RISK_RE.some((pattern) => pattern.test(p))
-  ) {
-    return { minimumTaskClass: 'HIGH-RISK', surface: p, riskTriggers: riskTriggersForPath(p) };
-  }
-  // Root-level tool/editor config (opencode.json, tsconfig.json, ...) is not a
-  // governed domain surface and must not impose a STANDARD floor. High-risk
-  // config (package.json, lockfiles, .opencode/) already returned above.
-  if (isNonDomainConfigPath(p)) {
-    return { minimumTaskClass: 'TRIVIAL', surface: p, riskTriggers: [] };
-  }
-  if (p === 'CHANGELOG.md' || GOVERNANCE_DOC_RE.test(p)) {
-    return { minimumTaskClass: 'STANDARD', surface: p, riskTriggers: [] };
-  }
-  if (p.endsWith('.test.ts') || p.endsWith('.spec.ts')) {
-    return { minimumTaskClass: 'STANDARD', surface: p, riskTriggers: [] };
-  }
-  if (p.endsWith('.md')) {
-    return { minimumTaskClass: 'TRIVIAL', surface: p, riskTriggers: [] };
-  }
-  return { minimumTaskClass: 'STANDARD', surface: p, riskTriggers: [] };
-}
-
-export function assessMinimumTaskClass(paths: readonly string[]): {
-  readonly minimumTaskClass: TaskClass;
-  readonly touchedSurfaces: readonly string[];
-  readonly riskTriggers: readonly RiskTrigger[];
-} {
-  if (paths.length === 0) {
-    return { minimumTaskClass: 'TRIVIAL', touchedSurfaces: [], riskTriggers: [] };
-  }
-  let minimumTaskClass: TaskClass = 'TRIVIAL';
-  const touchedSurfaces = new Set<string>();
-  const riskTriggers = new Set<Exclude<RiskTrigger, 'ceremony_only'>>();
-  for (const filePath of paths) {
-    const classified = classifyPath(filePath);
-    minimumTaskClass = maxTaskClass(minimumTaskClass, classified.minimumTaskClass);
-    touchedSurfaces.add(classified.surface);
-    classified.riskTriggers.forEach((trigger) => riskTriggers.add(trigger));
-  }
+function ticketBlockAuditDetail(
+  state: SessionState,
+  gate: Extract<TicketDeclarationGate, { status: 'blocked' }>,
+): Record<string, unknown> {
+  const digest = state.ticket?.digest;
   return {
-    minimumTaskClass,
-    touchedSurfaces: [...touchedSurfaces].sort(),
-    // Ceremony-only marks a HIGH-RISK result whose matching paths have no
-    // specific ProofGraph authority. It never accompanies a specific trigger.
-    riskTriggers:
-      minimumTaskClass === 'HIGH-RISK' && riskTriggers.size === 0
-        ? ['ceremony_only']
-        : [...riskTriggers].sort(),
+    decisionId: `TICKET-${Date.now()}-${digest?.slice(0, 12) ?? 'no-ticket'}`,
+    decision: 'blocked',
+    reasonCode: gate.code,
+    reason: gate.reason,
+    declarationKind: state.ticket?.riskDeclaration.kind ?? 'absent',
+    ticketDigest: digest ?? null,
+    changedFilesSummary: [],
   };
+}
+
+export function ticketDeclarationGate(state: SessionState): TicketDeclarationGate {
+  const ticket = state.ticket;
+  if (ticket === null) return { status: 'clear' };
+  if (!verifyTicketRiskDeclarationIntegrity(ticket)) {
+    return {
+      status: 'blocked',
+      code: 'TICKET_RISK_DECLARATION_INCONSISTENT',
+      reason:
+        'the stored ticket risk declaration does not match the parser result over the ticket text ' +
+        '(or the ticket digest does not hash that text); re-run /task to re-capture the ticket',
+    };
+  }
+  if (ticket.riskDeclaration.kind === 'invalid') {
+    return {
+      status: 'blocked',
+      code: 'TICKET_RISK_DECLARATION_INVALID',
+      reason:
+        `the ticket declares an invalid risk class ('${ticket.riskDeclaration.raw}'); ` +
+        'risk-relevant mutations are blocked until the ticket is corrected',
+    };
+  }
+  return { status: 'clear' };
 }
 
 export function isRiskClassificationAllowed(
@@ -429,63 +345,47 @@ export function isRiskClassificationAllowed(
   );
   const uniquePaths = [...new Set(combinedPaths)].sort();
   const assessment = assessMinimumTaskClass(uniquePaths);
+  const provisional = (input.mode ?? 'final') === 'provisional';
+  const unknownScope = input.unknownScope === true;
+  // Missing scope information is never interpreted as low risk: the
+  // provisional class is floored at STANDARD when targets are unknown.
+  const computedMinimumTaskClass =
+    provisional && unknownScope
+      ? maxTaskClass(assessment.minimumTaskClass, 'STANDARD')
+      : assessment.minimumTaskClass;
+
+  const facts = riskClassificationFacts({
+    state,
+    decisionId,
+    computedMinimumTaskClass,
+    provisional,
+    unknownScope,
+    touchedSurfaces: assessment.touchedSurfaces,
+    riskTriggers: assessment.riskTriggers,
+    changedFiles: uniquePaths,
+  });
 
   if (state.riskGate?.status === 'blocked') {
     return {
       allowed: false,
       code: 'RISK_GATE_BLOCKED',
       reason: state.riskGate.message,
+      ...facts,
       decisionId: state.riskGate.lastDecisionId,
-      ...(state.claimedTaskClass !== undefined ? { claimedTaskClass: state.claimedTaskClass } : {}),
-      minimumTaskClass: assessment.minimumTaskClass,
-      touchedSurfaces: assessment.touchedSurfaces,
-      riskTriggers: assessment.riskTriggers,
-      changedFiles: uniquePaths,
     };
   }
 
-  const claimedTaskClass = state.claimedTaskClass;
-  if (!claimedTaskClass) {
+  const declarationGate = ticketDeclarationGate(state);
+  if (declarationGate.status === 'blocked') {
     return {
       allowed: false,
-      code: 'RISK_CLASSIFICATION_REQUIRED',
-      reason: 'No task-class provided. Enforced policies require an explicit claimedTaskClass.',
-      decisionId,
-      minimumTaskClass: assessment.minimumTaskClass,
-      touchedSurfaces: assessment.touchedSurfaces,
-      riskTriggers: assessment.riskTriggers,
-      changedFiles: uniquePaths,
+      code: declarationGate.code,
+      reason: declarationGate.reason,
+      ...facts,
     };
   }
 
-  if (TASK_CLASS_ORDER[claimedTaskClass] < TASK_CLASS_ORDER[assessment.minimumTaskClass]) {
-    const downgradeOverrideDenied = state.policySnapshot.allowRiskDowngradeOverride === true;
-    return {
-      allowed: false,
-      code: downgradeOverrideDenied
-        ? 'RISK_DOWNGRADE_OVERRIDE_DENIED'
-        : 'RISK_CLASSIFICATION_MISMATCH',
-      reason:
-        `Task classified as ${claimedTaskClass} but touches ${assessment.touchedSurfaces.join(', ') || 'runtime-sensitive surface'}. ` +
-        `Reclassify as ${assessment.minimumTaskClass}. Downgrade overrides are not accepted in this slice.`,
-      decisionId,
-      claimedTaskClass,
-      minimumTaskClass: assessment.minimumTaskClass,
-      touchedSurfaces: assessment.touchedSurfaces,
-      riskTriggers: assessment.riskTriggers,
-      changedFiles: uniquePaths,
-    };
-  }
-
-  return {
-    allowed: true,
-    decisionId,
-    claimedTaskClass,
-    minimumTaskClass: assessment.minimumTaskClass,
-    touchedSurfaces: assessment.touchedSurfaces,
-    riskTriggers: assessment.riskTriggers,
-    changedFiles: uniquePaths,
-  };
+  return { allowed: true, ...facts };
 }
 
 /**
@@ -496,15 +396,31 @@ function staticCeremonyIneligibilityReason(input: CeremonyProfileInput): string 
   const policy = input.state.policySnapshot;
   if (policy.allowReducedCeremony !== true) return 'POLICY_REDUCED_CEREMONY_DISABLED';
   if (policy.requireHumanGates !== true) return 'POLICY_HUMAN_GATE_REQUIRED_FOR_REDUCED_CEREMONY';
-  if (input.state.claimedTaskClass == null) return 'TASK_CLASS_CLAIM_MISSING';
-  if (input.state.claimedTaskClass !== 'TRIVIAL') return 'CLAIMED_CLASS_NOT_TRIVIAL';
+  const declarationGate = ticketDeclarationGate(input.state);
+  if (declarationGate.status === 'blocked') return declarationGate.code;
+  if (input.state.ticket?.riskDeclaration.kind === 'conflict') {
+    return 'TICKET_RISK_DECLARATION_CONFLICT';
+  }
   if (input.state.riskGate?.status === 'blocked') return 'RISK_GATE_BLOCKED';
   if (input.changedFiles.length === 0) return 'RISK_EVIDENCE_MISSING';
-  if (assessMinimumTaskClass(input.changedFiles).minimumTaskClass !== 'TRIVIAL') {
-    return 'COMPUTED_MINIMUM_NOT_TRIVIAL';
-  }
+  // Only the FINAL effective class may justify reduction: max over the complete
+  // actual file set, the ticket-declared floor and an optional escalation.
+  const effective = ceremonyEffectiveTaskClass(input.state, input.changedFiles);
+  if (effective !== 'TRIVIAL') return 'RESOLVED_RISK_NOT_TRIVIAL';
   if (!reducedCeremonyEligible(input.changedFiles)) return 'REDUCED_CEREMONY_SURFACE_EXCLUDED';
   return null;
+}
+
+function ceremonyEffectiveTaskClass(
+  state: SessionState,
+  changedFiles: readonly string[],
+): TaskClass {
+  const declaration: TicketRiskDeclaration = state.ticket?.riskDeclaration ?? { kind: 'absent' };
+  return resolveEffectiveTaskClass({
+    computed: assessMinimumTaskClass(changedFiles).minimumTaskClass,
+    declaration,
+    escalated: state.claimedTaskClass,
+  });
 }
 
 /**
@@ -532,10 +448,23 @@ export function projectCeremonyEligibility(
  */
 export function resolveCeremonyProfile(input: CeremonyProfileInput): CeremonyProfileDecision {
   const assessment = assessMinimumTaskClass(input.changedFiles);
-  const claimedTaskClass = input.state.claimedTaskClass;
+  const declaration: TicketRiskDeclaration = input.state.ticket?.riskDeclaration ?? {
+    kind: 'absent',
+  };
+  const escalatedTaskClass = input.state.claimedTaskClass;
+  const declaredTaskClass = ticketRiskDeclarationFloor(declaration);
+  const effectiveTaskClass = resolveEffectiveTaskClass({
+    computed: assessment.minimumTaskClass,
+    declaration,
+    escalated: escalatedTaskClass,
+  });
   const base = {
-    ...(claimedTaskClass !== undefined ? { claimedTaskClass } : {}),
     computedMinimumTaskClass: assessment.minimumTaskClass,
+    effectiveTaskClass,
+    declaredTaskClass,
+    declarationKind: declaration.kind,
+    ticketDigest: input.state.ticket?.digest ?? null,
+    ...(escalatedTaskClass !== undefined ? { escalatedTaskClass } : {}),
     touchedSurfaces: assessment.touchedSurfaces,
     riskTriggers: assessment.riskTriggers,
   };

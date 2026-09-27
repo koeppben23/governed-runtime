@@ -17,6 +17,7 @@
 
 import type { SessionState } from '../state/schema.js';
 import type { TicketEvidence, ExternalReference, InputOrigin } from '../state/evidence.js';
+import { parseTicketRiskDeclaration } from '../state/risk-declaration.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import type { RailResult, RailContext, TransitionRecord } from './types.js';
 import { autoAdvance, createPolicyEvalFn, buildFlowSelectionTransition } from './types.js';
@@ -62,6 +63,7 @@ export function executeTicket(
     createdAt: ctx.now(),
     ...(input.inputOrigin !== undefined && { inputOrigin: input.inputOrigin }),
     ...(references !== undefined && { references }),
+    riskDeclaration: parseTicketRiskDeclaration(input.text),
   };
 
   // 4. Mutate state — clear all downstream evidence (fresh start)

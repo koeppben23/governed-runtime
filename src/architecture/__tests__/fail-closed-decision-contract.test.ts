@@ -70,10 +70,16 @@ const _pollutedAllowMustFail: GateDecision<TestCode> = pollutedAllowValue;
 
 const _deniedRiskDecision: DeniedRiskClassificationDecision = {
   allowed: false,
-  code: 'RISK_CLASSIFICATION_MISMATCH',
+  code: 'RISK_GATE_BLOCKED',
   reason: 'blocked',
   decisionId: 'risk-1',
   minimumTaskClass: 'HIGH-RISK',
+  effectiveTaskClass: 'HIGH-RISK',
+  declaredTaskClass: null,
+  declarationKind: 'absent',
+  ticketDigest: null,
+  provisional: false,
+  unknownScope: false,
   touchedSurfaces: [],
   riskTriggers: [],
   changedFiles: [],

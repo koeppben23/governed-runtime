@@ -533,6 +533,7 @@ describe('buildStatusProjection — EDGE evidence', () => {
         source: 'user',
         digest: 'abc123def456',
         createdAt: new Date().toISOString(),
+        riskDeclaration: { kind: 'absent' },
       },
     };
     const projection = buildStatusProjection(state, policy);
@@ -548,6 +549,7 @@ describe('buildStatusProjection — EDGE evidence', () => {
         source: 'user',
         digest: 'abc123def456',
         createdAt: new Date().toISOString(),
+        riskDeclaration: { kind: 'absent' },
       },
       plan: {
         current: makePlanRevision({ body: '## Plan\n...' }),
@@ -596,6 +598,7 @@ describe('buildEvidenceDetailProjection — HAPPY', () => {
         source: 'user',
         digest: 'abc123def456',
         createdAt: new Date().toISOString(),
+        riskDeclaration: { kind: 'absent' },
       },
     };
     const detail = buildEvidenceDetailProjection(state);
@@ -649,6 +652,7 @@ describe('buildEvidenceDetailProjection — HAPPY', () => {
         source: 'user',
         digest: 'abc123def456',
         createdAt: new Date().toISOString(),
+        riskDeclaration: { kind: 'absent' },
       },
     };
     const detail = buildEvidenceDetailProjection(state);
@@ -681,6 +685,7 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
         source: 'user',
         digest: 'ticket_digest',
         createdAt: new Date().toISOString(),
+        riskDeclaration: { kind: 'absent' },
       },
       plan: {
         current: makePlanRevision({ body: '## Plan' }),
@@ -771,6 +776,7 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
         source: 'user',
         digest: 'ticket_digest',
         createdAt: new Date().toISOString(),
+        riskDeclaration: { kind: 'absent' },
       },
       plan: {
         current: makePlanRevision({ body: '## Plan' }),
@@ -901,6 +907,10 @@ describe('buildStatusProjection — reduced ceremony projection', () => {
       implementation: IMPL_EVIDENCE,
       implementationRiskAssessment: {
         computedMinimumTaskClass: 'TRIVIAL',
+        effectiveTaskClass: 'TRIVIAL',
+        declaredTaskClass: null,
+        declarationKind: 'absent' as const,
+        ticketDigest: null,
         touchedSurfaces: [],
         riskTriggers: [],
         assessedFrom: 'implementation_changed_files',

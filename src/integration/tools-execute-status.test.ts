@@ -1294,7 +1294,13 @@ describe('declare_contract', () => {
       ...state!,
       phase: 'IMPL_VALIDATION',
       activeChecks: [checkId, 'security', ...(overrides.unattemptedChecks ?? [])],
-      ticket: { text: 'approved ticket', digest: 'ticket-digest', source: 'user', createdAt: NOW },
+      ticket: {
+        text: 'approved ticket',
+        digest: 'ticket-digest',
+        source: 'user',
+        createdAt: NOW,
+        riskDeclaration: { kind: 'absent' },
+      },
       implementation: {
         implementationId: '00000000-0000-4000-8000-0000000000aa',
         changedFiles: ['a.ts'],
@@ -1673,6 +1679,7 @@ describe('declare_contract', () => {
           digest: 'ticket-digest',
           source: 'user',
           createdAt: NOW,
+          riskDeclaration: { kind: 'absent' },
         },
         implementation: {
           implementationId: '00000000-0000-4000-8000-0000000000aa',
@@ -1924,7 +1931,13 @@ describe('declare_contract', () => {
         },
         makeStructuredSecurityCandidate(),
       ],
-      ticket: { text: 'approved ticket', digest: 'ticket-digest', source: 'user', createdAt: NOW },
+      ticket: {
+        text: 'approved ticket',
+        digest: 'ticket-digest',
+        source: 'user',
+        createdAt: NOW,
+        riskDeclaration: { kind: 'absent' },
+      },
       implementation: {
         implementationId: '00000000-0000-4000-8000-0000000000aa',
         changedFiles: ['a.ts'],

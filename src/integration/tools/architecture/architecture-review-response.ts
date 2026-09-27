@@ -9,6 +9,7 @@
  * @version v1
  */
 
+import { declaredTaskClassFor } from '../../phase-tool-gate.js';
 import { REVIEW_DISCOVERY_PROVIDER } from '../../discovery/review-discovery-provider.js';
 import type { SessionState } from '../../../state/schema.js';
 import type { AutoAdvanceResult } from '../../../rails/types.js';
@@ -456,7 +457,8 @@ function createNextArchitectureReviewObligation(input: {
     profileSource: 'policy_default',
     policySnapshot: state.policySnapshot,
     changedFiles: resolvedTargetPaths,
-    claimedTaskClass: state.claimedTaskClass,
+    declaredTaskClass: declaredTaskClassFor(state),
+    escalatedTaskClass: state.claimedTaskClass,
     metadata: targetPathsMetadata(resolvedTargetPaths),
     // Frozen repository context (freeze-time resolution): architecture reviews may cite it only.
     repositoryAuthority: frozenAuthorityOrUndefined(freeze),

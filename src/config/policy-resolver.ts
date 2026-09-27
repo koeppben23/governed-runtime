@@ -129,8 +129,6 @@ function applyConfigOverrides(
     identityProviderMode: opts.configIdentityProviderMode ?? basePolicy.identityProviderMode,
     enforceRiskClassification:
       opts.configEnforceRiskClassification ?? basePolicy.enforceRiskClassification,
-    allowRiskDowngradeOverride:
-      opts.configAllowRiskDowngradeOverride ?? basePolicy.allowRiskDowngradeOverride,
     allowReducedCeremony: opts.configAllowReducedCeremony ?? basePolicy.allowReducedCeremony,
     discoveryHealth: resolveDiscoveryHealth(basePolicy.discoveryHealth, opts.configDiscoveryHealth),
     validationEvidence: resolveValidationEvidence(

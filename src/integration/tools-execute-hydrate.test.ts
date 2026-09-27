@@ -606,7 +606,7 @@ describe('hydrate', () => {
         claimedTaskClass: 'TRIVIAL',
         riskGate: {
           status: 'blocked',
-          code: 'RISK_CLASSIFICATION_MISMATCH',
+          code: 'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
           message: 'blocked',
           blockedAt: '2026-01-01T00:00:00.000Z',
           lastDecisionId: 'RISK-1',
@@ -621,7 +621,7 @@ describe('hydrate', () => {
       expect(stateAfter!.claimedTaskClass).toBe('HIGH-RISK');
       expect(stateAfter!.riskGate).toEqual({
         status: 'blocked',
-        code: 'RISK_CLASSIFICATION_MISMATCH',
+        code: 'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
         message: 'blocked',
         blockedAt: '2026-01-01T00:00:00.000Z',
         lastDecisionId: 'RISK-1',

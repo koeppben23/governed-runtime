@@ -40,7 +40,6 @@ const CURRENT_SNAPSHOT = {
     counts: { TRIVIAL: 0 as const, STANDARD: 1 as const, 'HIGH-RISK': 2 as const },
   },
   enforceRiskClassification: false,
-  allowRiskDowngradeOverride: false,
   allowReducedCeremony: false,
   discoveryHealth: {
     enforcement: 'off' as const,

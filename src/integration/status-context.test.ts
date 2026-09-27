@@ -385,7 +385,13 @@ describe('context and readiness projections', () => {
 
   it('HAPPY returns readiness surface when readiness flag is set (survivor kill)', () => {
     const state = makeMinimalState('TICKET');
-    state.ticket = { text: 't', digest: 'd', source: 'user', createdAt: new Date().toISOString() };
+    state.ticket = {
+      text: 't',
+      digest: 'd',
+      source: 'user',
+      createdAt: new Date().toISOString(),
+      riskDeclaration: { kind: 'absent' },
+    };
     state.actorInfo = { id: 'u1', source: 'claim', assurance: 'claim_validated', email: 'u@e.com' };
     const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
     expect(readiness.phase).toBe('TICKET');

@@ -155,6 +155,16 @@ const ARCHITECTURE_CLAIM = {
   requiredReviewEvidence: ['architecture-review'],
 };
 
+function ticketFixture(text = 't', digest = 'd') {
+  return {
+    text,
+    digest,
+    source: 'user' as const,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    riskDeclaration: { kind: 'absent' as const },
+  };
+}
+
 describe('review-decision rail', () => {
   it('carries the exact decision evidence for a plan approval', () => {
     const state = makeState('PLAN_REVIEW', {
@@ -349,7 +359,7 @@ describe('review-decision rail', () => {
 
   it('changes_requested at EVIDENCE_REVIEW clears implementation and implReview', () => {
     const state = makeState('EVIDENCE_REVIEW', {
-      ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
+      ticket: ticketFixture('t', 'd'),
       plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
       implementation: IMPL_EVIDENCE,
       implReview: {
@@ -705,7 +715,7 @@ describe('review-decision rail', () => {
   it('changes_requested at EVIDENCE_REVIEW clears reducedCeremony alongside impl', () => {
     const reducedCeremonyDecision = REDUCED_CEREMONY_DECISION;
     const state = makeState('EVIDENCE_REVIEW', {
-      ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
+      ticket: ticketFixture('t', 'd'),
       plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
       implementation: IMPL_EVIDENCE,
       reducedCeremony: reducedCeremonyDecision,
@@ -743,7 +753,7 @@ describe('review-decision rail', () => {
   it('approve does NOT clear reducedCeremony', () => {
     const reducedCeremonyDecision = REDUCED_CEREMONY_DECISION;
     const state = makeState('EVIDENCE_REVIEW', {
-      ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
+      ticket: ticketFixture('t', 'd'),
       plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
       implementation: IMPL_EVIDENCE,
       reducedCeremony: reducedCeremonyDecision,
@@ -775,7 +785,7 @@ describe('review-decision rail', () => {
   it('reject preserves reducedCeremony and implementation evidence at REJECTED', () => {
     const reducedCeremonyDecision = REDUCED_CEREMONY_DECISION;
     const state = makeState('EVIDENCE_REVIEW', {
-      ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
+      ticket: ticketFixture('t', 'd'),
       plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
       implementation: IMPL_EVIDENCE,
       reducedCeremony: reducedCeremonyDecision,
@@ -1529,7 +1539,7 @@ describe('review-decision rail', () => {
 
     it('reject at PLAN_REVIEW preserves evidence at REJECTED (survivor kill)', () => {
       const state = makeState('PLAN_REVIEW', {
-        ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
+        ticket: ticketFixture('t', 'd'),
         plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         selfReview: CONVERGED_SELF_REVIEW,
       });
@@ -1875,7 +1885,7 @@ describe('review-decision rail', () => {
 
     it('skips the plan evidence gate outside PLAN_REVIEW (phase guard)', () => {
       const state = makeState('EVIDENCE_REVIEW', {
-        ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
+        ticket: ticketFixture('t', 'd'),
         plan: { ...PLAN_RECORD, reviewCompletion: 'pending' },
         selfReview: CONVERGED_SELF_REVIEW,
         implementation: IMPL_EVIDENCE,

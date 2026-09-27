@@ -59,7 +59,7 @@ import {
   reviewedIdentityFields,
 } from '../../review/evidence/reviewed-digest.js';
 import { buildHeuristicRiskWarning } from '../../proofgraph/claim-contract.js';
-import { assessMinimumTaskClass } from '../../phase-tool-gate.js';
+import { assessMinimumTaskClass, declaredTaskClassFor } from '../../phase-tool-gate.js';
 import {
   resolveRuntimeReviewPlatform,
   resolveReviewOrchestrationMode,
@@ -154,7 +154,8 @@ export function buildPlanReviewObligationInput(input: {
     profileSource: 'policy_default',
     policySnapshot: state.policySnapshot,
     changedFiles: classificationFiles,
-    claimedTaskClass: state.claimedTaskClass,
+    declaredTaskClass: declaredTaskClassFor(state),
+    escalatedTaskClass: state.claimedTaskClass,
     metadata,
     repositoryAuthority: frozenAuthorityOrUndefined(freeze),
     // Durable freeze outcome: continuations and forensics render the exact

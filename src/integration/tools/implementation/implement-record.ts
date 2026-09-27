@@ -88,7 +88,12 @@ import {
   assessMinimumTaskClass,
   isNonDomainConfigPath,
   projectCeremonyEligibility,
+  ticketDeclarationGate,
 } from '../../phase-tool-gate.js';
+import {
+  resolveEffectiveTaskClass,
+  ticketRiskDeclarationFloor,
+} from '../../../state/risk-declaration.js';
 import type { CeremonyEligibilityProjection } from '../../phase-tool-gate.js';
 import type { ImplementRuntime } from './implement-shared.js';
 import {
@@ -310,6 +315,38 @@ export async function validateRecordGitPrerequisites(
   return validateControlPlaneBinding(input);
 }
 
+function ticketDeclarationBlocked(state: SessionState): string | null {
+  const gate = ticketDeclarationGate(state);
+  return gate.status === 'blocked' ? formatBlocked(gate.code, { reason: gate.reason }) : null;
+}
+
+function buildImplementationRiskAssessment(
+  state: SessionState,
+  assessment: ReturnType<typeof assessMinimumTaskClass>,
+  implementationDigest: string,
+  assessedFileCount: number,
+): NonNullable<SessionState['implementationRiskAssessment']> {
+  const declaration = state.ticket?.riskDeclaration ?? { kind: 'absent' as const };
+  const escalatedTaskClass = state.claimedTaskClass;
+  return {
+    computedMinimumTaskClass: assessment.minimumTaskClass,
+    effectiveTaskClass: resolveEffectiveTaskClass({
+      computed: assessment.minimumTaskClass,
+      declaration,
+      escalated: escalatedTaskClass,
+    }),
+    declaredTaskClass: ticketRiskDeclarationFloor(declaration),
+    declarationKind: declaration.kind,
+    ticketDigest: state.ticket?.digest ?? null,
+    ...(escalatedTaskClass !== undefined ? { escalatedTaskClass } : {}),
+    touchedSurfaces: [...assessment.touchedSurfaces],
+    riskTriggers: [...assessment.riskTriggers],
+    assessedFrom: 'implementation_changed_files',
+    assessedFileCount,
+    implementationDigest,
+  };
+}
+
 export async function handleImplRecord(
   input: ImplementRuntime,
   changedFilesOverride?: string[],
@@ -360,6 +397,8 @@ export async function handleImplRecord(
   const existingFindings = input.state.implReviewFindings ?? [];
   const reviewIteration = nextImplementationReviewIteration(input.state);
   const planVersion = (input.state.plan?.history.length ?? 0) + 1;
+  const declarationBlocked = ticketDeclarationBlocked(input.state);
+  if (declarationBlocked !== null) return declarationBlocked;
   const ceremony = projectCeremonyEligibility({ state: input.state, changedFiles: files });
   const assessment = assessMinimumTaskClass(files);
   const nextState: SessionState = {
@@ -379,14 +418,12 @@ export async function handleImplRecord(
     implementationRework: input.state.implementationRework,
     // #762: bind the risk classification to the exact revision it describes, so a
     // gate rail can consult it without re-deriving it from a later file set.
-    implementationRiskAssessment: {
-      computedMinimumTaskClass: assessment.minimumTaskClass,
-      touchedSurfaces: [...assessment.touchedSurfaces],
-      riskTriggers: [...assessment.riskTriggers],
-      assessedFrom: 'implementation_changed_files',
-      assessedFileCount: files.length,
-      implementationDigest: implEvidence.digest,
-    },
+    implementationRiskAssessment: buildImplementationRiskAssessment(
+      input.state,
+      assessment,
+      implEvidence.digest,
+      files.length,
+    ),
     // Fresh implementation invalidates any prior post-implementation checks; the
     // machine advances to IMPL_VALIDATION where the checks are re-run against the
     // new code (prevents a stale IMPL_VALIDATION failure from looping).

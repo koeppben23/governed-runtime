@@ -138,7 +138,7 @@ export async function decidePostCheckCeremony(input: {
   }
 
   const decision = resolveCeremonyProfile(ceremonyInput);
-  if (decision.profile === 'reduced' && decision.claimedTaskClass !== undefined) {
+  if (decision.profile === 'reduced') {
     return {
       kind: 'decided',
       decision,
@@ -148,8 +148,14 @@ export async function decidePostCheckCeremony(input: {
         reducedCeremony: {
           profile: 'reduced',
           reason: decision.reason,
-          claimedTaskClass: decision.claimedTaskClass,
+          effectiveTaskClass: decision.effectiveTaskClass,
           computedMinimumTaskClass: decision.computedMinimumTaskClass,
+          declaredTaskClass: decision.declaredTaskClass,
+          declarationKind: decision.declarationKind,
+          ticketDigest: decision.ticketDigest,
+          ...(decision.escalatedTaskClass !== undefined
+            ? { escalatedTaskClass: decision.escalatedTaskClass }
+            : {}),
           touchedSurfaces: [...decision.touchedSurfaces],
           implementationId: decision.implementationId,
           implementationDigest: decision.implementationDigest,
@@ -176,6 +182,8 @@ function sameRecordedDecision(
   if (existing.implementationId !== decision.implementationId) return false;
   if (existing.implementationDigest !== decision.implementationDigest) return false;
   if (existing.policyDigest !== decision.policyDigest) return false;
+  if (existing.effectiveTaskClass !== decision.effectiveTaskClass) return false;
+  if (existing.ticketDigest !== decision.ticketDigest) return false;
   const existingAttempts = existing.verificationBasis.attempts
     .map((entry) => `${entry.checkId}:${entry.attemptId}`)
     .sort();
@@ -221,6 +229,14 @@ export function ceremonyAuditIntent(
         detail: {
           status: 'applied',
           reason: decision.reason,
+          effectiveTaskClass: decision.effectiveTaskClass,
+          computedMinimumTaskClass: decision.computedMinimumTaskClass,
+          declaredTaskClass: decision.declaredTaskClass,
+          declarationKind: decision.declarationKind,
+          ticketDigest: decision.ticketDigest,
+          ...(decision.escalatedTaskClass !== undefined
+            ? { escalatedTaskClass: decision.escalatedTaskClass }
+            : {}),
           implementationId: decision.implementationId,
           implementationDigest: decision.implementationDigest,
           policyDigest: decision.policyDigest,
@@ -238,6 +254,11 @@ export function ceremonyAuditIntent(
       detail: {
         status: 'ineligible',
         reason: decision.reason,
+        effectiveTaskClass: decision.effectiveTaskClass,
+        computedMinimumTaskClass: decision.computedMinimumTaskClass,
+        declaredTaskClass: decision.declaredTaskClass,
+        declarationKind: decision.declarationKind,
+        ticketDigest: decision.ticketDigest,
         ...(implementation !== null
           ? {
               implementationId: implementation.implementationId,

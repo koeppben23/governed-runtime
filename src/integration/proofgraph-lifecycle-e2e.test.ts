@@ -870,6 +870,10 @@ describe('implementation risk assessment (runtime)', () => {
       implementation: IMPL_EVIDENCE,
       implementationRiskAssessment: {
         computedMinimumTaskClass: 'HIGH-RISK',
+        effectiveTaskClass: 'HIGH-RISK',
+        declaredTaskClass: null,
+        declarationKind: 'absent' as const,
+        ticketDigest: null,
         touchedSurfaces: ['src/state/schema.ts'],
         assessedFrom: 'implementation_changed_files',
         assessedFileCount: 1,
@@ -888,6 +892,10 @@ describe('implementation risk assessment (runtime)', () => {
       implementation: { ...IMPL_EVIDENCE, digest: 'new-revision-digest' },
       implementationRiskAssessment: {
         computedMinimumTaskClass: 'HIGH-RISK',
+        effectiveTaskClass: 'HIGH-RISK',
+        declaredTaskClass: null,
+        declarationKind: 'absent' as const,
+        ticketDigest: null,
         touchedSurfaces: ['src/state/schema.ts'],
         assessedFrom: 'implementation_changed_files',
         assessedFileCount: 1,

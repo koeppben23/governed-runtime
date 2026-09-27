@@ -62,6 +62,23 @@ export interface FullStatusPresentationInput {
  * section (substituted by compact notice when evidence causes NOT_VERIFIED)
  * and renders ProofGraph without a per-claim list.
  */
+function pushTicketRiskNotice(status: StatusProjection, sections: PresentationSection[]): void {
+  const kind = status.ticketRisk?.declarationKind;
+  if (kind !== 'conflict' && kind !== 'invalid') return;
+  sections.push({
+    kind: 'notice',
+    level: 'warning',
+    heading: 'Ticket risk declaration',
+    message:
+      kind === 'conflict'
+        ? 'The ticket contains contradictory valid risk declarations. Reduced ceremony is denied; ' +
+          'the highest declared class applies as the conservative minimum until it is corrected.'
+        : 'The ticket contains an invalid risk declaration. Reduced ceremony is denied and ' +
+          'risk-relevant mutations are blocked until the ticket is corrected.',
+    details: [],
+  });
+}
+
 export function buildStatusDocument(
   input: FullStatusPresentationInput,
   options: PresentationBuildOptions = { detail: 'summary' },
@@ -71,6 +88,8 @@ export function buildStatusDocument(
   const sections: PresentationSection[] = [];
 
   sections.push(buildStatusSection(status));
+
+  pushTicketRiskNotice(status, sections);
 
   if (status.blocker && status.blocker.reasonText) {
     sections.push(buildBlockerSection(status.blocker, status.blocker.reasonText, detail));

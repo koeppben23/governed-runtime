@@ -93,8 +93,8 @@ record supplies `challengeResolutionVerdicts` for every prior implementation
 challenge. Only the independent reviewer may mark a resolution `resolved`; `still_failing`
 and `not_verified` fail closed. New-session review obligations derive their required
 challenge count from the `challenge-policy.v1` policy frozen in the session snapshot and
-the phase-tool-gate runtime minimum task class (TRIVIAL 0, STANDARD 1, HIGH-RISK 2)
-floored by the author's `claimedTaskClass`, then
+the phase-tool-gate effective task class (TRIVIAL 0, STANDARD 1, HIGH-RISK 2:
+max of the runtime minimum, the ticket-declared floor, and an optional escalation), then
 freeze that result and a single flow-native kind before invocation. An absent
 `challengePolicy` is fail-closed by mode: `solo` stays legacy-tolerant (disabled),
 while `team`/`team-ci`/`regulated` fall back to the canonical matrix. Host

@@ -141,10 +141,10 @@ describe('HostAdapter Contract', () => {
       const decision: BlockDecision = {
         blocked: true,
         reason: 'Risk classification required',
-        code: 'RISK_CLASSIFICATION_REQUIRED',
+        code: 'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
       };
       expect(() => adapter.deliverBlockDecision(createTestEvent(), decision)).toThrow(
-        /RISK_CLASSIFICATION_REQUIRED/,
+        /RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE/,
       );
     });
 

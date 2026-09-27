@@ -386,6 +386,10 @@ describe('evaluateProofGraphGateFromState', () => {
         implementation: { digest: 'impl-digest' } as SessionState['implementation'],
         implementationRiskAssessment: {
           computedMinimumTaskClass: 'STANDARD',
+          effectiveTaskClass: 'STANDARD',
+          declaredTaskClass: null,
+          declarationKind: 'absent' as const,
+          ticketDigest: null,
           touchedSurfaces: ['src/'],
           assessedFrom: 'implementation_changed_files',
           assessedFileCount: 1,

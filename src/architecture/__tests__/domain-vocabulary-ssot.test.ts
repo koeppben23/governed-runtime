@@ -1,7 +1,7 @@
 /**
  * @module architecture/domain-vocabulary-ssot
  * @description Default-deny guard for closed domain vocabularies that already
- * have a canonical authority: `TaskClass` (`state/schema.ts`) and `LoopVerdict`
+ * have a canonical authority: `TaskClass` (`state/task-class.ts`) and `LoopVerdict`
  * (`state/evidence-primitives.ts`).
  *
  * The guard protects the DEFINITION and MEMBERSHIP of a vocabulary, not its
@@ -45,7 +45,7 @@ const VOCABULARIES: readonly Vocabulary[] = [
   {
     name: 'TaskClass',
     values: new Set<string>(TaskClass.options),
-    authority: 'state/schema.ts',
+    authority: 'state/task-class.ts',
   },
   {
     name: 'LoopVerdict',

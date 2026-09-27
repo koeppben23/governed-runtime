@@ -150,9 +150,6 @@ function pickPolicyConfigOverrideFields(policy: HydrateConfig['policy']): Hydrat
     ...(policy.enforceRiskClassification !== undefined
       ? { enforceRiskClassification: policy.enforceRiskClassification }
       : {}),
-    ...(policy.allowRiskDowngradeOverride !== undefined
-      ? { allowRiskDowngradeOverride: policy.allowRiskDowngradeOverride }
-      : {}),
     ...(policy.allowReducedCeremony !== undefined
       ? { allowReducedCeremony: policy.allowReducedCeremony }
       : {}),

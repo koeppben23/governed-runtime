@@ -192,7 +192,7 @@ describe('buildImplementationGuidance', () => {
       ticket: { ...TICKET, text: 'Update release notes wording' },
       riskGate: {
         status: 'blocked',
-        code: 'RISK_CLASSIFICATION_REQUIRED',
+        code: 'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
         message: 'Runtime evidence requires HIGH-RISK classification.',
         blockedAt: '2026-01-01T00:00:00.000Z',
         lastDecisionId: 'risk-decision-1',
@@ -207,7 +207,7 @@ describe('buildImplementationGuidance', () => {
 
     expect(guidance.warnings.map((warning) => warning.code)).toContain('risk_gate_blocked');
     expect(guidance.riskHotspots[0]).toMatchObject({
-      label: 'RISK_CLASSIFICATION_REQUIRED',
+      label: 'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
       source: 'session_risk_gate',
     });
     expect(state.riskGate?.status).toBe('blocked');
@@ -339,7 +339,7 @@ function makeCharacterizationCases(): GuidanceCharacterizationCase[] {
   const blockedRiskGateState = matchingTaskState({
     riskGate: {
       status: 'blocked',
-      code: 'RISK_CLASSIFICATION_REQUIRED',
+      code: 'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
       message: 'Runtime evidence requires HIGH-RISK classification.',
       blockedAt: '2026-01-01T00:00:00.000Z',
       lastDecisionId: 'risk-decision-1',

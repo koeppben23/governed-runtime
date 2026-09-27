@@ -147,10 +147,13 @@ Classify the task before acting:
 
 Use the smallest process that is safe for the class. If uncertain, classify one level higher.
 
-With runtime risk enforcement, \`claimedTaskClass\` is only a claim; FlowGuard computes changed-surface
-minimums and blocks missing/too-low claims. Hydrate updates only \`claimedTaskClass\` and blocked
-\`riskGate\`. Reduced ceremony requires policy opt-in, \`TRIVIAL\` claim, computed
-\`TRIVIAL\`, verification, explicit reduced-ceremony evidence, no required review.`;
+With runtime risk enforcement, FlowGuard resolves ONE effective risk class:
+\`max(runtime-computed minimum, ticket-declared floor, optional escalation)\`. A ticket may bind a
+minimum risk class with an explicit \`Risk:\`/\`Risikoklasse:\` line in its canonical content; a
+conflicting declaration applies the highest declared class and denies reduced ceremony, an invalid
+one denies reduction and blocks risk-relevant mutations until corrected. \`claimedTaskClass\` is an
+optional, raise-only escalation — never a required claim. Reduced ceremony requires policy opt-in,
+effective class \`TRIVIAL\`, verification, explicit reduced-ceremony evidence, no required review.`;
 
 const HARD_INVARIANTS = `## 4. Hard Invariants
 

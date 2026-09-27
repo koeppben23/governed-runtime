@@ -18,5 +18,5 @@
   - `/request-changes` — Record the human decision at a review gate.
 
 **Session artifacts:**
-  ticket: available "Fix the auth bug in login.ts" (digest: digest-o...)
+  ticket: available "Fix the auth bug in login.ts" (digest: 36f24774...)
   current plan v1: available "## Plan" (digest: ccdbbfa3...)

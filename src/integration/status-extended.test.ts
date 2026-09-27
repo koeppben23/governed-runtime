@@ -261,6 +261,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
         source: 'user',
         digest: 'ticket-digest',
         createdAt: fixedTime,
+        riskDeclaration: { kind: 'absent' },
       },
     };
   }

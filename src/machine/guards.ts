@@ -19,6 +19,12 @@ import type { LoopVerdict } from '../state/evidence.js';
 import type { SessionState, Phase, Event } from '../state/schema.js';
 import { isTechnicalValidationBlock, type ValidationResult } from '../state/evidence-validation.js';
 import { hasOutstandingReviewObligation } from '../state/review-dispatch.js';
+import {
+  resolveEffectiveTaskClass,
+  ticketRiskDeclarationFloor,
+  verifyTicketRiskDeclarationIntegrity,
+  type TicketRiskDeclaration,
+} from '../state/risk-declaration.js';
 import { evaluateValidationEvidence } from './validation-evidence.js';
 import { evaluateImplValidationEvidence } from './impl-validation-evidence.js';
 
@@ -191,16 +197,53 @@ function decisionBindsFrozenPolicy(
   return decision.policyDigest === s.policySnapshot.hash;
 }
 
+/**
+ * Digest-bound ticket declaration of the current session, or null when the
+ * ticket is missing, manipulated, contradictory or invalid.
+ */
+function boundTicketDeclaration(s: SessionState): TicketRiskDeclaration | null {
+  const ticket = s.ticket;
+  if (ticket === null) return { kind: 'absent' };
+  if (!verifyTicketRiskDeclarationIntegrity(ticket)) return null;
+  const declaration = ticket.riskDeclaration;
+  if (declaration.kind === 'conflict' || declaration.kind === 'invalid') return null;
+  return declaration;
+}
+
+function decisionMatchesRiskFacts(
+  s: SessionState,
+  decision: NonNullable<SessionState['reducedCeremony']>,
+  declaration: TicketRiskDeclaration,
+): boolean {
+  const assessment = s.implementationRiskAssessment;
+  if (assessment === undefined) return false;
+  const effective = resolveEffectiveTaskClass({
+    computed: assessment.computedMinimumTaskClass,
+    declaration,
+    escalated: s.claimedTaskClass,
+  });
+  return (
+    assessment.effectiveTaskClass === effective &&
+    effective === 'TRIVIAL' &&
+    decision.declaredTaskClass === ticketRiskDeclarationFloor(declaration) &&
+    decision.computedMinimumTaskClass === assessment.computedMinimumTaskClass &&
+    decision.effectiveTaskClass === effective
+  );
+}
+
 function decisionBindsRiskAuthority(
   s: SessionState,
   decision: NonNullable<SessionState['reducedCeremony']>,
   implementation: NonNullable<SessionState['implementation']>,
 ): boolean {
-  if (s.claimedTaskClass !== 'TRIVIAL') return false;
-  if (decision.claimedTaskClass !== 'TRIVIAL') return false;
-  if (decision.computedMinimumTaskClass !== 'TRIVIAL') return false;
-  if (s.implementationRiskAssessment?.implementationDigest !== implementation.digest) return false;
-  if (s.implementationRiskAssessment.computedMinimumTaskClass !== 'TRIVIAL') return false;
+  const declaration = boundTicketDeclaration(s);
+  if (declaration === null) return false;
+  if (decision.declarationKind !== declaration.kind) return false;
+  if (decision.ticketDigest !== (s.ticket?.digest ?? null)) return false;
+  if (s.implementationRiskAssessment?.implementationDigest !== implementation.digest) {
+    return false;
+  }
+  if (!decisionMatchesRiskFacts(s, decision, declaration)) return false;
   return s.riskGate?.status !== 'blocked';
 }
 

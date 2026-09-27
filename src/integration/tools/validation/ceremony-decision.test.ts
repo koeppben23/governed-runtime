@@ -22,6 +22,8 @@ import {
   VERIFICATION_CANDIDATES,
 } from '../../../fixtures.js';
 import { TEST_EXECUTION_OBSERVATION } from '../../../state/evidence-test-constants.js';
+import { hashText } from '../../../shared/hashing.js';
+import { parseTicketRiskDeclaration } from '../../../state/risk-declaration.js';
 import { ceremonyAuditIntent, decidePostCheckCeremony } from './ceremony-decision.js';
 
 const mockedReattest = vi.mocked(reattestImplementationSubject);
@@ -95,6 +97,94 @@ describe('decidePostCheckCeremony', () => {
       policyDigest: state.policySnapshot.hash,
     });
     expect(outcome.state.reducedCeremony?.verificationBasis.checkIds).toEqual(['test', 'lint']);
+  });
+
+  it('HAPPY: reduced is authorized without any manual claim or ticket declaration', async () => {
+    const state = makeState('IMPL_VALIDATION', {
+      verificationCandidates: VERIFICATION_CANDIDATES,
+      implementation: DOC_IMPL,
+      activeChecks: ['test', 'lint'],
+      implValidation: VALIDATION_PASSED,
+      validationAttempts: [attempt('test', true), attempt('lint', true)],
+      policySnapshot: {
+        ...POLICY_SNAPSHOT,
+        allowReducedCeremony: true,
+        requireHumanGates: true,
+        effectiveGateBehavior: 'human_gated',
+      },
+    });
+    expect(state.claimedTaskClass).toBeUndefined();
+
+    const outcome = await decidePostCheckCeremony({
+      state,
+      worktree: '/tmp/worktree',
+      digest: passthroughDigest,
+      now: '2026-01-02T00:00:00.000Z',
+    });
+
+    expect(outcome.kind).toBe('decided');
+    if (outcome.kind !== 'decided') return;
+    expect(outcome.decision.profile).toBe('reduced');
+    expect(outcome.decision.effectiveTaskClass).toBe('TRIVIAL');
+    expect(outcome.decision.declaredTaskClass).toBeNull();
+  });
+
+  it('BAD: a ticket-declared STANDARD denies reduction even for a docs-only change', async () => {
+    const text = 'Risk: STANDARD\n\nDocs only.';
+    const state = baseState({
+      ticket: {
+        text,
+        digest: hashText(text),
+        source: 'user',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        riskDeclaration: parseTicketRiskDeclaration(text),
+      },
+      implValidation: VALIDATION_PASSED,
+      validationAttempts: [attempt('test', true), attempt('lint', true)],
+    });
+
+    const outcome = await decidePostCheckCeremony({
+      state,
+      worktree: '/tmp/worktree',
+      digest: passthroughDigest,
+      now: '2026-01-02T00:00:00.000Z',
+    });
+
+    expect(outcome.kind).toBe('decided');
+    if (outcome.kind !== 'decided') return;
+    expect(outcome.decision.profile).toBe('full');
+    expect(outcome.decision.reason).toBe('RESOLVED_RISK_NOT_TRIVIAL');
+    expect(outcome.decision.declaredTaskClass).toBe('STANDARD');
+    expect(outcome.state.reducedCeremony).toBeNull();
+  });
+
+  it('BAD: conflict and invalid ticket declarations deny reduction', async () => {
+    for (const [text, reason] of [
+      ['Risk: TRIVIAL\nRisk: HIGH-RISK', 'TICKET_RISK_DECLARATION_CONFLICT'],
+      ['Risk: HIGH', 'TICKET_RISK_DECLARATION_INVALID'],
+    ] as const) {
+      const state = baseState({
+        ticket: {
+          text,
+          digest: hashText(text),
+          source: 'user',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          riskDeclaration: parseTicketRiskDeclaration(text),
+        },
+        implValidation: VALIDATION_PASSED,
+        validationAttempts: [attempt('test', true), attempt('lint', true)],
+      });
+      const outcome = await decidePostCheckCeremony({
+        state,
+        worktree: '/tmp/worktree',
+        digest: passthroughDigest,
+        now: '2026-01-02T00:00:00.000Z',
+      });
+      expect(outcome.kind).toBe('decided');
+      if (outcome.kind !== 'decided') continue;
+      expect(outcome.decision.reason).toBe(reason);
+      expect(outcome.state.reducedCeremony).toBeNull();
+    }
   });
 
   it('BAD: an incomplete check set produces no decision', async () => {
@@ -266,7 +356,10 @@ describe('ceremonyAuditIntent', () => {
   const decision = {
     profile: 'reduced' as const,
     reason: 'POST_IMPL_VERIFIED_TRIVIAL',
-    claimedTaskClass: 'TRIVIAL' as const,
+    effectiveTaskClass: 'TRIVIAL' as const,
+    declaredTaskClass: null,
+    declarationKind: 'absent' as const,
+    ticketDigest: null,
     computedMinimumTaskClass: 'TRIVIAL' as const,
     touchedSurfaces: [],
     riskTriggers: [],
@@ -307,7 +400,10 @@ describe('ceremonyAuditIntent', () => {
       {
         profile: 'full',
         reason: 'VERIFICATION_EVIDENCE_INCOMPLETE',
-        claimedTaskClass: 'TRIVIAL',
+        effectiveTaskClass: 'TRIVIAL',
+        declaredTaskClass: null,
+        declarationKind: 'absent' as const,
+        ticketDigest: null,
         computedMinimumTaskClass: 'TRIVIAL',
         touchedSurfaces: [],
         riskTriggers: [],

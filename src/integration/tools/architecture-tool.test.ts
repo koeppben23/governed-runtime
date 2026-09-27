@@ -947,7 +947,13 @@ describe('integration/tools/architecture (wrapper)', () => {
     it('HAPPY: reviewVerdict=null + title + adrText → Mode A (initial submission)', async () => {
       mocks.requireStateForMutation.mockResolvedValue(
         makeState('ARCHITECTURE', {
-          ticket: { text: 'x', digest: 'd', source: 'user', createdAt: '2026-01-01T00:00:00.000Z' },
+          ticket: {
+            text: 'x',
+            digest: 'd',
+            source: 'user',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            riskDeclaration: { kind: 'absent' },
+          },
         }),
       );
       const { architecture } = await import('./architecture/architecture.js');
@@ -968,7 +974,13 @@ describe('integration/tools/architecture (wrapper)', () => {
     it('HAPPY: reviewVerdict="" + title + adrText → Mode A (empty string treated as absent)', async () => {
       mocks.requireStateForMutation.mockResolvedValue(
         makeState('ARCHITECTURE', {
-          ticket: { text: 'x', digest: 'd', source: 'user', createdAt: '2026-01-01T00:00:00.000Z' },
+          ticket: {
+            text: 'x',
+            digest: 'd',
+            source: 'user',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            riskDeclaration: { kind: 'absent' },
+          },
         }),
       );
       const { architecture } = await import('./architecture/architecture.js');
@@ -987,7 +999,13 @@ describe('integration/tools/architecture (wrapper)', () => {
     it('CORNER: reviewVerdict=null → isInitialSubmission=true (consistent with hasVerdict=false)', async () => {
       mocks.requireStateForMutation.mockResolvedValue(
         makeState('ARCHITECTURE', {
-          ticket: { text: 'x', digest: 'd', source: 'user', createdAt: '2026-01-01T00:00:00.000Z' },
+          ticket: {
+            text: 'x',
+            digest: 'd',
+            source: 'user',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            riskDeclaration: { kind: 'absent' },
+          },
         }),
       );
       const { architecture } = await import('./architecture/architecture.js');

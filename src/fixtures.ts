@@ -90,7 +90,6 @@ export const POLICY_SNAPSHOT: PolicySnapshot = {
     counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
   },
   enforceRiskClassification: false,
-  allowRiskDowngradeOverride: false,
   allowReducedCeremony: false,
   discoveryHealth: { enforcement: 'off', onDegraded: 'allow', onDrift: 'allow' },
   validationEvidence: { enforcement: 'off', allowNoCommands: false },
@@ -145,9 +144,10 @@ export const DECISION_IDENTITY_VERIFIED_REVIEWER: DecisionIdentity = {
 
 export const TICKET: TicketEvidence = {
   text: 'Fix the auth bug in login.ts',
-  digest: 'digest-of-ticket',
+  digest: hashText('Fix the auth bug in login.ts'),
   source: 'user',
   createdAt: FIXED_TIME,
+  riskDeclaration: { kind: 'absent' },
 };
 
 export const ARCHITECTURE_DECISION: ArchitectureDecision = {
@@ -575,8 +575,11 @@ export const APPROVED_IMPL_REVIEW: ImplReviewResult = {
 export const REDUCED_CEREMONY_DECISION: ReducedCeremonyDecision = {
   profile: 'reduced',
   reason: 'Trivial fix',
-  claimedTaskClass: 'TRIVIAL',
+  effectiveTaskClass: 'TRIVIAL',
   computedMinimumTaskClass: 'TRIVIAL',
+  declaredTaskClass: null,
+  declarationKind: 'absent',
+  ticketDigest: null,
   touchedSurfaces: [],
   implementationId: IMPL_EVIDENCE.implementationId,
   implementationDigest: IMPL_EVIDENCE.digest,

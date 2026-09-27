@@ -55,9 +55,12 @@ $ARGUMENTS
 ${externalRefMarkdown}
    - On extraction failure: use placeholder text, still add reference (without \`extractedAt\`).
 
-3. Call \`flowguard_ticket\` with:
-   - \`text\`: Ticket description (extracted or user-provided). If \`$ARGUMENTS\` is empty, ask the user for a description first.
-   - \`source\` and \`inputOrigin\` per the table above.
+3. Call \`flowguard_ticket\` with exactly ONE canonical content source:
+   - Repository file as the task source: \`ticketSource: { kind: "repository_file", path: "<path>" }\`
+     with NO \`text\`; FlowGuard reads the file and binds its content digest.
+   - Otherwise \`text\`: Ticket description (extracted or user-provided). If \`$ARGUMENTS\` is empty, ask the user for a description first.
+   - \`source\` and \`inputOrigin\` per the table above. Never pass a bare file path, URL, or
+     ticket ID as \`text\` — adopt the content explicitly.
    - \`references\` (optional): Array of ExternalReference objects.
 
 4. Report: confirm ticket recorded, show current phase and next action.

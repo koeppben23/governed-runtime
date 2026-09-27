@@ -120,10 +120,10 @@ mode, use `policy.minimumActorAssuranceForApproval` and
 ## Review Challenge Policy
 
 New sessions freeze `challenge-policy.v1` into their policy snapshot. Each review
-obligation derives coverage from the runtime minimum task class, floored by the
-author's declared `claimedTaskClass`: TRIVIAL requires 0 challenges, STANDARD
-requires 1, and HIGH-RISK requires 2. A change declared HIGH-RISK therefore keeps
-its challenge requirement even if its declared paths look doc-only. Plan and
+obligation derives coverage from the central effective task class:
+`max(runtime minimum, ticket-declared floor, optional escalation)`. TRIVIAL requires
+0 challenges, STANDARD 1, and HIGH-RISK 2. A ticket that declares HIGH-RISK
+therefore keeps its challenge requirement even if its paths look doc-only. Plan and
 architecture obligations require `design_challenge` evidence, implementation
 obligations require `implementation_challenge`, and peer review obligations
 require `content_challenge` (whose coverage is derived from the reviewed diff, not

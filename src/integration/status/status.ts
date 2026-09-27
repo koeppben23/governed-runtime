@@ -196,6 +196,7 @@ export function buildStatusProjection(
       waived: completeness.summary.waived,
     },
     reducedCeremony: buildReducedCeremonyProjection(state),
+    ticketRisk: buildTicketRiskProjection(state),
     proofGraph: summarizePersistedProofGraph(state),
     proofSummary: projectProofStatusForState(state),
     proofApprovals: buildProofApprovalProjection(state),
@@ -254,4 +255,20 @@ function buildBlocker(
     case 'transition':
       return null;
   }
+}
+
+function buildTicketRiskProjection(state: SessionState): StatusProjection['ticketRisk'] {
+  const ticket = state.ticket;
+  if (ticket === null) return null;
+  const declaration = ticket.riskDeclaration;
+  return {
+    declarationKind: declaration.kind,
+    declaredTaskClass:
+      declaration.kind === 'declared'
+        ? declaration.taskClass
+        : declaration.kind === 'conflict'
+          ? (declaration.values[0] ?? null)
+          : null,
+    ticketDigest: ticket.digest,
+  };
 }

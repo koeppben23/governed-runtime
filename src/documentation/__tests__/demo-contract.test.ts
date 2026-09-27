@@ -287,9 +287,15 @@ describe('java demo workflow contract', () => {
       'hostSessionId',
       'EVIDENCE_REVIEW',
       'EXPORT_READY',
+      '/task --file TICKET_DOCS.md',
+      'TICKET_REFERENCE_WITHOUT_CONTENT',
     ]) {
       expect(reduced, marker).toContain(marker);
     }
+    // The scenario never requires a manual risk claim: the effective class is
+    // resolved automatically (ticket-declared floor + computed minimum).
+    expect(reduced).not.toContain('claimedTaskClass');
+    expect(reduced).toContain('no manual risk claim');
     // No synthetic review is ever claimed.
     expect(reduced).toContain('`state.implReview` stays `null`');
     // The concrete values come from the structured response, not the card.

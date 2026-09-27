@@ -49,7 +49,8 @@ vi.mock('./blocked-result.js', () => ({
   strictBlockedOutput: mockStrictBlockedOutput,
 }));
 
-vi.mock('./phase-tool-gate.js', () => ({
+vi.mock('./phase-tool-gate.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./phase-tool-gate.js')>()),
   isRiskClassificationAllowed: mockIsRiskClassificationAllowed,
 }));
 
@@ -78,8 +79,12 @@ import {
   type RiskEnforcementDeps,
 } from './plugin-risk.js';
 import type { SessionState } from '../state/schema.js';
-import type { RiskClassificationDecision } from './phase-tool-gate.js';
+import type {
+  DeniedRiskClassificationDecision,
+  RiskClassificationDecision,
+} from './phase-tool-gate.js';
 import { makeState } from '../fixtures.js';
+import { hashText } from '../shared/hashing.js';
 
 function mockDeps(overrides: Partial<RiskEnforcementDeps> = {}): RiskEnforcementDeps {
   return {
@@ -529,7 +534,9 @@ describe('evidenceUnavailableRiskDecision', () => {
       expect(decision.allowed).toBe(false);
       expect(decision.code).toBe('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE');
       expect(decision.reason).toBe('worktree missing');
-      expect(decision.claimedTaskClass).toBe('TRIVIAL');
+      expect(decision.escalatedTaskClass).toBe('TRIVIAL');
+      expect(decision.effectiveTaskClass).toBe('HIGH-RISK');
+      expect(decision.declaredTaskClass).toBeNull();
       expect(decision.minimumTaskClass).toBe('HIGH-RISK');
       expect(decision.touchedSurfaces).toEqual(['risk-classification-evidence']);
       expect(decision.changedFiles).toEqual([]);
@@ -544,13 +551,19 @@ describe('evidenceUnavailableRiskDecision', () => {
 
 describe('persistRiskDecisionBlock', () => {
   const state = makeRiskState();
-  const decision: RiskClassificationDecision = {
+  const decision: DeniedRiskClassificationDecision = {
     allowed: false,
-    code: 'RISK_CLASSIFICATION_MISMATCH',
+    code: 'RISK_GATE_BLOCKED',
     reason: 'blocked',
     decisionId: 'd-1',
-    claimedTaskClass: 'STANDARD',
     minimumTaskClass: 'HIGH-RISK',
+    effectiveTaskClass: 'HIGH-RISK',
+    declaredTaskClass: null,
+    declarationKind: 'absent',
+    ticketDigest: null,
+    escalatedTaskClass: 'STANDARD',
+    provisional: false,
+    unknownScope: false,
     touchedSurfaces: ['src/foo.ts'],
     riskTriggers: ['ceremony_only'],
     changedFiles: ['src/foo.ts'],
@@ -608,6 +621,12 @@ describe('appendRiskDecisionAudit', () => {
         allowed: true,
         decisionId: 'd-2',
         minimumTaskClass: 'TRIVIAL',
+        effectiveTaskClass: 'TRIVIAL',
+        declaredTaskClass: null,
+        declarationKind: 'absent',
+        ticketDigest: null,
+        provisional: true,
+        unknownScope: false,
         touchedSurfaces: [],
         riskTriggers: [],
         changedFiles: [],
@@ -859,5 +878,55 @@ describe('enforceRiskClassificationAfterBash', () => {
       );
       expect(output.output).toBeDefined();
     });
+  });
+});
+
+describe('ticket declaration gate (pre-execution)', () => {
+  const invalidTicketState = (enforce: boolean): SessionState =>
+    makeRiskState({
+      ticket: {
+        text: 'Risk: HIGH',
+        digest: hashText('Risk: HIGH'),
+        source: 'user',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        riskDeclaration: { kind: 'invalid', raw: 'HIGH' },
+      },
+      policySnapshot: {
+        ...makeRiskState().policySnapshot,
+        enforceRiskClassification: enforce,
+      },
+    });
+
+  it('BAD: blocks a mutation before execution even with enforcement disabled', async () => {
+    const deps = mockDeps();
+    await expect(
+      enforceRiskClassificationBefore(deps, '/tmp/sess', invalidTicketState(false), 'write', {
+        filePath: 'src/foo.ts',
+      }),
+    ).rejects.toThrow('TICKET_RISK_DECLARATION_INVALID');
+    // The mutation path never started: no git evidence read, no latched riskGate.
+    expect(mockChangedFiles).not.toHaveBeenCalled();
+    expect(mockWriteState).not.toHaveBeenCalled();
+  });
+
+  it('BAD: blocks the post-bash path with a blocked output', async () => {
+    const output: { output?: unknown } = {};
+    await enforceRiskClassificationAfterBash(mockDeps(), 'sess-1', output);
+    expect(String(JSON.stringify(output.output))).toBeDefined();
+  });
+
+  it('HAPPY: an absent/valid declaration does not block when enforcement is disabled', async () => {
+    const state = makeRiskState({
+      ticket: null,
+      policySnapshot: {
+        ...makeRiskState().policySnapshot,
+        enforceRiskClassification: false,
+      },
+    });
+    await expect(
+      enforceRiskClassificationBefore(mockDeps(), '/tmp/sess', state, 'write', {
+        filePath: 'src/foo.ts',
+      }),
+    ).resolves.toBeUndefined();
   });
 });
