@@ -18,7 +18,7 @@ import { hashText } from '../shared/hashing.js';
 import { hashWorktreeFiles } from '../adapters/git.js';
 import { deriveVerificationCandidateId } from '../state/candidate-identity.js';
 import { TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
-import { IMPL_EVIDENCE, makeState, VALIDATION_PASSED } from '../fixtures.js';
+import { IMPL_EVIDENCE, makeProgressedState, makeState, VALIDATION_PASSED } from '../fixtures.js';
 import {
   computeImplementationDigest,
   flowguardReportArtifacts,
@@ -133,7 +133,45 @@ describe('flowguardReportArtifacts', () => {
     expect(flowguardReportArtifacts(state)).toEqual([]);
   });
 
-  it('BAD: attempts of a different implementation generation are not excluded', () => {
+  it('HAPPY: baseline attempts of the current plan contribute their report paths', () => {
+    const base = makeProgressedState('VALIDATION');
+    const state = makeState('VALIDATION', {
+      plan: base.plan,
+      verificationCandidates: [RUN_SPECIFIC_CANDIDATE],
+      validationAttempts: [
+        {
+          attemptId: RUN_SPECIFIC_ATTEMPT_ID,
+          scope: 'baseline' as const,
+          planDigest: base.plan!.current.digest,
+          executionObservation: TEST_EXECUTION_OBSERVATION,
+          result: { ...structuredAttempt().result },
+        },
+      ],
+    });
+    expect(flowguardReportArtifacts(state)).toEqual([
+      `.flowguard/reports/${RUN_SPECIFIC_ATTEMPT_ID}/jest.json`,
+    ]);
+  });
+
+  it('BAD: baseline attempts of an earlier plan version stay visible', () => {
+    const base = makeProgressedState('VALIDATION');
+    const state = makeState('VALIDATION', {
+      plan: base.plan,
+      verificationCandidates: [RUN_SPECIFIC_CANDIDATE],
+      validationAttempts: [
+        {
+          attemptId: RUN_SPECIFIC_ATTEMPT_ID,
+          scope: 'baseline' as const,
+          planDigest: 'superseded-plan-digest',
+          executionObservation: TEST_EXECUTION_OBSERVATION,
+          result: { ...structuredAttempt().result },
+        },
+      ],
+    });
+    expect(flowguardReportArtifacts(state)).toEqual([]);
+  });
+
+  it('HAPPY: superseded implementation generations still contribute (freeze/reattest symmetry)', () => {
     const state = makeState('IMPL_VALIDATION', {
       implementation: IMPL_EVIDENCE,
       verificationCandidates: [RUN_SPECIFIC_CANDIDATE],
@@ -142,7 +180,9 @@ describe('flowguardReportArtifacts', () => {
         structuredAttempt({ implementationDigest: 'other-digest' }),
       ],
     });
-    expect(flowguardReportArtifacts(state)).toEqual([]);
+    expect(flowguardReportArtifacts(state)).toEqual([
+      `.flowguard/reports/${RUN_SPECIFIC_ATTEMPT_ID}/jest.json`,
+    ]);
   });
 
   it('CORNER: non-run_specific candidates contribute no artifact paths', () => {

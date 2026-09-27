@@ -85,32 +85,39 @@ export type ImplementationSubjectReattestation =
   | { readonly kind: 'subject_changed'; readonly expected: string; readonly actual: string };
 
 /**
- * Exact worktree paths FlowGuard itself wrote for the CURRENT implementation
- * generation's validation attempts.
+ * Exact worktree paths FlowGuard itself wrote for the session's validation
+ * attempts.
  *
  * `run_specific` structured candidates execute `<command> <outputArgument>`
  * where the argument carries `.flowguard/reports/{attemptId}/...`; the report
  * file is tool-owned evidence, not governed implementation bytes. Without this
- * narrow boundary the post-check re-attestation would count the report of the
- * very check that just passed as subject drift.
+ * narrow boundary:
+ * - baseline reports (pre-implementation `/check` at VALIDATION, written
+ *   AFTER hydrate and therefore not baseline dirt) would be frozen into
+ *   `implementation.changedFiles` and classified as project surfaces,
+ * - the post-check re-attestation would count the report of the very check
+ *   that just passed as subject drift.
  *
  * The boundary is deliberately derived — not pattern-matched:
- * - only attempts bound to the current implementation id AND digest can
- *   contribute (cycle-external or stale files stay visible),
+ * - baseline attempts count only for the CURRENT approved plan (an earlier
+ *   plan version's checks are not part of this delivery),
+ * - implementation attempts count for every recorded generation, so the
+ *   boundary is identical at the `/implement` freeze and at the later
+ *   re-attestation (a superseded generation's report must not resurface as
+ *   drift after a re-record),
  * - only candidates whose id still hashes their complete definition
  *   (an edited definition cannot smuggle an exclusion),
  * - only the deterministic `resultPatternTemplate` substitution, never a
  *   wildcard or directory prefix.
  */
 export function flowguardReportArtifacts(state: SessionState): readonly string[] {
-  const implementation = state.implementation;
-  if (implementation === null) return [];
   const candidates = new Map(
     (state.verificationCandidates ?? []).map((candidate) => [candidate.candidateId, candidate]),
   );
+  const planDigest = state.plan?.current.digest;
   const artifacts = new Set<string>();
   for (const attempt of state.validationAttempts) {
-    if (!attemptBindsImplementation(attempt, implementation)) continue;
+    if (!attemptIsToolOwnedEvidence(attempt, planDigest)) continue;
     const candidateId = attempt.result.candidateId;
     if (candidateId === undefined) continue;
     const candidate = candidates.get(candidateId);
@@ -123,15 +130,12 @@ export function flowguardReportArtifacts(state: SessionState): readonly string[]
   return [...artifacts];
 }
 
-function attemptBindsImplementation(
+function attemptIsToolOwnedEvidence(
   attempt: SessionState['validationAttempts'][number],
-  implementation: NonNullable<SessionState['implementation']>,
+  planDigest: string | undefined,
 ): boolean {
-  return (
-    attempt.scope === 'implementation' &&
-    attempt.implementationId === implementation.implementationId &&
-    attempt.implementationDigest === implementation.digest
-  );
+  if (attempt.scope === 'implementation') return true;
+  return planDigest !== undefined && attempt.planDigest === planDigest;
 }
 
 /** The frozen report pattern, only from a still-bound run_specific candidate. */

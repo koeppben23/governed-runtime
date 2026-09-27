@@ -16,7 +16,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -38,6 +38,7 @@ import type { SessionState } from '../state/schema.js';
 import { writeStateWithArtifacts } from './tools/helpers.js';
 import type { ToolContext } from './tools/helpers.js';
 import { hydrate } from './tools/hydrate/hydrate.js';
+import { implement } from './tools/implementation/implement.js';
 import { run_check } from './tools/validation/run-check-tool.js';
 
 const DOC_PATH = 'docs/usage-notes.md';
@@ -145,7 +146,7 @@ function executorWritesReport(): void {
       stdout: 'OK',
       stderr: '',
       timedOut: false,
-      startedAt: '2026-01-01T00:00:00.000Z',
+      startedAt: '2026-09-01T00:00:00.000Z',
     };
   });
 }
@@ -272,6 +273,93 @@ describe('reduced-ceremony subject artifacts (real git)', () => {
 
     expect(String(result)).not.toContain('"error":true');
     const state = await readState(se.sDir);
+    expect(state!.phase).toBe('IMPL_REVIEW');
+  });
+});
+
+describe('baseline VALIDATION reports (real git)', () => {
+  /** Drive VALIDATION with a real baseline run_specific check. */
+  async function baselineReportRun(se: SE): Promise<string> {
+    const base = makeProgressedState('VALIDATION');
+    await writeStateWithArtifacts(se.sDir, {
+      ...base,
+      binding: { ...base.binding, worktree: se.worktree },
+      implementationBaseAuthority: undefined,
+      activeChecks: ['test'],
+      verificationCandidates: [RUN_SPECIFIC_CANDIDATE],
+      executionSubjectInputsByCandidateId: {
+        [RUN_SPECIFIC_CANDIDATE.candidateId]: [{ kind: 'implementation' as const }],
+      },
+    });
+    executorWritesReport();
+    const result = await run_check.execute(RUN, se.tc);
+    if (String(result).includes('"error":true')) {
+      throw new Error(`baseline check failed: ${String(result).slice(0, 400)}`);
+    }
+    const state = await readState(se.sDir);
+    if (state!.phase !== 'IMPLEMENTATION') {
+      throw new Error(`baseline check did not advance: ${state!.phase}`);
+    }
+    const attempt = state!.validationAttempts.find((entry) => entry.scope === 'baseline');
+    if (attempt === undefined) throw new Error('no baseline attempt recorded');
+    return `.flowguard/reports/${attempt.attemptId}/jest.json`;
+  }
+
+  async function optIn(se: SE): Promise<void> {
+    const state = await readState(se.sDir);
+    await writeStateWithArtifacts(se.sDir, {
+      ...state!,
+      claimedTaskClass: 'TRIVIAL',
+      policySnapshot: {
+        ...POLICY_SNAPSHOT,
+        allowReducedCeremony: true,
+        requireHumanGates: true,
+        effectiveGateBehavior: 'human_gated',
+      },
+    });
+  }
+
+  it('HAPPY: VALIDATION report → /implement → IMPL_VALIDATION → reduced decision', async () => {
+    s = await boot();
+    const se = s;
+    const reportPath = await baselineReportRun(se);
+    expect(existsSync(join(se.worktree, reportPath))).toBe(true);
+    await optIn(se);
+
+    // The doc-only delivery; the baseline report is untracked in the worktree.
+    mkdirSync(join(se.worktree, 'docs'), { recursive: true });
+    writeFileSync(join(se.worktree, DOC_PATH), 'notes\n');
+    executorWritesReport();
+    const result = await implement.execute({}, se.tc);
+
+    expect(String(result)).not.toContain('INTERNAL_ERROR');
+    const state = await readState(se.sDir);
+    expect(state!.implementation?.changedFiles).toEqual([DOC_PATH]);
+    expect(state!.implementationRiskAssessment?.computedMinimumTaskClass).toBe('TRIVIAL');
+    expect(state!.reducedCeremony).toMatchObject({
+      profile: 'reduced',
+      reason: 'POST_IMPL_VERIFIED_TRIVIAL',
+    });
+    expect(state!.phase).toBe('EVIDENCE_REVIEW');
+  });
+
+  it('BAD: an unexpected project file stays in the governed set and denies reduction', async () => {
+    s = await boot();
+    const se = s;
+    await baselineReportRun(se);
+    await optIn(se);
+
+    mkdirSync(join(se.worktree, 'docs'), { recursive: true });
+    writeFileSync(join(se.worktree, DOC_PATH), 'notes\n');
+    writeFileSync(join(se.worktree, 'src-unexpected.ts'), 'export const x = 1;\n');
+    executorWritesReport();
+    const result = await implement.execute({}, se.tc);
+
+    expect(String(result)).not.toContain('INTERNAL_ERROR');
+    const state = await readState(se.sDir);
+    expect(state!.implementation?.changedFiles).toEqual([DOC_PATH, 'src-unexpected.ts']);
+    expect(state!.implementationRiskAssessment?.computedMinimumTaskClass).toBe('STANDARD');
+    expect(state!.reducedCeremony).toBeNull();
     expect(state!.phase).toBe('IMPL_REVIEW');
   });
 });

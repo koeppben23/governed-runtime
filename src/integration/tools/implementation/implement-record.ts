@@ -73,6 +73,7 @@ import type { FlowGuardPolicy } from '../../../config/policy.js';
 import { writeImplementationDiffArtifact } from './implement-diff-artifact.js';
 import {
   computeImplementationDigest,
+  flowguardReportArtifacts,
   scopeImplementationFiles,
 } from '../../../verification/implementation-subject.js';
 import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
@@ -319,7 +320,15 @@ export async function handleImplRecord(
   const gitBlocked = await validateRecordGitPrerequisites(input);
   if (gitBlocked) return gitBlocked;
 
-  const rawFiles = changedFilesOverride ?? (await changedFiles(input.worktree));
+  // FlowGuard's own per-attempt report files (e.g. baseline VALIDATION
+  // run_specific reports written after hydrate) are tool evidence, never
+  // governed implementation bytes: subtract the exact candidate-derived paths
+  // BEFORE scoping, digest and risk assessment. Not a blanket exclusion —
+  // arbitrary project files stay in the set and keep failing closed.
+  const toolArtifacts = new Set(flowguardReportArtifacts(input.state));
+  const rawFiles = (changedFilesOverride ?? (await changedFiles(input.worktree))).filter(
+    (file) => !toolArtifacts.has(file),
+  );
   const scoped = await scopeImplementationFiles(
     input.worktree,
     rawFiles,
