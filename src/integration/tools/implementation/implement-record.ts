@@ -56,6 +56,7 @@ import {
   writeStateWithArtifacts,
 } from '../helpers.js';
 import { existsSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 
 // State & Machine
 import { evaluate } from '../../../machine/evaluate.js';
@@ -356,6 +357,7 @@ async function buildImplEvidence(
   }
 
   return {
+    implementationId: randomUUID(),
     changedFiles: files,
     domainFiles,
     digest,
@@ -473,6 +475,10 @@ export async function handleImplRecord(
             claimedTaskClass: ceremonyClaimedTaskClass,
             computedMinimumTaskClass: ceremony.computedMinimumTaskClass,
             touchedSurfaces: [...ceremony.touchedSurfaces],
+            implementationId: implEvidence.implementationId,
+            implementationDigest: implEvidence.digest,
+            policyDigest: input.state.policySnapshot.hash,
+            verificationBasis: { checkIds: [...input.state.activeChecks], attempts: [] },
             decidedAt: input.ctx.now(),
           }
         : null,

@@ -112,7 +112,11 @@ export function mergeValidationResult(
 
 export type ValidationSubject =
   | { readonly scope: 'baseline'; readonly planDigest: string }
-  | { readonly scope: 'implementation'; readonly implementationDigest: string };
+  | {
+      readonly scope: 'implementation';
+      readonly implementationId: string;
+      readonly implementationDigest: string;
+    };
 
 export function freezeValidationSubject(state: SessionState): ValidationSubject {
   if (state.phase === 'VALIDATION') {
@@ -137,6 +141,7 @@ export function freezeValidationSubject(state: SessionState): ValidationSubject 
   }
   return {
     scope: 'implementation',
+    implementationId: implementation.implementationId,
     implementationDigest: implementation.digest,
   };
 }
@@ -145,6 +150,7 @@ function validationSubjectMatches(state: SessionState, subject: ValidationSubjec
   return subject.scope === 'baseline'
     ? state.phase === 'VALIDATION' && state.plan?.current.digest === subject.planDigest
     : state.phase === 'IMPL_VALIDATION' &&
+        state.implementation?.implementationId === subject.implementationId &&
         state.implementation?.digest === subject.implementationDigest;
 }
 

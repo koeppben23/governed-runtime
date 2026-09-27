@@ -173,6 +173,10 @@ describe('evaluate', () => {
           claimedTaskClass: 'TRIVIAL',
           computedMinimumTaskClass: 'TRIVIAL',
           touchedSurfaces: [],
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
+          implementationDigest: 'digest-of-impl',
+          policyDigest: 'a'.repeat(64),
+          verificationBasis: { checkIds: ['test', 'lint'], attempts: [] },
           decidedAt: '2026-01-01T00:00:00.000Z',
         },
         policySnapshot: {
@@ -206,6 +210,10 @@ describe('evaluate', () => {
           claimedTaskClass: 'TRIVIAL',
           computedMinimumTaskClass: 'TRIVIAL',
           touchedSurfaces: [],
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
+          implementationDigest: 'digest-of-impl',
+          policyDigest: 'a'.repeat(64),
+          verificationBasis: { checkIds: ['test', 'lint'], attempts: [] },
           decidedAt: '2026-01-01T00:00:00.000Z',
         },
       });

@@ -31,6 +31,7 @@ function stateWithAttemptRef(
 ): SessionState {
   return makeState('IMPL_VALIDATION', {
     implementation: {
+      implementationId: '00000000-0000-4000-8000-0000000000aa',
       changedFiles: ['a.ts'],
       domainFiles: [],
       digest: implDigest,
@@ -203,6 +204,7 @@ describe('bindMutationEvidence', () => {
     function stateWithExitCode(exitCode: number): SessionState {
       return makeState('IMPL_VALIDATION', {
         implementation: {
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
           changedFiles: ['a.ts'],
           domainFiles: [],
           digest: 'impl-current',

@@ -18,7 +18,13 @@ const AUTHORITY_REF = {
   authorityId: 'ticket',
   digest: 'authority',
 };
-const IMPL = { changedFiles: ['a.ts'], domainFiles: [], digest: IMPL_DIGEST, executedAt: NOW };
+const IMPL = {
+  implementationId: '00000000-0000-4000-8000-0000000000aa',
+  changedFiles: ['a.ts'],
+  domainFiles: [],
+  digest: IMPL_DIGEST,
+  executedAt: NOW,
+};
 
 function attemptResult(passed: boolean) {
   const outcome: 'supported' | 'inconclusive' = passed ? 'supported' : 'inconclusive';
@@ -71,6 +77,7 @@ describe('summarizeProofGraph', () => {
         {
           attemptId: ATT,
           scope: 'implementation',
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
           implementationDigest: IMPL_DIGEST,
           executionObservation: TEST_EXECUTION_OBSERVATION,
           result: attemptResult(true),
@@ -95,6 +102,7 @@ describe('summarizeProofGraph', () => {
         {
           attemptId: ATT,
           scope: 'implementation',
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
           implementationDigest: 'old-digest',
           executionObservation: TEST_EXECUTION_OBSERVATION,
           result: attemptResult(true),
@@ -116,6 +124,7 @@ describe('summarizeProofGraph reviewer projection', () => {
     return {
       attemptId,
       scope: 'implementation' as const,
+      implementationId: '00000000-0000-4000-8000-0000000000aa',
       implementationDigest: digest,
       executionObservation: TEST_EXECUTION_OBSERVATION,
       result: { ...attemptResult(passed), checkId },
@@ -218,6 +227,7 @@ describe('summarizeProofGraph reviewer projection', () => {
         {
           attemptId: ATT,
           scope: 'implementation',
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
           implementationDigest: IMPL_DIGEST,
           executionObservation: TEST_EXECUTION_OBSERVATION,
           result: attemptResult(true),
@@ -235,6 +245,7 @@ describe('summarizeProofGraph reviewer projection', () => {
         {
           attemptId: ATT,
           scope: 'implementation',
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
           implementationDigest: 'old-digest',
           executionObservation: TEST_EXECUTION_OBSERVATION,
           result: attemptResult(true),

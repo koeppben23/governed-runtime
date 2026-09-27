@@ -23,7 +23,13 @@ const AUTHORITY_REF = {
   authorityId: 'ticket',
   digest: 'authority',
 };
-const IMPL = { changedFiles: ['a.ts'], domainFiles: [], digest: IMPL_DIGEST, executedAt: NOW };
+const IMPL = {
+  implementationId: '00000000-0000-4000-8000-0000000000aa',
+  changedFiles: ['a.ts'],
+  domainFiles: [],
+  digest: IMPL_DIGEST,
+  executedAt: NOW,
+};
 
 const COUNTEREXAMPLE_REQ: CounterexampleRequirement = {
   kind: 'assertion',
@@ -121,6 +127,7 @@ describe('bindCounterexamples', () => {
       {
         attemptId: ATT,
         scope: 'implementation',
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
         implementationDigest: IMPL_DIGEST,
         executionObservation: TEST_EXECUTION_OBSERVATION,
         result: validationResult(false),
@@ -135,6 +142,7 @@ describe('bindCounterexamples', () => {
       {
         attemptId: ATT,
         scope: 'implementation',
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
         implementationDigest: IMPL_DIGEST,
         executionObservation: TEST_EXECUTION_OBSERVATION,
         result: { ...validationResult(false), outcome: 'inconclusive' as const },
@@ -149,6 +157,7 @@ describe('bindCounterexamples', () => {
       {
         attemptId: ATT,
         scope: 'implementation',
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
         implementationDigest: IMPL_DIGEST,
         executionObservation: TEST_EXECUTION_OBSERVATION,
         result: { ...validationResult(false), outcome: 'blocked' as const, timedOut: true },
@@ -163,6 +172,7 @@ describe('bindCounterexamples', () => {
       {
         attemptId: ATT,
         scope: 'implementation',
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
         implementationDigest: IMPL_DIGEST,
         executionObservation: TEST_EXECUTION_OBSERVATION,
         result: validationResult(true),
@@ -178,6 +188,7 @@ describe('bindCounterexamples', () => {
           {
             attemptId: ATT,
             scope: 'implementation' as const,
+            implementationId: '00000000-0000-4000-8000-0000000000aa',
             implementationDigest: IMPL_DIGEST,
             executionObservation: TEST_EXECUTION_OBSERVATION,
             result: aggregateValidationResult(),
@@ -216,6 +227,7 @@ describe('bindCounterexamples', () => {
         {
           attemptId: ATT,
           scope: 'implementation',
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
           implementationDigest: IMPL_DIGEST,
           executionObservation: TEST_EXECUTION_OBSERVATION,
           result: aggregateValidationResult('full_check'),
@@ -258,6 +270,7 @@ describe('bindCounterexamples', () => {
             {
               attemptId: ATT,
               scope: 'implementation',
+              implementationId: '00000000-0000-4000-8000-0000000000aa',
               implementationDigest: IMPL_DIGEST,
               executionObservation: TEST_EXECUTION_OBSERVATION,
               result,
@@ -280,6 +293,7 @@ describe('bindCounterexamples', () => {
           {
             attemptId: ATT,
             scope: 'implementation',
+            implementationId: '00000000-0000-4000-8000-0000000000aa',
             implementationDigest: IMPL_DIGEST,
             executionObservation: TEST_EXECUTION_OBSERVATION,
             result: {
@@ -308,6 +322,7 @@ describe('bindCounterexamples', () => {
       {
         attemptId: ATT,
         scope: 'implementation',
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
         implementationDigest: IMPL_DIGEST,
         executionObservation: TEST_EXECUTION_OBSERVATION,
         result: { ...validationResult(true), outcome: 'supported' as const },
@@ -345,6 +360,7 @@ describe('bindCounterexamples', () => {
       {
         attemptId: ATT,
         scope: 'implementation',
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
         implementationDigest: IMPL_DIGEST,
         executionObservation: TEST_EXECUTION_OBSERVATION,
         result: validationResult(true),
@@ -371,6 +387,7 @@ function assertionAttempt(
 ) {
   return {
     attemptId: ATT,
+    implementationId: '00000000-0000-4000-8000-0000000000aa',
     scope: scope as 'implementation',
     implementationDigest: IMPL_DIGEST,
     executionObservation: TEST_EXECUTION_OBSERVATION,
@@ -441,6 +458,7 @@ describe('counterexample assertion outcome classification', () => {
         {
           attemptId: ATT,
           scope: 'implementation',
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
           implementationDigest: IMPL_DIGEST,
           executionObservation: TEST_EXECUTION_OBSERVATION,
           result: { ...aggregateValidationResult('full_check'), candidateId: 'candidate-1' },
@@ -477,6 +495,7 @@ describe('counterexample assertion binding edge cases', () => {
         {
           attemptId: ATT,
           scope: 'implementation',
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
           implementationDigest: IMPL_DIGEST,
           executionObservation: TEST_EXECUTION_OBSERVATION,
           result: { ...aggregateValidationResult('full_check'), candidateId: 'candidate-1' },

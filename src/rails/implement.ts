@@ -57,6 +57,23 @@ export interface ImplExecutors {
 
 // ─── Rail ─────────────────────────────────────────────────────────────────────
 
+/**
+ * Deterministic, collision-resistant implementation id for the rail-level
+ * executor seam. Rails must not use Node randomness; the id derives from the
+ * frozen content digest and the recording timestamp, so it is unique per
+ * `/implement` execution while staying pure. The canonical integration tool
+ * path generates its own UUID instead.
+ */
+function deriveRailImplementationId(ctx: RailContext, digest: string): string {
+  const hex = ctx
+    .digest(`${digest}:${ctx.now()}`)
+    .replace(/[^0-9a-f]/gi, '')
+    .toLowerCase()
+    .padEnd(30, '0')
+    .slice(0, 30);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(12, 15)}-a${hex.slice(15, 18)}-${hex.slice(18, 30)}`;
+}
+
 async function collectAndAdvance(
   state: SessionState,
   work: { ticket: TicketEvidence; plan: PlanRecord },
@@ -69,10 +86,12 @@ async function collectAndAdvance(
   transitions: TransitionRecord[];
 }> {
   const { changedFiles, domainFiles } = await executors.execute(work.ticket, work.plan);
+  const digest = ctx.digest(changedFiles.sort().join('\n'));
   const currentImpl: ImplEvidence = {
+    implementationId: deriveRailImplementationId(ctx, digest),
     changedFiles,
     domainFiles,
-    digest: ctx.digest(changedFiles.sort().join('\n')),
+    digest,
     executedAt: ctx.now(),
   };
   const nextState: SessionState = {

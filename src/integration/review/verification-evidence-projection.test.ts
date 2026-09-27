@@ -15,6 +15,7 @@ function implAttempt(overrides: Record<string, unknown> = {}) {
   return {
     attemptId: '22222222-2222-4222-8222-222222222222',
     scope: 'implementation' as const,
+    implementationId: '00000000-0000-4000-8000-0000000000aa',
     implementationDigest: CURRENT_DIGEST,
     executionObservation: TEST_EXECUTION_OBSERVATION,
     result: VALIDATION_PASSED[0]!,

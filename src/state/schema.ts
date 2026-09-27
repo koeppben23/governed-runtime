@@ -31,7 +31,7 @@ import {
 
 /** Immutable compatibility contract for executable session authority. */
 export const CURRENT_ASSURANCE_EPOCH = 'assurance-epoch.v3' as const;
-export const CURRENT_SESSION_STATE_SCHEMA_VERSION = 'v6' as const;
+export const CURRENT_SESSION_STATE_SCHEMA_VERSION = 'v7' as const;
 export const CURRENT_STATE_DIGEST_FORMAT = 'state-digest.v2' as const;
 export const CURRENT_AUDIT_CHAIN_FORMAT = 'audit-chain.v3' as const;
 
@@ -118,7 +118,35 @@ export const RiskTrigger = z.enum([
 ]);
 export type RiskTrigger = z.infer<typeof RiskTrigger>;
 
-/** Runtime decision that implementation review ceremony was explicitly reduced. */
+/**
+ * Exact verification basis of one reduced-ceremony decision: the frozen active
+ * check set and the selected implementation-scoped attempts. The decision is
+ * only valid while every referenced attempt is the latest decisive result for
+ * its check in the bound implementation cycle.
+ */
+export const ReducedCeremonyVerificationBasis = z
+  .object({
+    checkIds: z.array(z.string().min(1)),
+    attempts: z.array(
+      z
+        .object({
+          checkId: z.string().min(1),
+          attemptId: z.string().uuid(),
+          executedAt: z.string().datetime(),
+        })
+        .readonly(),
+    ),
+  })
+  .readonly();
+export type ReducedCeremonyVerificationBasis = z.infer<typeof ReducedCeremonyVerificationBasis>;
+
+/**
+ * Runtime decision that implementation review ceremony was explicitly reduced.
+ *
+ * The decision is not itself transition authority: the machine guard requires
+ * the full binding (`implementationId` + implementation digest + frozen policy
+ * digest + valid verification basis) plus passing post-implementation evidence.
+ */
 export const ReducedCeremonyDecision = z
   .object({
     profile: z.literal('reduced'),
@@ -126,6 +154,14 @@ export const ReducedCeremonyDecision = z
     claimedTaskClass: TaskClass,
     computedMinimumTaskClass: TaskClass,
     touchedSurfaces: z.array(z.string()),
+    /** Execution identity of the bound `/implement` recording. */
+    implementationId: z.string().uuid(),
+    /** Content digest of the frozen implementation revision. */
+    implementationDigest: z.string().min(1),
+    /** Frozen policy snapshot hash (`policySnapshot.hash`) the decision was made under. */
+    policyDigest: z.string().min(1),
+    /** Exact check/attempt basis selected by the canonical evidence authority. */
+    verificationBasis: ReducedCeremonyVerificationBasis,
     decidedAt: z.string().datetime(),
   })
   .readonly();

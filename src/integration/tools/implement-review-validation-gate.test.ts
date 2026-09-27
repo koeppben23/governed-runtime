@@ -23,6 +23,7 @@ function attempt(
   return {
     attemptId: `00000000-0000-4000-8000-0000000000${checkId === 'test' ? '01' : '02'}`,
     scope: 'implementation',
+    implementationId: '00000000-0000-4000-8000-0000000000aa',
     implementationDigest: digest,
     result: {
       ...base,

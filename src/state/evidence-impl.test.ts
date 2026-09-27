@@ -11,6 +11,7 @@ describe('evidence-impl', () => {
   describe('HAPPY', () => {
     it('ImplEvidence parses valid implementation', () => {
       const impl = {
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
         changedFiles: ['src/auth.ts', 'src/auth.test.ts'],
         domainFiles: ['src/auth.ts'],
         digest: 'sha256-abc',
@@ -52,6 +53,7 @@ describe('evidence-impl', () => {
     it('ImplEvidence rejects empty changedFiles', () => {
       expect(() =>
         ImplEvidence.parse({
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
           changedFiles: [],
           domainFiles: [],
           digest: 'abc',
@@ -63,8 +65,32 @@ describe('evidence-impl', () => {
     it('ImplEvidence rejects missing digest', () => {
       expect(() =>
         ImplEvidence.parse({
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
           changedFiles: ['file.ts'],
           domainFiles: ['file.ts'],
+          executedAt: FIXED_TIME,
+        }),
+      ).toThrow();
+    });
+
+    it('ImplEvidence rejects a missing implementationId', () => {
+      expect(() =>
+        ImplEvidence.parse({
+          changedFiles: ['file.ts'],
+          domainFiles: ['file.ts'],
+          digest: 'sha256-abc',
+          executedAt: FIXED_TIME,
+        }),
+      ).toThrow();
+    });
+
+    it('ImplEvidence rejects a non-UUID implementationId', () => {
+      expect(() =>
+        ImplEvidence.parse({
+          implementationId: 'not-a-uuid',
+          changedFiles: ['file.ts'],
+          domainFiles: ['file.ts'],
+          digest: 'sha256-abc',
           executedAt: FIXED_TIME,
         }),
       ).toThrow();
@@ -102,6 +128,7 @@ describe('evidence-impl', () => {
   describe('CORNER', () => {
     it('ImplEvidence empty arrays are valid (no changes)', () => {
       const impl = {
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
         changedFiles: [],
         domainFiles: [],
         digest: 'empty-digest',

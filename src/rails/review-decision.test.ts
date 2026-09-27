@@ -706,7 +706,11 @@ describe('review-decision rail', () => {
       reason: 'Trivial config change',
       claimedTaskClass: 'TRIVIAL' as const,
       computedMinimumTaskClass: 'TRIVIAL' as const,
-      touchedSurfaces: ['config/app.json'],
+      touchedSurfaces: [],
+      implementationId: '00000000-0000-4000-8000-0000000000aa',
+      implementationDigest: 'digest-of-impl',
+      policyDigest: 'a'.repeat(64),
+      verificationBasis: { checkIds: ['test', 'lint'], attempts: [] },
       decidedAt: FIXED_TIME,
     };
     const state = makeState('EVIDENCE_REVIEW', {
@@ -751,7 +755,11 @@ describe('review-decision rail', () => {
       reason: 'Trivial fix',
       claimedTaskClass: 'TRIVIAL' as const,
       computedMinimumTaskClass: 'TRIVIAL' as const,
-      touchedSurfaces: ['src/index.ts'],
+      touchedSurfaces: [],
+      implementationId: '00000000-0000-4000-8000-0000000000aa',
+      implementationDigest: 'digest-of-impl',
+      policyDigest: 'a'.repeat(64),
+      verificationBasis: { checkIds: ['test', 'lint'], attempts: [] },
       decidedAt: FIXED_TIME,
     };
     const state = makeState('EVIDENCE_REVIEW', {
@@ -790,7 +798,11 @@ describe('review-decision rail', () => {
       reason: 'Trivial fix',
       claimedTaskClass: 'TRIVIAL' as const,
       computedMinimumTaskClass: 'TRIVIAL' as const,
-      touchedSurfaces: ['src/index.ts'],
+      touchedSurfaces: [],
+      implementationId: '00000000-0000-4000-8000-0000000000aa',
+      implementationDigest: 'digest-of-impl',
+      policyDigest: 'a'.repeat(64),
+      verificationBasis: { checkIds: ['test', 'lint'], attempts: [] },
       decidedAt: FIXED_TIME,
     };
     const state = makeState('EVIDENCE_REVIEW', {

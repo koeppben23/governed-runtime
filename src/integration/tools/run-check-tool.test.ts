@@ -686,6 +686,7 @@ describe('HAPPY', () => {
       phase: 'IMPL_VALIDATION',
       implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
       implementation: {
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
         changedFiles: ['src/example.ts'],
         domainFiles: ['src/example.ts'],
         digest: implDigest,
@@ -997,6 +998,7 @@ describe('CORNER', () => {
       phase: 'IMPL_VALIDATION',
       implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
       implementation: {
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
         changedFiles: ['src/example.ts'],
         domainFiles: ['src/example.ts'],
         digest: implDigest,
@@ -1010,6 +1012,7 @@ describe('CORNER', () => {
     expect(finalState!.validationAttempts).toHaveLength(1);
     expect(finalState!.validationAttempts[0]).toMatchObject({
       scope: 'implementation',
+      implementationId: '00000000-0000-4000-8000-0000000000aa',
       implementationDigest: implDigest,
     });
   });
@@ -1025,6 +1028,7 @@ describe('CORNER', () => {
       phase: 'IMPL_VALIDATION',
       implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
       implementation: {
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
         changedFiles: ['src/example.ts'],
         domainFiles: ['src/example.ts'],
         digest: implDigest,

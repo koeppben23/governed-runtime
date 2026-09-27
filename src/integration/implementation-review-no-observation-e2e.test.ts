@@ -362,6 +362,7 @@ async function prepareBoundUnableReview(se: SE, implementationDigest: string) {
       reviewFindings: [],
     },
     implementation: {
+      implementationId: '00000000-0000-4000-8000-0000000000aa',
       changedFiles: ['src/auth.ts'],
       domainFiles: ['src/auth.ts'],
       digest: implementationDigest,
@@ -496,6 +497,7 @@ describe('implementation review without repository observation authority', () =>
         plan: st!.plan,
         reviewDecision: st!.reviewDecision,
         implementation: {
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
           changedFiles: ['src/auth.ts'],
           domainFiles: ['src/auth.ts'],
           digest: implDigest1,
@@ -630,6 +632,7 @@ describe('implementation review without repository observation authority', () =>
         plan: st!.plan,
         reviewDecision: st!.reviewDecision,
         implementation: {
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
           changedFiles: ['src/auth.ts'],
           domainFiles: ['src/auth.ts'],
           digest: implDigest1,
@@ -779,6 +782,7 @@ describe('implementation review without repository observation authority', () =>
         plan: st!.plan,
         reviewDecision: st!.reviewDecision,
         implementation: {
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
           changedFiles: ['src/auth.ts'],
           domainFiles: ['src/auth.ts'],
           digest: implDigest1,

@@ -79,11 +79,18 @@ async function seedImplValidation(digest = 'impl-digest-1'): Promise<string> {
       source: 'user',
       createdAt: NOW,
     },
-    implementation: { changedFiles: ['a.ts'], domainFiles: [], digest, executedAt: NOW },
+    implementation: {
+      implementationId: '00000000-0000-4000-8000-0000000000aa',
+      changedFiles: ['a.ts'],
+      domainFiles: [],
+      digest,
+      executedAt: NOW,
+    },
     validationAttempts: [
       {
         attemptId: crypto.randomUUID(),
         scope: 'implementation',
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
         implementationDigest: digest,
         executionObservation: TEST_EXECUTION_OBSERVATION,
         result: {

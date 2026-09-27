@@ -392,6 +392,43 @@ describe('state schemas', () => {
       expect(() => SessionState.parse(state)).toThrow();
     });
 
+    it('ReducedCeremonyDecision requires implementation, policy and verification binding', () => {
+      const decision = {
+        profile: 'reduced' as const,
+        reason: 'POST_IMPL_VERIFIED_TRIVIAL',
+        claimedTaskClass: 'TRIVIAL' as const,
+        computedMinimumTaskClass: 'TRIVIAL' as const,
+        touchedSurfaces: [],
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
+        implementationDigest: 'impl-digest',
+        policyDigest: VALID_POLICY_DIGEST,
+        verificationBasis: {
+          checkIds: ['test'],
+          attempts: [
+            {
+              checkId: 'test',
+              attemptId: '00000000-0000-4000-8000-0000000000bb',
+              executedAt: FIXED_TIME,
+            },
+          ],
+        },
+        decidedAt: FIXED_TIME,
+      };
+      expect(ReducedCeremonyDecision.parse(decision)).toBeDefined();
+      expect(() =>
+        ReducedCeremonyDecision.parse({ ...decision, implementationDigest: undefined }),
+      ).toThrow();
+      expect(() =>
+        ReducedCeremonyDecision.parse({ ...decision, policyDigest: undefined }),
+      ).toThrow();
+      expect(() =>
+        ReducedCeremonyDecision.parse({ ...decision, verificationBasis: undefined }),
+      ).toThrow();
+      expect(() =>
+        ReducedCeremonyDecision.parse({ ...decision, implementationId: 'not-a-uuid' }),
+      ).toThrow();
+    });
+
     it('SessionState rejects null actorInfo', () => {
       const state = { ...makeState('TICKET'), actorInfo: null };
       expect(() => SessionState.parse(state)).toThrow();
@@ -898,6 +935,10 @@ describe('schema field-boundary contracts', () => {
       claimedTaskClass: 'STANDARD',
       computedMinimumTaskClass: 'STANDARD',
       touchedSurfaces: [],
+      implementationId: UUID,
+      implementationDigest: DIGEST,
+      policyDigest: DIGEST,
+      verificationBasis: { checkIds: ['test'], attempts: [] },
       decidedAt: NOW,
     };
 

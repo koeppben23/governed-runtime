@@ -249,6 +249,7 @@ describe('validate rail', () => {
           verdict: 'accept' as const,
         },
         implementation: {
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
           changedFiles: ['src/auth.ts'],
           domainFiles: ['src/auth.ts'],
           digest: 'impl-d',

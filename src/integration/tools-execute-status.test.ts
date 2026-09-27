@@ -1295,11 +1295,18 @@ describe('declare_contract', () => {
       phase: 'IMPL_VALIDATION',
       activeChecks: [checkId, 'security', ...(overrides.unattemptedChecks ?? [])],
       ticket: { text: 'approved ticket', digest: 'ticket-digest', source: 'user', createdAt: NOW },
-      implementation: { changedFiles: ['a.ts'], domainFiles: [], digest, executedAt: NOW },
+      implementation: {
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
+        changedFiles: ['a.ts'],
+        domainFiles: [],
+        digest,
+        executedAt: NOW,
+      },
       validationAttempts: [
         {
           attemptId: crypto.randomUUID(),
           scope: 'implementation',
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
           implementationDigest: digest,
           executionObservation: TEST_EXECUTION_OBSERVATION,
           result: {
@@ -1319,6 +1326,7 @@ describe('declare_contract', () => {
         {
           attemptId: crypto.randomUUID(),
           scope: 'implementation',
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
           implementationDigest: digest,
           executionObservation: TEST_EXECUTION_OBSERVATION,
           result: {
@@ -1612,6 +1620,7 @@ describe('declare_contract', () => {
       const attempt = (checkId: string, passed: boolean) => ({
         attemptId: crypto.randomUUID(),
         scope: 'implementation' as const,
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
         implementationDigest: digest,
         executionObservation: TEST_EXECUTION_OBSERVATION,
         result: {
@@ -1665,7 +1674,13 @@ describe('declare_contract', () => {
           source: 'user',
           createdAt: NOW,
         },
-        implementation: { changedFiles: ['a.ts'], domainFiles: [], digest, executedAt: NOW },
+        implementation: {
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
+          changedFiles: ['a.ts'],
+          domainFiles: [],
+          digest,
+          executedAt: NOW,
+        },
         validationAttempts: [
           attempt('test', true),
           {
@@ -1875,6 +1890,7 @@ describe('declare_contract', () => {
       return {
         attemptId: crypto.randomUUID(),
         scope: 'implementation' as const,
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
         implementationDigest: digest,
         executionObservation: TEST_EXECUTION_OBSERVATION,
         result: {
@@ -1909,7 +1925,13 @@ describe('declare_contract', () => {
         makeStructuredSecurityCandidate(),
       ],
       ticket: { text: 'approved ticket', digest: 'ticket-digest', source: 'user', createdAt: NOW },
-      implementation: { changedFiles: ['a.ts'], domainFiles: [], digest, executedAt: NOW },
+      implementation: {
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
+        changedFiles: ['a.ts'],
+        domainFiles: [],
+        digest,
+        executedAt: NOW,
+      },
       validationAttempts: [
         attempt('test', true),
         {

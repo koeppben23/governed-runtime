@@ -45,6 +45,7 @@ function attempt(attemptId: string, implementationDigest: string) {
   return {
     attemptId,
     scope: 'implementation' as const,
+    implementationId: '00000000-0000-4000-8000-0000000000aa',
     implementationDigest,
     executionObservation: TEST_EXECUTION_OBSERVATION,
     result: {
@@ -105,6 +106,7 @@ async function seedState(options: SeedOptions = {}) {
     sessDir,
     makeState('IMPL_REVIEW', {
       implementation: {
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
         changedFiles: ['src/example.ts'],
         domainFiles: ['src/example.ts'],
         digest: options.digest ?? DIGEST,

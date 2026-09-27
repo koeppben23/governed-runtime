@@ -196,6 +196,7 @@ describe('review-decision rail', () => {
         {
           ...state,
           implementation: {
+            implementationId: '00000000-0000-4000-8000-0000000000aa',
             changedFiles: ['src/state/schema.ts'],
             domainFiles: ['src/state/schema.ts'],
             digest: 'implementation-digest',
@@ -226,6 +227,7 @@ describe('review-decision rail', () => {
         {
           ...state,
           implementation: {
+            implementationId: '00000000-0000-4000-8000-0000000000aa',
             changedFiles: ['src/archive/verify.ts'],
             domainFiles: ['src/archive/verify.ts'],
             digest: 'implementation-digest',
@@ -253,6 +255,7 @@ describe('review-decision rail', () => {
         {
           ...state,
           implementation: {
+            implementationId: '00000000-0000-4000-8000-0000000000aa',
             changedFiles: ['src/state/schema.ts'],
             domainFiles: ['src/state/schema.ts'],
             digest: 'implementation-digest',

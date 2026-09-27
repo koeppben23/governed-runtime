@@ -199,6 +199,7 @@ describe('readState legacy migrations', () => {
     const attempt = {
       attemptId: '00000000-0000-4000-8000-0000000000aa',
       scope: 'implementation' as const,
+      implementationId: '00000000-0000-4000-8000-0000000000aa',
       implementationDigest: 'impl-digest',
       executionObservation: TEST_EXECUTION_OBSERVATION,
       result: VALIDATION_PASSED[0]!,
@@ -222,6 +223,7 @@ describe('readState legacy migrations', () => {
         {
           attemptId: '00000000-0000-4000-8000-0000000000aa',
           scope: 'implementation',
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
           implementationDigest: 'impl-digest',
           executionObservation: {
             executionObservedStateDigest: 'not-hex',
