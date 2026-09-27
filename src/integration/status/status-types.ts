@@ -127,7 +127,7 @@ export interface StatusProjection {
 export interface EvidenceSlotProjection {
   slot: string;
   label: string;
-  status: 'complete' | 'missing' | 'not_yet_required' | 'failed';
+  status: 'complete' | 'missing' | 'not_yet_required' | 'failed' | 'waived';
   required: boolean;
   artifactKind: string | null;
   hint: string | null;
