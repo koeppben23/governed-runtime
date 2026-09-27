@@ -37,8 +37,9 @@ for already-terminal sessions and defaults to a redacted sharing archive.
 - JDK 21+
 - Node.js 22+
 - OpenCode CLI (`opencode`) in PATH
-- FlowGuard core tarball (build with `npm run build && npm pack` from the
-  governed-runtime repo root)
+- FlowGuard core tarball (build with `npm run build && npm run pack:checksums`
+  from the governed-runtime repo root; the script writes the tarball and the
+  `checksums.sha256` file the installer requires next to it)
 
 ## Quick Start
 
@@ -106,6 +107,20 @@ to the review obligation, the attempt, and the frozen subject digest
 (`reviewDispatch.completed`), writes the review report with explicit target
 coverage, and reaches terminal `PEER_REVIEW_COMPLETE`. `changes_requested` is a
 valid outcome; an optional `/archive` may follow.
+
+### Optional A/B — Reduced Ceremony vs. Full Review
+
+`REDUCED_CEREMONY.md` adds a controlled comparison on the same application: the
+same documentation task (`docs/usage-notes.md`, TRIVIAL) runs twice, in two
+fresh workspaces from the same seed, with identical team policy and identical
+active checks — once with `policy.allowReducedCeremony: true` (complete
+post-implementation checks → review waiver → human evidence gate → export) and
+once explicitly set to `false` (identical checks → full independent
+implementation review). The existing Java bugfix flow deliberately keeps the
+full review. `run-reduced-ceremony-demo-setup.sh` creates both workspaces and
+writes both policies explicitly; its `--verify-session` mode proves that
+FlowGuard actually selected `build` + `test` as active checks before the demo
+claims "2/2 passed".
 
 ## Archive and Raw Evidence
 
@@ -180,10 +195,12 @@ contract it was validated against.
 demos/java-task-manager/
 ├── README.md                    ← You are here
 ├── DEMO_SCRIPT.md               ← Live presentation script with talking points
+├── REDUCED_CEREMONY.md          ← Optional A/B comparison: reduced vs. full implementation review
 ├── RESET.md                     ← How to reset for a fresh demo
 ├── EVIDENCE_PACKAGE.md          ← Evidence-package verification scope and limits
 ├── evidence-manifest.example.json ← Template binding the three sessions to their artifacts
 ├── run-demo-setup.sh            ← Prepare or prepare+install the demo project
+├── run-reduced-ceremony-demo-setup.sh ← Two fresh workspaces, explicit policies, --verify-session
 ├── run-demo-preflight.sh        ← Pre-flight checks before a live pitch
 ├── verify-evidence-package.mjs  ← Standalone offline package verifier
 ├── snapshot-demo.sh             ← Workspace checkpoint save/restore (visual only)
@@ -193,6 +210,7 @@ demos/java-task-manager/
     ├── .gitignore
     ├── pom.xml
     ├── TICKET.md
+    ├── TICKET_DOCS.md
     ├── ADR_TICKET.md
     ├── mvnw / mvnw.cmd
     ├── .mvn/wrapper/

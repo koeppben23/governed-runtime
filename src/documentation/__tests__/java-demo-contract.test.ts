@@ -19,6 +19,9 @@ const TICKET_PATH = path.join(SEED_DIR, 'TICKET.md');
 const ADR_TICKET_PATH = path.join(SEED_DIR, 'ADR_TICKET.md');
 const README_PATH = path.join(DEMO_DIR, 'README.md');
 const DEMO_SCRIPT_PATH = path.join(DEMO_DIR, 'DEMO_SCRIPT.md');
+const REDUCED_CEREMONY_PATH = path.join(DEMO_DIR, 'REDUCED_CEREMONY.md');
+const REDUCED_SETUP_SCRIPT = path.join(DEMO_DIR, 'run-reduced-ceremony-demo-setup.sh');
+const TICKET_DOCS_PATH = path.join(SEED_DIR, 'TICKET_DOCS.md');
 const PROOFGRAPH_VARIANTS_PATH = path.join(REPO_ROOT, 'demos', 'proofgraph-variants.md');
 const CONTROLLER_TEST_PATH = path.join(
   SEED_DIR,
@@ -150,6 +153,79 @@ describe('Java Task Manager demo contract', () => {
     expect(demoScript).toContain('ADR_TICKET.md');
   });
 
+  it('keeps the reduced-ceremony A/B scenario bound to the runtime contract', async () => {
+    const [reducedDoc, reducedSetup, ticketDocs, demoScript] = await Promise.all([
+      fs.readFile(REDUCED_CEREMONY_PATH, 'utf-8'),
+      fs.readFile(REDUCED_SETUP_SCRIPT, 'utf-8'),
+      fs.readFile(TICKET_DOCS_PATH, 'utf-8'),
+      fs.readFile(DEMO_SCRIPT_PATH, 'utf-8'),
+    ]);
+
+    // The docs-only task is deterministic and scoped to the single new file.
+    expect(ticketDocs).toContain('docs/usage-notes.md');
+    expect(ticketDocs).toContain('./mvnw verify');
+    expect(ticketDocs).toContain('./mvnw test');
+    expect(ticketDocs).toMatch(/Do not add files other than `docs\/usage-notes\.md`/);
+
+    // The scenario documents both explicit policies, the waiver semantics and
+    // the durable audit proof including the real archive member resolution.
+    expect(reducedDoc).toContain('policy.allowReducedCeremony: true');
+    expect(reducedDoc).toContain('policy.allowReducedCeremony: false');
+    expect(reducedDoc).toContain('reduced_ceremony_applied');
+    expect(reducedDoc).toContain('POST_IMPL_VERIFIED_TRIVIAL');
+    expect(reducedDoc).toContain('tar -tzf');
+    expect(reducedDoc).toContain('audit/audit.jsonl$');
+    expect(reducedDoc).toContain('--verify-session');
+
+    // The setup script writes both policies, checks parity and verifies the
+    // runtime-selected active checks read-only.
+    expect(reducedSetup).toContain('--verify-session');
+    expect(reducedSetup).toContain('activeChecks');
+    expect(reducedSetup).toContain("'HEAD^{tree}'");
+    expect(reducedSetup).toContain('allowReducedCeremony');
+    expect(reducedSetup).toContain('reduced-on');
+    expect(reducedSetup).toContain('reduced-off');
+
+    // The main script no longer claims reduced ceremony skips IMPL_VALIDATION.
+    expect(demoScript).not.toMatch(/skipping\s+`?IMPL_VALIDATION/i);
+    expect(demoScript).toContain('REDUCED_CEREMONY.md');
+  });
+
+  it('verifies the runtime active-check selection from a real session state', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'flowguard-reduced-preflight-'));
+    const workspace = path.join(tempDir, 'reduced-on');
+    const configDir = path.join(tempDir, 'config');
+    const stateDir = path.join(configDir, 'workspaces', 'fp-test', 'sessions', 'sid-test', 'state');
+    const statePath = path.join(stateDir, 'session-state.json');
+    const runVerify = () =>
+      execFile('bash', [REDUCED_SETUP_SCRIPT, '--verify-session', workspace], {
+        cwd: REPO_ROOT,
+        env: { ...process.env, OPENCODE_CONFIG_DIR: configDir },
+      });
+
+    try {
+      await fs.mkdir(workspace, { recursive: true });
+      await fs.mkdir(stateDir, { recursive: true });
+      await fs.writeFile(
+        statePath,
+        JSON.stringify({ binding: { worktree: workspace }, activeChecks: ['test', 'build'] }),
+        'utf-8',
+      );
+      const { stdout } = await runVerify();
+      expect(stdout).toContain('activeChecks: [build, test]');
+      expect(stdout).toContain('PASS  activeChecks selected as build + test');
+
+      await fs.writeFile(
+        statePath,
+        JSON.stringify({ binding: { worktree: workspace }, activeChecks: ['build'] }),
+        'utf-8',
+      );
+      await expect(runVerify()).rejects.toMatchObject({ code: 1 });
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it('materializes the documented seed including architecture task and review fixture branches', async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'flowguard-java-demo-contract-'));
     const targetDir = path.join(tempDir, 'workspace');
@@ -206,6 +282,13 @@ describe('Java Task Manager demo contract', () => {
       expect(materializedAdrTicket).toContain('`## Context`');
       expect(materializedAdrTicket).toContain('`## Decision`');
       expect(materializedAdrTicket).toContain('`## Consequences`');
+
+      // The reduced-ceremony docs task is materialized with the seed.
+      const materializedDocsTicket = await fs.readFile(
+        path.join(targetDir, 'TICKET_DOCS.md'),
+        'utf-8',
+      );
+      expect(materializedDocsTicket).toContain('docs/usage-notes.md');
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true });
     }

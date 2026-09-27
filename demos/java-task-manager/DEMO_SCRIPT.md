@@ -251,8 +251,12 @@ covers it.
 > Under `team` policy, once the post-implementation checks pass, FlowGuard
 > dispatches an **independent implementation review** in `IMPL_REVIEW` — a
 > separate phase from the plan review. The reviewer is host-orchestrated and
-> host-observed; the human never submits findings. Reduced ceremony (skipping
-> `IMPL_VALIDATION` and `IMPL_REVIEW`) is disabled in `team`.
+> host-observed; the human never submits findings. Reduced ceremony is disabled
+> in `team` by default. When enabled, it waives **only** this independent
+> `IMPL_REVIEW` for runtime-verified TRIVIAL changes — `IMPL_VALIDATION` always
+> runs every active check, and the human `EVIDENCE_REVIEW` gate and `/export`
+> remain mandatory. The A/B comparison lives in
+> [`REDUCED_CEREMONY.md`](REDUCED_CEREMONY.md).
 
 | Action                                                | Phase                         | What I Say                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | ----------------------------------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -322,6 +326,16 @@ fehlschlagenden Baseline-Check in die Implementierung durchlässt. Der Fix beste
 aus zwei Teilen: Bug beheben und Regressionstest aktivieren. Am Ende beweist der grüne
 Testlauf, dass der zuvor dokumentierte Bug wirklich geschlossen wurde. Die Session ist
 erst nach `/export` COMPLETE — der Export ist der Commit-Schritt, nicht das Archivieren.
+
+### Optional: Reduced-Ceremony A/B (extra session, ~10 min)
+
+For audiences asking how FlowGuard can save review effort **without** weakening
+verification: [`REDUCED_CEREMONY.md`](REDUCED_CEREMONY.md) runs the same
+documentation task twice, in two fresh workspaces from the same seed — once
+with `policy.allowReducedCeremony: true` (TRIVIAL → complete post-implementation
+checks → review waiver → human gate → export) and once explicitly set to
+`false` (identical checks, full independent implementation review). The Java
+bugfix above deliberately stays in the full-ceremony path.
 
 ---
 

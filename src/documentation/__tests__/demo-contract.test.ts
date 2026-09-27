@@ -28,6 +28,7 @@ const DOCS: Readonly<Record<string, string>> = {
   'README.md': read('README.md'),
   'FALLBACK.md': read('FALLBACK.md'),
   'RESET.md': read('RESET.md'),
+  'REDUCED_CEREMONY.md': read('REDUCED_CEREMONY.md'),
 };
 
 const DEMO_SCRIPT = DOCS['DEMO_SCRIPT.md']!;
@@ -263,6 +264,32 @@ describe('java demo workflow contract', () => {
     // The demo must tell the same story.
     expect(DEMO_SCRIPT).toContain('`export evidence` ist `recommended`');
     expect(DEMO_SCRIPT).toContain('`create PR` und `keep branch` stehen auf `not_recommended`');
+  });
+
+  it('documents reduced ceremony as an implementation-review waiver only', () => {
+    const reduced = DOCS['REDUCED_CEREMONY.md']!;
+    // The corrected claim: only IMPL_REVIEW is waived; IMPL_VALIDATION always
+    // runs and the human gate plus /export remain mandatory.
+    expect(DEMO_SCRIPT).toContain('waives **only** this independent');
+    expect(DEMO_SCRIPT).not.toMatch(/skipping\s+`?IMPL_VALIDATION/i);
+    expect(DEMO_SCRIPT).toContain('REDUCED_CEREMONY.md');
+    // The A/B scenario binds the four observable proofs to the runtime contract.
+    for (const marker of [
+      'policy.allowReducedCeremony: true',
+      'policy.allowReducedCeremony: false',
+      'REDUCED_CEREMONY',
+      'POST_IMPL_VERIFIED_TRIVIAL',
+      'reduced_ceremony_applied',
+      'evidenceSummary.waived',
+      'post-impl 2/2 passed',
+      'waived by reduced ceremony',
+      'EVIDENCE_REVIEW',
+      'EXPORT_READY',
+    ]) {
+      expect(reduced, marker).toContain(marker);
+    }
+    // No synthetic review is ever claimed.
+    expect(reduced).toContain('`state.implReview` stays `null`');
   });
 
   it('documents deterministic task/architecture inputs and the export completion projection', () => {
