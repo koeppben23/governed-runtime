@@ -16,6 +16,8 @@ import {
   projectCeremonyEligibility,
   reducedCeremonyEligible,
   resolveCeremonyProfile,
+  ticketDeclarationGate,
+  declaredTaskClassFor,
   MUTATING_HOST_TOOLS,
   HOST_MUTATION_PHASE,
 } from './phase-tool-gate.js';
@@ -29,6 +31,7 @@ import {
   FIXTURE_LINT_CANDIDATE_ID,
 } from '../fixtures.js';
 import { TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
+import { hashText } from '../shared/hashing.js';
 
 function implementationAttempt(
   checkId: string,
@@ -786,6 +789,98 @@ describe('phase-tool-gate', () => {
       expect(result.profile).toBe('full');
       expect(result.reason).toBe('RISK_GATE_BLOCKED');
     });
+  });
+});
+
+describe('ticket declaration gate projection', () => {
+  function ticketState(input: {
+    text: string;
+    digest?: string;
+    riskDeclaration:
+      | { kind: 'absent' }
+      | { kind: 'declared'; taskClass: 'TRIVIAL' | 'STANDARD' | 'HIGH-RISK' }
+      | { kind: 'conflict'; values: Array<'TRIVIAL' | 'STANDARD' | 'HIGH-RISK'> }
+      | { kind: 'invalid'; raw: string };
+  }) {
+    return makeState('TICKET', {
+      ticket: {
+        text: input.text,
+        digest: input.digest ?? hashText(input.text),
+        source: 'user',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        riskDeclaration: input.riskDeclaration,
+      },
+    });
+  }
+
+  it('HAPPY: a valid declaration is clear and contributes its floor', () => {
+    const state = ticketState({
+      text: 'Risk: STANDARD\n\nBounded change.',
+      riskDeclaration: { kind: 'declared', taskClass: 'STANDARD' },
+    });
+    expect(ticketDeclarationGate(state)).toEqual({ status: 'clear' });
+    expect(declaredTaskClassFor(state)).toBe('STANDARD');
+  });
+
+  it('HAPPY: an absent declaration is clear with no floor', () => {
+    const state = ticketState({ text: 'No risk line.', riskDeclaration: { kind: 'absent' } });
+    expect(ticketDeclarationGate(state)).toEqual({ status: 'clear' });
+    expect(declaredTaskClassFor(state)).toBeNull();
+  });
+
+  it('BAD: an invalid declaration blocks with TICKET_RISK_DECLARATION_INVALID', () => {
+    const state = ticketState({
+      text: 'Risk: nonsense',
+      riskDeclaration: { kind: 'invalid', raw: 'nonsense' },
+    });
+    expect(ticketDeclarationGate(state)).toMatchObject({
+      status: 'blocked',
+      code: 'TICKET_RISK_DECLARATION_INVALID',
+    });
+    expect(declaredTaskClassFor(state)).toBeNull();
+  });
+
+  it('BAD: a digest that does not hash the text blocks as inconsistent', () => {
+    const state = ticketState({
+      text: 'Risk: TRIVIAL',
+      digest: 'not-the-hash-of-the-text',
+      riskDeclaration: { kind: 'declared', taskClass: 'TRIVIAL' },
+    });
+    expect(ticketDeclarationGate(state)).toMatchObject({
+      status: 'blocked',
+      code: 'TICKET_RISK_DECLARATION_INCONSISTENT',
+    });
+  });
+
+  it('BAD: a stored declaration that disagrees with the parser blocks as inconsistent', () => {
+    // The digest alone would pass; only re-running the parser over the text
+    // proves the stored declaration describes that text.
+    const text = 'Risk: TRIVIAL';
+    const state = ticketState({
+      text,
+      digest: hashText(text),
+      riskDeclaration: { kind: 'declared', taskClass: 'HIGH-RISK' },
+    });
+    expect(ticketDeclarationGate(state)).toMatchObject({
+      status: 'blocked',
+      code: 'TICKET_RISK_DECLARATION_INCONSISTENT',
+    });
+  });
+
+  it('EDGE: a conflicting declaration is clear but floors at the highest value', () => {
+    const text = 'Risk: TRIVIAL\nRisk: HIGH-RISK';
+    const state = ticketState({
+      text,
+      riskDeclaration: { kind: 'conflict', values: ['HIGH-RISK', 'TRIVIAL'] },
+    });
+    expect(ticketDeclarationGate(state)).toEqual({ status: 'clear' });
+    expect(declaredTaskClassFor(state)).toBe('HIGH-RISK');
+  });
+
+  it('EDGE: no ticket never blocks and has no floor', () => {
+    const state = makeState('TICKET');
+    expect(ticketDeclarationGate(state)).toEqual({ status: 'clear' });
+    expect(declaredTaskClassFor(state)).toBeNull();
   });
 });
 

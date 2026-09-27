@@ -259,8 +259,6 @@ export function declaredTaskClassFor(state: SessionState): TaskClass | null {
 }
 
 /**
-
-/**
  * Pre-execution enforcement of the ticket-declaration gate: an invalid or
  * inconsistent declaration blocks risk-relevant mutations independently of
  * `enforceRiskClassification`. The block is audited WITHOUT latching the
