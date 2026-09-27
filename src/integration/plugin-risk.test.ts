@@ -491,11 +491,21 @@ describe('extractPathsFromBashCommand', () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe('isBashScopeProvablyKnown', () => {
-  it('HAPPY: single simple commands with extractable targets are known', () => {
+  it('HAPPY: single simple commands with exhaustively captured writes are known', () => {
     expect(isBashScopeProvablyKnown('echo x > docs/notes.md')).toBe(true);
     expect(isBashScopeProvablyKnown('echo x | tee -a log.txt')).toBe(true);
     expect(isBashScopeProvablyKnown('rm "path with spaces/file.txt"')).toBe(true);
-    expect(isBashScopeProvablyKnown('npm test > log.txt 2>&1')).toBe(true);
+    expect(isBashScopeProvablyKnown("sed -i 's/a/b/' src/config/policy.ts")).toBe(true);
+  });
+
+  it('BAD: interpreters and package managers stay unknown even with a redirect', () => {
+    expect(
+      isBashScopeProvablyKnown(
+        'python -c \'open("src/config/policy.ts","w").write("x")\' > docs/notes.md',
+      ),
+    ).toBe(false);
+    expect(isBashScopeProvablyKnown('node build.js > log.txt')).toBe(false);
+    expect(isBashScopeProvablyKnown('npm test > log.txt 2>&1')).toBe(false);
   });
 
   it('BAD: a compound command with one extractable redirect is unknown', () => {

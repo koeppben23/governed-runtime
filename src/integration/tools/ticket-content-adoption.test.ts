@@ -181,6 +181,66 @@ describe('ticket content adoption (real worktree)', () => {
     expect(state!.ticket?.riskDeclaration).toEqual({ kind: 'absent' });
   });
 
+  it('BAD: a quoted or backticked read instruction never becomes the ticket content', async () => {
+    s = await boot();
+    const se = s;
+    writeFileSync(join(se.worktree, TICKET_FILE), TICKET_CONTENT);
+
+    for (const text of [
+      'Read "TICKET_DOCS.md" and create the requested usage notes',
+      'Read `TICKET_DOCS.md` and create the requested usage notes',
+    ]) {
+      const result = await ticket.execute({ text, source: 'user' }, se.tc);
+      expect(String(result), text).toContain('TICKET_REFERENCE_WITHOUT_CONTENT');
+      expect((await readState(se.sDir))!.ticket).toBeNull();
+    }
+  });
+
+  it('BAD: a quoted read instruction on a MISSING path still blocks', async () => {
+    s = await boot();
+    const se = s;
+
+    const result = await ticket.execute(
+      {
+        text: 'Read "TICKET_DOCS_MISSING.md" and create the requested usage notes',
+        source: 'user',
+      },
+      se.tc,
+    );
+    expect(String(result)).toContain('TICKET_REFERENCE_WITHOUT_CONTENT');
+    expect((await readState(se.sDir))!.ticket).toBeNull();
+  });
+
+  it('BAD: empty text plus ticketSource is still a source conflict', async () => {
+    s = await boot();
+    const se = s;
+    writeFileSync(join(se.worktree, TICKET_FILE), TICKET_CONTENT);
+
+    const result = await ticket.execute(
+      { text: '', ticketSource: { kind: 'repository_file', path: TICKET_FILE }, source: 'user' },
+      se.tc,
+    );
+    expect(String(result)).toContain('TICKET_SOURCE_CONFLICT');
+    expect((await readState(se.sDir))!.ticket).toBeNull();
+  });
+
+  it('BAD: a conflicting inputOrigin for ticketSource is rejected', async () => {
+    s = await boot();
+    const se = s;
+    writeFileSync(join(se.worktree, TICKET_FILE), TICKET_CONTENT);
+
+    const result = await ticket.execute(
+      {
+        ticketSource: { kind: 'repository_file', path: TICKET_FILE },
+        inputOrigin: 'external_reference',
+        source: 'external',
+      },
+      se.tc,
+    );
+    expect(String(result)).toContain('TICKET_SOURCE_CONFLICT');
+    expect((await readState(se.sDir))!.ticket).toBeNull();
+  });
+
   it('BAD: an in-worktree symlink pointing outside the worktree fails closed', async () => {
     s = await boot();
     const se = s;

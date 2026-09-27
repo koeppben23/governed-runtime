@@ -117,6 +117,21 @@ function ticketFor(text: string): NonNullable<SessionState['ticket']> {
   };
 }
 
+function bindAssessmentToTicket(
+  ticket: NonNullable<SessionState['ticket']>,
+  overrides: Partial<ImplementationRiskAssessment> = {},
+): ImplementationRiskAssessment {
+  const declaration = ticket.riskDeclaration;
+  return {
+    ...RISK_ASSESSMENT,
+    ticketDigest: ticket.digest,
+    declarationKind: declaration.kind,
+    declaredTaskClass: declaration.kind === 'declared' ? declaration.taskClass : null,
+    effectiveTaskClass: declaration.kind === 'declared' ? declaration.taskClass : 'TRIVIAL',
+    ...overrides,
+  };
+}
+
 function decisionFor(
   ticket: NonNullable<SessionState['ticket']>,
   declaration: TicketRiskDeclaration,
@@ -258,15 +273,28 @@ describe('reducedCeremonyReady binding invariants', () => {
     const ticket = ticketFor('Risk: TRIVIAL\n\nDocs only.');
     const state = boundState({
       ticket,
+      implementationRiskAssessment: bindAssessmentToTicket(ticket),
       reducedCeremony: decisionFor(ticket, ticket.riskDeclaration),
     });
     expect(reducedCeremonyReady(state)).toBe(true);
+  });
+
+  it('BAD: a stale assessment from a previous ticket rejects', () => {
+    const previousTicket = ticketFor('Risk: TRIVIAL\n\nOld scope.');
+    const currentTicket = ticketFor('Risk: TRIVIAL\n\nNew scope.');
+    const state = boundState({
+      ticket: currentTicket,
+      implementationRiskAssessment: bindAssessmentToTicket(previousTicket),
+      reducedCeremony: decisionFor(currentTicket, currentTicket.riskDeclaration),
+    });
+    expect(reducedCeremonyReady(state)).toBe(false);
   });
 
   it('BAD: a ticket-declared STANDARD rejects even for a docs-only change', () => {
     const ticket = ticketFor('Risk: STANDARD\n\nDocs only.');
     const state = boundState({
       ticket,
+      implementationRiskAssessment: bindAssessmentToTicket(ticket),
       reducedCeremony: decisionFor(ticket, ticket.riskDeclaration),
     });
     expect(reducedCeremonyReady(state)).toBe(false);
@@ -276,7 +304,7 @@ describe('reducedCeremonyReady binding invariants', () => {
     const ticket = ticketFor('Risk: STANDARD\n\nDocs only.');
     const state = boundState({
       ticket,
-      implementationRiskAssessment: { ...RISK_ASSESSMENT, effectiveTaskClass: 'STANDARD' },
+      implementationRiskAssessment: bindAssessmentToTicket(ticket),
       reducedCeremony: decisionFor(ticket, { kind: 'declared', taskClass: 'TRIVIAL' }),
     });
     expect(reducedCeremonyReady(state)).toBe(false);

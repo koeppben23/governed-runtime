@@ -133,6 +133,16 @@ describe('parseTicketRiskDeclaration', () => {
     expect(parseTicketRiskDeclaration(text)).toEqual({ kind: 'absent' });
   });
 
+  it('BAD: indented code examples are not binding declarations', () => {
+    expect(parseTicketRiskDeclaration('    Risk: STANDARD')).toEqual({ kind: 'absent' });
+    expect(parseTicketRiskDeclaration('\tRisk: HIGH')).toEqual({ kind: 'absent' });
+    const mixed = ['    Risk: STANDARD', '', 'Risk: TRIVIAL'].join('\n');
+    expect(parseTicketRiskDeclaration(mixed)).toEqual({
+      kind: 'declared',
+      taskClass: 'TRIVIAL',
+    });
+  });
+
   it('EDGE: an unclosed fence suppresses the rest of the document', () => {
     const text = ['```', 'Risk: HIGH', 'Risk: TRIVIAL'].join('\n');
     expect(parseTicketRiskDeclaration(text)).toEqual({ kind: 'absent' });

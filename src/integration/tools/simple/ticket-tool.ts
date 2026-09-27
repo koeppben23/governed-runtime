@@ -23,7 +23,12 @@ import { withMutableSessionTransaction } from '../helpers.js';
 import type { ToolResult } from '../helpers.js';
 import { persistAndFormat } from '../helpers-rail-presentation.js';
 import { executeTicket } from '../../../rails/ticket.js';
-import { InputOriginSchema, ExternalReferenceSchema } from '../../../state/evidence.js';
+import {
+  InputOriginSchema,
+  ExternalReferenceSchema,
+  type ExternalReference,
+  type InputOrigin,
+} from '../../../state/evidence.js';
 import { ActorClaimError } from '../../../adapters/actor.js';
 
 // ─── Shared safe-execution wrapper ───────────────────────────────────────────
@@ -53,8 +58,16 @@ function isPathLikeToken(token: string): boolean {
   return token.includes('/') || /\.[A-Za-z0-9]{1,8}$/.test(token);
 }
 
-function stripTrailingPunctuation(token: string): string {
-  return token.replace(/[),.;:!?]+$/, '');
+/**
+ * Remove the decorative quoting a user/agent wraps a referenced path in, so
+ * `Read "TICKET_DOCS.md"` and ``Read `TICKET_DOCS.md` `` are recognized as
+ * dominant references like their unquoted form.
+ */
+function stripTokenDecoration(token: string): string {
+  return token
+    .replace(/^[("'`]+/, '')
+    .replace(/[),.;:!?"'`]+$/, '')
+    .trim();
 }
 
 function isBareUrlToken(token: string): boolean {
@@ -74,14 +87,14 @@ function isUnadoptedTicketReference(text: string): boolean {
   const trimmed = text.trim();
   if (trimmed.length === 0) return false;
 
-  const single = stripTrailingPunctuation(trimmed);
+  const single = stripTokenDecoration(trimmed);
   if (!single.includes(' ') && (isPathLikeToken(single) || isBareUrlToken(single))) {
     return true;
   }
 
   const instruction = /^(?:please\s+)?(?:read|open|load|resolve|use)\s+(\S+)/i.exec(trimmed);
   if (instruction !== null) {
-    const target = stripTrailingPunctuation(instruction[1] ?? '');
+    const target = stripTokenDecoration(instruction[1] ?? '');
     if (isPathLikeToken(target) || isBareUrlToken(target)) return true;
   }
 
@@ -169,50 +182,17 @@ export const ticket: ToolDefinition = {
         return withMutableSessionTransaction(
           context,
           async ({ worktree, sessDir, state, ctx }): Promise<ToolResult> => {
-            const rawText = args.text;
-            const ticketSource = args.ticketSource;
-            const hasText = typeof rawText === 'string' && rawText.trim().length > 0;
-            if (hasText && ticketSource !== undefined) {
-              return formatBlocked('TICKET_SOURCE_CONFLICT');
-            }
-
-            let text: string;
-            let inputOrigin = args.inputOrigin;
-            let references = args.references;
-
-            if (ticketSource !== undefined) {
-              const adopted = readRepositoryTicketFile(worktree, ticketSource.path);
-              if (adopted.kind === 'error') {
-                return formatBlocked('TICKET_SOURCE_UNREADABLE', { reason: adopted.reason });
-              }
-              if (adopted.content.trim().length === 0) {
-                return formatBlocked('EMPTY_TICKET');
-              }
-              text = adopted.content;
-              inputOrigin = inputOrigin ?? 'workspace';
-              const fileRef = { ref: ticketSource.path, type: 'doc' as const };
-              references = [
-                fileRef,
-                ...(references ?? []).filter(
-                  (reference: { readonly ref: string }) => reference.ref !== fileRef.ref,
-                ),
-              ];
-            } else if (typeof rawText === 'string' && hasText) {
-              text = rawText;
-              if (isUnadoptedTicketReference(text)) {
-                return formatBlocked('TICKET_REFERENCE_WITHOUT_CONTENT');
-              }
-            } else {
-              return formatBlocked('EMPTY_TICKET');
-            }
-
+            const resolved = resolveCanonicalTicketSource(worktree, args);
+            if (resolved.kind === 'blocked') return formatBlocked(resolved.code);
             const result = executeTicket(
               state,
               {
-                text,
+                text: resolved.text,
                 source: args.source,
-                inputOrigin,
-                references,
+                ...(resolved.inputOrigin !== undefined
+                  ? { inputOrigin: resolved.inputOrigin }
+                  : {}),
+                ...(resolved.references !== undefined ? { references: resolved.references } : {}),
               },
               ctx,
             );
@@ -224,3 +204,71 @@ export const ticket: ToolDefinition = {
     );
   },
 };
+
+interface TicketArgs {
+  readonly text?: string | undefined;
+  readonly ticketSource?: { readonly kind: 'repository_file'; readonly path: string } | undefined;
+  readonly inputOrigin?: InputOrigin | undefined;
+  readonly references?: ExternalReference[] | undefined;
+}
+
+type ResolvedTicketSource =
+  | {
+      readonly kind: 'ok';
+      readonly text: string;
+      readonly inputOrigin: InputOrigin | undefined;
+      readonly references: ExternalReference[] | undefined;
+    }
+  | { readonly kind: 'blocked'; readonly code: string };
+
+/**
+ * Resolve the exactly-one canonical content source. Mutual exclusivity is
+ * source-based, not content-based: any text alongside ticketSource (even an
+ * empty string) is a conflict, and a conflicting provenance claim for a
+ * runtime-read worktree file is rejected rather than silently overwritten.
+ */
+function resolveCanonicalTicketSource(worktree: string, args: TicketArgs): ResolvedTicketSource {
+  if (args.text !== undefined && args.ticketSource !== undefined) {
+    return { kind: 'blocked', code: 'TICKET_SOURCE_CONFLICT' };
+  }
+  if (args.ticketSource !== undefined) {
+    return adoptRepositoryTicketFile(worktree, args);
+  }
+  if (typeof args.text === 'string' && args.text.trim().length > 0) {
+    if (isUnadoptedTicketReference(args.text)) {
+      return { kind: 'blocked', code: 'TICKET_REFERENCE_WITHOUT_CONTENT' };
+    }
+    return {
+      kind: 'ok',
+      text: args.text,
+      inputOrigin: args.inputOrigin,
+      references: args.references,
+    };
+  }
+  return { kind: 'blocked', code: 'EMPTY_TICKET' };
+}
+
+function adoptRepositoryTicketFile(worktree: string, args: TicketArgs): ResolvedTicketSource {
+  const ticketSource = args.ticketSource;
+  if (ticketSource === undefined) return { kind: 'blocked', code: 'EMPTY_TICKET' };
+  if (args.inputOrigin !== undefined && args.inputOrigin !== 'workspace') {
+    return { kind: 'blocked', code: 'TICKET_SOURCE_CONFLICT' };
+  }
+  const adopted = readRepositoryTicketFile(worktree, ticketSource.path);
+  if (adopted.kind === 'error') {
+    return { kind: 'blocked', code: 'TICKET_SOURCE_UNREADABLE' };
+  }
+  if (adopted.content.trim().length === 0) {
+    return { kind: 'blocked', code: 'EMPTY_TICKET' };
+  }
+  const fileRef = { ref: ticketSource.path, type: 'doc' as const };
+  return {
+    kind: 'ok',
+    text: adopted.content,
+    inputOrigin: 'workspace',
+    references: [
+      fileRef,
+      ...(args.references ?? []).filter((reference) => reference.ref !== fileRef.ref),
+    ],
+  };
+}

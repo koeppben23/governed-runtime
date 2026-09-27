@@ -225,6 +225,21 @@ function samePathSet(left: readonly string[], right: readonly string[]): boolean
  */
 type RecomputedRisk = ReturnType<typeof assessMinimumTaskClass>;
 
+/**
+ * The persisted assessment must be bound to the SAME verified ticket evidence
+ * as the decision: digest, declaration kind and declared floor. A stale
+ * assessment from a previous ticket can otherwise authorize a waiver.
+ */
+function assessmentBindsTicketDeclaration(
+  s: SessionState,
+  assessment: NonNullable<SessionState['implementationRiskAssessment']>,
+  declaration: TicketRiskDeclaration,
+): boolean {
+  if (assessment.ticketDigest !== (s.ticket?.digest ?? null)) return false;
+  if (assessment.declarationKind !== declaration.kind) return false;
+  return assessment.declaredTaskClass === ticketRiskDeclarationFloor(declaration);
+}
+
 /** Both stored artifacts must describe the same frozen implementation. */
 function assessmentMatchesImplementation(
   s: SessionState,
@@ -261,6 +276,7 @@ function decisionMatchesRiskFacts(
   if (!assessmentMatchesImplementation(s, decision, implementation)) return false;
   const assessment = s.implementationRiskAssessment;
   if (assessment === undefined) return false;
+  if (!assessmentBindsTicketDeclaration(s, assessment, declaration)) return false;
 
   const recomputed = assessMinimumTaskClass(implementation.changedFiles);
   if (recomputed.minimumTaskClass !== assessment.computedMinimumTaskClass) return false;

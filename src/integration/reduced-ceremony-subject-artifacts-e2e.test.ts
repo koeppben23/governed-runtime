@@ -214,6 +214,7 @@ async function subjectState(
     digest: hashText,
   });
   const base = makeProgressedState('IMPL_VALIDATION');
+  const baseDeclaration = base.ticket?.riskDeclaration ?? { kind: 'absent' as const };
   const state = {
     ...base,
     ...(identityBase !== undefined
@@ -238,9 +239,10 @@ async function subjectState(
     implementationRiskAssessment: {
       computedMinimumTaskClass: 'TRIVIAL' as const,
       effectiveTaskClass: 'TRIVIAL' as const,
-      declaredTaskClass: null,
-      declarationKind: 'absent' as const,
-      ticketDigest: null,
+      declaredTaskClass:
+        baseDeclaration.kind === 'declared' ? baseDeclaration.taskClass : (null as null),
+      declarationKind: baseDeclaration.kind,
+      ticketDigest: base.ticket?.digest ?? null,
       ...(claimedTaskClass !== null ? { escalatedTaskClass: claimedTaskClass } : {}),
       touchedSurfaces: [DOC_PATH],
       riskTriggers: [],
@@ -596,14 +598,22 @@ describe('effective risk class (real git)', () => {
 
     const text = 'Risk: STANDARD\n\nDocs only, but the ticket declares a process floor.';
     const withTicket = await readState(se.sDir);
+    const ticket = {
+      text,
+      digest: hashText(text),
+      source: 'user' as const,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      riskDeclaration: parseTicketRiskDeclaration(text),
+    };
     await writeStateWithArtifacts(se.sDir, {
       ...withTicket!,
-      ticket: {
-        text,
-        digest: hashText(text),
-        source: 'user',
-        createdAt: '2026-01-01T00:00:00.000Z',
-        riskDeclaration: parseTicketRiskDeclaration(text),
+      ticket,
+      implementationRiskAssessment: {
+        ...withTicket!.implementationRiskAssessment!,
+        ticketDigest: ticket.digest,
+        declarationKind: 'declared' as const,
+        declaredTaskClass: 'STANDARD' as const,
+        effectiveTaskClass: 'STANDARD' as const,
       },
     });
 

@@ -29,7 +29,6 @@ export function targetPathsForRisk(
   return [];
 }
 
-/** Unquoted characters that make the command's target set unprovable. */
 // ─── Path Resolution Helper ──────────────────────────────────────────────────
 
 function resolveRelativePath(filePath: string, getWorktreeRoot: () => string | undefined): string {
@@ -152,7 +151,76 @@ function splitUnquotedArgs(input: string): string[] {
   return args;
 }
 
+/** Unquoted characters that make the command's target set unprovable. */
 const UNPROVEN_UNQUOTED = new Set(['`', '$', '<', ';', '\n']);
+
+/**
+ * Commands whose only file writes are captured by the extractor:
+ * - output-only builtins (stdout/redirect only),
+ * - read-only filters and inspectors,
+ * - tools whose path arguments the extractor parses (`rm`, `mv`, `cp`, ...).
+ * Anything else (interpreters, package managers, build tools, scripts) may
+ * write arbitrary files and is never "provably known", even with a redirect.
+ */
+const OUTPUT_ONLY_COMMANDS = new Set(['echo', 'printf']);
+
+const READ_ONLY_COMMANDS = new Set([
+  'cat',
+  'ls',
+  'pwd',
+  'grep',
+  'egrep',
+  'fgrep',
+  'rg',
+  'awk',
+  'sort',
+  'uniq',
+  'head',
+  'tail',
+  'wc',
+  'cut',
+  'tr',
+  'diff',
+  'comm',
+  'basename',
+  'dirname',
+  'realpath',
+  'date',
+  'sleep',
+  'true',
+  'false',
+  'test',
+  '[',
+  'seq',
+  'stat',
+  'file',
+  'du',
+  'df',
+  'env',
+  'whoami',
+  'id',
+  'hostname',
+  'uname',
+]);
+
+/** Tools whose file paths the extractor parses from their arguments. */
+const PATH_ARGUMENT_COMMANDS = new Set(['rm', 'mv', 'cp', 'chmod', 'sed']);
+
+function firstCommandWord(cmd: string): string | null {
+  const match = /^\s*([^\s;|&<>`$'"]+)/.exec(cmd);
+  if (match === null) return null;
+  return match[1] ?? null;
+}
+
+function isSemanticallyCoveredCommand(cmd: string): boolean {
+  const word = firstCommandWord(cmd);
+  if (word === null) return false;
+  return (
+    OUTPUT_ONLY_COMMANDS.has(word) ||
+    READ_ONLY_COMMANDS.has(word) ||
+    PATH_ARGUMENT_COMMANDS.has(word)
+  );
+}
 
 interface ShellScanState {
   quote: '"' | "'" | null;
@@ -215,12 +283,15 @@ function consumeUnquoted(cmd: string, index: number, state: ShellScanState): voi
  * A path extracted from one part of a compound command does not make the whole
  * command's target set known: `echo x > docs/a.md; python -c '...'` would
  * otherwise look TRIVIAL while unanalyzed writes remain. Known scope therefore
- * requires the command to be a single simple pipeline: no unquoted `;`, `&&`,
- * `&`, newline, input redirection, substitution, or pipe other than to `tee`.
- * Anything else stays unknown and is floored at STANDARD (never TRIVIAL).
+ * requires (a) a single simple pipeline — no unquoted `;`, `&&`, `&`, newline,
+ * input redirection, substitution, or pipe other than to `tee` — and (b) a
+ * command whose file writes are exhaustively captured by the extractor.
+ * Interpreters, package managers, build tools and unknown executables stay
+ * unknown and are floored at STANDARD, even when a redirect is visible.
  */
 export function isBashScopeProvablyKnown(cmd: string): boolean {
   if (cmd.length > 1024 * 1024) return false;
+  if (!isSemanticallyCoveredCommand(cmd)) return false;
   const state: ShellScanState = { quote: null, composed: false, skip: 0 };
   for (let index = 0; index < cmd.length && !state.composed; index += 1 + state.skip) {
     state.skip = 0;

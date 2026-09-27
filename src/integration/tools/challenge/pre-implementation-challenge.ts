@@ -57,9 +57,10 @@ export async function resolvePreImplementationChallengeClassification(
   const declaredTargets = targetPaths ?? [];
   const riskPaths = discoveryRiskPaths(discovery);
   const changedFiles = [...new Set([...declaredTargets, ...riskPaths])];
-  // Unknown scope (no target paths AND no detected risk surfaces) is NOT the
-  // same as a provably empty change set: the provisional challenge floor must
-  // be at least STANDARD rather than TRIVIAL.
-  const scopeUnknown = declaredTargets.length === 0 && riskPaths.length === 0;
+  // Repository discovery surfaces only describe what already exists, not the
+  // planned change set. Without declared target paths the planned scope is
+  // UNKNOWN, so the provisional challenge floor is at least STANDARD;
+  // discovery may raise the classification, never substitute for a scope.
+  const scopeUnknown = declaredTargets.length === 0;
   return { kind: 'available', changedFiles, scopeUnknown };
 }

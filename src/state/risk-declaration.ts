@@ -92,6 +92,9 @@ function scanDeclarationLine(line: string, fence: string | null): DeclarationLin
   }
   if (token !== undefined) return { fence: token, skip: true };
   if (/^\s*>/.test(line)) return { fence: null, skip: true };
+  // CommonMark indented code block (four spaces or a tab) is an example, not
+  // a binding declaration.
+  if (/^(?: {4,}|\t)/.test(line)) return { fence: null, skip: true };
   return { fence: null, skip: false };
 }
 
