@@ -235,21 +235,37 @@ the only difference is the frozen policy value.
 `/task Read TICKET_DOCS.md and create the requested usage notes`, `/plan`,
 `/approve`, automatic baseline checks — identisch zu B.
 
-### Step C3 — Full Implementation Review
+### Step C3 — Flag-Off Proof and Full Implementation Review
 
-After `/implement`, the automatic post-implementation checks run, but the
-reduced-ceremony decision is statically ineligible (`POLICY_REDUCED_CEREMONY_DISABLED`).
-The machine takes the normal `IMPL_VALIDATION → IMPL_REVIEW` transition; while
-still in `IMPL_VALIDATION`, `/status` reports
-`reducedCeremony.status: "ineligible"`.
+Prove this run's frozen policy with the same read-only runtime preflight as B —
+it derives the expected value from the workspace name and must report
+`allowReducedCeremony=false`:
 
-| Action                                                | Phase                         | What I Say                                                                                                      |
-| ----------------------------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Host-orchestrated reviewer child session              | IMPL_REVIEW                   | "Dieselben Checks, dieselbe Evidence — aber jetzt prüft eine unabhängige Reviewer-Session den Doku-Diff."       |
-| `reviewDispatch.completed` → submit the bound verdict | IMPL_REVIEW → EVIDENCE_REVIEW | "Der Agent trägt nur das gebundene Reviewer-Verdikt nach. Danach das menschliche Gate und wie in B der Export." |
+```bash
+./run-reduced-ceremony-demo-setup.sh --verify-session /tmp/flowguard-reduced-demo/reduced-off
+# Expected:
+#   hostSessionId: <OpenCode host session id>
+#   activeChecks: [build, test]
+#   policySnapshot: mode=team requireHumanGates=true effectiveGateBehavior=human_gated allowReducedCeremony=false
+#   PASS  activeChecks selected as build + test
+#   PASS  frozen team policy matches the workspace (allowReducedCeremony=false)
+```
 
-`/status --evidence` now shows the `implReview` slot with a real iteration and
-verdict instead of `waived`.
+After `/implement`, the automatic post-implementation checks run and the machine
+takes the normal `IMPL_VALIDATION → IMPL_REVIEW` transition — the made phase is
+the proof, not a transient status: the reduced projection only reports
+`ineligible` **while still in `IMPL_VALIDATION`** and switches to
+`not_applicable` afterwards (and the `/status` card never renders it). Do not
+present that fleeting intermediate state as an expected live proof.
+
+| Action                                                | Phase                         | What I Say                                                                                                                                                 |
+| ----------------------------------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Show the returned `IMPL_REVIEW` phase                 | IMPL_REVIEW                   | "Dieselben Checks, dieselbe Evidence — aber der Flag-off-Preflight und die erreichte Phase `IMPL_REVIEW` zeigen: die Policy hat die Reduktion verweigert." |
+| Host-orchestrated reviewer child session              | IMPL_REVIEW                   | "Jetzt prüft eine unabhängige Reviewer-Session den Doku-Diff."                                                                                             |
+| `reviewDispatch.completed` → submit the bound verdict | IMPL_REVIEW → EVIDENCE_REVIEW | "Der Agent trägt nur das gebundene Reviewer-Verdikt nach. Danach das menschliche Gate und wie in B der Export."                                            |
+
+`flowguard_status({ evidence: true })` shows the `implReview` slot with a real
+iteration and verdict instead of `waived`.
 
 ### Step C4 — Approval and Export
 
@@ -263,7 +279,7 @@ verdict instead of `waived`.
 | Observable                      | B (`reduced-on`)                         | C (`reduced-off`)               |
 | ------------------------------- | ---------------------------------------- | ------------------------------- |
 | Post-implementation checks      | `post-impl 2/2 passed`                   | `post-impl 2/2 passed`          |
-| Reduced-ceremony decision       | `applied` (`POST_IMPL_VERIFIED_TRIVIAL`) | `ineligible` (policy)           |
+| Reduced-ceremony decision       | `applied` (`POST_IMPL_VERIFIED_TRIVIAL`) | none (flag off; full ceremony)  |
 | Completeness slot `implReview`  | `waived` (no synthetic verdict)          | real reviewer iteration/verdict |
 | Audit events                    | `reduced_ceremony_applied`               | normal full-ceremony trail      |
 | Human evidence gate + `/export` | mandatory                                | mandatory                       |

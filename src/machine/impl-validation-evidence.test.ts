@@ -126,6 +126,66 @@ describe('evaluateImplValidationEvidence', () => {
     expect(evaluateImplValidationEvidence(state).satisfied).toBe(false);
   });
 
+  it('EDGE: with identical executedAt the later decisive result wins (PASS then FAIL)', () => {
+    // Kills the `>=` → `>` mutant in latestBy(): the later FAIL shares the
+    // timestamp of the earlier PASS and must still be the latest result.
+    const at = '2026-01-01T00:00:01.000Z';
+    const state = makeState('IMPL_VALIDATION', {
+      verificationCandidates: VERIFICATION_CANDIDATES,
+      implementation: IMPL_EVIDENCE,
+      activeChecks: ['test'],
+      implValidation: [result('test', true, at), result('test', false, at)],
+      validationAttempts: [attempt('test', true, at)],
+    });
+
+    const decision = evaluateImplValidationEvidence(state);
+    expect(decision.satisfied).toBe(false);
+    expect(decision.missing).toEqual(['test']);
+  });
+
+  it('EDGE: with identical executedAt the later attempt wins (PASS then FAIL)', () => {
+    const at = '2026-01-01T00:00:01.000Z';
+    const state = makeState('IMPL_VALIDATION', {
+      verificationCandidates: VERIFICATION_CANDIDATES,
+      implementation: IMPL_EVIDENCE,
+      activeChecks: ['test'],
+      implValidation: [result('test', true, at)],
+      validationAttempts: [attempt('test', true, at), attempt('test', false, at)],
+    });
+
+    const decision = evaluateImplValidationEvidence(state);
+    expect(decision.satisfied).toBe(false);
+    expect(decision.missing).toEqual(['test']);
+  });
+
+  it('EDGE: evidence exactly at the unknown-outcome resolution time is stale', () => {
+    // Kills the `>` → `>=` mutant on the resolution boundary: an attempt that
+    // ended exactly when the unknown outcome was reconciled cannot qualify.
+    const at = '2026-01-01T00:00:01.000Z';
+    const state = makeState('IMPL_VALIDATION', {
+      verificationCandidates: VERIFICATION_CANDIDATES,
+      implementation: IMPL_EVIDENCE,
+      activeChecks: ['test'],
+      implValidation: [result('test', true, at)],
+      validationAttempts: [attempt('test', true, at)],
+      mutationEpisodeResolutions: [
+        {
+          resolutionId: '00000000-0000-4000-8000-0000000000aa',
+          hostCallId: 'call-1',
+          status: 'reconciled_after_unknown_outcome',
+          basis: 'worktree_recapture',
+          resolvedAt: at,
+          resolvingRuntimeInstanceId: '00000000-0000-4000-8000-0000000000bb',
+          resolvingLeaseGeneration: 2,
+        },
+      ],
+    });
+
+    const decision = evaluateImplValidationEvidence(state);
+    expect(decision.satisfied).toBe(false);
+    expect(decision.missing).toEqual(['test']);
+  });
+
   it('BAD: attempts bound to another implementation generation do not count', () => {
     const state = makeState('IMPL_VALIDATION', {
       verificationCandidates: VERIFICATION_CANDIDATES,

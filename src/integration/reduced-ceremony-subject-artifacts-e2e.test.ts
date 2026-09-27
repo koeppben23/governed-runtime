@@ -39,6 +39,8 @@ import type { SessionState } from '../state/schema.js';
 import { writeStateWithArtifacts } from './tools/helpers.js';
 import type { ToolContext } from './tools/helpers.js';
 import { decision, export as exportTool } from './tools/index.js';
+import { reconcilePendingAuditOperations } from './plugin-audit.js';
+import { createSessionCompletionAuditDeps } from './services/regulated-completion.js';
 import { hydrate } from './tools/hydrate/hydrate.js';
 import { implement } from './tools/implementation/implement.js';
 import { run_check } from './tools/validation/run-check-tool.js';
@@ -71,6 +73,8 @@ const RUN_SPECIFIC_CANDIDATE = {
 interface SE {
   rootDir: string;
   worktree: string;
+  configDir: string;
+  fingerprint: string;
   sId: string;
   sDir: string;
   tc: ToolContext;
@@ -147,7 +151,15 @@ async function boot(options: BootOptions = {}): Promise<SE> {
     throw new Error(`boot hydrate failed: ${String(hydrated).slice(0, 400)}`);
   }
   const fp = await computeFingerprint(w);
-  return { rootDir: r, worktree: w, sId: id, sDir: sessionDir(fp.fingerprint, id), tc };
+  return {
+    rootDir: r,
+    worktree: w,
+    configDir: c,
+    fingerprint: fp.fingerprint,
+    sId: id,
+    sDir: sessionDir(fp.fingerprint, id),
+    tc,
+  };
 }
 
 /** Executor mock: write the run_specific report the command asks for, pass. */
@@ -185,6 +197,7 @@ async function subjectState(
   se: SE,
   reduced: boolean,
   policySnapshot?: SessionState['policySnapshot'],
+  identityBase?: SessionState,
 ): Promise<{
   state: SessionState;
   digest: string;
@@ -201,7 +214,16 @@ async function subjectState(
   const base = makeProgressedState('IMPL_VALIDATION');
   const state = {
     ...base,
-    binding: { ...base.binding, worktree: se.worktree },
+    ...(identityBase !== undefined
+      ? {
+          id: identityBase.id,
+          flowguardSessionId: identityBase.flowguardSessionId,
+          binding: identityBase.binding,
+          createdAt: identityBase.createdAt,
+          initiatedBy: identityBase.initiatedBy,
+          initiatedByIdentity: identityBase.initiatedByIdentity,
+        }
+      : { binding: { ...base.binding, worktree: se.worktree } }),
     implementationBaseAuthority: undefined,
     claimedTaskClass: 'TRIVIAL' as const,
     implementation: {
@@ -411,7 +433,10 @@ describe('team opt-in completion (real git)', () => {
     expect(hydrated!.policySnapshot.allowReducedCeremony).toBe(true);
     expect(hydrated!.claimedTaskClass).toBe('TRIVIAL');
 
-    await subjectState(se, false, hydrated!.policySnapshot);
+    // Preserve the REAL hydrated identities (id, flowguardSessionId, binding):
+    // the completion archive is materialized under the host session id and the
+    // offline verifier cross-checks state.binding against the manifest.
+    await subjectState(se, false, hydrated!.policySnapshot, hydrated!);
     executorWritesReport();
     const check = await run_check.execute(RUN, se.tc);
     expect(String(check)).not.toContain('"error":true');
@@ -447,6 +472,16 @@ describe('team opt-in completion (real git)', () => {
     state = await readState(se.sDir);
     expect(state!.phase).toBe('EXPORT_READY');
 
+    // Flush the canonical outbox into the audit trail (the host lifecycle does
+    // this on tool boundaries) so the completion package carries the waiver.
+    const auditDeps = createSessionCompletionAuditDeps({
+      sessDir: se.sDir,
+      sessionID: se.sId,
+      fingerprint: se.fingerprint,
+      state: state!,
+    });
+    await reconcilePendingAuditOperations(auditDeps, se.sId, 'flowguard_review_decision');
+
     // /export → COMPLETE with verifiable completion evidence.
     const completion = await exportTool.execute({}, se.tc);
     expect(String(completion)).not.toContain('INTERNAL_ERROR');
@@ -475,5 +510,65 @@ describe('team opt-in completion (real git)', () => {
       implementationId: state!.implementation!.implementationId,
       implementationDigest: state!.implementation!.digest,
     });
+
+    // The completion package is named by the HOST session id and binds the
+    // archived state to the same host id and fingerprint.
+    const archivePath = join(
+      se.configDir,
+      'workspaces',
+      se.fingerprint,
+      'sessions',
+      'archive',
+      `${se.sId}.tar.gz`,
+    );
+    expect(existsSync(archivePath)).toBe(true);
+    const members = execFileSync('tar', ['-tzf', archivePath], { encoding: 'utf-8' })
+      .split('\n')
+      .filter(Boolean);
+    const stateMember = `${se.sId}/state/session-state.json`;
+    const manifestMember = `${se.sId}/archive-manifest.json`;
+    expect(members).toContain(stateMember);
+    expect(members).toContain(manifestMember);
+    const archivedState = JSON.parse(
+      execFileSync('tar', ['-xOzf', archivePath, stateMember], { encoding: 'utf-8' }),
+    ) as SessionState;
+    const archivedManifest = JSON.parse(
+      execFileSync('tar', ['-xOzf', archivePath, manifestMember], { encoding: 'utf-8' }),
+    ) as { sessionId: string; fingerprint: string };
+    expect(archivedManifest.sessionId).toBe(se.sId);
+    expect(archivedManifest.fingerprint).toBe(se.fingerprint);
+    expect(archivedState.id).toBe(hydrated!.id);
+    expect(archivedState.flowguardSessionId).toBe(hydrated!.flowguardSessionId);
+    expect(archivedState.binding.hostSessionId).toBe(se.sId);
+    expect(archivedState.binding.fingerprint).toBe(se.fingerprint);
+
+    // The archived audit trail carries the durable waiver event.
+    const auditMember = members.find((member) => member.endsWith('/audit/audit.jsonl'));
+    expect(auditMember).toBeDefined();
+    expect(
+      execFileSync('tar', ['-xOzf', archivePath, auditMember!], { encoding: 'utf-8' }),
+    ).toContain('reduced_ceremony_applied');
+
+    // Offline verification of the exact package an auditor receives.
+    const verifier = join(
+      process.cwd(),
+      'demos',
+      'java-task-manager',
+      'verify-evidence-package.mjs',
+    );
+    execFileSync(
+      'node',
+      [
+        verifier,
+        archivePath,
+        '--expect-session',
+        se.sId,
+        '--expect-flow',
+        'development',
+        '--expect-phase',
+        'EXPORT_READY',
+      ],
+      { encoding: 'utf-8' },
+    );
   });
 });
