@@ -211,6 +211,40 @@ describe('ticket content adoption (real worktree)', () => {
     expect((await readState(se.sDir))!.ticket).toBeNull();
   });
 
+  it('BAD: a bare issue ID echoed as external content stays a reference', async () => {
+    s = await boot();
+    const se = s;
+
+    const result = await ticket.execute(
+      {
+        text: 'ABC-123',
+        inputOrigin: 'external_reference',
+        references: [{ ref: 'ABC-123', type: 'issue' }],
+        source: 'external',
+      },
+      se.tc,
+    );
+    expect(String(result)).toContain('TICKET_REFERENCE_WITHOUT_CONTENT');
+    expect((await readState(se.sDir))!.ticket).toBeNull();
+  });
+
+  it('HAPPY: extracted external content with provenance stays accepted', async () => {
+    s = await boot();
+    const se = s;
+
+    const result = await ticket.execute(
+      {
+        text: 'The login page throws on submit. Acceptance: fix the null check.',
+        inputOrigin: 'external_reference',
+        references: [{ ref: 'ABC-123', type: 'issue' }],
+        source: 'external',
+      },
+      se.tc,
+    );
+    expect(String(result)).not.toContain('"error":true');
+    expect((await readState(se.sDir))!.ticket?.text).toContain('login page throws');
+  });
+
   it('BAD: empty text plus ticketSource is still a source conflict', async () => {
     s = await boot();
     const se = s;

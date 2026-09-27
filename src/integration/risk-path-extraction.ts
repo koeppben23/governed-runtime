@@ -74,6 +74,8 @@ export function extractPathsFromPatch(diff: string): string[] {
   collectPathsFromPattern(diff, /^Binary files a\/(.+?) and b\/\1 differ$/gm, [1], paths);
   collectPathsFromPattern(diff, /^diff --git a\/(.+?) b\/(.+)$/gm, [1, 2], paths);
   collectPathsFromPattern(diff, /^\*\*\* (?:Update|Add|Delete) File: (.+)$/gm, [1], paths);
+  // `*** Move to:` relocates an updated file to a new (possibly higher-risk) path.
+  collectPathsFromPattern(diff, /^\*\*\* Move to: (.+)$/gm, [1], paths);
   return [...paths];
 }
 
@@ -157,7 +159,8 @@ const UNPROVEN_UNQUOTED = new Set(['`', '$', '<', ';', '\n']);
 /**
  * Commands whose only file writes are captured by the extractor:
  * - output-only builtins (stdout/redirect only),
- * - read-only filters and inspectors,
+ * - read-only filters and inspectors without file-write options (`sort -o`,
+ *   `awk system(...)`, `env <cmd>`, scripted `sed w` are NOT known),
  * - tools whose path arguments the extractor parses (`rm`, `mv`, `cp`, ...).
  * Anything else (interpreters, package managers, build tools, scripts) may
  * write arbitrary files and is never "provably known", even with a redirect.
@@ -172,8 +175,6 @@ const READ_ONLY_COMMANDS = new Set([
   'egrep',
   'fgrep',
   'rg',
-  'awk',
-  'sort',
   'uniq',
   'head',
   'tail',
@@ -196,15 +197,18 @@ const READ_ONLY_COMMANDS = new Set([
   'file',
   'du',
   'df',
-  'env',
   'whoami',
   'id',
   'hostname',
   'uname',
 ]);
 
-/** Tools whose file paths the extractor parses from their arguments. */
-const PATH_ARGUMENT_COMMANDS = new Set(['rm', 'mv', 'cp', 'chmod', 'sed']);
+/**
+ * Tools whose file paths the extractor parses from their arguments. `sed` is
+ * deliberately absent: `sed -e 'w out.txt'` writes through a script command
+ * the extractor does not analyze.
+ */
+const PATH_ARGUMENT_COMMANDS = new Set(['rm', 'mv', 'cp', 'chmod']);
 
 function firstCommandWord(cmd: string): string | null {
   const match = /^\s*([^\s;|&<>`$'"]+)/.exec(cmd);
@@ -275,6 +279,30 @@ function consumeUnquoted(cmd: string, index: number, state: ShellScanState): voi
   if (ch === '|' && isNonProvablePipe(cmd, index)) {
     state.composed = true;
   }
+}
+
+/**
+ * `*** <header>` lines an apply_patch document may carry. Any other `***`
+ * header is an unanalyzed patch form and makes the target set unknown.
+ */
+const KNOWN_PATCH_HEADERS = [
+  /^\*\*\* Begin Patch$/,
+  /^\*\*\* End Patch$/,
+  /^\*\*\* Update File: .+$/,
+  /^\*\*\* Add File: .+$/,
+  /^\*\*\* Delete File: .+$/,
+  /^\*\*\* Move to: .+$/,
+] as const;
+
+/**
+ * Whether every `***` header of an apply_patch document is a known form whose
+ * paths the extractor captures. An unrecognized header keeps the scope
+ * unknown so the provisional class is floored at STANDARD.
+ */
+export function isPatchScopeProvablyKnown(diff: string): boolean {
+  if (diff.length > 1024 * 1024) return false;
+  const headers = diff.match(/^\*\*\*[ \t]+[^\n\r]+$/gm) ?? [];
+  return headers.every((header) => KNOWN_PATCH_HEADERS.some((pattern) => pattern.test(header)));
 }
 
 /**

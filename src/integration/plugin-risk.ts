@@ -22,6 +22,7 @@ import {
 import {
   extractPathsFromBashCommand,
   isBashScopeProvablyKnown,
+  isPatchScopeProvablyKnown,
   targetPathsForRisk,
 } from './risk-path-extraction.js';
 import { appendReviewAuditEvent } from './review/evidence/audit-events.js';
@@ -31,6 +32,7 @@ export {
   extractPathsFromBashCommand,
   extractPathsFromPatch,
   isBashScopeProvablyKnown,
+  isPatchScopeProvablyKnown,
   targetPathsForRisk,
 } from './risk-path-extraction.js';
 
@@ -44,7 +46,9 @@ export {
 function riskScopeUnknown(toolName: string, args: Record<string, unknown>): boolean {
   if (toolName === 'write' || toolName === 'edit') return typeof args.filePath !== 'string';
   if (toolName === 'apply_patch') {
-    return typeof args.patchText !== 'string' && typeof args.diff !== 'string';
+    const patch = typeof args.patchText === 'string' ? args.patchText : args.diff;
+    if (typeof patch !== 'string') return true;
+    return !isPatchScopeProvablyKnown(patch);
   }
   if (toolName === 'bash') {
     if (typeof args.command !== 'string') return true;

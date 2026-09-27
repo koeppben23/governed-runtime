@@ -205,6 +205,29 @@ export const ticket: ToolDefinition = {
   },
 };
 
+/**
+ * Whether the text merely echoes one of the provided external references
+ * (same ref string, case-insensitive, or a bare issue-key token matching a
+ * reference). Extracted ticket text with real content stays allowed.
+ */
+function isReferenceEcho(
+  text: string,
+  references: readonly ExternalReference[] | undefined,
+): boolean {
+  const trimmed = text.trim();
+  if (references === undefined || references.length === 0) return false;
+  // A bare issue key can never be adopted external content, even when it does
+  // not literally equal one of the supplied reference strings.
+  if (isBareIssueKey(trimmed)) return true;
+  const normalized = trimmed.toLowerCase();
+  return references.some((reference) => reference.ref.trim().toLowerCase() === normalized);
+}
+
+/** Bare issue key like `ABC-123` — a reference, never ticket content. */
+function isBareIssueKey(text: string): boolean {
+  return !text.includes(' ') && /^[A-Z][A-Z0-9]*-\d+$/i.test(text);
+}
+
 interface TicketArgs {
   readonly text?: string | undefined;
   readonly ticketSource?: { readonly kind: 'repository_file'; readonly path: string } | undefined;
@@ -236,6 +259,11 @@ function resolveCanonicalTicketSource(worktree: string, args: TicketArgs): Resol
   }
   if (typeof args.text === 'string' && args.text.trim().length > 0) {
     if (isUnadoptedTicketReference(args.text)) {
+      return { kind: 'blocked', code: 'TICKET_REFERENCE_WITHOUT_CONTENT' };
+    }
+    if (args.inputOrigin === 'external_reference' && isReferenceEcho(args.text, args.references)) {
+      // A bare ticket ID echoed as "content" is still a reference, not adopted
+      // external content.
       return { kind: 'blocked', code: 'TICKET_REFERENCE_WITHOUT_CONTENT' };
     }
     return {

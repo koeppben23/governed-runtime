@@ -53,8 +53,13 @@ export type TicketRiskDeclaration = z.infer<typeof TicketRiskDeclaration>;
 const DECLARATION_LINE =
   /^\s*(?:[-*+]\s+|#{1,6}\s+)?(?:\*\*|__)?\s*(?:risk(?:\s*class)?|risikoklasse)\s*(?:\*\*|__)?\s*[:=][ \t]*(.*)$/i;
 
-/** CommonMark fence opener: three or more backticks or tildes. */
-const FENCE_LINE = /^\s*(`{3,}|~{3,})/;
+/**
+ * CommonMark fences: an opening fence may be indented by at most three spaces
+ * and carry an info string; a closing fence is the delimiter plus whitespace
+ * only (an info string never closes a fence).
+ */
+const OPEN_FENCE = /^ {0,3}(`{3,}|~{3,})/;
+const CLOSE_FENCE = /^ {0,3}(`{3,}|~{3,})[ \t]*$/;
 
 /** Placeholder reported for an explicit declaration without a value. */
 const EMPTY_DECLARATION_RAW = '(no value)';
@@ -82,14 +87,21 @@ interface DeclarationLineScan {
   readonly skip: boolean;
 }
 
+function isClosingFence(line: string, fence: string): boolean {
+  const match = CLOSE_FENCE.exec(line);
+  const token = match === null ? undefined : match[1];
+  return token !== undefined && token[0] === fence[0] && token.length >= fence.length;
+}
+
 /** Fence/quote state machine step for one line. */
 function scanDeclarationLine(line: string, fence: string | null): DeclarationLineScan {
-  const match = FENCE_LINE.exec(line);
-  const token = match === null ? undefined : match[1];
   if (fence !== null) {
-    const closes = token !== undefined && token[0] === fence[0] && token.length >= fence.length;
-    return { fence: closes ? null : fence, skip: true };
+    // Only a bare closing fence ends the block; an info-string lookalike
+    // (````js`) is content and cannot close it.
+    return { fence: isClosingFence(line, fence) ? null : fence, skip: true };
   }
+  const match = OPEN_FENCE.exec(line);
+  const token = match === null ? undefined : match[1];
   if (token !== undefined) return { fence: token, skip: true };
   if (/^\s*>/.test(line)) return { fence: null, skip: true };
   // CommonMark indented code block (four spaces or a tab) is an example, not

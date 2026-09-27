@@ -71,6 +71,7 @@ import {
   extractPathsFromPatch,
   extractPathsFromBashCommand,
   isBashScopeProvablyKnown,
+  isPatchScopeProvablyKnown,
   currentChangedFilesForRisk,
   evidenceUnavailableRiskDecision,
   persistRiskDecisionBlock,
@@ -487,6 +488,31 @@ describe('extractPathsFromBashCommand', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// apply_patch scope (unit)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('apply_patch scope', () => {
+  it('captures the Move-to target alongside the source file', () => {
+    const patch =
+      '*** Begin Patch\n*** Update File: docs/usage.md\n*** Move to: src/config/policy.ts\n*** End Patch';
+    const paths = extractPathsFromPatch(patch);
+    expect(paths).toContain('docs/usage.md');
+    expect(paths).toContain('src/config/policy.ts');
+  });
+
+  it('HAPPY: known patch headers keep the scope provably known', () => {
+    const patch =
+      '*** Begin Patch\n*** Update File: docs/usage.md\n*** Move to: docs/usage-notes.md\n*** End Patch';
+    expect(isPatchScopeProvablyKnown(patch)).toBe(true);
+  });
+
+  it('BAD: an unrecognized patch header keeps the scope unknown', () => {
+    const patch = '*** Begin Patch\n*** Frobnicate File: docs/usage.md\n*** End Patch';
+    expect(isPatchScopeProvablyKnown(patch)).toBe(false);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // isBashScopeProvablyKnown (unit)
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -495,7 +521,7 @@ describe('isBashScopeProvablyKnown', () => {
     expect(isBashScopeProvablyKnown('echo x > docs/notes.md')).toBe(true);
     expect(isBashScopeProvablyKnown('echo x | tee -a log.txt')).toBe(true);
     expect(isBashScopeProvablyKnown('rm "path with spaces/file.txt"')).toBe(true);
-    expect(isBashScopeProvablyKnown("sed -i 's/a/b/' src/config/policy.ts")).toBe(true);
+    expect(isBashScopeProvablyKnown('cp src/a.ts src/b.ts')).toBe(true);
   });
 
   it('BAD: interpreters and package managers stay unknown even with a redirect', () => {
@@ -506,6 +532,18 @@ describe('isBashScopeProvablyKnown', () => {
     ).toBe(false);
     expect(isBashScopeProvablyKnown('node build.js > log.txt')).toBe(false);
     expect(isBashScopeProvablyKnown('npm test > log.txt 2>&1')).toBe(false);
+    expect(
+      isBashScopeProvablyKnown(
+        'env node -e \'require("fs").writeFileSync("src/config/policy.ts","x")\' > docs/log.md',
+      ),
+    ).toBe(false);
+    expect(
+      isBashScopeProvablyKnown('awk \'BEGIN{system("touch src/config/policy.ts")}\' > docs/log.md'),
+    ).toBe(false);
+    expect(isBashScopeProvablyKnown('sort -o src/config/policy.ts docs/in.md > docs/log.md')).toBe(
+      false,
+    );
+    expect(isBashScopeProvablyKnown("sed -e 'w src/config/policy.ts' docs/in.md")).toBe(false);
   });
 
   it('BAD: a compound command with one extractable redirect is unknown', () => {

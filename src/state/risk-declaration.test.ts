@@ -143,6 +143,23 @@ describe('parseTicketRiskDeclaration', () => {
     });
   });
 
+  it('BAD: an indented fence opener does not hide a real declaration', () => {
+    // Four spaces make the backtick line an indented code block, not a fence.
+    const text = ['    ```example', 'Risk: HIGH-RISK', '```'].join('\n');
+    expect(parseTicketRiskDeclaration(text)).toEqual({
+      kind: 'declared',
+      taskClass: 'HIGH-RISK',
+    });
+  });
+
+  it('EDGE: an info-string lookalike does not close an open fence', () => {
+    const text = ['```text', '```js', 'Risk: STANDARD', '```', '', 'Risk: TRIVIAL'].join('\n');
+    expect(parseTicketRiskDeclaration(text)).toEqual({
+      kind: 'declared',
+      taskClass: 'TRIVIAL',
+    });
+  });
+
   it('EDGE: an unclosed fence suppresses the rest of the document', () => {
     const text = ['```', 'Risk: HIGH', 'Risk: TRIVIAL'].join('\n');
     expect(parseTicketRiskDeclaration(text)).toEqual({ kind: 'absent' });

@@ -428,9 +428,10 @@ describe('baseline VALIDATION reports (real git)', () => {
 
 describe('team opt-in completion (real git)', () => {
   it('HAPPY: the reduced waiver reaches COMPLETE through the human gate and export', async () => {
+    // The full #819 product contract path WITHOUT any manual claim: the
+    // effective TRIVIAL class is computed from the docs-only change alone.
     s = await boot({
       policyMode: 'team',
-      claimedTaskClass: 'TRIVIAL',
       allowReducedCeremony: true,
     });
     const se = s;
@@ -439,18 +440,19 @@ describe('team opt-in completion (real git)', () => {
     expect(hydrated!.policySnapshot.requireHumanGates).toBe(true);
     expect(hydrated!.policySnapshot.effectiveGateBehavior).toBe('human_gated');
     expect(hydrated!.policySnapshot.allowReducedCeremony).toBe(true);
-    expect(hydrated!.claimedTaskClass).toBe('TRIVIAL');
+    expect(hydrated!.claimedTaskClass).toBeUndefined();
 
     // Preserve the REAL hydrated identities (id, flowguardSessionId, binding):
     // the completion archive is materialized under the host session id and the
     // offline verifier cross-checks state.binding against the manifest.
-    await subjectState(se, false, hydrated!.policySnapshot, hydrated!);
+    await subjectState(se, false, hydrated!.policySnapshot, hydrated!, null);
     executorWritesReport();
     const check = await run_check.execute(RUN, se.tc);
     expect(String(check)).not.toContain('"error":true');
 
     let state = await readState(se.sDir);
     expect(state!.phase).toBe('EVIDENCE_REVIEW');
+    expect(state!.claimedTaskClass).toBeUndefined();
     expect(state!.reducedCeremony).toMatchObject({
       profile: 'reduced',
       reason: 'POST_IMPL_VERIFIED_TRIVIAL',
