@@ -216,10 +216,12 @@ function isReferenceEcho(
 ): boolean {
   const trimmed = text.trim();
   if (references === undefined || references.length === 0) return false;
+  const candidate = stripTokenDecoration(trimmed);
+  if (candidate.length === 0) return false;
   // A bare issue key can never be adopted external content, even when it does
   // not literally equal one of the supplied reference strings.
-  if (isBareIssueKey(trimmed)) return true;
-  const normalized = trimmed.toLowerCase();
+  if (isBareIssueKey(candidate)) return true;
+  const normalized = candidate.toLowerCase();
   return references.some((reference) => reference.ref.trim().toLowerCase() === normalized);
 }
 

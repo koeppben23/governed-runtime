@@ -105,12 +105,8 @@ export function extractPathsFromBashCommand(cmd: string): string[] {
     }
   }
 
-  // 2. tee targets: | tee [-a] <file>
-  const teePattern = /\|\s*tee\s+(?:-a\s+)?["']?([^\s"'|;&><]+)["']?/g;
-  while ((match = teePattern.exec(cmd)) !== null) {
-    const target = match[1] ?? '';
-    if (target) paths.add(target);
-  }
+  // 2. tee targets: | tee [-a] <file> [<file> ...] — every operand counts.
+  collectArgsToPaths(cmd, /\|\s*tee\s+([^\n;&|>]+)/g, paths);
 
   collectArgsToPaths(cmd, /\brm\s+(?:-[rRfiv]+\s+)*([^\n;&|]+)/g, paths);
   collectArgsToPaths(cmd, /\b(?:mv|cp)\s+(?:-[a-zA-Z]+\s+)*([^\n;&|]+)/g, paths);
@@ -174,7 +170,6 @@ const READ_ONLY_COMMANDS = new Set([
   'grep',
   'egrep',
   'fgrep',
-  'rg',
   'uniq',
   'head',
   'tail',
@@ -216,14 +211,17 @@ function firstCommandWord(cmd: string): string | null {
   return match[1] ?? null;
 }
 
+/** Option forms that relocate a path-argument command's write target. */
+const UNSUPPORTED_PATH_COMMAND_OPTION = /(?:^|\s)(?:--target-directory(?:=|\s)|-t\s)/;
+
 function isSemanticallyCoveredCommand(cmd: string): boolean {
   const word = firstCommandWord(cmd);
   if (word === null) return false;
-  return (
-    OUTPUT_ONLY_COMMANDS.has(word) ||
-    READ_ONLY_COMMANDS.has(word) ||
-    PATH_ARGUMENT_COMMANDS.has(word)
-  );
+  if (OUTPUT_ONLY_COMMANDS.has(word) || READ_ONLY_COMMANDS.has(word)) return true;
+  if (!PATH_ARGUMENT_COMMANDS.has(word)) return false;
+  // `cp/mv --target-directory=...` writes into a target the argument scan
+  // deliberately skips; such commands stay unknown instead of docs-only.
+  return !UNSUPPORTED_PATH_COMMAND_OPTION.test(cmd);
 }
 
 interface ShellScanState {
@@ -238,7 +236,12 @@ function isFdDuplication(cmd: string, index: number): boolean {
 }
 
 function isNonProvablePipe(cmd: string, index: number): boolean {
-  return !/^tee(?:\s|$)/.test(cmd.slice(index + 1).trimStart());
+  const match = /^tee\s*([^\n;&|>]*)/.exec(cmd.slice(index + 1).trimStart());
+  if (match === null) return true;
+  // Only the append flag is understood; any other tee option is unprovable.
+  return splitUnquotedArgs((match[1] ?? '').trim()).some(
+    (operand) => operand.startsWith('-') && operand !== '-a' && operand !== '--append',
+  );
 }
 
 function consumeDoubleQuoted(cmd: string, index: number, state: ShellScanState): void {

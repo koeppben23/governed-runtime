@@ -485,6 +485,12 @@ describe('extractPathsFromBashCommand', () => {
     expect(result).toContain('out1.txt');
     expect(result).toContain('out2.txt');
   });
+
+  it('captures every tee target, not just the first', () => {
+    const result = extractPathsFromBashCommand('echo x | tee docs/a.md src/config/policy.ts');
+    expect(result).toContain('docs/a.md');
+    expect(result).toContain('src/config/policy.ts');
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -522,6 +528,17 @@ describe('isBashScopeProvablyKnown', () => {
     expect(isBashScopeProvablyKnown('echo x | tee -a log.txt')).toBe(true);
     expect(isBashScopeProvablyKnown('rm "path with spaces/file.txt"')).toBe(true);
     expect(isBashScopeProvablyKnown('cp src/a.ts src/b.ts')).toBe(true);
+  });
+
+  it('BAD: multi-target or option-bearing variants of known tools stay unknown', () => {
+    expect(isBashScopeProvablyKnown('cp --target-directory=src/config docs/a.md')).toBe(false);
+    expect(isBashScopeProvablyKnown('mv -t src/config docs/a.md')).toBe(false);
+    expect(
+      isBashScopeProvablyKnown("rg --pre 'touch src/config/policy.ts' pattern docs/input.md"),
+    ).toBe(false);
+    expect(isBashScopeProvablyKnown('echo x | tee -x docs/a.md')).toBe(false);
+    // Understood forms stay known and fully extracted.
+    expect(isBashScopeProvablyKnown('echo x | tee docs/a.md src/config/policy.ts')).toBe(true);
   });
 
   it('BAD: interpreters and package managers stay unknown even with a redirect', () => {

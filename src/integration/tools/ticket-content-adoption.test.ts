@@ -215,17 +215,19 @@ describe('ticket content adoption (real worktree)', () => {
     s = await boot();
     const se = s;
 
-    const result = await ticket.execute(
-      {
-        text: 'ABC-123',
-        inputOrigin: 'external_reference',
-        references: [{ ref: 'ABC-123', type: 'issue' }],
-        source: 'external',
-      },
-      se.tc,
-    );
-    expect(String(result)).toContain('TICKET_REFERENCE_WITHOUT_CONTENT');
-    expect((await readState(se.sDir))!.ticket).toBeNull();
+    for (const text of ['ABC-123', '`ABC-123`', '"ABC-123"']) {
+      const result = await ticket.execute(
+        {
+          text,
+          inputOrigin: 'external_reference',
+          references: [{ ref: 'ABC-123', type: 'issue' }],
+          source: 'external',
+        },
+        se.tc,
+      );
+      expect(String(result), text).toContain('TICKET_REFERENCE_WITHOUT_CONTENT');
+      expect((await readState(se.sDir))!.ticket).toBeNull();
+    }
   });
 
   it('HAPPY: extracted external content with provenance stays accepted', async () => {
