@@ -239,8 +239,7 @@ async function subjectState(
     implementationRiskAssessment: {
       computedMinimumTaskClass: 'TRIVIAL' as const,
       effectiveTaskClass: 'TRIVIAL' as const,
-      declaredTaskClass:
-        baseDeclaration.kind === 'declared' ? baseDeclaration.taskClass : (null as null),
+      declaredTaskClass: baseDeclaration.kind === 'declared' ? baseDeclaration.taskClass : null,
       declarationKind: baseDeclaration.kind,
       ticketDigest: base.ticket?.digest ?? null,
       ...(claimedTaskClass !== null ? { escalatedTaskClass: claimedTaskClass } : {}),
