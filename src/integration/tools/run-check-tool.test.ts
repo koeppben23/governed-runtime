@@ -166,6 +166,21 @@ async function writeImplFileAndDigest(
   return hashText(`${filePath}:${hashes[filePath] ?? 'deleted'}`);
 }
 
+/**
+ * Write files matching the mocked git changed-file set and return the canonical
+ * implementation digest for that exact subject.
+ */
+async function writeDefaultImplSubject(tmpDir: string): Promise<string> {
+  for (const file of GIT_MOCK_DEFAULTS.changedFiles) {
+    const full = join(tmpDir, file);
+    mkdirSync(join(full, '..'), { recursive: true });
+    writeFileSync(full, `content of ${file}`, 'utf-8');
+  }
+  const sortedFiles = [...GIT_MOCK_DEFAULTS.changedFiles].sort();
+  const hashes = await hashWorktreeFiles(tmpDir, sortedFiles);
+  return hashText(sortedFiles.map((file) => `${file}:${hashes[file] ?? 'deleted'}`).join('\n'));
+}
+
 function captureLogger(): {
   log: AdapterLogger;
   entries: {
@@ -669,7 +684,7 @@ describe('HAPPY', () => {
     await driveToValidation();
     const sessDir = await getSessDir();
     const state = await readState(sessDir);
-    const implDigest = await writeImplFileAndDigest(ws.tmpDir, 'src/example.ts', 'test');
+    const implDigest = await writeDefaultImplSubject(ws.tmpDir);
     const primary = state!.verificationCandidates!.find(
       (candidate) => candidate.kind === 'typecheck',
     )!;
@@ -687,8 +702,8 @@ describe('HAPPY', () => {
       implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
       implementation: {
         implementationId: '00000000-0000-4000-8000-0000000000aa',
-        changedFiles: ['src/example.ts'],
-        domainFiles: ['src/example.ts'],
+        changedFiles: [...GIT_MOCK_DEFAULTS.changedFiles],
+        domainFiles: [...GIT_MOCK_DEFAULTS.changedFiles],
         digest: implDigest,
         executedAt: '2026-01-01T00:00:00.000Z',
       },
@@ -992,15 +1007,15 @@ describe('CORNER', () => {
     await driveToValidation();
     const sessDir = await getSessDir();
     const state = await readState(sessDir);
-    const implDigest = await writeImplFileAndDigest(ws.tmpDir, 'src/example.ts', 'test');
+    const implDigest = await writeDefaultImplSubject(ws.tmpDir);
     await writeState(sessDir, {
       ...state!,
       phase: 'IMPL_VALIDATION',
       implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
       implementation: {
         implementationId: '00000000-0000-4000-8000-0000000000aa',
-        changedFiles: ['src/example.ts'],
-        domainFiles: ['src/example.ts'],
+        changedFiles: [...GIT_MOCK_DEFAULTS.changedFiles],
+        domainFiles: [...GIT_MOCK_DEFAULTS.changedFiles],
         digest: implDigest,
         executedAt: '2026-01-01T00:00:00.000Z',
       },
@@ -1022,15 +1037,15 @@ describe('CORNER', () => {
     const sessDir = await getSessDir();
     const state = await readState(sessDir);
     const claimId = '11111111-1111-4111-8111-111111111111';
-    const implDigest = await writeImplFileAndDigest(ws.tmpDir, 'src/example.ts', 'test');
+    const implDigest = await writeDefaultImplSubject(ws.tmpDir);
     await writeState(sessDir, {
       ...state!,
       phase: 'IMPL_VALIDATION',
       implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
       implementation: {
         implementationId: '00000000-0000-4000-8000-0000000000aa',
-        changedFiles: ['src/example.ts'],
-        domainFiles: ['src/example.ts'],
+        changedFiles: [...GIT_MOCK_DEFAULTS.changedFiles],
+        domainFiles: [...GIT_MOCK_DEFAULTS.changedFiles],
         digest: implDigest,
         executedAt: '2026-01-01T00:00:00.000Z',
       },

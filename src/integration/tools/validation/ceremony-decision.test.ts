@@ -8,10 +8,10 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 vi.mock('../../../verification/implementation-subject.js', () => ({
-  computeImplementationDigest: vi.fn(),
+  reattestImplementationSubject: vi.fn(),
 }));
 
-import { computeImplementationDigest } from '../../../verification/implementation-subject.js';
+import { reattestImplementationSubject } from '../../../verification/implementation-subject.js';
 import {
   IMPL_EVIDENCE,
   makeState,
@@ -20,9 +20,9 @@ import {
   VALIDATION_PASSED,
 } from '../../../fixtures.js';
 import { TEST_EXECUTION_OBSERVATION } from '../../../state/evidence-test-constants.js';
-import { decidePostCheckCeremony } from './ceremony-decision.js';
+import { ceremonyAuditIntent, decidePostCheckCeremony } from './ceremony-decision.js';
 
-const mockedDigest = vi.mocked(computeImplementationDigest);
+const mockedReattest = vi.mocked(reattestImplementationSubject);
 
 /** Documentation-only implementation: TRIVIAL under the general classifier. */
 const DOC_IMPL = {
@@ -65,8 +65,8 @@ const passthroughDigest = (text: string) => text;
 
 describe('decidePostCheckCeremony', () => {
   beforeEach(() => {
-    mockedDigest.mockReset();
-    mockedDigest.mockResolvedValue(DOC_IMPL.digest);
+    mockedReattest.mockReset();
+    mockedReattest.mockResolvedValue({ kind: 'ok', digest: DOC_IMPL.digest });
   });
 
   it('HAPPY: decides reduced only with the complete check set, bound bytes and policy', async () => {
@@ -129,7 +129,11 @@ describe('decidePostCheckCeremony', () => {
   });
 
   it('BAD: worktree bytes that no longer match the frozen digest fail closed', async () => {
-    mockedDigest.mockResolvedValue('different-digest');
+    mockedReattest.mockResolvedValue({
+      kind: 'subject_changed',
+      expected: DOC_IMPL.digest,
+      actual: 'different-digest',
+    });
     const state = baseState({
       implValidation: VALIDATION_PASSED,
       validationAttempts: [attempt('test', true), attempt('lint', true)],
@@ -188,5 +192,70 @@ describe('decidePostCheckCeremony', () => {
     expect(outcome.kind).toBe('decided');
     if (outcome.kind !== 'decided') return;
     expect(outcome.decision.reason).toBe('POLICY_HUMAN_GATE_REQUIRED_FOR_REDUCED_CEREMONY');
+  });
+});
+
+describe('ceremonyAuditIntent', () => {
+  const decision = {
+    profile: 'reduced' as const,
+    reason: 'POST_IMPL_VERIFIED_TRIVIAL',
+    claimedTaskClass: 'TRIVIAL' as const,
+    computedMinimumTaskClass: 'TRIVIAL' as const,
+    touchedSurfaces: [],
+    riskTriggers: [],
+    implementationId: DOC_IMPL.implementationId,
+    implementationDigest: DOC_IMPL.digest,
+    policyDigest: 'a'.repeat(64),
+    verificationBasis: {
+      checkIds: ['test'],
+      attempts: [
+        {
+          checkId: 'test',
+          attemptId: '00000000-0000-4000-8000-0000000000f1',
+          executedAt: '2026-01-02T00:00:00.000Z',
+        },
+      ],
+    },
+    decidedAt: '2026-01-02T00:00:00.000Z',
+  };
+
+  it('records an applied decision with its exact binding', () => {
+    const intents = ceremonyAuditIntent(decision, '2026-01-02T00:00:00.000Z');
+    expect(intents).toHaveLength(1);
+    expect(intents[0]).toMatchObject({
+      phase: 'IMPL_VALIDATION',
+      event: 'reduced_ceremony_applied',
+      detail: {
+        status: 'applied',
+        implementationId: DOC_IMPL.implementationId,
+        implementationDigest: DOC_IMPL.digest,
+        checkIds: ['test'],
+        attemptIds: ['00000000-0000-4000-8000-0000000000f1'],
+      },
+    });
+  });
+
+  it('records a denial with its structured reason', () => {
+    const intents = ceremonyAuditIntent(
+      {
+        profile: 'full',
+        reason: 'VERIFICATION_EVIDENCE_INCOMPLETE',
+        claimedTaskClass: 'TRIVIAL',
+        computedMinimumTaskClass: 'TRIVIAL',
+        touchedSurfaces: [],
+        riskTriggers: [],
+      },
+      '2026-01-02T00:00:00.000Z',
+    );
+    expect(intents).toMatchObject([
+      {
+        event: 'reduced_ceremony_denied',
+        detail: { status: 'ineligible', reason: 'VERIFICATION_EVIDENCE_INCOMPLETE' },
+      },
+    ]);
+  });
+
+  it('records nothing when no decision was evaluated (aborted cycle)', () => {
+    expect(ceremonyAuditIntent(null, '2026-01-02T00:00:00.000Z')).toEqual([]);
   });
 });

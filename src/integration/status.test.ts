@@ -32,7 +32,12 @@ import {
 } from './status/status-detail-projections.js';
 import { getPolicyPreset } from '../config/policy.js';
 import { createPolicySnapshot } from '../config/policy-snapshot.js';
-import { makeState } from '../fixtures.js';
+import {
+  IMPL_EVIDENCE,
+  makeState,
+  POLICY_SNAPSHOT,
+  REDUCED_CEREMONY_DECISION,
+} from '../fixtures.js';
 import { isCommandAllowed, Command } from '../machine/commands.js';
 import { USER_GATES, TERMINAL } from '../machine/topology.js';
 import { makePlanRevision } from '../state/evidence-test-constants.js';
@@ -815,5 +820,60 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
     expect(validationSlot).toBeDefined();
     expect(validationSlot!.status).toBe('failed');
     expect(validationSlot!.detail).toContain('1/2 passed');
+  });
+});
+
+describe('buildStatusProjection — reduced ceremony projection', () => {
+  const policy = getPolicyPreset('team');
+
+  it('is not_applicable outside IMPL_VALIDATION without a decision', () => {
+    const projection = buildStatusProjection(makeState('READY'), policy);
+    expect(projection.reducedCeremony).toEqual({ status: 'not_applicable', reason: null });
+  });
+
+  it('derives the pending projection at IMPL_VALIDATION without persisting it', () => {
+    const state = makeState('IMPL_VALIDATION', {
+      claimedTaskClass: 'TRIVIAL',
+      implementation: {
+        ...IMPL_EVIDENCE,
+        changedFiles: ['docs/usage-notes.md'],
+        domainFiles: [],
+      },
+      policySnapshot: {
+        ...POLICY_SNAPSHOT,
+        allowReducedCeremony: true,
+        requireHumanGates: true,
+      },
+    });
+
+    expect(state.reducedCeremony).toBeNull();
+    expect(buildStatusProjection(state, policy).reducedCeremony).toEqual({
+      status: 'pending_post_implementation_verification',
+      reason: 'AWAITING_POST_IMPLEMENTATION_VERIFICATION',
+    });
+  });
+
+  it('reports the static ineligibility reason when policy does not allow reduction', () => {
+    const state = makeState('IMPL_VALIDATION', {
+      claimedTaskClass: 'TRIVIAL',
+      implementation: { ...IMPL_EVIDENCE, changedFiles: ['docs/usage-notes.md'], domainFiles: [] },
+    });
+
+    expect(buildStatusProjection(state, policy).reducedCeremony).toEqual({
+      status: 'ineligible',
+      reason: 'POLICY_REDUCED_CEREMONY_DISABLED',
+    });
+  });
+
+  it('reports an applied decision from state', () => {
+    const state = makeState('EVIDENCE_REVIEW', {
+      implementation: IMPL_EVIDENCE,
+      reducedCeremony: REDUCED_CEREMONY_DECISION,
+    });
+
+    expect(buildStatusProjection(state, policy).reducedCeremony).toEqual({
+      status: 'applied',
+      reason: REDUCED_CEREMONY_DECISION.reason,
+    });
   });
 });

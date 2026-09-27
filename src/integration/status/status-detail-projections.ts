@@ -50,6 +50,7 @@ export function buildEvidenceDetailProjection(state: SessionState): EvidenceDeta
       missing: report.summary.missing,
       notYetRequired: report.summary.notYetRequired,
       failed: report.summary.failed,
+      waived: report.summary.waived,
     },
     fourEyes: {
       required: report.fourEyes.required,

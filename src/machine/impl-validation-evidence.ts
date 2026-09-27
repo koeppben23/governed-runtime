@@ -23,6 +23,7 @@
  */
 
 import type { SessionState } from '../state/schema.js';
+import type { ValidationResult } from '../state/evidence-validation.js';
 import { latestUnknownOutcomeResolvedAt } from '../state/evidence-mutation-episode.js';
 
 /** One selected check/attempt binding of the current verification cycle. */
@@ -76,6 +77,7 @@ export function evaluateImplValidationEvidence(
         (attempt) =>
           attempt.scope === 'implementation' &&
           attempt.implementationId === implementation.implementationId &&
+          attempt.implementationDigest === implementation.digest &&
           attempt.result.checkId === checkId &&
           (resolvedAt === null || attempt.result.executedAt > resolvedAt),
       ),
@@ -90,6 +92,12 @@ export function evaluateImplValidationEvidence(
       missing.push(checkId);
       continue;
     }
+    // The selected attempt must be the execution that produced the latest
+    // decisive result: formally matching but unrelated records never qualify.
+    if (!sameExecution(latestAttempt.result, latestResult)) {
+      missing.push(checkId);
+      continue;
+    }
     basis.push({
       checkId,
       attemptId: latestAttempt.attemptId,
@@ -98,4 +106,17 @@ export function evaluateImplValidationEvidence(
   }
 
   return { activeChecks, satisfied: missing.length === 0, missing, basis };
+}
+
+/** Whether two results describe the same check execution. */
+function sameExecution(a: ValidationResult, b: ValidationResult): boolean {
+  return (
+    a.checkId === b.checkId &&
+    a.passed === b.passed &&
+    a.executedAt === b.executedAt &&
+    a.exitCode === b.exitCode &&
+    a.timedOut === b.timedOut &&
+    a.outcome === b.outcome &&
+    a.outputDigest === b.outputDigest
+  );
 }

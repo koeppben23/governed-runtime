@@ -19,7 +19,8 @@
 import { isTechnicalValidationBlock } from '../../../state/evidence-validation.js';
 import type { SessionState } from '../../../state/schema.js';
 import { resolveCeremonyProfile, type CeremonyProfileDecision } from '../../phase-tool-gate.js';
-import { computeImplementationDigest } from '../../../verification/implementation-subject.js';
+import { reattestImplementationSubject } from '../../../verification/implementation-subject.js';
+import type { SemanticAuditIntent } from '../../audit-outbox.js';
 
 export type PostCheckCeremonyOutcome =
   | {
@@ -80,15 +81,22 @@ export async function decidePostCheckCeremony(input: {
     return { kind: 'skipped', state: { ...state, reducedCeremony: null } };
   }
 
-  // The decision must bind the bytes actually in the worktree, not a stale
-  // file list. Any add/remove/rename/modify after the freeze fails closed.
-  const actual = await computeImplementationDigest({
+  // The decision must bind the CURRENT governed bytes, not a stale file list:
+  // re-enumerate, scope, compare sets and recompute the digest. Any add,
+  // remove, rename or modify after the freeze fails closed.
+  const reattestation = await reattestImplementationSubject({
     worktree: input.worktree,
-    files: implementation.changedFiles,
+    frozenFiles: implementation.changedFiles,
+    expectedDigest: implementation.digest,
+    baseline: state.implementationBaseline,
     digest: input.digest,
   });
-  if (actual !== implementation.digest) {
-    return { kind: 'subject_changed', expected: implementation.digest, actual };
+  if (reattestation.kind !== 'ok') {
+    return {
+      kind: 'subject_changed',
+      expected: reattestation.expected,
+      actual: reattestation.actual,
+    };
   }
 
   const decision = resolveCeremonyProfile({ state, changedFiles: implementation.changedFiles });
@@ -114,4 +122,42 @@ export async function decidePostCheckCeremony(input: {
     };
   }
   return { kind: 'decided', decision, state: { ...state, reducedCeremony: null } };
+}
+
+/**
+ * Structured audit intent for one final ceremony decision. Emitted for every
+ * evaluated cycle (applied or ineligible), never for aborted check runs: a
+ * failed or technically blocked check set never reaches the authority.
+ */
+export function ceremonyAuditIntent(
+  decision: CeremonyProfileDecision | null,
+  occurredAt: string,
+): readonly SemanticAuditIntent[] {
+  if (decision === null) return [];
+  if (decision.profile === 'reduced') {
+    return [
+      {
+        phase: 'IMPL_VALIDATION',
+        event: 'reduced_ceremony_applied',
+        occurredAt,
+        detail: {
+          status: 'applied',
+          reason: decision.reason,
+          implementationId: decision.implementationId,
+          implementationDigest: decision.implementationDigest,
+          policyDigest: decision.policyDigest,
+          checkIds: [...decision.verificationBasis.checkIds],
+          attemptIds: decision.verificationBasis.attempts.map((entry) => entry.attemptId),
+        },
+      },
+    ];
+  }
+  return [
+    {
+      phase: 'IMPL_VALIDATION',
+      event: 'reduced_ceremony_denied',
+      occurredAt,
+      detail: { status: 'ineligible', reason: decision.reason },
+    },
+  ];
 }

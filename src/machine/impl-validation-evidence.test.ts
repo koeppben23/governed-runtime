@@ -126,6 +126,37 @@ describe('evaluateImplValidationEvidence', () => {
     expect(evaluateImplValidationEvidence(state).satisfied).toBe(false);
   });
 
+  it('BAD: an attempt bound to the right generation but the wrong digest never counts', () => {
+    const badDigestAttempt = {
+      ...attempt('test', true, '2026-01-01T00:00:01.000Z'),
+      implementationDigest: 'different-digest',
+    };
+    const state = makeState('IMPL_VALIDATION', {
+      implementation: IMPL_EVIDENCE,
+      activeChecks: ['test'],
+      implValidation: [result('test', true, '2026-01-01T00:00:01.000Z')],
+      validationAttempts: [badDigestAttempt],
+    });
+
+    expect(evaluateImplValidationEvidence(state).satisfied).toBe(false);
+  });
+
+  it('BAD: a passing attempt that did not produce the latest result never counts', () => {
+    const base = attempt('test', true, '2026-01-01T00:00:01.000Z');
+    const unrelatedAttempt = {
+      ...base,
+      result: { ...base.result, outputDigest: 'f'.repeat(64) },
+    };
+    const state = makeState('IMPL_VALIDATION', {
+      implementation: IMPL_EVIDENCE,
+      activeChecks: ['test'],
+      implValidation: [result('test', true, '2026-01-01T00:00:01.000Z')],
+      validationAttempts: [unrelatedAttempt],
+    });
+
+    expect(evaluateImplValidationEvidence(state).satisfied).toBe(false);
+  });
+
   it('BAD: missing implementation evidence marks all checks missing', () => {
     const state = makeState('IMPL_VALIDATION', {
       implementation: null,

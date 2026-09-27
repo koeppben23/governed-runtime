@@ -32,6 +32,7 @@ export async function attestReducedCeremonySubject(input: {
     worktree: input.worktree,
     frozenFiles: implementation.changedFiles,
     expectedDigest: implementation.digest,
+    baseline: state.implementationBaseline,
     digest: input.digest,
   });
   return result.kind === 'ok'

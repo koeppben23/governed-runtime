@@ -44,6 +44,7 @@ import {
 } from '../../machine/commands.js';
 import { PHASE_LABELS } from '../../presentation/phase-labels.js';
 import { evaluateCompleteness } from '../../audit/completeness.js';
+import { projectCeremonyEligibility } from '../phase-tool-gate.js';
 import { getReviewLoopProgress } from '../review/obligations/review-loop-progress.js';
 import { isConverged } from '../../machine/guards.js';
 import { projectStatusConclusion } from './status-conclusion.js';
@@ -130,6 +131,20 @@ function projectImplementationRework(
   };
 }
 
+function buildReducedCeremonyProjection(state: SessionState): StatusProjection['reducedCeremony'] {
+  if (state.reducedCeremony !== null) {
+    return { status: 'applied', reason: state.reducedCeremony.reason };
+  }
+  if (state.phase === 'IMPL_VALIDATION') {
+    const projection = projectCeremonyEligibility({
+      state,
+      changedFiles: state.implementation?.changedFiles ?? [],
+    });
+    return { status: projection.status, reason: projection.reason };
+  }
+  return { status: 'not_applicable', reason: null };
+}
+
 export function buildStatusProjection(
   state: SessionState,
   policy: FlowGuardPolicy,
@@ -172,7 +187,9 @@ export function buildStatusProjection(
       missing: completeness.summary.missing,
       notYetRequired: completeness.summary.notYetRequired,
       failed: completeness.summary.failed,
+      waived: completeness.summary.waived,
     },
+    reducedCeremony: buildReducedCeremonyProjection(state),
     proofGraph: summarizePersistedProofGraph(state),
     proofSummary: projectProofStatusForState(state),
     proofApprovals: buildProofApprovalProjection(state),

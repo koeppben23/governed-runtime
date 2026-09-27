@@ -10,7 +10,7 @@
  * @version v1
  */
 
-import { hashWorktreeFiles } from '../adapters/git.js';
+import { changedFiles, hashWorktreeFiles } from '../adapters/git.js';
 import type { SessionState } from '../state/schema.js';
 
 /** Scoped governed implementation files plus the scoping disposition. */
@@ -81,17 +81,45 @@ export type ImplementationSubjectReattestation =
   | { readonly kind: 'ok'; readonly digest: string }
   | { readonly kind: 'subject_changed'; readonly expected: string; readonly actual: string };
 
+function sameFileSet(left: readonly string[], right: readonly string[]): boolean {
+  if (left.length !== right.length) return false;
+  const sortedLeft = [...left].sort();
+  const sortedRight = [...right].sort();
+  return sortedLeft.every((file, index) => file === sortedRight[index]);
+}
+
 /**
- * Re-enumerate the frozen governed set against the worktree and compare the
- * canonical digest. Any mutation, add, delete or rename after the freeze is a
- * subject change: callers fail closed and require a fresh /implement.
+ * Prove that the CURRENT governed implementation subject still equals the
+ * frozen one:
+ *
+ * 1. re-enumerate the live git changes,
+ * 2. apply the frozen implementation baseline scoping,
+ * 3. require exact set equality (add, delete and rename all change the set),
+ * 4. recompute the canonical content digest over the frozen set.
+ *
+ * Hashing the stored file list alone is not proof: a file added after the
+ * freeze would never appear in it. Any mismatch fails closed and requires a
+ * fresh /implement.
  */
 export async function reattestImplementationSubject(input: {
   readonly worktree: string;
   readonly frozenFiles: readonly string[];
   readonly expectedDigest: string;
+  readonly baseline: SessionState['implementationBaseline'];
   readonly digest: (text: string) => string;
 }): Promise<ImplementationSubjectReattestation> {
+  const rawFiles = await changedFiles(input.worktree);
+  const scoped = await scopeImplementationFiles(input.worktree, rawFiles, input.baseline);
+  const currentFiles = scoped.kind === 'ok' ? [...scoped.subject.files] : [];
+
+  if (!sameFileSet(currentFiles, input.frozenFiles)) {
+    return {
+      kind: 'subject_changed',
+      expected: input.expectedDigest,
+      actual: `file-set:${[...currentFiles].sort().join(',')}`,
+    };
+  }
+
   const actual = await computeImplementationDigest({
     worktree: input.worktree,
     files: input.frozenFiles,

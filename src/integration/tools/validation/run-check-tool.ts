@@ -50,7 +50,7 @@ import {
 } from '../../../state/discovery-schemas.js';
 import { autoAdvance } from '../../../rails/types.js';
 import { executeCheck } from '../../../verification/executor.js';
-import { decidePostCheckCeremony } from './ceremony-decision.js';
+import { ceremonyAuditIntent, decidePostCheckCeremony } from './ceremony-decision.js';
 import type { CeremonyProfileDecision } from '../../phase-tool-gate.js';
 import { deriveRepairGuidance } from '../../../verification/repair-guidance.js';
 import type {
@@ -502,6 +502,7 @@ async function finalizeCheckUnderLock(input: {
     input.sessDir,
     activated.state,
     advanced.transitions,
+    ceremonyAuditIntent(input.revalidated.ceremony, input.revalidated.railCtx.now()),
   );
   const authorityResult = resolveRunCheckDispatchAuthority(activated, persisted);
   if (typeof authorityResult === 'string') return authorityResult;

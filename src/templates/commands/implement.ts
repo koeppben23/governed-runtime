@@ -54,16 +54,18 @@ ${DISCOVERY_REVIEW_CAPTURE}
    - Do not add behavior, authority, scope, or acceptance criteria beyond the approved plan.
   4. After satisfying all approved outcomes, contracts, authority decisions, scope boundaries, and
      acceptance criteria, call \`flowguard_implement({})\` with no arguments.
-    - The tool records evidence and auto-advances the state machine. It can cross MULTIPLE
-      phases in one call — e.g. straight past IMPL_VALIDATION into IMPL_REVIEW (a
-      policy-permitted zero-check transition) or into EVIDENCE_REVIEW (reduced ceremony).
+    - The tool records evidence and auto-advances the state machine. It never skips
+      post-implementation verification and never skips the human evidence gate: after
+      \`/implement\` the phase is usually \`IMPL_VALIDATION\`; a policy-permitted zero-check
+      transition can advance straight to \`IMPL_REVIEW\`.
     - Dispatch on the RETURNED \`phase\` field of the tool response; the returned phase is
       authoritative, never an assumed sequence:
       - \`EVIDENCE_REVIEW\`: display \`presentation.markdown\` (or the legacy \`reviewCard\`)
         verbatim and STOP. No checks, no reviewer, no further steps — this is the user gate.
-      - \`COMPLETE\`: terminal — the workflow reached a policy-permitted final phase
-        without a human gate (e.g. automatic approval under reduced ceremony). Display any
-        returned presentation verbatim and STOP.
+        Reduced ceremony waives only the independent IMPL_REVIEW, never this gate.
+      - \`EXPORT_READY\`: the policy auto-approved the evidence gate; \`/export\` remains an
+        explicit step. Display any returned presentation verbatim and STOP.
+      - \`COMPLETE\`: terminal — display any returned presentation verbatim and STOP.
       - \`IMPL_REVIEW\`: validation already passed. Go DIRECTLY to Phase 5 (review loop) and
         continue automatically — do not stop and do not treat the session as IMPL_VALIDATION.
       - \`IMPLEMENTATION\` or \`error\`/\`blocked\`: follow the exact recovery in the tool
@@ -162,10 +164,12 @@ Zero-check path (machine advances within the record call):
 1. \`flowguard_implement({})\` → returns phase: IMPL_REVIEW (policy-permitted vacuous validation)
 2. go DIRECTLY to the review loop — no status re-read, no invented IMPL_VALIDATION step
 
-Reduced-ceremony path:
-1. \`flowguard_implement({})\` → returns phase: EVIDENCE_REVIEW + presentation (or COMPLETE
-   under a policy-permitted automatic approval)
-2. display \`presentation.markdown\` verbatim and STOP
+Reduced-ceremony path (policy-enabled, post-implementation only):
+1. \`flowguard_implement({})\` → returns phase: IMPL_VALIDATION
+2. run every active check (Phase 3); when all checks pass against the frozen implementation
+   and the runtime ceremony decision is valid, the machine advances directly to
+   EVIDENCE_REVIEW — waiving only IMPL_REVIEW, never post-implementation verification
+3. display \`presentation.markdown\` verbatim and STOP — the human evidence gate remains mandatory
 
 Revision path (when review returns changes_requested):
 1. \`flowguard_review_implementation({ reviewVerdict: "changes_requested" })\` → routes back to IMPLEMENTATION

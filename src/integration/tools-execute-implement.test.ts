@@ -44,7 +44,6 @@ import {
 } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
 import { appendReviewDispatch } from '../state/review-dispatch.js';
-import { readAuditTrail } from '../adapters/persistence-audit.js';
 import * as persistence from '../adapters/persistence.js';
 import {
   makeState,
@@ -449,7 +448,7 @@ describe('implement', () => {
       const diff =
         'diff --git a/src/auth.ts b/src/auth.ts\n' +
         '--- a/src/auth.ts\n+++ b/src/auth.ts\n@@ -1 +1 @@\n-old\n+new\n';
-      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['src/auth.ts']);
+      vi.mocked(gitMock.changedFiles).mockResolvedValue(['src/auth.ts']);
       vi.mocked(gitMock.worktreeDiff).mockResolvedValueOnce(diff);
 
       const raw = await implement.execute({}, ctx);
@@ -475,7 +474,7 @@ describe('implement', () => {
     it('F3: omits diffDigest and writes no artifact when the diff is empty', async () => {
       await reachImplementation();
       const sessDir = await currentSessionDir();
-      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['src/auth.ts']);
+      vi.mocked(gitMock.changedFiles).mockResolvedValue(['src/auth.ts']);
       vi.mocked(gitMock.worktreeDiff).mockResolvedValueOnce('   \n');
 
       const raw = await implement.execute({}, ctx);
@@ -489,7 +488,7 @@ describe('implement', () => {
     it('F3: omits diffDigest and never persists a claimed artifact when write fails', async () => {
       await reachImplementation();
       const sessDir = await currentSessionDir();
-      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['src/auth.ts']);
+      vi.mocked(gitMock.changedFiles).mockResolvedValue(['src/auth.ts']);
       vi.mocked(gitMock.worktreeDiff).mockResolvedValueOnce(
         'diff --git a/src/auth.ts b/src/auth.ts\n--- a/src/auth.ts\n+++ b/src/auth.ts',
       );
@@ -534,7 +533,7 @@ describe('implement', () => {
         },
       });
 
-      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['docs/usage-notes.md']);
+      vi.mocked(gitMock.changedFiles).mockResolvedValue(['docs/usage-notes.md']);
       const raw = await implement.execute({}, ctx);
       await passImplValidation();
       const result = parseToolResult(raw);
@@ -555,6 +554,16 @@ describe('implement', () => {
       expect(finalState?.reducedCeremony?.verificationBasis.checkIds).toEqual(
         finalState?.activeChecks,
       );
+      // The structured decision event is durably queued through the canonical
+      // audit outbox in the same locked commit; it flushes on later writes.
+      expect(
+        (finalState?.pendingAuditOperations ?? []).some(
+          (operation) =>
+            operation.kind === 'semantic' &&
+            operation.semantic.event === 'reduced_ceremony_applied' &&
+            operation.semantic.detail.status === 'applied',
+        ),
+      ).toBe(true);
       expect(finalState?.transition?.event).toBe('REDUCED_CEREMONY');
       // The human evidence gate remains mandatory.
       expect(finalState?.phase).toBe('EVIDENCE_REVIEW');
@@ -580,7 +589,7 @@ describe('implement', () => {
         },
       });
 
-      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['src/security/policy.ts']);
+      vi.mocked(gitMock.changedFiles).mockResolvedValue(['src/security/policy.ts']);
       const raw = await implement.execute({}, ctx);
       const result = parseToolResult(raw);
       const finalState = await readState(sessDir);
@@ -655,7 +664,7 @@ describe('implement', () => {
   describe('CORNER', () => {
     it('filters out .opencode/ files from domain files', async () => {
       await reachImplementation();
-      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce([
+      vi.mocked(gitMock.changedFiles).mockResolvedValue([
         'src/foo.ts',
         '.opencode/tools/flowguard.ts',
         'node_modules/dep/index.js',
@@ -672,7 +681,7 @@ describe('implement', () => {
       // Real demo case: a stale opencode.json detected in the worktree must not
       // be counted as an implementation domain surface.
       await reachImplementation();
-      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce([
+      vi.mocked(gitMock.changedFiles).mockResolvedValue([
         'opencode.json',
         'src/main/Service.java',
         'tsconfig.json',
@@ -702,7 +711,7 @@ describe('implement', () => {
           capturedAt: new Date().toISOString(),
         },
       });
-      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce([
+      vi.mocked(gitMock.changedFiles).mockResolvedValue([
         'src/main/Service.java',
         'stale/preexisting.txt',
       ]);
@@ -729,7 +738,7 @@ describe('implement', () => {
           capturedAt: new Date().toISOString(),
         },
       });
-      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['src/main/Service.java']);
+      vi.mocked(gitMock.changedFiles).mockResolvedValue(['src/main/Service.java']);
       const raw = await implement.execute({}, ctx);
       expect(parseToolResult(raw).error).toBeUndefined();
       const changed = (await readState(sessDir))!.implementation!.changedFiles;
@@ -744,7 +753,7 @@ describe('implement', () => {
       if (!state) throw new TypeError('Expected persisted session state');
       const { implementationBaseline: _drop, ...withoutBaseline } = state;
       await writeState(sessDir, withoutBaseline);
-      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce([
+      vi.mocked(gitMock.changedFiles).mockResolvedValue([
         'src/main/Service.java',
         'stale/preexisting.txt',
       ]);
@@ -777,10 +786,7 @@ describe('implement', () => {
       // The task only touched a doc; a stale dirty package.json (HIGH-RISK) was
       // present before the task, unchanged, and must be scoped out, not raise
       // the floor.
-      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce([
-        'docs/usage-notes.md',
-        'package.json',
-      ]);
+      vi.mocked(gitMock.changedFiles).mockResolvedValue(['docs/usage-notes.md', 'package.json']);
       const raw = await implement.execute({}, ctx);
       await passImplValidation();
       const result = parseToolResult(raw);
@@ -805,7 +811,7 @@ describe('implement', () => {
           capturedAt: new Date().toISOString(),
         },
       });
-      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['stale/a.txt', 'stale/b.txt']);
+      vi.mocked(gitMock.changedFiles).mockResolvedValue(['stale/a.txt', 'stale/b.txt']);
       const raw = await implement.execute({}, ctx);
       await passImplValidation();
       const result = parseToolResult(raw);
@@ -1178,7 +1184,7 @@ describe('implement', () => {
       // automatic post-implementation check is forced to ERROR so the
       // intermediate IMPL_VALIDATION state (marker still set) is observable.
       const gitMockForDigest = await import('../adapters/git.js');
-      vi.mocked(gitMockForDigest.changedFiles).mockResolvedValueOnce([
+      vi.mocked(gitMockForDigest.changedFiles).mockResolvedValue([
         ...GIT_MOCK_DEFAULTS.changedFiles,
         'src/fixed-after-review.ts',
       ]);

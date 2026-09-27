@@ -84,7 +84,10 @@ describe('implValidationEvidenceGate', () => {
     const after = '2026-02-01T13:00:00.000Z';
     const state = makeState('IMPL_REVIEW', {
       implementation: IMPL_EVIDENCE,
-      implValidation: VALIDATION_PASSED,
+      implValidation: [
+        { ...VALIDATION_PASSED[0]!, executedAt: after },
+        { ...VALIDATION_PASSED[1]!, executedAt: after },
+      ],
       validationAttempts: [
         attempt('test', true, CURRENT_DIGEST, after),
         attempt('lint', true, CURRENT_DIGEST, after),

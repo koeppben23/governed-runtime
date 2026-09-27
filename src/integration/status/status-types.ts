@@ -76,6 +76,17 @@ export interface StatusProjection {
     missing: number;
     notYetRequired: number;
     failed: number;
+    /** Implementation reviews explicitly waived by a valid reduced-ceremony decision. */
+    waived: number;
+  };
+  /**
+   * Derived reduced-ceremony state: the pending projection is computed, never
+   * persisted; only an applied decision is persisted state evidence.
+   */
+  reducedCeremony: {
+    status:
+      'applied' | 'pending_post_implementation_verification' | 'ineligible' | 'not_applicable';
+    reason: string | null;
   };
   proofGraph: PersistedProofGraphSummary;
   /** Mandatory compact ProofGraph presentation for every resolved session. */
