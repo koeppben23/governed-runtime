@@ -25,6 +25,8 @@ import {
   PLAN_REVIEW_ASSURANCE,
   IMPL_EVIDENCE,
   VERIFICATION_CANDIDATES,
+  FIXTURE_TEST_CANDIDATE_ID,
+  FIXTURE_LINT_CANDIDATE_ID,
 } from '../fixtures.js';
 import { TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
 
@@ -48,8 +50,8 @@ function implementationAttempt(
 function validationResult(checkId: string) {
   const candidate =
     checkId === 'lint'
-      ? { candidateId: 'candidate-lint', command: 'npm run lint', kind: 'lint' as const }
-      : { candidateId: 'candidate-test', command: 'npm test', kind: 'test' as const };
+      ? { candidateId: FIXTURE_LINT_CANDIDATE_ID, command: 'npm run lint', kind: 'lint' as const }
+      : { candidateId: FIXTURE_TEST_CANDIDATE_ID, command: 'npm test', kind: 'test' as const };
   return {
     checkId,
     ...candidate,

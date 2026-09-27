@@ -34,6 +34,8 @@ import {
 } from '../../adapters/workspace/index.js';
 import { executeCheck } from '../../verification/executor.js';
 import { PersistenceError } from '../../adapters/persistence.js';
+import { evaluateImplValidationEvidence } from '../../machine/impl-validation-evidence.js';
+import { deriveVerificationCandidateId } from '../../state/candidate-identity.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { hashText } from '../../shared/hashing.js';
 import { hashWorktreeFiles, listRepoSignals } from '../../adapters/git.js';
@@ -828,6 +830,88 @@ describe('HAPPY', () => {
         providerId: 'pytest',
       },
     });
+  });
+
+  it('executes a run_specific structured candidate with its per-attempt argument and stays satisfiable', async () => {
+    await driveToValidation();
+    const sd = await getSessDir();
+    const state = await readState(sd);
+    const implDigest = await writeDefaultImplSubject(ws.tmpDir);
+    const definition = {
+      assertionCapability: 'structured' as const,
+      kind: 'test' as const,
+      command: 'npm test --',
+      source: 'detectedStack:testFramework:jest',
+      confidence: 'high' as const,
+      reason: 'jest fixture',
+      assertionReport: {
+        collection: 'run_specific' as const,
+        transport: 'file' as const,
+        format: 'jest_json' as const,
+        providerId: 'jest' as const,
+        outputArgumentTemplate: '--json --outputFile=.flowguard/reports/{attemptId}/jest.json',
+        resultPatternTemplate: '.flowguard/reports/{attemptId}/jest.json',
+      },
+    };
+    const candidate = { ...definition, candidateId: deriveVerificationCandidateId(definition) };
+    await writeState(sd, {
+      ...state!,
+      phase: 'IMPL_VALIDATION',
+      implementationBaseAuthority: FROZEN_IMPLEMENTATION_BASE,
+      implementation: {
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
+        changedFiles: [...GIT_MOCK_DEFAULTS.changedFiles],
+        domainFiles: [...GIT_MOCK_DEFAULTS.changedFiles],
+        digest: implDigest,
+        executedAt: '2026-01-01T00:00:00.000Z',
+      },
+      activeChecks: ['test'],
+      verificationCandidates: [candidate],
+      executionSubjectInputsByCandidateId: {
+        [candidate.candidateId]: [{ kind: 'implementation' }],
+      },
+    });
+
+    vi.mocked(executeCheck).mockImplementationOnce(async (input) => {
+      const reportPath = /--outputFile=(\S+)/.exec(input.command)?.[1];
+      expect(reportPath).toBeDefined();
+      const absoluteReportPath = join(input.cwd, reportPath!);
+      mkdirSync(dirname(absoluteReportPath), { recursive: true });
+      writeFileSync(
+        absoluteReportPath,
+        JSON.stringify({
+          testResults: [
+            { name: 'tests/a.test.ts', assertionResults: [{ title: 'passes', status: 'passed' }] },
+          ],
+        }),
+        'utf-8',
+      );
+      return {
+        kind: input.kind,
+        command: input.command,
+        exitCode: 0,
+        passed: true,
+        executionMs: 120,
+        outputDigest: 'a'.repeat(64),
+        stdout: '',
+        stderr: '',
+        timedOut: false,
+        startedAt: '2026-01-01T00:00:00.000Z',
+      };
+    });
+
+    await callOk(run_check, { kind: 'test', candidateId: candidate.candidateId });
+
+    const persisted = (await readState(sd))!;
+    const attempt = persisted.validationAttempts.find(
+      (entry) => entry.result.candidateId === candidate.candidateId,
+    );
+    expect(attempt?.result.command).toMatch(
+      /^npm test -- --json --outputFile=\.flowguard\/reports\/[^/]+\/jest\.json$/,
+    );
+    // The shared predicate (normal gate and reduced eligibility) accepts the
+    // extended command because it is reconstructed from the frozen definition.
+    expect(evaluateImplValidationEvidence(persisted).satisfied).toBe(true);
   });
 });
 

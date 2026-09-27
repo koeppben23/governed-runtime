@@ -218,6 +218,7 @@ function ceremonyBindingMatches(
 }
 
 function ceremonyBasisMatches(
+  s: SessionState,
   decision: NonNullable<SessionState['reducedCeremony']>,
   evidence: ReturnType<typeof evaluateImplValidationEvidence>,
 ): boolean {
@@ -226,14 +227,21 @@ function ceremonyBasisMatches(
   if (decidedCheckIds.length !== activeCheckIds.length) return false;
   if (decidedCheckIds.some((checkId, index) => checkId !== activeCheckIds[index])) return false;
 
+  // Full binding equality: check, attempt id AND the recorded execution time.
   const decidedAttempts = decision.verificationBasis.attempts
-    .map((entry) => `${entry.checkId}:${entry.attemptId}`)
+    .map((entry) => `${entry.checkId}:${entry.attemptId}:${entry.executedAt}`)
     .sort();
   const currentAttempts = evidence.basis
-    .map((entry) => `${entry.checkId}:${entry.attemptId}`)
+    .map((entry) => `${entry.checkId}:${entry.attemptId}:${entry.executedAt}`)
     .sort();
   if (decidedAttempts.length !== currentAttempts.length) return false;
-  return decidedAttempts.every((entry, index) => entry === currentAttempts[index]);
+  if (!decidedAttempts.every((entry, index) => entry === currentAttempts[index])) return false;
+
+  // The decision surfaces must still equal the frozen risk assessment.
+  const decidedSurfaces = [...decision.touchedSurfaces].sort();
+  const assessedSurfaces = [...(s.implementationRiskAssessment?.touchedSurfaces ?? [])].sort();
+  if (decidedSurfaces.length !== assessedSurfaces.length) return false;
+  return decidedSurfaces.every((surface, index) => surface === assessedSurfaces[index]);
 }
 
 /**
@@ -247,7 +255,7 @@ export const reducedCeremonyReady: GuardFn = (s) => {
   if (decision === null || !ceremonyBindingMatches(s, decision)) return false;
   const evidence = evaluateImplValidationEvidence(s);
   if (!evidence.satisfied) return false;
-  return ceremonyBasisMatches(decision, evidence);
+  return ceremonyBasisMatches(s, decision, evidence);
 };
 
 export const implReviewMet: GuardFn = (s) => {

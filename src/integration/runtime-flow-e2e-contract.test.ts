@@ -27,6 +27,20 @@ import { readState } from '../adapters/persistence.js';
 import { sessionDir } from '../adapters/workspace/index.js';
 import { computeFingerprint } from '../adapters/workspace/fingerprint.js';
 import { writeStateWithArtifacts } from './tools/helpers.js';
+import { deriveVerificationCandidateId } from '../state/candidate-identity.js';
+
+const E2E_TYPECHECK_DEFINITION = {
+  assertionCapability: 'unsupported' as const,
+  kind: 'typecheck' as const,
+  command: 'npx tsc --noEmit',
+  source: 'test',
+  confidence: 'high' as const,
+  reason: 'E2E test candidate',
+};
+const E2E_TYPECHECK_CANDIDATE = {
+  ...E2E_TYPECHECK_DEFINITION,
+  candidateId: deriveVerificationCandidateId(E2E_TYPECHECK_DEFINITION),
+};
 
 import { plan } from './tools/plan/plan.js';
 import { hydrate } from './tools/hydrate/hydrate.js';
@@ -434,19 +448,9 @@ describe('FlowGuard tool-level E2E', () => {
           plan: currentPlan,
           reviewDecision: st!.reviewDecision,
           activeChecks: ['typecheck'],
-          verificationCandidates: [
-            {
-              assertionCapability: 'unsupported' as const,
-              candidateId: 'vc_typecheck_e2e',
-              kind: 'typecheck',
-              command: 'npx tsc --noEmit',
-              source: 'test',
-              confidence: 'high',
-              reason: 'E2E test candidate',
-            },
-          ],
+          verificationCandidates: [E2E_TYPECHECK_CANDIDATE],
           executionSubjectInputsByCandidateId: {
-            vc_typecheck_e2e: [{ kind: 'implementation' as const }],
+            [E2E_TYPECHECK_CANDIDATE.candidateId]: [{ kind: 'implementation' as const }],
           },
         }),
       );
@@ -466,19 +470,9 @@ describe('FlowGuard tool-level E2E', () => {
           reviewDecision: st!.reviewDecision,
           validation: st!.validation,
           activeChecks: ['typecheck'],
-          verificationCandidates: [
-            {
-              assertionCapability: 'unsupported' as const,
-              candidateId: 'vc_typecheck_e2e',
-              kind: 'typecheck',
-              command: 'npx tsc --noEmit',
-              source: 'test',
-              confidence: 'high',
-              reason: 'E2E test candidate',
-            },
-          ],
+          verificationCandidates: [E2E_TYPECHECK_CANDIDATE],
           executionSubjectInputsByCandidateId: {
-            vc_typecheck_e2e: [{ kind: 'implementation' as const }],
+            [E2E_TYPECHECK_CANDIDATE.candidateId]: [{ kind: 'implementation' as const }],
           },
         }),
       );
@@ -514,19 +508,9 @@ describe('FlowGuard tool-level E2E', () => {
           reviewDecision: st!.reviewDecision,
           validation: st!.validation,
           activeChecks: ['typecheck'],
-          verificationCandidates: [
-            {
-              assertionCapability: 'unsupported' as const,
-              candidateId: 'vc_typecheck_e2e',
-              kind: 'typecheck',
-              command: 'npx tsc --noEmit',
-              source: 'test',
-              confidence: 'high',
-              reason: 'E2E test candidate',
-            },
-          ],
+          verificationCandidates: [E2E_TYPECHECK_CANDIDATE],
           executionSubjectInputsByCandidateId: {
-            vc_typecheck_e2e: [{ kind: 'implementation' as const }],
+            [E2E_TYPECHECK_CANDIDATE.candidateId]: [{ kind: 'implementation' as const }],
           },
         }),
       );

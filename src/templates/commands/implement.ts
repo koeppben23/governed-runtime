@@ -89,9 +89,13 @@ ${DISCOVERY_REVIEW_CAPTURE}
       for each kind in \`verificationCandidates\`, call
       \`flowguard_run_check({ kind: "<kind>" })\` — it validates the kind against canonical
       state, not against the status output.
-    - After running all checks, check the FINAL \`flowguard_run_check\` response: only proceed
-      to Phase 5 if the response phase is \`IMPL_REVIEW\`. Never assume IMPL_REVIEW without
-      a confirming runtime response.
+    - After running all checks, dispatch on the FINAL \`flowguard_run_check\` response phase —
+      never assume a phase without a confirming runtime response:
+      - \`IMPL_REVIEW\`: proceed to Phase 5 (independent review loop).
+      - \`EVIDENCE_REVIEW\`: reduced ceremony waived only the independent IMPL_REVIEW. Display
+        \`presentation.markdown\` verbatim and STOP — this is the mandatory user gate.
+      - anything else (\`IMPLEMENTATION\`/error/blocked): follow the exact recovery in the
+        response and STOP.
     - Any check fails → routes back to IMPLEMENTATION. Fix the code, then call
       \`flowguard_implement({})\` again to re-record evidence (return to Phase 2 step 4).
     - Executor timeout/error on a single check → retry that \`flowguard_run_check({ kind })\`
@@ -191,7 +195,9 @@ ${renderCommandGovernanceRules()}
 - Every approved outcome, contract, authority decision, scope boundary, and acceptance criterion is satisfied without material drift.
 - Verification Evidence distinguishes Planned from Executed checks.
 - Implementation evidence is recorded via flowguard_implement.
-- Independent review loop has converged.
+- The independent review loop has converged, OR the runtime recorded a valid reduced-ceremony
+  waiver (completeness reports the implementation review as waived) with every active check
+  passing against the frozen implementation.
 ${DISCOVERY_REVIEW_DONE_WHEN}
 - If \`presentation.markdown\` is present, it is displayed verbatim; otherwise the legacy \`reviewCard\` is displayed verbatim.
 - On the converged path: phase has advanced to EVIDENCE_REVIEW and the canonical presentation conclusion is the only visible next action.

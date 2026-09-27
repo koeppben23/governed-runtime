@@ -30,14 +30,13 @@ import {
   type ScriptSignature,
 } from '../providers/registry.js';
 import { buildScriptInvocation, type PackageManager } from './package-script-command.js';
+import { deriveVerificationCandidateId } from '../state/candidate-identity.js';
 import { analyzeVerificationScript, type ScriptAnalysis } from './verification-script-analysis.js';
 import type { ProviderId } from '../state/assertion-identity.js';
 import type {
   IdentifiedPlannedVerificationCandidate,
   PlannedVerificationCandidate,
 } from './verification-candidate-planned.js';
-import { canonicalJsonStringify } from '../shared/canonical-json.js';
-import { hashText } from '../shared/hashing.js';
 
 type ReadFileFn = (relativePath: string) => Promise<string | undefined>;
 
@@ -118,7 +117,7 @@ export async function planVerificationCandidates(
 function identifyPlannedCandidate(
   planned: PlannedVerificationCandidate,
 ): IdentifiedPlannedVerificationCandidate {
-  const candidateId = `vc_${hashText(canonicalJsonStringify(planned.candidate))}`;
+  const candidateId = deriveVerificationCandidateId(planned.candidate);
   const candidate = planned.candidate;
   return {
     ...planned,

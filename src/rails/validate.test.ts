@@ -10,7 +10,14 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { executeValidate, type ValidateExecutors } from './validate.js';
-import { makeState, FIXED_TIME, TICKET, VERIFICATION_CANDIDATES } from '../fixtures.js';
+import {
+  makeState,
+  FIXED_TIME,
+  TICKET,
+  VERIFICATION_CANDIDATES,
+  FIXTURE_TEST_CANDIDATE_ID,
+  FIXTURE_LINT_CANDIDATE_ID,
+} from '../fixtures.js';
 import type { RailContext } from './types.js';
 import type { PlanRecord, ValidationResult } from '../state/evidence.js';
 import { TEAM_POLICY } from '../config/policy.js';
@@ -50,9 +57,9 @@ function planWith(body: string): PlanRecord {
 function makeValidationResult(checkId: string, passed: boolean, detail: string): ValidationResult {
   const candidate =
     checkId === 'test'
-      ? { candidateId: 'candidate-test', command: 'npm test' }
+      ? { candidateId: FIXTURE_TEST_CANDIDATE_ID, command: 'npm test' }
       : checkId === 'lint'
-        ? { candidateId: 'candidate-lint', command: 'npm run lint' }
+        ? { candidateId: FIXTURE_LINT_CANDIDATE_ID, command: 'npm run lint' }
         : { candidateId: `candidate-${checkId}`, command: 'npm test' };
   return {
     checkId,

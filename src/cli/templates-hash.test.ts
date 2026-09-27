@@ -316,11 +316,12 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed for peer review native-task parity: /review now follows its
     // canonical reviewDispatch/reviewInvocation loop and completes with the
     // bound reviewObligationId rather than a non-existent reviewVerdict field.
-    // Refreshed for #819: /implement no longer claims a reduced-ceremony jump
-    // to EVIDENCE_REVIEW or COMPLETE; the decision happens after
-    // post-implementation verification in flowguard_run_check.
+    // Refreshed for #819 follow-up review: /implement now dispatches on the
+    // returned /check phase (IMPL_REVIEW or the reduced-ceremony EVIDENCE_REVIEW)
+    // and the Done-when accepts a valid reduced-ceremony waiver as the
+    // alternative to a converged independent review.
     expect(sha256(commandsJson)).toBe(
-      '5a81d390d9b031b64b7520a5b690f756927c604ed1ca8c9fd5adc4125e2033b6',
+      '26784c276c6eef905d85b535352839b18cc9965d07b88bd8ad3fc1e9893817d8',
     );
   });
 

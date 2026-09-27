@@ -269,10 +269,13 @@ describe('implement command: validation-gate contract', () => {
     expect(body).not.toContain('cannot be reached');
   });
 
-  it('requires a confirming runtime response before entering IMPL_REVIEW', () => {
+  it('dispatches on the confirming runtime response before entering IMPL_REVIEW or EVIDENCE_REVIEW', () => {
     const body = COMMANDS['implement.md'];
-    expect(body).toContain('Never assume IMPL_REVIEW without');
-    expect(body).toContain('a confirming runtime response');
+    expect(body).toContain('never assume a phase without a confirming runtime response');
+    expect(body).toContain('`IMPL_REVIEW`: proceed to Phase 5');
+    expect(body).toContain(
+      '`EVIDENCE_REVIEW`: reduced ceremony waived only the independent IMPL_REVIEW',
+    );
   });
 
   it('does not skip IMPL_VALIDATION into IMPL_REVIEW directly', () => {

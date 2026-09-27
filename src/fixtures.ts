@@ -37,6 +37,7 @@ import type {
   PolicySnapshot,
 } from './state/evidence.js';
 import { IMPL_REVIEW_CONVERGED, SELF_REVIEW_CONVERGED } from './state/evidence-test-constants.js';
+import { deriveVerificationCandidateId } from './state/candidate-identity.js';
 import { computeRecordDigest } from './state/evidence-plan.js';
 import { POLICY_DIGEST_VERSION } from './state/evidence-identifiers.js';
 import { canonicalJsonStringify } from './shared/canonical-json.js';
@@ -462,29 +463,31 @@ export const PLAN_RECORD: PlanRecord = {
   reviewCompletion: 'pending',
 };
 
-const FIXTURE_TEST_CANDIDATE_ID = 'candidate-test';
-const FIXTURE_LINT_CANDIDATE_ID = 'candidate-lint';
+const TEST_CANDIDATE_DEFINITION = {
+  assertionCapability: 'unsupported',
+  kind: 'test',
+  command: 'npm test',
+  source: 'package.json:scripts.test',
+  confidence: 'high',
+  reason: 'fixture',
+} as const;
+const LINT_CANDIDATE_DEFINITION = {
+  assertionCapability: 'unsupported',
+  kind: 'lint',
+  command: 'npm run lint',
+  source: 'package.json:scripts.lint',
+  confidence: 'high',
+  reason: 'fixture',
+} as const;
+
+/** Planner-minted candidate ids: the id hashes the complete definition. */
+export const FIXTURE_TEST_CANDIDATE_ID = deriveVerificationCandidateId(TEST_CANDIDATE_DEFINITION);
+export const FIXTURE_LINT_CANDIDATE_ID = deriveVerificationCandidateId(LINT_CANDIDATE_DEFINITION);
 
 /** Verification candidates matching the canonical validation fixtures. */
 export const VERIFICATION_CANDIDATES: NonNullable<SessionState['verificationCandidates']> = [
-  {
-    candidateId: FIXTURE_TEST_CANDIDATE_ID,
-    assertionCapability: 'unsupported',
-    kind: 'test',
-    command: 'npm test',
-    source: 'package.json:scripts.test',
-    confidence: 'high',
-    reason: 'fixture',
-  },
-  {
-    candidateId: FIXTURE_LINT_CANDIDATE_ID,
-    assertionCapability: 'unsupported',
-    kind: 'lint',
-    command: 'npm run lint',
-    source: 'package.json:scripts.lint',
-    confidence: 'high',
-    reason: 'fixture',
-  },
+  { ...TEST_CANDIDATE_DEFINITION, candidateId: FIXTURE_TEST_CANDIDATE_ID },
+  { ...LINT_CANDIDATE_DEFINITION, candidateId: FIXTURE_LINT_CANDIDATE_ID },
 ];
 
 export const VALIDATION_PASSED: ValidationResult[] = [

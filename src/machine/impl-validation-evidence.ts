@@ -24,6 +24,7 @@
 
 import type { SessionState } from '../state/schema.js';
 import type { ValidationResult } from '../state/evidence-validation.js';
+import { isVerificationCandidateBound } from '../state/candidate-identity.js';
 import { latestUnknownOutcomeResolvedAt } from '../state/evidence-mutation-episode.js';
 
 /** One selected check/attempt binding of the current verification cycle. */
@@ -99,9 +100,9 @@ export function evaluateImplValidationEvidence(
       continue;
     }
     // ...and it must still match the current candidate definition. A changed
-    // check command/config invalidates earlier PASS evidence; a missing
-    // candidate attestation fails closed.
-    if (!candidateBindingMatches(state, latestAttempt.result)) {
+    // check command/config invalidates earlier PASS evidence; a missing or
+    // edited candidate definition fails closed.
+    if (!candidateBindingMatches(state, latestAttempt)) {
       missing.push(checkId);
       continue;
     }
@@ -117,19 +118,46 @@ export function evaluateImplValidationEvidence(
 
 /**
  * Exact candidate/config attestation for a result: the referenced candidate
- * must still exist with the identical command and kind. Results without a
- * candidateId cannot be tied to a current definition and fail closed.
+ * must still exist, its id must still hash its complete definition, and the
+ * actual executed command must equal the one derived deterministically from
+ * the frozen definition and the attempt id. Results without a candidateId
+ * cannot be tied to a current definition and fail closed.
  */
-function candidateBindingMatches(state: SessionState, result: ValidationResult): boolean {
+function candidateBindingMatches(
+  state: SessionState,
+  attempt: SessionState['validationAttempts'][number],
+): boolean {
+  const result = attempt.result;
   if (result.candidateId === undefined) return false;
   const candidate = (state.verificationCandidates ?? []).find(
     (entry) => entry.candidateId === result.candidateId,
   );
-  return (
-    candidate !== undefined &&
-    candidate.command === result.command &&
-    candidate.kind === result.kind
-  );
+  if (candidate === undefined) return false;
+  if (!isVerificationCandidateBound(candidate)) return false;
+  if (candidate.kind !== result.kind) return false;
+  return expectedCandidateCommand(candidate, attempt.attemptId) === result.command;
+}
+
+/**
+ * Reconstruct the command the check must have executed. For `run_specific`
+ * structured candidates the runner appends the per-attempt output argument,
+ * so equality against the frozen base command alone would reject valid PASSES.
+ */
+function expectedCandidateCommand(
+  candidate: NonNullable<SessionState['verificationCandidates']>[number],
+  attemptId: string,
+): string {
+  if (
+    candidate.assertionCapability === 'structured' &&
+    candidate.assertionReport.collection === 'run_specific'
+  ) {
+    const substituted = candidate.assertionReport.outputArgumentTemplate.replace(
+      /\{attemptId\}/g,
+      attemptId,
+    );
+    return `${candidate.command} ${substituted}`.trim();
+  }
+  return candidate.command;
 }
 
 /** Whether two results describe the same check execution. */

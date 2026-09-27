@@ -18,8 +18,10 @@ import {
   VALIDATION_FAILED,
   VALIDATION_PASSED,
   VERIFICATION_CANDIDATES,
+  FIXTURE_TEST_CANDIDATE_ID,
 } from '../fixtures.js';
 import { TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
+import { deriveVerificationCandidateId } from '../state/candidate-identity.js';
 import { evaluateImplValidationEvidence } from './impl-validation-evidence.js';
 
 const OTHER_IMPLEMENTATION_ID = '00000000-0000-4000-8000-0000000000cc';
@@ -193,13 +195,165 @@ describe('evaluateImplValidationEvidence', () => {
       validationAttempts: [attempt('test', true, '2026-01-01T00:00:01.000Z')],
       verificationCandidates: [
         {
-          candidateId: 'candidate-test',
+          candidateId: FIXTURE_TEST_CANDIDATE_ID,
           assertionCapability: 'unsupported',
           kind: 'test',
           command: 'npm test --changed',
           source: 'package.json:scripts.test',
           confidence: 'high',
           reason: 'changed definition',
+        },
+      ],
+    });
+
+    expect(evaluateImplValidationEvidence(state).satisfied).toBe(false);
+  });
+
+  it('HAPPY: accepts a run_specific candidate whose executed command carries the attempt argument', () => {
+    const definition = {
+      assertionCapability: 'structured' as const,
+      kind: 'test' as const,
+      command: 'npm test --',
+      source: 'detectedStack:testFramework:jest',
+      confidence: 'high' as const,
+      reason: 'jest fixture',
+      assertionReport: {
+        collection: 'run_specific' as const,
+        transport: 'file' as const,
+        format: 'jest_json' as const,
+        providerId: 'jest' as const,
+        outputArgumentTemplate: '--json --outputFile=.flowguard/reports/{attemptId}/jest.json',
+        resultPatternTemplate: '.flowguard/reports/{attemptId}/jest.json',
+      },
+    };
+    const candidate = { ...definition, candidateId: deriveVerificationCandidateId(definition) };
+    const attemptId = '00000000-0000-4000-8000-0000000000c9';
+    const executed = `npm test -- --json --outputFile=.flowguard/reports/${attemptId}/jest.json`;
+    const base = VALIDATION_PASSED[0]!;
+    const boundResult = {
+      ...base,
+      checkId: 'test',
+      passed: true,
+      candidateId: candidate.candidateId,
+      command: executed,
+    };
+    const state = makeState('IMPL_VALIDATION', {
+      implementation: IMPL_EVIDENCE,
+      activeChecks: ['test'],
+      verificationCandidates: [candidate],
+      implValidation: [boundResult],
+      validationAttempts: [
+        {
+          attemptId,
+          scope: 'implementation',
+          implementationId: IMPL_EVIDENCE.implementationId,
+          implementationDigest: IMPL_EVIDENCE.digest,
+          executionObservation: TEST_EXECUTION_OBSERVATION,
+          result: boundResult,
+        },
+      ],
+    });
+
+    expect(evaluateImplValidationEvidence(state).satisfied).toBe(true);
+  });
+
+  it('BAD: a drifted run_specific command fails closed even when results are self-consistent', () => {
+    const definition = {
+      assertionCapability: 'structured' as const,
+      kind: 'test' as const,
+      command: 'npm test --',
+      source: 'detectedStack:testFramework:jest',
+      confidence: 'high' as const,
+      reason: 'jest fixture',
+      assertionReport: {
+        collection: 'run_specific' as const,
+        transport: 'file' as const,
+        format: 'jest_json' as const,
+        providerId: 'jest' as const,
+        outputArgumentTemplate: '--json --outputFile=.flowguard/reports/{attemptId}/jest.json',
+        resultPatternTemplate: '.flowguard/reports/{attemptId}/jest.json',
+      },
+    };
+    const candidate = { ...definition, candidateId: deriveVerificationCandidateId(definition) };
+    const attemptId = '00000000-0000-4000-8000-0000000000ca';
+    const drifted = 'npm test -- --json';
+    const base = VALIDATION_PASSED[0]!;
+    const driftedResult = {
+      ...base,
+      checkId: 'test',
+      passed: true,
+      candidateId: candidate.candidateId,
+      command: drifted,
+    };
+    const state = makeState('IMPL_VALIDATION', {
+      implementation: IMPL_EVIDENCE,
+      activeChecks: ['test'],
+      verificationCandidates: [candidate],
+      implValidation: [driftedResult],
+      validationAttempts: [
+        {
+          attemptId,
+          scope: 'implementation',
+          implementationId: IMPL_EVIDENCE.implementationId,
+          implementationDigest: IMPL_EVIDENCE.digest,
+          executionObservation: TEST_EXECUTION_OBSERVATION,
+          result: driftedResult,
+        },
+      ],
+    });
+
+    expect(evaluateImplValidationEvidence(state).satisfied).toBe(false);
+  });
+
+  it('BAD: an edited candidate definition with a reused id fails closed', () => {
+    const definition = {
+      assertionCapability: 'structured' as const,
+      kind: 'test' as const,
+      command: 'npm test --',
+      source: 'detectedStack:testFramework:jest',
+      confidence: 'high' as const,
+      reason: 'jest fixture',
+      assertionReport: {
+        collection: 'run_specific' as const,
+        transport: 'file' as const,
+        format: 'jest_json' as const,
+        providerId: 'jest' as const,
+        outputArgumentTemplate: '--json --outputFile=.flowguard/reports/{attemptId}/jest.json',
+        resultPatternTemplate: '.flowguard/reports/{attemptId}/jest.json',
+      },
+    };
+    const minted = deriveVerificationCandidateId(definition);
+    const editedCandidate = {
+      ...definition,
+      candidateId: minted,
+      assertionReport: {
+        ...definition.assertionReport,
+        resultPatternTemplate: '.flowguard/other.json',
+      },
+    };
+    const attemptId = '00000000-0000-4000-8000-0000000000cb';
+    const executed = `npm test -- --json --outputFile=.flowguard/reports/${attemptId}/jest.json`;
+    const base = VALIDATION_PASSED[0]!;
+    const boundResult = {
+      ...base,
+      checkId: 'test',
+      passed: true,
+      candidateId: minted,
+      command: executed,
+    };
+    const state = makeState('IMPL_VALIDATION', {
+      implementation: IMPL_EVIDENCE,
+      activeChecks: ['test'],
+      verificationCandidates: [editedCandidate],
+      implValidation: [boundResult],
+      validationAttempts: [
+        {
+          attemptId,
+          scope: 'implementation',
+          implementationId: IMPL_EVIDENCE.implementationId,
+          implementationDigest: IMPL_EVIDENCE.digest,
+          executionObservation: TEST_EXECUTION_OBSERVATION,
+          result: boundResult,
         },
       ],
     });

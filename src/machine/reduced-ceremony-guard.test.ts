@@ -174,4 +174,32 @@ describe('reducedCeremonyReady binding invariants', () => {
     const state = boundState({ reducedCeremony: { ...DECISION, policyDigest: 'b'.repeat(64) } });
     expect(reducedCeremonyReady(state)).toBe(false);
   });
+
+  it('EDGE: a changed executedAt in the stored basis rejects', () => {
+    const state = boundState({
+      reducedCeremony: {
+        ...DECISION,
+        verificationBasis: {
+          ...DECISION.verificationBasis,
+          attempts: DECISION.verificationBasis.attempts.map((entry, index) =>
+            index === 0 ? { ...entry, executedAt: '2026-02-01T00:00:00.000Z' } : entry,
+          ),
+        },
+      },
+    });
+    expect(reducedCeremonyReady(state)).toBe(false);
+  });
+
+  it('EDGE: touched surfaces that no longer match the assessment reject', () => {
+    const state = boundState({
+      implementationRiskAssessment: { ...RISK_ASSESSMENT, touchedSurfaces: ['config'] },
+    });
+    expect(reducedCeremonyReady(state)).toBe(false);
+
+    const matching = boundState({
+      implementationRiskAssessment: { ...RISK_ASSESSMENT, touchedSurfaces: ['config'] },
+      reducedCeremony: { ...DECISION, touchedSurfaces: ['config'] },
+    });
+    expect(reducedCeremonyReady(matching)).toBe(true);
+  });
 });
