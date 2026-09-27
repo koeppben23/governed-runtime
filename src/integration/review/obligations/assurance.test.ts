@@ -423,6 +423,42 @@ describe('integration/review-assurance', () => {
         expect(result.requiredChallengeCount).toBe(1);
       });
 
+      it('floors an unknown pre-implementation scope at STANDARD', () => {
+        const result = createReviewObligation({
+          obligationType: 'plan',
+          reviewCycle: 1,
+          repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+          iteration: 0,
+          planVersion: 1,
+          now: NOW,
+          subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
+          changedFiles: [],
+          provisionalScopeUnknown: true,
+          reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
+          policySnapshot,
+        });
+        expect(result.requiredChallengeCount).toBe(1);
+      });
+
+      it('keeps a provably empty pre-implementation scope at zero challenges', () => {
+        const result = createReviewObligation({
+          obligationType: 'plan',
+          reviewCycle: 1,
+          repositoryEvidenceFreeze: { kind: 'unavailable', reason: 'repository_unavailable' },
+          iteration: 0,
+          planVersion: 1,
+          now: NOW,
+          subjectDigest: 'test',
+          reviewMaterial: freezeReviewMaterial('frozen review material', 'test'),
+          changedFiles: [],
+          provisionalScopeUnknown: false,
+          reviewSubjectScope: artifactReviewSubjectScope('plan', '# Overview\nBody', 'test'),
+          policySnapshot,
+        });
+        expect(result.requiredChallengeCount).toBe(0);
+      });
+
       it('defaults to the computed minimum when no claim is present', () => {
         const result = createReviewObligation({
           obligationType: 'plan',

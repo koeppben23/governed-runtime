@@ -901,21 +901,29 @@ describe('buildStatusProjection — reduced ceremony projection', () => {
       executionObservation: TEST_EXECUTION_OBSERVATION,
       result: VALIDATION_PASSED[index]!,
     });
+    // The applied status requires a genuinely eligible docs-only change: the
+    // projection re-checks the machine binding instead of trusting the record.
+    const docsImpl = {
+      ...IMPL_EVIDENCE,
+      changedFiles: ['docs/usage-notes.md'],
+      domainFiles: [],
+    };
     const state = makeState('EVIDENCE_REVIEW', {
       claimedTaskClass: 'TRIVIAL',
       verificationCandidates: VERIFICATION_CANDIDATES,
-      implementation: IMPL_EVIDENCE,
+      implementation: docsImpl,
       implementationRiskAssessment: {
         computedMinimumTaskClass: 'TRIVIAL',
         effectiveTaskClass: 'TRIVIAL',
         declaredTaskClass: null,
         declarationKind: 'absent' as const,
         ticketDigest: null,
-        touchedSurfaces: [],
+        escalatedTaskClass: 'TRIVIAL',
+        touchedSurfaces: ['docs/usage-notes.md'],
         riskTriggers: [],
         assessedFrom: 'implementation_changed_files',
-        assessedFileCount: 2,
-        implementationDigest: IMPL_EVIDENCE.digest,
+        assessedFileCount: 1,
+        implementationDigest: docsImpl.digest,
       },
       activeChecks: ['test', 'lint'],
       implValidation: VALIDATION_PASSED,
@@ -923,9 +931,11 @@ describe('buildStatusProjection — reduced ceremony projection', () => {
       policySnapshot,
       reducedCeremony: {
         ...REDUCED_CEREMONY_DECISION,
+        escalatedTaskClass: 'TRIVIAL',
+        touchedSurfaces: ['docs/usage-notes.md'],
         policyDigest: policySnapshot.hash,
-        implementationId: IMPL_EVIDENCE.implementationId,
-        implementationDigest: IMPL_EVIDENCE.digest,
+        implementationId: docsImpl.implementationId,
+        implementationDigest: docsImpl.digest,
         verificationBasis: {
           checkIds: ['test', 'lint'],
           attempts: [
@@ -947,6 +957,31 @@ describe('buildStatusProjection — reduced ceremony projection', () => {
     expect(buildStatusProjection(state, policy).reducedCeremony).toEqual({
       status: 'applied',
       reason: REDUCED_CEREMONY_DECISION.reason,
+    });
+
+    // A schema-valid decision over a HIGH-RISK implementation (src/auth.ts)
+    // must project as invalid instead of applied.
+    const assessment = state.implementationRiskAssessment;
+    const decision = state.reducedCeremony;
+    if (assessment === undefined || decision === null) {
+      throw new Error('fixture state must carry a risk assessment and a reduced decision');
+    }
+    const drifted: SessionState = {
+      ...state,
+      implementation: IMPL_EVIDENCE,
+      implementationRiskAssessment: {
+        ...assessment,
+        assessedFileCount: 2,
+        implementationDigest: IMPL_EVIDENCE.digest,
+      },
+      reducedCeremony: {
+        ...decision,
+        implementationDigest: IMPL_EVIDENCE.digest,
+      },
+    };
+    expect(buildStatusProjection(drifted, policy).reducedCeremony).toEqual({
+      status: 'invalid',
+      reason: 'REDUCED_CEREMONY_BINDING_INVALID',
     });
   });
 });

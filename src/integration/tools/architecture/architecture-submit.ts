@@ -73,7 +73,12 @@ async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Prom
   if (resolvedTargetPaths && resolvedTargetPaths.length > 0) {
     metadata.targetPaths = resolvedTargetPaths;
   }
-  const minted = await mintArchSubmissionObligation(ctx, resolvedTargetPaths, metadata);
+  const minted = await mintArchSubmissionObligation(
+    ctx,
+    resolvedTargetPaths,
+    classification.kind === 'available' ? classification.scopeUnknown : false,
+    metadata,
+  );
   // Repository-governed attempts are minted WITH their host-owned Discovery
   // snapshot (persistence coherence). A structural projection failure blocks
   // before any state mutation, mirroring the peer review path.
@@ -122,6 +127,7 @@ async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Prom
 async function mintArchSubmissionObligation(
   ctx: ArchObligationContext,
   resolvedTargetPaths: readonly string[] | undefined,
+  provisionalScopeUnknown: boolean,
   metadata: Record<string, unknown>,
 ): Promise<ReturnType<typeof createReviewObligation> | null> {
   if (!ctx.subagentEnabled) return null;
@@ -155,6 +161,7 @@ async function mintArchSubmissionObligation(
     changedFiles: resolvedTargetPaths,
     declaredTaskClass: declaredTaskClassFor(ctx.state),
     escalatedTaskClass: ctx.state.claimedTaskClass,
+    provisionalScopeUnknown,
     metadata,
     // Frozen repository context (freeze-time resolution): architecture
     // reviews may cite repository evidence only against this context.

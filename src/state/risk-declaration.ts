@@ -47,9 +47,17 @@ export type TicketRiskDeclaration = z.infer<typeof TicketRiskDeclaration>;
  * Declaration line grammar: an optional bullet/heading, optional Markdown
  * emphasis around the key, then `Risk` / `Risk Class` / `Risikoklasse`
  * followed by `:` or `=`, then the value and optional trailing rationale.
+ * The value is captured even when empty so an explicit but valueless
+ * declaration is reported as invalid instead of silently disappearing.
  */
 const DECLARATION_LINE =
-  /^\s*(?:[-*+]\s+|#{1,6}\s+)?(?:\*\*|__)?\s*(?:risk(?:\s*class)?|risikoklasse)\s*(?:\*\*|__)?\s*[:=]\s*(.+)$/i;
+  /^\s*(?:[-*+]\s+|#{1,6}\s+)?(?:\*\*|__)?\s*(?:risk(?:\s*class)?|risikoklasse)\s*(?:\*\*|__)?\s*[:=][ \t]*(.*)$/i;
+
+/** CommonMark fence opener: three or more backticks or tildes. */
+const FENCE_LINE = /^\s*(`{3,}|~{3,})/;
+
+/** Placeholder reported for an explicit declaration without a value. */
+const EMPTY_DECLARATION_RAW = '(no value)';
 
 function parseDeclarationValue(raw: string): TaskClass | null {
   const cleaned = raw.replace(/[*_`]/g, ' ').trim().toUpperCase();
@@ -64,21 +72,52 @@ function parseDeclarationValue(raw: string): TaskClass | null {
 /**
  * Deterministic parse of the canonical ticket text. Only lines whose key
  * starts the line count (prose that merely mentions a risk class does not).
- * Any unparseable explicit declaration makes the whole declaration invalid —
- * a malformed `Risk: HIGH` must not silently degrade to "no declaration".
+ * Fenced code blocks and quoted blockquote lines are examples, not binding
+ * declarations. An explicit declaration without a value and any other
+ * unparseable explicit declaration make the whole declaration invalid — a
+ * malformed `Risk:` must not silently degrade to "no declaration".
  */
-export function parseTicketRiskDeclaration(text: string): TicketRiskDeclaration {
+interface DeclarationLineScan {
+  readonly fence: string | null;
+  readonly skip: boolean;
+}
+
+/** Fence/quote state machine step for one line. */
+function scanDeclarationLine(line: string, fence: string | null): DeclarationLineScan {
+  const match = FENCE_LINE.exec(line);
+  const token = match === null ? undefined : match[1];
+  if (fence !== null) {
+    const closes = token !== undefined && token[0] === fence[0] && token.length >= fence.length;
+    return { fence: closes ? null : fence, skip: true };
+  }
+  if (token !== undefined) return { fence: token, skip: true };
+  if (/^\s*>/.test(line)) return { fence: null, skip: true };
+  return { fence: null, skip: false };
+}
+
+function collectDeclarationLines(text: string): {
+  readonly values: TaskClass[];
+  readonly invalidRaw: string[];
+} {
   const values: TaskClass[] = [];
   const invalidRaw: string[] = [];
+  let fence: string | null = null;
   for (const line of text.split(/\r?\n/)) {
+    const scan = scanDeclarationLine(line, fence);
+    fence = scan.fence;
+    if (scan.skip) continue;
     const match = DECLARATION_LINE.exec(line);
     if (match === null) continue;
-    const raw = match[1] ?? '';
+    const raw = (match[1] ?? '').trim();
     const parsed = parseDeclarationValue(raw);
-    if (parsed === null) invalidRaw.push(raw.trim());
+    if (parsed === null) invalidRaw.push(raw === '' ? EMPTY_DECLARATION_RAW : raw);
     else values.push(parsed);
   }
+  return { values, invalidRaw };
+}
 
+export function parseTicketRiskDeclaration(text: string): TicketRiskDeclaration {
+  const { values, invalidRaw } = collectDeclarationLines(text);
   if (invalidRaw.length > 0) {
     return { kind: 'invalid', raw: invalidRaw.join('; ') };
   }

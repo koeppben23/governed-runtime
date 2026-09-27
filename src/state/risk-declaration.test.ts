@@ -89,6 +89,55 @@ describe('parseTicketRiskDeclaration', () => {
     });
   });
 
+  it('BAD: an explicit declaration without a value is invalid, with or without whitespace', () => {
+    expect(parseTicketRiskDeclaration('Risk:')).toEqual({
+      kind: 'invalid',
+      raw: '(no value)',
+    });
+    expect(parseTicketRiskDeclaration('Risk:   ')).toEqual({
+      kind: 'invalid',
+      raw: '(no value)',
+    });
+    expect(parseTicketRiskDeclaration('Risikoklasse =')).toEqual({
+      kind: 'invalid',
+      raw: '(no value)',
+    });
+  });
+
+  it('HAPPY: fenced code examples are not binding declarations', () => {
+    const text = [
+      'Example usage:',
+      '',
+      '```markdown',
+      'Risk: HIGH',
+      '```',
+      '',
+      'Risk: TRIVIAL',
+    ].join('\n');
+    expect(parseTicketRiskDeclaration(text)).toEqual({
+      kind: 'declared',
+      taskClass: 'TRIVIAL',
+    });
+  });
+
+  it('HAPPY: tilde fences and quoted blockquote examples are not binding', () => {
+    const text = [
+      '~~~',
+      '- Risk: STANDARD',
+      '~~~',
+      '',
+      '> Risk: HIGH-RISK',
+      '',
+      'No binding declaration here.',
+    ].join('\n');
+    expect(parseTicketRiskDeclaration(text)).toEqual({ kind: 'absent' });
+  });
+
+  it('EDGE: an unclosed fence suppresses the rest of the document', () => {
+    const text = ['```', 'Risk: HIGH', 'Risk: TRIVIAL'].join('\n');
+    expect(parseTicketRiskDeclaration(text)).toEqual({ kind: 'absent' });
+  });
+
   it('CORNER: repeated identical declarations collapse to one class', () => {
     expect(parseTicketRiskDeclaration('Risk: STANDARD\nRisk: STANDARD')).toEqual({
       kind: 'declared',

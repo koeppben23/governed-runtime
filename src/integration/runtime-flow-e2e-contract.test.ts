@@ -134,28 +134,57 @@ function challengesFor(
   state: SessionState,
   obligation: ReviewObligation,
 ): ReviewFindings['challenges'] {
-  return Array.from({ length: obligation.requiredChallengeCount ?? 0 }, (_, index) => ({
+  const kind = obligation.requiredChallengeKind ?? 'implementation_challenge';
+  const artifactKind =
+    obligation.reviewSubjectScope?.kind === 'artifact' &&
+    obligation.reviewSubjectScope.artifact.kind === 'adr'
+      ? ('adr' as const)
+      : ('plan' as const);
+  const implementationRefs = [
+    {
+      kind: 'implementation' as const,
+      implementationDigest: state.implementation?.digest ?? 'missing',
+    },
+    {
+      kind: 'validation_attempt' as const,
+      attemptId:
+        state.validationAttempts.find((a) => a.scope === 'implementation' && a.result.passed)
+          ?.attemptId ??
+        state.validationAttempts[0]?.attemptId ??
+        '99999999-9999-4999-8999-999999999999',
+    },
+  ];
+  const count = obligation.requiredChallengeCount ?? 0;
+  if (kind === 'design_challenge') {
+    // Artifact obligations must cite the artifact section; the host rebinds
+    // the refs to its canonical copies at bind time.
+    return Array.from({ length: count }, (_, index) => ({
+      challengeId: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+      obligationId: obligation.obligationId,
+      scenario: 'Exercise the artifact decision against its frozen section.',
+      claim: 'The artifact decision handles the reviewed scenario.',
+      locations: ['artifact section'],
+      kind: 'design_challenge' as const,
+      evidenceRefs: [
+        {
+          kind: 'plan_adr_section' as const,
+          artifactKind,
+          artifactDigest: obligation.subjectDigest,
+          sectionPath: [{ headingDepth: 1, siblingIndex: 1, headingText: 'Overview' }],
+          excerptDigest: 'excerpt-digest',
+        },
+      ],
+      outcome: 'supported' as const,
+    }));
+  }
+  return Array.from({ length: count }, (_, index) => ({
     challengeId: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
     obligationId: obligation.obligationId,
     scenario: 'Exercise the changed behavior against its implementation evidence.',
     claim: 'The implementation handles the reviewed scenario.',
     locations: ['implementation evidence'],
-    kind: (obligation.requiredChallengeKind ??
-      'implementation_challenge') as 'implementation_challenge',
-    evidenceRefs: [
-      {
-        kind: 'implementation' as const,
-        implementationDigest: state.implementation?.digest ?? 'missing',
-      },
-      {
-        kind: 'validation_attempt' as const,
-        attemptId:
-          state.validationAttempts.find((a) => a.scope === 'implementation' && a.result.passed)
-            ?.attemptId ??
-          state.validationAttempts[0]?.attemptId ??
-          '99999999-9999-4999-8999-999999999999',
-      },
-    ],
+    kind: 'implementation_challenge' as const,
+    evidenceRefs: implementationRefs,
     outcome: 'pass' as const,
   }));
 }

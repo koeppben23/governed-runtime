@@ -70,6 +70,7 @@ import {
   targetPathsForRisk,
   extractPathsFromPatch,
   extractPathsFromBashCommand,
+  isBashScopeProvablyKnown,
   currentChangedFilesForRisk,
   evidenceUnavailableRiskDecision,
   persistRiskDecisionBlock,
@@ -482,6 +483,40 @@ describe('extractPathsFromBashCommand', () => {
     const result = extractPathsFromBashCommand('echo a > out1.txt && echo b > out2.txt');
     expect(result).toContain('out1.txt');
     expect(result).toContain('out2.txt');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// isBashScopeProvablyKnown (unit)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('isBashScopeProvablyKnown', () => {
+  it('HAPPY: single simple commands with extractable targets are known', () => {
+    expect(isBashScopeProvablyKnown('echo x > docs/notes.md')).toBe(true);
+    expect(isBashScopeProvablyKnown('echo x | tee -a log.txt')).toBe(true);
+    expect(isBashScopeProvablyKnown('rm "path with spaces/file.txt"')).toBe(true);
+    expect(isBashScopeProvablyKnown('npm test > log.txt 2>&1')).toBe(true);
+  });
+
+  it('BAD: a compound command with one extractable redirect is unknown', () => {
+    expect(
+      isBashScopeProvablyKnown(
+        'echo x > docs/notes.md; python -c \'open("src/config/policy.ts","w")\'',
+      ),
+    ).toBe(false);
+    expect(isBashScopeProvablyKnown('echo a > out1.txt && echo b > out2.txt')).toBe(false);
+    expect(isBashScopeProvablyKnown('echo a > out1.txt &')).toBe(false);
+  });
+
+  it('BAD: substitutions, input redirection and non-tee pipes are unknown', () => {
+    expect(isBashScopeProvablyKnown('echo x > "$(pwd)/out.txt"')).toBe(false);
+    expect(isBashScopeProvablyKnown('echo x > `pwd`/out.txt')).toBe(false);
+    expect(isBashScopeProvablyKnown('cat < input.txt')).toBe(false);
+    expect(isBashScopeProvablyKnown('echo x | grep y > out.txt')).toBe(false);
+  });
+
+  it('EDGE: quoted separators are not shell composition', () => {
+    expect(isBashScopeProvablyKnown('echo "a;b" > out.txt')).toBe(true);
   });
 });
 

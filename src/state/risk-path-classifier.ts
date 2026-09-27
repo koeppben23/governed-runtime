@@ -1,5 +1,5 @@
 /**
- * @module integration/risk-path-classifier
+ * @module state/risk-path-classifier
  * @description Canonical path classification for task classes and ceremony
  * eligibility: instruction/config/high-risk surfaces and the conservative
  * minimum task class over a file set.
@@ -7,8 +7,8 @@
  * @version v1
  */
 
-import { maxTaskClass, type TaskClass } from '../state/task-class.js';
-import type { RiskTrigger } from '../state/schema.js';
+import { maxTaskClass, type TaskClass } from './task-class.js';
+import type { RiskTrigger } from './schema.js';
 
 const HIGH_RISK_PREFIXES = [
   'src/state/',

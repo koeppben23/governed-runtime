@@ -93,6 +93,16 @@ describe('DEV_REPO_INVARIANTS', () => {
       expect(commandNames).toEqual([...INSTALLED_TEMPLATE_FILES].sort());
     });
 
+    it('ticket command fails closed when external content cannot be extracted', () => {
+      const ticket = COMMANDS['ticket.md'];
+      // The old placeholder fallback invented ticket content; the canonical
+      // adoption contract requires a clear stop instead.
+      expect(ticket).not.toContain('use placeholder text');
+      expect(ticket).toMatch(/extraction failure: STOP/);
+      expect(ticket).toContain('TICKET_REFERENCE_WITHOUT_CONTENT');
+      expect(ticket).toContain('ticketSource');
+    });
+
     it('all slash commands use Goal/Rules/Governance/Done-when structure', () => {
       for (const [name, content] of Object.entries(COMMANDS)) {
         expect(content, `${name} missing ## Goal`).toContain('## Goal');

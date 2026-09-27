@@ -9,7 +9,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -179,6 +179,49 @@ describe('ticket content adoption (real worktree)', () => {
     const state = await readState(se.sDir);
     expect(state!.ticket?.text).toBe('Fix the typo in the README.md installation section');
     expect(state!.ticket?.riskDeclaration).toEqual({ kind: 'absent' });
+  });
+
+  it('BAD: an in-worktree symlink pointing outside the worktree fails closed', async () => {
+    s = await boot();
+    const se = s;
+    const outside = resolve(se.worktree, '..', 'private-notes.md');
+    writeFileSync(outside, '# outside secret\n\nRisk: TRIVIAL');
+    symlinkSync(outside, join(se.worktree, 'TICKET_LINK.md'));
+
+    const result = await ticket.execute(
+      { ticketSource: { kind: 'repository_file', path: 'TICKET_LINK.md' }, source: 'user' },
+      se.tc,
+    );
+    expect(String(result)).toContain('TICKET_SOURCE_UNREADABLE');
+    expect((await readState(se.sDir))!.ticket).toBeNull();
+  });
+
+  it('BAD: a broken symlink fails closed instead of falling back to the link target string', async () => {
+    s = await boot();
+    const se = s;
+    symlinkSync(join(se.worktree, 'does-not-exist.md'), join(se.worktree, 'TICKET_LINK.md'));
+
+    const result = await ticket.execute(
+      { ticketSource: { kind: 'repository_file', path: 'TICKET_LINK.md' }, source: 'user' },
+      se.tc,
+    );
+    expect(String(result)).toContain('TICKET_SOURCE_UNREADABLE');
+    expect((await readState(se.sDir))!.ticket).toBeNull();
+  });
+
+  it('HAPPY: an in-worktree symlink to an in-worktree file is adopted', async () => {
+    s = await boot();
+    const se = s;
+    writeFileSync(join(se.worktree, 'REAL_TICKET.md'), TICKET_CONTENT);
+    symlinkSync(join(se.worktree, 'REAL_TICKET.md'), join(se.worktree, 'TICKET_LINK.md'));
+
+    const result = await ticket.execute(
+      { ticketSource: { kind: 'repository_file', path: 'TICKET_LINK.md' }, source: 'user' },
+      se.tc,
+    );
+    expect(String(result)).not.toContain('"error":true');
+    const state = await readState(se.sDir);
+    expect(state!.ticket?.text).toBe(TICKET_CONTENT);
   });
 
   it('BAD: a ticketSource path escaping the worktree fails closed', async () => {

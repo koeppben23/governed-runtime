@@ -57,7 +57,7 @@ const RISK_ASSESSMENT: ImplementationRiskAssessment = {
   declaredTaskClass: null,
   declarationKind: 'absent' as const,
   ticketDigest: null,
-  touchedSurfaces: [],
+  touchedSurfaces: ['docs/usage-notes.md'],
   riskTriggers: [],
   assessedFrom: 'implementation_changed_files',
   assessedFileCount: 1,
@@ -79,7 +79,7 @@ const DECISION: ReducedCeremonyDecision = {
   declarationKind: 'absent' as const,
   ticketDigest: null,
   computedMinimumTaskClass: 'TRIVIAL',
-  touchedSurfaces: [],
+  touchedSurfaces: ['docs/usage-notes.md'],
   implementationId: DOC_IMPL.implementationId,
   implementationDigest: DOC_IMPL.digest,
   policyDigest: POLICY.hash,
@@ -156,7 +156,7 @@ describe('reducedCeremonyReady binding invariants', () => {
     const state = boundState({
       riskGate: {
         status: 'blocked',
-        code: 'RISK_CLASSIFICATION_MISMATCH',
+        code: 'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
         message: 'blocked',
         blockedAt: '2026-01-02T00:00:00.000Z',
         lastDecisionId: 'RISK-1',
@@ -227,17 +227,32 @@ describe('reducedCeremonyReady binding invariants', () => {
     expect(reducedCeremonyReady(state)).toBe(false);
   });
 
-  it('EDGE: touched surfaces that no longer match the assessment reject', () => {
+  it('EDGE: touched surfaces that no longer match the frozen file list reject', () => {
     const state = boundState({
       implementationRiskAssessment: { ...RISK_ASSESSMENT, touchedSurfaces: ['config'] },
     });
     expect(reducedCeremonyReady(state)).toBe(false);
 
-    const matching = boundState({
-      implementationRiskAssessment: { ...RISK_ASSESSMENT, touchedSurfaces: ['config'] },
+    const decisionDrift = boundState({
       reducedCeremony: { ...DECISION, touchedSurfaces: ['config'] },
     });
-    expect(reducedCeremonyReady(matching)).toBe(true);
+    expect(reducedCeremonyReady(decisionDrift)).toBe(false);
+
+    expect(reducedCeremonyReady(boundState())).toBe(true);
+  });
+
+  it('BAD: a forged TRIVIAL assessment over a HIGH-RISK file list rejects', () => {
+    const implementation = {
+      ...DOC_IMPL,
+      changedFiles: ['src/machine/guards.ts'],
+      domainFiles: ['src/machine/guards.ts'],
+    };
+    const state = boundState({
+      implementation,
+      implementationRiskAssessment: { ...RISK_ASSESSMENT, assessedFileCount: 1 },
+      reducedCeremony: { ...DECISION },
+    });
+    expect(reducedCeremonyReady(state)).toBe(false);
   });
   it('HAPPY: a ticket-declared TRIVIAL bound to its digest is accepted', () => {
     const ticket = ticketFor('Risk: TRIVIAL\n\nDocs only.');

@@ -343,6 +343,8 @@ async function persistAndFormatNonConvergedReview(
     revision,
     iteration,
     resolvedTargetPaths,
+    provisionalScopeUnknown:
+      classification.kind === 'available' ? classification.scopeUnknown : false,
     freeze,
   });
   // Repository-governed attempts are minted WITH their host-owned Discovery
@@ -430,9 +432,19 @@ function createNextArchitectureReviewObligation(input: {
   revision: AdrRevision;
   iteration: number;
   resolvedTargetPaths: string[] | undefined;
+  provisionalScopeUnknown: boolean;
   freeze: RepositoryAuthorityFreezeResult;
 }) {
-  const { state, session, review, revision, iteration, resolvedTargetPaths, freeze } = input;
+  const {
+    state,
+    session,
+    review,
+    revision,
+    iteration,
+    resolvedTargetPaths,
+    provisionalScopeUnknown,
+    freeze,
+  } = input;
   const subjectDigest = state.architecture?.digest ?? `arch-${review.expectedPlanVersion}`;
   return createReviewObligation({
     obligationType: 'architecture',
@@ -459,6 +471,7 @@ function createNextArchitectureReviewObligation(input: {
     changedFiles: resolvedTargetPaths,
     declaredTaskClass: declaredTaskClassFor(state),
     escalatedTaskClass: state.claimedTaskClass,
+    provisionalScopeUnknown,
     metadata: targetPathsMetadata(resolvedTargetPaths),
     // Frozen repository context (freeze-time resolution): architecture reviews may cite it only.
     repositoryAuthority: frozenAuthorityOrUndefined(freeze),

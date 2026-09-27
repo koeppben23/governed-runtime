@@ -323,8 +323,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed for the effective-risk-class contract: /task and /ticket now
     // adopt exactly one canonical content source (ticketSource for repository
     // files, explicit text otherwise) instead of passing a bare reference.
+    // Refreshed for the fail-closed external extraction rule: /ticket no longer
+    // permits placeholder ticket text and reports TICKET_REFERENCE_WITHOUT_CONTENT
+    // instead.
     expect(sha256(commandsJson)).toBe(
-      '79e7386aeb07177e14691db73e1a1c01f13eaaa73a862dd2512521d0605d3dee',
+      '42c9f7ecc0f3a0cc993084f56f6b850c826794a72d629366df9d55c3e98304a5',
     );
   });
 

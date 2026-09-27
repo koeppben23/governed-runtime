@@ -12,7 +12,6 @@ const EXTERNAL_REFERENCE_TABLE: Array<{
     inputOrigin: 'external_reference',
   },
   { scenario: 'User text AND URL', source: 'external', inputOrigin: 'mixed' },
-  { scenario: 'Extraction failed', source: 'external', inputOrigin: 'external_reference' },
 ];
 
 const externalRefMarkdown = [
@@ -51,9 +50,14 @@ $ARGUMENTS
      - \`title\`: extracted title
      - \`source\`: platform name (jira, ados, github, gitlab, confluence, figma)
      - \`extractedAt\`: ISO timestamp (only when content was actually extracted)
-   - Set \`inputOrigin\` based on scenario:
+    - Set \`inputOrigin\` based on scenario:
 ${externalRefMarkdown}
-   - On extraction failure: use placeholder text, still add reference (without \`extractedAt\`).
+    - **On extraction failure: STOP — fail closed.** Never invent, paraphrase into a
+      placeholder, or pass a bare URL/ticket ID as ticket content; the runtime blocks a
+      reference without adopted content with \`TICKET_REFERENCE_WITHOUT_CONTENT\`. Report
+      that the external content could not be verified and ask the user either to paste the
+      ticket text or to point to a repository file, which is then adopted with
+      \`ticketSource\`. Only fully available external content may be passed as \`text\`.
 
 3. Call \`flowguard_ticket\` with exactly ONE canonical content source:
    - Repository file as the task source: \`ticketSource: { kind: "repository_file", path: "<path>" }\`

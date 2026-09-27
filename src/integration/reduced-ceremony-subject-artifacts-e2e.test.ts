@@ -241,6 +241,7 @@ async function subjectState(
       declaredTaskClass: null,
       declarationKind: 'absent' as const,
       ticketDigest: null,
+      ...(claimedTaskClass !== null ? { escalatedTaskClass: claimedTaskClass } : {}),
       touchedSurfaces: [DOC_PATH],
       riskTriggers: [],
       assessedFrom: 'implementation_changed_files' as const,

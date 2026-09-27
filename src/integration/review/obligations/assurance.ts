@@ -143,6 +143,7 @@ function resolveFrozenChallengeRequirements(
     changedFiles?: readonly string[] | undefined;
     declaredTaskClass?: TaskClass | null | undefined;
     escalatedTaskClass?: TaskClass | undefined;
+    provisionalScopeUnknown?: boolean | undefined;
   },
 ): ReturnType<typeof resolveChallengeRequirements> {
   return resolveChallengeRequirements(challengePolicy, {
@@ -153,6 +154,9 @@ function resolveFrozenChallengeRequirements(
       : {}),
     ...(input.escalatedTaskClass !== undefined
       ? { escalatedTaskClass: input.escalatedTaskClass }
+      : {}),
+    ...(input.provisionalScopeUnknown !== undefined
+      ? { provisionalScopeUnknown: input.provisionalScopeUnknown }
       : {}),
   });
 }
@@ -181,6 +185,7 @@ export function createReviewObligation(input: {
   repositoryEvidenceFreeze?: RepositoryEvidenceFreeze | undefined;
   declaredTaskClass?: TaskClass | null | undefined;
   escalatedTaskClass?: TaskClass | undefined;
+  provisionalScopeUnknown?: boolean | undefined;
   metadata?: Record<string, unknown> | undefined;
   fingerprintVersion?: 'v2' | undefined;
 }): ReviewObligation {

@@ -25,6 +25,7 @@ import {
   verifyTicketRiskDeclarationIntegrity,
   type TicketRiskDeclaration,
 } from '../state/risk-declaration.js';
+import { assessMinimumTaskClass, reducedCeremonyEligible } from '../state/risk-path-classifier.js';
 import { evaluateValidationEvidence } from './validation-evidence.js';
 import { evaluateImplValidationEvidence } from './impl-validation-evidence.js';
 
@@ -210,25 +211,70 @@ function boundTicketDeclaration(s: SessionState): TicketRiskDeclaration | null {
   return declaration;
 }
 
+function samePathSet(left: readonly string[], right: readonly string[]): boolean {
+  if (left.length !== right.length) return false;
+  const rightSet = new Set(right);
+  return left.every((entry) => rightSet.has(entry));
+}
+
+/**
+ * The persisted risk assessment and the decision must both describe the exact
+ * frozen implementation. The guard reclassifies `implementation.changedFiles`
+ * itself and compares the result with the stored facts, so a schema-valid but
+ * manipulated assessment/decision pair cannot waive a HIGH-RISK file list.
+ */
+type RecomputedRisk = ReturnType<typeof assessMinimumTaskClass>;
+
+/** Both stored artifacts must describe the same frozen implementation. */
+function assessmentMatchesImplementation(
+  s: SessionState,
+  decision: NonNullable<SessionState['reducedCeremony']>,
+  implementation: NonNullable<SessionState['implementation']>,
+): boolean {
+  const assessment = s.implementationRiskAssessment;
+  if (assessment === undefined) return false;
+  if (assessment.implementationDigest !== implementation.digest) return false;
+  if (assessment.assessedFileCount !== implementation.changedFiles.length) return false;
+  if (assessment.escalatedTaskClass !== s.claimedTaskClass) return false;
+  return decision.escalatedTaskClass === s.claimedTaskClass;
+}
+
+function declaredDecisionMatches(
+  decision: NonNullable<SessionState['reducedCeremony']>,
+  declaration: TicketRiskDeclaration,
+  recomputed: RecomputedRisk,
+  effective: string,
+): boolean {
+  return (
+    decision.declaredTaskClass === ticketRiskDeclarationFloor(declaration) &&
+    decision.computedMinimumTaskClass === recomputed.minimumTaskClass &&
+    decision.effectiveTaskClass === effective
+  );
+}
+
 function decisionMatchesRiskFacts(
   s: SessionState,
   decision: NonNullable<SessionState['reducedCeremony']>,
   declaration: TicketRiskDeclaration,
+  implementation: NonNullable<SessionState['implementation']>,
 ): boolean {
+  if (!assessmentMatchesImplementation(s, decision, implementation)) return false;
   const assessment = s.implementationRiskAssessment;
   if (assessment === undefined) return false;
+
+  const recomputed = assessMinimumTaskClass(implementation.changedFiles);
+  if (recomputed.minimumTaskClass !== assessment.computedMinimumTaskClass) return false;
+  if (!samePathSet(assessment.touchedSurfaces, recomputed.touchedSurfaces)) return false;
+  if (!samePathSet(decision.touchedSurfaces, recomputed.touchedSurfaces)) return false;
+
   const effective = resolveEffectiveTaskClass({
-    computed: assessment.computedMinimumTaskClass,
+    computed: recomputed.minimumTaskClass,
     declaration,
     escalated: s.claimedTaskClass,
   });
-  return (
-    assessment.effectiveTaskClass === effective &&
-    effective === 'TRIVIAL' &&
-    decision.declaredTaskClass === ticketRiskDeclarationFloor(declaration) &&
-    decision.computedMinimumTaskClass === assessment.computedMinimumTaskClass &&
-    decision.effectiveTaskClass === effective
-  );
+  if (assessment.effectiveTaskClass !== effective || effective !== 'TRIVIAL') return false;
+  if (!reducedCeremonyEligible(implementation.changedFiles)) return false;
+  return declaredDecisionMatches(decision, declaration, recomputed, effective);
 }
 
 function decisionBindsRiskAuthority(
@@ -243,7 +289,7 @@ function decisionBindsRiskAuthority(
   if (s.implementationRiskAssessment?.implementationDigest !== implementation.digest) {
     return false;
   }
-  if (!decisionMatchesRiskFacts(s, decision, declaration)) return false;
+  if (!decisionMatchesRiskFacts(s, decision, declaration, implementation)) return false;
   return s.riskGate?.status !== 'blocked';
 }
 

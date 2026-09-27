@@ -298,6 +298,8 @@ async function mintRestartObligation(
     changedFiles: resolvedTargetPaths,
     declaredTaskClass: declaredTaskClassFor(session.state),
     escalatedTaskClass: session.state.claimedTaskClass,
+    provisionalScopeUnknown:
+      classification.kind === 'available' ? classification.scopeUnknown : false,
     metadata,
     repositoryAuthority: frozenAuthorityOrUndefined(freeze),
     // Durable freeze outcome: continuations, restarts, and re-emits render

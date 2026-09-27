@@ -284,7 +284,9 @@ describe('integration/tools/architecture (wrapper)', () => {
     const savedState = mocks.writeStateWithArtifacts.mock.calls.at(-1)?.[1] as SessionState;
     const obligation = savedState.reviewAssurance?.obligations.at(-1);
     expect(obligation?.obligationType).toBe('architecture');
-    expect(obligation?.requiredChallengeCount).toBe(0);
+    // No target paths and no discovery risk surfaces = unknown scope, which is
+    // floored at STANDARD (one challenge); only provably empty scope is zero.
+    expect(obligation?.requiredChallengeCount).toBe(1);
     expect(obligation?.metadata?.targetPaths).toBeUndefined();
     // The ADR artifact is the review SUBJECT — never the repository diff or
     // discovery risk surfaces (regression: review_finding_out_of_scope on

@@ -104,6 +104,7 @@ export function resolveChallengeRequirements(
     changedFiles?: readonly string[];
     declaredTaskClass?: TaskClass | null;
     escalatedTaskClass?: TaskClass;
+    provisionalScopeUnknown?: boolean;
   },
 ): {
   requiredChallengeCount: number;
@@ -114,8 +115,12 @@ export function resolveChallengeRequirements(
   // challengePolicy, and the obligation freezes the requirement explicitly.
   // TRIVIAL is the explicit zero — never an implicit no-policy state.
   const declaredTaskClass = input.declaredTaskClass ?? null;
+  const computed = assessMinimumTaskClass(input.changedFiles ?? []).minimumTaskClass;
   const effectiveTaskClass = resolveEffectiveTaskClass({
-    computed: assessMinimumTaskClass(input.changedFiles ?? []).minimumTaskClass,
+    // An unresolved pre-implementation scope is floored at STANDARD: absence of
+    // target evidence is not evidence of a trivial change.
+    computed:
+      input.provisionalScopeUnknown === true && computed === 'TRIVIAL' ? 'STANDARD' : computed,
     declaration:
       declaredTaskClass === null
         ? { kind: 'absent' }

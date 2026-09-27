@@ -81,6 +81,7 @@ export async function createPlanReviewAttempt(
   planEvidence: PlanEvidence,
   planVersion: number,
   classificationFiles?: readonly string[],
+  provisionalScopeUnknown?: boolean,
 ): Promise<
   | {
       kind: 'ok';
@@ -117,6 +118,7 @@ export async function createPlanReviewAttempt(
       iteration: 0,
       planVersion,
       classificationFiles,
+      provisionalScopeUnknown,
       freeze,
       planClaimDeclarations:
         submittedPlanClaimDeclarations(scope) ??

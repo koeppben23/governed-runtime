@@ -11,7 +11,7 @@
  * @version v1
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 
 import { z } from 'zod';
@@ -94,8 +94,17 @@ function readRepositoryTicketFile(
   worktree: string,
   path: string,
 ): { readonly kind: 'ok'; readonly content: string } | { readonly kind: 'error'; reason: string } {
-  const root = resolve(worktree);
-  const target = isAbsolute(path) ? resolve(path) : resolve(root, path);
+  let root: string;
+  let target: string;
+  try {
+    // Canonicalize both sides: a lexical check alone would let an in-worktree
+    // symlink point at a file outside the worktree, and `readFileSync` would
+    // happily follow it.
+    root = realpathSync(resolve(worktree));
+    target = realpathSync(isAbsolute(path) ? resolve(path) : resolve(root, path));
+  } catch (err) {
+    return { kind: 'error', reason: err instanceof Error ? err.message : String(err) };
+  }
   const rel = relative(root, target);
   if (rel.startsWith(`..${sep}`) || rel === '..' || isAbsolute(rel)) {
     return { kind: 'error', reason: `path escapes the worktree: ${path}` };

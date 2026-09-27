@@ -33,7 +33,7 @@ import {
   assessMinimumTaskClass,
   normalizePathForRisk,
   reducedCeremonyEligible,
-} from './risk-path-classifier.js';
+} from '../state/risk-path-classifier.js';
 import { evaluateImplValidationEvidence } from '../machine/impl-validation-evidence.js';
 import type { GateDecision } from '../shared/gate-decision.js';
 import { FLOWGUARD_TOOL_PREFIX, MCP_FLOWGUARD_TOOL_PREFIX } from './tool-names.js';
@@ -79,7 +79,7 @@ export {
   assessMinimumTaskClass,
   isNonDomainConfigPath,
   reducedCeremonyEligible,
-} from './risk-path-classifier.js';
+} from '../state/risk-path-classifier.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
