@@ -13,12 +13,32 @@ import {
   assessMinimumTaskClass,
   isRiskClassificationAllowed,
   maxTaskClass,
+  projectCeremonyEligibility,
+  reducedCeremonyEligible,
   resolveCeremonyProfile,
   MUTATING_HOST_TOOLS,
   HOST_MUTATION_PHASE,
 } from './phase-tool-gate.js';
 import type { Phase } from '../state/schema.js';
-import { makeState, PLAN_REVIEW_ASSURANCE } from '../fixtures.js';
+import { makeState, PLAN_REVIEW_ASSURANCE, IMPL_EVIDENCE } from '../fixtures.js';
+import { TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
+
+function implementationAttempt(
+  checkId: string,
+  implementation: { implementationId: string; digest: string },
+) {
+  return {
+    attemptId:
+      checkId === 'test'
+        ? '00000000-0000-4000-8000-0000000000c1'
+        : '00000000-0000-4000-8000-0000000000c2',
+    scope: 'implementation' as const,
+    implementationId: implementation.implementationId,
+    implementationDigest: implementation.digest,
+    executionObservation: TEST_EXECUTION_OBSERVATION,
+    result: validationResult(checkId),
+  };
+}
 
 function validationResult(checkId: string) {
   return {
@@ -573,37 +593,53 @@ describe('phase-tool-gate', () => {
     });
   });
 
+  describe('reduced ceremony eligibility boundary', () => {
+    it('excludes instruction, permission and control-plane surfaces at any depth', () => {
+      const excluded = [
+        'AGENTS.md',
+        'pkg/AGENTS.md',
+        'CLAUDE.md',
+        'nested/GEMINI.md',
+        '.claude/settings.json',
+        'pkg/.opencode/agent.md',
+        '.github/copilot-instructions.md',
+        'opencode.json',
+        'vitest.config.ts',
+      ];
+      for (const path of excluded) {
+        expect(reducedCeremonyEligible([path]), path).toBe(false);
+      }
+    });
+
+    it('allows ordinary documentation and source files', () => {
+      expect(reducedCeremonyEligible(['docs/usage-notes.md', 'src/feature.ts'])).toBe(true);
+      expect(reducedCeremonyEligible([])).toBe(false);
+    });
+
+    it('escalates instruction surfaces in the general risk classifier', () => {
+      for (const path of [
+        'CLAUDE.md',
+        'GEMINI.md',
+        'nested/AGENTS.md',
+        '.claude/settings.json',
+        '.github/copilot-instructions.md',
+      ]) {
+        expect(assessMinimumTaskClass([path]).minimumTaskClass, path).toBe('HIGH-RISK');
+      }
+    });
+  });
+
   describe('reduced ceremony profile', () => {
     it('HAPPY — permits reduced ceremony only for verified TRIVIAL runtime evidence', () => {
-      const base = makeState('IMPLEMENTATION', {
+      const implementation = IMPL_EVIDENCE;
+      const base = makeState('IMPL_VALIDATION', {
         claimedTaskClass: 'TRIVIAL',
-        validation: [
-          {
-            checkId: 'test',
-            passed: true,
-            detail: 'OK',
-            executedAt: '2026-01-01T00:00:00.000Z',
-            kind: 'test',
-            command: 'npm test',
-            exitCode: 0,
-            executionMs: 100,
-            outputDigest: 'a'.repeat(64),
-            timedOut: false,
-            outcome: 'supported' as const,
-          },
-          {
-            checkId: 'lint',
-            passed: true,
-            detail: 'OK',
-            executedAt: '2026-01-01T00:00:00.000Z',
-            kind: 'lint',
-            command: 'npm run lint',
-            exitCode: 0,
-            executionMs: 100,
-            outputDigest: 'b'.repeat(64),
-            timedOut: false,
-            outcome: 'supported' as const,
-          },
+        implementation,
+        activeChecks: ['test', 'lint'],
+        implValidation: [validationResult('test'), validationResult('lint')],
+        validationAttempts: [
+          implementationAttempt('test', implementation),
+          implementationAttempt('lint', implementation),
         ],
       });
       const state = {
@@ -617,8 +653,14 @@ describe('phase-tool-gate', () => {
       });
 
       expect(result.profile).toBe('reduced');
-      expect(result.reason).toBe('RUNTIME_VERIFIED_TRIVIAL');
-      expect(result.computedMinimumTaskClass).toBe('TRIVIAL');
+      if (result.profile === 'reduced') {
+        expect(result.reason).toBe('POST_IMPL_VERIFIED_TRIVIAL');
+        expect(result.implementationId).toBe(implementation.implementationId);
+        expect(result.implementationDigest).toBe(implementation.digest);
+        expect(result.policyDigest).toBe(state.policySnapshot.hash);
+        expect(result.verificationBasis.checkIds).toEqual(['test', 'lint']);
+        expect(result.verificationBasis.attempts).toHaveLength(2);
+      }
     });
 
     it('BAD — missing task class claim keeps full ceremony', () => {

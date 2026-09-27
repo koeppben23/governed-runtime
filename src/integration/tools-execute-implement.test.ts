@@ -519,14 +519,19 @@ describe('implement', () => {
       expect(result.phase).toBe('EXPORT_READY');
     });
 
-    it('reduced ceremony records evidence and skips implementation review obligation only for runtime-verified TRIVIAL changes', async () => {
+    it('applies reduced ceremony only after post-implementation checks pass', async () => {
       await reachImplementation();
       const sessDir = await currentSessionDir();
       const state = await readState(sessDir);
       await writeState(sessDir, {
         ...state!,
         claimedTaskClass: 'TRIVIAL',
-        policySnapshot: { ...state!.policySnapshot, allowReducedCeremony: true },
+        policySnapshot: {
+          ...state!.policySnapshot,
+          allowReducedCeremony: true,
+          requireHumanGates: true,
+          effectiveGateBehavior: 'human_gated',
+        },
       });
 
       vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['docs/usage-notes.md']);
@@ -536,20 +541,23 @@ describe('implement', () => {
       const finalState = await readState(sessDir);
 
       expect(result.error).toBeUndefined();
-      expect(result.ceremonyProfile).toBe('reduced');
-      expect(result.computedMinimumTaskClass).toBe('TRIVIAL');
-      expect(result.reviewMode).toBe('reduced_ceremony');
       expect(finalState?.implementation).not.toBeNull();
       expect(finalState?.implReview).toBeNull();
       expect(finalState?.reducedCeremony).toMatchObject({
         profile: 'reduced',
-        reason: 'RUNTIME_VERIFIED_TRIVIAL',
+        reason: 'POST_IMPL_VERIFIED_TRIVIAL',
         claimedTaskClass: 'TRIVIAL',
         computedMinimumTaskClass: 'TRIVIAL',
+        implementationId: finalState?.implementation?.implementationId,
+        implementationDigest: finalState?.implementation?.digest,
+        policyDigest: finalState?.policySnapshot.hash,
       });
-      expect(finalState?.transition?.event).toBe('APPROVE');
-      // Solo auto-approval stops at EXPORT_READY; completion requires /export.
-      expect(finalState?.phase).toBe('EXPORT_READY');
+      expect(finalState?.reducedCeremony?.verificationBasis.checkIds).toEqual(
+        finalState?.activeChecks,
+      );
+      expect(finalState?.transition?.event).toBe('REDUCED_CEREMONY');
+      // The human evidence gate remains mandatory.
+      expect(finalState?.phase).toBe('EVIDENCE_REVIEW');
       expect(
         finalState?.reviewAssurance?.obligations.some(
           (obligation) => obligation.obligationType === 'implement',
@@ -564,7 +572,12 @@ describe('implement', () => {
       await writeState(sessDir, {
         ...state!,
         claimedTaskClass: 'TRIVIAL',
-        policySnapshot: { ...state!.policySnapshot, allowReducedCeremony: true },
+        policySnapshot: {
+          ...state!.policySnapshot,
+          allowReducedCeremony: true,
+          requireHumanGates: true,
+          effectiveGateBehavior: 'human_gated',
+        },
       });
 
       vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['src/security/policy.ts']);
@@ -750,7 +763,12 @@ describe('implement', () => {
       await writeState(sessDir, {
         ...state!,
         claimedTaskClass: 'TRIVIAL',
-        policySnapshot: { ...state!.policySnapshot, allowReducedCeremony: true },
+        policySnapshot: {
+          ...state!.policySnapshot,
+          allowReducedCeremony: true,
+          requireHumanGates: true,
+          effectiveGateBehavior: 'human_gated',
+        },
         implementationBaseline: {
           dirtyFiles: [{ path: 'package.json', hash: 'stable:package.json' }],
           capturedAt: new Date().toISOString(),
@@ -766,10 +784,11 @@ describe('implement', () => {
       const raw = await implement.execute({}, ctx);
       await passImplValidation();
       const result = parseToolResult(raw);
+      const finalState = await readState(sessDir);
       expect(result.error).toBeUndefined();
-      expect(result.baselineScoping).toBe('applied');
-      expect(result.computedMinimumTaskClass).toBe('TRIVIAL');
-      expect(result.ceremonyProfile).toBe('reduced');
+      expect(finalState?.implementation?.changedFiles).toEqual(['docs/usage-notes.md']);
+      expect(finalState?.implementationRiskAssessment?.computedMinimumTaskClass).toBe('TRIVIAL');
+      expect(finalState?.reducedCeremony?.profile).toBe('reduced');
     });
 
     it('blocks when every changed file was already dirty and unchanged since session start', async () => {

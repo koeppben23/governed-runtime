@@ -14,9 +14,16 @@
  * @version v1
  */
 
-import type { Phase, RiskTrigger, SessionState, TaskClass } from '../state/schema.js';
+import type {
+  Phase,
+  ReducedCeremonyVerificationBasis,
+  RiskTrigger,
+  SessionState,
+  TaskClass,
+} from '../state/schema.js';
 import { randomUUID } from 'node:crypto';
 import { hasOutstandingReviewObligation } from '../state/review-dispatch.js';
+import { evaluateImplValidationEvidence } from '../machine/impl-validation-evidence.js';
 import type { GateDecision } from '../shared/gate-decision.js';
 import { FLOWGUARD_TOOL_PREFIX, MCP_FLOWGUARD_TOOL_PREFIX } from './tool-names.js';
 
@@ -113,14 +120,39 @@ export interface RiskClassificationInput {
 
 export type CeremonyProfile = 'full' | 'reduced';
 
-export interface CeremonyProfileDecision {
-  readonly profile: CeremonyProfile;
+interface CeremonyProfileFacts {
   readonly reason: string;
   readonly claimedTaskClass?: TaskClass;
   readonly computedMinimumTaskClass: TaskClass;
   readonly touchedSurfaces: readonly string[];
   readonly riskTriggers: readonly RiskTrigger[];
 }
+
+/**
+ * Final ceremony decision. `reduced` carries the full evidence binding; the
+ * machine guard re-verifies every field and never trusts the decision alone.
+ */
+export interface ReducedCeremonyProfileDecision extends CeremonyProfileFacts {
+  readonly profile: 'reduced';
+  readonly implementationId: string;
+  readonly implementationDigest: string;
+  readonly policyDigest: string;
+  readonly verificationBasis: ReducedCeremonyVerificationBasis;
+}
+
+export interface FullCeremonyProfileDecision extends CeremonyProfileFacts {
+  readonly profile: 'full';
+}
+
+export type CeremonyProfileDecision = ReducedCeremonyProfileDecision | FullCeremonyProfileDecision;
+
+/**
+ * Pre-verification projection recorded by `/implement`. The pending state is
+ * derived, never persisted: only the final decision is state evidence.
+ */
+export type CeremonyEligibilityProjection =
+  | { readonly status: 'pending_post_implementation_verification'; readonly reason: string }
+  | { readonly status: 'ineligible'; readonly reason: string };
 
 export interface CeremonyProfileInput {
   readonly state: SessionState;
@@ -162,6 +194,8 @@ const HIGH_RISK_PREFIXES = [
 
 const HIGH_RISK_EXACT = new Set([
   'AGENTS.md',
+  'CLAUDE.md',
+  'GEMINI.md',
   'docs/admin-model.md',
   'docs/commands.md',
   'docs/configuration.md',
@@ -197,6 +231,11 @@ const HIGH_RISK_RE = [
   /(^|\/)release(\/|[-_].*)/,
   /(^|\/)installer?(\/|[-_].*)/,
   /(^|\/)migration(s)?(\/|[-_].*)/,
+  // Instruction-surface parity: nested agent instructions and their directories
+  // steer agents/permissions and must never classify as TRIVIAL.
+  /(^|\/)(AGENTS|CLAUDE|GEMINI)\.md$/,
+  /(^|\/)copilot-instructions\.md$/,
+  /(^|\/)\.(claude|gemini|opencode)(\/|$)/,
 ] as const;
 
 const GOVERNANCE_DOC_RE =
@@ -253,6 +292,36 @@ export function isNonDomainConfigPath(filePath: string): boolean {
   const p = normalizePathForRisk(filePath);
   if (p.includes('/')) return false; // root-level only
   return NON_DOMAIN_CONFIG_BASENAMES.has(p);
+}
+
+/** Agent/user instruction basenames that never qualify for reduced ceremony. */
+const INSTRUCTION_BASENAMES = new Set([
+  'AGENTS.md',
+  'CLAUDE.md',
+  'GEMINI.md',
+  'copilot-instructions.md',
+]);
+
+/** Instruction or control-plane directories that never qualify, at any depth. */
+const INSTRUCTION_DIR_NAMES = new Set(['.claude', '.gemini', '.opencode']);
+
+/**
+ * Ceremony-specific eligibility boundary. Separate from the general task-class
+ * taxonomy: a file may be TRIVIAL in the general model and still be excluded
+ * from ceremony reduction because it steers agents, permissions or the
+ * control plane. Normalized match on every path.
+ */
+export function reducedCeremonyEligible(changedFiles: readonly string[]): boolean {
+  if (changedFiles.length === 0) return false;
+  return changedFiles.every((filePath) => {
+    const normalized = normalizePathForRisk(filePath);
+    const segments = normalized.split('/');
+    const basename = segments[segments.length - 1] ?? '';
+    if (INSTRUCTION_BASENAMES.has(basename)) return false;
+    if (segments.some((segment) => INSTRUCTION_DIR_NAMES.has(segment))) return false;
+    if (isNonDomainConfigPath(normalized)) return false;
+    return true;
+  });
 }
 
 export function maxTaskClass(a: TaskClass, b: TaskClass): TaskClass {
@@ -419,12 +488,48 @@ export function isRiskClassificationAllowed(
   };
 }
 
-function validationEvidenceComplete(state: SessionState): boolean {
-  if (state.activeChecks.length === 0) return false;
-  const passed = new Set(state.validation.filter((result) => result.passed).map((r) => r.checkId));
-  return state.activeChecks.every((checkId) => passed.has(checkId));
+/**
+ * Static ceremony ineligibility reason, or null when the change is a candidate
+ * pending post-implementation verification. Performs no evidence evaluation.
+ */
+function staticCeremonyIneligibilityReason(input: CeremonyProfileInput): string | null {
+  const policy = input.state.policySnapshot;
+  if (policy.allowReducedCeremony !== true) return 'POLICY_REDUCED_CEREMONY_DISABLED';
+  if (policy.requireHumanGates !== true) return 'POLICY_HUMAN_GATE_REQUIRED_FOR_REDUCED_CEREMONY';
+  if (input.state.claimedTaskClass == null) return 'TASK_CLASS_CLAIM_MISSING';
+  if (input.state.claimedTaskClass !== 'TRIVIAL') return 'CLAIMED_CLASS_NOT_TRIVIAL';
+  if (input.state.riskGate?.status === 'blocked') return 'RISK_GATE_BLOCKED';
+  if (input.changedFiles.length === 0) return 'RISK_EVIDENCE_MISSING';
+  if (assessMinimumTaskClass(input.changedFiles).minimumTaskClass !== 'TRIVIAL') {
+    return 'COMPUTED_MINIMUM_NOT_TRIVIAL';
+  }
+  if (!reducedCeremonyEligible(input.changedFiles)) return 'REDUCED_CEREMONY_SURFACE_EXCLUDED';
+  return null;
 }
 
+/**
+ * `/implement` projection: a candidate awaiting post-implementation
+ * verification, or the static ineligibility reason. This is never a ceremony
+ * decision and is deliberately not persisted.
+ */
+export function projectCeremonyEligibility(
+  input: CeremonyProfileInput,
+): CeremonyEligibilityProjection {
+  const reason = staticCeremonyIneligibilityReason(input);
+  return reason === null
+    ? {
+        status: 'pending_post_implementation_verification',
+        reason: 'AWAITING_POST_IMPLEMENTATION_VERIFICATION',
+      }
+    : { status: 'ineligible', reason };
+}
+
+/**
+ * The single final ceremony authority. Called with the freshly merged
+ * post-check state so the decision binds the actual delivered bytes and the
+ * canonical latest-pass evidence. Never authorizes without complete passing
+ * checks bound to the current implementation generation.
+ */
 export function resolveCeremonyProfile(input: CeremonyProfileInput): CeremonyProfileDecision {
   const assessment = assessMinimumTaskClass(input.changedFiles);
   const claimedTaskClass = input.state.claimedTaskClass;
@@ -435,32 +540,32 @@ export function resolveCeremonyProfile(input: CeremonyProfileInput): CeremonyPro
     riskTriggers: assessment.riskTriggers,
   };
 
-  if (input.state.policySnapshot.allowReducedCeremony !== true) {
-    return { ...base, profile: 'full', reason: 'POLICY_REDUCED_CEREMONY_DISABLED' };
-  }
-  if (input.state.claimedTaskClass == null) {
-    return { ...base, profile: 'full', reason: 'TASK_CLASS_CLAIM_MISSING' };
-  }
-  if (input.state.claimedTaskClass !== 'TRIVIAL') {
-    return { ...base, profile: 'full', reason: 'CLAIMED_CLASS_NOT_TRIVIAL' };
-  }
-  if (input.state.riskGate?.status === 'blocked') {
-    return { ...base, profile: 'full', reason: 'RISK_GATE_BLOCKED' };
-  }
-  if (input.changedFiles.length === 0) {
-    return { ...base, profile: 'full', reason: 'RISK_EVIDENCE_MISSING' };
-  }
-  if (assessment.minimumTaskClass !== 'TRIVIAL') {
-    return { ...base, profile: 'full', reason: 'COMPUTED_MINIMUM_NOT_TRIVIAL' };
-  }
-  if (!validationEvidenceComplete(input.state)) {
-    return { ...base, profile: 'full', reason: 'VERIFICATION_EVIDENCE_INCOMPLETE' };
-  }
+  const staticReason = staticCeremonyIneligibilityReason(input);
+  if (staticReason !== null) return { ...base, profile: 'full', reason: staticReason };
   if (hasOutstandingReviewObligation(input.state.reviewAssurance)) {
     return { ...base, profile: 'full', reason: 'REVIEW_OBLIGATION_REQUIRED' };
   }
+  const implementation = input.state.implementation;
+  if (implementation === null) {
+    return { ...base, profile: 'full', reason: 'IMPLEMENTATION_EVIDENCE_MISSING' };
+  }
+  const evidence = evaluateImplValidationEvidence(input.state);
+  if (!evidence.satisfied) {
+    return { ...base, profile: 'full', reason: 'VERIFICATION_EVIDENCE_INCOMPLETE' };
+  }
 
-  return { ...base, profile: 'reduced', reason: 'RUNTIME_VERIFIED_TRIVIAL' };
+  return {
+    ...base,
+    profile: 'reduced',
+    reason: 'POST_IMPL_VERIFIED_TRIVIAL',
+    implementationId: implementation.implementationId,
+    implementationDigest: implementation.digest,
+    policyDigest: input.state.policySnapshot.hash,
+    verificationBasis: {
+      checkIds: [...evidence.activeChecks],
+      attempts: evidence.basis.map((entry) => ({ ...entry })),
+    },
+  };
 }
 
 // ─── Gate Functions ───────────────────────────────────────────────────────────

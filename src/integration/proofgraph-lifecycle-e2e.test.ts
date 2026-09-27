@@ -1055,6 +1055,18 @@ describe('ProofGraph materialization and gate (runtime)', () => {
         phase: 'EVIDENCE_REVIEW',
         proofContract: contract,
         proofGraph: summary.projection,
+        // A realistic EVIDENCE_REVIEW state carries a converged review bound to
+        // the current implementation digest; this test isolates the ProofGraph gate.
+        implReview: {
+          iteration: 1,
+          reviewCycle: 1,
+          maxIterations: 3,
+          prevDigest: null,
+          currDigest: IMPL_EVIDENCE.digest,
+          revisionDelta: 'none' as const,
+          verdict: 'accept' as const,
+          executedAt: FIXED_TIME,
+        },
       },
       {
         verdict: 'approve',

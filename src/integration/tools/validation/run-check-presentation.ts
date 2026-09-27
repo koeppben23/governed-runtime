@@ -9,6 +9,7 @@ import type { ToolResult } from '../helpers.js';
 import { enrichWithWorkflowDirective } from '../helpers.js';
 import type { SessionState } from '../../../state/schema.js';
 import type { FlowGuardPolicy } from '../../../config/policy.js';
+import type { CeremonyProfileDecision } from '../../phase-tool-gate.js';
 import { autoAdvance } from '../../../rails/types.js';
 import { canonicalJsonStringify } from '../../../shared/canonical-json.js';
 import { hashText } from '../../../shared/hashing.js';
@@ -95,6 +96,8 @@ export function formatRunCheckResponse(input: {
   finalState: SessionState;
   authority: ReviewDispatchAuthority | null;
   policy: FlowGuardPolicy;
+  /** Final post-check ceremony decision, when one was evaluated. */
+  ceremony?: CeremonyProfileDecision | undefined;
 }): ToolResult {
   const finalValidation =
     input.originalState.phase === 'IMPL_VALIDATION'
@@ -129,6 +132,12 @@ export function formatRunCheckResponse(input: {
           input.executionObservation.preCommitStateDigest,
         derivedRepairGuidance: input.derivedRepairGuidance,
         remainingChecks,
+        ...(input.ceremony
+          ? {
+              ceremonyEligibility: input.ceremony.profile === 'reduced' ? 'applied' : 'ineligible',
+              ceremonyReason: input.ceremony.reason,
+            }
+          : {}),
         ...(input.authority ? reviewObligationResponseFields(input.authority) : {}),
         ...(reviewInstruction ? { reviewDispatch: reviewInstruction.reviewDispatch } : {}),
         ...(reviewInstruction ? { reviewInvocation: reviewInstruction } : {}),
