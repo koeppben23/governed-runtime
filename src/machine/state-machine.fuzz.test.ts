@@ -338,7 +338,7 @@ describe('state machine fuzz', () => {
 
   it('REDUCED_CEREMONY resolves only from IMPL_VALIDATION, never from IMPLEMENTATION', () => {
     fc.assert(
-      fc.property(fc.constant('REDUCED_CEREMONY' as Event), (event) => {
+      fc.property(fc.constant('REDUCED_CEREMONY'), (event) => {
         expect(resolveTransition('IMPL_VALIDATION', event)).toBe('EVIDENCE_REVIEW');
         expect(resolveTransition('IMPLEMENTATION', event)).toBeUndefined();
       }),
@@ -352,7 +352,7 @@ describe('state machine fuzz', () => {
 
   it('IMPL_COMPLETE resolves from IMPLEMENTATION to IMPL_VALIDATION', () => {
     fc.assert(
-      fc.property(fc.constant('IMPL_COMPLETE' as Event), (event) => {
+      fc.property(fc.constant('IMPL_COMPLETE'), (event) => {
         expect(resolveTransition('IMPLEMENTATION', event)).toBe('IMPL_VALIDATION');
       }),
       {
