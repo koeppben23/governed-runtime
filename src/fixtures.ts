@@ -29,6 +29,7 @@ import type {
   PlanRecord,
   ValidationResult,
   ImplEvidence,
+  ImplReviewResult,
   ReviewDecision,
   DecisionIdentity,
   ErrorInfo,
@@ -53,7 +54,7 @@ export {
 export const FIXED_TIME = '2026-01-01T00:00:00.000Z';
 export const FIXED_UUID = '00000000-0000-4000-8000-000000000001';
 export const FIXED_SESSION_UUID = '00000000-0000-4000-8000-000000000002';
-export const FIXED_IMPL_UUID = '00000000-0000-4000-8000-0000000000aa';
+const FIXED_IMPL_UUID = '00000000-0000-4000-8000-0000000000aa';
 export const FIXED_DIGEST = 'digest-of-test';
 export const FIXED_FINGERPRINT = 'a1b2c3d4e5f6a1b2c3d4e5f6';
 const PLAN_DIGEST = hashText('## Plan\n1. Fix auth\n2. Add tests');

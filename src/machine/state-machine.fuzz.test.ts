@@ -336,12 +336,24 @@ describe('state machine fuzz', () => {
     );
   });
 
-  it('REDUCED_CEREMONY and IMPL_COMPLETE resolve from IMPLEMENTATION', () => {
+  it('REDUCED_CEREMONY resolves only from IMPL_VALIDATION, never from IMPLEMENTATION', () => {
     fc.assert(
-      fc.property(fc.constantFrom('REDUCED_CEREMONY', 'IMPL_COMPLETE' as Event), (event) => {
-        const target = resolveTransition('IMPLEMENTATION', event);
-        expect(target).toBeDefined();
-        expect(['IMPL_VALIDATION', 'EVIDENCE_REVIEW']).toContain(target!);
+      fc.property(fc.constant('REDUCED_CEREMONY' as Event), (event) => {
+        expect(resolveTransition('IMPL_VALIDATION', event)).toBe('EVIDENCE_REVIEW');
+        expect(resolveTransition('IMPLEMENTATION', event)).toBeUndefined();
+      }),
+      {
+        numRuns: Number(process.env.FAST_CHECK_NUM_RUNS) || 100,
+        seed: Number(process.env.FAST_CHECK_SEED ?? '12345'),
+        endOnFailure: true,
+      },
+    );
+  });
+
+  it('IMPL_COMPLETE resolves from IMPLEMENTATION to IMPL_VALIDATION', () => {
+    fc.assert(
+      fc.property(fc.constant('IMPL_COMPLETE' as Event), (event) => {
+        expect(resolveTransition('IMPLEMENTATION', event)).toBe('IMPL_VALIDATION');
       }),
       {
         numRuns: Number(process.env.FAST_CHECK_NUM_RUNS) || 100,
