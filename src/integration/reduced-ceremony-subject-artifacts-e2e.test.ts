@@ -549,26 +549,32 @@ describe('team opt-in completion (real git)', () => {
       execFileSync('tar', ['-xOzf', archivePath, auditMember!], { encoding: 'utf-8' }),
     ).toContain('reduced_ceremony_applied');
 
-    // Offline verification of the exact package an auditor receives.
-    const verifier = join(
-      process.cwd(),
-      'demos',
-      'java-task-manager',
-      'verify-evidence-package.mjs',
-    );
-    execFileSync(
-      'node',
-      [
-        verifier,
-        archivePath,
-        '--expect-session',
-        se.sId,
-        '--expect-flow',
-        'development',
-        '--expect-phase',
-        'EXPORT_READY',
-      ],
-      { encoding: 'utf-8' },
-    );
+    // Offline verification of the exact package an auditor receives. The
+    // standalone verifier imports the built @flowguard/core (dist/index.js),
+    // so the build-dependent contract lives in the smoke project
+    // (src/cli/demo-evidence-verify.test.ts); verify the concrete package here
+    // whenever this checkout has a build.
+    if (existsSync(join(process.cwd(), 'dist', 'index.js'))) {
+      const verifier = join(
+        process.cwd(),
+        'demos',
+        'java-task-manager',
+        'verify-evidence-package.mjs',
+      );
+      execFileSync(
+        'node',
+        [
+          verifier,
+          archivePath,
+          '--expect-session',
+          se.sId,
+          '--expect-flow',
+          'development',
+          '--expect-phase',
+          'EXPORT_READY',
+        ],
+        { encoding: 'utf-8' },
+      );
+    }
   });
 });
