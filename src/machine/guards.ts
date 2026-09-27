@@ -19,6 +19,7 @@ import type { LoopVerdict } from '../state/evidence.js';
 import type { SessionState, Phase, Event } from '../state/schema.js';
 import { isTechnicalValidationBlock, type ValidationResult } from '../state/evidence-validation.js';
 import { evaluateValidationEvidence } from './validation-evidence.js';
+import { evaluateImplValidationEvidence } from './impl-validation-evidence.js';
 
 function isTechnicalValidationResult(result: ValidationResult): boolean {
   return isTechnicalValidationBlock({
@@ -162,11 +163,7 @@ export const implValidationPassed: GuardFn = (s) => {
   if (s.activeChecks.length === 0) {
     return !evaluateValidationEvidence(s).blocked;
   }
-  const passedIds = new Set<string>();
-  for (const v of s.implValidation) {
-    if (v.passed) passedIds.add(v.checkId);
-  }
-  return s.activeChecks.every((checkId) => passedIds.has(checkId));
+  return evaluateImplValidationEvidence(s).satisfied;
 };
 
 /**

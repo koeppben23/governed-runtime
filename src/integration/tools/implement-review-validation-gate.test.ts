@@ -43,6 +43,7 @@ describe('implValidationEvidenceGate', () => {
     // makeState default activeChecks = ['test','lint'].
     const state = makeState('IMPL_REVIEW', {
       implementation: IMPL_EVIDENCE,
+      implValidation: VALIDATION_PASSED,
       validationAttempts: [attempt('test', true), attempt('lint', true)],
     });
     expect(implValidationEvidenceGate(state)).toBeNull();
@@ -83,6 +84,7 @@ describe('implValidationEvidenceGate', () => {
     const after = '2026-02-01T13:00:00.000Z';
     const state = makeState('IMPL_REVIEW', {
       implementation: IMPL_EVIDENCE,
+      implValidation: VALIDATION_PASSED,
       validationAttempts: [
         attempt('test', true, CURRENT_DIGEST, after),
         attempt('lint', true, CURRENT_DIGEST, after),
@@ -117,6 +119,7 @@ describe('implValidationEvidenceGate', () => {
   it('blocks when only some active checks have passing evidence', () => {
     const state = makeState('IMPL_REVIEW', {
       implementation: IMPL_EVIDENCE,
+      implValidation: VALIDATION_PASSED,
       validationAttempts: [attempt('test', true)], // 'lint' missing
     });
     const result = implValidationEvidenceGate(state);

@@ -98,8 +98,8 @@ import {
 } from '../implementation-review-activation.js';
 import { unknownOutcomeRevalidationBlock } from './implement-shared.js';
 import { handleTransportRecovery } from './implement-review-recovery.js';
-import { latestUnknownOutcomeResolvedAt } from '../../../state/evidence-mutation-episode.js';
 import { handleUnableToReview } from './implement-unable-review.js';
+import { evaluateImplValidationEvidence } from '../../../machine/impl-validation-evidence.js';
 import type { CompactProofPresentation } from '../../../presentation/proof-model.js';
 import { buildImplReviewChangesRequestedMarkdown } from './implement-review-presentation.js';
 export { buildImplReviewChangesRequestedMarkdown } from './implement-review-presentation.js';
@@ -488,33 +488,10 @@ export function implValidationEvidenceGate(state: SessionState): string | null {
   if (state.activeChecks.length === 0) {
     return implValidationPassed(state) ? null : blockValidationEvidence(state.activeChecks, state);
   }
-  // Active checks present: require a PASSING validation attempt bound to the
-  // current implementation digest for EVERY active check. A missing current
-  // implementation digest cannot satisfy any check.
-  const currentDigest = state.implementation?.digest;
-  // An unknown-outcome resolution declares ALL prior evidence unreliable, not
-  // just the implementation recording. Check results are bound to the
-  // implementation digest alone, with no time component, so re-recording an
-  // identical worktree after a resolution reproduces the same digest and
-  // silently revives pre-resolution check results — precisely the evidence the
-  // resolution invalidated, and precisely what the reconcile tool instructs the
-  // agent to re-run. Only results produced after the latest resolution count.
-  const resolvedAt = latestUnknownOutcomeResolvedAt(state.mutationEpisodeResolutions);
-  const passedForCurrentDigest = new Set<string>();
-  if (currentDigest) {
-    for (const attempt of state.validationAttempts) {
-      if (
-        attempt.scope === 'implementation' &&
-        attempt.implementationDigest === currentDigest &&
-        attempt.result.passed &&
-        (resolvedAt === null || attempt.result.executedAt > resolvedAt)
-      ) {
-        passedForCurrentDigest.add(attempt.result.checkId);
-      }
-    }
-  }
-  const missing = state.activeChecks.filter((checkId) => !passedForCurrentDigest.has(checkId));
-  return missing.length === 0 ? null : blockValidationEvidence(missing, state);
+  // Active checks present: the shared pure authority selects the latest
+  // decisive result per check plus its bound implementation-scoped attempt.
+  const decision = evaluateImplValidationEvidence(state);
+  return decision.satisfied ? null : blockValidationEvidence(decision.missing, state);
 }
 
 function blockValidationEvidence(missing: readonly string[], state: SessionState): string {
