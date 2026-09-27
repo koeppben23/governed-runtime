@@ -18,9 +18,16 @@
 
 import { isTechnicalValidationBlock } from '../../../state/evidence-validation.js';
 import type { SessionState } from '../../../state/schema.js';
-import { resolveCeremonyProfile, type CeremonyProfileDecision } from '../../phase-tool-gate.js';
+import {
+  projectCeremonyEligibility,
+  resolveCeremonyProfile,
+  type CeremonyProfileDecision,
+} from '../../phase-tool-gate.js';
 import { evaluateImplValidationEvidence } from '../../../machine/impl-validation-evidence.js';
-import { reattestImplementationSubject } from '../../../verification/implementation-subject.js';
+import {
+  flowguardReportArtifacts,
+  reattestImplementationSubject,
+} from '../../../verification/implementation-subject.js';
 import type { SemanticAuditIntent } from '../../audit-outbox.js';
 
 export type PostCheckCeremonyOutcome =
@@ -44,6 +51,34 @@ function latestResultFor(
     if (latest === undefined || result.executedAt >= latest.executedAt) latest = result;
   }
   return latest;
+}
+
+/**
+ * Reduced-path-only worktree re-attestation: re-enumerate, scope, compare sets
+ * and recompute the digest. Any add, remove, rename or modify after the freeze
+ * fails closed. FlowGuard's own per-attempt report files are excluded (narrow,
+ * candidate-derived boundary) because they are tool evidence, not
+ * implementation bytes.
+ */
+async function reattestEligibleSubject(
+  input: Parameters<typeof decidePostCheckCeremony>[0],
+  implementation: NonNullable<SessionState['implementation']>,
+): Promise<Extract<PostCheckCeremonyOutcome, { kind: 'subject_changed' }> | null> {
+  const reattestation = await reattestImplementationSubject({
+    worktree: input.worktree,
+    frozenFiles: implementation.changedFiles,
+    expectedDigest: implementation.digest,
+    baseline: input.state.implementationBaseline,
+    digest: input.digest,
+    ignoredArtifacts: flowguardReportArtifacts(input.state),
+  });
+  return reattestation.kind === 'ok'
+    ? null
+    : {
+        kind: 'subject_changed',
+        expected: reattestation.expected,
+        actual: reattestation.actual,
+      };
 }
 
 export async function decidePostCheckCeremony(input: {
@@ -90,26 +125,19 @@ export async function decidePostCheckCeremony(input: {
   if (!evaluateImplValidationEvidence(state).satisfied) {
     return { kind: 'skipped', state };
   }
-
-  // The decision must bind the CURRENT governed bytes, not a stale file list:
-  // re-enumerate, scope, compare sets and recompute the digest. Any add,
-  // remove, rename or modify after the freeze fails closed.
-  const reattestation = await reattestImplementationSubject({
-    worktree: input.worktree,
-    frozenFiles: implementation.changedFiles,
-    expectedDigest: implementation.digest,
-    baseline: state.implementationBaseline,
-    digest: input.digest,
-  });
-  if (reattestation.kind !== 'ok') {
-    return {
-      kind: 'subject_changed',
-      expected: reattestation.expected,
-      actual: reattestation.actual,
-    };
+  const ceremonyInput = { state, changedFiles: implementation.changedFiles };
+  // The worktree re-attestation only serves the reduced-ceremony decision. A
+  // statically ineligible cycle (feature disabled, non-TRIVIAL claim/surface,
+  // blocked risk gate, ...) is denied without touching git: the new safety
+  // check must not add blocks to the default full-ceremony path.
+  if (
+    projectCeremonyEligibility(ceremonyInput).status === 'pending_post_implementation_verification'
+  ) {
+    const subjectChanged = await reattestEligibleSubject(input, implementation);
+    if (subjectChanged !== null) return subjectChanged;
   }
 
-  const decision = resolveCeremonyProfile({ state, changedFiles: implementation.changedFiles });
+  const decision = resolveCeremonyProfile(ceremonyInput);
   if (decision.profile === 'reduced' && decision.claimedTaskClass !== undefined) {
     return {
       kind: 'decided',

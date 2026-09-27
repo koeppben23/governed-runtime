@@ -12,7 +12,10 @@
  */
 
 import type { SessionState } from '../../state/schema.js';
-import { reattestImplementationSubject } from '../../verification/implementation-subject.js';
+import {
+  flowguardReportArtifacts,
+  reattestImplementationSubject,
+} from '../../verification/implementation-subject.js';
 
 export type ReducedCeremonySubjectAttestation =
   | { readonly kind: 'ok'; readonly digest: string }
@@ -34,6 +37,7 @@ export async function attestReducedCeremonySubject(input: {
     expectedDigest: implementation.digest,
     baseline: state.implementationBaseline,
     digest: input.digest,
+    ignoredArtifacts: flowguardReportArtifacts(state),
   });
   return result.kind === 'ok'
     ? { kind: 'ok', digest: result.digest }

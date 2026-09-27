@@ -10,7 +10,10 @@
  * @version v1
  */
 
+import { isAbsolute, normalize } from 'node:path';
+
 import { changedFiles, hashWorktreeFiles } from '../adapters/git.js';
+import { isVerificationCandidateBound } from '../state/candidate-identity.js';
 import type { SessionState } from '../state/schema.js';
 
 /** Scoped governed implementation files plus the scoping disposition. */
@@ -81,6 +84,72 @@ export type ImplementationSubjectReattestation =
   | { readonly kind: 'ok'; readonly digest: string }
   | { readonly kind: 'subject_changed'; readonly expected: string; readonly actual: string };
 
+/**
+ * Exact worktree paths FlowGuard itself wrote for the CURRENT implementation
+ * generation's validation attempts.
+ *
+ * `run_specific` structured candidates execute `<command> <outputArgument>`
+ * where the argument carries `.flowguard/reports/{attemptId}/...`; the report
+ * file is tool-owned evidence, not governed implementation bytes. Without this
+ * narrow boundary the post-check re-attestation would count the report of the
+ * very check that just passed as subject drift.
+ *
+ * The boundary is deliberately derived — not pattern-matched:
+ * - only attempts bound to the current implementation id AND digest can
+ *   contribute (cycle-external or stale files stay visible),
+ * - only candidates whose id still hashes their complete definition
+ *   (an edited definition cannot smuggle an exclusion),
+ * - only the deterministic `resultPatternTemplate` substitution, never a
+ *   wildcard or directory prefix.
+ */
+export function flowguardReportArtifacts(state: SessionState): readonly string[] {
+  const implementation = state.implementation;
+  if (implementation === null) return [];
+  const candidates = new Map(
+    (state.verificationCandidates ?? []).map((candidate) => [candidate.candidateId, candidate]),
+  );
+  const artifacts = new Set<string>();
+  for (const attempt of state.validationAttempts) {
+    if (!attemptBindsImplementation(attempt, implementation)) continue;
+    const candidateId = attempt.result.candidateId;
+    if (candidateId === undefined) continue;
+    const candidate = candidates.get(candidateId);
+    if (candidate === undefined) continue;
+    const template = runSpecificResultPattern(candidate);
+    if (template === null) continue;
+    const path = safeArtifactPath(template, attempt.attemptId);
+    if (path !== null) artifacts.add(path);
+  }
+  return [...artifacts];
+}
+
+function attemptBindsImplementation(
+  attempt: SessionState['validationAttempts'][number],
+  implementation: NonNullable<SessionState['implementation']>,
+): boolean {
+  return (
+    attempt.scope === 'implementation' &&
+    attempt.implementationId === implementation.implementationId &&
+    attempt.implementationDigest === implementation.digest
+  );
+}
+
+/** The frozen report pattern, only from a still-bound run_specific candidate. */
+function runSpecificResultPattern(
+  candidate: NonNullable<SessionState['verificationCandidates']>[number],
+): string | null {
+  if (candidate.assertionCapability !== 'structured') return null;
+  if (candidate.assertionReport.collection !== 'run_specific') return null;
+  if (!isVerificationCandidateBound(candidate)) return null;
+  return candidate.assertionReport.resultPatternTemplate;
+}
+
+/** Substitute the attempt id and reject anything outside the worktree. */
+function safeArtifactPath(template: string, attemptId: string): string | null {
+  const path = normalize(template.replace(/\{attemptId\}/g, attemptId));
+  return isAbsolute(path) || path.startsWith('..') ? null : path;
+}
+
 function sameFileSet(left: readonly string[], right: readonly string[]): boolean {
   if (left.length !== right.length) return false;
   const sortedLeft = [...left].sort();
@@ -107,10 +176,16 @@ export async function reattestImplementationSubject(input: {
   readonly expectedDigest: string;
   readonly baseline: SessionState['implementationBaseline'];
   readonly digest: (text: string) => string;
+  /** Exact tool-generated paths that are not governed implementation bytes. */
+  readonly ignoredArtifacts?: readonly string[];
 }): Promise<ImplementationSubjectReattestation> {
   const rawFiles = await changedFiles(input.worktree);
   const scoped = await scopeImplementationFiles(input.worktree, rawFiles, input.baseline);
-  const currentFiles = scoped.kind === 'ok' ? [...scoped.subject.files] : [];
+  const ignored = new Set((input.ignoredArtifacts ?? []).map((path) => normalize(path)));
+  const currentFiles =
+    scoped.kind === 'ok'
+      ? scoped.subject.files.filter((file) => !ignored.has(normalize(file)))
+      : [];
 
   if (!sameFileSet(currentFiles, input.frozenFiles)) {
     return {

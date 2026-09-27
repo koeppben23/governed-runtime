@@ -9,6 +9,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 vi.mock('../../../verification/implementation-subject.js', () => ({
   reattestImplementationSubject: vi.fn(),
+  flowguardReportArtifacts: vi.fn(() => []),
 }));
 
 import { reattestImplementationSubject } from '../../../verification/implementation-subject.js';
@@ -167,7 +168,11 @@ describe('decidePostCheckCeremony', () => {
     expect(outcome).toMatchObject({ kind: 'subject_changed', expected: DOC_IMPL.digest });
   });
 
-  it('BAD: policy-disabled ceremony decides full with the denial reason', async () => {
+  it('BAD: policy-disabled ceremony decides full without touching the worktree', async () => {
+    // The re-attestation serves the reduced path only: a statically ineligible
+    // cycle must never gain a new worktree-derived block (e.g. from
+    // FlowGuard's own per-attempt report files on the full-ceremony default).
+    mockedReattest.mockRejectedValue(new Error('must not re-attest'));
     const state = baseState({
       implValidation: VALIDATION_PASSED,
       validationAttempts: [attempt('test', true), attempt('lint', true)],
@@ -184,10 +189,53 @@ describe('decidePostCheckCeremony', () => {
       now: '2026-01-02T00:00:00.000Z',
     });
 
+    expect(mockedReattest).not.toHaveBeenCalled();
     expect(outcome.kind).toBe('decided');
     if (outcome.kind !== 'decided') return;
     expect(outcome.decision.profile).toBe('full');
     expect(outcome.decision.reason).toBe('POLICY_REDUCED_CEREMONY_DISABLED');
+    expect(outcome.state.reducedCeremony).toBeNull();
+  });
+
+  it('HAPPY: an eligible cycle passes the candidate-bound report artifacts to re-attestation', async () => {
+    const state = baseState({
+      implValidation: VALIDATION_PASSED,
+      validationAttempts: [attempt('test', true), attempt('lint', true)],
+    });
+    const outcome = await decidePostCheckCeremony({
+      state,
+      worktree: '/tmp/worktree',
+      digest: passthroughDigest,
+      now: '2026-01-02T00:00:00.000Z',
+    });
+
+    expect(outcome.kind).toBe('decided');
+    expect(mockedReattest).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(reattestImplementationSubject).mock.calls[0]?.[0]).toMatchObject({
+      worktree: '/tmp/worktree',
+      frozenFiles: DOC_IMPL.changedFiles,
+      ignoredArtifacts: [],
+    });
+  });
+
+  it('BAD: an ineligible claim decides full without re-attesting unchanged bytes', async () => {
+    mockedReattest.mockRejectedValue(new Error('must not re-attest'));
+    const state = baseState({
+      implValidation: VALIDATION_PASSED,
+      validationAttempts: [attempt('test', true), attempt('lint', true)],
+      claimedTaskClass: 'STANDARD',
+    });
+    const outcome = await decidePostCheckCeremony({
+      state,
+      worktree: '/tmp/worktree',
+      digest: passthroughDigest,
+      now: '2026-01-02T00:00:00.000Z',
+    });
+
+    expect(mockedReattest).not.toHaveBeenCalled();
+    expect(outcome.kind).toBe('decided');
+    if (outcome.kind !== 'decided') return;
+    expect(outcome.decision.profile).toBe('full');
     expect(outcome.state.reducedCeremony).toBeNull();
   });
 

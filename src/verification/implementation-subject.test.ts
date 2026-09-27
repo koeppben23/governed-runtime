@@ -16,8 +16,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { hashText } from '../shared/hashing.js';
 import { hashWorktreeFiles } from '../adapters/git.js';
+import { deriveVerificationCandidateId } from '../state/candidate-identity.js';
+import { TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
+import { IMPL_EVIDENCE, makeState, VALIDATION_PASSED } from '../fixtures.js';
 import {
   computeImplementationDigest,
+  flowguardReportArtifacts,
   reattestImplementationSubject,
 } from './implementation-subject.js';
 
@@ -54,6 +58,116 @@ afterEach(() => {
   for (const dir of cleanup.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+const RUN_SPECIFIC_DEFINITION = {
+  assertionCapability: 'structured' as const,
+  kind: 'test' as const,
+  command: 'npm test --',
+  source: 'detectedStack:testFramework:jest',
+  confidence: 'high' as const,
+  reason: 'jest fixture',
+  assertionReport: {
+    collection: 'run_specific' as const,
+    transport: 'file' as const,
+    format: 'jest_json' as const,
+    providerId: 'jest' as const,
+    outputArgumentTemplate: '--json --outputFile=.flowguard/reports/{attemptId}/jest.json',
+    resultPatternTemplate: '.flowguard/reports/{attemptId}/jest.json',
+  },
+};
+const RUN_SPECIFIC_CANDIDATE = {
+  ...RUN_SPECIFIC_DEFINITION,
+  candidateId: deriveVerificationCandidateId(RUN_SPECIFIC_DEFINITION),
+};
+const RUN_SPECIFIC_ATTEMPT_ID = '00000000-0000-4000-8000-0000000000a1';
+
+function structuredAttempt(
+  overrides: {
+    attemptId?: string;
+    implementationId?: string;
+    implementationDigest?: string;
+  } = {},
+) {
+  return {
+    attemptId: overrides.attemptId ?? RUN_SPECIFIC_ATTEMPT_ID,
+    scope: 'implementation' as const,
+    implementationId: overrides.implementationId ?? IMPL_EVIDENCE.implementationId,
+    implementationDigest: overrides.implementationDigest ?? IMPL_EVIDENCE.digest,
+    executionObservation: TEST_EXECUTION_OBSERVATION,
+    result: {
+      ...VALIDATION_PASSED[0]!,
+      checkId: 'test',
+      candidateId: RUN_SPECIFIC_CANDIDATE.candidateId,
+      command: `npm test -- --json --outputFile=.flowguard/reports/${overrides.attemptId ?? RUN_SPECIFIC_ATTEMPT_ID}/jest.json`,
+    },
+  };
+}
+
+describe('flowguardReportArtifacts', () => {
+  it('HAPPY: derives the exact report path of a bound run_specific attempt', () => {
+    const state = makeState('IMPL_VALIDATION', {
+      implementation: IMPL_EVIDENCE,
+      verificationCandidates: [RUN_SPECIFIC_CANDIDATE],
+      validationAttempts: [structuredAttempt()],
+    });
+    expect(flowguardReportArtifacts(state)).toEqual([
+      `.flowguard/reports/${RUN_SPECIFIC_ATTEMPT_ID}/jest.json`,
+    ]);
+  });
+
+  it('BAD: an edited candidate definition cannot smuggle an exclusion', () => {
+    const state = makeState('IMPL_VALIDATION', {
+      implementation: IMPL_EVIDENCE,
+      verificationCandidates: [
+        {
+          ...RUN_SPECIFIC_CANDIDATE,
+          assertionReport: {
+            ...RUN_SPECIFIC_DEFINITION.assertionReport,
+            resultPatternTemplate: 'src/anything.ts',
+          },
+        },
+      ],
+      validationAttempts: [structuredAttempt()],
+    });
+    expect(flowguardReportArtifacts(state)).toEqual([]);
+  });
+
+  it('BAD: attempts of a different implementation generation are not excluded', () => {
+    const state = makeState('IMPL_VALIDATION', {
+      implementation: IMPL_EVIDENCE,
+      verificationCandidates: [RUN_SPECIFIC_CANDIDATE],
+      validationAttempts: [
+        structuredAttempt({ implementationId: '00000000-0000-4000-8000-0000000000bb' }),
+        structuredAttempt({ implementationDigest: 'other-digest' }),
+      ],
+    });
+    expect(flowguardReportArtifacts(state)).toEqual([]);
+  });
+
+  it('CORNER: non-run_specific candidates contribute no artifact paths', () => {
+    const state = makeState('IMPL_VALIDATION', {
+      implementation: IMPL_EVIDENCE,
+      verificationCandidates: [
+        {
+          assertionCapability: 'unsupported' as const,
+          candidateId: 'vc_plain',
+          kind: 'test' as const,
+          command: 'npm test',
+          source: 'x',
+          confidence: 'high' as const,
+          reason: 'x',
+        },
+      ],
+      validationAttempts: [
+        {
+          ...structuredAttempt(),
+          result: { ...structuredAttempt().result, candidateId: 'vc_plain' },
+        },
+      ],
+    });
+    expect(flowguardReportArtifacts(state)).toEqual([]);
+  });
 });
 
 describe('reattestImplementationSubject', () => {
@@ -171,6 +285,44 @@ describe('reattestImplementationSubject', () => {
     });
 
     expect(result).toEqual({ kind: 'ok', digest });
+  });
+
+  it('HAPPY: a declared FlowGuard report artifact is not subject drift', async () => {
+    const worktree = makeRepo();
+    write(worktree, 'docs/usage-notes.md', 'notes');
+    const frozen = ['docs/usage-notes.md'];
+    const digest = await frozenDigest(worktree, frozen);
+    const artifact = '.flowguard/reports/attempt-1/jest.json';
+    write(worktree, artifact, '{"testResults":[]}');
+
+    const result = await reattestImplementationSubject({
+      worktree,
+      frozenFiles: frozen,
+      expectedDigest: digest,
+      baseline: null,
+      digest: digestFn,
+      ignoredArtifacts: [artifact],
+    });
+
+    expect(result).toEqual({ kind: 'ok', digest });
+  });
+
+  it('BAD: an undeclared new file still fails closed', async () => {
+    const worktree = makeRepo();
+    write(worktree, 'docs/usage-notes.md', 'notes');
+    const frozen = ['docs/usage-notes.md'];
+    const digest = await frozenDigest(worktree, frozen);
+    write(worktree, '.flowguard/reports/attempt-1/jest.json', '{"testResults":[]}');
+
+    const result = await reattestImplementationSubject({
+      worktree,
+      frozenFiles: frozen,
+      expectedDigest: digest,
+      baseline: null,
+      digest: digestFn,
+    });
+
+    expect(result.kind).toBe('subject_changed');
   });
 
   it('EDGE: pre-existing dirt modified since the baseline is kept and fails closed', async () => {
