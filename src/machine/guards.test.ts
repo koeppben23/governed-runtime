@@ -646,11 +646,17 @@ describe('guards', () => {
       ]);
     });
 
-    it('IMPLEMENTATION guards contain exactly ERROR, REDUCED_CEREMONY, and IMPL_COMPLETE', () => {
-      expect(GUARDS.get('IMPLEMENTATION')!.map((g) => g.event)).toEqual([
+    it('IMPLEMENTATION guards contain exactly ERROR and IMPL_COMPLETE', () => {
+      expect(GUARDS.get('IMPLEMENTATION')!.map((g) => g.event)).toEqual(['ERROR', 'IMPL_COMPLETE']);
+    });
+
+    it('IMPL_VALIDATION guards order reduction after technical blocks and before ALL_PASSED', () => {
+      expect(GUARDS.get('IMPL_VALIDATION')!.map((g) => g.event)).toEqual([
         'ERROR',
+        'CHECK_ERRORED',
         'REDUCED_CEREMONY',
-        'IMPL_COMPLETE',
+        'ALL_PASSED',
+        'CHECK_FAILED',
       ]);
     });
 

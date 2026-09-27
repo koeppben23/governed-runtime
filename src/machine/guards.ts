@@ -18,6 +18,7 @@
 import type { LoopVerdict } from '../state/evidence.js';
 import type { SessionState, Phase, Event } from '../state/schema.js';
 import { isTechnicalValidationBlock, type ValidationResult } from '../state/evidence-validation.js';
+import { hasOutstandingReviewObligation } from '../state/review-dispatch.js';
 import { evaluateValidationEvidence } from './validation-evidence.js';
 import { evaluateImplValidationEvidence } from './impl-validation-evidence.js';
 
@@ -181,9 +182,41 @@ export const implCheckErrored: GuardFn = (s) => s.implValidation.some(isTechnica
 /** Implementation evidence is present. */
 export const implComplete: GuardFn = (s) => s.implementation !== null;
 
-/** Implementation evidence has an explicit reduced-ceremony decision. */
-export const reducedCeremonyReady: GuardFn = (s) =>
-  s.implementation !== null && s.reducedCeremony !== null;
+/**
+ * Implementation evidence has a reduced-ceremony decision that is fully bound
+ * to the current implementation generation, the frozen policy and the canonical
+ * post-implementation evidence. A decision by itself is never transition
+ * authority.
+ */
+export const reducedCeremonyReady: GuardFn = (s) => {
+  const decision = s.reducedCeremony;
+  const implementation = s.implementation;
+  if (decision === null || implementation === null) return false;
+  if (s.policySnapshot.allowReducedCeremony !== true) return false;
+  if (s.policySnapshot.requireHumanGates !== true) return false;
+  if (decision.policyDigest !== s.policySnapshot.hash) return false;
+  if (decision.implementationId !== implementation.implementationId) return false;
+  if (decision.implementationDigest !== implementation.digest) return false;
+  if (s.implementationRiskAssessment?.implementationDigest !== implementation.digest) return false;
+  if (hasOutstandingReviewObligation(s.reviewAssurance)) return false;
+
+  const evidence = evaluateImplValidationEvidence(s);
+  if (!evidence.satisfied) return false;
+
+  const decidedCheckIds = [...decision.verificationBasis.checkIds].sort();
+  const activeCheckIds = [...evidence.activeChecks].sort();
+  if (decidedCheckIds.length !== activeCheckIds.length) return false;
+  if (decidedCheckIds.some((checkId, index) => checkId !== activeCheckIds[index])) return false;
+
+  const decidedAttempts = decision.verificationBasis.attempts
+    .map((entry) => `${entry.checkId}:${entry.attemptId}`)
+    .sort();
+  const currentAttempts = evidence.basis
+    .map((entry) => `${entry.checkId}:${entry.attemptId}`)
+    .sort();
+  if (decidedAttempts.length !== currentAttempts.length) return false;
+  return decidedAttempts.every((entry, index) => entry === currentAttempts[index]);
+};
 
 /**
  * Implementation review loop converged.
@@ -255,7 +288,6 @@ export const GUARDS: ReadonlyMap<Phase, readonly GuardEntry[]> = new Map<
     'IMPLEMENTATION',
     [
       { event: 'ERROR', guard: hasError },
-      { event: 'REDUCED_CEREMONY', guard: reducedCeremonyReady },
       { event: 'IMPL_COMPLETE', guard: implComplete },
     ],
   ],
@@ -265,6 +297,7 @@ export const GUARDS: ReadonlyMap<Phase, readonly GuardEntry[]> = new Map<
     [
       { event: 'ERROR', guard: hasError },
       { event: 'CHECK_ERRORED', guard: implCheckErrored },
+      { event: 'REDUCED_CEREMONY', guard: reducedCeremonyReady },
       { event: 'ALL_PASSED', guard: implValidationPassed },
       { event: 'CHECK_FAILED', guard: implCheckFailed },
     ],

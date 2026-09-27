@@ -16,6 +16,7 @@
 
 import type { Phase, RiskTrigger, SessionState, TaskClass } from '../state/schema.js';
 import { randomUUID } from 'node:crypto';
+import { hasOutstandingReviewObligation } from '../state/review-dispatch.js';
 import type { GateDecision } from '../shared/gate-decision.js';
 import { FLOWGUARD_TOOL_PREFIX, MCP_FLOWGUARD_TOOL_PREFIX } from './tool-names.js';
 
@@ -424,14 +425,6 @@ function validationEvidenceComplete(state: SessionState): boolean {
   return state.activeChecks.every((checkId) => passed.has(checkId));
 }
 
-function hasOutstandingReviewObligation(state: SessionState): boolean {
-  return (
-    state.reviewAssurance?.obligations.some(
-      (obligation) => obligation.status !== 'consumed' && obligation.consumedAt == null,
-    ) ?? false
-  );
-}
-
 export function resolveCeremonyProfile(input: CeremonyProfileInput): CeremonyProfileDecision {
   const assessment = assessMinimumTaskClass(input.changedFiles);
   const claimedTaskClass = input.state.claimedTaskClass;
@@ -463,7 +456,7 @@ export function resolveCeremonyProfile(input: CeremonyProfileInput): CeremonyPro
   if (!validationEvidenceComplete(input.state)) {
     return { ...base, profile: 'full', reason: 'VERIFICATION_EVIDENCE_INCOMPLETE' };
   }
-  if (hasOutstandingReviewObligation(input.state)) {
+  if (hasOutstandingReviewObligation(input.state.reviewAssurance)) {
     return { ...base, profile: 'full', reason: 'REVIEW_OBLIGATION_REQUIRED' };
   }
 

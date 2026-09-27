@@ -117,11 +117,11 @@ export const TRANSITIONS: ReadonlyMap<Phase, ReadonlyMap<Event, Phase>> = new Ma
   // ── IMPLEMENTATION ──────────────────────────────────────────
   // IMPL_COMPLETE → IMPL_VALIDATION: the fixed code is re-validated (checks
   // re-run against the implementation) before the independent review. Reduced
-  // ceremony still bypasses straight to EVIDENCE_REVIEW (disabled under team).
+  // ceremony is decided only AFTER that post-implementation verification, in
+  // IMPL_VALIDATION — there is no implementation shortcut to EVIDENCE_REVIEW.
   [
     'IMPLEMENTATION',
     new Map<Event, Phase>([
-      ['REDUCED_CEREMONY', 'EVIDENCE_REVIEW'],
       ['IMPL_COMPLETE', 'IMPL_VALIDATION'],
       ['ERROR', 'IMPLEMENTATION'],
       ['ABORT', 'ABORTED'],
@@ -134,9 +134,13 @@ export const TRANSITIONS: ReadonlyMap<Phase, ReadonlyMap<Event, Phase>> = new Ma
   // `validation`). ALL_PASSED → IMPL_REVIEW; CHECK_FAILED → IMPLEMENTATION
   // (the CODE is wrong, not the plan); CHECK_ERRORED → self (timeout/executor
   // error retry, mirrors VALIDATION); ERROR → self.
+  // REDUCED_CEREMONY → EVIDENCE_REVIEW only when the complete check set passed
+  // and the digest-bound ceremony decision is valid; it waives the independent
+  // IMPL_REVIEW, never the post-implementation verification or the human gate.
   [
     'IMPL_VALIDATION',
     new Map<Event, Phase>([
+      ['REDUCED_CEREMONY', 'EVIDENCE_REVIEW'],
       ['ALL_PASSED', 'IMPL_REVIEW'],
       ['CHECK_FAILED', 'IMPLEMENTATION'],
       ['CHECK_ERRORED', 'IMPL_VALIDATION'],

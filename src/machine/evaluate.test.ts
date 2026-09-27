@@ -18,6 +18,11 @@ import {
   POLICY_SNAPSHOT,
 } from '../fixtures.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
+import type { SessionState } from '../state/schema.js';
+import { TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
+
+const TEST_ATTEMPT_ID = '00000000-0000-4000-8000-0000000000b1';
+const LINT_ATTEMPT_ID = '00000000-0000-4000-8000-0000000000b2';
 
 describe('evaluate', () => {
   // ─── HAPPY ─────────────────────────────────────────────────
@@ -201,7 +206,7 @@ describe('evaluate', () => {
       }
     });
 
-    it('IMPLEMENTATION with reduced ceremony evidence → transition REDUCED_CEREMONY', () => {
+    it('IMPLEMENTATION with reduced ceremony evidence still requires IMPL_VALIDATION (negative)', () => {
       const state = makeState('IMPLEMENTATION', {
         implementation: IMPL_EVIDENCE,
         reducedCeremony: {
@@ -216,6 +221,58 @@ describe('evaluate', () => {
           verificationBasis: { checkIds: ['test', 'lint'], attempts: [] },
           decidedAt: '2026-01-01T00:00:00.000Z',
         },
+      });
+      const result = evaluate(state);
+      expect(result.kind).toBe('transition');
+      if (result.kind === 'transition') {
+        expect(result.event).toBe('IMPL_COMPLETE');
+        expect(result.target).toBe('IMPL_VALIDATION');
+      }
+    });
+
+    it('IMPL_VALIDATION with a fully bound reduced decision → REDUCED_CEREMONY', () => {
+      const attempt = (checkId: string): SessionState['validationAttempts'][number] => ({
+        attemptId: checkId === 'test' ? TEST_ATTEMPT_ID : LINT_ATTEMPT_ID,
+        scope: 'implementation',
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
+        implementationDigest: 'digest-of-impl',
+        executionObservation: TEST_EXECUTION_OBSERVATION,
+        result: {
+          ...VALIDATION_PASSED[checkId === 'test' ? 0 : 1]!,
+          checkId,
+          passed: true,
+        },
+      });
+      const state = makeState('IMPL_VALIDATION', {
+        implementation: IMPL_EVIDENCE,
+        implementationRiskAssessment: {
+          computedMinimumTaskClass: 'TRIVIAL',
+          touchedSurfaces: [],
+          assessedFrom: 'implementation_changed_files',
+          assessedFileCount: 2,
+          implementationDigest: 'digest-of-impl',
+        },
+        implValidation: VALIDATION_PASSED,
+        validationAttempts: [attempt('test'), attempt('lint')],
+        reducedCeremony: {
+          profile: 'reduced',
+          reason: 'POST_IMPL_VERIFIED_TRIVIAL',
+          claimedTaskClass: 'TRIVIAL',
+          computedMinimumTaskClass: 'TRIVIAL',
+          touchedSurfaces: [],
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
+          implementationDigest: 'digest-of-impl',
+          policyDigest: POLICY_SNAPSHOT.hash,
+          verificationBasis: {
+            checkIds: ['test', 'lint'],
+            attempts: [
+              { checkId: 'test', attemptId: TEST_ATTEMPT_ID, executedAt: FIXED_TIME },
+              { checkId: 'lint', attemptId: LINT_ATTEMPT_ID, executedAt: FIXED_TIME },
+            ],
+          },
+          decidedAt: FIXED_TIME,
+        },
+        policySnapshot: { ...POLICY_SNAPSHOT, allowReducedCeremony: true },
       });
       const result = evaluate(state);
       expect(result.kind).toBe('transition');

@@ -26,6 +26,20 @@ const baseCtx = {
   policy: TEAM_POLICY,
 };
 
+/** Bound reduced-ceremony decision shared by the EVIDENCE_REVIEW rail tests. */
+const REDUCED_CEREMONY_DECISION = {
+  profile: 'reduced' as const,
+  reason: 'Trivial fix',
+  claimedTaskClass: 'TRIVIAL' as const,
+  computedMinimumTaskClass: 'TRIVIAL' as const,
+  touchedSurfaces: [],
+  implementationId: '00000000-0000-4000-8000-0000000000aa',
+  implementationDigest: 'digest-of-impl',
+  policyDigest: 'a'.repeat(64),
+  verificationBasis: { checkIds: ['test', 'lint'], attempts: [] },
+  decidedAt: FIXED_TIME,
+};
+
 /**
  * Bound architecture review evidence in the canonical assurance chain: one
  * fulfilled/consumed obligation plus its invocation with a findingsHash.
@@ -701,18 +715,7 @@ describe('review-decision rail', () => {
   });
 
   it('changes_requested at EVIDENCE_REVIEW clears reducedCeremony alongside impl', () => {
-    const reducedCeremonyDecision = {
-      profile: 'reduced' as const,
-      reason: 'Trivial config change',
-      claimedTaskClass: 'TRIVIAL' as const,
-      computedMinimumTaskClass: 'TRIVIAL' as const,
-      touchedSurfaces: [],
-      implementationId: '00000000-0000-4000-8000-0000000000aa',
-      implementationDigest: 'digest-of-impl',
-      policyDigest: 'a'.repeat(64),
-      verificationBasis: { checkIds: ['test', 'lint'], attempts: [] },
-      decidedAt: FIXED_TIME,
-    };
+    const reducedCeremonyDecision = REDUCED_CEREMONY_DECISION;
     const state = makeState('EVIDENCE_REVIEW', {
       ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
       plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
@@ -750,18 +753,7 @@ describe('review-decision rail', () => {
   });
 
   it('approve does NOT clear reducedCeremony', () => {
-    const reducedCeremonyDecision = {
-      profile: 'reduced' as const,
-      reason: 'Trivial fix',
-      claimedTaskClass: 'TRIVIAL' as const,
-      computedMinimumTaskClass: 'TRIVIAL' as const,
-      touchedSurfaces: [],
-      implementationId: '00000000-0000-4000-8000-0000000000aa',
-      implementationDigest: 'digest-of-impl',
-      policyDigest: 'a'.repeat(64),
-      verificationBasis: { checkIds: ['test', 'lint'], attempts: [] },
-      decidedAt: FIXED_TIME,
-    };
+    const reducedCeremonyDecision = REDUCED_CEREMONY_DECISION;
     const state = makeState('EVIDENCE_REVIEW', {
       ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
       plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
@@ -793,18 +785,7 @@ describe('review-decision rail', () => {
   });
 
   it('reject preserves reducedCeremony and implementation evidence at REJECTED', () => {
-    const reducedCeremonyDecision = {
-      profile: 'reduced' as const,
-      reason: 'Trivial fix',
-      claimedTaskClass: 'TRIVIAL' as const,
-      computedMinimumTaskClass: 'TRIVIAL' as const,
-      touchedSurfaces: [],
-      implementationId: '00000000-0000-4000-8000-0000000000aa',
-      implementationDigest: 'digest-of-impl',
-      policyDigest: 'a'.repeat(64),
-      verificationBasis: { checkIds: ['test', 'lint'], attempts: [] },
-      decidedAt: FIXED_TIME,
-    };
+    const reducedCeremonyDecision = REDUCED_CEREMONY_DECISION;
     const state = makeState('EVIDENCE_REVIEW', {
       ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
       plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
