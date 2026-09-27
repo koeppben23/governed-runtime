@@ -10,7 +10,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { executeValidate, type ValidateExecutors } from './validate.js';
-import { makeState, FIXED_TIME, TICKET } from '../fixtures.js';
+import { makeState, FIXED_TIME, TICKET, VERIFICATION_CANDIDATES } from '../fixtures.js';
 import type { RailContext } from './types.js';
 import type { PlanRecord, ValidationResult } from '../state/evidence.js';
 import { TEAM_POLICY } from '../config/policy.js';
@@ -48,13 +48,20 @@ function planWith(body: string): PlanRecord {
 
 /** Create a full ValidationResult matching the v2 execution-evidence schema. */
 function makeValidationResult(checkId: string, passed: boolean, detail: string): ValidationResult {
+  const candidate =
+    checkId === 'test'
+      ? { candidateId: 'candidate-test', command: 'npm test' }
+      : checkId === 'lint'
+        ? { candidateId: 'candidate-lint', command: 'npm run lint' }
+        : { candidateId: `candidate-${checkId}`, command: 'npm test' };
   return {
     checkId,
+    ...candidate,
     passed,
     detail,
     executedAt: FIXED_TIME,
-    kind: 'test',
-    command: 'npm test',
+    kind: checkId === 'lint' ? 'lint' : 'test',
+    command: candidate.command,
     exitCode: passed ? 0 : 1,
     executionMs: 1000,
     outputDigest: 'a'.repeat(64),
@@ -226,6 +233,7 @@ describe('validate rail', () => {
   describe('IMPL_VALIDATION', () => {
     function implValidationState(overrides?: Record<string, unknown>) {
       const state = makeState('IMPL_VALIDATION', {
+        verificationCandidates: VERIFICATION_CANDIDATES,
         ticket: TICKET,
         plan: planWith('## Plan\nTest'),
         reviewDecision: {

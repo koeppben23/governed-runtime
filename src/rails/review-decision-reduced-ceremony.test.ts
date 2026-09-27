@@ -8,7 +8,13 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { IMPL_EVIDENCE, makeState, POLICY_SNAPSHOT, VALIDATION_PASSED } from '../fixtures.js';
+import {
+  IMPL_EVIDENCE,
+  makeState,
+  POLICY_SNAPSHOT,
+  VALIDATION_PASSED,
+  VERIFICATION_CANDIDATES,
+} from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
 import { TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
 import {
@@ -46,6 +52,7 @@ function reducedState(): SessionState {
   };
   return makeState('EVIDENCE_REVIEW', {
     claimedTaskClass: 'TRIVIAL',
+    verificationCandidates: VERIFICATION_CANDIDATES,
     implementation: DOC_IMPL,
     implementationRiskAssessment: {
       computedMinimumTaskClass: 'TRIVIAL',

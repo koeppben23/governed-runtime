@@ -182,18 +182,38 @@ export const implCheckErrored: GuardFn = (s) => s.implValidation.some(isTechnica
 /** Implementation evidence is present. */
 export const implComplete: GuardFn = (s) => s.implementation !== null;
 
+function decisionBindsFrozenPolicy(
+  s: SessionState,
+  decision: NonNullable<SessionState['reducedCeremony']>,
+): boolean {
+  if (s.policySnapshot.allowReducedCeremony !== true) return false;
+  if (s.policySnapshot.requireHumanGates !== true) return false;
+  return decision.policyDigest === s.policySnapshot.hash;
+}
+
+function decisionBindsRiskAuthority(
+  s: SessionState,
+  decision: NonNullable<SessionState['reducedCeremony']>,
+  implementation: NonNullable<SessionState['implementation']>,
+): boolean {
+  if (s.claimedTaskClass !== 'TRIVIAL') return false;
+  if (decision.claimedTaskClass !== 'TRIVIAL') return false;
+  if (decision.computedMinimumTaskClass !== 'TRIVIAL') return false;
+  if (s.implementationRiskAssessment?.implementationDigest !== implementation.digest) return false;
+  if (s.implementationRiskAssessment.computedMinimumTaskClass !== 'TRIVIAL') return false;
+  return s.riskGate?.status !== 'blocked';
+}
+
 function ceremonyBindingMatches(
   s: SessionState,
   decision: NonNullable<SessionState['reducedCeremony']>,
 ): boolean {
   const implementation = s.implementation;
   if (implementation === null) return false;
-  if (s.policySnapshot.allowReducedCeremony !== true) return false;
-  if (s.policySnapshot.requireHumanGates !== true) return false;
-  if (decision.policyDigest !== s.policySnapshot.hash) return false;
   if (decision.implementationId !== implementation.implementationId) return false;
   if (decision.implementationDigest !== implementation.digest) return false;
-  if (s.implementationRiskAssessment?.implementationDigest !== implementation.digest) return false;
+  if (!decisionBindsFrozenPolicy(s, decision)) return false;
+  if (!decisionBindsRiskAuthority(s, decision, implementation)) return false;
   return !hasOutstandingReviewObligation(s.reviewAssurance);
 }
 

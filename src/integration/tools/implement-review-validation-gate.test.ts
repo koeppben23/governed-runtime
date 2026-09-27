@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 
-import { makeState, VALIDATION_PASSED, IMPL_EVIDENCE } from '../../fixtures.js';
+import {
+  makeState,
+  VALIDATION_PASSED,
+  IMPL_EVIDENCE,
+  VERIFICATION_CANDIDATES,
+} from '../../fixtures.js';
 import { implValidationEvidenceGate } from './implementation/implement-review.js';
 import type { ValidationAttempt } from '../../state/evidence-validation.js';
 
@@ -42,6 +47,7 @@ describe('implValidationEvidenceGate', () => {
   it('passes when every active check has a passing attempt for the current digest', () => {
     // makeState default activeChecks = ['test','lint'].
     const state = makeState('IMPL_REVIEW', {
+      verificationCandidates: VERIFICATION_CANDIDATES,
       implementation: IMPL_EVIDENCE,
       implValidation: VALIDATION_PASSED,
       validationAttempts: [attempt('test', true), attempt('lint', true)],
@@ -57,6 +63,7 @@ describe('implValidationEvidenceGate', () => {
     const resolvedAt = '2026-02-01T12:00:00.000Z';
     const before = '2026-02-01T11:00:00.000Z';
     const state = makeState('IMPL_REVIEW', {
+      verificationCandidates: VERIFICATION_CANDIDATES,
       implementation: IMPL_EVIDENCE,
       validationAttempts: [
         attempt('test', true, CURRENT_DIGEST, before),
@@ -83,6 +90,7 @@ describe('implValidationEvidenceGate', () => {
     const resolvedAt = '2026-02-01T12:00:00.000Z';
     const after = '2026-02-01T13:00:00.000Z';
     const state = makeState('IMPL_REVIEW', {
+      verificationCandidates: VERIFICATION_CANDIDATES,
       implementation: IMPL_EVIDENCE,
       implValidation: [
         { ...VALIDATION_PASSED[0]!, executedAt: after },
@@ -109,6 +117,7 @@ describe('implValidationEvidenceGate', () => {
 
   it('blocks when there are no validation attempts but active checks exist', () => {
     const state = makeState('IMPL_REVIEW', {
+      verificationCandidates: VERIFICATION_CANDIDATES,
       implementation: IMPL_EVIDENCE,
       validationAttempts: [],
     });
@@ -121,6 +130,7 @@ describe('implValidationEvidenceGate', () => {
 
   it('blocks when only some active checks have passing evidence', () => {
     const state = makeState('IMPL_REVIEW', {
+      verificationCandidates: VERIFICATION_CANDIDATES,
       implementation: IMPL_EVIDENCE,
       implValidation: VALIDATION_PASSED,
       validationAttempts: [attempt('test', true)], // 'lint' missing
@@ -134,6 +144,7 @@ describe('implValidationEvidenceGate', () => {
 
   it('blocks when an active check has failing evidence', () => {
     const state = makeState('IMPL_REVIEW', {
+      verificationCandidates: VERIFICATION_CANDIDATES,
       implementation: IMPL_EVIDENCE,
       validationAttempts: [attempt('test', false), attempt('lint', true)],
     });
@@ -147,6 +158,7 @@ describe('implValidationEvidenceGate', () => {
     // The core D3 fix: attempts pass, but for a prior implementation revision.
     // The digest-less machine guard would accept this; the gate must not.
     const state = makeState('IMPL_REVIEW', {
+      verificationCandidates: VERIFICATION_CANDIDATES,
       implementation: IMPL_EVIDENCE,
       validationAttempts: [
         attempt('test', true, 'stale-digest'),
@@ -162,6 +174,7 @@ describe('implValidationEvidenceGate', () => {
 
   it('blocks when there is no current implementation digest', () => {
     const state = makeState('IMPL_REVIEW', {
+      verificationCandidates: VERIFICATION_CANDIDATES,
       implementation: null,
       validationAttempts: [attempt('test', true), attempt('lint', true)],
     });
@@ -178,6 +191,7 @@ describe('implValidationEvidenceGate', () => {
       result: { ...VALIDATION_PASSED[0]!, checkId: 'test', passed: true },
     } as ValidationAttempt;
     const state = makeState('IMPL_REVIEW', {
+      verificationCandidates: VERIFICATION_CANDIDATES,
       implementation: IMPL_EVIDENCE,
       validationAttempts: [baseline, attempt('lint', true)],
     });
@@ -189,6 +203,7 @@ describe('implValidationEvidenceGate', () => {
 
   it('passes vacuously when there are no active checks (zero-check sessions unaffected)', () => {
     const state = makeState('IMPL_REVIEW', {
+      verificationCandidates: VERIFICATION_CANDIDATES,
       implementation: IMPL_EVIDENCE,
       activeChecks: [],
       validationAttempts: [],

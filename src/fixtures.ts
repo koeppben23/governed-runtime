@@ -462,6 +462,31 @@ export const PLAN_RECORD: PlanRecord = {
   reviewCompletion: 'pending',
 };
 
+const FIXTURE_TEST_CANDIDATE_ID = 'candidate-test';
+const FIXTURE_LINT_CANDIDATE_ID = 'candidate-lint';
+
+/** Verification candidates matching the canonical validation fixtures. */
+export const VERIFICATION_CANDIDATES: NonNullable<SessionState['verificationCandidates']> = [
+  {
+    candidateId: FIXTURE_TEST_CANDIDATE_ID,
+    assertionCapability: 'unsupported',
+    kind: 'test',
+    command: 'npm test',
+    source: 'package.json:scripts.test',
+    confidence: 'high',
+    reason: 'fixture',
+  },
+  {
+    candidateId: FIXTURE_LINT_CANDIDATE_ID,
+    assertionCapability: 'unsupported',
+    kind: 'lint',
+    command: 'npm run lint',
+    source: 'package.json:scripts.lint',
+    confidence: 'high',
+    reason: 'fixture',
+  },
+];
+
 export const VALIDATION_PASSED: ValidationResult[] = [
   {
     checkId: 'test',
@@ -469,6 +494,7 @@ export const VALIDATION_PASSED: ValidationResult[] = [
     detail: 'All tests pass',
     executedAt: FIXED_TIME,
     kind: 'test',
+    candidateId: FIXTURE_TEST_CANDIDATE_ID,
     command: 'npm test',
     exitCode: 0,
     executionMs: 1200,
@@ -482,6 +508,7 @@ export const VALIDATION_PASSED: ValidationResult[] = [
     detail: 'No lint errors',
     executedAt: FIXED_TIME,
     kind: 'lint',
+    candidateId: FIXTURE_LINT_CANDIDATE_ID,
     command: 'npm run lint',
     exitCode: 0,
     executionMs: 800,
@@ -498,6 +525,7 @@ export const VALIDATION_FAILED: ValidationResult[] = [
     detail: 'Tests failed: 3 failing',
     executedAt: FIXED_TIME,
     kind: 'test',
+    candidateId: FIXTURE_TEST_CANDIDATE_ID,
     command: 'npm test',
     exitCode: 1,
     executionMs: 2000,
@@ -693,6 +721,7 @@ export function makeProgressedState(phase: Phase): SessionState {
         validation: VALIDATION_PASSED,
         implementation: IMPL_EVIDENCE,
         implValidation: VALIDATION_PASSED,
+        verificationCandidates: VERIFICATION_CANDIDATES,
       });
     case 'EVIDENCE_REVIEW':
       return makeState('EVIDENCE_REVIEW', {
@@ -704,6 +733,7 @@ export function makeProgressedState(phase: Phase): SessionState {
         validation: VALIDATION_PASSED,
         implementation: IMPL_EVIDENCE,
         implValidation: VALIDATION_PASSED,
+        verificationCandidates: VERIFICATION_CANDIDATES,
         implReview: IMPL_REVIEW_CONVERGED,
       });
     case 'EXPORT_READY':
@@ -717,6 +747,7 @@ export function makeProgressedState(phase: Phase): SessionState {
         validation: VALIDATION_PASSED,
         implementation: IMPL_EVIDENCE,
         implValidation: VALIDATION_PASSED,
+        verificationCandidates: VERIFICATION_CANDIDATES,
         implReview: IMPL_REVIEW_CONVERGED,
       });
     case 'REJECTED':

@@ -18,6 +18,7 @@ import {
   POLICY_SNAPSHOT,
   VALIDATION_FAILED,
   VALIDATION_PASSED,
+  VERIFICATION_CANDIDATES,
 } from '../../../fixtures.js';
 import { TEST_EXECUTION_OBSERVATION } from '../../../state/evidence-test-constants.js';
 import { ceremonyAuditIntent, decidePostCheckCeremony } from './ceremony-decision.js';
@@ -49,6 +50,7 @@ function attempt(checkId: string, passed: boolean) {
 function baseState(overrides: Record<string, unknown> = {}) {
   return makeState('IMPL_VALIDATION', {
     claimedTaskClass: 'TRIVIAL',
+    verificationCandidates: VERIFICATION_CANDIDATES,
     implementation: DOC_IMPL,
     activeChecks: ['test', 'lint'],
     policySnapshot: {
@@ -98,6 +100,23 @@ describe('decidePostCheckCeremony', () => {
     const state = baseState({
       implValidation: [VALIDATION_PASSED[0]!],
       validationAttempts: [attempt('test', true)],
+    });
+    const outcome = await decidePostCheckCeremony({
+      state,
+      worktree: '/tmp/worktree',
+      digest: passthroughDigest,
+      now: '2026-01-02T00:00:00.000Z',
+    });
+
+    expect(outcome.kind).toBe('skipped');
+    if (outcome.kind !== 'skipped') return;
+    expect(outcome.state.reducedCeremony).toBeNull();
+  });
+
+  it('BAD: PASS results with invalidated attempts stay pending, never a final denial', async () => {
+    const state = baseState({
+      implValidation: VALIDATION_PASSED,
+      validationAttempts: [],
     });
     const outcome = await decidePostCheckCeremony({
       state,
@@ -220,7 +239,7 @@ describe('ceremonyAuditIntent', () => {
   };
 
   it('records an applied decision with its exact binding', () => {
-    const intents = ceremonyAuditIntent(decision, '2026-01-02T00:00:00.000Z');
+    const intents = ceremonyAuditIntent(decision, '2026-01-02T00:00:00.000Z', DOC_IMPL, true);
     expect(intents).toHaveLength(1);
     expect(intents[0]).toMatchObject({
       phase: 'IMPL_VALIDATION',
@@ -246,16 +265,27 @@ describe('ceremonyAuditIntent', () => {
         riskTriggers: [],
       },
       '2026-01-02T00:00:00.000Z',
+      DOC_IMPL,
+      true,
     );
     expect(intents).toMatchObject([
       {
         event: 'reduced_ceremony_denied',
-        detail: { status: 'ineligible', reason: 'VERIFICATION_EVIDENCE_INCOMPLETE' },
+        detail: {
+          status: 'ineligible',
+          reason: 'VERIFICATION_EVIDENCE_INCOMPLETE',
+          implementationId: DOC_IMPL.implementationId,
+          implementationDigest: DOC_IMPL.digest,
+        },
       },
     ]);
   });
 
   it('records nothing when no decision was evaluated (aborted cycle)', () => {
-    expect(ceremonyAuditIntent(null, '2026-01-02T00:00:00.000Z')).toEqual([]);
+    expect(ceremonyAuditIntent(null, '2026-01-02T00:00:00.000Z', null, true)).toEqual([]);
+  });
+
+  it('emits nothing when the decision is not new (same generation recheck)', () => {
+    expect(ceremonyAuditIntent(decision, '2026-01-02T00:00:00.000Z', DOC_IMPL, false)).toEqual([]);
   });
 });

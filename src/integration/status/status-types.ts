@@ -85,7 +85,11 @@ export interface StatusProjection {
    */
   reducedCeremony: {
     status:
-      'applied' | 'pending_post_implementation_verification' | 'ineligible' | 'not_applicable';
+      | 'applied'
+      | 'invalid'
+      | 'pending_post_implementation_verification'
+      | 'ineligible'
+      | 'not_applicable';
     reason: string | null;
   };
   proofGraph: PersistedProofGraphSummary;

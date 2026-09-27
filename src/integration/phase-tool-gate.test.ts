@@ -20,7 +20,12 @@ import {
   HOST_MUTATION_PHASE,
 } from './phase-tool-gate.js';
 import type { Phase } from '../state/schema.js';
-import { makeState, PLAN_REVIEW_ASSURANCE, IMPL_EVIDENCE } from '../fixtures.js';
+import {
+  makeState,
+  PLAN_REVIEW_ASSURANCE,
+  IMPL_EVIDENCE,
+  VERIFICATION_CANDIDATES,
+} from '../fixtures.js';
 import { TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
 
 function implementationAttempt(
@@ -41,13 +46,16 @@ function implementationAttempt(
 }
 
 function validationResult(checkId: string) {
+  const candidate =
+    checkId === 'lint'
+      ? { candidateId: 'candidate-lint', command: 'npm run lint', kind: 'lint' as const }
+      : { candidateId: 'candidate-test', command: 'npm test', kind: 'test' as const };
   return {
     checkId,
+    ...candidate,
     passed: true,
     detail: 'OK',
     executedAt: '2026-01-01T00:00:00.000Z',
-    kind: 'test' as const,
-    command: 'npm test',
     exitCode: 0,
     executionMs: 1,
     outputDigest: 'a'.repeat(64),
@@ -634,6 +642,7 @@ describe('phase-tool-gate', () => {
       const implementation = IMPL_EVIDENCE;
       const base = makeState('IMPL_VALIDATION', {
         claimedTaskClass: 'TRIVIAL',
+        verificationCandidates: VERIFICATION_CANDIDATES,
         implementation,
         activeChecks: ['test', 'lint'],
         implValidation: [validationResult('test'), validationResult('lint')],

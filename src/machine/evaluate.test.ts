@@ -16,6 +16,7 @@ import {
   ERROR_INFO,
   ARCHITECTURE_DECISION,
   POLICY_SNAPSHOT,
+  VERIFICATION_CANDIDATES,
 } from '../fixtures.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 import type { SessionState } from '../state/schema.js';
@@ -244,6 +245,8 @@ describe('evaluate', () => {
         },
       });
       const state = makeState('IMPL_VALIDATION', {
+        claimedTaskClass: 'TRIVIAL',
+        verificationCandidates: VERIFICATION_CANDIDATES,
         implementation: IMPL_EVIDENCE,
         implementationRiskAssessment: {
           computedMinimumTaskClass: 'TRIVIAL',

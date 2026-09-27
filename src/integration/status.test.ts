@@ -37,7 +37,10 @@ import {
   makeState,
   POLICY_SNAPSHOT,
   REDUCED_CEREMONY_DECISION,
+  VALIDATION_PASSED,
+  VERIFICATION_CANDIDATES,
 } from '../fixtures.js';
+import { TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
 import { isCommandAllowed, Command } from '../machine/commands.js';
 import { USER_GATES, TERMINAL } from '../machine/topology.js';
 import { makePlanRevision } from '../state/evidence-test-constants.js';
@@ -865,10 +868,70 @@ describe('buildStatusProjection — reduced ceremony projection', () => {
     });
   });
 
-  it('reports an applied decision from state', () => {
+  it('marks a stored decision invalid when its binding no longer holds', () => {
     const state = makeState('EVIDENCE_REVIEW', {
       implementation: IMPL_EVIDENCE,
       reducedCeremony: REDUCED_CEREMONY_DECISION,
+    });
+
+    expect(buildStatusProjection(state, policy).reducedCeremony).toEqual({
+      status: 'invalid',
+      reason: 'REDUCED_CEREMONY_BINDING_INVALID',
+    });
+  });
+
+  it('reports an applied decision only while the machine binding still holds', () => {
+    const policySnapshot = {
+      ...POLICY_SNAPSHOT,
+      allowReducedCeremony: true,
+      requireHumanGates: true,
+      effectiveGateBehavior: 'human_gated' as const,
+    };
+    const attempt = (checkId: string, index: number) => ({
+      attemptId: `00000000-0000-4000-8000-0000000000${index}d`,
+      scope: 'implementation' as const,
+      implementationId: IMPL_EVIDENCE.implementationId,
+      implementationDigest: IMPL_EVIDENCE.digest,
+      executionObservation: TEST_EXECUTION_OBSERVATION,
+      result: VALIDATION_PASSED[index]!,
+    });
+    const state = makeState('EVIDENCE_REVIEW', {
+      claimedTaskClass: 'TRIVIAL',
+      verificationCandidates: VERIFICATION_CANDIDATES,
+      implementation: IMPL_EVIDENCE,
+      implementationRiskAssessment: {
+        computedMinimumTaskClass: 'TRIVIAL',
+        touchedSurfaces: [],
+        riskTriggers: [],
+        assessedFrom: 'implementation_changed_files',
+        assessedFileCount: 2,
+        implementationDigest: IMPL_EVIDENCE.digest,
+      },
+      activeChecks: ['test', 'lint'],
+      implValidation: VALIDATION_PASSED,
+      validationAttempts: [attempt('test', 0), attempt('lint', 1)],
+      policySnapshot,
+      reducedCeremony: {
+        ...REDUCED_CEREMONY_DECISION,
+        policyDigest: policySnapshot.hash,
+        implementationId: IMPL_EVIDENCE.implementationId,
+        implementationDigest: IMPL_EVIDENCE.digest,
+        verificationBasis: {
+          checkIds: ['test', 'lint'],
+          attempts: [
+            {
+              checkId: 'test',
+              attemptId: '00000000-0000-4000-8000-00000000000d',
+              executedAt: VALIDATION_PASSED[0]!.executedAt,
+            },
+            {
+              checkId: 'lint',
+              attemptId: '00000000-0000-4000-8000-00000000001d',
+              executedAt: VALIDATION_PASSED[1]!.executedAt,
+            },
+          ],
+        },
+      },
     });
 
     expect(buildStatusProjection(state, policy).reducedCeremony).toEqual({

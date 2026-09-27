@@ -45,6 +45,7 @@ import {
 import { PHASE_LABELS } from '../../presentation/phase-labels.js';
 import { evaluateCompleteness } from '../../audit/completeness.js';
 import { projectCeremonyEligibility } from '../phase-tool-gate.js';
+import { reducedCeremonyReady } from '../../machine/guards.js';
 import { getReviewLoopProgress } from '../review/obligations/review-loop-progress.js';
 import { isConverged } from '../../machine/guards.js';
 import { projectStatusConclusion } from './status-conclusion.js';
@@ -133,7 +134,12 @@ function projectImplementationRework(
 
 function buildReducedCeremonyProjection(state: SessionState): StatusProjection['reducedCeremony'] {
   if (state.reducedCeremony !== null) {
-    return { status: 'applied', reason: state.reducedCeremony.reason };
+    // A stored decision is only "applied" while the machine authority still
+    // accepts its full binding; otherwise it is stale and must not be shown as
+    // valid (parity with completeness).
+    return reducedCeremonyReady(state)
+      ? { status: 'applied', reason: state.reducedCeremony.reason }
+      : { status: 'invalid', reason: 'REDUCED_CEREMONY_BINDING_INVALID' };
   }
   if (state.phase === 'IMPL_VALIDATION') {
     const projection = projectCeremonyEligibility({

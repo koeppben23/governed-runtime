@@ -389,6 +389,7 @@ interface RevalidatedCheck {
   readonly executionObservation: ValidationExecutionObservation;
   readonly advanced: Exclude<ReturnType<typeof autoAdvance>, { kind: 'overflow' }>;
   readonly ceremony: CeremonyProfileDecision | null;
+  readonly ceremonyIsNew: boolean;
 }
 
 type CheckRevalidation = string | RevalidatedCheck;
@@ -459,6 +460,7 @@ async function revalidateCheckUnderLock(input: PersistCheckInput): Promise<Check
     executionObservation,
     advanced,
     ceremony: ceremony.kind === 'decided' ? ceremony.decision : null,
+    ceremonyIsNew: ceremony.kind === 'decided' ? ceremony.isNew : false,
   };
 }
 
@@ -502,7 +504,12 @@ async function finalizeCheckUnderLock(input: {
     input.sessDir,
     activated.state,
     advanced.transitions,
-    ceremonyAuditIntent(input.revalidated.ceremony, input.revalidated.railCtx.now()),
+    ceremonyAuditIntent(
+      input.revalidated.ceremony,
+      input.revalidated.railCtx.now(),
+      input.revalidated.nextState.implementation,
+      input.revalidated.ceremonyIsNew,
+    ),
   );
   const authorityResult = resolveRunCheckDispatchAuthority(activated, persisted);
   if (typeof authorityResult === 'string') return authorityResult;

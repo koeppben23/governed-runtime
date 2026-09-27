@@ -12,7 +12,13 @@ import { describe, expect, it } from 'vitest';
 
 import type { ValidationAttempt } from '../state/evidence-validation.js';
 import type { ValidationResult } from '../state/evidence.js';
-import { IMPL_EVIDENCE, makeState, VALIDATION_FAILED, VALIDATION_PASSED } from '../fixtures.js';
+import {
+  IMPL_EVIDENCE,
+  makeState,
+  VALIDATION_FAILED,
+  VALIDATION_PASSED,
+  VERIFICATION_CANDIDATES,
+} from '../fixtures.js';
 import { TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
 import { evaluateImplValidationEvidence } from './impl-validation-evidence.js';
 
@@ -42,6 +48,7 @@ function attempt(
 describe('evaluateImplValidationEvidence', () => {
   it('HAPPY: passes when every check has a latest passing result and bound attempt', () => {
     const state = makeState('IMPL_VALIDATION', {
+      verificationCandidates: VERIFICATION_CANDIDATES,
       implementation: IMPL_EVIDENCE,
       activeChecks: ['test', 'lint'],
       implValidation: [
@@ -63,6 +70,7 @@ describe('evaluateImplValidationEvidence', () => {
 
   it('BAD: no active checks is not satisfied (no vacuous reduced approval)', () => {
     const state = makeState('IMPL_VALIDATION', {
+      verificationCandidates: VERIFICATION_CANDIDATES,
       implementation: IMPL_EVIDENCE,
       activeChecks: [],
       implValidation: [],
@@ -74,6 +82,7 @@ describe('evaluateImplValidationEvidence', () => {
 
   it('BAD: a missing bound attempt cannot qualify even with a passing result', () => {
     const state = makeState('IMPL_VALIDATION', {
+      verificationCandidates: VERIFICATION_CANDIDATES,
       implementation: IMPL_EVIDENCE,
       activeChecks: ['test'],
       implValidation: [result('test', true, '2026-01-01T00:00:01.000Z')],
@@ -87,6 +96,7 @@ describe('evaluateImplValidationEvidence', () => {
 
   it('BAD: a later FAIL cannot be masked by an earlier PASS', () => {
     const state = makeState('IMPL_VALIDATION', {
+      verificationCandidates: VERIFICATION_CANDIDATES,
       implementation: IMPL_EVIDENCE,
       activeChecks: ['test'],
       implValidation: [result('test', false, '2026-01-01T00:00:02.000Z')],
@@ -98,6 +108,7 @@ describe('evaluateImplValidationEvidence', () => {
 
   it('BAD: a later FAILING attempt cannot be masked by an earlier passing attempt', () => {
     const state = makeState('IMPL_VALIDATION', {
+      verificationCandidates: VERIFICATION_CANDIDATES,
       implementation: IMPL_EVIDENCE,
       activeChecks: ['test'],
       implValidation: [result('test', true, '2026-01-01T00:00:01.000Z')],
@@ -115,6 +126,7 @@ describe('evaluateImplValidationEvidence', () => {
 
   it('BAD: attempts bound to another implementation generation do not count', () => {
     const state = makeState('IMPL_VALIDATION', {
+      verificationCandidates: VERIFICATION_CANDIDATES,
       implementation: IMPL_EVIDENCE,
       activeChecks: ['test'],
       implValidation: [result('test', true, '2026-01-01T00:00:01.000Z')],
@@ -132,6 +144,7 @@ describe('evaluateImplValidationEvidence', () => {
       implementationDigest: 'different-digest',
     };
     const state = makeState('IMPL_VALIDATION', {
+      verificationCandidates: VERIFICATION_CANDIDATES,
       implementation: IMPL_EVIDENCE,
       activeChecks: ['test'],
       implValidation: [result('test', true, '2026-01-01T00:00:01.000Z')],
@@ -148,6 +161,7 @@ describe('evaluateImplValidationEvidence', () => {
       result: { ...base.result, outputDigest: 'f'.repeat(64) },
     };
     const state = makeState('IMPL_VALIDATION', {
+      verificationCandidates: VERIFICATION_CANDIDATES,
       implementation: IMPL_EVIDENCE,
       activeChecks: ['test'],
       implValidation: [result('test', true, '2026-01-01T00:00:01.000Z')],
@@ -157,8 +171,45 @@ describe('evaluateImplValidationEvidence', () => {
     expect(evaluateImplValidationEvidence(state).satisfied).toBe(false);
   });
 
+  it('BAD: an attempt without a candidate attestation never counts', () => {
+    const bound = attempt('test', true, '2026-01-01T00:00:01.000Z');
+    const { candidateId: _candidateId, ...unattestedResult } = bound.result;
+    const state = makeState('IMPL_VALIDATION', {
+      verificationCandidates: VERIFICATION_CANDIDATES,
+      implementation: IMPL_EVIDENCE,
+      activeChecks: ['test'],
+      implValidation: [result('test', true, '2026-01-01T00:00:01.000Z')],
+      validationAttempts: [{ ...bound, result: { ...unattestedResult, checkId: 'test' } }],
+    });
+
+    expect(evaluateImplValidationEvidence(state).satisfied).toBe(false);
+  });
+
+  it('BAD: a changed candidate definition invalidates earlier PASS evidence', () => {
+    const state = makeState('IMPL_VALIDATION', {
+      implementation: IMPL_EVIDENCE,
+      activeChecks: ['test'],
+      implValidation: [result('test', true, '2026-01-01T00:00:01.000Z')],
+      validationAttempts: [attempt('test', true, '2026-01-01T00:00:01.000Z')],
+      verificationCandidates: [
+        {
+          candidateId: 'candidate-test',
+          assertionCapability: 'unsupported',
+          kind: 'test',
+          command: 'npm test --changed',
+          source: 'package.json:scripts.test',
+          confidence: 'high',
+          reason: 'changed definition',
+        },
+      ],
+    });
+
+    expect(evaluateImplValidationEvidence(state).satisfied).toBe(false);
+  });
+
   it('BAD: missing implementation evidence marks all checks missing', () => {
     const state = makeState('IMPL_VALIDATION', {
+      verificationCandidates: VERIFICATION_CANDIDATES,
       implementation: null,
       activeChecks: ['test', 'lint'],
       implValidation: VALIDATION_PASSED,
@@ -177,6 +228,7 @@ describe('evaluateImplValidationEvidence', () => {
     const first = attempt('test', true, '2026-01-01T00:00:01.000Z');
     const second = attempt('test', true, '2026-01-01T00:00:05.000Z');
     const state = makeState('IMPL_VALIDATION', {
+      verificationCandidates: VERIFICATION_CANDIDATES,
       implementation: IMPL_EVIDENCE,
       activeChecks: ['test'],
       implValidation: [result('test', true, '2026-01-01T00:00:05.000Z')],

@@ -19,6 +19,7 @@
 import { isTechnicalValidationBlock } from '../../../state/evidence-validation.js';
 import type { SessionState } from '../../../state/schema.js';
 import { resolveCeremonyProfile, type CeremonyProfileDecision } from '../../phase-tool-gate.js';
+import { evaluateImplValidationEvidence } from '../../../machine/impl-validation-evidence.js';
 import { reattestImplementationSubject } from '../../../verification/implementation-subject.js';
 import type { SemanticAuditIntent } from '../../audit-outbox.js';
 
@@ -27,6 +28,8 @@ export type PostCheckCeremonyOutcome =
       readonly kind: 'decided';
       readonly state: SessionState;
       readonly decision: CeremonyProfileDecision;
+      /** False when an equivalent final decision was already recorded. */
+      readonly isNew: boolean;
     }
   | { readonly kind: 'skipped'; readonly state: SessionState }
   | { readonly kind: 'subject_changed'; readonly expected: string; readonly actual: string };
@@ -81,6 +84,13 @@ export async function decidePostCheckCeremony(input: {
     return { kind: 'skipped', state: { ...state, reducedCeremony: null } };
   }
 
+  // Canonical completeness is the gate: attempts must still be valid for the
+  // current generation (post-resolution, candidate-bound). Incomplete evidence
+  // stays PENDING — it is not a final denial.
+  if (!evaluateImplValidationEvidence(state).satisfied) {
+    return { kind: 'skipped', state };
+  }
+
   // The decision must bind the CURRENT governed bytes, not a stale file list:
   // re-enumerate, scope, compare sets and recompute the digest. Any add,
   // remove, rename or modify after the freeze fails closed.
@@ -104,6 +114,7 @@ export async function decidePostCheckCeremony(input: {
     return {
       kind: 'decided',
       decision,
+      isNew: !sameRecordedDecision(state.reducedCeremony, decision),
       state: {
         ...state,
         reducedCeremony: {
@@ -121,7 +132,44 @@ export async function decidePostCheckCeremony(input: {
       },
     };
   }
-  return { kind: 'decided', decision, state: { ...state, reducedCeremony: null } };
+  return {
+    kind: 'decided',
+    decision,
+    isNew: !denialAlreadyQueued(state, implementation),
+    state: { ...state, reducedCeremony: null },
+  };
+}
+
+function sameRecordedDecision(
+  existing: SessionState['reducedCeremony'],
+  decision: Extract<CeremonyProfileDecision, { profile: 'reduced' }>,
+): boolean {
+  if (existing === null) return false;
+  if (existing.implementationId !== decision.implementationId) return false;
+  if (existing.implementationDigest !== decision.implementationDigest) return false;
+  if (existing.policyDigest !== decision.policyDigest) return false;
+  const existingAttempts = existing.verificationBasis.attempts
+    .map((entry) => `${entry.checkId}:${entry.attemptId}`)
+    .sort();
+  const nextAttempts = decision.verificationBasis.attempts
+    .map((entry) => `${entry.checkId}:${entry.attemptId}`)
+    .sort();
+  return (
+    existingAttempts.length === nextAttempts.length &&
+    existingAttempts.every((entry, index) => entry === nextAttempts[index])
+  );
+}
+
+function denialAlreadyQueued(
+  state: SessionState,
+  implementation: NonNullable<SessionState['implementation']>,
+): boolean {
+  return state.pendingAuditOperations.some(
+    (operation) =>
+      operation.kind === 'semantic' &&
+      operation.semantic.event === 'reduced_ceremony_denied' &&
+      operation.semantic.detail['implementationId'] === implementation.implementationId,
+  );
 }
 
 /**
@@ -132,8 +180,10 @@ export async function decidePostCheckCeremony(input: {
 export function ceremonyAuditIntent(
   decision: CeremonyProfileDecision | null,
   occurredAt: string,
+  implementation: SessionState['implementation'],
+  isNew: boolean,
 ): readonly SemanticAuditIntent[] {
-  if (decision === null) return [];
+  if (decision === null || !isNew) return [];
   if (decision.profile === 'reduced') {
     return [
       {
@@ -157,7 +207,16 @@ export function ceremonyAuditIntent(
       phase: 'IMPL_VALIDATION',
       event: 'reduced_ceremony_denied',
       occurredAt,
-      detail: { status: 'ineligible', reason: decision.reason },
+      detail: {
+        status: 'ineligible',
+        reason: decision.reason,
+        ...(implementation !== null
+          ? {
+              implementationId: implementation.implementationId,
+              implementationDigest: implementation.digest,
+            }
+          : {}),
+      },
     },
   ];
 }

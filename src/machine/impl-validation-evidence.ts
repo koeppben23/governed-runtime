@@ -98,6 +98,13 @@ export function evaluateImplValidationEvidence(
       missing.push(checkId);
       continue;
     }
+    // ...and it must still match the current candidate definition. A changed
+    // check command/config invalidates earlier PASS evidence; a missing
+    // candidate attestation fails closed.
+    if (!candidateBindingMatches(state, latestAttempt.result)) {
+      missing.push(checkId);
+      continue;
+    }
     basis.push({
       checkId,
       attemptId: latestAttempt.attemptId,
@@ -106,6 +113,23 @@ export function evaluateImplValidationEvidence(
   }
 
   return { activeChecks, satisfied: missing.length === 0, missing, basis };
+}
+
+/**
+ * Exact candidate/config attestation for a result: the referenced candidate
+ * must still exist with the identical command and kind. Results without a
+ * candidateId cannot be tied to a current definition and fail closed.
+ */
+function candidateBindingMatches(state: SessionState, result: ValidationResult): boolean {
+  if (result.candidateId === undefined) return false;
+  const candidate = (state.verificationCandidates ?? []).find(
+    (entry) => entry.candidateId === result.candidateId,
+  );
+  return (
+    candidate !== undefined &&
+    candidate.command === result.command &&
+    candidate.kind === result.kind
+  );
 }
 
 /** Whether two results describe the same check execution. */
@@ -117,6 +141,9 @@ function sameExecution(a: ValidationResult, b: ValidationResult): boolean {
     a.exitCode === b.exitCode &&
     a.timedOut === b.timedOut &&
     a.outcome === b.outcome &&
-    a.outputDigest === b.outputDigest
+    a.outputDigest === b.outputDigest &&
+    a.candidateId === b.candidateId &&
+    a.command === b.command &&
+    a.kind === b.kind
   );
 }
