@@ -283,6 +283,8 @@ describe('java demo workflow contract', () => {
       'evidenceSummary.waived',
       'post-impl 2/2 passed',
       'waived by reduced ceremony',
+      'flowguard_status({ evidence: true })',
+      'hostSessionId',
       'EVIDENCE_REVIEW',
       'EXPORT_READY',
     ]) {
@@ -290,6 +292,9 @@ describe('java demo workflow contract', () => {
     }
     // No synthetic review is ever claimed.
     expect(reduced).toContain('`state.implReview` stays `null`');
+    // The concrete values come from the structured response, not the card.
+    expect(reduced).toContain('does **not** render');
+    expect(reduced).toMatch(/host session id.*not.*FlowGuard session UUID/is);
   });
 
   it('documents deterministic task/architecture inputs and the export completion projection', () => {

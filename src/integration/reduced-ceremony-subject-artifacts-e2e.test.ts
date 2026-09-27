@@ -30,6 +30,7 @@ import { readState } from '../adapters/persistence.js';
 import { sessionDir } from '../adapters/workspace/index.js';
 import { computeFingerprint } from '../adapters/workspace/fingerprint.js';
 import { hashText } from '../shared/hashing.js';
+import { evaluateCompleteness } from '../audit/completeness.js';
 import { deriveVerificationCandidateId } from '../state/candidate-identity.js';
 import { computeImplementationDigest } from '../verification/implementation-subject.js';
 import { executeCheck } from '../verification/executor.js';
@@ -37,9 +38,11 @@ import { makeProgressedState, POLICY_SNAPSHOT } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
 import { writeStateWithArtifacts } from './tools/helpers.js';
 import type { ToolContext } from './tools/helpers.js';
+import { decision, export as exportTool } from './tools/index.js';
 import { hydrate } from './tools/hydrate/hydrate.js';
 import { implement } from './tools/implementation/implement.js';
 import { run_check } from './tools/validation/run-check-tool.js';
+import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
 
 const DOC_PATH = 'docs/usage-notes.md';
 const REPORT_PATH = '.flowguard/reports/{attemptId}/jest.json';
@@ -82,6 +85,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  clearUserDecisionIntents();
   if (pc === undefined) delete process.env.OPENCODE_CONFIG_DIR;
   else process.env.OPENCODE_CONFIG_DIR = pc;
   if (s) {
@@ -90,7 +94,13 @@ afterEach(() => {
   }
 });
 
-async function boot(): Promise<SE> {
+interface BootOptions {
+  readonly policyMode?: 'solo' | 'team';
+  readonly claimedTaskClass?: 'TRIVIAL';
+  readonly allowReducedCeremony?: boolean;
+}
+
+async function boot(options: BootOptions = {}): Promise<SE> {
   const r = mkdtempSync(join(tmpdir(), 'fg-reduced-artifacts-'));
   const w = join(r, 'worktree');
   const c = join(r, 'config');
@@ -104,6 +114,16 @@ async function boot(): Promise<SE> {
   execFileSync('git', ['add', 'README.md'], { cwd: w });
   execFileSync('git', ['commit', '-q', '-m', 'init'], { cwd: w });
   process.env.OPENCODE_CONFIG_DIR = c;
+  if (options.allowReducedCeremony !== undefined) {
+    // Global config keeps the worktree clean (no untracked config artifact).
+    writeFileSync(
+      join(c, 'flowguard.json'),
+      JSON.stringify({
+        schemaVersion: 'v1',
+        policy: { defaultMode: 'team', allowReducedCeremony: options.allowReducedCeremony },
+      }),
+    );
+  }
   const tc: ToolContext = {
     sessionID: id,
     messageID: randomUUID(),
@@ -113,7 +133,16 @@ async function boot(): Promise<SE> {
     abort: new AbortController().signal,
     metadata: () => {},
   };
-  const hydrated = await hydrate.execute({ policyMode: 'solo', profileId: 'baseline' }, tc);
+  const hydrated = await hydrate.execute(
+    {
+      policyMode: options.policyMode ?? 'solo',
+      profileId: 'baseline',
+      ...(options.claimedTaskClass !== undefined
+        ? { claimedTaskClass: options.claimedTaskClass }
+        : {}),
+    },
+    tc,
+  );
   if (typeof hydrated !== 'string' || hydrated.includes('"error":true')) {
     throw new Error(`boot hydrate failed: ${String(hydrated).slice(0, 400)}`);
   }
@@ -155,6 +184,7 @@ function executorWritesReport(): void {
 async function subjectState(
   se: SE,
   reduced: boolean,
+  policySnapshot?: SessionState['policySnapshot'],
 ): Promise<{
   state: SessionState;
   digest: string;
@@ -194,14 +224,16 @@ async function subjectState(
     executionSubjectInputsByCandidateId: {
       [RUN_SPECIFIC_CANDIDATE.candidateId]: [{ kind: 'implementation' as const }],
     },
-    policySnapshot: reduced
-      ? {
-          ...POLICY_SNAPSHOT,
-          allowReducedCeremony: true,
-          requireHumanGates: true,
-          effectiveGateBehavior: 'human_gated' as const,
-        }
-      : base.policySnapshot,
+    policySnapshot:
+      policySnapshot ??
+      (reduced
+        ? {
+            ...POLICY_SNAPSHOT,
+            allowReducedCeremony: true,
+            requireHumanGates: true,
+            effectiveGateBehavior: 'human_gated' as const,
+          }
+        : base.policySnapshot),
   };
   await writeStateWithArtifacts(se.sDir, state);
   return { state, digest, implementationId };
@@ -361,5 +393,87 @@ describe('baseline VALIDATION reports (real git)', () => {
     expect(state!.implementationRiskAssessment?.computedMinimumTaskClass).toBe('STANDARD');
     expect(state!.reducedCeremony).toBeNull();
     expect(state!.phase).toBe('IMPL_REVIEW');
+  });
+});
+
+describe('team opt-in completion (real git)', () => {
+  it('HAPPY: the reduced waiver reaches COMPLETE through the human gate and export', async () => {
+    s = await boot({
+      policyMode: 'team',
+      claimedTaskClass: 'TRIVIAL',
+      allowReducedCeremony: true,
+    });
+    const se = s;
+    const hydrated = await readState(se.sDir);
+    expect(hydrated!.policySnapshot.mode).toBe('team');
+    expect(hydrated!.policySnapshot.requireHumanGates).toBe(true);
+    expect(hydrated!.policySnapshot.effectiveGateBehavior).toBe('human_gated');
+    expect(hydrated!.policySnapshot.allowReducedCeremony).toBe(true);
+    expect(hydrated!.claimedTaskClass).toBe('TRIVIAL');
+
+    await subjectState(se, false, hydrated!.policySnapshot);
+    executorWritesReport();
+    const check = await run_check.execute(RUN, se.tc);
+    expect(String(check)).not.toContain('"error":true');
+
+    let state = await readState(se.sDir);
+    expect(state!.phase).toBe('EVIDENCE_REVIEW');
+    expect(state!.reducedCeremony).toMatchObject({
+      profile: 'reduced',
+      reason: 'POST_IMPL_VERIFIED_TRIVIAL',
+    });
+    expect(state!.implReview).toBeNull();
+
+    // Honest completeness: post-impl validation complete, review waived —
+    // never a synthesized verdict.
+    const completeness = evaluateCompleteness(state!);
+    expect(completeness.slots.find((slot) => slot.slot === 'implValidation')?.detail).toBe(
+      'post-impl 1/1 passed',
+    );
+    expect(completeness.slots.find((slot) => slot.slot === 'implReview')?.status).toBe('waived');
+    expect(completeness.summary.waived).toBe(1);
+
+    // The human evidence gate remains mandatory: approve → EXPORT_READY.
+    recordUserDecisionIntent({
+      sessionId: se.sId,
+      command: '/approve',
+      expectedVerdict: 'approve',
+    });
+    const approved = await decision.execute(
+      { verdict: 'approve', rationale: 'human evidence gate' },
+      se.tc,
+    );
+    expect(String(approved)).not.toContain('INTERNAL_ERROR');
+    state = await readState(se.sDir);
+    expect(state!.phase).toBe('EXPORT_READY');
+
+    // /export → COMPLETE with verifiable completion evidence.
+    const completion = await exportTool.execute({}, se.tc);
+    expect(String(completion)).not.toContain('INTERNAL_ERROR');
+    state = await readState(se.sDir);
+    expect(state!.phase).toBe('COMPLETE');
+    expect(state!.exportCompletionEvidence).toMatchObject({
+      purpose: 'auditor',
+      integrityCapability: 'verifiable',
+    });
+    expect(state!.lastExportVerificationStatus).toBe('passed');
+
+    // The canonical audit outbox durably carries the waiver decision with its
+    // binding (the host lifecycle flushes it into the audit chain; the export
+    // package snapshots the same state).
+    const waiverEvents = state!.pendingAuditOperations.filter(
+      (
+        operation,
+      ): operation is Extract<
+        SessionState['pendingAuditOperations'][number],
+        { kind: 'semantic' }
+      > => operation.kind === 'semantic' && operation.semantic.event === 'reduced_ceremony_applied',
+    );
+    expect(waiverEvents).toHaveLength(1);
+    expect(waiverEvents[0]!.semantic.detail).toMatchObject({
+      status: 'applied',
+      implementationId: state!.implementation!.implementationId,
+      implementationDigest: state!.implementation!.digest,
+    });
   });
 });

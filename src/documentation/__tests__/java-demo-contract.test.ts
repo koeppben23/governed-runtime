@@ -176,13 +176,20 @@ describe('Java Task Manager demo contract', () => {
     expect(reducedDoc).toContain('tar -tzf');
     expect(reducedDoc).toContain('audit/audit.jsonl$');
     expect(reducedDoc).toContain('--verify-session');
+    // Concrete proofs come from the structured projection, and the archive
+    // proof uses the host session id, not the FlowGuard session UUID.
+    expect(reducedDoc).toContain('flowguard_status({ evidence: true })');
+    expect(reducedDoc).toContain('hostSessionId');
 
     // The setup script writes both policies, checks parity and verifies the
-    // runtime-selected active checks read-only.
+    // runtime-selected checks plus the frozen policy snapshot read-only.
     expect(reducedSetup).toContain('--verify-session');
     expect(reducedSetup).toContain('activeChecks');
     expect(reducedSetup).toContain("'HEAD^{tree}'");
     expect(reducedSetup).toContain('allowReducedCeremony');
+    expect(reducedSetup).toContain('policySnapshot');
+    expect(reducedSetup).toContain('requireHumanGates');
+    expect(reducedSetup).toContain('effectiveGateBehavior');
     expect(reducedSetup).toContain('reduced-on');
     expect(reducedSetup).toContain('reduced-off');
 
@@ -191,36 +198,76 @@ describe('Java Task Manager demo contract', () => {
     expect(demoScript).toContain('REDUCED_CEREMONY.md');
   });
 
-  it('verifies the runtime active-check selection from a real session state', async () => {
+  it('verifies runtime active checks and the frozen policy from a real session state', async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'flowguard-reduced-preflight-'));
     const workspace = path.join(tempDir, 'reduced-on');
     const configDir = path.join(tempDir, 'config');
     const stateDir = path.join(configDir, 'workspaces', 'fp-test', 'sessions', 'sid-test', 'state');
     const statePath = path.join(stateDir, 'session-state.json');
-    const runVerify = () =>
-      execFile('bash', [REDUCED_SETUP_SCRIPT, '--verify-session', workspace], {
+    const runVerify = (target = workspace) =>
+      execFile('bash', [REDUCED_SETUP_SCRIPT, '--verify-session', target], {
         cwd: REPO_ROOT,
         env: { ...process.env, OPENCODE_CONFIG_DIR: configDir },
       });
+    const teamPolicy = {
+      mode: 'team',
+      requireHumanGates: true,
+      effectiveGateBehavior: 'human_gated',
+      allowReducedCeremony: true,
+    };
+    const writeState = (overrides: Record<string, unknown>) =>
+      fs.writeFile(
+        statePath,
+        JSON.stringify({
+          binding: { worktree: workspace },
+          activeChecks: ['test', 'build'],
+          policySnapshot: teamPolicy,
+          ...overrides,
+        }),
+        'utf-8',
+      );
 
     try {
       await fs.mkdir(workspace, { recursive: true });
       await fs.mkdir(stateDir, { recursive: true });
-      await fs.writeFile(
-        statePath,
-        JSON.stringify({ binding: { worktree: workspace }, activeChecks: ['test', 'build'] }),
-        'utf-8',
-      );
-      const { stdout } = await runVerify();
-      expect(stdout).toContain('activeChecks: [build, test]');
-      expect(stdout).toContain('PASS  activeChecks selected as build + test');
 
+      await writeState({});
+      const { stdout } = await runVerify();
+      expect(stdout).toContain('hostSessionId: sid-test');
+      expect(stdout).toContain('activeChecks: [build, test]');
+      expect(stdout).toContain(
+        'policySnapshot: mode=team requireHumanGates=true effectiveGateBehavior=human_gated allowReducedCeremony=true',
+      );
+      expect(stdout).toContain('PASS  activeChecks selected as build + test');
+      expect(stdout).toContain('PASS  frozen team policy matches the workspace');
+
+      // Every non-matching dimension must fail closed.
+      await writeState({ activeChecks: ['build'] });
+      await expect(runVerify()).rejects.toMatchObject({ code: 1 });
+      await writeState({ policySnapshot: { ...teamPolicy, allowReducedCeremony: false } });
+      await expect(runVerify()).rejects.toMatchObject({ code: 1 });
+      await writeState({ policySnapshot: { ...teamPolicy, mode: 'solo' } });
+      await expect(runVerify()).rejects.toMatchObject({ code: 1 });
+      await writeState({ policySnapshot: { ...teamPolicy, requireHumanGates: false } });
+      await expect(runVerify()).rejects.toMatchObject({ code: 1 });
+      await writeState({
+        policySnapshot: { ...teamPolicy, effectiveGateBehavior: 'auto_approve' },
+      });
+      await expect(runVerify()).rejects.toMatchObject({ code: 1 });
+
+      // An unknown workspace name cannot derive the expected policy.
+      const unknownWorkspace = path.join(tempDir, 'reduced-other');
+      await fs.mkdir(unknownWorkspace, { recursive: true });
       await fs.writeFile(
         statePath,
-        JSON.stringify({ binding: { worktree: workspace }, activeChecks: ['build'] }),
+        JSON.stringify({
+          binding: { worktree: unknownWorkspace },
+          activeChecks: ['test', 'build'],
+          policySnapshot: teamPolicy,
+        }),
         'utf-8',
       );
-      await expect(runVerify()).rejects.toMatchObject({ code: 1 });
+      await expect(runVerify(unknownWorkspace)).rejects.toMatchObject({ code: 1 });
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true });
     }

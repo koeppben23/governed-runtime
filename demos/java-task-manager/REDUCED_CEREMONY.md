@@ -89,13 +89,20 @@ the scenarios below.
 ```bash
 ./run-reduced-ceremony-demo-setup.sh --verify-session /tmp/flowguard-reduced-demo/reduced-on
 # Expected:
+#   hostSessionId: <OpenCode host session id>
 #   activeChecks: [build, test]
+#   policySnapshot: mode=team requireHumanGates=true effectiveGateBehavior=human_gated allowReducedCeremony=true
 #   PASS  activeChecks selected as build + test
+#   PASS  frozen team policy matches the workspace (allowReducedCeremony=true)
 ```
 
-Only with this PASS may the demonstration speak of "2/2" later. The setup
-script proves the static preconditions; this read-only check proves FlowGuard
-actually selected both checks in the running session.
+Only with these PASS lines may the demonstration speak of "2/2" later. The
+setup script proves the static preconditions; this read-only check proves both
+the actually selected checks **and** the actually frozen policy snapshot
+(mode, human gate, effective gate behavior, reduced flag) in the running
+session. The printed `hostSessionId` is the authoritative archive identity used
+in Step B8 — it is the OpenCode host session id, not the FlowGuard session
+UUID from `/status`.
 
 ### Step B3 — Declare the Risk Claim
 
@@ -138,24 +145,32 @@ advances via the explicit `REDUCED_CEREMONY` transition directly to the human
 
 ### Step B7 — The Four Proofs
 
+> The `/status` slash command renders the presentation card only (phase,
+> readiness, policy, evidence counts); it does **not** render
+> `reducedCeremony.status` or `evidenceSummary.waived`. For these concrete
+> proofs, show the **structured** `flowguard_status` tool response (the JSON
+> projection) explicitly — do not wait for the card to contain the values.
+
 #### Proof 1 — Complete Post-Implementation Checks (never skipped)
 
 ```text
-/status --evidence
+flowguard_status({ evidence: true })
 ```
 
-Expect the completeness slot `implValidation` with detail
-`post-impl 2/2 passed`. The `IMPL_VALIDATION` phase always ran — no shortcut.
+In the structured response, the completeness slot `implValidation` carries the
+detail `post-impl 2/2 passed`. The `IMPL_VALIDATION` phase always ran — no
+shortcut.
 
 #### Proof 2 — Applied Decision and Projected Waiver
 
 ```text
-/status
+flowguard_status({})
 ```
 
-Expect `reducedCeremony: { status: "applied", reason: "POST_IMPL_VERIFIED_TRIVIAL" }`
-and `evidenceSummary.waived: 1`. In `/status --evidence`, the `implReview` slot
-reports status `waived` with detail
+In the structured response: `reducedCeremony.status: "applied"`,
+`reducedCeremony.reason: "POST_IMPL_VERIFIED_TRIVIAL"` and
+`evidenceSummary.waived: 1`. With `flowguard_status({ evidence: true })`, the
+`implReview` slot reports status `waived` with detail
 `waived by reduced ceremony (POST_IMPL_VERIFIED_TRIVIAL)`.
 
 There is **no synthetic review**: `state.implReview` stays `null`; the waiver is
@@ -176,15 +191,19 @@ After `/export`, the canonical audit trail in the export package contains
 and determine the real member name first:
 
 ```bash
-SESSION_ID="<session id from /status>"
+# The archive is named by the OpenCode HOST session id (state.binding.hostSessionId),
+# not by the FlowGuard session UUID that /status reports. Take it from the
+# --verify-session output (hostSessionId: ...) or the structured
+# flowguard_status({}) response (hostSessionId).
+SESSION_ID="<hostSessionId from run-reduced-ceremony-demo-setup.sh --verify-session>"
 PKG=$(find "$HOME/.config/opencode/workspaces" -type f -name "$SESSION_ID.tar.gz" -print -quit)
 MEMBER=$(tar -tzf "$PKG" | grep '/audit/audit.jsonl$' | head -n 1)
 tar -xOzf "$PKG" "$MEMBER" | grep reduced_ceremony_applied
 ```
 
-The member is prefixed with the session id (e.g.
-`<session-id>/audit/audit.jsonl`); the `tar -tzf` step resolves it instead of
-assuming a layout. Optionally cross-check the whole package offline:
+The member is prefixed with the host session id (e.g.
+`<host-session-id>/audit/audit.jsonl`); the `tar -tzf` step resolves it instead
+of assuming a layout. Optionally cross-check the whole package offline:
 
 ```bash
 node demos/java-task-manager/verify-evidence-package.mjs "$PKG" --expect-session "$SESSION_ID"
@@ -267,4 +286,9 @@ or the export commit. The Java bugfix in scenario A keeps the full review.
   `TASK_CLASS_CLAIM_MISSING` — the claim is a visible operator statement, not an
   implicit assumption.
 - The setup script verifies the static preconditions and the parity of both
-  workspaces; `--verify-session` verifies the runtime `activeChecks` selection.
+  workspaces; `--verify-session` verifies the runtime `activeChecks` selection
+  and the frozen policy snapshot (`mode`, `requireHumanGates`,
+  `effectiveGateBehavior`, `allowReducedCeremony`).
+- The `/status` presentation card does not render the reduced-ceremony status or
+  the waived-evidence count; the concrete values are shown from the structured
+  `flowguard_status` response instead.

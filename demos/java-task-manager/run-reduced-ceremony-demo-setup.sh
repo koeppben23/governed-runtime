@@ -134,16 +134,51 @@ if (matches.length === 0) {
 matches.sort((a, b) => b.mtimeMs - a.mtimeMs);
 const latest = matches[0];
 const checks = [...(latest.state.activeChecks ?? [])].sort();
-const expected = ['build', 'test'];
-const ok = checks.length === expected.length && checks.every((check, index) => check === expected[index]);
+const expectedChecks = ['build', 'test'];
+const checksOk =
+  checks.length === expectedChecks.length &&
+  checks.every((check, index) => check === expectedChecks[index]);
 
-console.log(`session: ${latest.sessionId}`);
+// The workspace name fixes the expected frozen policy: the static pre-start
+// JSON comparison cannot prove the effective policy after central/external
+// overrides, so the runtime snapshot is verified explicitly.
+const workspaceName = path.basename(path.resolve(workspace));
+const expectedReduced =
+  workspaceName === 'reduced-on' ? true : workspaceName === 'reduced-off' ? false : null;
+const snapshot = latest.state.policySnapshot ?? {};
+const policyOk =
+  expectedReduced !== null &&
+  snapshot.mode === 'team' &&
+  snapshot.requireHumanGates === true &&
+  snapshot.effectiveGateBehavior === 'human_gated' &&
+  snapshot.allowReducedCeremony === expectedReduced;
+
+console.log(`hostSessionId: ${latest.sessionId}`);
 console.log(`activeChecks: [${checks.join(', ')}]`);
-if (!ok) {
-  console.error(`FAIL  expected exactly [${expected.join(', ')}] from the seed discovery`);
+console.log(
+  `policySnapshot: mode=${String(snapshot.mode)} requireHumanGates=${String(snapshot.requireHumanGates)} ` +
+    `effectiveGateBehavior=${String(snapshot.effectiveGateBehavior)} ` +
+    `allowReducedCeremony=${String(snapshot.allowReducedCeremony)}`,
+);
+if (!checksOk) {
+  console.error(`FAIL  expected exactly [${expectedChecks.join(', ')}] from the seed discovery`);
+  process.exit(1);
+}
+if (expectedReduced === null) {
+  console.error(
+    `FAIL  workspace basename must be 'reduced-on' or 'reduced-off' to derive the expected policy, got '${workspaceName}'`,
+  );
+  process.exit(1);
+}
+if (!policyOk) {
+  console.error(
+    `FAIL  expected frozen team policy with requireHumanGates=true, effectiveGateBehavior=human_gated ` +
+      `and allowReducedCeremony=${String(expectedReduced)}`,
+  );
   process.exit(1);
 }
 console.log('PASS  activeChecks selected as build + test');
+console.log(`PASS  frozen team policy matches the workspace (allowReducedCeremony=${String(expectedReduced)})`);
 NODE
 }
 
