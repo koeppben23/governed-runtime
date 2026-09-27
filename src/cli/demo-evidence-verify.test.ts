@@ -28,6 +28,7 @@ import {
   BINDING,
   FIXED_TIME,
   makeState,
+  POLICY_SNAPSHOT,
   REGULATED_POLICY_SNAPSHOT,
   REVIEW_APPROVE,
 } from '../fixtures.js';
@@ -158,6 +159,72 @@ async function buildExportReadyPackage(): Promise<string> {
         at: FIXED_TIME,
       },
     }),
+  );
+  await appendEvent(sessionDir, FLOWGUARD_A, SESSION_A, 'EVIDENCE_REVIEW', 'transition:APPROVE', {
+    kind: 'transition',
+    from: 'EVIDENCE_REVIEW',
+    to: 'EXPORT_READY',
+    event: 'APPROVE',
+  });
+  return archiveCompletionExport(fingerprint, SESSION_A);
+}
+
+/**
+ * A real reduced-ceremony completion snapshot: the independent implementation
+ * review is waived by a persisted decision (never a synthetic verdict), with
+ * the durable `reduced_ceremony_applied` audit event in the archived trail.
+ */
+async function buildReducedCeremonyPackage(): Promise<string> {
+  const { fingerprint, sessionDir } = await initSession(SESSION_A, FLOWGUARD_A);
+  await writeState(
+    sessionDir,
+    makeState('EXPORT_READY', {
+      id: FLOWGUARD_A,
+      flowguardSessionId: FLOWGUARD_A,
+      binding: bindingFor(SESSION_A, fingerprint),
+      claimedTaskClass: 'TRIVIAL',
+      implReview: null,
+      reducedCeremony: {
+        profile: 'reduced',
+        reason: 'POST_IMPL_VERIFIED_TRIVIAL',
+        claimedTaskClass: 'TRIVIAL',
+        computedMinimumTaskClass: 'TRIVIAL',
+        touchedSurfaces: ['docs/usage-notes.md'],
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
+        implementationDigest: 'reduced-ceremony-implementation-digest',
+        policyDigest: POLICY_SNAPSHOT.hash,
+        verificationBasis: {
+          checkIds: ['test'],
+          attempts: [
+            {
+              checkId: 'test',
+              attemptId: '00000000-0000-4000-8000-0000000000a1',
+              executedAt: FIXED_TIME,
+            },
+          ],
+        },
+        decidedAt: FIXED_TIME,
+      },
+      transition: {
+        from: 'EVIDENCE_REVIEW',
+        to: 'EXPORT_READY',
+        event: 'APPROVE',
+        at: FIXED_TIME,
+      },
+    }),
+  );
+  await appendEvent(
+    sessionDir,
+    FLOWGUARD_A,
+    SESSION_A,
+    'IMPL_VALIDATION',
+    'reduced_ceremony_applied',
+    {
+      kind: 'semantic',
+      status: 'applied',
+      reason: 'POST_IMPL_VERIFIED_TRIVIAL',
+      implementationId: '00000000-0000-4000-8000-0000000000aa',
+    },
   );
   await appendEvent(sessionDir, FLOWGUARD_A, SESSION_A, 'EVIDENCE_REVIEW', 'transition:APPROVE', {
     kind: 'transition',
@@ -472,6 +539,24 @@ describe('demo evidence package verifier', () => {
   describe('HAPPY', () => {
     it('verifies the real /export snapshot at EXPORT_READY', async () => {
       const packagePath = await buildExportReadyPackage();
+
+      const result = await runVerifier([
+        packagePath,
+        '--expect-session',
+        SESSION_A,
+        '--expect-flow',
+        'development',
+        '--expect-phase',
+        'EXPORT_READY',
+      ]);
+
+      expect(result.stdout).toContain('VERIFIED');
+      expect(result.stderr).toBe('');
+      expect(result.code).toBe(0);
+    });
+
+    it('verifies a reduced-ceremony completion package with a waived implementation review', async () => {
+      const packagePath = await buildReducedCeremonyPackage();
 
       const result = await runVerifier([
         packagePath,

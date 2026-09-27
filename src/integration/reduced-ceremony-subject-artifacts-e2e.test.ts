@@ -27,7 +27,7 @@ vi.mock('../verification/executor', () => ({
 }));
 
 import { readState } from '../adapters/persistence.js';
-import { sessionDir } from '../adapters/workspace/index.js';
+import { sessionDir, verifyArchive } from '../adapters/workspace/index.js';
 import { computeFingerprint } from '../adapters/workspace/fingerprint.js';
 import { hashText } from '../shared/hashing.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
@@ -549,32 +549,12 @@ describe('team opt-in completion (real git)', () => {
       execFileSync('tar', ['-xOzf', archivePath, auditMember!], { encoding: 'utf-8' }),
     ).toContain('reduced_ceremony_applied');
 
-    // Offline verification of the exact package an auditor receives. The
-    // standalone verifier imports the built @flowguard/core (dist/index.js),
-    // so the build-dependent contract lives in the smoke project
-    // (src/cli/demo-evidence-verify.test.ts); verify the concrete package here
-    // whenever this checkout has a build.
-    if (existsSync(join(process.cwd(), 'dist', 'index.js'))) {
-      const verifier = join(
-        process.cwd(),
-        'demos',
-        'java-task-manager',
-        'verify-evidence-package.mjs',
-      );
-      execFileSync(
-        'node',
-        [
-          verifier,
-          archivePath,
-          '--expect-session',
-          se.sId,
-          '--expect-flow',
-          'development',
-          '--expect-phase',
-          'EXPORT_READY',
-        ],
-        { encoding: 'utf-8' },
-      );
-    }
+    // Canonical SOURCE verification of the materialized archive (no build
+    // required): the integration suite must stay runnable before `npm run
+    // build`. The standalone CLI verifier on the concrete package runs
+    // post-build in the smoke project
+    // (src/cli/demo-evidence-verify.test.ts).
+    const verification = await verifyArchive(se.fingerprint, se.sId);
+    expect(verification.passed).toBe(true);
   });
 });
