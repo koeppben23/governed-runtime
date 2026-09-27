@@ -51,7 +51,7 @@ export function targetPathsForRisk(
  * Unknown scope is never interpreted as low risk: the provisional class is
  * floored at STANDARD by the risk authority.
  */
-export function riskScopeUnknown(toolName: string, args: Record<string, unknown>): boolean {
+function riskScopeUnknown(toolName: string, args: Record<string, unknown>): boolean {
   if (toolName === 'write' || toolName === 'edit') return typeof args.filePath !== 'string';
   if (toolName === 'apply_patch') {
     return typeof args.patchText !== 'string' && typeof args.diff !== 'string';

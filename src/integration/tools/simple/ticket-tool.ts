@@ -70,7 +70,7 @@ function isBareUrlToken(token: string): boolean {
  * with a read/load instruction on a path-like token); prose that merely
  * mentions a filename stays a regular ticket.
  */
-export function isUnadoptedTicketReference(text: string): boolean {
+function isUnadoptedTicketReference(text: string): boolean {
   const trimmed = text.trim();
   if (trimmed.length === 0) return false;
 

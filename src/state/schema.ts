@@ -91,7 +91,7 @@ export type Phase = z.infer<typeof Phase>;
  * Canonical task-class vocabulary and ordering live in `task-class.ts`; they
  * are re-exported here for the historic state-layer import surface.
  */
-export { TaskClass, TASK_CLASS_ORDER, maxTaskClass, isTaskClass } from './task-class.js';
+export { TaskClass, isTaskClass } from './task-class.js';
 
 /** Specific authority affected by a HIGH-RISK implementation change. */
 export const RiskTrigger = z.enum([
