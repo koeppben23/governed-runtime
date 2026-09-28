@@ -20,6 +20,7 @@ import { readAuditTrail } from '../adapters/persistence-audit.js';
 import { writeStateWithArtifactsAndAuditOperations } from './tools/helpers.js';
 import {
   computeFingerprint,
+  ensureWorkspace,
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/obligations/assurance.js';
@@ -227,22 +228,40 @@ describe('plugin bootstrap fail-closed', () => {
     }
   });
 
-  it('creates the workspace folder when worktree is a real repo (happy path)', async () => {
+  it('never materializes the workspace folder on plugin load alone', async () => {
     const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-real-repo-'));
     try {
       await fs.mkdir(path.join(repo, '.git'), { recursive: true });
       await FlowGuardAuditPlugin(createMockInput({ worktree: repo, directory: repo }));
-      // Logger sink writes asynchronously on the first log entry. Allow the
-      // microtask + I/O queue to flush before asserting.
+      // The plugin's diagnostic logging must not create the governed
+      // workspace root; only ensureWorkspace() is the creation SSOT.
       await new Promise((r) => setTimeout(r, 50));
       const workspacesDir = path.join(configDir, 'workspaces');
-      const entries = await fs.readdir(workspacesDir).catch(() => []);
-      // At least one fingerprint folder must exist.
-      expect(entries.length).toBeGreaterThanOrEqual(1);
-      // Each entry name must be a 24-hex fingerprint.
-      for (const e of entries) {
-        expect(e).toMatch(/^[0-9a-f]{24}$/);
-      }
+      const entries = await fs.readdir(workspacesDir).catch(() => [] as string[]);
+      expect(entries).toEqual([]);
+    } finally {
+      await fs.rm(repo, { recursive: true, force: true });
+    }
+  });
+
+  it('writes file logs into an initialized workspace', async () => {
+    const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-real-repo-'));
+    try {
+      await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+      await FlowGuardAuditPlugin(createMockInput({ worktree: repo, directory: repo }));
+
+      // Hydrate-equivalent bootstrap: the only authority that creates the root.
+      const ensured = await ensureWorkspace(repo);
+      const workspaceJson = path.join(ensured.workspaceDir, 'workspace.json');
+      await expect(fs.stat(workspaceJson)).resolves.toBeTruthy();
+
+      // Plugin wiring targets the governed workspace once it exists. Lazy
+      // activation of the SAME dormant sink instance is covered by the unit
+      // test 'activates lazily once the workspace root appears'.
+      await FlowGuardAuditPlugin(createMockInput({ worktree: repo, directory: repo }));
+      await new Promise((r) => setTimeout(r, 50));
+      const logFiles = await fs.readdir(path.join(ensured.workspaceDir, '.opencode/logs'));
+      expect(logFiles.length).toBeGreaterThanOrEqual(1);
     } finally {
       await fs.rm(repo, { recursive: true, force: true });
     }

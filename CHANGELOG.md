@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `created`; missing/`null` fails closed before the canonical validator could
   silently skip), and are validated against the archived completion evidence
   (the mandatory archive necessarily snapshots `regulatedArchiveStatus:
-  pending`) instead of the later live verification status. A small
+pending`) instead of the later live verification status. A small
   `evidence-manifest.example.json` binds the three demo sessions to their
   FlowGuard packages and external host chat exports (manually assigned,
   hash-secured supplementary evidence, never authority), enforces distinct
@@ -63,24 +63,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   archive assurance when every part of the chain is independently validated:
   - **TSA signer contract (TSA1/TSA3):** the pinned signer certificate MUST
     carry a critical extendedKeyUsage with id-kp-timeStamping and no other key
-     purposes and exactly one EKU extension (`missing_tsa_eku` /
-     `duplicate_tsa_eku` / `non_exclusive_tsa_eku`); unknown critical
+    purposes and exactly one EKU extension (`missing_tsa_eku` /
+    `duplicate_tsa_eku` / `non_exclusive_tsa_eku`); unknown critical
     extensions reject (`unhandled_critical_extension`), unknown non-critical
     ones are tolerated per RFC 5280.
-   - **Algorithm allowlists (TSA2):** message-imprint and CMS signature hashes
-     are independently allowlisted to SHA-256/384/512. CMS digest and signature
-     algorithm remain internally coherent (RFC 8933 §3.5), but need not equal
-     the message-imprint algorithm. RSASSA-PSS is accepted
+  - **Algorithm allowlists (TSA2):** message-imprint and CMS signature hashes
+    are independently allowlisted to SHA-256/384/512. CMS digest and signature
+    algorithm remain internally coherent (RFC 8933 §3.5), but need not equal
+    the message-imprint algorithm. RSASSA-PSS is accepted
     only against the explicit profile (MGF1 with a matching hash,
     trailerField 1, saltLength within 8..digest byte length). Divergences fail
-     closed with `unsafe_digest_algorithm` / `unsafe_signature_algorithm` plus
+    closed with `unsafe_digest_algorithm` / `unsafe_signature_algorithm` plus
     structured diagnostics. The verifier interface now receives the full
     admissible digest family (`expectedDigests`), computed canonically in
     `computeCanonicalEventDigests`; stamp-time verification only ever accepts
-     the SHA-256 imprint the request used.
-   - **Signer certificate binding:** each token requires a signed
-     `SigningCertificate`/`ESSCertID` or `SigningCertificateV2`/`ESSCertIDv2`
-     binding that matches the embedded, pinned signer certificate.
+    the SHA-256 imprint the request used.
+  - **Signer certificate binding:** each token requires a signed
+    `SigningCertificate`/`ESSCertID` or `SigningCertificateV2`/`ESSCertIDv2`
+    binding that matches the embedded, pinned signer certificate.
   - **Constant-time imprints (TSA4):** all imprint comparisons use
     `constantTimeBytesEqual` (`src/audit/constant-time.ts`).
   - **No downgrade trust (AC2):** stronger TSA evidence — a token, an imprint,
@@ -604,6 +604,21 @@ true })` returns the evaluated projection. Key invariants:
   consolidated into single canonical implementations.
 
 ### Fixed
+
+- **Diagnostic file logging no longer materializes an uninitialized workspace.**
+  The file sink previously created the full `{workspaces}/<fingerprint>/` root
+  as a side effect of its first log record (`mkdir -p` down to
+  `.opencode/logs`), which bypassed `ensureWorkspace()` — the documented SSOT
+  for workspace-root creation — and produced torn fingerprint folders for
+  worktrees that were opened but never started. The sink is now dormant until
+  the workspace root exists: records are discarded without I/O and without a
+  failure, activation is lazy, and only `.opencode/logs` is created after
+  `ensureWorkspace()` materialized the root. Log directories are created
+  non-recursively, so a root that disappears between the probe and setup fails
+  the sink instead of being re-created. A root path (or log path component)
+  that exists but is not a directory, and any non-`ENOENT` stat failure, keep
+  the existing reject-plus-`onFailure` semantics instead of being silently
+  treated as absent.
 
 - **Archive verification documentation matched to the real API.** The
   `docs/archive.md` example called `verifyArchive('/path/to/archive.tar.gz')`,
