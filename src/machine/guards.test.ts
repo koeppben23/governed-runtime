@@ -100,6 +100,27 @@ describe('guards', () => {
       ).toBe(true);
     });
 
+    it('implCheckErrored treats an inconclusive assertion extraction as a technical block', () => {
+      const inconclusive = [
+        {
+          ...VALIDATION_FAILED[0]!,
+          passed: false,
+          outcome: 'inconclusive' as const,
+          timedOut: false,
+          exitCode: 1,
+          assertionExtraction: {
+            status: 'inconclusive' as const,
+            attemptId: '00000000-0000-4000-8000-0000000000a9',
+            reasonCode: 'report_ambiguous' as const,
+            reason: 'report could not be bound unambiguously',
+          },
+        },
+      ];
+      expect(implCheckErrored(makeState('IMPL_VALIDATION', { implValidation: inconclusive }))).toBe(
+        true,
+      );
+    });
+
     it('implComplete fires when implementation is present', () => {
       expect(implComplete(makeState('IMPLEMENTATION', { implementation: IMPL_EVIDENCE }))).toBe(
         true,

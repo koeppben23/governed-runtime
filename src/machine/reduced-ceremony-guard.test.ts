@@ -338,4 +338,377 @@ describe('reducedCeremonyReady binding invariants', () => {
     });
     expect(reducedCeremonyReady(state)).toBe(false);
   });
+
+  describe('single-fact drift is always discriminating', () => {
+    const expectRejects = (state: SessionState): void => {
+      expect(reducedCeremonyReady(state)).toBe(false);
+    };
+
+    it('rejects when the assessment file count does not match the frozen file list', () => {
+      expectRejects(
+        boundState({
+          implementationRiskAssessment: { ...RISK_ASSESSMENT, assessedFileCount: 2 },
+        }),
+      );
+    });
+
+    it('rejects when the assessment surface set is incomplete', () => {
+      expectRejects(
+        boundState({
+          implementationRiskAssessment: { ...RISK_ASSESSMENT, touchedSurfaces: [] },
+        }),
+      );
+    });
+
+    it('rejects same-size assessment surfaces with a different member', () => {
+      const implementation = {
+        ...DOC_IMPL,
+        changedFiles: ['docs/a.md', 'docs/b.md'],
+        domainFiles: [],
+      };
+      expectRejects(
+        boundState({
+          implementation,
+          implementationRiskAssessment: {
+            ...RISK_ASSESSMENT,
+            touchedSurfaces: ['docs/a.md', 'docs/x.md'],
+            assessedFileCount: 2,
+          },
+          reducedCeremony: { ...DECISION, touchedSurfaces: ['docs/a.md', 'docs/b.md'] },
+        }),
+      );
+    });
+
+    it('rejects one-sided assessment surface drift while the decision stays bound', () => {
+      const implementation = {
+        ...DOC_IMPL,
+        changedFiles: ['docs/a.md', 'docs/b.md'],
+        domainFiles: [],
+      };
+      expectRejects(
+        boundState({
+          implementation,
+          implementationRiskAssessment: {
+            ...RISK_ASSESSMENT,
+            touchedSurfaces: ['docs/a.md'],
+            assessedFileCount: 2,
+          },
+          reducedCeremony: { ...DECISION, touchedSurfaces: ['docs/a.md', 'docs/b.md'] },
+        }),
+      );
+    });
+
+    it('rejects one-sided decision surface drift while the assessment stays bound', () => {
+      const implementation = {
+        ...DOC_IMPL,
+        changedFiles: ['docs/a.md', 'docs/b.md'],
+        domainFiles: [],
+      };
+      expectRejects(
+        boundState({
+          implementation,
+          implementationRiskAssessment: {
+            ...RISK_ASSESSMENT,
+            touchedSurfaces: ['docs/a.md', 'docs/b.md'],
+            assessedFileCount: 2,
+          },
+          reducedCeremony: { ...DECISION, touchedSurfaces: ['docs/a.md'] },
+        }),
+      );
+    });
+
+    it('rejects when the assessment declares a different ticket kind than the ticket', () => {
+      const ticket = ticketFor('Risk: TRIVIAL\n\nDocs only.');
+      expectRejects(
+        boundState({
+          ticket,
+          implementationRiskAssessment: {
+            ...bindAssessmentToTicket(ticket),
+            declarationKind: 'absent',
+          },
+          reducedCeremony: decisionFor(ticket, ticket.riskDeclaration),
+        }),
+      );
+    });
+
+    it('rejects when the assessment declared class diverges from the ticket floor', () => {
+      const ticket = ticketFor('Risk: TRIVIAL\n\nDocs only.');
+      expectRejects(
+        boundState({
+          ticket,
+          implementationRiskAssessment: {
+            ...bindAssessmentToTicket(ticket),
+            declaredTaskClass: null,
+          },
+          reducedCeremony: decisionFor(ticket, ticket.riskDeclaration),
+        }),
+      );
+    });
+
+    it('rejects when the decision declared class diverges from the ticket floor', () => {
+      const ticket = ticketFor('Risk: TRIVIAL\n\nDocs only.');
+      expectRejects(
+        boundState({
+          ticket,
+          implementationRiskAssessment: bindAssessmentToTicket(ticket),
+          reducedCeremony: decisionFor(ticket, ticket.riskDeclaration, { declaredTaskClass: null }),
+        }),
+      );
+    });
+
+    it('rejects when the assessment escalation does not match the active claim', () => {
+      expectRejects(
+        boundState({
+          claimedTaskClass: 'TRIVIAL',
+          reducedCeremony: { ...DECISION, escalatedTaskClass: 'TRIVIAL' },
+        }),
+      );
+    });
+
+    it('rejects when the decision escalation does not match the active claim', () => {
+      expectRejects(
+        boundState({
+          claimedTaskClass: 'TRIVIAL',
+          implementationRiskAssessment: { ...RISK_ASSESSMENT, escalatedTaskClass: 'TRIVIAL' },
+        }),
+      );
+    });
+
+    it('rejects when no risk assessment is recorded', () => {
+      const { implementationRiskAssessment: _omitted, ...state } = boundState();
+      expectRejects(state);
+    });
+
+    it('rejects when the decision ticket kind diverges from the ticket', () => {
+      const ticket = ticketFor('Risk: TRIVIAL\n\nDocs only.');
+      expectRejects(
+        boundState({
+          ticket,
+          implementationRiskAssessment: bindAssessmentToTicket(ticket),
+          reducedCeremony: decisionFor(ticket, ticket.riskDeclaration, {
+            declarationKind: 'absent',
+          }),
+        }),
+      );
+    });
+
+    it('rejects a stale decision ticket digest even when the assessment is bound', () => {
+      const ticket = ticketFor('Risk: TRIVIAL\n\nDocs only.');
+      expectRejects(
+        boundState({
+          ticket,
+          implementationRiskAssessment: bindAssessmentToTicket(ticket),
+          reducedCeremony: decisionFor(ticket, ticket.riskDeclaration, {
+            ticketDigest: 'stale-digest',
+          }),
+        }),
+      );
+    });
+
+    it('rejects when the assessment effective class diverges from the resolution', () => {
+      expectRejects(
+        boundState({
+          implementationRiskAssessment: { ...RISK_ASSESSMENT, effectiveTaskClass: 'STANDARD' },
+        }),
+      );
+    });
+
+    it('rejects a consistent STANDARD escalation chain (effective class not TRIVIAL)', () => {
+      expectRejects(
+        boundState({
+          claimedTaskClass: 'STANDARD',
+          implementationRiskAssessment: {
+            ...RISK_ASSESSMENT,
+            escalatedTaskClass: 'STANDARD',
+            effectiveTaskClass: 'STANDARD',
+          },
+          reducedCeremony: {
+            ...DECISION,
+            escalatedTaskClass: 'STANDARD',
+            effectiveTaskClass: 'STANDARD',
+          },
+        }),
+      );
+    });
+
+    it('rejects a TRIVIAL classification on a ceremony-ineligible surface', () => {
+      expectRejects(
+        boundState({
+          implementation: { ...DOC_IMPL, changedFiles: ['opencode.json'], domainFiles: [] },
+          implementationRiskAssessment: {
+            ...RISK_ASSESSMENT,
+            touchedSurfaces: ['opencode.json'],
+          },
+          reducedCeremony: { ...DECISION, touchedSurfaces: ['opencode.json'] },
+        }),
+      );
+    });
+
+    it('rejects when the decision implementation id diverges', () => {
+      expectRejects(
+        boundState({
+          reducedCeremony: {
+            ...DECISION,
+            implementationId: '00000000-0000-4000-8000-0000000000ff',
+          },
+        }),
+      );
+    });
+
+    it('rejects when the decision implementation digest diverges', () => {
+      expectRejects(
+        boundState({ reducedCeremony: { ...DECISION, implementationDigest: 'other' } }),
+      );
+    });
+
+    it('rejects when no implementation is recorded', () => {
+      expectRejects(boundState({ implementation: null }));
+    });
+
+    it('rejects when the decision check set differs in size from the canonical evidence', () => {
+      expectRejects(
+        boundState({
+          reducedCeremony: {
+            ...DECISION,
+            verificationBasis: { ...DECISION.verificationBasis, checkIds: ['test'] },
+          },
+        }),
+      );
+    });
+
+    it('rejects when the decision check set is same-size but mismatched', () => {
+      expectRejects(
+        boundState({
+          reducedCeremony: {
+            ...DECISION,
+            verificationBasis: { ...DECISION.verificationBasis, checkIds: ['test', 'other'] },
+          },
+        }),
+      );
+    });
+
+    it('rejects when the decision attempt basis is incomplete', () => {
+      const [firstAttempt] = DECISION.verificationBasis.attempts;
+      expectRejects(
+        boundState({
+          reducedCeremony: {
+            ...DECISION,
+            verificationBasis: { ...DECISION.verificationBasis, attempts: [firstAttempt!] },
+          },
+        }),
+      );
+    });
+
+    it('rejects when the decision attempt identity diverges', () => {
+      expectRejects(
+        boundState({
+          reducedCeremony: {
+            ...DECISION,
+            verificationBasis: {
+              ...DECISION.verificationBasis,
+              attempts: DECISION.verificationBasis.attempts.map((entry, index) =>
+                index === 0
+                  ? { ...entry, attemptId: '00000000-0000-4000-8000-0000000000ff' }
+                  : entry,
+              ),
+            },
+          },
+        }),
+      );
+    });
+
+    it('rejects when the canonical post-implementation evidence is not satisfied', () => {
+      expectRejects(boundState({ implValidation: [] }));
+    });
+
+    it('rejects when the latest active-check result failed although attempts match the basis', () => {
+      const failedLint = { ...VALIDATION_PASSED[1]!, passed: false };
+      expectRejects(boundState({ implValidation: [VALIDATION_PASSED[0]!, failedLint] }));
+    });
+
+    it('rejects a decision when no active checks justify the evidence', () => {
+      // With no active checks (and an emptied basis) every binding comparison
+      // trivially matches; only the canonical evidence authority may reject
+      // the waiver.
+      expectRejects(
+        boundState({
+          activeChecks: [],
+          implValidation: [],
+          validationAttempts: [],
+          reducedCeremony: {
+            ...DECISION,
+            verificationBasis: { checkIds: [], attempts: [] },
+          },
+        }),
+      );
+    });
+
+    it('rejects a decision whose check set is a matching prefix of the active set', () => {
+      // ['lint'] is sorted-equal at index 0 of ['lint','test'], so only the
+      // length check can reject this forged basis.
+      expectRejects(
+        boundState({
+          reducedCeremony: {
+            ...DECISION,
+            verificationBasis: { ...DECISION.verificationBasis, checkIds: ['lint'] },
+          },
+        }),
+      );
+    });
+
+    it('rejects a decision whose attempt basis drops a matching attempt', () => {
+      const lintAttempt = DECISION.verificationBasis.attempts[1]!;
+      expectRejects(
+        boundState({
+          reducedCeremony: {
+            ...DECISION,
+            verificationBasis: { ...DECISION.verificationBasis, attempts: [lintAttempt] },
+          },
+        }),
+      );
+    });
+
+    it('rejects a ticket whose declaration no longer matches the parser result', () => {
+      const text = 'Risk: TRIVIAL\n\nDocs only.';
+      const ticket: NonNullable<SessionState['ticket']> = {
+        text,
+        digest: hashText(text),
+        source: 'user',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        riskDeclaration: { kind: 'absent' },
+      };
+      expectRejects(
+        boundState({
+          ticket,
+          implementationRiskAssessment: {
+            ...RISK_ASSESSMENT,
+            ticketDigest: ticket.digest,
+            declarationKind: 'absent',
+            declaredTaskClass: null,
+          },
+          reducedCeremony: {
+            ...DECISION,
+            ticketDigest: ticket.digest,
+            declarationKind: 'absent',
+            declaredTaskClass: null,
+          },
+        }),
+      );
+    });
+
+    it('rejects an invalid ticket declaration even when assessment and decision bind it', () => {
+      const ticket = ticketFor('Risk: HIGH\n\nDocs only.');
+      expect(ticket.riskDeclaration.kind).toBe('invalid');
+      expectRejects(
+        boundState({
+          ticket,
+          implementationRiskAssessment: {
+            ...bindAssessmentToTicket(ticket),
+            effectiveTaskClass: 'TRIVIAL',
+          },
+          reducedCeremony: decisionFor(ticket, ticket.riskDeclaration),
+        }),
+      );
+    });
+  });
 });

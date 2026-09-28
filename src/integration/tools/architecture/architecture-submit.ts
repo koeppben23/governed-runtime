@@ -46,7 +46,6 @@ interface ArchObligationContext {
   readonly state: SessionState;
   readonly wsDir: string;
   readonly worktree: string;
-  readonly subagentEnabled: boolean;
   readonly targetPaths: string[] | undefined;
   readonly archPlanVersion: number;
   readonly now: string;
@@ -57,8 +56,8 @@ async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Prom
   | {
       kind: 'ok';
       state: SessionState;
-      obligation: ReturnType<typeof createReviewObligation> | null;
-      attemptId: string | null;
+      obligation: ReturnType<typeof createReviewObligation>;
+      attemptId: string;
     }
   | { kind: 'blocked'; message: string }
 > {
@@ -82,14 +81,14 @@ async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Prom
   // Repository-governed attempts are minted WITH their host-owned Discovery
   // snapshot (persistence coherence). A structural projection failure blocks
   // before any state mutation, mirroring the peer review path.
-  const repositoryGoverned = minted ? hasFrozenRepositoryAuthority(minted) : false;
+  const repositoryGoverned = hasFrozenRepositoryAuthority(minted);
   const discovery = await resolveAttemptDiscoveryOrBlock({
     state: ctx.state,
     worktree: ctx.worktree,
     repositoryGoverned,
     now: ctx.now,
     discoveryProvider: REVIEW_DISCOVERY_PROVIDER,
-    ...(minted ? { obligationId: minted.obligationId } : {}),
+    obligationId: minted.obligationId,
   });
   if (discovery.kind === 'blocked') {
     return {
@@ -100,27 +99,21 @@ async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Prom
       }),
     };
   }
-  let archAttemptId: string | null = null;
-  const augmentedState = minted
-    ? (() => {
-        const withAttempt = appendObligationWithAttempt(
-          ctx.state.reviewAssurance,
-          minted,
-          ctx.now,
-          discovery.context,
-        );
-        archAttemptId = withAttempt.attemptId;
-        return {
-          ...ctx.state,
-          reviewAssurance: withAttempt.assurance,
-        };
-      })()
-    : ctx.state;
+  const withAttempt = appendObligationWithAttempt(
+    ctx.state.reviewAssurance,
+    minted,
+    ctx.now,
+    discovery.context,
+  );
+  const augmentedState: SessionState = {
+    ...ctx.state,
+    reviewAssurance: withAttempt.assurance,
+  };
   return {
     kind: 'ok',
     state: augmentedState,
     obligation: minted,
-    attemptId: archAttemptId,
+    attemptId: withAttempt.attemptId,
   };
 }
 
@@ -129,8 +122,7 @@ async function mintArchSubmissionObligation(
   resolvedTargetPaths: readonly string[] | undefined,
   provisionalScopeUnknown: boolean,
   metadata: Record<string, unknown>,
-): Promise<ReturnType<typeof createReviewObligation> | null> {
-  if (!ctx.subagentEnabled) return null;
+): Promise<ReturnType<typeof createReviewObligation>> {
   const digest = ctx.state.architecture?.digest ?? `arch-submit-${ctx.archPlanVersion}`;
   const adrText = ctx.state.architecture?.adrText ?? '';
   const freeze = await freezeContextAuthorityAtHead(ctx.worktree);
@@ -212,14 +204,12 @@ export async function handleAdrSubmission(
     });
   }
 
-  const subagentEnabled = true;
   const archPlanVersion = 1;
   const now = ctx.now();
   const classification = await classifyAndCreateArchObligation({
     state: result.state,
     wsDir: session.wsDir,
     worktree: session.worktree,
-    subagentEnabled,
     targetPaths: args.targetPaths,
     archPlanVersion,
     now,
@@ -230,11 +220,6 @@ export async function handleAdrSubmission(
 
   const persisted = await writeStateWithArtifacts(sessDir, augmentedState);
 
-  if (!nextObligation) {
-    return formatBlocked('REVIEW_ATTEMPT_UNAVAILABLE', {
-      reason: 'the ADR submission minted no review obligation authority',
-    });
-  }
   const authority = resolveReviewDispatchAuthority(
     persisted.reviewAssurance,
     nextObligation.obligationId,
@@ -257,7 +242,7 @@ export async function handleAdrSubmission(
     adrDigest: submittedAdr.digest,
     selfReviewIteration: 0,
     maxArchitectureReviewIterations: policy.reviewBudget.architecture,
-    reviewMode: subagentEnabled ? 'subagent' : 'self',
+    reviewMode: 'subagent',
     ...reviewObligationResponseFields(authority.authority),
     ...repositoryEvidenceUnavailableField(authority.authority.obligation.repositoryEvidenceFreeze),
     reviewDispatch: instruction.reviewDispatch,

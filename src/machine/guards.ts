@@ -240,15 +240,19 @@ function assessmentBindsTicketDeclaration(
   return assessment.declaredTaskClass === ticketRiskDeclarationFloor(declaration);
 }
 
-/** Both stored artifacts must describe the same frozen implementation. */
+/**
+ * Both stored artifacts must describe the same frozen implementation.
+ *
+ * The caller (`decisionBindsRiskAuthority`) has already established the
+ * canonical assessment presence and digest binding; duplicating either check
+ * here would be unreachable decision space, not additional protection.
+ */
 function assessmentMatchesImplementation(
   s: SessionState,
+  assessment: NonNullable<SessionState['implementationRiskAssessment']>,
   decision: NonNullable<SessionState['reducedCeremony']>,
   implementation: NonNullable<SessionState['implementation']>,
 ): boolean {
-  const assessment = s.implementationRiskAssessment;
-  if (assessment === undefined) return false;
-  if (assessment.implementationDigest !== implementation.digest) return false;
   if (assessment.assessedFileCount !== implementation.changedFiles.length) return false;
   if (assessment.escalatedTaskClass !== s.claimedTaskClass) return false;
   return decision.escalatedTaskClass === s.claimedTaskClass;
@@ -269,13 +273,12 @@ function declaredDecisionMatches(
 
 function decisionMatchesRiskFacts(
   s: SessionState,
+  assessment: NonNullable<SessionState['implementationRiskAssessment']>,
   decision: NonNullable<SessionState['reducedCeremony']>,
   declaration: TicketRiskDeclaration,
   implementation: NonNullable<SessionState['implementation']>,
 ): boolean {
-  if (!assessmentMatchesImplementation(s, decision, implementation)) return false;
-  const assessment = s.implementationRiskAssessment;
-  if (assessment === undefined) return false;
+  if (!assessmentMatchesImplementation(s, assessment, decision, implementation)) return false;
   if (!assessmentBindsTicketDeclaration(s, assessment, declaration)) return false;
 
   const recomputed = assessMinimumTaskClass(implementation.changedFiles);
@@ -298,14 +301,19 @@ function decisionBindsRiskAuthority(
   decision: NonNullable<SessionState['reducedCeremony']>,
   implementation: NonNullable<SessionState['implementation']>,
 ): boolean {
+  // Canonical assessment presence and digest binding: this is the single
+  // authority for these two facts in the guard chain.
+  const assessment = s.implementationRiskAssessment;
+  if (assessment === undefined) return false;
+  if (assessment.implementationDigest !== implementation.digest) return false;
+
   const declaration = boundTicketDeclaration(s);
   if (declaration === null) return false;
   if (decision.declarationKind !== declaration.kind) return false;
   if (decision.ticketDigest !== (s.ticket?.digest ?? null)) return false;
-  if (s.implementationRiskAssessment?.implementationDigest !== implementation.digest) {
+  if (!decisionMatchesRiskFacts(s, assessment, decision, declaration, implementation)) {
     return false;
   }
-  if (!decisionMatchesRiskFacts(s, decision, declaration, implementation)) return false;
   return s.riskGate?.status !== 'blocked';
 }
 
@@ -323,7 +331,6 @@ function ceremonyBindingMatches(
 }
 
 function ceremonyBasisMatches(
-  s: SessionState,
   decision: NonNullable<SessionState['reducedCeremony']>,
   evidence: ReturnType<typeof evaluateImplValidationEvidence>,
 ): boolean {
@@ -340,13 +347,7 @@ function ceremonyBasisMatches(
     .map((entry) => `${entry.checkId}:${entry.attemptId}:${entry.executedAt}`)
     .sort();
   if (decidedAttempts.length !== currentAttempts.length) return false;
-  if (!decidedAttempts.every((entry, index) => entry === currentAttempts[index])) return false;
-
-  // The decision surfaces must still equal the frozen risk assessment.
-  const decidedSurfaces = [...decision.touchedSurfaces].sort();
-  const assessedSurfaces = [...(s.implementationRiskAssessment?.touchedSurfaces ?? [])].sort();
-  if (decidedSurfaces.length !== assessedSurfaces.length) return false;
-  return decidedSurfaces.every((surface, index) => surface === assessedSurfaces[index]);
+  return decidedAttempts.every((entry, index) => entry === currentAttempts[index]);
 }
 
 /**
@@ -360,7 +361,10 @@ export const reducedCeremonyReady: GuardFn = (s) => {
   if (decision === null || !ceremonyBindingMatches(s, decision)) return false;
   const evidence = evaluateImplValidationEvidence(s);
   if (!evidence.satisfied) return false;
-  return ceremonyBasisMatches(s, decision, evidence);
+  // Surface equality between decision and assessment is implied by
+  // `decisionMatchesRiskFacts`, which binds both arrays to the same
+  // freshly recomputed surface set; no separate comparison is needed.
+  return ceremonyBasisMatches(decision, evidence);
 };
 
 export const implReviewMet: GuardFn = (s) => {
