@@ -211,10 +211,17 @@ function boundTicketDeclaration(s: SessionState): TicketRiskDeclaration | null {
   return declaration;
 }
 
+/**
+ * Exact set equality over the unique members. Comparing raw lengths plus
+ * membership would accept duplicate substitution (e.g. `['a','a']` against
+ * `['a','b']`), which would let a manipulated assessment or decision drop a
+ * real surface while keeping the array length.
+ */
 function samePathSet(left: readonly string[], right: readonly string[]): boolean {
-  if (left.length !== right.length) return false;
+  const leftSet = new Set(left);
   const rightSet = new Set(right);
-  return left.every((entry) => rightSet.has(entry));
+  if (leftSet.size !== rightSet.size) return false;
+  return [...leftSet].every((entry) => rightSet.has(entry));
 }
 
 /**

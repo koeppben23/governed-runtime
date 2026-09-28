@@ -417,6 +417,31 @@ describe('reducedCeremonyReady binding invariants', () => {
       );
     });
 
+    it('rejects duplicate surface substitution on both artifacts', () => {
+      // ['docs/a.md','docs/a.md'] has the recomputed length and every member
+      // is contained in the recomputed set, so only unique-set cardinality
+      // rejects the substituted surface.
+      const implementation = {
+        ...DOC_IMPL,
+        changedFiles: ['docs/a.md', 'docs/b.md'],
+        domainFiles: [],
+      };
+      expectRejects(
+        boundState({
+          implementation,
+          implementationRiskAssessment: {
+            ...RISK_ASSESSMENT,
+            touchedSurfaces: ['docs/a.md', 'docs/a.md'],
+            assessedFileCount: 2,
+          },
+          reducedCeremony: {
+            ...DECISION,
+            touchedSurfaces: ['docs/a.md', 'docs/a.md'],
+          },
+        }),
+      );
+    });
+
     it('rejects when the assessment declares a different ticket kind than the ticket', () => {
       const ticket = ticketFor('Risk: TRIVIAL\n\nDocs only.');
       expectRejects(
