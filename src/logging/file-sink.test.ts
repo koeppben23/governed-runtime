@@ -5,7 +5,7 @@
  * @test-policy HAPPY, BAD, CORNER, EDGE
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { writeFile, readFile, readdir, stat, mkdir, rm, mkdtemp } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -140,27 +140,91 @@ describe('createFileSink', () => {
       expect(lines).toHaveLength(2);
     });
 
-    it('creates log directory if missing', async () => {
-      const freshDir = '/tmp/flowguard-fresh-' + Date.now();
-      await rm(freshDir, { recursive: true, force: true }).catch(() => {});
+    it('creates only the log directory inside an existing workspace root', async () => {
+      const freshRoot = '/tmp/flowguard-fresh-' + Date.now();
+      await rm(freshRoot, { recursive: true, force: true }).catch(() => {});
+      await mkdir(freshRoot, { recursive: true });
 
-      const sink = createFileSink(freshDir, 7);
+      const sink = createFileSink(freshRoot, 7);
       await sink({ level: 'info', service: 'test', message: 'new dir' });
 
-      const dirOk = await stat(join(freshDir, '.opencode/logs'))
-        .then(() => true)
+      const dirOk = await stat(join(freshRoot, '.opencode/logs'))
+        .then((s) => s.isDirectory())
         .catch(() => false);
       expect(dirOk).toBe(true);
-      await rm(freshDir, { recursive: true, force: true }).catch(() => {});
+      // The sink never materializes the workspace structure itself.
+      const sessionsOk = await stat(join(freshRoot, 'sessions'))
+        .then(() => true)
+        .catch(() => false);
+      expect(sessionsOk).toBe(false);
+      await rm(freshRoot, { recursive: true, force: true }).catch(() => {});
+    });
+  });
+
+  describe('workspace-root gate', () => {
+    it('discards records without I/O while the workspace root is absent', async () => {
+      const absentRoot = join(testDir, 'never-initialized');
+      const onFailure = vi.fn();
+      const sink = createFileSink(absentRoot, { retentionDays: 7, onFailure });
+      const entry: LogEntry = { level: 'info', service: 'test', message: 'dropped' };
+
+      await expect(sink(entry)).resolves.toBeUndefined();
+
+      // No filesystem mutation, no logged failure: the workspace was never
+      // initialized, so the governed workspace must not be materialized here.
+      const exists = await stat(absentRoot)
+        .then(() => true)
+        .catch(() => false);
+      expect(exists).toBe(false);
+      expect(onFailure).not.toHaveBeenCalled();
+    });
+
+    it('activates lazily once the workspace root appears', async () => {
+      const lateRoot = join(testDir, 'late-root');
+      const sink = createFileSink(lateRoot, 7);
+      await sink({ level: 'info', service: 'test', message: 'pre-init' });
+
+      await mkdir(lateRoot, { recursive: true });
+      await sink({ level: 'info', service: 'test', message: 'post-init' });
+
+      const files = await readdir(join(lateRoot, '.opencode/logs'));
+      const [logFile] = files;
+      if (!logFile) throw new TypeError('expected log file');
+      const content = await readFile(join(lateRoot, '.opencode/logs', logFile), 'utf-8');
+      const lines = content.trim().split('\n').filter(Boolean);
+      // Only the record logged after initialization is persisted.
+      expect(lines).toHaveLength(1);
+      expect(JSON.parse(lines[0]!).message).toBe('post-init');
+    });
+
+    it('rejects with the anomaly code when the workspace root is not a directory', async () => {
+      const fileRoot = join(testDir, 'root-is-a-file');
+      await writeFile(fileRoot, 'not a directory', 'utf-8');
+      const onFailure = vi.fn();
+      const sink = createFileSink(fileRoot, { retentionDays: 7, onFailure });
+      const entry: LogEntry = { level: 'info', service: 'test', message: 'anomaly' };
+
+      await expect(sink(entry)).rejects.toMatchObject({
+        code: 'WORKSPACE_ROOT_NOT_DIRECTORY',
+      });
+      expect(onFailure).toHaveBeenCalledTimes(1);
+      // The anomaly is reported, never repaired by the sink.
+      const stillFile = await stat(fileRoot);
+      expect(stillFile.isFile()).toBe(true);
     });
   });
 
   describe('BAD', () => {
-    it('does not throw when directory is non-existent', async () => {
+    it('does not throw and does not create a non-existent workspace root', async () => {
       const badDir = '/tmp/this-does-not-exist-123456789';
+      await rm(badDir, { recursive: true, force: true }).catch(() => {});
       const sink = createFileSink(badDir, 7);
       const entry: LogEntry = { level: 'info', service: 'test', message: 'hello' };
       await expect(sink(entry)).resolves.not.toThrow();
+      const exists = await stat(badDir)
+        .then(() => true)
+        .catch(() => false);
+      expect(exists).toBe(false);
     });
 
     it('handles disk failure gracefully', async () => {

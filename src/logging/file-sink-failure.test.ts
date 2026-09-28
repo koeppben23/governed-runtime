@@ -10,18 +10,31 @@
  * @version v3
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { mockAppendFile, mockRename, mockStat } = vi.hoisted(() => ({
-  mockAppendFile: vi.fn(),
-  mockRename: vi.fn(),
-  mockStat: vi.fn(),
-}));
+const { mockAppendFile, mockRename, mockStat, actualStat, actualRename, statOutcomeBox } =
+  vi.hoisted(() => ({
+    mockAppendFile: vi.fn(),
+    mockRename: vi.fn(),
+    mockStat: vi.fn(),
+    actualStat: vi.fn(),
+    actualRename: vi.fn(),
+    statOutcomeBox: { current: null as number | Error | null },
+  }));
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>();
+  actualRename.mockImplementation(actual.rename);
   mockRename.mockImplementation(actual.rename);
-  mockStat.mockImplementation(actual.stat);
+  actualStat.mockImplementation(actual.stat);
+  mockStat.mockImplementation(async (filePath: unknown, ...rest: unknown[]) => {
+    const outcome = statOutcomeBox.current;
+    if (outcome !== null && String(filePath).endsWith('.log')) {
+      if (outcome instanceof Error) throw outcome;
+      return { size: outcome };
+    }
+    return (actualStat as (...args: unknown[]) => Promise<unknown>)(filePath, ...rest);
+  });
   return { ...actual, appendFile: mockAppendFile, rename: mockRename, stat: mockStat };
 });
 
@@ -32,6 +45,22 @@ import { createFileSink } from './file-sink.js';
 import { createLogger, type HealthAwareLogger } from './logger.js';
 
 const ENTRY = { level: 'info' as const, service: 'test', message: 'message' };
+
+/**
+ * Route the stat override to log-file paths only. The sink probes the workspace
+ * root with stat before its first write; that probe must observe the real
+ * filesystem so these tests keep exercising delivery/rotation failures.
+ */
+function statOverrideForLogFile(outcome: number | Error): void {
+  statOutcomeBox.current = outcome;
+}
+
+beforeEach(() => {
+  statOutcomeBox.current = null;
+  mockAppendFile.mockReset();
+  mockRename.mockReset();
+  mockRename.mockImplementation(actualRename);
+});
 
 describe('file-sink failure propagation', () => {
   it('ENOSPC write failure rejects the sink and a later write can recover', async () => {
@@ -48,7 +77,7 @@ describe('file-sink failure propagation', () => {
       expect(mockAppendFile).toHaveBeenCalledTimes(1);
 
       mockAppendFile.mockResolvedValueOnce(undefined);
-      mockStat.mockResolvedValueOnce({ size: 0 });
+      statOverrideForLogFile(0);
       await expect(sink({ ...ENTRY, message: 'recovered' })).resolves.not.toThrow();
       expect(mockAppendFile).toHaveBeenCalledTimes(2);
     } finally {
@@ -97,7 +126,7 @@ describe('file-sink failure propagation', () => {
     const onFailure = vi.fn();
 
     mockAppendFile.mockResolvedValueOnce(undefined);
-    mockStat.mockResolvedValueOnce({ size: 10 * 1024 * 1024 });
+    statOverrideForLogFile(10 * 1024 * 1024);
     const renameErr = Object.assign(new Error('cross-device link'), { code: 'EXDEV' });
     mockRename.mockRejectedValueOnce(renameErr);
 
@@ -123,7 +152,7 @@ describe('file-sink failure propagation', () => {
 
     mockAppendFile.mockResolvedValueOnce(undefined);
     const statErr = Object.assign(new Error('io error'), { code: 'EIO' });
-    mockStat.mockRejectedValueOnce(statErr);
+    statOverrideForLogFile(statErr);
 
     try {
       const sink = createFileSink(testDir, { retentionDays: 1, onFailure });
