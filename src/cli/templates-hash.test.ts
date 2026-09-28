@@ -326,8 +326,13 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed for the fail-closed external extraction rule: /ticket no longer
     // permits placeholder ticket text and reports TICKET_REFERENCE_WITHOUT_CONTENT
     // instead.
+    // Refreshed for the read-side import contract: /ticket and /task adopt only an
+    // explicitly named risk field (Risk/Risk Class/Risikoklasse) with an exact
+    // class value as its own Risk: line, never derive classes from generic fields,
+    // and state that comments/attachments/provider state are not part of the
+    // contract.
     expect(sha256(commandsJson)).toBe(
-      '42c9f7ecc0f3a0cc993084f56f6b850c826794a72d629366df9d55c3e98304a5',
+      '137afe0a9cba1dc297292eb83003681112b12576f242bd843d1eae2b1a15bb21',
     );
   });
 

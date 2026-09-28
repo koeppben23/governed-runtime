@@ -98,9 +98,30 @@ describe('DEV_REPO_INVARIANTS', () => {
       // The old placeholder fallback invented ticket content; the canonical
       // adoption contract requires a clear stop instead.
       expect(ticket).not.toContain('use placeholder text');
-      expect(ticket).toMatch(/extraction failure: STOP/);
+      expect(ticket).toMatch(/extraction failure or unreadable risk field: STOP/);
       expect(ticket).toContain('TICKET_REFERENCE_WITHOUT_CONTENT');
       expect(ticket).toContain('ticketSource');
+    });
+
+    it('external ticket import carries only explicitly named risk fields at exact values', () => {
+      const ticket = COMMANDS['ticket.md'];
+      const task = COMMANDS['task.md'];
+      // Field-NAME rule and exact values; no derivation from generic fields.
+      for (const content of [ticket, task]) {
+        expect(content).toContain('Risk Class');
+        expect(content).toContain('Risikoklasse');
+        expect(content).toContain('`TRIVIAL`, `STANDARD` or `HIGH-RISK`');
+        expect(content).toMatch(/Never derive a class from/);
+      }
+      expect(ticket).toContain('Comments, attachments and provider state are NOT part of');
+      expect(task).toContain('Comments,');
+      expect(task).toContain('are not part of this contract');
+      // The description is preserved and a conflicting Risk line is left intact.
+      expect(ticket).toMatch(/do not rewrite it/);
+      expect(ticket).toContain('Risk: <CLASS>');
+      expect(task).toContain('Risk: <CLASS>');
+      // The old overclaim about adopting the complete extracted content is gone.
+      expect(task).not.toContain('COMPLETE extracted content');
     });
 
     it('all slash commands use Goal/Rules/Governance/Done-when structure', () => {

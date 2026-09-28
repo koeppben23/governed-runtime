@@ -207,10 +207,20 @@ Record the task description. Starts the development flow from READY or updates t
   - `source` (optional): Platform — `jira`, `ados`, `github`, `gitlab`, `confluence`, etc.
   - `extractedAt` (optional): ISO timestamp — only set when content was actually extracted
 
+**External import contract (read-side):** the agent adopts title, description and — only when the
+FIELD NAME explicitly denotes a risk class (`Risk`, `Risk Class`, `Risikoklasse`) with an exact
+`TRIVIAL` / `STANDARD` / `HIGH-RISK` value — that field as its own canonical `Risk: <CLASS>` line.
+The description is never rewritten; a pre-existing different `Risk:` line stays and the parser
+applies the higher floor. `Priority`, `Severity`, `Impact`, `Business Criticality`,
+`Production Relevance` and similar fields are never interpreted as a risk class. If the extracted
+provider content shows an explicit risk field that cannot be read/verified, `flowguard_ticket` is
+not called. Comments, attachments and provider state are not part of this contract; provider
+adapters, configured field mappings and freshness/change detection are future integration work.
+
 **Examples:**
 
 - `/ticket Fix the auth bug in login.ts`
-- `/ticket https://jira.example.com/browse/PROJ-123` — agent fetches Jira, extracts title+description, stores URL as reference
+- `/ticket https://jira.example.com/browse/PROJ-123` — agent fetches Jira and adopts the content it can read (title, description, and an explicitly named risk field if present); the URL stays as the reference
 - `/ticket PROJ-123 Fix login redirect` — mixed: manual text + ticket ID
 
 **Derived artifacts:** On successful state persistence, FlowGuard materializes append-only evidence artifacts:

@@ -22,9 +22,15 @@ Task description: $ARGUMENTS
      \`flowguard_ticket({ ticketSource: { kind: "repository_file", path: "<path>" }, source: "user" })\`
      with NO \`text\`. FlowGuard reads the file itself and binds its content digest.
    - **External reference** (\`--ref\`): extract the referenced content first (webfetch or the
-     content the user provided), then pass the COMPLETE extracted content as \`text\` with
-     \`inputOrigin: "external_reference"\` and \`references\`. Never pass a bare URL, ticket ID, or
-     branch name as \`text\`.
+     content the user provided), then pass the adopted content as \`text\` with
+     \`inputOrigin: "external_reference"\` and \`references\`: title and description, plus — only
+     when the FIELD NAME explicitly denotes a risk class (\`Risk\`, \`Risk Class\`,
+     \`Risikoklasse\`) and the read value is exactly \`TRIVIAL\`, \`STANDARD\` or \`HIGH-RISK\` — that
+     field as its own canonical \`Risk: <CLASS>\` line. Never derive a class from \`Priority\`,
+     \`Severity\`, \`Impact\` or other field names/values. If an explicit risk field exists but its
+     value cannot be read/verified, stop without calling \`flowguard_ticket\`. Comments,
+     attachments and provider state are not part of this contract. Never pass a bare URL, ticket
+     ID, or branch name as \`text\`.
    - **Plain text**: pass the user's complete description as \`text\`.
    If \`$ARGUMENTS\` is empty: ask the user to describe their task (never invent content).
 
