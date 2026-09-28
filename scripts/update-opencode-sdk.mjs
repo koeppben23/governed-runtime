@@ -17,6 +17,8 @@ const installedPackageJsonPath = path.join(
 );
 const baselineVersionPath = path.join(root, '.sdk-baselines', 'opencode', 'version.json');
 const hostVersionPath = path.join(root, '.sdk-baselines', 'opencode', 'host-version.json');
+const runtimeCompatPath = path.join(root, 'src', 'cli', 'opencode-runtime-compat.ts');
+const TESTED_HOST_VERSION_PATTERN = /(export const TESTED_OPENCODE_HOST_VERSION = ')([^']+)(';)/;
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
@@ -37,6 +39,43 @@ function resolvePackageVersion(packageName, rawTarget) {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`ERROR: Failed to resolve ${packageName}@${target}: ${message}`);
+    process.exit(1);
+  }
+}
+
+function readTestedHostVersion() {
+  const match = fs.readFileSync(runtimeCompatPath, 'utf-8').match(TESTED_HOST_VERSION_PATTERN);
+  return match ? match[2] : null;
+}
+
+/**
+ * Keep the canonical tested-host constant in sync with the host baseline.
+ * The constant is the runtime authority for host compatibility classification;
+ * the baseline alone does not update it, which previously left the update
+ * workflow's live smoke test asserting the old version.
+ */
+function writeTestedHostVersion(version) {
+  const content = fs.readFileSync(runtimeCompatPath, 'utf-8');
+  const matches = content.match(
+    new RegExp(TESTED_HOST_VERSION_PATTERN.source, TESTED_HOST_VERSION_PATTERN.flags + 'g'),
+  );
+  if (!matches || matches.length !== 1) {
+    console.error(
+      `ERROR: expected exactly one TESTED_OPENCODE_HOST_VERSION declaration in ` +
+        `${path.relative(root, runtimeCompatPath)}, found ${matches ? matches.length : 0}.`,
+    );
+    process.exit(1);
+  }
+  fs.writeFileSync(
+    runtimeCompatPath,
+    content.replace(TESTED_HOST_VERSION_PATTERN, `$1${version}$3`),
+    'utf-8',
+  );
+  if (readTestedHostVersion() !== version) {
+    console.error(
+      `ERROR: failed to update TESTED_OPENCODE_HOST_VERSION to ${version} in ` +
+        `${path.relative(root, runtimeCompatPath)}.`,
+    );
     process.exit(1);
   }
 }
@@ -74,6 +113,7 @@ console.log(`OpenCode host/Desktop compatibility target: opencode-ai@${targetHos
 run('npm', ['install', `@opencode-ai/plugin@${targetVersion}`, '--save-dev', '--save-exact']);
 run('node', ['scripts/sdk-type-snapshot.mjs', '--platform', 'opencode', '--update']);
 writeHostVersion(targetHostVersion);
+writeTestedHostVersion(targetHostVersion);
 
 const installedVersion = readJson(installedPackageJsonPath).version;
 const baselineVersion = readJson(baselineVersionPath).version;
@@ -103,6 +143,14 @@ if (baselineVersion !== targetVersion) {
 if (hostVersion !== targetHostVersion) {
   console.error(
     `ERROR: opencode host baseline version ${hostVersion}, expected ${targetHostVersion}.`,
+  );
+  process.exit(1);
+}
+
+if (readTestedHostVersion() !== targetHostVersion) {
+  console.error(
+    `ERROR: TESTED_OPENCODE_HOST_VERSION is ${readTestedHostVersion()}, expected ` +
+      `${targetHostVersion}.`,
   );
   process.exit(1);
 }
