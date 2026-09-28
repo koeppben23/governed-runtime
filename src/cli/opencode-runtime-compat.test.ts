@@ -6,6 +6,7 @@
  * @test-policy HAPPY, BAD, CORNER, EDGE — all four categories present.
  */
 
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import {
   classifyOpenCodeHostContract,
@@ -160,6 +161,19 @@ describe('opencode-runtime-compat', () => {
     it('CORNER: unknown or malformed versions are compatible-unverified', () => {
       expect(classifyOpenCodeHostContract(null).status).toBe('compatible-unverified');
       expect(classifyOpenCodeHostContract('not-a-version').status).toBe('compatible-unverified');
+    });
+
+    it('HAPPY: the tested host version stays in sync with the OpenCode host baseline', () => {
+      // Enforceable guard for the scheduled SDK/host update workflow: the
+      // canonical constant and the baseline file are two representations of
+      // the same tested version and must never drift apart.
+      const baseline = JSON.parse(
+        readFileSync(
+          new URL('../../.sdk-baselines/opencode/host-version.json', import.meta.url),
+          'utf-8',
+        ),
+      ) as { version: string };
+      expect(TESTED_OPENCODE_HOST_VERSION).toBe(baseline.version);
     });
 
     it('EDGE: prerelease/nightly builds do not inherit verified status', () => {
