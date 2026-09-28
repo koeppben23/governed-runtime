@@ -46,7 +46,7 @@ cd /tmp/flowguard-java-demo
 Capture: OpenCode window + terminal side-by-side. The recording should show:
 
 - `/start` output with policy mode (READY)
-- `/task` recording TICKET.md
+- `/task --file TICKET.md` recording the ticket content canonically
 - `/implement` blocker (`COMMAND_NOT_ALLOWED`, directive `PLAN_REQUIRED`,
   "Plan required" in TICKET)
 - Optional: a direct host-tool mutation attempt in TICKET, denied with

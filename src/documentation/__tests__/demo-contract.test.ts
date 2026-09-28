@@ -305,8 +305,11 @@ describe('java demo workflow contract', () => {
 
   it('documents deterministic task/architecture inputs and the export completion projection', () => {
     // Bare `/task` and `/architecture` do not read files; the demo must pass
-    // explicit input so the live run is deterministic.
-    expect(DEMO_SCRIPT).toContain('/task Read TICKET.md');
+    // explicit input so the live run is deterministic. `/task --file` adopts the
+    // repository ticket canonically; a bare read instruction is now blocked with
+    // TICKET_REFERENCE_WITHOUT_CONTENT.
+    expect(DEMO_SCRIPT).toContain('/task --file TICKET.md');
+    expect(DEMO_SCRIPT).not.toContain('/task Read TICKET.md');
     expect(DEMO_SCRIPT).toContain('/architecture Read ADR_TICKET.md');
     // `/export` surfaces its persisted completion evidence in the response.
     expect(DEMO_SCRIPT).toContain('exportCompletion');

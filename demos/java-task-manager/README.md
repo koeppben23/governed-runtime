@@ -88,6 +88,13 @@ After a successful FlowGuard session, two files are changed:
 | `src/main/java/com/example/taskmanager/service/TaskService.java`           | Add null-check in `updateTask()`, throw `TaskNotFoundException`                      |
 | `src/test/java/com/example/taskmanager/controller/TaskControllerTest.java` | Enable `update_taskNotFound_returns404()`, assert `$.taskId`, and update its Javadoc |
 
+The task is recorded from the seed ticket with `/task --file TICKET.md`: FlowGuard reads the file
+itself and binds its content digest — no manual risk claim is required, because the effective risk
+class is computed from the actual change (the Java fix classifies as STANDARD, so the full
+independent implementation review runs). Only an explicitly named `Risk` / `Risk Class` /
+`Risikoklasse` field could raise that class; bare file/URL references are blocked, and comments or
+attachments are not part of the import (provider integration: epic #976).
+
 All 16 tests pass (the previously skipped test is now enabled and green). The
 session reaches `COMPLETE` only after `/export` materializes and verifies the
 required package; a blocked or failed export leaves the session in

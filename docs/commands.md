@@ -198,7 +198,10 @@ Record the task description. Starts the development flow from READY or updates t
 **Allowed in:** READY, TICKET
 **Arguments:**
 
-- `text` (required): Task description
+- `text` (optional): The complete task/ticket content. Mutually exclusive with `ticketSource`.
+- `ticketSource` (optional): `{ kind: "repository_file", path }` — the runtime reads the repository
+  file itself, requires the realpath-resolved target to stay inside the worktree, and binds its
+  content digest. Mutually exclusive with `text`.
 - `inputOrigin` (optional): Where the text came from — `manual_text` (typed by user), `external_reference` (extracted from URL/tracker), or `mixed` (both)
 - `references` (optional): Array of external references with audit provenance. Each reference has:
   - `ref` (required): URL, ticket ID, or reference string
@@ -206,6 +209,10 @@ Record the task description. Starts the development flow from READY or updates t
   - `title` (optional): Extracted title from the reference
   - `source` (optional): Platform — `jira`, `ados`, `github`, `gitlab`, `confluence`, etc.
   - `extractedAt` (optional): ISO timestamp — only set when content was actually extracted
+
+Exactly one content source must be provided: `text` and `ticketSource` together are rejected with
+`TICKET_SOURCE_CONFLICT`, neither is rejected as `EMPTY_TICKET`, and a bare file path, URL or issue
+ID passed as `text` is rejected with `TICKET_REFERENCE_WITHOUT_CONTENT`.
 
 **External import contract (read-side):** the agent adopts title, description and — only when the
 FIELD NAME explicitly denotes a risk class (`Risk`, `Risk Class`, `Risikoklasse`) with an exact

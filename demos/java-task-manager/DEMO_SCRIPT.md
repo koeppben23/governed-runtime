@@ -149,9 +149,9 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 ### Step 2 — Record the Ticket
 
-| Action                                           | Phase  | What I Say                                                                                                                                                                                                      |
-| ------------------------------------------------ | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/task Read TICKET.md and fix the described bug` | TICKET | "Ich übergebe das Ticket mit explizitem Input (`Read TICKET.md …`). `/task` konsumiert den Text als Task-Beschreibung; FlowGuard erzwingt anschließend, dass jede Änderung von einem erfassten Ticket ausgeht." |
+| Action                   | Phase  | What I Say                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------ | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/task --file TICKET.md` | TICKET | "Ich übergebe das Ticket als kanonischen Inhalt: `--file` lässt FlowGuard `TICKET.md` selbst lesen und digest-binden. Ein manueller Risk-Claim ist nicht nötig — die effektive Risikoklasse berechnet FlowGuard aus der tatsächlichen Änderung (Java-Fix → STANDARD, also voller Review). Bare Datei- oder URL-Referenzen ohne adoptierten Inhalt werden von der Runtime mit `TICKET_REFERENCE_WITHOUT_CONTENT` blockiert." |
 
 ---
 
