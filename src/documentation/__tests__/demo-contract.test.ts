@@ -311,6 +311,10 @@ describe('java demo workflow contract', () => {
     expect(DEMO_SCRIPT).toContain('/task --file TICKET.md');
     expect(DEMO_SCRIPT).not.toContain('/task Read TICKET.md');
     expect(DEMO_SCRIPT).toContain('/architecture Read ADR_TICKET.md');
+    // The asymmetry is intentional and documented: architecture has no
+    // reference-adoption contract (no --file/--ref), the agent reads the task
+    // file and passes adrText explicitly.
+    expect(DEMO_SCRIPT).toContain('/architecture` has no reference adoption');
     // `/export` surfaces its persisted completion evidence in the response.
     expect(DEMO_SCRIPT).toContain('exportCompletion');
   });

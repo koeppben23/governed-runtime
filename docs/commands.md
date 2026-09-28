@@ -374,7 +374,7 @@ Create or revise an Architecture Decision Record (ADR).
 
 Two modes:
 
-- **Mode A (submit ADR):** Provide `title`, `adrText`. ADR ID is auto-generated (`ADR-001`, `ADR-002`, ...). Records ADR and starts the **independent subagent review loop**.
+- **Mode A (submit ADR):** Provide `title`, `adrText`. ADR ID is auto-generated (`ADR-001`, `ADR-002`, ...). Records ADR and starts the **independent subagent review loop**. A referenced task file (e.g. `ADR_TICKET.md`) is read by the agent as context; the ADR text is passed explicitly as `adrText`. Unlike `/task`, `/architecture` has no reference-adoption contract and no `--file`/`--ref` flags — the ADR itself is never adopted from a file by the runtime.
 - **Mode B (ADR review):** Provide `reviewVerdict` plus `reviewFindings` from the `flowguard-reviewer` subagent. On convergence, advances to ARCH_REVIEW.
 
 ADR must include `## Context`, `## Decision`, and `## Consequences` sections (MADR format).

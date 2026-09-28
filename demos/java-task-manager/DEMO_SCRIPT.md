@@ -56,6 +56,12 @@ cd demos/java-task-manager
 | ---------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `/architecture Read ADR_TICKET.md and create an ADR based on it` | ARCHITECTURE | "Ich ubergebe den Architecture Task mit explizitem Input: der Command liest `ADR_TICKET.md`. FlowGuard erzwingt, dass ein ADR in MADR-Format erstellt wird — mit `## Context`, `## Decision`, `## Consequences`. Der LLM analysiert den Code, erkennt die Inkonsistenz und generiert eine strukturierte Entscheidungsvorlage." |
 
+> **Note:** `--file` and `--ref` are ticket-adoption flags of `/task` (repository file vs. external
+> ticket content). `/architecture` has no reference adoption: the agent reads `ADR_TICKET.md`
+> itself and passes the generated ADR text explicitly as `adrText` to
+> `flowguard_architecture({ title, adrText, claims })`. The source file is task context, not the
+> reviewed artifact, so no adoption/backstop contract applies.
+
 ### Step A3 — ADR Generation and Autonomous Independent Review
 
 | Action                                     | Phase        | What I Say                                                                                                                                                                                                                                                                                                                                                                                 |
