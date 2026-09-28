@@ -244,7 +244,7 @@ describe('plugin bootstrap fail-closed', () => {
     }
   });
 
-  it('activates file logging once ensureWorkspace materialized the root', async () => {
+  it('writes file logs into an initialized workspace', async () => {
     const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-real-repo-'));
     try {
       await fs.mkdir(path.join(repo, '.git'), { recursive: true });
@@ -255,7 +255,9 @@ describe('plugin bootstrap fail-closed', () => {
       const workspaceJson = path.join(ensured.workspaceDir, 'workspace.json');
       await expect(fs.stat(workspaceJson)).resolves.toBeTruthy();
 
-      // A later plugin load (root now exists) writes its file logs.
+      // Plugin wiring targets the governed workspace once it exists. Lazy
+      // activation of the SAME dormant sink instance is covered by the unit
+      // test 'activates lazily once the workspace root appears'.
       await FlowGuardAuditPlugin(createMockInput({ worktree: repo, directory: repo }));
       await new Promise((r) => setTimeout(r, 50));
       const logFiles = await fs.readdir(path.join(ensured.workspaceDir, '.opencode/logs'));

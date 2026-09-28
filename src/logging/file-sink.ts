@@ -79,10 +79,44 @@ class FileSinkWorkspaceRootError extends Error {
   }
 }
 
+/** Filesystem anomaly: a log path component exists but is not a directory. */
+class FileSinkPathError extends Error {
+  readonly code = 'LOG_PATH_NOT_DIRECTORY';
+
+  constructor(target: string) {
+    super(`log path exists but is not a directory: ${target}`);
+    this.name = 'FileSinkPathError';
+  }
+}
+
+function errorCode(error: unknown): unknown {
+  return typeof error === 'object' && error !== null
+    ? (error as { code?: unknown }).code
+    : undefined;
+}
+
 function isEnoentError(error: unknown): boolean {
-  return (
-    typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'ENOENT'
-  );
+  return errorCode(error) === 'ENOENT';
+}
+
+function isEexistError(error: unknown): boolean {
+  return errorCode(error) === 'EEXIST';
+}
+
+/**
+ * Create one directory, tolerating only an existing directory. A missing
+ * parent (ENOENT) is never repaired: after a successful root probe this means
+ * the workspace root disappeared and re-creating it would bypass
+ * `ensureWorkspace()`. An existing non-directory is a hard anomaly.
+ */
+async function ensureDirectory(dir: string): Promise<void> {
+  try {
+    await mkdir(dir);
+  } catch (err) {
+    if (!isEexistError(err)) throw err;
+    const existing = await stat(dir);
+    if (!existing.isDirectory()) throw new FileSinkPathError(dir);
+  }
 }
 
 /**
@@ -160,8 +194,14 @@ function notifyFileSinkFailure(runtime: FileSinkRuntime, error: unknown): void {
   }
 }
 
-async function ensureLogDir(logDir: string): Promise<void> {
-  await mkdir(logDir, { recursive: true });
+/**
+ * Create only the log subdirectories, non-recursively: `.opencode` and then
+ * `.opencode/logs`. Parents are never materialized, so a workspace root that
+ * vanished after the probe fails the sink instead of being re-created.
+ */
+async function ensureLogDir(runtime: FileSinkRuntime): Promise<void> {
+  await ensureDirectory(join(runtime.workspaceRoot, '.opencode'));
+  await ensureDirectory(runtime.logDir);
 }
 
 async function cleanupOldLogs(logDir: string, retentionDays: number): Promise<void> {
@@ -195,7 +235,7 @@ async function cleanupOldLogs(logDir: string, retentionDays: number): Promise<vo
 async function initializeFileSink(runtime: FileSinkRuntime): Promise<void> {
   if (runtime.initialized) return;
   if (!runtime.initPromise) {
-    runtime.initPromise = ensureLogDir(runtime.logDir)
+    runtime.initPromise = ensureLogDir(runtime)
       .then(() => cleanupOldLogs(runtime.logDir, runtime.retentionDays))
       .finally(() => {
         runtime.initPromise = null;

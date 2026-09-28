@@ -12,15 +12,25 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { mockAppendFile, mockRename, mockStat, actualStat, actualRename, statOutcomeBox } =
-  vi.hoisted(() => ({
-    mockAppendFile: vi.fn(),
-    mockRename: vi.fn(),
-    mockStat: vi.fn(),
-    actualStat: vi.fn(),
-    actualRename: vi.fn(),
-    statOutcomeBox: { current: null as number | Error | null },
-  }));
+const {
+  mockAppendFile,
+  mockRename,
+  mockStat,
+  mockMkdir,
+  actualStat,
+  actualRename,
+  statOutcomeBox,
+  mkdirHookBox,
+} = vi.hoisted(() => ({
+  mockAppendFile: vi.fn(),
+  mockRename: vi.fn(),
+  mockStat: vi.fn(),
+  mockMkdir: vi.fn(),
+  actualStat: vi.fn(),
+  actualRename: vi.fn(),
+  statOutcomeBox: { current: null as number | Error | null },
+  mkdirHookBox: { current: null as null | (() => Promise<void>) },
+}));
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>();
@@ -35,10 +45,24 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     }
     return (actualStat as (...args: unknown[]) => Promise<unknown>)(filePath, ...rest);
   });
-  return { ...actual, appendFile: mockAppendFile, rename: mockRename, stat: mockStat };
+  mockMkdir.mockImplementation(async (dir: unknown, options: unknown) => {
+    const hook = mkdirHookBox.current;
+    if (hook) {
+      mkdirHookBox.current = null;
+      await hook();
+    }
+    return (actual.mkdir as (...args: unknown[]) => Promise<unknown>)(dir, options);
+  });
+  return {
+    ...actual,
+    appendFile: mockAppendFile,
+    rename: mockRename,
+    stat: mockStat,
+    mkdir: mockMkdir,
+  };
 });
 
-import { mkdir, rm, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, rm, mkdtemp, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createFileSink } from './file-sink.js';
@@ -57,6 +81,7 @@ function statOverrideForLogFile(outcome: number | Error): void {
 
 beforeEach(() => {
   statOutcomeBox.current = null;
+  mkdirHookBox.current = null;
   mockAppendFile.mockReset();
   mockRename.mockReset();
   mockRename.mockImplementation(actualRename);
@@ -159,6 +184,28 @@ describe('file-sink failure propagation', () => {
       await expect(sink({ ...ENTRY, message: 'stat boom' })).rejects.toBe(statErr);
       expect(onFailure).toHaveBeenCalledTimes(1);
       expect(onFailure.mock.calls[0]![0]).toBe(statErr);
+    } finally {
+      await rm(testDir, { recursive: true, force: true }).catch(() => {});
+    }
+  });
+
+  it('does not recreate a workspace root that disappears after the probe', async () => {
+    const testDir = await mkdtemp(join(tmpdir(), 'fg-fs-toctou-'));
+    mkdirHookBox.current = async () => {
+      // Root removal between the successful root probe and directory setup.
+      await rm(testDir, { recursive: true, force: true });
+    };
+
+    try {
+      const sink = createFileSink(testDir, 1);
+      await expect(sink({ ...ENTRY, message: 'root race' })).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+      // Non-recursive creation must not resurrect the workspace root.
+      const exists = await stat(testDir)
+        .then(() => true)
+        .catch(() => false);
+      expect(exists).toBe(false);
     } finally {
       await rm(testDir, { recursive: true, force: true }).catch(() => {});
     }

@@ -197,6 +197,22 @@ describe('createFileSink', () => {
       expect(JSON.parse(lines[0]!).message).toBe('post-init');
     });
 
+    it('rejects when a log path component exists but is not a directory', async () => {
+      const root = join(testDir, 'opencode-is-a-file');
+      await mkdir(root, { recursive: true });
+      await writeFile(join(root, '.opencode'), 'not a directory', 'utf-8');
+      const onFailure = vi.fn();
+      const sink = createFileSink(root, { retentionDays: 7, onFailure });
+
+      await expect(
+        sink({ level: 'info', service: 'test', message: 'log path anomaly' }),
+      ).rejects.toMatchObject({ code: 'LOG_PATH_NOT_DIRECTORY' });
+      expect(onFailure).toHaveBeenCalledTimes(1);
+      // The anomaly is reported, never repaired by the sink.
+      const stillFile = await stat(join(root, '.opencode'));
+      expect(stillFile.isFile()).toBe(true);
+    });
+
     it('rejects with the anomaly code when the workspace root is not a directory', async () => {
       const fileRoot = join(testDir, 'root-is-a-file');
       await writeFile(fileRoot, 'not a directory', 'utf-8');
