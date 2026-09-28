@@ -10,28 +10,82 @@
  * @version v3
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { mockAppendFile, mockRename, mockStat } = vi.hoisted(() => ({
+const {
+  mockAppendFile,
+  mockRename,
+  mockStat,
+  mockMkdir,
+  actualStat,
+  actualRename,
+  statOutcomeBox,
+  mkdirHookBox,
+} = vi.hoisted(() => ({
   mockAppendFile: vi.fn(),
   mockRename: vi.fn(),
   mockStat: vi.fn(),
+  mockMkdir: vi.fn(),
+  actualStat: vi.fn(),
+  actualRename: vi.fn(),
+  statOutcomeBox: { current: null as number | Error | null },
+  mkdirHookBox: { current: null as null | (() => Promise<void>) },
 }));
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>();
+  actualRename.mockImplementation(actual.rename);
   mockRename.mockImplementation(actual.rename);
-  mockStat.mockImplementation(actual.stat);
-  return { ...actual, appendFile: mockAppendFile, rename: mockRename, stat: mockStat };
+  actualStat.mockImplementation(actual.stat);
+  mockStat.mockImplementation(async (filePath: unknown, ...rest: unknown[]) => {
+    const outcome = statOutcomeBox.current;
+    if (outcome !== null && String(filePath).endsWith('.log')) {
+      if (outcome instanceof Error) throw outcome;
+      return { size: outcome };
+    }
+    return (actualStat as (...args: unknown[]) => Promise<unknown>)(filePath, ...rest);
+  });
+  mockMkdir.mockImplementation(async (dir: unknown, options: unknown) => {
+    const hook = mkdirHookBox.current;
+    if (hook) {
+      mkdirHookBox.current = null;
+      await hook();
+    }
+    return (actual.mkdir as (...args: unknown[]) => Promise<unknown>)(dir, options);
+  });
+  return {
+    ...actual,
+    appendFile: mockAppendFile,
+    rename: mockRename,
+    stat: mockStat,
+    mkdir: mockMkdir,
+  };
 });
 
-import { mkdir, rm, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, rm, mkdtemp, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createFileSink } from './file-sink.js';
 import { createLogger, type HealthAwareLogger } from './logger.js';
 
 const ENTRY = { level: 'info' as const, service: 'test', message: 'message' };
+
+/**
+ * Route the stat override to log-file paths only. The sink probes the workspace
+ * root with stat before its first write; that probe must observe the real
+ * filesystem so these tests keep exercising delivery/rotation failures.
+ */
+function statOverrideForLogFile(outcome: number | Error): void {
+  statOutcomeBox.current = outcome;
+}
+
+beforeEach(() => {
+  statOutcomeBox.current = null;
+  mkdirHookBox.current = null;
+  mockAppendFile.mockReset();
+  mockRename.mockReset();
+  mockRename.mockImplementation(actualRename);
+});
 
 describe('file-sink failure propagation', () => {
   it('ENOSPC write failure rejects the sink and a later write can recover', async () => {
@@ -48,7 +102,7 @@ describe('file-sink failure propagation', () => {
       expect(mockAppendFile).toHaveBeenCalledTimes(1);
 
       mockAppendFile.mockResolvedValueOnce(undefined);
-      mockStat.mockResolvedValueOnce({ size: 0 });
+      statOverrideForLogFile(0);
       await expect(sink({ ...ENTRY, message: 'recovered' })).resolves.not.toThrow();
       expect(mockAppendFile).toHaveBeenCalledTimes(2);
     } finally {
@@ -97,7 +151,7 @@ describe('file-sink failure propagation', () => {
     const onFailure = vi.fn();
 
     mockAppendFile.mockResolvedValueOnce(undefined);
-    mockStat.mockResolvedValueOnce({ size: 10 * 1024 * 1024 });
+    statOverrideForLogFile(10 * 1024 * 1024);
     const renameErr = Object.assign(new Error('cross-device link'), { code: 'EXDEV' });
     mockRename.mockRejectedValueOnce(renameErr);
 
@@ -123,13 +177,35 @@ describe('file-sink failure propagation', () => {
 
     mockAppendFile.mockResolvedValueOnce(undefined);
     const statErr = Object.assign(new Error('io error'), { code: 'EIO' });
-    mockStat.mockRejectedValueOnce(statErr);
+    statOverrideForLogFile(statErr);
 
     try {
       const sink = createFileSink(testDir, { retentionDays: 1, onFailure });
       await expect(sink({ ...ENTRY, message: 'stat boom' })).rejects.toBe(statErr);
       expect(onFailure).toHaveBeenCalledTimes(1);
       expect(onFailure.mock.calls[0]![0]).toBe(statErr);
+    } finally {
+      await rm(testDir, { recursive: true, force: true }).catch(() => {});
+    }
+  });
+
+  it('does not recreate a workspace root that disappears after the probe', async () => {
+    const testDir = await mkdtemp(join(tmpdir(), 'fg-fs-toctou-'));
+    mkdirHookBox.current = async () => {
+      // Root removal between the successful root probe and directory setup.
+      await rm(testDir, { recursive: true, force: true });
+    };
+
+    try {
+      const sink = createFileSink(testDir, 1);
+      await expect(sink({ ...ENTRY, message: 'root race' })).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+      // Non-recursive creation must not resurrect the workspace root.
+      const exists = await stat(testDir)
+        .then(() => true)
+        .catch(() => false);
+      expect(exists).toBe(false);
     } finally {
       await rm(testDir, { recursive: true, force: true }).catch(() => {});
     }

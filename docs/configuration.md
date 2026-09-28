@@ -52,6 +52,14 @@ Controls where FlowGuard writes structured log output.
 
 **CLI `--log-mode` flag**: The CLI uses a separate flag (`--log-mode console|file|file+console`) because it has no OpenCode plugin context and cannot use `ui` or `both`. The CLI defaults to `console` if `--log-mode` is omitted.
 
+**Workspace-root creation contract:** the file sink never creates the workspace
+root. Until `ensureWorkspace()` — the workspace-root creation SSOT used by
+`/start` and the session bootstrap — has materialized `{workspace}`, the sink
+stays dormant: records are discarded without filesystem mutation and without a
+failure. Once the root exists, the sink lazily creates only
+`{workspace}/.opencode/logs` and applies the normal write/rotation/retention
+semantics. File logs are diagnostic only and never audit evidence.
+
 ### logging.retentionDays
 
 **Type:** `number` (1-90)

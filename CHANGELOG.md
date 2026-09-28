@@ -618,6 +618,21 @@ true })` returns the evaluated projection. Key invariants:
 
 ### Fixed
 
+- **Diagnostic file logging no longer materializes an uninitialized workspace.**
+  The file sink previously created the full `{workspaces}/<fingerprint>/` root
+  as a side effect of its first log record (`mkdir -p` down to
+  `.opencode/logs`), which bypassed `ensureWorkspace()` — the documented SSOT
+  for workspace-root creation — and produced torn fingerprint folders for
+  worktrees that were opened but never started. The sink is now dormant until
+  the workspace root exists: records are discarded without I/O and without a
+  failure, activation is lazy, and only `.opencode/logs` is created after
+  `ensureWorkspace()` materialized the root. Log directories are created
+  non-recursively, so a root that disappears between the probe and setup fails
+  the sink instead of being re-created. A root path (or log path component)
+  that exists but is not a directory, and any non-`ENOENT` stat failure, keep
+  the existing reject-plus-`onFailure` semantics instead of being silently
+  treated as absent.
+
 - **Archive verification documentation matched to the real API.** The
   `docs/archive.md` example called `verifyArchive('/path/to/archive.tar.gz')`,
   but the public function signature is `verifyArchive(fingerprint, sessionId)`
