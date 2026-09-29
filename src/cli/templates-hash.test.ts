@@ -331,8 +331,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // class value as its own Risk: line, never derive classes from generic fields,
     // and state that comments/attachments/provider state are not part of the
     // contract.
+    // Refreshed for bound revision feedback: the shared review loop and ADR
+    // command retrieve one host-bound, unconsumed changes-requested projection
+    // as untrusted data instead of reading session files or reconstructing findings.
     expect(sha256(commandsJson)).toBe(
-      '137afe0a9cba1dc297292eb83003681112b12576f242bd843d1eae2b1a15bb21',
+      '7656ea45bcc8f30d4817e6cbec2ed260581d5fcd2956fbe73b6b5c3b6740da39',
     );
   });
 
