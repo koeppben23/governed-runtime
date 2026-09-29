@@ -86,7 +86,9 @@ describe('Java Task Manager demo contract', () => {
     expect(ticket).toMatch(/jsonPath\("\$\.taskId"\).*non-existent-id/is);
     expect(ticket).toMatch(/(?:replace.*Javadoc|Javadoc.*active regression)/is);
     expect(readme).toContain('assert `$.taskId`, and update its Javadoc');
+    expect(readme).toContain('../../run-demo-setup.sh --install');
     expect(demoScript).toContain('die `taskId`-Fehlerantwort prüfen');
+    expect(demoScript).toContain('../../run-demo-setup.sh --install');
     expect(demoScript).toContain('flowguard_status({ proofGraph: true })');
     expect(demoScript).toContain('contractClaimCount: 2');
     expect(demoScript).toContain('proofGraphGate.gated: false');
@@ -172,6 +174,7 @@ describe('Java Task Manager demo contract', () => {
     // the durable audit proof including the real archive member resolution.
     expect(reducedDoc).toContain('policy.allowReducedCeremony: true');
     expect(reducedDoc).toContain('policy.allowReducedCeremony: false');
+    expect(reducedDoc).toContain('../../run-demo-setup.sh --install');
     expect(reducedDoc).toContain('reduced_ceremony_applied');
     expect(reducedDoc).toContain('POST_IMPL_VERIFIED_TRIVIAL');
     expect(reducedDoc).toContain('tar -tzf');

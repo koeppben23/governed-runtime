@@ -19,8 +19,8 @@ working tree — it operates independently of Development changes on `main`.
 ## Prerequisites (run before the demo)
 
 ```bash
-# From the governed-runtime repository root
-./run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-demos
+# From demos/java-task-manager/
+../../run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-demos
 # Open /tmp/flowguard-demos/java-task-manager in OpenCode Desktop
 ```
 

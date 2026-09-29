@@ -56,8 +56,8 @@ Same as `README.md`, plus:
 ## Setup — Two Workspaces, One Seed
 
 ```bash
-# from the governed-runtime repository root
-./run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-demos
+# From demos/java-task-manager/
+../../run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-demos
 ```
 
 The root runner prepares every installable live demo and creates the two A/B

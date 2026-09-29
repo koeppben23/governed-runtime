@@ -44,8 +44,8 @@ for already-terminal sessions and defaults to a redacted sharing archive.
 ## Quick Start
 
 ```bash
-# From the governed-runtime repository root: prepare every live demo workspace
-./run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-demos
+# From demos/java-task-manager/: prepare every live demo workspace
+../../run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-demos
 cd /tmp/flowguard-demos/java-task-manager
 
 # Verify the starting state
