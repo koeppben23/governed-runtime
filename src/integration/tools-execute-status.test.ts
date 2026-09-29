@@ -246,6 +246,12 @@ describe('status', () => {
       expect(result.next).toBeUndefined();
     });
 
+    it('returns no review feedback before a bound changes-requested review exists', async () => {
+      await hydrateSession();
+      const result = parseToolResult(await status.execute({ reviewFeedback: true }, ctx));
+      expect(result.reviewFeedback).toBeNull();
+    });
+
     it('returns the advisory ProofGraph projection when proofGraph:true', async () => {
       await hydrateSession();
       const result = parseToolResult(await status.execute({ proofGraph: true }, ctx));

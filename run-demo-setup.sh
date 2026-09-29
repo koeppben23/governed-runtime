@@ -5,8 +5,9 @@ usage() {
     cat <<EOF
 Usage: $0 [--prepare-only | --install --tarball <tgz>] [--demo main|reduced] <target-root>
 
-Prepare fresh FlowGuard live-demo workspaces. Without --demo, prepares all
-installable live demos.
+Prepare fresh FlowGuard live-demo workspaces. This prepares files and optional
+installs only; it does not start a session or execute a demo flow. Without
+--demo, prepares all installable live demos.
 
 Modes:
   --prepare-only               Copy seeds and initialize Git repositories (default).
@@ -174,7 +175,7 @@ if [[ "$DEMO" == "all" || "$DEMO" == "reduced" ]]; then
 fi
 
 echo ""
-echo "=== FlowGuard demos ready ==="
+echo "=== FlowGuard demo workspaces prepared ==="
 echo ""
 if [[ "$DEMO" == "all" || "$DEMO" == "main" ]]; then
     echo "Main demo:"
@@ -190,3 +191,6 @@ if [[ "$DEMO" == "all" || "$DEMO" == "reduced" ]]; then
 fi
 echo "Executable ProofGraph fixtures:"
 echo "  ./demos/run-proofgraph-variants.sh"
+echo ""
+echo "No FlowGuard session has been started and no demo flow has run."
+echo "Open a prepared workspace and follow its runbook before claiming live evidence."

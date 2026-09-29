@@ -43,6 +43,10 @@ for already-terminal sessions and defaults to a redacted sharing archive.
 
 ## Quick Start
 
+`run-demo-setup.sh` prepares fresh workspaces and optionally installs the
+tarball. It does not call `/start`, dispatch a reviewer, or complete any flow.
+Follow the live-evidence checklist below before claiming a demo was executed.
+
 ```bash
 # From demos/java-task-manager/: prepare every live demo workspace
 ../../run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-demos
@@ -132,6 +136,52 @@ comparison together with the main workspace by default. Use
 `run-reduced-ceremony-demo-setup.sh` directly only when preparing the A/B
 comparison on its own.
 
+## Live Evidence Checklist
+
+Workspace preparation is not a live run. Record a distinct host-session ID and
+FlowGuard session ID for every row; the host-session ID is the package identity
+used by `verify-evidence-package.mjs`. Do not reuse a session or a chat export
+between flows.
+
+| Flow         | Workspace                      | Required terminal state    | Individual evidence package                                                |
+| ------------ | ------------------------------ | -------------------------- | -------------------------------------------------------------------------- |
+| Architecture | `java-task-manager`            | `ARCH_COMPLETE`            | Create a raw `/archive`; verify as `architecture` / `ARCH_COMPLETE`.       |
+| Development  | `java-task-manager`            | `COMPLETE` after `/export` | Verify the `/export` package as `development` / `EXPORT_READY`.            |
+| Peer review  | `java-task-manager`            | `PEER_REVIEW_COMPLETE`     | Create a raw `/archive`; verify as `peer-review` / `PEER_REVIEW_COMPLETE`. |
+| Reduced-on   | `reduced-ceremony/reduced-on`  | `COMPLETE` after `/export` | Verify its `/export` package as `development` / `EXPORT_READY`.            |
+| Reduced-off  | `reduced-ceremony/reduced-off` | `COMPLETE` after `/export` | Verify its `/export` package as `development` / `EXPORT_READY`.            |
+
+Mark the live record only after the terminal state and individual verification
+both succeeded:
+
+- [ ] Architecture: `ARCH_COMPLETE`, distinct session IDs, raw package verified.
+- [ ] Development: `COMPLETE`, distinct session IDs, `/export` package verified.
+- [ ] Peer Review: `PEER_REVIEW_COMPLETE`, distinct session IDs, raw package verified.
+- [ ] Reduced-on: `COMPLETE`, distinct session IDs, `/export` package verified.
+- [ ] Reduced-off: `COMPLETE`, distinct session IDs, `/export` package verified.
+
+For Architecture and Peer Review, enable
+`archive.redaction.allowRawExport=true` and run:
+
+```text
+/archive redactionMode=none includeRaw=true
+```
+
+Verify each package independently, substituting the recorded host session ID,
+flow, and package snapshot phase from the table:
+
+```bash
+node demos/java-task-manager/verify-evidence-package.mjs "$PKG" \
+  --expect-session "$HOST_SESSION_ID" \
+  --expect-flow <architecture|development|peer-review> \
+  --expect-phase <ARCH_COMPLETE|EXPORT_READY|PEER_REVIEW_COMPLETE>
+```
+
+`evidence-manifest.example.json` intentionally remains the three-flow manifest
+for Architecture, Development, and Peer Review. Do not extend it to imply that
+the two reduced-ceremony flows ran; retain their separately verified packages
+and this checklist instead.
+
 ## Archive and Raw Evidence
 
 `/archive` is the operational export for terminal sessions. It creates a
@@ -171,7 +221,7 @@ node demos/java-task-manager/verify-evidence-package.mjs <package.tar.gz> \
 
 It exits non-zero on any tamper or session misassignment and refuses to present
 a redacted sharing archive as fully verifiable raw evidence (exit code 3). The
-three demo sessions (architecture, development, peer-review) and their external
+three original demo sessions (architecture, development, peer-review) and their external
 host chat exports are bound by a small evidence manifest template
 (`evidence-manifest.example.json`), verified with:
 

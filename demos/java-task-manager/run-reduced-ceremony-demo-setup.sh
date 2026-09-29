@@ -112,7 +112,9 @@ for (const fingerprint of fingerprints) {
     continue;
   }
   for (const sessionId of sessions) {
-    const statePath = path.join(sessionsRoot, sessionId, 'state', 'session-state.json');
+    // Read only the canonical live-session location. Archived layouts are not
+    // runtime state and must not satisfy this preflight.
+    const statePath = path.join(sessionsRoot, sessionId, 'session-state.json');
     let state;
     try {
       state = JSON.parse(fs.readFileSync(statePath, 'utf8'));

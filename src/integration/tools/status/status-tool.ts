@@ -6,7 +6,7 @@
  * and next action. Does NOT mutate state.
  *
  * Supports focused projections via optional boolean flags:
- * whyBlocked, evidence, context, readiness.
+ * whyBlocked, evidence, context, readiness, reviewFeedback.
  *
  * @version v2 (extracted projection dispatch and full status builder)
  */
@@ -63,6 +63,7 @@ import {
   buildBlockedProjection,
   buildContextProjection,
   buildReadinessProjection,
+  buildReviewFeedbackProjection,
 } from '../../status/status-detail-projections.js';
 import { buildFinishCard } from '../../status/status-finish.js';
 import {
@@ -90,6 +91,7 @@ interface StatusArgs {
   readiness?: boolean;
   finish?: boolean;
   proofGraph?: boolean;
+  reviewFeedback?: boolean;
 }
 
 /**
@@ -208,6 +210,24 @@ async function buildFinishProjectionResponse(
     ),
   );
 }
+
+function buildReviewFeedbackProjectionResponse(
+  state: SessionState,
+  checkFields: Record<string, unknown>,
+): string {
+  return JSON.stringify(
+    enrichWithWorkflowDirective(
+      {
+        phase: state.phase,
+        sessionId: state.id,
+        reviewFeedback: buildReviewFeedbackProjection(state),
+        ...checkFields,
+      },
+      state,
+    ),
+  );
+}
+
 async function resolveProjection(input: ResolveProjectionInput): Promise<string | null> {
   const { args, state, policy, presentation } = input;
   const checkFields = buildCheckProjectionFields(state, policy);
@@ -277,6 +297,9 @@ async function resolveProjection(input: ResolveProjectionInput): Promise<string 
       ),
     );
   }
+  if (args.reviewFeedback) {
+    return buildReviewFeedbackProjectionResponse(state, checkFields);
+  }
   if (args.proofGraph) {
     return await buildProofGraphProjectionResponse(state, policy, checkFields);
   }
@@ -304,6 +327,13 @@ export const status: ToolDefinition = {
       .describe('Return per-slot evidence detail from the session completeness check.'),
     context: z.boolean().optional().describe('Return actor/policy/archive context projection.'),
     readiness: z.boolean().optional().describe('Return compact operational readiness projection.'),
+    reviewFeedback: z
+      .boolean()
+      .optional()
+      .describe(
+        'Return read-only, untrusted reviewer feedback only for one exact bound, ' +
+          'unconsumed changes-requested review. Never accepts or consumes findings.',
+      ),
     finish: z
       .boolean()
       .optional()

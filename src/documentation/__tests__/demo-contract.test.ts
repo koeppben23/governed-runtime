@@ -310,7 +310,8 @@ describe('java demo workflow contract', () => {
     // TICKET_REFERENCE_WITHOUT_CONTENT.
     expect(DEMO_SCRIPT).toContain('/task --file TICKET.md');
     expect(DEMO_SCRIPT).not.toContain('/task Read TICKET.md');
-    expect(DEMO_SCRIPT).toContain('/architecture Read ADR_TICKET.md');
+    expect(DEMO_SCRIPT).toContain('/architecture Read ADR_TICKET.md and TICKET.md');
+    expect(DEMO_SCRIPT).toContain('flowguard_status({ reviewFeedback: true })');
     // The asymmetry is intentional and documented: architecture has no
     // reference-adoption contract (no --file/--ref), the agent reads the task
     // file and passes adrText explicitly.

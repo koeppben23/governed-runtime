@@ -122,6 +122,8 @@ describe('Claude Code plugin templates', () => {
       'skills/implement/SKILL.md',
     ]) {
       expect(files[skill], skill).toContain('do not invoke a reviewer, construct reviewer context');
+      expect(files[skill], skill).toContain('flowguard_status({ reviewFeedback: true })');
+      expect(files[skill], skill).toContain('reviewFeedback` is null');
     }
   });
 

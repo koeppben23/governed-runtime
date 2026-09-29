@@ -535,6 +535,12 @@ Standalone PR/content `/review` evaluates external diffs against the **current r
 - `latestArchitectureReview` — latest architecture (ADR) review findings. planVersion is a compatibility binding for the ADR review subject and must not be interpreted as the task plan version.
 - `latestImplementationReview` — latest implementation review findings (same shape without planVersion)
 
+For an active revision loop, `flowguard_status({ reviewFeedback: true })`
+projects only one exact host-bound, unconsumed `changes_requested` review. It
+returns `null` for missing, ambiguous, stale, malformed, accepted, or consumed
+evidence. Its reviewer-authored strings are explicitly marked untrusted data;
+the projection is read-only and cannot be resubmitted as `reviewFindings`.
+
 ---
 
 ## Installed Artifacts

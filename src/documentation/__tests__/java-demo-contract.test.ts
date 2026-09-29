@@ -87,6 +87,9 @@ describe('Java Task Manager demo contract', () => {
     expect(ticket).toMatch(/(?:replace.*Javadoc|Javadoc.*active regression)/is);
     expect(readme).toContain('assert `$.taskId`, and update its Javadoc');
     expect(readme).toContain('../../run-demo-setup.sh --install');
+    expect(readme).toContain('## Live Evidence Checklist');
+    expect(readme).toContain('does not call `/start`');
+    expect(readme).toContain('- [ ] Reduced-off: `COMPLETE`');
     expect(demoScript).toContain('die `taskId`-Fehlerantwort prüfen');
     expect(demoScript).toContain('../../run-demo-setup.sh --install');
     expect(demoScript).toContain('flowguard_status({ proofGraph: true })');
@@ -127,6 +130,7 @@ describe('Java Task Manager demo contract', () => {
     expect(adrTicket).toContain('## Requested Output');
     expect(adrTicket).toContain('## Constraints');
     expect(adrTicket).toContain('## Acceptance Criteria');
+    expect(adrTicket).toContain('## Decision Quality Requirements');
 
     // The Requested Output section requires MADR sections
     const requestedOutput = extractSection(adrTicket, 'Requested Output');
@@ -139,6 +143,9 @@ describe('Java Task Manager demo contract', () => {
     expect(adrTicket).toContain('`TaskRepository.findById()`');
     expect(adrTicket).toContain('`TaskService.getTask()`');
     expect(adrTicket).toContain('`TaskService.updateTask()`');
+    expect(adrTicket).toContain('at least two realistic service-layer options');
+    expect(adrTicket).toContain('falsifiable validation path');
+    expect(adrTicket).toContain('`TICKET.md`');
 
     // Referenced symbols exist as methods in the seed code (not just words)
     const [serviceSrc, repoSrc] = await Promise.all([
@@ -154,6 +161,7 @@ describe('Java Task Manager demo contract', () => {
     expect(demoScript).toContain('/architecture');
     expect(demoScript).toContain('ARCH_COMPLETE');
     expect(demoScript).toContain('ADR_TICKET.md');
+    expect(demoScript).toContain('flowguard_status({ reviewFeedback: true })');
   });
 
   it('keeps the reduced-ceremony A/B scenario bound to the runtime contract', async () => {
@@ -184,6 +192,8 @@ describe('Java Task Manager demo contract', () => {
     // proof uses the host session id, not the FlowGuard session UUID.
     expect(reducedDoc).toContain('flowguard_status({ evidence: true })');
     expect(reducedDoc).toContain('hostSessionId');
+    expect(reducedDoc).toContain('--expect-flow development');
+    expect(reducedDoc).toContain('--expect-phase EXPORT_READY');
 
     // The setup script writes both policies, checks parity and verifies the
     // runtime-selected checks plus the frozen policy snapshot read-only.
@@ -206,8 +216,9 @@ describe('Java Task Manager demo contract', () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'flowguard-reduced-preflight-'));
     const workspace = path.join(tempDir, 'reduced-on');
     const configDir = path.join(tempDir, 'config');
-    const stateDir = path.join(configDir, 'workspaces', 'fp-test', 'sessions', 'sid-test', 'state');
+    const stateDir = path.join(configDir, 'workspaces', 'fp-test', 'sessions', 'sid-test');
     const statePath = path.join(stateDir, 'session-state.json');
+    const legacyStatePath = path.join(stateDir, 'state', 'session-state.json');
     const runVerify = (target = workspace) =>
       execFile('bash', [REDUCED_SETUP_SCRIPT, '--verify-session', target], {
         cwd: REPO_ROOT,
@@ -233,6 +244,18 @@ describe('Java Task Manager demo contract', () => {
 
     try {
       await fs.mkdir(workspace, { recursive: true });
+      await fs.mkdir(path.dirname(legacyStatePath), { recursive: true });
+      await fs.writeFile(
+        legacyStatePath,
+        JSON.stringify({
+          binding: { worktree: workspace },
+          activeChecks: ['test', 'build'],
+          policySnapshot: teamPolicy,
+        }),
+        'utf-8',
+      );
+      // Archived-state layouts are not valid live-session state locations.
+      await expect(runVerify()).rejects.toMatchObject({ code: 1 });
       await fs.mkdir(stateDir, { recursive: true });
 
       await writeState({});
@@ -359,7 +382,14 @@ describe('Java Task Manager demo contract', () => {
         code: 'ENOENT',
       });
 
-      await execFile('bash', [ROOT_SETUP_SCRIPT, '--prepare-only', targetRoot], { cwd: REPO_ROOT });
+      const { stdout: setupOutput } = await execFile(
+        'bash',
+        [ROOT_SETUP_SCRIPT, '--prepare-only', targetRoot],
+        { cwd: REPO_ROOT },
+      );
+      expect(setupOutput).toContain(
+        'No FlowGuard session has been started and no demo flow has run.',
+      );
 
       const [{ stdout: branch }, onConfig, offConfig] = await Promise.all([
         execFile('git', ['branch', '--show-current'], { cwd: mainWorkspace }),

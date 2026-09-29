@@ -55,6 +55,10 @@ Same as `README.md`, plus:
 
 ## Setup — Two Workspaces, One Seed
 
+The root runner prepares files and installs FlowGuard only. It does not start a
+session or execute either scenario; the runtime preflight below is required
+after `/start` in each fresh workspace.
+
 ```bash
 # From demos/java-task-manager/
 ../../run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-demos
@@ -211,11 +215,17 @@ tar -xOzf "$PKG" "$MEMBER" | grep reduced_ceremony_applied
 
 The member is prefixed with the host session id (e.g.
 `<host-session-id>/audit/audit.jsonl`); the `tar -tzf` step resolves it instead
-of assuming a layout. Optionally cross-check the whole package offline:
+of assuming a layout. Verify this exact package offline:
 
 ```bash
-node demos/java-task-manager/verify-evidence-package.mjs "$PKG" --expect-session "$SESSION_ID"
+node demos/java-task-manager/verify-evidence-package.mjs "$PKG" \
+  --expect-session "$SESSION_ID" \
+  --expect-flow development \
+  --expect-phase EXPORT_READY
 ```
+
+This is an individual package check. The checked-in three-flow evidence
+manifest deliberately does not represent this reduced-ceremony run.
 
 Result of scenario B:
 
@@ -278,7 +288,9 @@ iteration and verdict instead of `waived`.
 ### Step C4 — Approval and Export
 
 `/approve` at `EVIDENCE_REVIEW` → `EXPORT_READY`, then `/export` →
-`COMPLETE`. Identisch zu B.
+`COMPLETE`. Identisch zu B. Record C's distinct host session ID and verify its
+own `/export` package with the same individual `development` / `EXPORT_READY`
+command from Step B7; do not substitute B's package or session ID.
 
 ---
 
@@ -319,3 +331,6 @@ or the export commit. The Java bugfix in scenario A keeps the full review.
 - The `/status` presentation card does not render the reduced-ceremony status or
   the waived-evidence count; the concrete values are shown from the structured
   `flowguard_status` response instead.
+- Retain the separately verified B and C packages with the five-flow checklist
+  in `README.md`; the three-flow evidence manifest intentionally remains scoped
+  to Architecture, Development, and Peer Review.

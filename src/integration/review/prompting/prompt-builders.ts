@@ -140,6 +140,7 @@ function renderFindingsSemanticRule(input: ReviewerTaskPromptInput): string[] {
   return [
     '- Produce one complete ReviewerFindingsInput result. Native structured output enforces serialization when available.',
     '- overallVerdict must be changes_requested whenever blockingIssues is non-empty; accept is allowed only when blockingIssues is empty.',
+    '- A contradicted content/design challenge, or a failed/not_verified implementation challenge, is a blocking issue: record it and return changes_requested, never accept.',
     '- unable_to_review is valid only when honest review is impossible because required context/evidence is missing, corrupt, mismatched, or unavailable.',
     '- Every substantive finding needs the relation/evidence semantics below.',
     `- Bind iteration exactly to ${input.iteration}.`,

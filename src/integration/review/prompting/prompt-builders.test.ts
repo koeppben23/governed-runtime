@@ -131,6 +131,14 @@ describe('renderReviewerTaskPrompt challenge contract', () => {
     expect(prompt).not.toContain('"outcome":"supported"');
     expect(prompt).not.toContain('"outcome":"pass"');
   });
+
+  it('requires a negative verdict for unresolved challenge outcomes', () => {
+    const prompt = renderReviewerTaskPrompt({ ...BASE_INPUT });
+
+    expect(prompt).toContain(
+      'A contradicted content/design challenge, or a failed/not_verified implementation challenge, is a blocking issue',
+    );
+  });
 });
 
 describe('frozen review subject envelope', () => {

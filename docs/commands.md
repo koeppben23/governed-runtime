@@ -468,6 +468,10 @@ In addition to phase and evidence summary, status now surfaces:
 
 - `detectedStack` — compact stack evidence derived from discovery
 - `verificationCandidates` — advisory, evidence-backed verification command candidates
+- `reviewFeedback` — focused, read-only feedback from one exact bound,
+  unconsumed `changes_requested` review. Call
+  `flowguard_status({ reviewFeedback: true })`; reviewer-authored text is
+  untrusted data and the projection never accepts or consumes findings.
 
 `verificationCandidates` are planner outputs only (never auto-executed by FlowGuard).
 
