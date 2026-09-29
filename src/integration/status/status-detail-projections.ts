@@ -12,6 +12,7 @@ import type {
   ReviewAssuranceState,
   ReviewInvocationEvidence,
   ReviewObligation,
+  ReviewObligationType,
 } from '../../state/evidence.js';
 import { evaluate } from '../../machine/evaluate.js';
 import {
@@ -24,7 +25,10 @@ import { evaluateCompleteness } from '../../audit/completeness.js';
 import { evaluateProofGraphGateFromState } from '../../audit/proofgraph/gate.js';
 import { mapEnforcementReasonToRegistryCode } from '../../audit/proofgraph/reason-code-mapping.js';
 import { hashFindings } from '../review/findings-hash.js';
-import { findAcceptedInvocationForFindings } from '../review/obligations/assurance.js';
+import {
+  findAcceptedInvocationForFindings,
+  isCurrentReviewGeneration,
+} from '../review/obligations/assurance.js';
 import type {
   BlockedProjection,
   ContextProjection,
@@ -215,15 +219,26 @@ interface BoundReviewFeedbackEvidence {
   readonly invocation: ReviewInvocationEvidence;
 }
 
+function currentReviewFeedbackObligationType(state: SessionState): ReviewObligationType | null {
+  if (state.phase === 'PLAN') return 'plan';
+  if (state.phase === 'ARCHITECTURE') return 'architecture';
+  if (state.phase === 'IMPL_REVIEW') return 'implement';
+  if (state.phase === 'PEER_REVIEW') return 'review';
+  return null;
+}
+
 function resolveBoundReviewFeedbackEvidence(
   state: SessionState,
 ): BoundReviewFeedbackEvidence | null {
   const assurance = state.reviewAssurance;
-  if (!assurance) return null;
+  const currentObligationType = currentReviewFeedbackObligationType(state);
+  if (!assurance || !currentObligationType) return null;
 
   const candidates = assurance.obligations.filter(
     (obligation) =>
       obligation.status === 'fulfilled' &&
+      obligation.obligationType === currentObligationType &&
+      isCurrentReviewGeneration(obligation) &&
       obligation.invocationId !== null &&
       obligation.fulfilledAt !== null &&
       obligation.consumedAt === null,

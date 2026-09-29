@@ -14,7 +14,7 @@ import { hashFindings } from '../review/findings-hash.js';
 import { buildReviewFeedbackProjection } from './status-detail-projections.js';
 
 function feedbackState() {
-  const base = makeState('ARCH_REVIEW');
+  const base = makeState('ARCHITECTURE');
   const obligation = createReviewObligation({
     policySnapshot: {
       challengePolicy: {
@@ -78,7 +78,7 @@ function feedbackState() {
     attemptId,
   });
 
-  return makeState('ARCH_REVIEW', {
+  return makeState('ARCHITECTURE', {
     reviewAssurance: {
       assuranceSchemaVersion: 'review-assurance.v6',
       obligations: [
@@ -112,7 +112,7 @@ function feedbackState() {
 }
 
 describe('buildReviewFeedbackProjection', () => {
-  it('projects only exact, bound, unconsumed changes-requested feedback as untrusted data', () => {
+  it('projects only exact, current, bound, unconsumed changes-requested feedback as untrusted data', () => {
     const projection = buildReviewFeedbackProjection(feedbackState());
 
     expect(projection).toMatchObject({
@@ -158,5 +158,39 @@ describe('buildReviewFeedbackProjection', () => {
 
     expect(buildReviewFeedbackProjection(consumed)).toBeNull();
     expect(buildReviewFeedbackProjection(mismatchedHost)).toBeNull();
+  });
+
+  it('fails closed outside the owning phase, for a stale generation, or a different obligation type', () => {
+    const state = feedbackState();
+    const assurance = state.reviewAssurance!;
+    const architectureReview = { ...state, phase: 'ARCH_REVIEW' as const };
+    const staleGeneration = {
+      ...state,
+      reviewAssurance: {
+        ...assurance,
+        obligations: assurance.obligations.map((item) => ({
+          ...item,
+          criteriaVersion: 'obsolete-generation',
+        })),
+      },
+    };
+    const planObligation = {
+      ...state,
+      reviewAssurance: {
+        ...assurance,
+        obligations: assurance.obligations.map((item) => ({
+          ...item,
+          obligationType: 'plan' as const,
+        })),
+        invocations: assurance.invocations.map((item) => ({
+          ...item,
+          obligationType: 'plan' as const,
+        })),
+      },
+    };
+
+    expect(buildReviewFeedbackProjection(architectureReview)).toBeNull();
+    expect(buildReviewFeedbackProjection(staleGeneration)).toBeNull();
+    expect(buildReviewFeedbackProjection(planObligation)).toBeNull();
   });
 });
