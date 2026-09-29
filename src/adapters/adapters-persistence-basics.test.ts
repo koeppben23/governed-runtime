@@ -487,6 +487,7 @@ describe('persistence', () => {
       const state = makeProgressedState('IMPL_REVIEW');
       const json = JSON.parse(JSON.stringify(state)) as Record<string, unknown>;
       json.implementation = {
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
         changedFiles: ['a.ts'],
         domainFiles: ['a.ts'],
         digest: 'impl-digest',
@@ -496,6 +497,7 @@ describe('persistence', () => {
         {
           attemptId: '00000000-0000-4000-8000-000000000001',
           scope: 'implementation',
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
           implementationDigest: 'impl-digest',
           result: {
             checkId: 'security',
@@ -544,6 +546,7 @@ describe('persistence', () => {
       const state = makeProgressedState('IMPL_REVIEW');
       const json = JSON.parse(JSON.stringify(state)) as Record<string, unknown>;
       json.implementation = {
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
         changedFiles: ['a.ts'],
         domainFiles: ['a.ts'],
         digest: 'impl-digest',
@@ -553,6 +556,7 @@ describe('persistence', () => {
         {
           attemptId: '00000000-0000-4000-8000-000000000001',
           scope: 'implementation',
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
           implementationDigest: 'impl-digest',
           result: {
             checkId: 'security',

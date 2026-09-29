@@ -319,6 +319,7 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
     sessDir,
     makeState('IMPL_REVIEW', {
       implementation: {
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
         changedFiles: ['src/example.ts'],
         domainFiles: ['src/example.ts'],
         digest: 'impl-digest',
@@ -336,6 +337,7 @@ async function runResolutionAndIndependentReReview(): Promise<boolean> {
         {
           attemptId,
           scope: 'implementation',
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
           implementationDigest: 'impl-digest',
           executionObservation: TEST_EXECUTION_OBSERVATION,
           result: {

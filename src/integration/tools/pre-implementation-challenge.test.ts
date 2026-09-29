@@ -56,12 +56,42 @@ describe('resolvePreImplementationChallengeClassification', () => {
       'src/db.ts',
       'src/api.ts',
     ]);
-    expect(r).toEqual({ kind: 'available', changedFiles: ['src/db.ts', 'src/api.ts'] });
+    expect(r).toEqual({
+      kind: 'available',
+      changedFiles: ['src/db.ts', 'src/api.ts'],
+      scopeUnknown: false,
+    });
     expect(mocks.readDiscovery).toHaveBeenCalledWith('/ws');
   });
 
-  it('available with an empty set when no targetPaths and empty discovery (never unavailable)', async () => {
+  it('marks an empty scope unknown (never unavailable, never silently trivial)', async () => {
     const r = await resolvePreImplementationChallengeClassification(withChallenge, '/ws');
-    expect(r).toEqual({ kind: 'available', changedFiles: [] });
+    // No target paths and no detected risk surfaces is UNKNOWN scope: the
+    // provisional challenge floor is STANDARD, not TRIVIAL.
+    expect(r).toEqual({ kind: 'available', changedFiles: [], scopeUnknown: true });
+  });
+
+  it('discovery surfaces raise the class but never prove a planned scope', async () => {
+    mocks.readDiscovery.mockResolvedValueOnce(persistenceDiscovery(['docs/api.md']));
+    const r = await resolvePreImplementationChallengeClassification(withChallenge, '/ws');
+    // The repository happens to contain docs/api.md; that says nothing about
+    // the planned change set, so the declared scope stays UNKNOWN.
+    expect(r).toEqual({
+      kind: 'available',
+      changedFiles: ['docs/api.md'],
+      scopeUnknown: true,
+    });
+  });
+
+  it('declared target paths keep the scope known regardless of discovery', async () => {
+    mocks.readDiscovery.mockResolvedValueOnce(persistenceDiscovery(['docs/api.md']));
+    const r = await resolvePreImplementationChallengeClassification(withChallenge, '/ws', [
+      'src/app.ts',
+    ]);
+    expect(r).toEqual({
+      kind: 'available',
+      changedFiles: ['src/app.ts', 'docs/api.md'],
+      scopeUnknown: false,
+    });
   });
 });

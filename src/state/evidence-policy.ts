@@ -228,7 +228,6 @@ export const PolicySnapshotSchema = z
     /** Runtime risk-classification enforcement frozen at hydrate time. */
     enforceRiskClassification: z.boolean(),
     /** Structured downgrade override permission. */
-    allowRiskDowngradeOverride: z.boolean(),
     /** Reduced ceremony permission. */
     allowReducedCeremony: z.boolean(),
     /** Policy-gated Discovery health enforcement frozen at hydrate time (#399). */

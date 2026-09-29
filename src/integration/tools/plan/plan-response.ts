@@ -59,7 +59,7 @@ import {
   reviewedIdentityFields,
 } from '../../review/evidence/reviewed-digest.js';
 import { buildHeuristicRiskWarning } from '../../proofgraph/claim-contract.js';
-import { assessMinimumTaskClass } from '../../phase-tool-gate.js';
+import { assessMinimumTaskClass, declaredTaskClassFor } from '../../phase-tool-gate.js';
 import {
   resolveRuntimeReviewPlatform,
   resolveReviewOrchestrationMode,
@@ -112,6 +112,7 @@ export function buildPlanReviewObligationInput(input: {
   iteration: number;
   planVersion: number;
   classificationFiles: readonly string[] | undefined;
+  provisionalScopeUnknown?: boolean | undefined;
   freeze: RepositoryAuthorityFreezeResult;
   planClaimDeclarations: PlanClaimDeclarations | LegacyEmptyPlanClaimDeclarations;
 }): Parameters<typeof createObligationAndAttempt>[1] {
@@ -122,6 +123,7 @@ export function buildPlanReviewObligationInput(input: {
     iteration,
     planVersion,
     classificationFiles,
+    provisionalScopeUnknown,
     freeze,
     planClaimDeclarations,
   } = input;
@@ -154,7 +156,9 @@ export function buildPlanReviewObligationInput(input: {
     profileSource: 'policy_default',
     policySnapshot: state.policySnapshot,
     changedFiles: classificationFiles,
-    claimedTaskClass: state.claimedTaskClass,
+    declaredTaskClass: declaredTaskClassFor(state),
+    escalatedTaskClass: state.claimedTaskClass,
+    ...(provisionalScopeUnknown !== undefined ? { provisionalScopeUnknown } : {}),
     metadata,
     repositoryAuthority: frozenAuthorityOrUndefined(freeze),
     // Durable freeze outcome: continuations and forensics render the exact
@@ -402,6 +406,8 @@ export async function persistNonConvergedPlanReview(
     iteration,
     nextPlanVersion,
     resolvedTargetPaths,
+    provisionalScopeUnknown:
+      classification.kind === 'available' ? classification.scopeUnknown : false,
   });
   if (mint.kind === 'blocked') return mint.message;
   const attemptResult = mint.attemptResult;
@@ -441,11 +447,20 @@ async function mintPlanRevisionAttempt(input: {
   iteration: number;
   nextPlanVersion: number;
   resolvedTargetPaths: readonly string[];
+  provisionalScopeUnknown: boolean;
 }): Promise<
   | { kind: 'ok'; attemptResult: ReturnType<typeof createObligationAndAttempt> | null }
   | { kind: 'blocked'; message: string }
 > {
-  const { scope, finalState, revision, iteration, nextPlanVersion, resolvedTargetPaths } = input;
+  const {
+    scope,
+    finalState,
+    revision,
+    iteration,
+    nextPlanVersion,
+    resolvedTargetPaths,
+    provisionalScopeUnknown,
+  } = input;
   const freeze = await freezeContextAuthorityAtHead(scope.worktree);
   const authority = frozenAuthorityOrUndefined(freeze);
   const discovery = await resolveAttemptDiscoveryOrBlock({
@@ -472,6 +487,7 @@ async function mintPlanRevisionAttempt(input: {
       iteration,
       planVersion: nextPlanVersion,
       classificationFiles: resolvedTargetPaths,
+      provisionalScopeUnknown,
       freeze,
       planClaimDeclarations:
         finalState.plan?.claimDeclarations ??

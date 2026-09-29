@@ -399,6 +399,7 @@ describe('buildFinishDocument', () => {
         evaluatedAt: '2025-01-01T00:00:00Z',
       },
       implementation: {
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
         changedFiles: ['src/foo.ts'],
         domainFiles: ['src/foo.ts'],
         digest: 'impl-digest',
@@ -442,6 +443,7 @@ describe('buildFinishDocument', () => {
         evaluatedAt: '2025-01-01T00:00:00Z',
       },
       implementation: {
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
         changedFiles: ['src/foo.ts'],
         domainFiles: ['src/foo.ts'],
         digest: 'impl-digest',

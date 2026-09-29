@@ -56,27 +56,26 @@ import {
   writeStateWithArtifacts,
 } from '../helpers.js';
 import { existsSync } from 'node:fs';
-
+import { randomUUID } from 'node:crypto';
 // State & Machine
 import { evaluate } from '../../../machine/evaluate.js';
 import { autoAdvance } from '../../../rails/types.js';
 import type { ReviewFindings, ImplEvidence } from '../../../state/evidence.js';
-import type { SessionState, TaskClass } from '../../../state/schema.js';
+import type { SessionState } from '../../../state/schema.js';
 import { isCommandAllowed, Command } from '../../../machine/commands.js';
 
 // Rail helpers
 
 // Adapters
-import {
-  changedFiles,
-  GitError,
-  hashWorktreeFiles,
-  isGitRepoStrict,
-  worktreeDiff,
-} from '../../../adapters/git.js';
+import { changedFiles, GitError, isGitRepoStrict, worktreeDiff } from '../../../adapters/git.js';
 import { computeGitControlPlaneMarker } from '../../git-control-plane.js';
 import type { FlowGuardPolicy } from '../../../config/policy.js';
 import { writeImplementationDiffArtifact } from './implement-diff-artifact.js';
+import {
+  computeImplementationDigest,
+  flowguardReportArtifacts,
+  scopeImplementationFiles,
+} from '../../../verification/implementation-subject.js';
 import { ensureReviewAssurance } from '../../../state/review-dispatch.js';
 import {
   resolveReviewDispatchAuthority,
@@ -85,9 +84,18 @@ import {
 import type { ReviewDispatchAuthority } from '../../review/dispatch/dispatch-authority.js';
 import { buildLatestImplementationReviewSummary } from './review-summary.js';
 import { collectHistoricallyRejectedImplementationDigests } from '../../review/evidence/rejected-digests.js';
-import { resolveCeremonyProfile, isNonDomainConfigPath } from '../../phase-tool-gate.js';
-import type { CeremonyProfileDecision } from '../../phase-tool-gate.js';
-import type { ImplementRuntime, ImplementationCeremony } from './implement-shared.js';
+import {
+  assessMinimumTaskClass,
+  isNonDomainConfigPath,
+  projectCeremonyEligibility,
+  ticketDeclarationGate,
+} from '../../phase-tool-gate.js';
+import {
+  resolveEffectiveTaskClass,
+  ticketRiskDeclarationFloor,
+} from '../../../state/risk-declaration.js';
+import type { CeremonyEligibilityProjection } from '../../phase-tool-gate.js';
+import type { ImplementRuntime } from './implement-shared.js';
 import {
   hasUnresolvedMutationEpisodes,
   reconcileMutationEpisodes,
@@ -98,22 +106,10 @@ import {
   materializeImplReviewContract,
   nextImplementationReviewIteration,
 } from '../implementation-review-activation.js';
-import { IntegrationInvariantError } from '../../errors.js';
 
 /**
- * The claimed task class a ceremony decision was derived from, fail-closed when
- * a reduced ceremony carries no claim (the profile is unreachable without one).
+ * A blocked implementation-recovery state, or null when recovery is allowed.
  */
-function requireCeremonyClaimedTaskClass(ceremony: CeremonyProfileDecision): TaskClass | undefined {
-  if (ceremony.profile === 'reduced' && ceremony.claimedTaskClass === undefined) {
-    throw new IntegrationInvariantError(
-      'REDUCED_CEREMONY_TASK_CLASS_MISSING',
-      'a reduced ceremony profile requires the claimed task class it was derived from',
-    );
-  }
-  return ceremony.claimedTaskClass;
-}
-
 function blockedImplRecovery(state: SessionState): string | null {
   if (state.phase !== 'IMPL_REVIEW') {
     return formatBlocked('COMMAND_NOT_ALLOWED', { command: '/implement', phase: state.phase });
@@ -222,18 +218,17 @@ export async function validateControlPlaneBinding(input: ImplementRuntime): Prom
 
 function buildImplRecordedResponse(input: {
   finalState: SessionState;
-  files: string[];
-  domainFiles: string[];
+  files: readonly string[];
+  domainFiles: readonly string[];
   reviewIteration: number;
   planVersion: number;
   authority: ReviewDispatchAuthority | null;
   transitions: ReadonlyArray<unknown>;
   reviewFindings: ReviewFindings[];
-  ceremony: ImplementationCeremony;
+  ceremony: CeremonyEligibilityProjection;
   policy: FlowGuardPolicy;
   baselineScoping: 'applied' | 'unavailable';
 }): Record<string, unknown> {
-  const reduced = input.ceremony.profile === 'reduced';
   const instruction = input.authority
     ? buildImplementationReviewInstruction(input.authority)
     : null;
@@ -243,17 +238,15 @@ function buildImplRecordedResponse(input: {
     changedFiles: input.files,
     domainFiles: input.domainFiles,
     baselineScoping: input.baselineScoping,
-    reviewMode: reduced ? 'reduced_ceremony' : 'subagent',
-    ceremonyProfile: input.ceremony.profile,
+    // The ceremony decision happens after post-implementation verification in
+    // /check; /implement never projects a provisional reduction.
+    reviewMode: 'subagent',
+    ceremonyProfile: 'full',
+    ceremonyEligibility: input.ceremony.status,
     ceremonyReason: input.ceremony.reason,
-    computedMinimumTaskClass: input.ceremony.computedMinimumTaskClass,
+    computedMinimumTaskClass:
+      input.finalState.implementationRiskAssessment?.computedMinimumTaskClass,
     ...(input.authority ? reviewObligationResponseFields(input.authority) : {}),
-    ...(reduced
-      ? {
-          agentInstruction:
-            'REDUCED_CEREMONY_APPLIED: Runtime evidence classified the changed files as TRIVIAL after passed validation. Reduced-ceremony evidence was recorded; implementation review evidence was not synthesized.',
-        }
-      : {}),
     ...(instruction ? { reviewDispatch: instruction.reviewDispatch } : {}),
     ...(instruction ? { reviewInvocation: instruction } : {}),
     _audit: { transitions: input.transitions },
@@ -267,81 +260,10 @@ function buildImplRecordedResponse(input: {
   return response;
 }
 
-/**
- * Apply pre-implementation baseline scoping (#baseline): subtract files that
- * were already dirty at session start AND are still unchanged (same content
- * hash), so pre-existing worktree changes (e.g. a stale opencode.json) are not
- * attributed to this implementation — while a pre-dirty file the task actually
- * modified (hash changed) is KEPT, never hidden. When no baseline was captured
- * (legacy session / git unreadable at hydrate), do NOT subtract: record the
- * full worktree exactly as before and mark scoping unavailable.
- *
- * Returns the scoped file list plus the scoping status, or an
- * IMPLEMENTATION_EVIDENCE_EMPTY block when nothing remains.
- */
-async function scopeImplementationFiles(
-  worktree: string,
-  rawFiles: string[],
-  baseline: SessionState['implementationBaseline'],
-): Promise<{ files: string[]; baselineScoping: 'applied' | 'unavailable' } | { block: string }> {
-  if (!baseline) {
-    if (rawFiles.length === 0) {
-      return {
-        block: formatBlocked('IMPLEMENTATION_EVIDENCE_EMPTY', {
-          reason: 'no changed files detected in worktree',
-        }),
-      };
-    }
-    return { files: rawFiles, baselineScoping: 'unavailable' };
-  }
-
-  // Re-hash the still-present baseline paths; a path is scoped out only if it
-  // was pre-dirty and its content hash is unchanged since session start.
-  const baselineByPath = new Map(baseline.dirtyFiles.map((d) => [d.path, d.hash]));
-  const candidatesToRehash = rawFiles.filter((f) => baselineByPath.has(f));
-  const currentHashes =
-    candidatesToRehash.length > 0 ? await hashWorktreeFiles(worktree, candidatesToRehash) : {};
-  const files = rawFiles.filter((f) => {
-    if (!baselineByPath.has(f)) return true; // not pre-dirty → task change
-    const before = baselineByPath.get(f) ?? null;
-    const now = currentHashes[f] ?? null;
-    // Scope out ONLY when both hashes are present and equal (provably unchanged
-    // since session start). If either hash is missing, we cannot prove the file
-    // is untouched, so we conservatively KEEP it — never hide a change.
-    if (before === null || now === null) return true;
-    return before !== now; // changed since baseline → keep; unchanged → drop
-  });
-
-  if (files.length === 0) {
-    return {
-      block: formatBlocked('IMPLEMENTATION_EVIDENCE_EMPTY', {
-        reason:
-          rawFiles.length > 0
-            ? 'no changed files attributable to this implementation after baseline scoping (all changed files were already dirty and unchanged since session start)'
-            : 'no changed files detected in worktree',
-      }),
-    };
-  }
-  return { files, baselineScoping: 'applied' };
-}
-
-/**
- * Build ImplEvidence with a CONTENT-bound digest and capture the change as a diff
- * artifact.
- *
- * The digest hashes each changed file's CURRENT content (path + git blob hash) so
- * distinct edits to the same file set yield distinct digests — closing the prior
- * gap where the digest was computed over file NAMES only. The unified diff is written
- * to `<sessDir>/implementation-diff.<diffDigest>.patch` (content-addressed, so
- * identical content is idempotent) and covered by the archive manifest checksums;
- * its digest is bound into the evidence. Diff capture is best-effort: an empty
- * diff or a write failure omits `diffDigest` and never blocks recording; the digest
- * is only set when the artifact was successfully written to disk.
- */
 async function buildImplEvidence(
   input: ImplementRuntime,
-  files: string[],
-  domainFiles: string[],
+  files: readonly string[],
+  domainFiles: readonly string[],
   digest: string,
 ): Promise<ImplEvidence> {
   let diffDigest: string | undefined;
@@ -356,23 +278,13 @@ async function buildImplEvidence(
   }
 
   return {
-    changedFiles: files,
-    domainFiles,
+    implementationId: randomUUID(),
+    changedFiles: [...files],
+    domainFiles: [...domainFiles],
     digest,
     ...(diffDigest ? { diffDigest } : {}),
     executedAt: input.ctx.now(),
   };
-}
-
-async function buildImplementationDigest(
-  input: ImplementRuntime,
-  files: string[],
-): Promise<string> {
-  const sortedFiles = [...files].sort();
-  const contentHashes = await hashWorktreeFiles(input.worktree, sortedFiles);
-  return input.ctx.digest(
-    sortedFiles.map((f) => `${f}:${contentHashes[f] ?? 'deleted'}`).join('\n'),
-  );
 }
 
 function reworkBlock(state: SessionState, digest: string): string | null {
@@ -403,6 +315,38 @@ export async function validateRecordGitPrerequisites(
   return validateControlPlaneBinding(input);
 }
 
+function ticketDeclarationBlocked(state: SessionState): string | null {
+  const gate = ticketDeclarationGate(state);
+  return gate.status === 'blocked' ? formatBlocked(gate.code, { reason: gate.reason }) : null;
+}
+
+function buildImplementationRiskAssessment(
+  state: SessionState,
+  assessment: ReturnType<typeof assessMinimumTaskClass>,
+  implementationDigest: string,
+  assessedFileCount: number,
+): NonNullable<SessionState['implementationRiskAssessment']> {
+  const declaration = state.ticket?.riskDeclaration ?? { kind: 'absent' as const };
+  const escalatedTaskClass = state.claimedTaskClass;
+  return {
+    computedMinimumTaskClass: assessment.minimumTaskClass,
+    effectiveTaskClass: resolveEffectiveTaskClass({
+      computed: assessment.minimumTaskClass,
+      declaration,
+      escalated: escalatedTaskClass,
+    }),
+    declaredTaskClass: ticketRiskDeclarationFloor(declaration),
+    declarationKind: declaration.kind,
+    ticketDigest: state.ticket?.digest ?? null,
+    ...(escalatedTaskClass !== undefined ? { escalatedTaskClass } : {}),
+    touchedSurfaces: [...assessment.touchedSurfaces],
+    riskTriggers: [...assessment.riskTriggers],
+    assessedFrom: 'implementation_changed_files',
+    assessedFileCount,
+    implementationDigest,
+  };
+}
+
 export async function handleImplRecord(
   input: ImplementRuntime,
   changedFilesOverride?: string[],
@@ -413,19 +357,38 @@ export async function handleImplRecord(
   const gitBlocked = await validateRecordGitPrerequisites(input);
   if (gitBlocked) return gitBlocked;
 
-  const rawFiles = changedFilesOverride ?? (await changedFiles(input.worktree));
+  // FlowGuard's own per-attempt report files (e.g. baseline VALIDATION
+  // run_specific reports written after hydrate) are tool evidence, never
+  // governed implementation bytes: subtract the exact candidate-derived paths
+  // BEFORE scoping, digest and risk assessment. Not a blanket exclusion —
+  // arbitrary project files stay in the set and keep failing closed.
+  const toolArtifacts = new Set(flowguardReportArtifacts(input.state));
+  const rawFiles = (changedFilesOverride ?? (await changedFiles(input.worktree))).filter(
+    (file) => !toolArtifacts.has(file),
+  );
   const scoped = await scopeImplementationFiles(
     input.worktree,
     rawFiles,
     input.state.implementationBaseline,
   );
-  if ('block' in scoped) return scoped.block;
-  const { files, baselineScoping } = scoped;
+  if (scoped.kind === 'empty') {
+    return formatBlocked('IMPLEMENTATION_EVIDENCE_EMPTY', {
+      reason:
+        scoped.rawFiles.length > 0
+          ? 'no changed files attributable to this implementation after baseline scoping (all changed files were already dirty and unchanged since session start)'
+          : 'no changed files detected in worktree',
+    });
+  }
+  const { files, baselineScoping } = scoped.subject;
 
   const domainFiles = files.filter(
     (f) => !f.startsWith('.opencode/') && !f.includes('node_modules/') && !isNonDomainConfigPath(f),
   );
-  const digest = await buildImplementationDigest(input, files);
+  const digest = await computeImplementationDigest({
+    worktree: input.worktree,
+    files,
+    digest: input.ctx.digest,
+  });
   const reworkBlocked = reworkBlock(input.state, digest);
   if (reworkBlocked) return reworkBlocked;
   const implEvidence = await buildImplEvidence(input, files, domainFiles, digest);
@@ -434,8 +397,10 @@ export async function handleImplRecord(
   const existingFindings = input.state.implReviewFindings ?? [];
   const reviewIteration = nextImplementationReviewIteration(input.state);
   const planVersion = (input.state.plan?.history.length ?? 0) + 1;
-  const ceremony = resolveCeremonyProfile({ state: input.state, changedFiles: files });
-  const ceremonyClaimedTaskClass = requireCeremonyClaimedTaskClass(ceremony);
+  const declarationBlocked = ticketDeclarationBlocked(input.state);
+  if (declarationBlocked !== null) return declarationBlocked;
+  const ceremony = projectCeremonyEligibility({ state: input.state, changedFiles: files });
+  const assessment = assessMinimumTaskClass(files);
   const nextState: SessionState = {
     ...input.state,
     mutationEpisodes: reconcileMutationEpisodes(
@@ -453,29 +418,20 @@ export async function handleImplRecord(
     implementationRework: input.state.implementationRework,
     // #762: bind the risk classification to the exact revision it describes, so a
     // gate rail can consult it without re-deriving it from a later file set.
-    implementationRiskAssessment: {
-      computedMinimumTaskClass: ceremony.computedMinimumTaskClass,
-      touchedSurfaces: [...ceremony.touchedSurfaces],
-      riskTriggers: [...ceremony.riskTriggers],
-      assessedFrom: 'implementation_changed_files',
-      assessedFileCount: files.length,
-      implementationDigest: implEvidence.digest,
-    },
+    implementationRiskAssessment: buildImplementationRiskAssessment(
+      input.state,
+      assessment,
+      implEvidence.digest,
+      files.length,
+    ),
     // Fresh implementation invalidates any prior post-implementation checks; the
     // machine advances to IMPL_VALIDATION where the checks are re-run against the
     // new code (prevents a stale IMPL_VALIDATION failure from looping).
     implValidation: [],
-    reducedCeremony:
-      ceremony.profile === 'reduced' && ceremonyClaimedTaskClass !== undefined
-        ? {
-            profile: 'reduced',
-            reason: ceremony.reason,
-            claimedTaskClass: ceremonyClaimedTaskClass,
-            computedMinimumTaskClass: ceremony.computedMinimumTaskClass,
-            touchedSurfaces: [...ceremony.touchedSurfaces],
-            decidedAt: input.ctx.now(),
-          }
-        : null,
+    // #819: the ceremony decision is made only after post-implementation
+    // verification, in /check, against the freshly merged check state. A new
+    // implementation always invalidates any prior decision.
+    reducedCeremony: null,
     implReview: null,
     implReviewFindings: existingFindings.length > 0 ? existingFindings : undefined,
     reviewAssurance: input.state.reviewAssurance,
@@ -497,12 +453,12 @@ export async function handleImplRecord(
 interface PersistImplRecordArgs {
   input: ImplementRuntime;
   nextState: SessionState;
-  files: string[];
-  domainFiles: string[];
+  files: readonly string[];
+  domainFiles: readonly string[];
   reviewIteration: number;
   planVersion: number;
   reviewFindings: ReviewFindings[];
-  ceremony: ReturnType<typeof resolveCeremonyProfile>;
+  ceremony: CeremonyEligibilityProjection;
   baselineScoping: 'applied' | 'unavailable';
 }
 

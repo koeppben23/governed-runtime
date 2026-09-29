@@ -18,7 +18,16 @@
 import type { LoopVerdict } from '../state/evidence.js';
 import type { SessionState, Phase, Event } from '../state/schema.js';
 import { isTechnicalValidationBlock, type ValidationResult } from '../state/evidence-validation.js';
+import { hasOutstandingReviewObligation } from '../state/review-dispatch.js';
+import {
+  resolveEffectiveTaskClass,
+  ticketRiskDeclarationFloor,
+  verifyTicketRiskDeclarationIntegrity,
+  type TicketRiskDeclaration,
+} from '../state/risk-declaration.js';
+import { assessMinimumTaskClass, reducedCeremonyEligible } from '../state/risk-path-classifier.js';
 import { evaluateValidationEvidence } from './validation-evidence.js';
+import { evaluateImplValidationEvidence } from './impl-validation-evidence.js';
 
 function isTechnicalValidationResult(result: ValidationResult): boolean {
   return isTechnicalValidationBlock({
@@ -162,11 +171,7 @@ export const implValidationPassed: GuardFn = (s) => {
   if (s.activeChecks.length === 0) {
     return !evaluateValidationEvidence(s).blocked;
   }
-  const passedIds = new Set<string>();
-  for (const v of s.implValidation) {
-    if (v.passed) passedIds.add(v.checkId);
-  }
-  return s.activeChecks.every((checkId) => passedIds.has(checkId));
+  return evaluateImplValidationEvidence(s).satisfied;
 };
 
 /**
@@ -184,14 +189,191 @@ export const implCheckErrored: GuardFn = (s) => s.implValidation.some(isTechnica
 /** Implementation evidence is present. */
 export const implComplete: GuardFn = (s) => s.implementation !== null;
 
-/** Implementation evidence has an explicit reduced-ceremony decision. */
-export const reducedCeremonyReady: GuardFn = (s) =>
-  s.implementation !== null && s.reducedCeremony !== null;
+function decisionBindsFrozenPolicy(
+  s: SessionState,
+  decision: NonNullable<SessionState['reducedCeremony']>,
+): boolean {
+  if (s.policySnapshot.allowReducedCeremony !== true) return false;
+  if (s.policySnapshot.requireHumanGates !== true) return false;
+  return decision.policyDigest === s.policySnapshot.hash;
+}
 
 /**
- * Implementation review loop converged.
- * Same convergence logic as self-review (digest-stop).
+ * Digest-bound ticket declaration of the current session, or null when the
+ * ticket is missing, manipulated, contradictory or invalid.
  */
+function boundTicketDeclaration(s: SessionState): TicketRiskDeclaration | null {
+  const ticket = s.ticket;
+  if (ticket === null) return { kind: 'absent' };
+  if (!verifyTicketRiskDeclarationIntegrity(ticket)) return null;
+  const declaration = ticket.riskDeclaration;
+  if (declaration.kind === 'conflict' || declaration.kind === 'invalid') return null;
+  return declaration;
+}
+
+/**
+ * Exact set equality over the unique members. Comparing raw lengths plus
+ * membership would accept duplicate substitution (e.g. `['a','a']` against
+ * `['a','b']`), which would let a manipulated assessment or decision drop a
+ * real surface while keeping the array length.
+ */
+function samePathSet(left: readonly string[], right: readonly string[]): boolean {
+  const leftSet = new Set(left);
+  const rightSet = new Set(right);
+  if (leftSet.size !== rightSet.size) return false;
+  return [...leftSet].every((entry) => rightSet.has(entry));
+}
+
+/**
+ * The persisted risk assessment and the decision must both describe the exact
+ * frozen implementation. The guard reclassifies `implementation.changedFiles`
+ * itself and compares the result with the stored facts, so a schema-valid but
+ * manipulated assessment/decision pair cannot waive a HIGH-RISK file list.
+ */
+type RecomputedRisk = ReturnType<typeof assessMinimumTaskClass>;
+
+/**
+ * The persisted assessment must be bound to the SAME verified ticket evidence
+ * as the decision: digest, declaration kind and declared floor. A stale
+ * assessment from a previous ticket can otherwise authorize a waiver.
+ */
+function assessmentBindsTicketDeclaration(
+  s: SessionState,
+  assessment: NonNullable<SessionState['implementationRiskAssessment']>,
+  declaration: TicketRiskDeclaration,
+): boolean {
+  if (assessment.ticketDigest !== (s.ticket?.digest ?? null)) return false;
+  if (assessment.declarationKind !== declaration.kind) return false;
+  return assessment.declaredTaskClass === ticketRiskDeclarationFloor(declaration);
+}
+
+/**
+ * Both stored artifacts must describe the same frozen implementation.
+ *
+ * The caller (`decisionBindsRiskAuthority`) has already established the
+ * canonical assessment presence and digest binding; duplicating either check
+ * here would be unreachable decision space, not additional protection.
+ */
+function assessmentMatchesImplementation(
+  s: SessionState,
+  assessment: NonNullable<SessionState['implementationRiskAssessment']>,
+  decision: NonNullable<SessionState['reducedCeremony']>,
+  implementation: NonNullable<SessionState['implementation']>,
+): boolean {
+  if (assessment.assessedFileCount !== implementation.changedFiles.length) return false;
+  if (assessment.escalatedTaskClass !== s.claimedTaskClass) return false;
+  return decision.escalatedTaskClass === s.claimedTaskClass;
+}
+
+function declaredDecisionMatches(
+  decision: NonNullable<SessionState['reducedCeremony']>,
+  declaration: TicketRiskDeclaration,
+  recomputed: RecomputedRisk,
+  effective: string,
+): boolean {
+  return (
+    decision.declaredTaskClass === ticketRiskDeclarationFloor(declaration) &&
+    decision.computedMinimumTaskClass === recomputed.minimumTaskClass &&
+    decision.effectiveTaskClass === effective
+  );
+}
+
+function decisionMatchesRiskFacts(
+  s: SessionState,
+  assessment: NonNullable<SessionState['implementationRiskAssessment']>,
+  decision: NonNullable<SessionState['reducedCeremony']>,
+  declaration: TicketRiskDeclaration,
+  implementation: NonNullable<SessionState['implementation']>,
+): boolean {
+  if (!assessmentMatchesImplementation(s, assessment, decision, implementation)) return false;
+  if (!assessmentBindsTicketDeclaration(s, assessment, declaration)) return false;
+
+  const recomputed = assessMinimumTaskClass(implementation.changedFiles);
+  if (recomputed.minimumTaskClass !== assessment.computedMinimumTaskClass) return false;
+  if (!samePathSet(assessment.touchedSurfaces, recomputed.touchedSurfaces)) return false;
+  if (!samePathSet(decision.touchedSurfaces, recomputed.touchedSurfaces)) return false;
+
+  const effective = resolveEffectiveTaskClass({
+    computed: recomputed.minimumTaskClass,
+    declaration,
+    escalated: s.claimedTaskClass,
+  });
+  if (assessment.effectiveTaskClass !== effective || effective !== 'TRIVIAL') return false;
+  if (!reducedCeremonyEligible(implementation.changedFiles)) return false;
+  return declaredDecisionMatches(decision, declaration, recomputed, effective);
+}
+
+function decisionBindsRiskAuthority(
+  s: SessionState,
+  decision: NonNullable<SessionState['reducedCeremony']>,
+  implementation: NonNullable<SessionState['implementation']>,
+): boolean {
+  // Canonical assessment presence and digest binding: this is the single
+  // authority for these two facts in the guard chain.
+  const assessment = s.implementationRiskAssessment;
+  if (assessment === undefined) return false;
+  if (assessment.implementationDigest !== implementation.digest) return false;
+
+  const declaration = boundTicketDeclaration(s);
+  if (declaration === null) return false;
+  if (decision.declarationKind !== declaration.kind) return false;
+  if (decision.ticketDigest !== (s.ticket?.digest ?? null)) return false;
+  if (!decisionMatchesRiskFacts(s, assessment, decision, declaration, implementation)) {
+    return false;
+  }
+  return s.riskGate?.status !== 'blocked';
+}
+
+function ceremonyBindingMatches(
+  s: SessionState,
+  decision: NonNullable<SessionState['reducedCeremony']>,
+): boolean {
+  const implementation = s.implementation;
+  if (implementation === null) return false;
+  if (decision.implementationId !== implementation.implementationId) return false;
+  if (decision.implementationDigest !== implementation.digest) return false;
+  if (!decisionBindsFrozenPolicy(s, decision)) return false;
+  if (!decisionBindsRiskAuthority(s, decision, implementation)) return false;
+  return !hasOutstandingReviewObligation(s.reviewAssurance);
+}
+
+function ceremonyBasisMatches(
+  decision: NonNullable<SessionState['reducedCeremony']>,
+  evidence: ReturnType<typeof evaluateImplValidationEvidence>,
+): boolean {
+  const decidedCheckIds = [...decision.verificationBasis.checkIds].sort();
+  const activeCheckIds = [...evidence.activeChecks].sort();
+  if (decidedCheckIds.length !== activeCheckIds.length) return false;
+  if (decidedCheckIds.some((checkId, index) => checkId !== activeCheckIds[index])) return false;
+
+  // Full binding equality: check, attempt id AND the recorded execution time.
+  const decidedAttempts = decision.verificationBasis.attempts
+    .map((entry) => `${entry.checkId}:${entry.attemptId}:${entry.executedAt}`)
+    .sort();
+  const currentAttempts = evidence.basis
+    .map((entry) => `${entry.checkId}:${entry.attemptId}:${entry.executedAt}`)
+    .sort();
+  if (decidedAttempts.length !== currentAttempts.length) return false;
+  return decidedAttempts.every((entry, index) => entry === currentAttempts[index]);
+}
+
+/**
+ * Implementation evidence has a reduced-ceremony decision that is fully bound
+ * to the current implementation generation, the frozen policy and the canonical
+ * post-implementation evidence. A decision by itself is never transition
+ * authority.
+ */
+export const reducedCeremonyReady: GuardFn = (s) => {
+  const decision = s.reducedCeremony;
+  if (decision === null || !ceremonyBindingMatches(s, decision)) return false;
+  const evidence = evaluateImplValidationEvidence(s);
+  if (!evidence.satisfied) return false;
+  // Surface equality between decision and assessment is implied by
+  // `decisionMatchesRiskFacts`, which binds both arrays to the same
+  // freshly recomputed surface set; no separate comparison is needed.
+  return ceremonyBasisMatches(decision, evidence);
+};
+
 export const implReviewMet: GuardFn = (s) => {
   if (s.implReview === null) return false;
   return isConverged(s.implReview);
@@ -258,7 +440,6 @@ export const GUARDS: ReadonlyMap<Phase, readonly GuardEntry[]> = new Map<
     'IMPLEMENTATION',
     [
       { event: 'ERROR', guard: hasError },
-      { event: 'REDUCED_CEREMONY', guard: reducedCeremonyReady },
       { event: 'IMPL_COMPLETE', guard: implComplete },
     ],
   ],
@@ -268,6 +449,7 @@ export const GUARDS: ReadonlyMap<Phase, readonly GuardEntry[]> = new Map<
     [
       { event: 'ERROR', guard: hasError },
       { event: 'CHECK_ERRORED', guard: implCheckErrored },
+      { event: 'REDUCED_CEREMONY', guard: reducedCeremonyReady },
       { event: 'ALL_PASSED', guard: implValidationPassed },
       { event: 'CHECK_FAILED', guard: implCheckFailed },
     ],

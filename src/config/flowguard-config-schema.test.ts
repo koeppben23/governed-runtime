@@ -61,7 +61,6 @@ describe('FlowGuardConfigSchema', () => {
         defaultMode: 'regulated',
         reviewBudget: { plan: 5, architecture: 6, implementation: 7 },
         enforceRiskClassification: true,
-        allowRiskDowngradeOverride: false,
         allowReducedCeremony: true,
       },
       profile: {
@@ -90,7 +89,6 @@ describe('FlowGuardConfigSchema', () => {
         implementation: 7,
       });
       expect(result.data.policy.enforceRiskClassification).toBe(true);
-      expect(result.data.policy.allowRiskDowngradeOverride).toBe(false);
       expect(result.data.policy.allowReducedCeremony).toBe(true);
       expect(result.data.profile.defaultId).toBe('typescript');
       expect(result.data.profile.activeChecks).toEqual([

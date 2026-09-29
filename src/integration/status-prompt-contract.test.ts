@@ -24,7 +24,7 @@ vi.mock('../adapters/git', async (importOriginal) => {
   };
 });
 
-type CallShape = 'full' | 'whyBlocked' | 'evidence' | 'context' | 'readiness';
+type CallShape = 'full' | 'whyBlocked' | 'evidence' | 'context' | 'readiness' | 'reviewFeedback';
 
 interface StatusContractEntry {
   readonly label: string;
@@ -123,6 +123,12 @@ const STATUS_CONTRACT: readonly StatusContractEntry[] = [
       'whyBlocked.reasonCode',
       'whyBlocked.nextResolvableCommand',
     ],
+  },
+  {
+    label: '/plan, /architecture, /implement review repair',
+    phases: ['PLAN_REVIEW', 'ARCH_REVIEW', 'IMPL_REVIEW'],
+    callShape: 'reviewFeedback',
+    requiredTopLevel: ['reviewFeedback'],
   },
 ];
 

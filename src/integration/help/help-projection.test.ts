@@ -323,7 +323,7 @@ describe('HelpResult artifacts', () => {
       view: 'context',
     });
     expect(result.artifacts.ticket.status).toBe('available');
-    expect(result.artifacts.ticket.digest).toBe('digest-of-ticket');
+    expect(result.artifacts.ticket.digest).toBe(TICKET.digest);
     expect(result.artifacts.ticket.preview).toBe('Fix the auth bug in login.ts');
     expect(result.artifacts.ticket.content).toBeNull();
   });

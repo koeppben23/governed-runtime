@@ -178,7 +178,7 @@ async function executeHydrateTool(args: HydrateArgs, context: ToolContext): Prom
 export const hydrate: ToolDefinition = {
   description:
     'Bootstrap or reload the FlowGuard session. Creates a new session if none exists, ' +
-    'or returns the existing session unchanged except explicit claimedTaskClass risk recovery. ' +
+    'or returns the existing session unchanged except explicit claimedTaskClass escalation. ' +
     'Optionally configure policy mode (solo/team/regulated) and profile. ' +
     'This MUST be the first FlowGuard tool call in any workflow.',
   args: {
@@ -193,7 +193,9 @@ export const hydrate: ToolDefinition = {
       .default('baseline')
       .describe("Governance profile ID. Defaults to 'baseline'."),
     claimedTaskClass: TaskClass.optional().describe(
-      'Agent/operator risk-classification claim. Runtime still computes the minimum class. ' +
+      'Optional raise-only escalation class. The effective risk class is ' +
+        'max(runtime-computed minimum, ticket-declared floor, this escalation); it can never ' +
+        'lower a ticket declaration or the computed minimum and is never required. ' +
         'On an existing session this may only update claimedTaskClass; a blocked riskGate ' +
         'is NOT cleared (recovering from a blocked risk gate requires a fresh governed session).',
     ),

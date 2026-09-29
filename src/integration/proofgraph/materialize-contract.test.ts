@@ -142,6 +142,7 @@ function stateWithClaims() {
       },
     },
     implementation: {
+      implementationId: '00000000-0000-4000-8000-0000000000aa',
       changedFiles: ['src/example.ts'],
       domainFiles: ['src/example.ts'],
       digest: IMPL_DIGEST,
@@ -151,6 +152,7 @@ function stateWithClaims() {
       {
         attemptId: ATTEMPT_ID,
         scope: 'implementation',
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
         implementationDigest: IMPL_DIGEST,
         executionObservation: TEST_EXECUTION_OBSERVATION,
         result: {
@@ -378,6 +380,7 @@ describe('materializeApprovedPlanContract', () => {
           {
             attemptId: '11111111-1111-4111-8111-111111111111',
             scope: 'implementation' as const,
+            implementationId: '00000000-0000-4000-8000-0000000000aa',
             implementationDigest: IMPL_DIGEST,
             executionObservation: TEST_EXECUTION_OBSERVATION,
             result: {
@@ -397,6 +400,7 @@ describe('materializeApprovedPlanContract', () => {
           {
             attemptId: '22222222-2222-4222-8222-222222222222',
             scope: 'implementation' as const,
+            implementationId: '00000000-0000-4000-8000-0000000000aa',
             implementationDigest: IMPL_DIGEST,
             executionObservation: TEST_EXECUTION_OBSERVATION,
             result: {
@@ -457,6 +461,7 @@ describe('materializeApprovedPlanContractResult — mutation coverage', () => {
     return {
       attemptId: AGG_ID,
       scope: 'implementation' as const,
+      implementationId: '00000000-0000-4000-8000-0000000000aa',
       implementationDigest: IMPL_DIGEST,
       executionObservation: TEST_EXECUTION_OBSERVATION,
       result: {
@@ -728,6 +733,7 @@ describe('materializeApprovedPlanContractResult — mutation coverage', () => {
           {
             attemptId: '88888888-8888-4888-8888-888888888888',
             scope: 'implementation' as const,
+            implementationId: '00000000-0000-4000-8000-0000000000aa',
             implementationDigest: 'other-implementation',
             executionObservation: TEST_EXECUTION_OBSERVATION,
             result: {

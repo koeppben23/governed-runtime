@@ -36,6 +36,7 @@ import { mintObservationCapabilityIfResolvable } from './review/obligations/atte
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { completedDispatchForInvocation } from '../state/evidence-test-constants.js';
 import { writeStateWithAuditOperations } from './audit-outbox.js';
+import { buildReviewChallengeContract } from './review/obligations/challenge-contract.js';
 
 // ─── Safety Guards ───────────────────────────────────────────────────────────
 
@@ -397,6 +398,10 @@ export async function fulfillStrictReviewObligation(
   );
   if (!obligation) throw new Error('No matching review obligation found');
 
+  // Canonical evidence refs from the obligation's frozen challenge contract:
+  // host-observed identity must match exactly, including artifact section paths.
+  const canonicalRefs = buildReviewChallengeContract(state, obligation)?.evidenceRefs as
+    ReviewFindings['challenges'][number]['evidenceRefs'] | undefined;
   const challenges = Array.from({ length: obligation.requiredChallengeCount ?? 0 }, () => {
     const challengeId = crypto.randomUUID();
     if (obligation.requiredChallengeKind === 'implementation_challenge') {
@@ -407,20 +412,23 @@ export async function fulfillStrictReviewObligation(
         claim: 'The implementation handles the reviewed scenario.',
         locations: ['implementation evidence'],
         kind: 'implementation_challenge' as const,
-        evidenceRefs: [
-          {
-            kind: 'implementation' as const,
-            implementationDigest: state.implementation?.digest ?? 'missing-implementation-digest',
-          },
-          {
-            kind: 'validation_attempt' as const,
-            attemptId:
-              state.validationAttempts.find((a) => a.scope === 'implementation' && a.result.passed)
-                ?.attemptId ??
-              state.validationAttempts[0]?.attemptId ??
-              crypto.randomUUID(),
-          },
-        ],
+        evidenceRefs:
+          canonicalRefs ??
+          ([
+            {
+              kind: 'implementation' as const,
+              implementationDigest: state.implementation?.digest ?? 'missing-implementation-digest',
+            },
+            {
+              kind: 'validation_attempt' as const,
+              attemptId:
+                state.validationAttempts.find(
+                  (a) => a.scope === 'implementation' && a.result.passed,
+                )?.attemptId ??
+                state.validationAttempts[0]?.attemptId ??
+                crypto.randomUUID(),
+            },
+          ] satisfies ReviewFindings['challenges'][number]['evidenceRefs']),
         outcome: 'pass' as const,
       };
     }
@@ -431,18 +439,25 @@ export async function fulfillStrictReviewObligation(
       claim: 'The design addresses the reviewed scenario.',
       locations: ['plan section'],
       kind: 'design_challenge' as const,
-      evidenceRefs: [
-        {
-          kind: 'plan_adr_section' as const,
-          artifactKind: 'plan' as const,
-          artifactDigest: state.plan?.current.digest ?? 'missing-plan-digest',
-          sectionPath: [{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }],
-          excerptDigest: state.plan?.current.digest ?? 'missing-plan-digest',
-        },
-      ],
+      evidenceRefs:
+        (canonicalRefs as
+          | Extract<
+              ReviewFindings['challenges'][number],
+              { kind: 'design_challenge' }
+            >['evidenceRefs']
+          | undefined) ??
+        ([
+          {
+            kind: 'plan_adr_section' as const,
+            artifactKind: 'plan' as const,
+            artifactDigest: state.plan?.current.digest ?? 'missing-plan-digest',
+            sectionPath: [{ headingDepth: 2, siblingIndex: 1, headingText: 'Plan' }],
+            excerptDigest: state.plan?.current.digest ?? 'missing-plan-digest',
+          },
+        ] satisfies ReviewFindings['challenges'][number]['evidenceRefs']),
       outcome: 'supported' as const,
     };
-  });
+  }) as ReviewFindings['challenges'];
 
   const findings: ReviewFindings = {
     iteration: input.iteration,

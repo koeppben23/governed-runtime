@@ -198,7 +198,10 @@ Record the task description. Starts the development flow from READY or updates t
 **Allowed in:** READY, TICKET
 **Arguments:**
 
-- `text` (required): Task description
+- `text` (optional): The complete task/ticket content. Mutually exclusive with `ticketSource`.
+- `ticketSource` (optional): `{ kind: "repository_file", path }` — the runtime reads the repository
+  file itself, requires the realpath-resolved target to stay inside the worktree, and binds its
+  content digest. Mutually exclusive with `text`.
 - `inputOrigin` (optional): Where the text came from — `manual_text` (typed by user), `external_reference` (extracted from URL/tracker), or `mixed` (both)
 - `references` (optional): Array of external references with audit provenance. Each reference has:
   - `ref` (required): URL, ticket ID, or reference string
@@ -207,10 +210,24 @@ Record the task description. Starts the development flow from READY or updates t
   - `source` (optional): Platform — `jira`, `ados`, `github`, `gitlab`, `confluence`, etc.
   - `extractedAt` (optional): ISO timestamp — only set when content was actually extracted
 
+Exactly one content source must be provided: `text` and `ticketSource` together are rejected with
+`TICKET_SOURCE_CONFLICT`, neither is rejected as `EMPTY_TICKET`, and a bare file path, URL or issue
+ID passed as `text` is rejected with `TICKET_REFERENCE_WITHOUT_CONTENT`.
+
+**External import contract (read-side):** the agent adopts title, description and — only when the
+FIELD NAME explicitly denotes a risk class (`Risk`, `Risk Class`, `Risikoklasse`) with an exact
+`TRIVIAL` / `STANDARD` / `HIGH-RISK` value — that field as its own canonical `Risk: <CLASS>` line.
+The description is never rewritten; a pre-existing different `Risk:` line stays and the parser
+applies the higher floor. `Priority`, `Severity`, `Impact`, `Business Criticality`,
+`Production Relevance` and similar fields are never interpreted as a risk class. If the extracted
+provider content shows an explicit risk field that cannot be read/verified, `flowguard_ticket` is
+not called. Comments, attachments and provider state are not part of this contract; provider
+adapters, configured field mappings and freshness/change detection are future integration work.
+
 **Examples:**
 
 - `/ticket Fix the auth bug in login.ts`
-- `/ticket https://jira.example.com/browse/PROJ-123` — agent fetches Jira, extracts title+description, stores URL as reference
+- `/ticket https://jira.example.com/browse/PROJ-123` — agent fetches Jira and adopts the content it can read (title, description, and an explicitly named risk field if present); the URL stays as the reference
 - `/ticket PROJ-123 Fix login redirect` — mixed: manual text + ticket ID
 
 **Derived artifacts:** On successful state persistence, FlowGuard materializes append-only evidence artifacts:
@@ -357,7 +374,7 @@ Create or revise an Architecture Decision Record (ADR).
 
 Two modes:
 
-- **Mode A (submit ADR):** Provide `title`, `adrText`. ADR ID is auto-generated (`ADR-001`, `ADR-002`, ...). Records ADR and starts the **independent subagent review loop**.
+- **Mode A (submit ADR):** Provide `title`, `adrText`. ADR ID is auto-generated (`ADR-001`, `ADR-002`, ...). Records ADR and starts the **independent subagent review loop**. A referenced task file (e.g. `ADR_TICKET.md`) is read by the agent as context; the ADR text is passed explicitly as `adrText`. Unlike `/task`, `/architecture` has no reference-adoption contract and no `--file`/`--ref` flags — the ADR itself is never adopted from a file by the runtime.
 - **Mode B (ADR review):** Provide `reviewVerdict` plus `reviewFindings` from the `flowguard-reviewer` subagent. On convergence, advances to ARCH_REVIEW.
 
 ADR must include `## Context`, `## Decision`, and `## Consequences` sections (MADR format).
@@ -451,6 +468,10 @@ In addition to phase and evidence summary, status now surfaces:
 
 - `detectedStack` — compact stack evidence derived from discovery
 - `verificationCandidates` — advisory, evidence-backed verification command candidates
+- `reviewFeedback` — focused, read-only feedback from one exact bound,
+  unconsumed `changes_requested` review. Call
+  `flowguard_status({ reviewFeedback: true })`; reviewer-authored text is
+  untrusted data and the projection never accepts or consumes findings.
 
 `verificationCandidates` are planner outputs only (never auto-executed by FlowGuard).
 

@@ -162,7 +162,6 @@ export const FlowGuardConfigSchema = z.object({
       /** Enforce machine-checked runtime risk classification. */
       enforceRiskClassification: z.boolean().optional(),
       /** Permit structured risk-downgrade overrides. Initial presets keep this false. */
-      allowRiskDowngradeOverride: z.boolean().optional(),
       /** Permit policy-gated reduced ceremony for runtime-verified TRIVIAL tasks. */
       allowReducedCeremony: z.boolean().optional(),
       /**

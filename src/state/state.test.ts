@@ -95,6 +95,7 @@ describe('state schemas', () => {
         digest: 'abc123',
         source: 'user',
         createdAt: FIXED_TIME,
+        riskDeclaration: { kind: 'absent' },
       };
       expect(TicketEvidence.parse(ticket)).toEqual(ticket);
     });
@@ -243,7 +244,6 @@ describe('state schemas', () => {
           },
         };
         delete (incomplete.policySnapshot as Record<string, unknown>).enforceRiskClassification;
-        delete (incomplete.policySnapshot as Record<string, unknown>).allowRiskDowngradeOverride;
 
         expect(() => SessionState.parse(incomplete)).toThrow();
       }
@@ -307,6 +307,7 @@ describe('state schemas', () => {
           digest: 'abc',
           source: 'user',
           createdAt: FIXED_TIME,
+          riskDeclaration: { kind: 'absent' },
         }),
       ).toThrow();
     });
@@ -349,6 +350,7 @@ describe('state schemas', () => {
           digest: 'abc',
           source: 'unknown',
           createdAt: FIXED_TIME,
+          riskDeclaration: { kind: 'absent' },
         }),
       ).toThrow();
     });
@@ -390,6 +392,46 @@ describe('state schemas', () => {
     it('SessionState rejects invalid schemaVersion', () => {
       const state = { ...makeState('TICKET'), schemaVersion: 'v1' };
       expect(() => SessionState.parse(state)).toThrow();
+    });
+
+    it('ReducedCeremonyDecision requires implementation, policy and verification binding', () => {
+      const decision = {
+        profile: 'reduced' as const,
+        reason: 'POST_IMPL_VERIFIED_TRIVIAL',
+        effectiveTaskClass: 'TRIVIAL' as const,
+        computedMinimumTaskClass: 'TRIVIAL' as const,
+        declaredTaskClass: null,
+        declarationKind: 'absent' as const,
+        ticketDigest: null,
+        touchedSurfaces: [],
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
+        implementationDigest: 'impl-digest',
+        policyDigest: VALID_POLICY_DIGEST,
+        verificationBasis: {
+          checkIds: ['test'],
+          attempts: [
+            {
+              checkId: 'test',
+              attemptId: '00000000-0000-4000-8000-0000000000bb',
+              executedAt: FIXED_TIME,
+            },
+          ],
+        },
+        decidedAt: FIXED_TIME,
+      };
+      expect(ReducedCeremonyDecision.parse(decision)).toBeDefined();
+      expect(() =>
+        ReducedCeremonyDecision.parse({ ...decision, implementationDigest: undefined }),
+      ).toThrow();
+      expect(() =>
+        ReducedCeremonyDecision.parse({ ...decision, policyDigest: undefined }),
+      ).toThrow();
+      expect(() =>
+        ReducedCeremonyDecision.parse({ ...decision, verificationBasis: undefined }),
+      ).toThrow();
+      expect(() =>
+        ReducedCeremonyDecision.parse({ ...decision, implementationId: 'not-a-uuid' }),
+      ).toThrow();
     });
 
     it('SessionState rejects null actorInfo', () => {
@@ -584,7 +626,6 @@ describe('state schemas', () => {
         maxIncoherentReviewerCaptureRetries: 1,
         maxReviewerAttempts: 1,
         enforceRiskClassification: false,
-        allowRiskDowngradeOverride: false,
         allowReducedCeremony: false,
         discoveryHealth: { enforcement: 'off', onDegraded: 'allow', onDrift: 'allow' },
         validationEvidence: { enforcement: 'off', allowNoCommands: false },
@@ -627,7 +668,6 @@ describe('state schemas', () => {
         allowSelfApproval: true,
         minimumActorAssuranceForApproval: 'best_effort',
         enforceRiskClassification: false,
-        allowRiskDowngradeOverride: false,
         allowReducedCeremony: false,
         discoveryHealth: { enforcement: 'off', onDegraded: 'allow', onDrift: 'allow' },
         validationEvidence: { enforcement: 'off', allowNoCommands: false },
@@ -721,7 +761,6 @@ describe('state schemas', () => {
         maxIncoherentReviewerCaptureRetries: 1,
         maxReviewerAttempts: 1,
         enforceRiskClassification: true,
-        allowRiskDowngradeOverride: false,
         allowReducedCeremony: false,
         discoveryHealth: { enforcement: 'required', onDegraded: 'warn', onDrift: 'block' },
         validationEvidence: { enforcement: 'required', allowNoCommands: false },
@@ -895,9 +934,16 @@ describe('schema field-boundary contracts', () => {
     const decision = {
       profile: 'reduced',
       reason: 'maintenance-only change',
-      claimedTaskClass: 'STANDARD',
+      effectiveTaskClass: 'STANDARD',
       computedMinimumTaskClass: 'STANDARD',
+      declaredTaskClass: null,
+      declarationKind: 'absent',
+      ticketDigest: null,
       touchedSurfaces: [],
+      implementationId: UUID,
+      implementationDigest: DIGEST,
+      policyDigest: DIGEST,
+      verificationBasis: { checkIds: ['test'], attempts: [] },
       decidedAt: NOW,
     };
 
@@ -908,6 +954,10 @@ describe('schema field-boundary contracts', () => {
   it('requires a non-empty implementation digest in the risk assessment', () => {
     const assessment = {
       computedMinimumTaskClass: 'STANDARD',
+      effectiveTaskClass: 'STANDARD',
+      declaredTaskClass: null,
+      declarationKind: 'absent',
+      ticketDigest: null,
       touchedSurfaces: [],
       assessedFrom: 'implementation_changed_files',
       assessedFileCount: 3,

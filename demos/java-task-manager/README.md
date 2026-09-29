@@ -37,15 +37,20 @@ for already-terminal sessions and defaults to a redacted sharing archive.
 - JDK 21+
 - Node.js 22+
 - OpenCode CLI (`opencode`) in PATH
-- FlowGuard core tarball (build with `npm run build && npm pack` from the
-  governed-runtime repo root)
+- FlowGuard core tarball (build with `npm run build && npm run pack:checksums`
+  from the governed-runtime repo root; the script writes the tarball and the
+  `checksums.sha256` file the installer requires next to it)
 
 ## Quick Start
 
+`run-demo-setup.sh` prepares fresh workspaces and optionally installs the
+tarball. It does not call `/start`, dispatch a reviewer, or complete any flow.
+Follow the live-evidence checklist below before claiming a demo was executed.
+
 ```bash
-# Prepare and install FlowGuard into the demo workspace
-./run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-java-demo
-cd /tmp/flowguard-java-demo
+# From demos/java-task-manager/: prepare every live demo workspace
+../../run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-demos
+cd /tmp/flowguard-demos/java-task-manager
 
 # Verify the starting state
 ./mvnw test
@@ -87,6 +92,13 @@ After a successful FlowGuard session, two files are changed:
 | `src/main/java/com/example/taskmanager/service/TaskService.java`           | Add null-check in `updateTask()`, throw `TaskNotFoundException`                      |
 | `src/test/java/com/example/taskmanager/controller/TaskControllerTest.java` | Enable `update_taskNotFound_returns404()`, assert `$.taskId`, and update its Javadoc |
 
+The task is recorded from the seed ticket with `/task --file TICKET.md`: FlowGuard reads the file
+itself and binds its content digest — no manual risk claim is required, because the effective risk
+class is computed from the actual change (the Java fix classifies as STANDARD, so the full
+independent implementation review runs). Only an explicitly named `Risk` / `Risk Class` /
+`Risikoklasse` field could raise that class; bare file/URL references are blocked, and comments or
+attachments are not part of the import (provider integration: epic #976).
+
 All 16 tests pass (the previously skipped test is now enabled and green). The
 session reaches `COMPLETE` only after `/export` materializes and verifies the
 required package; a blocked or failed export leaves the session in
@@ -106,6 +118,69 @@ to the review obligation, the attempt, and the frozen subject digest
 (`reviewDispatch.completed`), writes the review report with explicit target
 coverage, and reaches terminal `PEER_REVIEW_COMPLETE`. `changes_requested` is a
 valid outcome; an optional `/archive` may follow.
+
+### Optional A/B — Reduced Ceremony vs. Full Review
+
+`REDUCED_CEREMONY.md` adds a controlled comparison on the same application: the
+same documentation task (`docs/usage-notes.md`, TRIVIAL) runs twice, in two
+fresh workspaces from the same seed, with identical team policy and identical
+active checks — once with `policy.allowReducedCeremony: true` (complete
+post-implementation checks → review waiver → human evidence gate → export) and
+once explicitly set to `false` (identical checks → full independent
+implementation review). The existing Java bugfix flow deliberately keeps the
+full review. `run-reduced-ceremony-demo-setup.sh` creates both workspaces and
+writes both policies explicitly; its `--verify-session` mode proves that
+FlowGuard actually selected `build` + `test` as active checks before the demo
+claims "2/2 passed". The repository-root `./run-demo-setup.sh` prepares this
+comparison together with the main workspace by default. Use
+`run-reduced-ceremony-demo-setup.sh` directly only when preparing the A/B
+comparison on its own.
+
+## Live Evidence Checklist
+
+Workspace preparation is not a live run. Record a distinct host-session ID and
+FlowGuard session ID for every row; the host-session ID is the package identity
+used by `verify-evidence-package.mjs`. Do not reuse a session or a chat export
+between flows.
+
+| Flow         | Workspace                      | Required terminal state    | Individual evidence package                                                |
+| ------------ | ------------------------------ | -------------------------- | -------------------------------------------------------------------------- |
+| Architecture | `java-task-manager`            | `ARCH_COMPLETE`            | Create a raw `/archive`; verify as `architecture` / `ARCH_COMPLETE`.       |
+| Development  | `java-task-manager`            | `COMPLETE` after `/export` | Verify the `/export` package as `development` / `EXPORT_READY`.            |
+| Peer review  | `java-task-manager`            | `PEER_REVIEW_COMPLETE`     | Create a raw `/archive`; verify as `peer-review` / `PEER_REVIEW_COMPLETE`. |
+| Reduced-on   | `reduced-ceremony/reduced-on`  | `COMPLETE` after `/export` | Verify its `/export` package as `development` / `EXPORT_READY`.            |
+| Reduced-off  | `reduced-ceremony/reduced-off` | `COMPLETE` after `/export` | Verify its `/export` package as `development` / `EXPORT_READY`.            |
+
+Mark the live record only after the terminal state and individual verification
+both succeeded:
+
+- [ ] Architecture: `ARCH_COMPLETE`, distinct session IDs, raw package verified.
+- [ ] Development: `COMPLETE`, distinct session IDs, `/export` package verified.
+- [ ] Peer Review: `PEER_REVIEW_COMPLETE`, distinct session IDs, raw package verified.
+- [ ] Reduced-on: `COMPLETE`, distinct session IDs, `/export` package verified.
+- [ ] Reduced-off: `COMPLETE`, distinct session IDs, `/export` package verified.
+
+For Architecture and Peer Review, enable
+`archive.redaction.allowRawExport=true` and run:
+
+```text
+/archive redactionMode=none includeRaw=true
+```
+
+Verify each package independently, substituting the recorded host session ID,
+flow, and package snapshot phase from the table:
+
+```bash
+node demos/java-task-manager/verify-evidence-package.mjs "$PKG" \
+  --expect-session "$HOST_SESSION_ID" \
+  --expect-flow <architecture|development|peer-review> \
+  --expect-phase <ARCH_COMPLETE|EXPORT_READY|PEER_REVIEW_COMPLETE>
+```
+
+`evidence-manifest.example.json` intentionally remains the three-flow manifest
+for Architecture, Development, and Peer Review. Do not extend it to imply that
+the two reduced-ceremony flows ran; retain their separately verified packages
+and this checklist instead.
 
 ## Archive and Raw Evidence
 
@@ -146,7 +221,7 @@ node demos/java-task-manager/verify-evidence-package.mjs <package.tar.gz> \
 
 It exits non-zero on any tamper or session misassignment and refuses to present
 a redacted sharing archive as fully verifiable raw evidence (exit code 3). The
-three demo sessions (architecture, development, peer-review) and their external
+three original demo sessions (architecture, development, peer-review) and their external
 host chat exports are bound by a small evidence manifest template
 (`evidence-manifest.example.json`), verified with:
 
@@ -177,13 +252,16 @@ contract it was validated against.
 ## Directory Structure
 
 ```text
+run-demo-setup.sh                  ← Public entry point: prepares all live demos from the repository root
 demos/java-task-manager/
 ├── README.md                    ← You are here
 ├── DEMO_SCRIPT.md               ← Live presentation script with talking points
+├── REDUCED_CEREMONY.md          ← Optional A/B comparison: reduced vs. full implementation review
 ├── RESET.md                     ← How to reset for a fresh demo
 ├── EVIDENCE_PACKAGE.md          ← Evidence-package verification scope and limits
 ├── evidence-manifest.example.json ← Template binding the three sessions to their artifacts
-├── run-demo-setup.sh            ← Prepare or prepare+install the demo project
+├── run-main-demo-setup.sh       ← Main-workspace setup primitive
+├── run-reduced-ceremony-demo-setup.sh ← Two fresh workspaces, explicit policies, --verify-session
 ├── run-demo-preflight.sh        ← Pre-flight checks before a live pitch
 ├── verify-evidence-package.mjs  ← Standalone offline package verifier
 ├── snapshot-demo.sh             ← Workspace checkpoint save/restore (visual only)
@@ -193,6 +271,7 @@ demos/java-task-manager/
     ├── .gitignore
     ├── pom.xml
     ├── TICKET.md
+    ├── TICKET_DOCS.md
     ├── ADR_TICKET.md
     ├── mvnw / mvnw.cmd
     ├── .mvn/wrapper/

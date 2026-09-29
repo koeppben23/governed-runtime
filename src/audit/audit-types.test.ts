@@ -758,7 +758,7 @@ describe('host session provenance on event bodies', () => {
         phase: 'PLAN',
         detail: {
           tool: 'bash',
-          reasonCode: 'RISK_CLASSIFICATION_REQUIRED',
+          reasonCode: 'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
           hostCallId: 'host-call-1',
           traceId: 'trace-1',
           policyMode: 'team',

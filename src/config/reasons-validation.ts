@@ -76,26 +76,6 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   },
 
   {
-    code: 'RISK_CLASSIFICATION_MISMATCH',
-    category: 'admissibility',
-    messageTemplate:
-      'Task classified as {claimedTaskClass} but runtime evidence requires at least {minimumTaskClass} for {touchedSurface}',
-    recoverySteps: [
-      'Reclassify the task at the required risk level and re-hydrate the session',
-      'Do not use text justification to downgrade risk classification',
-    ],
-  },
-
-  {
-    code: 'RISK_CLASSIFICATION_REQUIRED',
-    category: 'admissibility',
-    messageTemplate: 'Risk classification is required before mutating tools may run',
-    recoverySteps: [
-      'Run flowguard_hydrate with claimedTaskClass set to HIGH-RISK, STANDARD, or TRIVIAL',
-    ],
-  },
-
-  {
     code: 'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
     category: 'admissibility',
     messageTemplate: 'Cannot verify risk classification evidence. {reason}',
@@ -112,13 +92,6 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     recoverySteps: [
       'A blocked risk gate is fail-closed and cannot be cleared in-session (hydrate and reclassification do not clear it); start a fresh governed session to proceed',
     ],
-  },
-
-  {
-    code: 'RISK_DOWNGRADE_OVERRIDE_DENIED',
-    category: 'admissibility',
-    messageTemplate: 'Risk downgrade overrides are disabled by policy',
-    recoverySteps: ['Reclassify the task at the runtime-computed minimum risk level'],
   },
 
   {
@@ -159,6 +132,62 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     category: 'input',
     messageTemplate: 'Ticket text must not be empty',
     recoverySteps: ['Provide a non-empty task description'],
+  },
+
+  {
+    code: 'TICKET_REFERENCE_WITHOUT_CONTENT',
+    category: 'input',
+    messageTemplate:
+      'The ticket text is only a file or URL reference; the referenced content was not adopted',
+    recoverySteps: [
+      'Pass the repository file via ticketSource (/task --file <path>) so the runtime reads and binds its content',
+      'Or pass the full external content explicitly with inputOrigin=external_reference and references',
+      'A bare reference never counts as the canonical ticket content',
+    ],
+  },
+
+  {
+    code: 'TICKET_SOURCE_UNREADABLE',
+    category: 'input',
+    messageTemplate: 'The repository file passed as ticketSource could not be read: {reason}',
+    recoverySteps: [
+      'Verify the path is repository-relative, exists and is readable, and stays inside the worktree',
+      'Re-run /task with a corrected --file path',
+    ],
+  },
+
+  {
+    code: 'TICKET_SOURCE_CONFLICT',
+    category: 'input',
+    messageTemplate:
+      'ticketSource and text are mutually exclusive; provide exactly one canonical ticket content source',
+    recoverySteps: [
+      'Pass only ticketSource (/task --file <path>) to adopt a repository file',
+      'Or pass only text with the complete ticket content (optionally with inputOrigin/references)',
+      'Put additional context inside the ticket content, never as a competing second source',
+    ],
+  },
+
+  {
+    code: 'TICKET_RISK_DECLARATION_INVALID',
+    category: 'admissibility',
+    messageTemplate:
+      'The ticket risk declaration is invalid ({raw}); risk-relevant mutations are blocked until it is corrected',
+    recoverySteps: [
+      'Re-run /task with a valid declaration line: Risk: TRIVIAL | STANDARD | HIGH-RISK',
+      'Or remove the malformed declaration line if no explicit risk class is intended',
+    ],
+  },
+
+  {
+    code: 'TICKET_RISK_DECLARATION_INCONSISTENT',
+    category: 'admissibility',
+    messageTemplate:
+      'The stored ticket risk declaration does not match the parser result over the ticket text',
+    recoverySteps: [
+      'Re-run /task to re-capture the ticket from its canonical content',
+      'Do not edit persisted state manually — the declaration is digest-bound',
+    ],
   },
 
   {

@@ -25,6 +25,7 @@ function implementationState(executionObservation: {
       {
         attemptId: ATTEMPT_ID,
         scope: 'implementation',
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
         implementationDigest: IMPL_EVIDENCE.digest,
         executionObservation,
         result: VALIDATION_PASSED[0]!,

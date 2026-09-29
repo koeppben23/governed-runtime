@@ -10,11 +10,18 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { executeValidate, type ValidateExecutors } from './validate.js';
-import { makeState, FIXED_TIME, TICKET } from '../fixtures.js';
+import {
+  makeState,
+  FIXED_TIME,
+  TICKET,
+  VERIFICATION_CANDIDATES,
+  FIXTURE_TEST_CANDIDATE_ID,
+  FIXTURE_LINT_CANDIDATE_ID,
+} from '../fixtures.js';
 import type { RailContext } from './types.js';
 import type { PlanRecord, ValidationResult } from '../state/evidence.js';
 import { TEAM_POLICY } from '../config/policy.js';
-import { makePlanRevision } from '../state/evidence-test-constants.js';
+import { makePlanRevision, TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
 
 vi.mock('../adapters/git.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
@@ -48,13 +55,20 @@ function planWith(body: string): PlanRecord {
 
 /** Create a full ValidationResult matching the v2 execution-evidence schema. */
 function makeValidationResult(checkId: string, passed: boolean, detail: string): ValidationResult {
+  const candidate =
+    checkId === 'test'
+      ? { candidateId: FIXTURE_TEST_CANDIDATE_ID, command: 'npm test' }
+      : checkId === 'lint'
+        ? { candidateId: FIXTURE_LINT_CANDIDATE_ID, command: 'npm run lint' }
+        : { candidateId: `candidate-${checkId}`, command: 'npm test' };
   return {
     checkId,
+    ...candidate,
     passed,
     detail,
     executedAt: FIXED_TIME,
-    kind: 'test',
-    command: 'npm test',
+    kind: checkId === 'lint' ? 'lint' : 'test',
+    command: candidate.command,
     exitCode: passed ? 0 : 1,
     executionMs: 1000,
     outputDigest: 'a'.repeat(64),
@@ -225,7 +239,8 @@ describe('validate rail', () => {
   // ── IMPL_VALIDATION ────────────────────────────────────────────────────
   describe('IMPL_VALIDATION', () => {
     function implValidationState(overrides?: Record<string, unknown>) {
-      return makeState('IMPL_VALIDATION', {
+      const state = makeState('IMPL_VALIDATION', {
+        verificationCandidates: VERIFICATION_CANDIDATES,
         ticket: TICKET,
         plan: planWith('## Plan\nTest'),
         reviewDecision: {
@@ -249,6 +264,7 @@ describe('validate rail', () => {
           verdict: 'accept' as const,
         },
         implementation: {
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
           changedFiles: ['src/auth.ts'],
           domainFiles: ['src/auth.ts'],
           digest: 'impl-d',
@@ -256,6 +272,21 @@ describe('validate rail', () => {
         },
         ...overrides,
       });
+      // Post-implementation evidence binds a passing implementation-scoped
+      // attempt per active check to the current implementation generation.
+      const checks =
+        (overrides?.['activeChecks'] as readonly string[] | undefined) ?? state.activeChecks;
+      return {
+        ...state,
+        validationAttempts: checks.map((checkId, index) => ({
+          attemptId: `00000000-0000-4000-8000-0000000000${String(index + 10).padStart(2, '0')}`,
+          scope: 'implementation' as const,
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
+          implementationDigest: 'impl-d',
+          executionObservation: TEST_EXECUTION_OBSERVATION,
+          result: makeValidationResult(checkId, true, 'OK'),
+        })),
+      };
     }
 
     it('ALL_PASSED writes to implValidation and advances to IMPL_REVIEW', async () => {

@@ -320,6 +320,7 @@ function attempt(
   return {
     attemptId,
     scope: 'implementation',
+    implementationId: '00000000-0000-4000-8000-0000000000aa',
     implementationDigest: IMPL_EVIDENCE.digest,
     executionObservation: TEST_EXECUTION_OBSERVATION,
     result: {
@@ -869,6 +870,10 @@ describe('implementation risk assessment (runtime)', () => {
       implementation: IMPL_EVIDENCE,
       implementationRiskAssessment: {
         computedMinimumTaskClass: 'HIGH-RISK',
+        effectiveTaskClass: 'HIGH-RISK',
+        declaredTaskClass: null,
+        declarationKind: 'absent' as const,
+        ticketDigest: null,
         touchedSurfaces: ['src/state/schema.ts'],
         assessedFrom: 'implementation_changed_files',
         assessedFileCount: 1,
@@ -887,6 +892,10 @@ describe('implementation risk assessment (runtime)', () => {
       implementation: { ...IMPL_EVIDENCE, digest: 'new-revision-digest' },
       implementationRiskAssessment: {
         computedMinimumTaskClass: 'HIGH-RISK',
+        effectiveTaskClass: 'HIGH-RISK',
+        declaredTaskClass: null,
+        declarationKind: 'absent' as const,
+        ticketDigest: null,
         touchedSurfaces: ['src/state/schema.ts'],
         assessedFrom: 'implementation_changed_files',
         assessedFileCount: 1,
@@ -1054,6 +1063,18 @@ describe('ProofGraph materialization and gate (runtime)', () => {
         phase: 'EVIDENCE_REVIEW',
         proofContract: contract,
         proofGraph: summary.projection,
+        // A realistic EVIDENCE_REVIEW state carries a converged review bound to
+        // the current implementation digest; this test isolates the ProofGraph gate.
+        implReview: {
+          iteration: 1,
+          reviewCycle: 1,
+          maxIterations: 3,
+          prevDigest: null,
+          currDigest: IMPL_EVIDENCE.digest,
+          revisionDelta: 'none' as const,
+          verdict: 'accept' as const,
+          executedAt: FIXED_TIME,
+        },
       },
       {
         verdict: 'approve',

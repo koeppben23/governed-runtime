@@ -13,6 +13,7 @@ import {
   CURRENT_STATE_DIGEST_FORMAT,
   type SessionState,
   type Phase,
+  type ReducedCeremonyDecision,
 } from './state/schema.js';
 import {
   REVIEW_ASSURANCE_SCHEMA_VERSION,
@@ -28,6 +29,7 @@ import type {
   PlanRecord,
   ValidationResult,
   ImplEvidence,
+  ImplReviewResult,
   ReviewDecision,
   DecisionIdentity,
   ErrorInfo,
@@ -35,6 +37,7 @@ import type {
   PolicySnapshot,
 } from './state/evidence.js';
 import { IMPL_REVIEW_CONVERGED, SELF_REVIEW_CONVERGED } from './state/evidence-test-constants.js';
+import { deriveVerificationCandidateId } from './state/candidate-identity.js';
 import { computeRecordDigest } from './state/evidence-plan.js';
 import { POLICY_DIGEST_VERSION } from './state/evidence-identifiers.js';
 import { canonicalJsonStringify } from './shared/canonical-json.js';
@@ -52,6 +55,7 @@ export {
 export const FIXED_TIME = '2026-01-01T00:00:00.000Z';
 export const FIXED_UUID = '00000000-0000-4000-8000-000000000001';
 export const FIXED_SESSION_UUID = '00000000-0000-4000-8000-000000000002';
+const FIXED_IMPL_UUID = '00000000-0000-4000-8000-0000000000aa';
 export const FIXED_DIGEST = 'digest-of-test';
 export const FIXED_FINGERPRINT = 'a1b2c3d4e5f6a1b2c3d4e5f6';
 const PLAN_DIGEST = hashText('## Plan\n1. Fix auth\n2. Add tests');
@@ -86,7 +90,6 @@ export const POLICY_SNAPSHOT: PolicySnapshot = {
     counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
   },
   enforceRiskClassification: false,
-  allowRiskDowngradeOverride: false,
   allowReducedCeremony: false,
   discoveryHealth: { enforcement: 'off', onDegraded: 'allow', onDrift: 'allow' },
   validationEvidence: { enforcement: 'off', allowNoCommands: false },
@@ -141,9 +144,10 @@ export const DECISION_IDENTITY_VERIFIED_REVIEWER: DecisionIdentity = {
 
 export const TICKET: TicketEvidence = {
   text: 'Fix the auth bug in login.ts',
-  digest: 'digest-of-ticket',
+  digest: hashText('Fix the auth bug in login.ts'),
   source: 'user',
   createdAt: FIXED_TIME,
+  riskDeclaration: { kind: 'absent' },
 };
 
 export const ARCHITECTURE_DECISION: ArchitectureDecision = {
@@ -459,6 +463,33 @@ export const PLAN_RECORD: PlanRecord = {
   reviewCompletion: 'pending',
 };
 
+const TEST_CANDIDATE_DEFINITION = {
+  assertionCapability: 'unsupported',
+  kind: 'test',
+  command: 'npm test',
+  source: 'package.json:scripts.test',
+  confidence: 'high',
+  reason: 'fixture',
+} as const;
+const LINT_CANDIDATE_DEFINITION = {
+  assertionCapability: 'unsupported',
+  kind: 'lint',
+  command: 'npm run lint',
+  source: 'package.json:scripts.lint',
+  confidence: 'high',
+  reason: 'fixture',
+} as const;
+
+/** Planner-minted candidate ids: the id hashes the complete definition. */
+export const FIXTURE_TEST_CANDIDATE_ID = deriveVerificationCandidateId(TEST_CANDIDATE_DEFINITION);
+export const FIXTURE_LINT_CANDIDATE_ID = deriveVerificationCandidateId(LINT_CANDIDATE_DEFINITION);
+
+/** Verification candidates matching the canonical validation fixtures. */
+export const VERIFICATION_CANDIDATES: NonNullable<SessionState['verificationCandidates']> = [
+  { ...TEST_CANDIDATE_DEFINITION, candidateId: FIXTURE_TEST_CANDIDATE_ID },
+  { ...LINT_CANDIDATE_DEFINITION, candidateId: FIXTURE_LINT_CANDIDATE_ID },
+];
+
 export const VALIDATION_PASSED: ValidationResult[] = [
   {
     checkId: 'test',
@@ -466,6 +497,7 @@ export const VALIDATION_PASSED: ValidationResult[] = [
     detail: 'All tests pass',
     executedAt: FIXED_TIME,
     kind: 'test',
+    candidateId: FIXTURE_TEST_CANDIDATE_ID,
     command: 'npm test',
     exitCode: 0,
     executionMs: 1200,
@@ -479,6 +511,7 @@ export const VALIDATION_PASSED: ValidationResult[] = [
     detail: 'No lint errors',
     executedAt: FIXED_TIME,
     kind: 'lint',
+    candidateId: FIXTURE_LINT_CANDIDATE_ID,
     command: 'npm run lint',
     exitCode: 0,
     executionMs: 800,
@@ -495,6 +528,7 @@ export const VALIDATION_FAILED: ValidationResult[] = [
     detail: 'Tests failed: 3 failing',
     executedAt: FIXED_TIME,
     kind: 'test',
+    candidateId: FIXTURE_TEST_CANDIDATE_ID,
     command: 'npm test',
     exitCode: 1,
     executionMs: 2000,
@@ -518,10 +552,40 @@ export const VALIDATION_FAILED: ValidationResult[] = [
 ];
 
 export const IMPL_EVIDENCE: ImplEvidence = {
+  implementationId: FIXED_IMPL_UUID,
   changedFiles: ['src/auth.ts', 'src/auth.test.ts'],
   domainFiles: ['src/auth.ts'],
   digest: 'digest-of-impl',
   executedAt: FIXED_TIME,
+};
+
+/** Converged implementation review bound to the current implementation digest. */
+export const APPROVED_IMPL_REVIEW: ImplReviewResult = {
+  iteration: 1,
+  reviewCycle: 1,
+  maxIterations: 3,
+  prevDigest: null,
+  currDigest: IMPL_EVIDENCE.digest,
+  revisionDelta: 'none',
+  verdict: 'accept',
+  executedAt: FIXED_TIME,
+};
+
+/** Bound reduced-ceremony decision shared by EVIDENCE_REVIEW rail tests. */
+export const REDUCED_CEREMONY_DECISION: ReducedCeremonyDecision = {
+  profile: 'reduced',
+  reason: 'Trivial fix',
+  effectiveTaskClass: 'TRIVIAL',
+  computedMinimumTaskClass: 'TRIVIAL',
+  declaredTaskClass: null,
+  declarationKind: 'absent',
+  ticketDigest: null,
+  touchedSurfaces: [],
+  implementationId: IMPL_EVIDENCE.implementationId,
+  implementationDigest: IMPL_EVIDENCE.digest,
+  policyDigest: 'a'.repeat(64),
+  verificationBasis: { checkIds: ['test', 'lint'], attempts: [] },
+  decidedAt: FIXED_TIME,
 };
 
 export const REVIEW_APPROVE: ReviewDecision = {
@@ -663,6 +727,7 @@ export function makeProgressedState(phase: Phase): SessionState {
         validation: VALIDATION_PASSED,
         implementation: IMPL_EVIDENCE,
         implValidation: VALIDATION_PASSED,
+        verificationCandidates: VERIFICATION_CANDIDATES,
       });
     case 'EVIDENCE_REVIEW':
       return makeState('EVIDENCE_REVIEW', {
@@ -674,6 +739,7 @@ export function makeProgressedState(phase: Phase): SessionState {
         validation: VALIDATION_PASSED,
         implementation: IMPL_EVIDENCE,
         implValidation: VALIDATION_PASSED,
+        verificationCandidates: VERIFICATION_CANDIDATES,
         implReview: IMPL_REVIEW_CONVERGED,
       });
     case 'EXPORT_READY':
@@ -687,6 +753,7 @@ export function makeProgressedState(phase: Phase): SessionState {
         validation: VALIDATION_PASSED,
         implementation: IMPL_EVIDENCE,
         implValidation: VALIDATION_PASSED,
+        verificationCandidates: VERIFICATION_CANDIDATES,
         implReview: IMPL_REVIEW_CONVERGED,
       });
     case 'REJECTED':

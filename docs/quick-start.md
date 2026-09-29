@@ -37,6 +37,12 @@ Or reference an external Jira ticket:
 /task https://jira.example.com/browse/PROJ-123
 ```
 
+The agent adopts the ticket content it can read: title, description and — only for an explicitly
+named risk field such as `Risk` with a value of `TRIVIAL`, `STANDARD` or `HIGH-RISK` — that class as
+its own `Risk:` line. A bare URL or issue ID is never ticket content, unreadable content (or an
+unreadable explicit risk field) fails closed, and `Priority`/`Severity`/`Impact` are never
+interpreted as risk classes. Comments, attachments and provider state are not part of this contract.
+
 ### 2. Generate a Plan
 
 ```

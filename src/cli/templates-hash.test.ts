@@ -316,8 +316,26 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed for peer review native-task parity: /review now follows its
     // canonical reviewDispatch/reviewInvocation loop and completes with the
     // bound reviewObligationId rather than a non-existent reviewVerdict field.
+    // Refreshed for #819 follow-up review: /implement now dispatches on the
+    // returned /check phase (IMPL_REVIEW or the reduced-ceremony EVIDENCE_REVIEW)
+    // and the Done-when accepts a valid reduced-ceremony waiver as the
+    // alternative to a converged independent review.
+    // Refreshed for the effective-risk-class contract: /task and /ticket now
+    // adopt exactly one canonical content source (ticketSource for repository
+    // files, explicit text otherwise) instead of passing a bare reference.
+    // Refreshed for the fail-closed external extraction rule: /ticket no longer
+    // permits placeholder ticket text and reports TICKET_REFERENCE_WITHOUT_CONTENT
+    // instead.
+    // Refreshed for the read-side import contract: /ticket and /task adopt only an
+    // explicitly named risk field (Risk/Risk Class/Risikoklasse) with an exact
+    // class value as its own Risk: line, never derive classes from generic fields,
+    // and state that comments/attachments/provider state are not part of the
+    // contract.
+    // Refreshed for bound revision feedback: the shared review loop and ADR
+    // command retrieve one host-bound, unconsumed changes-requested projection
+    // as untrusted data instead of reading session files or reconstructing findings.
     expect(sha256(commandsJson)).toBe(
-      'f3af49e7e6045b93a99c2d91fa80802cc043751ce4a598de86dce4e3ba27f623',
+      '7656ea45bcc8f30d4817e6cbec2ed260581d5fcd2956fbe73b6b5c3b6740da39',
     );
   });
 

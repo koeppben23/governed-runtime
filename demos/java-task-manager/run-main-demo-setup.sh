@@ -165,7 +165,7 @@ fi
 # ─── Done ─────────────────────────────────────────────────────────────────────
 
 echo ""
-echo "=== Setup complete ==="
+echo "=== Demo workspace prepared ==="
 echo ""
 echo "--- Prepared branches ---"
 git branch --list
@@ -182,3 +182,4 @@ if [[ "$MODE" == "prepare-only" ]]; then
 fi
 echo "  # Open $TARGET_DIR in OpenCode Desktop"
 echo "  # Then follow DEMO_SCRIPT.md"
+echo "  # No FlowGuard session has been started and no demo flow has run."

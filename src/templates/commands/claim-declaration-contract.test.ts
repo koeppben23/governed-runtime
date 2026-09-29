@@ -81,6 +81,29 @@ describe('architecture command template declares claims', () => {
   it('states that architecture claims never block an approval', () => {
     expect(ARCHITECTURE_TEMPLATE).toContain('never block an approval');
   });
+
+  it('publishes the frozen ADR review criteria to the author', () => {
+    for (const criterion of [
+      'Alternatives: at least two realistic options with trade-offs.',
+      'Compatibility: schemas, state, persistence, and public contracts are addressed.',
+      'Verification: decision has a falsifiable validation path.',
+    ]) {
+      expect(ARCHITECTURE_TEMPLATE).toContain(criterion);
+    }
+  });
+});
+
+describe('review-loop templates retrieve bound revision feedback', () => {
+  it('uses the read-only feedback projection and fails closed when unavailable', () => {
+    for (const template of [
+      COMMANDS['plan.md'],
+      COMMANDS['architecture.md'],
+      COMMANDS['implement.md'],
+    ]) {
+      expect(template).toContain('flowguard_status({ reviewFeedback: true })');
+      expect(template).toContain('If `reviewFeedback` is null, stop');
+    }
+  });
 });
 
 describe('claude-code plugin skills stay contract-aligned', () => {
@@ -96,5 +119,6 @@ describe('claude-code plugin skills stay contract-aligned', () => {
   it('submits architecture claims through the MCP tool', () => {
     expect(architectureSkill).toContain('flowguard_architecture({ title, adrText, claims })');
     expect(architectureSkill).not.toContain('flowguard_architecture({ title, adrText })');
+    expect(architectureSkill).toContain('Alternatives: at least two realistic options');
   });
 });

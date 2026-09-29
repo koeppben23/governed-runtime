@@ -80,7 +80,7 @@ local composite-action dependencies: external GitHub Actions must use full
 40-character lowercase commit SHAs, local actions under `./` are allowed, local
 and Docker actions are allowed only when pinned by `sha256` digest.
 
-The `mutation` job runs StrykerJS mutation testing against 109 security-critical
+The `mutation` job runs StrykerJS mutation testing against 110 security-critical
 files spanning adapters (persistence-lock, host-adapter, persistence, IP validation),
 archive creation,
 publication, inventory validation, and digesting,
@@ -234,7 +234,7 @@ protects a security-relevant literal: `stryker.identity-jwks.conf.json` enables
 
 ### Scope
 
-109 files are mutated in the base profile, covering the fail-closed governance
+110 files are mutated in the base profile, covering the fail-closed governance
 core (see `stryker.conf.json` for the canonical list; the authority inventory
 above is the classification authority):
 
@@ -256,9 +256,9 @@ above is the classification authority):
 | Templates (`codex-plugin`, `claude-code-plugin`)                                                                                                                                                  | 2       | see `reports/mutation/`         |
 | Shared (`canonical-json`, `hashing`)                                                                                                                                                              | 2       | see `reports/mutation/`         |
 | Logging (`error-serialize`)                                                                                                                                                                       | 1       | see `reports/mutation/`         |
-| Machine (`commands`, `evaluate`, `guards`, `workflow-directive`, `validation-evidence`)                                                                                                           | 5       | see `reports/mutation/`         |
+| Machine (`commands`, `evaluate`, `guards`, `workflow-directive`, `validation-evidence`, `impl-validation-evidence`)                                                                               | 6       | see `reports/mutation/`         |
 | Rails (`architecture`, `hydrate`, `review`, `review-url`, `review-decision`, `review-decision-gates`, `ticket`, plan and review evidence)                                                         | 9       | see `reports/mutation/`         |
-| **Total**                                                                                                                                                                                         | **109** | uploaded as `reports/mutation/` |
+| **Total**                                                                                                                                                                                         | **110** | uploaded as `reports/mutation/` |
 
 Per-file mutation scores are produced fresh in CI; consult the latest
 `reports/mutation/` artifact for current numbers.
@@ -421,7 +421,9 @@ a verified profile full run on the freeze commit decides whether it becomes
 2026-09-21 freeze run admitted five candidates. The 2026-09-22 base profile
 run admitted the durable human-decision audit intent authority
 (`src/integration/services/decision-audit-intent.ts`) with a 100 % per-target
-score (33 killed, 0 survived); currently none remain staged.
+score (33 killed, 0 survived). The 2026-09-26 reduced-ceremony work stages the
+post-implementation validation evidence authority
+(`src/machine/impl-validation-evidence.ts`) for a future full base-profile run.
 
 ### Running Locally
 

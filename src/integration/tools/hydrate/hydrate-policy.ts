@@ -148,9 +148,6 @@ function hydrateGovernanceArgs(policy: HydrateConfig['policy']): Partial<Hydrate
     ...(policy.enforceRiskClassification !== undefined
       ? { configEnforceRiskClassification: policy.enforceRiskClassification }
       : {}),
-    ...(policy.allowRiskDowngradeOverride !== undefined
-      ? { configAllowRiskDowngradeOverride: policy.allowRiskDowngradeOverride }
-      : {}),
     ...(policy.allowReducedCeremony !== undefined
       ? { configAllowReducedCeremony: policy.allowReducedCeremony }
       : {}),

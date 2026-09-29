@@ -460,6 +460,19 @@ true })` returns the evaluated projection. Key invariants:
 
 ### Changed
 
+- **BREAKING — reduced ceremony is now post-verification and digest-bound (#819).**
+  The persisted session schema is `v7`: `ImplEvidence` and implementation-scope
+  `ValidationAttempt` carry a required `implementationId`, and
+  `ReducedCeremonyDecision` requires the implementation digest, the frozen
+  policy digest and the exact check/attempt basis. `v6` and earlier snapshots
+  fail closed with `SESSION_STATE_INCOMPATIBLE`; there is no migration or dual
+  reader. Reduced ceremony exists only as `IMPL_VALIDATION → EVIDENCE_REVIEW`
+  after every active check re-ran against the frozen governed bytes and the
+  worktree re-attests to the frozen implementation digest. The human evidence
+  gate always remains, `implReview` is reported as an explicit `waived` status
+  instead of fabricated evidence, and approval/export re-attest the frozen
+  bytes before proceeding.
+
 - **Shared state-write preparation and recovery regression coverage.** Governed
   writes now finalize the Implementation Base and refresh the ProofGraph once
   before binding outbox digests and materializing artifacts. Tests pin the

@@ -50,6 +50,8 @@ import {
 } from '../../../state/discovery-schemas.js';
 import { autoAdvance } from '../../../rails/types.js';
 import { executeCheck } from '../../../verification/executor.js';
+import { ceremonyAuditIntent, decidePostCheckCeremony } from './ceremony-decision.js';
+import type { CeremonyProfileDecision } from '../../phase-tool-gate.js';
 import { deriveRepairGuidance } from '../../../verification/repair-guidance.js';
 import type {
   AssertionExtractionResult,
@@ -386,6 +388,8 @@ interface RevalidatedCheck {
   readonly validationResult: ValidationResult;
   readonly executionObservation: ValidationExecutionObservation;
   readonly advanced: Exclude<ReturnType<typeof autoAdvance>, { kind: 'overflow' }>;
+  readonly ceremony: CeremonyProfileDecision | null;
+  readonly ceremonyIsNew: boolean;
 }
 
 type CheckRevalidation = string | RevalidatedCheck;
@@ -429,17 +433,34 @@ async function revalidateCheckUnderLock(input: PersistCheckInput): Promise<Check
     executionObservation,
   );
   const nextState = buildNextValidationState(freshState, allResults, validationAttempt);
-  const advanced = autoAdvance(nextState, (s) => evaluate(s, railCtx.policy), railCtx);
+  // #819: the reduced-ceremony decision is made only here, after the merged
+  // post-check state and before auto-advance, bound to the actual worktree.
+  const ceremony = await decidePostCheckCeremony({
+    state: nextState,
+    worktree: input.worktree,
+    digest: railCtx.digest,
+    now: railCtx.now(),
+  });
+  if (ceremony.kind === 'subject_changed') {
+    return formatBlocked('VALIDATION_SUBJECT_CHANGED', {
+      reason:
+        'the governed implementation subject changed after the freeze; ' +
+        're-run /implement and all active checks before any ceremony decision',
+    });
+  }
+  const advanced = autoAdvance(ceremony.state, (s) => evaluate(s, railCtx.policy), railCtx);
   if (advanced.kind === 'overflow') return formatAutoAdvanceOverflow(advanced);
 
   return {
     freshState,
     freshPolicy,
-    nextState,
+    nextState: ceremony.state,
     railCtx,
     validationResult,
     executionObservation,
     advanced,
+    ceremony: ceremony.kind === 'decided' ? ceremony.decision : null,
+    ceremonyIsNew: ceremony.kind === 'decided' ? ceremony.isNew : false,
   };
 }
 
@@ -483,6 +504,12 @@ async function finalizeCheckUnderLock(input: {
     input.sessDir,
     activated.state,
     advanced.transitions,
+    ceremonyAuditIntent(
+      input.revalidated.ceremony,
+      input.revalidated.railCtx.now(),
+      input.revalidated.nextState.implementation,
+      input.revalidated.ceremonyIsNew,
+    ),
   );
   const authorityResult = resolveRunCheckDispatchAuthority(activated, persisted);
   if (typeof authorityResult === 'string') return authorityResult;
@@ -506,6 +533,7 @@ async function finalizeCheckUnderLock(input: {
     finalState: persisted,
     authority: authorityResult ?? null,
     policy: freshPolicy,
+    ceremony: input.revalidated.ceremony ?? undefined,
   });
 }
 

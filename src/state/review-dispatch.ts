@@ -167,3 +167,18 @@ export function abandonReviewDispatch(
     ),
   };
 }
+
+/**
+ * True when the session carries a review obligation that is not consumed.
+ * Canonical for every consumer that must fail closed on outstanding review
+ * work (message phase gate, reduced-ceremony guard).
+ */
+export function hasOutstandingReviewObligation(
+  assurance: ReviewAssuranceState | null | undefined,
+): boolean {
+  return (
+    assurance?.obligations.some(
+      (obligation) => obligation.status !== 'consumed' && obligation.consumedAt == null,
+    ) ?? false
+  );
+}

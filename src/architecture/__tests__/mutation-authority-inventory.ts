@@ -1125,6 +1125,14 @@ export const MUTATION_AUTHORITY_INVENTORY: readonly MutationAuthorityEntry[] = [
       admission: admissionRecord('src/machine/validation-evidence.ts'),
     },
   ),
+  candidate(
+    'src/machine/impl-validation-evidence.ts',
+    'Post-implementation validation evidence authority',
+    'base',
+    ['src/machine/impl-validation-evidence.test.ts'],
+    'New canonical evidence predicate for the implementation-review gate and reduced-ceremony eligibility; admission requires a full base-profile run with per-target evidence.',
+    { source: [SOURCE.machine], critical: true },
+  ),
   required(
     'src/rails/architecture.ts',
     'Architecture rail executor',

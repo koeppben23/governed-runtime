@@ -331,8 +331,10 @@ function implReviewState(): SessionState {
       source: 'user',
       digest: 'ticket-digest',
       createdAt: '2026-01-01T00:00:00.000Z',
+      riskDeclaration: { kind: 'absent' },
     },
     implementation: {
+      implementationId: '00000000-0000-4000-8000-0000000000aa',
       changedFiles: ['src/test.ts'],
       domainFiles: ['src/test.ts'],
       digest: 'impl-digest',

@@ -6,6 +6,8 @@ import {
   IMPL_EVIDENCE,
   PLAN_RECORD,
   FIXED_TIME,
+  APPROVED_IMPL_REVIEW,
+  REDUCED_CEREMONY_DECISION,
 } from '../fixtures.js';
 import { TEAM_POLICY } from '../config/policy.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
@@ -152,6 +154,16 @@ const ARCHITECTURE_CLAIM = {
   authoritySectionId: 'decision',
   requiredReviewEvidence: ['architecture-review'],
 };
+
+function ticketFixture(text = 't', digest = 'd') {
+  return {
+    text,
+    digest,
+    source: 'user' as const,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    riskDeclaration: { kind: 'absent' as const },
+  };
+}
 
 describe('review-decision rail', () => {
   it('carries the exact decision evidence for a plan approval', () => {
@@ -347,7 +359,7 @@ describe('review-decision rail', () => {
 
   it('changes_requested at EVIDENCE_REVIEW clears implementation and implReview', () => {
     const state = makeState('EVIDENCE_REVIEW', {
-      ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
+      ticket: ticketFixture('t', 'd'),
       plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
       implementation: IMPL_EVIDENCE,
       implReview: {
@@ -701,16 +713,9 @@ describe('review-decision rail', () => {
   });
 
   it('changes_requested at EVIDENCE_REVIEW clears reducedCeremony alongside impl', () => {
-    const reducedCeremonyDecision = {
-      profile: 'reduced' as const,
-      reason: 'Trivial config change',
-      claimedTaskClass: 'TRIVIAL' as const,
-      computedMinimumTaskClass: 'TRIVIAL' as const,
-      touchedSurfaces: ['config/app.json'],
-      decidedAt: FIXED_TIME,
-    };
+    const reducedCeremonyDecision = REDUCED_CEREMONY_DECISION;
     const state = makeState('EVIDENCE_REVIEW', {
-      ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
+      ticket: ticketFixture('t', 'd'),
       plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
       implementation: IMPL_EVIDENCE,
       reducedCeremony: reducedCeremonyDecision,
@@ -746,16 +751,9 @@ describe('review-decision rail', () => {
   });
 
   it('approve does NOT clear reducedCeremony', () => {
-    const reducedCeremonyDecision = {
-      profile: 'reduced' as const,
-      reason: 'Trivial fix',
-      claimedTaskClass: 'TRIVIAL' as const,
-      computedMinimumTaskClass: 'TRIVIAL' as const,
-      touchedSurfaces: ['src/index.ts'],
-      decidedAt: FIXED_TIME,
-    };
+    const reducedCeremonyDecision = REDUCED_CEREMONY_DECISION;
     const state = makeState('EVIDENCE_REVIEW', {
-      ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
+      ticket: ticketFixture('t', 'd'),
       plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
       implementation: IMPL_EVIDENCE,
       reducedCeremony: reducedCeremonyDecision,
@@ -785,16 +783,9 @@ describe('review-decision rail', () => {
   });
 
   it('reject preserves reducedCeremony and implementation evidence at REJECTED', () => {
-    const reducedCeremonyDecision = {
-      profile: 'reduced' as const,
-      reason: 'Trivial fix',
-      claimedTaskClass: 'TRIVIAL' as const,
-      computedMinimumTaskClass: 'TRIVIAL' as const,
-      touchedSurfaces: ['src/index.ts'],
-      decidedAt: FIXED_TIME,
-    };
+    const reducedCeremonyDecision = REDUCED_CEREMONY_DECISION;
     const state = makeState('EVIDENCE_REVIEW', {
-      ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
+      ticket: ticketFixture('t', 'd'),
       plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
       implementation: IMPL_EVIDENCE,
       reducedCeremony: reducedCeremonyDecision,
@@ -1169,6 +1160,7 @@ describe('review-decision rail', () => {
     it('P34: minimumActorAssuranceForApproval=claim_validated blocks best_effort actor', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: IMPL_EVIDENCE,
+        implReview: APPROVED_IMPL_REVIEW,
         plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         initiatedBy: 'initiator',
         initiatedByIdentity: initiatorIdentity,
@@ -1196,6 +1188,7 @@ describe('review-decision rail', () => {
     it('P34: minimumActorAssuranceForApproval=idp_verified blocks claim_validated actor', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: IMPL_EVIDENCE,
+        implReview: APPROVED_IMPL_REVIEW,
         plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         initiatedBy: 'initiator',
         initiatedByIdentity: initiatorIdentity,
@@ -1223,6 +1216,7 @@ describe('review-decision rail', () => {
     it('P34: minimumActorAssuranceForApproval=claim_validated allows claim_validated actor (>= threshold)', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: IMPL_EVIDENCE,
+        implReview: APPROVED_IMPL_REVIEW,
         plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         initiatedBy: 'initiator',
         initiatedByIdentity: initiatorIdentity,
@@ -1247,6 +1241,7 @@ describe('review-decision rail', () => {
     it('blocks final approval for a completed mutation episode not bound to implementation evidence', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: IMPL_EVIDENCE,
+        implReview: APPROVED_IMPL_REVIEW,
         plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         mutationEpisodes: [
           {
@@ -1281,6 +1276,7 @@ describe('review-decision rail', () => {
     it('blocks final approval for a host mutation dispatched without a completion outcome', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: IMPL_EVIDENCE,
+        implReview: APPROVED_IMPL_REVIEW,
         plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         mutationEpisodes: [
           {
@@ -1315,6 +1311,7 @@ describe('review-decision rail', () => {
     it('allows final approval after a fenced unknown-outcome resolution and fresh review evidence', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: { ...IMPL_EVIDENCE, executedAt: '2026-02-01T00:00:00.000Z' },
+        implReview: APPROVED_IMPL_REVIEW,
         plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         mutationEpisodes: [
           {
@@ -1361,6 +1358,7 @@ describe('review-decision rail', () => {
     it('does not block final approval for a historical episode bound stale by a later implementation', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: IMPL_EVIDENCE,
+        implReview: APPROVED_IMPL_REVIEW,
         plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         mutationEpisodes: [
           {
@@ -1395,6 +1393,7 @@ describe('review-decision rail', () => {
     it('P34: minimumActorAssuranceForApproval=idp_verified allows idp_verified actor', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: IMPL_EVIDENCE,
+        implReview: APPROVED_IMPL_REVIEW,
         plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         initiatedBy: 'initiator',
         initiatedByIdentity: initiatorIdentity,
@@ -1419,6 +1418,7 @@ describe('review-decision rail', () => {
     it('P34: minimumActorAssuranceForApproval absent → no assurance check (else-if gate)', () => {
       const state = makeState('EVIDENCE_REVIEW', {
         implementation: IMPL_EVIDENCE,
+        implReview: APPROVED_IMPL_REVIEW,
         plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         initiatedBy: 'initiator',
         initiatedByIdentity: initiatorIdentity,
@@ -1539,7 +1539,7 @@ describe('review-decision rail', () => {
 
     it('reject at PLAN_REVIEW preserves evidence at REJECTED (survivor kill)', () => {
       const state = makeState('PLAN_REVIEW', {
-        ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
+        ticket: ticketFixture('t', 'd'),
         plan: { ...PLAN_RECORD, reviewCompletion: 'reviewer_accepted' },
         selfReview: CONVERGED_SELF_REVIEW,
       });
@@ -1885,7 +1885,7 @@ describe('review-decision rail', () => {
 
     it('skips the plan evidence gate outside PLAN_REVIEW (phase guard)', () => {
       const state = makeState('EVIDENCE_REVIEW', {
-        ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
+        ticket: ticketFixture('t', 'd'),
         plan: { ...PLAN_RECORD, reviewCompletion: 'pending' },
         selfReview: CONVERGED_SELF_REVIEW,
         implementation: IMPL_EVIDENCE,

@@ -176,6 +176,18 @@ function resolvePlanDispatchAuthority(
   return resolveReviewDispatchAuthority(finalState.reviewAssurance, obligation.obligationId);
 }
 
+type ChallengeClassification = Awaited<
+  ReturnType<typeof resolvePreImplementationChallengeClassification>
+>;
+
+function classificationFiles(classification: ChallengeClassification): readonly string[] {
+  return classification.kind === 'available' ? classification.changedFiles : [];
+}
+
+function classificationScopeUnknown(classification: ChallengeClassification): boolean {
+  return classification.kind === 'available' ? classification.scopeUnknown : false;
+}
+
 async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> {
   const planBody = scope.args.planText?.trim();
   if (!planBody) return formatBlocked('EMPTY_PLAN');
@@ -198,7 +210,8 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
     scope,
     planEvidence,
     planVersion,
-    classification.kind === 'available' ? classification.changedFiles : [],
+    classificationFiles(classification),
+    classificationScopeUnknown(classification),
   );
   if (attempt.kind === 'blocked') return attempt.message;
   const nextState = buildPlanSubmissionState(scope, planEvidence, planVersion, attempt);

@@ -51,6 +51,7 @@ import {
   isTerminalPhase,
 } from '../machine/topology.js';
 import { evaluateValidationEvidence } from '../machine/validation-evidence.js';
+import { reducedCeremonyReady } from '../machine/guards.js';
 import type { SessionState, Phase } from '../state/schema.js';
 import { DecisionIdentity } from '../state/evidence-identity.js';
 
@@ -59,7 +60,7 @@ export const EvidenceSlotStatusSchema = z.object({
   label: z.string(),
   required: z.boolean(),
   present: z.boolean(),
-  status: z.enum(['complete', 'missing', 'not_yet_required', 'failed']),
+  status: z.enum(['complete', 'missing', 'not_yet_required', 'failed', 'waived']),
   detail: z.string().optional(),
   artifactKind: z.string().optional(),
 });
@@ -78,6 +79,7 @@ export const CompletenessSummarySchema = z.object({
   missing: z.number().int().nonnegative(),
   notYetRequired: z.number().int().nonnegative(),
   failed: z.number().int().nonnegative(),
+  waived: z.number().int().nonnegative(),
 });
 
 export const CompletenessReportSchema = z.object({
@@ -95,7 +97,7 @@ export interface EvidenceSlotStatus {
   readonly label: string;
   readonly required: boolean;
   readonly present: boolean;
-  readonly status: 'complete' | 'missing' | 'not_yet_required' | 'failed';
+  readonly status: 'complete' | 'missing' | 'not_yet_required' | 'failed' | 'waived';
   readonly detail?: string;
   readonly artifactKind?: string;
 }
@@ -114,6 +116,7 @@ export interface CompletenessSummary {
   readonly missing: number;
   readonly notYetRequired: number;
   readonly failed: number;
+  readonly waived: number;
 }
 
 export interface CompletenessReport {
@@ -211,6 +214,15 @@ const SLOT_PRESENT_CHECKS: Record<string, (state: SessionState, phase: Phase) =>
   archReviewDecision: (s) => s.phase === 'ARCH_COMPLETE' && s.error === null,
 };
 
+function isSlotWaived(state: SessionState, slot: string): boolean {
+  // The implementation-review slot may be explicitly waived by a currently
+  // valid reduced-ceremony decision — the same machine authority that
+  // authorizes the REDUCED_CEREMONY transition. A waiver is never reported as
+  // a completed review and never as a missing slot. `implValidation` is never
+  // waivable.
+  return slot === 'implReview' && state.implReview === null && reducedCeremonyReady(state);
+}
+
 function isSlotPresent(state: SessionState, slot: string): boolean {
   const fn = SLOT_PRESENT_CHECKS[slot];
   return fn ? fn(state, state.phase) : false;
@@ -269,7 +281,9 @@ const SLOT_DETAIL_FNS: Record<string, (state: SessionState, phase: Phase) => str
   implReview: (s) =>
     s.implReview
       ? `iteration ${s.implReview.iteration}/${s.implReview.maxIterations}, verdict: ${s.implReview.verdict}`
-      : undefined,
+      : isSlotWaived(s, 'implReview')
+        ? `waived by reduced ceremony (${s.reducedCeremony?.reason ?? 'reduced'})`
+        : undefined,
   evidenceReviewDecision: (s) =>
     (s.phase === 'COMPLETE' || s.phase === 'EXPORT_READY') && s.error === null
       ? 'Approved (verified by topology invariant)'
@@ -307,9 +321,11 @@ function determineSlotStatus(
   isRequired: boolean,
   failed: boolean,
   present: boolean,
+  waived: boolean,
 ): EvidenceSlotStatus['status'] {
   if (!isRequired) return 'not_yet_required';
   if (failed) return 'failed';
+  if (waived) return 'waived';
   if (present) return 'complete';
   return 'missing';
 }
@@ -327,7 +343,12 @@ function buildSlotEntry(
     label,
     required: isRequired,
     present: isSlotPresent(state, slot),
-    status: determineSlotStatus(isRequired, isSlotFailed(state, slot), isSlotPresent(state, slot)),
+    status: determineSlotStatus(
+      isRequired,
+      isSlotFailed(state, slot),
+      isSlotPresent(state, slot),
+      isSlotWaived(state, slot),
+    ),
     ...(detail !== undefined ? { detail } : {}),
     ...(artifactKind !== undefined ? { artifactKind } : {}),
   };
@@ -402,6 +423,7 @@ export function evaluateCompleteness(state: SessionState): CompletenessReport {
   const missing = slots.filter((s) => s.status === 'missing').length;
   const notYetRequired = slots.filter((s) => s.status === 'not_yet_required').length;
   const failed = slots.filter((s) => s.status === 'failed').length;
+  const waived = slots.filter((s) => s.status === 'waived').length;
   const terminalEnough = state.phase !== 'READY' && (!isReviewFlow || isTerminalPhase(state.phase));
   const overallComplete = missing === 0 && failed === 0 && fourEyes.satisfied && terminalEnough;
 
@@ -412,6 +434,6 @@ export function evaluateCompleteness(state: SessionState): CompletenessReport {
     overallComplete,
     slots,
     fourEyes,
-    summary: { total: slots.length, complete, missing, notYetRequired, failed },
+    summary: { total: slots.length, complete, missing, notYetRequired, failed, waived },
   };
 }

@@ -196,6 +196,7 @@ describe('review-decision rail', () => {
         {
           ...state,
           implementation: {
+            implementationId: '00000000-0000-4000-8000-0000000000aa',
             changedFiles: ['src/state/schema.ts'],
             domainFiles: ['src/state/schema.ts'],
             digest: 'implementation-digest',
@@ -207,6 +208,10 @@ describe('review-decision rail', () => {
           implReview: { ...state.implReview!, currDigest: 'implementation-digest' },
           implementationRiskAssessment: {
             computedMinimumTaskClass: 'HIGH-RISK',
+            effectiveTaskClass: 'HIGH-RISK',
+            declaredTaskClass: null,
+            declarationKind: 'absent' as const,
+            ticketDigest: null,
             touchedSurfaces: ['src/state/schema.ts'],
             riskTriggers: ['state_integrity'],
             assessedFrom: 'implementation_changed_files',
@@ -226,6 +231,7 @@ describe('review-decision rail', () => {
         {
           ...state,
           implementation: {
+            implementationId: '00000000-0000-4000-8000-0000000000aa',
             changedFiles: ['src/archive/verify.ts'],
             domainFiles: ['src/archive/verify.ts'],
             digest: 'implementation-digest',
@@ -234,6 +240,10 @@ describe('review-decision rail', () => {
           implReview: { ...state.implReview!, currDigest: 'implementation-digest' },
           implementationRiskAssessment: {
             computedMinimumTaskClass: 'HIGH-RISK',
+            effectiveTaskClass: 'HIGH-RISK',
+            declaredTaskClass: null,
+            declarationKind: 'absent' as const,
+            ticketDigest: null,
             touchedSurfaces: ['src/archive/verify.ts'],
             riskTriggers: ['ceremony_only'],
             assessedFrom: 'implementation_changed_files',
@@ -253,6 +263,7 @@ describe('review-decision rail', () => {
         {
           ...state,
           implementation: {
+            implementationId: '00000000-0000-4000-8000-0000000000aa',
             changedFiles: ['src/state/schema.ts'],
             domainFiles: ['src/state/schema.ts'],
             digest: 'implementation-digest',
@@ -261,6 +272,10 @@ describe('review-decision rail', () => {
           implReview: { ...state.implReview!, currDigest: 'implementation-digest' },
           implementationRiskAssessment: {
             computedMinimumTaskClass: 'HIGH-RISK',
+            effectiveTaskClass: 'HIGH-RISK',
+            declaredTaskClass: null,
+            declarationKind: 'absent' as const,
+            ticketDigest: null,
             touchedSurfaces: ['src/state/schema.ts'],
             assessedFrom: 'implementation_changed_files',
             assessedFileCount: 1,

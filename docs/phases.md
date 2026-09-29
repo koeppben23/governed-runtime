@@ -223,7 +223,7 @@ Validation executes automatically when the phase is entered; `/check` remains av
 
 AI implements the plan using OpenCode tools. Changed files are automatically tracked via git.
 
-When `policy.allowReducedCeremony` is enabled, FlowGuard may reduce only the implementation-review ceremony after implementation evidence is recorded. The machine still uses explicit transitions (`IMPLEMENTATION → EVIDENCE_REVIEW` via `REDUCED_CEREMONY`, then the normal evidence gate). Reduction is evidenced in `state.reducedCeremony`; FlowGuard does not synthesize `implReview` evidence. Reduction is allowed only for a `TRIVIAL` claim, runtime-computed `TRIVIAL` changed files, clear `riskGate`, complete passing validation evidence, no sensitive surfaces, no policy-required host review, and no outstanding review obligation. Otherwise the full IMPL_VALIDATION → IMPL_REVIEW path remains unchanged.
+When `policy.allowReducedCeremony` is enabled **and** `requireHumanGates` is true, FlowGuard may reduce only the independent implementation-review ceremony **after** post-implementation verification. `/implement` records the frozen implementation generation and projects `pending_post_implementation_verification`; the machine has no implementation-phase shortcut. The decision is made in IMPL_VALIDATION, inside the `/check` transaction, once every active check has a latest decisive PASS bound to the current `implementationId`, and only after the frozen governed bytes were re-attested in the worktree. The machine then uses the explicit `IMPL_VALIDATION → EVIDENCE_REVIEW` transition via `REDUCED_CEREMONY`. Reduction requires the effective risk class (`max(runtime minimum, ticket-declared floor, optional escalation)`) to be `TRIVIAL`. It is evidenced in `state.reducedCeremony` with the implementation digest, frozen policy digest, declaration provenance (ticket digest, declared class, escalation) and exact check/attempt basis; FlowGuard never synthesizes `implReview` evidence, and completeness reports the review slot as explicitly `waived`. Otherwise the full IMPL_VALIDATION → IMPL_REVIEW path remains unchanged.
 Use `/implement` to record evidence and auto-advance.
 
 ### IMPL_VALIDATION
@@ -236,8 +236,8 @@ Re-runs the active verification checks against the **implemented** code (recorde
 checks execute automatically; `/check` remains available as a compatibility surface to
 execute them explicitly. A genuine failure routes back to IMPLEMENTATION (the
 delivered code is wrong, not the plan); a timeout or executor error retries in
-IMPL_VALIDATION without invalidating the approved plan. Reduced ceremony bypasses this
-phase along with IMPL_REVIEW.
+IMPL_VALIDATION without invalidating the approved plan. Reduced ceremony can
+waive only the subsequent IMPL_REVIEW, never this phase.
 
 ### IMPL_REVIEW
 

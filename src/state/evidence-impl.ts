@@ -11,6 +11,14 @@ import { LoopVerdict, RevisionDelta } from './evidence-primitives.js';
 /** Evidence produced by /implement — what files were changed. */
 export const ImplEvidence = z
   .object({
+    /**
+     * Unique execution identity of this `/implement` recording. Content alone
+     * cannot distinguish a resubmission with identical bytes from a fresh
+     * implementation: post-implementation attempts and reduced-ceremony
+     * decisions bind this id, so a re-recorded identical revision still
+     * requires fresh checks.
+     */
+    implementationId: z.string().uuid(),
     changedFiles: z.array(z.string()),
     domainFiles: z.array(z.string()),
     /**

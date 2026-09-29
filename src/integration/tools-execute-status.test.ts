@@ -246,6 +246,12 @@ describe('status', () => {
       expect(result.next).toBeUndefined();
     });
 
+    it('returns no review feedback before a bound changes-requested review exists', async () => {
+      await hydrateSession();
+      const result = parseToolResult(await status.execute({ reviewFeedback: true }, ctx));
+      expect(result.reviewFeedback).toBeNull();
+    });
+
     it('returns the advisory ProofGraph projection when proofGraph:true', async () => {
       await hydrateSession();
       const result = parseToolResult(await status.execute({ proofGraph: true }, ctx));
@@ -1294,12 +1300,25 @@ describe('declare_contract', () => {
       ...state!,
       phase: 'IMPL_VALIDATION',
       activeChecks: [checkId, 'security', ...(overrides.unattemptedChecks ?? [])],
-      ticket: { text: 'approved ticket', digest: 'ticket-digest', source: 'user', createdAt: NOW },
-      implementation: { changedFiles: ['a.ts'], domainFiles: [], digest, executedAt: NOW },
+      ticket: {
+        text: 'approved ticket',
+        digest: 'ticket-digest',
+        source: 'user',
+        createdAt: NOW,
+        riskDeclaration: { kind: 'absent' },
+      },
+      implementation: {
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
+        changedFiles: ['a.ts'],
+        domainFiles: [],
+        digest,
+        executedAt: NOW,
+      },
       validationAttempts: [
         {
           attemptId: crypto.randomUUID(),
           scope: 'implementation',
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
           implementationDigest: digest,
           executionObservation: TEST_EXECUTION_OBSERVATION,
           result: {
@@ -1319,6 +1338,7 @@ describe('declare_contract', () => {
         {
           attemptId: crypto.randomUUID(),
           scope: 'implementation',
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
           implementationDigest: digest,
           executionObservation: TEST_EXECUTION_OBSERVATION,
           result: {
@@ -1612,6 +1632,7 @@ describe('declare_contract', () => {
       const attempt = (checkId: string, passed: boolean) => ({
         attemptId: crypto.randomUUID(),
         scope: 'implementation' as const,
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
         implementationDigest: digest,
         executionObservation: TEST_EXECUTION_OBSERVATION,
         result: {
@@ -1664,8 +1685,15 @@ describe('declare_contract', () => {
           digest: 'ticket-digest',
           source: 'user',
           createdAt: NOW,
+          riskDeclaration: { kind: 'absent' },
         },
-        implementation: { changedFiles: ['a.ts'], domainFiles: [], digest, executedAt: NOW },
+        implementation: {
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
+          changedFiles: ['a.ts'],
+          domainFiles: [],
+          digest,
+          executedAt: NOW,
+        },
         validationAttempts: [
           attempt('test', true),
           {
@@ -1875,6 +1903,7 @@ describe('declare_contract', () => {
       return {
         attemptId: crypto.randomUUID(),
         scope: 'implementation' as const,
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
         implementationDigest: digest,
         executionObservation: TEST_EXECUTION_OBSERVATION,
         result: {
@@ -1908,8 +1937,20 @@ describe('declare_contract', () => {
         },
         makeStructuredSecurityCandidate(),
       ],
-      ticket: { text: 'approved ticket', digest: 'ticket-digest', source: 'user', createdAt: NOW },
-      implementation: { changedFiles: ['a.ts'], domainFiles: [], digest, executedAt: NOW },
+      ticket: {
+        text: 'approved ticket',
+        digest: 'ticket-digest',
+        source: 'user',
+        createdAt: NOW,
+        riskDeclaration: { kind: 'absent' },
+      },
+      implementation: {
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
+        changedFiles: ['a.ts'],
+        domainFiles: [],
+        digest,
+        executedAt: NOW,
+      },
       validationAttempts: [
         attempt('test', true),
         {

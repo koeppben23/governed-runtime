@@ -99,6 +99,7 @@
     "src/machine/commands.ts",
     "src/machine/evaluate.ts",
     "src/machine/guards.ts",
+    "src/machine/impl-validation-evidence.ts",
     "src/machine/validation-evidence.ts",
     "src/machine/workflow-directive.ts",
     "src/mcp-server/execution-limiter.ts",

@@ -72,6 +72,20 @@ import { ticket } from './tools/simple/ticket-tool.js';
 import { plan } from './tools/plan/plan.js';
 import { implement, review_implementation } from './tools/implementation/implement.js';
 import { run_check } from './tools/validation/run-check-tool.js';
+import { deriveVerificationCandidateId } from '../state/candidate-identity.js';
+
+const E2E_TYPECHECK_DEFINITION = {
+  assertionCapability: 'unsupported' as const,
+  kind: 'typecheck' as const,
+  command: 'npx tsc --noEmit',
+  source: 'test',
+  confidence: 'high' as const,
+  reason: 'E2E test candidate',
+};
+const E2E_TYPECHECK_CANDIDATE = {
+  ...E2E_TYPECHECK_DEFINITION,
+  candidateId: deriveVerificationCandidateId(E2E_TYPECHECK_DEFINITION),
+};
 import type { ToolContext } from './tools/helpers.js';
 import { makeState, TICKET, FROZEN_IMPLEMENTATION_BASE } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
@@ -362,6 +376,7 @@ async function prepareBoundUnableReview(se: SE, implementationDigest: string) {
       reviewFindings: [],
     },
     implementation: {
+      implementationId: '00000000-0000-4000-8000-0000000000aa',
       changedFiles: ['src/auth.ts'],
       domainFiles: ['src/auth.ts'],
       digest: implementationDigest,
@@ -496,25 +511,16 @@ describe('implementation review without repository observation authority', () =>
         plan: st!.plan,
         reviewDecision: st!.reviewDecision,
         implementation: {
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
           changedFiles: ['src/auth.ts'],
           domainFiles: ['src/auth.ts'],
           digest: implDigest1,
           executedAt: FIXED_TIME,
         },
         activeChecks: ['typecheck'],
-        verificationCandidates: [
-          {
-            assertionCapability: 'unsupported' as const,
-            candidateId: 'vc_typecheck_e2e',
-            kind: 'typecheck',
-            command: 'npx tsc --noEmit',
-            source: 'test',
-            confidence: 'high',
-            reason: 'E2E test candidate',
-          },
-        ],
+        verificationCandidates: [E2E_TYPECHECK_CANDIDATE],
         executionSubjectInputsByCandidateId: {
-          vc_typecheck_e2e: [{ kind: 'implementation' as const }],
+          [E2E_TYPECHECK_CANDIDATE.candidateId]: [{ kind: 'implementation' as const }],
         },
       }),
     );
@@ -630,25 +636,16 @@ describe('implementation review without repository observation authority', () =>
         plan: st!.plan,
         reviewDecision: st!.reviewDecision,
         implementation: {
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
           changedFiles: ['src/auth.ts'],
           domainFiles: ['src/auth.ts'],
           digest: implDigest1,
           executedAt: FIXED_TIME,
         },
         activeChecks: ['typecheck'],
-        verificationCandidates: [
-          {
-            assertionCapability: 'unsupported' as const,
-            candidateId: 'vc_typecheck_e2e',
-            kind: 'typecheck',
-            command: 'npx tsc --noEmit',
-            source: 'test',
-            confidence: 'high',
-            reason: 'E2E test candidate',
-          },
-        ],
+        verificationCandidates: [E2E_TYPECHECK_CANDIDATE],
         executionSubjectInputsByCandidateId: {
-          vc_typecheck_e2e: [{ kind: 'implementation' as const }],
+          [E2E_TYPECHECK_CANDIDATE.candidateId]: [{ kind: 'implementation' as const }],
         },
       }),
     );
@@ -779,25 +776,16 @@ describe('implementation review without repository observation authority', () =>
         plan: st!.plan,
         reviewDecision: st!.reviewDecision,
         implementation: {
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
           changedFiles: ['src/auth.ts'],
           domainFiles: ['src/auth.ts'],
           digest: implDigest1,
           executedAt: FIXED_TIME,
         },
         activeChecks: ['typecheck'],
-        verificationCandidates: [
-          {
-            assertionCapability: 'unsupported' as const,
-            candidateId: 'vc_typecheck_e2e',
-            kind: 'typecheck',
-            command: 'npx tsc --noEmit',
-            source: 'test',
-            confidence: 'high',
-            reason: 'E2E test candidate',
-          },
-        ],
+        verificationCandidates: [E2E_TYPECHECK_CANDIDATE],
         executionSubjectInputsByCandidateId: {
-          vc_typecheck_e2e: [{ kind: 'implementation' as const }],
+          [E2E_TYPECHECK_CANDIDATE.candidateId]: [{ kind: 'implementation' as const }],
         },
       }),
     );

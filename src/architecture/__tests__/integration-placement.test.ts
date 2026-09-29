@@ -147,8 +147,8 @@ describe('integration placement authority', () => {
 
     expect(byOwner('root-composition').length).toBe(23);
     expect(byOwner('root-host-runtime').length).toBe(4);
-    expect(byOwner('root-authority').length).toBe(13);
-    expect(rootFiles.length).toBe(40);
+    expect(byOwner('root-authority').length).toBe(14);
+    expect(rootFiles.length).toBe(41);
 
     expect(
       byOwner('root-host-runtime')

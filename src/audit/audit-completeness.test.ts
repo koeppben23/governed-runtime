@@ -831,6 +831,7 @@ describe('audit completeness', () => {
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
         implementation: {
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
           changedFiles: ['a.ts', 'b.ts'],
           domainFiles: ['a.ts', 'b.ts'],
           digest: longDigest,

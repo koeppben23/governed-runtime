@@ -72,7 +72,13 @@ The manifest must declare the three flows exactly once with **distinct session
 ids**; reusing one session id across flows fails (`duplicate_session_id`), so a
 single session cannot masquerade as three independent runs. The development
 flow must declare exactly one `flowguard-package` (the mandatory `/export`
-evidence); architecture and peer-review packages remain optional per the demo.
+evidence); architecture and peer-review packages remain optional for an ordinary
+presentation, but the five-flow live-evidence checklist requests raw packages
+when those terminal runs are being retained as evidence.
+The reduced-ceremony A/B sessions are intentionally outside this three-flow
+manifest. Verify each of their `/export` packages individually with its distinct
+host session ID and retain the five-flow checklist in `README.md`; do not
+represent unexecuted reduced-ceremony sessions by extending this manifest.
 
 ```bash
 node demos/java-task-manager/verify-evidence-package.mjs --manifest evidence-manifest.json

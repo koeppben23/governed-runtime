@@ -100,6 +100,27 @@ describe('guards', () => {
       ).toBe(true);
     });
 
+    it('implCheckErrored treats an inconclusive assertion extraction as a technical block', () => {
+      const inconclusive = [
+        {
+          ...VALIDATION_FAILED[0]!,
+          passed: false,
+          outcome: 'inconclusive' as const,
+          timedOut: false,
+          exitCode: 1,
+          assertionExtraction: {
+            status: 'inconclusive' as const,
+            attemptId: '00000000-0000-4000-8000-0000000000a9',
+            reasonCode: 'report_ambiguous' as const,
+            reason: 'report could not be bound unambiguously',
+          },
+        },
+      ];
+      expect(implCheckErrored(makeState('IMPL_VALIDATION', { implValidation: inconclusive }))).toBe(
+        true,
+      );
+    });
+
     it('implComplete fires when implementation is present', () => {
       expect(implComplete(makeState('IMPLEMENTATION', { implementation: IMPL_EVIDENCE }))).toBe(
         true,
@@ -646,11 +667,17 @@ describe('guards', () => {
       ]);
     });
 
-    it('IMPLEMENTATION guards contain exactly ERROR, REDUCED_CEREMONY, and IMPL_COMPLETE', () => {
-      expect(GUARDS.get('IMPLEMENTATION')!.map((g) => g.event)).toEqual([
+    it('IMPLEMENTATION guards contain exactly ERROR and IMPL_COMPLETE', () => {
+      expect(GUARDS.get('IMPLEMENTATION')!.map((g) => g.event)).toEqual(['ERROR', 'IMPL_COMPLETE']);
+    });
+
+    it('IMPL_VALIDATION guards order reduction after technical blocks and before ALL_PASSED', () => {
+      expect(GUARDS.get('IMPL_VALIDATION')!.map((g) => g.event)).toEqual([
         'ERROR',
+        'CHECK_ERRORED',
         'REDUCED_CEREMONY',
-        'IMPL_COMPLETE',
+        'ALL_PASSED',
+        'CHECK_FAILED',
       ]);
     });
 

@@ -22,6 +22,7 @@ import {
   emptyClaimDeclarations,
 } from '../state/proofgraph-approval.js';
 import { resolveWorkflowDirective } from '../machine/workflow-directive.js';
+import { reducedCeremonyReady } from '../machine/guards.js';
 import type { RailBlocked, RailContext } from './types.js';
 import { blocked } from '../config/reasons.js';
 import { compareActorIdentity } from '../identity/actor-info.js';
@@ -57,7 +58,17 @@ export interface ReviewDecisionInput {
   readonly verdict: ReviewVerdict;
   readonly rationale: string;
   readonly decisionIdentity: DecisionIdentity;
+  /**
+   * Integration-boundary worktree re-attestation outcome for a
+   * reduced-ceremony approval. The rail remains filesystem-free and checks
+   * this outcome; the integration layer produces it before calling the rail.
+   */
+  readonly subjectAttestation?: ReducedCeremonySubjectAttestationOutcome;
 }
+
+export type ReducedCeremonySubjectAttestationOutcome =
+  | { readonly kind: 'ok'; readonly digest: string }
+  | { readonly kind: 'subject_changed'; readonly expected: string; readonly actual: string };
 
 /**
  * Enforce agreement between the human intent and the canonical directive:
@@ -253,6 +264,24 @@ function enforceMutationEpisodeEvidenceApproval(
  * that a review result exists at all; a normal approval only has to agree
  * with a recorded review when one exists (reduced ceremony records none).
  */
+function enforceReducedCeremonyWaiver(
+  state: SessionState,
+  input: ReviewDecisionInput,
+): RailBlocked | null {
+  if (!reducedCeremonyReady(state)) {
+    return blocked('IMPLEMENTATION_REVIEW_EVIDENCE_REQUIRED');
+  }
+  const current = state.implementation?.digest;
+  const attestation = input.subjectAttestation;
+  if (attestation === undefined || attestation.kind !== 'ok' || attestation.digest !== current) {
+    return blocked('IMPLEMENTATION_REVIEW_SUBJECT_MISMATCH', {
+      reviewedDigest: attestation?.kind === 'ok' ? attestation.digest : 'unattested',
+      currentDigest: current ?? 'missing',
+    });
+  }
+  return null;
+}
+
 export function enforceImplementationReviewSubject(
   state: SessionState,
   input: ReviewDecisionInput,
@@ -260,9 +289,14 @@ export function enforceImplementationReviewSubject(
   if (state.phase !== 'EVIDENCE_REVIEW' || !isApprovalVerdict(input.verdict)) return null;
   const reviewed = state.implReview;
   if (!reviewed) {
-    return input.verdict === 'approve_with_governance_override'
-      ? blocked('IMPLEMENTATION_REVIEW_EVIDENCE_REQUIRED')
-      : null;
+    // The governance override after an exhausted review remains an independent,
+    // digest-bound case: it always requires a real review result.
+    if (input.verdict === 'approve_with_governance_override') {
+      return blocked('IMPLEMENTATION_REVIEW_EVIDENCE_REQUIRED');
+    }
+    // A normal approval without a review is admissible only as a currently
+    // valid reduced-ceremony waiver backed by the machine authority.
+    return enforceReducedCeremonyWaiver(state, input);
   }
   const current = state.implementation?.digest;
   if (!current || reviewed.currDigest !== current) {

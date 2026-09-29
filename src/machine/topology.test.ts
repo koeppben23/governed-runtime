@@ -57,8 +57,12 @@ describe('topology', () => {
       expect(resolveTransition('IMPL_VALIDATION', 'CHECK_ERRORED')).toBe('IMPL_VALIDATION');
     });
 
-    it('resolves IMPLEMENTATION + REDUCED_CEREMONY → EVIDENCE_REVIEW', () => {
-      expect(resolveTransition('IMPLEMENTATION', 'REDUCED_CEREMONY')).toBe('EVIDENCE_REVIEW');
+    it('resolves IMPL_VALIDATION + REDUCED_CEREMONY → EVIDENCE_REVIEW', () => {
+      expect(resolveTransition('IMPL_VALIDATION', 'REDUCED_CEREMONY')).toBe('EVIDENCE_REVIEW');
+    });
+
+    it('IMPLEMENTATION has no reduced-ceremony shortcut (negative)', () => {
+      expect(resolveTransition('IMPLEMENTATION', 'REDUCED_CEREMONY')).toBeUndefined();
     });
 
     it('resolves IMPL_REVIEW + REVIEW_MET → EVIDENCE_REVIEW', () => {

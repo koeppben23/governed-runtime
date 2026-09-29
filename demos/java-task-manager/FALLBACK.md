@@ -17,7 +17,7 @@ not a planned part of the presentation.
 Record the Architecture variant (Steps A0–A6 from `DEMO_SCRIPT.md`):
 
 ```bash
-./run-demo-setup.sh --install --tarball <tgz> /tmp/flowguard-java-demo
+./run-main-demo-setup.sh --install --tarball <tgz> /tmp/flowguard-java-demo
 cd /tmp/flowguard-java-demo
 # Open /tmp/flowguard-java-demo in OpenCode Desktop
 ```
@@ -38,7 +38,7 @@ Capture: OpenCode window + terminal side-by-side. The recording should show:
 Record the Development variant (Steps 0–11 from `DEMO_SCRIPT.md`):
 
 ```bash
-./run-demo-setup.sh --install --tarball <tgz> /tmp/flowguard-java-demo
+./run-main-demo-setup.sh --install --tarball <tgz> /tmp/flowguard-java-demo
 cd /tmp/flowguard-java-demo
 # Open /tmp/flowguard-java-demo in OpenCode Desktop
 ```
@@ -46,7 +46,7 @@ cd /tmp/flowguard-java-demo
 Capture: OpenCode window + terminal side-by-side. The recording should show:
 
 - `/start` output with policy mode (READY)
-- `/task` recording TICKET.md
+- `/task --file TICKET.md` recording the ticket content canonically
 - `/implement` blocker (`COMMAND_NOT_ALLOWED`, directive `PLAN_REQUIRED`,
   "Plan required" in TICKET)
 - Optional: a direct host-tool mutation attempt in TICKET, denied with
@@ -71,7 +71,7 @@ Capture: OpenCode window + terminal side-by-side. The recording should show:
 Record R1–R4 from the Peer Review Flow section:
 
 ```bash
-./run-demo-setup.sh --install --tarball <tgz> /tmp/flowguard-java-demo
+./run-main-demo-setup.sh --install --tarball <tgz> /tmp/flowguard-java-demo
 cd /tmp/flowguard-java-demo
 # Open /tmp/flowguard-java-demo in OpenCode Desktop
 ```
@@ -218,7 +218,7 @@ Architecture recovery strategy:
 ## Pre-flight Checklist (morning of the demo)
 
 - [ ] All three recordings play correctly
-- [ ] `./run-demo-setup.sh --install --tarball <tgz> /tmp/flowguard-java-demo` completes with verified install
+- [ ] `./run-main-demo-setup.sh --install --tarball <tgz> /tmp/flowguard-java-demo` completes with verified install
 - [ ] `./mvnw test` — 16 tests, 0 failures, 1 skipped
 - [ ] `./mvnw -o test` passes (Maven offline-ready)
 - [ ] `ADR_TICKET.md` is present and non-empty in the workspace

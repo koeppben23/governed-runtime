@@ -131,6 +131,14 @@ describe('renderReviewerTaskPrompt challenge contract', () => {
     expect(prompt).not.toContain('"outcome":"supported"');
     expect(prompt).not.toContain('"outcome":"pass"');
   });
+
+  it('requires a negative verdict for unresolved challenge outcomes', () => {
+    const prompt = renderReviewerTaskPrompt({ ...BASE_INPUT });
+
+    expect(prompt).toContain(
+      'A contradicted content/design challenge, or a failed/not_verified implementation challenge, is a blocking issue',
+    );
+  });
 });
 
 describe('frozen review subject envelope', () => {
@@ -291,6 +299,7 @@ describe('native implementation review execution-continuity semantics', () => {
         {
           attemptId: '22222222-2222-4222-8222-222222222222',
           scope: 'implementation',
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
           implementationDigest: IMPL_EVIDENCE.digest,
           executionObservation: {
             executionObservedStateDigest: OBSERVED_DIGEST,

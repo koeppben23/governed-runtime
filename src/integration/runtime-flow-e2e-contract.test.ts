@@ -27,6 +27,20 @@ import { readState } from '../adapters/persistence.js';
 import { sessionDir } from '../adapters/workspace/index.js';
 import { computeFingerprint } from '../adapters/workspace/fingerprint.js';
 import { writeStateWithArtifacts } from './tools/helpers.js';
+import { deriveVerificationCandidateId } from '../state/candidate-identity.js';
+
+const E2E_TYPECHECK_DEFINITION = {
+  assertionCapability: 'unsupported' as const,
+  kind: 'typecheck' as const,
+  command: 'npx tsc --noEmit',
+  source: 'test',
+  confidence: 'high' as const,
+  reason: 'E2E test candidate',
+};
+const E2E_TYPECHECK_CANDIDATE = {
+  ...E2E_TYPECHECK_DEFINITION,
+  candidateId: deriveVerificationCandidateId(E2E_TYPECHECK_DEFINITION),
+};
 
 import { plan } from './tools/plan/plan.js';
 import { hydrate } from './tools/hydrate/hydrate.js';
@@ -120,28 +134,57 @@ function challengesFor(
   state: SessionState,
   obligation: ReviewObligation,
 ): ReviewFindings['challenges'] {
-  return Array.from({ length: obligation.requiredChallengeCount ?? 0 }, (_, index) => ({
+  const kind = obligation.requiredChallengeKind ?? 'implementation_challenge';
+  const artifactKind =
+    obligation.reviewSubjectScope?.kind === 'artifact' &&
+    obligation.reviewSubjectScope.artifact.kind === 'adr'
+      ? ('adr' as const)
+      : ('plan' as const);
+  const implementationRefs = [
+    {
+      kind: 'implementation' as const,
+      implementationDigest: state.implementation?.digest ?? 'missing',
+    },
+    {
+      kind: 'validation_attempt' as const,
+      attemptId:
+        state.validationAttempts.find((a) => a.scope === 'implementation' && a.result.passed)
+          ?.attemptId ??
+        state.validationAttempts[0]?.attemptId ??
+        '99999999-9999-4999-8999-999999999999',
+    },
+  ];
+  const count = obligation.requiredChallengeCount ?? 0;
+  if (kind === 'design_challenge') {
+    // Artifact obligations must cite the artifact section; the host rebinds
+    // the refs to its canonical copies at bind time.
+    return Array.from({ length: count }, (_, index) => ({
+      challengeId: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+      obligationId: obligation.obligationId,
+      scenario: 'Exercise the artifact decision against its frozen section.',
+      claim: 'The artifact decision handles the reviewed scenario.',
+      locations: ['artifact section'],
+      kind: 'design_challenge' as const,
+      evidenceRefs: [
+        {
+          kind: 'plan_adr_section' as const,
+          artifactKind,
+          artifactDigest: obligation.subjectDigest,
+          sectionPath: [{ headingDepth: 1, siblingIndex: 1, headingText: 'Overview' }],
+          excerptDigest: 'excerpt-digest',
+        },
+      ],
+      outcome: 'supported' as const,
+    }));
+  }
+  return Array.from({ length: count }, (_, index) => ({
     challengeId: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
     obligationId: obligation.obligationId,
     scenario: 'Exercise the changed behavior against its implementation evidence.',
     claim: 'The implementation handles the reviewed scenario.',
     locations: ['implementation evidence'],
-    kind: (obligation.requiredChallengeKind ??
-      'implementation_challenge') as 'implementation_challenge',
-    evidenceRefs: [
-      {
-        kind: 'implementation' as const,
-        implementationDigest: state.implementation?.digest ?? 'missing',
-      },
-      {
-        kind: 'validation_attempt' as const,
-        attemptId:
-          state.validationAttempts.find((a) => a.scope === 'implementation' && a.result.passed)
-            ?.attemptId ??
-          state.validationAttempts[0]?.attemptId ??
-          '99999999-9999-4999-8999-999999999999',
-      },
-    ],
+    kind: 'implementation_challenge' as const,
+    evidenceRefs: implementationRefs,
     outcome: 'pass' as const,
   }));
 }
@@ -434,19 +477,9 @@ describe('FlowGuard tool-level E2E', () => {
           plan: currentPlan,
           reviewDecision: st!.reviewDecision,
           activeChecks: ['typecheck'],
-          verificationCandidates: [
-            {
-              assertionCapability: 'unsupported' as const,
-              candidateId: 'vc_typecheck_e2e',
-              kind: 'typecheck',
-              command: 'npx tsc --noEmit',
-              source: 'test',
-              confidence: 'high',
-              reason: 'E2E test candidate',
-            },
-          ],
+          verificationCandidates: [E2E_TYPECHECK_CANDIDATE],
           executionSubjectInputsByCandidateId: {
-            vc_typecheck_e2e: [{ kind: 'implementation' as const }],
+            [E2E_TYPECHECK_CANDIDATE.candidateId]: [{ kind: 'implementation' as const }],
           },
         }),
       );
@@ -466,19 +499,9 @@ describe('FlowGuard tool-level E2E', () => {
           reviewDecision: st!.reviewDecision,
           validation: st!.validation,
           activeChecks: ['typecheck'],
-          verificationCandidates: [
-            {
-              assertionCapability: 'unsupported' as const,
-              candidateId: 'vc_typecheck_e2e',
-              kind: 'typecheck',
-              command: 'npx tsc --noEmit',
-              source: 'test',
-              confidence: 'high',
-              reason: 'E2E test candidate',
-            },
-          ],
+          verificationCandidates: [E2E_TYPECHECK_CANDIDATE],
           executionSubjectInputsByCandidateId: {
-            vc_typecheck_e2e: [{ kind: 'implementation' as const }],
+            [E2E_TYPECHECK_CANDIDATE.candidateId]: [{ kind: 'implementation' as const }],
           },
         }),
       );
@@ -514,19 +537,9 @@ describe('FlowGuard tool-level E2E', () => {
           reviewDecision: st!.reviewDecision,
           validation: st!.validation,
           activeChecks: ['typecheck'],
-          verificationCandidates: [
-            {
-              assertionCapability: 'unsupported' as const,
-              candidateId: 'vc_typecheck_e2e',
-              kind: 'typecheck',
-              command: 'npx tsc --noEmit',
-              source: 'test',
-              confidence: 'high',
-              reason: 'E2E test candidate',
-            },
-          ],
+          verificationCandidates: [E2E_TYPECHECK_CANDIDATE],
           executionSubjectInputsByCandidateId: {
-            vc_typecheck_e2e: [{ kind: 'implementation' as const }],
+            [E2E_TYPECHECK_CANDIDATE.candidateId]: [{ kind: 'implementation' as const }],
           },
         }),
       );

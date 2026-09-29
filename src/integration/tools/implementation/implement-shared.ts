@@ -11,7 +11,7 @@ import type { SessionState } from '../../../state/schema.js';
 import type { RailContext } from '../../../rails/types.js';
 import type { FlowGuardPolicy } from '../../../config/policy.js';
 import type { LoopVerdict, ReviewFindings } from '../../../state/evidence.js';
-import type { resolveCeremonyProfile } from '../../phase-tool-gate.js';
+import type { CeremonyEligibilityProjection } from '../../phase-tool-gate.js';
 import { classifyToolCallMode } from '../review-validation-mode.js';
 import { latestUnknownOutcomeResolvedAt } from '../../../state/evidence-mutation-episode.js';
 
@@ -37,7 +37,7 @@ export type ImplementRuntime = {
   maxImplementationReviewIterations: number;
 };
 
-export type ImplementationCeremony = ReturnType<typeof resolveCeremonyProfile>;
+export type ImplementationCeremony = CeremonyEligibilityProjection;
 
 export function buildImplementRuntime(input: {
   args: ImplementArgs;

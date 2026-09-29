@@ -38,6 +38,7 @@ import { finalizeDecision } from '../../services/decision-finalization.js';
 import { buildDecisionAuditIntent } from '../../services/decision-audit-intent.js';
 import { createSessionCompletionAuditDeps } from '../../services/regulated-completion.js';
 import { consumeUserDecisionIntent, peekUserDecisionIntent } from '../../user-decision-intent.js';
+import { attestReducedCeremonySubject } from '../reduced-ceremony-attestation.js';
 
 // Automatic validation on entry to VALIDATION
 import { runActiveChecksAutomatically } from '../auto-validation.js';
@@ -131,6 +132,15 @@ async function persistHumanDecision(
       };
       const actor = policy.actorClassification[TOOL_FLOWGUARD_DECISION] ?? 'system';
 
+      // Reduced-ceremony approval binding: the integration boundary re-attests
+      // the frozen worktree bytes; the rail checks the outcome. Non-reduced
+      // decisions receive no attestation.
+      const subjectAttestation = await attestReducedCeremonySubject({
+        state,
+        worktree: context.worktree,
+        digest: ctx.digest,
+      });
+
       const result = executeReviewDecision(
         state,
         {
@@ -143,6 +153,7 @@ async function persistHumanDecision(
           // the decision with SCHEMA_VALIDATION_FAILED.
           rationale: args.rationale ?? '',
           decisionIdentity,
+          ...(subjectAttestation !== null ? { subjectAttestation } : {}),
         },
         ctx,
       );

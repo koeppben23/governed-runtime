@@ -24,6 +24,7 @@ import { DiscoveryHealthGate } from './discovery-schemas.js';
 import { resolveAuthoritativePeerReviewTask } from './peer-review.js';
 import { SessionStateConfigShape } from './session-state-config-shape.js';
 import { SessionStateDiscoveryShape } from './session-state-discovery-shape.js';
+import { TaskClass } from './task-class.js';
 import {
   SessionStateEvidenceShape,
   SessionStateReviewEvidenceShape,
@@ -31,7 +32,7 @@ import {
 
 /** Immutable compatibility contract for executable session authority. */
 export const CURRENT_ASSURANCE_EPOCH = 'assurance-epoch.v3' as const;
-export const CURRENT_SESSION_STATE_SCHEMA_VERSION = 'v6' as const;
+export const CURRENT_SESSION_STATE_SCHEMA_VERSION = 'v7' as const;
 export const CURRENT_STATE_DIGEST_FORMAT = 'state-digest.v2' as const;
 export const CURRENT_AUDIT_CHAIN_FORMAT = 'audit-chain.v3' as const;
 
@@ -87,22 +88,10 @@ export type Phase = z.infer<typeof Phase>;
 // ─── Task Risk Classification ────────────────────────────────────────────────
 
 /**
- * Agent-claimed task class. This is only an operator/agent claim, never the
- * runtime truth. The runtime computes a minimum class per gate check.
+ * Canonical task-class vocabulary and ordering live in `task-class.ts`; they
+ * are re-exported here for the historic state-layer import surface.
  */
-export const TaskClass = z.enum(['TRIVIAL', 'STANDARD', 'HIGH-RISK']);
-export type TaskClass = z.infer<typeof TaskClass>;
-
-/**
- * Membership predicate over the canonical task-class vocabulary.
- *
- * Boundary-neutral: accepts any value so untyped transport input
- * (`claimedTaskClass: string`) can be narrowed at the authority instead of
- * re-enumerating the vocabulary at each consumer.
- */
-export function isTaskClass(value: unknown): value is TaskClass {
-  return TaskClass.safeParse(value).success;
-}
+export { TaskClass, isTaskClass } from './task-class.js';
 
 /** Specific authority affected by a HIGH-RISK implementation change. */
 export const RiskTrigger = z.enum([
@@ -118,14 +107,59 @@ export const RiskTrigger = z.enum([
 ]);
 export type RiskTrigger = z.infer<typeof RiskTrigger>;
 
-/** Runtime decision that implementation review ceremony was explicitly reduced. */
+/**
+ * Exact verification basis of one reduced-ceremony decision: the frozen active
+ * check set and the selected implementation-scoped attempts. The decision is
+ * only valid while every referenced attempt is the latest decisive result for
+ * its check in the bound implementation cycle.
+ */
+export const ReducedCeremonyVerificationBasis = z
+  .object({
+    checkIds: z.array(z.string().min(1)),
+    attempts: z.array(
+      z
+        .object({
+          checkId: z.string().min(1),
+          attemptId: z.string().uuid(),
+          executedAt: z.string().datetime(),
+        })
+        .readonly(),
+    ),
+  })
+  .readonly();
+export type ReducedCeremonyVerificationBasis = z.infer<typeof ReducedCeremonyVerificationBasis>;
+
+/**
+ * Runtime decision that implementation review ceremony was explicitly reduced.
+ *
+ * The decision is not itself transition authority: the machine guard requires
+ * the full binding (`implementationId` + implementation digest + frozen policy
+ * digest + valid verification basis) plus passing post-implementation evidence.
+ */
 export const ReducedCeremonyDecision = z
   .object({
     profile: z.literal('reduced'),
     reason: z.string().min(1),
-    claimedTaskClass: TaskClass,
+    /** Conservative effective class: max(computed, ticket floor, escalation). */
+    effectiveTaskClass: TaskClass,
     computedMinimumTaskClass: TaskClass,
+    /** Ticket-declared floor, or null when the ticket declares none. */
+    declaredTaskClass: TaskClass.nullable(),
+    /** Declaration kind of the bound ticket. */
+    declarationKind: z.enum(['absent', 'declared', 'conflict', 'invalid']),
+    /** Digest of the bound ticket content (`state.ticket.digest`). */
+    ticketDigest: z.string().min(1).nullable(),
+    /** Optional raise-only escalation claim active at decision time. */
+    escalatedTaskClass: TaskClass.optional(),
     touchedSurfaces: z.array(z.string()),
+    /** Execution identity of the bound `/implement` recording. */
+    implementationId: z.string().uuid(),
+    /** Content digest of the frozen implementation revision. */
+    implementationDigest: z.string().min(1),
+    /** Frozen policy snapshot hash (`policySnapshot.hash`) the decision was made under. */
+    policyDigest: z.string().min(1),
+    /** Exact check/attempt basis selected by the canonical evidence authority. */
+    verificationBasis: ReducedCeremonyVerificationBasis,
     decidedAt: z.string().datetime(),
   })
   .readonly();
@@ -142,6 +176,15 @@ export type ReducedCeremonyDecision = z.infer<typeof ReducedCeremonyDecision>;
 export const ImplementationRiskAssessment = z
   .object({
     computedMinimumTaskClass: TaskClass,
+    /** Conservative effective class: max(computed, ticket floor, escalation). */
+    effectiveTaskClass: TaskClass,
+    /** Ticket-declared floor, or null when the ticket declares none. */
+    declaredTaskClass: TaskClass.nullable(),
+    declarationKind: z.enum(['absent', 'declared', 'conflict', 'invalid']),
+    /** Digest of the bound ticket content at `/implement` time. */
+    ticketDigest: z.string().min(1).nullable(),
+    /** Optional raise-only escalation claim active at assessment time. */
+    escalatedTaskClass: TaskClass.optional(),
     touchedSurfaces: z.array(z.string()),
     // Optional for sessions written before #762 Change 2. Consumers must treat
     // its absence as superseded rather than silently inferring a trigger.

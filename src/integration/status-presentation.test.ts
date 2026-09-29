@@ -149,7 +149,9 @@ function makeBaseProjection(overrides: Partial<StatusProjection> = {}): StatusPr
       commands: ['/task', '/architecture', '/review'],
     },
     blocker: null,
-    evidenceSummary: { present: 0, missing: 0, notYetRequired: 7, failed: 0 },
+    evidenceSummary: { present: 0, missing: 0, notYetRequired: 7, failed: 0, waived: 0 },
+    reducedCeremony: { status: 'not_applicable', reason: null },
+    ticketRisk: null,
     proofGraph: {
       coverage: 'NOT_DECLARED',
       claimCount: 0,
@@ -529,7 +531,7 @@ describe('buildStatusDocument', () => {
 
   it('omits failed evidence row when count is zero', () => {
     const projection = makeBaseProjection({
-      evidenceSummary: { present: 2, missing: 0, notYetRequired: 5, failed: 0 },
+      evidenceSummary: { present: 2, missing: 0, notYetRequired: 5, failed: 0, waived: 0 },
     });
     const drift = makeDriftProjection();
     const doc = buildCompactDoc({
@@ -543,7 +545,7 @@ describe('buildStatusDocument', () => {
 
   it('includes failed evidence row when count > 0', () => {
     const projection = makeBaseProjection({
-      evidenceSummary: { present: 2, missing: 1, notYetRequired: 4, failed: 1 },
+      evidenceSummary: { present: 2, missing: 1, notYetRequired: 4, failed: 1, waived: 0 },
     });
     const drift = makeDriftProjection();
     const doc = buildCompactDoc({

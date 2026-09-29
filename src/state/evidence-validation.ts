@@ -312,6 +312,8 @@ export const ValidationAttempt = z.discriminatedUnion('scope', [
     .object({
       attemptId: z.string().uuid(),
       scope: z.literal('implementation'),
+      /** Execution identity of the implementation recording under test. */
+      implementationId: z.string().uuid(),
       implementationDigest: z.string().min(1),
       executionObservation: ValidationExecutionObservation,
       result: ValidationResult,

@@ -28,6 +28,7 @@ const DOCS: Readonly<Record<string, string>> = {
   'README.md': read('README.md'),
   'FALLBACK.md': read('FALLBACK.md'),
   'RESET.md': read('RESET.md'),
+  'REDUCED_CEREMONY.md': read('REDUCED_CEREMONY.md'),
 };
 
 const DEMO_SCRIPT = DOCS['DEMO_SCRIPT.md']!;
@@ -265,11 +266,56 @@ describe('java demo workflow contract', () => {
     expect(DEMO_SCRIPT).toContain('`create PR` und `keep branch` stehen auf `not_recommended`');
   });
 
+  it('documents reduced ceremony as an implementation-review waiver only', () => {
+    const reduced = DOCS['REDUCED_CEREMONY.md']!;
+    // The corrected claim: only IMPL_REVIEW is waived; IMPL_VALIDATION always
+    // runs and the human gate plus /export remain mandatory.
+    expect(DEMO_SCRIPT).toContain('waives **only** this independent');
+    expect(DEMO_SCRIPT).not.toMatch(/skipping\s+`?IMPL_VALIDATION/i);
+    expect(DEMO_SCRIPT).toContain('REDUCED_CEREMONY.md');
+    // The A/B scenario binds the four observable proofs to the runtime contract.
+    for (const marker of [
+      'policy.allowReducedCeremony: true',
+      'policy.allowReducedCeremony: false',
+      'REDUCED_CEREMONY',
+      'POST_IMPL_VERIFIED_TRIVIAL',
+      'reduced_ceremony_applied',
+      'evidenceSummary.waived',
+      'post-impl 2/2 passed',
+      'waived by reduced ceremony',
+      'flowguard_status({ evidence: true })',
+      'hostSessionId',
+      'EVIDENCE_REVIEW',
+      'EXPORT_READY',
+      '/task --file TICKET_DOCS.md',
+      'TICKET_REFERENCE_WITHOUT_CONTENT',
+    ]) {
+      expect(reduced, marker).toContain(marker);
+    }
+    // The scenario never requires a manual risk claim: the effective class is
+    // resolved automatically (ticket-declared floor + computed minimum).
+    expect(reduced).not.toContain('claimedTaskClass');
+    expect(reduced).toContain('no manual risk claim');
+    // No synthetic review is ever claimed.
+    expect(reduced).toContain('`state.implReview` stays `null`');
+    // The concrete values come from the structured response, not the card.
+    expect(reduced).toContain('does **not** render');
+    expect(reduced).toMatch(/host session id.*not.*FlowGuard session UUID/is);
+  });
+
   it('documents deterministic task/architecture inputs and the export completion projection', () => {
     // Bare `/task` and `/architecture` do not read files; the demo must pass
-    // explicit input so the live run is deterministic.
-    expect(DEMO_SCRIPT).toContain('/task Read TICKET.md');
-    expect(DEMO_SCRIPT).toContain('/architecture Read ADR_TICKET.md');
+    // explicit input so the live run is deterministic. `/task --file` adopts the
+    // repository ticket canonically; a bare read instruction is now blocked with
+    // TICKET_REFERENCE_WITHOUT_CONTENT.
+    expect(DEMO_SCRIPT).toContain('/task --file TICKET.md');
+    expect(DEMO_SCRIPT).not.toContain('/task Read TICKET.md');
+    expect(DEMO_SCRIPT).toContain('/architecture Read ADR_TICKET.md and TICKET.md');
+    expect(DEMO_SCRIPT).toContain('flowguard_status({ reviewFeedback: true })');
+    // The asymmetry is intentional and documented: architecture has no
+    // reference-adoption contract (no --file/--ref), the agent reads the task
+    // file and passes adrText explicitly.
+    expect(DEMO_SCRIPT).toContain('/architecture` has no reference adoption');
     // `/export` surfaces its persisted completion evidence in the response.
     expect(DEMO_SCRIPT).toContain('exportCompletion');
   });

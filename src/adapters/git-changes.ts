@@ -115,6 +115,11 @@ export function parsePorcelainZ(raw: string): string[] {
  * - Untracked files (??)
  * - Empty/initial repositories (no commits yet)
  *
+ * `--untracked-files=all` is deliberate: without it git collapses a new
+ * directory into a single `dir/` entry that cannot be content-hashed and would
+ * hide later additions inside that directory. The governed implementation
+ * subject is a per-file set, so every untracked file is enumerated.
+ *
  * @returns Sorted array of file paths relative to worktree root, OS-normalized.
  *
  * Uses `--porcelain=v1 -z` (NUL-delimited, no path quoting/escaping) parsed by
@@ -123,7 +128,12 @@ export function parsePorcelainZ(raw: string): string[] {
  * changes (e.g. " M src/..." -> "rc/...").
  */
 export async function changedFiles(worktree: string): Promise<string[]> {
-  const status = await gitRaw(worktree, ['status', '--porcelain=v1', '-z']);
+  const status = await gitRaw(worktree, [
+    'status',
+    '--porcelain=v1',
+    '-z',
+    '--untracked-files=all',
+  ]);
   if (!status) return [];
 
   const files = new Set<string>(parsePorcelainZ(status));

@@ -3,6 +3,7 @@
  * @description Cross-command activation authority for implementation review.
  */
 
+import { declaredTaskClassFor } from '../phase-tool-gate.js';
 import { REVIEW_DISCOVERY_PROVIDER } from '../discovery/review-discovery-provider.js';
 import { formatBlocked } from '../blocked-result.js';
 import {
@@ -116,7 +117,8 @@ function buildImplementationReviewObligation(
     profileSource: 'policy_default',
     policySnapshot: state.policySnapshot,
     changedFiles,
-    claimedTaskClass: state.claimedTaskClass,
+    declaredTaskClass: declaredTaskClassFor(state),
+    escalatedTaskClass: state.claimedTaskClass,
     reviewSubjectScope: { kind: 'implementation', implementationDigest: digest },
     repositoryAuthority,
   });

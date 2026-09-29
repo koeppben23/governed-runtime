@@ -31,13 +31,13 @@ import { discoveryRiskPaths } from '../../discovery/discovery-risk-paths.js';
  *  - changedFiles = caller-provided `targetPaths` (author hint and, in the review
  *    loop, the prior obligation's recovered paths) ∪ the repository's detected risk
  *    surfaces (`discoveryRiskPaths`), a deterministic, persisted source. The
- *    challenge COUNT is then floored by the author's `claimedTaskClass` inside
- *    `createReviewObligation` (max(computed, claimed)), so these paths can only
- *    raise the requirement, never lower it.
- *  - When no evidence exists (no targetPaths, no detected surfaces), the set is
- *    empty → TRIVIAL → count 0. That is a genuine "no detected risk" signal, not a
- *    block. In enforced modes the separate risk gate still requires a claim before
- *    the tool runs.
+ *    challenge COUNT is then floored by the central effective-task-class
+ *    resolution inside `createReviewObligation`, so these paths can only raise
+ *    the requirement, never lower it.
+ *  - When no evidence exists (no targetPaths, no detected surfaces), the scope is
+ *    UNKNOWN, not provably empty: the provisional floor is at least STANDARD
+ *    (one challenge), never TRIVIAL. Only a provably empty scope may resolve to
+ *    zero challenges.
  *
  * Fail-closed sequencing note: an absent `challengePolicy` is normalized to the
  * canonical matrix for team/team-ci/regulated at snapshot load (finding A2), so
@@ -48,9 +48,19 @@ export async function resolvePreImplementationChallengeClassification(
   state: SessionState,
   wsDir: string,
   targetPaths?: readonly string[],
-): Promise<{ kind: 'not_required' } | { kind: 'available'; changedFiles: readonly string[] }> {
+): Promise<
+  | { kind: 'not_required' }
+  | { kind: 'available'; changedFiles: readonly string[]; scopeUnknown: boolean }
+> {
   if (!state.policySnapshot?.challengePolicy) return { kind: 'not_required' };
   const discovery = await readDiscovery(wsDir);
-  const changedFiles = [...new Set([...(targetPaths ?? []), ...discoveryRiskPaths(discovery)])];
-  return { kind: 'available', changedFiles };
+  const declaredTargets = targetPaths ?? [];
+  const riskPaths = discoveryRiskPaths(discovery);
+  const changedFiles = [...new Set([...declaredTargets, ...riskPaths])];
+  // Repository discovery surfaces only describe what already exists, not the
+  // planned change set. Without declared target paths the planned scope is
+  // UNKNOWN, so the provisional challenge floor is at least STANDARD;
+  // discovery may raise the classification, never substitute for a scope.
+  const scopeUnknown = declaredTargets.length === 0;
+  return { kind: 'available', changedFiles, scopeUnknown };
 }

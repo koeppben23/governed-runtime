@@ -228,7 +228,6 @@ export interface FlowGuardPolicy {
    * Initial Issue #271 slice keeps all presets false; text justification alone
    * must not bypass the gate.
    */
-  readonly allowRiskDowngradeOverride: boolean;
 
   /**
    * Permit reduced delivery ceremony only after runtime evidence proves a task is

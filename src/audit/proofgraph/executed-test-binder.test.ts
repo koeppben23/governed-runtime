@@ -23,7 +23,13 @@ const AUTHORITY_REF = {
   authorityId: 'ticket',
   digest: 'authority',
 };
-const IMPL = { changedFiles: ['a.ts'], domainFiles: [], digest: IMPL_DIGEST, executedAt: NOW };
+const IMPL = {
+  implementationId: '00000000-0000-4000-8000-0000000000aa',
+  changedFiles: ['a.ts'],
+  domainFiles: [],
+  digest: IMPL_DIGEST,
+  executedAt: NOW,
+};
 
 function validationResult(passed: boolean, over: Record<string, unknown> = {}) {
   const outcome: 'supported' | 'inconclusive' = passed ? 'supported' : 'inconclusive';
@@ -70,6 +76,7 @@ describe('bindExecutedTestEvidence', () => {
       {
         attemptId: ATT,
         scope: 'implementation',
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
         implementationDigest: IMPL_DIGEST,
         executionObservation: TEST_EXECUTION_OBSERVATION,
         result: validationResult(true),
@@ -96,6 +103,7 @@ describe('bindExecutedTestEvidence', () => {
       {
         attemptId: ATT,
         scope: 'implementation',
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
         implementationDigest: IMPL_DIGEST,
         executionObservation: TEST_EXECUTION_OBSERVATION,
         result: validationResult(false),
@@ -109,6 +117,7 @@ describe('bindExecutedTestEvidence', () => {
       {
         attemptId: ATT,
         scope: 'implementation',
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
         implementationDigest: IMPL_DIGEST,
         executionObservation: TEST_EXECUTION_OBSERVATION,
         result: validationResult(false, { exitCode: 127 }),
@@ -150,6 +159,7 @@ describe('bindExecutedTestEvidence', () => {
         {
           attemptId: ATT,
           scope: 'implementation',
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
           implementationDigest: IMPL_DIGEST,
           executionObservation: TEST_EXECUTION_OBSERVATION,
           result: validationResult(true),
@@ -170,6 +180,7 @@ describe('bindExecutedTestEvidence', () => {
         {
           attemptId: ATT,
           scope: 'implementation',
+          implementationId: '00000000-0000-4000-8000-0000000000aa',
           implementationDigest: IMPL_DIGEST,
           executionObservation: TEST_EXECUTION_OBSERVATION,
           result: validationResult(true, { fullCheckScopeAttestation: 'full_check' }),
@@ -194,6 +205,7 @@ describe('bindExecutedTestEvidence', () => {
       {
         attemptId: ATT,
         scope: 'implementation',
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
         implementationDigest: IMPL_DIGEST,
         executionObservation: TEST_EXECUTION_OBSERVATION,
         result: validationResult(true),

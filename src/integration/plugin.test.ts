@@ -92,6 +92,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
         digest: 'ticket-digest',
         source: 'user',
         createdAt: now,
+        riskDeclaration: { kind: 'absent' },
       },
       plan: {
         current: planCurrent,

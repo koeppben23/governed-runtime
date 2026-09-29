@@ -89,6 +89,13 @@ describe('session-state current epoch boundary', () => {
     }
   });
 
+  it('rejects v6 snapshots from before the implementation-generation contract', async () => {
+    const sessDir = await writeFixtureState('v6-pre-implementation-generation.json');
+    await expect(readState(sessDir)).rejects.toMatchObject({
+      code: 'SESSION_STATE_INCOMPATIBLE',
+    });
+  });
+
   it('rejects legacy regulated snapshots before a decision can execute', async () => {
     const sessDir = await writeFixtureState('v1-legacy-policy-snapshot.json');
     await expect(readState(sessDir)).rejects.toMatchObject({

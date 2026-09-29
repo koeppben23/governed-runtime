@@ -150,7 +150,6 @@ describe('config/policy', () => {
       expect(SOLO_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
       expect(SOLO_POLICY.identityProviderMode).toBe('optional');
       expect(SOLO_POLICY.enforceRiskClassification).toBe(false);
-      expect(SOLO_POLICY.allowRiskDowngradeOverride).toBe(false);
       expect(SOLO_POLICY.allowReducedCeremony).toBe(false);
     });
 
@@ -164,7 +163,6 @@ describe('config/policy', () => {
       expect(TEAM_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
       expect(TEAM_POLICY.identityProviderMode).toBe('optional');
       expect(TEAM_POLICY.enforceRiskClassification).toBe(false);
-      expect(TEAM_POLICY.allowRiskDowngradeOverride).toBe(false);
       expect(TEAM_POLICY.allowReducedCeremony).toBe(false);
     });
 
@@ -175,7 +173,6 @@ describe('config/policy', () => {
       expect(REGULATED_POLICY.minimumActorAssuranceForApproval).toBe('claim_validated');
       expect(REGULATED_POLICY.identityProviderMode).toBe('optional');
       expect(REGULATED_POLICY.enforceRiskClassification).toBe(true);
-      expect(REGULATED_POLICY.allowRiskDowngradeOverride).toBe(false);
       expect(REGULATED_POLICY.allowReducedCeremony).toBe(false);
     });
 
@@ -205,7 +202,6 @@ describe('config/policy', () => {
       expect(TEAM_CI_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
       expect(TEAM_CI_POLICY.identityProviderMode).toBe('optional');
       expect(TEAM_CI_POLICY.enforceRiskClassification).toBe(true);
-      expect(TEAM_CI_POLICY.allowRiskDowngradeOverride).toBe(false);
       expect(TEAM_CI_POLICY.allowReducedCeremony).toBe(false);
     });
 

@@ -186,12 +186,11 @@ describe('hydrate rail unit tests', () => {
     it('applies risk-classification policy overrides when provided', () => {
       const result = hydrateNew(
         minimalInput({
-          policy: { enforceRiskClassification: true, allowRiskDowngradeOverride: false },
+          policy: { enforceRiskClassification: true },
         }),
       );
       const state = expectOk(result);
       expect(state.policySnapshot.enforceRiskClassification).toBe(true);
-      expect(state.policySnapshot.allowRiskDowngradeOverride).toBe(false);
     });
 
     it('stores claimedTaskClass as a claim on new sessions', () => {
@@ -477,22 +476,10 @@ describe('hydrate rail unit tests', () => {
       expect(state.policySnapshot.enforceRiskClassification).toBe(false);
     });
 
-    it('allowRiskDowngradeOverride preserves base false when undefined', () => {
-      const result = hydrateNew(minimalInput({ policy: {} }));
-      const state = expectOk(result);
-      expect(state.policySnapshot.allowRiskDowngradeOverride).toBe(false);
-    });
-
     it('allowReducedCeremony preserves base false when undefined', () => {
       const result = hydrateNew(minimalInput({ policy: {} }));
       const state = expectOk(result);
       expect(state.policySnapshot.allowReducedCeremony).toBe(false);
-    });
-
-    it('allowRiskDowngradeOverride=true IS applied (kills ObjectLiteral mutant)', () => {
-      const result = hydrateNew(minimalInput({ policy: { allowRiskDowngradeOverride: true } }));
-      const state = expectOk(result);
-      expect(state.policySnapshot.allowRiskDowngradeOverride).toBe(true);
     });
 
     it('allowReducedCeremony=true IS applied (kills ObjectLiteral mutant)', () => {

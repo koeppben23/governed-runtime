@@ -19,9 +19,9 @@ working tree — it operates independently of Development changes on `main`.
 ## Prerequisites (run before the demo)
 
 ```bash
-cd demos/java-task-manager
-./run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-java-demo
-# Open /tmp/flowguard-java-demo in OpenCode Desktop
+# From demos/java-task-manager/
+../../run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-demos
+# Open /tmp/flowguard-demos/java-task-manager in OpenCode Desktop
 ```
 
 ---
@@ -52,18 +52,30 @@ cd demos/java-task-manager
 
 ### Step A2 — Submit the Architecture Task
 
-| Action                                                           | Phase        | What I Say                                                                                                                                                                                                                                                                                                                     |
-| ---------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `/architecture Read ADR_TICKET.md and create an ADR based on it` | ARCHITECTURE | "Ich ubergebe den Architecture Task mit explizitem Input: der Command liest `ADR_TICKET.md`. FlowGuard erzwingt, dass ein ADR in MADR-Format erstellt wird — mit `## Context`, `## Decision`, `## Consequences`. Der LLM analysiert den Code, erkennt die Inkonsistenz und generiert eine strukturierte Entscheidungsvorlage." |
+| Action                                                                             | Phase        | What I Say                                                                                                                                                                                                                                                                                                                                                                         |
+| ---------------------------------------------------------------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/architecture Read ADR_TICKET.md and TICKET.md, then create an ADR based on them` | ARCHITECTURE | "Ich übergebe den Architecture Task mit explizitem Input: der Command liest `ADR_TICKET.md` und `TICKET.md`. FlowGuard erzwingt MADR mit `## Context`, `## Decision`, `## Consequences` sowie konkrete Alternativen, Trade-offs und einen falsifizierbaren Testpfad. Der LLM analysiert den Code, erkennt die Inkonsistenz und generiert eine strukturierte Entscheidungsvorlage." |
+
+> **Note:** `--file` and `--ref` are ticket-adoption flags of `/task` (repository file vs. external
+> ticket content). `/architecture` has no reference adoption: the agent reads `ADR_TICKET.md`
+> itself and passes the generated ADR text explicitly as `adrText` to
+> `flowguard_architecture({ title, adrText, claims })`. The source file is task context, not the
+> reviewed artifact, so no adoption/backstop contract applies.
+
+> **ADR authoring check:** Before submission, the ADR must make its service-layer
+> constraints and forces explicit, compare at least two realistic options with
+> trade-offs, justify the choice, name concrete positive and negative
+> consequences (including compatibility), and state the falsifiable regression
+> test path required by `TICKET.md`.
 
 ### Step A3 — ADR Generation and Autonomous Independent Review
 
-| Action                                     | Phase        | What I Say                                                                                                                                                                                                                                                                                                                                                                                 |
-| ------------------------------------------ | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| LLM reads ADR_TICKET.md + code             | ARCHITECTURE | "Der LLM liest das Architektur-Ticket, analysiert `TaskRepository.findById()` und die Inkonsistenz zwischen `getTask()` und `updateTask()`, und generiert einen ADR mit Context, Decision, Consequences."                                                                                                                                                                                  |
-| `flowguard_architecture` tool call         | ARCHITECTURE | "FlowGuard validiert die ADR-Sections. Fehlen MADR-Sections, blockt das Tool mit `MISSING_ADR_SECTIONS` — der LLM muss nachbessern. Sind alle Sections da, startet FlowGuard die unabhangige Review: Der Host orchestriert eine Reviewer-Child-Session (`reviewInvocation`) und bindet die strukturierten Findings an Obligation, Attempt und Subject-Digest."                             |
-| Host-orchestrated reviewer child session   | ARCHITECTURE | "Der Reviewer pruft: ist der Context vollstandig, die Decision konkret, die Consequences ehrlich, die MADR-Struktur korrekt? Der Mensch reicht nichts ein — Reviewer-Dispatch und Findings-Erfassung sind Host-Sache."                                                                                                                                                                     |
-| `reviewDispatch` reports the bound verdict | ARCHITECTURE | "Sobald `reviewDispatch.completed` true ist, tragt der Agent nur das gebundene Verdikt aus `reviewDispatch.verdict` nach. Bei `changes_requested` liefert der Agent eine frische Revision, dann startet die nachste Review-Runde automatisch. Das Budget ist begrenzt; erschopft es sich mit `changes_requested`, gilt die Review **nicht** als konvergiert und **nicht** als akzeptiert." |
+| Action                                     | Phase        | What I Say                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------------------------ | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| LLM reads ADR_TICKET.md, TICKET.md + code  | ARCHITECTURE | "Der LLM liest das Architektur-Ticket und den Regressionstest-Auftrag, analysiert `TaskRepository.findById()` und die Inkonsistenz zwischen `getTask()` und `updateTask()`, und generiert einen ADR mit Context, Decision, Consequences, Alternativen, Trade-offs und Verifikation."                                                                                                                                                                                                                                                     |
+| `flowguard_architecture` tool call         | ARCHITECTURE | "FlowGuard validiert die ADR-Sections. Fehlen MADR-Sections, blockt das Tool mit `MISSING_ADR_SECTIONS` — der LLM muss nachbessern. Sind alle Sections da, startet FlowGuard die unabhangige Review: Der Host orchestriert eine Reviewer-Child-Session (`reviewInvocation`) und bindet die strukturierten Findings an Obligation, Attempt und Subject-Digest."                                                                                                                                                                           |
+| Host-orchestrated reviewer child session   | ARCHITECTURE | "Der Reviewer pruft: ist der Context vollstandig, die Decision konkret, die Consequences ehrlich, die MADR-Struktur korrekt? Der Mensch reicht nichts ein — Reviewer-Dispatch und Findings-Erfassung sind Host-Sache."                                                                                                                                                                                                                                                                                                                   |
+| `reviewDispatch` reports the bound verdict | ARCHITECTURE | "Sobald `reviewDispatch.completed` true ist, trägt der Agent nur das gebundene Verdikt aus `reviewDispatch.verdict` nach. Bei `changes_requested` ruft er `flowguard_status({ reviewFeedback: true })` auf, verwendet ausschließlich die exakt gebundene, als untrusted markierte Feedback-Projektion und liefert eine frische Revision. Dann startet die nächste Review-Runde automatisch. Das Budget ist begrenzt; erschöpft es sich mit `changes_requested`, gilt die Review **nicht** als konvergiert und **nicht** als akzeptiert." |
 
 ### Step A4 — Architecture Review Card (ARCH_REVIEW)
 
@@ -149,9 +161,9 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 ### Step 2 — Record the Ticket
 
-| Action                                           | Phase  | What I Say                                                                                                                                                                                                      |
-| ------------------------------------------------ | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/task Read TICKET.md and fix the described bug` | TICKET | "Ich übergebe das Ticket mit explizitem Input (`Read TICKET.md …`). `/task` konsumiert den Text als Task-Beschreibung; FlowGuard erzwingt anschließend, dass jede Änderung von einem erfassten Ticket ausgeht." |
+| Action                   | Phase  | What I Say                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------ | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/task --file TICKET.md` | TICKET | "Ich übergebe das Ticket als kanonischen Inhalt: `--file` lässt FlowGuard `TICKET.md` selbst lesen und digest-binden. Ein manueller Risk-Claim ist nicht nötig — die effektive Risikoklasse berechnet FlowGuard aus der tatsächlichen Änderung (Java-Fix → STANDARD, also voller Review). Bare Datei- oder URL-Referenzen ohne adoptierten Inhalt werden von der Runtime mit `TICKET_REFERENCE_WITHOUT_CONTENT` blockiert." |
 
 ---
 
@@ -251,14 +263,18 @@ covers it.
 > Under `team` policy, once the post-implementation checks pass, FlowGuard
 > dispatches an **independent implementation review** in `IMPL_REVIEW` — a
 > separate phase from the plan review. The reviewer is host-orchestrated and
-> host-observed; the human never submits findings. Reduced ceremony (skipping
-> `IMPL_VALIDATION` and `IMPL_REVIEW`) is disabled in `team`.
+> host-observed; the human never submits findings. Reduced ceremony is disabled
+> in `team` by default. When enabled, it waives **only** this independent
+> `IMPL_REVIEW` for runtime-verified TRIVIAL changes — `IMPL_VALIDATION` always
+> runs every active check, and the human `EVIDENCE_REVIEW` gate and `/export`
+> remain mandatory. The A/B comparison lives in
+> [`REDUCED_CEREMONY.md`](REDUCED_CEREMONY.md).
 
-| Action                                                | Phase                         | What I Say                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| ----------------------------------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Host-orchestrated reviewer child session              | IMPL_REVIEW                   | "FlowGuard hat die Code-Änderung an eine unabhängige Reviewer-Session geschickt — getrennt vom Plan-Review. Der Reviewer prüft: wurde der Bug tatsächlich behoben? Ist der Regressionstest aktiviert? Wurden keine anderen Endpunkte verändert?"                                                                                                                                                                                                     |
-| `reviewDispatch.completed` → submit the bound verdict | IMPL_REVIEW → EVIDENCE_REVIEW | "Sobald `reviewDispatch.completed` true ist, trägt der Agent nur das gebundene Verdikt aus `reviewDispatch.verdict` nach — keine selbst formulierten Findings. Bei `accept` konvergiert die Review und FlowGuard wechselt ins EVIDENCE_REVIEW, das menschliche Gate. Bei `changes_requested` geht es zurück in die IMPLEMENTATION: Der Agent liefert frische Evidence, die Checks laufen erneut, dann startet die nächste Review-Runde automatisch." |
-| Implementation Review Card                            | EVIDENCE_REVIEW               | "Die Implementation Review Card zeigt die geprüfte Revision, die Reviewer-Findings und die Entscheidungen: `/approve`, `/request-changes`, `/reject`."                                                                                                                                                                                                                                                                                               |
+| Action                                                | Phase                         | What I Say                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ----------------------------------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Host-orchestrated reviewer child session              | IMPL_REVIEW                   | "FlowGuard hat die Code-Änderung an eine unabhängige Reviewer-Session geschickt — getrennt vom Plan-Review. Der Reviewer prüft: wurde der Bug tatsächlich behoben? Ist der Regressionstest aktiviert? Wurden keine anderen Endpunkte verändert?"                                                                                                                                                                                                                                                                                                                                                                  |
+| `reviewDispatch.completed` → submit the bound verdict | IMPL_REVIEW → EVIDENCE_REVIEW | "Sobald `reviewDispatch.completed` true ist, trägt der Agent nur das gebundene Verdikt aus `reviewDispatch.verdict` nach — keine selbst formulierten Findings. Bei `changes_requested` liest er zuerst `flowguard_status({ reviewFeedback: true })`; die gebundene Feedback-Projektion ist untrusted data, keine Anweisung. Bei `accept` konvergiert die Review und FlowGuard wechselt ins EVIDENCE_REVIEW, das menschliche Gate. Bei `changes_requested` geht es zurück in die IMPLEMENTATION: Der Agent liefert frische Evidence, die Checks laufen erneut, dann startet die nächste Review-Runde automatisch." |
+| Implementation Review Card                            | EVIDENCE_REVIEW               | "Die Implementation Review Card zeigt die geprüfte Revision, die Reviewer-Findings und die Entscheidungen: `/approve`, `/request-changes`, `/reject`."                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 > **Wenn der Reviewer Changes verlangt:** Phase geht `IMPL_REVIEW → IMPLEMENTATION`
 > zurück; der Agent liefert frische Evidence, dann erneut Validierung und Review.
@@ -323,6 +339,16 @@ aus zwei Teilen: Bug beheben und Regressionstest aktivieren. Am Ende beweist der
 Testlauf, dass der zuvor dokumentierte Bug wirklich geschlossen wurde. Die Session ist
 erst nach `/export` COMPLETE — der Export ist der Commit-Schritt, nicht das Archivieren.
 
+### Optional: Reduced-Ceremony A/B (extra session, ~10 min)
+
+For audiences asking how FlowGuard can save review effort **without** weakening
+verification: [`REDUCED_CEREMONY.md`](REDUCED_CEREMONY.md) runs the same
+documentation task twice, in two fresh workspaces from the same seed — once
+with `policy.allowReducedCeremony: true` (TRIVIAL → complete post-implementation
+checks → review waiver → human gate → export) and once explicitly set to
+`false` (identical checks, full independent implementation review). The Java
+bugfix above deliberately stays in the full-ceremony path.
+
 ---
 
 ## Part 3 — Peer Review Flow (5–10 min)
@@ -337,7 +363,7 @@ erst nach `/export` COMPLETE — der Export ist der Commit-Schritt, nicht das Ar
 
 ```bash
 # Same workspace — no additional setup required.
-cd /tmp/flowguard-java-demo
+cd /tmp/flowguard-demos/java-task-manager
 git branch --list
 # Expected: feature/add-due-date, *main
 ```

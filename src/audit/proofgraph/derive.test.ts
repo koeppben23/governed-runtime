@@ -14,7 +14,13 @@ const AUTHORITY_REF = {
   digest: 'authority',
 };
 const IMPL_DIGEST = 'impl-current';
-const IMPL = { changedFiles: ['a.ts'], domainFiles: [], digest: IMPL_DIGEST, executedAt: NOW };
+const IMPL = {
+  implementationId: '00000000-0000-4000-8000-0000000000aa',
+  changedFiles: ['a.ts'],
+  domainFiles: [],
+  digest: IMPL_DIGEST,
+  executedAt: NOW,
+};
 const SHA = 'a'.repeat(64);
 
 function claim() {

@@ -136,6 +136,31 @@ function assertObligationFreezeCoherence(input: {
   });
 }
 
+function resolveFrozenChallengeRequirements(
+  challengePolicy: Pick<PolicySnapshot, 'challengePolicy'>['challengePolicy'],
+  input: {
+    obligationType: ReviewObligationType;
+    changedFiles?: readonly string[] | undefined;
+    declaredTaskClass?: TaskClass | null | undefined;
+    escalatedTaskClass?: TaskClass | undefined;
+    provisionalScopeUnknown?: boolean | undefined;
+  },
+): ReturnType<typeof resolveChallengeRequirements> {
+  return resolveChallengeRequirements(challengePolicy, {
+    obligationType: input.obligationType,
+    ...(input.changedFiles !== undefined ? { changedFiles: input.changedFiles } : {}),
+    ...(input.declaredTaskClass !== undefined
+      ? { declaredTaskClass: input.declaredTaskClass }
+      : {}),
+    ...(input.escalatedTaskClass !== undefined
+      ? { escalatedTaskClass: input.escalatedTaskClass }
+      : {}),
+    ...(input.provisionalScopeUnknown !== undefined
+      ? { provisionalScopeUnknown: input.provisionalScopeUnknown }
+      : {}),
+  });
+}
+
 export function createReviewObligation(input: {
   obligationType: ReviewObligationType;
   iteration: number;
@@ -158,7 +183,9 @@ export function createReviewObligation(input: {
   reviewSubjectScope?: ReviewSubjectScope | undefined;
   repositoryAuthority?: FrozenRepositoryAuthority | undefined;
   repositoryEvidenceFreeze?: RepositoryEvidenceFreeze | undefined;
-  claimedTaskClass?: TaskClass | undefined;
+  declaredTaskClass?: TaskClass | null | undefined;
+  escalatedTaskClass?: TaskClass | undefined;
+  provisionalScopeUnknown?: boolean | undefined;
   metadata?: Record<string, unknown> | undefined;
   fingerprintVersion?: 'v2' | undefined;
 }): ReviewObligation {
@@ -166,11 +193,7 @@ export function createReviewObligation(input: {
   assertObligationFreezeCoherence(input);
   requireArtifactSubjectScope(input.obligationType, input.reviewSubjectScope);
   const challengePolicy = input.policySnapshot?.challengePolicy ?? CHALLENGE_POLICY_V1;
-  const resolvedChallengeRequirements = resolveChallengeRequirements(challengePolicy, {
-    obligationType: input.obligationType,
-    ...(input.changedFiles !== undefined ? { changedFiles: input.changedFiles } : {}),
-    ...(input.claimedTaskClass !== undefined ? { claimedTaskClass: input.claimedTaskClass } : {}),
-  });
+  const resolvedChallengeRequirements = resolveFrozenChallengeRequirements(challengePolicy, input);
   const subjectDigest = resolveSubjectDigest(input);
   const reviewSubjectScope = resolveSubjectScope(
     subjectDigest,

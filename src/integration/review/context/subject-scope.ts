@@ -12,7 +12,8 @@
 
 import type { ReviewSubjectScope } from '../../../state/evidence-review.js';
 import type { TaskClass } from '../../../state/schema.js';
-import { assessMinimumTaskClass, maxTaskClass } from '../../phase-tool-gate.js';
+import { resolveEffectiveTaskClass } from '../../../state/risk-declaration.js';
+import { assessMinimumTaskClass } from '../../phase-tool-gate.js';
 import { challengeKindForObligation, type ChallengeKind } from '../../../config/policy-types.js';
 import type { PolicySnapshot } from '../../../state/evidence.js';
 import type { ReviewObligationType } from '../../../state/evidence.js';
@@ -90,8 +91,10 @@ export function resolveSubjectScope(
 
 /**
  * Frozen challenge coverage requirements: the fail-closed FLOOR derives from
- * `max(computedFromChangedFiles, claimedTaskClass)` so a high-risk change
- * cannot collapse the requirement to 0 by declaring doc-only target paths.
+ * the central effective task-class resolution
+ * `max(computedFromChangedFiles, ticketDeclared, escalated)` so a high-risk
+ * change cannot collapse the requirement to 0 by declaring doc-only target
+ * paths, and a ticket-declared minimum cannot be undercut.
  * Empty when no challenge policy is frozen on the obligation.
  */
 export function resolveChallengeRequirements(
@@ -99,7 +102,9 @@ export function resolveChallengeRequirements(
   input: {
     obligationType: ReviewObligationType;
     changedFiles?: readonly string[];
-    claimedTaskClass?: TaskClass;
+    declaredTaskClass?: TaskClass | null;
+    escalatedTaskClass?: TaskClass;
+    provisionalScopeUnknown?: boolean;
   },
 ): {
   requiredChallengeCount: number;
@@ -109,14 +114,21 @@ export function resolveChallengeRequirements(
   // Hard Assurance Epoch: the persisted policy snapshot requires
   // challengePolicy, and the obligation freezes the requirement explicitly.
   // TRIVIAL is the explicit zero — never an implicit no-policy state.
+  const declaredTaskClass = input.declaredTaskClass ?? null;
+  const computed = assessMinimumTaskClass(input.changedFiles ?? []).minimumTaskClass;
+  const effectiveTaskClass = resolveEffectiveTaskClass({
+    // An unresolved pre-implementation scope is floored at STANDARD: absence of
+    // target evidence is not evidence of a trivial change.
+    computed:
+      input.provisionalScopeUnknown === true && computed === 'TRIVIAL' ? 'STANDARD' : computed,
+    declaration:
+      declaredTaskClass === null
+        ? { kind: 'absent' }
+        : { kind: 'declared', taskClass: declaredTaskClass },
+    escalated: input.escalatedTaskClass,
+  });
   return {
-    requiredChallengeCount:
-      challengePolicy.counts[
-        maxTaskClass(
-          assessMinimumTaskClass(input.changedFiles ?? []).minimumTaskClass,
-          input.claimedTaskClass ?? 'TRIVIAL',
-        )
-      ],
+    requiredChallengeCount: challengePolicy.counts[effectiveTaskClass],
     requiredChallengeKind: challengeKindForObligation(input.obligationType),
     challengePolicyVersion: challengePolicy.version,
   };

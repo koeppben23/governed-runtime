@@ -357,7 +357,6 @@ function maxDeviationPolicy(): FlowGuardPolicy {
     },
     identityProviderMode: 'required',
     enforceRiskClassification: true,
-    allowRiskDowngradeOverride: true,
     allowReducedCeremony: true,
     discoveryHealth: { enforcement: 'advisory', onDegraded: 'block', onDrift: 'warn' },
     validationEvidence: { enforcement: 'advisory', allowNoCommands: true },

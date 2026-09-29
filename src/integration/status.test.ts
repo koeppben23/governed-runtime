@@ -32,7 +32,15 @@ import {
 } from './status/status-detail-projections.js';
 import { getPolicyPreset } from '../config/policy.js';
 import { createPolicySnapshot } from '../config/policy-snapshot.js';
-import { makeState } from '../fixtures.js';
+import {
+  IMPL_EVIDENCE,
+  makeState,
+  POLICY_SNAPSHOT,
+  REDUCED_CEREMONY_DECISION,
+  VALIDATION_PASSED,
+  VERIFICATION_CANDIDATES,
+} from '../fixtures.js';
+import { TEST_EXECUTION_OBSERVATION } from '../state/evidence-test-constants.js';
 import { isCommandAllowed, Command } from '../machine/commands.js';
 import { USER_GATES, TERMINAL } from '../machine/topology.js';
 import { makePlanRevision } from '../state/evidence-test-constants.js';
@@ -525,6 +533,7 @@ describe('buildStatusProjection — EDGE evidence', () => {
         source: 'user',
         digest: 'abc123def456',
         createdAt: new Date().toISOString(),
+        riskDeclaration: { kind: 'absent' },
       },
     };
     const projection = buildStatusProjection(state, policy);
@@ -540,6 +549,7 @@ describe('buildStatusProjection — EDGE evidence', () => {
         source: 'user',
         digest: 'abc123def456',
         createdAt: new Date().toISOString(),
+        riskDeclaration: { kind: 'absent' },
       },
       plan: {
         current: makePlanRevision({ body: '## Plan\n...' }),
@@ -588,6 +598,7 @@ describe('buildEvidenceDetailProjection — HAPPY', () => {
         source: 'user',
         digest: 'abc123def456',
         createdAt: new Date().toISOString(),
+        riskDeclaration: { kind: 'absent' },
       },
     };
     const detail = buildEvidenceDetailProjection(state);
@@ -641,6 +652,7 @@ describe('buildEvidenceDetailProjection — HAPPY', () => {
         source: 'user',
         digest: 'abc123def456',
         createdAt: new Date().toISOString(),
+        riskDeclaration: { kind: 'absent' },
       },
     };
     const detail = buildEvidenceDetailProjection(state);
@@ -673,6 +685,7 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
         source: 'user',
         digest: 'ticket_digest',
         createdAt: new Date().toISOString(),
+        riskDeclaration: { kind: 'absent' },
       },
       plan: {
         current: makePlanRevision({ body: '## Plan' }),
@@ -720,6 +733,7 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
         },
       ],
       implementation: {
+        implementationId: '00000000-0000-4000-8000-0000000000aa',
         changedFiles: ['a.ts'],
         domainFiles: ['a.ts'],
         digest: 'impl_digest',
@@ -762,6 +776,7 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
         source: 'user',
         digest: 'ticket_digest',
         createdAt: new Date().toISOString(),
+        riskDeclaration: { kind: 'absent' },
       },
       plan: {
         current: makePlanRevision({ body: '## Plan' }),
@@ -814,5 +829,159 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
     expect(validationSlot).toBeDefined();
     expect(validationSlot!.status).toBe('failed');
     expect(validationSlot!.detail).toContain('1/2 passed');
+  });
+});
+
+describe('buildStatusProjection — reduced ceremony projection', () => {
+  const policy = getPolicyPreset('team');
+
+  it('is not_applicable outside IMPL_VALIDATION without a decision', () => {
+    const projection = buildStatusProjection(makeState('READY'), policy);
+    expect(projection.reducedCeremony).toEqual({ status: 'not_applicable', reason: null });
+  });
+
+  it('derives the pending projection at IMPL_VALIDATION without persisting it', () => {
+    const state = makeState('IMPL_VALIDATION', {
+      claimedTaskClass: 'TRIVIAL',
+      implementation: {
+        ...IMPL_EVIDENCE,
+        changedFiles: ['docs/usage-notes.md'],
+        domainFiles: [],
+      },
+      policySnapshot: {
+        ...POLICY_SNAPSHOT,
+        allowReducedCeremony: true,
+        requireHumanGates: true,
+      },
+    });
+
+    expect(state.reducedCeremony).toBeNull();
+    expect(buildStatusProjection(state, policy).reducedCeremony).toEqual({
+      status: 'pending_post_implementation_verification',
+      reason: 'AWAITING_POST_IMPLEMENTATION_VERIFICATION',
+    });
+  });
+
+  it('reports the static ineligibility reason when policy does not allow reduction', () => {
+    const state = makeState('IMPL_VALIDATION', {
+      claimedTaskClass: 'TRIVIAL',
+      implementation: { ...IMPL_EVIDENCE, changedFiles: ['docs/usage-notes.md'], domainFiles: [] },
+    });
+
+    expect(buildStatusProjection(state, policy).reducedCeremony).toEqual({
+      status: 'ineligible',
+      reason: 'POLICY_REDUCED_CEREMONY_DISABLED',
+    });
+  });
+
+  it('marks a stored decision invalid when its binding no longer holds', () => {
+    const state = makeState('EVIDENCE_REVIEW', {
+      implementation: IMPL_EVIDENCE,
+      reducedCeremony: REDUCED_CEREMONY_DECISION,
+    });
+
+    expect(buildStatusProjection(state, policy).reducedCeremony).toEqual({
+      status: 'invalid',
+      reason: 'REDUCED_CEREMONY_BINDING_INVALID',
+    });
+  });
+
+  it('reports an applied decision only while the machine binding still holds', () => {
+    const policySnapshot = {
+      ...POLICY_SNAPSHOT,
+      allowReducedCeremony: true,
+      requireHumanGates: true,
+      effectiveGateBehavior: 'human_gated' as const,
+    };
+    const attempt = (checkId: string, index: number) => ({
+      attemptId: `00000000-0000-4000-8000-0000000000${index}d`,
+      scope: 'implementation' as const,
+      implementationId: IMPL_EVIDENCE.implementationId,
+      implementationDigest: IMPL_EVIDENCE.digest,
+      executionObservation: TEST_EXECUTION_OBSERVATION,
+      result: VALIDATION_PASSED[index]!,
+    });
+    // The applied status requires a genuinely eligible docs-only change: the
+    // projection re-checks the machine binding instead of trusting the record.
+    const docsImpl = {
+      ...IMPL_EVIDENCE,
+      changedFiles: ['docs/usage-notes.md'],
+      domainFiles: [],
+    };
+    const state = makeState('EVIDENCE_REVIEW', {
+      claimedTaskClass: 'TRIVIAL',
+      verificationCandidates: VERIFICATION_CANDIDATES,
+      implementation: docsImpl,
+      implementationRiskAssessment: {
+        computedMinimumTaskClass: 'TRIVIAL',
+        effectiveTaskClass: 'TRIVIAL',
+        declaredTaskClass: null,
+        declarationKind: 'absent' as const,
+        ticketDigest: null,
+        escalatedTaskClass: 'TRIVIAL',
+        touchedSurfaces: ['docs/usage-notes.md'],
+        riskTriggers: [],
+        assessedFrom: 'implementation_changed_files',
+        assessedFileCount: 1,
+        implementationDigest: docsImpl.digest,
+      },
+      activeChecks: ['test', 'lint'],
+      implValidation: VALIDATION_PASSED,
+      validationAttempts: [attempt('test', 0), attempt('lint', 1)],
+      policySnapshot,
+      reducedCeremony: {
+        ...REDUCED_CEREMONY_DECISION,
+        escalatedTaskClass: 'TRIVIAL',
+        touchedSurfaces: ['docs/usage-notes.md'],
+        policyDigest: policySnapshot.hash,
+        implementationId: docsImpl.implementationId,
+        implementationDigest: docsImpl.digest,
+        verificationBasis: {
+          checkIds: ['test', 'lint'],
+          attempts: [
+            {
+              checkId: 'test',
+              attemptId: '00000000-0000-4000-8000-00000000000d',
+              executedAt: VALIDATION_PASSED[0]!.executedAt,
+            },
+            {
+              checkId: 'lint',
+              attemptId: '00000000-0000-4000-8000-00000000001d',
+              executedAt: VALIDATION_PASSED[1]!.executedAt,
+            },
+          ],
+        },
+      },
+    });
+
+    expect(buildStatusProjection(state, policy).reducedCeremony).toEqual({
+      status: 'applied',
+      reason: REDUCED_CEREMONY_DECISION.reason,
+    });
+
+    // A schema-valid decision over a HIGH-RISK implementation (src/auth.ts)
+    // must project as invalid instead of applied.
+    const assessment = state.implementationRiskAssessment;
+    const decision = state.reducedCeremony;
+    if (assessment === undefined || decision === null) {
+      throw new Error('fixture state must carry a risk assessment and a reduced decision');
+    }
+    const drifted: SessionState = {
+      ...state,
+      implementation: IMPL_EVIDENCE,
+      implementationRiskAssessment: {
+        ...assessment,
+        assessedFileCount: 2,
+        implementationDigest: IMPL_EVIDENCE.digest,
+      },
+      reducedCeremony: {
+        ...decision,
+        implementationDigest: IMPL_EVIDENCE.digest,
+      },
+    };
+    expect(buildStatusProjection(drifted, policy).reducedCeremony).toEqual({
+      status: 'invalid',
+      reason: 'REDUCED_CEREMONY_BINDING_INVALID',
+    });
   });
 });
