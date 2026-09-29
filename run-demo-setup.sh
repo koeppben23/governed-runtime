@@ -30,14 +30,25 @@ EOF
 }
 
 MODE="prepare-only"
+MODE_EXPLICIT=""
 TARBALL=""
 DEMO="all"
 TARGET_ROOT=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --prepare-only) MODE="prepare-only"; shift ;;
-        --install) MODE="install"; shift ;;
+        --prepare-only)
+            if [[ -n "$MODE_EXPLICIT" ]]; then
+                echo "Error: --prepare-only and --install are mutually exclusive." >&2
+                usage
+            fi
+            MODE="prepare-only"; MODE_EXPLICIT="prepare-only"; shift ;;
+        --install)
+            if [[ -n "$MODE_EXPLICIT" ]]; then
+                echo "Error: --prepare-only and --install are mutually exclusive." >&2
+                usage
+            fi
+            MODE="install"; MODE_EXPLICIT="install"; shift ;;
         --tarball)
             if [[ $# -lt 2 || "$2" == -* || -z "$2" ]]; then
                 echo "Error: --tarball requires a path argument." >&2
@@ -76,6 +87,11 @@ fi
 
 if [[ "$MODE" == "install" && -z "$TARBALL" ]]; then
     echo "Error: --install requires --tarball <path>." >&2
+    usage
+fi
+
+if [[ "$MODE" != "install" && -n "$TARBALL" ]]; then
+    echo "Error: --tarball may be used only with --install." >&2
     usage
 fi
 

@@ -416,5 +416,42 @@ describe('Java Task Manager demo contract', () => {
         cwd: REPO_ROOT,
       }),
     ).rejects.toMatchObject({ code: 1 });
+    await expect(
+      execFile(
+        'bash',
+        [
+          ROOT_SETUP_SCRIPT,
+          '--prepare-only',
+          '--install',
+          '--tarball',
+          '/dev/null',
+          '/tmp/flowguard-demos',
+        ],
+        { cwd: REPO_ROOT },
+      ),
+    ).rejects.toMatchObject({ code: 1 });
+    await expect(
+      execFile(
+        'bash',
+        [
+          ROOT_SETUP_SCRIPT,
+          '--install',
+          '--prepare-only',
+          '--tarball',
+          '/dev/null',
+          '/tmp/flowguard-demos',
+        ],
+        { cwd: REPO_ROOT },
+      ),
+    ).rejects.toMatchObject({ code: 1 });
+    await expect(
+      execFile(
+        'bash',
+        [ROOT_SETUP_SCRIPT, '--prepare-only', '--tarball', '/dev/null', '/tmp/flowguard-demos'],
+        {
+          cwd: REPO_ROOT,
+        },
+      ),
+    ).rejects.toMatchObject({ code: 1 });
   });
 });
