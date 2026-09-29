@@ -108,7 +108,7 @@ if [[ ! -d "$TARGET_PARENT" ]]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-MAIN_SETUP="$SCRIPT_DIR/demos/java-task-manager/run-demo-setup.sh"
+MAIN_SETUP="$SCRIPT_DIR/demos/java-task-manager/run-main-demo-setup.sh"
 REDUCED_SETUP="$SCRIPT_DIR/demos/java-task-manager/run-reduced-ceremony-demo-setup.sh"
 
 for script in "$MAIN_SETUP" "$REDUCED_SETUP"; do

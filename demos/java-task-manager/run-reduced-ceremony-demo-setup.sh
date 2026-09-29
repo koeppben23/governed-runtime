@@ -66,7 +66,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SETUP_SCRIPT="$SCRIPT_DIR/run-demo-setup.sh"
+SETUP_SCRIPT="$SCRIPT_DIR/run-main-demo-setup.sh"
 
 # ─── Runtime session preflight (read-only) ────────────────────────────────────
 

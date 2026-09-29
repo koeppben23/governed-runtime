@@ -9,7 +9,7 @@ files never does.
 ```bash
 # Option A: Delete and recreate with setup script (recommended)
 rm -rf /tmp/flowguard-java-demo
-./demos/java-task-manager/run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-java-demo
+./demos/java-task-manager/run-main-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-java-demo
 
 # Then open the workspace in OpenCode Desktop and start a fresh session:
 # /start
@@ -18,7 +18,7 @@ rm -rf /tmp/flowguard-java-demo
 ```bash
 # Option B: Prepare-only, then install manually
 rm -rf /tmp/flowguard-java-demo
-./demos/java-task-manager/run-demo-setup.sh --prepare-only /tmp/flowguard-java-demo
+./demos/java-task-manager/run-main-demo-setup.sh --prepare-only /tmp/flowguard-java-demo
 cd /tmp/flowguard-java-demo
 npx --package /path/to/flowguard-core-*.tgz flowguard install --install-scope repo --policy-mode team --core-tarball /path/to/flowguard-core-*.tgz --force
 

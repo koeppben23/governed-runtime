@@ -14,7 +14,7 @@ const execFile = promisify(execFileCallback);
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 const DEMO_DIR = path.join(REPO_ROOT, 'demos', 'java-task-manager');
 const ROOT_SETUP_SCRIPT = path.join(REPO_ROOT, 'run-demo-setup.sh');
-const SETUP_SCRIPT = path.join(DEMO_DIR, 'run-demo-setup.sh');
+const SETUP_SCRIPT = path.join(DEMO_DIR, 'run-main-demo-setup.sh');
 const SEED_DIR = path.join(DEMO_DIR, 'seed');
 const TICKET_PATH = path.join(SEED_DIR, 'TICKET.md');
 const ADR_TICKET_PATH = path.join(SEED_DIR, 'ADR_TICKET.md');
@@ -352,6 +352,9 @@ describe('Java Task Manager demo contract', () => {
     try {
       const scriptStat = await fs.stat(ROOT_SETUP_SCRIPT);
       expect(scriptStat.mode & fs.constants.S_IXUSR).not.toBe(0);
+      await expect(fs.stat(path.join(DEMO_DIR, 'run-demo-setup.sh'))).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
 
       await execFile('bash', [ROOT_SETUP_SCRIPT, '--prepare-only', targetRoot], { cwd: REPO_ROOT });
 
