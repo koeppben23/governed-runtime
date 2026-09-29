@@ -44,9 +44,9 @@ for already-terminal sessions and defaults to a redacted sharing archive.
 ## Quick Start
 
 ```bash
-# Prepare and install FlowGuard into the demo workspace
-./run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-java-demo
-cd /tmp/flowguard-java-demo
+# From the governed-runtime repository root: prepare every live demo workspace
+./run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-demos
+cd /tmp/flowguard-demos/java-task-manager
 
 # Verify the starting state
 ./mvnw test
@@ -127,7 +127,10 @@ implementation review). The existing Java bugfix flow deliberately keeps the
 full review. `run-reduced-ceremony-demo-setup.sh` creates both workspaces and
 writes both policies explicitly; its `--verify-session` mode proves that
 FlowGuard actually selected `build` + `test` as active checks before the demo
-claims "2/2 passed".
+claims "2/2 passed". The repository-root `./run-demo-setup.sh` prepares this
+comparison together with the main workspace by default. Use
+`run-reduced-ceremony-demo-setup.sh` directly only when preparing the A/B
+comparison on its own.
 
 ## Archive and Raw Evidence
 
@@ -199,6 +202,7 @@ contract it was validated against.
 ## Directory Structure
 
 ```text
+run-demo-setup.sh                  ← Public entry point: prepares all live demos from the repository root
 demos/java-task-manager/
 ├── README.md                    ← You are here
 ├── DEMO_SCRIPT.md               ← Live presentation script with talking points
@@ -206,7 +210,7 @@ demos/java-task-manager/
 ├── RESET.md                     ← How to reset for a fresh demo
 ├── EVIDENCE_PACKAGE.md          ← Evidence-package verification scope and limits
 ├── evidence-manifest.example.json ← Template binding the three sessions to their artifacts
-├── run-demo-setup.sh            ← Prepare or prepare+install the demo project
+├── run-demo-setup.sh            ← Main-workspace setup primitive
 ├── run-reduced-ceremony-demo-setup.sh ← Two fresh workspaces, explicit policies, --verify-session
 ├── run-demo-preflight.sh        ← Pre-flight checks before a live pitch
 ├── verify-evidence-package.mjs  ← Standalone offline package verifier

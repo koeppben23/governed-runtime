@@ -19,9 +19,9 @@ working tree — it operates independently of Development changes on `main`.
 ## Prerequisites (run before the demo)
 
 ```bash
-cd demos/java-task-manager
-./run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-java-demo
-# Open /tmp/flowguard-java-demo in OpenCode Desktop
+# From the governed-runtime repository root
+./run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-demos
+# Open /tmp/flowguard-demos/java-task-manager in OpenCode Desktop
 ```
 
 ---
@@ -357,7 +357,7 @@ bugfix above deliberately stays in the full-ceremony path.
 
 ```bash
 # Same workspace — no additional setup required.
-cd /tmp/flowguard-java-demo
+cd /tmp/flowguard-demos/java-task-manager
 git branch --list
 # Expected: feature/add-due-date, *main
 ```

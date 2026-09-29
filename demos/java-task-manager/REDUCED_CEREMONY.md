@@ -56,17 +56,17 @@ Same as `README.md`, plus:
 ## Setup — Two Workspaces, One Seed
 
 ```bash
-cd demos/java-task-manager
-./run-reduced-ceremony-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-reduced-demo
+# from the governed-runtime repository root
+./run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-demos
 ```
 
-The script reuses `run-demo-setup.sh` and creates two fresh workspaces from the
-same seed:
+The root runner prepares every installable live demo and creates the two A/B
+workspaces from the same seed:
 
-| Workspace                                 | `.opencode/flowguard.json`                                       |
-| ----------------------------------------- | ---------------------------------------------------------------- |
-| `/tmp/flowguard-reduced-demo/reduced-on`  | `policy.defaultMode: team`, `policy.allowReducedCeremony: true`  |
-| `/tmp/flowguard-reduced-demo/reduced-off` | `policy.defaultMode: team`, `policy.allowReducedCeremony: false` |
+| Workspace                                           | `.opencode/flowguard.json`                                       |
+| --------------------------------------------------- | ---------------------------------------------------------------- |
+| `/tmp/flowguard-demos/reduced-ceremony/reduced-on`  | `policy.defaultMode: team`, `policy.allowReducedCeremony: true`  |
+| `/tmp/flowguard-demos/reduced-ceremony/reduced-off` | `policy.defaultMode: team`, `policy.allowReducedCeremony: false` |
 
 Both configurations are written **explicitly** (not left to preset defaults)
 and the script fails closed unless the two workspaces are identical except for
@@ -78,7 +78,13 @@ The policy must be configured **before** `/start` — it is frozen into the
 session snapshot at session start.
 
 Open the two workspaces in OpenCode Desktop (one at a time is fine) and follow
-the scenarios below.
+the scenarios below. To prepare only this comparison, use the specialized
+primitive from the repository root:
+
+```bash
+./demos/java-task-manager/run-reduced-ceremony-demo-setup.sh \
+  --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-reduced-demo
+```
 
 ---
 
@@ -93,7 +99,8 @@ the scenarios below.
 ### Step B2 — Verify the Runtime Selection (preflight)
 
 ```bash
-./run-reduced-ceremony-demo-setup.sh --verify-session /tmp/flowguard-reduced-demo/reduced-on
+./demos/java-task-manager/run-reduced-ceremony-demo-setup.sh \
+  --verify-session /tmp/flowguard-demos/reduced-ceremony/reduced-on
 # Expected:
 #   hostSessionId: <OpenCode host session id>
 #   activeChecks: [build, test]
@@ -242,7 +249,8 @@ it derives the expected value from the workspace name and must report
 `allowReducedCeremony=false`:
 
 ```bash
-./run-reduced-ceremony-demo-setup.sh --verify-session /tmp/flowguard-reduced-demo/reduced-off
+./demos/java-task-manager/run-reduced-ceremony-demo-setup.sh \
+  --verify-session /tmp/flowguard-demos/reduced-ceremony/reduced-off
 # Expected:
 #   hostSessionId: <OpenCode host session id>
 #   activeChecks: [build, test]

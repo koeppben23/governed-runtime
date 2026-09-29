@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 const execFile = promisify(execFileCallback);
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 const DEMO_DIR = path.join(REPO_ROOT, 'demos', 'java-task-manager');
+const ROOT_SETUP_SCRIPT = path.join(REPO_ROOT, 'run-demo-setup.sh');
 const SETUP_SCRIPT = path.join(DEMO_DIR, 'run-demo-setup.sh');
 const SEED_DIR = path.join(DEMO_DIR, 'seed');
 const TICKET_PATH = path.join(SEED_DIR, 'TICKET.md');
@@ -339,5 +340,81 @@ describe('Java Task Manager demo contract', () => {
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true });
     }
+  });
+
+  it('orchestrates all installable live demos into a fresh root', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'flowguard-all-demos-contract-'));
+    const targetRoot = path.join(tempDir, 'demos');
+    const mainWorkspace = path.join(targetRoot, 'java-task-manager');
+    const reducedOn = path.join(targetRoot, 'reduced-ceremony', 'reduced-on');
+    const reducedOff = path.join(targetRoot, 'reduced-ceremony', 'reduced-off');
+
+    try {
+      const scriptStat = await fs.stat(ROOT_SETUP_SCRIPT);
+      expect(scriptStat.mode & fs.constants.S_IXUSR).not.toBe(0);
+
+      await execFile('bash', [ROOT_SETUP_SCRIPT, '--prepare-only', targetRoot], { cwd: REPO_ROOT });
+
+      const [{ stdout: branch }, onConfig, offConfig] = await Promise.all([
+        execFile('git', ['branch', '--show-current'], { cwd: mainWorkspace }),
+        fs.readFile(path.join(reducedOn, '.opencode', 'flowguard.json'), 'utf-8'),
+        fs.readFile(path.join(reducedOff, '.opencode', 'flowguard.json'), 'utf-8'),
+      ]);
+
+      expect(branch.trim()).toBe('main');
+      expect(JSON.parse(onConfig)).toMatchObject({
+        policy: { defaultMode: 'team', allowReducedCeremony: true },
+      });
+      expect(JSON.parse(offConfig)).toMatchObject({
+        policy: { defaultMode: 'team', allowReducedCeremony: false },
+      });
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('selects only the requested installable live demo', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'flowguard-demo-selector-contract-'));
+    const mainRoot = path.join(tempDir, 'main');
+    const reducedRoot = path.join(tempDir, 'reduced');
+
+    try {
+      await execFile('bash', [ROOT_SETUP_SCRIPT, '--demo', 'main', mainRoot], { cwd: REPO_ROOT });
+      await expect(fs.stat(path.join(mainRoot, 'java-task-manager'))).resolves.toBeDefined();
+      await expect(fs.stat(path.join(mainRoot, 'reduced-ceremony'))).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+
+      await execFile('bash', [ROOT_SETUP_SCRIPT, '--demo', 'reduced', reducedRoot], {
+        cwd: REPO_ROOT,
+      });
+      await expect(
+        fs.stat(path.join(reducedRoot, 'reduced-ceremony', 'reduced-on')),
+      ).resolves.toBeDefined();
+      await expect(
+        fs.stat(path.join(reducedRoot, 'reduced-ceremony', 'reduced-off')),
+      ).resolves.toBeDefined();
+      await expect(fs.stat(path.join(reducedRoot, 'java-task-manager'))).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects incomplete and invalid root setup arguments', async () => {
+    await expect(execFile('bash', [ROOT_SETUP_SCRIPT], { cwd: REPO_ROOT })).rejects.toMatchObject({
+      code: 1,
+    });
+    await expect(
+      execFile('bash', [ROOT_SETUP_SCRIPT, '--install', '/tmp/flowguard-demos'], {
+        cwd: REPO_ROOT,
+      }),
+    ).rejects.toMatchObject({ code: 1 });
+    await expect(
+      execFile('bash', [ROOT_SETUP_SCRIPT, '--demo', 'proofgraph', '/tmp/flowguard-demos'], {
+        cwd: REPO_ROOT,
+      }),
+    ).rejects.toMatchObject({ code: 1 });
   });
 });
