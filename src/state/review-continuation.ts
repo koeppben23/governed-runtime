@@ -33,8 +33,7 @@
  *
  * This module lives in the state layer so BOTH the machine layer (NextAction
  * projection) and the integration layer (re-invocation routing) consume the
- * same authority. Integration modules re-export the moved pieces to preserve
- * their historical import surfaces.
+ * same authority.
  *
  * @version v1
  */

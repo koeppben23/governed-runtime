@@ -29,7 +29,8 @@ import type { ReviewBinding } from '../state/proofgraph-approval.js';
  * Evidence resolved from the canonical review-assurance chain (obligations +
  * invocations), never from `latestReview` correlation. `reviewerVerdict` is the
  * host-captured verdict (`invocation.capturedVerdict`) when present; its
- * absence means legacy evidence without a captured verdict.
+ * absence is a current fail-closed state (`verdict_missing`), never an
+ * acceptable review.
  */
 export interface ResolvedBoundReviewEvidence {
   readonly obligationId: string;
@@ -153,8 +154,8 @@ export function resolveLatestBoundReviewEvidence(
  *   `review_exhausted` (acceptance was NOT obtained) and likewise surfaces as
  *   `completion_contradiction`.
  * - Evidence WITHOUT a captured verdict is `verdict_missing` — never silently
- *   admissible. The verdict must be present and coherent; only the legacy
- *   `approve` vocabulary is normalized at hydration, never manufactured here.
+ *   admissible. The verdict must be present and coherent; it is never
+ *   manufactured here.
  */
 export type ArchitectureReviewEvidenceResolution =
   | { kind: 'bound'; binding: ReviewBinding }

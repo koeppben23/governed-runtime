@@ -78,14 +78,14 @@ export const SessionStateEvidenceShape = {
    */
   runtimeLease: RuntimeLease.nullable(),
 
-  /** Advisory challenge-resolution evidence; defaults for legacy sessions. */
+  /** Advisory challenge-resolution evidence; required array, empty before any resolution. */
   challengeResolutions: z.array(ChallengeResolution),
 
   /**
    * Post-implementation validation check results (IMPL_VALIDATION phase). Kept
    * separate from `validation` (the pre-implementation baseline run) so the audit
    * trail retains both the baseline and the re-run of checks against the fixed code.
-   * Defaulted to [] for backward compatibility with pre-IMPL_VALIDATION sessions.
+   * Required array, empty before the first post-implementation check.
    */
   implValidation: z.array(ValidationResult),
 
