@@ -357,10 +357,9 @@ export function hasCurrentPlanApprovalCertificate(
   // recordDigest (z.B. andere Lineage-Metadaten) invalidiert das Zertifikat.
   if (plan.approvalCertificate.planRecordDigest !== plan.current.recordDigest) return false;
   // CE5: The review-evidence binding is part of the certificate's authority.
-  // Legacy certificates without a binding (or whose binding no longer matches
-  // the current subject) never authorize critical claims — fail closed.
+  // The v8 certificate schema requires it, so only a binding that matches the
+  // current subject authorizes critical claims — anything else fails closed.
   const binding = plan.approvalCertificate.reviewBinding;
-  if (!binding) return false;
   if (binding.kind === 'current_review') {
     if (binding.reviewedSubjectDigest !== plan.current.digest) return false;
   } else if (
