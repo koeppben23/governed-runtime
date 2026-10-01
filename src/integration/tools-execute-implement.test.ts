@@ -758,7 +758,62 @@ describe('implement', () => {
       expect(changed).toContain('src/main/Service.java');
     });
 
-    it('blocks when the control-plane baseline capture is unavailable', async () => {
+    it('records the full worktree when dirty capture is unavailable but the marker is valid (null + marker)', async () => {
+      await reachImplementation();
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      // Independent availability: a successfully captured control-plane marker
+      // must never be discarded because dirty-file capture failed. Recording
+      // proceeds conservatively over the full worktree with an explicit signal.
+      if (!state) throw new TypeError('Expected persisted session state');
+      await writeState(sessDir, {
+        ...state,
+        activeChecks: [],
+        implementationBaseline: {
+          ...state.implementationBaseline,
+          dirtyFiles: null,
+          controlPlaneMarker: 'test-control-plane-marker',
+        },
+      });
+      vi.mocked(gitMock.changedFiles).mockResolvedValue([
+        'src/main/Service.java',
+        'stale/preexisting.txt',
+      ]);
+      const raw = await implement.execute({}, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.baselineScoping).toBe('unavailable');
+      const changed = (await readState(sessDir))!.implementation!.changedFiles;
+      expect(changed).toContain('src/main/Service.java');
+      expect(changed).toContain('stale/preexisting.txt');
+    });
+
+    it('blocks when the marker is unavailable even with a captured dirty baseline (list + null)', async () => {
+      await reachImplementation();
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      if (!state) throw new TypeError('Expected persisted session state');
+      await writeState(sessDir, {
+        ...state,
+        implementationBaseline: {
+          ...state.implementationBaseline,
+          dirtyFiles: [{ path: 'stale/preexisting.txt', hash: 'stable:stale/preexisting.txt' }],
+          controlPlaneMarker: null,
+        },
+      });
+      vi.mocked(gitMock.changedFiles).mockResolvedValue([
+        'src/main/Service.java',
+        'stale/preexisting.txt',
+      ]);
+      const raw = await implement.execute({}, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('MUTATION_EPISODE_CONTROL_PLANE_UNAVAILABLE');
+      const persisted = await readState(sessDir);
+      expect(persisted?.implementation).toBeNull();
+    });
+
+    it('blocks when both baseline captures are unavailable (null + null)', async () => {
       await reachImplementation();
       const sessDir = await currentSessionDir();
       const state = await readState(sessDir);
