@@ -32,9 +32,8 @@ import {
   ReducedCeremonyDecision,
   ImplementationRiskAssessment,
   RiskGate,
-  TaskClass,
-  isTaskClass,
 } from '../state/schema.js';
+import { TaskClass, isTaskClass } from '../state/task-class.js';
 import {
   artifactReviewSubjectScope,
   createReviewObligation,

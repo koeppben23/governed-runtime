@@ -24,7 +24,7 @@
  * individual rules live in claim-contract-rules.ts.
  */
 
-import type { TaskClass } from '../../state/schema.js';
+import type { TaskClass } from '../../state/task-class.js';
 import type {
   ClaimContractBatchResult,
   ClaimContractInput,

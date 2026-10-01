@@ -31,8 +31,8 @@ import type {
   CommandListSection,
   NoticeSection,
 } from '../../../presentation/model.js';
-import type { Phase, TaskClass } from '../../../state/schema.js';
-import { isTaskClass } from '../../../state/schema.js';
+import type { Phase } from '../../../state/schema.js';
+import { isTaskClass, type TaskClass } from '../../../state/task-class.js';
 import { IntegrationInvariantError } from '../../errors.js';
 
 import type {

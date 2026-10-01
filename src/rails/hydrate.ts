@@ -36,8 +36,8 @@ import {
   CURRENT_SESSION_STATE_SCHEMA_VERSION,
   CURRENT_STATE_DIGEST_FORMAT,
   type SessionState,
-  type TaskClass,
 } from '../state/schema.js';
+import type { TaskClass } from '../state/task-class.js';
 import type { BindingInfo } from '../state/evidence.js';
 import type { ActorAssurance } from '../shared/actor-assurance.js';
 import { FINGERPRINT_PATTERN } from '../shared/repository-fingerprint.js';

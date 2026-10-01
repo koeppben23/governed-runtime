@@ -12,7 +12,7 @@ import { getAdapterLogger, getLogTraceFields } from '../../../logging/adapter-lo
 import { executeHydrate } from '../../../rails/hydrate.js';
 import { REASON_SESSION_LOCK_CONTENDED } from '../../../shared/flowguard-identifiers.js';
 import { PolicyModeSchema } from '../../../state/policy-mode.js';
-import { TaskClass } from '../../../state/schema.js';
+import { TaskClass } from '../../../state/task-class.js';
 import { formatBlocked } from '../../blocked-result.js';
 import { getWorktree, withSessionWriteTransaction } from '../helpers.js';
 import { formatError } from '../error-format.js';
