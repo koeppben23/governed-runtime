@@ -1,3 +1,4 @@
+/** @test-policy HAPPY, BAD, CORNER — comparable-run and assurance rejection contracts. */
 import { describe, expect, it } from 'vitest';
 import type { EvalSummary } from '../schema.js';
 import type { RunnerCaseMetrics } from '../run.js';
@@ -139,7 +140,9 @@ describe('non-inferiority gate', () => {
     expect(result.blockers).toContain(
       'optional metrics are runner self-reports rather than trusted host/provider observations',
     );
-    expect(result.blockers.join('\n')).toContain('effective provider seed is not independently confirmed');
+    expect(result.blockers.join('\n')).toContain(
+      'effective provider seed is not independently confirmed',
+    );
   });
 
   it('passes only when telemetry and effective seed are independently trusted', () => {
@@ -171,7 +174,9 @@ describe('non-inferiority gate', () => {
     const result = compareNonInferiority(baseline, current);
     expect(result.verdict).toBe('NOT_VERIFIED');
     expect(result.regressions).toEqual([]);
-    expect(result.blockers).toContain('case corpus digest differs; baseline subjects are not identical');
+    expect(result.blockers).toContain(
+      'case corpus digest differs; baseline subjects are not identical',
+    );
   });
 
   it('blocks comparison when provider/model/runner provenance differs', () => {
@@ -199,7 +204,9 @@ describe('non-inferiority gate', () => {
       { ...baseline, seed: undefined },
     );
     expect(missing.verdict).toBe('NOT_VERIFIED');
-    expect(missing.blockers).toContain('deterministic seed is missing from baseline or current run');
+    expect(missing.blockers).toContain(
+      'deterministic seed is missing from baseline or current run',
+    );
   });
 
   it('blocks assurance comparison when either repository worktree is dirty', () => {

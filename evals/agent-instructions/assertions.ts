@@ -21,20 +21,13 @@ function combinedStream(stdout: string, stderr: string): string {
   return stdout + '\n' + stderr;
 }
 
-function resolveStream(
-  stream: string,
-  stdout: string,
-  stderr: string,
-): string {
+function resolveStream(stream: string, stdout: string, stderr: string): string {
   if (stream === 'stdout') return stdout;
   if (stream === 'stderr') return stderr;
   return combinedStream(stdout, stderr);
 }
 
-export function evaluateAssertion(
-  assertion: Assertion,
-  ctx: AssertionContext,
-): AssertionResult {
+export function evaluateAssertion(assertion: Assertion, ctx: AssertionContext): AssertionResult {
   const base = {
     description: assertion.description,
     type: assertion.type,
@@ -52,16 +45,28 @@ export function evaluateAssertion(
     case 'output_matches': {
       const haystack = resolveStream(assertion.stream, ctx.stdout, ctx.stderr);
       const re = new RegExp(assertion.pattern, assertion.flags ?? '');
-      return { ...base, passed: re.test(haystack), expected: `/${assertion.pattern}/${assertion.flags ?? ''}` };
+      return {
+        ...base,
+        passed: re.test(haystack),
+        expected: `/${assertion.pattern}/${assertion.flags ?? ''}`,
+      };
     }
     case 'output_not_contains': {
       const haystack = resolveStream(assertion.stream, ctx.stdout, ctx.stderr);
-      return { ...base, passed: !haystack.includes(assertion.value), expected: `NOT "${assertion.value}"` };
+      return {
+        ...base,
+        passed: !haystack.includes(assertion.value),
+        expected: `NOT "${assertion.value}"`,
+      };
     }
     case 'output_not_matches': {
       const haystack = resolveStream(assertion.stream, ctx.stdout, ctx.stderr);
       const re = new RegExp(assertion.pattern, assertion.flags ?? '');
-      return { ...base, passed: !re.test(haystack), expected: `NOT /${assertion.pattern}/${assertion.flags ?? ''}` };
+      return {
+        ...base,
+        passed: !re.test(haystack),
+        expected: `NOT /${assertion.pattern}/${assertion.flags ?? ''}`,
+      };
     }
     case 'exit_code': {
       return {
@@ -79,32 +84,42 @@ export function evaluateAssertion(
     case 'file_changed': {
       const before = ctx.beforeSnapshot.get(assertion.path);
       const after = ctx.afterSnapshot.get(assertion.path);
-      const changed =
-        !before || !after
-          ? before !== after
-          : before.sha256 !== after.sha256;
+      const changed = !before || !after ? before !== after : before.sha256 !== after.sha256;
       return { ...base, passed: changed, expected: `${assertion.path} changed` };
     }
     case 'file_not_changed': {
       const before = ctx.beforeSnapshot.get(assertion.path);
       const after = ctx.afterSnapshot.get(assertion.path);
-      const unchanged =
-        before && after ? before.sha256 === after.sha256 : before === after;
+      const unchanged = before && after ? before.sha256 === after.sha256 : before === after;
       return { ...base, passed: unchanged, expected: `${assertion.path} unchanged` };
     }
     case 'file_contains': {
       const content = ctx.afterContent.get(assertion.path);
       if (content === undefined) {
-        return { ...base, passed: false, expected: assertion.value, received: 'file not found in after snapshot' };
+        return {
+          ...base,
+          passed: false,
+          expected: assertion.value,
+          received: 'file not found in after snapshot',
+        };
       }
       return { ...base, passed: content.includes(assertion.value), expected: assertion.value };
     }
     case 'file_not_contains': {
       const content = ctx.afterContent.get(assertion.path);
       if (content === undefined) {
-        return { ...base, passed: false, expected: `existing file without "${assertion.value}"`, received: 'file not found' };
+        return {
+          ...base,
+          passed: false,
+          expected: `existing file without "${assertion.value}"`,
+          received: 'file not found',
+        };
       }
-      return { ...base, passed: !content.includes(assertion.value), expected: `NOT "${assertion.value}"` };
+      return {
+        ...base,
+        passed: !content.includes(assertion.value),
+        expected: `NOT "${assertion.value}"`,
+      };
     }
     default:
       return { ...base, passed: false, expected: 'unknown assertion type' };

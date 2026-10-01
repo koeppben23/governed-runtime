@@ -1,3 +1,4 @@
+/** @test-policy BAD — failed workspace observation remains explicit. */
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';

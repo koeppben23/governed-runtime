@@ -1,11 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { EvalSummarySchema, type EvalSummary } from './schema.js';
-import {
-  extractRunnerCaseMetrics,
-  RUNNER_METRICS_PREFIX,
-  type RunnerCaseMetrics,
-} from './run.js';
+import { extractRunnerCaseMetrics, RUNNER_METRICS_PREFIX, type RunnerCaseMetrics } from './run.js';
 
 export type AvailabilityMetric = number | null;
 export type CorrectnessMetric = 'pass' | 'fail' | 'runner_error';
@@ -132,11 +128,7 @@ export function deriveRunMetrics(
       return {
         caseId: result.caseId,
         correctness:
-          result.verdict === 'PASS'
-            ? 'pass'
-            : result.verdict === 'FAIL'
-              ? 'fail'
-              : 'runner_error',
+          result.verdict === 'PASS' ? 'pass' : result.verdict === 'FAIL' ? 'fail' : 'runner_error',
         governanceViolations: governanceCase ? failedHard : 0,
         criticalInvariantViolations: criticalGovernanceCase ? failedHard : 0,
         reviewPrecision: telemetry?.reviewPrecision ?? null,
@@ -170,7 +162,10 @@ interface MetricAggregate {
   readonly caseIds: readonly string[];
 }
 
-function aggregateMetric(cases: readonly EvalCaseMetrics[], key: OptionalMetricKey): MetricAggregate {
+function aggregateMetric(
+  cases: readonly EvalCaseMetrics[],
+  key: OptionalMetricKey,
+): MetricAggregate {
   const available = cases
     .filter((entry) => entry[key] !== null)
     .map((entry) => ({ caseId: entry.caseId, value: entry[key] as number }));
@@ -207,8 +202,10 @@ function compareOptionalMetric(
     return;
   }
 
-  const regressed = direction === 'higher' ? current.value < baseline.value : current.value > baseline.value;
-  const improved = direction === 'higher' ? current.value > baseline.value : current.value < baseline.value;
+  const regressed =
+    direction === 'higher' ? current.value < baseline.value : current.value > baseline.value;
+  const improved =
+    direction === 'higher' ? current.value > baseline.value : current.value < baseline.value;
   if (regressed) regressions.push(`${name} regressed: ${baseline.value} -> ${current.value}`);
   if (improved) improvements.push(`${name} improved: ${baseline.value} -> ${current.value}`);
 }
@@ -226,22 +223,24 @@ function compareProvenance(
   if (!baseline.seed || !current.seed) {
     blockers.push('deterministic seed is missing from baseline or current run');
   }
-  if (baseline.seedAssurance !== 'provider_confirmed' || current.seedAssurance !== 'provider_confirmed') {
+  if (
+    baseline.seedAssurance !== 'provider_confirmed' ||
+    current.seedAssurance !== 'provider_confirmed'
+  ) {
     blockers.push(
       'effective provider seed is not independently confirmed for baseline and current run; configured/requested seed alone is insufficient',
     );
   }
-  if (baseline.telemetryTrust !== 'trusted_observer' || current.telemetryTrust !== 'trusted_observer') {
+  if (
+    baseline.telemetryTrust !== 'trusted_observer' ||
+    current.telemetryTrust !== 'trusted_observer'
+  ) {
     blockers.push(
       'optional metrics are runner self-reports rather than trusted host/provider observations',
     );
   }
 
-  const comparableFields: readonly [
-    string,
-    string | undefined,
-    string | undefined,
-  ][] = [
+  const comparableFields: readonly [string, string | undefined, string | undefined][] = [
     ['provider', baseline.provider, current.provider],
     ['model', baseline.model, current.model],
     ['model version', baseline.modelVersion, current.modelVersion],

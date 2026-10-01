@@ -1,3 +1,4 @@
+/** @test-policy HAPPY, BAD, CORNER — report persistence and provenance contracts. */
 import { readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -181,9 +182,7 @@ describe('writeReports', () => {
     };
 
     const d = writeReports(RUNNER_CONFIG, [c], { runId: 'test-run-4' });
-    expect(readFileSync(join(d, 'cases', 'c1', 'stdout.txt'), 'utf-8')).toContain(
-      'partial stdout',
-    );
+    expect(readFileSync(join(d, 'cases', 'c1', 'stdout.txt'), 'utf-8')).toContain('partial stdout');
 
     const outcome = JSON.parse(readFileSync(join(d, 'cases', 'c1', 'outcome.json'), 'utf-8'));
     expect(outcome).toEqual({

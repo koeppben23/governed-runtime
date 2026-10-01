@@ -4,7 +4,9 @@
  * of another. Secret length is never treated as a proxy for sensitivity.
  */
 export function redactSecrets(text: string, values: readonly string[]): string {
-  const secrets = [...new Set(values)].filter((value) => value.length > 0).sort((a, b) => b.length - a.length);
+  const secrets = [...new Set(values)]
+    .filter((value) => value.length > 0)
+    .sort((a, b) => b.length - a.length);
 
   let result = text;
   for (const secret of secrets) {

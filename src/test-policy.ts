@@ -5,8 +5,8 @@
  * Every test suite MUST cover the correctness categories applicable to its
  * behavior. PERF coverage is required only for an explicit performance
  * contract. Arbitrary single-invocation wall-clock smoke thresholds are not
- * performance contracts. This policy is enforced by test naming conventions
- * and review mandates in flowguard-mandates.md.
+ * performance contracts. Test suites may use @test-policy headers to document
+ * applicable canonical categories; those headers are not globally enforced.
  *
  * Categories:
  * 1. HAPPY  — Normal, expected successful flows

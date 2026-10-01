@@ -11,22 +11,12 @@
 
 import type { ExecutedEvalCase } from './schema.js';
 
-export function determineExitCode(
-  executed: ExecutedEvalCase[],
-  advisory: boolean,
-): 0 | 1 | 2 {
-  if (
-    executed.some(
-      (e) => e.result.verdict === 'RUNNER_ERROR',
-    )
-  ) {
+export function determineExitCode(executed: ExecutedEvalCase[], advisory: boolean): 0 | 1 | 2 {
+  if (executed.some((e) => e.result.verdict === 'RUNNER_ERROR')) {
     return 2;
   }
 
-  if (
-    !advisory &&
-    executed.some((e) => e.result.verdict === 'FAIL')
-  ) {
+  if (!advisory && executed.some((e) => e.result.verdict === 'FAIL')) {
     return 1;
   }
 

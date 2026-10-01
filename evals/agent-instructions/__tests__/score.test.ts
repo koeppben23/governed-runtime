@@ -1,3 +1,4 @@
+/** @test-policy HAPPY, BAD, CORNER — assertion scoring and result aggregation contracts. */
 import { describe, expect, it } from 'vitest';
 import { scoreCase, summarizeResults } from '../score.js';
 

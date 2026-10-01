@@ -88,7 +88,8 @@ export function extractRunnerCaseMetrics(stderr: string): RunnerCaseMetrics | nu
   }
 
   const entries = Object.entries(parsed as Record<string, unknown>);
-  if (entries.length === 0) throw new Error('Runner metrics envelope must contain at least one metric');
+  if (entries.length === 0)
+    throw new Error('Runner metrics envelope must contain at least one metric');
 
   const metrics: Record<string, number> = {};
   for (const [key, value] of entries) {
@@ -408,9 +409,18 @@ export function writeReports(
   for (const e of ordered) {
     const caseDir = join(casesDir, e.evalCase.id);
     mkdirSync(caseDir, { recursive: true });
-    writeFileSync(join(caseDir, 'prompt.txt'), redactSecrets(e.evalCase.task + '\n', redactionValues));
-    writeFileSync(join(caseDir, 'stdout.txt'), redactSecrets(e.outcome.stdout || '', redactionValues));
-    writeFileSync(join(caseDir, 'stderr.txt'), redactSecrets(e.outcome.stderr || '', redactionValues));
+    writeFileSync(
+      join(caseDir, 'prompt.txt'),
+      redactSecrets(e.evalCase.task + '\n', redactionValues),
+    );
+    writeFileSync(
+      join(caseDir, 'stdout.txt'),
+      redactSecrets(e.outcome.stdout || '', redactionValues),
+    );
+    writeFileSync(
+      join(caseDir, 'stderr.txt'),
+      redactSecrets(e.outcome.stderr || '', redactionValues),
+    );
 
     const runnerMetrics = extractRunnerCaseMetrics(e.outcome.stderr || '');
     if (runnerMetrics) {
@@ -433,7 +443,9 @@ export function writeReports(
             status: 'runner_error' as const,
             errorKind: e.outcome.errorKind,
             message: e.outcome.message,
-            ...(e.outcome.instructionSurface ? { instructionSurface: e.outcome.instructionSurface } : {}),
+            ...(e.outcome.instructionSurface
+              ? { instructionSurface: e.outcome.instructionSurface }
+              : {}),
             ...(e.outcome.instructionHost ? { instructionHost: e.outcome.instructionHost } : {}),
           };
 
@@ -444,7 +456,11 @@ export function writeReports(
     writeFileSync(
       join(caseDir, 'result.json'),
       redactSecrets(
-        JSON.stringify({ ...e.result, assuranceTags: [...(e.evalCase.assuranceTags ?? [])] }, null, 2),
+        JSON.stringify(
+          { ...e.result, assuranceTags: [...(e.evalCase.assuranceTags ?? [])] },
+          null,
+          2,
+        ),
         redactionValues,
       ) + '\n',
     );
@@ -479,7 +495,8 @@ export function writeReports(
     '| Host | PASS | FAIL | RUNNER_ERROR |',
     '| --- | ---: | ---: | ---: |',
     ...Object.entries(summary.byInstructionHost).map(
-      ([host, counts]) => `| ${host} | ${counts.passed} | ${counts.failed} | ${counts.runnerErrors} |`,
+      ([host, counts]) =>
+        `| ${host} | ${counts.passed} | ${counts.failed} | ${counts.runnerErrors} |`,
     ),
     '',
     ...summary.cases.map(
@@ -487,7 +504,10 @@ export function writeReports(
         `- **${c.caseId}** (${c.instructionSurface}${c.instructionHost ? `/${c.instructionHost}` : ''}): ${c.verdict}`,
     ),
   ];
-  writeFileSync(join(runDir, 'summary.md'), redactSecrets(mdLines.join('\n') + '\n', redactionValues));
+  writeFileSync(
+    join(runDir, 'summary.md'),
+    redactSecrets(mdLines.join('\n') + '\n', redactionValues),
+  );
 
   return runDir;
 }

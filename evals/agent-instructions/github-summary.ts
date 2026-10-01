@@ -8,16 +8,10 @@
 import type { ExecutedEvalCase } from './schema.js';
 
 function escapeCell(value: string): string {
-  return value
-    .replace(/\\/g, '\\\\')
-    .replace(/\r?\n/g, ' ')
-    .replace(/\|/g, '\\|');
+  return value.replace(/\\/g, '\\\\').replace(/\r?\n/g, ' ').replace(/\|/g, '\\|');
 }
 
-export function renderGitHubSummary(
-  runnerName: string,
-  executed: ExecutedEvalCase[],
-): string {
+export function renderGitHubSummary(runnerName: string, executed: ExecutedEvalCase[]): string {
   const safeRunner = escapeCell(runnerName);
   const lines = [
     `## Agent Instruction Eval: ${safeRunner}`,
@@ -27,9 +21,7 @@ export function renderGitHubSummary(
   ];
 
   for (const e of executed) {
-    const hard = e.result.assertionResults.filter(
-      (r) => r.severity === 'hard' && !r.passed,
-    ).length;
+    const hard = e.result.assertionResults.filter((r) => r.severity === 'hard' && !r.passed).length;
     const advisory = e.result.assertionResults.filter(
       (r) => r.severity === 'advisory' && !r.passed,
     ).length;

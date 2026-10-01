@@ -2,7 +2,7 @@
  * @module archive/content-digest.test
  * @description Direct contract tests for the archive content digest authority.
  *
- * @test-policy HAPPY, BAD, CORNER, EDGE, COMPATIBILITY
+ * @test-policy HAPPY, BAD, CORNER, EDGE
  */
 
 import { createHash } from 'node:crypto';

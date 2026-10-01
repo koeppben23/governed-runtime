@@ -1,3 +1,4 @@
+/** @test-policy HAPPY, BAD, CORNER — aggregate eval exit-code contracts. */
 import { describe, it, expect } from 'vitest';
 import { determineExitCode } from '../exit-code.js';
 import type { ExecutedEvalCase } from '../schema.js';

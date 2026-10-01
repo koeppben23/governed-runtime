@@ -1,3 +1,4 @@
+/** @test-policy HAPPY, BAD, CORNER — eval-case schema boundary contracts. */
 import { describe, it, expect } from 'vitest';
 import { EvalCaseSchema } from '../schema.js';
 

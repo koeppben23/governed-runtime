@@ -8,7 +8,7 @@
  * - Unhandled event types are silently ignored (no-op)
  * - Fail-safe behavior: handler never throws
  *
- * @test-policy HAPPY, BAD, CORNER, EDGE, SMOKE ÔÇö all categories present.
+ * @test-policy HAPPY, BAD, CORNER, EDGE ÔÇö all applicable categories present.
  * @version v1
  */
 

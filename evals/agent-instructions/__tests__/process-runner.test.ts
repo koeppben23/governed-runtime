@@ -1,3 +1,4 @@
+/** @test-policy HAPPY, BAD, EDGE — bounded process and workspace-snapshot contracts. */
 import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

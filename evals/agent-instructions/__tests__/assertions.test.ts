@@ -1,3 +1,4 @@
+/** @test-policy HAPPY, BAD, CORNER — output and workspace assertion contracts. */
 import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';
 import {
@@ -38,7 +39,13 @@ describe('evaluateAssertion — output', () => {
   it('output_contains passes when value is in stdout', () => {
     const ctx = emptyCtx({ stdout: 'hello world' });
     const r = evaluateAssertion(
-      { type: 'output_contains', value: 'world', stream: 'stdout', severity: 'hard', description: 'find world' },
+      {
+        type: 'output_contains',
+        value: 'world',
+        stream: 'stdout',
+        severity: 'hard',
+        description: 'find world',
+      },
       ctx,
     );
     expect(r.passed).toBe(true);
@@ -47,7 +54,13 @@ describe('evaluateAssertion — output', () => {
   it('output_contains fails when value is absent', () => {
     const ctx = emptyCtx({ stdout: 'hello' });
     const r = evaluateAssertion(
-      { type: 'output_contains', value: 'world', stream: 'stdout', severity: 'hard', description: 'find world' },
+      {
+        type: 'output_contains',
+        value: 'world',
+        stream: 'stdout',
+        severity: 'hard',
+        description: 'find world',
+      },
       ctx,
     );
     expect(r.passed).toBe(false);
@@ -56,7 +69,13 @@ describe('evaluateAssertion — output', () => {
   it('output_contains on combined includes stderr', () => {
     const ctx = emptyCtx({ stdout: 'a', stderr: 'b' });
     const r = evaluateAssertion(
-      { type: 'output_contains', value: 'b', stream: 'combined', severity: 'hard', description: 'find b' },
+      {
+        type: 'output_contains',
+        value: 'b',
+        stream: 'combined',
+        severity: 'hard',
+        description: 'find b',
+      },
       ctx,
     );
     expect(r.passed).toBe(true);
@@ -65,7 +84,13 @@ describe('evaluateAssertion — output', () => {
   it('output_matches uses regex', () => {
     const ctx = emptyCtx({ stdout: 'abc123def' });
     const r = evaluateAssertion(
-      { type: 'output_matches', pattern: '\\d+', stream: 'combined', severity: 'hard', description: 'has digits' },
+      {
+        type: 'output_matches',
+        pattern: '\\d+',
+        stream: 'combined',
+        severity: 'hard',
+        description: 'has digits',
+      },
       ctx,
     );
     expect(r.passed).toBe(true);
@@ -74,7 +99,13 @@ describe('evaluateAssertion — output', () => {
   it('output_not_contains passes when absent', () => {
     const ctx = emptyCtx({ stdout: 'safe' });
     const r = evaluateAssertion(
-      { type: 'output_not_contains', value: 'danger', stream: 'combined', severity: 'hard', description: 'no danger' },
+      {
+        type: 'output_not_contains',
+        value: 'danger',
+        stream: 'combined',
+        severity: 'hard',
+        description: 'no danger',
+      },
       ctx,
     );
     expect(r.passed).toBe(true);
@@ -115,7 +146,9 @@ describe('evaluateAssertion — file', () => {
     const before = snapSync({ 'src/b.ts': 'original content' });
     const after = snapSync({ 'src/b.ts': 'changed content' });
     const ctx: AssertionContext = {
-      stdout: '', stderr: '', exitCode: 0,
+      stdout: '',
+      stderr: '',
+      exitCode: 0,
       beforeSnapshot: before.entries,
       afterSnapshot: after.entries,
       beforeContent: before.contents,
@@ -131,14 +164,21 @@ describe('evaluateAssertion — file', () => {
   it('file_not_changed passes when sha256 matches', () => {
     const s = snapSync({ 'src/a.ts': 'same' });
     const ctx: AssertionContext = {
-      stdout: '', stderr: '', exitCode: 0,
+      stdout: '',
+      stderr: '',
+      exitCode: 0,
       beforeSnapshot: s.entries,
       afterSnapshot: s.entries,
       beforeContent: s.contents,
       afterContent: s.contents,
     };
     const r = evaluateAssertion(
-      { type: 'file_not_changed', path: 'src/a.ts', severity: 'hard', description: 'a.ts unchanged' },
+      {
+        type: 'file_not_changed',
+        path: 'src/a.ts',
+        severity: 'hard',
+        description: 'a.ts unchanged',
+      },
       ctx,
     );
     expect(r.passed).toBe(true);
@@ -147,7 +187,13 @@ describe('evaluateAssertion — file', () => {
   it('file_contains checks content', () => {
     const ctx = emptyCtx({ afterSnapshot: s.entries, afterContent: s.contents });
     const r = evaluateAssertion(
-      { type: 'file_contains', path: 'src/a.ts', value: 'import', severity: 'hard', description: 'has import' },
+      {
+        type: 'file_contains',
+        path: 'src/a.ts',
+        value: 'import',
+        severity: 'hard',
+        description: 'has import',
+      },
       ctx,
     );
     expect(r.passed).toBe(true);
@@ -156,7 +202,13 @@ describe('evaluateAssertion — file', () => {
   it('file_not_contains fails when file does not exist', () => {
     const ctx = emptyCtx();
     const r = evaluateAssertion(
-      { type: 'file_not_contains', path: 'src/gone.ts', value: 'anything', severity: 'hard', description: 'no anything' },
+      {
+        type: 'file_not_contains',
+        path: 'src/gone.ts',
+        value: 'anything',
+        severity: 'hard',
+        description: 'no anything',
+      },
       ctx,
     );
     expect(r.passed).toBe(false);
@@ -168,9 +220,21 @@ describe('evaluateAllAssertions', () => {
     const ctx = emptyCtx({ stdout: 'OK', exitCode: 0 });
     const results = evaluateAllAssertions(
       [
-        { type: 'output_contains', value: 'OK', stream: 'combined', severity: 'hard', description: 'has OK' },
+        {
+          type: 'output_contains',
+          value: 'OK',
+          stream: 'combined',
+          severity: 'hard',
+          description: 'has OK',
+        },
         { type: 'exit_code', value: 0, severity: 'hard', description: 'exit 0' },
-        { type: 'output_not_contains', value: 'FAIL', stream: 'combined', severity: 'advisory', description: 'no FAIL' },
+        {
+          type: 'output_not_contains',
+          value: 'FAIL',
+          stream: 'combined',
+          severity: 'advisory',
+          description: 'no FAIL',
+        },
       ],
       ctx,
     );

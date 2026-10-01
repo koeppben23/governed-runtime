@@ -2,7 +2,7 @@
  * @module adapters/workspace/evidence-artifacts.test
  * @description Tests for derived ticket/plan evidence artifact materialization.
  *
- * @test-policy HAPPY, BAD, CORNER, EDGE, PERF, E2E-SMOKE
+ * @test-policy HAPPY, BAD, CORNER, EDGE, PERF
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';

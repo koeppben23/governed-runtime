@@ -1,3 +1,4 @@
+/** @test-policy BAD, EDGE — corpus and workspace forensic regression boundaries. */
 import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

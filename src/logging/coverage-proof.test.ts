@@ -3,7 +3,7 @@
  * @description Comprehensive tests proving adapter, identity, and CLI logging
  * covers real critical paths with proper sinks and redaction.
  *
- * @test-policy HAPPY, BAD, CORNER, EDGE, SMOKE
+ * @test-policy HAPPY, BAD, CORNER, EDGE
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';

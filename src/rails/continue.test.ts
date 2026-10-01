@@ -5,7 +5,7 @@
  * P10b: tests terminal/user-gate short-circuits, phase-specific review loops,
  * gate enforcement, and iteration-bound convergence.
  *
- * @test-policy HAPPY, BAD, CORNER, SMOKE
+ * @test-policy HAPPY, BAD, CORNER
  */
 
 import { describe, expect, it, vi } from 'vitest';

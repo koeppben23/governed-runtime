@@ -78,7 +78,8 @@ export function summarizeResults(
 
   for (const result of caseResults) {
     addVerdict(byInstructionSurface[result.instructionSurface], result.verdict);
-    if (result.instructionHost) addVerdict(byInstructionHost[result.instructionHost], result.verdict);
+    if (result.instructionHost)
+      addVerdict(byInstructionHost[result.instructionHost], result.verdict);
   }
 
   return {

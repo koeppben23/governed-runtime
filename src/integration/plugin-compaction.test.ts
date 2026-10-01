@@ -10,7 +10,7 @@
  * - Active plan is indicated
  * - Errors are caught and logged (fail-safe)
  *
- * @test-policy HAPPY, BAD, CORNER, EDGE, SMOKE ÔÇö all categories present.
+ * @test-policy HAPPY, BAD, CORNER, EDGE ÔÇö all applicable categories present.
  * @version v1
  */
 

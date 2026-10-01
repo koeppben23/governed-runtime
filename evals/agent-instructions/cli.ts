@@ -82,7 +82,9 @@ async function main(): Promise<void> {
       process.exit(2);
     }
     if (!config.instructionHost) {
-      console.error('assurance evaluation requires an explicit instructionHost in the runner config');
+      console.error(
+        'assurance evaluation requires an explicit instructionHost in the runner config',
+      );
       process.exit(2);
     }
     if (config.provider.toLowerCase() === 'synthetic') {

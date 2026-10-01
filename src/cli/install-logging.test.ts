@@ -2,7 +2,7 @@
  * @module cli/install-logging.test
  * @description Tests verifying CLI produces structured logs via adapter logger.
  *
- * @test-policy HAPPY, BAD, CORNER, SMOKE
+ * @test-policy HAPPY, BAD, CORNER
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
