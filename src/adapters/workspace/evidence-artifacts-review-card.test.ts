@@ -8,18 +8,13 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { materializeReviewCardArtifact } from './evidence-artifacts.js';
 import { makeState } from '../../fixtures.js';
+import { hashText } from '../../shared/hashing.js';
 
 describe('materializeReviewCardArtifact', () => {
   let tmpDir: string;
 
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'flowguard-review-card-'));
-    // Create a minimal session-state.json for hashFile to read.
-    await fs.writeFile(
-      path.join(tmpDir, 'session-state.json'),
-      JSON.stringify({ id: 'test-session' }),
-      'utf-8',
-    );
   });
 
   afterEach(async () => {
@@ -27,15 +22,14 @@ describe('materializeReviewCardArtifact', () => {
   });
 
   const state = makeState('PEER_REVIEW_COMPLETE');
+  const stateHash = hashText(JSON.stringify(state, null, 2) + '\n');
 
   it('writes .md and .json artifacts with digest-based filename', async () => {
-    const result = await materializeReviewCardArtifact(
-      tmpDir,
-      'review-report-card',
-      '# Report',
+    const result = await materializeReviewCardArtifact(tmpDir, 'review-report-card', '# Report', {
       state,
-      'obligation-uuid',
-    );
+      contentDigest: 'obligation-uuid',
+      stateHash,
+    });
     expect(result).toBeNull();
 
     const artifactsDir = path.join(tmpDir, 'artifacts');
@@ -59,37 +53,30 @@ describe('materializeReviewCardArtifact', () => {
   });
 
   it('is idempotent — same markdown and digest returns null (no-op)', async () => {
-    await materializeReviewCardArtifact(
-      tmpDir,
-      'review-report-card',
-      '# Report',
+    await materializeReviewCardArtifact(tmpDir, 'review-report-card', '# Report', {
       state,
-      'digest-1',
-    );
-    const result = await materializeReviewCardArtifact(
-      tmpDir,
-      'review-report-card',
-      '# Report',
+      contentDigest: 'digest-1',
+      stateHash,
+    });
+    const result = await materializeReviewCardArtifact(tmpDir, 'review-report-card', '# Report', {
       state,
-      'digest-1',
-    );
+      contentDigest: 'digest-1',
+      stateHash,
+    });
     expect(result).toBeNull();
   });
 
   it('rejects different markdown for same digest (immutable)', async () => {
-    await materializeReviewCardArtifact(
-      tmpDir,
-      'review-report-card',
-      '# Report',
+    await materializeReviewCardArtifact(tmpDir, 'review-report-card', '# Report', {
       state,
-      'digest-2',
-    );
+      contentDigest: 'digest-2',
+      stateHash,
+    });
     const result = await materializeReviewCardArtifact(
       tmpDir,
       'review-report-card',
       '# Different',
-      state,
-      'digest-2',
+      { state, contentDigest: 'digest-2', stateHash },
     );
     expect(result).not.toBeNull();
     expect(result?.code).toBe('REVIEW_CARD_ARTIFACT_IMMUTABLE');
@@ -103,21 +90,17 @@ describe('materializeReviewCardArtifact', () => {
   });
 
   it('different digests create separate files (no staleness)', async () => {
-    const r1 = await materializeReviewCardArtifact(
-      tmpDir,
-      'plan-review-card',
-      '# Card v1',
+    const r1 = await materializeReviewCardArtifact(tmpDir, 'plan-review-card', '# Card v1', {
       state,
-      'digest-A',
-    );
+      contentDigest: 'digest-A',
+      stateHash,
+    });
     expect(r1).toBeNull();
-    const r2 = await materializeReviewCardArtifact(
-      tmpDir,
-      'plan-review-card',
-      '# Card v2',
+    const r2 = await materializeReviewCardArtifact(tmpDir, 'plan-review-card', '# Card v2', {
       state,
-      'digest-B',
-    );
+      contentDigest: 'digest-B',
+      stateHash,
+    });
     expect(r2).toBeNull();
 
     const artifactsDir = path.join(tmpDir, 'artifacts');
@@ -130,7 +113,11 @@ describe('materializeReviewCardArtifact', () => {
   });
 
   it('metadata includes contentDigest in the JSON', async () => {
-    await materializeReviewCardArtifact(tmpDir, 'review-report-card', '# R', state, 'uuid-123');
+    await materializeReviewCardArtifact(tmpDir, 'review-report-card', '# R', {
+      state,
+      contentDigest: 'uuid-123',
+      stateHash,
+    });
     const json = JSON.parse(
       await fs.readFile(
         path.join(tmpDir, 'artifacts', 'review-report-card.uuid-123.json'),

@@ -73,31 +73,6 @@ import {
 } from './plan-review-state.js';
 // presentation imports moved to plan-response.ts
 
-// ---- re-exported from sub-modules for backward-compatible import paths ----
-export type {
-  PlanArgs,
-  MutablePlanSession,
-  PlanInputFlags,
-  PlanReviewPolicy,
-  PlanExecutionScope,
-  PlanRevisionResult,
-  PlanSubmissionResponseInput,
-  ConvergedPlanReviewInput,
-} from './plan-types.js';
-export { classifyPlanCall, planInputFlags, planReviewPolicy } from './plan-types.js';
-export {
-  firstLine,
-  buildPlanSubmissionResponse,
-  buildPlanReviewInstruction,
-  latestPlanReviewSummary,
-  convergedPlanResponse,
-  convergedPlanReviewCardResponse,
-  nonConvergedPlanResponse,
-  persistConvergedPlanReview,
-  persistNonConvergedPlanReview,
-  persistPlanReview,
-} from './plan-response.js';
-
 // ---- internal types ----
 import type { PlanArgs, PlanInputFlags, PlanExecutionScope } from './plan-types.js';
 

@@ -7,7 +7,7 @@
  * @version v1
  */
 
-import { hashTextShort } from '../../../shared/hashing.js';
+import { hashText, hashTextShort } from '../../../shared/hashing.js';
 
 import type { SessionState } from '../../../state/schema.js';
 import type {
@@ -359,14 +359,13 @@ async function materializePeerReviewCard(input: {
   validatedReviewObligation: ReviewObligation | null;
 }): Promise<{ code: string; message: string } | undefined> {
   const { sessDir, result, reviewCard, validatedReviewObligation } = input;
+  const serializedState = JSON.stringify(result.state, null, 2) + '\n';
   return (
-    (await materializeReviewCardArtifact(
-      sessDir,
-      'review-report-card',
-      reviewCard,
-      result.state,
-      validatedReviewObligation?.obligationId ?? hashTextShort(reviewCard, 16),
-    )) ?? undefined
+    (await materializeReviewCardArtifact(sessDir, 'review-report-card', reviewCard, {
+      state: result.state,
+      contentDigest: validatedReviewObligation?.obligationId ?? hashTextShort(reviewCard, 16),
+      stateHash: hashText(serializedState),
+    })) ?? undefined
   );
 }
 

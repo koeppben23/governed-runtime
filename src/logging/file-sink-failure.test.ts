@@ -97,7 +97,7 @@ describe('file-sink failure propagation', () => {
     mockAppendFile.mockRejectedValueOnce(err);
 
     try {
-      const sink = createFileSink(testDir, 1);
+      const sink = createFileSink(testDir, { retentionDays: 1 });
       await expect(sink({ ...ENTRY, message: 'disk full' })).rejects.toBe(err);
       expect(mockAppendFile).toHaveBeenCalledTimes(1);
 
@@ -197,7 +197,7 @@ describe('file-sink failure propagation', () => {
     };
 
     try {
-      const sink = createFileSink(testDir, 1);
+      const sink = createFileSink(testDir, { retentionDays: 1 });
       await expect(sink({ ...ENTRY, message: 'root race' })).rejects.toMatchObject({
         code: 'ENOENT',
       });

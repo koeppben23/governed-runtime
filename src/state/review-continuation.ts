@@ -280,20 +280,9 @@ export function verifyFrozenMaterialForObligation(
 
 // ─── Assurance container primitives ──────────────────────────────────────────
 // `ensureReviewAssurance` and the durable dispatch ledger helpers live in
-// `state/review-dispatch.ts`; imported here for local use and re-exported for
-// the continuation callers that need the dispatch ledger alongside it.
+// `state/review-dispatch.ts`.
 
 import { ensureReviewAssurance, hasReleasedDispatch } from './review-dispatch.js';
-
-export {
-  abandonReviewDispatch,
-  appendReviewDispatch,
-  completeReviewDispatch,
-  ensureReviewAssurance,
-  hasReleasedDispatch,
-  markDispatchOutcomeUnknown,
-  rebindReviewDispatchHostCall,
-} from './review-dispatch.js';
 
 /**
  * The attempt a host Task can still be bound to for `obligationId`.

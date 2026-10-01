@@ -36,7 +36,7 @@ import {
   type ChallengePolicy,
 } from '../../../config/policy-types.js';
 import type { TaskClass } from '../../../state/schema.js';
-import type { ReviewSubjectScope } from '../../../state/evidence-review.js';
+import type { ReviewSubjectScope } from '../../../state/evidence-review-subject.js';
 import type { RepositoryEvidenceFreeze } from '../../../state/evidence-review-freeze.js';
 import { assertRepositoryFreezeCoherence } from './freeze-coherence.js';
 // Static import - mandate content is a constant in ESM

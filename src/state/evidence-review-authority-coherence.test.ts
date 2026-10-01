@@ -7,10 +7,10 @@ import { describe, it, expect } from 'vitest';
 import {
   ReviewObligation,
   ReviewAttempt,
-  ReviewInvocationEvidence,
   ReviewAssuranceState,
   ReviewInputFingerprintVersion,
 } from './evidence-review.js';
+import { ReviewInvocationEvidence } from './evidence-review-invocation.js';
 import { ReviewDecision } from './evidence-review-report.js';
 import { FIXED_TIME, FIXED_UUID } from './evidence-test-constants.js';
 

@@ -65,7 +65,10 @@ describe('Adapter logging — real sinks', () => {
       const tmpDir = await mkdtemp(join(tmpdir(), 'fg-rs-'));
 
       try {
-        const log = createLogger('debug', [createConsoleSink(), createFileSink(tmpDir, 7)]);
+        const log = createLogger('debug', [
+          createConsoleSink(),
+          createFileSink(tmpDir, { retentionDays: 7 }),
+        ]);
         const adapter = toAdapter(log);
 
         runWithAdapterLogger(adapter, () => {

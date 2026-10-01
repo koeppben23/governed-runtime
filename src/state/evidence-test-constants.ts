@@ -3,7 +3,8 @@
  * @description Shared test constants for evidence-module tests.
  */
 
-import type { ReviewDispatchRecord, ReviewInvocationEvidence } from './evidence-review.js';
+import type { ReviewDispatchRecord } from './evidence-review.js';
+import type { ReviewInvocationEvidence } from './evidence-review-invocation.js';
 import type { PlanEvidence, SelfReviewLoop } from './evidence-plan.js';
 import type { ImplReviewResult } from './evidence-impl.js';
 import type { ValidationExecutionObservation } from './evidence-validation.js';

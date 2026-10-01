@@ -16,39 +16,6 @@ import {
   ReviewRepositoryRevisionProvenance as ReviewRepositoryRevisionProvenanceSchema,
 } from './evidence-primitives.js';
 import { FrozenReviewSubject, ReviewSubjectScope } from './evidence-review-subject.js';
-export {
-  ArtifactSectionAnchor,
-  ContentSubjectAnchor,
-  Finding,
-  FindingRelation,
-  MarkdownSectionPath,
-  RepositoryLocation,
-  RepositoryLocationAnchor,
-  RepositoryPathSchema,
-  ReviewSubjectAnchor,
-  SafeReviewUrlMetadata,
-} from './evidence-findings.js';
-export type { RepositoryPath } from './evidence-findings.js';
-export {
-  FrozenReviewSubject,
-  RepositoryIdentity,
-  LocalRepositoryIdentity,
-  ReviewRepositoryIdentity,
-  ReviewSubjectScope,
-} from './evidence-review-subject.js';
-
-export {
-  FrozenRepositoryAuthority,
-  FrozenRepositoryRevisionTarget,
-  MAX_REPOSITORY_OBSERVATION_BYTES,
-  ObservationCapability,
-  RepositoryObservation,
-  RepositoryObservationCapture,
-  deriveRepositoryRevisionProvenance,
-  hasFrozenRepositoryAuthority,
-  resolveFrozenRevisionTarget,
-  verifyFrozenRepositoryAuthority,
-} from './evidence-review-authority.js';
 import {
   FrozenRepositoryAuthority,
   ObservationCapability,
@@ -73,7 +40,6 @@ import {
   refineAssuranceDispatchCoherence,
   refineAssuranceInvocationDispatchLinkage,
 } from './evidence-review-ledger-refinements.js';
-export { classifyRepositoryPath, type RepositoryPathClassification } from './repository-path.js';
 
 export const ReviewAttemptStatusValues = [
   'created',
@@ -86,10 +52,6 @@ export const ReviewAttemptStatusValues = [
 const ReviewAttemptStatus = z.enum(ReviewAttemptStatusValues);
 type ReviewAttemptStatus = z.infer<typeof ReviewAttemptStatus>;
 
-export {
-  RepositoryDiscoverySnapshot,
-  ReviewAttemptDiscoveryContext,
-} from './evidence-review-attempt-discovery.js';
 import { ReviewAttemptDiscoveryContext } from './evidence-review-attempt-discovery.js';
 
 /**
@@ -194,19 +156,6 @@ export const ReviewAttempt = z
   .readonly();
 export type ReviewAttempt = z.infer<typeof ReviewAttempt>;
 
-export {
-  PlanAdrSectionRef,
-  ImplementationRef,
-  ValidationAttemptRef,
-  ContentRef,
-  ReviewChallengeEvidenceRef,
-  ChallengeClientReference,
-  REVIEW_CHALLENGE_OUTCOMES,
-  ReviewChallenge,
-  ChallengeResolution,
-  ChallengeResolutionVerdict,
-} from './evidence-review-challenge.js';
-
 // ─── Review Obligations and Invocation Evidence ────────────────────────────────
 
 /**
@@ -239,8 +188,6 @@ export const ReviewInputFingerprintVersion = z.literal('v2');
 export type ReviewInputFingerprintVersion = z.infer<typeof ReviewInputFingerprintVersion>;
 
 /** Human review-cycle identity; canonical schema and invariants live in `review-cycles.ts`. */
-export { ReviewCycles } from './review-cycles.js';
-export { ReviewRepositoryRevisionProvenance } from './evidence-primitives.js';
 
 /**
  * P35 strict obligation record.
@@ -346,10 +293,8 @@ export const ReviewObligation = z
   .superRefine(refineRepositoryEvidenceFreezeCoherence);
 export type ReviewObligation = z.infer<typeof ReviewObligation>;
 
-// `ReviewInvocationEvidence` schema lives in `evidence-review-invocation.ts`;
-// imported for the assurance schema and re-exported for the historical surface.
+// `ReviewInvocationEvidence` schema lives in `evidence-review-invocation.ts`.
 import { ReviewInvocationEvidence } from './evidence-review-invocation.js';
-export { ReviewInvocationEvidence } from './evidence-review-invocation.js';
 
 /**
  * Durable reviewer-dispatch ledger entry. Persisted BEFORE the host releases a

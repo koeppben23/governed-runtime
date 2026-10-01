@@ -12,9 +12,10 @@
 
 import { REVIEW_DISCOVERY_PROVIDER } from '../../discovery/review-discovery-provider.js';
 import type { SessionState } from '../../../state/schema.js';
-import { hasFrozenRepositoryAuthority } from '../../../state/evidence.js';
+import { hasFrozenRepositoryAuthority } from '../../../state/evidence-review-authority.js';
 import type { ReviewObligation } from '../../../state/evidence.js';
-import type { ReviewAssuranceState, ReviewSubjectScope } from '../../../state/evidence-review.js';
+import type { ReviewAssuranceState } from '../../../state/evidence-review.js';
+import type { ReviewSubjectScope } from '../../../state/evidence-review-subject.js';
 import type { PreparedReviewContent } from '../../../rails/review.js';
 import {
   createReviewObligation,

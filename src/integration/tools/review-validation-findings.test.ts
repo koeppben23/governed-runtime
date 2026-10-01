@@ -24,7 +24,7 @@ function serializedValidation(
   return failure === null ? null : formatReviewValidationFailure(testLogger, failure);
 }
 import type { ReviewFindings } from '../../state/evidence.js';
-import type { ReviewChallenge } from '../../state/evidence-review.js';
+import type { ReviewChallenge } from '../../state/evidence-review-challenge.js';
 import {
   freezeReviewMaterial,
   REVIEW_CRITERIA_VERSION,

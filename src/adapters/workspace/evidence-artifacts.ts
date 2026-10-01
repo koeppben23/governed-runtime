@@ -26,7 +26,7 @@
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { hashText, hashFile } from '../../shared/hashing.js';
+import { hashText } from '../../shared/hashing.js';
 import type { SessionState } from '../../state/schema.js';
 import { atomicWrite } from '../persistence.js';
 import {
@@ -47,14 +47,11 @@ export type { EvidenceArtifactErrorCode } from './evidence-artifact-core.js';
 export async function materializeEvidenceArtifacts(
   sessionDir: string,
   state: SessionState,
-  preComputedStateHash?: string,
+  preComputedStateHash: string,
 ): Promise<void> {
   const artifactsDir = path.join(sessionDir, EVIDENCE_ARTIFACTS_DIR);
   await fs.mkdir(artifactsDir, { recursive: true });
-  // Use pre-computed hash when provided (artifacts-first ordering in writeStateWithArtifacts).
-  // Falls back to reading from disk for backward compatibility with direct callers.
-  const sourceStateHash =
-    preComputedStateHash ?? (await hashFile(path.join(sessionDir, 'session-state.json')));
+  const sourceStateHash = preComputedStateHash;
   const createdPaths: string[] = [];
 
   try {
@@ -76,9 +73,7 @@ export async function materializeEvidenceArtifacts(
  *
  * Writes `artifacts/<artifactType>.<contentDigest>.md` and `.json`.
  *
- * IMPORTANT: Callers MUST persist state (writeStateWithArtifacts) BEFORE
- * calling this function. The stateHash is computed from session-state.json
- * which must reflect the CURRENT phase, not a prior one.
+ * @param stateHash - Hash of the serialized current state, computed before this call.
  *
  * @param contentDigest - unique digest of the artifact content (planDigest,
  *   obligationId, or adrDigest). Used as the version identifier in the filename.
@@ -88,9 +83,9 @@ export async function materializeReviewCardArtifact(
   sessionDir: string,
   artifactType: 'plan-review-card' | 'review-report-card' | 'architecture-review-card',
   markdown: string,
-  state: SessionState,
-  contentDigest: string,
+  input: { state: SessionState; contentDigest: string; stateHash: string },
 ): Promise<{ code: string; message: string } | null> {
+  const { state, contentDigest, stateHash } = input;
   const artifactsDir = path.join(sessionDir, EVIDENCE_ARTIFACTS_DIR);
   const base = `${artifactType}.${contentDigest}`;
   const mdPath = path.join(artifactsDir, `${base}.md`);
@@ -101,7 +96,7 @@ export async function materializeReviewCardArtifact(
 
   try {
     await fs.mkdir(artifactsDir, { recursive: true });
-    const sourceStateHash = await hashFile(path.join(sessionDir, 'session-state.json'));
+    const sourceStateHash = stateHash;
 
     // Immutability: if the file already exists, preserve the original.
     try {

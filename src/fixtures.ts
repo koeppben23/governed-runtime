@@ -19,9 +19,9 @@ import {
   REVIEW_ASSURANCE_SCHEMA_VERSION,
   type ReviewAssuranceState,
   type ReviewAttempt,
-  type ReviewInvocationEvidence,
   type ReviewObligation,
 } from './state/evidence-review.js';
+import type { ReviewInvocationEvidence } from './state/evidence-review-invocation.js';
 import type {
   TicketEvidence,
   ArchitectureDecision,

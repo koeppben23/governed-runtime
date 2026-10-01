@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ReviewChallenge } from '../../../state/evidence-review.js';
+import { ReviewChallenge } from '../../../state/evidence-review-challenge.js';
 import { IMPL_EVIDENCE, VALIDATION_PASSED, makeState } from '../../../fixtures.js';
 import {
   buildArchitectureReviewPrompt,

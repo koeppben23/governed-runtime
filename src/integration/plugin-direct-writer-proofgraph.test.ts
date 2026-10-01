@@ -321,7 +321,7 @@ describe('direct metadata write channel', () => {
       'proofGraph',
       (state: SessionState): SessionState => ({
         ...state,
-        proofGraph: { ...state.proofGraph!, evaluatedAt: '2026-02-01T00:00:00.000Z' },
+        proofGraph: { ...state.proofGraph, evaluatedAt: '2026-02-01T00:00:00.000Z' },
       }),
     ],
     [
