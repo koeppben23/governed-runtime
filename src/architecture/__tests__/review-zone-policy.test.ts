@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest';
 import {
   INTEGRATION_PLACEMENT_ZONES,
   type IntegrationPlacementZone,
-} from './integration-placement-policy.js';
+} from './integration-placement-manifest.js';
 import { collectProductionSources } from './production-source.js';
 import {
   analyzeReviewZonePolicy,

@@ -2,7 +2,7 @@
  * @module architecture/integration-placement
  * @description Enforcement for the positive integration placement authority.
  *
- * The authority (`integration-placement-policy.ts`) is the exact projection of
+ * The manifest (`integration-placement-manifest.ts`) is the exact projection of
  * every production file under `src/integration/` with its architectural owner.
  * Zone and target zone are derived (parent directory / owner target) and MUST
  * be equal. This suite proves the projection in BOTH directions against the
@@ -25,16 +25,18 @@ import {
   INTEGRATION_OWNERS,
   INTEGRATION_PLACEMENT,
   INTEGRATION_PLACEMENT_ZONES,
+  type IntegrationOwner,
+  type IntegrationPlacementEntry,
+  type IntegrationPlacementZone,
+} from './integration-placement-manifest.js';
+import {
   analyzeIntegrationPlacement,
   isRootCompositionFile,
   isRootHostRuntimeFile,
   isToolCommandContextFile,
   placementOwnerOf,
-  type IntegrationOwner,
-  type IntegrationPlacementEntry,
   type IntegrationPlacementViolation,
-  type IntegrationPlacementZone,
-} from './integration-placement-policy.js';
+} from './integration-placement-analyzer.js';
 import { isTestSourcePath } from './module-classification.js';
 import { collectProductionSources } from './production-source.js';
 

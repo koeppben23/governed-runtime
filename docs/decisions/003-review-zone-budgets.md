@@ -7,7 +7,7 @@
 ## Context
 
 Every review zone carries a `maxProductionFiles` budget in
-`src/architecture/__tests__/integration-placement-policy.ts`. At the time of
+`src/architecture/__tests__/integration-placement-manifest.ts`. At the time of
 this record all nine review zones sit exactly at their budget:
 
 | Zone                  | Budget |
