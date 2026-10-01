@@ -109,7 +109,7 @@ function makeEvalState(claims: ProofClaim[]): SessionState {
         reviewEvidenceDigest: 'e'.repeat(64),
       },
     },
-    implementationRiskAssessment: undefined,
+    implementationRiskAssessment: null,
   } as unknown as SessionState;
 }
 
@@ -132,8 +132,8 @@ describe('projectProofStatusForState', () => {
           ],
         },
       },
-      proofGraph: undefined,
-    } as SessionState;
+      proofGraph: { version: 'proofgraph.v2', claims: [], evaluatedAt: '2025-01-01T00:00:00Z' },
+    } as unknown as SessionState;
 
     expect(projectProofStatusForState(state)).toMatchObject({
       kind: 'declaration',
@@ -147,7 +147,7 @@ describe('projectImplementationProofStatus', () => {
   it('returns null when proofGraph has no claims', () => {
     const state: SessionState = {
       ...makeState('IMPLEMENTATION'),
-      proofGraph: undefined,
+      proofGraph: { version: 'proofgraph.v2', claims: [], evaluatedAt: '2025-01-01T00:00:00Z' },
     };
     expect(projectImplementationProofStatus(state).overallStatus).toBe('NOT_DECLARED');
   });
@@ -282,10 +282,10 @@ describe('projectImplementationProofStatus', () => {
     expect(String(first!.status)).toBe('CONTRADICTED');
   });
 
-  it('returns null when proofGraph is undefined', () => {
+  it('returns NOT_DECLARED when the required proofGraph is empty', () => {
     const state: SessionState = {
       ...makeState('IMPLEMENTATION'),
-      proofGraph: undefined,
+      proofGraph: { version: 'proofgraph.v2', claims: [], evaluatedAt: '2025-01-01T00:00:00Z' },
     };
     expect(projectImplementationProofStatus(state).overallStatus).toBe('NOT_DECLARED');
   });

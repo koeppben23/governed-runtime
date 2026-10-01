@@ -154,7 +154,7 @@ async function buildProofGraphProjectionResponse(
     authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
     certificateValid: authorization.kind === 'authorized',
     ...(state.implementation ? { implementationDigest: state.implementation.digest } : {}),
-    ...(riskAssessment !== undefined ? { riskAssessment } : {}),
+    ...(riskAssessment !== null ? { riskAssessment } : {}),
     claimDiagnostics: proofGraph.claimDiagnostics,
   });
   const registrationConsistency = checkRegistrationConsistency();

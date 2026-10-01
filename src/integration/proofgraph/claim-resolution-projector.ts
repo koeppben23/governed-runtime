@@ -20,11 +20,11 @@ import type { ClaimResolutionFacts } from '../../presentation/claim-resolution.j
 import { projectClaimResolutionFacts } from '../../presentation/claim-resolution.js';
 
 export function projectClaimResolutionFactsFromState(state: SessionState): ClaimResolutionFacts[] {
-  const claims: readonly ProofClaim[] = state.proofGraph?.claims ?? [];
+  const claims: readonly ProofClaim[] = state.proofGraph.claims;
   if (claims.length === 0) return [];
 
   const diagnostics: Readonly<Record<string, AssertionBindingReasonCode>> =
-    state.proofGraph?.claimDiagnostics ?? {};
+    state.proofGraph.claimDiagnostics ?? {};
 
   return claims.map((claim) => {
     const bindingDiagnostic = diagnostics[claim.claimId];

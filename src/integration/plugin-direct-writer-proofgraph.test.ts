@@ -370,6 +370,7 @@ describe('direct metadata write channel', () => {
           declarationKind: 'absent' as const,
           ticketDigest: null,
           touchedSurfaces: [],
+          riskTriggers: [],
           assessedFrom: 'implementation_changed_files',
           assessedFileCount: 0,
           implementationDigest: 'direct-write-test-digest',

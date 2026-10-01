@@ -68,6 +68,14 @@ const mocks = vi.hoisted(() => {
   };
 });
 
+vi.mock('../git-control-plane', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../git-control-plane.js')>();
+  return {
+    ...original,
+    computeGitControlPlaneMarker: vi.fn().mockResolvedValue('test-control-plane-marker'),
+  };
+});
+
 vi.mock('../blocked-result.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../blocked-result.js')>()),
   formatBlocked: mocks.formatBlocked,
@@ -353,6 +361,11 @@ describe('implement: empty evidence guard (P8a.1)', () => {
       mutationEpisodes: [],
       mutationEpisodeResolutions: [],
       validationAttempts: [],
+      implementationBaseline: {
+        dirtyFiles: [],
+        capturedAt: '2026-01-01T00:00:00.000Z',
+        controlPlaneMarker: 'test-control-plane-marker',
+      },
     };
     mocks.isCommandAllowed.mockReturnValue(true);
     mocks.changedFilesResult = [];

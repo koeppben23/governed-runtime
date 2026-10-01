@@ -46,6 +46,14 @@ vi.mock('../verification/executor', () => ({
     })),
 }));
 
+vi.mock('./git-control-plane', async (importOriginal) => {
+  const original = await importOriginal<typeof import('./git-control-plane.js')>();
+  return {
+    ...original,
+    computeGitControlPlaneMarker: vi.fn().mockResolvedValue('test-control-plane-marker'),
+  };
+});
+
 const discoveryOriginals = vi.hoisted(() => ({
   resolveAttemptDiscoveryOrBlock:
     undefined as unknown as (typeof import('./review/context/discovery-attempt-context.js'))['resolveAttemptDiscoveryOrBlock'],

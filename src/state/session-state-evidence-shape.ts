@@ -147,12 +147,11 @@ export const SessionStateReviewEvidenceShape = {
   /**
    * Compact ProofGraph projection (advisory; #762).
    *
-   * Additive and `.optional()` for backward compatibility: sessions created
-   * before ProofGraph have no projection, and its absence is treated as "no
-   * graph". It never gates a workflow on its own — blocking eligibility is a
-   * policy-layer decision. Large provider artifacts live outside session state.
+   * Always materialized, including an empty projection at hydrate. It never
+   * gates a workflow on its own — blocking eligibility is a policy-layer
+   * decision. Large provider artifacts live outside session state.
    */
-  proofGraph: ProofGraphProjection.optional(),
+  proofGraph: ProofGraphProjection,
 
   /** Next auto-generated ADR sequence number for /architecture. */
   nextAdrNumber: z.number().int().positive(),

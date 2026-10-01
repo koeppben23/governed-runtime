@@ -186,34 +186,21 @@ describe('evaluateProofGraphGate', () => {
     expect(decision).toMatchObject({ gated: false, kind: 'clear', relevantTriggers: [] });
   });
 
-  it('blocks a legacy assessment that has no trigger taxonomy', () => {
-    const decision = evaluateProofGraphGate({
-      ...summary([]),
-      implementationDigest: 'implementation-digest',
-      riskAssessment: { implementationDigest: 'implementation-digest' },
-    });
-    expect(decision).toMatchObject({ gated: true, kind: 'risk_assessment_stale' });
-  });
-
   // The following pin the discriminating conditions of the risk-assessment path.
   // Without them the corresponding branches can be inverted without any test
   // noticing (confirmed by surviving mutants).
 
-  it('treats a matching digest with a non-array trigger taxonomy as NOT current', () => {
-    // Same implementation digest, but riskTriggers is not an array: the
-    // assessment predates the taxonomy and must not be accepted as current.
+  it('treats an assessment as current only when both digests exist and are equal', () => {
+    const assessment = { implementationDigest: 'implementation-digest', riskTriggers: [] };
+    expect(isRiskAssessmentCurrent(undefined, 'implementation-digest')).toBe(false);
+    expect(isRiskAssessmentCurrent(assessment, undefined)).toBe(false);
     expect(
       isRiskAssessmentCurrent(
-        { implementationDigest: 'implementation-digest' },
+        { implementationDigest: 'other', riskTriggers: [] },
         'implementation-digest',
       ),
     ).toBe(false);
-    expect(
-      isRiskAssessmentCurrent(
-        { implementationDigest: 'implementation-digest', riskTriggers: [] },
-        'implementation-digest',
-      ),
-    ).toBe(true);
+    expect(isRiskAssessmentCurrent(assessment, 'implementation-digest')).toBe(true);
   });
 
   it('does not report a stale assessment when there is no implementation digest to bind to', () => {

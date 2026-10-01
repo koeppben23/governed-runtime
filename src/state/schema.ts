@@ -32,7 +32,7 @@ import {
 
 /** Immutable compatibility contract for executable session authority. */
 export const CURRENT_ASSURANCE_EPOCH = 'assurance-epoch.v3' as const;
-export const CURRENT_SESSION_STATE_SCHEMA_VERSION = 'v7' as const;
+export const CURRENT_SESSION_STATE_SCHEMA_VERSION = 'v8' as const;
 export const CURRENT_STATE_DIGEST_FORMAT = 'state-digest.v2' as const;
 export const CURRENT_AUDIT_CHAIN_FORMAT = 'audit-chain.v3' as const;
 
@@ -186,9 +186,7 @@ export const ImplementationRiskAssessment = z
     /** Optional raise-only escalation claim active at assessment time. */
     escalatedTaskClass: TaskClass.optional(),
     touchedSurfaces: z.array(z.string()),
-    // Optional for sessions written before #762 Change 2. Consumers must treat
-    // its absence as superseded rather than silently inferring a trigger.
-    riskTriggers: z.array(RiskTrigger).optional(),
+    riskTriggers: z.array(RiskTrigger),
     assessedFrom: z.literal('implementation_changed_files'),
     assessedFileCount: z.number().int().nonnegative(),
     implementationDigest: z.string().min(1),
@@ -398,11 +396,8 @@ export const SessionState = z
     /** Persistent runtime risk gate block state for mutating host tools. */
     riskGate: RiskGate.optional(),
 
-    /**
-     * Revision-bound risk classification of the recorded implementation (#762).
-     * Optional for backward compatibility with sessions recorded before this field.
-     */
-    implementationRiskAssessment: ImplementationRiskAssessment.optional(),
+    /** Revision-bound risk classification of the recorded implementation (#762). */
+    implementationRiskAssessment: ImplementationRiskAssessment.nullable(),
 
     implementationRework: ImplementationRework.nullable(),
     /** Persistent Discovery health gate block state for mutating host tools (#399). */

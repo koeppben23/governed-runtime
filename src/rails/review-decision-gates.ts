@@ -193,13 +193,15 @@ function evaluateEvidenceProofGraphGate(
 ): ReturnType<typeof evaluateProofGraphGate> {
   const authorization = authorizedCriticalPlanClaimIds(planClaimAuthorityOf(state.plan));
   return evaluateProofGraphGate({
-    ...(state.proofGraph !== undefined ? { projection: state.proofGraph } : {}),
+    projection: state.proofGraph,
     authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
     certificateValid: authorization.kind === 'authorized',
     ...(state.implementation?.digest !== undefined
       ? { implementationDigest: state.implementation.digest }
       : {}),
-    riskAssessment: state.implementationRiskAssessment,
+    ...(state.implementationRiskAssessment !== null
+      ? { riskAssessment: state.implementationRiskAssessment }
+      : {}),
   });
 }
 

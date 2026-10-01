@@ -44,9 +44,8 @@ export type {
 /**
  * Capture the set of files already dirty in the worktree, before the agent
  * makes any task edits, each with the git blob hash of its current content.
- * Fail-soft: any git failure yields undefined so hydrate never fails on
- * baseline capture and implement falls back to recording the full worktree
- * (marking scoping unavailable).
+ * Fail-soft: any git failure yields undefined; hydrate persists that capture
+ * as unavailable while retaining an independently captured control-plane marker.
  */
 async function captureBaselineDirtyFiles(
   worktree: string,
@@ -63,8 +62,8 @@ async function captureBaselineDirtyFiles(
 
 /**
  * Freeze the git control-plane state at baseline time (#852). Fail-soft like
- * the dirty-file baseline: undefined means implementation recording skips the
- * control-plane divergence check instead of hardening.
+ * the dirty-file baseline: undefined is persisted as unavailable and blocks
+ * implementation recording fail-closed.
  */
 async function captureBaselineControlPlaneMarker(worktree: string): Promise<string | undefined> {
   try {
@@ -90,10 +89,13 @@ async function runHydrate(args: HydrateArgs, context: ToolContext): Promise<Tool
     // files already dirty in the worktree BEFORE any editing, so flowguard_implement
     // can scope evidence to the task's own changes. Fail-soft: if git is
     // unreadable, leave it undefined and implement records the full worktree.
-    const baselineDirtyFiles =
-      existing === null ? await captureBaselineDirtyFiles(worktree) : undefined;
-    const baselineControlPlaneMarker =
-      existing === null ? await captureBaselineControlPlaneMarker(worktree) : undefined;
+    const [baselineDirtyFiles, baselineControlPlaneMarker] =
+      existing === null
+        ? await Promise.all([
+            captureBaselineDirtyFiles(worktree),
+            captureBaselineControlPlaneMarker(worktree),
+          ])
+        : [undefined, undefined];
     const policyContext = await resolveHydratePolicy(existing, config, args);
     getAdapterLogger().info('policy', 'policy_resolved', {
       sessionId: context.sessionID,

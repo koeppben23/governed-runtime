@@ -62,6 +62,14 @@ import { convertArgsToInputSchema } from '../mcp-server/schema-converter.js';
 import { TEAM_POLICY } from '../config/policy.js';
 import { runWithAdapterLoggerAsync, type AdapterLogger } from '../logging/adapter-logger.js';
 
+vi.mock('./git-control-plane', async (importOriginal) => {
+  const original = await importOriginal<typeof import('./git-control-plane.js')>();
+  return {
+    ...original,
+    computeGitControlPlaneMarker: vi.fn().mockResolvedValue('test-control-plane-marker'),
+  };
+});
+
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
 vi.mock('../adapters/git', async (importOriginal) => {
@@ -710,6 +718,7 @@ describe('implement', () => {
       await writeState(sessDir, {
         ...state!,
         implementationBaseline: {
+          ...state!.implementationBaseline,
           dirtyFiles: [{ path: 'stale/preexisting.txt', hash: 'stable:stale/preexisting.txt' }],
           capturedAt: new Date().toISOString(),
         },
@@ -737,6 +746,7 @@ describe('implement', () => {
       await writeState(sessDir, {
         ...state!,
         implementationBaseline: {
+          ...state!.implementationBaseline,
           dirtyFiles: [{ path: 'src/main/Service.java', hash: 'old:src/main/Service.java' }],
           capturedAt: new Date().toISOString(),
         },
@@ -748,24 +758,29 @@ describe('implement', () => {
       expect(changed).toContain('src/main/Service.java');
     });
 
-    it('absent baseline records the full worktree and marks scoping unavailable', async () => {
+    it('blocks when the control-plane baseline capture is unavailable', async () => {
       await reachImplementation();
       const sessDir = await currentSessionDir();
       const state = await readState(sessDir);
-      // Simulate a legacy session: strip any captured baseline.
+      // Independent dirty-file capture may be unavailable, but implementation
+      // cannot proceed without the control-plane marker.
       if (!state) throw new TypeError('Expected persisted session state');
-      const { implementationBaseline: _drop, ...withoutBaseline } = state;
-      await writeState(sessDir, withoutBaseline);
+      await writeState(sessDir, {
+        ...state,
+        implementationBaseline: {
+          ...state.implementationBaseline,
+          dirtyFiles: null,
+          controlPlaneMarker: null,
+        },
+      });
       vi.mocked(gitMock.changedFiles).mockResolvedValue([
         'src/main/Service.java',
         'stale/preexisting.txt',
       ]);
       const raw = await implement.execute({}, ctx);
-      expect(parseToolResult(raw).error).toBeUndefined();
-      const changed = (await readState(sessDir))!.implementation!.changedFiles;
-      // No subtraction: the full worktree is recorded, nothing hidden.
-      expect(changed).toContain('src/main/Service.java');
-      expect(changed).toContain('stale/preexisting.txt');
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('MUTATION_EPISODE_CONTROL_PLANE_UNAVAILABLE');
     });
 
     it('a stale HIGH-RISK file in the baseline does not escalate ceremony once scoped out', async () => {
@@ -782,6 +797,7 @@ describe('implement', () => {
           effectiveGateBehavior: 'human_gated',
         },
         implementationBaseline: {
+          ...state!.implementationBaseline,
           dirtyFiles: [{ path: 'package.json', hash: 'stable:package.json' }],
           capturedAt: new Date().toISOString(),
         },
@@ -807,6 +823,7 @@ describe('implement', () => {
       await writeState(sessDir, {
         ...state!,
         implementationBaseline: {
+          ...state!.implementationBaseline,
           dirtyFiles: [
             { path: 'stale/a.txt', hash: 'stable:stale/a.txt' },
             { path: 'stale/b.txt', hash: 'stable:stale/b.txt' },

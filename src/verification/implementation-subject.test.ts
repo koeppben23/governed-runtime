@@ -221,7 +221,7 @@ describe('reattestImplementationSubject', () => {
       worktree,
       frozenFiles: frozen,
       expectedDigest: digest,
-      baseline: null,
+      baseline: makeState().implementationBaseline,
       digest: digestFn,
     });
 
@@ -240,7 +240,7 @@ describe('reattestImplementationSubject', () => {
       worktree,
       frozenFiles: frozen,
       expectedDigest: digest,
-      baseline: null,
+      baseline: makeState().implementationBaseline,
       digest: digestFn,
     });
 
@@ -259,7 +259,7 @@ describe('reattestImplementationSubject', () => {
       worktree,
       frozenFiles: frozen,
       expectedDigest: digest,
-      baseline: null,
+      baseline: makeState().implementationBaseline,
       digest: digestFn,
     });
 
@@ -278,7 +278,7 @@ describe('reattestImplementationSubject', () => {
       worktree,
       frozenFiles: frozen,
       expectedDigest: digest,
-      baseline: null,
+      baseline: makeState().implementationBaseline,
       digest: digestFn,
     });
 
@@ -298,7 +298,7 @@ describe('reattestImplementationSubject', () => {
       worktree,
       frozenFiles: frozen,
       expectedDigest: digest,
-      baseline: null,
+      baseline: makeState().implementationBaseline,
       digest: digestFn,
     });
 
@@ -320,6 +320,7 @@ describe('reattestImplementationSubject', () => {
       baseline: {
         dirtyFiles: [{ path: 'package.json', hash: dirtyHash }],
         capturedAt: '2026-01-01T00:00:00.000Z',
+        controlPlaneMarker: 'marker-1',
       },
       digest: digestFn,
     });
@@ -339,7 +340,7 @@ describe('reattestImplementationSubject', () => {
       worktree,
       frozenFiles: frozen,
       expectedDigest: digest,
-      baseline: null,
+      baseline: makeState().implementationBaseline,
       digest: digestFn,
       ignoredArtifacts: [artifact],
     });
@@ -358,7 +359,7 @@ describe('reattestImplementationSubject', () => {
       worktree,
       frozenFiles: frozen,
       expectedDigest: digest,
-      baseline: null,
+      baseline: makeState().implementationBaseline,
       digest: digestFn,
     });
 
@@ -382,6 +383,7 @@ describe('reattestImplementationSubject', () => {
       baseline: {
         dirtyFiles: [{ path: 'package.json', hash: dirtyHash }],
         capturedAt: '2026-01-01T00:00:00.000Z',
+        controlPlaneMarker: 'marker-1',
       },
       digest: digestFn,
     });

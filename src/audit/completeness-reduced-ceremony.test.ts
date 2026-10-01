@@ -57,6 +57,7 @@ function reducedState() {
       ticketDigest: null,
       escalatedTaskClass: 'TRIVIAL',
       touchedSurfaces: ['docs/usage-notes.md'],
+      riskTriggers: [],
       assessedFrom: 'implementation_changed_files',
       assessedFileCount: 1,
       implementationDigest: DOC_IMPL.digest,

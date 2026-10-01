@@ -329,7 +329,7 @@ describe('buildFinishDocument', () => {
         claimDeclarations: declarations,
         approvalCertificate: certificate,
       },
-      proofGraph: undefined,
+      proofGraph: { version: 'proofgraph.v2', claims: [], evaluatedAt: '2026-01-01T00:00:00.000Z' },
     };
     const card = buildFinishCard(state, getPolicyPreset('team'));
     const doc = buildFinishDocument(buildFinishPresentationProjection(state, card));

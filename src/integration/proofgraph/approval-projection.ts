@@ -132,7 +132,7 @@ function certificateProjection(state: SessionState): ApprovalCertificateProjecti
  */
 export function buildProofApprovalProjection(state: SessionState): ProofApprovalProjection {
   const evaluated = new Map(
-    (state.proofGraph?.claims ?? []).map((claim) => [claim.claimId, claim] as const),
+    state.proofGraph.claims.map((claim) => [claim.claimId, claim] as const),
   );
   const claims = (state.proofContract?.claims ?? []).map((claim) => ({
     claimId: claim.claimId,

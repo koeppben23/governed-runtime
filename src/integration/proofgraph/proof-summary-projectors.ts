@@ -362,18 +362,16 @@ function resolveGate(state: SessionState, opts?: { gate?: ProofGraphGateDecision
       const riskAssessment = state.implementationRiskAssessment;
       const implementationDigest = state.implementation?.digest;
       return evaluateProofGraphGate({
-        ...(state.proofGraph !== undefined ? { projection: state.proofGraph } : {}),
+        projection: state.proofGraph,
         authorizedCriticalClaimIds:
           authorization.kind === 'authorized' ? authorization.claimIds : [],
         certificateValid: authorization.kind === 'authorized',
         ...(implementationDigest !== undefined ? { implementationDigest } : {}),
         riskAssessment:
-          riskAssessment !== undefined
+          riskAssessment !== null
             ? {
                 implementationDigest: riskAssessment.implementationDigest,
-                ...(riskAssessment.riskTriggers !== undefined
-                  ? { riskTriggers: riskAssessment.riskTriggers }
-                  : {}),
+                riskTriggers: riskAssessment.riskTriggers,
               }
             : undefined,
       });
@@ -386,7 +384,7 @@ function buildEvaluationResult(
   gateResult: ProofGraphGateDecision,
   decisionContext: ProofDecisionContext,
 ): CompactProofPresentation {
-  const claims = state.proofGraph?.claims ?? [];
+  const claims = state.proofGraph.claims;
   const summary = summarizePersistedProofGraph(state);
   if (claims.length === 0) {
     return {
@@ -457,7 +455,7 @@ export function projectImplementationProofStatus(
   // graph can evaluate them. An empty graph is not evidence that nothing was
   // declared.
   if (
-    (state.proofGraph?.claims.length ?? 0) === 0 &&
+    state.proofGraph.claims.length === 0 &&
     (state.plan?.claimDeclarations?.claims.length ?? 0) > 0
   ) {
     return projectPlanProofStatus(state);

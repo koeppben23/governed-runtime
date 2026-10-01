@@ -51,6 +51,7 @@ import type {
 } from '../state/discovery-schemas.js';
 import type { IdpConfig, IdentityProviderMode } from '../shared/policy-idp-config.js';
 import { evaluate } from '../machine/evaluate.js';
+import { summarizeProofGraph } from '../audit/proofgraph/summary.js';
 import type { RailResult, RailBlocked, RailContext } from './types.js';
 import { blocked } from '../config/reasons.js';
 import { baselineProfile, defaultProfileRegistry } from '../config/profile.js';
@@ -275,23 +276,21 @@ function resolveProfile(pr: HydrateProfileInput, s: HydrateSessionInput) {
 }
 
 /**
- * Pre-implementation baseline object for a NEW session, or null when the
- * async tool layer captured no dirty-file baseline (git unreadable).
- * Includes the git control-plane integrity marker frozen at baseline (#852).
+ * Pre-implementation baseline object for a NEW session. The dirty-file and
+ * control-plane captures are independent and each records its availability.
  */
 function buildImplementationBaseline(
   s: HydrateSessionInput,
   now: string,
 ): {
-  dirtyFiles: Array<{ path: string; hash: string | null }>;
+  dirtyFiles: Array<{ path: string; hash: string | null }> | null;
   capturedAt: string;
-  controlPlaneMarker?: string;
-} | null {
-  if (!s.baselineDirtyFiles) return null;
+  controlPlaneMarker: string | null;
+} {
   return {
-    dirtyFiles: s.baselineDirtyFiles.map((d) => ({ path: d.path, hash: d.hash })),
+    dirtyFiles: s.baselineDirtyFiles?.map((d) => ({ path: d.path, hash: d.hash })) ?? null,
     capturedAt: now,
-    ...(s.baselineControlPlaneMarker ? { controlPlaneMarker: s.baselineControlPlaneMarker } : {}),
+    controlPlaneMarker: s.baselineControlPlaneMarker ?? null,
   };
 }
 
@@ -314,7 +313,7 @@ function buildNewHydrateState(
 
   const sessionId = crypto.randomUUID();
   const implementationBaseline = buildImplementationBaseline(s, now);
-  const newState: SessionState = {
+  const stateWithoutProofGraph: Omit<SessionState, 'proofGraph'> = {
     id: sessionId,
     flowguardSessionId: sessionId,
     schemaVersion: CURRENT_SESSION_STATE_SCHEMA_VERSION,
@@ -340,6 +339,7 @@ function buildNewHydrateState(
     challengeResolutions: [],
     implValidation: [],
     implementation: null,
+    implementationRiskAssessment: null,
     reducedCeremony: null,
     implReview: null,
     reviewCycles: { plan: 1, architecture: 1, implementation: 1 },
@@ -358,7 +358,7 @@ function buildNewHydrateState(
     detectedStack: s.detectedStack ?? null,
     verificationCandidates: s.verificationCandidates ?? [],
     executionSubjectInputsByCandidateId: s.executionSubjectInputsByCandidateId ?? {},
-    ...(implementationBaseline ? { implementationBaseline } : {}),
+    implementationBaseline,
     transition: null,
     pendingAuditOperations: [],
     error: null,
@@ -368,6 +368,10 @@ function buildNewHydrateState(
     pendingSystemWork: null,
   };
 
+  const newState: SessionState = {
+    ...stateWithoutProofGraph,
+    proofGraph: summarizeProofGraph(stateWithoutProofGraph as SessionState, now).projection,
+  };
   const result = evaluate(newState, ctx.policy);
   return { kind: 'ok', state: newState, evalResult: result, transitions: [] };
 }

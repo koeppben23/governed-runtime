@@ -500,8 +500,7 @@ describe('reducedCeremonyReady binding invariants', () => {
     });
 
     it('rejects when no risk assessment is recorded', () => {
-      const { implementationRiskAssessment: _omitted, ...state } = boundState();
-      expectRejects(state);
+      expectRejects(boundState({ implementationRiskAssessment: null }));
     });
 
     it('rejects when the decision ticket kind diverges from the ticket', () => {

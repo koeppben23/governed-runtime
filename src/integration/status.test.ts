@@ -963,7 +963,7 @@ describe('buildStatusProjection — reduced ceremony projection', () => {
     // must project as invalid instead of applied.
     const assessment = state.implementationRiskAssessment;
     const decision = state.reducedCeremony;
-    if (assessment === undefined || decision === null) {
+    if (assessment === null || decision === null) {
       throw new Error('fixture state must carry a risk assessment and a reduced decision');
     }
     const drifted: SessionState = {

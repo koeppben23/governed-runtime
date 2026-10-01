@@ -84,6 +84,17 @@ vi.mock('../adapters/actor', async (importOriginal) => {
   };
 });
 
+// The control-plane marker is a git subprocess. A deterministic marker keeps
+// hydrate's frozen baseline and implementation recording in agreement without
+// weakening the fail-closed production check.
+vi.mock('./git-control-plane', async (importOriginal) => {
+  const original = await importOriginal<typeof import('./git-control-plane.js')>();
+  return {
+    ...original,
+    computeGitControlPlaneMarker: vi.fn().mockResolvedValue('test-control-plane-marker'),
+  };
+});
+
 // The automatic runner must never spawn real subprocesses in the temp worktree.
 vi.mock('../verification/executor', () => ({
   executeCheck: vi.fn().mockImplementation(async (input: { kind: string; command: string }) => ({
