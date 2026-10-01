@@ -15,7 +15,10 @@ import {
   validateControlPlaneBinding,
 } from './implement-record.js';
 import { handleImplReview } from './implement-review.js';
-import { responseReportsError, runActiveChecksAutomatically } from '../auto-validation.js';
+import {
+  decidePostCommandAutoValidation,
+  runActiveChecksAutomatically,
+} from '../auto-validation.js';
 import { LoopVerdict } from '../../../state/evidence.js';
 
 /**
@@ -72,9 +75,9 @@ async function executeImplementRecord(context: ToolContext): Promise<string> {
   // A blocked record (e.g. COMMAND_NOT_ALLOWED while already in IMPL_VALIDATION)
   // did not enter the phase and must not trigger the runner. The record
   // response is superseded only when checks actually ran.
-  const autoValidationResponse = responseReportsError(recordResponse)
-    ? null
-    : await runActiveChecksAutomatically(context);
+  const autoValidation = decidePostCommandAutoValidation({ response: recordResponse });
+  const autoValidationResponse =
+    autoValidation.kind === 'run' ? await runActiveChecksAutomatically(context) : null;
   return autoValidationResponse ?? recordResponse;
 }
 

@@ -99,6 +99,36 @@ export function responseReportsError(text: string): boolean {
   }
 }
 
+/** Why a post-command automatic validation run was skipped. */
+export type PostCommandAutoValidationSkipReason = 'response_error' | 'not_in_validation_phase';
+
+export type PostCommandAutoValidationDecision =
+  | { readonly kind: 'run' }
+  | { readonly kind: 'skip'; readonly reason: PostCommandAutoValidationSkipReason };
+
+/**
+ * Pure post-command trigger decision for the in-flow automatic validation.
+ *
+ * Callers invoke this after a mutating workflow command (plan approval,
+ * implementation record, decision) and act only on `run`. The decision is
+ * purely local: an error/blocked/unparseable response is a fail-closed stop
+ * signal, and an optional authoritative post-transition phase narrows the run
+ * to the two validation phases. Durable retry, re-arm and resume semantics
+ * stay owned by the runner and are deliberately not part of this decision.
+ */
+export function decidePostCommandAutoValidation(input: {
+  readonly response: string;
+  readonly phase?: Phase;
+}): PostCommandAutoValidationDecision {
+  if (responseReportsError(input.response)) {
+    return { kind: 'skip', reason: 'response_error' };
+  }
+  if (input.phase !== undefined && !isValidationPhase(input.phase)) {
+    return { kind: 'skip', reason: 'not_in_validation_phase' };
+  }
+  return { kind: 'run' };
+}
+
 interface SessionRead {
   readonly phase: Phase;
   readonly activeChecks: readonly string[];

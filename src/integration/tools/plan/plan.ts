@@ -79,7 +79,10 @@ import type { PlanArgs, PlanInputFlags, PlanExecutionScope } from './plan-types.
 // ---- internal helpers ----
 
 import { classifyPlanCall, planInputFlags, planReviewPolicy } from './plan-types.js';
-import { responseReportsError, runActiveChecksAutomatically } from '../auto-validation.js';
+import {
+  decidePostCommandAutoValidation,
+  runActiveChecksAutomatically,
+} from '../auto-validation.js';
 import { routePlanInitialSubmission, blockedPlanReviewInProgress } from './plan-route.js';
 import { classifyPlanClaimSubmission } from './plan-claim-submission.js';
 import {
@@ -377,9 +380,9 @@ export const plan: ToolDefinition = {
       // COMMAND_NOT_ALLOWED at an existing VALIDATION) did not enter the phase
       // and must not trigger the runner. The plan response is superseded only
       // when checks actually ran.
-      const autoValidationResponse = responseReportsError(response)
-        ? null
-        : await runActiveChecksAutomatically(context);
+      const autoValidation = decidePostCommandAutoValidation({ response });
+      const autoValidationResponse =
+        autoValidation.kind === 'run' ? await runActiveChecksAutomatically(context) : null;
       return autoValidationResponse ?? response;
     } catch (err) {
       return formatError(err);
