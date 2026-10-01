@@ -96,9 +96,8 @@ export const SessionStateEvidenceShape = {
    * Pre-mutation frozen implementation base (commit-kind frozen repository
    * revision target). Frozen at the transition INTO `IMPLEMENTATION`, before
    * any governed mutation; the implementation review candidate pair resolves
-   * `revision:'base'` against this target. Absent for sessions that entered
-   * IMPLEMENTATION before the frozen-repository-authority generation — such
-   * sessions have no repository evidence authority.
+   * `revision:'base'` against this target. Optional in the current lifecycle:
+   * absent until that entry transition freezes the authority.
    */
   implementationBaseAuthority: FrozenRepositoryRevisionTarget.optional(),
 };
