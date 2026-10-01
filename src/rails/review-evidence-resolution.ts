@@ -23,7 +23,7 @@
 import type { SessionState } from '../state/schema.js';
 import type { ArchitectureReviewCompletion } from '../state/evidence-primitives.js';
 import type { ReviewObligation } from '../state/evidence-review.js';
-import type { ArchitectureReviewBinding } from '../state/proofgraph-approval.js';
+import type { ReviewBinding } from '../state/proofgraph-approval.js';
 
 /**
  * Evidence resolved from the canonical review-assurance chain (obligations +
@@ -157,7 +157,7 @@ export function resolveLatestBoundReviewEvidence(
  *   `approve` vocabulary is normalized at hydration, never manufactured here.
  */
 export type ArchitectureReviewEvidenceResolution =
-  | { kind: 'bound'; binding: ArchitectureReviewBinding }
+  | { kind: 'bound'; binding: ReviewBinding }
   | { kind: 'unavailable' }
   | { kind: 'verdict_missing' }
   | {

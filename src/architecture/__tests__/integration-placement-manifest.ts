@@ -103,7 +103,7 @@ export const INTEGRATION_PLACEMENT_ZONES: readonly IntegrationPlacementZone[] = 
     id: 'review/validation',
     dir: 'integration/review/validation',
     description: 'Review validation and structured evidence verification',
-    maxProductionFiles: 4,
+    maxProductionFiles: 5,
   },
   {
     id: 'review/prompting',
@@ -415,6 +415,10 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/review/evidence/review-provenance.ts', owner: 'review-evidence' },
   {
     file: 'integration/review/validation/review-validation-acceptance.ts',
+    owner: 'review-validation',
+  },
+  {
+    file: 'integration/review/validation/challenge-consistency-input.ts',
     owner: 'review-validation',
   },
   {

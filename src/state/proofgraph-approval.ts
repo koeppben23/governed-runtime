@@ -184,21 +184,11 @@ const approvalCertificateShape = {
 } as const;
 
 /**
- * Provenance edge of a plan approval certificate.
- *
- * The binding kind is decided exclusively by the gate path that minted the
- * certificate — it is NEVER normalized afterwards from digest equality:
- *
- * - `current_review`: the human approval is proven to rest on independent
- *   review evidence whose obligation subjectDigest equals the certified plan
- *   digest exactly AND whose captured reviewer verdict is `accept`.
- * - `review_exhausted_override`: the review budget ended without reviewer
- *   acceptance; the human overrode it. Stricter than the architecture
- *   counterpart: the last bound evidence must have reviewed EXACTLY the
- *   approved subject (`reviewedSubjectDigest === approvedSubjectDigest`) —
- *   an unreviewed revision can never be released by an override.
+ * Provenance edge of an approval certificate. The binding kind is decided by
+ * the gate path that minted the certificate and is never normalized from
+ * digest equality afterwards.
  */
-export const PlanReviewBinding = z.discriminatedUnion('kind', [
+export const ReviewBinding = z.discriminatedUnion('kind', [
   z
     .object({
       kind: z.literal('current_review'),
@@ -219,7 +209,48 @@ export const PlanReviewBinding = z.discriminatedUnion('kind', [
     .strict()
     .readonly(),
 ]);
-export type PlanReviewBinding = z.infer<typeof PlanReviewBinding>;
+export type ReviewBinding = z.infer<typeof ReviewBinding>;
+
+function refineReviewBinding(
+  certificate: { readonly authorityDigest: string; readonly reviewBinding: ReviewBinding },
+  ctx: z.RefinementCtx,
+  flow: 'plan' | 'architecture',
+): void {
+  const binding = certificate.reviewBinding;
+  if (binding.kind === 'current_review') {
+    if (binding.reviewedSubjectDigest !== certificate.authorityDigest) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['reviewBinding', 'reviewedSubjectDigest'],
+        message:
+          flow === 'plan'
+            ? 'A plan current_review binding must review exactly the certified plan digest (reviewedSubjectDigest === authorityDigest).'
+            : 'A current_review binding must review exactly the certified ADR digest (reviewedSubjectDigest === authorityDigest).',
+      });
+    }
+    return;
+  }
+  if (binding.approvedSubjectDigest !== certificate.authorityDigest) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['reviewBinding', 'approvedSubjectDigest'],
+      message:
+        flow === 'plan'
+          ? 'A plan review_exhausted_override binding must approve exactly the certified plan digest (approvedSubjectDigest === authorityDigest).'
+          : 'A review_exhausted_override binding must approve exactly the certified ADR digest (approvedSubjectDigest === authorityDigest).',
+    });
+  }
+  if (binding.reviewedSubjectDigest !== binding.approvedSubjectDigest) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['reviewBinding', 'reviewedSubjectDigest'],
+      message:
+        flow === 'plan'
+          ? 'A plan review_exhausted_override binding may only release the exact subject the last review covered (reviewedSubjectDigest === approvedSubjectDigest).'
+          : 'A review_exhausted_override binding may only release the exact subject the last review covered (reviewedSubjectDigest === approvedSubjectDigest).',
+    });
+  }
+}
 
 /** A common certificate constrained for plan approval persistence. */
 export const PlanApprovalCertificate = z
@@ -236,79 +267,11 @@ export const PlanApprovalCertificate = z
      * certificate without one is not a current-epoch artifact — it fails
      * parsing instead of degrading to a readable-but-unauthoritative shape.
      */
-    reviewBinding: PlanReviewBinding,
+    reviewBinding: ReviewBinding,
   })
-  .superRefine((certificate, ctx) => {
-    const binding = certificate.reviewBinding;
-    if (binding.kind === 'current_review') {
-      if (binding.reviewedSubjectDigest !== certificate.authorityDigest) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['reviewBinding', 'reviewedSubjectDigest'],
-          message:
-            'A plan current_review binding must review exactly the certified plan digest (reviewedSubjectDigest === authorityDigest).',
-        });
-      }
-      return;
-    }
-    if (binding.approvedSubjectDigest !== certificate.authorityDigest) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['reviewBinding', 'approvedSubjectDigest'],
-        message:
-          'A plan review_exhausted_override binding must approve exactly the certified plan digest (approvedSubjectDigest === authorityDigest).',
-      });
-    }
-    if (binding.reviewedSubjectDigest !== binding.approvedSubjectDigest) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['reviewBinding', 'reviewedSubjectDigest'],
-        message:
-          'A plan review_exhausted_override binding may only release the exact subject the last review covered (reviewedSubjectDigest === approvedSubjectDigest).',
-      });
-    }
-  })
+  .superRefine((certificate, ctx) => refineReviewBinding(certificate, ctx, 'plan'))
   .readonly();
 export type PlanApprovalCertificate = z.infer<typeof PlanApprovalCertificate>;
-
-/**
- * Provenance edge of an architecture approval certificate.
- *
- * The binding kind is decided exclusively by the gate path that minted the
- * certificate — it is NEVER normalized afterwards from digest equality:
- *
- * - `current_review`: the human approval is proven to rest on independent
- *   review evidence whose obligation subjectDigest equals the certified ADR
- *   digest exactly (reviewer_accepted path).
- * - `review_exhausted_override`: the review budget ended without reviewer
- *   acceptance; the human overrode it. The binding is hardened to the exact
- *   reviewed subject: `reviewedSubjectDigest === approvedSubjectDigest` is a
- *   schema invariant. An override may release open findings of the reviewed
- *   ADR, never a different revision. A reviewed digest equal to the approved
- *   digest is still an override — it was not accepted.
- */
-export const ArchitectureReviewBinding = z.discriminatedUnion('kind', [
-  z
-    .object({
-      kind: z.literal('current_review'),
-      reviewObligationId: z.string().uuid(),
-      reviewEvidenceDigest: z.string().min(1),
-      reviewedSubjectDigest: z.string().min(1),
-    })
-    .strict()
-    .readonly(),
-  z
-    .object({
-      kind: z.literal('review_exhausted_override'),
-      lastReviewObligationId: z.string().uuid(),
-      lastReviewEvidenceDigest: z.string().min(1),
-      reviewedSubjectDigest: z.string().min(1),
-      approvedSubjectDigest: z.string().min(1),
-    })
-    .strict()
-    .readonly(),
-]);
-export type ArchitectureReviewBinding = z.infer<typeof ArchitectureReviewBinding>;
 
 /**
  * A common certificate constrained for architecture approval persistence.
@@ -322,40 +285,9 @@ export const ArchitectureApprovalCertificate = z
   .object({
     flow: z.literal('architecture'),
     ...approvalCertificateShape,
-    reviewBinding: ArchitectureReviewBinding,
+    reviewBinding: ReviewBinding,
   })
-  .superRefine((certificate, ctx) => {
-    if (certificate.reviewBinding.kind === 'current_review') {
-      if (certificate.reviewBinding.reviewedSubjectDigest !== certificate.authorityDigest) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['reviewBinding', 'reviewedSubjectDigest'],
-          message:
-            'A current_review binding must review exactly the certified ADR digest (reviewedSubjectDigest === authorityDigest).',
-        });
-      }
-      return;
-    }
-    if (certificate.reviewBinding.approvedSubjectDigest !== certificate.authorityDigest) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['reviewBinding', 'approvedSubjectDigest'],
-        message:
-          'A review_exhausted_override binding must approve exactly the certified ADR digest (approvedSubjectDigest === authorityDigest).',
-      });
-    }
-    if (
-      certificate.reviewBinding.reviewedSubjectDigest !==
-      certificate.reviewBinding.approvedSubjectDigest
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['reviewBinding', 'reviewedSubjectDigest'],
-        message:
-          'A review_exhausted_override binding may only release the exact subject the last review covered (reviewedSubjectDigest === approvedSubjectDigest).',
-      });
-    }
-  })
+  .superRefine((certificate, ctx) => refineReviewBinding(certificate, ctx, 'architecture'))
   .readonly();
 export type ArchitectureApprovalCertificate = z.infer<typeof ArchitectureApprovalCertificate>;
 

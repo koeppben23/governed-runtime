@@ -42,10 +42,8 @@ import {
   structuredResolutionFailure,
   type ReviewValidationFailure,
 } from './review-validation-failure.js';
-import {
-  validateChallengeConsistency,
-  type ChallengeConsistencyInput,
-} from '../enforcement/challenge-consistency.js';
+import { validateChallengeConsistency } from '../enforcement/challenge-consistency.js';
+import { buildChallengeConsistencyInput } from './challenge-consistency-input.js';
 import {
   validateReviewFindingsConsistency,
   validateReviewFindingsScope,
@@ -218,45 +216,6 @@ function checkFindingsVersionBinding(
   return null;
 }
 
-function challengeOptionalInputFields(
-  findings: ReviewFindings,
-  ctx: ReviewFindingsValidationContext,
-): Partial<ChallengeConsistencyInput> {
-  return {
-    ...(ctx.allowedEvidenceRefs !== undefined
-      ? { allowedEvidenceRefs: ctx.allowedEvidenceRefs }
-      : {}),
-    ...(findings.challengeResolutionVerdicts !== undefined
-      ? { resolutionVerdicts: findings.challengeResolutionVerdicts }
-      : {}),
-    ...(ctx.unresolvedImplementationChallengeIds !== undefined
-      ? { unresolvedImplementationChallengeIds: ctx.unresolvedImplementationChallengeIds }
-      : {}),
-    ...(ctx.unaddressedPriorFailIds !== undefined
-      ? { unaddressedPriorFailIds: ctx.unaddressedPriorFailIds }
-      : {}),
-    ...(ctx.previouslyUsedChallengeIds !== undefined
-      ? { previouslyUsedChallengeIds: ctx.previouslyUsedChallengeIds }
-      : {}),
-  };
-}
-
-function buildChallengeConsistencyInput(
-  findings: ReviewFindings,
-  ctx: ReviewFindingsValidationContext,
-  obligation: ReviewObligation | null,
-  expectedObligationId: string | undefined,
-): ChallengeConsistencyInput {
-  return {
-    overallVerdict: findings.overallVerdict,
-    requiredChallengeCount: obligation?.requiredChallengeCount ?? 0,
-    requiredChallengeKind: obligation?.requiredChallengeKind ?? 'implementation_challenge',
-    challenges: findings.challenges,
-    ...(expectedObligationId !== undefined ? { expectedObligationId } : {}),
-    ...challengeOptionalInputFields(findings, ctx),
-  };
-}
-
 function checkChallengeConsistency(
   findings: ReviewFindings,
   ctx: ReviewFindingsValidationContext,
@@ -264,7 +223,23 @@ function checkChallengeConsistency(
 ): ReviewValidationFailure | null {
   const expectedObligationId = ctx.expectedObligationId ?? obligation?.obligationId;
   const challengeConsistency = validateChallengeConsistency(
-    buildChallengeConsistencyInput(findings, ctx, obligation, expectedObligationId),
+    buildChallengeConsistencyInput({
+      findings,
+      obligation,
+      ...(expectedObligationId !== undefined ? { expectedObligationId } : {}),
+      ...(ctx.allowedEvidenceRefs !== undefined
+        ? { allowedEvidenceRefs: ctx.allowedEvidenceRefs }
+        : {}),
+      ...(ctx.unresolvedImplementationChallengeIds !== undefined
+        ? { unresolvedImplementationChallengeIds: ctx.unresolvedImplementationChallengeIds }
+        : {}),
+      ...(ctx.unaddressedPriorFailIds !== undefined
+        ? { unaddressedPriorFailIds: ctx.unaddressedPriorFailIds }
+        : {}),
+      ...(ctx.previouslyUsedChallengeIds !== undefined
+        ? { previouslyUsedChallengeIds: ctx.previouslyUsedChallengeIds }
+        : {}),
+    }),
   );
   if (challengeConsistency.ok) return null;
   return {

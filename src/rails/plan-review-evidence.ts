@@ -22,7 +22,7 @@
 import type { SessionState } from '../state/schema.js';
 import type { ReviewDecision } from '../state/evidence.js';
 import type { ReviewCompletion } from '../state/evidence-primitives.js';
-import type { PlanApprovalCertificate, PlanReviewBinding } from '../state/proofgraph-approval.js';
+import type { PlanApprovalCertificate, ReviewBinding } from '../state/proofgraph-approval.js';
 import { emptyClaimDeclarations } from '../state/proofgraph-approval.js';
 import type { RailBlocked, RailContext } from './types.js';
 import { blocked } from '../config/reasons.js';
@@ -117,7 +117,7 @@ export function buildPlanReviewBinding(
   completion: ReviewCompletion,
   resolution: ResolvedPlanReviewEvidence,
   approvedSubjectDigest: string,
-): PlanReviewBinding | null {
+): ReviewBinding | null {
   if (completion === 'reviewer_accepted') {
     return {
       kind: 'current_review',
@@ -149,7 +149,7 @@ export function createPlanApprovalCertificate(
   plan: NonNullable<SessionState['plan']>,
   decision: ReviewDecision,
   ctx: RailContext,
-  reviewBinding: PlanReviewBinding,
+  reviewBinding: ReviewBinding,
 ): PlanApprovalCertificate {
   const claimDeclarationsDigest = planClaimDeclarationsDigest(plan);
   const decisionAttestationDigest = ctx.digest(canonicalJsonStringify(decision));
