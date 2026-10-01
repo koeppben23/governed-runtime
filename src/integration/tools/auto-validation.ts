@@ -86,7 +86,7 @@ function isValidationPhase(phase: Phase): phase is ValidationPhase {
  * existing VALIDATION) — only a call that actually landed in a validation
  * phase may trigger the runner.
  */
-export function responseReportsError(text: string): boolean {
+function responseReportsError(text: string): boolean {
   try {
     const parsed = JSON.parse(text) as unknown;
     return (
