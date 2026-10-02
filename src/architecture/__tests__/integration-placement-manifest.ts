@@ -544,6 +544,10 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/tools/review-tool/preparation.ts', owner: 'tools-review-tool' },
   { file: 'integration/tools/review-tool/review-input.ts', owner: 'tools-review-tool' },
   { file: 'integration/tools/review-tool/types.ts', owner: 'tools-review-tool' },
+  {
+    file: 'integration/tools/review-transport-recovery.ts',
+    owner: 'tools-infrastructure',
+  },
   { file: 'integration/tools/review-validation-mode.ts', owner: 'tools-infrastructure' },
   { file: 'integration/tools/simple/abort-tool.ts', owner: 'tools-simple' },
   { file: 'integration/tools/simple/archive-tool.ts', owner: 'tools-simple' },

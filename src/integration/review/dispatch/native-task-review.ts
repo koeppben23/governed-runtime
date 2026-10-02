@@ -240,18 +240,21 @@ function requireCurrentAttempt(
 }
 
 /**
- * Phase-legal recovery for a spent/interrupted reviewer release. The
- * implementation review has a typed in-tool recovery; plan and architecture
- * re-arm through their originating command.
+ * Phase-legal recovery for a spent/interrupted reviewer release. Every
+ * obligation family has a typed or command-native recovery that re-arms the
+ * same frozen obligation with a fresh attempt.
  */
 function transportRecoveryInstruction(obligationType: ReviewObligationType): string {
-  if (obligationType === 'implement') {
-    return 'Call flowguard_review_implementation with reviewRecovery: "retry_transport" to re-arm the same review obligation with a fresh attempt, then invoke Task again.';
+  switch (obligationType) {
+    case 'implement':
+      return 'Call flowguard_review_implementation with reviewRecovery: "retry_transport" to re-arm the same review obligation with a fresh attempt, then invoke Task again.';
+    case 'plan':
+      return 'Call flowguard_plan({ reviewRecovery: "retry_transport" }) to re-arm the same review obligation with a fresh attempt, then invoke Task again.';
+    case 'architecture':
+      return 'Call flowguard_architecture({ reviewRecovery: "retry_transport" }) to re-arm the same review obligation with a fresh attempt, then invoke Task again.';
+    case 'review':
+      return 'Re-run flowguard_review with reviewObligationId to re-arm the same frozen review obligation with a fresh attempt, then invoke Task again.';
   }
-  if (obligationType === 'review') {
-    return 'Re-run flowguard_review with reviewObligationId to re-arm the same frozen review obligation with a fresh attempt, then invoke Task again.';
-  }
-  return 'Re-run the originating FlowGuard command (/plan or /architecture) so it can re-arm the frozen obligation with a fresh attempt, then invoke Task again.';
 }
 
 function mutateNativeTask(output: ToolHookBeforeOutput, prompt: string): void {

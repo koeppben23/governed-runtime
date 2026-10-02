@@ -53,6 +53,10 @@ describe('plan command template declares claims', () => {
   it('states that a declaration is not proof', () => {
     expect(PLAN_TEMPLATE).toContain('pre-evidence declarations, not proof');
   });
+
+  it('names the typed transport recovery call instead of a claim-free resubmission', () => {
+    expect(PLAN_TEMPLATE).toContain('flowguard_plan({ reviewRecovery: "retry_transport" })');
+  });
 });
 
 describe('architecture command template declares claims', () => {
@@ -90,6 +94,12 @@ describe('architecture command template declares claims', () => {
     ]) {
       expect(ARCHITECTURE_TEMPLATE).toContain(criterion);
     }
+  });
+
+  it('names the typed transport recovery call instead of a claim-free resubmission', () => {
+    expect(ARCHITECTURE_TEMPLATE).toContain(
+      'flowguard_architecture({ reviewRecovery: "retry_transport" })',
+    );
   });
 });
 

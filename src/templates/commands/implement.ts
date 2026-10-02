@@ -122,9 +122,7 @@ ${SHARED_REVIEW_LOOP({
   changesRequestedExtra:
     '\n         Then run the repair-recheck cycle: make the code changes based on blockingIssues, call flowguard_implement({}) again to re-record, dispatch on the returned phase again (step 4), run the post-recording checks only while the machine is still in IMPL_VALIDATION, record resolutions for any open implementation challenges (first bullet of step 7), then continue the review loop automatically from step 7.',
   changesRequestedVerdictFirst: true,
-  strictRecoveryCall: 'flowguard_implement({})',
-  strictRecoveryVerb: 'Re-record',
-  strictRecoveryNoun: 're-recordings',
+  recoveryCall: 'flowguard_implement({})',
   iterationNote: '(max 3 iterations)',
   repeatStep: 7,
   subagentExtra: '',

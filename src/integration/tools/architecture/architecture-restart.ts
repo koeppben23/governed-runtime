@@ -50,6 +50,7 @@ import {
 } from '../../../state/review-continuation.js';
 import { blockObligation } from '../../review/obligations/obligation-state.js';
 import { buildInterruptedDispatchRearm } from '../../review/dispatch/durable-dispatch.js';
+import { handleReviewTransportRecovery } from '../review-transport-recovery.js';
 import { resolvePreImplementationChallengeClassification } from '../challenge/pre-implementation-challenge.js';
 import {
   freezeContextAuthorityAtHead,
@@ -103,6 +104,25 @@ export async function routeArchitectureInitialSubmission(
     case 'none':
       return null;
   }
+}
+
+/** Typed retry_transport routing: re-emit or durably re-arm the SAME frozen obligation, never a new ADR revision. */
+export async function routeArchitectureTransportRecovery(
+  session: ArchitectureSession,
+): Promise<string> {
+  return handleReviewTransportRecovery({
+    state: session.state,
+    sessDir: session.sessDir,
+    now: session.ctx.now(),
+    obligationType: 'architecture',
+    buildResponse: (status, authority) =>
+      architectureInstructionResponse(session, {
+        authority,
+        status,
+        iteration: authority.obligation.iteration,
+        planVersion: authority.obligation.planVersion,
+      }),
+  });
 }
 
 async function routeArchitectureMissingAttempt(

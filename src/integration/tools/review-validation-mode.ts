@@ -44,7 +44,7 @@ export interface ToolCallArgsView {
   readonly reviewVerdict?: LoopVerdict | undefined;
   /** reviewerUnavailable flag. */
   readonly reviewerUnavailable?: boolean | undefined;
-  /** Explicit typed transport-recovery intent (implementation review). */
+  /** Explicit typed transport-recovery intent (plan / architecture / implement). */
   readonly reviewRecovery?: 'retry_transport' | undefined;
 }
 
@@ -95,11 +95,13 @@ const FAMILY_CODES: Record<ToolFamily, FamilyCodes> = {
     approveWithText: 'PLAN_APPROVE_WITH_TEXT',
     unavailableWithSubmission: 'INVALID_PLAN_TOOL_SEQUENCE',
     unavailableRequiresText: true,
+    recoveryWithOtherInput: 'INVALID_PLAN_TOOL_SEQUENCE',
   },
   architecture: {
     approveWithText: 'ADR_APPROVE_WITH_TEXT',
     unavailableWithSubmission: 'INVALID_ARCHITECTURE_TOOL_SEQUENCE',
     unavailableRequiresText: false,
+    recoveryWithOtherInput: 'INVALID_ARCHITECTURE_TOOL_SEQUENCE',
   },
   implement: {
     // implement has no text payload, so approve-with-text is structurally N/A.
@@ -185,21 +187,25 @@ function detectInvalidShape(
  * The valid `text + verdict=changes_requested` (revision) shape is never
  * rejected — that is the revised-plan / revised-ADR path.
  */
-function classifyImplementTransportIntent(
-  family: ToolFamily,
-  flags: ToolCallFlags,
-): ToolCallMode | null {
-  if (family !== 'implement') return null;
-  const standalone = !flags.hasVerdict && !flags.hasText;
+function classifyTransportIntent(family: ToolFamily, flags: ToolCallFlags): ToolCallMode | null {
   // The implementation verdict tool is the only admissible entrypoint once the
   // workflow reaches IMPL_REVIEW. A bare reviewerUnavailable signal requests a
   // transport retry; it is never a verdict submission.
-  if (flags.hasReviewerUnavailable && standalone && !flags.hasReviewRecovery) {
+  if (
+    family === 'implement' &&
+    flags.hasReviewerUnavailable &&
+    !flags.hasVerdict &&
+    !flags.hasText &&
+    !flags.hasReviewRecovery
+  ) {
     return { kind: 'transport_failure_retry' };
   }
   // An explicit typed recovery intent re-arms or re-emits the pending review
-  // dispatch; it is never mixed with a verdict or a transport-failure report.
-  if (flags.hasReviewRecovery && standalone && !flags.hasReviewerUnavailable) {
+  // dispatch; it is never mixed with a verdict, text, or a transport-failure
+  // report. Available to every family: plan/architecture re-arm their frozen
+  // obligation without minting a new artifact revision.
+  const standalone = !flags.hasVerdict && !flags.hasText && !flags.hasReviewerUnavailable;
+  if (flags.hasReviewRecovery && standalone) {
     return { kind: 'transport_recovery' };
   }
   return null;
@@ -209,7 +215,7 @@ export function classifyToolCallMode(family: ToolFamily, args: ToolCallArgsView)
   const flags = toolCallFlags(args);
   const receivedVerdict = args.reviewVerdict;
 
-  const transportIntent = classifyImplementTransportIntent(family, flags);
+  const transportIntent = classifyTransportIntent(family, flags);
   if (transportIntent) return transportIntent;
 
   const invalid = detectInvalidShape(FAMILY_CODES[family], flags, receivedVerdict);

@@ -334,8 +334,13 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed for bound revision feedback: the shared review loop and ADR
     // command retrieve one host-bound, unconsumed changes-requested projection
     // as untrusted data instead of reading session files or reconstructing findings.
+    // Refreshed for typed transport recovery: the shared review loop now
+    // continues immediately on a retryable `reviewRetry` response and otherwise
+    // uses one typed recovery call per command — /plan and /architecture name
+    // `reviewRecovery: "retry_transport"` instead of a claim-carrying
+    // re-submission, and /implement keeps `flowguard_implement({})`.
     expect(sha256(commandsJson)).toBe(
-      '7656ea45bcc8f30d4817e6cbec2ed260581d5fcd2956fbe73b6b5c3b6740da39',
+      'c82db2960e02027dda5804741175148e6178821272e174bf1401d46435eb097a',
     );
   });
 

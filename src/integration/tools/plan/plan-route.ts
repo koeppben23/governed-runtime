@@ -23,6 +23,7 @@ import type { ReviewDispatchAuthority } from '../../review/dispatch/dispatch-aut
 import { resolveReviewContinuation } from '../../../state/review-continuation.js';
 import { blockObligation } from '../../review/obligations/obligation-state.js';
 import { buildInterruptedDispatchRearm } from '../../review/dispatch/durable-dispatch.js';
+import { handleReviewTransportRecovery } from '../review-transport-recovery.js';
 import type { PlanExecutionScope } from './plan-types.js';
 import { buildPlanReviewInstruction } from './plan-response.js';
 import { formatBlocked } from '../../blocked-result.js';
@@ -118,6 +119,22 @@ export async function routePlanInitialSubmission(
   }
 }
 
+/**
+ * Typed `reviewRecovery: 'retry_transport'` routing for the pending plan
+ * review. Re-emits the current attempt's dispatch or durably re-arms a fresh
+ * attempt on the SAME frozen obligation — never a new plan revision, never a
+ * changed-subject comparison (the recovery call carries no artifact text).
+ */
+export async function routePlanTransportRecovery(scope: PlanExecutionScope): Promise<string> {
+  return handleReviewTransportRecovery({
+    state: scope.state,
+    sessDir: scope.sessDir,
+    now: scope.ctx.now(),
+    obligationType: 'plan',
+    buildResponse: (status, authority) => planInstructionResponse(scope, authority, status),
+  });
+}
+
 async function routePlanMissingAttempt(
   scope: PlanExecutionScope,
   obligation: PlanReviewObligation,
@@ -185,6 +202,7 @@ function changedSubjectWhilePending(
 function planInstructionResponse(
   scope: PlanExecutionScope,
   authority: ReviewDispatchAuthority,
+  status = 'Plan review is pending; reusing the existing review obligation.',
 ): string {
   const instruction = buildPlanReviewInstruction({
     scope,
@@ -204,7 +222,7 @@ function planInstructionResponse(
   }
   const response: Record<string, unknown> = {
     phase: scope.state.phase,
-    status: 'Plan review is pending; reusing the existing review obligation.',
+    status,
     planDigest: plan.current.digest,
     selfReviewIteration: selfReview.iteration,
     reviewMode: 'subagent',

@@ -64,10 +64,7 @@ ${SHARED_REVIEW_LOOP({
   artifactName: 'ADR',
   reviseParams: 'adrText: <revised>, claims: <revised>',
   changesRequestedExtra: '',
-  strictRecoveryCall:
-    'flowguard_architecture({ title: <same title>, adrText: <same ADR text>, claims: <same claims> })',
-  strictRecoveryVerb: 'Re-submit',
-  strictRecoveryNoun: 're-submissions',
+  recoveryCall: 'flowguard_architecture({ reviewRecovery: "retry_transport" })',
   iterationNote: '(max iterations from policy.reviewBudget.architecture)',
   repeatStep: 5,
   subagentExtra:

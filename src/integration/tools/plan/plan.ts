@@ -84,7 +84,11 @@ import {
   decidePostCommandAutoValidation,
   runActiveChecksAutomatically,
 } from '../auto-validation.js';
-import { routePlanInitialSubmission, blockedPlanReviewInProgress } from './plan-route.js';
+import {
+  routePlanInitialSubmission,
+  routePlanTransportRecovery,
+  blockedPlanReviewInProgress,
+} from './plan-route.js';
 import { classifyPlanClaimSubmission } from './plan-claim-submission.js';
 import {
   buildPlanSubmissionResponse as buildSubmissionResponse,
@@ -125,6 +129,19 @@ function validateReviewInputShape(input: PlanInputFlags, state: SessionState): s
   if (input.hasVerdict && !state.plan) return formatBlocked('PLAN_SUBMISSION_REQUIRED');
   if (input.hasVerdict && !state.selfReview) return formatBlocked('PLAN_REVIEW_LOOP_REQUIRED');
   return null;
+}
+
+/**
+ * Re-invocation routing for an existing plan obligation. Typed transport
+ * recovery runs first: it re-emits or durably re-arms the SAME frozen plan
+ * obligation. It carries no artifact text, so it must never run the
+ * changed-subject comparison, and it never mints a new plan revision.
+ */
+async function routeInitialPlanCall(scope: PlanExecutionScope): Promise<string | null> {
+  if (classifyPlanCall(scope.args, scope.input).kind === 'transport_recovery') {
+    return routePlanTransportRecovery(scope);
+  }
+  return routePlanInitialSubmission(scope);
 }
 
 // ---- tool handlers ----
@@ -276,6 +293,8 @@ export const plan: ToolDefinition = {
     "Mode B (reviewer verdict): provide reviewVerdict only ('accept' or 'changes_requested'). " +
     'The host captures the reviewer findings; FlowGuard resolves them from that evidence automatically. ' +
     "Never submit reviewer findings. If 'changes_requested', provide revised planText and claims.\n" +
+    'On a technical reviewer transport/capture failure, submit reviewRecovery: "retry_transport" ' +
+    'to re-arm the frozen plan review obligation without creating a new plan revision.\n' +
     'The independent review loop runs up to maxIterations (from policy). ' +
     'On convergence it advances to the PLAN_REVIEW user gate; it does NOT approve the plan. ' +
     'Only the user approves via flowguard_decision (/review-decision).',
@@ -310,6 +329,16 @@ export const plan: ToolDefinition = {
         'Set to true ONLY after a real reviewer-subagent spawn failure (Task tool fails, agent ' +
           'unavailable). This is a fail-closed signal: FlowGuard blocks with SUBAGENT_UNABLE_TO_REVIEW ' +
           'and recovery guidance. It never enables self-review and never approves the plan.',
+      ),
+    reviewRecovery: z
+      .literal('retry_transport')
+      .optional()
+      .describe(
+        'Typed transport-recovery intent. ONLY when the authorized native reviewer Task release ' +
+          'was technically interrupted or yielded no bindable evidence: re-emits the pending ' +
+          'review dispatch for the current attempt, or re-arms a fresh attempt on the SAME frozen ' +
+          'plan subject after a released dispatch. Never a verdict, never approval, and never a ' +
+          'new plan revision.',
       ),
     targetPaths: z
       .array(z.string())
@@ -352,11 +381,7 @@ export const plan: ToolDefinition = {
             : {}),
         };
         if (scope.input.isInitialSubmission) {
-          // Re-invocation routing for an existing plan obligation:
-          // output-repair reissue or attempt re-emission. A blocked plan
-          // obligation falls through to the regular submission path (fresh
-          // plan revision + fresh obligation).
-          const routed = await routePlanInitialSubmission(scope);
+          const routed = await routeInitialPlanCall(scope);
           if (routed !== null) return routed;
         }
         if (
