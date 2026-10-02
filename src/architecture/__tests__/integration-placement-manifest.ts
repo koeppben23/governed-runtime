@@ -21,6 +21,13 @@
  * @version v4
  */
 
+export interface IntegrationPlacementBudgetException {
+  /** Production file below `src/` that this zone explicitly allows above target. */
+  readonly file: string;
+  /** Required, human-readable justification for the exception. */
+  readonly reason: string;
+}
+
 export interface IntegrationPlacementZone {
   /** Physical zone id — the directory path under `src/integration/`, or `root`. */
   readonly id: string;
@@ -28,11 +35,19 @@ export interface IntegrationPlacementZone {
   readonly dir: string;
   readonly description: string;
   /**
-   * Optional growth-decision budget: the maximum number of production files
-   * this zone may hold. A change beyond the budget must update this authority
-   * in the same diff — it is a visible decision, not a hidden baseline.
+   * Growth target: the intended number of production files for this zone.
+   * Growth beyond the target requires one `budgetExceptions` entry per
+   * additional file, with an explicit reason. The target is a deliberate
+   * commitment, never derived from the current tree.
    */
-  readonly maxProductionFiles?: number;
+  readonly targetProductionFiles?: number;
+  /**
+   * Explicit, file-bound growth exceptions above `targetProductionFiles`.
+   * Every entry must name an existing production file in this zone, must be
+   * unique, and must carry a non-empty reason; stale or surplus entries fail
+   * the placement guard.
+   */
+  readonly budgetExceptions?: readonly IntegrationPlacementBudgetException[];
 }
 
 export interface IntegrationOwner {
@@ -67,55 +82,55 @@ export const INTEGRATION_PLACEMENT_ZONES: readonly IntegrationPlacementZone[] = 
     id: 'review',
     dir: 'integration/review',
     description: 'Review bounded context facade and cross-zone primitives',
-    maxProductionFiles: 6,
+    targetProductionFiles: 5,
   },
   {
     id: 'review/dispatch',
     dir: 'integration/review/dispatch',
     description: 'Reviewer/task resolution, dispatch, and orchestration',
-    maxProductionFiles: 13,
+    targetProductionFiles: 13,
   },
   {
     id: 'review/obligations',
     dir: 'integration/review/obligations',
     description: 'Review obligations, attempts, and challenge lifecycle',
-    maxProductionFiles: 12,
+    targetProductionFiles: 12,
   },
   {
     id: 'review/context',
     dir: 'integration/review/context',
     description: 'Reviewer, discovery, proof, and subject context',
-    maxProductionFiles: 8,
+    targetProductionFiles: 8,
   },
   {
     id: 'review/observations',
     dir: 'integration/review/observations',
     description: 'Observation capture, binding, replay, and resolution',
-    maxProductionFiles: 8,
+    targetProductionFiles: 8,
   },
   {
     id: 'review/evidence',
     dir: 'integration/review/evidence',
     description: 'Findings, hashes, provenance, coherence, and review evidence',
-    maxProductionFiles: 9,
+    targetProductionFiles: 9,
   },
   {
     id: 'review/validation',
     dir: 'integration/review/validation',
     description: 'Review validation and structured evidence verification',
-    maxProductionFiles: 5,
+    targetProductionFiles: 5,
   },
   {
     id: 'review/prompting',
     dir: 'integration/review/prompting',
     description: 'Prompt construction and host/reviewer instructions',
-    maxProductionFiles: 5,
+    targetProductionFiles: 4,
   },
   {
     id: 'review/enforcement',
     dir: 'integration/review/enforcement',
     description: 'Review enforcement subsystem',
-    maxProductionFiles: 10,
+    targetProductionFiles: 9,
   },
   {
     id: 'proofgraph',

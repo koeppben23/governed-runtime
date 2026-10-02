@@ -101,9 +101,10 @@ mutation scope only to mutation-suitable authorities.
    (`src/architecture/__tests__/integration-placement-manifest.ts`). A new
    directory needs a zone in `INTEGRATION_PLACEMENT_ZONES` and an owner in
    `INTEGRATION_OWNERS`; the physical directory must equal the owner's
-   `targetZone`. Review zones carry a **zone budget** (`maxProductionFiles`):
-   raising it is a deliberate architecture decision; otherwise decompose the
-   zone.
+   `targetZone`. Review zones carry a **growth target**
+   (`targetProductionFiles`): growth beyond the target requires one
+   `budgetExceptions` entry per additional file with an explicit reason,
+   otherwise decompose the zone.
 5. `src/integration/review/**`: declare the observed zone edge in
    `DECLARED_REVIEW_ZONE_EDGES` (`review-zone-policy.ts`); the zone graph must
    stay acyclic.
