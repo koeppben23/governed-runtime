@@ -1424,7 +1424,8 @@ describe('integration/plugin', () => {
           return malformed;
         });
       try {
-        await dispatchReviewerTask(hooks, sessionID);
+        const firstTask = await dispatchReviewerTask(hooks, sessionID);
+        expect(String(firstTask.args.prompt)).not.toContain('Prior Output Rejected');
         const first = await completeReviewerTask(hooks, sessionID);
 
         const retry = JSON.parse(String(first.output)) as Record<string, unknown>;
@@ -1435,6 +1436,11 @@ describe('integration/plugin', () => {
           obligationId,
           retryable: true,
         });
+        expect(reviewRetry.diagnostics).toEqual(
+          expect.arrayContaining([
+            expect.stringMatching(/^HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION:/),
+          ]),
+        );
         const retryAttemptId = reviewRetry.attemptId as string;
         expect(retryAttemptId).not.toBe(ATTEMPT_ID);
 
@@ -1449,7 +1455,11 @@ describe('integration/plugin', () => {
         structuredPrompt.mockResolvedValue({
           data: { info: { structured: nativeFindings(obligationId) } },
         });
-        await dispatchReviewerTask(hooks, sessionID, 'call-native-2');
+        const secondTask = await dispatchReviewerTask(hooks, sessionID, 'call-native-2');
+        expect(String(secondTask.args.prompt)).toContain('Prior Output Rejected — Contract Errors');
+        expect(String(secondTask.args.prompt)).toContain(
+          'HOST_STRUCTURED_OUTPUT_CONTRACT_VIOLATION',
+        );
         const second = await completeReviewerTask(hooks, sessionID, 'call-native-2');
 
         const completed = JSON.parse(String(second.output)) as Record<string, unknown>;

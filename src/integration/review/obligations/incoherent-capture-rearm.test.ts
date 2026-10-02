@@ -163,14 +163,29 @@ function bindNextF12(fixture: F12Fixture, attemptId: string): F12Fixture {
   };
 }
 
+/** Exact F12 proof identity of the fixture's CURRENT canonical linkage. */
+function rearmProof(fixture: F12Fixture): {
+  readonly incoherentInvocationId: string;
+  readonly incoherentAttemptId: string;
+} {
+  if (fixture.obligation.invocationId === null) {
+    throw new TypeError('fixture obligation must be linked to a canonical invocation');
+  }
+  return {
+    incoherentInvocationId: fixture.obligation.invocationId,
+    incoherentAttemptId: fixture.invocation.attemptId,
+  };
+}
+
 describe('authorizeIncoherentCaptureRearm', () => {
   it('HAPPY: authorizes an exact bound F12 release within both budgets', () => {
-    const { assurance } = f12Fixture();
-    expect(ensureValid(assurance)).toBe(true);
+    const fixture = f12Fixture();
+    expect(ensureValid(fixture.assurance)).toBe(true);
     expect(
       authorizeIncoherentCaptureRearm({
-        assurance,
-        obligationId: assurance.obligations[0]!.obligationId,
+        assurance: fixture.assurance,
+        obligationId: fixture.obligation.obligationId,
+        ...rearmProof(fixture),
         maxIncoherentReviewerCaptureRetries: 1,
         now: F12_AT,
       }),
@@ -187,6 +202,7 @@ describe('authorizeIncoherentCaptureRearm', () => {
       authorizeIncoherentCaptureRearm({
         assurance: pending,
         obligationId: fixture.obligation.obligationId,
+        ...rearmProof(fixture),
         maxIncoherentReviewerCaptureRetries: 1,
         now: F12_AT,
       }),
@@ -203,6 +219,7 @@ describe('authorizeIncoherentCaptureRearm', () => {
       authorizeIncoherentCaptureRearm({
         assurance: unlinked,
         obligationId: fixture.obligation.obligationId,
+        ...rearmProof(fixture),
         maxIncoherentReviewerCaptureRetries: 1,
         now: F12_AT,
       }),
@@ -216,6 +233,7 @@ describe('authorizeIncoherentCaptureRearm', () => {
       authorizeIncoherentCaptureRearm({
         assurance: missingAttempt,
         obligationId: fixture.obligation.obligationId,
+        ...rearmProof(fixture),
         maxIncoherentReviewerCaptureRetries: 1,
         now: F12_AT,
       }),
@@ -232,6 +250,7 @@ describe('authorizeIncoherentCaptureRearm', () => {
       authorizeIncoherentCaptureRearm({
         assurance: notBound,
         obligationId: fixture.obligation.obligationId,
+        ...rearmProof(fixture),
         maxIncoherentReviewerCaptureRetries: 1,
         now: F12_AT,
       }),
@@ -248,18 +267,48 @@ describe('authorizeIncoherentCaptureRearm', () => {
       authorizeIncoherentCaptureRearm({
         assurance: mismatched,
         obligationId: fixture.obligation.obligationId,
+        ...rearmProof(fixture),
         maxIncoherentReviewerCaptureRetries: 1,
         now: F12_AT,
       }),
     ).toEqual({ kind: 'blocked', reason: 'incoherent_rearm_binding_mismatch' });
   });
 
-  it('blocks an unknown obligation', () => {
-    const { assurance } = f12Fixture();
+  it('blocks when the F12 proof invocation does not match the canonical obligation linkage', () => {
+    const fixture = f12Fixture();
     expect(
       authorizeIncoherentCaptureRearm({
-        assurance,
+        assurance: fixture.assurance,
+        obligationId: fixture.obligation.obligationId,
+        incoherentInvocationId: '99999999-9999-4999-8999-999999999999',
+        incoherentAttemptId: fixture.invocation.attemptId,
+        maxIncoherentReviewerCaptureRetries: 1,
+        now: F12_AT,
+      }),
+    ).toEqual({ kind: 'blocked', reason: 'incoherent_rearm_proof_mismatch' });
+  });
+
+  it('blocks when the F12 proof attempt does not match the canonical invocation attempt', () => {
+    const fixture = f12Fixture();
+    expect(
+      authorizeIncoherentCaptureRearm({
+        assurance: fixture.assurance,
+        obligationId: fixture.obligation.obligationId,
+        ...rearmProof(fixture),
+        incoherentAttemptId: '99999999-9999-4999-8999-999999999999',
+        maxIncoherentReviewerCaptureRetries: 1,
+        now: F12_AT,
+      }),
+    ).toEqual({ kind: 'blocked', reason: 'incoherent_rearm_proof_mismatch' });
+  });
+
+  it('blocks an unknown obligation', () => {
+    const fixture = f12Fixture();
+    expect(
+      authorizeIncoherentCaptureRearm({
+        assurance: fixture.assurance,
         obligationId: '99999999-9999-4999-8999-999999999999',
+        ...rearmProof(fixture),
         maxIncoherentReviewerCaptureRetries: 1,
         now: F12_AT,
       }),
@@ -273,6 +322,7 @@ describe('buildIncoherentCaptureRearm mutation', () => {
     const result = buildIncoherentCaptureRearm({
       assurance: fixture.assurance,
       obligationId: fixture.obligation.obligationId,
+      ...rearmProof(fixture),
       maxIncoherentReviewerCaptureRetries: 1,
       now: F12_AT,
     });
@@ -324,6 +374,7 @@ describe('buildIncoherentCaptureRearm mutation', () => {
     const result = buildIncoherentCaptureRearm({
       assurance: fixture.assurance,
       obligationId: fixture.obligation.obligationId,
+      ...rearmProof(fixture),
       maxIncoherentReviewerCaptureRetries: 1,
       now: F12_AT,
     });
@@ -340,6 +391,7 @@ describe('buildIncoherentCaptureRearm budgets', () => {
     const firstRearm = buildIncoherentCaptureRearm({
       assurance: first.assurance,
       obligationId: first.obligation.obligationId,
+      ...rearmProof(first),
       maxIncoherentReviewerCaptureRetries: 1,
       now: F12_AT,
     });
@@ -355,6 +407,7 @@ describe('buildIncoherentCaptureRearm budgets', () => {
     const secondRearm = buildIncoherentCaptureRearm({
       assurance: second.assurance,
       obligationId: second.obligation.obligationId,
+      ...rearmProof(second),
       maxIncoherentReviewerCaptureRetries: 1,
       now: F12_AT,
     });
@@ -370,6 +423,7 @@ describe('buildIncoherentCaptureRearm budgets', () => {
       buildIncoherentCaptureRearm({
         assurance: fixture.assurance,
         obligationId: fixture.obligation.obligationId,
+        ...rearmProof(fixture),
         maxIncoherentReviewerCaptureRetries: 0,
         now: F12_AT,
       }),
@@ -385,6 +439,7 @@ describe('buildIncoherentCaptureRearm budgets', () => {
       buildIncoherentCaptureRearm({
         assurance: fixture.assurance,
         obligationId: fixture.obligation.obligationId,
+        ...rearmProof(fixture),
         maxIncoherentReviewerCaptureRetries: 1,
         now: F12_AT,
       }),
@@ -399,6 +454,7 @@ describe('buildIncoherentCaptureRearm budgets', () => {
     const result = buildIncoherentCaptureRearm({
       assurance: fixture.assurance,
       obligationId: fixture.obligation.obligationId,
+      ...rearmProof(fixture),
       maxIncoherentReviewerCaptureRetries: 1,
       now: F12_AT,
     });
@@ -411,6 +467,7 @@ describe('buildIncoherentCaptureRearm budgets', () => {
     buildIncoherentCaptureRearm({
       assurance: fixture.assurance,
       obligationId: fixture.obligation.obligationId,
+      ...rearmProof(fixture),
       maxIncoherentReviewerCaptureRetries: 0,
       now: F12_AT,
     });

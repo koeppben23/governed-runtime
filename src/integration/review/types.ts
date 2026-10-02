@@ -31,6 +31,13 @@ export interface PendingReview {
   readonly requestedAt: string;
   attemptId: string | null;
   obligationId: string | null;
+  /**
+   * Host-generated, bounded diagnostics of the rejected prior capture for the
+   * immediately re-armed attempt. Transient projection only: it supplies the
+   * canonical reviewer prompt with trusted retry context and is never
+   * persisted as session authority.
+   */
+  retryDiagnostics?: readonly string[];
 }
 
 /** Session-level review-enforcement state. */

@@ -4,6 +4,8 @@ import type { PendingReview, PendingReviewTool } from '../types.js';
 export type ReviewSignalBinding = {
   readonly attemptId?: string | null;
   readonly obligationId?: string | null;
+  /** Host-generated, bounded retry context for the immediately re-armed attempt. */
+  readonly retryDiagnostics?: readonly string[];
 };
 
 /** Build the host-owned pending-review record from one canonical review signal. */
@@ -17,5 +19,8 @@ export function buildPendingReview(
     requestedAt: now,
     attemptId: binding.attemptId ?? null,
     obligationId: binding.obligationId ?? null,
+    ...(binding.retryDiagnostics !== undefined
+      ? { retryDiagnostics: [...binding.retryDiagnostics] }
+      : {}),
   };
 }

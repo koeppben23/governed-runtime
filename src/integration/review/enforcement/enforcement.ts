@@ -102,7 +102,11 @@ function trackReviewRequired(
 export function registerPendingReviewForAttempt(
   state: SessionEnforcementState,
   reviewTool: ReviewableTool,
-  binding: { readonly attemptId: string; readonly obligationId: string },
+  binding: {
+    readonly attemptId: string;
+    readonly obligationId: string;
+    readonly retryDiagnostics?: readonly string[];
+  },
   now: string,
 ): void {
   trackReviewRequired(state, reviewTool, now, binding);

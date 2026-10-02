@@ -174,7 +174,7 @@ function renderAnchorContractLines(input: {
 function retryContract(errors: readonly string[] | undefined): string[] {
   if (!errors || errors.length === 0) return [];
   return [
-    '### Prior Output Rejected — Schema Validation Errors',
+    '### Prior Output Rejected — Contract Errors',
     'The previous output for this obligation was rejected. Correct these specific errors:',
     ...errors.map((error) => `- ${error}`),
     'Return a fresh complete result. The frozen subject and evidence bindings are unchanged.',

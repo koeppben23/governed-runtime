@@ -28,22 +28,15 @@ import { hashText } from '../../../shared/hashing.js';
 import { ensureReviewAssurance, hasReleasedDispatch } from '../../../state/review-dispatch.js';
 import { findBindableAttempt } from '../../../state/review-continuation.js';
 import { isCurrentReviewGeneration } from '../obligations/assurance.js';
-import { verifyFrozenMaterialForObligation } from '../../../state/review-continuation.js';
-import { renderReviewerTaskPrompt } from '../prompting/prompt-builders.js';
-import { reviewerPromptTypeForTask } from './reviewer-task-type.js';
-import { renderArtifactAnchorContract } from '../context/frozen-reviewer-context.js';
-import { resolveObservationRevisions } from '../../../state/evidence-review-authority.js';
-import { buildReviewChallengeContract } from '../obligations/challenge-contract.js';
-import {
-  buildReviewerProofContext,
-  type ReviewerProofGraphAuthorities,
-} from '../context/proof-context.js';
+import type { ReviewerProofGraphAuthorities } from '../context/proof-context.js';
+import { canonicalTaskPrompt } from './native-task-review-prompt.js';
 import {
   abandonAndRearmByHostCall,
   abandonReviewDispatchByHostCall,
   persistAuthorizedReviewDispatch,
 } from './durable-dispatch.js';
 import {
+  buildCaptureRetryDiagnostics,
   buildReviewerCaptureRetryOutput,
   classifyReviewerCaptureFailure,
 } from './capture-retry.js';
@@ -120,57 +113,6 @@ function pendingBinding(runtime: NativeReviewTransportRuntime, sessionId: string
   return candidates.length === 1 ? (candidates[0] ?? null) : null;
 }
 
-function subjectLabel(type: ReviewObligationType): string {
-  switch (type) {
-    case 'plan':
-      return 'the frozen plan and ticket context';
-    case 'architecture':
-      return 'the frozen architecture decision and ticket context';
-    case 'implement':
-      return 'the frozen implementation change and approved plan context';
-    case 'review':
-      return 'the frozen peer-review content';
-  }
-}
-
-function canonicalTaskPrompt(
-  state: PersistedState,
-  obligation: ReviewObligation,
-  attempt: BindableAttempt,
-  proofGraphAuthorities: ReviewerProofGraphAuthorities,
-): string {
-  const material = verifyFrozenMaterialForObligation(obligation, obligation.reviewMaterial);
-  if (material.kind === 'blocked') {
-    throw buildEnforcementError(material.code, material.reason);
-  }
-  const frozenReviewerContext =
-    material.context ??
-    (obligation.reviewMaterial ? { reviewMaterial: obligation.reviewMaterial } : undefined);
-  const artifactScope =
-    obligation.reviewSubjectScope?.kind === 'artifact' ? obligation.reviewSubjectScope : undefined;
-  const observationRevisions = resolveObservationRevisions(obligation);
-  return renderReviewerTaskPrompt({
-    iteration: obligation.iteration,
-    planVersion: obligation.planVersion,
-    obligationId: obligation.obligationId,
-    mandateDigest: obligation.mandateDigest,
-    criteriaVersion: obligation.criteriaVersion,
-    subjectLabel: subjectLabel(obligation.obligationType),
-    reviewType: reviewerPromptTypeForTask(obligation.obligationType),
-    repositoryReview: observationRevisions.length > 0,
-    challengeContract: buildReviewChallengeContract(state, obligation) ?? undefined,
-    proofContext: buildReviewerProofContext(state, proofGraphAuthorities),
-    frozenReviewerContext,
-    artifactAnchorContract: artifactScope ? renderArtifactAnchorContract(artifactScope) : undefined,
-    repositoryDiscoverySnapshot:
-      attempt.repositoryDiscovery.kind === 'repository'
-        ? attempt.repositoryDiscovery.snapshot
-        : null,
-    observationCapability: attempt.observationCapability,
-    observationRevisions,
-  });
-}
-
 async function reconcileBeforeReviewerDispatch(
   reconcile: NativeReviewAuditReconciler,
   sessionId: string,
@@ -200,7 +142,11 @@ function requireCurrentAttempt(
   runtime: NativeReviewTransportRuntime,
   sessionId: string,
   state: PersistedState,
-): { readonly obligation: ReviewObligation; readonly attempt: BindableAttempt } {
+): {
+  readonly obligation: ReviewObligation;
+  readonly attempt: BindableAttempt;
+  readonly retryDiagnostics?: readonly string[];
+} {
   const pending = pendingBinding(runtime, sessionId);
   if (!pending) {
     throw buildEnforcementError(
@@ -236,7 +182,13 @@ function requireCurrentAttempt(
       )}`,
     );
   }
-  return { obligation, attempt };
+  return {
+    obligation,
+    attempt,
+    ...(pending.retryDiagnostics !== undefined
+      ? { retryDiagnostics: pending.retryDiagnostics }
+      : {}),
+  };
 }
 
 /**
@@ -289,8 +241,18 @@ export async function nativeReviewTaskBefore(
 
   await reconcileBeforeReviewerDispatch(reconcile, sessionId);
   const { sessDir, state } = await requireState(runtime, sessionId);
-  const { obligation, attempt } = requireCurrentAttempt(runtime, sessionId, state);
-  const prompt = canonicalTaskPrompt(state, obligation, attempt, proofGraphAuthorities);
+  const { obligation, attempt, retryDiagnostics } = requireCurrentAttempt(
+    runtime,
+    sessionId,
+    state,
+  );
+  const prompt = canonicalTaskPrompt(
+    state,
+    obligation,
+    attempt,
+    proofGraphAuthorities,
+    retryDiagnostics,
+  );
   const authorizedAt = new Date().toISOString();
   await persistAuthorizedReviewDispatch(runtime.orchestratorDeps, sessDir, {
     attemptId: attempt.attemptId,
@@ -377,16 +339,22 @@ async function abandonOrRetryCaptureFailure(input: CaptureFailureInput): Promise
     });
     return;
   }
+  const diagnostics = buildCaptureRetryDiagnostics(input.code, input.reason);
   registerPendingReviewForAttempt(
     input.runtime.ws.getEnforcementState(input.sessionId),
     reviewTool,
-    { attemptId: rearm.attempt.attemptId, obligationId: rearm.obligationId },
+    {
+      attemptId: rearm.attempt.attemptId,
+      obligationId: rearm.obligationId,
+      retryDiagnostics: diagnostics,
+    },
     new Date().toISOString(),
   );
   input.output.output = buildReviewerCaptureRetryOutput({
     code: input.code,
     obligationId: rearm.obligationId,
     attemptId: rearm.attempt.attemptId,
+    diagnostics,
   });
 }
 

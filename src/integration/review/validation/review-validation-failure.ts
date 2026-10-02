@@ -61,9 +61,22 @@ export interface ReviewValidationFailure {
   readonly vars: Readonly<Record<string, string>>;
   /** Operator-only diagnostics; never serialized into the blocked envelope. */
   readonly diagnostics?: readonly StructuredResolutionDiagnostics[];
+  /**
+   * Exact F12 proof identity of the incoherent capture. Consumed by the
+   * incoherent-capture re-arm authority so it can only re-arm the very
+   * invocation/attempt the resolution identified as incoherent — never an
+   * arbitrary bound obligation.
+   */
+  readonly incoherentCapture?: {
+    readonly invocationId: string;
+    readonly attemptId: string;
+  };
 }
 
-type ResolutionFailureCore = Pick<ReviewValidationFailure, 'code' | 'vars' | 'diagnostics'>;
+type ResolutionFailureCore = Pick<
+  ReviewValidationFailure,
+  'code' | 'vars' | 'diagnostics' | 'incoherentCapture'
+>;
 
 function resolutionFailureCore(
   resolution: Exclude<StructuredFindingsResolution, { kind: 'resolved' }>,
@@ -80,6 +93,10 @@ function resolutionFailureCore(
       vars: Object.fromEntries(
         Object.entries(resolution.details).map(([key, value]) => [key, String(value)]),
       ),
+      incoherentCapture: {
+        invocationId: resolution.invocationId,
+        attemptId: resolution.attemptId,
+      },
     };
   }
   if (resolution.kind === 'attempt_lineage_unavailable') {
@@ -115,9 +132,14 @@ export function structuredResolutionFailure(
 ): ReviewValidationFailure {
   const failure = resolutionFailureCore(resolution);
   const resolvedDiagnostics = diagnostics.length > 0 ? diagnostics : failure.diagnostics;
-  return resolvedDiagnostics === undefined
-    ? { code: failure.code, vars: failure.vars }
-    : { code: failure.code, vars: failure.vars, diagnostics: resolvedDiagnostics };
+  return {
+    code: failure.code,
+    vars: failure.vars,
+    ...(failure.incoherentCapture !== undefined
+      ? { incoherentCapture: failure.incoherentCapture }
+      : {}),
+    ...(resolvedDiagnostics === undefined ? {} : { diagnostics: resolvedDiagnostics }),
+  };
 }
 
 /**

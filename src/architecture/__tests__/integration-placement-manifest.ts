@@ -73,7 +73,7 @@ export const INTEGRATION_PLACEMENT_ZONES: readonly IntegrationPlacementZone[] = 
     id: 'review/dispatch',
     dir: 'integration/review/dispatch',
     description: 'Reviewer/task resolution, dispatch, and orchestration',
-    maxProductionFiles: 12,
+    maxProductionFiles: 13,
   },
   {
     id: 'review/obligations',
@@ -380,6 +380,7 @@ export const INTEGRATION_PLACEMENT: readonly IntegrationPlacementEntry[] = [
   { file: 'integration/review/context/frozen-reviewer-context.ts', owner: 'review-context' },
   { file: 'integration/review/prompting/impl-review-prompt.ts', owner: 'review-prompting' },
   { file: 'integration/review/dispatch/native-task-review-bindings.ts', owner: 'review-dispatch' },
+  { file: 'integration/review/dispatch/native-task-review-prompt.ts', owner: 'review-dispatch' },
   { file: 'integration/review/dispatch/native-task-review-types.ts', owner: 'review-dispatch' },
   { file: 'integration/review/dispatch/native-task-review.ts', owner: 'review-dispatch' },
   { file: 'integration/review/obligations/obligation-settlement.ts', owner: 'review-obligations' },

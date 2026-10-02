@@ -68,10 +68,14 @@ export async function attemptIncoherentCaptureRetry(
     return { kind: 'not_applicable' };
   }
   if (input.obligationId === undefined) return { kind: 'not_applicable' };
+  const proof = input.failure.incoherentCapture;
+  if (proof === undefined) return { kind: 'not_applicable' };
 
   const rearm = buildIncoherentCaptureRearm({
     assurance: input.state.reviewAssurance,
     obligationId: input.obligationId,
+    incoherentInvocationId: proof.invocationId,
+    incoherentAttemptId: proof.attemptId,
     maxIncoherentReviewerCaptureRetries:
       input.state.policySnapshot.maxIncoherentReviewerCaptureRetries,
     now: input.now,

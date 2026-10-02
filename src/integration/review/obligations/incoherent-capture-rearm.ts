@@ -41,6 +41,13 @@ import { createAttemptForExistingObligation, updateAttemptStatus } from './attem
 export interface IncoherentCaptureRearmInput {
   readonly assurance: ReviewAssuranceState | undefined;
   readonly obligationId: string;
+  /**
+   * Exact F12 proof identity from the structured resolution. The authority
+   * only re-arms the very invocation/attempt the resolver identified as
+   * incoherent — never an arbitrary bound obligation.
+   */
+  readonly incoherentInvocationId: string;
+  readonly incoherentAttemptId: string;
   readonly maxIncoherentReviewerCaptureRetries: number;
   readonly now: string;
 }
@@ -87,8 +94,16 @@ function resolveRearmTarget(input: IncoherentCaptureRearmInput): RearmTargetReso
   if (obligation.invocationId === null) {
     return blocked('incoherent_rearm_invocation_missing');
   }
+  // The F12 proof must match the canonical obligation linkage exactly. A
+  // mismatched or stale proof never authorizes a re-arm.
+  if (obligation.invocationId !== input.incoherentInvocationId) {
+    return blocked('incoherent_rearm_proof_mismatch');
+  }
   const invocation = base.invocations.find((item) => item.invocationId === obligation.invocationId);
   if (!invocation) return blocked('incoherent_rearm_invocation_missing');
+  if (invocation.attemptId !== input.incoherentAttemptId) {
+    return blocked('incoherent_rearm_proof_mismatch');
+  }
   const attempt = base.attempts.find((item) => item.attemptId === invocation.attemptId);
   if (!attempt) return blocked('incoherent_rearm_attempt_missing');
   if (attempt.status !== 'bound') return blocked('incoherent_rearm_attempt_not_bound');
