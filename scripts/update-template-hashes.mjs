@@ -8,9 +8,9 @@
  *
  * The hash authority is the vitest suite
  * (`src/cli/templates-hash.test.ts`): only the test runner can load the
- * TypeScript template tree, so this wrapper sets `TEMPLATE_HASHES_WRITE=1` and
- * runs that suite. The suite recomputes every hash from the live templates and
- * overwrites the manifest; a follow-up run without the flag verifies it.
+ * TypeScript template tree. This wrapper runs that suite twice: first with
+ * `TEMPLATE_HASHES_WRITE=1` to refresh the manifest from the live templates,
+ * then without the flag to verify the committed bytes independently.
  */
 
 import { execFileSync } from 'node:child_process';
@@ -26,4 +26,11 @@ execFileSync(NPX, ['vitest', 'run', 'src/cli/templates-hash.test.ts'], {
   env: { ...process.env, TEMPLATE_HASHES_WRITE: '1' },
 });
 
-console.log('[update-template-hashes] golden manifest refreshed');
+// Independent verification run: no write flag, so the suite reads the manifest
+// just committed to disk and compares it against the live templates.
+execFileSync(NPX, ['vitest', 'run', 'src/cli/templates-hash.test.ts'], {
+  cwd: REPO_ROOT,
+  stdio: 'inherit',
+});
+
+console.log('[update-template-hashes] golden manifest refreshed and verified');
